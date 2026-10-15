@@ -24,19 +24,21 @@ import readline from "node:readline";
 import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
 import { callTool, capResult, toolCallContextFromEnv } from "./agents-call.ts";
 import { harnessClientFromEnv, type Json } from "./agents-client.ts";
-import { deniedResourcesFromEnv, guardToolCall, permissionModeFromEnv, principalFromEnv } from "../mcp-permissions.ts";
+import { auditSampleFromEnv, deniedResourcesFromEnv, guardToolCall, permissionModeFromEnv, principalFromEnv } from "../mcp-permissions.ts";
 
 const AVAILABLE_TOOLS = availableTools(catalogProfileFromEnv(process.env));
 // A warm engine keeps this process across its turns; the harness keeps
 // every per-turn limit, so nothing here counts.
 const CONTEXT = toolCallContextFromEnv(process.env);
 // Permission check and audit row for every call (docs/mcp/permissions.md).
-// SAGAX_MCP_PERMISSIONS: off | shadow (default, records only) | enforce.
+// SAGAX_MCP_PERMISSIONS: off | shadow (default: refuses nothing, audits the
+// denials and SAGAX_MCP_AUDIT_SAMPLE of the allowed calls) | enforce (audits all).
 const GUARD = {
   principal: principalFromEnv(process.env),
   mode: permissionModeFromEnv(process.env),
   ownBotId: CONTEXT.botId,
   deniedResources: deniedResourcesFromEnv(process.env),
+  allowedSample: auditSampleFromEnv(process.env),
   // The server's activity log first; one JSON line on stderr when the
   // server cannot be reached. Never arguments, text or results.
   audit: (record: unknown) => {

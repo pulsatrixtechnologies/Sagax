@@ -133,15 +133,17 @@ describe("the other internal MCP routes (real server)", () => {
     const bot = await createBot("Gateway");
     const token = await mint(bot.id, await threadOf(bot.id));
     expect((await post(token, "/api/internal/perspicax/tool", { tool: "rm_rf", args: {} })).status).toBe(400);
-    const linked = await post(token, "/api/internal/perspicax/tool", { tool: "api_query", args: { api: "cw" } });
-    expect(linked.status).toBe(403);
+    // api_query is not a Perspicax tool (the per-profile one is cw_psa__query, on the bridge).
+    expect((await post(token, "/api/internal/perspicax/tool", { tool: "api_query", args: {} })).status).toBe(400);
+    const linked = await post(token, "/api/internal/perspicax/tool", { tool: "api_search", args: { query: "tickets" } });
+    expect(linked.status).toBe(409);
     expect(linked.body.error).toMatch(/not linked/);
   });
 
   it("/api/internal/mcp-audit writes a row without arguments to the admin activity log", async () => {
     const bot = await createBot("Audited");
     const token = await mint(bot.id, await threadOf(bot.id));
-    const record = { at: new Date().toISOString(), principal: "p", role: "viewer", tool: "api_write", permission: "api:write", scope: "self", decision: "denied", reason: "not_granted", enforced: true, args: { secret: "hunter2" } };
+    const record = { at: new Date().toISOString(), principal: "p", role: "viewer", tool: "cw_psa__write", permission: "api:write", scope: "self", decision: "denied", reason: "not_granted", enforced: true, args: { secret: "hunter2" } };
     expect((await post(token, "/api/internal/mcp-audit", record)).status).toBe(200);
     expect((await post(token, "/api/internal/mcp-audit", { nothing: 1 })).status).toBe(400);
     const dir = join(data, "admin-activity");

@@ -726,23 +726,23 @@ describe("agents-proxy MCP surface", () => {
       "skills_list",
       "skill_manage",
       "add_mcp_server",
-      "memory_find",
-      "memory_save",
-      "memory_remove",
-      "memory_suggestions",
+      "memory_recall",
+      "memory_search",
+      "memory_write",
+      "memory_propose",
+      "memory_forget",
+      "memory_feedback",
       "api_list",
       "api_search",
       "api_describe",
+      "api_result_query",
       "api_lookup",
       "api_plan",
-      "api_resultquery",
       "api_upload",
       "api_reload",
-      "api_query",
-      "api_write",
-      "api_action",
+      "identity",
+      "flow",
       "flow_action",
-      "identity_search",
       "review_write",
     ]);
     const ask = list.result.tools.find((tool: { name: string }) => tool.name === "ask_bot");
@@ -1686,7 +1686,7 @@ describe("agents-proxy MCP surface", () => {
   });
 
   it("forwards the Perspicax gateway tools through the harness route", async () => {
-    for (const tool of ["memory_find", "memory_save", "api_query", "flow_action", "identity_search", "review_write", "api_write"]) {
+    for (const tool of ["memory_recall", "memory_write", "api_search", "api_result_query", "identity", "flow", "flow_action", "review_write"]) {
       lastPerspicaxToolBody = null;
       const res = await callTool(tool, { query: "vpn" });
       expect(res.result.isError, tool).toBeFalsy();

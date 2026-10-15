@@ -1,0 +1,43 @@
+// POST /api/internal/perspicax/tool: one Perspicax gateway tool of the agents
+// catalog (PERSPICAX_TOOLS in server/drivers/agents-catalog.ts) forwarded to
+// the profile mounted in this turn, in the speaker's name, after the same
+// misuse and safety review as a Perspicax MCP call. Behind the agents
+// capability (see internal-route.ts).
+import type { PerspicaxMcp } from "../perspicax-mcp.ts";
+import type { InternalCapabilityView, InternalRouteHandler } from "./internal-route.ts";
+import { PASS } from "./table.ts";
+
+export interface PerspicaxToolInternalDeps {
+  /** The tool names the route forwards; anything else is refused. */
+  tools: ReadonlySet<string>;
+  perspicaxMcp(): Pick<PerspicaxMcp, "callTool"> | null;
+  /** The misuse and safety review of a Perspicax MCP call: the refusal to
+   * answer with, or null to go on. */
+  review(text: string, capability: InternalCapabilityView): Promise<unknown>;
+}
+
+/** Answers `{ text, isError }` (200), or `{ error, code }`: 400 for a tool it
+ * does not forward, 409 when no profile is mounted in this turn or the server
+ * is not linked to Perspicax, 502 when Perspicax could not answer. */
+export function createPerspicaxToolInternalRoutes(deps: PerspicaxToolInternalDeps): InternalRouteHandler {
+  return async ({ res, path, method, json, capability, readBody }) => {
+    if (!(method === "POST" && path === "/api/internal/perspicax/tool")) return PASS;
+    const body = await readBody();
+    const tool = typeof body.tool === "string" ? body.tool : "";
+    if (!deps.tools.has(tool)) return json(res, 400, { error: "unknown Perspicax tool", code: "unknown_tool" });
+    const mcp = deps.perspicaxMcp();
+    if (!mcp) return json(res, 409, { error: "Perspicax is not linked to this server.", code: "profile_not_mounted" });
+    const args = body.args && typeof body.args === "object" && !Array.isArray(body.args) ? (body.args as Record<string, unknown>) : {};
+    const refusal = await deps.review(JSON.stringify({ tool, args }), capability);
+    if (refusal) return json(res, 200, { text: String(refusal), isError: true });
+    const answer = await mcp.callTool({ threadId: capability.threadId, generation: capability.generation, botId: capability.botId, name: tool, args });
+    if (!answer.ok) {
+      return json(res, answer.code === "profile_not_mounted" ? 409 : 502, {
+        error: answer.code === "profile_not_mounted" ? "No Perspicax profile is mounted in this turn for the person speaking." : answer.error,
+        code: answer.code,
+      });
+    }
+    const text = typeof answer.value === "string" ? answer.value : JSON.stringify(answer.value);
+    return json(res, 200, { text, isError: answer.isError });
+  };
+}

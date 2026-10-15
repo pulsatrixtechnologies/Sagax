@@ -33,6 +33,9 @@ export const READ_ONLY_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "find_cloud_agent_by_pr",
   "cloud_agent_transcript",
   "list_cloud_agent_artifacts",
+  // Claims (server/perspicax-claims.ts): listing the live leases changes no
+  // live lease (Perspicax only frees the expired ones as it lists).
+  "claim_list",
 ]);
 
 const READ_ONLY_ANNOTATIONS = Object.freeze({

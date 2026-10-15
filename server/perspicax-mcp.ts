@@ -159,6 +159,13 @@ export interface PerspicaxRelayAnswer {
   body?: unknown;
 }
 
+/** The answer of a Perspicax tool the harness calls itself (callTool): the
+ * tool's structured result and whether it is a tool error, or why no call
+ * was made. */
+export type PerspicaxToolAnswer =
+  | { ok: true; isError: boolean; value: unknown }
+  | { ok: false; code: "profile_not_mounted" | "access_ended" | "unreachable" | "rpc_error"; error: string };
+
 const key = (threadId: string, generation: string, profileId: string) => `${threadId}\u0000${generation}\u0000${profileId}`;
 const initKey = (threadId: string, profileId: string) => `${threadId}\u0000${profileId}`;
 /** Bounds the kept initialize params (one per thread and profile). */
@@ -234,6 +241,7 @@ export class PerspicaxMcp {
   /** The engine's last initialize params per thread and profile (reopen). */
   private readonly initParams = new Map<string, Json>();
   private reopens = 0;
+  private nativeCalls = 0;
 
   constructor(options: PerspicaxMcpOptions) {
     this.options = options;
@@ -362,30 +370,10 @@ export class PerspicaxMcp {
     return plan;
   }
 
-  /** Call one tool of a mounted profile for the speaker of this turn, as the
-   * agents tools do (server/perspicax-tools.ts). Opens the MCP session when
-   * the bridge has none. Never throws; a refusal is `isError`. */
-  async callTool(input: { threadId: string; generation: string; botId: string; tool: string; args: unknown }): Promise<{ status: number; body: Json }> {
-    const entry = [...this.entries.values()].find((e) => e.threadId === input.threadId && e.generation === input.generation && e.botId === input.botId && !e.ended);
-    if (!entry) return { status: 403, body: { error: "no Perspicax profile is mounted in this turn", code: "profile_not_mounted" } };
-    const args = isObject(input.args) ? input.args : {};
-    const run = () => this.relay({ threadId: input.threadId, generation: input.generation, botId: input.botId, profileId: entry.profileId, frame: { jsonrpc: "2.0", id: `sagax-tool-${++this.reopens}`, method: "tools/call", params: { name: input.tool, arguments: args } } });
-    if (!entry.mcpSessionId) {
-      const link = this.options.link();
-      if (!link || !(await this.reopen(link, entry))) return { status: 200, body: { isError: true, text: "Perspicax is unavailable" } };
-    }
-    const answer = await run();
-    const frame = isObject(answer.body) ? answer.body : null;
-    if (!frame) return { status: 200, body: { isError: true, text: "Perspicax sent no answer" } };
-    if (isObject(frame.error)) return { status: 200, body: { isError: true, text: String(frame.error.message ?? "Perspicax refused the call") } };
-    const result = isObject(frame.result) ? frame.result : {};
-    const content = Array.isArray(result.content) ? result.content : [];
-    const text = content.flatMap((c) => (isObject(c) && typeof c.text === "string" ? [c.text] : [])).join("\n");
-    return { status: 200, body: { text, isError: result.isError === true } };
-  }
-
-  /** Relay one JSON-RPC frame from a bridge to Perspicax /mcp. */
-  async relay(input: { threadId: string; generation: string; botId: string; profileId: string; frame: unknown }): Promise<PerspicaxRelayAnswer> {
+  /** Relay one JSON-RPC frame from a bridge to Perspicax /mcp. `judged`:
+   * the call comes from callTool, whose native tool the agents proxy already
+   * put through the permission check, so it is not judged (nor audited) twice. */
+  async relay(input: { threadId: string; generation: string; botId: string; profileId: string; frame: unknown; judged?: boolean }): Promise<PerspicaxRelayAnswer> {
     const entry = this.entries.get(key(input.threadId, input.generation, input.profileId));
     if (!entry || entry.botId !== input.botId) return { status: 403, body: { error: "this Perspicax profile is not mounted in this turn", code: "profile_not_mounted" } };
     if (!isObject(input.frame)) return { status: 400, body: rpcError(null, -32600, "Invalid Request") };
@@ -396,7 +384,7 @@ export class PerspicaxMcp {
     if (!(this.options.botProfiles(input.botId) ?? []).includes(input.profileId)) {
       return { status: 403, body: { error: "this bot no longer lists that Perspicax profile", code: "profile_not_mounted" } };
     }
-    const blocked = await this.permissionBlock(entry, frame);
+    const blocked = input.judged ? null : await this.permissionBlock(entry, frame);
     if (blocked) return { status: 200, body: { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: blocked }], isError: true } } };
     const speaker = this.options.subjectOf(entry.principalId);
     if (!speaker || speaker.disabled) this.end(entry);
@@ -465,6 +453,70 @@ export class PerspicaxMcp {
     const pass = { text: "" };
     const result = await guardToolCall(options, String(params.name ?? ""), isObject(params.arguments) ? params.arguments : {}, async () => pass);
     return result === pass ? null : result.text;
+  }
+
+  /** The live entry of a turn the bot can still use: the first mounted
+   * profile its bot still lists. */
+  private turnEntry(threadId: string, generation: string, botId: string): Entry | undefined {
+    const prefix = `${threadId}\u0000${generation}\u0000`;
+    const listed = this.options.botProfiles(botId) ?? [];
+    for (const [at, entry] of this.entries) {
+      if (at.startsWith(prefix) && entry.botId === botId && !entry.ended && listed.includes(entry.profileId)) return entry;
+    }
+    return undefined;
+  }
+
+  /** Whether this turn of the bot has a Perspicax profile mounted, so the
+   * harness may call a Perspicax tool in the speaker's name (callTool). */
+  hasMounted(threadId: string, generation: string, botId: string): boolean {
+    return this.turnEntry(threadId, generation, botId) !== undefined;
+  }
+
+  /** Call one Perspicax tool from the harness itself (a native tool, such
+   * as the claims), as the person who speaks in this turn: the token of the
+   * turn's first mounted profile, so Perspicax sees that person as the
+   * authenticated caller. A session is opened first when the entry has
+   * none, since a call that can change data is never replayed on a new one.
+   * Never throws; no token is logged or returned. */
+  async callTool(input: { threadId: string; generation: string; botId: string; name: string; args: Json }): Promise<PerspicaxToolAnswer> {
+    const entry = this.turnEntry(input.threadId, input.generation, input.botId);
+    if (!entry) return { ok: false, code: "profile_not_mounted", error: "no Perspicax profile is mounted in this turn" };
+    const link = this.options.link();
+    if (!link) return { ok: false, code: "access_ended", error: PERSPICAX_ACCESS_ENDED };
+    if (!entry.mcpSessionId && !(await this.reopen(link, entry))) {
+      return entry.ended
+        ? { ok: false, code: "access_ended", error: PERSPICAX_ACCESS_ENDED }
+        : { ok: false, code: "unreachable", error: "Perspicax is unavailable" };
+    }
+    const id = `sagax-native-${++this.nativeCalls}`;
+    const answer = await this.relay({
+      threadId: input.threadId,
+      generation: input.generation,
+      botId: input.botId,
+      profileId: entry.profileId,
+      frame: { jsonrpc: "2.0", id, method: "tools/call", params: { name: input.name, arguments: input.args } },
+      judged: true,
+    });
+    const body = answer.body;
+    if (answer.status !== 200 || !isObject(body)) {
+      const error = isObject(body) && typeof body.error === "string" ? body.error : `Perspicax answered HTTP ${answer.status}`;
+      return { ok: false, code: answer.status === 403 ? "profile_not_mounted" : "unreachable", error };
+    }
+    if (isObject(body.error)) {
+      const message = typeof body.error.message === "string" ? body.error.message : "Perspicax refused the call";
+      return { ok: false, code: message === PERSPICAX_ACCESS_ENDED ? "access_ended" : "rpc_error", error: message };
+    }
+    const result = isObject(body.result) ? body.result : {};
+    let value: unknown = result.structuredContent;
+    if (value === undefined && Array.isArray(result.content)) {
+      const text = result.content.find((block): block is Json => isObject(block) && block.type === "text");
+      try {
+        value = typeof text?.text === "string" ? (JSON.parse(text.text) as unknown) : null;
+      } catch {
+        value = text?.text ?? null;
+      }
+    }
+    return { ok: true, isError: result.isError === true, value: value ?? null };
   }
 
   /** POST one frame with the entry's token and session; a 401 renews the

@@ -510,52 +510,75 @@ describe("PerspicaxMcp permissions and callTool", () => {
   const answerWith = (text: string, isError = false) => ({ mcp: ({ body }: { body: any }) => body.method === "tools/call"
     ? new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text }], isError } }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s" } })
     : new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: {} }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s" } }) });
-  const guardFor = (role: string, mode: "shadow" | "enforce", rows: McpAuditRecord[]): PerspicaxMcpOptions["permissionGuard"] => ({ botId }) => ({
-    principal: { id: "p", role }, mode, ownBotId: botId, audit: (r) => rows.push(r), deniedResources: ["cw:ticket.*"],
+  const guardFor = (role: string, mode: "shadow" | "enforce", rows: McpAuditRecord[], deniedResources = ["cw_psa:tickets.*"]): PerspicaxMcpOptions["permissionGuard"] => ({ botId }) => ({
+    principal: { id: "p", role }, mode, ownBotId: botId, audit: (r) => rows.push(r), deniedResources,
   });
+  const relayed = (h: ReturnType<typeof harness>) => h.mcpCalls.filter((c) => c.body?.method === "tools/call").map((c) => c.body.params.name);
 
-  it("enforce refuses a write a viewer may not make, and nothing reaches Perspicax", async () => {
+  it("enforce judges the per-profile names Perspicax serves: a permitted cw_psa__query passes, a refused cw_psa__write is blocked", async () => {
     const rows: McpAuditRecord[] = [];
     const h = harness({ ...answerWith("done"), guard: guardFor("viewer", "enforce", rows) });
     await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
-    const answer = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("api_write", { api: "cw", resource: "ticket", verb: "update" }) });
-    expect(answer.body).toMatchObject({ id: 9, result: { isError: true } });
-    expect(JSON.stringify(answer.body)).toContain("Permission denied: api:write");
-    expect(h.mcpCalls.some((c) => c.body?.method === "tools/call")).toBe(false);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ decision: "denied", enforced: true });
+    const read = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("cw_psa__query", { resource: "companies" }, 8) });
+    expect(read.body).toMatchObject({ id: 8, result: { content: [{ text: "done" }] } });
+    const write = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("cw_psa__write", { resource: "companies", action: "update", id: 1, set: {} }) });
+    expect(write.body).toMatchObject({ id: 9, result: { isError: true } });
+    expect(JSON.stringify(write.body)).toContain("Permission denied: api:write");
+    expect(relayed(h)).toEqual(["cw_psa__query"]);
+    expect(rows.map((r) => [r.tool, r.permission, r.decision, r.resource])).toEqual([
+      ["cw_psa__query", "api:query", "allowed", "cw_psa:companies.read"],
+      ["cw_psa__write", "api:write", "denied", "cw_psa:companies.update"],
+    ]);
   });
 
-  it("shadow audits the denial and lets the call through", async () => {
+  it("enforce passes the meta-tools of Perspicax 1.8.28 by their real names", async () => {
+    const rows: McpAuditRecord[] = [];
+    const h = harness({ ...answerWith("ok"), guard: guardFor("member", "enforce", rows) });
+    await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    const names = ["api_list", "api_search", "api_describe", "api_result_query", "api_lookup", "api_plan", "identity", "flow", "flow_action", "memory_recall"];
+    for (const [i, name] of names.entries()) {
+      const answer = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall(name, {}, 20 + i) });
+      expect(answer.body, name).toMatchObject({ result: { content: [{ text: "ok" }] } });
+    }
+    expect(relayed(h)).toEqual(names);
+    expect(rows.every((r) => r.decision === "allowed")).toBe(true);
+  });
+
+  it("shadow lets a denial through and audits only the denial", async () => {
     const rows: McpAuditRecord[] = [];
     const h = harness({ ...answerWith("done"), guard: guardFor("viewer", "shadow", rows) });
     await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
-    const answer = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("api_write", { api: "cw", resource: "ticket", verb: "update" }) });
+    await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("cw_psa__query", { resource: "companies" }, 8) });
+    const answer = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("cw_psa__write", { resource: "companies", action: "update" }) });
     expect(answer.body).toMatchObject({ result: { content: [{ text: "done" }] } });
-    expect(rows[0]).toMatchObject({ decision: "denied", enforced: false });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ tool: "cw_psa__write", decision: "denied", enforced: false });
   });
 
-  it("a per-resource deny refuses cw:ticket.update for a member that may write", async () => {
+  it("a per-resource deny refuses cw_psa:tickets.update for a role that may write", async () => {
     const rows: McpAuditRecord[] = [];
     const h = harness({ ...answerWith("done"), guard: guardFor("operator", "enforce", rows) });
     await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
-    const denied = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("api_write", { api: "cw", resource: "ticket", verb: "update" }) });
-    expect(JSON.stringify(denied.body)).toContain("cw:ticket.update");
-    const allowed = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("api_write", { api: "cw", resource: "contact", verb: "update" }, 10) });
+    const denied = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("cw_psa__write", { resource: "tickets", action: "update" }) });
+    expect(JSON.stringify(denied.body)).toContain("cw_psa:tickets.update");
+    const allowed = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("cw_psa__write", { resource: "contacts", action: "update" }, 10) });
     expect(allowed.body).toMatchObject({ result: { content: [{ text: "done" }] } });
-    expect(rows.map((r) => r.resource)).toEqual(["cw:ticket.update", "cw:contact.update"]);
+    expect(rows.map((r) => r.resource)).toEqual(["cw_psa:tickets.update", "cw_psa:contacts.update"]);
   });
 
-  it("callTool answers the text of a tool, an error of Perspicax, and refuses when no profile is mounted", async () => {
-    const h = harness(answerWith("42 records"));
-    expect(await h.mcp.callTool({ ...turn, botId: "x", tool: "api_query", args: {} })).toMatchObject({ status: 403, body: { code: "profile_not_mounted" } });
+  it("callTool answers a tool's value or Perspicax's error, refuses when no profile is mounted, and is not judged twice", async () => {
+    const rows: McpAuditRecord[] = [];
+    const h = harness({ ...answerWith("42 records"), guard: guardFor("viewer", "enforce", rows) });
+    expect(await h.mcp.callTool({ ...turn, botId: "x", name: "api_list", args: {} })).toMatchObject({ ok: false, code: "profile_not_mounted" });
     await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
-    expect(await h.mcp.callTool({ ...turn, botId: "x", tool: "api_query", args: { api: "cw" } })).toEqual({ status: 200, body: { text: "42 records", isError: false } });
+    // The agents proxy already judged the native tool: the relay does not refuse nor audit it again.
+    expect(await h.mcp.callTool({ ...turn, botId: "x", name: "claim", args: { name: "x" } })).toEqual({ ok: true, isError: false, value: "42 records" });
+    expect(rows).toEqual([]);
     const failing = harness(answerWith("bad filter", true));
     await failing.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
-    expect(await failing.mcp.callTool({ ...turn, botId: "x", tool: "api_query", args: null })).toEqual({ status: 200, body: { text: "bad filter", isError: true } });
+    expect(await failing.mcp.callTool({ ...turn, botId: "x", name: "api_search", args: {} })).toEqual({ ok: true, isError: true, value: "bad filter" });
     const rpcFail = harness({ mcp: ({ body }) => body.method === "tools/call" ? new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, error: { code: -32000, message: "nope" } }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s" } }) : new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: {} }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s" } }) });
     await rpcFail.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
-    expect(await rpcFail.mcp.callTool({ ...turn, botId: "x", tool: "api_query", args: {} })).toEqual({ status: 200, body: { isError: true, text: "nope" } });
+    expect(await rpcFail.mcp.callTool({ ...turn, botId: "x", name: "api_search", args: {} })).toEqual({ ok: false, code: "rpc_error", error: "nope" });
   });
 });

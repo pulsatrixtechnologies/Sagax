@@ -26,13 +26,30 @@ export interface McpPermission {
   tool: string | null;
   /** Where the capability lives (see docs/mcp/coverage.md). */
   source: "sagax" | "perspicax";
+  /** Other names of the same capability: a Perspicax tool that a Sagax tool
+   * already stands for (sagax_send is send_to_bot), or a name a Perspicax
+   * build behind a switch serves (memory v2, Perspicax #326). */
+  aliases?: readonly string[];
+  /** A per-profile Perspicax tool (`<profile>__query`, ...): `tool` is then a
+   * display name and the call is matched by profileToolCall. */
+  profileKind?: ProfileToolKind;
 }
 
-const p = (key: string, tier: PermissionTier, tool: string | null, source: "sagax" | "perspicax" = "sagax"): McpPermission => ({ key, tier, tool, source });
+const p = (key: string, tier: PermissionTier, tool: string | null, source: "sagax" | "perspicax" = "sagax", aliases?: readonly string[]): McpPermission =>
+  ({ key, tier, tool, source, ...(aliases?.length ? { aliases } : {}) });
+const profileTool = (key: string, tier: PermissionTier, kind: ProfileToolKind, tool: string): McpPermission => ({ key, tier, tool, source: "perspicax", profileKind: kind });
+
+/** The kinds of per-profile tool Perspicax 1.8.28 serves (connector-core
+ * tools/compact.rs and tools/name.rs): `<profile>__query` reads a resource,
+ * `<profile>__write` creates, updates or deletes one (`<profile>__<resource>_write`
+ * when the profile is not compacted), `<profile>__action` runs an action,
+ * `<profile>__read_action` runs a read-only one, and any other
+ * `<profile>__<operation>` is one operation's own tool. */
+export type ProfileToolKind = "query" | "write" | "action" | "read_action" | "operation";
 
 export const MCP_PERMISSIONS: readonly McpPermission[] = [
   // Reads
-  p("bots:list", "read", "list_bots"),
+  p("bots:list", "read", "list_bots", "sagax", ["sagax_bots"]),
   p("rooms:list", "read", "list_rooms"),
   p("rooms:targets", "read", "list_room_targets"),
   p("threads:list", "read", "list_threads"),
@@ -51,7 +68,7 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("agents:list", "read", "list_agents"),
   p("agents:find", "read", "find_agents"),
   p("agents:await", "read", "await_turn"),
-  p("transcript:read", "read", "read_transcript"),
+  p("transcript:read", "read", "read_transcript", "sagax", ["sagax_thread"]),
   p("transcript:page", "read", "read_transcript_page"),
   p("transcript:latest", "read", "read_latest_page"),
   p("transcript:latest.threads", "read", "read_latest_page_with_threads"),
@@ -84,7 +101,7 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   // Dispatch
   p("bots:ask", "dispatch", "ask_bot"),
   p("bots:delegate", "dispatch", "delegate_bot"),
-  p("bots:send", "dispatch", "send_to_bot"),
+  p("bots:send", "dispatch", "send_to_bot", "sagax", ["sagax_send"]),
   p("bots:coordinate", "dispatch", "coordinate_bots"),
   p("agents:send", "dispatch", "send_prompt"),
   p("threads:start", "dispatch", "start_thread"),
@@ -109,45 +126,78 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("computers:use", "admin", "shared_computer"),
   p("vm:exec", "admin", "vm_exec"),
   p("actions:invoke", "admin", "act"),
-  // Gaps: capabilities with no MCP tool yet (docs/mcp/coverage.md). The
-  // permission exists so roles and the console can grant it ahead of the tool.
-  p("claims:acquire", "claim", null),
-  p("claims:renew", "claim", null),
-  p("claims:release", "claim", null),
-  p("claims:list", "read", null),
-  p("memory:search", "read", "memory_find", "perspicax"),
-  p("memory:recall", "read", null, "perspicax"),
-  p("memory:write", "own", "memory_save", "perspicax"),
-  p("memory:forget", "own", "memory_remove", "perspicax"),
-  p("memory:feedback", "own", null, "perspicax"),
-  p("memory:promote", "admin", null, "perspicax"),
-  p("memory:propose", "own", "memory_suggestions", "perspicax"),
-  p("memory:review", "admin", null, "perspicax"),
-  p("approvals:answer", "dispatch", "answer_approval"),
-  p("routines:run", "dispatch", "run_routine"),
-  p("people:nudge", "dispatch", "nudge_person"),
+  // Claims (Sagax #497, Perspicax #327): the native claim tools.
+  p("claims:acquire", "claim", "claim"),
+  p("claims:renew", "claim", "claim_renew"),
+  p("claims:release", "claim", "claim_release"),
+  p("claims:list", "read", "claim_list"),
+  // Perspicax memory tools, as 1.8.28 serves them (connector mcp/memory_tools.rs).
+  // The aliases are the memory v2 names of the draft behind a switch (#326).
+  p("memory:search", "read", "memory_search", "perspicax", ["memory_find"]),
+  p("memory:recall", "read", "memory_recall", "perspicax"),
+  p("memory:write", "own", "memory_write", "perspicax", ["memory_save"]),
+  p("memory:forget", "own", "memory_forget", "perspicax", ["memory_remove"]),
+  p("memory:feedback", "own", "memory_feedback", "perspicax"),
+  p("memory:promote", "admin", "memory_promote", "perspicax"),
+  p("memory:propose", "own", "memory_propose", "perspicax", ["memory_suggestions"]),
+  p("memory:review", "admin", "memory_review", "perspicax"),
+  p("memory:files", "own", "memory", "perspicax"),
+  p("work:search", "read", "work_search", "perspicax"),
+  p("work:check", "read", "work_check", "perspicax"),
+  p("work:open", "read", "work_open", "perspicax"),
+  p("people:ask", "dispatch", "ask_person", "perspicax"),
+  p("approvals:answer", "dispatch", "answer_approval", "sagax", ["sagax_approve"]),
+  p("routines:run", "dispatch", "run_routine", "sagax", ["sagax_routine_run"]),
+  p("people:nudge", "dispatch", "nudge_person", "sagax", ["sagax_nudge"]),
+  // Perspicax meta-tools (connector mcp/meta_tools.rs CORE_META_NAMES).
   p("api:list", "read", "api_list", "perspicax"),
   p("api:search", "read", "api_search", "perspicax"),
   p("api:describe", "read", "api_describe", "perspicax"),
   p("api:lookup", "read", "api_lookup", "perspicax"),
   p("api:plan", "read", "api_plan", "perspicax"),
-  p("api:resultquery", "read", "api_resultquery", "perspicax"),
+  p("api:resultquery", "read", "api_result_query", "perspicax"),
   p("api:upload", "own", "api_upload", "perspicax"),
   p("api:reload", "admin", "api_reload", "perspicax"),
-  p("identity:search", "read", "identity_search", "perspicax"),
-  p("api:query", "read", "api_query", "perspicax"),
-  p("api:write", "dispatch", "api_write", "perspicax"),
-  p("api:action", "dispatch", "api_action", "perspicax"),
+  p("identity:search", "read", "identity", "perspicax"),
+  p("flow:read", "read", "flow", "perspicax"),
   p("flow:action", "dispatch", "flow_action", "perspicax"),
   p("review:write", "admin", "review_write", "perspicax"),
+  // Per-profile Perspicax tools, matched by name (profileToolCall). An
+  // operation's own tool is not known to be a read, so it needs dispatch.
+  profileTool("api:query", "read", "query", "<profile>__query"),
+  profileTool("api:write", "dispatch", "write", "<profile>__write"),
+  profileTool("api:action", "dispatch", "action", "<profile>__action"),
+  profileTool("api:action.read", "read", "read_action", "<profile>__read_action"),
+  profileTool("api:operation", "dispatch", "operation", "<profile>__<operation>"),
   p("pairing:manage", "admin", "manage_pairing"),
   p("settings:manage", "admin", "manage_settings"),
 ];
 
-const BY_TOOL = new Map<string, McpPermission>(MCP_PERMISSIONS.filter((x) => x.tool).map((x) => [x.tool as string, x]));
+const BY_TOOL = new Map<string, McpPermission>(MCP_PERMISSIONS.filter((x) => x.tool && !x.profileKind).flatMap((x) => [x.tool as string, ...(x.aliases ?? [])].map((name) => [name, x] as const)));
 const BY_KEY = new Map<string, McpPermission>(MCP_PERMISSIONS.map((x) => [x.key, x]));
+const BY_PROFILE_KIND = new Map<ProfileToolKind, McpPermission>(MCP_PERMISSIONS.filter((x) => x.profileKind).map((x) => [x.profileKind as ProfileToolKind, x]));
 
-export const permissionForTool = (tool: string): McpPermission | undefined => BY_TOOL.get(tool);
+/** A per-profile Perspicax tool name, split: `cw_psa__query` is profile
+ * cw_psa, kind query. The `-` spelling (`cw_psa-query`, Perspicax
+ * tool_name_separator) is read too. Null for any other name: a Sagax tool or a
+ * meta-tool never carries `__` or `-`. */
+export function profileToolCall(tool: string): { profile: string; kind: ProfileToolKind; name: string } | null {
+  const m = /^([a-z0-9][a-z0-9_]*?)(?:__|-)([A-Za-z0-9][A-Za-z0-9_]*)$/.exec(tool);
+  if (!m) return null;
+  const [, profile, name] = m as unknown as [string, string, string];
+  const kind: ProfileToolKind = name === "query" || name === "write" || name === "action" || name === "read_action"
+    ? name
+    : name.endsWith("_write") ? "write" : "operation";
+  return { profile, kind, name };
+}
+
+/** The permission of a tool: by name (or alias), else by the per-profile pattern. */
+export const permissionForTool = (tool: string): McpPermission | undefined => {
+  const named = BY_TOOL.get(tool);
+  if (named) return named;
+  const profile = profileToolCall(tool);
+  return profile ? BY_PROFILE_KIND.get(profile.kind) : undefined;
+};
 export const permissionByKey = (key: string): McpPermission | undefined => BY_KEY.get(key);
 
 type TierScopes = Partial<Record<PermissionTier, McpScope>>;
@@ -221,28 +271,43 @@ export function scopeForCall(args: Record<string, unknown> | undefined, ownBotId
 }
 
 const SEGMENT = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const API_TOOL_VERB: Record<string, string | undefined> = { api_query: "read", api_write: undefined, api_action: undefined };
 
-/** What the Perspicax catalog knows: api slug to its resource names. */
+/** What the Perspicax catalog knows: api (profile) id to its resource names. */
 export type ApiCatalog = ReadonlyMap<string, ReadonlySet<string>>;
 
-/** The per-resource key of an api_query, api_write or api_action call
- * (`cw:ticket.update`), read from its arguments. Null when the call is not
- * one of those, names no api, or names a segment that is not a plain slug.
- * With a catalog, an api or resource it does not list gives null, so a made
- * up name can never match a grant or a deny. */
+/** The per-resource key of a per-profile Perspicax call, from its name and
+ * arguments: `<profile>:<resource>.<verb>`.
+ *   - `cw_psa__query` { resource: "tickets" }               cw_psa:tickets.read
+ *   - `cw_psa__write` { resource: "tickets", action: "update" } cw_psa:tickets.update
+ *   - `cw_psa__tickets_write` { action: "delete" }            cw_psa:tickets.delete
+ *   - `cw_psa__action` { action: "merge" }                    cw_psa:merge.run
+ *   - `cw_psa__read_action` { action: "usage" }               cw_psa:usage.read
+ *   - `cw_psa__find_tickets`                                  cw_psa:find_tickets.run
+ * Null for any other tool, or when a segment is missing or not a plain slug.
+ * With a catalog, a profile it does not list, or a query or write on a
+ * resource it does not list, gives null, so a made up name can never match a
+ * grant or a deny. */
 export function resourceKeyForCall(tool: string, args: Record<string, unknown> | undefined, catalog?: ApiCatalog): string | null {
-  if (!(tool in API_TOOL_VERB) || !args) return null;
+  const call = profileToolCall(tool);
+  if (!call) return null;
   const clean = (v: unknown) => (typeof v === "string" && SEGMENT.test(v.trim().toLowerCase()) ? v.trim().toLowerCase() : null);
-  const api = clean(args.api);
-  const resource = clean(args.resource);
-  const verb = API_TOOL_VERB[tool] ?? clean(tool === "api_action" ? args.action : args.verb);
-  if (!api || !resource || !verb) return null;
-  if (catalog) {
-    const known = catalog.get(api);
-    if (!known || !known.has(resource)) return null;
+  const a = args ?? {};
+  const profile = clean(call.profile);
+  let resource: string | null;
+  let verb: string | null;
+  switch (call.kind) {
+    case "query": resource = clean(a.resource); verb = "read"; break;
+    case "write": resource = call.name === "write" ? clean(a.resource) : clean(call.name.slice(0, -"_write".length)); verb = clean(a.action); break;
+    case "action": resource = clean(a.action); verb = "run"; break;
+    case "read_action": resource = clean(a.action); verb = "read"; break;
+    default: resource = clean(call.name); verb = "run";
   }
-  return `${api}:${resource}.${verb}`;
+  if (!profile || !resource || !verb) return null;
+  if (catalog) {
+    const known = catalog.get(profile);
+    if (!known || ((call.kind === "query" || call.kind === "write") && !known.has(resource))) return null;
+  }
+  return `${profile}:${resource}.${verb}`;
 }
 
 /** Deny rules for resource keys: exact (`cw:ticket.update`), `cw:ticket.*`
@@ -301,6 +366,10 @@ export interface GuardOptions {
   /** Resource deny rules (see resourceDenied) and the catalog that vets names. */
   deniedResources?: readonly string[];
   catalog?: ApiCatalog;
+  /** Shadow mode only: the share of allowed calls audited, 0 (default) to 1.
+   * Enforce audits every call; shadow audits every denial. */
+  allowedSample?: number;
+  random?: () => number;
   now?: () => Date;
 }
 
@@ -312,6 +381,24 @@ export interface GuardedResult {
 
 export const permissionDeniedText = (d: McpDecision): string =>
   `Permission denied: ${d.permission} (${d.reason.replace(/_/g, " ")}, needs ${d.requiredScope} scope). Ask an administrator to grant it.`;
+
+/** Whether this decision gets an audit row. Enforce: every call (rule 3 of
+ * docs/mcp/permissions.md). Shadow: every denial, and an allowed call only
+ * within allowedSample: in shadow nothing is refused, so the denials are what
+ * the audit is for, and one row per allowed tool call (one local POST and one
+ * activity-log line each, many per turn) would bury them. */
+function auditable(options: GuardOptions, allowed: boolean): boolean {
+  if (!allowed || options.mode === "enforce") return true;
+  const share = options.allowedSample ?? 0;
+  return share > 0 && (options.random ?? Math.random)() < share;
+}
+
+/** SAGAX_MCP_AUDIT_SAMPLE: the share of allowed calls shadow mode audits
+ * (0 to 1; unset, unreadable or out of range is 0). */
+export function auditSampleFromEnv(env: NodeJS.ProcessEnv): number {
+  const value = Number((env.SAGAX_MCP_AUDIT_SAMPLE ?? "").trim());
+  return Number.isFinite(value) && value > 0 && value <= 1 ? value : 0;
+}
 
 /** Wraps one tool call. The audit hook never throws into the call. */
 export async function guardToolCall<R extends GuardedResult>(options: GuardOptions, tool: string, args: Record<string, unknown> | undefined, run: () => Promise<R>): Promise<R | GuardedResult> {
@@ -325,7 +412,7 @@ export async function guardToolCall<R extends GuardedResult>(options: GuardOptio
   const enforced = options.mode === "enforce";
   const blocked = !decision.allowed && enforced;
   try {
-    options.audit({
+    if (auditable(options, decision.allowed)) options.audit({
       at: (options.now?.() ?? new Date()).toISOString(),
       principal: options.principal.id,
       role: options.principal.role,
@@ -342,6 +429,19 @@ export async function guardToolCall<R extends GuardedResult>(options: GuardOptio
   }
   if (blocked) return { text: permissionDeniedText(decision), isError: true };
   return run();
+}
+
+/** The policy variables the harness hands the agents proxy, read from the
+ * server's own environment, so the proxy judges with the server's mode, deny
+ * rules and audit sample whatever environment the engine spawns it with. */
+export function mcpPolicyEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const deny = deniedResourcesFromEnv(env).join(",");
+  const sample = auditSampleFromEnv(env);
+  return {
+    SAGAX_MCP_PERMISSIONS: permissionModeFromEnv(env),
+    ...(deny ? { SAGAX_MCP_DENY: deny } : {}),
+    ...(sample ? { SAGAX_MCP_AUDIT_SAMPLE: String(sample) } : {}),
+  };
 }
 
 /** The identity variables the harness gives the proxy (docs/mcp/permissions.md,

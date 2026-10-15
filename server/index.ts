@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { ToolGrantStore } from "./tool-grants.ts";
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
-import { deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, permissionModeFromEnv, principalFromEnv, type McpAuditRecord } from "./mcp-permissions.ts";
+import { auditSampleFromEnv, deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, mcpPolicyEnv, permissionModeFromEnv, principalFromEnv } from "./mcp-permissions.ts";
 import { misusePathRefusal, misuseRefusal, misuseToolFrameText, setMisuseAlert } from "./misuse-guardrails.ts";
 import {
   openSafetyHold,
@@ -930,6 +930,12 @@ import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./p
 import { duplicateNote, PerspicaxMemory } from "./perspicax-memory.ts";
 import { PERSPICAX_TOOL_NAMES } from "./drivers/agents-catalog.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
+import { withClaimsFlag } from "./perspicax-claims.ts";
+import { createPerspicaxClaimsInternalRoutes } from "./routes/perspicax-claims-internal.ts";
+import { dispatchInternalRoutes, type InternalCapabilityView, type InternalRouteHandler } from "./routes/internal-route.ts";
+import { createPerspicaxToolInternalRoutes } from "./routes/perspicax-tool-internal.ts";
+import { createMcpAuditInternalRoutes } from "./routes/mcp-audit-internal.ts";
+import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/routine-run-internal.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
@@ -3567,6 +3573,10 @@ function agentsIntegration(
       SAGAX_PERSPICAX_TOOLS: IDENTITY.kind === "perspicax" && perspicaxMcp ? "1" : "0",
       // Who the permission layer judges (server/mcp-permissions.ts).
       ...mcpIdentityEnv(mcpIdentityOf(botId, threadId)),
+      ...mcpPolicyEnv(process.env),
+      // The claim tools (server/perspicax-claims.ts) while this turn has a
+      // Perspicax profile mounted for the person speaking; the route re-checks.
+      SAGAX_CLAIMS: perspicaxMcp?.hasMounted(threadId, generation, botId) ? "1" : "0",
     },
   };
 }
@@ -12477,12 +12487,36 @@ function auditRoutineRunAs(auth: RequestAuth, routine: Routine, before: string |
  * the person the routine runs as, or an admin. A solo server, the operator
  * and the loopback keep the bot-level rule (`run`). */
 function mayRunRoutineNow(auth: RequestAuth, routine: Routine): boolean {
-  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return true;
-  if (orgAdminCaller(auth) || callerCan(auth, "routines.runNowAny")) return true;
-  const principalId = auth.session.principalId?.trim();
-  if (!principalId) return false;
+  const organization = IDENTITY.kind === "perspicax";
+  const person = auth.kind === "session";
+  return routineRunNowAllowed({
+    organization,
+    person,
+    ...(person ? { principalId: auth.session.principalId } : {}),
+    admin: organization && person && (orgAdminCaller(auth) || callerCan(auth, "routines.runNowAny")),
+    ...routineRunNowParties(routine),
+  });
+}
+/** The same rule for the person a bot speaks for (run_routine): there is no
+ * session, so their own admin role and permissions decide. Nobody speaking is
+ * refused on an organization server. */
+function speakerMayRunRoutineNow(principalId: string | undefined, routine: Routine): boolean {
+  const organization = IDENTITY.kind === "perspicax";
+  const person = principalId && isPrincipalId(principalId) ? principals.byId(principalId) : undefined;
+  const active = Boolean(person && person.disabledAt === undefined);
+  return routineRunNowAllowed({
+    organization,
+    person: true,
+    ...(active ? { principalId } : {}),
+    admin: organization && active && (person!.local === true || person!.orgRole === "admin" || can(principalPermissions(principalId, { sessionAdmin: false }), "routines.runNowAny")),
+    ...routineRunNowParties(routine),
+  });
+}
+function routineRunNowParties(routine: Routine): { botOwner?: string; runAs?: string } {
   const bot = store.bot(routine.botId);
-  return principalId === (bot ? effectiveBotOwner(bot) : undefined) || principalId === effectiveRunAs(routine);
+  const botOwner = bot ? effectiveBotOwner(bot) : undefined;
+  const runAs = effectiveRunAs(routine);
+  return { ...(botOwner ? { botOwner } : {}), ...(runAs ? { runAs } : {}) };
 }
 /** Whether a run of this routine is queued, running or waiting. */
 function routineRunInFlight(routineId: string): boolean {
@@ -12490,10 +12524,13 @@ function routineRunInFlight(routineId: string): boolean {
 }
 /** A run started by hand, in the admin activity log with who clicked. */
 function auditRoutineRunNow(auth: RequestAuth, routine: Routine, run: RoutineRun): void {
+  auditRoutineRunNowBy(IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth), routine, run);
+}
+function auditRoutineRunNowBy(actor: AdminActor, routine: Routine, run: RoutineRun): void {
   appendAdminAction(DATA_DIR, {
     category: "bot", action: "routine.run_now", target: { kind: "routine", id: routine.id, name: routine.name },
     after: { runId: run.id, trigger: "manual", ...(run.runAs ? { runAs: run.runAs } : {}) },
-    actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+    actor,
   });
 }
 /** Saved run logs cleared by hand, in the admin activity log with who did it. */
@@ -18659,6 +18696,8 @@ async function runGroupMemberTurn(
     });
     if (Object.keys(perspicax.custom).length) integrations.custom = { ...integrations.custom, ...perspicax.custom };
     roomPerspicaxPrompt = perspicax.prompt;
+    // The agents tools were built before this mount: list the claim tools now.
+    if (integrations.agents) integrations.agents = withClaimsFlag(integrations.agents, perspicaxMcp?.hasMounted(threadId, internalGeneration, bot.id) === true);
   }
   // Connected-app discovery is intentionally awaited before a provider owns
   // the bot. An interrupt during that setup window must still stop the queued
@@ -22647,6 +22686,41 @@ const cloudMoveRoutes = async (..._args: unknown[]): Promise<boolean> => false;
 // Route modules (server/routes/README.md). `workspaceAccess` is assigned at
 // boot, after this line, so the dependency reads it per request.
 ROUTES.push(createMcpToolNameRoutes());
+// Internal routes (server/routes/internal-route.ts): run from the internal
+// block after its capability gate, so they are not in ROUTES.
+/** The misuse and safety review of a Perspicax MCP call, for the native
+ * Perspicax tools (claims, gateway tools): the refusal, or null. */
+const perspicaxNativeReview = async (text: string, capability: InternalCapabilityView): Promise<string | null> => {
+  const speakerId = capability.sandboxPrincipalId ?? capability.desktopPrincipalId;
+  const misuse = misuseTextRefusal(text, speakerId, "mcp", { botId: capability.botId, threadId: capability.threadId, tool: "perspicax" });
+  if (misuse) return misuse;
+  const who = safetyPrincipal(capability.threadId);
+  return (await safetyToolHold({
+    text,
+    surface: "mcp",
+    tool: "perspicax",
+    known: true,
+    triage: who.triage || misuseActor(speakerId).triage,
+    ...(who.principalId || speakerId ? { principalId: who.principalId ?? speakerId } : {}),
+    threadId: capability.threadId,
+    botId: capability.botId,
+    review: safetyReviewer(capability.botId),
+  })) ?? null;
+};
+const INTERNAL_ROUTES: InternalRouteHandler[] = [
+  createPerspicaxClaimsInternalRoutes({ perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview }),
+  createPerspicaxToolInternalRoutes({ tools: PERSPICAX_TOOL_NAMES, perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview }),
+  createMcpAuditInternalRoutes({ append: (row) => appendAdminAction(DATA_DIR, { ...row, actor: { kind: "loopback" } }) }),
+  createRoutineRunInternalRoutes<Routine, RoutineRun>({
+    ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    routines: () => routines?.listRoutines() ?? [],
+    speaker: (threadId) => safetyPrincipal(threadId).principalId,
+    mayRunNow: speakerMayRunRoutineNow,
+    inFlight: routineRunInFlight,
+    runNow: (routineId) => routines?.runNow(routineId),
+    audit: (routine, run, principalId) => auditRoutineRunNowBy(principalId ? { kind: "person", principalId, via: "sagax" } : { kind: "worker" }, routine, run),
+  }),
+];
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
 // Install statuses come from the organization library's own state, never
 // its file, so New bot cannot disagree with it. No organization: none.
@@ -26228,6 +26302,7 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
         mode: permissionModeFromEnv(process.env),
         ownBotId: botId,
         deniedResources: deniedResourcesFromEnv(process.env),
+        allowedSample: auditSampleFromEnv(process.env),
         audit: (record) => appendAdminAction(DATA_DIR, { ...mcpAuditRow(record, botId), actor: { kind: "loopback" } }),
       };
     },
@@ -29747,55 +29822,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             .map((routine) => agentRoutine(routine, latestRuns.get(routine.id))),
         });
       }
-      // Perspicax gateway tools (PERSPICAX_TOOLS): one agents tool forwarded to
-      // the mounted profile in the speaker's name, after the same misuse and
-      // safety review as a Perspicax MCP call.
-      if (method === "POST" && path === "/api/internal/perspicax/tool") {
-        const body = await readInternalBody();
-        const tool = typeof body.tool === "string" ? body.tool : "";
-        if (!PERSPICAX_TOOL_NAMES.has(tool)) return json(res, 400, { error: "unknown Perspicax tool" });
-        if (!perspicaxMcp) return json(res, 403, { error: "Perspicax is not linked to this server." });
-        const text = JSON.stringify({ tool, args: body.args });
-        const speakerId = internalCapability.sandboxPrincipalId ?? internalCapability.desktopPrincipalId;
-        const misuse = misuseTextRefusal(text, speakerId, "mcp", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "perspicax" });
-        if (misuse) return json(res, 200, { text: misuse, isError: true });
-        const who = safetyPrincipal(internalCapability.threadId);
-        const held = await safetyToolHold({
-          text,
-          surface: "mcp",
-          tool: "perspicax",
-          known: true,
-          triage: who.triage || misuseActor(speakerId).triage,
-          ...(who.principalId || speakerId ? { principalId: who.principalId ?? speakerId } : {}),
-          threadId: internalCapability.threadId,
-          botId: internalCapability.botId,
-          review: safetyReviewer(internalCapability.botId),
-        });
-        if (held) return json(res, 200, { text: held, isError: true });
-        const answer = await perspicaxMcp.callTool({ threadId: internalCapability.threadId, generation: internalCapability.generation, botId: internalCapability.botId, tool, args: body.args });
-        return json(res, answer.status, answer.body);
-      }
-      // Permission audit rows from the agents proxy (docs/mcp/permissions.md).
-      if (method === "POST" && path === "/api/internal/mcp-audit") {
-        const body = (await readInternalBody()) as unknown as McpAuditRecord;
-        if (!body || typeof body !== "object" || typeof body.tool !== "string") return json(res, 400, { error: "bad audit record" });
-        const row = mcpAuditRow(body, internalCapability.botId);
-        appendAdminAction(DATA_DIR, { ...row, actor: { kind: "loopback" } });
-        return json(res, 200, { ok: true });
-      }
-      if (method === "POST" && path === "/api/internal/routine-run") {
-        const body = (await readInternalBody()) as { routineId?: unknown };
-        const from = internalSender;
-        if (!connectorThread(from.id, internalCapability.threadId)) {
-          return json(res, 403, { error: "source conversation does not belong to sender" });
-        }
-        const routineId = typeof body.routineId === "string" ? body.routineId : "";
-        const target = routines!.listRoutines().find((routine) => routine.id === routineId && routine.botId === from.id);
-        if (!target) return json(res, 404, { error: "no such routine on this bot" });
-        if (routineRunInFlight(target.id)) return json(res, 409, { error: "A run of this routine is already in progress.", code: "run_in_flight" });
-        const run = routines!.runNow(target.id);
-        return run ? json(res, 201, { runId: run.id }) : json(res, 404, { error: "no such routine on this bot" });
-      }
+      // Internal route modules (claims, Perspicax gateway tools, MCP audit,
+      // run_routine), behind the capability checked above.
+      if (await dispatchInternalRoutes(INTERNAL_ROUTES, { res, path, method, json, capability: internalCapability, readBody: readInternalBody })) return;
       if (method === "POST" && path === "/api/internal/routine-requests") {
         const parsed = routineRequestEnvelopeSchema.safeParse(await readInternalBody());
         if (!parsed.success) return json(res, 400, { error: "invalid routine proposal" });
