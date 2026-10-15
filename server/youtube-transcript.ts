@@ -4,12 +4,8 @@ export interface YoutubeTranscriptCue {
 }
 
 function decodeEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+  const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
+  return text.replace(/&(amp|lt|gt|quot|#39);/g, (_, name: string) => entities[name]);
 }
 
 function parseXmlTimedText(xml: string): YoutubeTranscriptCue[] {
