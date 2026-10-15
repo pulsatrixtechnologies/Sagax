@@ -18,7 +18,12 @@ function parseXmlTimedText(xml: string): YoutubeTranscriptCue[] {
   for (const block of blocks) {
     const start = block.match(/\bstart="([^"]+)"/);
     const inner = block.replace(/^<text[^>]*>/, "").replace(/<\/text>$/, "");
-    const text = decodeEntities(inner.replace(/<[^>]+>/g, "").trim());
+    let stripped = inner;
+    for (let previous = ""; previous !== stripped; ) {
+      previous = stripped;
+      stripped = stripped.replace(/<[^>]+>/g, "");
+    }
+    const text = decodeEntities(stripped.trim());
     if (!text || !start) continue;
     const startSec = Number(start[1]);
     if (!Number.isFinite(startSec)) continue;

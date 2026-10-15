@@ -25,6 +25,16 @@ describe("fetchYoutubeTranscript", () => {
     ]);
   });
 
+  it("strips markup inside a cue until none is left", async () => {
+    const html = `"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=abc","languageCode":"fr"}]`;
+    const fetchImpl = async (url: string) => ({
+      ok: true,
+      text: async () => (url.includes("watch?v=") ? html : '<text start="2"><font color="#fff">Bon<i>jour</i></font> &amp; <b>salut</b></text>'),
+    });
+    const cues = await fetchYoutubeTranscript("abc12345678", fetchImpl as unknown as typeof fetch);
+    expect(cues).toEqual([{ startMs: 2000, text: "Bonjour & salut" }]);
+  });
+
   it("refuses when no caption tracks exist", async () => {
     const fetchImpl = async () => ({ ok: true, text: async () => "<html></html>" });
     await expect(fetchYoutubeTranscript("abc12345678", fetchImpl as unknown as typeof fetch)).rejects.toMatchObject({ code: "no_captions" });
