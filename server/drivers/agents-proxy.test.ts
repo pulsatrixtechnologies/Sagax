@@ -7,7 +7,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { childEnv } from "../testing/omb-env.ts";
 import { ToolResults } from "../tool-results.ts";
 import { waitForExit } from "../testing/cleanup.ts";
@@ -66,6 +66,7 @@ let lastRoutineQuery = "";
 let lastRoutineRunBody: any = null;
 let lastActBody: any = null;
 let lastPerspicaxToolBody: any = null;
+const auditPosts: any[] = [];
 let routinesResponse: unknown = {
   now: "2026-08-28T10:30:00.000Z",
   timeZone: "Asia/Kolkata",
@@ -353,6 +354,16 @@ beforeAll(async () => {
         lastActBody = JSON.parse(data);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ text: "acted" }));
+      });
+      return;
+    }
+    if (req.method === "POST" && req.url === "/api/internal/mcp-audit") {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => {
+        auditPosts.push(JSON.parse(data));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
       });
       return;
     }
@@ -2500,5 +2511,59 @@ describe("coordinate_bots arguments (room turn)", () => {
     expect(text).toContain("botIds");
     expect(text).toContain("message");
     expect(lastCoordinateBody).toBeNull();
+  });
+});
+
+// Enforce mode at the proxy: a viewer is refused before any route is called,
+// and the refusal reaches the server's activity log as an audit post.
+describe("permissions in enforce mode", () => {
+  let guarded: ChildProcess;
+  const waiting = new Map<number, (msg: any) => void>();
+  let nextId = 900;
+  const ask = (method: string, params?: unknown): Promise<any> =>
+    new Promise((resolve, reject) => {
+      const id = nextId++;
+      waiting.set(id, resolve);
+      guarded.stdin!.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+      setTimeout(() => { if (waiting.delete(id)) reject(new Error(`${method} timed out`)); }, 10_000).unref?.();
+    });
+
+  beforeAll(async () => {
+    guarded = spawn(process.execPath, [PROXY], {
+      env: { ...childEnv(), SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`, SAGAX_BOT_ID: "bot-asker", SAGAX_THREAD_ID: "thread-asker-routine", SAGAX_COMMS_TOKEN: TOKEN, SAGAX_TURN_DEPTH: "0", SAGAX_MCP_PERMISSIONS: "enforce", SAGAX_MCP_ROLE: "viewer", SAGAX_MCP_PRINCIPAL: "pr_viewer" },
+      stdio: ["pipe", "pipe", "inherit"],
+    });
+    let buf = "";
+    guarded.stdout!.on("data", (c) => {
+      buf += c;
+      let nl;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        if (!line.trim()) continue;
+        const msg = JSON.parse(line);
+        waiting.get(msg.id)?.(msg);
+        waiting.delete(msg.id);
+      }
+    });
+    await ask("initialize", { protocolVersion: "2024-11-05" });
+  });
+  afterAll(() => { guarded?.kill(); });
+
+  it("refuses run_routine for a viewer without reaching the route, and posts the audit row", async () => {
+    lastRoutineRunBody = null;
+    auditPosts.length = 0;
+    const refused = await ask("tools/call", { name: "run_routine", arguments: { routine_id: "routine-1" } });
+    expect(refused.result.isError).toBe(true);
+    expect(refused.result.content[0].text).toMatch(/^Permission denied: routines:run/);
+    expect(lastRoutineRunBody).toBeNull();
+    await vi.waitFor(() => expect(auditPosts).toHaveLength(1));
+    expect(auditPosts[0]).toMatchObject({ principal: "pr_viewer", role: "viewer", tool: "run_routine", decision: "denied", enforced: true });
+    expect(JSON.stringify(auditPosts[0])).not.toContain("routine-1");
+  });
+
+  it("still lets a viewer read", async () => {
+    const list = await ask("tools/call", { name: "list_bots", arguments: {} });
+    expect(list.result.content[0].text).not.toMatch(/Permission denied/);
   });
 });
