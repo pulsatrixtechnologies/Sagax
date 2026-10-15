@@ -1,13 +1,16 @@
-// Settings > Models and voice: every key in one list, model keys and voice
-// keys alike, one row per provider (name, state in words, one action) and a
-// small dialog to add, replace, test or remove a key (2026-10-14: the voice
-// keys and the rare providers joined this list; Grok voice uses the xAI row). The dialog holds the same ApiKeyRow that Settings > API keys
-// used to show as a column of open fields (2026-10-12), so a key is saved,
-// tested and resolved exactly as before (PUT /api/config, POST
+// Settings > Models and voice: every key in one list, model keys, voice
+// keys and image keys alike, one row per provider (name, state in words, one
+// action) and a small dialog to add, replace, test or remove a key. Since
+// 2026-10-15 this list is the only place a key is managed on the page: the
+// Voice section and Image generation only say whether the key of the chosen
+// provider is saved and lead here (revealKeyRow), Grok voice and Grok images
+// use the xAI row. The dialog holds the same ApiKeyRow that Settings > API
+// keys used to show as a column of open fields (2026-10-12), so a key is
+// saved, tested and resolved exactly as before (PUT /api/config, POST
 // /api/keys/test). Keys stay write-only: a row says whether one is saved,
 // never its value.
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { ExternalLink, KeyRound, X } from "lucide-react";
+import { ArrowUpRight, ExternalLink, KeyRound, X } from "lucide-react";
 
 import { useStore, type ConfigStatus } from "@/state/store";
 import { cn } from "@/lib/cn";
@@ -22,9 +25,9 @@ import {
   type ConfigSection,
   type TestableProvider,
 } from "../ApiKeys";
-import { Card, HelpTip } from "../SettingsPrimitives";
+import { Card, HelpTip, requestSettingsCard } from "../SettingsPrimitives";
 
-export type KeyRowId = "openai" | "anthropic" | "xai" | "elevenlabs" | "fishAudio" | "openrouter" | "mistral" | "openaiCompat" | "opencodeGo";
+export type KeyRowId = "openai" | "anthropic" | "xai" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage" | "openrouter" | "mistral" | "openaiCompat" | "opencodeGo";
 
 /** Which key a row holds, its name and whether a key is saved. `included`:
  * works with no saved key (Cloud Pro). */
@@ -34,31 +37,42 @@ const ROWS: Record<KeyRowId, { section: ConfigSection; nameKey: LocaleKey; test?
   xai: { section: "xai", nameKey: "providerKeys.xai", test: "xai", saved: (c) => c.xai?.configured ?? false },
   elevenlabs: { section: "elevenlabs", nameKey: "providerKeys.elevenlabs", saved: (c) => c.tts?.keys?.elevenlabs ?? false, included: (c) => c.tts?.included === true },
   fishAudio: { section: "fishAudio", nameKey: "providerKeys.fishAudio", saved: (c) => c.tts?.keys?.fish ?? false },
+  openaiImage: { section: "openaiImage", nameKey: "providerKeys.openaiImage", saved: (c) => c.imageGen?.openaiConfigured === true },
+  customImage: { section: "customImage", nameKey: "providerKeys.customImage", saved: (c) => c.imageGen?.customKeyConfigured === true },
   openrouter: { section: "openrouter", nameKey: "providerKeys.openrouter", test: "openrouter", saved: (c) => c.openrouter?.configured ?? false },
   mistral: { section: "mistral", nameKey: "providerKeys.mistral", test: "mistral", saved: (c) => c.mistral?.configured ?? false },
   openaiCompat: { section: "openaiCompat", nameKey: "providerKeys.openaiCompat", test: "openaiCompat", saved: (c) => c.openaiCompat?.configured ?? false },
   opencodeGo: { section: "opencodeGo", nameKey: "providerKeys.opencode", saved: (c) => (c.opencodeGo?.configured ?? false) || (c.opencodeGo?.providerKeys?.length ?? 0) > 0 },
 };
-/** The keys most people need: the big model providers. The voice keys
- * (ElevenLabs, Fish Audio) are managed in the Voice section only since
- * 2026-10-14: one place each, not two on the same page. Grok voice uses the
- * xAI key of this list. */
+/** The keys most people need: the big model providers. Grok voice and Grok
+ * images use the xAI key of this list. */
 export const MAIN_KEY_ROWS = ["anthropic", "openai", "xai"] as const satisfies readonly KeyRowId[];
-/** Keys the Voice section opens (the same dialog), never listed here. */
-export const VOICE_KEY_ROWS = ["elevenlabs", "fishAudio"] as const satisfies readonly KeyRowId[];
 /** Rarer keys, under "More providers" until one is saved: a saved key is
- * always in the main list, never hidden. */
-export const MORE_KEY_ROWS = ["openrouter", "mistral", "openaiCompat", "opencodeGo"] as const satisfies readonly KeyRowId[];
+ * always in the main list, never hidden. The voice keys (ElevenLabs, Fish
+ * Audio) and the image keys are here too since 2026-10-15: one place for
+ * every key, the Voice section and Image generation only lead to their row. */
+export const MORE_KEY_ROWS = ["openrouter", "mistral", "openaiCompat", "opencodeGo", "elevenlabs", "fishAudio", "openaiImage", "customImage"] as const satisfies readonly KeyRowId[];
 
 export function keyRowSaved(id: KeyRowId, config: ConfigStatus | null | undefined): boolean {
   return config ? ROWS[id].saved(config) : false;
 }
 
 /** The rows of the main list and of "More providers" for this config. */
+export function keyRowName(id: KeyRowId): string {
+  return t(ROWS[id].nameKey);
+}
+
+/** A rare key that works already (saved, or included with Cloud Pro) sits in
+ * the main list. */
+function inMainList(id: KeyRowId, config: ConfigStatus | null | undefined): boolean {
+  return config ? ROWS[id].saved(config) || ROWS[id].included?.(config) === true : false;
+}
+
+/** The rows of the main list and of "More providers" for this config. */
 export function splitKeyRows(config: ConfigStatus | null | undefined): { main: KeyRowId[]; more: KeyRowId[] } {
   return {
-    main: [...MAIN_KEY_ROWS, ...MORE_KEY_ROWS.filter((id) => keyRowSaved(id, config))],
-    more: MORE_KEY_ROWS.filter((id) => !keyRowSaved(id, config)),
+    main: [...MAIN_KEY_ROWS, ...MORE_KEY_ROWS.filter((id) => inMainList(id, config))],
+    more: MORE_KEY_ROWS.filter((id) => !inMainList(id, config)),
   };
 }
 
@@ -75,6 +89,83 @@ function useOpenRow(): KeyRowId | null {
   return useSyncExternalStore((listener) => { listeners.add(listener); return () => listeners.delete(listener); }, () => openRow, () => openRow);
 }
 
+// The row another section asked to see ("Add in Keys"): highlighted for a
+// moment, so the eye lands on it after the scroll.
+let highlightRow: KeyRowId | null = null;
+let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+const HIGHLIGHT_MS = 2400;
+function useHighlightRow(): KeyRowId | null {
+  return useSyncExternalStore((listener) => { listeners.add(listener); return () => listeners.delete(listener); }, () => highlightRow, () => highlightRow);
+}
+
+/** Shows a row of the Keys list: opens "More providers" when the row is
+ * folded there, scrolls the row into view, highlights it and moves the focus
+ * to its button. No form opens: the person adds the key from the row, the
+ * one place keys are managed. */
+export function revealKeyRow(row: KeyRowId, config: ConfigStatus | null | undefined): void {
+  if (!inMainList(row, config) && (MORE_KEY_ROWS as readonly KeyRowId[]).includes(row)) requestSettingsCard("engines.moreProviders");
+  highlightRow = row;
+  emit();
+  if (highlightTimer) clearTimeout(highlightTimer);
+  highlightTimer = setTimeout(() => { highlightRow = null; highlightTimer = null; emit(); }, HIGHLIGHT_MS);
+  let frames = 0;
+  const reveal = () => {
+    try {
+      const item = document.querySelector<HTMLElement>(`[data-provider-key="${row}"]`);
+      // the card opens on the next render: wait until the row is laid out
+      if (item && item.getClientRects().length > 0) {
+        item.scrollIntoView?.({ block: "center", behavior: "smooth" });
+        item.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+      } else if (++frames < 30) requestAnimationFrame(reveal);
+    } catch {
+      /* no document outside the renderer */
+    }
+  };
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(reveal);
+}
+
+/** The key line of a section that uses a key of the list (Voice, Image
+ * generation): whether the chosen provider's key is saved, in a few words,
+ * and when it is missing a link to its row in Keys, never a key field.
+ * `link` is false where the Keys list is not on the page (a remote window):
+ * the line then only says what is missing. */
+export function KeyInKeys({ row, saved, included = false, optional = false, missing, link = true }: {
+  row: KeyRowId;
+  saved: boolean;
+  /** Works with no saved key (ElevenLabs with Cloud Pro). */
+  included?: boolean;
+  /** The provider also works without a key (a keyless custom server). */
+  optional?: boolean;
+  /** The words when no key is saved; default "{name} key missing". */
+  missing?: string;
+  link?: boolean;
+}) {
+  const { state } = useStore();
+  const name = keyRowName(row);
+  const ready = saved || included;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-key-in-keys={row} data-key-in-keys-saved={ready ? "true" : "false"}>
+      <span className={cn("size-1.5 shrink-0 rounded-full", ready ? "bg-accent" : optional ? "bg-raised-hover" : "bg-warning")} aria-hidden="true" />
+      <span className="min-w-0 flex-1 text-[12.5px] text-ink-secondary">
+        {saved ? t("modelsVoice.key.uses", { name })
+          : included ? t("keys.includedWithCloudPro")
+          : missing ?? t("modelsVoice.key.missing", { name })}
+      </span>
+      {!ready && link && (
+        <button
+          type="button"
+          data-add-in-keys={row}
+          onClick={() => revealKeyRow(row, state.config)}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md text-[12.5px] font-medium text-accent-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+        >
+          {t("modelsVoice.key.addInKeys")}
+          <ArrowUpRight size={13} aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** The key a key engine runs on, for an engine card's "Add the key". */
 export function keyRowForEngine(driverKind: string, instanceId: string): KeyRowId | null {
   if (driverKind === "claudeAgent") return "anthropic";
@@ -89,6 +180,7 @@ export function keyRowForEngine(driverKind: string, instanceId: string): KeyRowI
 
 export function ProviderKeyRows({ rows }: { rows: readonly KeyRowId[] }) {
   const { state } = useStore();
+  const highlighted = useHighlightRow();
   return (
     <ul className="divide-y divide-hairline/40 overflow-hidden rounded-xl border border-hairline/40" data-provider-keys="">
       {rows.map((id) => {
@@ -96,7 +188,13 @@ export function ProviderKeyRows({ rows }: { rows: readonly KeyRowId[] }) {
         const saved = state.config ? row.saved(state.config) : false;
         const included = !saved && state.config ? row.included?.(state.config) === true : false;
         return (
-          <li key={id} data-provider-key={id} data-key-saved={saved ? "true" : "false"} className="flex items-center gap-3 px-3.5 py-2.5">
+          <li
+            key={id}
+            data-provider-key={id}
+            data-key-saved={saved ? "true" : "false"}
+            data-key-highlight={highlighted === id ? "true" : undefined}
+            className={cn("flex items-center gap-3 px-3.5 py-2.5 transition-colors motion-reduce:transition-none", highlighted === id && "bg-accent/10")}
+          >
             <KeyRound size={15} aria-hidden="true" className="shrink-0 text-ink-secondary" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] text-ink">{t(row.nameKey)}</span>
