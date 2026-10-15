@@ -83,8 +83,7 @@ struct PairingView: View {
         OnboardingHero(
             title: "Connect your computer",
             subtitle: "In Sagax on your computer, open Settings, then Phone, then Set up a phone. Scan the code it shows.",
-            color: "green",
-            mascotSize: 88
+            logoSize: 80
         )
     }
 
@@ -179,8 +178,7 @@ struct PairingView: View {
             OnboardingHero(
                 title: LocalizedStringKey(connection.name),
                 subtitle: LocalizedStringKey(badge.title),
-                color: "green",
-                mascotSize: 72
+                logoSize: 64
             )
 
             SectionLabel(text: "Address")
