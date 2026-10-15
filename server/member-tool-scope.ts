@@ -45,6 +45,19 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   close_thread: "conversation",
   retry_thread: "conversation",
   create_options_card: "conversation",
+  // the person's own rights decide through act; a nudge is rate limited
+  run_routine: "conversation",
+  answer_approval: "conversation",
+  nudge_person: "conversation",
+  // Perspicax gateway tools (PERSPICAX_TOOLS): Perspicax applies the person's
+  // grants; the admin ones (api_reload, review_write) are host level below
+  memory_find: "read",
+  memory_save: "memory",
+  memory_remove: "memory",
+  memory_suggestions: "read",
+  api_list: "read", api_search: "read", api_describe: "read", api_lookup: "read",
+  api_plan: "read", api_resultquery: "read", api_query: "read", identity_search: "read",
+  api_upload: "conversation", api_write: "conversation", api_action: "conversation", flow_action: "conversation",
   // chat widgets (agents-widget-tools.ts): a card in the member's own conversation
   show_widget: "conversation",
   update_widget: "conversation",
@@ -83,7 +96,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
  *   archive_cloud_agent
  *                   a cloud coding agent run on a provider account */
 export const HOST_LEVEL_AGENT_TOOLS: ReadonlySet<string> = new Set([
-  "act", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
+  "act", "manage_pairing", "manage_settings", "api_reload", "review_write", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
   "list_terminal_resources", "offer_shell_terminal",
   "launch_cloud_agent", "cloud_agent_follow_up", "cancel_cloud_agent", "archive_cloud_agent",
 ]);

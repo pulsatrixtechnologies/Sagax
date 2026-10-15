@@ -64,6 +64,8 @@ let lastManageRoomBody: unknown = null;
 let lastCredentialBody: any = null;
 let lastRoutineQuery = "";
 let lastRoutineRunBody: any = null;
+let lastActBody: any = null;
+let lastPerspicaxToolBody: any = null;
 let routinesResponse: unknown = {
   now: "2026-08-28T10:30:00.000Z",
   timeZone: "Asia/Kolkata",
@@ -344,6 +346,26 @@ beforeAll(async () => {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify(routinesResponse));
     }
+    if (req.method === "POST" && req.url === "/api/internal/act") {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => {
+        lastActBody = JSON.parse(data);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ text: "acted" }));
+      });
+      return;
+    }
+    if (req.method === "POST" && req.url === "/api/internal/perspicax/tool") {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => {
+        lastPerspicaxToolBody = JSON.parse(data);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ text: "{\"entries\":[]}", isError: false }));
+      });
+      return;
+    }
     if (req.method === "POST" && req.url === "/api/internal/routine-run") {
       let data = "";
       req.on("data", (c) => (data += c));
@@ -472,6 +494,7 @@ beforeAll(async () => {
       SAGAX_SHARED_COMPUTERS_ENABLED: "1",
       // A Chief's turn, so the Chief-only team tools are mounted too.
       SAGAX_CHIEF_OF_STAFF: "1",
+      SAGAX_PERSPICAX_TOOLS: "1",
     },
     stdio: ["pipe", "pipe", "inherit"],
   });
@@ -684,10 +707,32 @@ describe("agents-proxy MCP surface", () => {
       "propose_profile",
       "propose_model",
       "propose_team_memory",
+      "answer_approval",
+      "nudge_person",
+      "manage_pairing",
+      "manage_settings",
       "act",
       "skills_list",
       "skill_manage",
       "add_mcp_server",
+      "memory_find",
+      "memory_save",
+      "memory_remove",
+      "memory_suggestions",
+      "api_list",
+      "api_search",
+      "api_describe",
+      "api_lookup",
+      "api_plan",
+      "api_resultquery",
+      "api_upload",
+      "api_reload",
+      "api_query",
+      "api_write",
+      "api_action",
+      "flow_action",
+      "identity_search",
+      "review_write",
     ]);
     const ask = list.result.tools.find((tool: { name: string }) => tool.name === "ask_bot");
     const delegate = list.result.tools.find((tool: { name: string }) => tool.name === "delegate_bot");
@@ -1610,6 +1655,32 @@ describe("agents-proxy MCP surface", () => {
     expect(lastRoutineRunBody).toMatchObject({ fromBotId: "bot-asker", routineId: "routine-1" });
     const none = await callTool("run_routine", {});
     expect(none.result.isError).toBe(true);
+  });
+
+  it("sends the gap tools through act with the person's own routes", async () => {
+    const cases: Array<[string, Record<string, unknown>, unknown]> = [
+      ["answer_approval", { thread_id: "t1", request_id: "r-1", decision: "allow" }, { method: "POST", path: "/api/threads/t1/respond", body: { requestId: "r-1", behavior: "allow" } }],
+      ["nudge_person", { principal_id: "pr_bob" }, { method: "POST", path: "/api/nudges", body: { principalId: "pr_bob" } }],
+      ["manage_pairing", { action: "list" }, { method: "GET", path: "/api/auth/pairing" }],
+      ["manage_settings", { action: "patch", patch: { a: 1 } }, { method: "PATCH", path: "/api/config", body: { a: 1 } }],
+    ];
+    for (const [tool, args, expected] of cases) {
+      lastActBody = null;
+      const res = await callTool(tool, args);
+      expect(res.result.isError, tool).toBeFalsy();
+      expect(lastActBody, tool).toEqual(expected);
+    }
+    expect((await callTool("nudge_person", {})).result.isError).toBe(true);
+    expect((await callTool("answer_approval", { thread_id: "t1", request_id: "r", decision: "maybe" })).result.isError).toBe(true);
+  });
+
+  it("forwards the Perspicax gateway tools through the harness route", async () => {
+    for (const tool of ["memory_find", "memory_save", "api_query", "flow_action", "identity_search", "review_write", "api_write"]) {
+      lastPerspicaxToolBody = null;
+      const res = await callTool(tool, { query: "vpn" });
+      expect(res.result.isError, tool).toBeFalsy();
+      expect(lastPerspicaxToolBody).toEqual({ tool, args: { query: "vpn" } });
+    }
   });
 
   it("proposes a weekly routine through a confirmation-only request", async () => {

@@ -6,7 +6,7 @@ exposes to a bot or an AI client. The machine-readable form is the registry in
 `server/mcp-permissions.ts`; `server/mcp-permissions.test.ts` fails when a
 catalog tool has no permission.
 
-Totals: capabilities 105, covered 75, gaps 30.
+Totals: capabilities 105, covered 97, gaps 8.
 
 Sources read: the agents tool catalog, the internal routes it calls
 (`/api/internal/*`), the member API (`docs/org-member-api.md`), and the
@@ -109,43 +109,54 @@ Reading the table:
 | claims:renew | sagax | MISSING | `claims:renew` | P0 |
 | claims:release | sagax | MISSING | `claims:release` | P0 |
 | claims:list | sagax | MISSING | `claims:list` | P1 |
-| memory:search | perspicax | MISSING | `memory:search` | P1 |
+| memory:search | perspicax | `memory_find` | `memory:search` | covered |
 | memory:recall | perspicax | MISSING | `memory:recall` | P1 |
-| memory:write | perspicax | MISSING | `memory:write` | P1 |
-| memory:forget | perspicax | MISSING | `memory:forget` | P1 |
+| memory:write | perspicax | `memory_save` | `memory:write` | covered |
+| memory:forget | perspicax | `memory_remove` | `memory:forget` | covered |
 | memory:feedback | perspicax | MISSING | `memory:feedback` | P1 |
 | memory:promote | perspicax | MISSING | `memory:promote` | P2 |
-| memory:propose | perspicax | MISSING | `memory:propose` | P1 |
+| memory:propose | perspicax | `memory_suggestions` | `memory:propose` | covered |
 | memory:review | perspicax | MISSING | `memory:review` | P2 |
-| approvals:answer | sagax | MISSING | `approvals:answer` | P1 |
+| approvals:answer | sagax | `answer_approval` | `approvals:answer` | covered |
 | routines:run | sagax | `run_routine` | `routines:run` | covered |
-| people:nudge | sagax | MISSING | `people:nudge` | P1 |
-| api:list | perspicax | MISSING | `api:list` | P1 |
-| api:search | perspicax | MISSING | `api:search` | P1 |
-| api:describe | perspicax | MISSING | `api:describe` | P1 |
-| api:lookup | perspicax | MISSING | `api:lookup` | P1 |
-| api:plan | perspicax | MISSING | `api:plan` | P1 |
-| api:resultquery | perspicax | MISSING | `api:resultquery` | P1 |
-| api:upload | perspicax | MISSING | `api:upload` | P1 |
-| api:reload | perspicax | MISSING | `api:reload` | P2 |
-| identity:search | perspicax | MISSING | `identity:search` | P1 |
-| api:query | perspicax | MISSING | `api:query` | P1 |
-| api:write | perspicax | MISSING | `api:write` | P1 |
-| api:action | perspicax | MISSING | `api:action` | P1 |
-| flow:action | perspicax | MISSING | `flow:action` | P1 |
-| review:write | perspicax | MISSING | `review:write` | P2 |
-| pairing:manage | sagax | MISSING | `pairing:manage` | P2 |
-| settings:manage | sagax | MISSING | `settings:manage` | P2 |
+| people:nudge | sagax | `nudge_person` | `people:nudge` | covered |
+| api:list | perspicax | `api_list` | `api:list` | covered |
+| api:search | perspicax | `api_search` | `api:search` | covered |
+| api:describe | perspicax | `api_describe` | `api:describe` | covered |
+| api:lookup | perspicax | `api_lookup` | `api:lookup` | covered |
+| api:plan | perspicax | `api_plan` | `api:plan` | covered |
+| api:resultquery | perspicax | `api_resultquery` | `api:resultquery` | covered |
+| api:upload | perspicax | `api_upload` | `api:upload` | covered |
+| api:reload | perspicax | `api_reload` | `api:reload` | covered |
+| identity:search | perspicax | `identity_search` | `identity:search` | covered |
+| api:query | perspicax | `api_query` | `api:query` | covered |
+| api:write | perspicax | `api_write` | `api:write` | covered |
+| api:action | perspicax | `api_action` | `api:action` | covered |
+| flow:action | perspicax | `flow_action` | `flow:action` | covered |
+| review:write | perspicax | `review_write` | `review:write` | covered |
+| pairing:manage | sagax | `manage_pairing` | `pairing:manage` | covered |
+| settings:manage | sagax | `manage_settings` | `settings:manage` | covered |
 
 
 ## Gap summary by priority
 
-- P0 (3): `claims:acquire`, `claims:renew`, `claims:release`. The native claim
-  tools are in an open pull request; the permissions already exist here.
-- P1 (21): `claims:list`, the memory tools, approval answer,
-  nudge, the gateway meta-tools, `api:query|write|action`, `flow:action`,
-  `identity:search`.
-- P2 (6): `memory:promote`, `memory:review`, `api:reload`, `review:write`,
-  `pairing:manage`, `settings:manage` (admin only).
+Remaining gaps (8):
 
-Counts come from the registry: 105 rows, 74 with a tool, 31 without.
+- P0/P1: `claims:acquire`, `claims:renew`, `claims:release`, `claims:list`. The
+  native claim tools (`claim`, `claim_renew`, `claim_release`, `claim_list`)
+  are in pull request #497; map them here when it merges.
+- P1: `memory:recall`, `memory:feedback` (Perspicax memory v1 only; the v2
+  tools are `memory_find`, `memory_save`, `memory_remove`,
+  `memory_suggestions`, see Sagax #496 and Perspicax #326).
+- P2: `memory:promote`, `memory:review` (a person's decision in the console;
+  v2 `memory_suggestions` accept/reject is refused to AI clients).
+
+Closed here: `approvals:answer` (`answer_approval`), `people:nudge`
+(`nudge_person`), `pairing:manage` (`manage_pairing`), `settings:manage`
+(`manage_settings`): thin wrappers over `act`, so the person's rights and the
+bot's approval mode still decide. The Perspicax gateway tools (`memory_*`,
+`api_*`, `flow_action`, `identity_search`, `review_write`) are listed only on an
+organization server linked to Perspicax (`SAGAX_PERSPICAX_TOOLS`) and
+forwarded by `/api/internal/perspicax/tool` to the profile mounted in the turn,
+after the misuse and safety review. Per-API fine grain (`cw:ticket.update`)
+still waits for catalogue resolution.
