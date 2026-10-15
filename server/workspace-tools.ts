@@ -5,18 +5,35 @@
 import { RULES_PATH, MemoryStoreError, readMemoryDoc } from "./memory-store.ts";
 import { journalMemoryDelete, journalMemoryWrite, type MemoryActor, type MemoryJournalEntry } from "./memory-journal.ts";
 import { redactSecretsInText } from "./redact.ts";
-import { DOCS_DIR, RULE_MAX_CHARS, RULES_MAX_BYTES, RULES_MAX_LINES, effectiveRulesText, rulesOverBudget } from "./workspace-files.ts";
+import {
+  DEFAULT_RULE_SET_ID,
+  RULE_MAX_CHARS,
+  RULES_MAX_BYTES,
+  RULES_MAX_LINES,
+  RULES_TOTAL_MAX_BYTES,
+  RULES_TOTAL_MAX_LINES,
+  activeRulesTotal,
+  effectiveRulesText,
+  findRuleSet,
+  listRuleSets,
+  rulesOverBudget,
+  totalOverBudget,
+  writeRuleSets,
+} from "./rule-sets.ts";
+import { DOCS_DIR } from "./workspace-files.ts";
 import { MEMORY_FILE_MAX_BYTES, isMemoryTopicName, memoryLineCount } from "./workspace.ts";
 import { markWorkspaceUse } from "./workspace-usage.ts";
 
 export type WorkspaceWriteResult =
-  | { ok: true; path: string; entry?: string; lines?: number; bytes?: number; journal: MemoryJournalEntry | null }
+  | { ok: true; path: string; set?: string; entry?: string; lines?: number; bytes?: number; journal: MemoryJournalEntry | null }
   | { ok: false; code: "invalid" | "conflict" | "over-budget" | "exists" | "missing"; error: string };
 
 export interface RulesUpdate {
   action: "append" | "replace" | "remove";
   text?: string;
   oldText?: string;
+  /** The rule set: its name or id. Absent: the first set. */
+  set?: string;
 }
 
 const BULLET = /^(?:[-*•]|\d+[.)])\s+/;
@@ -31,7 +48,7 @@ function ruleLine(text: string): string {
  * Pure. The same guard rails as memory_update: one rule per append, an
  * exact unique old_text for replace and remove, secrets scrubbed, and a
  * write that would not load whole is refused rather than cut. */
-export function applyRulesUpdate(current: string, update: RulesUpdate): { ok: true; next: string; entry?: string } | { ok: false; code: "invalid" | "conflict" | "over-budget"; error: string } {
+export function applyRulesUpdate(current: string, update: RulesUpdate, file = RULES_PATH): { ok: true; next: string; entry?: string } | { ok: false; code: "invalid" | "conflict" | "over-budget"; error: string } {
   const needsText = update.action !== "remove";
   const needsOld = update.action !== "append";
   if (!["append", "replace", "remove"].includes(update.action)
@@ -54,7 +71,7 @@ export function applyRulesUpdate(current: string, update: RulesUpdate): { ok: tr
     const oldText = update.oldText!;
     const index = current.indexOf(oldText);
     if (index === -1 || current.indexOf(oldText, index + 1) !== -1) {
-      return { ok: false, code: "conflict", error: "old_text must match exactly once in the current RULES.md. Read it again (workspace_read RULES.md) and retry with a current, unique passage." };
+      return { ok: false, code: "conflict", error: `old_text must match exactly once in the current ${file}. Read it again (workspace_read ${file}) and retry with a current, unique passage.` };
     }
     if (update.action === "remove") {
       next = current.slice(0, index) + current.slice(index + oldText.length);
@@ -70,27 +87,52 @@ export function applyRulesUpdate(current: string, update: RulesUpdate): { ok: tr
     return {
       ok: false,
       code: "over-budget",
-      error: `RULES.md would be ${memoryLineCount(text)} lines and ${Buffer.byteLength(text, "utf8")} bytes, over what loads each turn (${RULES_MAX_LINES} lines / ${RULES_MAX_BYTES} bytes). Nothing was saved. Ask the person which rule to shorten or remove.`,
+      error: `${file} would be ${memoryLineCount(text)} lines and ${Buffer.byteLength(text, "utf8")} bytes, over what one rule set loads each turn (${RULES_MAX_LINES} lines / ${RULES_MAX_BYTES} bytes). Nothing was saved. Ask the person which rule to shorten or remove.`,
     };
   }
   return { ok: true, next, entry };
 }
 
-/** rules_update: read, apply, write through the journal as the bot's. */
+/** rules_update: read, apply, write through the journal as the bot's. The
+ * set is named by `update.set` (its name or id); without one, the first
+ * set. A bot with no set at all gets the default one (RULES.md) back. */
 export function updateRules(botId: string, update: RulesUpdate, opts: { threadId?: string; actor?: MemoryActor; via?: string } = {}): WorkspaceWriteResult {
-  const current = readMemoryDoc(botId, RULES_PATH);
-  const applied = applyRulesUpdate(current.text, update);
-  if (!applied.ok) return applied;
+  const sets = listRuleSets(botId);
+  let set = findRuleSet(sets, update.set);
+  if (!set && sets.length === 0 && (update.set === undefined || !update.set.trim())) {
+    set = { id: DEFAULT_RULE_SET_ID, name: null, enabled: true, file: RULES_PATH };
+  }
+  if (!set) {
+    const names = sets.map((candidate) => JSON.stringify(candidate.name ?? "Rules")).join(", ");
+    return { ok: false, code: "missing", error: `There is no rule set ${JSON.stringify(update.set)}. Sets: ${names || "none"}. Only the person adds a set, in Persona > Rules.` };
+  }
   try {
-    const { doc, entry } = journalMemoryWrite(botId, RULES_PATH, applied.next, {
+    const current = readMemoryDoc(botId, set.file);
+    const applied = applyRulesUpdate(current.text, update, set.file);
+    if (!applied.ok) return applied;
+    if (set.enabled) {
+      const total = activeRulesTotal(botId, { id: set.id, raw: applied.next });
+      const before = activeRulesTotal(botId);
+      if (totalOverBudget(total) && (total.lines > before.lines || total.bytes > before.bytes)) {
+        return {
+          ok: false,
+          code: "over-budget",
+          error: `Your rule sets would be ${total.lines} lines and ${total.bytes} bytes in all, over what loads each turn (${RULES_TOTAL_MAX_LINES} lines / ${RULES_TOTAL_MAX_BYTES} bytes). Nothing was saved. Ask the person which rule to shorten or remove, or which set to switch off.`,
+        };
+      }
+    }
+    const { doc, entry } = journalMemoryWrite(botId, set.file, applied.next, {
       actor: opts.actor ?? "bot",
       via: opts.via ?? "tool",
       threadId: opts.threadId,
       expectedHash: current.hash,
     });
-    markWorkspaceUse(botId, [RULES_PATH]);
+    // a set that existed only implicitly (no manifest, no sets left) is
+    // listed from now on
+    if (!sets.some((candidate) => candidate.id === set!.id)) writeRuleSets(botId, [...sets, set]);
+    markWorkspaceUse(botId, [set.file]);
     const text = effectiveRulesText(doc.text);
-    return { ok: true, path: RULES_PATH, entry: applied.entry, lines: memoryLineCount(text), bytes: Buffer.byteLength(text, "utf8"), journal: entry };
+    return { ok: true, path: set.file, set: set.name ?? "Rules", entry: applied.entry, lines: memoryLineCount(text), bytes: Buffer.byteLength(text, "utf8"), journal: entry };
   } catch (error) {
     return storeRefusal(error);
   }

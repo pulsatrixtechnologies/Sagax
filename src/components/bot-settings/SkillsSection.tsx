@@ -18,6 +18,7 @@ import { Switch } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 import { PaneEmpty, PaneSection } from "./PaneSection";
 import { OrgSkillsCard } from "./OrgSkillsCard";
+import { SkillUpload } from "./SkillUpload";
 import { WriteCommandCard } from "./WriteCommandCard";
 
 export interface ManagedSkill {
@@ -484,6 +485,12 @@ export function SkillsSection({ bot }: { bot: Bot }) {
             {importMessage && <div className="mt-1 text-[12px] text-ink-secondary">{importMessage}</div>}
           </>
         ) : null}
+
+        {skillWrites && (
+          <div className="mt-3">
+            <SkillUpload botId={bot.id} disabled={Boolean(working)} onAdded={() => void refresh()} />
+          </div>
+        )}
 
         {loading ? (
           <div className="mt-3 text-[12px] text-ink-secondary">{t("botPanel.loading")}</div>

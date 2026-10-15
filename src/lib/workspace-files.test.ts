@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { RULES_MAX_BYTES as SERVER_MAX_BYTES, RULES_MAX_LINES as SERVER_MAX_LINES, RULES_TEMPLATE as SERVER_TEMPLATE, effectiveRulesText as serverEffective } from "../../server/workspace-files.ts";
 import { RULES_TEMPLATE } from "../components/bot-settings/RulesSection";
-import { RULES_MAX_BYTES, RULES_MAX_LINES, docPathFromName, effectiveRulesText, entryAncestors, entryDepth, entryName, entryParent, entryVisible, rulesCount } from "./workspace-files";
+import { RULES_MAX_BYTES, RULES_MAX_LINES, docPathFromName, isRulesOrDoc, effectiveRulesText, entryAncestors, entryDepth, entryName, entryParent, entryVisible, rulesCount } from "./workspace-files";
 
 describe("workspace files (client)", () => {
   it("keeps the starter template and the budget equal to the server's", () => {
@@ -17,12 +17,20 @@ describe("workspace files (client)", () => {
     expect(rulesCount(RULES_TEMPLATE)).toMatchObject({ lines: 1, over: false });
     const raw = "# Rules\n\n<!-- note -->\n- Never quote a price.\n- Always ask first.\n";
     expect(effectiveRulesText(raw)).toBe(serverEffective(raw));
-    expect(rulesCount(raw)).toMatchObject({ lines: 4, maxLines: 60, maxBytes: 8000, over: false });
+    expect(rulesCount(raw)).toMatchObject({ lines: 4, maxLines: 100, maxBytes: 12000, over: false });
   });
 
   it("says when the rules are over budget, by lines or by bytes", () => {
-    expect(rulesCount(Array.from({ length: 61 }, (_, i) => `- rule ${i}`).join("\n")).over).toBe(true);
-    expect(rulesCount(`- ${"x".repeat(8001)}`).over).toBe(true);
+    expect(rulesCount(Array.from({ length: 101 }, (_, i) => `- rule ${i}`).join("\n")).over).toBe(true);
+    expect(rulesCount(`- ${"x".repeat(12_001)}`).over).toBe(true);
+  });
+
+  it("serves RULES.md, rule sets and documents through /workspace/file, nothing else", () => {
+    expect(isRulesOrDoc("RULES.md")).toBe(true);
+    expect(isRulesOrDoc("rules/emails.md")).toBe(true);
+    expect(isRulesOrDoc("docs/a.md")).toBe(true);
+    expect(isRulesOrDoc("rules/.sets.json")).toBe(false);
+    expect(isRulesOrDoc("MEMORY.md")).toBe(false);
   });
 
   it("turns a typed name into a docs/ path, or refuses it", () => {
