@@ -7,6 +7,9 @@
 // preview, Character (three 64 tall cells), Color (24 pt swatches), Skin
 // (seven 60 tall cells), Style (2D, 3D) and the owl's Moves. Saved as each
 // choice is made (`PATCH /api/bots/:id/profile`), as on the desktop.
+// Every character and skin shows (#475): a locked one greyed with its
+// padlock and the achievement that unlocks it; a tap previews it on the
+// stage, "Preview: locked, nothing is saved" (#518), and saves nothing.
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -52,6 +55,10 @@ struct BotAvatarEditor: View {
     /// The stage's own mascot plays the moves (as MascotLookEditor.tsx's stage).
     @StateObject private var stageHandle = OwlMascotHandle()
     @State private var hop = false
+    /// A locked character picked to look at; nil shows the draft's.
+    @State private var previewCharacter: MascotCharacter?
+    /// A locked skin picked to look at, on the character shown.
+    @State private var previewSkin: String?
 
     private var shownRow: MausColors.PickerRow {
         guard MausColors.offersClay(draft.character, color: draft.color) else { return .classic }
@@ -139,16 +146,25 @@ struct BotAvatarEditor: View {
                 VStack(alignment: .leading, spacing: 6) {
                     label("Character")
                     let wornCharacter = CharacterDraft(bot: bot).character
-                    let characters = MascotCharacter.allCases.filter { !unlocks.characterLocked($0, current: wornCharacter) }
+                    let characters = unlocks.listedCharacters(current: wornCharacter)
+                    // the state read here, once: the cells' closures run later, outside the body
+                    let shown = shownCharacter
                     // equal tiles on one grid, as the web gallery's (minmax(70px, 1fr))
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
                         ForEach(characters, id: \.self) { character in
+                            let locked = unlocks.characterLocked(character, current: wornCharacter)
                             cell(look: lookFor(character), skin: character == .owl ? draft.skin : .none,
-                                 name: characterName(character), selected: draft.character == character, height: 64,
-                                 locked: false) {
-                                var next = draft
-                                next.character = character
-                                save(next)
+                                 name: characterName(character), selected: shown == character, height: 64,
+                                 locked: locked, hint: locked ? lockHint(character) : nil) {
+                                previewSkin = nil
+                                if locked {
+                                    previewCharacter = character
+                                } else {
+                                    previewCharacter = nil
+                                    var next = draft
+                                    next.character = character
+                                    save(next)
+                                }
                             }
                         }
                     }
@@ -233,10 +249,38 @@ struct BotAvatarEditor: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(RadialGradient(colors: [theme.control, theme.inset], center: .center, startRadius: 4, endRadius: 150))
-                MascotCharacterView(look: draft.complete, color: draft.color, skin: draft.character == .owl ? draft.skin : .none,
+                MascotCharacterView(look: stageLook, color: draft.color, skin: stageOwlSkin,
                                     size: 104, animated: true, owlHandle: stageHandle)
+                    .grayscale(shownCharacterLocked ? 1 : 0)
+                    .opacity(shownCharacterLocked ? 0.6 : 1)
                     .offset(y: hop ? -10 : 0)
                     .scaleEffect(hop ? 1.04 : 1)
+                if shownCharacterLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(theme.inkSecondary)
+                        .frame(width: 24, height: 24)
+                        .background(theme.control, in: Circle())
+                        .padding(8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .accessibilityHidden(true)
+                }
+                if previewing {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Preview: locked, nothing is saved")
+                        if let hint = lockHint(shownCharacter, skin: previewSkin) { Text(verbatim: hint) }
+                    }
+                    .font(theme.font(11))
+                    .foregroundStyle(theme.inkSecondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(theme.control.opacity(0.9), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .padding(8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .accessibilityIdentifier("avatar-skin-preview")
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 150)
@@ -244,10 +288,10 @@ struct BotAvatarEditor: View {
             .onTapGesture { preview() }
             .onHover { inside in if inside { preview() } }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text("Preview of \(characterName(draft.character))"))
+            .accessibilityLabel(Text("Preview of \(characterName(shownCharacter))"))
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("avatar-stage")
-            Text(verbatim: characterName(draft.character))
+            Text(verbatim: characterName(shownCharacter))
                 .font(theme.font(14, .medium))
                 .foregroundStyle(theme.ink)
                 .frame(maxWidth: .infinity)
@@ -258,7 +302,7 @@ struct BotAvatarEditor: View {
     }
 
     private func preview() {
-        switch draft.character {
+        switch shownCharacter {
         case .owl: stageHandle.flourish(OwlWingMove.allCases.first!)
         case .shape: stageHandle.shape(ShapeMove.allCases.first!)
         default:
@@ -269,135 +313,66 @@ struct BotAvatarEditor: View {
         }
     }
 
-    @ViewBuilder
+    /// The character on the stage and in the skins: a locked one picked to look at, or the draft's.
+    private var shownCharacter: MascotCharacter { previewCharacter ?? draft.character }
+    private var shownCharacterLocked: Bool { unlocks.characterLocked(shownCharacter, current: CharacterDraft(bot: bot).character) }
+    private var previewing: Bool { previewCharacter != nil || previewSkin != nil }
+
+    private var stageLook: CompleteMascotLook {
+        var look = lookFor(shownCharacter)
+        if let previewSkin { look.setSkin(previewSkin, for: shownCharacter) }
+        return look
+    }
+
+    private var stageOwlSkin: MascotSkin {
+        guard shownCharacter == .owl else { return .none }
+        return previewSkin.flatMap(MascotSkin.init(rawValue:)) ?? draft.skin
+    }
+
+    private func skinLook(_ character: MascotCharacter, _ id: String) -> CompleteMascotLook {
+        var look = lookFor(character)
+        look.setSkin(id, for: character)
+        return look
+    }
+
+    /// "Unlock: <achievement>" (`lockHint`), or nil when no achievement unlocks it.
+    private func lockHint(_ character: MascotCharacter, skin: String? = nil) -> String? {
+        guard let achievement = unlocks.lockAchievement(character, skin: skin) else { return nil }
+        let name = achievement.hidden ? String(localized: "Secret achievement") : achievement.name.resolved(AchievementLanguage.current)
+        return String(localized: "Unlock: \(name)")
+    }
+
+    /// Every skin of the character shown (#475): a locked one, or any skin of
+    /// a locked character, greyed with its padlock and previewed on the stage.
     private var skins: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
         let worn = CharacterDraft(bot: bot)
-        switch draft.character {
-        case .owl:
-            let skins = MascotSkin.allCases.filter { !unlocks.skinLocked(.owl, skin: $0.rawValue, current: worn.skin.rawValue) }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(skins, id: \.self) { skin in
-                    cell(look: MascotLook.owl.complete, skin: skin, name: skinName(skin.rawValue), selected: draft.skin == skin, height: 60,
-                         locked: false) {
-                        var next = draft
-                        next.skin = skin
-                        save(next)
+        let character = shownCharacter
+        let characterLocked = shownCharacterLocked
+        let wornSkin: String? = character != worn.character ? nil
+            : character == .owl ? worn.skin.rawValue : worn.complete.skinID(character)
+        let selectedSkin = previewSkin ?? (character == draft.character
+            ? (character == .owl ? draft.skin.rawValue : draft.complete.skinID(character)) : nil)
+        return LazyVGrid(columns: columns, spacing: 4) {
+            ForEach(CompleteMascotLook.skinIDs(character), id: \.self) { id in
+                let locked = characterLocked || unlocks.skinLocked(character, skin: id, current: wornSkin ?? "")
+                cell(look: skinLook(character, id), skin: character == .owl ? (MascotSkin(rawValue: id) ?? .none) : .none,
+                     name: skinName(id), selected: selectedSkin == id, height: 60,
+                     locked: locked, hint: locked ? lockHint(character, skin: id) : nil) {
+                    if locked {
+                        previewSkin = id
+                        return
                     }
-                }
-            }
-        case .shape:
-            let skins = ShapeSkin.allCases.filter { !unlocks.skinLocked(.shape, skin: $0.rawValue, current: worn.complete.shapeSkin.rawValue) }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(skins, id: \.self) { skin in
-                    cell(look: edited { $0.shapeSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.shapeSkin == skin, height: 60,
-                         locked: false) {
-                        var next = draft
-                        var look = next.complete
-                        look.shapeSkin = skin
-                        next.look = look.stored
-                        save(next)
+                    previewSkin = nil
+                    var next = draft
+                    if character == .owl {
+                        next.skin = MascotSkin(rawValue: id) ?? .none
+                    } else {
+                        var complete = next.complete
+                        complete.setSkin(id, for: character)
+                        next.look = complete.stored
                     }
-                }
-            }
-        case .trombi:
-            let skins = TrombiSkin.allCases.filter { !unlocks.skinLocked(.trombi, skin: $0.rawValue, current: worn.complete.trombiSkin.rawValue) }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(skins, id: \.self) { skin in
-                    cell(look: edited { $0.trombiSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.trombiSkin == skin, height: 60,
-                         locked: false) {
-                        var next = draft
-                        var look = next.complete
-                        look.trombiSkin = skin
-                        next.look = look.stored
-                        save(next)
-                    }
-                }
-            }
-        case .bunbu:
-            let skins = BunbuSkin.allCases.filter { !unlocks.skinLocked(.bunbu, skin: $0.rawValue, current: worn.complete.bunbuSkin.rawValue) }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(skins, id: \.self) { skin in
-                    cell(look: edited { $0.bunbuSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.bunbuSkin == skin, height: 60,
-                         locked: false) {
-                        var next = draft
-                        var look = next.complete
-                        look.bunbuSkin = skin
-                        next.look = look.stored
-                        save(next)
-                    }
-                }
-            }
-        case .shiba:
-            // only what this person unlocked (the server answers 403 look_locked otherwise); the worn skin stays
-            let skins = ShibaSkin.allCases.filter { !unlocks.skinLocked(.shiba, skin: $0.rawValue, current: worn.complete.shibaSkin.rawValue) }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(skins, id: \.self) { skin in
-                    cell(look: edited { $0.shibaSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.shibaSkin == skin, height: 60,
-                         locked: false) {
-                        var next = draft
-                        var look = next.complete
-                        look.shibaSkin = skin
-                        next.look = look.stored
-                        save(next)
-                    }
-                }
-            }
-        case .grump:
-            let skins = GrumpSkin.allCases.filter { !unlocks.skinLocked(.grump, skin: $0.rawValue, current: worn.complete.grumpSkin.rawValue) }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(skins, id: \.self) { skin in
-                    cell(look: edited { $0.grumpSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.grumpSkin == skin, height: 60,
-                         locked: false) {
-                        var next = draft
-                        var look = next.complete
-                        look.grumpSkin = skin
-                        next.look = look.stored
-                        save(next)
-                    }
-                }
-            }
-        case .ogre:
-            let skins = OgreSkin.allCases.filter { !unlocks.skinLocked(.ogre, skin: $0.rawValue, current: worn.complete.ogreSkin.rawValue) }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(skins, id: \.self) { skin in
-                    cell(look: edited { $0.ogreSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.ogreSkin == skin, height: 60,
-                         locked: false) {
-                        var next = draft
-                        var look = next.complete
-                        look.ogreSkin = skin
-                        next.look = look.stored
-                        save(next)
-                    }
-                }
-            }
-        case .frog:
-            // only what this person unlocked (the server answers 403 look_locked otherwise); the worn skin stays
-            let skins = FrogSkin.allCases.filter { !unlocks.skinLocked(.frog, skin: $0.rawValue, current: worn.complete.frogSkin.rawValue) }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(skins, id: \.self) { skin in
-                    cell(look: edited { $0.frogSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.frogSkin == skin, height: 60,
-                         locked: false) {
-                        var next = draft
-                        var look = next.complete
-                        look.frogSkin = skin
-                        next.look = look.stored
-                        save(next)
-                    }
-                }
-            }
-        case .crab:
-            let skins = CrabSkin.allCases.filter { !unlocks.skinLocked(.crab, skin: $0.rawValue, current: worn.complete.crabSkin.rawValue) }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(skins, id: \.self) { skin in
-                    cell(look: edited { $0.crabSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.crabSkin == skin, height: 60,
-                         locked: false) {
-                        var next = draft
-                        var look = next.complete
-                        look.crabSkin = skin
-                        next.look = look.stored
-                        save(next)
-                    }
+                    save(next)
                 }
             }
         }
@@ -412,11 +387,13 @@ struct BotAvatarEditor: View {
             .frame(height: 16.5)
     }
 
-    private func cell(look: CompleteMascotLook, skin: MascotSkin, name: String, selected: Bool, height: CGFloat, locked: Bool, action: @escaping () -> Void) -> some View {
-        Button { if !locked { action() } } label: {
+    /// A tap always reaches `action`: the caller previews a locked choice and saves nothing.
+    private func cell(look: CompleteMascotLook, skin: MascotSkin, name: String, selected: Bool, height: CGFloat, locked: Bool, hint: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             VStack(spacing: 2) {
                 MascotCharacterView(look: look, color: draft.color, skin: skin, size: height - 28)
                     .frame(width: height - 28, height: height - 28)
+                    .grayscale(locked ? 1 : 0)
                 Text(verbatim: name)
                     .font(theme.font(11))
                     .foregroundStyle(selected ? theme.ink : theme.inkSecondary)
@@ -438,6 +415,7 @@ struct BotAvatarEditor: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text(verbatim: name))
         .accessibilityValue(locked ? Text("Locked") : Text(verbatim: ""))
+        .accessibilityHint(hint.map { Text(verbatim: $0) } ?? Text(verbatim: ""))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

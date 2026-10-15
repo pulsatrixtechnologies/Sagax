@@ -2,8 +2,8 @@
 // Two simple cards on top, Plan (their subscriptions' allowance) and Cost
 // (this month, its trend against the same days of last month, a 30-day
 // sparkline), then one folded breakdown by bot and by model. Every figure
-// comes from GET /api/usage?mine=1, which keeps only the requester's turns
-// (server/routes/usage.ts). Per-person tables, organization totals, budgets
+// comes from GET /api/me/usage, which keeps only the requester's turns
+// (server/routes/usage.ts) and is open to every member (2026-10-15). Per-person tables, organization totals, budgets
 // and sell prices belong to the organization's admin console, which an
 // organization admin reaches from the link at the bottom.
 import { useEffect, useState } from "react";
@@ -49,14 +49,15 @@ export async function loadPersonalUsage(now = new Date(), get: <T>(path: string)
   return { month, previous, days30, byBot, byModel };
 }
 
-export function UsageSection() {
-  const { state } = useStore();
-  // The ledger is an admin read on this server. Mounting it as a member polls 403.
-  if (!canViewUsage(state.config)) return null;
-  return <UsageDetails />;
+/** Plan windows come from GET /api/plan-usage: a person's own on an
+ * organization server, an admin read on a solo server (a paired device
+ * without the admin scope would only meet a 403 there). */
+export function planUsageShown(input: { organization: boolean; viewUsage: boolean }): boolean {
+  return input.organization || input.viewUsage;
 }
 
-function UsageDetails() {
+/** Every member sees this page (2026-10-15): it shows their own usage only. */
+export function UsageSection() {
   const { state } = useStore();
   const org = usePerspicaxOrg();
   const [usage, setUsage] = useState<PersonalUsage | null>(null);
@@ -68,7 +69,7 @@ function UsageDetails() {
   }, []);
   return (
     <>
-      <PlanUsage />
+      {planUsageShown({ organization: org !== null, viewUsage: canViewUsage(state.config) }) && <PlanUsage />}
       <CostCard usage={usage} error={error} />
       {usage && <BreakdownCard usage={usage} />}
       {org && viewerIsOrgAdmin(state.config) && (

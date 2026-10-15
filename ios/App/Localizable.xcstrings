@@ -60904,6 +60904,38 @@
           }
         }
       }
+    },
+    "Preview: locked, nothing is saved": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aperçu : verrouillé, rien n'est enregistré"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prévia: bloqueado, nada é salvo"
+          }
+        }
+      }
+    },
+    "Unlock: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour débloquer : %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para desbloquear: %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

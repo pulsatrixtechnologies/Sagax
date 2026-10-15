@@ -21,12 +21,14 @@ const MERGED: Partial<Record<AppSettingsSection, { section: AppSettingsSection; 
 /** Sections hidden from the app since 2026-10-14 (JC: managing several
  * people is Sagax Business's job; the app shows what concerns the person
  * signed in). Their server routes stay. An old link opens the nearest page:
- * Pair devices and Activity open General; Email opens People, or General
- * where People is not shown. */
+ * General. 2026-10-15: People and Installations joined them, so Email (a
+ * card of People) opens General too. */
 const HIDDEN: Partial<Record<AppSettingsSection, AppSettingsSection>> = {
   companion: "general",
   activity: "general",
-  mail: "people",
+  mail: "general",
+  people: "general",
+  workspaces: "general",
 };
 
 export function currentSettingsSection(section: AppSettingsSection, cardId?: string): AppSettingsSection {

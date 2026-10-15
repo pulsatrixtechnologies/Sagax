@@ -8,8 +8,11 @@ describe("settings links", () => {
     expect(settingsSectionLabel("engines")).toBe("Models and voice");
     // a former page names the page that holds its card now
     expect(settingsSectionLabel("connectedApps")).toBe("Models and voice");
-    expect(settingsSectionLabel("mail")).toBe("People");
-    // Pair devices and Activity are hidden (2026-10-14): their old links open General
+    // Pair devices and Activity are hidden (2026-10-14), People, Installations
+    // and Email (a card of People) too (2026-10-15): their old links open General
+    expect(settingsSectionLabel("mail")).toBe("General");
+    expect(settingsSectionLabel("people")).toBe("General");
+    expect(settingsSectionLabel("workspaces")).toBe("General");
     expect(settingsSectionLabel("companion")).toBe("General");
     expect(settingsSectionLabel("activity")).toBe("General");
     expect(settingsSectionLabel("experimental")).toBe("Experimental");
@@ -32,7 +35,9 @@ describe("settings links", () => {
     expect(currentSettingsSection("decisionModel")).toBe("engines");
     expect(currentSettingsSection("privacy")).toBe("notifications");
     expect(currentSettingsSection("memory")).toBe("organization");
-    expect(currentSettingsSection("mail")).toBe("people");
+    expect(currentSettingsSection("mail")).toBe("general");
+    expect(currentSettingsSection("people")).toBe("general");
+    expect(currentSettingsSection("workspaces")).toBe("general");
     expect(currentSettingsSection("companion")).toBe("general");
     expect(currentSettingsSection("activity")).toBe("general");
     expect(currentSettingsSection("usage")).toBe("usage");

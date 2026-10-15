@@ -189,9 +189,47 @@ public struct MascotUnlocks: Hashable, Sendable {
     /// The character every person has (`DEFAULT_CHARACTERS`): the owl. The crab waits on `character:crab`.
     public static let defaultCharacters: Set<MascotCharacter> = [.owl]
 
+    /// The skins free with a Mastery character (`MASTERY_BASE_SKINS`): earning one unlocks nothing.
+    static let masteryBaseSkins: Set<String> = ["plain", "classic"]
+    static let masteryCharacters: Set<MascotCharacter> = [.shiba, .grump, .ogre, .frog]
+
     public func characterUnlocked(_ character: MascotCharacter) -> Bool {
         if onlyOwl { return character == .owl }
-        return !enforced || Self.defaultCharacters.contains(character) || keys.contains("character:\(character.rawValue)")
+        guard enforced else { return true }
+        if Self.defaultCharacters.contains(character) || keys.contains("character:\(character.rawValue)") { return true }
+        // An earned skin lets its character be worn in it (`characterUnlocked`,
+        // `masteryLock`, #475, JC 2026-10-14). Trombi stays the easter egg:
+        // only its hidden command reveals it.
+        if character == .trombi { return false }
+        let prefix = "skin:\(character.rawValue):"
+        let mastery = Self.masteryCharacters.contains(character)
+        return keys.contains { key in
+            guard key.hasPrefix(prefix) else { return false }
+            return !mastery || !Self.masteryBaseSkins.contains(String(key.dropFirst(prefix.count)))
+        }
+    }
+
+    /// The characters an editor lists (#475): every one, a locked one greyed
+    /// with its padlock and previewed only; Trombi once found (an easter egg)
+    /// or worn. The demo lists the owl alone.
+    public func listedCharacters(current: MascotCharacter) -> [MascotCharacter] {
+        MascotCharacter.allCases.filter { character in
+            if character == current { return true }
+            if onlyOwl { return character == .owl }
+            return character != .trombi || characterUnlocked(character)
+        }
+    }
+
+    /// The achievement a lock names (`lockHint`): the one whose reward is
+    /// this skin, or, for a locked character (or a skin no achievement
+    /// names), the character's. Nil when no achievement unlocks it.
+    public func lockAchievement(_ character: MascotCharacter, skin: String? = nil) -> AchievementDefinition? {
+        func first(_ key: String) -> AchievementDefinition? {
+            AchievementDefinition.catalog.first { $0.rewards.contains { $0.key == key } }
+        }
+        let skinAchievement = skin.flatMap { first("skin:\(character.rawValue):\($0)") }
+        if characterUnlocked(character) { return skinAchievement }
+        return first("character:\(character.rawValue)") ?? skinAchievement
     }
 
     /// Earned or grandfathered, or Common on an unlocked character.
@@ -309,5 +347,55 @@ public extension CompanionClient {
     func makePrimaryBotRequest(botId: String) throws -> URLRequest {
         guard Self.validRouteID(botId) else { throw APIError.badURL }
         return try makeRequest("POST", "/api/bots/\(botId)/primary")
+    }
+}
+
+// MARK: - Skins by id
+
+/// A character's skins as the ids the locks and the server use, so an
+/// editor draws one skin grid for every character (#475: all of them, the
+/// locked ones greyed). The owl's skin is the bot's `mascotSkin`, not part
+/// of the look: `skinIDs(.owl)` lists it, `skinID`/`setSkin` leave it alone.
+public extension CompleteMascotLook {
+    static func skinIDs(_ character: MascotCharacter) -> [String] {
+        switch character {
+        case .owl: return MascotSkin.allCases.map(\.rawValue)
+        case .shape: return ShapeSkin.allCases.map(\.rawValue)
+        case .trombi: return TrombiSkin.allCases.map(\.rawValue)
+        case .bunbu: return BunbuSkin.allCases.map(\.rawValue)
+        case .shiba: return ShibaSkin.allCases.map(\.rawValue)
+        case .grump: return GrumpSkin.allCases.map(\.rawValue)
+        case .ogre: return OgreSkin.allCases.map(\.rawValue)
+        case .frog: return FrogSkin.allCases.map(\.rawValue)
+        case .crab: return CrabSkin.allCases.map(\.rawValue)
+        }
+    }
+
+    func skinID(_ character: MascotCharacter) -> String? {
+        switch character {
+        case .owl: return nil
+        case .shape: return shapeSkin.rawValue
+        case .trombi: return trombiSkin.rawValue
+        case .bunbu: return bunbuSkin.rawValue
+        case .shiba: return shibaSkin.rawValue
+        case .grump: return grumpSkin.rawValue
+        case .ogre: return ogreSkin.rawValue
+        case .frog: return frogSkin.rawValue
+        case .crab: return crabSkin.rawValue
+        }
+    }
+
+    mutating func setSkin(_ id: String, for character: MascotCharacter) {
+        switch character {
+        case .owl: break
+        case .shape: if let skin = ShapeSkin(rawValue: id) { shapeSkin = skin }
+        case .trombi: if let skin = TrombiSkin(rawValue: id) { trombiSkin = skin }
+        case .bunbu: if let skin = BunbuSkin(rawValue: id) { bunbuSkin = skin }
+        case .shiba: if let skin = ShibaSkin(rawValue: id) { shibaSkin = skin }
+        case .grump: if let skin = GrumpSkin(rawValue: id) { grumpSkin = skin }
+        case .ogre: if let skin = OgreSkin(rawValue: id) { ogreSkin = skin }
+        case .frog: if let skin = FrogSkin(rawValue: id) { frogSkin = skin }
+        case .crab: if let skin = CrabSkin(rawValue: id) { crabSkin = skin }
+        }
     }
 }

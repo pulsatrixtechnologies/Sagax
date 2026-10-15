@@ -286,7 +286,7 @@ final class SettingsUITests: XCTestCase {
         defer { setSkin(nil, in: app) }
         openAppearance(in: app)
         app.element("theme.mode.fixed").tap()
-        for (skin, ground) in [("lagoon", UInt32(0xDFECEB)), ("foundry", 0x100E0B), ("atelier", 0xF5F1EB), ("midnight", 0x070707)] {
+        for (skin, ground) in [("lagoon", UInt32(0xDFECEB)), ("foundry", 0x100E0B), ("atelier", 0xF5F1EB), ("midnight", 0x121212)] {
             let card = app.element("skin.fixed.\(skin)")
             for _ in 0..<8 where !card.isHittable { app.swipeUp() }
             XCTAssertTrue(card.waitForExistence(timeout: 5), skin)

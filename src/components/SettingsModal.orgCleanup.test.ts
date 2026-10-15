@@ -121,11 +121,12 @@ describe("an organization member", () => {
     fixture.viewer = member;
     fixture.org = ORG;
     const { memberHidesSection } = await import("./SettingsModal");
-    const hidden = { editConfig: false, manageComputers: false, viewUsage: false, manageBackups: false, organization: true };
+    const hidden = { editConfig: false, manageComputers: false, manageBackups: false, organization: true };
     expect(memberHidesSection("experimental", hidden)).toBe(true);
     expect(memberHidesSection("connectedApps", hidden)).toBe(true);
     expect(memberHidesSection("decisionModel", hidden)).toBe(true);
-    expect(memberHidesSection("usage", hidden)).toBe(true);
+    // 2026-10-15: Usage is the person's own (GET /api/me/usage): every member sees it
+    expect(memberHidesSection("usage", hidden)).toBe(false);
     expect(memberHidesSection("backups", hidden)).toBe(true);
     expect(memberHidesSection("general", hidden)).toBe(false);
     expect(memberHidesSection("computer", hidden)).toBe(false);
@@ -136,10 +137,21 @@ describe("an organization member", () => {
     expect(nav).not.toContain(">Experimental<");
     expect(nav).not.toContain(">API keys<");
     expect(nav).not.toContain(">Decision model<");
-    expect(nav).not.toContain(">Usage<");
+    expect(nav).toContain(">Usage<");
     expect(nav).not.toContain(">Backups<");
     expect(nav).toContain(">General<");
     expect(nav).toContain(">Computer<");
+  });
+
+  it("opens Usage on the member's own usage", async () => {
+    fixture.viewer = member;
+    fixture.org = ORG;
+    fixture.section = "usage";
+    const html = await render();
+    expect(html).toContain('<option value="usage" selected="">Usage</option>');
+    expect(html).toContain('data-settings-card="usage.cost"');
+    // the link to the organization's console is an admin's
+    expect(html).not.toContain("data-usage-org-link");
   });
 
   it("hides the General and Appearance rows that write the installation", async () => {
@@ -155,6 +167,38 @@ describe("an organization member", () => {
     fixture.section = "appearance";
     expect(await render()).not.toContain("Tool calls");
     expect(await render()).toContain("Interface font");
+  });
+});
+
+// 2026-10-15 (JC): People and Installations are hidden in the app, like
+// Email, Activity and Pair devices; managing several people or
+// installations is Sagax Business's job. Their server routes stay.
+describe("People and Installations are hidden in the app", () => {
+  it("lists neither page, for an owner or a member, solo or organization", async () => {
+    const { SECTIONS } = await import("./SettingsModal");
+    expect(SECTIONS.map((entry) => entry.id)).not.toContain("people");
+    expect(SECTIONS.map((entry) => entry.id)).not.toContain("workspaces");
+    for (const org of [null, ORG]) {
+      for (const viewer of [undefined, { role: "member" as const, operator: false }]) {
+        fixture.org = org;
+        fixture.viewer = viewer;
+        const html = await render();
+        expect(html).not.toContain('<option value="people"');
+        expect(html).not.toContain('<option value="workspaces"');
+        expect(html).not.toContain(">People<");
+        expect(html).not.toContain(">Installations<");
+      }
+    }
+  });
+
+  it("opens an old People, Installations or Email link on General", async () => {
+    for (const section of ["people", "workspaces", "mail"] as const) {
+      fixture.section = section;
+      const html = await render();
+      expect(html, section).toContain('<option value="general" selected="">General</option>');
+      expect(html, section).not.toContain("MAIL_SETTINGS_MARKER");
+      expect(html, section).not.toContain('data-settings-card="people.list"');
+    }
   });
 });
 

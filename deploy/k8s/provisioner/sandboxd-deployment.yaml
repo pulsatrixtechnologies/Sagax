@@ -24,6 +24,10 @@ spec:
       enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
+        # The server image runs as the user maus (uid 1001, after node's
+        # 1000). The kubelet cannot check runAsNonRoot against a user name.
+        runAsUser: 1001
+        runAsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
       containers:

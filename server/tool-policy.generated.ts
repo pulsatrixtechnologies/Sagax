@@ -174,6 +174,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"exact","route":"/api/me/server-environment/power","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/me/server-environment/stats","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/me/server-environment/update","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
+  {"method":"GET","kind":"exact","route":"/api/me/usage","tier":"admin","readOnly":true,"scope":"me:admin","defaultEnabled":false,"billing":true},
   {"method":"GET","kind":"prefix","route":"/api/media/proxy/","tier":"read","readOnly":true,"scope":"media:read","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/org","tier":"admin","readOnly":false,"scope":"org:admin","defaultEnabled":false},
   {"method":"GET","kind":"exact","route":"/api/org","tier":"admin","readOnly":true,"scope":"org:admin","defaultEnabled":false},
