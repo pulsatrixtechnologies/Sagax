@@ -38,7 +38,11 @@ export function plainPreviewText(text: string): string {
   out = out.replace(/<((?:https?|mailto):[^>\s]+)>/gi, "$1");
   // html line breaks and simple inline tags
   out = out.replace(/<br\s*\/?>/gi, " ");
-  out = out.replace(/<\/?(?:b|strong|i|em|u|s|del|ins|mark|code|kbd|sub|sup|small|span|p|div)\b[^>]*>/gi, "");
+  // (until stable, so a tag split by another, <sp<b>an>, leaves none behind)
+  for (let previous = ""; previous !== out; ) {
+    previous = out;
+    out = out.replace(/<\/?(?:b|strong|i|em|u|s|del|ins|mark|code|kbd|sub|sup|small|span|p|div)\b[^>]*>/gi, "");
+  }
   // block markers at the start of a line: headings, quotes, list bullets,
   // task boxes, table rules and horizontal rules
   out = out.replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "");
