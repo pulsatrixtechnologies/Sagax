@@ -81,6 +81,9 @@ export function createBrowserControl(options: {
   let closed = false;
   // The typing dialog is open: its text is for the field the person picked.
   let pinned = false;
+  // The person took control with the Take control button: keep it until
+  // they hand it back, rather than after a few idle seconds.
+  let keep = false;
   // Hand back as soon as nothing blocks it, not after the idle wait.
   let soon = false;
   let activity = 0;
@@ -96,7 +99,7 @@ export function createBrowserControl(options: {
     if (isPress(input) && heldUntilReleased(input)) held.add(inputId(input));
     else if (isRelease(input)) held.delete(inputId(input));
   };
-  const quiet = () => !closed && !pinned && !flushing && !held.size && !options.busy()
+  const quiet = () => !closed && !pinned && !keep && !flushing && !held.size && !options.busy()
     && (state === "held" || (state === "bot" && options.owned()));
   const arm = () => {
     clearTimeout(idle);
@@ -156,7 +159,7 @@ export function createBrowserControl(options: {
         state = "held";
         report(waitedForBot(grant.reply) && dropStale() ? "stale" : "");
         await flush();
-      } else { report(""); state = "bot"; buffer = []; held.clear(); }
+      } else { report(""); state = "bot"; buffer = []; held.clear(); keep = false; }
       arm(); // a refused take can still leave this viewer holding the browser
     }).catch(() => {});
   };
@@ -197,7 +200,17 @@ export function createBrowserControl(options: {
     observe() { if (!closed && idle === undefined && options.owned()) arm(); },
     /** Hand back without the idle wait (the person is switching profiles), as
      * soon as nothing is held down, unsent or running. */
-    handBack() { if (!closed) { soon = true; arm(); } },
+    handBack() { if (!closed) { keep = false; soon = true; arm(); } },
+    /** Take control now (the Take control button), and keep it until
+     * handBack(): no idle hand-back while the person reads the page. */
+    takeNow() {
+      if (closed) return;
+      keep = true;
+      soon = false;
+      activity++;
+      if (state === "bot" && !options.owned()) take();
+      else arm();
+    },
     /** While the typing dialog is open, keep control: its text is meant for
      * the field the person picked. Closing it starts the idle wait again. */
     hold(on: boolean) {
@@ -208,6 +221,7 @@ export function createBrowserControl(options: {
     /** The panel is closing: hand back now, unless input is held or unsent.
      * The server's own disconnect cleanup handles those. */
     leave() {
+      keep = false;
       if (!quiet() || options.queue.size()) return;
       state = "releasing";
       void options.release().catch(() => {});

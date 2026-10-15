@@ -84,17 +84,20 @@ export function SandboxDesktopModal({ title, state, controls, busy = false, onCl
           <span data-power={state} className="flex items-center gap-1.5 rounded-full bg-control px-2 py-0.5 text-[11px] text-ink-secondary">
             <span aria-hidden="true" className={cn("size-1.5 rounded-full", state === "running" ? "bg-accent" : state === "paused" || state === "starting" ? "bg-accent/50" : state === "error" ? "bg-danger" : "bg-ink-secondary/50")} />
             {screenStateLabel(state)}
-            <span aria-hidden="true">·</span>
-            {control ? <Hand size={11} aria-hidden="true" /> : <Eye size={11} aria-hidden="true" />}
-            {t(control ? "sandboxDesktop.controlling" : "sandboxDesktop.watching")}
+            {/* The browser says who has it, with Take control / Give back, in its own bar. */}
+            {kind !== "browser" && <>
+              <span aria-hidden="true">·</span>
+              {control ? <Hand size={11} aria-hidden="true" /> : <Eye size={11} aria-hidden="true" />}
+              {t(control ? "sandboxDesktop.controlling" : "sandboxDesktop.watching")}
+            </>}
           </span>
-          <button type="button" onClick={() => setControl((value) => !value)} data-takeover-control={control ? "release" : "take"}
+          {kind !== "browser" && <button type="button" onClick={() => setControl((value) => !value)} data-takeover-control={control ? "release" : "take"}
             title={control ? t("sandboxDesktop.controlHint") : undefined}
             className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium",
               control ? "bg-accent text-accent-ink hover:brightness-110" : "bg-control text-ink hover:bg-raised-hover")}>
             <Hand size={12} aria-hidden="true" />
             {t(control ? "sandboxDesktop.releaseControl" : "sandboxDesktop.takeControl")}
-          </button>
+          </button>}
           {controls && <div role="group" aria-label={t("computerScreen.controls")} className="flex items-center gap-0.5 rounded-full bg-control p-0.5">
             <HeaderButton icon={Play} label={state === "paused" ? t("computerScreen.resume") : t("computerScreen.play")}
               onClick={state === "paused" ? controls.resume : controls.play} busy={busy} />

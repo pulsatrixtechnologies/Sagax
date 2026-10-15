@@ -413,3 +413,44 @@ describe("handing browser control back", () => {
     expect(h.options.take).toHaveBeenCalledOnce();
   });
 });
+
+describe("taking browser control with the button", () => {
+  it("takes control at once and keeps it until the person hands it back", async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.control.takeNow();
+    await settle();
+    expect(h.options.take).toHaveBeenCalledOnce();
+    h.server.owned = true;
+    // No idle hand-back while the person reads the page.
+    await vi.advanceTimersByTimeAsync(BROWSER_HAND_BACK_MS * 3);
+    expect(h.options.release).not.toHaveBeenCalled();
+    // A click goes straight to the page, without a second take.
+    h.interact({ input: press }, { input: lift });
+    expect(h.queue.enqueue.mock.calls.map(([body]) => body)).toEqual([press, lift]);
+    expect(h.options.take).toHaveBeenCalledOnce();
+    h.control.handBack();
+    await vi.advanceTimersByTimeAsync(0); await settle();
+    expect(h.options.release).toHaveBeenCalledOnce();
+  });
+
+  it("does not take twice when the person already holds the browser", async () => {
+    const h = harness();
+    h.interact({ input: press }, { input: lift });
+    await settle();
+    h.server.owned = true;
+    h.control.takeNow();
+    await settle();
+    expect(h.options.take).toHaveBeenCalledOnce();
+  });
+
+  it("closing the view hands a kept browser back", async () => {
+    const h = harness();
+    h.control.takeNow();
+    await settle();
+    h.server.owned = true;
+    h.control.leave();
+    await settle();
+    expect(h.options.release).toHaveBeenCalledOnce();
+  });
+});

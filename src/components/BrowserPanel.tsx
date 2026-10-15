@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, EllipsisVertical, Globe, Hand, Loader2, Plus, RotateCw, UserRound, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot as BotIcon, EllipsisVertical, Globe, Hand, Loader2, Plus, RotateCw, UserRound, X } from "lucide-react";
 import { BrowserUnavailableNote } from "./SettingsLink";
 import { t } from "@/lib/i18n";
 import { api, useStore, type Bot } from "@/state/store";
@@ -10,7 +10,7 @@ import { createBrowserControl, type BrowserInteraction, type BrowserTakeStatus }
 import { resolveAddressBarInput } from "@/lib/browser-address";
 import { cn } from "@/lib/cn";
 import type { ScreenState } from "@/lib/desktop-local-vm";
-import { ComputerScreen, REVEALED_CONTROL, type ScreenAction } from "./computer/ComputerScreen";
+import { ComputerScreen, type ScreenAction } from "./computer/ComputerScreen";
 import { SandboxDesktopModal } from "./computer/SandboxDesktopModal";
 
 interface BrowserTab { tabId: string; title: string; url: string; active: boolean }
@@ -19,14 +19,19 @@ const button = "rounded-md p-1.5 text-ink-secondary hover:bg-inset hover:text-in
 const RECONNECT_DELAYS = [1_000, 2_000, 4_000, 8_000, 15_000];
 
 const NO_CONTROL = { held: false, controlling: false, owned: false };
+/** Where the window takes a browser that shows a blank page (the server
+ * launches a closed one there too: BROWSER_START_URL in server/browser-live.ts). */
+export const BROWSER_START_URL = "https://www.google.com/";
 
 /** Closing a panel releases its lease. A new connection never silently
  * restores permission to type, and never replays old browser frames.
- * There is no Take control button: interacting takes the browser from the
- * bot, and a few idle seconds hand it back (see createBrowserControl).
- * `control`: set by the take-control window; false (Release control) hands
- * the browser back at once and leaves the page view-only. */
-export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; control?: boolean }) {
+ * Interacting takes the browser from the bot, and a few idle seconds hand it
+ * back (see createBrowserControl). The bar under the address says who has
+ * the browser, with Take control (kept until handed back) and Give back.
+ * `control`: false hands the browser back at once and leaves the page
+ * view-only. `placeholder`: the preview's last picture, shown dimmed while
+ * the live view connects, so the window never opens on an empty square. */
+export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot: Bot; control?: boolean; placeholder?: string | undefined }) {
   const { state } = useStore();
   const [attempt, setAttempt] = useState(0);
   const [frame, setFrame] = useState<ViewerFrame | null>(null);
@@ -56,10 +61,13 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
   const browserControl = useRef<ReturnType<typeof createBrowserControl> | null>(null);
   // The latest server control state, for callbacks that outlive a render.
   const controlNow = useRef(NO_CONTROL);
+  const allowedNow = useRef(allowed);
   const haltMessage = useRef("");
   const urlEditing = useRef(false);
   const reconnectCount = useRef(0);
   const connectionProfile = useRef("");
+  // Once per connection: a blank page is taken to the start page.
+  const startChecked = useRef(false);
   const profileName = bot.browserProfile === "guest" ? t("browser.profile.temporary")
     : state.config?.browserProfiles?.find((profile) => profile.id === bot.browserProfile)?.name ?? t("browser.profile.own", { name: bot.name });
   useEffect(() => { if (showProfiles) profilesDialog.current?.showModal(); else profilesDialog.current?.close(); }, [showProfiles]);
@@ -107,7 +115,7 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
     let stopped = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     viewer.current = ""; pendingOperation.current = null; haltMessage.current = "";
-    urlEditing.current = false;
+    urlEditing.current = false; startChecked.current = false;
     setFrame(null); setTabs([]); setAddress(""); setConnected(false); setError(""); setReconnecting(false); setBusy(false);
     setControl({ held: false, controlling: false, owned: false }); setPending(false);
     controlNow.current = NO_CONTROL; setTakeStatus("");
@@ -153,6 +161,12 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
       setTabs(data.tabs);
       const active = data.tabs.find((tab: BrowserTab) => tab.active);
       if (active && !urlEditing.current) setAddress(active.url === "about:blank" ? "" : active.url);
+      // The person opened the window on a browser with nothing in it: start
+      // where a browser starts, not on a white page. Never moves a real page.
+      if (!startChecked.current && active) {
+        startChecked.current = true;
+        if (allowedNow.current && isBlankPage(active.url)) browserControl.current?.interact({ command: { type: "navigate", url: BROWSER_START_URL } });
+      }
     });
     listen("url", (data) => { if (typeof data.url === "string" && !urlEditing.current) setAddress(data.url === "about:blank" ? "" : data.url); });
     listen("status", (data) => {
@@ -214,6 +228,7 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
   }, [bot.id, bot.browserProfile, attempt, action]);
 
   // Release control in the window: hand the browser back now, not after the idle wait.
+  allowedNow.current = allowed;
   useEffect(() => { if (!allowed) browserControl.current?.handBack(); }, [allowed]);
 
   const execute = async (body: Record<string, unknown>) => {
@@ -251,6 +266,11 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
   const taking = takeStatus === "pending" || takeStatus === "slow";
   const commandsReady = interactive && !taking;
   const pill = "flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border bg-menu px-2.5 py-1 text-[11px] shadow-sm sm:text-[12px]";
+  // Who has the browser, in words, with the one action that changes it.
+  const mine = control.owned && control.controlling;
+  const pageTitle = tabs.find((tab) => tab.active)?.title ?? "";
+  const holder = mine ? t("sandboxDesktop.controlling") : heldElsewhere ? t("browser.live.heldElsewhere")
+    : taking ? t("browser.control.waiting", { name: bot.name }) : t("browser.control.bot", { name: bot.name });
   return <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline/40 bg-card text-ink">
     <div className="flex min-h-12 items-center gap-1 px-2 pt-1.5">
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
@@ -284,12 +304,35 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
         </div>
       </details>
     </form>
+    <div data-browser-holder={mine ? "you" : heldElsewhere ? "elsewhere" : "bot"} className="flex min-h-10 items-center gap-2 border-b border-hairline/40 px-3 py-1.5 text-[12px]">
+      <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", mine ? "font-medium text-accent-text" : "text-ink-secondary")}>
+        {mine ? <Hand size={13} className="shrink-0" aria-hidden="true" /> : <BotIcon size={13} className="shrink-0" aria-hidden="true" />}
+        <span className="shrink-0">{holder}</span>
+        {pageTitle && <span className="min-w-0 truncate font-normal text-ink-secondary" title={pageTitle}>· {pageTitle}</span>}
+      </span>
+      {allowed && connected && !heldElsewhere && (mine
+        ? <button type="button" data-browser-give-back="" onClick={() => browserControl.current?.handBack()}
+            className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full bg-control px-3 py-1 font-medium text-ink hover:bg-raised-hover md:min-h-0">
+            <BotIcon size={12} aria-hidden="true" />{t("browser.control.giveBack")}
+          </button>
+        : <button type="button" data-browser-take="" disabled={taking || pending} onClick={() => browserControl.current?.takeNow()}
+            className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full bg-accent px-3 py-1 font-medium text-accent-ink hover:brightness-110 disabled:opacity-50 md:min-h-0">
+            <Hand size={12} aria-hidden="true" />{t("sandboxDesktop.takeControl")}
+          </button>)}
+    </div>
     {error && <div role={reconnecting ? "status" : "alert"} className={`flex items-center justify-between gap-2 border-b border-hairline/30 px-3 py-2 text-[12px] ${reconnecting ? "text-ink-secondary" : "text-danger"}`}><span>{error}</span>{!connected && <button className="shrink-0 underline" onClick={reconnect}>{t("browser.live.reconnect")}</button>}</div>}
     <div className="relative min-h-0 flex-1 overflow-hidden bg-inset/40">
       {frame ? <BrowserViewport frame={frame} {...viewport} driving={interactive} input={input}
         onReturnToToolbar={() => addressInput.current?.focus()}
         acknowledge={(seq) => { if (generation.current === frame.generation && viewer.current === frame.viewerId) void action({ type: "ack", seq }, frame.viewerId).catch(() => {}); }}
         onDecodeError={() => { if (generation.current === frame.generation && viewer.current === frame.viewerId) setError(t("browser.frame.decodeError")); }} />
+        : placeholder && !heldElsewhere && !(error && !reconnecting)
+          ? <div data-browser-placeholder="" className="absolute inset-0">
+            <img src={placeholder} alt="" draggable={false} className="h-full w-full select-none object-contain opacity-60" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className={`${pill} border-hairline text-ink`}><Loader2 size={13} className="shrink-0 animate-spin" aria-hidden="true" />{busy ? t("browser.live.botBusy", { name: bot.name }) : t("browser.live.connecting")}</span>
+            </div>
+          </div>
         : <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-[13px] text-ink-secondary">{connected && heldElsewhere ? <Hand size={24} /> : error && !reconnecting ? <Globe size={24} /> : <Loader2 size={24} className="animate-spin" />}<span>{heldElsewhere ? t("browser.live.heldElsewhere") : reconnecting ? t("browser.live.reconnectingShort") : error ? t("browser.live.disconnected") : busy ? t("browser.live.botBusy", { name: bot.name }) : t("browser.live.opening")}</span></div>}
       {/* Status only, never a control: it floats over the top of the page,
           readable at any panel width, and every click passes through it. */}
@@ -298,8 +341,6 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
           <Loader2 size={13} className="shrink-0 animate-spin" aria-hidden="true" /><span className="truncate">{t("browser.control.waiting", { name: bot.name })}</span>
         </span> : takeStatus === "stale" ? <span className={`${pill} border-accent-border text-accent-text`}>
           <Hand size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{t("browser.control.stale", { name: bot.name })}</span>
-        </span> : !takeStatus && control.owned && control.controlling ? <span className={`${pill} border-accent-border text-accent-text`} aria-description={t("browser.control.yoursHint", { name: bot.name })}>
-          <Hand size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{t("browser.control.yours")}</span>
         </span> : null}
       </div>
     </div>
@@ -343,8 +384,12 @@ export function useBrowserPreview(bot: Bot, enabled: boolean) {
   const [state, setState] = useState<PreviewState>("connecting");
   const [frame, setFrame] = useState<PreviewFrame | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // The page the browser shows: a running browser on a blank page is drawn
+  // as "nothing open", not as a white rectangle.
+  const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     setFrame(null);
+    setUrl(null);
     if (!enabled || !visible) return;
     let stopped = false;
     let viewerId = "";
@@ -365,6 +410,11 @@ export function useBrowserPreview(bot: Bot, enabled: boolean) {
     });
     listen("waiting", () => setState("busy"));
     listen("ready", (data) => { if (typeof data.viewerId === "string") viewerId = data.viewerId; });
+    listen("tabs", (data) => {
+      const active = Array.isArray(data.tabs) ? data.tabs.find((tab: BrowserTab) => tab?.active) : undefined;
+      setUrl(typeof active?.url === "string" ? active.url : "");
+    });
+    listen("url", (data) => { if (typeof data.url === "string") setUrl(data.url); });
     listen("frame", (data) => {
       if (!viewerId || typeof data.seq !== "number" || typeof data.data !== "string") return;
       setFrame({ seq: data.seq, viewerId, src: `data:image/${data.format === "png" ? "png" : "jpeg"};base64,${data.data}` });
@@ -378,22 +428,42 @@ export function useBrowserPreview(bot: Bot, enabled: boolean) {
   const acknowledge = useCallback((shown: PreviewFrame) => {
     void api(`/api/bots/${encodeURIComponent(bot.id)}/browser/action`, { method: "POST", body: JSON.stringify({ type: "ack", seq: shown.seq, viewerId: shown.viewerId }) }).catch(() => {});
   }, [bot.id]);
-  return { state, frame, acknowledge, retry: () => setAttempt((value) => value + 1) };
+  return { state, frame, acknowledge, blank: url !== null && isBlankPage(url), retry: () => setAttempt((value) => value + 1) };
 }
 
-function PreviewImage({ frame, alt, acknowledge, onTakeControl }: { frame: PreviewFrame; alt: string; acknowledge: (frame: PreviewFrame) => void; onTakeControl: () => void }) {
+/** A page with nothing on it: the browser runs, but no site is open. */
+export function isBlankPage(url: string): boolean {
+  const trimmed = url.trim();
+  return trimmed === "" || trimmed === "about:blank" || trimmed.startsWith("chrome://newtab") || trimmed.startsWith("chrome://new-tab-page");
+}
+
+/** The Take control pill at the bottom of the picture: shown on hover or
+ * keyboard focus, always on a touch screen (no hover there), and always
+ * while the bot waits on the person. */
+export function takeControlPillClass(waiting: boolean): string {
+  return cn("pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-black/75 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm transition-opacity duration-150",
+    waiting ? "opacity-100" : "opacity-0 group-hover/preview:opacity-100 group-focus-within/preview:opacity-100 touch:opacity-100");
+}
+
+/** Acknowledges a frame that is not drawn (a blank page), so the server keeps
+ * pacing frames and the picture comes back when a page opens. */
+function FrameAck({ frame, acknowledge }: { frame: PreviewFrame; acknowledge: (frame: PreviewFrame) => void }) {
+  useEffect(() => { const tick = requestAnimationFrame(() => acknowledge(frame)); return () => cancelAnimationFrame(tick); }, [frame, acknowledge]);
+  return null;
+}
+
+function PreviewImage({ frame, alt, acknowledge, onTakeControl, waiting }: { frame: PreviewFrame; alt: string; acknowledge: (frame: PreviewFrame) => void; onTakeControl: () => void; waiting: boolean }) {
   // Acknowledge after the frame is painted (identical pixels fire no load event).
   useEffect(() => { const tick = requestAnimationFrame(() => acknowledge(frame)); return () => cancelAnimationFrame(tick); }, [frame, acknowledge]);
-  return <div data-browser-preview="" className="absolute inset-0">
+  // Watch-only: the whole picture is the Take control target (a click on the
+  // thumbnail opens the interactive window), and its pill says so.
+  return <button type="button" data-browser-preview="" data-take-control="" onClick={onTakeControl}
+    className="group/preview absolute inset-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
     <img src={frame.src} alt={alt} draggable={false} className="h-full w-full select-none object-contain" />
-    {/* Watch-only, like the VM's square: one button in the middle takes the wheel. */}
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-      <button type="button" onClick={onTakeControl} data-take-control=""
-        className={cn("flex min-h-[44px] items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm hover:bg-black/80 md:min-h-0", REVEALED_CONTROL)}>
-        <Hand size={15} aria-hidden="true" />{t("sandboxDesktop.takeControl")}
-      </button>
-    </div>
-  </div>;
+    <span className={takeControlPillClass(waiting)} data-take-control-pill={waiting ? "shown" : "hover"}>
+      <Hand size={15} aria-hidden="true" />{t("sandboxDesktop.takeControl")}
+    </span>
+  </button>;
 }
 
 /** The bot's browser on the Computer tab, drawn as the VM's screen: a live
@@ -404,7 +474,12 @@ export function BrowserComputerScreen({ bot }: { bot: Bot }) {
   const [takeover, setTakeover] = useState(false);
   const preview = useBrowserPreview(bot, !takeover);
   const caption = t("computer.browserOf", { name: bot.name });
+  // The last picture, shown in the window while its live view connects.
+  const lastFrame = useRef<string | undefined>(undefined);
+  if (preview.frame && !preview.blank) lastFrame.current = preview.frame.src;
   const open = () => setTakeover(true);
+  // The bot stopped to ask the person something: Take control stays in view.
+  const waiting = bot.tasks?.some((task) => task.activity === "waiting-on-you") === true;
   const state: ScreenState = takeover || (preview.state === "live" && preview.frame) ? "running"
     : preview.state === "offline" ? "off" : preview.state === "error" ? "error" : "starting";
   const message = preview.state === "offline" ? t("browser.preview.offline", { name: bot.name })
@@ -416,11 +491,22 @@ export function BrowserComputerScreen({ bot }: { bot: Bot }) {
     : [];
   const live = takeover
     ? <div data-browser-takeover-open="" className="flex h-full w-full items-center justify-center p-4 text-center text-[12px] text-ink-secondary">{t("sandboxDesktop.inWindow")}</div>
-    : preview.frame ? <PreviewImage frame={preview.frame} alt={caption} acknowledge={preview.acknowledge} onTakeControl={open} /> : undefined;
+    : preview.frame && preview.blank
+      ? <div data-browser-blank="" className="flex h-full w-full flex-col items-center justify-center gap-2 p-4 text-center">
+        <FrameAck frame={preview.frame} acknowledge={preview.acknowledge} />
+        <Globe size={28} aria-hidden="true" className="text-ink-secondary" />
+        <span className="text-[13px] font-medium text-ink">{t("browser.preview.notOpen")}</span>
+        <p className="text-[12px] leading-relaxed text-ink-secondary">{t("browser.preview.blank", { name: bot.name })}</p>
+        <button type="button" data-take-control="" onClick={open}
+          className="mt-1 flex min-h-[44px] items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110 md:min-h-0">
+          <Hand size={13} aria-hidden="true" />{t("sandboxDesktop.takeControl")}
+        </button>
+      </div>
+    : preview.frame ? <PreviewImage frame={preview.frame} alt={caption} acknowledge={preview.acknowledge} onTakeControl={open} waiting={waiting} /> : undefined;
   return <>
     <ComputerScreen source="browser" icon={Globe} state={state} caption={caption} message={message} actions={actions} live={live} />
     {takeover && <SandboxDesktopModal kind="browser" title={caption} state="running" onClose={() => setTakeover(false)}
-      screen={(control) => <LiveBrowser key={bot.id} bot={bot} control={control} />} />}
+      screen={(control) => <LiveBrowser key={bot.id} bot={bot} control={control} placeholder={lastFrame.current} />} />}
   </>;
 }
 

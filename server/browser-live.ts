@@ -21,10 +21,13 @@ const VIEWPORT_TIMEOUT_MS = 5_000;
 const STATUS_PROBE_MS = 10_000;
 const BUSY_RETRY_MS = [1_000, 2_000, 5_000];
 const BUSY_LIMIT_MS = 10 * 60_000;
+/** Where a browser the person opens lands, and a new tab opened from the
+ * toolbar: a search page to start from, not a blank one. */
+export const BROWSER_START_URL = "https://www.google.com/";
 // The native press resolver supplies the virtual key codes and Enter/Tab text
 // that its raw input_keyboard relay omits. Keep unknown keys literal.
 const DISCRETE_KEYS = new Set(["Backspace", "Enter", "Tab", "Escape", "Delete", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
-// The panel has no take-control button: interacting takes control, and an
+// Interacting (or Take control) takes control, and an
 // interrupted action is recovered from the panel's menu.
 const RESTART_NEEDED = "A browser action was interrupted. Choose Restart browser… in the browser menu before continuing.";
 
@@ -165,7 +168,7 @@ export function parseBrowserLiveAction(value: unknown): Action {
   if (body.type === "ack" && integer(body.seq, 1, Number.MAX_SAFE_INTEGER)) return { type: "ack", seq: body.seq };
   if (body.type === "back" || body.type === "forward" || body.type === "reload") return { type: "command", args: [body.type] };
   if (body.type === "navigate" || body.type === "tab-new") {
-    if (body.type === "tab-new" && body.url === undefined) return { type: "command", args: ["tab", "new"] };
+    if (body.type === "tab-new" && body.url === undefined) return { type: "command", args: ["tab", "new", BROWSER_START_URL] };
     // eslint-disable-next-line no-control-regex -- Reject control characters before URL parsing normalizes them.
     if (!text(body.url, 8192) || !body.url || /[\u0000-\u0020\u007f\\]/u.test(body.url)) throw invalid();
     let url: URL;
@@ -402,13 +405,18 @@ export class BrowserLive {
       if (status.connected !== true) throw new BrowserOfflineError();
       return port;
     }
-    // `open` without a URL is an idempotent launch, never navigation away from the bot's page.
-    if (status.connected !== true) await this.command(viewer, ["open"]);
+    // A browser that was already running, which the probe did not launch,
+    // was sized when it launched: sizing it again only delays the view (one
+    // more engine command, about a second, on every Take control).
+    const alreadyRunning = status.connected === true && object(status.lifecycle)?.launched === false;
+    // Only a browser that is not running yet is opened, so this never
+    // navigates away from the bot's page: it launches on the start page.
+    if (status.connected !== true) await this.command(viewer, ["open", BROWSER_START_URL]);
     // The status probe itself may have launched the browser. Give its page the
     // standard size, as the bot's runtime does, so the page, the frames and
     // the clicks share one geometry; at that size this changes nothing. Best
     // effort and brief: a failure or a busy session keeps the current size.
-    if (ownsBrowserViewport(viewer.spec.env ?? {})) {
+    if (!alreadyRunning && ownsBrowserViewport(viewer.spec.env ?? {})) {
       await this.command(viewer, [...BROWSER_VIEWPORT_ARGS], VIEWPORT_TIMEOUT_MS).catch(() => undefined);
     }
     return port;

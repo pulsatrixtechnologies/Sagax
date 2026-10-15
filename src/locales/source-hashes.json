@@ -11585,7 +11585,11 @@
       "usage.plan.windowWeek": "e78041ab51a818a22e2cfea6c15fe72e9e20092246f496f1670f7be3e42177a6",
       "usage.plan.windowFiveHour": "a055a76a7f02db364c1cba5a8f956bf1fea2fffbfcc05a5365de5891c0376182",
       "usage.plan.renewsShort": "31accbe72c83190097bd0d180cb174e48c9dd71cebed7af66765e69d0569705c",
-      "usage.personal.unavailable": "c514b3d249d8a138e6dd88ae0ad6c9cad17da185f173bd31fd5bc9589fbc4d30"
+      "usage.personal.unavailable": "c514b3d249d8a138e6dd88ae0ad6c9cad17da185f173bd31fd5bc9589fbc4d30",
+      "browser.control.bot": "250b2c87bce44eb5987b1e38aee9a6c0997569083f3ebd03422401dd28d9153d",
+      "browser.control.giveBack": "72151bf8fc255c6d8d19bf0f18a8d32257f4416041c92578d4ccbda55586b568",
+      "browser.preview.notOpen": "5ef0be1731f6d7e105678ff7772d6c9ec40dbf26e0381a2a1f2cbeb08a7a7092",
+      "browser.preview.blank": "6e1038280ec61b6edfda611bda75fbde6c651b7bde5d97473098779aeceeffcc"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
