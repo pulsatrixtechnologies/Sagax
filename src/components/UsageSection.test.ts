@@ -1,6 +1,6 @@
 // Settings > Usage (2026-10-14): the signed-in person's own usage. Plan and
 // Cost on top, one folded breakdown by bot and model, nothing about other
-// people. Every figure is asked of GET /api/usage?mine=1.
+// people. Every figure is asked of GET /api/me/usage (2026-10-15: open to every member).
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +14,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
   useStore: () => ({ state: { instances: [], bots: [], config: {} }, dispatch: () => {} }),
 }));
 
-import { CostCard, loadPersonalUsage, type PersonalUsage } from "./UsageSection";
+import { CostCard, loadPersonalUsage, planUsageShown, type PersonalUsage } from "./UsageSection";
 import { PlanUsageView } from "./PlanUsage";
 
 const NOW = new Date("2026-10-14T15:00:00Z");
@@ -38,18 +38,27 @@ describe("what Settings > Usage asks the server", () => {
     await loadPersonalUsage(NOW, get as never);
     const paths = get.mock.calls.map(([path]) => path);
     expect(paths).toHaveLength(5);
-    for (const path of paths) expect(path).toContain("/api/usage?mine=1&");
-    expect(paths).toContain("/api/usage?mine=1&from=2026-10-01&to=2026-10-14&groupBy=day");
-    expect(paths).toContain("/api/usage?mine=1&from=2026-09-01&to=2026-09-14&groupBy=day");
-    expect(paths).toContain("/api/usage?mine=1&from=2026-09-15&to=2026-10-14&groupBy=day");
-    expect(paths).toContain("/api/usage?mine=1&from=2026-10-01&to=2026-10-14&groupBy=bot");
-    expect(paths).toContain("/api/usage?mine=1&from=2026-10-01&to=2026-10-14&groupBy=model");
+    for (const path of paths) expect(path).toContain("/api/me/usage?");
+    expect(paths).toContain("/api/me/usage?from=2026-10-01&to=2026-10-14&groupBy=day");
+    expect(paths).toContain("/api/me/usage?from=2026-09-01&to=2026-09-14&groupBy=day");
+    expect(paths).toContain("/api/me/usage?from=2026-09-15&to=2026-10-14&groupBy=day");
+    expect(paths).toContain("/api/me/usage?from=2026-10-01&to=2026-10-14&groupBy=bot");
+    expect(paths).toContain("/api/me/usage?from=2026-10-01&to=2026-10-14&groupBy=model");
     expect(paths.some((path) => path.includes("groupBy=user"))).toBe(false);
   });
 
   it("compares with the same days of a shorter last month", () => {
     expect(personalUsagePeriods(new Date("2026-03-31T12:00:00Z")).previous).toEqual({ from: "2026-02-01", to: "2026-02-28" });
-    expect(usageQuery({ from: "2026-10-01", to: "2026-10-14" }, "bot")).toBe("/api/usage?mine=1&from=2026-10-01&to=2026-10-14&groupBy=bot");
+    expect(usageQuery({ from: "2026-10-01", to: "2026-10-14" }, "bot")).toBe("/api/me/usage?from=2026-10-01&to=2026-10-14&groupBy=bot");
+  });
+});
+
+describe("the plan card", () => {
+  it("shows a member's own plan on an organization server, and the solo server's to its admins", () => {
+    expect(planUsageShown({ organization: true, viewUsage: false })).toBe(true);
+    expect(planUsageShown({ organization: false, viewUsage: true })).toBe(true);
+    // a solo server's plan windows are an admin read
+    expect(planUsageShown({ organization: false, viewUsage: false })).toBe(false);
   });
 });
 

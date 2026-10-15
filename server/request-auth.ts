@@ -611,6 +611,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // A person's own engines: what their own turns run on, and their own
   // subscription sign-in (server/principal-engine-logins.ts).
   { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
+  // A person's own usage ledger (server/routes/usage.ts, 2026-10-15): the
+  // handler keeps the caller's own turns only, never another person's; the
+  // whole ledger (/api/usage) stays admin or usage.view.
+  { methods: ["GET"], path: /^\/api\/me\/usage$/ },
   // A person's own plan windows (5-hour, weekly) read from their own
   // subscription logins only (server/plan-usage.ts orgPlanAccounts). On a
   // solo server this path stays admin.

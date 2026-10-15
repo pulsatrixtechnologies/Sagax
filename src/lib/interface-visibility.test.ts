@@ -7,10 +7,11 @@ import {
 
 describe("simple visibility", () => {
   it("hides technical settings sections and keeps the ones a person needs", () => {
-    for (const id of ["experimental", "connections", "decisionModel", "engines", "computer", "usage", "mail", "activity", "backups", "workspaces", "people"] as const) {
+    for (const id of ["experimental", "connections", "decisionModel", "engines", "computer", "mail", "activity", "backups", "workspaces", "people"] as const) {
       expect(simpleHidesSettingsSection(id), id).toBe(true);
     }
-    for (const id of ["general", "appearance", "organization", "companion"] as const) {
+    // 2026-10-15: Usage is the person's own plan and cost, shown in Simple too
+    for (const id of ["general", "appearance", "organization", "companion", "usage"] as const) {
       expect(simpleHidesSettingsSection(id), id).toBe(false);
     }
   });

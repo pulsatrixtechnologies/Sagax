@@ -15,22 +15,22 @@ const SECTION_LABEL = {
   appearance: "settings.section.appearance",
   experimental: "settings.section.experimental",
   // Integrations, Connected apps and Decision model are in Models and voice
-  // (2026-10-14); Privacy, Memory and Email are cards of Notifications,
-  // Organization and People. A pointer names the page that shows them.
+  // (2026-10-14); Privacy and Memory are cards of Notifications and
+  // Organization. A pointer names the page that shows them.
   connections: "settings.section.modelsVoice",
   connectedApps: "settings.section.modelsVoice",
   decisionModel: "settings.section.modelsVoice",
   engines: "settings.section.modelsVoice",
-  // Pair devices, Activity and Email are hidden (2026-10-14): a pointer
-  // names the page an old link opens.
+  // Pair devices, Activity and Email are hidden (2026-10-14), People and
+  // Installations too (2026-10-15): a pointer names the page an old link opens.
   companion: "settings.section.general",
   computer: "settings.section.computer",
   usage: "settings.section.usage",
-  people: "settings.section.people",
-  mail: "settings.section.people",
+  people: "settings.section.general",
+  mail: "settings.section.general",
   activity: "settings.section.general",
   backups: "settings.section.backups",
-  workspaces: "settings.section.workspaces",
+  workspaces: "settings.section.general",
   privacy: "settings.section.notifications",
   notifications: "settings.section.notifications",
   memory: "settings.section.organization",
