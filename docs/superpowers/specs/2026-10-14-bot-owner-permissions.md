@@ -146,9 +146,12 @@ interface OwnerRule {
 
 - **Granularité** : l'outil plus une portée tirée des arguments, jamais
   « tout cet outil » par défaut. Clés de portée retenues (dans l'ordre,
-  4 au plus) : `resource` (sans l'id final : `service/tickets/123` devient
-  `service/tickets`), `operation` / `method`, `repo`, `server`, `domain`,
-  hôte d'une `url`, `board`, `channel`, `to`. Une portée vide veut dire
+  4 au plus) : `api`, `resource` (sans l'id final : `service/tickets/123`
+  devient `service/tickets`), `operation` / `method`, `verb` / `action`,
+  `repo`, `server`, `domain`, hôte d'une `url`, `board`, `channel`, `to`.
+  `api`, `resource` et `verb` sont les trois parties de la clé par ressource
+  du registre MCP de la PR #508 (`cw:ticket.update`) : une règle faite sur
+  une carte `api_write` de la passerelle vise la même clé (section 11). Une portée vide veut dire
   « n'importe quelle cible » ; le propriétaire peut l'élargir en éditant.
 - **Appariement** : même propriétaire, même bot (ou `botId: null`), même
   outil, et chaque clé de la portée de la règle égale (sans casse) à celle
@@ -202,7 +205,10 @@ interface OwnerRule {
 ## 8. Sécurité
 
 - Un jeton interne de tour ne crée, ne modifie ni ne supprime une règle et
-  ne change pas le mode : les routes exigent la personne propriétaire.
+  ne change pas le mode : les routes exigent la personne propriétaire. La
+  copie de session d'un `act` (« Bot act », `isBotActSession`) agit comme la
+  personne ailleurs, mais n'est jamais la personne ici (`ruleManager`) : un
+  bot ne sauve pas de règle en répondant à sa propre carte.
 - Bypass : opt-in explicite, avertissement, permission `bots.fullAccess` et
   politique d'org ; chaque approbation est journalisée ; retombe à
   Approbation au changement de propriétaire.
@@ -233,3 +239,39 @@ personnes, destructif exige une règle explicite, mode auto, mode bypass
 journalisé, rien ne contourne la route admin ni les holds, admin sollicité
 seulement au delà des droits, mode qui retombe au changement de
 propriétaire.
+
+## 11. Recouvrement avec la PR #508 (registre MCP `resource:verb`)
+
+La PR #508 (`feat/mcp-permissions-coverage`, ouverte le 2026-10-14, mode
+shadow) ajoute `server/mcp-permissions.ts` : une permission par outil
+Sagax (`memory:save`, `api:write`), des rôles (viewer, member, operator,
+admin, service), des portées self/team/org, une liste de refus
+`SAGAX_MCP_DENY` par clé de ressource (`cw:ticket.*`) et un audit par appel.
+
+Ce ne sont pas deux systèmes concurrents, ce sont deux couches dans l'ordre :
+
+1. **#508, garde de rôle** (qui peut appeler quel outil, à quelle portée) :
+   décide avant tout. Un refus en mode enforce n'atteint jamais une carte.
+2. **Ce chantier, approbation** (ce qui passe la garde : qui répond à la
+   carte, et les règles et le mode du propriétaire qui la répondent
+   d'avance).
+
+Alignements faits ici : la portée d'une règle lit `api`, `resource` et
+`verb` / `action` comme `resourceKeyForCall`, donc une règle « Toujours »
+et une clé de refus de #508 nomment la même cible. À faire après la fusion
+de #508 (pas dans cette branche, pour ne pas dépendre d'une PR ouverte) :
+
+- calculer la cible d'une règle avec `resourceKeyForCall` quand l'outil est
+  `api_query` / `api_write` / `api_action`, et afficher la clé dans la page
+  des règles ;
+- qu'un refus `SAGAX_MCP_DENY` (organisation) gagne sur une règle
+  « Toujours permettre » de personne, comme le refus gagne déjà ici ;
+- l'audit : #508 écrit `mcp.call` / `mcp.deny` (catégorie `security`), ce
+  chantier écrit `approval.rule.*` et `bot.permission-mode` (catégorie
+  `approval`) et les lignes `decisions` (`owner-rule`, `owner-auto`,
+  `owner-bypass`, `owner-rule-deny`) : garder les deux, sans fusionner les
+  catégories ;
+- la permission `approvals:answer` (outil `answer_approval` de #508, route
+  `/api/threads/:id/respond`) passe par les mêmes contrôles que l'humain :
+  un jeton de tour n'est jamais le propriétaire (`ruleManager`), donc un bot
+  ne peut ni créer de règle ni changer son mode.

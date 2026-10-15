@@ -72,8 +72,13 @@ export function normalizeRuleTool(tool: string): string {
   return parsed.server ? `${parsed.server}__${parsed.name}`.toLowerCase() : trimmed;
 }
 
-/** Argument keys that name WHERE a call acts, in the order they are kept. */
-const TARGET_KEYS = ["resource", "resource_prefix", "entity", "operation", "method", "repo", "repository", "server", "domain", "url", "board", "channel", "to"] as const;
+/** Argument keys that name WHERE a call acts, in the order they are kept.
+ * `api`, `resource` and `verb` (or `action`) are the three parts of the
+ * per-resource key of the MCP permission registry (`cw:ticket.update`,
+ * PR #508, server/mcp-permissions.ts resourceKeyForCall): a rule made on a
+ * gateway `api_write` card names the same api, resource and verb, so an
+ * Always allow for ticket updates never covers ticket creates. */
+const TARGET_KEYS = ["api", "resource", "resource_prefix", "entity", "operation", "method", "verb", "action", "repo", "repository", "server", "domain", "url", "board", "channel", "to"] as const;
 const MAX_SCOPE_KEYS = 4;
 const MAX_SCOPE_VALUE = 120;
 

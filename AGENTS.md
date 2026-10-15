@@ -543,7 +543,12 @@ rules, covered by `server/owner-approval.test.ts`,
   starts on Approval. No mode or rule answers an admin card, a safety hold,
   a sandbox widening, a question, a guest's turn or a teammate tool.
 - Routes live in `server/routes/owner-approvals.ts`, the owner's only;
-  `act` cannot reach their writes (`tool-policy.generated.ts`).
+  `act` cannot reach their writes (`tool-policy.generated.ts`), and a bot-act
+  session copy (`isBotActSession`) is never the rule manager, so a bot
+  cannot save a rule while answering a card through `act`.
+- Rule scopes read `api`, `resource` and `verb` / `action` like the MCP
+  permission registry's per-resource key (PR #508, `resourceKeyForCall`):
+  #508 is the role guard before the call, this is the approval after it.
 
 ## Server log on disk and expired approvals (2026-10-11)
 

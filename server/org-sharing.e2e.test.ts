@@ -779,6 +779,17 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       const schedule = await ask(CW, { resource: "schedule/entries", operation: "create", body: {} });
       expect(schedule.card).toBeNull();
       expect(schedule.answer()?.behavior).toBe("allow");
+      // an edited rule: only its owner edits it; Ask every time keeps a card even in auto
+      const ruleIdEarly = mine[0]!.id as string;
+      expect((await api("PATCH", `/api/approval-rules/${ruleIdEarly}`, alice, { behavior: "ask" })).status).toBe(404);
+      const toAsk = await api("PATCH", `/api/approval-rules/${ruleIdEarly}`, erin, { behavior: "ask" });
+      expect(toAsk.status, toAsk.text).toBe(200);
+      expect(toAsk.body.rule).toMatchObject({ behavior: "ask", scope: { resource: "service/tickets", operation: "update" } });
+      const askRule = await ask(CW, { resource: "service/tickets/80", operation: "update", body: {} });
+      expect(askRule.card, "an Ask every time rule still asks in auto").toBeTruthy();
+      expect((await respond(erin, askRule.id)).status).toBe(200);
+      await waitFor(async () => askRule.answer()?.behavior === "allow");
+      expect((await api("PATCH", `/api/approval-rules/${ruleIdEarly}`, erin, { behavior: "allow" })).status).toBe(200);
       // auto still asks for a destructive call no rule covers
       const bulk = await ask(CW, { resource: "service/tickets", operation: "update", ids: [1, 2, 3], body: { status: "Closed" } });
       expect(bulk.card?.ownerRule?.destructive).toBe("bulk");
@@ -788,6 +799,13 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       const unconfirmed = await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass" });
       expect(unconfirmed.status).toBe(400);
       expect(unconfirmed.body.code).toBe("bypass_confirmation_required");
+      // and the organization's Full access policy: off, Bypass stays off
+      expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: false })).status).toBe(200);
+      const policyOff = await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass", confirmBypass: true });
+      expect(policyOff.status).toBe(403);
+      expect(policyOff.body.code).toBe("bypass_not_allowed");
+      expect((await api("GET", `/api/bots/${cora.id}/permission-mode`, erin)).body.canBypass).toBe(false);
+      expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: true })).status).toBe(200);
       expect((await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass", confirmBypass: true })).status).toBe(200);
       const project = await ask(CW, { resource: "project/projects", operation: "update", body: {} });
       expect(project.card).toBeNull();

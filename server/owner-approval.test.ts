@@ -40,6 +40,17 @@ describe("rule granularity: the tool and its target, not the whole tool", () => 
     expect(ruleScopeFor(JSON.stringify({ url: "https://github.com/acme/repo/pull/3" }))).toEqual({ host: "github.com" });
     expect(ruleScopeFor("not json")).toEqual({});
   });
+  it("reads a gateway api_write call as api, resource and verb, like the MCP permission key (#508)", () => {
+    const update = JSON.stringify({ api: "CW", resource: "ticket", verb: "update", body: {} });
+    const create = JSON.stringify({ api: "cw", resource: "ticket", verb: "create", body: {} });
+    expect(ruleScopeFor(update)).toEqual({ api: "cw", resource: "ticket", verb: "update" });
+    expect(ruleScopeFor(JSON.stringify({ api: "cw", resource: "ticket", action: "close" }))).toEqual({ api: "cw", resource: "ticket", action: "close" });
+    const tool = "mcp__perspicax_gox__api_write";
+    const candidate = ruleCandidateFor({ tool, input: update });
+    const saved: OwnerRule = { id: "g1", ownerId: ALICE, botId: "bot-a", tool: candidate.tool, scope: candidate.scope, behavior: "allow", description: candidate.description, createdAt: 1, updatedAt: 1 };
+    expect(matchOwnerRule([saved], { ownerId: ALICE, botId: "bot-a", tool, input: update })?.id).toBe("g1");
+    expect(matchOwnerRule([saved], { ownerId: ALICE, botId: "bot-a", tool, input: create })).toBeUndefined();
+  });
   it("treats mcp__srv__tool and srv__tool as one tool", () => {
     expect(normalizeRuleTool(CW_WRITE)).toBe(normalizeRuleTool("perspicax_gox__cw_psa__write"));
     expect(normalizeRuleTool("WebSearch")).toBe("WebSearch");

@@ -748,7 +748,7 @@ import {
   serializeSessionCookie,
   sessionCookieName,
 } from "./request-auth.ts";
-import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
+import { cookieMaxAgeSeconds, formatPairingCode, isBotActSession, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
@@ -24187,6 +24187,9 @@ function effectivePermissionMode(bot: BotRecord, ownerId: string): BotPermission
  * a signed-in person or this computer's own operator, never a local
  * service or a turn's token. */
 function ruleManager(auth: RequestAuth): string | null {
+  // a bot's act copy of its person's session is the bot, not the person:
+  // it never saves, edits or removes a rule, nor changes a mode
+  if (auth.kind === "session" && isBotActSession(auth.session)) return null;
   const id = approvalCallerUserId(auth);
   return id ? id : null;
 }
