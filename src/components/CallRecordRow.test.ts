@@ -31,7 +31,7 @@ const transcript: Message[] = [
 const draw = (message: Message, messages: Message[] = transcript, { busy = false, hasMore = false } = {}) =>
   renderToStaticMarkup(createElement(CallRecordRow, { message, transcript: [...messages, message], botName: "Pepper", busy, hasMore }));
 /** What each line reads as: its markup's text. The glyphs carry none. */
-const lineTexts = (markup: string) => [...markup.matchAll(/<li\b[^>]*>(.*?)<\/li>/g)].map(([, inner]) => inner!.replace(/<[^>]+>/g, ""));
+const lineTexts = (markup: string) => [...markup.matchAll(/<li\b[^>]*>(.*?)<\/li>/g)].map(([, inner]) => inner!.split(/<[^>]*>/).join(""));
 
 afterEach(() => {
   setLocale("en");
