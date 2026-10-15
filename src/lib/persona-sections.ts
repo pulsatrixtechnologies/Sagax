@@ -9,7 +9,7 @@
 // the bot's identity, and its other pages (Appearance, Shared with, What it
 // does) are listed under it. Permissions (with the Perspicax
 // profiles under it), Voice, Usage and Changes are entries of their own
-// (JC 2026-10-15).
+// (JC 2026-10-15). Memory and its files are one page, the Bot folder.
 import type { BotSettingsSection } from "@/state/store";
 
 /** Every page the editor can show, in the order they appear. */
@@ -22,7 +22,6 @@ export const PERSONA_CATEGORIES = [
   "soul",
   "rules",
   "skills",
-  "memory",
   "files",
   "model",
   "worksOn",
@@ -41,7 +40,7 @@ export type PersonaCategory = (typeof PERSONA_CATEGORIES)[number];
 export const PERSONA_GROUPS = [
   { id: "profile", sections: ["overview", "appearance", "sharing", "visibility", "summary"] },
   { id: "instructions", sections: ["soul", "rules", "skills"] },
-  { id: "memoryFiles", sections: ["memory", "files"] },
+  { id: "memoryFiles", sections: ["files"] },
   { id: "modelTools", sections: ["model", "worksOn", "access", "slack"] },
   { id: "permissions", sections: ["permissions", "perspicax"] },
   { id: "voice", sections: ["voice"] },
@@ -53,6 +52,12 @@ export type PersonaGroup = (typeof PERSONA_GROUPS)[number]["id"];
 /** Sections that stay in the bot panel (the Details tab). */
 const PANEL_SECTIONS: ReadonlySet<BotSettingsSection> = new Set(["details", "routines"]);
 
+/** Sections shown inside another page: the memory is managed in the Bot
+ * folder (JC 2026-10-15). */
+const FOLDED_INTO: Partial<Record<BotSettingsSection, PersonaCategory>> = {
+  memory: "files",
+};
+
 export function isPersonaCategory(id: BotSettingsSection): id is PersonaCategory {
   return (PERSONA_CATEGORIES as readonly string[]).includes(id);
 }
@@ -60,7 +65,7 @@ export function isPersonaCategory(id: BotSettingsSection): id is PersonaCategory
 /** The persona page that shows `section`, or null when the bot panel does. */
 export function personaCategoryForSection(section: BotSettingsSection): PersonaCategory | null {
   if (PANEL_SECTIONS.has(section)) return null;
-  return isPersonaCategory(section) ? section : "overview";
+  return isPersonaCategory(section) ? section : FOLDED_INTO[section] ?? "overview";
 }
 
 /** The group whose pages include `section`. */

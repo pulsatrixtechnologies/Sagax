@@ -10,16 +10,22 @@
 // SOUL.md lives on the bot record and opens the Soul category. Documents in
 // docs/ can be created, uploaded (.md), renamed and deleted here.
 //
+// The Bot folder is also the memory's one interface (JC 2026-10-15): for a
+// viewer who may edit Memory, "Use memory" heads the page, "New" makes a
+// document or a memory topic (a file in memory/), memory files can be
+// deleted from their row, and the memory's options (tidying, the change log
+// with undo) are in the folder's "..." menu (MemoryFolderOptions).
+//
 // Simple mode keeps the list and the badges, and leaves out their details
 // (budgets, dates, last use). Folders start collapsed; a chevron opens
 // them like a file manager.
-import { ChevronRight, Download, File as FileIcon, FilePlus, Folder, Pencil, Trash2, Upload } from "lucide-react";
+import { ChevronRight, Download, File as FileIcon, FilePlus, Folder, MoreHorizontal, Pencil, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useAdvancedMode } from "@/lib/interface-mode";
-import { fetchMemoryDoc, formatBytes, relativeTime, saveMemoryDoc } from "@/lib/memory";
+import { deleteMemoryDoc, fetchMemoryDoc, formatBytes, relativeTime, saveMemoryDoc, topicFileName } from "@/lib/memory";
 import {
   DOCS_DIR,
   deleteWorkspaceDoc,
@@ -44,6 +50,8 @@ import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import { HelpTip } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 import { RulesCounter } from "./RulesSection";
+import { MemoryToggleCard, topicTemplate } from "./MemorySection";
+import { MemoryFolderOptions } from "./MemoryFolderOptions";
 
 const buttonCls = "rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50";
 const iconButtonCls = "rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50";
@@ -134,11 +142,14 @@ export function WorkspaceFilesSection({
   initial,
   initialExpanded,
   memoryEditable = false,
+  memory,
 }: {
   bot: Bot;
   active: boolean;
   /** the viewer may edit Memory too (MEMORY.md, memory/ in place) */
   memoryEditable?: boolean;
+  /** "Use memory" at the head of the folder, for a viewer who may change it */
+  memory?: { enabled: boolean; busy: boolean; onToggle: (enabled: boolean) => void };
   onOpenSection: (target: BotSettingsSection) => void;
   /** a listing to start from (tests); otherwise fetched when active */
   initial?: WorkspaceListing;
@@ -151,6 +162,8 @@ export function WorkspaceFilesSection({
   const [open, setOpen] = useState<Open | null>(null);
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState<"doc" | "topic" | null>(null);
+  const [showOptions, setShowOptions] = useState(false);
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
   const [conflict, setConflict] = useState<{ current: string; currentHash: string } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(initialExpanded));
@@ -264,6 +277,36 @@ export function WorkspaceFilesSection({
       setOpen({ path, text: result.doc.text, hash: result.doc.hash, dirty: false, readOnly: false });
     });
 
+  /** A memory topic: a file in memory/ with the header recall reads. */
+  const createTopic = (name: string) =>
+    run(async () => {
+      const file = topicFileName(name);
+      if (!file) throw new Error(t("botPanel.memory.badTopic"));
+      const path = `memory/${file}`;
+      const result = await saveMemoryDoc(bot.id, path, topicTemplate(file), EMPTY_HASH);
+      if (!result.ok) throw new Error(t("persona.files.exists", { path }));
+      setNewName("");
+      setCreating(null);
+      await reload();
+      reveal(path);
+      setOpen({ path, text: result.doc.text, hash: result.doc.hash, dirty: false, readOnly: false });
+    });
+
+  const create = () => {
+    if (!newName.trim()) return;
+    if (creating === "topic") void createTopic(newName);
+    else void createDoc(newName, `# ${newName.trim().replace(/\.md$/i, "")}\n`).then(() => setCreating(null));
+  };
+
+  const removeMemoryFile = (entry: WorkspaceEntry) => {
+    if (!window.confirm(t("botPanel.memory.confirmDelete", { name: entryName(entry.path) }))) return;
+    void run(async () => {
+      await deleteMemoryDoc(bot.id, entry.path);
+      if (open?.path === entry.path) setOpen(null);
+      await reload();
+    });
+  };
+
   const onUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -306,6 +349,7 @@ export function WorkspaceFilesSection({
 
   return (
     <div className="flex flex-col gap-3" data-workspace-files="">
+      {memory && <MemoryToggleCard enabled={memory.enabled} busy={memory.busy} onToggle={memory.onToggle} />}
       <div className="flex items-center gap-1.5 text-[13px] text-ink-secondary">
         <span>{t("persona.files.short")}</span>
         <HelpTip label={t("settings.moreAbout", { title: t("botSettings.nav.files") })}>
@@ -315,29 +359,16 @@ export function WorkspaceFilesSection({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          value={newName}
-          onChange={(event) => setNewName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && newName.trim()) {
-              event.preventDefault();
-              void createDoc(newName, `# ${newName.trim().replace(/\.md$/i, "")}\n`);
-            }
-          }}
-          placeholder={t("persona.files.newPlaceholder")}
-          aria-label={t("persona.files.newLabel")}
-          className={cn(inputCls, "max-w-[240px]")}
-          data-files-new-name=""
-        />
         <button
           type="button"
           className={cn(buttonCls, "inline-flex items-center gap-1.5")}
-          disabled={busy || !newName.trim()}
-          onClick={() => void createDoc(newName, `# ${newName.trim().replace(/\.md$/i, "")}\n`)}
-          data-files-new=""
+          disabled={busy}
+          aria-expanded={creating !== null}
+          onClick={() => setCreating(creating === null ? "doc" : null)}
+          data-files-new-menu=""
         >
           <FilePlus size={14} aria-hidden="true" />
-          {t("persona.files.new")}
+          {t("persona.files.newMenu")}
         </button>
         <button
           type="button"
@@ -349,8 +380,67 @@ export function WorkspaceFilesSection({
           <Upload size={14} aria-hidden="true" />
           {t("persona.files.upload")}
         </button>
+        {memoryEditable && (
+          <button
+            type="button"
+            className={cn(iconButtonCls, "ml-auto p-1.5")}
+            aria-label={t("persona.files.options")}
+            title={t("persona.files.options")}
+            aria-expanded={showOptions}
+            onClick={() => setShowOptions((shown) => !shown)}
+            data-files-options=""
+          >
+            <MoreHorizontal size={16} aria-hidden="true" />
+          </button>
+        )}
         <input ref={uploadRef} type="file" accept=".md,.markdown,text/markdown" hidden onChange={onUpload} />
       </div>
+
+      {creating && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-hairline/40 p-2" data-files-create={creating}>
+          {memoryEditable && (
+            <div role="radiogroup" aria-label={t("persona.files.newKindLabel")} className="flex gap-0.5 rounded-lg bg-control p-0.5">
+              {(["doc", "topic"] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  role="radio"
+                  aria-checked={creating === kind}
+                  onClick={() => setCreating(kind)}
+                  data-files-kind={kind}
+                  className={cn("rounded-md px-2.5 py-1 text-[12.5px]", creating === kind ? "bg-selected font-medium text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}
+                >
+                  {t(kind === "doc" ? "persona.files.newKind.document" : "persona.files.newKind.topic")}
+                </button>
+              ))}
+            </div>
+          )}
+          <input
+            autoFocus
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && newName.trim()) {
+                event.preventDefault();
+                create();
+              }
+              if (event.key === "Escape") setCreating(null);
+            }}
+            placeholder={t(creating === "topic" ? "botPanel.memory.topicPlaceholder" : "persona.files.newPlaceholder")}
+            aria-label={t(creating === "topic" ? "botPanel.memory.topicAria" : "persona.files.newLabel")}
+            className={cn(inputCls, "min-w-0 max-w-[240px] flex-1")}
+            data-files-new-name=""
+          />
+          <button type="button" className={buttonCls} disabled={busy || !newName.trim()} onClick={create} data-files-new="">
+            {t("persona.files.create")}
+          </button>
+          <button type="button" className="rounded-md px-2 py-1 text-[12.5px] text-ink-secondary hover:bg-control hover:text-ink" onClick={() => setCreating(null)}>
+            {t("common.cancel")}
+          </button>
+        </div>
+      )}
+
+      {memoryEditable && <MemoryFolderOptions bot={bot} active={active} showOptions={showOptions} onChanged={() => void reload()} />}
 
       {error && <p role="alert" className="text-[12.5px] text-danger">{error}</p>}
       {listing === null && !error && <p className="text-[12.5px] text-ink-secondary">{t("persona.files.loading")}</p>}
@@ -420,6 +510,11 @@ export function WorkspaceFilesSection({
                       <Trash2 size={13} aria-hidden="true" />
                     </button>
                   </>
+                )}
+                {memoryEditable && entry.kind === "file" && entry.path.startsWith("memory/") && (
+                  <button type="button" className={iconButtonCls} disabled={busy} aria-label={t("botPanel.memory.delete", { name })} onClick={() => removeMemoryFile(entry)} data-file-delete={entry.path}>
+                    <Trash2 size={13} aria-hidden="true" />
+                  </button>
                 )}
                 {entry.kind === "file" && !entry.virtual && (
                   <button type="button" className={iconButtonCls} disabled={busy} aria-label={t("persona.files.download", { name })} onClick={() => void run(() => downloadEntry(bot.id, entry.path))}>

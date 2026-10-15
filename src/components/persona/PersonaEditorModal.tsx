@@ -10,7 +10,7 @@
 // the bot's "..." menu in the bot panel, and on Appearance from a click on
 // the bot's avatar (store action openPersonaEditor).
 import { useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Brain, Coins, Cpu, History, LayoutDashboard, Lock, type LucideIcon, Mic, ScrollText, ShieldCheck, X } from "lucide-react";
+import { Coins, FolderTree, Cpu, History, LayoutDashboard, Lock, type LucideIcon, Mic, ScrollText, ShieldCheck, X } from "lucide-react";
 
 import { useStore, type Bot, type BotSettingsSection } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -23,7 +23,6 @@ import { useRetroSkin } from "../RetroChromeHost";
 import { shortcutLabel } from "../ShortcutHint";
 import { CATEGORY_MODAL, categoryNavItemClass, nextCategory, useCategoryModalKeyboard } from "../category-modal";
 import { BOT_SECTIONS } from "../bot-settings/sections";
-import { MemorySection } from "../bot-settings/MemorySection";
 import { RulesSection } from "../bot-settings/RulesSection";
 import { WorkspaceFilesSection } from "../bot-settings/WorkspaceFilesSection";
 import { botSectionLock, useBotSectionAvailability, useBotSectionContent } from "../bot-settings/useBotSectionContent";
@@ -46,7 +45,7 @@ const ENTRY = new Map(BOT_SECTIONS.map((entry) => [entry.id, entry]));
 const GROUP_ICON: Record<PersonaGroup, LucideIcon> = {
   profile: LayoutDashboard,
   instructions: ScrollText,
-  memoryFiles: Brain,
+  memoryFiles: FolderTree,
   modelTools: Cpu,
   permissions: ShieldCheck,
   voice: Mic,
@@ -71,7 +70,7 @@ export function personaGroupLabel(id: PersonaGroup): string {
 
 /** Sections that keep an unsaved draft (their own Save button): mounted on
  * every page, shown only on their own. */
-const KEEP_MOUNTED: ReadonlySet<PersonaCategory> = new Set(["memory", "rules", "files"]);
+const KEEP_MOUNTED: ReadonlySet<PersonaCategory> = new Set(["rules", "files"]);
 
 function Note({ children, icon = true }: { children: ReactNode; icon?: boolean }) {
   return (
@@ -207,20 +206,20 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
     return renderSectionBody(id);
   };
 
-  // Memory, Rules and Files have an explicit Save button: they stay mounted
-  // on every page so an unsaved draft survives a look at another page.
+  // Rules and the Bot folder have an explicit Save button: they stay
+  // mounted on every page so an unsaved draft survives a look at another
+  // page. The Bot folder is also where the memory is managed: "Use memory"
+  // heads it for a viewer who may change it.
   const kept = (id: PersonaCategory, onPage: boolean): ReactNode => {
-    if (id === "memory") {
-      if (!memoryAllowed || lockOf("memory") !== null) return null;
-      return <MemorySection bot={bot} active={onPage} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />;
-    }
     if (lockOf(id) !== null) return null;
     if (id === "rules") return <RulesSection bot={bot} active={onPage} />;
+    const memoryEditable = memoryAllowed && lockOf("memory") === null;
     return (
       <WorkspaceFilesSection
         bot={bot}
         active={onPage}
-        memoryEditable={memoryAllowed && lockOf("memory") === null}
+        memoryEditable={memoryEditable}
+        memory={memoryEditable ? { enabled: bot.memoryEnabled !== false, busy: Boolean(bot.busy), onToggle: (enabled) => derived.patch({ memoryEnabled: enabled }) } : undefined}
         onOpenSection={goTo}
       />
     );
@@ -336,7 +335,7 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
                 const onPage = id === current;
                 const keep = KEEP_MOUNTED.has(id);
                 if (!onPage && !keep) return null;
-                const content = keep && !unavailable(id) && lockOf(id) === null && !(id === "memory" && !memoryAllowed)
+                const content = keep && !unavailable(id) && lockOf(id) === null
                   ? kept(id, onPage)
                   : onPage ? body(id) : null;
                 if (!onPage && content === null) return null;

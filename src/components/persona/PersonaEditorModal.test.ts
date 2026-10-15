@@ -112,7 +112,7 @@ describe("persona editor shell", () => {
     expect(html).toContain("w-[198px]");
     expect(groupsOf(html)).toEqual(PERSONA_GROUPS.map((group) => group.id));
     expect(groupsOf(html)).toEqual(ALL_GROUPS);
-    for (const label of ["Profile", "Instructions", "Memory and files", "Model and tools", "Permissions", "Voice", "Usage", "Changes"]) {
+    for (const label of ["Profile", "Instructions", "Bot folder", "Model and tools", "Permissions", "Voice", "Usage", "Changes"]) {
       expect(html).toContain(`>${label}</span>`);
     }
     expect(html).not.toContain("data-persona-search");
@@ -124,7 +124,7 @@ describe("persona editor shell", () => {
   it("names the groups and pages in French", () => {
     setLocale("fr");
     const html = render("overview");
-    for (const label of ["Profil", "Instructions", "Mémoire et fichiers", "Modèle et outils", "Permissions", "Voix", "Utilisation", "Changements"]) {
+    for (const label of ["Profil", "Instructions", "Dossier du bot", "Modèle et outils", "Permissions", "Voix", "Utilisation", "Changements"]) {
       expect(html).toContain(`>${label}</span>`);
     }
     for (const label of ["Identité", "Apparence", "Partagé avec", "Ce qu&#x27;il fait"]) expect(html).toContain(`>${label}</span>`);
@@ -166,7 +166,6 @@ describe("persona editor pages", () => {
     ["soul", "instructions", ["soul"]],
     ["rules", "instructions", ["rules"]],
     ["skills", "instructions", ["skills"]],
-    ["memory", "memoryFiles", ["memory"]],
     ["files", "memoryFiles", ["files"]],
     ["model", "modelTools", ["model"]],
     ["worksOn", "modelTools", ["worksOn"]],
@@ -195,7 +194,9 @@ describe("persona editor pages", () => {
   it("lists the pages of the open group only, under it", () => {
     expect(subPagesOf(render("overview"))).toEqual(["overview", "appearance", "sharing", "summary"]);
     expect(subPagesOf(render("rules"))).toEqual(["soul", "rules", "skills"]);
-    expect(subPagesOf(render("memory"))).toEqual(["memory", "files"]);
+    // the memory is managed in the Bot folder: one page, no list
+    expect(subPagesOf(render("files"))).toEqual([]);
+    expect(render("memory")).toContain('data-persona-current="files"');
     expect(subPagesOf(render("model"))).toEqual(["model", "worksOn", "access"]);
     expect(subPagesOf(render("perspicax"))).toEqual(["permissions", "perspicax"]);
     // groups of one page have no list
@@ -253,7 +254,7 @@ describe("persona editor pages", () => {
     expect(render("sharing")).toContain('data-persona-current="visibility"');
   });
 
-  for (const category of ["memory", "rules", "files"]) {
+  for (const category of ["rules", "files"]) {
     it(`${category} stays mounted on every page and shows only on its own`, () => {
       const own = render(category as BotSettingsSection);
       expect(pageHtml(own, category).hidden).toBe(false);
@@ -301,9 +302,11 @@ describe("persona editor for an organization member", () => {
     expect(shownBodies(render("soul", state), "soul")).toEqual(["soul"]);
     expect(shownBodies(render("rules", state), "rules")).toEqual(["rules"]);
     expect(shownBodies(render("files", state), "files")).toEqual(["files"]);
-    const memory = pageHtml(render("memory", state), "memory").html;
-    expect(memory).not.toContain('data-section-body="memory"');
-    expect(memory).toContain("Only this bot&#x27;s owner or an admin can change this.");
+    // Memory is managed in the Bot folder; "Use memory" stays an admin's
+    // (the folder gets no memory controls then)
+    const memory = render("memory", state);
+    expect(memory).toContain('data-persona-current="files"');
+    expect(shownBodies(memory, "files")).toEqual(["files"]);
   });
 
   it("shows a bot they do not own locked, with the reason, never hidden", () => {

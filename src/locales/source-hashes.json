@@ -11559,7 +11559,13 @@
       "botPanel.history.restoreVersionBody": "607ea791caae00f1490dfc2620f07745e89938b8073b7ef2a91bca82f972468e",
       "botPanel.history.restoreError": "a19fcd75e7c2dbaaa83f93ff0da596a7fa8baebba5028f3005525a42010b2aa3",
       "botPanel.history.notRestorable": "8b3f8e3deb18132490b5f9fe0cbb9eafe63f1bee215be895046572982a86f26d",
-      "persona.page.identity": "999f23fcd7bec7075e54bb5dea0d9c548bfe7261f95b911ed8e23d2f4188724f"
+      "persona.page.identity": "999f23fcd7bec7075e54bb5dea0d9c548bfe7261f95b911ed8e23d2f4188724f",
+      "persona.files.newMenu": "18fdd549b2ed367ac0c74cbec1214644728515b30edbcb78e7d322757a7c8359",
+      "persona.files.newKindLabel": "d59327dceb251c3031dac825ccb89880a6fef99ed0238a1186406e1600692b3f",
+      "persona.files.newKind.document": "d6bd8c0aeee80fedb2dbf05c973100c3db04be90c072a88572533f2684131a36",
+      "persona.files.newKind.topic": "f44f67cde5703e03e89cc0c664cc399570b336c48ab73bc7bf4c3cc8f606cb3b",
+      "persona.files.create": "4759498ac2a719c619e2c8cf8ee60af2d2407425e95d308eb208425b2a6d427a",
+      "persona.files.options": "e37afba745641c21dd29c40aa11a2259949d7539d2995dfa66f9ca586e69398d"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
