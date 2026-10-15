@@ -47,12 +47,37 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
     }
   };
   const key = (caller: AgentCaller) => `${caller.kind}:${caller.id}`;
+  const owners = new Map<string, string>();
+  const archived: string[] = [];
+  const created: Array<{ name: string; idleHours?: number }> = [];
   const deps: AgentApiDeps = {
-    agents: (caller) => agents.filter((agent) => (options.reachable ? options.reachable(caller, agent) : true)),
-    async createAgent(_caller, input) {
-      const agent = { id: `bot-${++ids}`, name: input.name, description: input.description, status: "idle" as const };
+    agents: (caller) => agents.filter((agent) => !archived.includes(agent.id) && (options.reachable ? options.reachable(caller, agent) : true)),
+    async createAgent(caller, input) {
+      const agent = { id: `bot-${++ids}`, name: input.name, description: input.description, status: "idle" as const, temporary: true };
       agents.push(agent);
+      owners.set(agent.id, key(caller));
+      created.push({ name: input.name, ...(input.idleHours !== undefined ? { idleHours: input.idleHours } : {}) });
       return agent;
+    },
+    profile(caller, agentId) {
+      const agent = agents.find((candidate) => candidate.id === agentId)!;
+      const reads = caller.admin === true || owners.get(agentId) === key(caller) || !agent.temporary;
+      return {
+        title: `${agent.name} title`,
+        owner: owners.has(agentId) ? { principal_id: owners.get(agentId)!, name: "Owner" } : null,
+        profile: reads ? {
+          instructions: "## Persona\nA careful clerk.\n## Rules\nNever invent numbers.",
+          instructions_truncated: false, persona: "A careful clerk.", rules: "Never invent numbers.", voice: null, anti_jobs: null,
+          headings: ["Persona", "Rules"], voice_settings: { voice: null, speak_replies: false, voice_notes: true },
+        } : null,
+        temporary: agent.temporary ? { created_at: clock, idle_hours: 24, expires_at: clock + 86_400_000, pinned: false } : null,
+        profile_url: `https://perspicax.example.test/console/sagax/bots/${agentId}`,
+      };
+    },
+    async deleteAgent(caller, agentId) {
+      if (caller.admin !== true && owners.get(agentId) !== key(caller)) return { status: 403, code: "forbidden_owner", message: "Only this agent's owner or an organization admin can delete it." };
+      archived.push(agentId);
+      return { archived_at: clock, purge_at: clock + 30 * 86_400_000 };
     },
     threads: (caller, agentId) => [...threads].filter(([, t]) => t.agentId === agentId && t.owner === key(caller)).map(([threadId, t]) => ({ threadId, title: t.title, hidden: t.hidden })),
     messages: (threadId) => messages.get(threadId) ?? [],
@@ -88,15 +113,15 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
       tick();
     },
   };
-  return { deps, api: createAgentApi(deps), agents, threads, messages, state, audits, notified, interrupted, turnStateCalls, posted, add, advance: (ms: number) => { clock += ms; }, settle: async () => { for (let i = 0; i < 50; i++) await deps.sleep!(400); } };
+  return { deps, api: createAgentApi(deps), agents, owners, archived, created, threads, messages, state, audits, notified, interrupted, turnStateCalls, posted, add, advance: (ms: number) => { clock += ms; }, settle: async () => { for (let i = 0; i < 50; i++) await deps.sleep!(400); } };
 }
 
 const bot = (id: string, scopes: AgentScope[] = ALL): AgentCaller => ({ kind: "bot", id, name: id, scopes: new Set(scopes), via: "agents-mcp", sourceThreadId: `src-${id}` });
 const person = (id: string, scopes: AgentScope[] = ALL): AgentCaller => ({ kind: "person", id, name: id, scopes: new Set(scopes), via: "perspicax-mcp" });
 
 describe("agent API policy", () => {
-  it("declares ten tools, each with a scope, an access level and a read-only flag", () => {
-    expect(AGENT_TOOL_NAMES).toHaveLength(10);
+  it("declares twelve tools, each with a scope, an access level and a read-only flag", () => {
+    expect(AGENT_TOOL_NAMES).toHaveLength(12);
     for (const name of AGENT_TOOL_NAMES) {
       const policy = AGENT_TOOL_POLICY[name];
       expect(policy.readOnly).toBe(policy.access === "read");
@@ -139,7 +164,7 @@ describe("agent API policy", () => {
 
   it("refuses unknown tools and unknown parameters", async () => {
     const w = world();
-    expect((await w.api.call(bot("x"), "delete_agent", {})).status).toBe(404);
+    expect((await w.api.call(bot("x"), "drop_agent", {})).status).toBe(404);
     const r = await w.api.call(bot("x"), "list_agents", { foo: 1 });
     expect(r.status).toBe(400);
     expect(String(r.body.error)).toContain("foo");
@@ -150,7 +175,7 @@ describe("list_agents / find_agents", () => {
   it("list_agents answers id, name, description and status of reachable agents only", async () => {
     const w = world({ reachable: (caller, agent) => caller.id !== "outsider" || agent.id === "bot-b" });
     const r = await w.api.call(bot("bot-x"), "list_agents", {});
-    expect(r.body.agents).toEqual(w.agents.map(({ id, name, description, status }) => ({ id, name, description, status })));
+    expect(r.body.agents).toEqual(w.agents.map(({ id, name, description, status }) => ({ id, name, description, status, temporary: false })));
     const isolated = await w.api.call(bot("outsider"), "list_agents", {});
     expect((isolated.body.agents as AgentSummary[]).map((a) => a.id)).toEqual(["bot-b"]);
   });
@@ -192,6 +217,115 @@ describe("create_agent", () => {
   it("needs the agents.create scope", async () => {
     const w = world();
     expect((await w.api.call(bot("x", ["agents.read", "agents.send"]), "create_agent", { name: "Nope" })).status).toBe(403);
+  });
+
+  it("makes a temporary agent and takes an idle expiry of 1 to 720 hours", async () => {
+    const w = world();
+    const r = await w.api.call(person("pr_1"), "create_agent", { name: "Scratch", idle_hours: 6 });
+    expect(r.status).toBe(200);
+    expect(r.body.agent).toMatchObject({ name: "Scratch", temporary: true });
+    expect(String(r.body.note)).toContain("delete_agent");
+    expect(w.created.at(-1)).toEqual({ name: "Scratch", idleHours: 6 });
+    expect(w.audits.at(-1)!.entry.detail).toMatchObject({ temporary: true, idleHours: 6 });
+    for (const idle_hours of [0, 721, 1.5, "24"]) {
+      expect((await w.api.call(person("pr_bad"), "create_agent", { name: `Bad ${String(idle_hours)}`, idle_hours })).status).toBe(400);
+    }
+    expect((await w.api.call(person("pr_1"), "create_agent", { name: "Default" })).status).toBe(200);
+    expect(w.created.at(-1)).toEqual({ name: "Default" });
+    // a duplicate of a temporary agent points at delete_agent
+    expect(String((await w.api.call(person("pr_1"), "create_agent", { name: "scratch" })).body.message)).toContain("delete_agent");
+  });
+
+  it("passes a dependency's refusal through (the quota, a temporary agent creating another)", async () => {
+    const w = world();
+    w.deps.createAgent = async () => ({ status: 409, code: "temporary_quota", message: "You already have 10 active temporary agents." });
+    const api = createAgentApi(w.deps);
+    const r = await api.call(person("pr_1"), "create_agent", { name: "Eleventh" });
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe("temporary_quota");
+    expect(w.audits.at(-1)!.entry).toMatchObject({ tool: "create_agent", outcome: "refused", code: "temporary_quota" });
+  });
+});
+
+describe("get_agent / delete_agent", () => {
+  const admin = (id: string): AgentCaller => ({ ...person(id), admin: true });
+
+  it("get_agent answers the full profile of a reachable agent", async () => {
+    const w = world();
+    const r = await w.api.call(person("pr_1"), "get_agent", { agent_id: "bot-a" });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({
+      agent: { id: "bot-a", name: "Alpha", status: "idle", temporary: false, title: "Alpha title" },
+      profile: { persona: "A careful clerk.", rules: "Never invent numbers.", headings: ["Persona", "Rules"], voice_settings: { voice_notes: true } },
+      temporary: null,
+      profile_url: "https://perspicax.example.test/console/sagax/bots/bot-a",
+    });
+    expect((await w.api.call(person("pr_1"), "get_agent", { agent_id: "bot-a", extra: 1 })).status).toBe(400);
+    expect((await w.api.call(person("pr_1"), "get_agent", {})).status).toBe(400);
+    // the audit row keeps the shape, never the instructions
+    expect(w.audits.at(-1)!.entry).toMatchObject({ tool: "get_agent", outcome: "refused" });
+    expect(JSON.stringify(w.audits)).not.toContain("careful clerk");
+  });
+
+  it("get_agent hides the instructions from a caller who may only use the agent", async () => {
+    const w = world();
+    const made = await w.api.call(person("pr_1"), "create_agent", { name: "Scratch" });
+    const id = (made.body.agent as { id: string }).id;
+    const other = await w.api.call(person("pr_2"), "get_agent", { agent_id: id });
+    expect(other.status).toBe(200);
+    expect(other.body.profile).toBeNull();
+    expect(String(other.body.note)).toContain("owner");
+    const own = await w.api.call(person("pr_1"), "get_agent", { agent_id: id });
+    expect(own.body.profile).not.toBeNull();
+    expect(own.body.temporary).toMatchObject({ idle_hours: 24, pinned: false });
+  });
+
+  it("delete_agent archives the owner's temporary agent: gone from every list, the next call is unknown", async () => {
+    const w = world();
+    const id = ((await w.api.call(person("pr_1"), "create_agent", { name: "Scratch" })).body.agent as { id: string }).id;
+    const r = await w.api.call(person("pr_1"), "delete_agent", { agent_id: id });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ agent_id: id, archived: true });
+    expect((r.body.purge_at as number) - (r.body.archived_at as number)).toBe(30 * 86_400_000);
+    expect(w.archived).toEqual([id]);
+    expect(((await w.api.call(person("pr_1"), "list_agents", {})).body.agents as AgentSummary[]).map((a) => a.id)).not.toContain(id);
+    expect((await w.api.call(person("pr_1"), "delete_agent", { agent_id: id })).body.code).toBe("unknown_agent");
+    expect((await w.api.call(person("pr_1"), "send_prompt", { agent_id: id, prompt: "still there?" })).status).toBe(404);
+    expect(w.audits.find((row) => row.entry.tool === "delete_agent" && row.entry.outcome === "ok")!.entry.detail).toMatchObject({ archived: true });
+  });
+
+  it("delete_agent refuses anyone but the owner or an organization admin", async () => {
+    const w = world();
+    const id = ((await w.api.call(person("pr_1"), "create_agent", { name: "Scratch" })).body.agent as { id: string }).id;
+    const refused = await w.api.call(person("pr_2"), "delete_agent", { agent_id: id });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe("forbidden_owner");
+    expect(w.audits.at(-1)!.entry).toMatchObject({ tool: "delete_agent", outcome: "refused", code: "forbidden_owner", agentId: id });
+    expect(w.archived).toEqual([]);
+    // the scope: a caller without agents.create is refused before anything
+    expect((await w.api.call(person("pr_1", ["agents.read"]), "delete_agent", { agent_id: id })).body.code).toBe("forbidden_scope");
+    expect((await w.api.call(admin("pr_9"), "delete_agent", { agent_id: id })).status).toBe(200);
+    expect(w.archived).toEqual([id]);
+  });
+
+  it("delete_agent never touches a lasting agent", async () => {
+    const w = world();
+    const r = await w.api.call(admin("pr_9"), "delete_agent", { agent_id: "bot-a" });
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe("not_temporary");
+    expect(w.archived).toEqual([]);
+  });
+
+  it("another organization's agent does not exist for the caller", async () => {
+    // reach is the tenant boundary: an agent outside it answers like an unknown id
+    const w = world({ reachable: (caller, agent) => (caller.id === "org2-person") === (agent.name === "Org2 Scratch") });
+    const id = ((await w.api.call(person("org2-person"), "create_agent", { name: "Org2 Scratch" })).body.agent as { id: string }).id;
+    for (const tool of ["get_agent", "delete_agent"]) {
+      const r = await w.api.call(admin("org1-admin"), tool, { agent_id: id });
+      expect(r.status, tool).toBe(404);
+      expect(r.body.code, tool).toBe("unknown_agent");
+    }
+    expect(w.archived).toEqual([]);
   });
 });
 

@@ -20,6 +20,7 @@ describe("built-in agent tool read policy", () => {
       "workspace_search",
       "list_agents",
       "find_agents",
+      "get_agent",
       "await_turn",
       "read_transcript",
       "read_transcript_page",

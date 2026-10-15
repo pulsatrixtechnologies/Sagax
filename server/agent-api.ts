@@ -1,11 +1,14 @@
-// The agent-to-agent API: ten tools that let one agent (a Sagax bot, or a
+// The agent-to-agent API: twelve tools that let one agent (a Sagax bot, or a
 // person's AI client attached to Perspicax) find, create, prompt and read
 // other Sagax bots, with the semantics, parameters and limits of Grok Bot's
 // own agent tools (docs/agent-api.md):
 //
-//   list_agents, find_agents, create_agent, send_prompt, await_turn,
-//   read_transcript, read_transcript_page, read_latest_page,
-//   read_latest_page_with_threads, read_transcript_cold
+//   list_agents, find_agents, get_agent, create_agent, delete_agent,
+//   send_prompt, await_turn, read_transcript, read_transcript_page,
+//   read_latest_page, read_latest_page_with_threads, read_transcript_cold
+//
+// create_agent makes a temporary agent and delete_agent archives one
+// (server/temporary-agents.ts, Perspicax #321).
 //
 // This file is the core only: validation, the turn handle, waiting for a
 // turn, transcript paging, rate limits, scopes and the audit hook. It reads
@@ -20,11 +23,14 @@
 // caller owns, never in the person's open chat.
 import type { GuardDecision, GuardPolicy, ToolGuardMode } from "./tool-guard.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { TEMP_AGENT_IDLE_HOURS_MAX } from "./temporary-agents.ts";
 
 export const AGENT_TOOL_NAMES = [
   "list_agents",
   "find_agents",
+  "get_agent",
   "create_agent",
+  "delete_agent",
   "send_prompt",
   "await_turn",
   "read_transcript",
@@ -59,7 +65,10 @@ export const RATE_WINDOW_MS = { read: 60_000, write: 60_000, admin: 3_600_000 } 
 export const AGENT_TOOL_POLICY: Record<AgentToolName, AgentToolPolicy> = {
   list_agents: { scope: "agents.read", access: "read", readOnly: true, rate: 240 },
   find_agents: { scope: "agents.read", access: "read", readOnly: true, rate: 240 },
+  get_agent: { scope: "agents.read", access: "read", readOnly: true, rate: 240 },
   create_agent: { scope: "agents.create", access: "admin", readOnly: false, rate: 5 },
+  // Archives a temporary agent: the same scope as creating one.
+  delete_agent: { scope: "agents.create", access: "admin", readOnly: false, rate: 30 },
   send_prompt: { scope: "agents.send", access: "write", readOnly: false, rate: 30 },
   // await_turn waits on a turn the caller already started: a read.
   await_turn: { scope: "agents.read", access: "read", readOnly: true, rate: 240 },
@@ -92,6 +101,8 @@ export const AGENT_NAME_MAX = 80;
 export const AGENT_DESCRIPTION_MAX = 1_000;
 export const ENTRY_TEXT_MAX = 16_000;
 export const REPLY_MAX_CHARS = 32_000;
+/** create_agent's idle_hours (server/temporary-agents.ts). */
+export const IDLE_HOURS_MAX = TEMP_AGENT_IDLE_HOURS_MAX;
 /** How long a turn handle stays valid. */
 export const HANDLE_TTL_MS = 7 * 24 * 3_600_000;
 const POLL_MS = 400;
@@ -130,6 +141,33 @@ export interface AgentSummary {
   name: string;
   description: string;
   status: AgentStatus;
+  /** A temporary agent (create_agent): it expires when idle and can be deleted. */
+  temporary?: boolean;
+}
+
+/** What get_agent answers beyond the summary (the dependencies fill it). */
+export interface AgentProfile {
+  title: string;
+  owner: { principal_id: string; name: string } | null;
+  /** Null when the caller may use the agent but not read its instructions. */
+  profile: {
+    instructions: string;
+    instructions_truncated: boolean;
+    persona: string | null;
+    rules: string | null;
+    voice: string | null;
+    anti_jobs: string | null;
+    headings: string[];
+    voice_settings: { voice: string | null; speak_replies: boolean; voice_notes: boolean };
+  } | null;
+  temporary: {
+    created_at: number;
+    idle_hours: number;
+    expires_at: number | null;
+    pinned: boolean;
+  } | null;
+  /** The agent's sheet, when the server can name one. */
+  profile_url: string | null;
 }
 
 export interface TranscriptThread {
@@ -193,8 +231,13 @@ export interface AuditEntry {
 export interface AgentApiDeps {
   /** Every agent the caller may reach (tenant/org isolation is applied here). */
   agents(caller: AgentCaller): AgentSummary[] | Promise<AgentSummary[]>;
-  /** Create one agent for the caller; it greets the user itself. */
-  createAgent(caller: AgentCaller, input: { name: string; description: string }): Promise<AgentSummary | Refusal>;
+  /** Create one temporary agent for the caller; it greets the user itself.
+   * idleHours is the caller's expiry, else the server's default. */
+  createAgent(caller: AgentCaller, input: { name: string; description: string; idleHours?: number }): Promise<AgentSummary | Refusal>;
+  /** The full profile of a reachable agent, as this caller may read it. */
+  profile(caller: AgentCaller, agentId: string): AgentProfile | Refusal | Promise<AgentProfile | Refusal>;
+  /** Archive a temporary agent (its conversations are kept for a while). */
+  deleteAgent(caller: AgentCaller, agentId: string): Promise<{ archived_at: number; purge_at: number } | Refusal>;
   /** The conversations with this agent the caller may read. */
   threads(caller: AgentCaller, agentId: string): TranscriptThread[];
   /** A conversation's stored messages, oldest first. Never wakes anything. */
@@ -397,6 +440,9 @@ function collectEntries(deps: AgentApiDeps, threads: readonly TranscriptThread[]
   return out;
 }
 
+/** An agent as list_agents, find_agents and create_agent answer it. */
+const wireSummary = (agent: AgentSummary) => ({ id: agent.id, name: agent.name, description: agent.description, status: agent.status, temporary: agent.temporary === true });
+
 const keyOf = (entry: TranscriptEntry): CursorKey => ({ at: entry.at, threadId: entry.thread_id, id: entry.id });
 
 /** The newest `limit` entries strictly before `before` (all when null), and
@@ -542,7 +588,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       const bad = onlyKeys(args, []);
       if (bad) return bad;
       const agents = await deps.agents(caller);
-      return ok({ agents: agents.map(({ id, name, description, status }) => ({ id, name, description, status })) });
+      return ok({ agents: agents.map(wireSummary) });
     },
 
     async find_agents(caller, args) {
@@ -563,25 +609,62 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       // Best matches only: within reach of the top score.
       const top = scored[0]?.score ?? 0;
       const best = scored.filter((hit) => hit.score >= top * 0.4).slice(0, limit);
-      return ok({ agents: best.map(({ agent }) => ({ id: agent.id, name: agent.name, description: agent.description, status: agent.status })) });
+      return ok({ agents: best.map(({ agent }) => wireSummary(agent)) });
+    },
+
+    async get_agent(caller, args) {
+      const bad = onlyKeys(args, ["agent_id"]);
+      if (bad) return bad;
+      const agentId = agentIdArg(args);
+      if (isRefusal(agentId)) return agentId;
+      const agent = await reachable(caller, agentId);
+      if (isRefusal(agent)) return agent;
+      const profile = await deps.profile(caller, agentId);
+      if (isRefusal(profile)) return profile;
+      return ok({
+        agent: { ...wireSummary(agent), title: profile.title },
+        owner: profile.owner,
+        profile: profile.profile,
+        temporary: profile.temporary,
+        profile_url: profile.profile_url,
+        ...(profile.profile ? {} : { note: "You may use this agent, but only its owner, a person who can edit it or an organization admin reads its instructions." }),
+      });
+    },
+
+    async delete_agent(caller, args) {
+      const bad = onlyKeys(args, ["agent_id"]);
+      if (bad) return bad;
+      const agentId = agentIdArg(args);
+      if (isRefusal(agentId)) return agentId;
+      const agent = await reachable(caller, agentId);
+      if (isRefusal(agent)) return agent;
+      if (!agent.temporary) return refuse(409, "not_temporary", `${agent.name} was not created with create_agent: only its owner deletes it, in the Sagax app.`);
+      const archived = await deps.deleteAgent(caller, agentId);
+      if (isRefusal(archived)) return archived;
+      return ok({
+        agent_id: agentId, archived: true, ...archived,
+        note: "The agent is archived: it no longer answers or appears in list_agents. Its conversations are kept until purge_at, then deleted with it.",
+      });
     },
 
     async create_agent(caller, args) {
-      const bad = onlyKeys(args, ["name", "description"]);
+      const bad = onlyKeys(args, ["name", "description", "idle_hours"]);
       if (bad) return bad;
       const name = typeof args.name === "string" ? args.name.trim() : "";
       if (!name || name.length > AGENT_NAME_MAX || /[\r\n]/.test(name)) return refuse(400, "bad_request", `name is the display name: one line, 1 to ${AGENT_NAME_MAX} characters.`);
       if (args.description !== undefined && args.description !== null && typeof args.description !== "string") return refuse(400, "bad_request", "description is text.");
       const description = typeof args.description === "string" ? args.description.trim() : "";
       if (description.length > AGENT_DESCRIPTION_MAX) return refuse(400, "bad_request", `description is at most ${AGENT_DESCRIPTION_MAX} characters.`);
+      const idleHours = intArg(args, "idle_hours", 1, IDLE_HOURS_MAX, undefined);
+      if (isRefusal(idleHours)) return idleHours;
       const existing = (await deps.agents(caller)).find((agent) => agent.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase());
-      if (existing) return refuse(409, "agent_exists", `An agent named ${existing.name} already exists (id ${existing.id}). Use it instead of creating another; agents cannot be deleted from here.`);
-      const created = await deps.createAgent(caller, { name, description });
+      if (existing) return refuse(409, "agent_exists", `An agent named ${existing.name} already exists (id ${existing.id}). Use it instead of creating another${existing.temporary ? ", or delete it first with delete_agent" : ""}.`);
+      const created = await deps.createAgent(caller, { name, description, ...(idleHours !== undefined ? { idleHours } : {}) });
       if (isRefusal(created)) return created;
       return ok({
-        agent: { id: created.id, name: created.name, description: created.description, status: created.status },
+        agent: wireSummary(created),
         greeted: true,
-        note: "The new agent greets the user itself. Do not send it a first prompt unless asked, and never quote its id to the user. Only the owner can delete it, from the Sagax app.",
+        note: "The new agent is temporary: it is archived after its idle expiry unless a person pins it, and delete_agent archives it now. It greets the user itself. Do not send it a first prompt unless asked, and never quote its id to the user.",
       });
     },
 
@@ -822,7 +905,15 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
           detail.files = Array.isArray(args.files) ? args.files.length : 0;
           if (typeof shaped.body.thread_id === "string") detail.threadId = shaped.body.thread_id;
         }
-        if (tool === "create_agent" && shaped.status < 400) detail.created = (shaped.body.agent as { id?: string } | undefined)?.id ?? null;
+        if (tool === "create_agent" && shaped.status < 400) {
+          detail.created = (shaped.body.agent as { id?: string } | undefined)?.id ?? null;
+          detail.temporary = true;
+          if (typeof args.idle_hours === "number") detail.idleHours = args.idle_hours;
+        }
+        if (tool === "delete_agent" && shaped.status < 400) {
+          detail.archived = true;
+          detail.purgeAt = shaped.body.purge_at ?? null;
+        }
         return finish(shaped, detail);
       } catch (error) {
         console.error(`[agent-api] ${tool}: ${error instanceof Error ? error.message : String(error)}`);

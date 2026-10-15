@@ -22,6 +22,7 @@ export const READ_ONLY_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   // The agent-to-agent API's reads (server/agent-api.ts AGENT_TOOL_POLICY).
   "list_agents",
   "find_agents",
+    "get_agent",
   "await_turn",
   "read_transcript",
   "read_transcript_page",

@@ -916,6 +916,11 @@ import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./
 import { createOrgLinkRoutes, DirectoryRefreshScheduler } from "./org-link-routes.ts";
 import { internalAgentApiTool } from "./routes/agent-api-internal.ts";
 import { isInternalVoiceCallEnd } from "./routes/voice-call-internal.ts";
+import {
+  activeCount as temporaryActiveCount, archiveMark, capInstructions, defaultIdleHours, expired as temporaryExpired, mayDelete as mayDeleteTemporary,
+  mayPin as mayPinTemporary, profileSections, purgeDue as temporaryPurgeDue, quotaKey as temporaryQuotaKey, TEMP_AGENT_QUOTA, TEMP_AGENT_SWEEP_MS,
+  temporaryOwner, type TemporaryAgent, type TemporaryCreator,
+} from "./temporary-agents.ts";
 import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
 import { parseHideList, planHiddenAgentThreads, planHiddenBotThreads } from "./agent-threads.ts";
 import { MemberLiveText } from "./member-live-text.ts";
@@ -6026,7 +6031,7 @@ function shownBotActivity(bot: BotRecord, include: (task: TaskRecord) => boolean
 }
 
 const wireBot = (bot: BotRecord): WireBot => {
-  const { resumeCursors: _resumeCursors, tasks: allTasks, approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, assignedSkills: _assignedSkills, ...rest } = bot;
+  const { resumeCursors: _resumeCursors, tasks: allTasks, approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, assignedSkills: _assignedSkills, temporary: _temporary, ...rest } = bot;
   const tasks = allTasks ? listedTasks(bot.threadId, allTasks) : undefined;
   // The aggregate only: a record projected onto one thread already carries
   // that thread's own activity.
@@ -6058,7 +6063,7 @@ function toolScopeForTurn(botId: string) {
 /** The correlated private response carries the requested value so Electron
  * can validate it before sending the confirmation that makes it effective. */
 const wireTrustedApprovalBot = (bot: NonNullable<ReturnType<typeof store.bot>>) => {
-  const { resumeCursors: _resumeCursors, tasks: allTasks, approvalGrant: _approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, assignedSkills: _assignedSkills, ...rest } = bot;
+  const { resumeCursors: _resumeCursors, tasks: allTasks, approvalGrant: _approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, assignedSkills: _assignedSkills, temporary: _temporary, ...rest } = bot;
   const tasks = allTasks ? listedTasks(bot.threadId, allTasks) : undefined;
   return { ...rest, approvalMode: approvalModeFor(rest), mainThreadId: botMainThread(bot.id), avatarUrl: rest.avatarUrl ?? null, ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection)) } : {}) };
 };
@@ -9112,6 +9117,15 @@ function viewerNotificationMuted(payload: Record<string, unknown>, viewerId: str
 /** The frame a non-admin stream gets: the shared client frame, unless a bot
  * is restricted and this member may not see all of what the frame carries —
  * then narrowed (bot-visibility.ts), withdrawn, or nothing at all (null). */
+/** A live frame about a temporary agent (its record, its conversations):
+ * the app never shows one (Perspicax #321). */
+function temporaryAgentFrame(payload: Record<string, unknown>): boolean {
+  const named = (payload.bot && typeof payload.bot === "object" ? (payload.bot as { id?: unknown }).id : undefined) ?? payload.botId;
+  if (typeof named === "string" && store.bot(named)?.temporary) return true;
+  const message = payload.message && typeof payload.message === "object" ? payload.message as { threadId?: unknown } : undefined;
+  const threadId = typeof payload.threadId === "string" ? payload.threadId : typeof message?.threadId === "string" ? message.threadId : undefined;
+  return threadId !== undefined && Boolean(store.botByThread(threadId)?.temporary);
+}
 function sseFrameFor(
   client: SseClient,
   seq: number,
@@ -9120,6 +9134,7 @@ function sseFrameFor(
   clientFrame: string | null,
 ): string | null {
   if (payload && !peopleDmFrameAllowed(payload, client.viewerId)) return null;
+  if (payload && temporaryAgentFrame(payload)) return null;
   if (payload && viewerNotificationMuted(payload, client.viewerId)) return null;
   // A conversation between two people carries each person's own unread
   // state, and never who else has read it (server/people-dms.ts).
@@ -27477,12 +27492,76 @@ function agentSummary(bot: BotRecord): AgentSummary {
     name: bot.name,
     description: (bot.description || bot.title || "").slice(0, 600),
     status: bot.busy || store.tasks(bot.id).some((task) => threadBusy(bot.id, task.threadId)) ? "running" : "idle",
+    ...(bot.temporary ? { temporary: true } : {}),
   };
 }
-/** The bots a bot may reach: its team, the teams it was allowed, its allow-list. */
+/** The bots a bot may reach: its team, the teams it was allowed, its allow-list.
+ * An archived temporary agent is gone for everyone. */
 function agentPeersOf(from: BotRecord): BotRecord[] {
-  return reachablePeers(store.bots, from).filter((peer) => !peer.hidden && peerInScope(from, peer) && canAccessTeam(from, peer.section) && peerAllowed(from, peer));
+  return reachablePeers(store.bots, from).filter((peer) => !peer.hidden && !peer.temporary?.archived && peerInScope(from, peer) && canAccessTeam(from, peer.section) && peerAllowed(from, peer));
 }
+// ── temporary agents (server/temporary-agents.ts, Perspicax #321) ──────
+const TEMP_AGENT_DEFAULT_IDLE_HOURS = defaultIdleHours(process.env);
+/** One-use tokens that mark the bot a person's POST /api/bots creates for
+ * create_agent as temporary before its first announcement. Memory only,
+ * a minute each, bound to that person. */
+const temporaryCreateTokens = new Map<string, { record: TemporaryAgent; principalId: string; expires: number }>();
+function issueTemporaryCreateToken(record: TemporaryAgent, principalId: string): string {
+  const now = Date.now();
+  for (const [token, entry] of temporaryCreateTokens) if (entry.expires <= now) temporaryCreateTokens.delete(token);
+  const token = randomBytes(32).toString("base64url");
+  temporaryCreateTokens.set(token, { record, principalId: principalId.trim().toLowerCase(), expires: now + 60_000 });
+  return token;
+}
+/** The record a token carries, once, for the person it was issued to. */
+function takeTemporaryCreateToken(token: unknown, auth: RequestAuth): TemporaryAgent | null {
+  if (typeof token !== "string") return null;
+  const entry = temporaryCreateTokens.get(token);
+  temporaryCreateTokens.delete(token);
+  if (!entry || entry.expires <= Date.now()) return null;
+  if (auth.kind !== "session" || (auth.session.principalId ?? "").trim().toLowerCase() !== entry.principalId) return null;
+  return entry.record;
+}
+/** The newest sign of life of a bot: its own conversations. */
+function botLastActivity(bot: BotRecord): number {
+  let last = bot.createdAt ?? 0;
+  for (const task of store.tasks(bot.id)) last = Math.max(last, task.updatedAt ?? task.createdAt ?? 0);
+  return last;
+}
+function temporaryAudit(action: "agents.temporary.expired" | "agents.temporary.purged" | "agents.temporary.pinned" | "agents.temporary.unpinned", bot: BotRecord, after: Record<string, unknown>, actor?: { principalId: string }) {
+  appendAdminAction(DATA_DIR, {
+    category: "client",
+    action,
+    target: { kind: "bot", id: bot.id, name: bot.name },
+    after: { ownerPrincipalId: bot.temporary?.ownerPrincipalId ?? null, ...after },
+    actor: actor ? { kind: "person", principalId: actor.principalId, via: "console" } : { kind: "worker" },
+  });
+}
+/** Archive what has been idle past its expiry; delete what has been archived
+ * past its retention. Runs every few minutes and once at start. */
+async function sweepTemporaryAgents(now = Date.now()): Promise<void> {
+  // A copy: a purge removes bots from the list while it is walked.
+  for (const bot of store.bots.slice()) {
+    const temporary = bot.temporary;
+    if (!temporary) continue;
+    if (temporaryPurgeDue(temporary, now)) {
+      const result = await deleteBotWithLifecycle(bot.id).catch((error) => {
+        console.warn(`[temporary-agents] could not delete ${bot.id}: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
+      });
+      if (result?.status === 200) temporaryAudit("agents.temporary.purged", bot, { archivedAt: temporary.archived?.at ?? null });
+      continue;
+    }
+    if (bot.busy || store.tasks(bot.id).some((task) => threadBusy(bot.id, task.threadId))) continue;
+    if (temporaryExpired(temporary, botLastActivity(bot), now)) {
+      const archived = archiveMark({ kind: "system" }, "expired", now);
+      store.setBotTemporary(bot.id, { ...temporary, archived });
+      temporaryAudit("agents.temporary.expired", bot, { idleHours: temporary.idleHours, purgeAt: archived.purgeAt });
+    }
+  }
+}
+setTimeout(() => { void sweepTemporaryAgents(); }, 30_000).unref?.();
+setInterval(() => { void sweepTemporaryAgents(); }, TEMP_AGENT_SWEEP_MS).unref?.();
 const agentApiCallerBot = (caller: AgentCaller) => (caller.kind === "bot" ? store.bot(caller.id) ?? null : null);
 /** One workspace-relative file of a bot caller, resolved inside one of its roots. */
 function agentApiSourceFile(from: BotRecord, sourceThreadId: string, relative: string): { path: string; bytes: number } | Refusal {
@@ -27618,32 +27697,107 @@ const agentApi = createAgentApi({
     const listed = await performAsMember(memberForAgentCaller(caller), { method: "GET", path: "/api/bots", query: { messages: "0" } });
     if (listed.status < 200 || listed.status >= 300) return [];
     const ids = new Set(((listed.body as { bots?: Array<{ id?: unknown }> })?.bots ?? []).map((bot) => String(bot.id ?? "")));
-    return store.bots.filter((bot) => ids.has(bot.id) && !bot.hidden).map(agentSummary);
+    // The app does not list temporary agents (GET /api/bots leaves them
+    // out): a person reaches their own, those a bot they reach created, and
+    // an organization admin every one. Never an archived one.
+    const person = caller.id.trim().toLowerCase();
+    const reachesTemporary = (temporary: TemporaryAgent) => !temporary.archived && (caller.admin === true || temporary.ownerPrincipalId === person ||
+      (temporary.createdBy.kind === "bot" && ids.has(temporary.createdBy.botId)));
+    return store.bots.filter((bot) => !bot.hidden && (bot.temporary ? reachesTemporary(bot.temporary) : ids.has(bot.id))).map(agentSummary);
   },
   async createAgent(caller, input) {
+    const now = Date.now();
+    const idleHours = input.idleHours ?? TEMP_AGENT_DEFAULT_IDLE_HOURS;
     if (caller.kind === "person") {
-      const created = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: "/api/bots", body: { name: input.name, ...(input.description ? { description: input.description } : {}) } });
+      const creator: TemporaryCreator = { kind: "person", principalId: caller.id.trim().toLowerCase() };
+      const record: TemporaryAgent = { via: "mcp", createdAt: now, ownerPrincipalId: temporaryOwner(creator, null), createdBy: creator, idleHours, lastActiveAt: now };
+      if (temporaryActiveCount(store.bots.map((bot) => bot.temporary), temporaryQuotaKey(record)) >= TEMP_AGENT_QUOTA) {
+        return agentRefuse(409, "temporary_quota", `You already have ${TEMP_AGENT_QUOTA} active temporary agents. Delete one with delete_agent first.`, { quota: TEMP_AGENT_QUOTA });
+      }
+      const temporaryToken = issueTemporaryCreateToken(record, creator.principalId);
+      const created = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: "/api/bots", body: { name: input.name, ...(input.description ? { description: input.description } : {}), temporaryToken } });
+      temporaryCreateTokens.delete(temporaryToken);
       const body = (created.body ?? {}) as { bot?: { id?: unknown }; id?: unknown; error?: unknown; message?: unknown };
       const id = String(body.bot?.id ?? body.id ?? "");
       if (created.status >= 300 || !store.bot(id)) return agentRefuse(created.status >= 400 ? created.status : 502, "not_created", String(body.message ?? body.error ?? "The agent could not be created."));
       return agentSummary(store.bot(id)!);
     }
     const chief = agentApiCallerBot(caller);
+    // Depth 1: an agent made by create_agent never makes another.
+    if (chief?.temporary) return agentRefuse(409, "too_deep", "A temporary agent cannot create agents. Do the work here, or ask the bot that created you.");
     if (!chief || !chief.chiefOfStaff) return agentRefuse(403, "forbidden_scope", "Only a Primary Bot can create agents.");
     if (ownerBotsReadOnly(chief)) return agentRefuse(403, "bots_read_only", BOTS_READ_ONLY.message);
     if (store.bots.length >= MAX_WORKSPACE_BOTS) return agentRefuse(409, "limit", `This workspace is limited to ${MAX_WORKSPACE_BOTS} bots.`);
     let selection = await defaultSelection();
     if (chief.modelSelection.auto === true && selection.instanceId) selection = { ...selection, auto: true };
     if (hostedModels && !hostedModels.allows(selection)) return agentRefuse(400, "model", hostedModels.error());
+    const creator: TemporaryCreator = { kind: "bot", botId: chief.id, ...(caller.speakerPrincipalId ? { speakerPrincipalId: caller.speakerPrincipalId.trim().toLowerCase() } : {}) };
+    const owner = temporaryOwner(creator, recordedBotOwner(chief) ?? null);
+    const record: TemporaryAgent = { via: "mcp", createdAt: now, ownerPrincipalId: owner, createdBy: creator, idleHours, lastActiveAt: now };
+    if (temporaryActiveCount(store.bots.map((bot) => bot.temporary), temporaryQuotaKey(record)) >= TEMP_AGENT_QUOTA) {
+      return agentRefuse(409, "temporary_quota", `${TEMP_AGENT_QUOTA} temporary agents are already active for this person. Delete one with delete_agent first.`, { quota: TEMP_AGENT_QUOTA });
+    }
     const bot = store.createBot({
       name: input.name,
       description: input.description,
       modelSelection: selection,
       section: chief.section,
-      ...(recordedBotOwner(chief) ? { ownerUserId: recordedBotOwner(chief) } : {}),
+      // It belongs to the person the call speaks for, else the bot's owner.
+      ...(owner ? { ownerUserId: owner } : {}),
       ...(chief.visibility ? { visibility: chief.visibility } : {}),
+      temporary: record,
     });
     return agentSummary(bot);
+  },
+  profile(caller, agentId) {
+    const bot = store.bot(agentId);
+    if (!bot) return agentRefuse(404, "unknown_agent", "No such agent.");
+    // The instructions: an organization admin, the owner, a person who can
+    // edit the bot; a bot reads those of a temporary agent it created.
+    const viewer = caller.kind === "person" ? authzViewerFromId(caller.id.trim().toLowerCase()) : undefined;
+    const reads = caller.kind === "person"
+      ? caller.admin === true || (viewer !== undefined && atLeast(botLevel({ viewer, ...botFacts(bot) }), "edit"))
+      : bot.temporary?.createdBy.kind === "bot" && bot.temporary.createdBy.botId === caller.id;
+    const ownerId = bot.temporary?.ownerPrincipalId ?? (recordedBotOwner(bot) ?? null);
+    const soul = bot.soul ?? "";
+    const instructions = capInstructions(soul);
+    const temporary = bot.temporary;
+    return {
+      title: bot.title ?? "",
+      owner: ownerId ? { principal_id: ownerId, name: adminPerson(ownerId).name } : null,
+      profile: reads ? {
+        instructions: instructions.text,
+        instructions_truncated: instructions.truncated,
+        ...profileSections(soul),
+        voice_settings: { voice: bot.voice ?? null, speak_replies: bot.speakReplies === true, voice_notes: bot.voiceNotes !== false },
+      } : null,
+      temporary: temporary ? {
+        created_at: temporary.createdAt,
+        idle_hours: temporary.idleHours,
+        expires_at: temporary.pinned ? null : Math.max(temporary.lastActiveAt, botLastActivity(bot)) + temporary.idleHours * 3_600_000,
+        pinned: Boolean(temporary.pinned),
+      } : null,
+      profile_url: IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/sagax/bots/${encodeURIComponent(bot.id)}` : null,
+    };
+  },
+  async deleteAgent(caller, agentId) {
+    const bot = store.bot(agentId);
+    const temporary = bot?.temporary;
+    if (!bot || !temporary || temporary.archived) return agentRefuse(404, "unknown_agent", "No such agent.");
+    const actor = caller.kind === "person"
+      ? { kind: "person" as const, principalId: caller.id.trim().toLowerCase(), admin: caller.admin === true }
+      : { kind: "bot" as const, botId: caller.id, ownerPrincipalId: temporaryOwner(
+        { kind: "bot", botId: caller.id, ...(caller.speakerPrincipalId ? { speakerPrincipalId: caller.speakerPrincipalId.trim().toLowerCase() } : {}) },
+        recordedBotOwner(store.bot(caller.id) ?? {}) ?? null) };
+    if (!mayDeleteTemporary(temporary, actor)) {
+      return agentRefuse(403, "forbidden_owner", "Only this agent's owner or an organization admin can delete it.");
+    }
+    if (bot.busy || store.tasks(bot.id).some((task) => threadBusy(bot.id, task.threadId))) {
+      for (const task of store.tasks(bot.id)) if (threadBusy(bot.id, task.threadId)) await interruptDirectThread(bot.id, task.threadId).catch(() => undefined);
+    }
+    const archived = archiveMark(actor.kind === "person" ? { kind: "person", principalId: actor.principalId } : { kind: "bot", botId: actor.botId }, "deleted", Date.now());
+    store.setBotTemporary(bot.id, { ...temporary, archived });
+    return { archived_at: archived.at, purge_at: archived.purgeAt };
   },
   threads(caller, agentId) {
     const agent = store.bot(agentId);
@@ -27693,6 +27847,9 @@ const agentApi = createAgentApi({
   async post(caller, agentId, threadId, prompt, files) {
     const target = store.bot(agentId);
     if (!target) return agentRefuse(404, "unknown_agent", "No such agent.");
+    if (target.temporary?.archived) return agentRefuse(404, "unknown_agent", "No such agent.");
+    // A prompt keeps a temporary agent alive.
+    if (target.temporary) store.setBotTemporary(target.id, { ...target.temporary, lastActiveAt: Date.now() });
     if (caller.kind === "person") {
       const staged = agentApiStageFiles(caller, target, files);
       if ("code" in staged) return staged;
@@ -28386,6 +28543,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // edit, a new or switched task) comes without its audience list or
       // the teammates they cannot see, whichever route answers.
       onJsonBody(res, (body) => memberBody(body, visible));
+    }
+    // Perspicax #321: an archived temporary agent takes no more work. Its
+    // conversations stay readable to whoever could read them until the purge.
+    if (method !== "GET" && method !== "HEAD" && method !== "DELETE") {
+      const subject = pathSubject(path);
+      const subjectBot = subject?.kind === "bot" ? store.bot(subject.id) : subject?.kind === "thread" ? store.botByThread(subject.id) : undefined;
+      if (subjectBot?.temporary?.archived) return json(res, 410, { error: "This agent was archived.", code: "agent_archived" });
     }
     // A bot's grants are judged by server/bot-grants.ts (slice 4): an admin
     // or a team manager administers them without seeing the bot.
@@ -32546,7 +32710,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // carrying no tasks, where clients expect [].
       // A member on a workspace with a restricted bot gets only what they may
       // see (bot-visibility.ts); for everyone else these filters keep all.
-      const shownBots = store.bots.filter((bot) => visible.bot(bot.id) && listedBotVisible(bot, viewerId));
+      // Temporary agents (create_agent) are never listed in the app.
+      const shownBots = store.bots.filter((bot) => !bot.temporary && visible.bot(bot.id) && listedBotVisible(bot, viewerId));
       const queued = publicBotQueuedMessages();
       // Organization server: each person opens a bot on their own thread
       // (started for them the first time) and lists only their threads.
@@ -34335,6 +34500,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(res, 400, { error: "bot must be a JSON object" });
       }
+      // create_agent for a person's AI client (Perspicax #321): a one-use
+      // token from the agent API marks the new bot temporary.
+      let temporary: TemporaryAgent | undefined;
+      if (body.temporaryToken !== undefined) {
+        const taken = takeTemporaryCreateToken(body.temporaryToken, auth);
+        if (!taken) return json(res, 400, { error: "temporaryToken is not valid" });
+        temporary = taken;
+        const { temporaryToken: _token, ...rest } = body;
+        body = rest;
+      }
       // An organization member's bot starts from nothing the admin saved
       // (New bot defaults can set a folder, a computer or skills): only the
       // fields memberBotFieldViolation allows, and it is theirs.
@@ -34434,6 +34609,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const bot = store.createBot({ ...profile.patch, soul: settings.soul, section, modelSelection: selection,
         ownerUserId: creatingBotOwnerId(auth),
         toolScope: settings.toolScope ?? undefined,
+        ...(temporary ? { temporary } : {}),
         ...(created?.ok ? { visibility: created.visibility } : {}) });
       const createdRoutines: Array<{ id: string; enabled: boolean }> = [];
       try {
@@ -34632,6 +34808,27 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       store.patchTask(bot.id, selected.threadId, { modelSelection: undefined,
         ...hostedModels?.resetTask(selected.modelSelection, checked.selection) });
       return json(res, 200, { bot: wireBot(bot) });
+    }
+    // Perspicax #321: a person pins a temporary agent so it never expires
+    // (or unpins it). Its owner or an organization admin, never a bot.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/temporary-pin$/);
+    if (m && method === "PUT") {
+      const bot = store.bot(m[1]);
+      if (!bot?.temporary) return json(res, 404, { error: "no such temporary agent" });
+      if (auth.kind === "loopback" && auth.trust === "service") return json(res, 403, { error: "forbidden: a person pins a temporary agent" });
+      const principalId = actorPrincipalId(auth).trim().toLowerCase();
+      if (!principalId || !mayPinTemporary(bot.temporary, { principalId, admin: orgAdminCaller(auth) })) {
+        return json(res, 403, { error: "forbidden: only this agent's owner or an organization admin pins it", code: "forbidden_owner" });
+      }
+      const body = await readBody(req);
+      if (!body || typeof body !== "object" || Object.keys(body).some((key) => key !== "pinned") || typeof body.pinned !== "boolean") {
+        return json(res, 400, { error: "Send { \"pinned\": true } or false" });
+      }
+      const { pinned: _was, ...rest } = bot.temporary;
+      const next: TemporaryAgent = body.pinned ? { ...rest, pinned: { principalId, at: Date.now() } } : { ...rest, lastActiveAt: Date.now() };
+      store.setBotTemporary(bot.id, next);
+      temporaryAudit(body.pinned ? "agents.temporary.pinned" : "agents.temporary.unpinned", bot, {}, { principalId });
+      return json(res, 200, { pinned: body.pinned === true });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/read$/);
     if (m && method === "POST") {

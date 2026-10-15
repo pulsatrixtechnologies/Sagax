@@ -1236,12 +1236,23 @@ const AGENT_API_TOOLS = [
     }, required: ["query"] },
   },
   {
+    name: "get_agent",
+    description: "Read one agent's full profile for an audit: title, owner, instructions with their persona, rules, voice and anti-jobs sections, voice settings, whether it is temporary and when it expires, and a link to its sheet.",
+    inputSchema: { type: "object", additionalProperties: false, properties: { agent_id: AGENT_ID }, required: ["agent_id"] },
+  },
+  {
     name: "create_agent",
-    description: "Create one agent (bot) in your section. Only when the user explicitly asks; one per call; check list_agents first, since only the owner can delete it in the app. It greets the user itself: do not send it a first prompt and never quote its id.",
+    description: "Create one temporary agent (bot) in your section, for a one-off task kept apart from the lasting bots. Only when the user explicitly asks; one per call; check list_agents first. It is archived after idle_hours without a prompt (default 24) unless a person pins it; at most 10 per person; it cannot create agents itself. It greets the user itself: do not send it a first prompt and never quote its id.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       name: { type: "string", minLength: 1, maxLength: 80, description: "Display name." },
       description: { type: "string", maxLength: 1000, description: "What it does." },
+      idle_hours: { type: "integer", minimum: 1, maximum: 720, description: "Hours without a prompt before it is archived; default 24." },
     }, required: ["name"] },
+  },
+  {
+    name: "delete_agent",
+    description: "Delete a temporary agent you created once its task is done: it is archived (no longer listed, no longer answers) and its conversations are kept 30 days.",
+    inputSchema: { type: "object", additionalProperties: false, properties: { agent_id: AGENT_ID }, required: ["agent_id"] },
   },
   {
     name: "send_prompt",
@@ -1352,7 +1363,7 @@ export function availableTools(profile: CatalogProfile) {
 function catalogTools(profile: CatalogProfile) {
   const base = coreCatalogTools(profile);
   if (!profile.agentApi || profile.externalRuntime) return base;
-  return [...base, ...AGENT_API_TOOLS.filter((tool) => profile.chief || tool.name !== "create_agent")];
+  return [...base, ...AGENT_API_TOOLS.filter((tool) => profile.chief || (tool.name !== "create_agent" && tool.name !== "delete_agent"))];
 }
 
 function coreCatalogTools(profile: CatalogProfile) {

@@ -134,6 +134,7 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   outbound: "settings",
   assignedSkills: "settings",
   perspicax: "settings",
+  temporary: { drop: "an imported bot is never temporary (Perspicax #321)" },
   section: "settings",
   managedSections: "settings",
   projects: "settings",

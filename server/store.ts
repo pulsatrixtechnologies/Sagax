@@ -13,6 +13,7 @@ import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts";
 import { ensureSections, readSections, changeEmptySection } from "./section-context.ts";
 import type { TeamComputers } from "./team-computers.ts";
 import { removeBotFolder, soulFile, soulHash, writeSoulMirror } from "./bot-folder.ts";
+import { cleanTemporaryAgent, type TemporaryAgent } from "./temporary-agents.ts";
 import type { BotProfilePatch } from "./bot-profile.ts";
 import { peerAllowKey, type PeerAction } from "./peer-approval-key.ts";
 import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, loadBrowserProfileIdAliases } from "./config.ts";
@@ -447,6 +448,9 @@ export interface BotRecord extends Omit<WireBot, "avatarUrl" | "tasks"> {
    * changed only through /api/bots/:id/perspicax, never PATCH, never in a
    * package or an export. */
   perspicax?: BotPerspicax;
+  /** Perspicax #321: made by create_agent (server/temporary-agents.ts).
+   * Never on the wire: the Sagax app does not list such a bot. */
+  temporary?: TemporaryAgent;
 }
 
 /** Slice 5: at most 8 profile ids per bot. */
@@ -468,7 +472,7 @@ export function cleanBotPerspicax(value: unknown): BotPerspicax | undefined {
  * WireTask[], avatarUrl is coerced to always-present). The exactness
  * assertion fails to compile when either side drifts, so a new server
  * field forces a decision — wire-visible or private here. */
-export type BotWirePrivateKeys = "resumeCursors" | "tasks" | "avatarUrl" | "approvalGrant" | "lastProfileRequestId" | "lastTeamSetupReceipt" | "packageBase" | "perspicax" | "assignedSkills";
+export type BotWirePrivateKeys = "resumeCursors" | "tasks" | "avatarUrl" | "approvalGrant" | "lastProfileRequestId" | "lastTeamSetupReceipt" | "packageBase" | "perspicax" | "assignedSkills" | "temporary";
 export type BotWireProjection = Pick<BotRecord, Exclude<keyof BotRecord, BotWirePrivateKeys>>;
 export type BotWireProjectionIsExact = AssertExact<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection> & AssertSameKeys<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection>;
 export const botWireProjectionIsExact: BotWireProjectionIsExact = true;
@@ -1087,6 +1091,16 @@ export class Store {
       if (JSON.stringify(clean) !== JSON.stringify(b.perspicax)) {
         if (clean) b.perspicax = clean;
         else delete b.perspicax;
+        botsMigrated = true;
+      }
+    }
+    // Perspicax #321: a malformed temporary mark is dropped.
+    for (const b of this.bots) {
+      if (b.temporary === undefined) continue;
+      const clean = cleanTemporaryAgent(b.temporary);
+      if (JSON.stringify(clean) !== JSON.stringify(b.temporary)) {
+        if (clean) b.temporary = clean;
+        else delete b.temporary;
         botsMigrated = true;
       }
     }
@@ -2062,7 +2076,7 @@ export class Store {
     profile: Partial<
       Pick<
         BotRecord,
-        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "modelSelection" | "section" | "cwd" | "visibility" | "ownerUserId" | "toolScope"
+        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "modelSelection" | "section" | "cwd" | "visibility" | "ownerUserId" | "toolScope" | "temporary"
       >
     > = {},
     opts: {
@@ -2101,6 +2115,8 @@ export class Store {
       createdAt: Date.now(),
       host: { kind: "fleet" },
       ...(profile.ownerUserId?.trim() ? { ownerUserId: profile.ownerUserId.trim().toLowerCase() } : {}),
+      // Marked before its first announcement, so the app never lists it.
+      ...(profile.temporary ? { temporary: structuredClone(profile.temporary) } : {}),
     };
     if (section) bot.section = section;
     if (profile.cwd) bot.cwd = profile.cwd;
@@ -2118,8 +2134,15 @@ export class Store {
     }];
     // Persist the selection in the first record, before publishing the bot
     // or starting its greeting. An interrupted creation cannot inherit tools.
-    this.saveBots([bot, ...this.bots]);
-    this.bots.unshift(bot);
+    // A temporary agent goes last: whatever takes the newest bot as the one
+    // to show never lands on a bot the app does not list.
+    if (bot.temporary) {
+      this.saveBots([...this.bots, bot]);
+      this.bots.push(bot);
+    } else {
+      this.saveBots([bot, ...this.bots]);
+      this.bots.unshift(bot);
+    }
     // The folder exists from the first moment, so the user can open
     // SOUL.md before the bot has said a word. The record is canonical: a
     // mirror-write failure must never fail bot creation.
@@ -2313,6 +2336,19 @@ export class Store {
   setBotGrants(id: string, grants: BotGrant[]): BotRecord | null {
     const clean = cleanBotGrants(grants);
     return this.patchBot(id, { grants: clean, directGrants: directFromGrants(clean) });
+  }
+
+  /** Perspicax #321: replace a bot's temporary mark (undefined removes it). */
+  setBotTemporary(id: string, temporary: TemporaryAgent | undefined): BotRecord | null {
+    const bot = this.bot(id);
+    if (!bot) return null;
+    const clean = temporary === undefined ? undefined : cleanTemporaryAgent(temporary);
+    if (temporary !== undefined && !clean) throw new Error("invalid temporary agent record");
+    if (clean) bot.temporary = clean;
+    else delete bot.temporary;
+    this.saveBots();
+    this.emit({ type: "bot", botId: id });
+    return bot;
   }
 
   /** Slice 5: replace a bot's Perspicax profiles ([] removes the field). */
