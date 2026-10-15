@@ -51,8 +51,6 @@ export function parseLegacyRuleId(id: string): { botId: string; key: string } | 
   return botId && key ? { botId, key } : null;
 }
 
-const RULE = /^\/api\/approval-rules\/([\w-]+)$/;
-const MODE = /^\/api\/bots\/([\w-]+)\/permission-mode$/;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHandler {
@@ -72,8 +70,8 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
     })));
 
   return async ({ req, res, url, path, method, auth, json, readBody }) => {
-    if (path === "/api/approval-rules") {
-      if (method !== "GET") return json(res, 405, { error: "GET only" });
+    if (path === "/api/approval-rules" && method !== "GET") return json(res, 405, { error: "GET only" });
+    if (path === "/api/approval-rules" && method === "GET") {
       res.setHeader("cache-control", "no-store");
       const me = deps.manager(auth);
       if (!me) return json(res, 403, { error: "Sign in to see your approval rules." });
@@ -82,9 +80,10 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
       return json(res, 200, { rules: [...deps.store.rulesOf(me, botId), ...legacyRules(me, botId)] });
     }
 
-    const rule = RULE.exec(path);
-    if (rule) {
-      if (method !== "PATCH" && method !== "DELETE") return json(res, 405, { error: "PATCH or DELETE only" });
+    // each route sits beside its method guard (scripts/tool-policy/route-inventory.ts)
+    const rule = /^\/api\/approval-rules\/([\w-]+)$/.exec(path);
+    if (rule && method !== "PATCH" && method !== "DELETE") return json(res, 405, { error: "PATCH or DELETE only" });
+    if (rule && (method === "PATCH" || method === "DELETE")) {
       const me = deps.manager(auth);
       if (!me) return json(res, 403, { error: "Sign in to change your approval rules." });
       const body = method === "PATCH" ? await readBody(req) : {};
@@ -134,9 +133,9 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
       return json(res, 200, { rule: updated });
     }
 
-    const mode = MODE.exec(path);
-    if (mode) {
-      if (method !== "GET" && method !== "PUT") return json(res, 405, { error: "GET or PUT only" });
+    const mode = /^\/api\/bots\/([\w-]+)\/permission-mode$/.exec(path);
+    if (mode && method !== "GET" && method !== "PUT") return json(res, 405, { error: "GET or PUT only" });
+    if (mode && (method === "GET" || method === "PUT")) {
       const botId = mode[1]!;
       const ownerId = deps.ownerOf(botId);
       if (!ownerId) return json(res, 404, { error: "no such bot" });
