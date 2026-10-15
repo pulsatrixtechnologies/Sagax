@@ -10,6 +10,9 @@ only on demand and are never persisted in chat messages.
 
 Deployment for this repository:
 
+0. The committed `wrangler.jsonc` ships an all-zero D1 `database_id`
+   placeholder. Put the real database ID into your local copy first (do not
+   commit it); every command below reads that file.
 1. `pnpm broker:types`
 2. `pnpm exec wrangler d1 migrations apply openmausbot-composio --remote --config cloudflare/composio-broker/wrangler.jsonc`
 3. For an existing Worker, run `pnpm exec wrangler secret put COMPOSIO_API_KEY --config cloudflare/composio-broker/wrangler.jsonc`, then `pnpm broker:deploy`.
