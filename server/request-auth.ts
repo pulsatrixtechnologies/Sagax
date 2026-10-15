@@ -460,6 +460,14 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/workspace(?:\/download)?$/ },
   { methods: ["GET", "PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/workspace\/file$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/workspace\/docs\/rename$/ },
+  // The rule sets (server/routes/bot-rules.ts): list, add, rename, switch,
+  // reorder, save a set's text, delete. Same gate as the Soul edit, checked
+  // in the handler.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/rules$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/rules\/sets$/ },
+  { methods: ["PUT"], path: /^\/api\/bots\/[\w-]+\/rules\/order$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/rules\/sets\/[a-z0-9-]+$/ },
+  { methods: ["PUT"], path: /^\/api\/bots\/[\w-]+\/rules\/sets\/[a-z0-9-]+\/text$/ },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
   // What the bot does, can reach and won't do (the profile's "What this bot
   // does"): the handler lets a client session read it for a bot it owns.
@@ -594,6 +602,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/skills$/, feature: "orgDirectory" },
   { methods: ["GET", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/skills\/[a-z0-9-]+$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/skill-template$/, feature: "orgDirectory" },
+  // Skills > Upload (server/routes/bot-skill-upload.ts): same rights as the
+  // skills routes, checked in the handler.
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/skill-upload$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/plugins$/, feature: "orgDirectory" },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/update)?)?$/, feature: "orgDirectory" },
   { methods: ["PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, feature: "orgDirectory" },

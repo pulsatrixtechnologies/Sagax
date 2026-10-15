@@ -23,6 +23,8 @@ import {
   RULES_MAX_BYTES,
   RULES_MAX_LINES,
   RULES_TEMPLATE,
+  RULES_TOTAL_MAX_BYTES,
+  RULES_TOTAL_MAX_LINES,
   SOUL_MAX_BYTES,
   WorkspacePathError,
   isForgotten,
@@ -51,13 +53,13 @@ export interface BotWorkspaceRouteDeps {
 
 const FORBIDDEN = { error: "forbidden: only this bot's owner or an admin can change its rules and documents" };
 
-/** RULES.md or docs/<name>.md, nothing else: this route is reachable by a
+/** RULES.md, rules/<set>.md or docs/<name>.md, nothing else: this route is reachable by a
  * member, and memory files stay an admin's. */
 function rulesOrDoc(path: string | null): string | null {
   if (!path) return null;
   try {
     const ref = parseMemoryPath(path);
-    return ref.kind === "rules" || ref.kind === "doc" ? path : null;
+    return ref.kind === "rules" || ref.kind === "ruleset" || ref.kind === "doc" ? path : null;
   } catch {
     return null;
   }
@@ -100,6 +102,7 @@ export function createBotWorkspaceRoutes(deps: BotWorkspaceRouteDeps): RouteHand
         forgottenAfterDays: Math.round(FORGOTTEN_AFTER_MS / (24 * 60 * 60_000)),
         budgets: {
           rules: { maxLines: RULES_MAX_LINES, maxBytes: RULES_MAX_BYTES },
+          rulesTotal: { maxLines: RULES_TOTAL_MAX_LINES, maxBytes: RULES_TOTAL_MAX_BYTES },
           memory: { maxLines: MEMORY_MAX_LINES, maxBytes: MEMORY_MAX_BYTES },
           soul: { maxBytes: SOUL_MAX_BYTES },
         },
@@ -156,7 +159,7 @@ export function createBotWorkspaceRoutes(deps: BotWorkspaceRouteDeps): RouteHand
       };
       if (method === "GET") {
         const file = rulesOrDoc(url.searchParams.get("path") ?? RULES_PATH);
-        if (!file) return json(res, 400, { error: "path must be RULES.md or docs/<name>.md" });
+        if (!file) return json(res, 400, { error: "path must be RULES.md, rules/<set>.md or docs/<name>.md" });
         try {
           return json(res, 200, readMemoryDoc(botId, file));
         } catch (error) {
@@ -165,7 +168,7 @@ export function createBotWorkspaceRoutes(deps: BotWorkspaceRouteDeps): RouteHand
       }
       if (method === "DELETE") {
         const file = rulesOrDoc(url.searchParams.get("path"));
-        if (!file) return json(res, 400, { error: "path must be RULES.md or docs/<name>.md" });
+        if (!file) return json(res, 400, { error: "path must be RULES.md, rules/<set>.md or docs/<name>.md" });
         try {
           write(botId, () => journalMemoryDelete(botId, file, { actor: "person", via: "ui" }));
           return json(res, 200, { ok: true, path: file });
@@ -175,7 +178,7 @@ export function createBotWorkspaceRoutes(deps: BotWorkspaceRouteDeps): RouteHand
       }
       const parsed = z.object({ path: z.string(), text: z.string(), expectedHash: z.string().optional() }).safeParse(await readBody(req));
       const file = parsed.success ? rulesOrDoc(parsed.data.path) : null;
-      if (!parsed.success || !file) return json(res, 400, { error: "send { path: RULES.md or docs/<name>.md, text, expectedHash? }" });
+      if (!parsed.success || !file) return json(res, 400, { error: "send { path: RULES.md, rules/<set>.md or docs/<name>.md, text, expectedHash? }" });
       try {
         const { doc } = write(botId, () => journalMemoryWrite(botId, file, parsed.data.text, { actor: "person", via: "ui", expectedHash: parsed.data.expectedHash }));
         return json(res, 200, { ok: true, ...doc });

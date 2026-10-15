@@ -72,14 +72,14 @@ describe("RULES.md", () => {
     expect(rulesSystemPrompt(BOT)).not.toContain("rules_update");
   });
 
-  it("cuts at 60 lines or 8 KB, whichever first, with a notice like MEMORY.md", () => {
-    write("RULES.md", Array.from({ length: 80 }, (_, i) => `- rule ${i}`).join("\n"));
+  it("cuts at 100 lines or 12 KB, whichever first, with a notice like MEMORY.md", () => {
+    write("RULES.md", Array.from({ length: 130 }, (_, i) => `- rule ${i}`).join("\n"));
     const lines = loadRules(BOT)!;
-    expect(lines).toMatchObject({ truncated: true, lines: 80 });
+    expect(lines).toMatchObject({ truncated: true, lines: 130 });
     expect(lines.text.split("\n")).toHaveLength(RULES_MAX_LINES);
-    expect(rulesSystemPrompt(BOT)).toContain(`[RULES.md is 80 lines and ${lines.bytes} bytes; only the first ${RULES_MAX_LINES} lines / ${RULES_MAX_BYTES} bytes are shown above.`);
+    expect(rulesSystemPrompt(BOT)).toContain(`[RULES.md is 130 lines and ${lines.bytes} bytes; only the first ${RULES_MAX_LINES} lines / ${RULES_MAX_BYTES} bytes are shown above.`);
 
-    write("RULES.md", `- ${"é".repeat(5000)}`);
+    write("RULES.md", `- ${"é".repeat(7000)}`);
     const bytes = loadRules(BOT)!;
     expect(bytes.truncated).toBe(true);
     expect(Buffer.byteLength(bytes.text, "utf8")).toBeLessThanOrEqual(RULES_MAX_BYTES);
@@ -264,7 +264,7 @@ describe("the Files list", () => {
     const { entries } = workspaceTree(BOT);
     expect(entries.map((entry) => entry.path)).toEqual(["MEMORY.md", "RULES.md", "docs", "docs/a.md", "memory", "out", "out/report.pdf"]);
     const rules = entries.find((entry) => entry.path === "RULES.md")!;
-    expect(rules).toMatchObject({ load: "every-turn", editable: true, budget: { maxLines: 60, maxBytes: 8000, lines: 1, over: false } });
+    expect(rules).toMatchObject({ load: "every-turn", editable: true, budget: { maxLines: 100, maxBytes: 12000, lines: 1, over: false } });
     expect(entries.find((entry) => entry.path === "out/report.pdf")).toMatchObject({ load: "never", editable: false, markdown: false });
   });
 
