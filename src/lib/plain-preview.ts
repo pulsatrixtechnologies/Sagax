@@ -37,10 +37,11 @@ export function plainPreviewText(text: string): string {
   // <https://example.com> autolinks read as the address
   out = out.replace(/<((?:https?|mailto):[^>\s]+)>/gi, "$1");
   // html line breaks and simple inline tags
-  out = out.replace(/<br\s*\/?>/gi, " ");
-  // (until stable, so a tag split by another, <sp<b>an>, leaves none behind)
-  for (let previous = ""; previous !== out; ) {
+  // (until stable, so a tag split by another, <sp<b>an>, leaves none behind;
+  // capped so deeply nested hostile input cannot stall the sidebar)
+  for (let previous = "", pass = 0; previous !== out && pass < 32; pass++) {
     previous = out;
+    out = out.replace(/<br\s*\/?>/gi, " ");
     out = out.replace(/<\/?(?:b|strong|i|em|u|s|del|ins|mark|code|kbd|sub|sup|small|span|p|div)\b[^>]*>/gi, "");
   }
   // block markers at the start of a line: headings, quotes, list bullets,

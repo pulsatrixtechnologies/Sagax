@@ -51,5 +51,6 @@ describe("plainPreviewText", () => {
 
   it("leaves no inline tag behind when one is split by another", () => {
     expect(plainPreviewText("a <sp<b>an>bold</sp</b>an> word")).toBe("a bold word");
+    expect(plainPreviewText("x <br<i>/> y")).not.toContain("<br");
   });
 });
