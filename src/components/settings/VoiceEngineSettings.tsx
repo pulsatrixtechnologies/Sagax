@@ -34,7 +34,7 @@ export function voiceKeyRow(provider: string | undefined): KeyRowId | null {
 
 /** `keysLink`: the Keys list is on this page, so a missing key links to its
  * row (false in a remote window, where the list is not shown). */
-export function VoiceEngineSettings({ keysLink = true }: { keysLink?: boolean } = {}) {
+export function VoiceEngineSettings({ keysLink = true }: { keysLink?: boolean }) {
   const { state, dispatch } = useStore();
   const tts = state.config?.tts;
   const [serverUrl, setServerUrl] = useState("");

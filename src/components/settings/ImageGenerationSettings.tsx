@@ -35,7 +35,7 @@ const BUTTON_CLASS = "flex items-center justify-center gap-1.5 rounded-lg bg-con
 
 /** `keysLink`: the Keys list is on this page, so a missing key links to its
  * row (false in a remote window, where the list is not shown). */
-export function ImageGenerationSettings({ keysLink = true }: { keysLink?: boolean } = {}) {
+export function ImageGenerationSettings({ keysLink = true }: { keysLink?: boolean }) {
   const { state, dispatch } = useStore();
   const imageGen = state.config?.imageGen;
   const savedProvider = imageGen?.provider ?? "openai";
