@@ -48,7 +48,7 @@ function fakeElectron() {
   return { BrowserWindow: FakeWindow, ipcMain, handlers, windows, main };
 }
 
-function setup({ enabled = true, trusted = true } = {}) {
+function setup({ enabled = true, trusted = true, log = undefined } = {}) {
   const fake = fakeElectron();
   const featureEnabled = vi.fn(async () => enabled);
   const openExternal = vi.fn();
@@ -59,6 +59,7 @@ function setup({ enabled = true, trusted = true } = {}) {
     isTrustedMain: () => trusted,
     featureEnabled,
     openExternal,
+    log,
   });
   const fromMain = { sender: fake.main.webContents, senderFrame: { url: `${ORIGIN}/#bot=scout` } };
   return { ...fake, controller, featureEnabled, openExternal, fromMain };
@@ -113,16 +114,22 @@ describe("Data windows", () => {
     expect(windows).toHaveLength(3);
   });
 
-  it("refuses while the experimental switch is off, or when it cannot be read", async () => {
+  it("says whether the server answered off or could not be asked", async () => {
+    // The server answered: its switch is off. The page shows "off" and
+    // rereads the config, so Settings stops showing a switch that is not on.
     const off = setup({ enabled: false });
-    expect(await off.controller.open(off.fromMain, { botId: "scout", title: "Data" })).toBe("refused");
+    expect(await off.controller.open(off.fromMain, { botId: "scout", title: "Data" })).toBe("off");
     expect(off.featureEnabled).toHaveBeenCalledWith(ORIGIN);
     expect(off.windows).toHaveLength(0);
 
-    const broken = setup();
-    broken.featureEnabled.mockRejectedValueOnce(new Error("offline"));
-    expect(await broken.controller.open(broken.fromMain, { botId: "scout", title: "Data" })).toBe("refused");
+    // The check itself failed (signed out, a proxy, a timeout): that is not
+    // "the switch is off", and the page must not say it is.
+    const log = vi.fn();
+    const broken = setup({ log });
+    broken.featureEnabled.mockRejectedValueOnce(new Error("the server answered 401"));
+    expect(await broken.controller.open(broken.fromMain, { botId: "scout", title: "Data" })).toBe("unavailable");
     expect(broken.windows).toHaveLength(0);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("the server answered 401"));
   });
 
   it("answers only the main window's own page", async () => {

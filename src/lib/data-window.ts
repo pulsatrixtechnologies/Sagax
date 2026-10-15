@@ -84,7 +84,9 @@ export function subscribeDataWindowMessages(listener: (message: DataWindowMessag
   return () => port.close();
 }
 
-export type OpenDataWindowResult = "created" | "focused" | "refused" | "blocked";
+/** "off": the server answered that its switch is off; "unavailable": the
+ * desktop could not ask it (electron/data-window.mjs). */
+export type OpenDataWindowResult = "created" | "focused" | "refused" | "blocked" | "off" | "unavailable";
 
 /** Opens (or brings forward) this bot's Data window, on `cardId` if given.
  * The caller checks the experimental switch first; main checks it again. */

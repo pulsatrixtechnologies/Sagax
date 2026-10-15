@@ -7401,6 +7401,8 @@
   "dataWindow.off": "The Data window is off. Turn it on in Settings > Experimental.",
   "dataWindow.noBot": "This bot is not available here.",
   "dataWindow.blocked": "The browser blocked the new window. Allow pop-ups for Sagax and try again.",
+  "dataWindow.unavailable": "Sagax could not check with the server whether the Data window is on. Check your connection and sign-in, then try again.",
+  "dataWindow.refused": "Sagax could not open the Data window from this page.",
   "settings.experimental.dataWindow": "Data window",
   "settings.experimental.dataWindowAria": "Turn on the Data window",
   "settings.experimental.dataWindowDetail": "Off by default. A Data button next to the threads button opens a bot's tables, charts and SQL in a window of their own.",

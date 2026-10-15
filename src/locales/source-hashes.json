@@ -9358,6 +9358,8 @@
       "dataWindow.off": "7d3238fb5fa7024523a9d46c8df0fcde000b9cfab2f293ec20713a73774adb6b",
       "dataWindow.noBot": "f04cfe294ca300b3329f008d0aafa52cfce5491d150fc1f2784f3f58c38a72fa",
       "dataWindow.blocked": "2ce8abf2c17455b9474e8353a2bb2dd0c3516fe06861cc121a81fc5c79551cee",
+      "dataWindow.unavailable": "2d23de77d8260d4e4842fcdaf404fe2e7f5eabc64ba191e89af385b7715ad835",
+      "dataWindow.refused": "06c307b52329cf3278f5ace7c8e2657d8d89fd8dba5a953287e1b2df8e0d593d",
       "settings.experimental.dataWindow": "05a20917cb7b487841b6a992ae71186e2e4b39d719e912f60eaada4113c05b26",
       "settings.experimental.dataWindowAria": "c111040a8f21aedf0e044dc9e2d81d769cf6050ac3d1ab6cfd4b8409618493e1",
       "settings.experimental.dataWindowDetail": "44bd6810c3679b6b871995892883392a75712ccf174a2c387518618bcc957202",

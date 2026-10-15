@@ -3786,16 +3786,26 @@ const dataWindows = createDataWindows({
   ipcMain,
   getMainWindow: () => mainWindow,
   isTrustedMain: (event) => isDesktopUiSender(event),
+  // The person's own session cookie, like the org memory call: never the
+  // HTTP cache (the answer must be the server's state now), and a refusal or
+  // a page that is not the config is an error the page reports as such,
+  // never as "the switch is off" (data-window.mjs).
   featureEnabled: async (origin) => {
-    const cookie = (await session.defaultSession.cookies.get({ url: origin })).map((entry) => `${entry.name}=${entry.value}`).join("; ");
+    // main's own calls never go through the bundled-UI handler (bundled-ui.cjs)
     const response = await session.defaultSession.fetch(`${origin}/api/config`, {
-      headers: cookie ? { cookie } : {},
-      signal: AbortSignal.timeout(5_000),
+      credentials: "include",
+      cache: "no-store",
+      redirect: "error",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
       bypassCustomProtocolHandlers: true,
     });
-    if (!response.ok) return false;
+    if (!response.ok) throw new Error(`the server answered ${response.status}`);
     const status = await response.json().catch(() => null);
-    return status?.features?.dataWindow === true;
+    if (!status || typeof status !== "object" || !status.features || typeof status.features !== "object") {
+      throw new Error("the server's answer has no features");
+    }
+    return status.features.dataWindow === true;
   },
   openExternal: (url) => {
     try {

@@ -5543,6 +5543,8 @@
   "dataWindow.off": "La fenêtre Data est désactivée. Activez-la dans Réglages > Expérimental.",
   "dataWindow.noBot": "Ce bot n'est pas disponible ici.",
   "dataWindow.blocked": "Le navigateur a bloqué la nouvelle fenêtre. Autorisez les fenêtres surgissantes pour Sagax et réessayez.",
+  "dataWindow.unavailable": "Sagax n'a pas pu vérifier auprès du serveur si la fenêtre Data est activée. Vérifiez votre connexion et votre session, puis réessayez.",
+  "dataWindow.refused": "Sagax n'a pas pu ouvrir la fenêtre Data depuis cette page.",
   "settings.experimental.dataWindow": "Fenêtre Data",
   "settings.experimental.dataWindowAria": "Activer la fenêtre Data",
   "settings.experimental.dataWindowDetail": "Désactivé par défaut. Un bouton Data à côté du bouton des fils ouvre les tableaux, graphiques et requêtes SQL d'un bot dans une fenêtre à part.",

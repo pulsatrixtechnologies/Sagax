@@ -3,7 +3,7 @@
 // Inspector. Absent while the experimental switch is off and on the
 // companion connection, where Data is not served.
 import { useEffect, useRef } from "react";
-import { useStore, type Bot } from "@/state/store";
+import { api, useStore, type Bot, type ConfigStatus } from "@/state/store";
 import { dataWindowEnabled } from "@/lib/feature-flags";
 import { openDataWindow, subscribeDataWindowMessages } from "@/lib/data-window";
 import { t } from "@/lib/i18n";
@@ -20,9 +20,16 @@ export function useDataWindowItem(bot: Pick<Bot, "id" | "name">): { label: strin
       void openDataWindow({ botId: bot.id, title: t("dataWindow.title", { name: bot.name }) }).then((result) => {
         if (result === "blocked") dispatch({ type: "error", message: t("dataWindow.blocked") });
         // The desktop asks the page's server again before it opens anything
-        // (electron/data-window.mjs): a server that does not report the
-        // switch on refuses, which used to do nothing at all.
-        else if (result === "refused") dispatch({ type: "error", message: t("dataWindow.off") });
+        // (electron/data-window.mjs). Only its "off" means the switch is off:
+        // then this page's copy of the config was stale, so it is read again
+        // and Settings shows the server's state, not a switch that lies.
+        else if (result === "off") {
+          dispatch({ type: "error", message: t("dataWindow.off") });
+          void api<ConfigStatus>("/api/config").then((config) => dispatch({ type: "configStatus", config }), () => {});
+        }
+        // The check itself failed (signed out, no answer): not "off".
+        else if (result === "unavailable") dispatch({ type: "error", message: t("dataWindow.unavailable") });
+        else if (result === "refused") dispatch({ type: "error", message: t("dataWindow.refused") });
       });
     },
   };
