@@ -66,6 +66,11 @@ metadata:
   labels:
     {{- include "sandboxes.labels" . | nindent 4 }}
 rules:
+  # kubectl scale reads the Deployment before it writes the scale subresource.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["sagax-sandbox-warmer"]
+    verbs: ["get"]
   - apiGroups: ["apps"]
     resources: ["deployments/scale"]
     resourceNames: ["sagax-sandbox-warmer"]

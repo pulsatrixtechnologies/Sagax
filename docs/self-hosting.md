@@ -1269,7 +1269,7 @@ Connect apps, in that bot's scope ("For <bot>", `server/bot-plugins.ts`; the
 marketplace list is the workspace's own, one list for both scopes); Sagax
 fetches the marketplace itself and loads each plugin with `--plugin-dir`, without its
 hooks or MCP servers. The organization's admin may keep a list of allowed
-marketplaces (Settings > Organization > Plugins et GitHub; any by default).
+marketplaces (Connect apps > Manage > Organization sources and access; any by default).
 `SAGAX_CLAUDE_ALLOW` rules for `claude plugin ...` are therefore not needed
 there.
 

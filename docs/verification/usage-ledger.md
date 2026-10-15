@@ -1,6 +1,8 @@
 # Usage ledger
 
 > 2026-10-14: Settings > Usage reads `GET /api/usage?mine=1` (the requester's own turns, `usageRowsFor` in server/usage-ledger.ts). The History card and its groupings left the app.
+>
+> 2026-10-15: Settings > Usage reads `GET /api/me/usage` instead, open to every signed-in person (CLIENT_ALLOW): the handler keeps the caller's own turns only, refuses `groupBy=user`, carries no budget, and on an organization server refuses a session that names no person (403). `/api/usage` (and `?mine=1`, still read by the iOS app) stays admin or `usage.view`. Tests: server/routes/usage.test.ts.
 
 ## Sub-features
 

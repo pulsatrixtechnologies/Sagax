@@ -55,7 +55,7 @@ describe("Settings → General", () => {
     setLocale("fr");
     const fr = await renderSettings();
     expect(fr).toContain(">Réglages<");
-    expect(fr).toContain("MCP, accès aux outils, conversations parallèles");
+    expect(fr).toContain("Accès aux outils, conversations parallèles");
     expect(fr).not.toMatch(/[\u2013\u2014]/);
   });
 
@@ -65,7 +65,7 @@ describe("Settings → General", () => {
     expect(en).toContain("Settings");
     expect(en).toContain("Models and voice");
     // the technical cards are one row away, on General > Advanced
-    expect(en).toContain("MCP, tool access, parallel conversations");
+    expect(en).toContain("Tool access, parallel conversations");
   });
 
   it("offers a labeled compact section picker without removing desktop navigation", async () => {

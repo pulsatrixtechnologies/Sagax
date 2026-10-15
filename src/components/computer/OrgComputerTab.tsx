@@ -10,9 +10,10 @@
 //   (src/lib/desktop-local-vm.ts, electron/local-vm.mjs), set up, repaired or
 //   started from the screen itself.
 //
-// Above the screen, when there is more than one to look at, a segmented
-// control: Cloud, then each of the person's online computers by its name
-// (a person with two PCs sees two), a dot on the one the bot works on.
+// Above the screen, when there is more than one to look at, a drop-down
+// (ScreenPicker): Cloud, then each of the person's online computers by its
+// name (a person with two PCs sees two), then the bot's browser, a dot on
+// the one the bot works on.
 // Picking one only changes the screen shown (and where its Local VM
 // actions go, `desktopId`), never where the bot works.
 //
@@ -22,8 +23,8 @@
 //
 // Every action is the signed-in person's own (the server takes the person
 // from the session); nothing here names a bot or another person.
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, Cpu, Globe, HardDrive, Info, Laptop, MemoryStick, Server, type LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Check, ChevronDown, Cpu, Globe, HardDrive, Info, Laptop, MemoryStick, Server, type LucideIcon } from "lucide-react";
 
 import { chosenComputer, computerChoices, currentDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import {
@@ -138,28 +139,98 @@ export interface ScreenPickerItem {
   here?: boolean;
 }
 
-/** The Computer tab's one segmented control: Cloud and each of the person's
- * computers by name on an organization server, then the bot's Browser
- * (Screen and Browser on a solo server). The dot marks where the bot works. */
+/** The Computer tab's one screen chooser, a drop-down (#518 menus): one
+ * button names the screen shown (Cloud and each of the person's computers by
+ * name on an organization server, then the bot's Browser; Screen and Browser
+ * on a solo server) and opens the list of them. The dot marks where the bot
+ * works. Keyboard: Enter, Space or the arrows open it; in the list the
+ * arrows, Home and End move, Enter or Space pick, Escape and Tab close, and
+ * focus comes back to the button. The list stays in the page while closed
+ * (hidden), so a screen reader never meets a half-built one. */
 export function ScreenPicker({ items, chosen, onPick }: { items: ScreenPickerItem[]; chosen: string | null; onPick: (key: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const chosenIndex = Math.max(0, items.findIndex((item) => item.key === chosen));
+  const [active, setActive] = useState(chosenIndex);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const current = items[chosenIndex];
+
+  const close = useCallback((refocus: boolean) => {
+    setOpen(false);
+    if (refocus) trigger.current?.focus({ preventScroll: true });
+  }, []);
+  const show = (index: number) => {
+    setActive(Math.min(Math.max(index, 0), items.length - 1));
+    setOpen(true);
+  };
+  const pick = (index: number) => {
+    const item = items[index];
+    close(true);
+    if (item) onPick(item.key);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    list.current?.focus({ preventScroll: true });
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) close(false);
+    };
+    window.addEventListener("pointerdown", outside);
+    return () => window.removeEventListener("pointerdown", outside);
+  }, [open, close]);
+
+  const onTriggerKey = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      show(chosenIndex);
+    }
+  };
+  const onListKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const last = items.length - 1;
+    const move: Record<string, number> = { ArrowDown: Math.min(active + 1, last), ArrowUp: Math.max(active - 1, 0), Home: 0, End: last };
+    if (event.key in move) { event.preventDefault(); setActive(move[event.key]!); return; }
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); pick(active); return; }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); return; }
+    if (event.key === "Tab") close(false);
+  };
+
+  if (!current) return null;
+  const CurrentIcon = current.icon;
+  const optionId = (index: number) => `${id}-option-${index}`;
   return (
-    <div role="radiogroup" aria-label={t("orgComputer.choice.label")} data-computer-picker=""
-      className="flex max-w-full gap-0.5 self-center overflow-x-auto rounded-full bg-control p-0.5 [scrollbar-width:none]">
-      {items.map((item) => {
-        const selected = item.key === chosen;
-        const Icon = item.icon;
-        return (
-          <button key={item.key} type="button" role="radio" aria-checked={selected} data-computer-choice={item.key}
-            title={item.here ? t("orgComputer.choice.worksHere", { name: item.label }) : item.label}
-            onClick={() => onPick(item.key)}
-            className={`flex min-w-0 shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
-              selected ? "bg-elevated text-ink shadow-sm" : "text-ink-secondary hover:text-ink"}`}>
-            <Icon size={12} aria-hidden="true" />
-            <span className="max-w-[132px] truncate">{item.label}</span>
-            {item.here && <span aria-hidden="true" data-works-here="" className="size-1.5 rounded-full bg-accent" />}
-          </button>
-        );
-      })}
+    <div ref={root} className="relative max-w-full self-center" data-computer-picker="">
+      <button ref={trigger} type="button" aria-haspopup="listbox" aria-expanded={open} aria-controls={`${id}-list`}
+        aria-label={t("orgComputer.choice.button", { name: current.here ? t("orgComputer.choice.worksHere", { name: current.label }) : current.label })}
+        title={current.here ? t("orgComputer.choice.worksHere", { name: current.label }) : current.label}
+        data-computer-picker-button="" data-computer-current={current.key}
+        onClick={() => (open ? close(false) : show(chosenIndex))} onKeyDown={onTriggerKey}
+        className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full bg-control px-3 py-1 text-[12.5px] text-ink transition-colors hover:bg-raised-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+        <CurrentIcon size={12} aria-hidden="true" />
+        <span className="max-w-[180px] truncate">{current.label}</span>
+        {current.here && <span aria-hidden="true" data-works-here="" className="size-1.5 shrink-0 rounded-full bg-accent" />}
+        <ChevronDown size={12} aria-hidden="true" className={open ? "rotate-180 text-ink-secondary" : "text-ink-secondary"} />
+      </button>
+      <div ref={list} id={`${id}-list`} role="listbox" aria-label={t("orgComputer.choice.label")} tabIndex={-1} hidden={!open}
+        aria-activedescendant={open ? optionId(active) : undefined} onKeyDown={onListKey}
+        className="absolute left-1/2 top-full z-30 mt-1 flex w-max min-w-[180px] max-w-[min(280px,90vw)] -translate-x-1/2 flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px] shadow-lg outline-none popover-surface">
+        {items.map((item, index) => {
+          const selected = item.key === current.key;
+          const Icon = item.icon;
+          return (
+            <div key={item.key} id={optionId(index)} role="option" aria-selected={selected} data-computer-choice={item.key}
+              title={item.here ? t("orgComputer.choice.worksHere", { name: item.label }) : item.label}
+              onPointerDown={(event) => event.preventDefault()} onClick={() => pick(index)} onPointerEnter={() => setActive(index)}
+              className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 ${index === active && open ? "bg-raised-hover" : ""} ${selected ? "text-ink" : "text-ink-secondary"}`}>
+              <Icon size={13} aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {item.here && <span data-works-here="" className="size-1.5 shrink-0 rounded-full bg-accent"><span className="sr-only">{t("orgComputer.choice.worksHereShort")}</span></span>}
+              {selected ? <Check size={13} aria-hidden="true" /> : <span aria-hidden="true" className="w-[13px]" />}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

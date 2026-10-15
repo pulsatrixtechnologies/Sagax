@@ -98,6 +98,7 @@ struct ChatView: View {
     /// The run card above the composer (ST4, WP14 `RunCardView`).
     @AppStorage(RunCardPreference.key) var showRunCard = true
     @ObservedObject var runCardDismissals = RunCardDismissals.shared
+    @ObservedObject var sidebarPrefs = SidebarPrefsModel.shared
 
     init(chat: Chat) {
         self.chat = chat
@@ -133,6 +134,14 @@ struct ChatView: View {
         guard case let .bot(bot) = chat else { return false }
         guard let live = session.state.bot(bot.id) else { return true }
         return live.tasks.map { !$0.contains { $0.threadId == selectedThreadId } } ?? false
+    }
+
+    /// The room on screen was in the state and is gone (deleted on the
+    /// server). Only the change counts: a room opened before the snapshot
+    /// lands is not dismissed.
+    var openRoomWasRemoved: Bool {
+        guard case .room = chat else { return false }
+        return !OpenConversation.present(chat, in: session.state)
     }
 
     var messages: [Message] {
@@ -318,6 +327,15 @@ struct ChatView: View {
         }
         .onValueChange(of: selectedThreadWasRemoved) { removed in
             if removed { dismiss() }
+        }
+        // A room deleted while open leaves the screen (its composer would
+        // write into nothing), and so does a conversation the person closes
+        // or hides while it is open (OpenConversation, bug 2026-10-15).
+        .onValueChange(of: openRoomWasRemoved) { removed in
+            if removed { dismiss() }
+        }
+        .onValueChangePair(of: sidebarPrefs.prefs.hidden) { previous, next in
+            if OpenConversation.newlyHidden(chat, previous: previous, next: next) { dismiss() }
         }
         .onValueChange(of: session.state.hasLoadedPage(forThread: threadId)) { loaded in
             let requestedThread = threadId

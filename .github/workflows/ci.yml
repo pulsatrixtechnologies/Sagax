@@ -421,8 +421,30 @@ jobs:
           cache: pnpm
       - if: steps.token.outputs.present == 'true'
         run: pnpm install --frozen-lockfile
-      - name: Deploy the composio broker Worker via Wrangler
+      # The committed wrangler.jsonc carries an all-zero D1 database_id
+      # placeholder. Inject the real one from a repo secret right before the
+      # deploy, and refuse to deploy against the placeholder.
+      # A missing or malformed secret skips the deploy with a warning, the
+      # same way a missing token does, so the placeholder is never deployed.
+      - name: Inject the broker D1 database_id from a secret
+        id: d1
         if: steps.token.outputs.present == 'true'
+        env:
+          D1_ID: ${{ secrets.COMPOSIO_BROKER_D1_DATABASE_ID }}
+        run: |
+          if ! printf '%s' "$D1_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || [ "$D1_ID" = "00000000-0000-0000-0000-000000000000" ]; then
+            echo "::warning title=Composio broker not deployed::COMPOSIO_BROKER_D1_DATABASE_ID is not set or is not a D1 database UUID, so the broker Worker was not deployed."
+            exit 0
+          fi
+          f=cloudflare/composio-broker/wrangler.jsonc
+          sed -i "s/\"database_id\": \"00000000-0000-0000-0000-000000000000\"/\"database_id\": \"$D1_ID\"/" "$f"
+          if grep -q '00000000-0000-0000-0000-000000000000' "$f"; then
+            echo "::error::database_id placeholder was not replaced in $f"
+            exit 1
+          fi
+          echo "injected=true" >> "$GITHUB_OUTPUT"
+      - name: Deploy the composio broker Worker via Wrangler
+        if: steps.token.outputs.present == 'true' && steps.d1.outputs.injected == 'true'
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

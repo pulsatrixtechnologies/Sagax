@@ -52,6 +52,10 @@ struct MarkdownText: View {
     /// Pictures as their alt text (an email draft's body, as the desktop's
     /// EmailCard draws them).
     var picturesAsText = false
+    /// A chat widget's Markdown node: an HTML ```widget, ```artifact or
+    /// ```cw fence shows as code, never as a card or a frame
+    /// (`<ChatMarkdown inert>` on the desktop).
+    var inert = false
 
     /// Spoilers this reader has revealed, by their text.
     @State private var revealed: Set<String> = []
@@ -88,8 +92,10 @@ struct MarkdownText: View {
         cwAsk: ((CwActionBody) -> Void)? = nil,
         cwThreadId: String? = nil,
         cwBotId: String? = nil,
-        openLink: ((URL) -> OpenURLAction.Result)? = nil
+        openLink: ((URL) -> OpenURLAction.Result)? = nil,
+        inert: Bool = false
     ) {
+        self.inert = inert
         self.source = source
         self.caret = caret
         self.scrollIdentifier = scrollIdentifier
@@ -163,7 +169,7 @@ struct MarkdownText: View {
         MarkdownText(
             source: text, mentions: mentions, mentionEveryone: mentionEveryone,
             attachmentScope: attachmentScope, picturesAsText: picturesAsText,
-            cwAsk: cwAsk, cwThreadId: cwThreadId, cwBotId: cwBotId, openLink: openLink
+            cwAsk: cwAsk, cwThreadId: cwThreadId, cwBotId: cwBotId, openLink: openLink, inert: inert
         )
     }
 
@@ -171,7 +177,8 @@ struct MarkdownText: View {
     private func view(for block: MarkdownBlock, tail: Bool, scrollIdentifier: String?, pending: Bool, identifier: String?) -> some View {
         switch block {
         case let .paragraph(text):
-            let youtubeIds = YouTubeLinks.ids(in: text)
+            // inert (a widget's Markdown): a YouTube link stays a link
+            let youtubeIds = inert ? [] : YouTubeLinks.ids(in: text)
             if youtubeIds.count == 1, YouTubeLinks.isStandaloneParagraph(text, videoId: youtubeIds[0]) {
                 YouTubeMiniPlayerView(videoId: youtubeIds[0], identifier: identifier.map { "\($0)-yt" })
             } else {
@@ -262,7 +269,9 @@ struct MarkdownText: View {
         let kind = RichBlocks.fenceKind(lang)
         let email = kind == .email || kind == nil ? RichBlocks.parseEmailBlock(code, lang: lang) : nil
         let csv = kind == .csv && !pending ? MarkdownTable.delimited(code, language: lang) : nil
-        if kind == .cw, let widget = CwWidget.parse(code) {
+        if inert, kind == .cw || kind == .widget {
+            CodeBlockView(language: language, code: code, pending: pending, caret: caretText(tail), identifier: identifier)
+        } else if kind == .cw, let widget = CwWidget.parse(code) {
             CwWidgetCard(widget: widget, threadId: cwThreadId, botId: cwBotId, ask: cwAsk)
         } else if lang.trimmingCharacters(in: .whitespaces).lowercased() == "mermaid" {
             MermaidBlockView(code: code, identifier: identifier)

@@ -277,10 +277,13 @@ describe("image scripts and manifests", () => {
     expect(deployment).toContain("type: ClusterIP");
     expect(deployment).toContain("SAGAX_SANDBOX_K8S_NODE_SELECTOR");
     expect(deployment).toContain("SAGAX_SANDBOX_K8S_TOLERATION");
+    expect(deployment).toMatch(/runAsUser: 1001/);
     const namespace = readFileSync(new URL("../deploy/k8s/provisioner/namespace.yaml", import.meta.url), "utf8");
     expect(namespace).toContain("restricted");
     const allow = readFileSync(new URL("../deploy/k8s/provisioner/networkpolicy-provisioner.yaml", import.meta.url), "utf8");
     expect(allow).toContain("app: sagax-sandboxd");
     expect(allow).toContain("6443");
+    expect(allow).toContain("k8s-app: kube-dns");
+    expect(allow).toMatch(/protocol: UDP\r?\n\s+port: 53/);
   });
 });

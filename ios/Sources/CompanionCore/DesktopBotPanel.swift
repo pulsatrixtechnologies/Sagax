@@ -97,6 +97,51 @@ public enum DesktopPanelSection: String, CaseIterable, Hashable, Sendable {
     }
 }
 
+/// The editor's six groups (`persona-sections.ts` `PERSONA_GROUPS`, JC
+/// 2026-10-14): Profile, Instructions, Memory and files, Model and tools,
+/// Behavior, History and usage. A group's page shows its sections one under
+/// the other; a section folded into another on the desktop (Who can see
+/// it and Shared with in the Overview, Slack and Works on in Access)
+/// follows its host's group.
+public enum DesktopPanelGroup: String, CaseIterable, Hashable, Sendable {
+    case profile, instructions, memoryFiles, modelTools, behavior, activity
+
+    /// Every section the group may hold, in the order it draws them.
+    public var sections: [DesktopPanelSection] {
+        switch self {
+        case .profile: [.overview, .visibility, .sharing]
+        case .instructions: [.soul, .skills]
+        case .memoryFiles: [.memory]
+        case .modelTools: [.model, .access, .worksOn, .slack, .perspicax]
+        case .behavior: [.permissions, .voice]
+        case .activity: [.history, .usage]
+        }
+    }
+
+    /// The group that shows a section.
+    public static func of(_ section: DesktopPanelSection) -> DesktopPanelGroup {
+        allCases.first { $0.sections.contains(section) } ?? .profile
+    }
+
+    /// The groups with at least one of `visible`, in order.
+    public static func visible(_ visible: [DesktopPanelSection]) -> [DesktopPanelGroup] {
+        allCases.filter { !$0.sections(in: visible).isEmpty }
+    }
+
+    /// The group's sections this pairing lists.
+    public func sections(in visible: [DesktopPanelSection]) -> [DesktopPanelSection] {
+        sections.filter(visible.contains)
+    }
+
+    /// The list's search: the group's label, or one of its sections'.
+    public func matches(_ query: String, label: String, visible: [DesktopPanelSection], sectionLabel: (DesktopPanelSection) -> String) -> Bool {
+        let wanted = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !wanted.isEmpty else { return true }
+        if label.lowercased().contains(wanted) { return true }
+        return sections(in: visible).contains { $0.matches(query, label: sectionLabel($0)) }
+    }
+}
+
 /// Where the panel sits at a window width (spec "At each iPad width"): docked
 /// beside the chat from 1024 pt, over the leading edge below.
 public enum DesktopPanelPlacement: Equatable, Sendable {
@@ -468,5 +513,68 @@ public enum BotLibraryChip: Hashable, Sendable {
         let kinds = ThreadFileRules.visibleFilters(counts: counts, selected: selected.fileFilter ?? .all).map(BotLibraryChip.files)
         guard links > 0 || selected == .links else { return kinds }
         return (kinds.isEmpty ? [.files(.all)] : kinds) + [.links]
+    }
+}
+
+// MARK: - The bot's one "..." menu
+
+/// One entry of the bot's one "..." menu (`BotActionsMenu.tsx`, JC
+/// 2026-10-14): Edit bot, Rename, the Primary Bot entry; Export the
+/// conversation (copy, download) and the bot (.zip); Archive, and in the
+/// desktop's Advanced mode the Inspector. It replaced the mascot's menu,
+/// the editor Overview's quick actions and the Primary bot button. "Put on
+/// the desktop" floats a window: desktop only.
+public enum BotActionsMenuItem: String, CaseIterable, Hashable, Sendable {
+    case editBot, rename, makePrimary, replacePrimary
+    case copyConversation, downloadConversation, exportZip
+    case archive, inspector
+}
+
+public struct BotActionsMenuPlan: Hashable, Sendable {
+    /// The entries, one group per run between the desktop's dividers; the
+    /// second group is the export, under its heading.
+    public var groups: [[BotActionsMenuItem]]
+    /// Set when Archive is shown but may not run now (the desktop's hint).
+    public var archiveBlock: BotArchiveBlock?
+
+    public var items: [BotActionsMenuItem] { groups.flatMap { $0 } }
+
+    public func enables(_ item: BotActionsMenuItem) -> Bool {
+        item != .archive || archiveBlock == nil
+    }
+
+    /// - Parameters:
+    ///   - viewerId: the viewer as the server knows them; nil keeps the
+    ///     Primary Bot entry out, as the sidebar's menu does.
+    ///   - editable: the pairing lists at least one section of the editor.
+    ///   - zipExport: `showBotZipExport` (the bot's owner or an admin, not
+    ///     through a sidecar).
+    ///   - inspector: the Inspector is offered where the pairing shows it.
+    ///   - activeBotCount: bots not archived, for Archive's "keep one".
+    public init(gate: SurfaceGate, bot: Bot, viewerId: String?, editable: Bool, zipExport: Bool,
+                inspector: Bool = false, activeBotCount: Int) {
+        var first: [BotActionsMenuItem] = []
+        if editable { first.append(.editBot) }
+        if gate.allows(.renameBot), gate.scope != .serverClient || viewerId.map({ PrimaryBotRules.viewerOwns(bot, viewerId: $0) }) == true {
+            first.append(.rename)
+        }
+        if let viewerId, gate.allows(.primaryBot) {
+            switch PrimaryBotRules.menuAction(for: bot, viewerId: viewerId) {
+            case .make: first.append(.makePrimary)
+            case .replace: first.append(.replacePrimary)
+            case nil: break
+            }
+        }
+        var export: [BotActionsMenuItem] = [.copyConversation, .downloadConversation]
+        if zipExport { export.append(.exportZip) }
+        var last: [BotActionsMenuItem] = []
+        var block: BotArchiveBlock?
+        if gate.allows(.archiveBot) {
+            last.append(.archive)
+            if bot.chiefOfStaff == true { block = .primary } else if activeBotCount <= 1 { block = .lastActive }
+        }
+        if inspector, gate.allows(.inspector) { last.append(.inspector) }
+        groups = [first, export, last].filter { !$0.isEmpty }
+        archiveBlock = block
     }
 }

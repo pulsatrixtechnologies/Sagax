@@ -1,8 +1,11 @@
 // Settings > Organization on an organization server (matrix ST8, AU19), in
 // the desktop's order (PerspicaxOrgSettings.tsx): the organization card
 // (link to Perspicax, role, who pays for a turn), Routines in my name,
-// Sharing in the organization (admins: force stop, force delete), then for
-// an admin Allow full access and the commands waiting for an admin. The
+// then for an admin Allow full access and the commands waiting for an
+// admin. Sharing in the organization (every bot of the organization with
+// its owner) is hidden since 2026-10-15, as on the desktop: the app shows
+// the person signed in; views of everyone belong to Sagax Business and the
+// Perspicax console. Its view code and the server routes stay. The
 // desktop-only cards (Where bots work, This computer for your bots) and the
 // interim people of a server that just moved to Perspicax stay on the
 // desktop.
@@ -27,10 +30,9 @@ final class OrganizationSettingsModel: ObservableObject {
         } catch {
             loadFailed = org == nil
         }
-        async let delegation = try? client.routineDelegation()
-        async let bots = try? client.organizationBots()
-        self.delegation = await delegation ?? RoutineDelegationStatus(state: "none")
-        self.bots = await bots ?? []
+        // Sharing in the organization is hidden (2026-10-15): its bot list is
+        // no longer fetched.
+        self.delegation = (try? await client.routineDelegation()) ?? RoutineDelegationStatus(state: "none")
         if org?.isAdmin == true {
             approvals = (try? await client.organizationApprovals()) ?? []
         }
@@ -99,7 +101,6 @@ struct OrganizationSettingsPage: View {
             if let org = model.org {
                 orgCard(org)
                 delegationCard
-                sharingCard(admin: org.isAdmin)
                 if org.isAdmin {
                     fullAccessCard(org)
                     approvalsCard

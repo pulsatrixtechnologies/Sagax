@@ -129,9 +129,11 @@ public enum FolderStatus: Equatable, Sendable {
 
 // MARK: - The thread menu (TH2-TH6)
 
-/// One entry of the thread row menu, in the desktop's order
-/// (SidebarThreadRow.tsx): Copy link, Rename, Regenerate title, Move to
-/// folder, Pin, Archive, Snooze, Stop snoozing, Delete.
+/// One entry of the thread menu. The desktop's one thread menu
+/// (`ThreadMenu.tsx`, 2026-10-14, shared by the sidebar and "All threads")
+/// keeps the everyday actions on its first level (Rename, Pin, Archive,
+/// Snooze ›, More ›) and the rare ones one step down under More (Move ›,
+/// Copy link, Regenerate title, Delete). Stop snoozing sits in Snooze.
 public enum ThreadMenuItem: Hashable, Sendable {
     case copyLink
     case rename
@@ -142,13 +144,21 @@ public enum ThreadMenuItem: Hashable, Sendable {
     case snooze
     case stopSnoozing
     case delete
+    /// The submenu that holds `ThreadMenuPlan.more`.
+    case more
 }
 
-/// Which items a thread's menu shows, and which of them are disabled.
-/// Bots get every item the desktop's bot thread list passes; rooms get
-/// what the room thread list passes (copy link, rename, pin, delete).
+/// Which items a thread's menu shows, on which level, and which of them are
+/// disabled. Bots get every item the desktop's bot thread list passes;
+/// rooms get what the room thread list passes (rename, pin, copy link,
+/// delete); a person's conversation archives and snoozes like a bot (#262).
 public struct ThreadMenuPlan: Equatable, Sendable {
+    /// The first level, in order; `.more` opens `more`.
     public var items: [ThreadMenuItem]
+    /// Under More, in order (Delete last).
+    public var more: [ThreadMenuItem]
+    /// Inside Snooze, before the presets: the thread is snoozed now.
+    public var stopsSnoozing: Bool
     public var disabled: Set<ThreadMenuItem>
 
     public init(
@@ -160,20 +170,19 @@ public struct ThreadMenuPlan: Equatable, Sendable {
         personThreads: Bool = false,
         now: Date = Date()
     ) {
-        var items: [ThreadMenuItem] = [.copyLink, .rename]
-        if ownerIsBot {
-            if generatedTitles { items.append(.regenerateTitle) }
-            if !folders.isEmpty { items.append(.moveToFolder) }
-        }
-        items.append(.pin)
-        // a person's conversation archives and snoozes like a bot (#262)
-        if ownerIsBot || personThreads {
-            items.append(.archive)
-            items.append(.snooze)
-            if task.isSnoozed(now: now) { items.append(.stopSnoozing) }
-        }
-        items.append(.delete)
+        let archives = ownerIsBot || personThreads
+        var items: [ThreadMenuItem] = [.rename, .pin]
+        if archives { items += [.archive, .snooze] }
+        items.append(.more)
         self.items = items
+
+        var more: [ThreadMenuItem] = []
+        if ownerIsBot, !folders.isEmpty { more.append(.moveToFolder) }
+        more.append(.copyLink)
+        if ownerIsBot, generatedTitles { more.append(.regenerateTitle) }
+        more.append(.delete)
+        self.more = more
+        stopsSnoozing = archives && task.isSnoozed(now: now)
 
         // The desktop disables archive, the snooze presets and delete while
         // the thread works; stop snoozing stays.
@@ -186,8 +195,11 @@ public struct ThreadMenuPlan: Equatable, Sendable {
         self.disabled = disabled
     }
 
-    public func shows(_ item: ThreadMenuItem) -> Bool { items.contains(item) }
-    public func enables(_ item: ThreadMenuItem) -> Bool { items.contains(item) && !disabled.contains(item) }
+    public func shows(_ item: ThreadMenuItem) -> Bool {
+        items.contains(item) || more.contains(item) || (item == .stopSnoozing && stopsSnoozing)
+    }
+
+    public func enables(_ item: ThreadMenuItem) -> Bool { shows(item) && !disabled.contains(item) }
 }
 
 // MARK: - The folder menu (SB19, SB20)

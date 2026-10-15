@@ -13,10 +13,13 @@
 //   5. Photo (optional): upload or remove a picture.
 //   6. Reset to default (optional): the owl, green, no skin, no picture.
 //
-// Locks (matrix row BP6): with `unlocks` from the person's achievements, a
-// character or a skin they have not earned carries a lock badge and cannot
-// be chosen; what the bot wears now always stays usable. Each skin names its
-// rarity (Common, Rare, Epic, Legendary) to VoiceOver.
+// Locks (matrix row BP6, #475): with `unlocks` from the person's
+// achievements, every character and every skin shows; one not earned yet is
+// greyed with a padlock and the achievement that unlocks it. A tap on it
+// previews it ("Preview: locked, nothing is saved", #518) and never writes
+// the draft. Trombi stays out until found (an easter egg). What the bot
+// wears now always stays usable. Each skin names its rarity (Common, Rare,
+// Epic, Legendary) to VoiceOver.
 //
 // Every choice is written to the binding at once; the owner decides whether
 // that is a draft (create) or a save (profile).
@@ -116,23 +119,22 @@ struct CharacterEditor: View {
     @State private var photoItem: PhotosPickerItem?
     /// The colour row picked by hand; nil follows the colour worn.
     @State private var colourRow: MausColors.PickerRow?
+    /// A locked character picked to look at; nil shows the one in the draft.
+    @State private var previewCharacter: MascotCharacter?
+    /// A locked skin picked to look at, on the character shown.
+    @State private var previewSkin: String?
 
     private static let ringGap: CGFloat = 2.7
     private static let ringWidth: CGFloat = 2
 
     var body: some View {
         VStack(spacing: 0) {
-            let characters = MascotCharacter.allCases.filter { !unlocks.characterLocked($0, current: wornDraft.character) }
-            row(count: characters.count, pitch: metrics.pitch, height: metrics.pitch) { index in
-                let character = characters[index]
-                thumbnail(
-                    look: lookFor(character),
-                    skin: character == .owl ? draft.skin : .none,
-                    size: metrics.cell,
-                    selected: draft.character == character,
-                    label: Text(characterName(character))
-                ) {
-                    draft.character = character
+            let characters = unlocks.listedCharacters(current: wornDraft.character)
+            let shown = shownCharacter
+            let characterLines = Self.lines(characters, perRow: 5)
+            ForEach(characterLines.indices, id: \.self) { line in
+                row(count: characterLines[line].count, pitch: metrics.pitch, height: metrics.pitch) { index in
+                    characterCell(characterLines[line][index], shown: shown)
                 }
             }
 
@@ -150,6 +152,10 @@ struct CharacterEditor: View {
             }
 
             skinRow
+
+            if previewing {
+                previewCard.padding(.top, 10)
+            }
 
             if draft.character != .trombi {
                 colourRows
@@ -182,90 +188,141 @@ struct CharacterEditor: View {
 
     // MARK: Rows
 
+    /// The character the skins are for: a locked one picked to look at, or the draft's.
+    private var shownCharacter: MascotCharacter { previewCharacter ?? draft.character }
+    private var shownCharacterLocked: Bool { unlocks.characterLocked(shownCharacter, current: wornDraft.character) }
+    private var previewing: Bool { previewCharacter != nil || previewSkin != nil }
+
+    /// The skin the draft wears on `character`.
+    private func wornSkin(_ character: MascotCharacter) -> String {
+        character == .owl ? draft.skin.rawValue : (draft.complete.skinID(character) ?? "")
+    }
+
+    /// Every skin of the character shown (#475): a locked one (or any skin
+    /// of a locked character) greyed with its padlock, previewed on a tap.
     @ViewBuilder private var skinRow: some View {
-        switch draft.character {
-        case .owl:
-            let skins = MascotSkin.allCases.filter { !skinLocked(.owl, $0.rawValue, worn: wornDraft.skin.rawValue) }
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: MascotLook.owl.complete, skin: skins[index], size: metrics.skinCell, selected: draft.skin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.owl, skins[index].rawValue)) {
-                    draft.skin = skins[index]
-                }
+        let character = shownCharacter
+        let characterLocked = shownCharacterLocked
+        let picked = previewSkin
+        let ids = CompleteMascotLook.skinIDs(character)
+        let large = character == .trombi
+        let worn = character == draft.character ? wornSkin(character) : nil
+        let skinLines = Self.lines(ids, perRow: large ? 5 : 9)
+        ForEach(skinLines.indices, id: \.self) { line in
+            row(count: skinLines[line].count, pitch: large ? metrics.pitch : metrics.skinPitch,
+                height: large ? metrics.pitch : (metrics.skinRowHeight ?? metrics.pitch)) { index in
+                skinCell(skinLines[line][index], character: character, characterLocked: characterLocked, picked: picked, worn: worn)
             }
-        case .shape:
-            let skins = ShapeSkin.allCases.filter { !skinLocked(.shape, $0.rawValue, worn: wornDraft.complete.shapeSkin.rawValue) }
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: edited { $0.shapeSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.shapeSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.shape, skins[index].rawValue)) {
-                    var next = draft.complete
-                    next.shapeSkin = skins[index]
-                    draft.look = next.stored
-                }
+        }
+    }
+
+    private func characterCell(_ character: MascotCharacter, shown: MascotCharacter) -> some View {
+        let locked = unlocks.characterLocked(character, current: wornDraft.character)
+        return thumbnail(
+            look: lookFor(character),
+            skin: character == .owl ? draft.skin : .none,
+            size: metrics.cell,
+            selected: shown == character,
+            label: Text(characterName(character)),
+            locked: locked,
+            hint: locked ? lockHint(character) : nil
+        ) {
+            previewSkin = nil
+            if locked {
+                previewCharacter = character
+            } else {
+                previewCharacter = nil
+                draft.character = character
             }
-        case .trombi:
-            let skins = TrombiSkin.allCases.filter { !skinLocked(.trombi, $0.rawValue, worn: wornDraft.complete.trombiSkin.rawValue) }
-            row(count: skins.count, pitch: metrics.pitch, height: metrics.pitch) { index in
-                thumbnail(look: edited { $0.trombiSkin = skins[index] }, skin: .none, size: metrics.cell, selected: draft.complete.trombiSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.trombi, skins[index].rawValue)) {
+        }
+    }
+
+    private func skinCell(_ id: String, character: MascotCharacter, characterLocked: Bool, picked: String?, worn: String?) -> some View {
+        let large = character == .trombi
+        let locked = characterLocked || unlocks.skinLocked(character, skin: id, current: worn ?? "")
+        return thumbnail(
+            look: skinLook(character, id),
+            skin: character == .owl ? (MascotSkin(rawValue: id) ?? .none) : .none,
+            size: large ? metrics.cell : metrics.skinCell,
+            selected: picked.map { $0 == id } ?? (worn == id),
+            label: Text(verbatim: id),
+            tier: tierLabel(character, id),
+            locked: locked,
+            hint: locked ? lockHint(character, skin: id) : nil
+        ) {
+            if locked {
+                previewSkin = id
+            } else {
+                previewSkin = nil
+                if character == .owl {
+                    draft.skin = MascotSkin(rawValue: id) ?? .none
+                } else {
                     var next = draft.complete
-                    next.trombiSkin = skins[index]
-                    draft.look = next.stored
-                }
-            }
-        case .bunbu:
-            let skins = BunbuSkin.allCases.filter { !skinLocked(.bunbu, $0.rawValue, worn: wornDraft.complete.bunbuSkin.rawValue) }
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: edited { $0.bunbuSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.bunbuSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.bunbu, skins[index].rawValue)) {
-                    var next = draft.complete
-                    next.bunbuSkin = skins[index]
-                    draft.look = next.stored
-                }
-            }
-        case .shiba:
-            // a locked skin stays out (the server refuses it anyway: 403 look_locked); the worn one stays
-            let skins = ShibaSkin.allCases.filter { !skinLocked(.shiba, $0.rawValue, worn: wornDraft.complete.shibaSkin.rawValue) }
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: edited { $0.shibaSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.shibaSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.shiba, skins[index].rawValue)) {
-                    var next = draft.complete
-                    next.shibaSkin = skins[index]
-                    draft.look = next.stored
-                }
-            }
-        case .grump:
-            let skins = GrumpSkin.allCases.filter { !skinLocked(.grump, $0.rawValue, worn: wornDraft.complete.grumpSkin.rawValue) }
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: edited { $0.grumpSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.grumpSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.grump, skins[index].rawValue)) {
-                    var next = draft.complete
-                    next.grumpSkin = skins[index]
-                    draft.look = next.stored
-                }
-            }
-        case .ogre:
-            let skins = OgreSkin.allCases.filter { !skinLocked(.ogre, $0.rawValue, worn: wornDraft.complete.ogreSkin.rawValue) }
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: edited { $0.ogreSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.ogreSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.ogre, skins[index].rawValue)) {
-                    var next = draft.complete
-                    next.ogreSkin = skins[index]
-                    draft.look = next.stored
-                }
-            }
-        case .frog:
-            // a locked skin stays out (the server refuses it anyway: 403 look_locked); the worn one stays
-            let skins = FrogSkin.allCases.filter { !skinLocked(.frog, $0.rawValue, worn: wornDraft.complete.frogSkin.rawValue) }
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: edited { $0.frogSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.frogSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.frog, skins[index].rawValue)) {
-                    var next = draft.complete
-                    next.frogSkin = skins[index]
-                    draft.look = next.stored
-                }
-            }
-        case .crab:
-            let skins = CrabSkin.allCases.filter { !skinLocked(.crab, $0.rawValue, worn: wornDraft.complete.crabSkin.rawValue) }
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: edited { $0.crabSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.crabSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.crab, skins[index].rawValue)) {
-                    var next = draft.complete
-                    next.crabSkin = skins[index]
+                    next.setSkin(id, for: character)
                     draft.look = next.stored
                 }
             }
         }
+    }
+
+    private func skinLook(_ character: MascotCharacter, _ id: String) -> CompleteMascotLook {
+        var look = lookFor(character)
+        look.setSkin(id, for: character)
+        return look
+    }
+
+    /// "Unlock: <achievement>" (`lockHint`), or nil when no achievement unlocks it.
+    private func lockHint(_ character: MascotCharacter, skin: String? = nil) -> String? {
+        guard let achievement = unlocks.lockAchievement(character, skin: skin) else { return nil }
+        let name = achievement.hidden ? String(localized: "Secret achievement") : achievement.name.resolved(AchievementLanguage.current)
+        return String(localized: "Unlock: \(name)")
+    }
+
+    /// The look picked to look at (#518): the mascot as it would be, greyed
+    /// when its character is locked, "Preview: locked, nothing is saved" and
+    /// the achievement that unlocks it. A tap closes it.
+    private var previewCard: some View {
+        let character = shownCharacter
+        let look = previewSkin.map { skinLook(character, $0) } ?? lookFor(character)
+        let owlSkin = character == .owl ? (previewSkin.flatMap(MascotSkin.init(rawValue:)) ?? draft.skin) : .none
+        let hint = lockHint(character, skin: previewSkin)
+        let greyed = shownCharacterLocked
+        return Button {
+            previewCharacter = nil
+            previewSkin = nil
+        } label: {
+            HStack(spacing: 12) {
+                MascotCharacterView(look: look, color: draft.color, skin: owlSkin, size: 48)
+                    .frame(width: 48, height: 48)
+                    .grayscale(greyed ? 1 : 0)
+                    .opacity(greyed ? 0.6 : 1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(characterName(character))
+                        .font(Theme.Font.rowTitle)
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("Preview: locked, nothing is saved")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                    if let hint {
+                        Text(verbatim: hint)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Theme.cardRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, Theme.Metric.rowInset)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("character-skin-preview")
     }
 
     private var offersClay: Bool { MausColors.offersClay(draft.character, color: draft.color) }
@@ -401,14 +458,23 @@ struct CharacterEditor: View {
         .frame(height: height)
     }
 
-    private func thumbnail(look: CompleteMascotLook, skin: MascotSkin, size: CGFloat, selected: Bool, label: Text, tier: Text? = nil, locked: Bool = false, action: @escaping () -> Void) -> some View {
+    /// `items` in rows of at most `perRow` (every character and every skin
+    /// show now, more than one row holds).
+    private static func lines<Item>(_ items: [Item], perRow: Int) -> [[Item]] {
+        stride(from: 0, to: items.count, by: perRow).map { Array(items[$0..<min($0 + perRow, items.count)]) }
+    }
+
+    /// A tap always reaches `action`: the caller previews a locked choice
+    /// and never writes it.
+    private func thumbnail(look: CompleteMascotLook, skin: MascotSkin, size: CGFloat, selected: Bool, label: Text, tier: Text? = nil, locked: Bool = false, hint: String? = nil, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.selection()
-            // a locked choice shows what it is but cannot be worn
-            if !locked { action() }
+            action()
         } label: {
             MascotCharacterView(look: look, color: draft.color, skin: skin, size: size)
                 .frame(width: size, height: size)
+                .grayscale(locked ? 1 : 0)
+                .opacity(locked ? 0.55 : 1)
                 .modifier(SilhouetteRing(visible: selected, gap: Self.ringGap, width: Self.ringWidth))
                 .overlay(alignment: .bottomTrailing) {
                     if locked {
@@ -426,6 +492,7 @@ struct CharacterEditor: View {
         .buttonStyle(.plain)
         .accessibilityLabel(tier.map { Text("\(label), \($0)") } ?? label)
         .accessibilityValue(locked ? Text("Locked") : Text(verbatim: ""))
+        .accessibilityHint(hint.map { Text(verbatim: $0) } ?? Text(verbatim: ""))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

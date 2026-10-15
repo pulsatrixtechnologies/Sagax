@@ -23028,6 +23028,7 @@ ROUTES.push(createUsageRoutes({
   prices: operatorPrices,
   budget: () => spendState(cfg, DATA_DIR),
   currency: () => cfg.billing?.currency ?? "USD",
+  organization: () => IDENTITY.kind === "perspicax",
 }));
 // "Switch them too": a bot's threads on a model of their own follow its model again.
 ROUTES.push(createThreadModelRoutes({

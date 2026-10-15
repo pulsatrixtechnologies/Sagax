@@ -31,7 +31,12 @@ public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
             ["github", "mcp", "mcp servers", "connections", "connexions", "token", "oauth", "gh", "git", "my connections",
              "mes connexions", "server", "plugins"]
         case .decisionModel: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"]
-        case .engines: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "sign in", "subscription"]
+        // Models and voice (2026-10-14): API keys, Connected apps and the
+        // Decision model are cards of this page
+        case .engines:
+            ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "sign in", "subscription",
+             "keys", "api", "api key", "api keys", "connections", "composio", "connected apps", "xai", "mistral", "router",
+             "openrouter", "openai", "anthropic", "decision", "jev", "typesafe", "routing", "who answers", "voice", "voix"]
         case .companion: ["companion", "device", "phone", "ipad", "pair", "pairing", "mobile", "remote"]
         case .computer: ["computer", "local vm", "vm", "virtual", "desktop", "cloud computers", "vps"]
         case .usage: ["tokens", "cost", "billing", "spend", "limit", "history"]
@@ -52,24 +57,33 @@ public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
 
     /// The sections this pairing lists, in order. The rule is the desktop
     /// remote client's: paired through a sidecar it shows Organization (its
-    /// connection to the computer), Appearance and Pair devices; a server's
-    /// client session the same (Organization is the person's organization
-    /// on an organization server); an admin session the served renderer's
-    /// list. A section the pairing cannot use is left out, never drawn
-    /// disabled.
+    /// connection to the computer) and Appearance; a server's client
+    /// session the same (Organization is the person's organization on an
+    /// organization server); an admin session the served renderer's list.
+    /// A section the pairing cannot use is left out, never drawn disabled.
+    ///
+    /// Menus simplified (#518, JC 2026-10-14): API keys and Decision model
+    /// are cards of Models and voice; Pair devices, Email and Activity are
+    /// not in the app (this device's own pairing is a card of Organization;
+    /// managing several people is Sagax Business's).
     public static func available(for gate: SurfaceGate) -> [DesktopSettingsSection] {
         // My connections: a person's own, on an organization server only
         // (`organizationHidesSection`), through the server (not the sidecar).
         let mine: [DesktopSettingsSection] = gate.allows(.myConnections) ? [.myConnections] : []
         switch gate.scope {
         case .sidecar, .serverClient:
-            return [.organization] + mine + [.appearance, .companion]
+            return [.organization] + mine + [.appearance]
         case .serverAdmin:
-            // Email, People and Activity are the served page's too; the
-            // iPad does not draw them yet, so it leaves them out.
-            return [.general, .organization, .appearance, .experimental, .connections] + mine + [
-                .decisionModel, .engines, .companion, .computer, .usage, .backups,
-            ]
+            return [.general, .organization, .appearance, .experimental, .engines] + mine + [.computer, .usage, .backups]
+        }
+    }
+
+    /// A section that is a card of another page now: the page that shows it.
+    public var host: DesktopSettingsSection {
+        switch self {
+        case .connections, .decisionModel: .engines
+        case .companion, .mail, .activity, .people: .organization
+        default: self
         }
     }
 
@@ -78,6 +92,7 @@ public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
     public static func resolve(
         _ requested: DesktopSettingsSection, available: [DesktopSettingsSection], visible: [DesktopSettingsSection]
     ) -> DesktopSettingsSection? {
+        let requested = requested.host
         if visible.contains(requested) { return requested }
         if visible.isEmpty { return available.contains(requested) ? requested : available.first }
         return visible.first

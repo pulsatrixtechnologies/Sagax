@@ -26,5 +26,7 @@ final class PlanUsageTests: XCTestCase {
         XCTAssertEqual(PlanUsageRules.tone(used: 10), .success)
         XCTAssertFalse(PlanUsageRules.hasDueReset(report, now: now))
         XCTAssertTrue(PlanUsageRules.hasDueReset(report, now: now.addingTimeInterval(4 * 3600)))
+        XCTAssertEqual(PlanUsageRules.connected(report).map(\.id), ["claude"])
+        XCTAssertTrue(PlanUsageRules.connected(nil).isEmpty)
     }
 }

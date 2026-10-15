@@ -7,16 +7,16 @@
 //            owl's moves and style), the name and label, each edited where
 //            it shows and saved on leaving the field. Description lives
 //            in Edit persona.
-//   top bar  Close, Export conversation, and "..." with the bot's own
-//            actions (Share as Template, Copy ID, Duplicate, Primary Bot,
-//            Delete), each once
+//   top bar  Close, and the bot's one "..." menu (`BotActionsMenu.tsx`,
+//            #518): Edit bot, Rename, Primary Bot; Export the conversation
+//            (copy, download) and the bot (.zip); Archive
 //   tabs     Details (Coding, Activity, Routines) | Library (Files: the
 //            conversation's files by kind and the bot's links; Skills;
 //            Plugins) | Computer (the live computer, embedded), the
 //            desktop's three (no More tab)
-//   Edit persona  under "..." and as a pencil on the mascot (the desktop
-//            has no labeled button under the tabs). Each other section
-//            opens from that editor's list.
+//   Edit bot under "..." and as a pencil on the mascot (the desktop
+//            has no labeled button under the tabs). The editor lists its six
+//            groups (`DesktopPanelGroup`); a group shows its sections.
 //
 // Which tabs and sections a pairing shows is `DesktopPanelTab` /
 // `DesktopPanelSection` / `DesktopPersonaEditor` (CompanionCore, from
@@ -56,10 +56,12 @@ private struct PhoneBotPanelContent: View {
     @State private var menuOpen = false
     @State private var toast: String?
     @State private var editingAvatar = false
-    @State private var confirmingDelete = false
+    @State private var confirmingArchive = false
+    @State private var renaming = false
+    @State private var renameDraft = ""
+    @State private var exportingZip = false
     @State private var pickingPrimary = false
     @State private var primaryWorking = false
-    @State private var exporting = false
     @State private var sharedFile: IdentifiedURL?
     @State private var query = ""
     @State private var scrollToRoutines = 0
@@ -127,15 +129,26 @@ private struct PhoneBotPanelContent: View {
             PrimaryBotPicker(currentId: current.id, viewerId: viewerId) { show($0) }
         }
         .sheet(item: $sharedFile) { file in ProfileShareSheet(items: [file.url]) }
+        .sheet(isPresented: $exportingZip) { BotZipExportSheet(bot: current) { exportingZip = false } }
         .confirmationDialog(
-            String(localized: "Delete \(current.name)?"),
-            isPresented: $confirmingDelete,
+            String(localized: "Archive \(current.name)?"),
+            isPresented: $confirmingArchive,
             titleVisibility: .visible
         ) {
-            Button(String(localized: "Delete Bot"), role: .destructive) { Task { await deleteBot() } }
+            Button(String(localized: "Archive")) { Task { await archiveBot() } }
             Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
-            Text("The bot, its threads and its routines are removed from your computer. This cannot be undone.")
+            Text("Its conversations are kept. Archived bots in the account menu brings it back.")
+        }
+        .alert("Rename the bot", isPresented: $renaming) {
+            TextField("Name", text: $renameDraft)
+                .accessibilityIdentifier("panel-rename-field")
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                let target = current
+                let draft = renameDraft
+                Task { await session.renameBot(target, to: draft) }
+            }
         }
         .confirmationDialog(
             String(localized: "Delete \(deletingRoutine?.name ?? String(localized: "this routine"))?"),
@@ -237,24 +250,7 @@ private struct PhoneBotPanelContent: View {
                 .chatGlassRim(Circle())
                 .accessibilityIdentifier("panel-close")
             Spacer()
-            Menu {
-                Section(String(localized: "Export Conversation")) {
-                    Button(String(localized: "Copy as Markdown"), systemImage: "doc.on.doc") { exportConversation(copy: true) }
-                    Button(String(localized: "Download as .md"), systemImage: "arrow.down.to.line") { exportConversation(copy: false) }
-                }
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                    .frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .themeGlass(Circle())
-            .chatGlassRim(Circle())
-            .accessibilityLabel(Text("Export conversation"))
-            .accessibilityIdentifier("panel-export")
-            GlassCircleButton(systemImage: "ellipsis", accessibilityLabel: "More", glyphSize: 15, weight: .semibold) {
+            GlassCircleButton(systemImage: "ellipsis", accessibilityLabel: "Bot menu", glyphSize: 15, weight: .semibold) {
                 withAnimation(.snappy(duration: 0.22)) { menuOpen.toggle() }
             }
             .chatGlassRim(Circle())
@@ -264,37 +260,56 @@ private struct PhoneBotPanelContent: View {
         .padding(.top, 6)
     }
 
+    /// The bot's one "..." menu (`BotActionsMenuPlan`, the desktop's
+    /// `BotActionsMenu`): a divider between its groups, the export under
+    /// its heading.
     private var menuItems: [GlassMenuItem] {
-        // Edit persona first, as in the desktop's bot menu
-        let persona: [GlassMenuItem] = sections.isEmpty ? [] : [
-            GlassMenuItem(id: "edit-persona", title: Text("Edit persona"), systemImage: "pencil") { openPersona() },
-        ]
-        let actions: [GlassMenuItem] = BotPanelAction.available(gate: gate, bot: current, viewerId: viewerId).map { action in
-            switch action {
-            case .shareTemplate:
-                GlassMenuItem(id: "share-template", title: Text("Share as Template"), systemImage: "square.and.arrow.up.on.square") {
-                    Task { await shareTemplate() }
-                }
-            case .copyId:
-                // the open conversation's id, as the desktop's Copy ID
-                GlassMenuItem(id: "copy-id", title: Text("Copy ID"), systemImage: "doc.on.doc") { copy(bot.threadId) }
-            case .duplicate:
-                GlassMenuItem(id: "duplicate", title: Text("Duplicate"), systemImage: "plus.square.on.square") {
-                    Task { await duplicate() }
-                }
-            case .makePrimary:
-                GlassMenuItem(id: "make-primary", title: Text("Make primary bot"), systemImage: "star") {
-                    Task { await PrimaryBotActions.make(current.id, session: session, done: { show($0) }, working: $primaryWorking) }
-                }
-            case .replacePrimary:
-                GlassMenuItem(id: "replace-primary", title: Text("Replace with different Bot"), systemImage: "arrow.left.arrow.right") {
-                    pickingPrimary = true
-                }
-            case .delete:
-                GlassMenuItem(id: "delete", title: Text("Delete Bot"), systemImage: "trash", destructive: true) { confirmingDelete = true }
+        let plan = BotActionsMenuPlan(
+            gate: gate, bot: current, viewerId: viewerId, editable: !sections.isEmpty,
+            zipExport: gate.scope != .sidecar && (session.canAdminister || PrimaryBotRules.viewerOwns(current, viewerId: session.roomViewer.actorId)),
+            activeBotCount: session.state.bots.filter { $0.hidden != true }.count
+        )
+        var out: [GlassMenuItem] = []
+        for (groupIndex, group) in plan.groups.enumerated() {
+            for (index, item) in group.enumerated() {
+                let divider = groupIndex > 0 && index == 0
+                let heading: Text? = item == .copyConversation ? Text("Export conversation") : nil
+                out.append(menuItem(item, plan: plan, divider: divider, heading: heading))
             }
         }
-        return persona + actions
+        return out
+    }
+
+    private func menuItem(_ item: BotActionsMenuItem, plan: BotActionsMenuPlan, divider: Bool, heading: Text?) -> GlassMenuItem {
+        switch item {
+        case .editBot:
+            return GlassMenuItem(id: "edit-bot", title: Text("Edit bot"), systemImage: "person.crop.circle.badge.pencil", dividerBefore: divider, heading: heading) { openPersona() }
+        case .rename:
+            return GlassMenuItem(id: "rename", title: Text("Rename the bot"), systemImage: "pencil", dividerBefore: divider, heading: heading) {
+                renameDraft = current.name
+                renaming = true
+            }
+        case .makePrimary:
+            return GlassMenuItem(id: "make-primary", title: Text("Make primary bot"), systemImage: "star", disabled: primaryWorking, dividerBefore: divider, heading: heading) {
+                Task { await PrimaryBotActions.make(current.id, session: session, done: { show($0) }, working: $primaryWorking) }
+            }
+        case .replacePrimary:
+            return GlassMenuItem(id: "replace-primary", title: Text("Replace with different Bot"), systemImage: "arrow.left.arrow.right", dividerBefore: divider, heading: heading) {
+                pickingPrimary = true
+            }
+        case .copyConversation:
+            return GlassMenuItem(id: "copy-markdown", title: Text("Copy as Markdown"), systemImage: "doc.on.doc", dividerBefore: divider, heading: heading) { exportConversation(copy: true) }
+        case .downloadConversation:
+            return GlassMenuItem(id: "download-markdown", title: Text("Download as .md"), systemImage: "arrow.down.to.line", dividerBefore: divider, heading: heading) { exportConversation(copy: false) }
+        case .exportZip:
+            return GlassMenuItem(id: "export-zip", title: Text("Export the bot (.zip)"), systemImage: "doc.zipper", dividerBefore: divider, heading: heading) { exportingZip = true }
+        case .archive:
+            return GlassMenuItem(id: "archive", title: Text("Archive…"), systemImage: "archivebox", disabled: !plan.enables(.archive), dividerBefore: divider, heading: heading) {
+                confirmingArchive = true
+            }
+        case .inspector:
+            return GlassMenuItem(id: "inspector", title: Text("Inspector"), systemImage: "ladybug", dividerBefore: divider, heading: heading) {}
+        }
     }
 
     // MARK: Identity
@@ -330,7 +345,7 @@ private struct PhoneBotPanelContent: View {
                     }
                     .buttonStyle(.plain)
                     .offset(x: 6, y: -4)
-                    .accessibilityLabel(Text("Edit persona"))
+                    .accessibilityLabel(Text("Edit bot"))
                     .accessibilityIdentifier("panel-edit-persona")
                 }
             }
@@ -483,13 +498,15 @@ private struct PhoneBotPanelContent: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle(Text("Edit persona"))
+        .navigationTitle(Text("Edit bot"))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("panel-persona")
     }
 
     private var personaList: some View {
-        let shown = sections.filter { $0.matches(query, label: $0.localizedTitle) }
+        // a group's own name finds all its sections
+        let matchedGroups = Set(DesktopPanelGroup.allCases.filter { $0.localizedTitle.lowercased().contains(query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) && !query.trimmingCharacters(in: .whitespaces).isEmpty })
+        let shown = sections.filter { $0.matches(query, label: $0.localizedTitle) || matchedGroups.contains(DesktopPanelGroup.of($0)) }
         return VStack(spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Theme.textSecondary)
@@ -505,17 +522,28 @@ private struct PhoneBotPanelContent: View {
             .frame(height: 40)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .padding(.horizontal, Theme.Profile.cardMargin)
-            ProfileCard {
-                ForEach(Array(shown.enumerated()), id: \.element) { index, section in
-                    if index > 0 { ProfileDivider() }
-                    NavigationLink(value: section) {
-                        ProfileRow(icon: ProfileRowIcon(systemImage: section.symbol, size: 16), title: Text(section.title),
-                                   height: Theme.Profile.singleRow) { ProfileChevronTrailing() }
+            // the editor's six groups (#518), each with its sections
+            ForEach(DesktopPanelGroup.visible(shown), id: \.self) { group in
+                VStack(spacing: 0) {
+                    ProfileSectionLabel(text: group.title)
+                    ProfileCard {
+                        ForEach(Array(group.sections(in: shown).enumerated()), id: \.element) { index, section in
+                            if index > 0 { ProfileDivider() }
+                            NavigationLink(value: section) {
+                                ProfileRow(icon: ProfileRowIcon(systemImage: section.symbol, size: 16), title: Text(section.title),
+                                           height: Theme.Profile.singleRow) { ProfileChevronTrailing() }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("panel-row.\(section.rawValue)")
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("panel-row.\(section.rawValue)")
                 }
-                if shown.isEmpty {
+                .padding(.top, 8)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("panel-group.\(group.rawValue)")
+            }
+            if shown.isEmpty {
+                ProfileCard {
                     Text("Nothing matches “\(query.trimmingCharacters(in: .whitespacesAndNewlines))”")
                         .font(Theme.Font.body)
                         .foregroundStyle(Theme.textSecondary)
@@ -562,11 +590,6 @@ private struct PhoneBotPanelContent: View {
         }
     }
 
-    private func copy(_ id: String) {
-        UIPasteboard.general.string = id
-        show(String(localized: "Copied"))
-    }
-
     private func exportConversation(copy: Bool) {
         let threadId = current.threadId
         Task {
@@ -582,50 +605,11 @@ private struct PhoneBotPanelContent: View {
         }
     }
 
-    private func shareTemplate() async {
-        guard !exporting, let client = session.profileClient else { return }
-        exporting = true
-        defer { exporting = false }
-        do {
-            let export = try await client.exportBot(botId: bot.id)
-            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("bot-export-\(UUID().uuidString)", isDirectory: true)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let url = folder.appendingPathComponent(BotExport.shareFileName(botName: current.name))
-            try export.document.write(to: url, options: .atomic)
-            sharedFile = IdentifiedURL(url: url)
-        } catch {
-            session.actionError = error.localizedDescription
-        }
-    }
-
-    /// Duplicate (store.tsx `duplicateBot`): a new bot, then the source's
-    /// profile on it as "<name> copy".
-    private func duplicate() async {
-        guard let client = session.profileClient else { return }
-        let source = current
-        let admin = gate.scope == .serverAdmin
-        do {
-            // the fleet carries no instructions: read them for the copy
-            let soul = try? await client.soul(botId: source.id).soul
-            let copy = try await client.duplicateBot(source, soul: soul, computerFields: admin, carryVisibility: admin)
-            session.applyProfileBot(copy)
-            show(String(localized: "Added \(copy.name)."))
-        } catch {
-            session.actionError = error.localizedDescription
-        }
-    }
-
-    private func deleteBot() async {
-        guard let client = session.profileClient else { return }
-        do {
-            try await client.deleteBot(botId: bot.id)
-            // Close the panel, then let the chat under it see its bot gone
-            // and pop itself.
+    /// Archive (`hidden: true`): the conversations stay; the panel closes.
+    private func archiveBot() async {
+        let target = current
+        if await session.setArchived(target, archived: true) {
             dismiss()
-            try? await Task.sleep(nanoseconds: 700_000_000)
-            session.applyBotDeleted(bot.id)
-        } catch {
-            session.actionError = error.localizedDescription
         }
     }
 

@@ -6,7 +6,10 @@
 import CompanionCore
 import SwiftUI
 
-/// The desktop's thread row menu (SidebarThreadRow.tsx).
+/// The desktop's one thread menu (`ThreadMenu.tsx`, 2026-10-14): Rename,
+/// Pin, Archive, Snooze ›, then More › with Move ›, Copy link, Regenerate
+/// title and Delete. The sidebar rows, the chat's thread list and the
+/// thread manager all draw this one.
 struct ThreadMenu: View {
     let task: BotTask
     let plan: ThreadMenuPlan
@@ -38,17 +41,17 @@ struct ThreadMenu: View {
                     get: { folders.contains { $0.id == task.projectId } ? task.projectId ?? "" : "" },
                     set: { value in perform(.move(folderId: value.isEmpty ? nil : value)) }
                 )) {
-                    Text("No folder").tag("")
                     ForEach(folders) { folder in
                         Text(verbatim: folder.emoji.map { $0.isEmpty ? folder.name : "\($0) \(folder.name)" } ?? folder.name)
                             .tag(folder.id)
                     }
+                    Text("No folder").tag("")
                 } label: {
                     EmptyView()
                 }
                 .pickerStyle(.inline)
             } label: {
-                Label("Move to folder", systemImage: "folder")
+                Label("Move", systemImage: "folder")
             }
         case .pin:
             Button { perform(.pin(task.pinned != true)) } label: {
@@ -62,18 +65,34 @@ struct ThreadMenu: View {
             .disabled(!enabled)
         case .snooze:
             Menu {
-                Button("Until new activity") { perform(.snooze(until: 0)) }
-                Button("Until 6 PM") { perform(.snooze(until: ThreadSnoozePreset.tonight())) }
-                Button("Until 9 AM tomorrow") { perform(.snooze(until: ThreadSnoozePreset.tomorrowMorning())) }
+                if plan.stopsSnoozing {
+                    Button { perform(.stopSnoozing) } label: { Label("Stop snoozing", systemImage: "bell") }
+                }
+                Group {
+                    Button("Until new activity") { perform(.snooze(until: 0)) }
+                    Button("Until 6 PM") { perform(.snooze(until: ThreadSnoozePreset.tonight())) }
+                    Button("Until 9 AM tomorrow") { perform(.snooze(until: ThreadSnoozePreset.tomorrowMorning())) }
+                }
+                .disabled(!enabled)
             } label: {
-                Label("Snooze", systemImage: "moon.zzz")
+                Label(plan.stopsSnoozing ? "Snoozed" : "Snooze", systemImage: "moon.zzz")
             }
-            .disabled(!enabled)
         case .stopSnoozing:
             Button { perform(.stopSnoozing) } label: { Label("Stop snoozing", systemImage: "bell") }
         case .delete:
             Button(role: .destructive) { perform(.delete) } label: { Label("Delete", systemImage: "trash") }
                 .disabled(!enabled)
+        case .more:
+            Menu {
+                ForEach(plan.more, id: \.self) { item in
+                    if item == .delete { Divider() }
+                    // type-erased: the submenu draws entries of its own menu
+                    AnyView(entry(item))
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
+            }
+            .accessibilityIdentifier("thread-menu-more")
         }
     }
 }

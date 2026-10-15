@@ -1,7 +1,7 @@
-// Dev gallery for the welcome flow, like mascot-preview.html for the mascot:
+// Dev gallery for the welcome flow, like dev/previews/mascot-preview.html for the mascot:
 // every beat, in every skin, with reduced motion on or off, without touching
 // the workspace's real onboarding record. Served by Vite in dev at
-// /onboarding-preview.html; not part of the packaged app.
+// /dev/previews/onboarding-preview.html; not part of the packaged app.
 //
 // The flow talks to whatever harness the dev proxy points at, so the engines
 // and phone beats show real data when `pnpm dev:server` is running and their
