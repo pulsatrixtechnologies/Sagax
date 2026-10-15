@@ -2,7 +2,7 @@
 // (New schedule); a row opens the routine's page, which holds Run now, Pause
 // or Resume, Edit, the run logs and Delete.
 import { CalendarClock, ChevronLeft, FileText, PanelRight, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore, type Bot } from "@/state/store";
 import type { Routine, RoutineRun, RoutineRunOn } from "@/lib/routines";
 import { t } from "@/lib/i18n";
@@ -37,6 +37,13 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
   const [detailId, setDetailId] = useState<string | null>(null);
   const detail = routines.find((routine) => routine.id === detailId) ?? null;
   const toggle = (routine: Routine) => dispatch({ type: "updateRoutine", routineId: routine.id, patch: { enabled: !routine.enabled } });
+  // A routine line in the conversation asked for this routine's page.
+  const focus = state.routineFocus;
+  useEffect(() => {
+    if (!focus || focus.botId !== bot.id || !routines.some((routine) => routine.id === focus.routineId)) return;
+    setDetailId(focus.routineId);
+    dispatch({ type: "routineFocused" });
+  }, [focus, bot.id, routines, dispatch]);
 
   if (detail) {
     return <div className="absolute inset-0 z-20 flex flex-col bg-panel">

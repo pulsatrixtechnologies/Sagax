@@ -15,7 +15,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
   useStore: () => ({ state: { instances: [], bots: [], config: {} }, refreshInstances: async () => {}, refreshModels: async () => {} }),
 }));
 
-import { EngineConnect, connectName, paysWithText } from "./EngineConnect";
+import { EngineConnect, connectName, engineConnectHasAction, paysWithText } from "./EngineConnect";
 import { deviceCodeHintShown } from "./DeviceSignIn";
 
 const issuer = "https://px.example.test";
@@ -68,6 +68,21 @@ describe("EngineConnect", () => {
     expect(html).toContain("Disconnect");
     expect(html).not.toContain("Connect ChatGPT");
     expect(html).not.toContain("data-engine-keys-link");
+  });
+
+  it("in the model window: no status line and no Connected/Disconnect, which the window shows elsewhere (2026-10-15)", () => {
+    const signedIn = engine({ subscription: { supported: true, signedIn: true }, myTurns: "subscription" });
+    const bare = (value: MyEngine) => renderToStaticMarkup(createElement(EngineConnect, { engine: value, issuer, onChanged: () => {}, statusLine: false, disconnect: false }));
+    const html = bare(signedIn);
+    expect(html).not.toContain("data-pays-with");
+    expect(html).not.toContain("data-engine-connected");
+    expect(html).not.toContain("Disconnect");
+    expect(engineConnectHasAction(signedIn)).toBe(false);
+    // still the way to connect
+    expect(bare(engine())).toContain("Connect ChatGPT");
+    expect(engineConnectHasAction(engine())).toBe(true);
+    expect(engineConnectHasAction(engine({ instanceId: "pi", driver: "piAgent", subscription: { supported: false, signedIn: false }, myTurns: "key" }))).toBe(true);
+    expect(engineConnectHasAction(engine({ instanceId: "xaiApi", driver: "grok", subscription: { supported: false, signedIn: false }, myTurns: "org-key" }))).toBe(false);
   });
 
   it("key only: the status line names the key and the Manage link shows, with no button when no subscription exists", () => {

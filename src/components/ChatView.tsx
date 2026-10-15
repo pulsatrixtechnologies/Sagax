@@ -148,6 +148,8 @@ import { NewMessagesDivider } from "./NewMessagesDivider";
 import { unreadMessageIds } from "@/lib/unread-divider";
 import { appendComposerDraft, appendDraftAttachments, useReplyDraft } from "@/lib/drafts";
 import { OtherAuthorLabel } from "./MessageAuthor";
+import { ConversationRoutineToggle } from "./RoutineToggleLine";
+import { ConversationConnectApps } from "./ConnectAppsPill";
 import { AccessCard } from "./AccessCard";
 import { transcriptLookups, type TranscriptLookups } from "@/lib/transcript-derivations";
 import { citationPreviewText, splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
@@ -1183,6 +1185,8 @@ const MessagesList = memo(function MessagesList({
               return <MessageBoundary fallbackText={m.text ?? ""}><WidgetMessage botId={botId} threadId={threadId} message={m} /></MessageBoundary>;
             case "routine.run":
               return <RoutineRunRow message={m} botId={botId} />;
+            case "routines":
+              return <ConversationRoutineToggle message={m} />;
             case "call":
               // a finished Live call's record; its spoken lines stay inline
               return m.call ? <CallRecordRow message={m} transcript={transcript} botName={botName} busy={busy} hasMore={hasMore} /> : null;
@@ -1761,6 +1765,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
               </button>
             </div>
           )}
+          {/* The latest turn needed an app that is not connected
+              (src/lib/connect-apps-signal.ts): Connect apps, on those apps. */}
+          <ConversationConnectApps botId={bot.id} messages={messages} busy={Boolean(bot.busy)} />
           {computerStarting && (
             <div className="flex justify-start">
               <div className="ui-pill">

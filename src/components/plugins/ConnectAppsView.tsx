@@ -50,6 +50,7 @@ const FILTER_KEY: Record<string, LocaleKey> = {
 const SECTION_KEY: Record<string, LocaleKey> = {
   ...FILTER_KEY,
   recommended: "connectApps.section.recommended",
+  needed: "connectApps.section.needed",
   results: "connectApps.section.results",
   other: "connectApps.section.other",
   mcp: "connectApps.section.mcp",
@@ -160,15 +161,17 @@ export interface ConnectAppsViewProps {
   notices?: ReactNode;
   /** the install scope (everyone, or one bot) under the title */
   scope?: ReactNode;
+  /** apps a conversation needs (its Connect apps pill): shown first */
+  focus?: readonly string[];
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
   const { items, loading, search, onSearch, filter, onFilter, type = "any", onType, extraSources = [], extraConnected = 0, sourceLabel,
-    onClose, onOpenManage, onOpenItem, renderAction, renderBelow, notices, scope } = props;
+    onClose, onOpenManage, onOpenItem, renderAction, renderBelow, notices, scope, focus } = props;
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [filter, type, search]);
 
-  const sections = mainSections(items, search, filter, type, extraSources);
+  const sections = mainSections(items, search, filter, type, extraSources, focus);
   const summary = connectedSummary(items, extraConnected);
   const categoryActive = CATEGORY_CHIPS.includes(filter);
   const single = sections.length === 1 && (search.trim() !== "" || filter !== "all" || type !== "any");
