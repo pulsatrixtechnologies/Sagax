@@ -17,7 +17,7 @@ final class BrowserLiveTests: XCTestCase {
         XCTAssertEqual(BrowserLiveMessage.parse(event: "error", data: #"{"retryable":false,"message":"Gone"}"#), .error(message: "Gone", retryable: false))
         XCTAssertEqual(BrowserLiveMessage.parse(event: "heartbeat", data: "{}"), .heartbeat)
         // what this build does not read is skipped, never a crash
-        XCTAssertNil(BrowserLiveMessage.parse(event: "control", data: #"{"held":true}"#))
+        XCTAssertNil(BrowserLiveMessage.parse(event: "dialog", data: #"{"held":true}"#))
         XCTAssertNil(BrowserLiveMessage.parse(event: "frame", data: #"{"seq":0,"data":"x"}"#))
         XCTAssertNil(BrowserLiveMessage.parse(event: nil, data: "{}"))
         XCTAssertNil(BrowserLiveMessage.parse(event: "ready", data: "not json"))
@@ -46,5 +46,57 @@ final class BrowserLiveTests: XCTestCase {
         let event = parser.line("")
         XCTAssertEqual(event?.event, "ready")
         XCTAssertEqual(BrowserLiveMessage.parse(event: event?.event, data: event?.data ?? ""), .ready(viewerId: "v1"))
+    }
+}
+
+final class BrowserLivePreviewTests: XCTestCase {
+    func testParsesControlAndOffline() {
+        XCTAssertEqual(BrowserLiveMessage.parse(event: "control", data: #"{"held":true,"owned":true,"controlling":false}"#),
+                       .control(held: true, owned: true, controlling: false))
+        XCTAssertEqual(BrowserLiveMessage.parse(event: "offline", data: "{}"), .offline)
+        XCTAssertNil(BrowserLiveMessage.parse(event: "control", data: #"{"owned":true}"#))
+        var state = BrowserLiveState()
+        _ = state.apply(.control(held: true, owned: true, controlling: true))
+        XCTAssertTrue(state.held)
+        XCTAssertTrue(state.owned)
+        XCTAssertTrue(state.controlling)
+        _ = state.apply(.offline)
+        XCTAssertTrue(state.offline)
+    }
+
+    func testThePreviewAsksForTheWatchOnlyStream() throws {
+        let client = CompanionClient(connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810), token: "t")
+        let preview = try client.browserLiveRequest(botId: "b1", preview: true)
+        XCTAssertEqual(preview.url?.path, "/api/bots/b1/browser/live")
+        XCTAssertEqual(preview.url?.query, "preview=1")
+        let full = try client.browserLiveRequest(botId: "b1", preview: false)
+        XCTAssertNil(full.url?.query)
+    }
+
+    func testActionBodiesMatchTheServerParser() {
+        XCTAssertEqual(BrowserLiveAction.take.body as NSDictionary, ["type": "take"])
+        XCTAssertEqual(BrowserLiveAction.release.body as NSDictionary, ["type": "release"])
+        XCTAssertEqual(BrowserLiveAction.reload.body as NSDictionary, ["type": "reload"])
+        XCTAssertEqual(BrowserLiveAction.mouse(event: "mousePressed", x: 10.4, y: 20.6, button: "left", clickCount: 1).body as NSDictionary,
+                       ["type": "input_mouse", "eventType": "mousePressed", "x": 10.0, "y": 21.0, "button": "left", "clickCount": 1])
+        XCTAssertEqual(BrowserLiveAction.mouse(event: "mouseWheel", x: -5, y: 9000, deltaX: 0, deltaY: 120).body as NSDictionary,
+                       ["type": "input_mouse", "eventType": "mouseWheel", "x": 0.0, "y": 8192.0, "button": "none", "clickCount": 0, "deltaX": 0.0, "deltaY": 120.0])
+        XCTAssertEqual(BrowserLiveAction.text("bonjour").body as NSDictionary, ["type": "input_keyboard", "eventType": "char", "text": "bonjour"])
+        XCTAssertEqual(BrowserLiveAction.key("Backspace").body as NSDictionary, ["type": "input_keyboard", "eventType": "keyDown", "key": "Backspace"])
+        XCTAssertEqual(BrowserLiveAction.special(.up), .key("ArrowUp"))
+        XCTAssertEqual(BrowserLiveAction.typed("ab\ncd"), [.text("ab"), .key("Enter"), .text("cd")])
+        XCTAssertTrue(BrowserLiveAction.mouse(event: "mousePressed", x: 0, y: 0).interacts)
+        XCTAssertFalse(BrowserLiveAction.mouse(event: "mouseReleased", x: 0, y: 0).interacts)
+        XCTAssertFalse(BrowserLiveAction.take.interacts)
+        XCTAssertTrue(BrowserLiveAction.back.interacts)
+    }
+
+    func testAPointOnThePictureLandsOnThePage() {
+        let page = BrowserPageSize(width: 1280, height: 800)
+        // a 16:10 page in a 320x400 view: 200pt tall, centered, 100pt bars
+        let point = BrowserPagePoint.map(x: 160, y: 200, viewWidth: 320, viewHeight: 400, page: page)
+        XCTAssertEqual(point?.x ?? 0, 640, accuracy: 0.01)
+        XCTAssertEqual(point?.y ?? 0, 400, accuracy: 0.01)
+        XCTAssertNil(BrowserPagePoint.map(x: 160, y: 50, viewWidth: 320, viewHeight: 400, page: page))
     }
 }
