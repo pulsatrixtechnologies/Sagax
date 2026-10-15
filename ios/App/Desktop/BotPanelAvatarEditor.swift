@@ -147,12 +147,14 @@ struct BotAvatarEditor: View {
                     label("Character")
                     let wornCharacter = CharacterDraft(bot: bot).character
                     let characters = unlocks.listedCharacters(current: wornCharacter)
+                    // the state read here, once: the cells' closures run later, outside the body
+                    let shown = shownCharacter
                     // equal tiles on one grid, as the web gallery's (minmax(70px, 1fr))
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
                         ForEach(characters, id: \.self) { character in
                             let locked = unlocks.characterLocked(character, current: wornCharacter)
                             cell(look: lookFor(character), skin: character == .owl ? draft.skin : .none,
-                                 name: characterName(character), selected: shownCharacter == character, height: 64,
+                                 name: characterName(character), selected: shown == character, height: 64,
                                  locked: locked, hint: locked ? lockHint(character) : nil) {
                                 previewSkin = nil
                                 if locked {
@@ -346,13 +348,14 @@ struct BotAvatarEditor: View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
         let worn = CharacterDraft(bot: bot)
         let character = shownCharacter
+        let characterLocked = shownCharacterLocked
         let wornSkin: String? = character != worn.character ? nil
             : character == .owl ? worn.skin.rawValue : worn.complete.skinID(character)
         let selectedSkin = previewSkin ?? (character == draft.character
             ? (character == .owl ? draft.skin.rawValue : draft.complete.skinID(character)) : nil)
         return LazyVGrid(columns: columns, spacing: 4) {
             ForEach(CompleteMascotLook.skinIDs(character), id: \.self) { id in
-                let locked = shownCharacterLocked || unlocks.skinLocked(character, skin: id, current: wornSkin ?? "")
+                let locked = characterLocked || unlocks.skinLocked(character, skin: id, current: wornSkin ?? "")
                 cell(look: skinLook(character, id), skin: character == .owl ? (MascotSkin(rawValue: id) ?? .none) : .none,
                      name: skinName(id), selected: selectedSkin == id, height: 60,
                      locked: locked, hint: locked ? lockHint(character, skin: id) : nil) {

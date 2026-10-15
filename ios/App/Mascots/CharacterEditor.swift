@@ -130,24 +130,11 @@ struct CharacterEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             let characters = unlocks.listedCharacters(current: wornDraft.character)
-            wrapped(characters, perRow: 5, pitch: metrics.pitch, height: metrics.pitch) { character in
-                let locked = unlocks.characterLocked(character, current: wornDraft.character)
-                thumbnail(
-                    look: lookFor(character),
-                    skin: character == .owl ? draft.skin : .none,
-                    size: metrics.cell,
-                    selected: shownCharacter == character,
-                    label: Text(characterName(character)),
-                    locked: locked,
-                    hint: locked ? lockHint(character) : nil
-                ) {
-                    previewSkin = nil
-                    if locked {
-                        previewCharacter = character
-                    } else {
-                        previewCharacter = nil
-                        draft.character = character
-                    }
+            let shown = shownCharacter
+            let characterLines = Self.lines(characters, perRow: 5)
+            ForEach(characterLines.indices, id: \.self) { line in
+                row(count: characterLines[line].count, pitch: metrics.pitch, height: metrics.pitch) { index in
+                    characterCell(characterLines[line][index], shown: shown)
                 }
             }
 
@@ -215,33 +202,64 @@ struct CharacterEditor: View {
     /// of a locked character) greyed with its padlock, previewed on a tap.
     @ViewBuilder private var skinRow: some View {
         let character = shownCharacter
+        let characterLocked = shownCharacterLocked
+        let picked = previewSkin
         let ids = CompleteMascotLook.skinIDs(character)
         let large = character == .trombi
         let worn = character == draft.character ? wornSkin(character) : nil
-        wrapped(ids, perRow: large ? 5 : 9, pitch: large ? metrics.pitch : metrics.skinPitch,
-                height: large ? metrics.pitch : (metrics.skinRowHeight ?? metrics.pitch)) { id in
-            let locked = shownCharacterLocked || unlocks.skinLocked(character, skin: id, current: worn ?? "")
-            thumbnail(
-                look: skinLook(character, id),
-                skin: character == .owl ? (MascotSkin(rawValue: id) ?? .none) : .none,
-                size: large ? metrics.cell : metrics.skinCell,
-                selected: previewSkin.map { $0 == id } ?? (worn == id),
-                label: Text(verbatim: id),
-                tier: tierLabel(character, id),
-                locked: locked,
-                hint: locked ? lockHint(character, skin: id) : nil
-            ) {
-                if locked {
-                    previewSkin = id
+        let skinLines = Self.lines(ids, perRow: large ? 5 : 9)
+        ForEach(skinLines.indices, id: \.self) { line in
+            row(count: skinLines[line].count, pitch: large ? metrics.pitch : metrics.skinPitch,
+                height: large ? metrics.pitch : (metrics.skinRowHeight ?? metrics.pitch)) { index in
+                skinCell(skinLines[line][index], character: character, characterLocked: characterLocked, picked: picked, worn: worn)
+            }
+        }
+    }
+
+    private func characterCell(_ character: MascotCharacter, shown: MascotCharacter) -> some View {
+        let locked = unlocks.characterLocked(character, current: wornDraft.character)
+        return thumbnail(
+            look: lookFor(character),
+            skin: character == .owl ? draft.skin : .none,
+            size: metrics.cell,
+            selected: shown == character,
+            label: Text(characterName(character)),
+            locked: locked,
+            hint: locked ? lockHint(character) : nil
+        ) {
+            previewSkin = nil
+            if locked {
+                previewCharacter = character
+            } else {
+                previewCharacter = nil
+                draft.character = character
+            }
+        }
+    }
+
+    private func skinCell(_ id: String, character: MascotCharacter, characterLocked: Bool, picked: String?, worn: String?) -> some View {
+        let large = character == .trombi
+        let locked = characterLocked || unlocks.skinLocked(character, skin: id, current: worn ?? "")
+        return thumbnail(
+            look: skinLook(character, id),
+            skin: character == .owl ? (MascotSkin(rawValue: id) ?? .none) : .none,
+            size: large ? metrics.cell : metrics.skinCell,
+            selected: picked.map { $0 == id } ?? (worn == id),
+            label: Text(verbatim: id),
+            tier: tierLabel(character, id),
+            locked: locked,
+            hint: locked ? lockHint(character, skin: id) : nil
+        ) {
+            if locked {
+                previewSkin = id
+            } else {
+                previewSkin = nil
+                if character == .owl {
+                    draft.skin = MascotSkin(rawValue: id) ?? .none
                 } else {
-                    previewSkin = nil
-                    if character == .owl {
-                        draft.skin = MascotSkin(rawValue: id) ?? .none
-                    } else {
-                        var next = draft.complete
-                        next.setSkin(id, for: character)
-                        draft.look = next.stored
-                    }
+                    var next = draft.complete
+                    next.setSkin(id, for: character)
+                    draft.look = next.stored
                 }
             }
         }
@@ -268,6 +286,7 @@ struct CharacterEditor: View {
         let look = previewSkin.map { skinLook(character, $0) } ?? lookFor(character)
         let owlSkin = character == .owl ? (previewSkin.flatMap(MascotSkin.init(rawValue:)) ?? draft.skin) : .none
         let hint = lockHint(character, skin: previewSkin)
+        let greyed = shownCharacterLocked
         return Button {
             previewCharacter = nil
             previewSkin = nil
@@ -275,8 +294,8 @@ struct CharacterEditor: View {
             HStack(spacing: 12) {
                 MascotCharacterView(look: look, color: draft.color, skin: owlSkin, size: 48)
                     .frame(width: 48, height: 48)
-                    .grayscale(shownCharacterLocked ? 1 : 0)
-                    .opacity(shownCharacterLocked ? 0.6 : 1)
+                    .grayscale(greyed ? 1 : 0)
+                    .opacity(greyed ? 0.6 : 1)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(characterName(character))
                         .font(Theme.Font.rowTitle)
@@ -439,15 +458,10 @@ struct CharacterEditor: View {
         .frame(height: height)
     }
 
-    /// `items` in centred rows of at most `perRow` cells (every character
-    /// and every skin show now, more than one row holds).
-    private func wrapped<Item: Hashable, Cell: View>(_ items: [Item], perRow: Int, pitch: CGFloat, height: CGFloat, @ViewBuilder cell: @escaping (Item) -> Cell) -> some View {
-        let lines = stride(from: 0, to: items.count, by: perRow).map { Array(items[$0..<min($0 + perRow, items.count)]) }
-        return VStack(spacing: 0) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                row(count: line.count, pitch: pitch, height: height) { index in cell(line[index]) }
-            }
-        }
+    /// `items` in rows of at most `perRow` (every character and every skin
+    /// show now, more than one row holds).
+    private static func lines<Item>(_ items: [Item], perRow: Int) -> [[Item]] {
+        stride(from: 0, to: items.count, by: perRow).map { Array(items[$0..<min($0 + perRow, items.count)]) }
     }
 
     /// A tap always reaches `action`: the caller previews a locked choice

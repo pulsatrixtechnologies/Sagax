@@ -402,6 +402,7 @@ final class BotPanelDetailsUITests: XCTestCase {
         XCTAssertEqual(crab.value as? String, "Locked")
         crab.tap()
         XCTAssertTrue(element("character-skin-preview", in: app).waitForExistence(timeout: 5), "a locked character previews")
+        attach("Locked crab preview", app)
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         let worn = (try bot(named: "Ara")?["mascotLook"] as? [String: Any])?["character"] as? String
         XCTAssertEqual(worn ?? "owl", "owl", "a locked character is not saved")
