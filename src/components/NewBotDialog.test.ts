@@ -25,7 +25,10 @@ vi.mock("@/state/store", async importOriginal => {
   const store = await importOriginal<typeof import("@/state/store")>();
   return { ...store, api: fixture.api, BotEditorStore: () => null, useStore: () => ({ state: { ...store.initialState, ...fixture.state }, dispatch: fixture.dispatch }) };
 });
-import { LocalNewBotDialog as NewBotDialog, BotsReadOnlyDialog, CompanionNewBotDialog, DefaultBotSettings, NewBotDialog as RoutedNewBotDialog, newBotStartMode } from "./NewBotDialog";
+import { setLocale } from "@/lib/i18n";
+import { BotEditorContext } from "./bot-settings/BotEditorContext";
+import { BotCreationDraft, EMPTY_BOT_DEFAULTS } from "@/lib/bot-creation-draft";
+import { LocalNewBotDialog as NewBotDialog, DraftPage, BotsReadOnlyDialog, CompanionNewBotDialog, DefaultBotSettings, NewBotDialog as RoutedNewBotDialog, newBotStartMode } from "./NewBotDialog";
 
 type Node = ReactElement<{ children?: ReactNode; role?: string; "aria-label"?: string; onClick?: () => void; onMouseDown?: (event: unknown) => void; onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void; disabled?: boolean }>;
 function nodes(value: ReactNode): Node[] {
@@ -104,17 +107,60 @@ describe("bot draft dialog", () => {
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "newBot", onCreated: expect.any(Function) });
     expect(fixture.api).not.toHaveBeenCalled();
   });
-  it("opens immediately with all sections and no creation request", () => {
+  it("opens immediately on one page, without a section menu, and no creation request", () => {
     const result = render();
     expect(result.html).toContain('role="dialog"');
-    for (const section of ["Identity", "Soul", "Skills", "Memory", "Routines", "Access", "Model", "Permissions", "Voice &amp; alerts"]) {
-      expect(result.html).toContain(section);
-    }
+    // the nine sections are under More options on the page, not a side menu
+    for (const section of ["Identity", "Soul", "Skills", "Voice &amp; alerts"]) expect(result.html).not.toContain(`>${section}<`);
+    expect(result.html).not.toContain("<nav");
     fixture.effects[0]();
     expect(fixture.api).toHaveBeenCalledExactlyOnceWith("/api/bot-defaults");
     expect(fixture.dispatch).not.toHaveBeenCalled();
     const submit = result.nodes.find(node => node.type === "button" && node.props.disabled)!;
     expect(submit.props.disabled).toBe(true);
+  });
+
+  describe("the page (JC 2026-10-14)", () => {
+    function page(options: { moreOpen?: boolean; defaultsMode?: boolean; state?: Record<string, unknown> } = {}) {
+      fixture.state = options.state ?? {};
+      vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+      const draft = new BotCreationDraft(EMPTY_BOT_DEFAULTS, () => {});
+      draft.patch({ name: "Fixture" });
+      const pageElement = createElement(DraftPage, { draft, defaultsMode: options.defaultsMode ?? false, moreOpen: options.moreOpen ?? false, onToggleMore: () => {} });
+      return renderToStaticMarkup(createElement(BotEditorContext.Provider, { value: { request: draft.request, draft: true, uploadAvatar: draft.uploadAvatar } }, pageElement));
+    }
+    it("shows Start from, the avatar, one random name button, the description and a folded More options", () => {
+      const html = page();
+      expect(html).toContain("Start from");
+      expect(html).toContain("data-new-bot-start");
+      expect(html).toContain('data-avatar-edit=""');
+      expect(html.match(/data-random-name=""/g)).toHaveLength(1);
+      expect(html).not.toContain("Random female name");
+      expect(html).toContain("Description");
+      expect(html).toMatch(/aria-expanded="false"[^>]*>.*More options/);
+      expect(html).not.toContain('id="new-bot-more-options"');
+      expect(html).not.toContain("data-new-bot-section");
+      // the label is under More options, the team only when there is one to pick
+      expect(html).not.toContain("Label (optional)");
+      expect(html).not.toContain("data-new-bot-team");
+      // the other starts are in the same list
+      expect(html).toContain("Template from the catalog…");
+    });
+    it("lists the nine sections, translated, under More options", () => {
+      const html = page({ moreOpen: true });
+      const sections = [...html.matchAll(/data-new-bot-section="(\w+)"/g)].map(match => match[1]);
+      expect(sections).toEqual(["identity", "soul", "skills", "memory", "routines", "access", "model", "permissions", "voice"]);
+      expect(html).toContain("Label (optional)");
+      setLocale("fr");
+      try {
+        const fr = page({ moreOpen: true });
+        for (const label of ["Identité", "Personnalité", "Compétences", "Mémoire", "Routines", "Accès", "Modèle", "Permissions", "Voix et alertes", "Plus d&#x27;options", "Commencer depuis"]) expect(fr).toContain(label);
+        expect(fr).not.toMatch(/>(Identity|Soul|Skills|Memory|Access|Model|Voice &amp; alerts)</);
+      } finally { setLocale("en"); }
+    });
+    it("shows Team only when there is a team to choose", () => {
+      expect(page({ state: { sections: ["Ops"] } })).toContain("data-new-bot-team");
+    });
   });
 
   it.each([undefined, null, { instanceId: "", model: "" }])("fills an unselected saved default from the available model (%j)", async selection => {

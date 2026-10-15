@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { t } from "@/lib/i18n";
 import {
@@ -137,11 +137,18 @@ const endpointHost = (url: string): string => {
   }
 };
 
+type AddMethod = "phone" | "code";
+
 /** `focusRequest` counts up when "Connect your phone" opened Settings here:
- * the phone flow scrolls into view with focus on Pair your phone. */
-export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { profileEmail?: string; focusRequest?: number }) {
+ * the phone flow scrolls into view with focus on Pair your phone.
+ * 2026-10-14: one "Add a device" card. `codePairing` (the server's pairing
+ * code, ServerPairingCard embedded) is its second method beside this
+ * computer's phone flow; `codeRequested` opens it on that method. Tailscale,
+ * Wi-Fi and the rest are under Advanced and troubleshooting, once each. */
+export function CompanionSection({ profileEmail = "", focusRequest = 0, codePairing, codeRequested = false }: { profileEmail?: string; focusRequest?: number; codePairing?: ReactNode; codeRequested?: boolean }) {
   const advanced = useAdvancedMode();
   const c = usePhoneSetupController(profileEmail);
+  const [method, setMethod] = useState<AddMethod>(codeRequested ? "code" : "phone");
   const state = c.state;
   const pairingFlow = useRef<HTMLDivElement>(null);
   const revealed = useRef(0);
@@ -152,6 +159,14 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
     if (!focusRequest) revealed.current = 0;
     else if (revealed.current !== focusRequest && revealPhonePairing(pairingFlow.current)) revealed.current = focusRequest;
   }, [focusRequest, loaded]);
+  // "Connect your phone" opens the phone method; a request for the server's
+  // pairing code opens the code method.
+  useEffect(() => {
+    if (focusRequest) setMethod("phone");
+  }, [focusRequest]);
+  useEffect(() => {
+    if (codeRequested) setMethod("code");
+  }, [codeRequested]);
   // An enrolled organisation can turn remote access off; the desktop refuses
   // new pairing and turning the companion on. Existing devices are listed as before.
   const managedPolicy = useStore().state.config?.managedPolicy;
@@ -173,7 +188,7 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
 
   if (!state) {
     return (
-      <Card collapsible cardId="companion.phone" title={t("remote.title")} subtitle={t("remote.checking")} summary={t("common.checking")}>
+      <Card collapsible cardId="companion.add" title={t("settings.addDevice.title")} subtitle={t("remote.checking")} summary={t("common.checking")}>
         <Loader2 size={15} className="animate-spin text-ink-secondary" />
       </Card>
     );
@@ -202,14 +217,33 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
   return (
     <div className="flex flex-col gap-4">
       {remoteBlocked && <p role="status" className="text-[13px] leading-relaxed text-ink-secondary">{remoteBlocked}</p>}
-      <div ref={pairingFlow} tabIndex={-1} data-phone-pairing="computer" className="scroll-mt-4 focus:outline-none">
-        <Card
-          collapsible
-          cardId="companion.phone"
-          title={pairingCopy.title}
-          subtitle={pairingCopy.subtitle}
-          summary={panelStatus?.label ?? cardCount("devices", pairedCount)}
-        >
+      <Card
+        collapsible
+        cardId="companion.add"
+        title={t("settings.addDevice.title")}
+        subtitle={method === "phone" ? pairingCopy.subtitle : t("settings.addDevice.codeSubtitle")}
+        summary={panelStatus?.label ?? cardCount("devices", pairedCount)}
+      >
+        {codePairing && (
+          <div role="radiogroup" aria-label={t("settings.addDevice.method")} className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-inset p-1" data-add-device-method={method}>
+            {([
+              { value: "phone", label: t("settings.addDevice.phone") },
+              { value: "code", label: t("settings.addDevice.code") },
+            ] as const).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={method === option.value}
+                onClick={() => setMethod(option.value)}
+                className={`rounded-lg px-3 py-1.5 text-[12.5px] transition-colors ${method === option.value ? "bg-raised text-ink shadow" : "text-ink-secondary hover:text-ink"}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div hidden={method !== "phone" && Boolean(codePairing)} ref={pairingFlow} tabIndex={-1} data-phone-pairing="computer" className="scroll-mt-4 focus:outline-none">
           {(panelStatus || (pairedCount > 0 && c.hostedReady)) && (
             <div className="mb-4 flex items-center justify-between gap-3">
               {panelStatus && (
@@ -229,58 +263,10 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
               )}
             </div>
           )}
+          <p className="mb-3 text-[12.5px] font-medium text-ink">{pairingCopy.title}</p>
           <PhoneSetupFlowView controller={c} variant="settings" />
-        </Card>
-      </div>
-
-      <Card
-        collapsible
-        cardId="companion.tailscale"
-        defaultOpen={false}
-        title={t("remote.pairing.tailscale.title")}
-        subtitle={t("remote.tailscaleCard.subtitle")}
-        summary={tailscaleStatus.title}
-      >
-        <div className="rounded-xl bg-inset px-3 py-3" aria-live="polite">
-          <div className="flex items-start gap-2.5">
-            <ShieldCheck
-              size={16}
-              className={`mt-0.5 shrink-0 ${tailscaleStatus.kind === "ready" ? "text-success" : "text-ink-secondary"}`}
-            />
-            <div className="min-w-0">
-              <div className="text-[13px] font-medium text-ink">{tailscaleStatus.title}</div>
-              <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">
-                {tailscaleStatus.detail}
-              </div>
-            </div>
-          </div>
         </div>
-        {tailscaleStatus.kind === "ready" ? (
-          <button
-            disabled={c.busy || c.accountBusy || Boolean(managedBy)}
-            title={managedBy ?? undefined}
-            onClick={() => {
-              c.useTailscale();
-              requestSettingsCard("companion.phone");
-              window.requestAnimationFrame(() => {
-                pairingFlow.current?.scrollIntoView({ block: "start" });
-                pairingFlow.current?.focus({ preventScroll: true });
-              });
-            }}
-            className="mt-3 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-40"
-          >
-            {t("remote.pairOverTailscale")}
-          </button>
-        ) : (
-          <button
-            disabled={c.busy || c.accountBusy || (Boolean(managedBy) && !state.enabled)}
-            title={managedBy ?? undefined}
-            onClick={c.refreshTailscale}
-            className="mt-3 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-40"
-          >
-            {c.busy ? t("common.checking") : managedBy && !state.enabled ? managedBy : state.enabled ? t("remote.checkAgain") : t("remote.turnOnAndCheck")}
-          </button>
-        )}
+        {codePairing && <div hidden={method !== "code"}>{codePairing}</div>}
       </Card>
 
       <Card
@@ -332,6 +318,20 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
                     }
                   />
                 </div>
+                {advanced && (
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-hairline/30 pt-3">
+                    <div>
+                      <div className="text-[12px] text-ink">{t("remote.devices.allowBrowser")}</div>
+                      <div className="mt-0.5 text-[11px] text-ink-secondary">{t("remote.devices.allowBrowserDetail")}</div>
+                    </div>
+                    <Switch
+                      checked={device.browserControlAccess === true}
+                      aria-label={t("remote.devices.browserAria", { name: device.name })}
+                      disabled={c.busy}
+                      onClick={() => void c.act((companion) => companion.browserControl(device.id, !device.browserControlAccess))}
+                    />
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -359,66 +359,6 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
           </div>
 
           <div className="border-t border-hairline/30 pt-4">
-            <div className="text-[13px] text-ink">{t("remote.devices.title")}</div>
-            <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{pairedCount ? t("remote.devices.subtitle", { app: brand().name }) : t("remote.devices.empty")}</div>
-            <div className="mt-3">
-              {pairedCount > 0 && (
-                <ul className="flex flex-col gap-2">
-                  {state.devices.map((device) => (
-                    <li key={device.id} className="rounded-xl bg-inset px-3 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-control text-ink-secondary">
-                          <Smartphone size={15} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[13.5px] font-medium text-ink">{device.name}</div>
-                          <div className="text-[11.5px] text-ink-secondary">{t("remote.devices.lastSeen", { when: relative(device.lastSeenAt) })}</div>
-                        </div>
-                        <button
-                          disabled={c.busy}
-                          onClick={() => void c.act((companion) => companion.revoke(device.id))}
-                          aria-label={t("remote.devices.remove", { name: device.name })}
-                          className="shrink-0 rounded p-1.5 text-ink-secondary hover:bg-control hover:text-danger disabled:opacity-40"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                      <div className="mt-3 flex items-center justify-between gap-3 border-t border-hairline/30 pt-3">
-                        <div>
-                          <div className="text-[12px] text-ink">{t("remote.devices.allowView")}</div>
-                          <div className="mt-0.5 text-[11px] text-ink-secondary">{t("remote.devices.allowViewDetail")}</div>
-                        </div>
-                        <Switch
-                          checked={device.cloudDesktopAccess}
-                          aria-label={t("remote.devices.viewAria", { name: device.name })}
-                          disabled={c.busy}
-                          onClick={() =>
-                            void c.act((companion) =>
-                              companion.cloudDesktop(device.id, !device.cloudDesktopAccess),
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="mt-3 flex items-center justify-between gap-3 border-t border-hairline/30 pt-3">
-                        <div>
-                          <div className="text-[12px] text-ink">{t("remote.devices.allowBrowser")}</div>
-                          <div className="mt-0.5 text-[11px] text-ink-secondary">{t("remote.devices.allowBrowserDetail")}</div>
-                        </div>
-                        <Switch
-                          checked={device.browserControlAccess === true}
-                          aria-label={t("remote.devices.browserAria", { name: device.name })}
-                          disabled={c.busy}
-                          onClick={() => void c.act((companion) => companion.browserControl(device.id, !device.browserControlAccess))}
-                        />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-
-          <div className="border-t border-hairline/30 pt-4">
             <div className="text-[13px] text-ink">{t("remote.pairing.tailscale.title")}</div>
             <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("remote.tailscaleCard.subtitle")}</div>
             <div className="mt-3">
@@ -442,6 +382,8 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
               title={managedBy ?? undefined}
               onClick={() => {
                 c.useTailscale();
+                setMethod("phone");
+                requestSettingsCard("companion.add");
                 window.requestAnimationFrame(() => {
                   pairingFlow.current?.scrollIntoView({ block: "start" });
                   pairingFlow.current?.focus({ preventScroll: true });
@@ -546,7 +488,11 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
             </div>
             <button
               disabled={c.busy || c.accountBusy}
-              onClick={c.useLocal}
+              onClick={() => {
+                c.useLocal();
+                setMethod("phone");
+                requestSettingsCard("companion.add");
+              }}
               className="mt-3 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-40"
             >
               {t("remote.wifi.pair")}

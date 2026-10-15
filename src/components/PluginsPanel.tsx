@@ -773,8 +773,6 @@ export function PluginsPanel() {
         sourceLabel={pluginSourceLabel}
         extraSources={(shownMarketplaces ?? []).map((market) => market.name)}
         extraConnected={scope === "bot" ? 0 : claudeConnectors}
-        refreshing={refreshing}
-        onRefresh={refreshAll}
         onClose={close}
         onOpenManage={() => setPage({ page: "manage" })}
         onOpenItem={openItem}

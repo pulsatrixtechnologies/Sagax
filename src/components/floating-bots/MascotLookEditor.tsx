@@ -352,7 +352,7 @@ function LockBadge({ lock }: { lock: LockInfo }) {
  * the achievement that unlocks it (tooltip and label); it stays focusable so
  * the tooltip reads, but a click does nothing.
  */
-function SkinCard({ tier, label, checked, disabled, onSelect, data, lock, children }: { tier: SkinTier; label: string; checked: boolean; disabled?: boolean; onSelect: () => void; data: Record<string, string>; lock?: LockInfo; children: ReactNode }) {
+function SkinCard({ tier, label, checked, disabled, onSelect, onPreview, previewOnly, data, lock, children }: { tier: SkinTier; label: string; checked: boolean; disabled?: boolean; onSelect: () => void; onPreview?: () => void; previewOnly?: boolean; data: Record<string, string>; lock?: LockInfo; children: ReactNode }) {
   const tierLabel = t(SKIN_TIER_LABEL[tier]);
   const locked = Boolean(lock?.locked);
   const hint = locked && lock ? lockHint(lock) : "";
@@ -370,9 +370,11 @@ function SkinCard({ tier, label, checked, disabled, onSelect, data, lock, childr
       data-unlock-achievement={locked ? lock?.achievement?.id : undefined}
       {...data}
       onClick={() => {
-        if (!locked) onSelect();
+        // a locked skin (or any skin of a locked character) previews on the stage, never saves
+        if (locked || previewOnly) { onPreview?.(); return; }
+        onSelect();
       }}
-      className={cn(card, "skin-card relative h-[56px] gap-0 pt-0.5", focusRing, checked && on, locked && "cursor-not-allowed hover:bg-inset")}
+      className={cn(card, "skin-card relative h-[56px] gap-0 pt-0.5", focusRing, checked && on, locked && "hover:bg-control")}
     >
       <span className="grid size-[36px] place-items-center" aria-hidden="true">
         {children}
@@ -388,7 +390,7 @@ function SkinCard({ tier, label, checked, disabled, onSelect, data, lock, childr
  * skin's rarity and follows it when it changes elsewhere (Reset); only the
  * open tab's cards are drawn, so the pane animates a handful at most.
  */
-function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPrefix, dataKey, disabled, onSelect, preview, lockOf }: { skins: readonly S[]; tierOf: Readonly<Record<S, SkinTier>>; selected: S; labelOf: (skin: S) => string; idPrefix: string; dataKey: string; disabled?: boolean; onSelect: (skin: S) => void; preview: (skin: S) => ReactNode; lockOf?: (skin: S) => LockInfo }) {
+function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPrefix, dataKey, disabled, onSelect, preview, lockOf, previewOnly, onPreview }: { skins: readonly S[]; tierOf: Readonly<Record<S, SkinTier>>; selected: S; labelOf: (skin: S) => string; idPrefix: string; dataKey: string; disabled?: boolean; onSelect: (skin: S) => void; preview: (skin: S) => ReactNode; lockOf?: (skin: S) => LockInfo; previewOnly?: boolean; onPreview?: (skin: S) => void }) {
   // Every skin shows, a locked one greyed with its padlock (the goal is to want it).
   const tabs = skinTierTabs(skins, tierOf);
   const [tab, setTab] = useState<SkinTier>(() => skinTabFor(selected, skins, tierOf));
@@ -414,7 +416,7 @@ function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPref
       <div id={`${idPrefix}-panel`} role="tabpanel" aria-labelledby={`${idPrefix}-tab-${open.tier}`} data-skin-panel={open.tier}>
         <div className="grid grid-cols-5 gap-1" role="radiogroup" aria-label={t("mascot.skin.title")}>
           {open.skins.map((skin) => (
-            <SkinCard key={skin} tier={tierOf[skin]} label={labelOf(skin)} checked={selected === skin} disabled={disabled} data={{ [dataKey]: skin }} lock={skin === selected ? undefined : lockOf?.(skin)} onSelect={() => onSelect(skin)}>
+            <SkinCard key={skin} tier={tierOf[skin]} label={labelOf(skin)} checked={selected === skin} disabled={disabled} data={{ [dataKey]: skin }} lock={skin === selected ? undefined : lockOf?.(skin)} onSelect={() => onSelect(skin)} previewOnly={previewOnly} onPreview={() => onPreview?.(skin)}>
               {preview(skin)}
             </SkinCard>
           ))}
@@ -576,7 +578,12 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
   }, [look.character]);
   const shownOption = MASCOTS.find((option) => option.id === shown) ?? MASCOTS[0];
   const shownLock = lockOf(shown);
-  const shownLook: MascotLook = { ...look, character: shown };
+  // a locked skin, or a skin of a locked character, picked to look at: the stage wears it, nothing saves (JC 2026-10-14)
+  const [previewSkin, setPreviewSkin] = useState<string | null>(null);
+  useEffect(() => setPreviewSkin(null), [shown]);
+  const shownLook: MascotLook = previewSkin && shown !== "owl"
+    ? { ...look, character: shown, skins: { ...look.skins, [shown]: previewSkin } as MascotLook["skins"] }
+    : { ...look, character: shown };
   const shownName = t(CHARACTER_LABEL[shown]);
   const inUse = shown === look.character;
   // A locked character previews only: its options show, disabled.
@@ -716,7 +723,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
         >
           <span aria-hidden="true" className={cn("pointer-events-none", shownLock.locked && "opacity-60 grayscale")}>
             <BotAvatar
-              bot={{ name: bot.name, color: bot.color, mascotSkin: owlSkin, mascotLook: shownLook, avatarCrop: "mascot" }}
+              bot={{ name: bot.name, color: bot.color, mascotSkin: (previewSkin && shown === "owl" ? previewSkin : owlSkin) as typeof owlSkin, mascotLook: shownLook, avatarCrop: "mascot" }}
               size={128}
               state="idle"
               motion={owlMotion?.kind ?? "none"}
@@ -725,6 +732,11 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               label={t("appearance.preview", { name: shownName })}
             />
           </span>
+          {previewSkin && (
+            <span data-mascot-skin-preview="" className="absolute inset-x-2 bottom-2 truncate rounded-md bg-control/90 px-2 py-1 text-[11px] leading-4 text-ink-secondary">
+              {t("mascot.skinPreview")}
+            </span>
+          )}
           {shownLock.locked && (
             <span className="absolute right-2 top-2 grid size-6 place-items-center rounded-full bg-control text-ink-secondary" aria-hidden="true"><Lock size={12} strokeWidth={2.4} /></span>
           )}
@@ -788,7 +800,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               labelOf={(skin) => t(OWL_SKIN_LABEL[skin])}
               idPrefix="owl-skin"
               dataKey="data-mascot-skin-option"
-              disabled={optionsOff}
+              disabled={disabled}
+              previewOnly={shownLock.locked}
+              onPreview={(skin) => setPreviewSkin(String(skin))}
               onSelect={(skin) => onPatch({ mascotSkin: skin })}
               lockOf={(skin) => (skin === owlSkin ? { locked: false } : skinLock(unlocks, "owl", skin))}
               preview={(skin) => <MausAvatar color={bot.color} skin={skin} state="idle" size={36} animated={false} skinAnimated trackPointer={false} />}
@@ -803,7 +817,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               labelOf={(skin) => t(SHAPE_SKIN_LABEL[skin])}
               idPrefix="shape-skin"
               dataKey="data-shape-skin-option"
-              disabled={optionsOff}
+              disabled={disabled}
+              previewOnly={shownLock.locked}
+              onPreview={(skin) => setPreviewSkin(String(skin))}
               onSelect={(skin) => setLook({ skins: { ...look.skins, shape: skin } })}
               lockOf={(skin) => skinLock(unlocks, "shape", skin)}
               preview={(skin) => <ShapeMascot shape={look.shape} skin={skin} color={bot.color} size={32} detail="full" label={null} />}
@@ -818,7 +834,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               labelOf={(skin) => t(TROMBI_SKIN_LABEL[skin])}
               idPrefix="trombi-skin"
               dataKey="data-trombi-skin-option"
-              disabled={optionsOff}
+              disabled={disabled}
+              previewOnly={shownLock.locked}
+              onPreview={(skin) => setPreviewSkin(String(skin))}
               onSelect={(skin) => setLook({ skins: { ...look.skins, trombi: skin } })}
               lockOf={(skin) => skinLock(unlocks, "trombi", skin)}
               preview={(skin) => <SkinnedTrombi skin={skin} pose="idle" size={34} width={26} detail="full" label={null} />}
@@ -833,7 +851,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               labelOf={(skin) => t(BUNBU_SKIN_LABEL[skin])}
               idPrefix="bunbu-skin"
               dataKey="data-bunbu-skin-option"
-              disabled={optionsOff}
+              disabled={disabled}
+              previewOnly={shownLock.locked}
+              onPreview={(skin) => setPreviewSkin(String(skin))}
               onSelect={(skin) => setLook({ skins: { ...look.skins, bunbu: skin } })}
               lockOf={(skin) => skinLock(unlocks, "bunbu", skin)}
               preview={(skin) => <BunbuMascot skin={skin} color={bot.color} size={32} detail="full" label={null} />}
@@ -848,7 +868,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               labelOf={(skin) => t(SHIBA_SKIN_LABEL[skin])}
               idPrefix="shiba-skin"
               dataKey="data-shiba-skin-option"
-              disabled={optionsOff}
+              disabled={disabled}
+              previewOnly={shownLock.locked}
+              onPreview={(skin) => setPreviewSkin(String(skin))}
               onSelect={(skin) => setLook({ skins: { ...look.skins, shiba: skin } })}
               lockOf={(skin) => skinLock(unlocks, "shiba", skin)}
               preview={(skin) => <ShibaMascot skin={skin} color={bot.color} size={32} detail="full" label={null} />}
@@ -863,7 +885,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               labelOf={(skin) => t(GRUMP_SKIN_LABEL[skin])}
               idPrefix="grump-skin"
               dataKey="data-grump-skin-option"
-              disabled={optionsOff}
+              disabled={disabled}
+              previewOnly={shownLock.locked}
+              onPreview={(skin) => setPreviewSkin(String(skin))}
               onSelect={(skin) => setLook({ skins: { ...look.skins, grump: skin } })}
               lockOf={(skin) => skinLock(unlocks, "grump", skin)}
               preview={(skin) => <GrumpMascot skin={skin} color={bot.color} size={32} detail="full" label={null} />}
@@ -878,7 +902,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               labelOf={(skin) => t(OGRE_SKIN_LABEL[skin])}
               idPrefix="ogre-skin"
               dataKey="data-ogre-skin-option"
-              disabled={optionsOff}
+              disabled={disabled}
+              previewOnly={shownLock.locked}
+              onPreview={(skin) => setPreviewSkin(String(skin))}
               onSelect={(skin) => setLook({ skins: { ...look.skins, ogre: skin } })}
               lockOf={(skin) => skinLock(unlocks, "ogre", skin)}
               preview={(skin) => <OgreMascot skin={skin} color={bot.color} size={32} detail="full" label={null} />}
@@ -893,7 +919,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               labelOf={(skin) => t(FROG_SKIN_LABEL[skin])}
               idPrefix="frog-skin"
               dataKey="data-frog-skin-option"
-              disabled={optionsOff}
+              disabled={disabled}
+              previewOnly={shownLock.locked}
+              onPreview={(skin) => setPreviewSkin(String(skin))}
               onSelect={(skin) => setLook({ skins: { ...look.skins, frog: skin } })}
               lockOf={(skin) => skinLock(unlocks, "frog", skin)}
               preview={(skin) => <FrogMascot skin={skin} color={bot.color} size={32} detail="full" label={null} />}
@@ -908,7 +936,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               labelOf={(skin) => t(CRAB_SKIN_LABEL[skin])}
               idPrefix="crab-skin"
               dataKey="data-crab-skin-option"
-              disabled={optionsOff}
+              disabled={disabled}
+              previewOnly={shownLock.locked}
+              onPreview={(skin) => setPreviewSkin(String(skin))}
               onSelect={(skin) => setLook({ skins: { ...look.skins, crab: skin } })}
               lockOf={(skin) => skinLock(unlocks, "crab", skin)}
               preview={(skin) => <CrabMascot skin={skin} color={bot.color} size={32} detail="full" label={null} />}

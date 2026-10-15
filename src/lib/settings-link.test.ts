@@ -1,30 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { currentSettingsSection, openModelKeysSettings, openSettings, settingsLinkParts, settingsSectionLabel } from "./settings-link";
+import { currentSettingsSection, mergedSettingsCard, openModelKeysSettings, openSettings, settingsLinkParts, settingsSectionLabel } from "./settings-link";
 import { setLocale } from "@/lib/i18n";
 
 describe("settings links", () => {
   it("names a section with the label Settings shows", () => {
     setLocale("en");
     expect(settingsSectionLabel("engines")).toBe("Models and voice");
-    expect(settingsSectionLabel("connectedApps")).toBe("Connected apps");
-    expect(settingsSectionLabel("companion")).toBe("Pair devices");
+    // a former page names the page that holds its card now
+    expect(settingsSectionLabel("connectedApps")).toBe("Models and voice");
+    expect(settingsSectionLabel("mail")).toBe("People");
+    // Pair devices and Activity are hidden (2026-10-14): their old links open General
+    expect(settingsSectionLabel("companion")).toBe("General");
+    expect(settingsSectionLabel("activity")).toBe("General");
     expect(settingsSectionLabel("experimental")).toBe("Experimental");
     setLocale("fr");
     expect(settingsSectionLabel("engines")).toBe("Modèles et voix");
-    expect(settingsSectionLabel("connectedApps")).toBe("Apps connectées");
+    expect(settingsSectionLabel("privacy")).toBe("Notifications");
+    expect(settingsSectionLabel("memory")).toBe("Organisation");
     setLocale("en");
   });
 
   // 2026-10-14: Integrations and Models and accounts are one page; an old
-  // link to Integrations opens it, or Connected apps for the Composio card.
-  it("redirects an old Integrations link to the page that holds it now", () => {
+  // link to Integrations opens it. Then (menu simplification, Settings lot)
+  // Connected apps, Decision model, Privacy, Memory and Email became cards:
+  // an old section id opens the page that holds the card, and the card.
+  it("redirects an old section link to the page and card that hold it now", () => {
     expect(currentSettingsSection("connections")).toBe("engines");
     expect(currentSettingsSection("connections", "connections.voice")).toBe("engines");
-    expect(currentSettingsSection("connections", "connections.apps")).toBe("connectedApps");
-    expect(currentSettingsSection("memory")).toBe("memory");
+    expect(currentSettingsSection("connections", "connections.apps")).toBe("engines");
+    expect(currentSettingsSection("connectedApps")).toBe("engines");
+    expect(currentSettingsSection("decisionModel")).toBe("engines");
+    expect(currentSettingsSection("privacy")).toBe("notifications");
+    expect(currentSettingsSection("memory")).toBe("organization");
+    expect(currentSettingsSection("mail")).toBe("people");
+    expect(currentSettingsSection("companion")).toBe("general");
+    expect(currentSettingsSection("activity")).toBe("general");
+    expect(currentSettingsSection("usage")).toBe("usage");
+    expect(mergedSettingsCard("connectedApps")).toBe("connections.apps");
+    expect(mergedSettingsCard("decisionModel")).toBe("engines.decisionModel");
+    expect(mergedSettingsCard("privacy")).toBe("notifications.privacy");
+    expect(mergedSettingsCard("memory")).toBe("organization.memory");
+    expect(mergedSettingsCard("mail")).toBeUndefined();
+    expect(mergedSettingsCard("general")).toBeUndefined();
     const sent: unknown[] = [];
     openSettings((action) => sent.push(action), "connections", "connections.apps");
-    expect(sent).toEqual([{ type: "toggleAppSettings", open: true, section: "connectedApps" }]);
+    openSettings((action) => sent.push(action), "decisionModel");
+    expect(sent).toEqual([
+      { type: "toggleAppSettings", open: true, section: "engines" },
+      { type: "toggleAppSettings", open: true, section: "engines" },
+    ]);
   });
 
   // New bot's "no model works" button opens the list of keys (PR #478).

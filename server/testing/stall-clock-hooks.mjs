@@ -7,12 +7,10 @@
 // from then, as it would in production. It changes no authorization or
 // dispatch decision.
 import { registerHooks } from 'node:module';
-import { join } from 'node:path';
 const dataDir = process.env.SAGAX_DATA_DIR;
 if (!dataDir || dataDir !== process.env.HOME || process.env.SAGAX_TEST_STALL_CLOCK !== '1') {
   throw new Error('The stall clock requires an explicitly isolated fixture');
 }
-const marker = join(dataDir, 'stall-turns');
 const server = new URL('../index.ts', import.meta.url).href;
 registerHooks({
   load(url, context, nextLoad) {
@@ -22,7 +20,10 @@ registerHooks({
     // The watchdog is the server's only interval with this period.
     const anchor = 'checkMs: 60_000,';
     if (source.split(anchor).length !== 2) throw new Error('Stall watchdog clock seam changed');
-    return { ...result, source: `import { existsSync as stallMarkerExists } from 'node:fs';\n` + source.replace(anchor,
-      `checkMs: 50, now: () => Date.now() + (stallMarkerExists(${JSON.stringify(marker)}) ? TURN_STALL_MS : 0),`) };
+    // The marker path is read from the environment at run time, never spliced
+    // into the source text.
+    return { ...result, source: `import { existsSync as stallMarkerExists } from 'node:fs';\n`
+      + `import { join as stallMarkerJoin } from 'node:path';\n` + source.replace(anchor,
+      `checkMs: 50, now: () => Date.now() + (stallMarkerExists(stallMarkerJoin(process.env.SAGAX_DATA_DIR, 'stall-turns')) ? TURN_STALL_MS : 0),`) };
   },
 });

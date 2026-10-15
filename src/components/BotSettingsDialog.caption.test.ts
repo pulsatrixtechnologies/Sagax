@@ -53,36 +53,34 @@ describe("bot settings caption inset", () => {
 });
 
 describe("bot panel header and tabs", () => {
-  it("keeps the header to round controls and puts Edit bot on the mascot as a pencil", () => {
+  it("keeps the header to round controls: the bot's one \"...\" menu and Close", () => {
     vi.stubGlobal("window", { ogb: { platform: "darwin" } });
     const html = renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
     const classOf = (marker: RegExp) => html.match(marker)?.[1] ?? html.match(marker)?.[2];
     const close = classOf(/<button[^>]*aria-label="Close"[^>]*class="([^"]*)"|<button[^>]*class="([^"]*)"[^>]*aria-label="Close"/);
     expect(close).toBe(CIRCLE_BUTTON);
-    // no "..." in the header: the pencil sits on the mascot, after it
-    expect(html).not.toContain("data-mascot-menu-button");
-    const badge = html.match(/<button[^>]*data-persona-edit-badge=""[^>]*>/)?.[0] ?? "";
-    expect(badge).toContain('aria-label="Edit bot"');
-    expect(badge).toContain('title="Edit bot"');
-    expect(badge).toContain("size-7");
-    expect(html.indexOf("data-persona-edit-badge")).toBeGreaterThan(html.indexOf("data-avatar-edit"));
+    const more = html.match(/<button[^>]*data-bot-actions-button=""[^>]*>/)?.[0] ?? "";
+    expect(more).toContain('aria-label="Bot menu"');
+    expect(more).toContain('aria-haspopup="menu"');
+    // Export and Inspector moved into the menu; no pencil on the mascot
+    expect(html).not.toContain('aria-label="Export conversation"');
+    expect(html).not.toContain('aria-label="Inspector"');
+    expect(html).not.toContain("data-persona-edit-badge");
+    expect(html).not.toContain("data-edit-persona");
+    expect(html.indexOf("data-bot-actions-button")).toBeLessThan(html.indexOf("data-avatar-edit"));
   });
 
-  it("offers one pencil on the mascot, before the tab bar", () => {
+  it("opens the editor from the mascot, with no second persona button", () => {
     vi.stubGlobal("window", { ogb: { platform: "darwin" } });
     const html = renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
-    expect(html.match(/data-edit-persona=""/g)).toHaveLength(1);
-    // no second persona button (the 0.4.19 one): the badge says Edit bot
+    expect(html).toContain('aria-haspopup="dialog"');
     expect(html).not.toContain('aria-label="Edit persona"');
     expect(html).not.toContain(">Edit persona<");
-    // the name and label pencils show only on hover or focus (and on touch screens)
+    // the name pencil shows only on hover or focus (and on touch screens);
+    // the label has none while there is no label
     const inlinePencils = [...html.matchAll(/<svg[^>]*lucide-pencil[^>]*>/g)].map((m) => m[0]).filter((svg) => svg.includes("opacity-0"));
-    expect(inlinePencils).toHaveLength(2);
+    expect(inlinePencils).toHaveLength(1);
     for (const svg of inlinePencils) expect(svg).toContain("group-hover/inline:opacity-100");
-    // the one pencil is the mascot's badge
-    expect(html.match(/<button[^>]*data-edit-persona=""[^>]*>/)?.[0]).toContain("data-persona-edit-badge");
-    expect(html.indexOf('data-edit-persona=""')).toBeLessThan(html.indexOf('role="tablist"'));
-    expect(html).not.toMatch(/role="tablist"[\s\S]*data-edit-persona=""/);
   });
 
   const panel = () => {
@@ -90,11 +88,12 @@ describe("bot panel header and tabs", () => {
     return renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
   };
 
-  it("edits the name and the label where they show, with no Name or Label field", () => {
+  it("edits the name where it shows, with no Name or Label field, and shows the label only when there is one", () => {
     const html = panel();
     expect(html).toMatch(/<button[^>]*id="bot-settings-title"[^>]*data-inline-edit="text"/);
     expect(html).toContain(">Maily</span>");
-    expect(html).toContain("Add a label");
+    // adding a label is in the editor's Profile
+    expect(html).not.toContain("Add a label");
     expect(html).not.toContain('id="bot-name-bot-1"');
     expect(html).not.toContain("Label (optional)");
   });
@@ -103,7 +102,6 @@ describe("bot panel header and tabs", () => {
     const html = panel();
     expect(html).not.toContain('data-description-info="button"');
     expect(html).toContain(">Maily</span>");
-    expect(html).toContain("Add a label");
     expect(html).not.toContain("Sorts the inbox.");
     expect(html).not.toContain("One line on what this bot is for");
     expect(html).not.toContain('id="bot-instructions-bot-1"');

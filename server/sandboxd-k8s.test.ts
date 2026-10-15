@@ -28,6 +28,7 @@ type Obj = Record<string, unknown>;
 
 function mergePatch(target: Obj, patch: Obj): void {
   for (const [field, value] of Object.entries(patch)) {
+    if (field === "__proto__" || field === "constructor" || field === "prototype") continue;
     if (value === null) {
       delete target[field];
       continue;

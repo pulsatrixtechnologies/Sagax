@@ -7,7 +7,6 @@ import { api, useStore, type ConfigStatus } from "@/state/store";
 import type { LiveSettings } from "../../shared/wire";
 import { SettingsText } from "./SettingsLink";
 import { Switch } from "./SettingsPrimitives";
-import { LiveKeySetup } from "./LiveKeySetup";
 
 const IDLE_CHOICES = [1, 2, 3, 5, 10, 15, 30, 60];
 
@@ -98,7 +97,6 @@ export function LiveCallSettings({ onClose }: { onClose: () => void }) {
  * Settings rather than on the call bar. */
 export function LiveCallInstallationSettings() {
   const { live, saving, error, save, removeKey } = useLiveSettingsEditor();
-  const [changingKey, setChangingKey] = useState(false);
   const typedHintId = useId();
 
   return (
@@ -130,20 +128,19 @@ export function LiveCallInstallationSettings() {
           ))}
         </select>
       </label>
-      <div className="flex items-center justify-between gap-2 border-t border-hairline/60 pt-2">
-        <span className="text-ink-secondary">{t("call.live.key")}</span>
-        <span className="flex gap-2">
-          <button type="button" className="text-accent hover:underline" onClick={() => setChangingKey((open) => !open)}>
-            {t("call.live.keyChange")}
-          </button>
-          {live.configured && (
-            <button type="button" className="text-danger hover:underline" disabled={saving} onClick={() => void removeKey()}>
-              {t("call.live.keyRemove")}
-            </button>
-          )}
+      {/* One OpenAI key (2026-10-14): Live calls use the OpenAI key of the
+          list above. An older install's separate key still wins until it is
+          removed here. */}
+      <div className="flex items-center justify-between gap-2 border-t border-hairline/60 pt-2" data-live-key={live.separateKey ? "separate" : live.configured ? "openai" : "none"}>
+        <span className="text-ink-secondary">
+          {live.separateKey ? t("call.live.separateKey") : live.configured ? t("call.live.usesOpenAiKey") : t("call.live.needsOpenAiKey")}
         </span>
+        {live.separateKey && (
+          <button type="button" className="shrink-0 text-danger hover:underline" disabled={saving} onClick={() => void removeKey()}>
+            {t("call.live.keyRemove")}
+          </button>
+        )}
       </div>
-      {changingKey && <LiveKeySetup compact onSaved={() => setChangingKey(false)} />}
       <div className="text-[11.5px] text-ink-tertiary">{liveDisclosure()} {t("call.live.cost")}</div>
       {error && <div className="text-[12px] text-danger">{error}</div>}
     </div>

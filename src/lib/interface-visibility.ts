@@ -1,5 +1,7 @@
-// What Simple mode hides. Advanced shows the screen as it is. The composer is
-// the same in both modes and is not listed here. Hiding never changes a
+// What Simple mode hides. Advanced shows the screen as it is. The composer
+// decides for itself (JC, 2026-10-14): two approval choices instead of five
+// (ApprovalModeSelector), no place chip unless the conversation has one
+// pinned (Composer), and the providers behind "All models ›" (ModelMenu). Hiding never changes a
 // stored value, and nothing in these lists is required to chat: engine
 // sign-in stays on the model picker and the empty-engines screen.
 import type { AppSettingsSection, BotSettingsSection } from "@/state/store";

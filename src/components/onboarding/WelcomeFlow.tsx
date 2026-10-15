@@ -13,7 +13,7 @@
 // its organisation assigns the models, and nothing there is installed on,
 // granted to or paired with this computer.
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { MausAvatar } from "@/components/Avatar";
+import { PulsatrixMark } from "@/components/PulsatrixMark";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { setEmailGateDone, track } from "@/lib/analytics";
 import { brand } from "@/lib/brand";
@@ -112,8 +112,10 @@ export function WelcomeFlow({
   const { capabilities } = useDesktopCapabilities();
   const beats = beatsFor({ dictation: dictation ?? capabilities.dictation.available, reel, hosted });
   const [beat, setBeat] = useState<BeatId>(() => (initialBeat && beats.includes(initialBeat) ? initialBeat : "hello"));
-  const [mascot, setMascot] = useState<MausState>(MASCOT_FOR_BEAT[beat]);
-  const [motion, setMotion] = useState<{ kind: Motion; key: number }>({ kind: "blink", key: 0 });
+  // the Pulsatrix mark replaced the guide mascot (JC 2026-10-14); beats still
+  // drive these so their setMascot/bump calls stay valid
+  const [, setMascot] = useState<MausState>(MASCOT_FOR_BEAT[beat]);
+  const [, setMotion] = useState<{ kind: Motion; key: number }>({ kind: "blink", key: 0 });
   const cardRef = useRef<HTMLDivElement>(null);
   const finishing = useRef(false);
 
@@ -245,14 +247,7 @@ export function WelcomeFlow({
             {logo ? (
               <img src={logo} alt="" width={72} height={72} className="h-[72px] w-[72px] object-contain" />
             ) : (
-              <MausAvatar
-                color="green"
-                state={mascot}
-                motion={motion.kind}
-                motionKey={motion.key}
-                size={hello ? 72 : 40}
-                label={brand().name}
-              />
+              <PulsatrixMark size={hello ? 72 : 40} />
             )}
           </div>
           {title && (

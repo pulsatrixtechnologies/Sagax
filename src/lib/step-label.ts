@@ -11,6 +11,7 @@ import { activeLocale, t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import * as shared from "../../shared/approval-describe";
 import { parseArgs, parseToolId } from "@/lib/approval-describe";
+import { readMcpGatewayCall, type McpGatewayCall } from "../../shared/mcp-gateway-call";
 
 export type StepPhase = "running" | "done" | "failed";
 
@@ -82,7 +83,8 @@ const BARE: Record<string, Kind> = {
   close_thread: "closeThread",
   list_threads: "listThreads",
   memory_update: "memory", memory_log: "memory", group_memory_update: "memory", rules_update: "memory", docs_update: "memory", memory_write: "memory",
-  memory_search: "memorySearch", memory_recall: "memorySearch",
+  memory_save: "memory", memory_remove: "memory", memory_forget: "memory", memory_suggestions: "memory",
+  memory_search: "memorySearch", memory_recall: "memorySearch", memory_find: "memorySearch",
   session_search: "readConversations", session_read: "readConversations", read_transcript: "readConversations",
   read_transcript_page: "readConversations", read_latest_page: "readConversations",
   read_latest_page_with_threads: "readConversations", read_transcript_cold: "readConversations",
@@ -252,12 +254,25 @@ function mcpLabel(tool: StepTool, phase: StepPhase): { label: string; target?: s
     },
   };
   const reading = shared.describeApproval(described, tool.input ?? tool.summary, undefined, new Date(), words);
-  const product = override ?? (parsed.server.startsWith("sagax-") ? undefined : reading.product);
+  const internal = parsed.server.startsWith("sagax-");
+  const product = override ?? (internal ? undefined : reading.product);
+  // A failed call names where it went and the real tool: the verb the
+  // reading guessed from its arguments may be what failed.
+  if (phase === "failed" && !internal) {
+    return { label: t("step.mcpTool.failed", { product: product ?? parsed.server, tool: parsed.name }), target: reading.summary };
+  }
   const action = !reading.action || reading.verbless
     ? t(`step.use.${phase}` as LocaleKey, { name: (reading.action ?? parsed.name).replace(/_+/g, " ") })
     : reading.action;
   const label = product ? t("approval.phrase.inProduct", { action, product }) : action;
   return { label: capitalize(label), target: reading.summary };
+}
+
+/** pi-mcp-adapter's `mcp` gateway housekeeping, read as what it did. */
+function gatewayLabel(call: Extract<McpGatewayCall, { kind: "admin" }>, phase: StepPhase): StepReading {
+  if (call.action === "search") return { label: t(`step.mcp.search.${phase}` as LocaleKey), target: call.query ? oneLine(call.query) : undefined };
+  if (call.server) return { label: t(`step.mcp.${call.action}.${phase}` as LocaleKey, { server: call.server }) };
+  return { label: t(`step.mcp.${call.action}.bare.${phase}` as LocaleKey) };
 }
 
 function capitalize(text: string): string {
@@ -301,6 +316,13 @@ export function readStep(tool: StepTool, nameOf?: StepNameOf): StepReading {
   const sentence = serverSentence(name);
   if (sentence) return { label: sentence };
   if (isSentence(name)) return { label: name };
+  // rows stored before the driver named the tool a gateway call ran
+  const gateway = readMcpGatewayCall(name, tool.input ?? tool.summary);
+  if (gateway?.kind === "admin") return gatewayLabel(gateway, phase);
+  if (gateway?.kind === "tool") {
+    const named = mcpLabel({ ...tool, name: gateway.id, input: JSON.stringify(gateway.args), summary: undefined }, phase);
+    if (named) return named;
+  }
   const args = parseArgs(tool.input) ?? parseArgs(tool.summary);
   const kind = kindOf(name);
   if (kind) return { label: kindLabel(kind, phase, args, nameOf), target: kindTarget(kind, args, tool) };
@@ -320,11 +342,11 @@ export function stepLabel(tool: StepTool, nameOf?: StepNameOf): string {
 /** A quiet duration: "2s", "1m 05s"; under a second reads "<1s". */
 export function stepDuration(ms: number | undefined): string | undefined {
   if (ms === undefined || !Number.isFinite(ms) || ms < 0) return undefined;
-  if (ms < 1_000) return "<1s";
+  if (ms < 1_000) return t("step.duration.underSecond");
   const total = Math.round(ms / 1_000);
-  if (total < 60) return `${total}s`;
+  if (total < 60) return t("step.duration.seconds", { seconds: total });
   const minutes = Math.floor(total / 60);
-  return `${minutes}m ${String(total % 60).padStart(2, "0")}s`;
+  return t("step.duration.minutes", { minutes, seconds: String(total % 60).padStart(2, "0") });
 }
 
 const ARG_MAX = 6;
@@ -370,9 +392,4 @@ export function stepJson(tool: StepTool): string {
     // not JSON: kept as text
   }
   return JSON.stringify({ tool: tool.name, ok: tool.ok, input: input ?? tool.input ?? tool.summary, output }, null, 2);
-}
-
-/** A folded run of finished steps: "Used 4 tools". */
-export function stepGroupLabel(count: number): string {
-  return t(count === 1 ? "step.group.one" : "step.group.many", { count });
 }

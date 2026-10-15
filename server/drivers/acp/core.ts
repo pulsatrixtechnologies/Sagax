@@ -105,6 +105,7 @@ import { takeSafetyNote } from "../../safety-review.ts";
 import { gatedMcpAsk } from "./gated-mcp-ask.ts";
 import { TURN_TOKEN_ENV, warmCommsEnv } from "../spawn-contract.ts";
 import { acpHostToolRequest } from "../host-tools.ts";
+import { readUseToolCall } from "../../../shared/mcp-gateway-call.ts";
 
 /** Failures the person fixes on their provider account, not by retrying:
  * the process that reported one is healthy and stays pooled. */
@@ -1747,17 +1748,20 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               if (support.onToolCompleted && typeof u.toolCallId === "string" && u.rawInput !== undefined) {
                 (current.toolInputs ??= new Map()).set(u.toolCallId, u.rawInput);
               }
-              if (typeof u.toolCallId === "string" && typeof u.title === "string" && isCwTool(u.title)) {
-                (current.cwToolNames ??= new Map()).set(u.toolCallId, u.title);
+              // Grok's use_tool reads as the MCP tool it runs, not "Use Tool"
+              const useTool = readUseToolCall(u.rawInput);
+              const toolTitle = useTool?.id ?? (typeof u.title === "string" ? u.title : undefined);
+              if (typeof u.toolCallId === "string" && toolTitle && isCwTool(toolTitle)) {
+                (current.cwToolNames ??= new Map()).set(u.toolCallId, toolTitle);
               }
               emit({
                 ...base(threadId, current.turnId),
                 type: "item.started",
                 itemType: "tool",
                 itemId: (typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId : nextUnkeyedToolId(current),
-                title: String(u.rawInput?.command ?? u.title ?? "tool").slice(0, 80),
-                summary: commandSummary(u.rawInput),
-                input: toolDetailPreview(u.rawInput),
+                title: String(useTool?.id ?? u.rawInput?.command ?? u.title ?? "tool").slice(0, 80),
+                summary: commandSummary(useTool ? useTool.args : u.rawInput),
+                input: toolDetailPreview(useTool ? useTool.args : u.rawInput),
                 ...filesField(acpWrittenFiles(u)),
               });
               break;

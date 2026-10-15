@@ -1,7 +1,7 @@
 // The mascot's menu in the bot panel (BotContextMenu variant "mascot"):
-// Edit persona, Rename the bot, Put on the desktop, Make primary bot.
-// No Browse Bots row (it lives in the sidebar). Items the viewer may not use stay, disabled, with
-// the reason on screen.
+// Edit bot and Put on the desktop (JC, 2026-10-14). Rename is the name in
+// the panel, and Make primary bot is in the sidebar menu's More. No Browse
+// Bots row (it lives in the sidebar).
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -79,14 +79,14 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("mascot menu", () => {
-  it("lists its items in order, with no separator and no Browse Bots", () => {
+  it("lists its two items in order, with no separator and no Browse Bots", () => {
     const { html } = render();
-    expect(items(html)).toEqual(["edit-persona", "rename", "put-on-desktop", "make-primary"]);
+    expect(items(html)).toEqual(["edit-persona", "put-on-desktop"]);
     expect(html).toContain('data-bot-menu-variant="mascot"');
-    expect(html).toContain(">Edit persona<");
-    expect(html).toContain(">Rename the bot<");
+    expect(html).toContain(">Edit bot<");
     expect(html).toContain(">Put on the desktop<");
-    expect(html).toContain(">Make primary bot<");
+    expect(html).not.toContain("Rename");
+    expect(html).not.toContain("primary");
     expect(html).not.toContain("Browse Bots");
     expect(html).not.toContain("h-[0.5px] bg-border");
     // none of the sidebar row's own actions
@@ -100,36 +100,22 @@ describe("mascot menu", () => {
     const found = buttons();
     found.get("edit-persona")!.props.onClick();
     expect(props.onEditPersona).toHaveBeenCalledWith(expect.objectContaining({ id: bot.id }));
-    found.get("rename")!.props.onClick();
-    expect(props.onRename).toHaveBeenCalledWith(bot.id);
     found.get("put-on-desktop")!.props.onClick();
     expect(fixture.toggled).toEqual([bot.id]);
-    found.get("make-primary")!.props.onClick();
-    expect(props.onMakePrimary).toHaveBeenCalledWith(expect.objectContaining({ id: bot.id }));
-    expect(props.onClose).toHaveBeenCalledTimes(4);
+    expect(props.onClose).toHaveBeenCalledTimes(2);
   });
 
-  it("disables Make primary bot on the primary bot, with the reason", () => {
-    const { html } = render({ ...bot, chiefOfStaff: true } as Bot);
-    expect(html).toMatch(/data-menu-item="make-primary" disabled=""/);
-    expect(html).toContain("Already your primary bot");
-    expect(buttons().get("make-primary")!.props.disabled).toBe(true);
-  });
-
-  it("disables Rename and Make primary for a member on a bot they do not own, with the reasons", () => {
+  it("keeps both items usable for a member on a bot they do not own", () => {
     fixture.state = { config: member };
     const { html } = render({ ...bot, ownerUserId: "pr_someone" } as Bot);
-    expect(items(html)).toEqual(["edit-persona", "rename", "put-on-desktop", "make-primary"]);
-    expect(html).toMatch(/data-menu-item="rename" disabled=""/);
-    expect(html).toMatch(/data-menu-item="make-primary" disabled=""/);
-    expect(html).toContain("Only this bot&#x27;s owner or an admin can change this.");
-    expect(html).toContain("Only this bot&#x27;s owner can make it their primary bot");
-    // Edit persona and the desktop stay usable
-    expect(html).not.toMatch(/data-menu-item="(edit-persona|put-on-desktop)" disabled/);
+    expect(items(html)).toEqual(["edit-persona", "put-on-desktop"]);
+    expect(html).not.toContain("disabled");
   });
 
-  it("disables Make primary bot on an archived bot", () => {
-    const { html } = render({ ...bot, hidden: true } as Bot);
-    expect(html).toContain("An archived bot cannot be your primary bot");
+  it("says it in French with the one editor label", () => {
+    setLocale("fr");
+    const { html } = render();
+    expect(html).toContain(">Modifier le bot<");
+    expect(html).not.toContain("Modifier le persona");
   });
 });

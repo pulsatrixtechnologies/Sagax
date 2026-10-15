@@ -232,7 +232,7 @@ function runForget(state) {
   const start = MAIN_SOURCE.indexOf("async function forgetEnvironment(");
   const end = MAIN_SOURCE.indexOf("async function showContextMenu(", start);
   assert.ok(start > 0 && end > start, "the forget helper exists");
-  const calls = { dialogs: [], shares: [], persisted: [], navigated: [], rm: [] };
+  const calls = { dialogs: [], shares: [], persisted: [], navigated: [], rm: [], memoryForgotten: [] };
   const rmOptions = [];
   const ctx = {
     environmentsState: state,
@@ -240,6 +240,7 @@ function runForget(state) {
     runningDataDir: null,
     dialog: { showMessageBox: async (options) => { calls.dialogs.push(options); return { response: 0 }; } },
     sharingController: () => ({ forget: (entry) => calls.shares.push(entry.id) }),
+    orgMemoryCache: () => ({ forgetSource: async (origin) => { calls.memoryForgotten.push(origin); } }),
     persistEnvironments: (next) => { calls.persisted.push(next); context.environmentsState = next; },
     withoutEnvironment: env.withoutEnvironment,
     // Sagax's server mode and organization forget wording
@@ -268,7 +269,7 @@ function runForget(state) {
 test("forgetting the ACTIVE local environment is refused with {error:active} and touches nothing", async () => {
   const { calls, context } = runForget({ environments: [LOCAL_FIXTURE], activeId: "l1" });
   assert.deepEqual(plain(await context.forgetEnvironment("l1", true)), { ok: false, error: "active" });
-  assert.deepEqual(calls, { dialogs: [], shares: [], persisted: [], navigated: [], rm: [] });
+  assert.deepEqual(calls, { dialogs: [], shares: [], persisted: [], navigated: [], rm: [], memoryForgotten: [] });
 });
 
 test("forgetting a local environment asks nothing of the user, and a failed purge keeps the entry with {error:purge}", async () => {
@@ -301,6 +302,7 @@ test("forgetting a remote environment keeps its sign-out confirmation and answer
   assert.equal(calls.dialogs.length, 1, "the remote dialog stays");
   assert.match(calls.dialogs[0].detail, /signs out of that server/);
   assert.deepEqual(plain(calls.persisted[0].environments), []);
+  assert.deepEqual(calls.memoryForgotten, ["https://box.example"], "the memory copy from that server leaves with the person");
 });
 
 test("forgetting a local environment whose folder the server child uses is refused with {error:active}", async () => {

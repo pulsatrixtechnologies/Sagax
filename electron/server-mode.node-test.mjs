@@ -26,7 +26,7 @@ function section(start, end) {
 function fixture({ response = 0, packaged = false, serverReady = true, logout = true } = {}) {
   let state = env.withEnvironment({ environments: [], activeId: "local" }, { origin: "https://hosted.example.test" }, () => "h1");
   state = env.withServerMode(env.withEnvironment(state, { origin: ORG, name: "Example", org: true }, () => "o1"), "o1");
-  const calls = { navigated: [], persisted: [], fetched: [], cleared: [], closed: 0, relaunched: 0, dialogs: [], forgotten: [] };
+  const calls = { navigated: [], persisted: [], fetched: [], cleared: [], closed: 0, relaunched: 0, dialogs: [], forgotten: [], memoryForgotten: [] };
   const context = vm.createContext({
     environmentsState: state,
     LOCAL_ID: env.LOCAL_ID,
@@ -44,6 +44,7 @@ function fixture({ response = 0, packaged = false, serverReady = true, logout = 
       clearStorageData: async (options) => { calls.cleared.push(options.origin); },
     } },
     sharingController: () => ({ forget: (entry) => calls.forgotten.push(entry.id) }),
+    orgMemoryCache: () => ({ forgetSource: async (origin) => { calls.memoryForgotten.push(origin); } }),
     floatingBotWindows: { closeAll: () => { calls.closed++; } },
     retroAssistantWindow: { close: () => {} },
     app: { isPackaged: packaged },
@@ -86,6 +87,7 @@ test("leaving signs out of the server, forgets it and its page data, and shows t
   assert.deepEqual(calls.fetched, [[`${ORG}/api/auth/logout`, "POST", "include", true]], "main signs out itself, past the bundled-UI handler");
   assert.deepEqual(calls.cleared, [ORG]);
   assert.deepEqual(calls.forgotten, ["o1"]);
+  assert.deepEqual(calls.memoryForgotten, [ORG], "the memory copy from that server leaves with the person");
   assert.equal(calls.closed, 1, "the server's floating bots go with it");
   assert.equal(context.environmentsState.serverModeId, undefined);
   assert.equal(context.environmentsState.activeId, "local");

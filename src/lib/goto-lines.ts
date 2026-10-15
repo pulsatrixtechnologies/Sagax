@@ -193,7 +193,8 @@ export function gotoAgents(
  * does not know stays visible and so ends a stack of go-to lines. */
 export function silentChatItem(item: AnyItem, showToolCalls: boolean): boolean {
   if (showToolCalls) return false;
-  if (item.kind === "run" && "messages" in item) return !item.messages.some((message) => message.tool?.widget);
+  // a group with a turn's narration still shows that narration
+  if (item.kind === "run" && "messages" in item) return !item.messages.some((message) => message.tool?.widget || message.kind !== "activity");
   if (item.kind !== "message" || !("message" in item)) return false;
   const message = item.message;
   if (message.kind !== "activity" || !message.tool || message.state) return false;

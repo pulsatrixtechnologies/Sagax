@@ -34,17 +34,17 @@ const escaped = vi.fn();
 let host: HTMLDivElement;
 let root: Root;
 
-function Menu() {
+function Menu({ groupProviders }: { groupProviders: boolean }) {
   const keys = useModelFavorites();
   const [, rerender] = useState(0);
   return createElement("div", { style: { position: "fixed", right: "8px", bottom: "8px", width: "340px" }, "data-menu-box": "" },
     createElement(ModelSearchList, {
-      variant: "popover", submenus: true, autoFocus: true, sections, onPick: picked, onEscape: escaped,
+      variant: "popover", submenus: true, groupProviders, autoFocus: true, sections, onPick: picked, onEscape: escaped,
       favorites: { keys, onToggle: (row) => { toggleModelFavorite(row.key); rerender((n) => n + 1); } },
     }));
 }
 
-const render = () => flushSync(() => root.render(createElement(Menu)));
+const render = (groupProviders = false) => flushSync(() => root.render(createElement(Menu, { groupProviders })));
 const $ = <T extends Element = HTMLElement>(selector: string) => host.querySelector<T & HTMLElement>(selector);
 const $$ = (selector: string) => [...host.querySelectorAll<HTMLElement>(selector)];
 const input = () => $<HTMLInputElement>("[data-model-search]")!;
@@ -206,5 +206,62 @@ describe("the nested model menu", () => {
     expect(submenu()!.querySelector("[data-model-submenu-back]")!.textContent).toContain("Back");
     click(submenu()!.querySelector("[data-model-submenu-back]")!);
     expect(submenu()).toBeNull();
+  });
+});
+
+// Simple mode (JC, 2026-10-14): one "All models ›" row under Auto, the
+// bot's model and the favorites; the provider submenus stay inside it.
+describe("the nested model menu in Simple (providers grouped)", () => {
+  it("shows Auto, the bot's model and one All models row instead of the providers", () => {
+    render(true);
+    expect($$("[data-model-list] [role=menuitemradio]").map((row) => row.dataset.modelRowKey)).toEqual(["auto", "follow"]);
+    expect($$("[data-model-provider]")).toEqual([]);
+    const all = $("[data-model-all]")!;
+    expect(all.textContent).toBe("All models");
+    expect(all.getAttribute("aria-haspopup")).toBe("menu");
+  });
+
+  it("keeps the favorites above All models", () => {
+    toggleModelFavorite(favoriteKey("grok", "grok-4.5"));
+    render(true);
+    expect($("[data-model-favorites]")).not.toBeNull();
+    expect(rootModels()).toEqual(["grok-4.5"]);
+    expect($("[data-model-all]")).not.toBeNull();
+  });
+
+  it("lists the providers in place of the root on click, each opening its submenu, and comes back", () => {
+    render(true);
+    click($("[data-model-all]")!);
+    expect($("[data-model-all]")).toBeNull();
+    expect($$("[data-model-list] [role=menuitemradio]")).toEqual([]);
+    expect($$("[data-model-provider]").map((row) => row.textContent)).toEqual(["Claude (API key)", "Grok"]);
+    click($('[data-model-provider="grok"]')!);
+    expect(submenu()).not.toBeNull();
+    click($$("[data-model-submenu] [data-model-option]").find((row) => row.dataset.modelOption === "grok-4.7")!);
+    expect(picked).toHaveBeenCalledWith(expect.objectContaining({ modelId: "grok-4.7" }));
+    click($("[data-model-all-back]")!);
+    expect($("[data-model-all]")).not.toBeNull();
+    expect($$("[data-model-provider]")).toEqual([]);
+  });
+
+  it("opens All models with the keyboard and goes back with Escape before closing the menu", () => {
+    render(true);
+    // the bot's model is checked, so the next row down is All models
+    key(input(), "ArrowDown");
+    expect(input().getAttribute("aria-activedescendant")).toBe($("[data-model-all]")!.id);
+    key(input(), "ArrowRight");
+    expect($$("[data-model-provider]").length).toBe(2);
+    key(input(), "Escape");
+    expect($("[data-model-all]")).not.toBeNull();
+    expect(escaped).not.toHaveBeenCalled();
+    key(input(), "Escape");
+    expect(escaped).toHaveBeenCalledTimes(1);
+  });
+
+  it("searches every provider flat, as in Advanced", () => {
+    render(true);
+    type("grok");
+    expect(rootModels()).toEqual(["grok-4.7", "grok-4.5"]);
+    expect($("[data-model-all]")).toBeNull();
   });
 });

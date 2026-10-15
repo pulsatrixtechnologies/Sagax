@@ -2,12 +2,11 @@ import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BotEditorStore, initialState, StoreProvider, type AppState, type Bot } from "@/state/store";
+import { StoreProvider, type Bot } from "@/state/store";
 import { endCall } from "@/lib/call";
 import { configureLiveMedia, resetLiveMedia, startLiveCall } from "@/lib/live-call-media";
 import { LiveCallBar } from "./LiveCallBar";
 import { LiveCallInstallationSettings, LiveCallSettings } from "./LiveCallSettings";
-import { LiveKeySetup } from "./LiveKeySetup";
 
 const bot: Bot = {
   id: "atlas",
@@ -24,13 +23,6 @@ const bot: Bot = {
 
 const render = (element: ReturnType<typeof createElement>) =>
   renderToStaticMarkup(createElement(StoreProvider, null, element));
-/** Rendered by the person's own Cloud (its config answers `cloudHome`). */
-const renderOnCloud = (element: ReturnType<typeof createElement>) => {
-  const config = { cloudHome: true, live: { configured: true, voice: "marin", readTypedReplies: true, idleMinutes: 5 } } as AppState["config"];
-  const value = { state: { ...initialState, config }, dispatch: vi.fn(), flushBotPatches: async () => null, refreshInstances: async () => {}, refreshModels: async () => {} };
-  return renderToStaticMarkup(createElement(BotEditorStore, { value, children: element }));
-};
-const CLOUD_DISCLOSURE = `A Live call sends your voice to OpenAI, along with the chat&#x27;s recent messages, the bot&#x27;s answers and the details of any approval it asks for. The OpenAI key stays on My Cloud.`;
 
 afterEach(() => {
   resetLiveMedia();
@@ -142,7 +134,10 @@ describe("LiveCallSettings", () => {
     expect(markup).toContain(`A Live call sends your voice to OpenAI, along with the chat&#x27;s recent messages, the bot&#x27;s answers and the details of any approval it asks for. The OpenAI key stays on your computer.`);
     expect(markup).toContain("Hang up after this many minutes of silence");
     expect(markup).toMatch(/<option value="5" selected="">5<\/option>/);
-    expect(markup).toContain("Change key");
+    // one OpenAI key (2026-10-14): no second key field for Live calls
+    expect(markup).not.toContain("Change key");
+    expect(markup).toContain('data-live-key="none"');
+    expect(markup).toContain("Live calls use the OpenAI key of the list above. Add it there.");
     expect(markup).toContain('role="switch"');
     expect(markup).not.toContain("Remove key");
     expect(markup).not.toContain("Marin (default)");
@@ -165,24 +160,5 @@ describe("LiveCallSettings", () => {
     tree.props.onKeyDown({ key: "Escape", stopPropagation });
     expect(onClose).toHaveBeenCalledOnce();
     expect(stopPropagation).toHaveBeenCalledOnce();
-  });
-});
-
-describe("LiveKeySetup", () => {
-  it("says what the key is for, in the app's language", () => {
-    const markup = render(createElement(LiveKeySetup, { onSaved: vi.fn() }));
-    expect(markup).toContain("Live calls use OpenAI GPT-Live");
-    // what leaves the computer, where Live is set up
-    expect(markup).toContain(`A Live call sends your voice to OpenAI, along with the chat&#x27;s recent messages, the bot&#x27;s answers and the details of any approval it asks for. The OpenAI key stays on your computer.`);
-    expect(markup).toContain('aria-label="OpenAI API key for Live calls"');
-    expect(markup).toContain("Save and start the call");
-    expect(render(createElement(LiveKeySetup, { onSaved: vi.fn(), compact: true }))).toContain(">Save<");
-  });
-
-  // Pasted on the Cloud's page, the key is saved on the Cloud.
-  it("says the key stays on the Cloud when the chat is on the person's Cloud", () => {
-    const markup = renderOnCloud(createElement(LiveKeySetup, { onSaved: vi.fn() }));
-    expect(markup).toContain(CLOUD_DISCLOSURE);
-    expect(markup).not.toContain("stays on your computer");
   });
 });

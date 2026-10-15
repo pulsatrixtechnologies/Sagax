@@ -380,7 +380,8 @@ describe("Settings opened on the phone pairing", () => {
     expect(initialState.appSettingsPhonePairing).toBe(0);
     const phone = { type: "toggleAppSettings", open: true, section: "companion", phonePairing: true } as const;
     const opened = reducer(initialState, phone);
-    expect(opened).toMatchObject({ appSettingsOpen: true, appSettingsSection: "companion", appSettingsPhonePairing: 1 });
+    // Pair devices is hidden (2026-10-14): the request lands on General
+    expect(opened).toMatchObject({ appSettingsOpen: true, appSettingsSection: "general", appSettingsPhonePairing: 1 });
     expect(reducer(opened, phone).appSettingsPhonePairing).toBe(2);
     expect(reducer(opened, { type: "toggleAppSettings", open: true, section: "companion" }).appSettingsPhonePairing).toBe(0);
     expect(reducer(opened, { type: "toggleAppSettings", open: false }).appSettingsPhonePairing).toBe(0);

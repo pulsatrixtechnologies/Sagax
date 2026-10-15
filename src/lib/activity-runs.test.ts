@@ -45,10 +45,23 @@ describe("groupActivityRuns", () => {
     expect(items.map((i) => i.kind)).toEqual(["message", "message", "message"]);
   });
 
-  it("keeps a step that is still running out of the run, so live progress stays visible", () => {
+  it("keeps a step that is still running in the group, which then says what runs now", () => {
     const items = groupActivityRuns([tool("Edit"), tool("Edit"), running("Bash")]);
-    expect(items.map((i) => i.kind)).toEqual(["run", "message"]);
-    expect(items[1].kind === "message" && items[1].message.tool?.name).toBe("Bash");
+    expect(items.map((i) => i.kind)).toEqual(["run"]);
+    expect(items[0].kind === "run" && items[0].messages.at(-1)?.tool?.name).toBe("Bash");
+    // still working: no time yet
+    expect(items[0].kind === "run" && items[0].elapsedMs).toBeUndefined();
+  });
+
+  it("puts every step of one turn, failed ones included, in one group", () => {
+    // the capture: Used 6 tools, Could not use mcp, Used mcp, ... as ten rows
+    const steps = [
+      tool("Read"), tool("mcp", false), tool("mcp", false), tool("mcp"), tool("mcp", false),
+      tool("mcp", false), tool("Bash"), tool("Bash"), tool("mcp", false), tool("mcp"),
+    ];
+    const items = groupActivityRuns([text("check the ticket"), ...steps, text("Here is the summary")]);
+    expect(items.map((i) => i.kind)).toEqual(["message", "run", "message"]);
+    expect(items[1].kind === "run" && items[1].messages).toEqual(steps);
   });
 
   it("never folds a failed turn, which renders as an error not a tool run", () => {
@@ -99,7 +112,7 @@ describe("groupActivityRuns", () => {
     }
   });
 
-  it("keeps ordinary failed tools visible between successful runs", () => {
+  it("keeps a failed tool in its group: the group counts it", () => {
     const items = groupActivityRuns([
       tool("Read"),
       tool("Edit"),
@@ -107,7 +120,13 @@ describe("groupActivityRuns", () => {
       tool("Write"),
       tool("Write"),
     ]);
-    expect(items.map((i) => i.kind)).toEqual(["run", "message", "run"]);
+    expect(items.map((i) => i.kind)).toEqual(["run"]);
+  });
+
+  it("times a group from its first step to the end of its last", () => {
+    const at = (name: string, start: number, durationMs: number): Message => ({ ...tool(name), at: start, tool: { name, ok: true, durationMs } });
+    const items = groupActivityRuns([at("Read", 10_000, 1_000), at("Bash", 20_000, 5_000)]);
+    expect(items[0].kind === "run" && items[0].elapsedMs).toBe(15_000);
   });
 
   it("gives a run a stable id taken from its first step", () => {
@@ -231,14 +250,44 @@ describe("groupTranscript", () => {
     const final = assistant("You have three tasks.", "turn-1", true, 5_000);
 
     const items = groupTranscript([user, first, second, final]);
-    expect(items.map((item) => item.kind)).toEqual(["message", "turn", "message"]);
+    expect(items.map((item) => item.kind)).toEqual(["message", "run", "message"]);
     expect(items[1]).toMatchObject({
-      kind: "turn",
-      id: "turn:turn-1",
-      label: "Worked for 4s",
+      kind: "run",
+      id: `run:${first.id}`,
+      elapsedMs: 4_000,
       messages: [first, second],
     });
     expect(items[2].kind === "message" && items[2].message).toBe(final);
+  });
+
+  it("never shows a short turn as two rows: narration and its tools are one group", () => {
+    // JC's capture: "Worked for 15s" then "Used 2 tools" under it
+    const user: Message = { id: "u3", at: 1_000, role: "user", kind: "text", text: "check" };
+    const said = assistant("Let me check.", "turn-3", false, 2_000);
+    const first = { ...tool("Read"), at: 3_000 };
+    const second = { ...tool("Bash"), at: 4_000 };
+    const final = assistant("Done.", "turn-3", true, 16_000);
+    const items = groupTranscript([user, said, first, second, final]);
+    expect(items.map((item) => item.kind)).toEqual(["message", "run", "message"]);
+    expect(items[1]).toMatchObject({ elapsedMs: 15_000, messages: [said, first, second] });
+    // tools first, narration after: still one group
+    const late = assistant("Reading the result.", "turn-4", false, 5_000);
+    const steps = [{ ...tool("Read"), at: 2_000 }, { ...tool("Bash", false), at: 3_000 }];
+    const end = assistant("Done.", "turn-4", true, 9_000);
+    expect(groupTranscript([{ ...user, id: "u4" }, ...steps, late, end]).map((item) => item.kind)).toEqual(["message", "run", "message"]);
+  });
+
+  it("folds a settled turn's narration and its steps into one group, in order", () => {
+    const user: Message = { id: "u2", at: 1_000, role: "user", kind: "text", text: "check ticket 296221" };
+    const said = assistant("I'm reading the ticket.", "turn-2", false, 2_000);
+    const failed = { ...tool("mcp", false), at: 3_000 };
+    const read = { ...tool("mcp"), at: 4_000 };
+    const again = assistant("Now the notes.", "turn-2", false, 5_000);
+    const notes = { ...tool("mcp"), at: 6_000 };
+    const final = assistant("Here is the summary.", "turn-2", true, 174_000);
+    const items = groupTranscript([user, said, failed, read, again, notes, final]);
+    expect(items.map((item) => item.kind)).toEqual(["message", "run", "message"]);
+    expect(items[1]).toMatchObject({ kind: "run", elapsedMs: 173_000, messages: [said, failed, read, again, notes] });
   });
 
   it("keeps every message visible until the turn settles", () => {
@@ -258,7 +307,7 @@ describe("groupTranscript", () => {
     const final = assistant("Done.", "turn-new", true);
     expect(groupTranscript([older, progress, final]).map((item) => item.kind)).toEqual([
       "message",
-      "turn",
+      "run",
       "message",
     ]);
   });

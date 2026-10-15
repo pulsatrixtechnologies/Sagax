@@ -19,6 +19,7 @@ import { homedir } from "node:os";
 import { ToolGrantStore } from "./tool-grants.ts";
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
+import { auditSampleFromEnv, deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, mcpPolicyEnv, permissionModeFromEnv, principalFromEnv } from "./mcp-permissions.ts";
 import { misusePathRefusal, misuseRefusal, misuseToolFrameText, setMisuseAlert } from "./misuse-guardrails.ts";
 import {
   openSafetyHold,
@@ -203,10 +204,12 @@ import {
   poolLocalVmTarget,
   SHARED_LOCAL_VM_TARGET,
   setupCommands,
+  startContainerRuntime,
   VM_WORKSPACE_GUEST,
   type LocalVmTarget,
   type Runtime,
 } from "./container-computer.ts";
+import { LocalVmAutoStarter } from "./local-vm-auto.ts";
 import { attachForTurn, deliveredCopy, saveBotAttachment } from "./bot-attachment.ts";
 import {
   cacheUntilConfigChanges,
@@ -267,6 +270,7 @@ import {
   CLAUDE_API_INSTANCE,
   liveCallsEnabled,
   liveSettingsFor,
+  liveCallKey,
   mergeOpenCodeProviderKeys,
   openCodeProviderKeys,
 } from "./config.ts";
@@ -861,6 +865,7 @@ import { diskSpace, folderBytes } from "./disk-usage.ts";
 import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
 import { turnClockEnabled, turnTimeZone, withTurnClock } from "./turn-clock.ts";
 import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
+import { createLocalComputerAutoRoutes } from "./routes/local-computer-auto.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore, preferencesFrameAllowed, type PersonPreferences } from "./user-preferences.ts";
 import { createViewerBotOverrideRoutes } from "./routes/viewer-bot-overrides.ts";
@@ -931,7 +936,14 @@ import { acceptOpenInvitesForEmail, createPublicInviteRoutes, createSoloOrgRoute
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./perspicax-link.ts";
 import { duplicateNote, PerspicaxMemory } from "./perspicax-memory.ts";
+import { PERSPICAX_TOOL_NAMES } from "./drivers/agents-catalog.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
+import { withClaimsFlag } from "./perspicax-claims.ts";
+import { createPerspicaxClaimsInternalRoutes } from "./routes/perspicax-claims-internal.ts";
+import { dispatchInternalRoutes, type InternalCapabilityView, type InternalRouteHandler } from "./routes/internal-route.ts";
+import { createPerspicaxToolInternalRoutes } from "./routes/perspicax-tool-internal.ts";
+import { createMcpAuditInternalRoutes } from "./routes/mcp-audit-internal.ts";
+import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/routine-run-internal.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
@@ -965,6 +977,7 @@ import { withDesktopModelPerson } from "./desktop-model-grant.ts";
 import { setDesktopInjectModels } from "./drivers/local-inject.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
+import { FLOW_TOOLS_MCP_NAME } from "./flow-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, selectAutoComputer, type AutoComputerState, type FixedWorksOn } from "./auto-computer.ts";
 import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
@@ -3495,6 +3508,12 @@ function groupMemoryWritable(group: GroupRecord | undefined, botId: string): boo
   return Boolean(group) && groupMemoryEnabled(group) && group!.memberIds.includes(botId) && store.bot(botId)?.memoryEnabled !== false;
 }
 
+function mcpIdentityOf(botId: string, threadId: string): Parameters<typeof mcpIdentityEnv>[0] {
+  const speakerId = safetyPrincipal(threadId).principalId;
+  const person = speakerId ? principals.byId(speakerId) : undefined;
+  return { botId, ...(speakerId ? { principalId: speakerId } : {}), perspicaxRole: person?.perspicaxRole, teamIds: (person?.teams ?? []).map((team) => team.id) };
+}
+
 function agentsIntegration(
   botId: string,
   threadId: string,
@@ -3561,6 +3580,15 @@ function agentsIntegration(
       // And for a role: team setup, bot creation and deletion, rooms and
       // retries are shown only to a Chief of Staff, whom their routes require.
       SAGAX_CHIEF_OF_STAFF: store.bot(botId)?.chiefOfStaff === true ? "1" : "0",
+      // The Perspicax gateway tools on an organization server linked to Perspicax;
+      // /api/internal/perspicax/tool re-checks that a profile is mounted.
+      SAGAX_PERSPICAX_TOOLS: IDENTITY.kind === "perspicax" && perspicaxMcp ? "1" : "0",
+      // Who the permission layer judges (server/mcp-permissions.ts).
+      ...mcpIdentityEnv(mcpIdentityOf(botId, threadId)),
+      ...mcpPolicyEnv(process.env),
+      // The claim tools (server/perspicax-claims.ts) while this turn has a
+      // Perspicax profile mounted for the person speaking; the route re-checks.
+      SAGAX_CLAIMS: perspicaxMcp?.hasMounted(threadId, generation, botId) ? "1" : "0",
     },
   };
 }
@@ -4344,6 +4372,17 @@ function workplaceIntegration(botId: string, threadId: string, generation: strin
   };
 }
 
+/** Pulsatrix Flow's compute tools ("sagax-flow", server/flow-tools.ts): the
+ * same stdio proxy, answering in its own process. Pure functions of their
+ * arguments, so it carries no capability at all. */
+function flowToolsIntegration() {
+  return {
+    command: process.execPath,
+    args: [SPAWNED_PROXIES.userSandbox],
+    env: { ...AGENTS_NODE_FLAG, SAGAX_TOOL_SERVER: FLOW_TOOLS_MCP_NAME },
+  };
+}
+
 /** A turn's Works on as computer_select reads it: Auto, or the fixed place. */
 function turnWorksOn(plan: { computer: ReturnType<typeof resolveSurface>["computer"]; browser: boolean; pinned: ReturnType<typeof resolveSurface>["pinned"] }, forced: boolean): { auto: boolean; fixed?: FixedWorksOn } {
   if (forced) return { auto: false, fixed: "cloud" };
@@ -4737,6 +4776,9 @@ async function perspicaxTurnIntegration(input: {
       },
     };
   }
+  // Pulsatrix Flow's compute (server/flow-tools.ts) rides with the
+  // Perspicax tools whose data it works on.
+  if (Object.keys(custom).length && !taken.has(FLOW_TOOLS_MCP_NAME)) custom[FLOW_TOOLS_MCP_NAME] = flowToolsIntegration();
   if (!plan.unavailable.length) return { custom, prompt: "" };
   const lines = plan.unavailable.map((entry) => entry.reason === "no_delegation"
     ? `Perspicax tools of profile "${entry.name}" are not available in this routine run: ${PERSPICAX_UNAVAILABLE_WHY.no_delegation}.`
@@ -11212,6 +11254,61 @@ void (async () => {
   // The Settings inventory remains available for a later explicit retry.
 });
 
+/** The desktop app's own server keeps its Local VM up by itself
+ * (server/local-vm-auto.ts): at launch, when a bot needs it, and after a
+ * failure with a growing delay. Never on an organization server (the Local
+ * VM there lives on each person's computer, electron/local-vm.mjs), a
+ * Cloud home, or a self-hosted server without the desktop app. */
+const localVmAuto = DESKTOP_MANAGED && !CLOUD_HOME && IDENTITY.kind !== "perspicax" && !process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE
+  ? new LocalVmAutoStarter({
+    mode: () => localVmMode(cfg),
+    allowed: () => managedPolicy.computerAllowed("localVm") && !hostComputerRefusal(),
+    status: () => containerComputerStatus(undefined, undefined, SHARED_LOCAL_VM_TARGET),
+    startRuntime: (status) => startContainerRuntime(status.runtime),
+    prepareImage: async () => {
+      if (localVmImageBusy || localVmModeChangeBusy) throw new Error("another Local VM setup action is still running");
+      localVmImageBusy = true;
+      try { return await containerComputerAction("pull", undefined, undefined, SHARED_LOCAL_VM_TARGET); } finally { localVmImageBusy = false; }
+    },
+    create: () => localVmAutoLifecycle("run"),
+    start: () => localVmAutoLifecycle("start"),
+    remove: () => localVmAutoLifecycle("remove"),
+    busy: () => localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(SHARED_LOCAL_VM_TARGET.key),
+    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: () => Date.now(),
+    schedule: (run, ms) => { const timer = setTimeout(run, ms); timer.unref?.(); return timer; },
+    cancel: (handle) => clearTimeout(handle as NodeJS.Timeout),
+    desktopWaitMs: LOCAL_VM_DESKTOP_WAIT_MS,
+  })
+  : null;
+
+/** One lifecycle step of the automatic start, with the same guards as the
+ * Settings routes: never while a bot holds the desktop or a setup runs. */
+async function localVmAutoLifecycle(action: "run" | "start" | "remove") {
+  const target = SHARED_LOCAL_VM_TARGET;
+  if (localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(target.key)) {
+    throw new Error("another Local VM setup action is still running");
+  }
+  if (action === "remove" && (localVmLeaseFor(target).current(localVmOwnerBusy) || localVmActiveThreads.has(target.key))) {
+    throw new Error("the Local VM is being used by a bot");
+  }
+  localVmLifecycleBusy.add(target.key);
+  try {
+    const status = await containerComputerAction(action, undefined, undefined, target);
+    if (action === "remove") localVmIdleFor(target).cancel();
+    else {
+      localVmSeen.add(target.key);
+      localVmIdleFor(target).touch();
+    }
+    return status;
+  } finally {
+    localVmLifecycleBusy.delete(target.key);
+  }
+}
+
+// At launch: bring the Local VM up in the background.
+if (localVmAuto) setTimeout(() => { void localVmAuto.ensure("launch"); }, 3_000).unref?.();
+
 async function localVmInventoryPayload() {
   const runtime = await containerRuntimeStatus();
   if (!runtime.runtime || !runtime.daemonUp) {
@@ -12519,12 +12616,36 @@ function auditRoutineRunAs(auth: RequestAuth, routine: Routine, before: string |
  * the person the routine runs as, or an admin. A solo server, the operator
  * and the loopback keep the bot-level rule (`run`). */
 function mayRunRoutineNow(auth: RequestAuth, routine: Routine): boolean {
-  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return true;
-  if (orgAdminCaller(auth) || callerCan(auth, "routines.runNowAny")) return true;
-  const principalId = auth.session.principalId?.trim();
-  if (!principalId) return false;
+  const organization = IDENTITY.kind === "perspicax";
+  const person = auth.kind === "session";
+  return routineRunNowAllowed({
+    organization,
+    person,
+    ...(person ? { principalId: auth.session.principalId } : {}),
+    admin: organization && person && (orgAdminCaller(auth) || callerCan(auth, "routines.runNowAny")),
+    ...routineRunNowParties(routine),
+  });
+}
+/** The same rule for the person a bot speaks for (run_routine): there is no
+ * session, so their own admin role and permissions decide. Nobody speaking is
+ * refused on an organization server. */
+function speakerMayRunRoutineNow(principalId: string | undefined, routine: Routine): boolean {
+  const organization = IDENTITY.kind === "perspicax";
+  const person = principalId && isPrincipalId(principalId) ? principals.byId(principalId) : undefined;
+  const active = Boolean(person && person.disabledAt === undefined);
+  return routineRunNowAllowed({
+    organization,
+    person: true,
+    ...(active ? { principalId } : {}),
+    admin: organization && active && (person!.local === true || person!.orgRole === "admin" || can(principalPermissions(principalId, { sessionAdmin: false }), "routines.runNowAny")),
+    ...routineRunNowParties(routine),
+  });
+}
+function routineRunNowParties(routine: Routine): { botOwner?: string; runAs?: string } {
   const bot = store.bot(routine.botId);
-  return principalId === (bot ? effectiveBotOwner(bot) : undefined) || principalId === effectiveRunAs(routine);
+  const botOwner = bot ? effectiveBotOwner(bot) : undefined;
+  const runAs = effectiveRunAs(routine);
+  return { ...(botOwner ? { botOwner } : {}), ...(runAs ? { runAs } : {}) };
 }
 /** Whether a run of this routine is queued, running or waiting. */
 function routineRunInFlight(routineId: string): boolean {
@@ -12532,10 +12653,13 @@ function routineRunInFlight(routineId: string): boolean {
 }
 /** A run started by hand, in the admin activity log with who clicked. */
 function auditRoutineRunNow(auth: RequestAuth, routine: Routine, run: RoutineRun): void {
+  auditRoutineRunNowBy(IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth), routine, run);
+}
+function auditRoutineRunNowBy(actor: AdminActor, routine: Routine, run: RoutineRun): void {
   appendAdminAction(DATA_DIR, {
     category: "bot", action: "routine.run_now", target: { kind: "routine", id: routine.id, name: routine.name },
     after: { runId: run.id, trigger: "manual", ...(run.runAs ? { runAs: run.runAs } : {}) },
-    actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+    actor,
   });
 }
 /** Saved run logs cleared by hand, in the admin activity log with who did it. */
@@ -18701,6 +18825,8 @@ async function runGroupMemberTurn(
     });
     if (Object.keys(perspicax.custom).length) integrations.custom = { ...integrations.custom, ...perspicax.custom };
     roomPerspicaxPrompt = perspicax.prompt;
+    // The agents tools were built before this mount: list the claim tools now.
+    if (integrations.agents) integrations.agents = withClaimsFlag(integrations.agents, perspicaxMcp?.hasMounted(threadId, internalGeneration, bot.id) === true);
   }
   // Connected-app discovery is intentionally awaited before a provider owns
   // the bot. An interrupt during that setup window must still stop the queued
@@ -21495,6 +21621,8 @@ async function localVmPayload(target: LocalVmTarget, auth: RequestAuth) {
     max_instances: localVmMaxInstances(cfg),
     // The UI hides the per-bot choice: one environment per person instead.
     organization: IDENTITY.kind === "perspicax",
+    // The automatic start on the desktop app (null elsewhere).
+    auto: localVmAuto?.snapshot() ?? null,
   };
 }
 
@@ -21518,6 +21646,9 @@ async function readyLocalVmForTurn(botId: string, target: LocalVmTarget, isCurre
     noteLocalVmSeen(target, status);
     if (!isCurrent()) return status;
     const action = localVmWakeAction(status);
+    // Not something a turn may fix itself (image missing, older image,
+    // runtime stopped): the automatic start takes it in the background.
+    if (!status.ready && !action && target.key === SHARED_LOCAL_VM_TARGET.key) void localVmAuto?.ensure("bot");
     if (status.ready || !action || !status.runtime) return status;
     // An organization server never creates a desktop on itself (the claim is
     // refused too; this keeps a turn from even starting one).
@@ -22689,6 +22820,41 @@ const cloudMoveRoutes = async (..._args: unknown[]): Promise<boolean> => false;
 // Route modules (server/routes/README.md). `workspaceAccess` is assigned at
 // boot, after this line, so the dependency reads it per request.
 ROUTES.push(createMcpToolNameRoutes());
+// Internal routes (server/routes/internal-route.ts): run from the internal
+// block after its capability gate, so they are not in ROUTES.
+/** The misuse and safety review of a Perspicax MCP call, for the native
+ * Perspicax tools (claims, gateway tools): the refusal, or null. */
+const perspicaxNativeReview = async (text: string, capability: InternalCapabilityView): Promise<string | null> => {
+  const speakerId = capability.sandboxPrincipalId ?? capability.desktopPrincipalId;
+  const misuse = misuseTextRefusal(text, speakerId, "mcp", { botId: capability.botId, threadId: capability.threadId, tool: "perspicax" });
+  if (misuse) return misuse;
+  const who = safetyPrincipal(capability.threadId);
+  return (await safetyToolHold({
+    text,
+    surface: "mcp",
+    tool: "perspicax",
+    known: true,
+    triage: who.triage || misuseActor(speakerId).triage,
+    ...(who.principalId || speakerId ? { principalId: who.principalId ?? speakerId } : {}),
+    threadId: capability.threadId,
+    botId: capability.botId,
+    review: safetyReviewer(capability.botId),
+  })) ?? null;
+};
+const INTERNAL_ROUTES: InternalRouteHandler[] = [
+  createPerspicaxClaimsInternalRoutes({ perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview }),
+  createPerspicaxToolInternalRoutes({ tools: PERSPICAX_TOOL_NAMES, perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview }),
+  createMcpAuditInternalRoutes({ append: (row) => appendAdminAction(DATA_DIR, { ...row, actor: { kind: "loopback" } }) }),
+  createRoutineRunInternalRoutes<Routine, RoutineRun>({
+    ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    routines: () => routines?.listRoutines() ?? [],
+    speaker: (threadId) => safetyPrincipal(threadId).principalId,
+    mayRunNow: speakerMayRunRoutineNow,
+    inFlight: routineRunInFlight,
+    runNow: (routineId) => routines?.runNow(routineId),
+    audit: (routine, run, principalId) => auditRoutineRunNowBy(principalId ? { kind: "person", principalId, via: "sagax" } : { kind: "worker" }, routine, run),
+  }),
+];
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
 // Install statuses come from the organization library's own state, never
 // its file, so New bot cannot disagree with it. No organization: none.
@@ -22911,6 +23077,38 @@ ROUTES.push(createVmScreenshotRoute<BotRecord>({
     localVmIdleFor(target).touch();
     return containerComputerFrame(undefined, undefined, target);
   },
+}));
+ROUTES.push(createLocalComputerAutoRoutes({
+  localVmAuto,
+  hostRefusal: () => hostComputerRefusal(),
+  setupBusy: () => localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.size > 0,
+  botUsesLocalVm: () => localVmActiveThreads.size > 0,
+  botHoldsLease: (targets) => targets.some((target) => localVmLeaseFor(target).current(localVmOwnerBusy)),
+  listTargets: async () => {
+    const targets: LocalVmTarget[] = [SHARED_LOCAL_VM_TARGET];
+    const runtime = await containerRuntimeStatus();
+    if (runtime.runtime && runtime.daemonUp) {
+      const perBot = await discoverExistingPerBotLocalVms(store.bots, runtime.runtime).catch(() => []);
+      targets.push(...perBot.map(({ target }) => target));
+    }
+    return targets;
+  },
+  withLifecycleBusy: async (targets, run) => {
+    for (const target of targets) localVmLifecycleBusy.add(target.key);
+    try {
+      await run();
+    } finally {
+      for (const target of targets) localVmLifecycleBusy.delete(target.key);
+    }
+  },
+  removeVm: async (target) => {
+    const status = await containerComputerStatus(undefined, undefined, target);
+    // A container Sagax did not create is left alone.
+    if (status.container === "missing" || !status.managed) return;
+    await containerComputerAction("remove", undefined, undefined, target);
+    localVmIdleFor(target).cancel();
+  },
+  sharedPayload: (auth) => localVmPayload(SHARED_LOCAL_VM_TARGET, auth),
 }));
 ROUTES.push(createComputerInputRoutes<BotRecord>({
   bot: (id) => store.bot(id) ?? undefined,
@@ -26405,6 +26603,18 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     routineSubjectToken: (principalId) => routineConsents ? routineConsents.subjectToken(principalId) : Promise.resolve({ ok: false as const, error: "no_session" as const }),
     delegationRefused: (principalId) => routineConsents?.dropCache(principalId),
     botProfiles: (id) => store.bot(id)?.perspicax?.profiles,
+    permissionGuard: ({ botId, principalId }) => {
+      const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
+      const env = mcpIdentityEnv({ botId, principalId, perspicaxRole: person?.perspicaxRole, teamIds: (person?.teams ?? []).map((team) => team.id) });
+      return {
+        principal: principalFromEnv(env),
+        mode: permissionModeFromEnv(process.env),
+        ownBotId: botId,
+        deniedResources: deniedResourcesFromEnv(process.env),
+        allowedSample: auditSampleFromEnv(process.env),
+        audit: (record) => appendAdminAction(DATA_DIR, { ...mcpAuditRow(record, botId), actor: { kind: "loopback" } }),
+      };
+    },
     version,
   });
 }
@@ -28133,7 +28343,7 @@ const liveCalls = new LiveCallController({
     return task.activity === "waiting-on-you" ? "waiting" : "working";
   },
   broadcast: (frame) => broadcast(frame, { adminOnly: true }),
-  settings: () => ({ key: cfg.live?.key ?? "", ...liveSettingsFor(cfg) }),
+  settings: () => ({ key: liveCallKey(cfg), ...liveSettingsFor(cfg) }),
   createSession: ({ key, sdp, botId, threadId, voice }) => {
     // Defense in depth: no OpenAI session while Live calls are off (the routes already 404).
     if (!liveCallsEnabled()) throw new Error("Live calls are not available on this server.");
@@ -29921,6 +30131,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             .map((routine) => agentRoutine(routine, latestRuns.get(routine.id))),
         });
       }
+      // Internal route modules (claims, Perspicax gateway tools, MCP audit,
+      // run_routine), behind the capability checked above.
+      if (await dispatchInternalRoutes(INTERNAL_ROUTES, { res, path, method, json, capability: internalCapability, readBody: readInternalBody })) return;
       if (method === "POST" && path === "/api/internal/routine-requests") {
         const parsed = routineRequestEnvelopeSchema.safeParse(await readInternalBody());
         if (!parsed.success) return json(res, 400, { error: "invalid routine proposal" });
@@ -37639,7 +37852,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (action === "run" || action === "start") {
           localVmSeen.add(SHARED_LOCAL_VM_TARGET.key);
           localVmIdleFor(SHARED_LOCAL_VM_TARGET).touch();
+          localVmAuto?.personStarted();
         }
+        // The person stopped it: nothing restarts it by itself this session.
+        if (action === "stop") localVmAuto?.personStopped();
         if (action === "stop" || action === "remove") localVmIdleFor(SHARED_LOCAL_VM_TARGET).cancel();
         return json(res, 200, {
           ...localVmViewerStatus(status, auth),

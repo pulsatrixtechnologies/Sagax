@@ -275,13 +275,13 @@ export function SidebarPhoneStatusButton({
   );
 }
 
-export function SidebarPhoneButton({
-  density,
-  onOpen,
-}: {
+/** Hidden since 2026-10-14: it opened Settings > Pair devices, which the
+ * app no longer shows (devices sign in with the organization, OAuth through
+ * Sagax Business). Kept as a component so the sidebar needs no change; the
+ * status button below still renders where a test or a later page asks. */
+export function SidebarPhoneButton(_props: {
   density: SidebarDensity;
   onOpen: () => void;
 }) {
-  const status = useSidebarPhoneStatus();
-  return <SidebarPhoneStatusButton density={density} status={status} onOpen={onOpen} />;
+  return null;
 }

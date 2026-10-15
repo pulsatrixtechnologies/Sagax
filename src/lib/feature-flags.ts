@@ -94,14 +94,6 @@ export function dataWindowEnabled(config: FeatureFlagConfig | null | undefined):
   return config?.features?.dataWindow === true;
 }
 
-/** Settings > General's Routines in the conversation row and Group turns
- * card. Experimental: hidden until switched on in Settings > Experimental
- * features; mirrors the server's routineGroupSettingsEnabled. Hiding them
- * changes nothing else: their saved values keep applying. */
-export function routineGroupSettingsEnabled(config: FeatureFlagConfig | null | undefined): boolean {
-  return config?.features?.routineGroupSettings === true;
-}
-
 /** Opt-in computer sharing — lending this desktop's folders, terminal or
  * computer control to a connected workspace. Off unless this server was
  * explicitly switched on in its config.json; there is no Settings toggle, so

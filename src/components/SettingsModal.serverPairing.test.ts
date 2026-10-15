@@ -4,17 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettingsSection } from "@/state/store";
 import { SettingsModal } from "./SettingsModal";
 
-// #950: a packaged desktop build never surfaced a way to mint a session
-// pairing code, so MCP clients (and a second desktop app) had no path to
-// one. ServerPairingCard was gated on `!window.ogb`, hiding it from every
-// desktop instance instead of only the ones that don't own the server
-// being paired against. MOCA-84 then found the remote-client case needs it
-// too. These tests pin the card as always offered; the server decides who may act.
+// 2026-10-14 (JC): Settings > Pair devices is hidden. Every device signs in
+// with the organization (OAuth through Sagax Business), so the app offers no
+// pairing code and no phone flow any more. The server's pairing routes stay
+// (the iOS app or an older build may still use them); an old link or
+// "Connect your phone" request opens General.
 const fixture = vi.hoisted(() => ({ section: "companion" as AppSettingsSection, config: undefined as { cloudHome?: boolean; signIn?: object } | undefined, phonePairing: 0 }));
-// Pinned to Advanced: these cover the Advanced rail; Simple has its own suite.
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
-
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   api: vi.fn(),
@@ -22,8 +19,8 @@ vi.mock("@/state/store", async (importOriginal) => ({
 }));
 vi.mock("./RemoteComputerSection", () => ({ RemoteComputerSection: () => null }));
 vi.mock("./CustomDomainSettings", () => ({ CustomDomainSettings: () => null }));
-vi.mock("./CompanionSection", () => ({ CompanionSection: ({ focusRequest }: { focusRequest?: number }) => `COMPANION_SECTION focus=${focusRequest ?? 0}` }));
-vi.mock("./ServerPairingCard", () => ({ ServerPairingCard: ({ cloudHome, focusRequest }: { cloudHome?: boolean; focusRequest?: number }) => `SERVER_PAIRING_CARD_MARKER${cloudHome ? " cloud" : ""} focus=${focusRequest ?? 0}` }));
+vi.mock("./CompanionSection", () => ({ CompanionSection: () => "COMPANION_SECTION" }));
+vi.mock("./ServerPairingCard", () => ({ ServerPairingCard: () => "SERVER_PAIRING_CARD_MARKER" }));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -39,75 +36,31 @@ afterEach(() => {
 
 const render = () => renderToStaticMarkup(createElement(SettingsModal));
 
-describe("Settings → Remote access: server pairing card visibility", () => {
-  it("is offered on a hosted server reached from a browser (no window.ogb)", () => {
-    vi.stubGlobal("window", {});
-    expect(render()).toContain("SERVER_PAIRING_CARD_MARKER");
-  });
-
-  it("is offered inside the desktop app when it owns the server being paired against", () => {
-    vi.stubGlobal("window", { ogb: {} });
-    expect(render()).toContain("SERVER_PAIRING_CARD_MARKER");
-  });
-
-  it("is offered when this desktop is a remote client of a hosted workspace, whose phones pair only here", () => {
-    // MOCA-84: a NAS-hosted server reached from the Mac app had no pairing
-    // options at all — the companion section is hidden remotely too. The
-    // desktop's requests carry the hosted server's session, so the server,
-    // not this gate, decides whether that session may mint codes.
-    vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
-    expect(render()).toContain("SERVER_PAIRING_CARD_MARKER");
-  });
-
-  it("ignores a leftover Cloud home flag: pairing stays the server's and People stays", () => {
-    vi.stubGlobal("window", {});
-    // Sagax shows People only where the server serves a sign-in list.
-    fixture.config = { signIn: {} };
-    expect(render()).toContain(">People<");
-    fixture.config = { cloudHome: true, signIn: {} };
-    const html = render();
-    expect(html).toContain("SERVER_PAIRING_CARD_MARKER");
-    expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER cloud");
-    expect(html).toContain(">People<");
-  });
-});
-
-describe("Settings → Remote access opened by Connect your phone", () => {
-  // The request goes to exactly one card: the one that pairs a phone with
-  // what this window shows.
-  it("on this computer, reveals the phone flow, not the server's pairing code", () => {
-    fixture.phonePairing = 3;
-    vi.stubGlobal("window", { ogb: { companion: {} } });
-    const html = render();
-    expect(html).toContain("COMPANION_SECTION focus=3");
-    expect(html).toContain("SERVER_PAIRING_CARD_MARKER focus=0");
-  });
-
-  it("does not treat a leftover Cloud home flag as this window's own Cloud", () => {
+describe("Settings > Pair devices is hidden", () => {
+  it.each([
+    ["a browser", {}],
+    ["the desktop app on its own server", { ogb: { companion: {} } }],
+  ])("is not in the menu and an old link opens General, in %s", (_where, win) => {
+    vi.stubGlobal("window", win);
     fixture.phonePairing = 2;
-    fixture.config = { cloudHome: true };
-    vi.stubGlobal("window", { ogb: {} });
     const html = render();
-    expect(html).toContain("SERVER_PAIRING_CARD_MARKER focus=2");
-    expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER cloud");
-    expect(html).toContain("COMPANION_SECTION focus=0");
-  });
-
-  it("on another server, in a browser or as a remote client, reveals that server's pairing code", () => {
-    fixture.phonePairing = 1;
-    vi.stubGlobal("window", {});
-    expect(render()).toContain("SERVER_PAIRING_CARD_MARKER focus=1");
-    vi.stubGlobal("window", { ogb: { companion: {}, remoteClient: { active: true } } });
-    const html = render();
-    expect(html).toContain("SERVER_PAIRING_CARD_MARKER focus=1");
-    // this computer's phone flow is not offered to a remote client at all
+    expect(html).not.toContain('<option value="companion"');
+    expect(html).not.toContain(">Pair devices<");
+    expect(html).toContain('<option value="general" selected="">General</option>');
+    expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER");
     expect(html).not.toContain("COMPANION_SECTION");
   });
 
-  it("a plain visit reveals nothing", () => {
-    vi.stubGlobal("window", { ogb: { companion: {} } });
+  it("lands a remote client on Appearance instead", () => {
+    vi.stubGlobal("window", { ogb: { companion: {}, remoteClient: { active: true } } });
     const html = render();
-    expect(html).toContain("COMPANION_SECTION focus=0");
-    expect(html).toContain("SERVER_PAIRING_CARD_MARKER focus=0");
+    expect(html).toContain('<option value="appearance" selected="">Appearance</option>');
+    expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER");
+  });
+
+  it("keeps People where the server serves a sign-in list", () => {
+    vi.stubGlobal("window", {});
+    fixture.config = { signIn: {} };
+    expect(render()).toContain(">People<");
   });
 });

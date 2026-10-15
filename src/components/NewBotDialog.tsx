@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { ChevronRight, Loader2, Plus, Trash2, X } from "lucide-react";
 import { api, BotEditorStore, useStore, type Bot, type ConfigStatus, type ModelSelection } from "@/state/store";
 import { BotCreationDraft, EMPTY_BOT_DEFAULTS } from "@/lib/bot-creation-draft";
 import { createConfiguredBot, preparedBotTemplate } from "@/lib/create-configured-bot";
@@ -40,8 +40,15 @@ import { refreshModelHealth, startingModel, type StartingModel } from "@/lib/mod
 import { useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { openModelKeysSettings } from "@/lib/settings-link";
 
-const SECTIONS = ["Identity", "Soul", "Skills", "Memory", "Routines", "Access", "Model", "Permissions", "Voice & alerts"] as const;
+// New bot is one page (JC 2026-10-14): where to start from, the avatar, the
+// name, the description and the team. Every other setting sits under More
+// options, folded, one section at a time; all of them can also be changed
+// after the bot exists.
+const SECTIONS = ["identity", "soul", "skills", "memory", "routines", "access", "model", "permissions", "voice"] as const;
 type Section = typeof SECTIONS[number];
+/** Sections an organization member does not set on a new bot. */
+const ADMIN_SECTIONS: ReadonlySet<Section> = new Set(["memory", "access", "permissions"]);
+const sectionLabel = (id: Section) => t(`newBot.section.${id}` as LocaleKey);
 
 /** Companion pairing permits creation, but not reading host defaults or
  * patching host settings. Keep its existing single-request creation flow.
@@ -157,7 +164,8 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
   const parent = useStore();
   const [, render] = useState(0);
   const [draft, setDraft] = useState(() => new BotCreationDraft(EMPTY_BOT_DEFAULTS, () => render(value => value + 1)));
-  const [active, setActive] = useState<Section>("Identity");
+  // The defaults editor is all settings: it opens with More options unfolded.
+  const [moreOpen, setMoreOpen] = useState(defaultsMode);
   const [ready, setReady] = useState(false);
   const [localSaving, setSaving] = useState(false);
   const saving = localSaving || parent.state.botCreationPending;
@@ -324,19 +332,13 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
             )}
           </div>
         )}
-      <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-        <nav aria-label={t("newBot.sections")} className="flex shrink-0 gap-1 overflow-x-auto border-b border-hairline/40 p-2 sm:w-40 sm:flex-col sm:border-b-0 sm:border-r">
-          {SECTIONS.filter(label => !viewerIsOrgMember(parent.state.config) || (label !== "Memory" && label !== "Access" && label !== "Permissions")).map(label => <button key={label} type="button" onClick={() => setActive(label)} aria-current={active === label ? "page" : undefined}
-            className={cn("shrink-0 rounded-lg px-3 py-2 text-left text-[13px]", active === label ? "bg-control text-ink" : "text-ink-secondary hover:bg-control/50")}>{label}</button>)}
-        </nav>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-5">
-          {!ready && !error && <div role="status" className="flex items-center gap-2 text-[13px] text-ink-secondary"><Loader2 size={16} className="animate-spin" />{t("newBot.loading")}</div>}
-          {ready && <fieldset disabled={saving} className="min-w-0">
-            <BotEditorStore value={scopedStore}><BotEditorContext.Provider value={{ request: draft.request, draft: true, uploadAvatar: draft.uploadAvatar }}>
-              <DraftSection active={active} draft={draft} defaultsMode={defaultsMode} onImported={() => closeRef.current()} />
-            </BotEditorContext.Provider></BotEditorStore>
-          </fieldset>}
-        </div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-5">
+        {!ready && !error && <div role="status" className="flex items-center gap-2 text-[13px] text-ink-secondary"><Loader2 size={16} className="animate-spin" />{t("newBot.loading")}</div>}
+        {ready && <fieldset disabled={saving} className="mx-auto min-w-0 max-w-[640px]">
+          <BotEditorStore value={scopedStore}><BotEditorContext.Provider value={{ request: draft.request, draft: true, uploadAvatar: draft.uploadAvatar }}>
+            <DraftPage draft={draft} defaultsMode={defaultsMode} moreOpen={moreOpen} onToggleMore={() => setMoreOpen(open => !open)} onImported={() => closeRef.current()} />
+          </BotEditorContext.Provider></BotEditorStore>
+        </fieldset>}
       </div>
       {error && <p role="alert" className="max-h-24 overflow-y-auto border-t border-hairline/40 px-5 py-3 text-[13px] text-danger">{error}</p>}
       {ready && startKind === "none" && (
@@ -370,29 +372,60 @@ function sameModel(a: ModelSelection | undefined, b: ModelSelection | undefined)
   return Boolean(a && b) && a!.instanceId === b!.instanceId && a!.model === b!.model && Boolean(a!.auto) === Boolean(b!.auto);
 }
 
-function DraftSection({ active, draft, defaultsMode, onImported }: { active: Section; draft: BotCreationDraft; defaultsMode: boolean; onImported?: () => void }) {
+/** The page itself: Start from, the avatar, name and description, the team
+ * when there is more than one to choose from, then More options. Exported
+ * for tests. */
+export function DraftPage({ draft, defaultsMode, moreOpen, onToggleMore, onImported }: {
+  draft: BotCreationDraft; defaultsMode: boolean; moreOpen: boolean; onToggleMore: () => void; onImported?: () => void;
+}) {
   const bot = draft.bot;
   const { state } = useStore();
   const derived = useBotSettingsDerived(bot);
-  if (active === "Identity") return <div className="space-y-4">
+  const [active, setActive] = useState<Section>("identity");
+  const member = viewerIsOrgMember(state.config);
+  const sections = SECTIONS.filter(id => !member || !ADMIN_SECTIONS.has(id));
+  const teams = [...new Set([...(state.sections ?? []), ...state.bots.map(existing => existing.section ?? ""), bot.section ?? ""])].filter(Boolean);
+  return <div className="space-y-4">
     <StartingRole draft={draft} defaultsMode={defaultsMode} onImported={onImported} />
-    <IdentitySection bot={bot} patch={derived.patch} activeState={derived.activeState} mascotMotion={null}
+    <IdentitySection bot={bot} patch={derived.patch} activeState={derived.activeState} mascotMotion={null} part="main"
       namePlaceholder={defaultsMode ? t("newBot.randomName") : undefined} />
-    {!viewerIsOrgMember(state.config) && <label className="block text-[13px] text-ink-secondary">Team
+    {!member && teams.length > 0 && <label data-new-bot-team className="block text-[13px] text-ink-secondary">{t("newBot.team")}
       <select className={cn(inputCls, "mt-1.5")} value={bot.section ?? ""} onChange={event => draft.patch({ section: event.target.value })}>
-        <option value="">{t("sidebar.section.general")}</option>{[...new Set([...(state.sections ?? []), ...state.bots.map(bot => bot.section ?? "")])].filter(Boolean).map(name => <option key={name}>{name}</option>)}
+        <option value="">{t("sidebar.section.general")}</option>{teams.map(name => <option key={name}>{name}</option>)}
       </select>
     </label>}
+    <div data-new-bot-more className="border-t border-hairline/40 pt-3">
+      <button type="button" aria-expanded={moreOpen} aria-controls="new-bot-more-options" onClick={onToggleMore}
+        className="flex items-center gap-1.5 rounded-md py-1 text-[13px] font-medium text-ink hover:text-ink-secondary">
+        <ChevronRight size={14} aria-hidden="true" className={cn("transition-transform motion-reduce:transition-none", moreOpen && "rotate-90")} />
+        {t("newBot.moreOptions")}
+      </button>
+      {moreOpen && <div id="new-bot-more-options" className="mt-3 space-y-4">
+        <nav aria-label={t("newBot.sections")} className="flex flex-wrap gap-1">
+          {sections.map(id => <button key={id} type="button" data-new-bot-section={id} onClick={() => setActive(id)} aria-current={active === id ? "page" : undefined}
+            className={cn("shrink-0 rounded-lg px-3 py-1.5 text-left text-[13px]", active === id ? "bg-control text-ink" : "text-ink-secondary hover:bg-control/50")}>{sectionLabel(id)}</button>)}
+        </nav>
+        <DraftSection active={sections.includes(active) ? active : "identity"} draft={draft} derived={derived} />
+      </div>}
+    </div>
   </div>;
-  if (active === "Soul") return <SoulSection bot={bot} patch={derived.patch} />;
-  if (active === "Skills") return <SkillsSection bot={bot} />;
-  if (active === "Memory") return <DraftMemory draft={draft} />;
-  if (active === "Routines") return <DraftRoutines draft={draft} />;
-  if (active === "Access") return <AccessSection bot={bot} derived={derived} />;
-  if (active === "Model") return <ModelSection bot={bot} />;
-  if (active === "Permissions") return <PermissionsSection bot={bot} derived={derived} />;
+}
+
+function DraftSection({ active, draft, derived }: { active: Section; draft: BotCreationDraft; derived: ReturnType<typeof useBotSettingsDerived> }) {
+  const bot = draft.bot;
+  if (active === "identity") return <IdentitySection bot={bot} patch={derived.patch} activeState={derived.activeState} mascotMotion={null} part="more" />;
+  if (active === "soul") return <SoulSection bot={bot} patch={derived.patch} />;
+  if (active === "skills") return <SkillsSection bot={bot} />;
+  if (active === "memory") return <DraftMemory draft={draft} />;
+  if (active === "routines") return <DraftRoutines draft={draft} />;
+  if (active === "access") return <AccessSection bot={bot} derived={derived} />;
+  if (active === "model") return <ModelSection bot={bot} />;
+  if (active === "permissions") return <PermissionsSection bot={bot} derived={derived} />;
   return <VoiceSection bot={bot} derived={derived} />;
 }
+
+const BROWSE_TEMPLATES = "action:browse-templates";
+const IMPORT_ZIP = "action:import-zip";
 
 /** Starting role: presets from the organization and imported files first,
  * then the built-in roles. A preset fills name, look and instructions (all
@@ -455,21 +488,28 @@ export function StartingRole({ draft, defaultsMode, onImported }: { draft: BotCr
     }
   };
   const roles = BOT_ROLES.map(role => <option key={role.id} value={role.id}>{role.title}</option>);
+  const canImport = !defaultsMode && showBotZipImport(state.config);
+  // Browse templates and Import from zip are two more ways to start: they
+  // are offered in the same list, and picking one opens it (the list keeps
+  // what it showed).
+  const onPick = (value: string) => {
+    if (value === BROWSE_TEMPLATES) { for (const action of templatesEntryActions("newBot")) dispatch(action); return; }
+    if (value === IMPORT_ZIP) { setZipOpen(true); return; }
+    void choose(value);
+  };
   return <div>
-    {!defaultsMode && <div className="mb-1 flex justify-end gap-1">
-      {showBotZipImport(state.config) && <button type="button" data-new-bot-import-zip="" onClick={() => setZipOpen(true)}
-        className="rounded-md px-2 py-0.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink">{t("botZip.importFromZip")}</button>}
-      <button type="button" data-new-bot-browse-templates="" onClick={() => { for (const action of templatesEntryActions("newBot")) dispatch(action); }}
-        className="rounded-md px-2 py-0.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink">{t("newBot.browseTemplates")}</button>
-    </div>}
     {zipOpen && <BotZipImportDialog onClose={() => setZipOpen(false)} onImported={() => onImported?.()} />}
     <label className="block text-[13px] text-ink-secondary">{t("newBot.startingRole")}
-      <select className={cn(inputCls, "mt-1.5")} value={draft.preset ? `preset:${draft.preset.id}` : ""} onChange={event => void choose(event.target.value)}>
+      <select data-new-bot-start className={cn(inputCls, "mt-1.5")} value={draft.preset ? `preset:${draft.preset.id}` : ""} onChange={event => onPick(event.target.value)}>
         <option value="">{t("newBot.customSettings")}</option>
         {presetGroups(presets).map(group => <optgroup key={group.label} label={group.label}>
           {group.presets.map(preset => <option key={preset.id} value={`preset:${preset.id}`}>{preset.name}</option>)}
         </optgroup>)}
-        {presets.length ? <optgroup label={t("newBot.builtInRoles")}>{roles}</optgroup> : roles}
+        {presets.length || !defaultsMode ? <optgroup label={t("newBot.builtInRoles")}>{roles}</optgroup> : roles}
+        {!defaultsMode && <optgroup label={t("newBot.otherStarts")}>
+          <option value={BROWSE_TEMPLATES} data-new-bot-browse-templates="">{t("newBot.browseTemplatesOption")}</option>
+          {canImport && <option value={IMPORT_ZIP} data-new-bot-import-zip="">{t("newBot.importZipOption")}</option>}
+        </optgroup>}
       </select>
     </label>
     {chosen && <div className="mt-2 space-y-1 rounded-lg bg-card px-3 py-2.5 text-[12.5px] text-ink-secondary" data-new-bot-preset>
@@ -486,13 +526,13 @@ export function DraftMemory({ draft }: { draft: BotCreationDraft }) {
   const [path, setPath] = useState("MEMORY.md");
   const [name, setName] = useState("");
   return <div className="space-y-3">
-    <select className={inputCls} aria-label="Memory file" value={path} onChange={event => setPath(event.target.value)}>
+    <select className={inputCls} aria-label={t("newBot.memory.file")} value={path} onChange={event => setPath(event.target.value)}>
       {[...new Set(["MEMORY.md", ...Object.keys(draft.template.memory)])].map(file => <option key={file}>{file}</option>)}
     </select>
-    <MarkdownEditor ariaLabel="Memory contents" dataField="new-bot-memory" minHeight={288} value={draft.template.memory[path] ?? ""} onChange={value => draft.setMemory(path, value)} />
-    <div className="flex gap-2"><input className={inputCls} aria-label="New memory topic" placeholder="Topic name" value={name} onChange={event => setName(event.target.value)} />
-      <button type="button" aria-label="Add memory topic" disabled={!/^[a-zA-Z0-9_-]+$/.test(name)} className="rounded-lg bg-control px-3 disabled:opacity-40" onClick={() => { const next = `memory/${name}.md`; if (!(next in draft.template.memory)) draft.setMemory(next, ""); setPath(next); setName(""); }}><Plus size={16} /></button>
-      {path !== "MEMORY.md" && <button type="button" aria-label="Remove memory topic" className="rounded-lg bg-control px-3" onClick={() => { draft.setMemory(path, null); setPath("MEMORY.md"); }}><Trash2 size={16} /></button>}
+    <MarkdownEditor ariaLabel={t("newBot.memory.contents")} dataField="new-bot-memory" minHeight={288} value={draft.template.memory[path] ?? ""} onChange={value => draft.setMemory(path, value)} />
+    <div className="flex gap-2"><input className={inputCls} aria-label={t("newBot.memory.newTopic")} placeholder={t("newBot.memory.topicName")} value={name} onChange={event => setName(event.target.value)} />
+      <button type="button" aria-label={t("newBot.memory.addTopic")} disabled={!/^[a-zA-Z0-9_-]+$/.test(name)} className="rounded-lg bg-control px-3 disabled:opacity-40" onClick={() => { const next = `memory/${name}.md`; if (!(next in draft.template.memory)) draft.setMemory(next, ""); setPath(next); setName(""); }}><Plus size={16} /></button>
+      {path !== "MEMORY.md" && <button type="button" aria-label={t("newBot.memory.removeTopic")} className="rounded-lg bg-control px-3" onClick={() => { draft.setMemory(path, null); setPath("MEMORY.md"); }}><Trash2 size={16} /></button>}
     </div>
   </div>;
 }
@@ -503,8 +543,8 @@ function DraftRoutines({ draft }: { draft: BotCreationDraft }) {
     <button type="button" className="rounded-lg bg-accent px-3 py-2 text-[13px] text-accent-ink" onClick={() => setEditing("new")}>{t("computer.routines.create")}</button>
     {draft.routines.map(routine => <div key={routine.id} className="flex items-center gap-2 rounded-lg bg-card p-3">
       <button type="button" className="min-w-0 flex-1 text-left text-[13px]" onClick={() => setEditing(routine)}>{routine.name}</button>
-      <label className="flex items-center gap-1.5 text-[12px] text-ink-secondary"><input type="checkbox" checked={routine.enabled} onChange={event => draft.setRoutineEnabled(routine.id, event.target.checked)} />Enabled</label>
-      <button type="button" aria-label={`Remove ${routine.name}`} onClick={() => draft.removeRoutine(routine.id)} className="rounded p-1.5 hover:bg-control"><Trash2 size={15} /></button>
+      <label className="flex items-center gap-1.5 text-[12px] text-ink-secondary"><input type="checkbox" checked={routine.enabled} onChange={event => draft.setRoutineEnabled(routine.id, event.target.checked)} />{t("newBot.routine.enabled")}</label>
+      <button type="button" aria-label={t("newBot.routine.remove", { name: routine.name })} onClick={() => draft.removeRoutine(routine.id)} className="rounded p-1.5 hover:bg-control"><Trash2 size={15} /></button>
     </div>)}
     {editing && <RoutineEditor routine={editing === "new" ? undefined : editing} bots={[draft.bot]} lockedBotId={draft.id} onClose={() => setEditing(null)} />}
   </div>;

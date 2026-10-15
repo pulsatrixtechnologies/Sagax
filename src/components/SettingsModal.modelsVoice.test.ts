@@ -108,12 +108,15 @@ describe("Settings > Models and voice", () => {
     expect(engines).toContain("1 ready");
   });
 
-  it("lists every key once, model and voice keys together, with no key field on the page", async () => {
+  // 2026-10-14: the voice keys are the Voice section's alone (one place each).
+  it("lists every model key once, the voice keys only in Voice, with no key field on the page", async () => {
     const html = await page();
     const keys = part(html, "data-keys-section", 'data-settings-card="engines.list"');
-    for (const id of ["anthropic", "openai", "xai", "elevenlabs", "fishAudio", "openrouter", "mistral", "openaiCompat", "opencodeGo"]) {
+    for (const id of ["anthropic", "openai", "xai", "openrouter", "mistral", "openaiCompat", "opencodeGo"]) {
       expect(keys.match(new RegExp(`data-provider-key="${id}"`, "g")), id).toHaveLength(1);
     }
+    for (const id of ["elevenlabs", "fishAudio"]) expect(html, id).not.toContain(`data-provider-key="${id}"`);
+    expect(part(html, "data-voice-section")).toContain('data-voice-key="elevenlabs"');
     expect(html.match(/data-keys-section/g)).toHaveLength(1);
     // keys are added in a dialog, never typed on the page
     expect(html).not.toContain('data-api-key-row="anthropic"');
@@ -135,11 +138,25 @@ describe("Settings > Models and voice", () => {
     expect(part(saved, 'data-settings-card="engines.moreProviders"', 'data-settings-card="engines.list"')).not.toContain('data-provider-key="openrouter"');
   });
 
-  it("shows a voice key saved for another engine in the list", async () => {
-    fixture.config = baseConfig({ tts: { configured: false, ready: false, voice: "", provider: "system", keys: { elevenlabs: true, fish: false } } });
+  it("keeps a voice key out of the list even when saved", async () => {
+    fixture.config = baseConfig({ tts: { configured: false, ready: false, voice: "", provider: "elevenlabs", keys: { elevenlabs: true, fish: false } } });
     const html = await page();
-    expect(html).toMatch(/data-provider-key="elevenlabs" data-key-saved="true"/);
-    expect(html).toMatch(/data-provider-key="fishAudio" data-key-saved="false"/);
+    expect(html).not.toContain('data-provider-key="elevenlabs"');
+    expect(html).toMatch(/data-voice-key="elevenlabs" data-voice-key-saved="true"/);
+    expect(html).toContain("ElevenLabs key saved.");
+  });
+
+  // One OpenAI key (2026-10-14): Live calls use the OpenAI key of the list.
+  it("has one OpenAI key on the page: Live calls use the list's", async () => {
+    const html = await page();
+    expect(html.match(/data-provider-key="openai"/g)).toHaveLength(1);
+    const advanced = part(html, 'data-settings-card="voice.advanced"');
+    expect(advanced).toContain('data-live-key="none"');
+    expect(advanced).not.toContain("Change key");
+    fixture.config = baseConfig({ live: { enabled: true, configured: true, separateKey: true, voice: "", readTypedReplies: true, idleMinutes: 5 } });
+    const older = part(await page(), 'data-settings-card="voice.advanced"');
+    expect(older).toContain('data-live-key="separate"');
+    expect(older).toContain("Remove key");
   });
 
   it("chooses the voice engine only; Grok voice uses the xAI row; Live calls under a folded Advanced", async () => {
@@ -165,11 +182,31 @@ describe("Settings > Models and voice", () => {
     expect(html).toContain("Plus de fournisseurs");
   });
 
-  it("leaves Connected apps out of this page", async () => {
-    fixture.config = baseConfig({ features: { connectedApps: true } });
-    const html = await page();
+  // 2026-10-14: Connected apps and Decision model are cards of this page
+  // while their experiment is on, no longer menu entries of their own.
+  it("holds Connected apps and Decision model as cards while their experiment is on", async () => {
+    let html = await page();
     expect(html).not.toContain("platform.composio.dev");
-    expect(html).toContain(">Connected apps<");
+    expect(html).not.toContain('data-settings-card="engines.decisionModel"');
+    fixture.config = baseConfig({ features: { connectedApps: true, decisionModel: true } });
+    html = await page();
+    expect(html).toContain('data-settings-card="connections.apps"');
+    expect(html).toContain("platform.composio.dev");
+    expect(html).toContain('data-settings-card="engines.decisionModel"');
+    // the navigation has no entry for either
+    const nav = part(html, "<nav", "</nav>");
+    expect(nav).not.toContain(">Connected apps<");
+    expect(nav).not.toContain(">Decision model<");
+  });
+
+  it("opens the card from an old Connected apps or Decision model link", async () => {
+    fixture.config = baseConfig({ features: { connectedApps: true, decisionModel: true } });
+    for (const section of ["connectedApps", "decisionModel"]) {
+      fixture.section = section;
+      const html = await page();
+      expect(html, section).toContain("data-models-voice");
+      expect(html, section).toContain('data-settings-card="engines.decisionModel"');
+    }
   });
 
   it("points OpenCode users at `opencode auth login` in the OpenCode key dialog", async () => {

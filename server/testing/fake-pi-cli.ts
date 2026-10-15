@@ -5,7 +5,7 @@
 // / set_model / steer, and streams a scripted turn in response to `prompt`. Failure
 // modes mirror how the real CLI misbehaves:
 //
-//   FAKE_PI_MODE   happy (default) | tooluse | permission | interleave | question-select | question-input
+//   FAKE_PI_MODE   happy (default) | tooluse | mcpgateway | permission | interleave | question-select | question-input
 //                  | turn-error | no-models | exit-early | compaction | compaction-recovery
 //                  | compaction-recovery-upstream | prompt-reject | omp-chunk
 //   FAKE_PI_MODELS comma-separated provider/model pairs (default "ollama-cloud/glm-5.2,openai/gpt-4o")
@@ -218,6 +218,24 @@ const streamCompactionRecoveryUpstreamTurn = () => {
   }, 30);
 };
 
+// mcpgateway: pi-mcp-adapter's single `mcp` tool, as pi reports it: a call
+// to a server's tool (one failed) and a status check without a tool.
+const streamGatewayTurn = () => {
+  send({ type: "agent_start" });
+  send({ type: "turn_start" });
+  send({ type: "tool_execution_start", toolCallId: "g1", toolName: "mcp", args: { server: "pulsatrix-psa", tool: "cw_psa__query", args: { resource: "service.tickets", id: "296221" } } });
+  send({ type: "tool_execution_end", toolCallId: "g1", toolName: "mcp", isError: false, result: { content: [{ type: "text", text: "{}" }] } });
+  send({ type: "tool_execution_start", toolCallId: "g2", toolName: "mcp", args: { tool: "pulsatrix-psa_api_search", args: "{\"query\": \"schedule today\"}" } });
+  send({ type: "tool_execution_end", toolCallId: "g2", toolName: "mcp", isError: true, result: { content: [{ type: "text", text: "Error" }] } });
+  send({ type: "tool_execution_start", toolCallId: "g3", toolName: "mcp", args: { server: "pulsatrix-psa" } });
+  send({ type: "tool_execution_end", toolCallId: "g3", toolName: "mcp", isError: false });
+  send({ type: "turn_end", message: { stopReason: "toolUse", usage: { input: 5, output: 1 } }, usage: { input: 5, output: 1 } });
+  send({ type: "turn_start" });
+  send({ type: "message_update", usage: { input: 0, output: 0 }, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "done" } });
+  send({ type: "turn_end", message: { stopReason: "end_turn", usage: { input: 12, output: 2 } }, usage: { input: 12, output: 2 } });
+  send({ type: "agent_end" });
+};
+
 // tooluse: one tool turn (stopReason toolUse, pi auto-continues) then a text
 // turn — exactly the sequence that broke the settle-on-toolUse bug.
 const streamToolTurn = () => {
@@ -395,6 +413,7 @@ function handle(cmd: any) {
       // acknowledge acceptance; the completion comes via events
       send({ type: "response", command: "prompt", success: true });
       if (mode === "tooluse") streamToolTurn();
+      else if (mode === "mcpgateway") streamGatewayTurn();
       else if (mode === "permission") streamPermissionTurn();
       else if (mode === "question-select") streamQuestionSelectTurn();
       else if (mode === "question-input") streamQuestionInputTurn();

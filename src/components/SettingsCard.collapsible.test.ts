@@ -181,7 +181,9 @@ describe("collapsed card summaries", () => {
     expect(setupStep({ runtime: "podman", daemonUp: true, image: false } as never)).toBe(3);
 
     expect(cardsMatching("ab")).toEqual([]);
-    expect(cardsMatching("composio")).toEqual([]);
+    // Connected apps is a card of Models and voice now: a search opens it
+    expect(cardsMatching("composio")).toEqual(["connections.apps"]);
+    expect(cardsMatching("jev")).toEqual(["engines.decisionModel"]);
     expect(cardsMatching("about")).toEqual(["general.aboutMe"]);
     expect(cardsMatching("openrouter")).toEqual(["engines.moreProviders"]);
     expect(cardsMatching("live call")).toEqual(["voice.advanced"]);
@@ -218,17 +220,21 @@ describe("skin picker", () => {
 });
 
 describe("Settings → General, compact", () => {
-  it("renders the advanced cards collapsed and About me as a row to its own page", async () => {
+  it("renders the advanced cards collapsed on General > Advanced and About me as a row to its own page", async () => {
     device();
-    const { SettingsModal } = await import("./SettingsModal");
+    const { SettingsModal, GeneralAdvancedSettings } = await import("./SettingsModal");
     const html = renderToStaticMarkup(createElement(StoreProvider, null, createElement(SettingsModal)));
-    for (const id of ["general.threads", "general.recovery", "general.threadCleanup"]) {
-      expect(html).toContain(`data-settings-card="${id}" data-open="false"`);
+    // 2026-10-14: the technical cards are one row away, on their own page
+    expect(html).toContain('data-settings-card="general.advanced" data-settings-subpage-row');
+    for (const id of ["general.threads", "general.recovery", "general.threadCleanup", "general.roomTurns", "general.mcpCalls"]) {
+      expect(html).not.toContain(`data-settings-card="${id}"`);
     }
-    // Group turns waits behind Settings > Experimental (routineGroupSettings)
-    expect(html).not.toContain('data-settings-card="general.roomTurns"');
+    const advanced = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GeneralAdvancedSettings)));
+    for (const id of ["general.threads", "general.recovery", "general.threadCleanup", "general.roomTurns", "general.mcpCalls", "general.toolAccess"]) {
+      expect(advanced).toContain(`data-settings-card="${id}" data-open="false"`);
+    }
+    expect(advanced).toContain(">3 per bot<");
     expect(html).toContain(">Not set<");
-    expect(html).toContain(">3 per bot<");
     // About me is edited on its sub-page; General shows its first line and Edit
     expect(html).toContain('data-settings-card="general.aboutMe" data-settings-subpage-row');
     expect(html).not.toContain('id="profile-about-me"');

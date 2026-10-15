@@ -1001,22 +1001,55 @@ export function ModelPicker({
   // composer's menu still shows the model in use, with its warning.
   const currentEngineHidden = autoOn || follows === true ? [] : selectable.filter((instance) =>
     instance.instanceId === selection.instanceId && !menuInstances.includes(instance) && !engineRuns(instance, health));
-  const sectionsOf = (fold: boolean): ModelMenuSection[] => [
-    { key: "top", rows: topRows },
-    ...menuInstances.map((instance) => {
+  // Models that run on this computer get their own section, whatever engine
+  // runs them (JC 2026-10-14): never mixed into "Claude" or another provider.
+  const LOCAL_SECTION_KEY = "local:this-computer";
+  // Every engine offers the same local models (DwarfStar through Claude, Grok,
+  // Codex, pi...): list each model once. Rows come in engine order with the
+  // bot's own engine first, so the first one kept is the engine already in use.
+  // The provider prefix ("DwarfStar: ") moves to the detail and the "Local"
+  // tag goes: the section already says both (JC 2026-10-14).
+  const uniqueLocalRows = (rows: readonly ModelMenuRow[]): ModelMenuRow[] => {
+    const seen = new Map<string, ModelMenuRow>();
+    for (const row of rows) {
+      const id = row.modelId ?? row.key;
+      const kept = seen.get(id);
+      if (kept && !(row.current && !kept.current)) continue;
+      const split = /^([^:]{2,40}):\s+(.+)$/.exec(row.label);
+      const localTag = t("model.localGroup");
+      seen.set(id, {
+        ...row,
+        label: split ? split[2] : row.label,
+        detail: split ? split[1] : row.detail,
+        tags: row.tags?.filter((tag) => tag !== localTag && tag.toLowerCase() !== "local"),
+      });
+    }
+    return [...seen.values()];
+  };
+  const sectionsOf = (fold: boolean): ModelMenuSection[] => {
+    const localRows: ModelMenuRow[] = [];
+    const engineSections = menuInstances.map((instance) => {
       const { catalog, cloud, local } = rowsOf(instance, true, fold);
-      return { key: instance.instanceId, label: engineLabel(instance), note: catalog.signInFirst ? t("model.signInRequired") : undefined, rows: [...cloud, ...local] };
-    }),
-  ];
+      localRows.push(...local);
+      return { key: instance.instanceId, label: engineLabel(instance), note: catalog.signInFirst ? t("model.signInRequired") : undefined, rows: cloud };
+    }).filter((section) => section.rows.length > 0 || section.note);
+    return [
+      { key: "top", rows: topRows },
+      ...engineSections,
+      ...(localRows.length > 0 ? [{ key: LOCAL_SECTION_KEY, label: t("model.localGroup"), rows: uniqueLocalRows(localRows) }] : []),
+    ];
+  };
   const allSections = sectionsOf(false);
   // The composer's menu lists only the models that can run a turn now
   // (src/lib/model-health.ts, JC 2026-10-14): a provider left with none
   // goes. The model in use stays, checked, saying it does not respond.
+  const menuLocalRows: ModelMenuRow[] = [];
   const menuSections: ModelMenuSection[] = [
     { key: "top", rows: topRows },
     ...[...currentEngineHidden, ...menuInstances].map((instance) => {
       const { cloud, local } = rowsOf(instance, true, true);
       const rows = [...cloud, ...local];
+      const localKeys = new Set(local.map((row) => row.key));
       const ownCurrent = !autoOn && follows !== true && instance.instanceId === selection.instanceId;
       const runsOf = (row: ModelMenuRow) => row.modelId !== undefined && modelUsable(instance, row.modelId, health);
       const shown = rows.filter((row) => (row.current && ownCurrent) || runsOf(row));
@@ -1025,13 +1058,16 @@ export function ModelPicker({
         const option = instance.models.options.find((candidate) => candidate.id === selection.model);
         if (option) shown.unshift(modelRow(instance, option, false, undefined, true));
       }
+      const marked = shown.map((row) => (row.current && !runsOf(row) ? { ...row, warning: t("model.notResponding") } : row));
+      menuLocalRows.push(...marked.filter((row) => localKeys.has(row.key)));
       return {
         key: instance.instanceId,
         label: engineLabel(instance),
-        rows: shown.map((row) => (row.current && !runsOf(row) ? { ...row, warning: t("model.notResponding") } : row)),
+        rows: marked.filter((row) => !localKeys.has(row.key)),
       };
     }).filter((section) => section.rows.length > 0),
   ];
+  if (menuLocalRows.length > 0) menuSections.push({ key: LOCAL_SECTION_KEY, label: t("model.localGroup"), rows: uniqueLocalRows(menuLocalRows) });
 
   const onRow = (row: ModelMenuRow) => {
     if (row.kind === "auto") return chooseAuto();
@@ -1323,36 +1359,26 @@ export function ModelPicker({
   );
 
   // Effort applies to the model this bot runs on now (its active engine,
-  // not the provider being browsed), under the same one mode. `contained`
-  // callers (the settings dialog) render their own EffortRow card, and two
-  // copies of one control in one view read as a bug.
+  // not the provider being browsed). JC, 2026-10-14: one Effort per path.
+  // The composer's menu has Effort › (Advanced) and the bot settings have
+  // their EffortRow card, so the window keeps none.
   const effortTitle = active?.capabilities?.modelVariants ? t("model.reasoning") : t("model.effort");
-  const effort = advanced && !contained && (
-    <EffortRow
-      bot={bot}
-      threadId={threadId}
-      updateBotDefault={Boolean(threadId)}
-      className="shrink-0"
-      label={<span className="text-[12.5px] font-medium text-ink">{effortTitle}</span>}
-    />
-  );
 
   // The settings of the model in use, under the composer's list (JC,
-  // 2026-10-13, Cursor's second panel): Fast when it has a fast twin, its
-  // context, Effort › with only the levels it takes, Model ›. On Auto the
-  // model changes per turn: only the effort stays.
+  // 2026-10-13, Cursor's second panel): Fast when it has a fast twin and
+  // Effort › with only the levels it takes. JC, 2026-10-14: Model › (the
+  // provider submenus list the same models) and the Context line are gone.
+  // On Auto the model changes per turn: only the effort stays.
   const activeOptions = active?.models.options ?? [];
   const activeOption = activeOptions.find((option) => option.id === selection.model);
   const fastBase = active && !autoOn ? fastBaseOf(activeOptions, selection.model) : undefined;
   const fastTwin = active && !autoOn ? fastTwinOf(activeOptions, selection.model) : undefined;
   const engineEfforts = active?.capabilities?.effortLevels;
   const menuEfforts = active?.capabilities?.modelVariants ? [] : modelEffortLevels(activeOption, engineEfforts);
-  const activeRows = active && !autoOn && !active.policy ? rowsOf(active, true, true) : null;
   const settingsPanel = active ? (
     <ModelMenuSettings
       disabled={Boolean(bot.busy)}
       fast={active && (fastBase || fastTwin) ? { on: Boolean(fastBase), onToggle: () => pick(active, (fastBase ?? fastTwin)!, true) } : undefined}
-      contextWindow={autoOn ? undefined : activeOption?.contextWindow}
       variantRow={active.capabilities?.modelVariants ? (
         <div data-model-menu-effort className="px-2 py-1.5">
           <EffortRow bot={bot} threadId={threadId} updateBotDefault={Boolean(threadId)} compact
@@ -1365,11 +1391,6 @@ export function ModelPicker({
         value: selection.effort && menuEfforts.includes(selection.effort) ? selection.effort : undefined,
         modelDefault: modelDefaultEffort(activeOption, engineEfforts),
         onPick: setEffort,
-      } : undefined}
-      model={activeRows ? {
-        label: modelLabel(active, fastBase ?? selection.model),
-        sections: [{ key: active.instanceId, label: engineLabel(active), rows: [...activeRows.cloud, ...activeRows.local] }],
-        onPick: onRow,
       } : undefined}
     />
   ) : null;
@@ -1436,7 +1457,6 @@ export function ModelPicker({
               <>
                 {autoHeader}
                 <ModelSearchList key={AUTO_RAIL} variant="window" sections={allSections} onPick={onRow} disabled={Boolean(bot.busy)} />
-                {effort}
               </>
             ) : railInstance ? (
               <>
@@ -1445,7 +1465,6 @@ export function ModelPicker({
                     the choice does, and who pays follows. */}
                 {payersFirst && payers}
                 {listSection}
-                {effort}
                 {!payersFirst && payers}
               </>
             ) : (
@@ -1459,7 +1478,9 @@ export function ModelPicker({
   );
 
   // The composer's menu (2026-10-12, JC: like Cursor's): search, Auto, every
-  // engine's models, the effort, and Edit… for the whole window.
+  // engine's models, the effort, and Edit… for the whole window. In Simple
+  // (JC, 2026-10-14) the providers sit behind one "All models ›" row under
+  // Auto, the bot's model and the favorites; the effort stays Advanced.
   const menuPanel = (
     <div
       ref={menuRef}
@@ -1479,7 +1500,7 @@ export function ModelPicker({
         menuMotion.className,
       )}
     >
-      <ModelSearchList variant="popover" autoFocus submenus sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)}
+      <ModelSearchList variant="popover" autoFocus submenus groupProviders={!advanced} sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)}
         favorites={{ keys: favoriteKeys, onToggle: (row) => toggleModelFavorite(row.key) }} />
       {advanced && settingsPanel}
       <div className="border-t border-popover-hairline px-1.5 pt-1">

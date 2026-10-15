@@ -45,18 +45,33 @@ const render = (props: Partial<Parameters<typeof FilesBrowser>[0]> = {}) => rend
 }));
 
 describe("FilesBrowser", () => {
-  it("shows a chip only for kinds that have files, then the files with their origin and size", () => {
+  it("keeps one bar (search and Filter) and lists the files with their origin and size", () => {
     const html = render();
-    for (const [label, count] of [["All", 6], ["Images", 2], ["Videos", 1], ["Documents", 1], ["Code", 1], ["Other", 1]] as const) {
-      expect(html).toMatch(new RegExp(`aria-pressed="(?:true|false)"[^>]*>${label}<span[^>]*>${count}</span>`));
-    }
-    // An empty kind gets no chip.
-    expect(html).not.toMatch(/aria-pressed="(?:true|false)"[^>]*>Audio<span/);
+    expect(html).toContain('aria-label="Search files"');
+    expect(html).toContain('data-files-filter=""');
+    expect(html).toContain(">Filter</span>");
+    // The menu is closed: no chips, no selects, no view toggle on screen.
+    expect(html).not.toContain("aria-pressed");
+    expect(html).not.toContain("<select");
+    expect(html).not.toContain('role="menu"');
     expect(html).toContain('data-files-view="list"');
     for (const name of ["chart.png", "demo.mp4", "report.pdf", "main.ts", "bundle.zip", "remote.png"]) expect(html).toContain(name);
     expect(html).toContain("Bot attached · 2.0 KB");
     expect(html).toContain("You sent · 2.0 KB");
     expect(html).toContain("Not on this computer");
+  });
+
+  it("puts type (only kinds that have files), origin, sort and view in the Filter menu", () => {
+    const html = render({ openMenus: "filter" });
+    for (const [label, count] of [["All", 6], ["Images", 2], ["Videos", 1], ["Documents", 1], ["Code", 1], ["Other", 1]] as const) {
+      expect(html).toMatch(new RegExp(`role="menuitemradio" aria-checked="(?:true|false)"[^>]*>.*?<span class="flex-1">${label}</span><span[^>]*>${count}</span>`));
+    }
+    // An empty kind is not offered.
+    expect(html).not.toContain('data-files-type="audio"');
+    for (const id of ["all", "bot", "you"]) expect(html).toContain(`data-files-origin="${id}"`);
+    for (const id of ["newest", "name", "size"]) expect(html).toContain(`data-files-sort="${id}"`);
+    for (const id of ["list", "grid"]) expect(html).toContain(`data-files-view-choice="${id}"`);
+    expect(html).toMatch(/aria-checked="true"[^>]*data-files-type="all"/);
   });
 
   it("loads image thumbnails by opaque id, never by host path", () => {
@@ -67,13 +82,18 @@ describe("FilesBrowser", () => {
     expect(html).not.toContain(`files/${files[5]!.id}?preview=1`);
   });
 
-  it("offers jump, download and copy path, and no download or copy for a file that is not here", () => {
-    const html = render();
-    expect(html.match(/aria-label="Show in chat"/g)).toHaveLength(6);
+  it("gives each file one menu: jump, download, and copy path in Advanced only", () => {
+    const closed = render();
+    expect(closed.match(/aria-label="More for [^"]+"/g)).toHaveLength(6);
+    expect(closed).not.toContain("Show in chat");
+    const html = render({ openMenus: "all", advanced: true });
+    expect(html.match(/>Show in chat</g)).toHaveLength(6);
     expect(html).toContain('aria-label="Download chart.png"');
-    expect(html).toMatch(/<button type="button" disabled="" aria-label="Download remote\.png"/);
+    expect(html).toMatch(/<button type="button" role="menuitem" disabled="" aria-label="Download remote\.png"/);
     expect(html).toContain('title="/work/src/main.ts"');
     expect(html).not.toContain('title="/home/cua/remote.png"');
+    // Simple mode: no Copy path.
+    expect(render({ openMenus: "all" })).not.toContain(">Copy path<");
   });
 
   it("renders a grid when asked, and filters by kind", () => {

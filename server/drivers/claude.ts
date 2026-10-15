@@ -11,6 +11,8 @@
 //     stdio `computer` server in turn.integrations.localComputer
 import { claudeDisallowedTools } from "./host-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
+import { FLOW_TOOLS_MCP_NAME } from "../flow-tools.ts";
+import { isFlowToolsServer } from "./acp/grok-read-only-tools.ts";
 import { networkProxyEnvironment } from "./network-proxy.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
@@ -1893,6 +1895,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // already reach (server/auto-computer.ts): no card for the choice
       // itself; every tool it routes to still rides the approval mode.
       if (mcpServers[AUTO_COMPUTER_MCP_NAME]) allowed.push(`mcp__${AUTO_COMPUTER_MCP_NAME}`);
+      // Pulsatrix Flow's compute (server/flow-tools.ts) only calculates over
+      // its arguments: nothing to approve.
+      if (isFlowToolsServer(turn.integrations?.custom?.[FLOW_TOOLS_MCP_NAME]) && mcpServers[FLOW_TOOLS_MCP_NAME]) allowed.push(`mcp__${FLOW_TOOLS_MCP_NAME}`);
       // --strict-mcp-config (above) makes this config the CLI's only source
       // of MCP servers, so a server the bot's OWN project declares would
       // otherwise vanish with the machine's. Merge it last: a project file

@@ -1,12 +1,12 @@
-// Grouping a transcript's tool chips into runs.
+// Grouping a transcript's steps into one row per stretch of work.
 //
-// A bot working through a task emits one chip per tool call, and a long
+// A bot working through a task emits one row per tool call, and a long
 // stretch of them buries the thing you actually came to read: what the bot
-// SAID. Consecutive finished steps fold into a single row that names them;
-// text between two stretches breaks the run, so the bot's words always
-// separate one run from the next.
+// SAID. Every step between two visible messages (running, finished or
+// failed, and a settled turn's narration) folds into a single group that
+// names the work; text the bot left visible breaks the group, so the bot's
+// words always separate one group from the next.
 import type { Message } from "@/state/store";
-import { formatElapsed } from "@/lib/working-time";
 import { t } from "@/lib/i18n";
 import { autoWorkerLine } from "@/lib/auto-model";
 import { failedTurnCause } from "../../shared/failed-turn";
@@ -16,11 +16,11 @@ import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/s
 
 export type ActivityTranscriptItem =
   | { kind: "message"; message: Message }
-  | { kind: "run"; id: string; messages: Message[] };
+  /** one stretch of work: tool steps and a settled turn's narration, in
+   * order. `elapsedMs` is how long the bot worked, when it is known. */
+  | { kind: "run"; id: string; messages: Message[]; elapsedMs?: number };
 
-export type TranscriptItem =
-  | ActivityTranscriptItem
-  | { kind: "turn"; id: string; turnId: string; label: string; messages: Message[] };
+export type TranscriptItem = ActivityTranscriptItem;
 
 /** A status row rather than a tool step: `recovery:` when automatic recovery
  * changes this conversation's engine, `notice:` when the engine runs another
@@ -69,18 +69,13 @@ export function isToolStep(message: Message): message is Message & { tool: NonNu
   return failedTurnCause(tool.name) === null;
 }
 
-/** A step that may be folded away: a tool step that finished. A step still
- * running stays out, so live progress is never hidden behind a fold, and so
- * does one that failed. */
-function foldable(message: Message): boolean {
-  return isToolStep(message) && message.tool.ok === true;
-}
-
-type TurnFold = Extract<TranscriptItem, { kind: "turn" }>;
+/** A settled turn's narration: the messages the bot wrote on its way to the
+ * answer, folded into the turn's group, and how long the whole turn took. */
+type TurnFold = { turnId: string; elapsedMs: number };
 
 /** Settled providers may emit several ordinary assistant messages around
- * tool calls. Keep the terminal answer in the transcript and replace the
- * earlier narration with one reversible row, matching T3 Code's turn fold. */
+ * tool calls. Keep the terminal answer in the transcript and fold the
+ * earlier narration into the turn's group of steps. */
 function assistantTurnFolds(messages: Message[]): {
   byAnchorId: Map<string, TurnFold>;
   hiddenIds: Set<string>;
@@ -113,23 +108,30 @@ function assistantTurnFolds(messages: Message[]): {
         break;
       }
     }
-    const elapsed = Math.max(0, terminal.at - startedAt);
-    const label =
-      elapsed >= 1_000
-        ? t("chat.run.workedFor", { elapsed: formatElapsed(elapsed) })
-        : t("chat.run.worked");
-    const fold: TurnFold = {
-      kind: "turn",
-      id: `turn:${terminal.turnId}`,
-      turnId: terminal.turnId,
-      label,
-      messages: narration,
-    };
-    byAnchorId.set(anchor.id, fold);
+    byAnchorId.set(anchor.id, { turnId: terminal.turnId, elapsedMs: Math.max(0, terminal.at - startedAt) });
     for (const message of narration) hiddenIds.add(message.id);
   });
 
   return { byAnchorId, hiddenIds };
+}
+
+/** How long a stretch of steps ran: from the first start to the last end.
+ * Undefined while a step still runs or when nothing says. */
+function stepSpan(messages: Message[]): number | undefined {
+  const steps = messages.filter((message) => isToolStep(message));
+  if (!steps.length || steps.some((step) => step.tool?.ok === undefined)) return undefined;
+  const start = Math.min(...steps.map((step) => step.at));
+  const end = Math.max(...steps.map((step) => step.at + (step.tool?.durationMs ?? 0)));
+  const span = end - start;
+  if (span >= 1_000) return span;
+  // steps stamped at the same moment: their own durations, added up
+  let total = 0;
+  for (const step of steps) {
+    const ms = step.tool?.durationMs;
+    if (ms === undefined) return span > 0 ? span : undefined;
+    total += ms;
+  }
+  return total;
 }
 
 function group(messages: Message[], foldAssistantTurns: boolean): TranscriptItem[] {
@@ -138,31 +140,42 @@ function group(messages: Message[], foldAssistantTurns: boolean): TranscriptItem
     ? assistantTurnFolds(messages)
     : { byAnchorId: new Map<string, TurnFold>(), hiddenIds: new Set<string>() };
   let run: Message[] = [];
+  let turnElapsed: number | undefined;
+  let narrated = false;
   const flush = () => {
-    // one step on its own is cheaper to read than a fold that hides it
-    if (run.length > 1) items.push({ kind: "run", id: `run:${run[0].id}`, messages: run });
-    else for (const message of run) items.push({ kind: "message", message });
+    // one step on its own is cheaper to read than a fold that hides it;
+    // narration is folded even alone, the answer under it is what shows
+    if (run.length > 1 || narrated) {
+      items.push({ kind: "run", id: `run:${run[0].id}`, messages: run, elapsedMs: turnElapsed ?? stepSpan(run) });
+    } else {
+      for (const message of run) items.push({ kind: "message", message });
+    }
     run = [];
+    turnElapsed = undefined;
+    narrated = false;
+  };
+  const join = (message: Message) => {
+    const first = run[0];
+    if (
+      first &&
+      (first.role !== message.role ||
+        first.from?.botId !== message.from?.botId ||
+        localDay(first.at) !== localDay(message.at))
+    ) {
+      flush();
+    }
+    run.push(message);
   };
   for (const message of messages) {
-    const turn = folds.byAnchorId.get(message.id);
-    if (turn) {
-      flush();
-      items.push(turn);
+    if (folds.hiddenIds.has(message.id)) {
+      join(message);
+      narrated = true;
+      const fold = folds.byAnchorId.get(message.id);
+      if (fold) turnElapsed = fold.elapsedMs;
       continue;
     }
-    if (folds.hiddenIds.has(message.id)) continue;
-    if (foldable(message)) {
-      const first = run[0];
-      if (
-        first &&
-        (first.role !== message.role ||
-          first.from?.botId !== message.from?.botId ||
-          localDay(first.at) !== localDay(message.at))
-      ) {
-        flush();
-      }
-      run.push(message);
+    if (isToolStep(message)) {
+      join(message);
       continue;
     }
     flush();
@@ -173,7 +186,7 @@ function group(messages: Message[], foldAssistantTurns: boolean): TranscriptItem
 }
 
 export function groupActivityRuns(messages: Message[]): ActivityTranscriptItem[] {
-  return group(messages, false) as ActivityTranscriptItem[];
+  return group(messages, false);
 }
 
 export function groupTranscript(messages: Message[]): TranscriptItem[] {
@@ -182,16 +195,16 @@ export function groupTranscript(messages: Message[]): TranscriptItem[] {
 
 const MAX_NAMES = 3;
 
-/** The one line a folded run has to earn its place with: how much work it
- * was and which tools did it. Failed steps are never folded. */
+/** The tooltip of a group: how many steps and which tools did them. */
 export function describeRun(messages: Message[]): string {
   const counts = new Map<string, number>();
-  for (const message of messages) {
+  const steps = messages.filter((message) => isToolStep(message));
+  for (const message of steps) {
     const name = message.tool?.name ?? "";
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   const names = [...counts].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name));
   const shown = names.slice(0, MAX_NAMES).join(", ");
   const rest = names.length > MAX_NAMES ? ` ${t("chat.run.more", { count: names.length - MAX_NAMES })}` : "";
-  return t("chat.run.steps", { count: messages.length, tools: `${shown}${rest}` });
+  return t("chat.run.steps", { count: steps.length, tools: `${shown}${rest}` });
 }

@@ -10,14 +10,19 @@
  */
 export function releaseHighlights(notes: string | undefined, max = 4): string[] {
   if (!notes?.trim()) return [];
-  const markdown = notes
+  let stripped = notes
     .replace(/\r\n?/g, "\n")
     .replace(/<\s*(strong|b)\s*>/gi, "**")
     .replace(/<\s*\/\s*(strong|b)\s*>/gi, "**")
     .replace(/<\s*li[^>]*>/gi, "\n- ")
     .replace(/<\s*\/\s*(li|p|h[1-6]|ul|ol)\s*>|<\s*br\s*\/?>/gi, "\n")
-    .replace(/<\s*h[1-6][^>]*>/gi, "\n# ")
-    .replace(/<[^>]+>/g, "")
+    .replace(/<\s*h[1-6][^>]*>/gi, "\n# ");
+  // repeat until stable: removing one tag can join the halves of another
+  for (let prev = ""; prev !== stripped; ) {
+    prev = stripped;
+    stripped = stripped.replace(/<[^>]+>/g, "");
+  }
+  const markdown = stripped
     .replace(/&nbsp;/g, " ")
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'")

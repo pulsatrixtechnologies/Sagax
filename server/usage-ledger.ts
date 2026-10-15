@@ -340,6 +340,25 @@ export function summarizeUsage(rows: UsageRow[], groupBy: UsageGroupBy, prices: 
   return { groups: ordered, total };
 }
 
+/** Who reads their own usage (GET /api/usage?mine=1, 2026-10-14). The
+ * operator on their own machine, or a session that is not a person's (a
+ * paired device of the owner), owns every turn no signed-in person asked
+ * for; a person owns the turns they asked for and the routines run as them. */
+export type UsageViewer = { kind: "operator" } | { kind: "person"; principalId?: string; email?: string };
+
+export function usageRowsFor(rows: UsageRow[], viewer: UsageViewer): UsageRow[] {
+  if (viewer.kind === "operator") {
+    return rows.filter((row) => row.trigger.kind !== "user" && !(row.trigger.kind === "routine" && row.trigger.runAsPrincipalId));
+  }
+  const email = viewer.email?.trim().toLowerCase();
+  return rows.filter(({ trigger }) => {
+    if (trigger.kind === "user") {
+      return Boolean((viewer.principalId && trigger.principalId === viewer.principalId) || (email && trigger.email?.toLowerCase() === email));
+    }
+    return trigger.kind === "routine" && Boolean(viewer.principalId) && trigger.runAsPrincipalId === viewer.principalId;
+  });
+}
+
 export function csvCell(value: string | number | null): string {
   if (value === null) return "";
   const text = String(value);

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { activeRowKey, filterModelSections, foldSearch, modelMenuRoot, modelMenuRootEntries, pickableRows, stepRow, type ModelMenuRow, type ModelMenuSection } from "./model-menu";
+import {
+  activeRowKey, filterModelSections, foldSearch, groupedModelMenuEntries, modelMenuRoot, modelMenuRootEntries, pickableRows, stepRow,
+  ALL_MODELS_KEY, FAVORITE_KEY_PREFIX, PROVIDER_KEY_PREFIX, type ModelMenuRow, type ModelMenuSection,
+} from "./model-menu";
 
 const model = (key: string, label: string, extra: Partial<ModelMenuRow> = {}): ModelMenuRow => ({ key, kind: "model", modelId: key, label, current: false, ...extra });
 const sections: ModelMenuSection[] = [
@@ -80,5 +83,29 @@ describe("the nested root of the composer's menu", () => {
   it("walks Auto, the current model, the favorites, then the providers", () => {
     const entries = modelMenuRootEntries(modelMenuRoot(sections, ["grok-4.7", "local"]));
     expect(entries.map((entry) => entry.key)).toEqual(["auto", "current:sonnet", "favorite:grok-4.7", "provider:claude", "provider:grok"]);
+  });
+});
+
+describe("groupedModelMenuEntries (Simple, JC 2026-10-14)", () => {
+  const row = (key: string, extra: Partial<ModelMenuRow> = {}): ModelMenuRow => ({ key, kind: "model", label: key, current: false, ...extra });
+  const sections: ModelMenuSection[] = [
+    { key: "top", rows: [{ key: "auto", kind: "auto", label: "Auto", current: true }] },
+    { key: "claude", label: "Claude", rows: [row("claude:opus")] },
+    { key: "grok", label: "Grok", rows: [row("grok:4.7")] },
+  ];
+
+  it("puts one All models entry after the root rows instead of the providers", () => {
+    const root = modelMenuRoot(sections, ["grok:4.7"]);
+    expect(groupedModelMenuEntries(root, false).map((entry) => entry.key)).toEqual(["auto", `${FAVORITE_KEY_PREFIX}grok:4.7`, ALL_MODELS_KEY]);
+  });
+
+  it("lists the providers alone once All models is open", () => {
+    const root = modelMenuRoot(sections, []);
+    expect(groupedModelMenuEntries(root, true).map((entry) => entry.key)).toEqual([`${PROVIDER_KEY_PREFIX}claude`, `${PROVIDER_KEY_PREFIX}grok`]);
+  });
+
+  it("has no All models entry without a provider", () => {
+    const root = modelMenuRoot([sections[0]!], []);
+    expect(groupedModelMenuEntries(root, false).map((entry) => entry.key)).toEqual(["auto"]);
   });
 });

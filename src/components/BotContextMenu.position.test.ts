@@ -44,9 +44,9 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function render(x = 990, y = 795) {
+function render(x = 990, y = 795, initialPage: "main" | "more" = "main") {
   return renderToStaticMarkup(createElement(BotContextMenu, {
-    menu: { botId: bot.id, x, y }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(),
+    menu: { botId: bot.id, x, y }, initialPage, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(),
     onMoveToSection: vi.fn(), onRename: vi.fn(),
   }));
 }
@@ -68,7 +68,7 @@ describe("bot actions menu viewport placement", () => {
     const element = measuredMenu(228, 468);
     const cleanup = layoutEffects();
     expect(element.style).toEqual({ top: "324px", left: "764px" });
-    expect(html).toContain(">Hide from sidebar</button>");
+    expect(html).toContain(">Archive</button>");
     expect(fixture.portal?.target).toBe(document.body);
     expect(html).toContain("data-sidebar");
     expect(listeners.has("resize")).toBe(true);
@@ -106,9 +106,10 @@ describe("bot actions menu viewport placement", () => {
 });
 
 describe("bot actions menu: hide versus archive", () => {
-  it("offers Hide from sidebar (this person only) beside Archive (the bot)", () => {
+  it("keeps Archive (the bot) at the first level and Hide from sidebar (this person only) under More", () => {
     const html = render();
-    expect(html).toContain(">Hide from sidebar</button>");
     expect(html).toContain(">Archive</button>");
+    expect(html).not.toContain("Hide from sidebar");
+    expect(render(990, 795, "more")).toContain(">Hide from sidebar</button>");
   });
 });

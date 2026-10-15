@@ -154,6 +154,28 @@ repositories, the whole lifecycle, auto included), `src/lib/org-memory.test.ts`,
 `server/perspicax-memory-sync-token.test.ts`. Not done yet: a file watcher
 (the sync runs on its timer).
 
+## Pulsatrix Flow compute (sagax-flow, 2026-10-14)
+
+`flow` and `flow_action` are Perspicax's tools, relayed through the
+`perspicax_<profile>` servers; Sagax does not implement them. The
+deterministic arithmetic of the marketplace plugin `pulsatrix-flow`
+(`px_flow.py`, `px_flow_action.py`) is native: `server/flow-tools.ts`, the
+`sagax-flow` server (`flow_free_slots`, `flow_time_block`, `flow_overlaps`,
+`flow_stats`, `flow_age_buckets`, `flow_group_units`, `flow_filter`,
+`flow_member_load`). Mapping of the whole plugin:
+`docs/migration/flow-plugin-mapping.md`. Keep these rules, covered by
+`server/flow-tools.test.ts` and `server/org-mcp.e2e.test.ts`:
+
+- Pure functions of their arguments. No organization fact (time zone,
+  hours, holidays, midnight split time, boards, people, client rules) is
+  built in or copied from the plugin's library; the caller passes it.
+- Mounted only on a turn where a Perspicax profile server is mounted
+  (`perspicaxTurnIntegration`), answered inside the workplace stdio proxy
+  (`flowToolsRequest`), with no capability and no call to the server.
+- Every tool is read only: Claude pre-allows `mcp__sagax-flow`, Grok's rules
+  and gate accept it only for the harness's own proxy path
+  (`isFlowToolsServer`), Codex mounts it as a workplace proxy.
+
 ## Organization memory signals (2026-10-11)
 
 Perspicax keeps the organization's work log and a duplicate detector over

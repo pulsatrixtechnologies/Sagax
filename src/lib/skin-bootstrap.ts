@@ -10,9 +10,22 @@ export function skinIdFromStored(stored: string | null | undefined): SkinId {
   return DEFAULT_SKIN;
 }
 
+const SCRIPT_UNSAFE: Record<string, string> = {
+  "<": "\\u003C",
+  ">": "\\u003E",
+  "/": "\\u002F",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
+};
+
+/** JSON literal safe to embed in an inline <script> (single pass over JSON.stringify's output). */
+export function scriptSafeJson(value: unknown): string {
+  return JSON.stringify(value).replace(/[<>/\u2028\u2029]/g, (c) => SCRIPT_UNSAFE[c] ?? c);
+}
+
 /** Inline script for index.html: sets document.documentElement.dataset.skin. */
 export function skinBootstrapInlineScript(): string {
-  const ids = JSON.stringify([...BOOTSTRAP_IDS]);
-  const fallback = JSON.stringify(DEFAULT_SKIN);
+  const ids = scriptSafeJson([...BOOTSTRAP_IDS]);
+  const fallback = scriptSafeJson(DEFAULT_SKIN);
   return `(function(){var SKINS=${ids},d=${fallback},s;try{s=localStorage.getItem("omb-skin")}catch(e){}document.documentElement.dataset.skin=SKINS.indexOf(s)>=0?s:d})();`;
 }

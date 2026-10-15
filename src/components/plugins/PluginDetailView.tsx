@@ -1,7 +1,8 @@
-// Plugins > one plugin: its accounts, its tools (each with a switch for an
-// MCP server: off means no bot sees it) and where it comes from.
-import { useEffect, useState, type ReactNode } from "react";
-import { CheckCircle2, ChevronDown, ChevronRight, FlaskConical, KeyRound, Loader2, LogOut, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+// Plugins > one plugin: its switch, its accounts, its tools (each with a
+// switch for an MCP server: off means no bot sees it) and where it comes
+// from. Update, Test, Edit and Uninstall sit in one "..." menu by the name.
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CheckCircle2, ChevronDown, ChevronRight, FlaskConical, KeyRound, Loader2, LogOut, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -83,27 +84,24 @@ export function PluginDetailView(props: PluginDetailProps) {
             <div className="truncate text-[15px] font-semibold text-ink">{item.name}</div>
             <div className="truncate font-mono text-[11.5px] text-ink-secondary" title={subtitle}>{subtitle}</div>
           </div>
-          <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            {onUpdate && (
-              <button type="button" disabled={busy} onClick={onUpdate} className="ui-button ui-button-primary flex items-center gap-1.5 text-[12px] disabled:opacity-40" data-plugin-update>
-                {updating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} {t("connectApps.plugin.update")}
-              </button>
+          <div className="ml-auto flex items-center gap-2">
+            {enabled && (
+              <label className="flex items-center gap-2 text-[12.5px] text-ink-secondary" data-plugin-enabled>
+                {t("connectApps.detail.enabled")}
+                <Switch checked={enabled.value} disabled={busy} onClick={enabled.onToggle} aria-label={enabled.label} />
+              </label>
             )}
-            {onTest && (
-              <button type="button" disabled={busy} onClick={onTest} className="ui-button flex items-center gap-1.5 text-[12px] disabled:opacity-40">
-                {testing ? <Loader2 size={13} className="animate-spin" /> : <FlaskConical size={13} />} {t("mcp.test")}
-              </button>
-            )}
-            {onEdit && (
-              <button type="button" disabled={busy} onClick={onEdit} className="ui-button flex items-center gap-1.5 text-[12px] disabled:opacity-40" aria-label={t("mcp.editAria", { name: item.name })}>
-                <Pencil size={13} /> {t("connectApps.detail.edit")}
-              </button>
-            )}
-            {onUninstall && (
-              <button type="button" disabled={busy} onClick={onUninstall} className="flex items-center gap-1.5 rounded-lg border border-danger/40 px-3 py-1.5 text-[12px] font-medium text-danger hover:bg-danger/10 disabled:opacity-40">
-                <Trash2 size={13} /> {t("connectApps.detail.uninstall")}
-              </button>
-            )}
+            <PluginActionsMenu
+              name={item.name}
+              busy={busy}
+              updateAvailable={Boolean(onUpdate)}
+              actions={[
+                onUpdate && { id: "update", icon: updating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />, label: t("connectApps.plugin.update"), onSelect: onUpdate },
+                onTest && { id: "test", icon: testing ? <Loader2 size={13} className="animate-spin" /> : <FlaskConical size={13} />, label: t("mcp.test"), onSelect: onTest },
+                onEdit && { id: "edit", icon: <Pencil size={13} />, label: t("connectApps.detail.edit"), onSelect: onEdit },
+                onUninstall && { id: "uninstall", icon: <Trash2 size={13} />, label: t("connectApps.detail.uninstall"), onSelect: onUninstall, danger: true },
+              ]}
+            />
           </div>
         </div>
 
@@ -189,14 +187,6 @@ export function PluginDetailView(props: PluginDetailProps) {
 
         <PluginCard title={t("connectApps.detail.details")}>
           <dl className="grid grid-cols-[minmax(90px,auto)_1fr] gap-x-4 gap-y-1.5 text-[12.5px]">
-            {enabled && (
-              <>
-                <dt className="self-center text-ink-secondary">{t("connectApps.detail.enabled")}</dt>
-                <dd className="flex justify-end">
-                  <Switch checked={enabled.value} disabled={busy} onClick={enabled.onToggle} aria-label={enabled.label} />
-                </dd>
-              </>
-            )}
             {details.map((row) => (
               <div key={row.label} className="contents">
                 <dt className="text-ink-secondary">{row.label}</dt>
@@ -207,6 +197,85 @@ export function PluginDetailView(props: PluginDetailProps) {
         </PluginCard>
       </div>
     </>
+  );
+}
+
+interface PluginAction {
+  id: string;
+  icon: ReactNode;
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+}
+
+/** The detail page's "..." menu: Update, Test, Edit, Uninstall (each only
+ * when the plugin offers it). A dot on the button says an update waits. */
+export function PluginActionsMenu({ name, busy, actions, updateAvailable }: {
+  name: string;
+  busy: boolean;
+  actions: Array<PluginAction | undefined | false>;
+  updateAvailable?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const shown = actions.filter((action): action is PluginAction => Boolean(action));
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+  if (shown.length === 0) return null;
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        data-plugin-actions
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={t("connectApps.detail.moreActions", { name })}
+        title={t("connectApps.detail.moreActions", { name })}
+        onClick={() => setOpen((value) => !value)}
+        className="ui-icon-button relative"
+      >
+        <MoreHorizontal size={17} />
+        {updateAvailable && <span data-plugin-update-dot className="absolute right-1 top-1 size-2 rounded-full bg-accent" aria-hidden="true" />}
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-9 z-10 min-w-[180px] rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1">
+          {shown.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              role="menuitem"
+              data-plugin-action={action.id}
+              disabled={busy}
+              onClick={() => {
+                setOpen(false);
+                action.onSelect();
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[12.5px] disabled:opacity-40",
+                action.danger ? "text-danger hover:bg-danger/10" : "text-ink hover:bg-hover",
+              )}
+            >
+              {action.icon} {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

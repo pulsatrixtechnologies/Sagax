@@ -128,8 +128,8 @@ export function VoiceEngineSettings() {
             {keySaved
               ? included && keyRow.row === "elevenlabs" && !keyRowSaved("elevenlabs", state.config)
                 ? t("keys.includedWithCloudPro")
-                : t("modelsVoice.voice.usesKey", { name: keyRow.name })
-              : t("modelsVoice.voice.needsKey", { name: keyRow.name })}
+                : keyRow.row === "xai" ? t("modelsVoice.voice.usesKey", { name: keyRow.name }) : t("modelsVoice.voice.keySaved", { name: keyRow.name })
+              : keyRow.row === "xai" ? t("modelsVoice.voice.needsKey", { name: keyRow.name }) : t("modelsVoice.voice.keyMissing", { name: keyRow.name })}
           </span>
           <button
             type="button"

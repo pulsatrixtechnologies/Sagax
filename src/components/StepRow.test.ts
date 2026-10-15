@@ -10,7 +10,6 @@ import type { Message } from "@/state/store";
 import { ActivityRun } from "./ActivityRun";
 import { DigestChip } from "./DigestChip";
 import { ToolActivity } from "./ToolActivity";
-import { TurnNarrationRun } from "./TurnNarrationRun";
 
 let root: Root | undefined;
 let host: HTMLElement | undefined;
@@ -64,13 +63,14 @@ describe("a tool step row", () => {
 
 describe("a group of steps", () => {
   const steps = [step("a", "Read", 1_000), step("b", "Bash", 2_000), step("c", "mcp__x__cw_psa__find_tickets", 3_000)];
-  const children = steps.map((message) => createElement(ToolActivity, { key: message.id, tool: message.tool! }));
+  const renderStep = (message: Message) => createElement(ToolActivity, { tool: message.tool! });
+  const renderMessage = (message: Message) => createElement("p", null, message.text);
 
-  it("reads 'Used N tools' with the time they took, then lists each step as its own row", () => {
-    const node = mount(createElement(ActivityRun, { messages: steps, children }));
+  it("reads as one line with the time and the tools, then lists each step as its own row", () => {
+    const node = mount(createElement(ActivityRun, { messages: steps, elapsedMs: 6_000, renderStep }));
     const row = node.querySelector("button")!;
-    expect(row.textContent).toContain("Used 3 tools");
-    expect(row.textContent).toContain("6s");
+    expect(row.textContent).toContain("Worked 6s");
+    expect(row.textContent).toContain("3 tools");
     expect(node.querySelectorAll("[data-step-row]")).toHaveLength(1);
     click(row);
     const rows = node.querySelectorAll("[data-step-detail] [data-step-row]");
@@ -83,12 +83,64 @@ describe("a group of steps", () => {
   });
 
   it("opens by itself for a search hit inside it", () => {
-    const node = mount(createElement(ActivityRun, { messages: steps, forceOpen: true, children }));
+    const node = mount(createElement(ActivityRun, { messages: steps, focusedId: "b", renderStep }));
     expect(node.querySelectorAll("[data-step-detail] [data-step-row]")).toHaveLength(3);
+  });
+
+  it("counts failures in the summary only, and merges the same step repeated", () => {
+    const tickets = JSON.stringify({ server: "pulsatrix-psa", tool: "cw_psa__query", args: { resource: "service.tickets" } });
+    const failed = (id: string): Message => ({ id, role: "bot", kind: "activity", at: 1, tool: { name: "mcp", ok: false, input: tickets } });
+    const done = (id: string): Message => ({ id, role: "bot", kind: "activity", at: 1, tool: { name: "mcp", ok: true, input: tickets } });
+    const node = mount(createElement(ActivityRun, { messages: [done("1"), failed("2"), failed("3"), failed("4"), done("5")], renderStep }));
+    const row = node.querySelector("button")!;
+    expect(row.textContent).toContain("5 tools");
+    expect(node.querySelector('[data-testid="activity-run-failed"]')?.textContent).toContain("3 failed");
+    // the summary row itself stays quiet: only the count is in danger
+    expect(row.querySelector("[data-step-label]")?.className).not.toContain("text-danger");
+    click(row);
+    const labels = [...node.querySelectorAll("[data-step-detail] > div > [data-step-row] > button [data-step-label], [data-step-detail] > div > .contents > [data-step-row] > button [data-step-label]")]
+      .map((label) => label.textContent);
+    expect(labels).toEqual([
+      "Viewed tickets in ConnectWise PSA",
+      "Could not use ConnectWise PSA (cw_psa__query) ×3",
+      "Viewed tickets in ConnectWise PSA",
+    ]);
+    // the merged row opens to each call, each with its own detail
+    click(node.querySelector('[data-testid="activity-run-repeat"] button'));
+    expect(node.querySelectorAll('[data-testid="activity-run-repeat"] [data-testid="tool-activity"]')).toHaveLength(3);
+  });
+
+  it("says what runs now while the bot works, in place, without piling rows", () => {
+    const live: Message = { id: "z", role: "bot", kind: "activity", at: 2, tool: { name: "WebSearch", input: JSON.stringify({ query: "sagax" }) } };
+    const node = mount(createElement(ActivityRun, { messages: [...steps, live], renderStep }));
+    expect(node.querySelectorAll("[data-step-row]")).toHaveLength(1);
+    const label = node.querySelector("[data-step-label]")!;
+    expect(label.textContent).toBe("Searching the web");
+    expect(label.className).toContain("thinking-shimmer");
+    expect(node.querySelector('[data-testid="activity-run"]')?.getAttribute("data-live")).toBe("true");
+  });
+
+  it("reads a short turn's narration and tools as one line: Worked 15s · 2 tools", () => {
+    const narration: Message = { id: "n0", role: "bot", kind: "text", at: 1, text: "Let me check.", turnId: "t" };
+    const node = mount(createElement(ActivityRun, { messages: [narration, steps[0]!, steps[1]!], elapsedMs: 15_000, renderStep, renderMessage }));
+    expect(node.querySelectorAll("[data-step-row]")).toHaveLength(1);
+    expect(node.querySelector("button")?.textContent).toMatch(/^Worked 15s\s*· 2 tools/);
+    click(node.querySelector("button"));
+    expect(node.textContent).toContain("Let me check.");
+    expect(node.querySelectorAll("[data-step-detail] [data-step-row]")).toHaveLength(2);
+  });
+
+  it("folds a turn's narration among its steps", () => {
+    const narration: Message = { id: "n", role: "bot", kind: "text", at: 1, text: "first narration", turnId: "t" };
+    const node = mount(createElement(ActivityRun, { messages: [narration], elapsedMs: 12_000, renderStep, renderMessage }));
+    expect(node.textContent).toContain("Worked 12s");
+    expect(node.textContent).not.toContain("first narration");
+    click(node.querySelector("button"));
+    expect(node.textContent).toContain("first narration");
   });
 });
 
-describe("the turn digest and the narration fold", () => {
+describe("the turn digest", () => {
   it("says what the turn did in words, with the detail one click away", () => {
     const message: Message = {
       id: "d", role: "bot", kind: "digest", at: 1, text: "Observed work",
@@ -104,13 +156,5 @@ describe("the turn digest and the narration fold", () => {
     expect(row.textContent).not.toContain("Did 1 tool calls");
     click(row);
     expect(node.querySelector('[data-testid="digest-detail"]')?.textContent).toContain("Ran a command");
-  });
-
-  it("folds a turn's narration under one quiet row", () => {
-    const node = mount(createElement(TurnNarrationRun, { label: "Worked for 12s", children: createElement("p", null, "first narration") }));
-    expect(node.textContent).toContain("Worked for 12s");
-    expect(node.textContent).not.toContain("first narration");
-    click(node.querySelector("button"));
-    expect(node.textContent).toContain("first narration");
   });
 });

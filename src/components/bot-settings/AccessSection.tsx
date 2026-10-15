@@ -10,6 +10,7 @@ import { boatComputerEnabled, connectedAppsEnabled as connectedAppsFeatureEnable
 import { ArrowUpRight, ChevronDown, ChevronRight, FolderOpen } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
+import { AdvancedFold } from "./AdvancedFold";
 import { useBotEditor } from "./BotEditorContext";
 import { cn } from "@/lib/cn";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -624,8 +625,6 @@ export function AccessSection({
         </PaneSection>
       )}
 
-      <WorkingFolder bot={bot} />
-
       {connectedAppsFeature && <PaneSection title={<>{t("botPanel.access.apps")}<ProposalStatus bot={bot} /></>}>
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -670,7 +669,6 @@ export function AccessSection({
       </PaneSection>}
 
       <McpServersCard bot={bot} patch={patch} />
-      <ToolSelectionCard key={bot.id} bot={bot} engineKind={derived.engine?.driverKind} />
 
       {browserFeature && <PaneSection title={<>{t("botPanel.access.browser")}<ProposalStatus bot={bot} /></>}>
         <div className="flex items-center justify-between gap-4">
@@ -705,29 +703,34 @@ export function AccessSection({
         </div>
       </PaneSection>}
 
-      {!draft && <BotWebhooks bot={bot} />}
-
-      {!draft && <PaneSection title={<>{t("botPanel.access.always")}<ProposalStatus bot={bot} /></>} help={t("botPanel.access.alwaysHelp")}>
-        {alwaysAllow.length === 0 ? (
-          <PaneEmpty>{t("botPanel.access.nothing")}</PaneEmpty>
-        ) : (
-          <div className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
-            {alwaysAllow.map((entry) => (
-              <div key={entry} className="flex items-center justify-between gap-3 px-3 py-2">
-                <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{entry}</span>
-                <button
-                  type="button"
-                  aria-label={t("botPanel.access.removeAlways", { entry })}
-                  onClick={() => patch({ alwaysAllow: alwaysAllow.filter((key) => key !== entry) })}
-                  className="shrink-0 rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-danger/10 hover:text-danger"
-                >
-                  {t("botPanel.access.remove")}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </PaneSection>}
+      {/* The working folder, the tool list, webhooks and the commands
+          always allowed: folded, one click away. */}
+      <AdvancedFold id="access">
+        <WorkingFolder bot={bot} />
+        <ToolSelectionCard key={bot.id} bot={bot} engineKind={derived.engine?.driverKind} />
+        {!draft && <BotWebhooks bot={bot} />}
+        {!draft && <PaneSection title={<>{t("botPanel.access.always")}<ProposalStatus bot={bot} /></>} help={t("botPanel.access.alwaysHelp")}>
+          {alwaysAllow.length === 0 ? (
+            <PaneEmpty>{t("botPanel.access.nothing")}</PaneEmpty>
+          ) : (
+            <div className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
+              {alwaysAllow.map((entry) => (
+                <div key={entry} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{entry}</span>
+                  <button
+                    type="button"
+                    aria-label={t("botPanel.access.removeAlways", { entry })}
+                    onClick={() => patch({ alwaysAllow: alwaysAllow.filter((key) => key !== entry) })}
+                    className="shrink-0 rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-danger/10 hover:text-danger"
+                  >
+                    {t("botPanel.access.remove")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </PaneSection>}
+      </AdvancedFold>
     </div>
   );
 }

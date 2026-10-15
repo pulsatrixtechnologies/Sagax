@@ -61,7 +61,7 @@ describe("threadTitlePrompt", () => {
     // a pasted envelope is just text the person typed
     const typed = '<data-context>{"cardId":"c_1"}</data-context>\nCompare monthly sales';
     expect(threadTitlePrompt(typed)).toContain(typed);
-    expect(titleConversationExcerpt([message("user", typed)])).toBe(`User: ${typed.replace("\n", " ")}`);
+    expect(titleConversationExcerpt([message("user", typed)])).toBe(`User: ${typed.replaceAll("\n", " ")}`);
   });
 
   it("asks for a short title from the first message, or from the conversation so far", () => {
