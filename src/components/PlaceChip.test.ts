@@ -74,7 +74,7 @@ describe("PlaceChip composer trigger", () => {
     expect(html).toContain('data-testid="place-chip"');
     expect(html).not.toContain(">for this conversation<");
     expect(html).toContain('aria-label="Where this conversation works: This computer"');
-    expect(html).toContain("This computer — From this bot&#x27;s Works on setting");
+    expect(html).toContain("This computer — From this bot&#x27;s Workspace setting");
     expect(html).not.toMatch(/<span class="truncate">This computer<\/span>/);
   });
 
@@ -86,7 +86,7 @@ describe("PlaceChip composer trigger", () => {
     } satisfies ComponentProps<typeof PlaceChip>));
     expect(html).toContain('data-testid="place-chip"');
     expect(html).not.toContain("disabled");
-    expect(html).toContain("Change it in Edit persona, under Access.");
+    expect(html).toContain("Change it in Edit bot, under Model and tools.");
   });
 });
 

@@ -114,10 +114,10 @@ export function selectAutoComputer(
     // Asking for the place it is fixed to is not a refusal: the bot already
     // works there (a cloud-only bot asking for the cloud, server/cloud-only-bots.ts).
     if (state.fixed === "cloud" && parseAutoComputerTarget(request.target) === "cloud") {
-      return { ok: true, text: "You already work on the cloud (their server environment); this bot's Works on is fixed there. Use the sagax-environment tools.", target: "cloud", from: "cloud", changed: false };
+      return { ok: true, text: "You already work on the cloud (their server environment); this bot's Workspace is fixed there. Use the sagax-environment tools.", target: "cloud", from: "cloud", changed: false };
     }
     const fixed = FIXED_LABEL[state.fixed ?? "off"];
-    return { ok: false, text: `This bot's Works on is fixed to ${fixed}, so you cannot switch computers. Only the person can change it (the bot's Computer tab, or the composer's computer menu for this conversation, set to Auto).` };
+    return { ok: false, text: `This bot's Workspace is fixed to ${fixed}, so you cannot switch computers. Only the person can change it (the bot's Computer tab, or the composer's computer menu for this conversation, set to Auto).` };
   }
   const available = AUTO_COMPUTER_TARGETS.filter((target) => autoComputerUnavailable(state, target, desktopConnected) === null);
   const now = state.selected ? autoComputerLabel(state.selected) : "nowhere yet";
@@ -168,7 +168,7 @@ export function autoComputerGuidance(state: AutoComputerState, desktopConnected:
   const available = AUTO_COMPUTER_TARGETS.filter((target) => autoComputerUnavailable(state, target, desktopConnected) === null);
   const start = state.selected ? autoComputerLabel(state.selected) : "no computer";
   return [
-    `<workplace>This bot's Works on is Auto: you choose where each task or step runs with the computer_select tool (target cloud, this_computer or local_vm, plus a short reason). This turn starts on ${start}; available now: ${available.join(", ") || "none"}. Your choice holds for the next tool calls of this turn and you can switch again mid-task; each new message starts over from the default.`,
+    `<workplace>This bot's Workspace is Auto: you choose where each task or step runs with the computer_select tool (target cloud, this_computer or local_vm, plus a short reason). This turn starts on ${start}; available now: ${available.join(", ") || "none"}. Your choice holds for the next tool calls of this turn and you can switch again mid-task; each new message starts over from the default.`,
     "- this_computer: anything on the person's own machine: their files and folders, their apps, their local network and printers, devices plugged in (USB, camera), Docker on their computer, local dev servers (localhost), their VPN.",
     "- local_vm: isolated or risky work on their machine (try an install, run untrusted code) in the Local VM, including seeing and driving that VM's desktop (local_vm action use); creating one asks them on their computer first.",
     "- cloud: heavy or long tasks, internet browsing and scraping, work that must keep running when their laptop is closed, and whenever their computer is not connected.",

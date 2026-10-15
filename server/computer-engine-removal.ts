@@ -78,8 +78,8 @@ export function computerEngineMoveText(
       ? `${noComputer} ${bot ? `${botName} no longer works on its` : `it no longer works on ${botName}'s`}` +
         " cloud computer. To use it again, choose a model that can use a computer."
     : move.noComputer === "works-on"
-      ? `${noComputer} ${botName} can't reply on ${engine} while its Works on is Cloud computer.` +
-        " Choose a model that can use a computer, or set Works on to Auto."
+      ? `${noComputer} ${botName} can't reply on ${engine} while its Workspace is Cloud computer.` +
+        " Choose a model that can use a computer, or set Workspace to Auto."
     : move.noComputer === "pin"
       ? `${noComputer} ${botName} can't reply here while this conversation is pinned to its cloud computer.` +
         " Choose a model that can use a computer, or clear this conversation's place in the composer."

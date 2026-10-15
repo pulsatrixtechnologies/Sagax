@@ -6,9 +6,10 @@
 // "visibility" only to an admin in a browser (never in the desktop app), and
 // "sharing" only on a server signed in with Perspicax, where it replaces
 // "visibility"; "perspicax" (the MCP profiles the bot offers) only there too.
-// Works on is its own row, labelled Computer, immediately after Access.
+// Works on is its own page, labelled Workspace (JC 2026-10-15).
 // "appearance" (the mascot gallery and the picture sources) is the persona
-// editor's second category, right after Overview.
+// editor's second page, right after the identity (Overview). "summary" (What
+// it does) is the Profile group's last page.
 // The Computer tab is the screen only.
 import {
   BookOpen,
@@ -19,6 +20,7 @@ import {
   Eye,
   FolderTree,
   History,
+  Info,
   LayoutDashboard,
   type LucideIcon,
   Mic,
@@ -45,7 +47,8 @@ export const BOT_SECTIONS: Array<{
   icon: LucideIcon;
   keywords: string[];
 }> = [
-  { id: "overview", label: "Overview", labelKey: "botSettings.nav.overview", icon: LayoutDashboard, keywords: ["summary", "status", "what it does", "won't", "prompt", "what the model sees"] },
+  { id: "overview", label: "Identity", labelKey: "persona.page.identity", icon: LayoutDashboard, keywords: ["identity", "name", "label", "description", "owner", "engine", "status"] },
+  { id: "summary", label: "What it does", labelKey: "persona.overview.summary", icon: Info, keywords: ["summary", "what it does", "won't", "reaches", "prompt", "what the model sees"] },
   { id: "appearance", label: "Appearance", labelKey: "botSettings.nav.appearance", icon: Palette, keywords: ["appearance", "mascot", "avatar", "character", "skin", "color", "colour", "look", "picture", "image", "generate", "upload", "moves"] },
   { id: "slack", label: "Slack", icon: Slack, keywords: ["slack", "slack app", "admin", "message", "direct messages", "mentions"] },
   { id: "soul", label: "Personality", labelKey: "botSettings.nav.soul", icon: Sparkles, keywords: ["standing instructions", "instructions", "persona", "soul", "personality", "rules", "soul.md"] },
@@ -55,7 +58,7 @@ export const BOT_SECTIONS: Array<{
   { id: "files", label: "Bot folder", labelKey: "botSettings.nav.files", icon: FolderTree, keywords: ["files", "workspace", "docs", "documents", "markdown", "folder", "upload", "procedures", "templates"] },
   { id: "routines", label: "Routines", labelKey: "botSettings.nav.routines", icon: CalendarClock, keywords: ["schedule", "routines", "cron", "tasks"] },
   { id: "access", label: "Access", labelKey: "botSettings.nav.access", icon: Network, keywords: ["computer", "vm", "cloud", "vps", "folder", "workspace", "browser", "connected apps", "composio", "webhooks", "always allow", "grants", "tool selection", "tools", "mcp", "allow", "exclude"] },
-  { id: "worksOn", label: "Computer", labelKey: "botSettings.nav.computer", icon: Monitor, keywords: ["works on", "computer", "auto", "cloud", "local vm", "vm", "this computer", "browser", "off", "where it works"] },
+  { id: "worksOn", label: "Workspace", labelKey: "computer.worksOn", icon: Monitor, keywords: ["workspace", "zone de travail", "works on", "computer", "auto", "cloud", "local vm", "vm", "this computer", "browser", "off", "where it works"] },
   { id: "model", label: "Model", labelKey: "botSettings.nav.model", icon: Cpu, keywords: ["engine", "model", "provider", "cli", "effort"] },
   { id: "permissions", label: "Permissions", labelKey: "botSettings.nav.permissions", icon: ShieldCheck, keywords: ["auto mode", "approve", "auto approve", "review", "routine approvals", "peers", "contact", "coordination", "chief of staff", "section"] },
   { id: "voice", label: "Voice & alerts", labelKey: "botSettings.nav.voice", icon: Mic, keywords: ["voice", "alerts", "notifications", "speak"] },
