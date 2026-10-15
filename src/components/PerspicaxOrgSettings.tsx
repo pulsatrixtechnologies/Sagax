@@ -1,6 +1,6 @@
 // Settings > Organization on a server signed in with Perspicax (slice 3):
 // the link line, the viewer's role, and one link to the Perspicax console.
-// Below that card: interim people, sharing, full access, plugin policy and,
+// Below that card: interim people, sharing, full access and,
 // for admins, the server commands waiting for an admin.
 // Slice 4 adds Sharing in the organization (the bots whose sharing the
 // viewer administers; an admin can force-stop or force-delete any of them).
@@ -21,7 +21,6 @@ import { Card } from "./SettingsPrimitives";
 import { OrgSharing } from "./settings/OrgSharing";
 import { InterimPeople } from "./settings/InterimPeople";
 
-import { OrgPluginPolicy } from "./settings/OrgPluginPolicy";
 import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
 
 interface PendingAdminApproval {
@@ -119,15 +118,6 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
       {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
       <OrgSharing admin={admin} />
       {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
-      {admin && (
-        <OrgPluginPolicy
-          marketplaces={org.settings.pluginMarketplaces ?? { mode: "any" }}
-          github={org.settings.github ?? { clientId: null, fromEnvironment: false }}
-          tokens={org.settings.githubTokens ?? []}
-          tokensUnavailable={org.settings.githubTokensUnavailable === true}
-          onChanged={onChanged}
-        />
-      )}
       {admin && (
         <Card cardId="organization.adminApprovals" title={t("organization.adminApprovals.title")} summary={approvals?.length ? String(approvals.length) : ""}>
           {!approvals?.length ? (

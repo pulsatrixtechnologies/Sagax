@@ -1243,6 +1243,10 @@ export interface AppState {
   /** The bot Connect apps opens on, in its "For this bot" scope (a bot
    * panel sent the person there); null: the workspace scope. */
   pluginsBotId: string | null;
+  /** A place inside Connect apps to open at: "orgAccess" is Manage >
+   * Advanced > Organization sources and access (an old link to Settings >
+   * Organization > Plugins and GitHub lands there). */
+  pluginsPage: "orgAccess" | null;
   /** The Triggers pop-up (webhooks, as a sentence: when this happens, that
    * bot should…). */
   triggersOpen: boolean;
@@ -1635,7 +1639,7 @@ export type Action =
    * notification of a routine run refused in another person's thread. */
   | { type: "openBotActivity"; botId: string; itemId: string }
   | { type: "botActivityOpened" }
-  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null }
+  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | null }
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "toggleComputer"; open?: boolean }
@@ -2658,7 +2662,8 @@ export function reducer(state: AppState, action: Action): AppState {
         pluginsSurface: action.surface ?? state.pluginsSurface,
         // A bot panel opens it on that bot; a change of surface while it is
         // open keeps the bot it is on.
-        pluginsBotId: !open ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
+        pluginsBotId: !open ? null : action.page === "orgAccess" ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
+        pluginsPage: open ? action.page ?? null : null,
         ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
       };
     }
@@ -3225,6 +3230,7 @@ export const initialState: AppState = {
   pluginsOpen: false,
   pluginsSurface: "apps",
   pluginsBotId: null,
+  pluginsPage: null,
   triggersOpen: false,
   newBotOpen: false,
   botCreationPending: false,

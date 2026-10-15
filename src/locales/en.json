@@ -3664,7 +3664,6 @@
   "myConnections.github.connectedAs": "Connected as @{login}",
   "myConnections.github.copyCode": "Copy code",
   "myConnections.github.disconnect": "Disconnect",
-  "myConnections.github.noDeviceFlow": "Your administrator has not set up a GitHub OAuth App for this server (Settings > Organization). Paste a personal access token instead.",
   "myConnections.github.notConnected": "GitHub is not connected.",
   "myConnections.github.openGithub": "Open GitHub",
   "myConnections.github.saveToken": "Connect",
@@ -4074,14 +4073,11 @@
   "organization.payOrder.text": "Each turn runs on the subscription of the person who speaks first, then on their key in Perspicax, then on the organization's key if an admin set one. A bot's routines always use its owner's credentials.",
   "organization.payOrder.title": "Who pays for a turn",
   "organization.plugins.any": "Any marketplace",
-  "organization.plugins.anySummary": "Any marketplace",
   "organization.plugins.hint": "Bot owners add plugins to their own bots from these marketplaces. A plugin's hooks and MCP servers never run on the server.",
   "organization.plugins.list": "Only these (owner/repo, owner/* or https addresses)",
-  "organization.plugins.listSummary": "Allowed list",
   "organization.plugins.marketplaces": "Allowed marketplaces",
   "organization.plugins.save": "Save",
   "organization.plugins.saved": "Saved.",
-  "organization.plugins.title": "Plugins and GitHub",
   "organization.privacy": "Connecting does not upload your chat history. Requests sent to Company models go through your organization’s gateway.",
   "organization.reauth": "Company access needs a new sign-in. Disconnect below, then sign in again. Personal and local models are still available.",
   "organization.refresh": "Refresh",
@@ -7601,5 +7597,8 @@
   "botSettings.nav.skills": "Skills",
   "computer.back": "Back",
   "computer.more": "More computer actions",
-  "botPanel.moreOptions": "More options"
+  "botPanel.moreOptions": "More options",
+  "connectApps.orgAccess.intro": "For the whole organization, admins only: where plugins may come from, the GitHub access tokens that read private repositories, and the GitHub OAuth App behind Connect GitHub.",
+  "connectApps.orgAccess.title": "Organization sources and access",
+  "myConnections.github.noDeviceFlow": "Your administrator has not set up a GitHub OAuth App for this server (Connect apps > Manage > Organization sources and access). Paste a personal access token instead."
 }
