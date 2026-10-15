@@ -78,7 +78,9 @@ describe("browser tab: a live preview like the VM's screen", () => {
     expect(image.alt).toBe("Assistant’s browser");
     await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => resolve(null))); });
     expect(api).toHaveBeenCalledWith("/api/bots/cryptic/browser/action", expect.objectContaining({ method: "POST", body: JSON.stringify({ type: "ack", seq: 1, viewerId: "viewer-1" }) }));
-    expect(document.querySelector("[data-browser-preview] [data-take-control]")?.textContent).toContain("Take control");
+    expect(document.querySelector("[data-browser-preview][data-take-control]")?.textContent).toContain("Take control");
+    // Shown on hover, always on touch, not drawn over the page otherwise.
+    expect(document.querySelector("[data-take-control-pill]")?.className).toMatch(/opacity-0 .*group-hover\/preview:opacity-100 .*touch:opacity-100/);
     // The caption: one line, the whole name in its tooltip.
     const caption = document.querySelector("figcaption")!;
     expect(caption.className).toContain("truncate");
@@ -127,17 +129,81 @@ describe("browser tab: take control opens the VM's window, not full screen", () 
     expect(dialog.querySelector("[role=group]")).toBeNull();
   });
 
-  it("releases control in the window, then takes it again", async () => {
+  it("says who has the browser in the window, with Take control, and no second toggle in the header", async () => {
     await render();
     await showFrame();
     await takeControl();
-    const toggle = () => document.querySelector("[data-takeover-control]") as HTMLButtonElement;
-    expect(toggle().getAttribute("data-takeover-control")).toBe("release");
-    await act(async () => toggle().click());
-    expect(toggle().getAttribute("data-takeover-control")).toBe("take");
-    expect(document.body.textContent).toContain("Watching, read-only");
-    await act(async () => toggle().click());
-    expect(toggle().getAttribute("data-takeover-control")).toBe("release");
+    expect(document.querySelector("[data-takeover-control]")).toBeNull();
+    const source = live()[0]!;
+    await emit(source, "ready", { viewerId: "viewer-live" });
+    await emit(source, "control", { held: false, controlling: false, owned: false });
+    expect(document.querySelector("[data-browser-holder]")?.textContent).toContain("Assistant is using the browser");
+    await act(async () => (document.querySelector("[data-browser-take]") as HTMLButtonElement).click());
+    expect(api).toHaveBeenCalledWith("/api/bots/cryptic/browser/action", expect.objectContaining({ body: JSON.stringify({ type: "take", viewerId: "viewer-live" }) }));
+    await emit(source, "control", { held: true, controlling: true, owned: true });
+    expect(document.querySelector("[data-browser-holder]")?.getAttribute("data-browser-holder")).toBe("you");
+    expect(document.querySelector("[data-browser-give-back]")?.textContent).toContain("Give back control");
+  });
+
+  it("takes a blank browser to the start page when the window opens, but never moves a real page", async () => {
+    await render();
+    await showFrame();
+    await takeControl();
+    const source = live()[0]!;
+    await emit(source, "ready", { viewerId: "viewer-live" });
+    await emit(source, "tabs", { tabs: [{ tabId: "t1", title: "", url: "about:blank", active: true }] });
+    await act(async () => { for (let turn = 0; turn < 20; turn++) await Promise.resolve(); });
+    const sent = api.mock.calls.filter(([path]) => path === "/api/bots/cryptic/browser/action").map(([, init]) => JSON.parse(init.body).type);
+    expect(sent).toEqual(expect.arrayContaining(["take", "navigate"]));
+    expect(api).toHaveBeenCalledWith("/api/bots/cryptic/browser/action", expect.objectContaining({ body: JSON.stringify({ type: "navigate", url: "https://www.google.com/", viewerId: "viewer-live" }) }));
+    api.mockClear();
+    await emit(source, "tabs", { tabs: [{ tabId: "t1", title: "", url: "about:blank", active: true }] });
+    expect(api.mock.calls.filter(([path, init]) => path === "/api/bots/cryptic/browser/action" && JSON.parse(init.body).type !== "ack")).toEqual([]);
+  });
+
+  it("leaves a page the bot has open where it is", async () => {
+    await render();
+    await showFrame();
+    await takeControl();
+    const source = live()[0]!;
+    await emit(source, "ready", { viewerId: "viewer-live" });
+    await emit(source, "tabs", { tabs: [{ tabId: "t1", title: "Example", url: "https://example.com/", active: true }] });
+    await act(async () => { for (let turn = 0; turn < 20; turn++) await Promise.resolve(); });
+    expect(api.mock.calls.filter(([path, init]) => path === "/api/bots/cryptic/browser/action" && JSON.parse(init.body).type !== "ack")).toEqual([]);
+  });
+
+  it("shows the last preview picture in the window while the live view connects", async () => {
+    await render();
+    await showFrame();
+    await takeControl();
+    const placeholder = document.querySelector("[data-browser-placeholder] img") as HTMLImageElement;
+    expect(placeholder.src).toBe("data:image/jpeg;base64,/9j/AAAA");
+    await emit(live()[0]!, "ready", { viewerId: "viewer-live" });
+    await emit(live()[0]!, "frame", FRAME);
+    expect(document.querySelector("[data-browser-placeholder]")).toBeNull();
+  });
+
+  it("draws a blank page as nothing open, with Take control, and keeps acknowledging frames", async () => {
+    await render();
+    const source = preview()[0]!;
+    await emit(source, "ready", { viewerId: "viewer-1" });
+    await emit(source, "tabs", { tabs: [{ tabId: "t1", title: "", url: "about:blank", active: true }] });
+    await emit(source, "frame", FRAME);
+    expect(document.querySelector("[data-browser-preview] img")).toBeNull();
+    expect(document.querySelector("[data-browser-blank]")?.textContent).toContain("The browser is not open");
+    expect(document.querySelector("[data-browser-blank] [data-take-control]")?.textContent).toContain("Take control");
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => resolve(null))); });
+    expect(api).toHaveBeenCalledWith("/api/bots/cryptic/browser/action", expect.objectContaining({ body: JSON.stringify({ type: "ack", seq: 1, viewerId: "viewer-1" }) }));
+    await emit(source, "url", { url: "https://www.google.com/" });
+    expect(document.querySelector("[data-browser-preview] img")).not.toBeNull();
+  });
+
+  it("keeps Take control in view while the bot waits on the person", async () => {
+    await act(async () => root.render(createElement(BrowserComputerScreen, { bot: { ...bot, tasks: [{ threadId: "t", activity: "waiting-on-you" }] } as unknown as Bot })));
+    await showFrame();
+    expect(document.querySelector("[data-take-control-pill]")?.getAttribute("data-take-control-pill")).toBe("shown");
+    expect(document.querySelector("[data-take-control-pill]")?.className).toContain("opacity-100");
+    expect(document.querySelector("[data-take-control-pill]")?.className).not.toContain("opacity-0");
   });
 
   it("closes on Escape outside the page, ends the live connection and resumes the preview", async () => {

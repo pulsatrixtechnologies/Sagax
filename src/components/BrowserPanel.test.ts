@@ -414,29 +414,45 @@ describe("live browser control affordance", () => {
   });
 
   it.each([
-    ["the bot has the browser", { held: false, controlling: false, owned: false }],
-    ["this viewer holds it", { held: true, controlling: true, owned: true }],
-  ])("has no Take control or Return to bot button while %s", (_state, control) => {
+    ["the bot has the browser", { held: false, controlling: false, owned: false }, "bot", "Pepper is using the browser", "Take control"],
+    ["this viewer holds it", { held: true, controlling: true, owned: true }, "you", "You have control", "Give back control"],
+  ])("says who has the browser, with the one button that changes it, while %s", (_state, control, holder, words, action) => {
     fixture.control = control;
+    fixture.states = { 4: true };
     const html = render();
-    expect(html).not.toMatch(/Take control|Return to bot|aria-pressed/);
+    expect(html).toContain(`data-browser-holder="${holder}"`);
+    expect(html).toContain(words);
+    expect(html).toContain(action);
+    expect(html).not.toContain(action === "Take control" ? "Give back control" : ">Take control<");
     expect(html).toContain('aria-label="Browser profiles"');
     expect(html).toContain("Restart browser…");
+  });
+
+  it("offers no Take control before the live view connects or while another window holds it", () => {
+    expect(render()).not.toMatch(/data-browser-take|data-browser-give-back/);
+    fixture.states = { 4: true };
+    fixture.control = { held: true, controlling: true, owned: false };
+    expect(render()).not.toMatch(/data-browser-take|data-browser-give-back/);
+  });
+
+  it("shows the preview's last picture, dimmed, while the live view connects", () => {
+    const html = renderToStaticMarkup(createElement(LiveBrowser, { bot, placeholder: "data:image/jpeg;base64,AAAA" }));
+    expect(html).toContain("data-browser-placeholder");
+    expect(html).toContain('src="data:image/jpeg;base64,AAAA"');
+    expect(html).toContain("Connecting…");
   });
 
   // The status floats over the live view, so its words show at any panel width
   // and it never takes a click from the page.
   const status = (html: string) => /<div role="status"([^>]*)>(.*?)<\/div><\/div><dialog/.exec(html)!;
 
-  it("shows a status pill, not a control, over the page only while this viewer holds the browser", () => {
+  it("keeps the status over the page for waits only: who has the browser is in the bar", () => {
     expect(status(render())[2]).toBe("");
     fixture.control = { held: true, controlling: true, owned: true };
     fixture.frame = { seq: 1, data: "fixture", viewerId: "current-viewer", generation: 1 };
     const [, attributes, pill] = status(render());
     expect(attributes).toContain("pointer-events-none");
-    expect(pill).toContain("You’re using the browser");
-    expect(pill).toContain('aria-description="Pepper’s browser tools are paused while you use it. Control goes back to Pepper after a few seconds without input."');
-    expect(pill).not.toMatch(/<button|<a |sr-only/);
+    expect(pill).toBe("");
   });
 
   it("says, in words, that it is waiting for the bot once a take is slow", () => {

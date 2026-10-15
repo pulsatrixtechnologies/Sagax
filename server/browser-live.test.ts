@@ -115,7 +115,7 @@ describe("browser viewer protocol boundary", () => {
   });
   it("maps only fixed navigation/tab verbs and rejects executable URLs and flags", () => {
     expect(parseBrowserLiveAction({ type: "navigate", url: "https://example.com/?q=hi", command: "eval", args: ["secret"] })).toEqual({ type: "command", args: ["open", "https://example.com/?q=hi"] });
-    expect(parseBrowserLiveAction({ type: "tab-new" })).toEqual({ type: "command", args: ["tab", "new"] });
+    expect(parseBrowserLiveAction({ type: "tab-new" })).toEqual({ type: "command", args: ["tab", "new", "https://www.google.com/"] });
     expect(parseBrowserLiveAction({ type: "tab-select", tabId: "t2" })).toEqual({ type: "command", args: ["tab", "t2"] });
     for (const url of ["javascript:alert(1)", "file:///etc/passwd", "data:text/html,x", "--cdp=9222", "https://a:secret@example.com", "https://example.com\n--headed", "http:\\example.com"]) expect(() => parseBrowserLiveAction({ type: "navigate", url })).toThrow();
     for (const body of [{ type: "eval", script: "1" }, { type: "press", key: "Control+a" }, { type: "tab-close", tabId: "--all" }, { type: "tab-select", tabId: 1 }, { type: "config", port: 1 }]) expect(() => parseBrowserLiveAction(body)).toThrow();
@@ -188,12 +188,12 @@ describe("authenticated browser viewer relay", () => {
     expect(execute.mock.calls[0]?.[2].env).not.toHaveProperty("PRIVATE_SERVER_SECRET");
     expect(execute.mock.calls[0]?.[2].env).not.toHaveProperty("AGENT_BROWSER_CDP");
   });
-  it("only enables disabled streams and launches a blank browser without navigating an existing one", async () => {
+  it("only enables disabled streams and launches a closed browser on the start page without navigating an existing one", async () => {
     execute.mockResolvedValueOnce(output({ enabled: false, connected: false, port: null }))
       .mockResolvedValueOnce(output({ ...ready, connected: false })).mockResolvedValueOnce(output({ launched: true }));
     await open();
     expect(execute.mock.calls.map((call) => call[1])).toEqual([
-      ["stream", "status", "--json", "--no-webmcp"], ["stream", "enable", "--json", "--no-webmcp"], ["open", "--json", "--no-webmcp"],
+      ["stream", "status", "--json", "--no-webmcp"], ["stream", "enable", "--json", "--no-webmcp"], ["open", "https://www.google.com/", "--json", "--no-webmcp"],
     ]);
   });
   it("fails closed on missing ports and sanitizes CLI errors without ending an unwritten error response", async () => {
@@ -220,7 +220,7 @@ describe("authenticated browser viewer relay", () => {
     await expect(refused).rejects.toBeInstanceOf(BrowserActionFailedError);
     // The engine answered with success:false and exit 0 too.
     execute.mockResolvedValueOnce({ stdout: JSON.stringify({ success: false, error: "element not found" }), stderr: "" });
-    await expect(action({ type: "tab-new" })).rejects.toMatchObject({ settled: true, message: "The browser could not do that. Try again." });
+    await expect(action({ type: "back" })).rejects.toMatchObject({ settled: true, message: "The browser could not do that. Try again." });
     execute.mockResolvedValueOnce(output({ url: "https://duckduckgo.com/?q=google" }));
     await expect(action({ type: "navigate", url: "https://duckduckgo.com/?q=google" })).resolves.toEqual({ ok: true });
   });
@@ -299,11 +299,19 @@ describe("authenticated browser viewer relay", () => {
     };
     await view({ AGENT_BROWSER_HEADLESS: "1" }, { ...ready, connected: false });
     expect(execute.mock.calls.map((call) => call[1])).toEqual([
-      ["stream", "status", "--json", "--no-webmcp"], ["open", "--json", "--no-webmcp"], ["set", "viewport", "1280", "720", "--json", "--no-webmcp"],
+      ["stream", "status", "--json", "--no-webmcp"], ["open", "https://www.google.com/", "--json", "--no-webmcp"], ["set", "viewport", "1280", "720", "--json", "--no-webmcp"],
     ]);
     expect(execute.mock.calls[2]?.[2]).toMatchObject({ timeout: 5_000 });
     live.closeAll();
     await view({ AGENT_BROWSER_HEADLESS: "1" });
+    expect(execute.mock.calls.map((call) => call[1].slice(0, 2))).toEqual([["stream", "status"], ["set", "viewport"]]);
+    live.closeAll();
+    // Already running before this view, not launched by its probe: sized at
+    // its own launch, so Take control does not wait on a second sizing.
+    await view({ AGENT_BROWSER_HEADLESS: "1" }, { ...ready, lifecycle: { launched: false } } as typeof ready);
+    expect(execute.mock.calls.map((call) => call[1].slice(0, 2))).toEqual([["stream", "status"]]);
+    live.closeAll();
+    await view({ AGENT_BROWSER_HEADLESS: "1" }, { ...ready, lifecycle: { launched: true } } as typeof ready);
     expect(execute.mock.calls.map((call) => call[1].slice(0, 2))).toEqual([["stream", "status"], ["set", "viewport"]]);
     live.closeAll();
     await view({ AGENT_BROWSER_HEADLESS: "1", AGENT_BROWSER_CDP: "http://127.0.0.1:9222" });
