@@ -24,11 +24,21 @@ import readline from "node:readline";
 import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
 import { callTool, capResult, toolCallContextFromEnv } from "./agents-call.ts";
 import type { Json } from "./agents-client.ts";
+import { guardToolCall, permissionModeFromEnv, principalFromEnv } from "../mcp-permissions.ts";
 
 const AVAILABLE_TOOLS = availableTools(catalogProfileFromEnv(process.env));
 // A warm engine keeps this process across its turns; the harness keeps
 // every per-turn limit, so nothing here counts.
 const CONTEXT = toolCallContextFromEnv(process.env);
+// Permission check and audit row for every call (docs/mcp/permissions.md).
+// SAGAX_MCP_PERMISSIONS: off | shadow (default, records only) | enforce.
+const GUARD = {
+  principal: principalFromEnv(process.env),
+  mode: permissionModeFromEnv(process.env),
+  ownBotId: CONTEXT.botId,
+  // One JSON line per call on stderr; never arguments, text or results.
+  audit: (record: unknown) => process.stderr.write(`[mcp-audit] ${JSON.stringify(record)}\n`),
+};
 
 const send = (msg: Json) => process.stdout.write(JSON.stringify(msg) + "\n");
 const ok = (id: unknown, result: unknown) => send({ jsonrpc: "2.0", id, result });
@@ -62,7 +72,7 @@ async function handle(msg: Json) {
       const name = params.name as string;
       if (!AVAILABLE_TOOLS.some((t) => t.name === name)) return rpcErr(id, -32602, `Unknown tool: ${name}`);
       try {
-        const { text, isError, passthrough } = await callTool(name, (params.arguments ?? {}) as Json, CONTEXT);
+        const { text, isError, passthrough } = await guardToolCall(GUARD, name, (params.arguments ?? {}) as Json, () => callTool(name, (params.arguments ?? {}) as Json, CONTEXT)) as Awaited<ReturnType<typeof callTool>>;
         if (passthrough) ok(id, passthrough);
         else textResult(id, name === "tool_result_read" ? text : await capResult(text, CONTEXT), isError);
       } catch (e) {
