@@ -23,8 +23,8 @@ import readline from "node:readline";
 
 import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
 import { callTool, capResult, toolCallContextFromEnv } from "./agents-call.ts";
-import type { Json } from "./agents-client.ts";
-import { guardToolCall, permissionModeFromEnv, principalFromEnv } from "../mcp-permissions.ts";
+import { harnessClientFromEnv, type Json } from "./agents-client.ts";
+import { deniedResourcesFromEnv, guardToolCall, permissionModeFromEnv, principalFromEnv } from "../mcp-permissions.ts";
 
 const AVAILABLE_TOOLS = availableTools(catalogProfileFromEnv(process.env));
 // A warm engine keeps this process across its turns; the harness keeps
@@ -36,8 +36,15 @@ const GUARD = {
   principal: principalFromEnv(process.env),
   mode: permissionModeFromEnv(process.env),
   ownBotId: CONTEXT.botId,
-  // One JSON line per call on stderr; never arguments, text or results.
-  audit: (record: unknown) => process.stderr.write(`[mcp-audit] ${JSON.stringify(record)}\n`),
+  deniedResources: deniedResourcesFromEnv(process.env),
+  // The server's activity log first; one JSON line on stderr when the
+  // server cannot be reached. Never arguments, text or results.
+  audit: (record: unknown) => {
+    const line = `[mcp-audit] ${JSON.stringify(record)}\n`;
+    void harnessClientFromEnv(process.env).apiResponse("/api/internal/mcp-audit", { method: "POST", body: JSON.stringify(record) })
+      .then((r) => { if (!r.ok) process.stderr.write(line); })
+      .catch(() => process.stderr.write(line));
+  },
 };
 
 const send = (msg: Json) => process.stdout.write(JSON.stringify(msg) + "\n");

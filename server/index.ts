@@ -19,6 +19,7 @@ import { homedir } from "node:os";
 import { ToolGrantStore } from "./tool-grants.ts";
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
+import { deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, permissionModeFromEnv, principalFromEnv, type McpAuditRecord } from "./mcp-permissions.ts";
 import { misusePathRefusal, misuseRefusal, misuseToolFrameText, setMisuseAlert } from "./misuse-guardrails.ts";
 import {
   openSafetyHold,
@@ -3489,6 +3490,12 @@ function groupMemoryWritable(group: GroupRecord | undefined, botId: string): boo
   return Boolean(group) && groupMemoryEnabled(group) && group!.memberIds.includes(botId) && store.bot(botId)?.memoryEnabled !== false;
 }
 
+function mcpIdentityOf(botId: string, threadId: string): Parameters<typeof mcpIdentityEnv>[0] {
+  const speakerId = safetyPrincipal(threadId).principalId;
+  const person = speakerId ? principals.byId(speakerId) : undefined;
+  return { botId, ...(speakerId ? { principalId: speakerId } : {}), perspicaxRole: person?.perspicaxRole, teamIds: (person?.teams ?? []).map((team) => team.id) };
+}
+
 function agentsIntegration(
   botId: string,
   threadId: string,
@@ -3558,6 +3565,8 @@ function agentsIntegration(
       // The Perspicax gateway tools on an organization server linked to Perspicax;
       // /api/internal/perspicax/tool re-checks that a profile is mounted.
       SAGAX_PERSPICAX_TOOLS: IDENTITY.kind === "perspicax" && perspicaxMcp ? "1" : "0",
+      // Who the permission layer judges (server/mcp-permissions.ts).
+      ...mcpIdentityEnv(mcpIdentityOf(botId, threadId)),
     },
   };
 }
@@ -26211,6 +26220,17 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     routineSubjectToken: (principalId) => routineConsents ? routineConsents.subjectToken(principalId) : Promise.resolve({ ok: false as const, error: "no_session" as const }),
     delegationRefused: (principalId) => routineConsents?.dropCache(principalId),
     botProfiles: (id) => store.bot(id)?.perspicax?.profiles,
+    permissionGuard: ({ botId, principalId }) => {
+      const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
+      const env = mcpIdentityEnv({ botId, principalId, perspicaxRole: person?.perspicaxRole, teamIds: (person?.teams ?? []).map((team) => team.id) });
+      return {
+        principal: principalFromEnv(env),
+        mode: permissionModeFromEnv(process.env),
+        ownBotId: botId,
+        deniedResources: deniedResourcesFromEnv(process.env),
+        audit: (record) => appendAdminAction(DATA_DIR, { ...mcpAuditRow(record, botId), actor: { kind: "loopback" } }),
+      };
+    },
     version,
   });
 }
@@ -29754,6 +29774,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (held) return json(res, 200, { text: held, isError: true });
         const answer = await perspicaxMcp.callTool({ threadId: internalCapability.threadId, generation: internalCapability.generation, botId: internalCapability.botId, tool, args: body.args });
         return json(res, answer.status, answer.body);
+      }
+      // Permission audit rows from the agents proxy (docs/mcp/permissions.md).
+      if (method === "POST" && path === "/api/internal/mcp-audit") {
+        const body = (await readInternalBody()) as unknown as McpAuditRecord;
+        if (!body || typeof body !== "object" || typeof body.tool !== "string") return json(res, 400, { error: "bad audit record" });
+        const row = mcpAuditRow(body, internalCapability.botId);
+        appendAdminAction(DATA_DIR, { ...row, actor: { kind: "loopback" } });
+        return json(res, 200, { ok: true });
       }
       if (method === "POST" && path === "/api/internal/routine-run") {
         const body = (await readInternalBody()) as { routineId?: unknown };
