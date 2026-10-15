@@ -348,6 +348,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/tasks\\/([\\w-]+)\\/title$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/tasks\\/([\\w-]+)$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/tasks$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/temporary-pin$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/threads\\/follow-model$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/voice\\/(status|voices|prepare|speak|transcribe|stream|listen|speech|call)$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/workspace(?:\\/|$)","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},

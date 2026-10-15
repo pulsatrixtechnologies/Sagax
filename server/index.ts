@@ -918,9 +918,10 @@ import { internalAgentApiTool } from "./routes/agent-api-internal.ts";
 import { isInternalVoiceCallEnd } from "./routes/voice-call-internal.ts";
 import {
   activeCount as temporaryActiveCount, archiveMark, capInstructions, defaultIdleHours, expired as temporaryExpired, mayDelete as mayDeleteTemporary,
-  mayPin as mayPinTemporary, profileSections, purgeDue as temporaryPurgeDue, quotaKey as temporaryQuotaKey, TEMP_AGENT_QUOTA, TEMP_AGENT_SWEEP_MS,
+  profileSections, purgeDue as temporaryPurgeDue, quotaKey as temporaryQuotaKey, TEMP_AGENT_QUOTA, TEMP_AGENT_SWEEP_MS,
   temporaryOwner, type TemporaryAgent, type TemporaryCreator,
 } from "./temporary-agents.ts";
+import { createTemporaryAgentRoutes } from "./routes/temporary-agents.ts";
 import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
 import { parseHideList, planHiddenAgentThreads, planHiddenBotThreads } from "./agent-threads.ts";
 import { MemberLiveText } from "./member-live-text.ts";
@@ -27560,6 +27561,16 @@ async function sweepTemporaryAgents(now = Date.now()): Promise<void> {
     }
   }
 }
+ROUTES.push(createTemporaryAgentRoutes({
+  temporary: (botId) => store.bot(botId)?.temporary,
+  personId: (auth) => actorPrincipalId(auth).trim().toLowerCase(),
+  orgAdmin: orgAdminCaller,
+  save: (botId, next) => { store.setBotTemporary(botId, next); },
+  audit: (botId, pinned, principalId) => {
+    const bot = store.bot(botId);
+    if (bot) temporaryAudit(pinned ? "agents.temporary.pinned" : "agents.temporary.unpinned", bot, {}, { principalId });
+  },
+}));
 setTimeout(() => { void sweepTemporaryAgents(); }, 30_000).unref?.();
 setInterval(() => { void sweepTemporaryAgents(); }, TEMP_AGENT_SWEEP_MS).unref?.();
 const agentApiCallerBot = (caller: AgentCaller) => (caller.kind === "bot" ? store.bot(caller.id) ?? null : null);
@@ -34808,27 +34819,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       store.patchTask(bot.id, selected.threadId, { modelSelection: undefined,
         ...hostedModels?.resetTask(selected.modelSelection, checked.selection) });
       return json(res, 200, { bot: wireBot(bot) });
-    }
-    // Perspicax #321: a person pins a temporary agent so it never expires
-    // (or unpins it). Its owner or an organization admin, never a bot.
-    m = path.match(/^\/api\/bots\/([\w-]+)\/temporary-pin$/);
-    if (m && method === "PUT") {
-      const bot = store.bot(m[1]);
-      if (!bot?.temporary) return json(res, 404, { error: "no such temporary agent" });
-      if (auth.kind === "loopback" && auth.trust === "service") return json(res, 403, { error: "forbidden: a person pins a temporary agent" });
-      const principalId = actorPrincipalId(auth).trim().toLowerCase();
-      if (!principalId || !mayPinTemporary(bot.temporary, { principalId, admin: orgAdminCaller(auth) })) {
-        return json(res, 403, { error: "forbidden: only this agent's owner or an organization admin pins it", code: "forbidden_owner" });
-      }
-      const body = await readBody(req);
-      if (!body || typeof body !== "object" || Object.keys(body).some((key) => key !== "pinned") || typeof body.pinned !== "boolean") {
-        return json(res, 400, { error: "Send { \"pinned\": true } or false" });
-      }
-      const { pinned: _was, ...rest } = bot.temporary;
-      const next: TemporaryAgent = body.pinned ? { ...rest, pinned: { principalId, at: Date.now() } } : { ...rest, lastActiveAt: Date.now() };
-      store.setBotTemporary(bot.id, next);
-      temporaryAudit(body.pinned ? "agents.temporary.pinned" : "agents.temporary.unpinned", bot, {}, { principalId });
-      return json(res, 200, { pinned: body.pinned === true });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/read$/);
     if (m && method === "POST") {
