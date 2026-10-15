@@ -1,7 +1,7 @@
 {
   "direct": {
-    "bytes": 63068,
-    "sha256": "6625ba02732fa00e7301e63174c6683478ba73466c1f9945d795e9ca64849474",
+    "bytes": 63539,
+    "sha256": "d2879901a8c154dfab9e6a9879f4250ded18f8353015905deb28f51feabf5961",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -49,6 +49,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -59,8 +60,8 @@
     ]
   },
   "direct+voice": {
-    "bytes": 63809,
-    "sha256": "5b14c666fe0d30eb9766a1747db0bf95d77edfa3d2c909ab7ad73730d6c7c62f",
+    "bytes": 64280,
+    "sha256": "eeff5c6dbad6f85450e29cfdea8715a896ef680a1d70665aacb1def6b30ebb4a",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -109,6 +110,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -119,8 +121,8 @@
     ]
   },
   "direct+shared": {
-    "bytes": 64813,
-    "sha256": "870396b726c838870bfe37542678438ed61f59313a1e1e1075bce7616513c772",
+    "bytes": 65284,
+    "sha256": "25b1b96e8bf064a6f37b6b9b9b2f1244f55309ac5f298c6c86d4bc3cf274bc42",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -170,6 +172,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -180,8 +183,8 @@
     ]
   },
   "direct+shared+voice": {
-    "bytes": 65554,
-    "sha256": "286dc7b63ee950bca39ea9665a86092e46d156fd53dddc4c93519a75c7621c89",
+    "bytes": 66025,
+    "sha256": "a7244617f9b7016cba9f1200c72b850e1dbd0205b2a9dbb6e6afb0be981945d4",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -232,6 +235,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -242,8 +246,8 @@
     ]
   },
   "direct+skills": {
-    "bytes": 65121,
-    "sha256": "c65a48b0439713da59e78291ab43737de98a2ee5e28133c7372e54e3b6db57fc",
+    "bytes": 65592,
+    "sha256": "dfed7cb3801d95f80ed30a3a97f159a581f13b6a57910d8ee306de45fa779ff8",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -291,6 +295,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -303,8 +308,8 @@
     ]
   },
   "direct+skills+voice": {
-    "bytes": 65862,
-    "sha256": "c4b8ddb20337540c92646d2d2131810c512d1f59d36c331616c24a29aa3f8a23",
+    "bytes": 66333,
+    "sha256": "a290cf4e1b94daab50afdf4c1b8a6506b6f0f122ca3929309289ced4c77d1ba3",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -353,6 +358,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -365,8 +371,8 @@
     ]
   },
   "direct+skills+shared": {
-    "bytes": 66866,
-    "sha256": "1e9fd7b7be2c74b5ee21da1b055bd8d05e7d9384d5b719417ebc6987b1d4d8a2",
+    "bytes": 67337,
+    "sha256": "d5236a25e4243175c19934b5f2eca4c3e4519d6406cccc9a93925da6f1c1c79f",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -416,6 +422,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -428,8 +435,8 @@
     ]
   },
   "direct+skills+shared+voice": {
-    "bytes": 67607,
-    "sha256": "449425b82c789159b4d8e8ca4a6b4ff2c5e197e80cfe9a2269dc68ef5b2d1308",
+    "bytes": 68078,
+    "sha256": "86b0dea4c6e873d7d9feeac61a32e376f2a46b9bf9ad4ae285ba033a48c73e8c",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -480,6 +487,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -492,8 +500,8 @@
     ]
   },
   "room": {
-    "bytes": 61162,
-    "sha256": "178bc41f838346775a53d51ac7fd6612b7ca45474092413c4a18643a83f4ab2f",
+    "bytes": 61633,
+    "sha256": "2af05286dd3de6142bf9dd9fe53eab80f5f7c83740270d8b64d60ab7a3233c06",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -539,6 +547,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -549,8 +558,8 @@
     ]
   },
   "room+voice": {
-    "bytes": 61903,
-    "sha256": "bb7077f9c82d795d89d5e532543a0aa46c547336c3a47de31a420a442311c4ed",
+    "bytes": 62374,
+    "sha256": "1a651d50527d6b26198e8d66721f3c7adb84a3dd57b1bae6534e0bdcd4449ccd",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -597,6 +606,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -607,8 +617,8 @@
     ]
   },
   "room+shared": {
-    "bytes": 62907,
-    "sha256": "04203e618c85bddb1ae9d563fb4d115d6a7a57ef38b664485d9de6125247de32",
+    "bytes": 63378,
+    "sha256": "0811eab8e15c16a93b477b24f27b782cdd4422084e6fb289a742f478ea9e375c",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -656,6 +666,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -666,8 +677,8 @@
     ]
   },
   "room+shared+voice": {
-    "bytes": 63648,
-    "sha256": "fd4a8f4714960a578805f440606b0becc7e8143427d2feaf3391df85f17a4aa7",
+    "bytes": 64119,
+    "sha256": "8e2d24c5f7531c0c74e3f578bdb2c32efadcf2f58b3bc16a5a62cbcbf0848e70",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -716,6 +727,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -726,8 +738,8 @@
     ]
   },
   "room+skills": {
-    "bytes": 63215,
-    "sha256": "94790609b9d7cd156a0cf0343f3f65faf3aa9b7b3f01b8033b48a1812d4cb40d",
+    "bytes": 63686,
+    "sha256": "8bdcae69af536fb2c3bba493c25a1ad980ba6fe288d842fa7a8388a47678290f",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -773,6 +785,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -785,8 +798,8 @@
     ]
   },
   "room+skills+voice": {
-    "bytes": 63956,
-    "sha256": "54e13102c9e95f4ef2c496c6579ac84c8d3c6f035ac6c3c31182657e295dba6e",
+    "bytes": 64427,
+    "sha256": "d697d447146f4cc8bd7cba7c8e0e75a8426a2223623ca17d18f7520458acf3bc",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -833,6 +846,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -845,8 +859,8 @@
     ]
   },
   "room+skills+shared": {
-    "bytes": 64960,
-    "sha256": "9cebeb25cc7685012ba6471806c0d8a7ab303f63dffcd521f8ba4e06f7181eeb",
+    "bytes": 65431,
+    "sha256": "efad490847b122d376aa7a9dab502064bdfe90f2e946e5ac2e02e1331bfca832",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -894,6 +908,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -906,8 +921,8 @@
     ]
   },
   "room+skills+shared+voice": {
-    "bytes": 65701,
-    "sha256": "9b7783ada6bc8eefa4d556cf65a5ece1d5180c344786cad065513883efafb2c4",
+    "bytes": 66172,
+    "sha256": "cb42c7b6fffd73787b66173b24fdae4ac4581a0c5a9bd8a1c54ff420f254918a",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -956,6 +971,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -968,8 +984,8 @@
     ]
   },
   "room+own-thread": {
-    "bytes": 62772,
-    "sha256": "9c2c457abd40d4ee4e1f6f13cd4fa7425cb951b884cfb4454bbf55ea143c7eec",
+    "bytes": 63243,
+    "sha256": "846fb7d379281a99b2f8e693f5b6106084e225bb285a471d10aed72ed58ff2c2",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1016,6 +1032,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1026,8 +1043,8 @@
     ]
   },
   "room+own-thread+voice": {
-    "bytes": 63513,
-    "sha256": "3759fee755de8743fd429d61c2ab40f4ce708d83d48272164e72555e3cd8b395",
+    "bytes": 63984,
+    "sha256": "fee011f5cf4720a372292959578f5114b99fe132cdf5a85c113168b053cfe247",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1075,6 +1092,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1085,8 +1103,8 @@
     ]
   },
   "room+own-thread+shared": {
-    "bytes": 64517,
-    "sha256": "fae741580dee3b4ad42e99a4f405ac27b13e4cca506c2890d7c5d73f65523b1d",
+    "bytes": 64988,
+    "sha256": "157153c82b32aa23c26f0e6c089d11f71b99f6233c951c9badf5580e2b5a321f",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1135,6 +1153,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1145,8 +1164,8 @@
     ]
   },
   "room+own-thread+shared+voice": {
-    "bytes": 65258,
-    "sha256": "566aa7f2abc8eebb37b1ba1673199fdb7cfba822b98dc54127dd6fa4322899a5",
+    "bytes": 65729,
+    "sha256": "8059e7778076da5cb01d3f98df6f0e17b7633bc6b91f426ce9539de169ed0689",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1196,6 +1215,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1206,8 +1226,8 @@
     ]
   },
   "room+own-thread+skills": {
-    "bytes": 64825,
-    "sha256": "57389f76515690564931b3e7c3d5ae53459fe06c4234f060d6968df4d4def62a",
+    "bytes": 65296,
+    "sha256": "b091d1f8cb3f8ac5126648e4e95b4fe1ebe7ed65b96dfc68d1a9e532fbea9e59",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1254,6 +1274,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1266,8 +1287,8 @@
     ]
   },
   "room+own-thread+skills+voice": {
-    "bytes": 65566,
-    "sha256": "5dae5db69984a531f2886a2ac95788d098665f25142714edcd1ff8e67943996f",
+    "bytes": 66037,
+    "sha256": "a51df7adb5202dc2450cbd3cb9691391a715c803e227c16d922cb7b0fdda277f",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1315,6 +1336,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1327,8 +1349,8 @@
     ]
   },
   "room+own-thread+skills+shared": {
-    "bytes": 66570,
-    "sha256": "df7f22957e49c671c4f663f5e0a379a98f356c1a9813bab891b7c1de1f3331fb",
+    "bytes": 67041,
+    "sha256": "76cf4b1fe033b8b532a3fe8a1728253d527bb8ffcfe1d7c6f6f681d609900792",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1377,6 +1399,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1389,8 +1412,8 @@
     ]
   },
   "room+own-thread+skills+shared+voice": {
-    "bytes": 67311,
-    "sha256": "158539fb787b130613393da0cccdf6c64e06d57103ef06c0d0de85a563901f09",
+    "bytes": 67782,
+    "sha256": "0f075fd7d4f8dc074b7ce700597709a73369235d65889899bb6337e83a760f52",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1440,6 +1463,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1452,8 +1476,8 @@
     ]
   },
   "direct+non-chief": {
-    "bytes": 53432,
-    "sha256": "b0d1b3d29fa0a2b19b077aab6dd522627960ceee673b9a8e4b14358fd4d4372d",
+    "bytes": 53903,
+    "sha256": "6daec8c5927e375c954d0c784bbb775317c8a851074cf7a9bbd6970f672a84fa",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1494,6 +1518,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1504,8 +1529,8 @@
     ]
   },
   "direct+voice+non-chief": {
-    "bytes": 54173,
-    "sha256": "a2d5747d8ed24872e69dc89279fe0be783a20d28e72a90fd94d6e86dbac2988a",
+    "bytes": 54644,
+    "sha256": "c99814ebdd30af94a8be3a36da31b398784b9d1dea9f29cced6c088769be07b9",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1547,6 +1572,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1557,8 +1583,8 @@
     ]
   },
   "direct+shared+non-chief": {
-    "bytes": 55177,
-    "sha256": "fb9939530334c3096fcc4f96a311cf3196965b36bff9b2e75a860587636b69e9",
+    "bytes": 55648,
+    "sha256": "1b80c08210f56de46b35f1baf83e091ca3ed732db5589617fd3a212c0335ac8d",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1601,6 +1627,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1611,8 +1638,8 @@
     ]
   },
   "direct+shared+voice+non-chief": {
-    "bytes": 55918,
-    "sha256": "7aebc302e7ffe4643d0db1cad54d4f08172bd255dc29a53327a8fc5f291dcfa0",
+    "bytes": 56389,
+    "sha256": "56452ace1d6d5102015d4d6681a1d70c1b45d90f3b490283e3c57d4bd13e481b",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1656,6 +1683,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1666,8 +1694,8 @@
     ]
   },
   "direct+skills+non-chief": {
-    "bytes": 55485,
-    "sha256": "096a36843de850f05c5d01fd12b7bcee710bdcf0b5892b841a834406ab4c16aa",
+    "bytes": 55956,
+    "sha256": "9931780fa15873296f2e0482e027814e58c506cf6501442e35d2bba5250d9c77",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1708,6 +1736,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1720,8 +1749,8 @@
     ]
   },
   "direct+skills+voice+non-chief": {
-    "bytes": 56226,
-    "sha256": "cdcbc041a362ce4e61635dd872a145b1014b8ca11bb66dcaab5ed10dbc70984b",
+    "bytes": 56697,
+    "sha256": "8945c13c5998a24f3b0b67885067c8740a520fdafb30897e902f919d4113b559",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1763,6 +1792,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1775,8 +1805,8 @@
     ]
   },
   "direct+skills+shared+non-chief": {
-    "bytes": 57230,
-    "sha256": "21e85c40144c50177d72e1aa4e9986332dd970b4b06ccc7451bd5b2dcf093a3d",
+    "bytes": 57701,
+    "sha256": "1623d9ccdeb92b8cb59100241af3778b6453b2780de13b4e19e81d494f4774b3",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1819,6 +1849,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1831,8 +1862,8 @@
     ]
   },
   "direct+skills+shared+voice+non-chief": {
-    "bytes": 57971,
-    "sha256": "5ff3240a3f1408d7c190c75f75f944e1ddc79962597104411d5fbfc68d72a34b",
+    "bytes": 58442,
+    "sha256": "cc2f7037768281aadbf2d4d356fd4dc0a9288ee750ac472e9982b2c04b4d1f2b",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1876,6 +1907,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1888,8 +1920,8 @@
     ]
   },
   "room+non-chief": {
-    "bytes": 51526,
-    "sha256": "44b06e4772215aac0cd3441fc3b4f7716f59638bc17dd9310d909b89f8d560a6",
+    "bytes": 51997,
+    "sha256": "67feaab0f14a15b301149cc1ac752bf1d4e7119aaa3ed286ca2ae29bbe27eccd",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1928,6 +1960,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1938,8 +1971,8 @@
     ]
   },
   "room+voice+non-chief": {
-    "bytes": 52267,
-    "sha256": "0c727b14743dce835ed289eab1041f518b9840485960bcab9af9839d2de52cc3",
+    "bytes": 52738,
+    "sha256": "5a37f928c3676859b7243a9ca5287b72a6e423ead90f606b6b385bbb2d283be9",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1979,6 +2012,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1989,8 +2023,8 @@
     ]
   },
   "room+shared+non-chief": {
-    "bytes": 53271,
-    "sha256": "243240213113f5186edcfa9acf82849478b44b0184bd7ec508ba5bc6a02da5f7",
+    "bytes": 53742,
+    "sha256": "d264414356699fdff1adbd2dcf58ff2b6f4dd37b3a141c275b106160b09bbd88",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2031,6 +2065,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2041,8 +2076,8 @@
     ]
   },
   "room+shared+voice+non-chief": {
-    "bytes": 54012,
-    "sha256": "4fcb141dbac296542d57dc4e5797f01372dd792808f49bf9936e8fa376a96e50",
+    "bytes": 54483,
+    "sha256": "2d515766b998a238909d66d9ca3e5c1edba26f2e4335e743daca0cc245ad3c39",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2084,6 +2119,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2094,8 +2130,8 @@
     ]
   },
   "room+skills+non-chief": {
-    "bytes": 53579,
-    "sha256": "db68f80e1bb4529a09c39e82e0c102db603ae9d1349065d2837ba66471aac35a",
+    "bytes": 54050,
+    "sha256": "48ceb4013c7e5917e138d059826a4b773a75de980b27c83ddadfaabcb2cb0870",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2134,6 +2170,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2146,8 +2183,8 @@
     ]
   },
   "room+skills+voice+non-chief": {
-    "bytes": 54320,
-    "sha256": "2d2537f0838ef7e28dfb50256dde2631f9d4c7d6b046b51f613176016ae6e9c7",
+    "bytes": 54791,
+    "sha256": "1b04d6cc48528fe9b9e6027d5d9edb07a1bd0dd716987c88cfb62dc80a482422",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2187,6 +2224,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2199,8 +2237,8 @@
     ]
   },
   "room+skills+shared+non-chief": {
-    "bytes": 55324,
-    "sha256": "05feaf4979a2d04b1a02d90bebff007bc2d8e30152d6f2c8a0c5c676327b94bc",
+    "bytes": 55795,
+    "sha256": "70bb181d42b4894900b54adf88a3da5be4256ef8940d9e1c5b44df4b726ec8b9",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2241,6 +2279,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2253,8 +2292,8 @@
     ]
   },
   "room+skills+shared+voice+non-chief": {
-    "bytes": 56065,
-    "sha256": "1c71c1e49dd315cca939455e74d22eea45f2781ebf1e6ff1e7220fa32cdb12c0",
+    "bytes": 56536,
+    "sha256": "461e863f042045d1474f290ba69fc3a58d6252062f956a33efff8f8f9037f9de",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2296,6 +2335,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2308,8 +2348,8 @@
     ]
   },
   "room+own-thread+non-chief": {
-    "bytes": 53136,
-    "sha256": "a070c7dcf0e6cab0b31190963132afc7dcae90027d3813a2f4a1f2ef4eced768",
+    "bytes": 53607,
+    "sha256": "c74820c72dc0e75e1fcab9901ef265659192ebba6ca7671dd2fba88a616ace10",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2349,6 +2389,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2359,8 +2400,8 @@
     ]
   },
   "room+own-thread+voice+non-chief": {
-    "bytes": 53877,
-    "sha256": "8a057e5847668f3cda7dd6fff6c49328abfedffb6520af42a36a7e9764a16393",
+    "bytes": 54348,
+    "sha256": "c4355c3c0d23e8b01d9f257d370792c1913c1ccd99a3fe68179b81f790ff4178",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2401,6 +2442,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2411,8 +2453,8 @@
     ]
   },
   "room+own-thread+shared+non-chief": {
-    "bytes": 54881,
-    "sha256": "79ec2caa7cbbeb4c6d851887399a2d2bc8eff475f7cd1b313db3a2b320c6c1cb",
+    "bytes": 55352,
+    "sha256": "afb897f295c0b70286312bd6c5e23ba1549c0a0ddc5aae1dbc3d4198ba0be448",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2454,6 +2496,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2464,8 +2507,8 @@
     ]
   },
   "room+own-thread+shared+voice+non-chief": {
-    "bytes": 55622,
-    "sha256": "8f33d570e34019a7c9c63cb059e4b807bdbe0c0db3b93bac280b72db523e01ac",
+    "bytes": 56093,
+    "sha256": "44c8bfcae380be69a5f8477ab82a4ad401e019120b6074cb4c7a2b8612322d27",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2508,6 +2551,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2518,8 +2562,8 @@
     ]
   },
   "room+own-thread+skills+non-chief": {
-    "bytes": 55189,
-    "sha256": "fe2f2511859376c267515fcfe1d468de9b1b7bdba46f1e0291276c79a3683dda",
+    "bytes": 55660,
+    "sha256": "414262a8103156d50717f4ff75cb93d4de2fef8040a709d4ada1fd0f267342b3",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2559,6 +2603,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2571,8 +2616,8 @@
     ]
   },
   "room+own-thread+skills+voice+non-chief": {
-    "bytes": 55930,
-    "sha256": "b565bfc7429fc15e204481ab3850e704702aa939dc0214915590864aff453177",
+    "bytes": 56401,
+    "sha256": "4da29a99bd08686b4eac4426a749eb9f0b7815e402b7af9ffd0626e34fd8a0f4",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2613,6 +2658,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2625,8 +2671,8 @@
     ]
   },
   "room+own-thread+skills+shared+non-chief": {
-    "bytes": 56934,
-    "sha256": "37deb1ab7b604eb79d5912153d72ee53e34f0a0f154663dd9bb13ffb639b80fc",
+    "bytes": 57405,
+    "sha256": "d60bfb7665e787ed59a52e39379fd24fe49291eadf83a1bd3d883a71feb5ee2f",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2668,6 +2714,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -2680,8 +2727,8 @@
     ]
   },
   "room+own-thread+skills+shared+voice+non-chief": {
-    "bytes": 57675,
-    "sha256": "12f62c5787b7eaedd0458970447ddef6f819ade2e7e1cd8e8460cf2606e3aea4",
+    "bytes": 58146,
+    "sha256": "f526b6595aa87ba3bf4edc19d09b8e384488d922ff965a656bb758549d9ff784",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2724,6 +2771,7 @@
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",

@@ -6,7 +6,7 @@ exposes to a bot or an AI client. The machine-readable form is the registry in
 `server/mcp-permissions.ts`; `server/mcp-permissions.test.ts` fails when a
 catalog tool has no permission.
 
-Totals: capabilities 105, covered 74, gaps 31.
+Totals: capabilities 105, covered 75, gaps 30.
 
 Sources read: the agents tool catalog, the internal routes it calls
 (`/api/internal/*`), the member API (`docs/org-member-api.md`), and the
@@ -118,7 +118,7 @@ Reading the table:
 | memory:propose | perspicax | MISSING | `memory:propose` | P1 |
 | memory:review | perspicax | MISSING | `memory:review` | P2 |
 | approvals:answer | sagax | MISSING | `approvals:answer` | P1 |
-| routines:run | sagax | MISSING | `routines:run` | P1 |
+| routines:run | sagax | `run_routine` | `routines:run` | covered |
 | people:nudge | sagax | MISSING | `people:nudge` | P1 |
 | api:list | perspicax | MISSING | `api:list` | P1 |
 | api:search | perspicax | MISSING | `api:search` | P1 |
@@ -142,7 +142,7 @@ Reading the table:
 
 - P0 (3): `claims:acquire`, `claims:renew`, `claims:release`. The native claim
   tools are in an open pull request; the permissions already exist here.
-- P1 (22): `claims:list`, the memory tools, routine run, approval answer,
+- P1 (21): `claims:list`, the memory tools, approval answer,
   nudge, the gateway meta-tools, `api:query|write|action`, `flow:action`,
   `identity:search`.
 - P2 (6): `memory:promote`, `memory:review`, `api:reload`, `review:write`,

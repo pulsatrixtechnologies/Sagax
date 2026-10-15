@@ -124,7 +124,7 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("memory:propose", "own", null, "perspicax"),
   p("memory:review", "admin", null, "perspicax"),
   p("approvals:answer", "dispatch", null),
-  p("routines:run", "dispatch", null),
+  p("routines:run", "dispatch", "run_routine"),
   p("people:nudge", "dispatch", null),
   p("api:list", "read", null, "perspicax"),
   p("api:search", "read", null, "perspicax"),

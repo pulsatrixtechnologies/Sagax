@@ -1011,6 +1011,15 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       text: `This bot's routines (current time: ${now}; timezone: ${timeZone}):\n${JSON.stringify(routines, null, 2)}`,
     };
   }
+  if (name === "run_routine") {
+    const routineId = String(args.routine_id ?? "").trim();
+    if (!routineId) return { text: "run_routine needs routine_id.", isError: true };
+    const r = await api("/api/internal/routine-run", {
+      method: "POST",
+      body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, routineId }),
+    });
+    return { text: `Started a run of routine ${routineId}${typeof r.runId === "string" ? ` (run ${r.runId})` : ""}. It runs on its own; check list_routines for the result.` };
+  }
   if (name === "propose_routine") {
     const { fields: routine, error: scheduleError } = routineFields(args);
     if (scheduleError) return { text: scheduleError, isError: true };

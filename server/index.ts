@@ -29723,6 +29723,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             .map((routine) => agentRoutine(routine, latestRuns.get(routine.id))),
         });
       }
+      if (method === "POST" && path === "/api/internal/routine-run") {
+        const body = (await readInternalBody()) as { routineId?: unknown };
+        const from = internalSender;
+        if (!connectorThread(from.id, internalCapability.threadId)) {
+          return json(res, 403, { error: "source conversation does not belong to sender" });
+        }
+        const routineId = typeof body.routineId === "string" ? body.routineId : "";
+        const target = routines!.listRoutines().find((routine) => routine.id === routineId && routine.botId === from.id);
+        if (!target) return json(res, 404, { error: "no such routine on this bot" });
+        if (routineRunInFlight(target.id)) return json(res, 409, { error: "A run of this routine is already in progress.", code: "run_in_flight" });
+        const run = routines!.runNow(target.id);
+        return run ? json(res, 201, { runId: run.id }) : json(res, 404, { error: "no such routine on this bot" });
+      }
       if (method === "POST" && path === "/api/internal/routine-requests") {
         const parsed = routineRequestEnvelopeSchema.safeParse(await readInternalBody());
         if (!parsed.success) return json(res, 400, { error: "invalid routine proposal" });

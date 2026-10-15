@@ -940,6 +940,17 @@ const toolDefinitions = (externalRuntime: boolean) => [
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
   },
   {
+    name: "run_routine",
+    description:
+      "Run one of this bot's own routines now, once. Get the routine id from list_routines. The schedule and the Active switch stay as they are; a paused routine runs and stays paused. Refused while a run of that routine is already in progress.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { routine_id: { type: "string", minLength: 1, description: "Routine id from list_routines." } },
+      required: ["routine_id"],
+    },
+  },
+  {
     name: "propose_routine",
     description:
       "Prepare a new routine after the user explicitly asks to schedule recurring or future work. Call list_routines first for relative dates or times so you use its authoritative current time and timezone. Convert calendar requests (monthly dates, last days, nth weekdays) into a validated five-field cron schedule with an explicit IANA timeZone; keep elapsed every-N-minutes work as interval. Never approximate unsupported requests with a different weekly schedule or an AI date-check routine; explain the limitation instead. Resolve ambiguous dates, times, timezone, destination, or instructions with the user first, and always give one-time schedules an explicit RFC3339 offset. If the user asks for the routine to run as ANOTHER bot in your section, call list_bots and pass that bot's id as for_bot_id; each run retains that bot's own permissions." + SELF_CHANGE_OUTCOME,

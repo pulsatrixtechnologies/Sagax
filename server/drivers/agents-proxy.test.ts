@@ -63,6 +63,7 @@ let lastCreateRoomBody: unknown = null;
 let lastManageRoomBody: unknown = null;
 let lastCredentialBody: any = null;
 let lastRoutineQuery = "";
+let lastRoutineRunBody: any = null;
 let routinesResponse: unknown = {
   now: "2026-08-28T10:30:00.000Z",
   timeZone: "Asia/Kolkata",
@@ -342,6 +343,16 @@ beforeAll(async () => {
       lastRoutineQuery = req.url;
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify(routinesResponse));
+    }
+    if (req.method === "POST" && req.url === "/api/internal/routine-run") {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => {
+        lastRoutineRunBody = JSON.parse(data);
+        res.writeHead(201, { "content-type": "application/json" });
+        res.end(JSON.stringify({ runId: "run-9" }));
+      });
+      return;
     }
     if (req.method === "POST" && req.url === "/api/internal/routine-requests") {
       let data = "";
@@ -667,6 +678,7 @@ describe("agents-proxy MCP surface", () => {
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
       "list_routines",
+      "run_routine",
       "propose_routine",
       "propose_routine_action",
       "propose_profile",
@@ -1588,6 +1600,16 @@ describe("agents-proxy MCP surface", () => {
     expect(query.get("fromBotId")).toBe("bot-asker");
     expect(query.get("fromThreadId")).toBe("thread-asker-routine");
     expect(lastAuth).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it("runs one of the bot's routines now through the internal route", async () => {
+    lastRoutineRunBody = null;
+    const res = await callTool("run_routine", { routine_id: "routine-1" });
+    expect(res.result.isError).toBeFalsy();
+    expect(res.result.content[0].text).toContain("run-9");
+    expect(lastRoutineRunBody).toMatchObject({ fromBotId: "bot-asker", routineId: "routine-1" });
+    const none = await callTool("run_routine", {});
+    expect(none.result.isError).toBe(true);
   });
 
   it("proposes a weekly routine through a confirmation-only request", async () => {
