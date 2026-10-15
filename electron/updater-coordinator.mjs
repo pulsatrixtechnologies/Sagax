@@ -37,12 +37,84 @@ export function releaseNotesText(notes) {
   return trimmed ? trimmed.slice(0, 8000) : undefined;
 }
 
-function withNotes(patch, info) {
-  const notes = releaseNotesFrom(info);
-  return notes === undefined ? patch : { ...patch, notes };
+// GitHub's releases.atom gives each body as HTML. The release file is
+// markdown, so HTML here means the feed had nothing better.
+const HTML_NOTE = /<\/?(?:p|h[1-6]|ul|ol|li|strong|em|a|code|pre|br|div|blockquote)\b[^>]*>/i;
+
+function noteFor(notes, version) {
+  if (typeof notes === "string") return notes;
+  if (Array.isArray(notes)) return notes.find((entry) => entry.version === version)?.note ?? "";
+  return "";
 }
 
-export function createUpdaterCoordinator(updater, setState, { handOffInstall = null, nativeStaging = false } = {}) {
+/** True when the feed brought no readable (markdown) notes for `version`. */
+export function needsReleaseNotes(notes, version) {
+  const note = noteFor(notes, version).trim();
+  return !note || HTML_NOTE.test(note);
+}
+
+/** The feed's notes with `body` as the note of `version`. */
+export function withReleaseNote(notes, version, body) {
+  if (!Array.isArray(notes)) return body;
+  return [{ version, note: body }, ...notes.filter((entry) => entry.version !== version)];
+}
+
+/**
+ * `fetchReleaseNotes(version)` resolves the release's markdown body (or null)
+ * when the feed brought none: the notes must show before every update. It is
+ * asked once per version; its answer arrives as a later state patch.
+ */
+export function createUpdaterCoordinator(
+  updater,
+  setState,
+  { handOffInstall = null, nativeStaging = false, fetchReleaseNotes = null } = {},
+) {
+  // The update the state shows, and the body the release API gave for it.
+  let notesVersion = null;
+  let feedNotes = undefined;
+  let fetched = null;
+  let notesRequest = null;
+
+  function requestNotes(version) {
+    if (notesRequest === version) return;
+    notesRequest = version;
+    Promise.resolve()
+      .then(() => fetchReleaseNotes(version))
+      .then((body) => {
+        if (typeof body !== "string" || !body.trim()) return;
+        fetched = { version, body };
+        if (recoveryRequired || notesVersion !== version || !needsReleaseNotes(feedNotes, version)) return;
+        const notes = withReleaseNote(feedNotes, version, body);
+        setState({ notes, releaseNotes: releaseNotesText(notes) });
+      })
+      .catch(() => {
+        // Notes never fail an update; the next event for it asks again.
+      })
+      .finally(() => {
+        if (notesRequest === version) notesRequest = null;
+      });
+  }
+
+  function notesOf(info) {
+    let notes = releaseNotesFrom(info);
+    const version = typeof info?.version === "string" ? info.version : null;
+    if (version) {
+      notesVersion = version;
+      feedNotes = notes;
+    }
+    if (fetchReleaseNotes && version && needsReleaseNotes(notes, version)) {
+      if (fetched?.version === version) notes = withReleaseNote(notes, version, fetched.body);
+      else requestNotes(version);
+    }
+    return notes;
+  }
+
+  function withNotes(patch, info) {
+    const notes = notesOf(info);
+    if (notes === undefined) return patch;
+    return "releaseNotes" in patch ? { ...patch, notes, releaseNotes: releaseNotesText(notes) } : { ...patch, notes };
+  }
+
   let checkOperation = null;
   // Set from downloadUpdate's resolution: the paths electron-updater staged.
   // Only the hand-off needs them; quitAndInstall reads its own copy.

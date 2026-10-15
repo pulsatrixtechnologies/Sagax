@@ -192,3 +192,11 @@ describe("whatsNewDecision", () => {
     expect(readSeenRelease("{}")).toBe(null);
   });
 });
+
+describe("releaseNotesSection on GitHub's atom HTML", () => {
+  it("splits at <h2>English</h2> like at ## English", () => {
+    const html = "<p>Bonjour</p>\n<h2>English</h2>\n<p>Hello</p>";
+    expect(releaseNotesSection(html, "fr")).toBe("<p>Bonjour</p>");
+    expect(releaseNotesSection(html, "en")).toBe("<p>Hello</p>");
+  });
+});

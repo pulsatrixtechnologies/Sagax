@@ -1,0 +1,17 @@
+version: 0.5.4
+files:
+  - url: Sagax-0.5.4-x64.zip
+    sha512: JsCCyGKX9JvJrSWlJUqRvLu6SVX3nc6xDwiRv7iQOQ8tLlGMIRwKMnizlyw/MeJbDxEhIt/XXZFSR1LneC98oQ==
+    size: 345417200
+  - url: Sagax-0.5.4-arm64.zip
+    sha512: V2TTquyow3ObbYbvAYkJKfJRFVDatygY4chc0dgnnCWRibCktHvXqeJ1aSFG3nRLm02y8+H7vNrnNYs2AwGjrQ==
+    size: 323463986
+  - url: Sagax-0.5.4-x64.dmg
+    sha512: 42EJTDKRvfFDwX8f+72eHuZPy2Gs1NIU0ZF/BSAX2/lGPcsy92Qg+HlkVzvfTKla1ylHc42zlkoaeycvZw9EPg==
+    size: 343563115
+  - url: Sagax-0.5.4-arm64.dmg
+    sha512: C/QNwfiMZQpnlPcFeiTmZhfWHPbyimzu+CrCTDf6ZIoGYQzqoe8UXjRQPc4VAxof4vG0sRtfJhCNqL2N0h87jA==
+    size: 321965412
+path: Sagax-0.5.4-x64.zip
+sha512: JsCCyGKX9JvJrSWlJUqRvLu6SVX3nc6xDwiRv7iQOQ8tLlGMIRwKMnizlyw/MeJbDxEhIt/XXZFSR1LneC98oQ==
+releaseDate: '2026-10-15T19:40:52.757Z'

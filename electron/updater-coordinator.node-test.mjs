@@ -759,3 +759,70 @@ test("carries the release notes with the version, as one capped string", async (
   assert.equal(h.getState().version, "2.0.0");
   assert.equal(h.getState().releaseNotes, "- **Faster start.** Opens at once.");
 });
+
+// The notes must show before every update. A feed without markdown notes
+// (none, or the atom feed's HTML) asks the release for its body once.
+test("an update whose feed brought no notes shows the release body from GitHub", async () => {
+  const asked = [];
+  const h = harness({
+    fetchReleaseNotes: async (version) => {
+      asked.push(version);
+      return "Notes FR\n\n## English\n\nNotes EN";
+    },
+  });
+  h.updater.downloadUpdate = () => new Promise(() => {});
+  await found(h, { version: "0.5.4" });
+  await settle();
+  assert.deepEqual(asked, ["0.5.4"]);
+  assert.equal(h.getState().status, "downloading");
+  assert.equal(h.getState().notes, "Notes FR\n\n## English\n\nNotes EN");
+  assert.equal(h.getState().releaseNotes, "Notes FR\n\n## English\n\nNotes EN");
+});
+
+test("the release body replaces the atom feed's HTML and survives later events", async () => {
+  const asked = [];
+  const h = harness({
+    nativeStaging: false,
+    fetchReleaseNotes: async (version) => {
+      asked.push(version);
+      return "- **Markdown**";
+    },
+  });
+  const html = [{ version: "2.0.0", note: "<p>Two</p>\n<h2>English</h2>\n<p>Two</p>" }, { version: "1.5.0", note: "Older" }];
+  let finish;
+  h.updater.downloadUpdate = () => new Promise((resolve) => (finish = resolve));
+  h.updater.checkForUpdates = async () => {
+    h.updater.emit("update-available", { version: "2.0.0", releaseNotes: html });
+  };
+  await h.coordinator.check(false);
+  await settle();
+  assert.deepEqual(h.getState().notes, [{ version: "2.0.0", note: "- **Markdown**" }, { version: "1.5.0", note: "Older" }]);
+  h.updater.emit("update-downloaded", { version: "2.0.0", releaseNotes: html });
+  finish(["/tmp/x.zip"]);
+  await settle();
+  assert.equal(h.getState().status, "downloaded");
+  assert.deepEqual(h.getState().notes, [{ version: "2.0.0", note: "- **Markdown**" }, { version: "1.5.0", note: "Older" }]);
+  assert.deepEqual(asked, ["2.0.0"]);
+});
+
+test("markdown notes from the feed are kept and GitHub is not asked", async () => {
+  let asked = 0;
+  const h = harness({ fetchReleaseNotes: async () => { asked += 1; return "other"; } });
+  h.updater.downloadUpdate = () => new Promise(() => {});
+  h.updater.checkForUpdates = async () => {
+    h.updater.emit("update-available", { version: "2.0.0", releaseNotes: "Bonjour\n\n## English\n\nHello" });
+  };
+  await h.coordinator.check(false);
+  await settle();
+  assert.equal(asked, 0);
+  assert.equal(h.getState().notes, "Bonjour\n\n## English\n\nHello");
+});
+
+test("a failed notes read leaves the update alone", async () => {
+  const h = harness({ fetchReleaseNotes: async () => { throw new Error("offline"); } });
+  h.updater.downloadUpdate = () => new Promise(() => {});
+  await found(h, { version: "2.0.0" });
+  await settle();
+  assert.equal(h.getState().status, "downloading");
+  assert.equal(Object.hasOwn(h.getState(), "notes"), false);
+});

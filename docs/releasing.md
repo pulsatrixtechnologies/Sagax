@@ -70,10 +70,20 @@ Sagax releases are built on a Mac, not by the workflows above:
    no `## English` line. `pnpm package:fork:mac` and `pnpm package:fork:win`
    run the same check before packaging, and step 5 runs it again before
    the tag is created. A version that fails the check is not tagged.
+   After electron-builder, `package:fork:mac` and `package:fork:win` write
+   that file into the feed they produced (`release/latest-mac.yml`,
+   `release/latest.yml`) as `releaseNotes`, on one line
+   (`node scripts/embed-feed-release-notes.mjs <feed>`). The app shows the
+   notes from the feed before the update; without them it falls back to
+   GitHub (atom feed, then the public API), which can be late or empty
+   right after publication (0.5.4 showed "No notes were published").
 2. macOS: `SAGAX_MAC_IDENTITY="<Developer ID name or SHA-1 hash>" pnpm package:fork:mac`
    (a hash is required when the keychain holds two identities with the same
    name), then notarize and staple each `.zip`/`.dmg`, re-zip and regenerate
-   `latest-mac.yml` (`node scripts/regenerate-mac-feed.mjs`).
+   `latest-mac.yml` (`node scripts/regenerate-mac-feed.mjs`). It keeps the
+   `releaseNotes` line and fails when the feed has none: run
+   `node scripts/embed-feed-release-notes.mjs release/latest-mac.yml`, then
+   regenerate again.
 3. Windows x64 + arm64: `pnpm package:fork:win:cross` (one NSIS installer for
    both arches, two portable zips, `latest.yml`). After-pack refuses a
    package whose `.node` addons or `Sagax.exe` are not PE images for that
@@ -90,7 +100,9 @@ Sagax releases are built on a Mac, not by the workflows above:
    never modified). Both must load the main window within 60 s.
 5. Dispatch CI on this commit (Actions → CI → Run workflow) and wait until
    the Windows and macOS vitest jobs on this SHA have succeeded. A green
-   push only ran Ubuntu. Then `node scripts/check-release-notes.mjs`, and
+   push only ran Ubuntu. Then `node scripts/check-release-notes.mjs`,
+   `node scripts/embed-feed-release-notes.mjs --check release/latest-mac.yml release/latest.yml`
+   (both feeds must carry exactly `docs/releases/X.Y.Z.md`), and
    `gh release create pulsa-vX.Y.Z --notes-file docs/releases/X.Y.Z.md`
    with every installer, zip, blockmap and both feeds, as a full release.
    The release body is that file. Do not write a different body: the

@@ -12695,7 +12695,7 @@ ${feedXml}`, "ERR_UPDATER_INVALID_RELEASE_FEED");
       if (!isFullChangelog) {
         return getNoteValue(latestRelease);
       }
-      const releaseVersionRegExp = /\/tag\/v?([^/]+)$/;
+      const releaseVersionRegExp = /\/tag\/(?:[A-Za-z][A-Za-z0-9_]*-)?v?([^/]+)$/;
       let latestVersion = void 0;
       try {
         latestVersion = releaseVersionRegExp.exec(latestRelease.element("link").attribute("href"))[1];

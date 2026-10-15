@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { bundledNotesFor, bundledNotesSince, bundledReleaseCatalog, bundledVersions } from "./bundled-release-notes";
+
+const packageJson = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { forkVersion: string };
 
 describe("bundledReleaseCatalog", () => {
   it("bundles the shipped release notes, including 0.4.4", () => {
@@ -64,8 +67,14 @@ describe("version browsing", () => {
 
   it("lists the real bundle newest first with the running release on top", () => {
     const versions = bundledVersions();
-    expect(versions[0]).toBe("0.5.4");
+    expect(versions[0]).toBe(packageJson.forkVersion);
     expect(versions.at(-1)).toBe("0.4.0");
+  });
+
+  it("bundles the release being built, so What's new and About show it after the update", () => {
+    expect(bundledNotesFor(packageJson.forkVersion, "fr")).toBeTruthy();
+    expect(bundledNotesFor(packageJson.forkVersion, "en")).toBeTruthy();
+    expect(bundledNotesFor(packageJson.forkVersion, "fr")).not.toBe(bundledNotesFor(packageJson.forkVersion, "en"));
   });
 
   it("renders the chosen file in the UI language, and falls back when there is no English section", () => {

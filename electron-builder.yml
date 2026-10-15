@@ -45,6 +45,8 @@ afterPack: ./scripts/after-pack.mjs
 files:
   - electron/**
   - "!electron/**/*.test.*"
+  # Test fixtures: what GitHub served for a release, never read at runtime.
+  - "!electron/fixtures/update-feed/**"
   - "!electron/resources/speech-helper"
   - "!electron/resources/speech-helper.swift"
   - "!electron/resources/speech-helper-Info.plist"

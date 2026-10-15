@@ -9,7 +9,7 @@
 // signing). In dev it's a no-op so the browser/dev shell is unaffected.
 // electron-updater is vendored (electron/vendor/electron-updater.cjs) because
 // the packaged app ships no node_modules.
-import { app, clipboard, ipcMain } from "electron";
+import { app, clipboard, ipcMain, net } from "electron";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -21,7 +21,7 @@ import {
 } from "./package-install-command.mjs";
 import { openBlankTerminal } from "./terminal-launch.mjs";
 import { createUpdaterCoordinator } from "./updater-coordinator.mjs";
-import { configureUpdateFeed, readUpdatePrefs, writeUpdatePrefs } from "./update-feed.mjs";
+import { configureUpdateFeed, fetchReleaseNotes, readUpdatePrefs, writeUpdatePrefs } from "./update-feed.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -140,9 +140,12 @@ export function startUpdater() {
   // The coordinator starts the download itself the moment a check finds an
   // update, so it owns that download (macOS staging, quiet failures).
   autoUpdater.autoDownload = false;
-  // Every skipped version contributes its GitHub release body. The yml feed
-  // leaves releaseNotes empty, so electron-updater fills them from the
-  // release. The renderer shows them newest first.
+  // The notes come with the update: the release writes docs/releases/X.Y.Z.md
+  // into latest*.yml (releaseNotes). A feed without them (0.5.4 and before)
+  // makes electron-updater read every skipped version's body from
+  // releases.atom (HTML; our pulsa-v tags are read by
+  // scripts/patch-release-notes-updater.mjs). When neither gives markdown,
+  // the coordinator reads the release body from GitHub's public API.
   autoUpdater.fullChangelog = true;
   autoUpdater.logger = updaterLogger();
 
@@ -161,6 +164,7 @@ export function startUpdater() {
   updaterCoordinator = createUpdaterCoordinator(autoUpdater, setState, {
     handOffInstall: handOff ? handOffDownloadedPackage(packageType) : null,
     nativeStaging: process.platform === "darwin",
+    fetchReleaseNotes: (version) => fetchReleaseNotes(version, { fetch: (url, init) => net.fetch(url, init) }),
   });
 
   // first check ~15s after launch (let the app settle), then hourly — never

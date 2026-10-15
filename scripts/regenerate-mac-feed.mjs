@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { embeddedReleaseNotes } from "./embed-feed-release-notes.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const feedPath = process.argv[2] ?? join(root, "release", "latest-mac.yml");
@@ -30,7 +31,16 @@ const lines = original.split("\n");
 
 let currentUrl = null;
 let firstUrl = null;
+// The release notes (scripts/embed-feed-release-notes.mjs) pass through
+// untouched, even written as a multi-line YAML block.
+let inNotes = false;
 const out = lines.map((line) => {
+  if (line.startsWith("releaseNotes:")) {
+    inNotes = true;
+    return line;
+  }
+  if (inNotes && (line === "" || /^\s/.test(line))) return line;
+  inNotes = false;
   const url = line.match(/^\s*-\s+url:\s+(\S+)\s*$/);
   if (url) {
     currentUrl = url[1];
@@ -79,3 +89,8 @@ for (const [, url, hash, size] of entries) {
   console.log(`  ok ${url} (${actualSize} bytes)`);
 }
 console.log(`latest-mac.yml verified against ${entries.length} artifacts`);
+
+// A feed without its notes makes the app say no notes were published.
+if (!embeddedReleaseNotes(updated)) {
+  throw new Error("latest-mac.yml has no releaseNotes: run node scripts/embed-feed-release-notes.mjs on it before publishing");
+}

@@ -15,6 +15,7 @@ import { dirname, join, sep } from "node:path";
 import { patchAppImageUpdater } from "./patch-appimage-updater.mjs";
 import { patchMacUpdater } from "./patch-mac-updater.mjs";
 import { patchOrganizationUpdater } from "./patch-organization-updater.mjs";
+import { patchReleaseNotesUpdater } from "./patch-release-notes-updater.mjs";
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,5 +38,8 @@ await build({
 
 // Throws when upstream's shape moved, so a bundle that would silently break
 // AppImage launchers never reaches a release.
-await writeFile(outfile, patchOrganizationUpdater(patchMacUpdater(patchAppImageUpdater(await readFile(outfile, "utf8")))));
-console.log("patched AppImage replacement, native Mac staging readiness and one-shot organisation relaunch");
+await writeFile(
+  outfile,
+  patchReleaseNotesUpdater(patchOrganizationUpdater(patchMacUpdater(patchAppImageUpdater(await readFile(outfile, "utf8"))))),
+);
+console.log("patched AppImage replacement, native Mac staging readiness, one-shot organisation relaunch and pulsa-v release notes");

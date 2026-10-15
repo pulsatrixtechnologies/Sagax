@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xml:lang="en-US">
+  <id>tag:github.com,2008:https://github.com/pulsatrixtechnologies/Sagax/releases</id>
+  <link type="text/html" rel="alternate" href="https://github.com/pulsatrixtechnologies/Sagax/releases"/>
+  <link type="application/atom+xml" rel="self" href="https://github.com/pulsatrixtechnologies/Sagax/releases.atom"/>
+  <title>Release notes from Sagax</title>
+  <updated>2026-10-15T19:18:47Z</updated>
+    <entry>
+    <id>tag:github.com,2008:Repository/1391258042/pulsa-v0.5.4</id>
+    <updated>2026-10-15T19:43:04Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/pulsatrixtechnologies/Sagax/releases/tag/pulsa-v0.5.4"/>
+    <title>Sagax 0.5.4</title>
+    <content type="html">&lt;p&gt;Sagax 0.5.4 poursuit la simplification de 0.5.3 : des Réglages plus courts, une seule place pour les clés, chaque membre voit sa propre utilisation, une ligne de tour plus sobre et, sur iPhone et iPad, le navigateur du bot et les widgets comme sur le bureau.&lt;/p&gt;
+&lt;h2&gt;Réglages&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Général : une seule carte de compte&lt;/strong&gt; : votre photo, votre nom, votre étiquette (modifiable sur place), votre courriel et Se déconnecter tiennent dans une carte. Le nom et le courriel ne sont plus répétés ; le serveur et l&#39;organisation s&#39;affichent au survol.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Modèles et voix : une seule place pour les clés&lt;/strong&gt; : toutes les clés (modèles, voix, images) s&#39;ajoutent dans la section Clés. Quand la voix ou la génération d&#39;images n&#39;a pas sa clé, un lien « Ajouter dans Clés » vous y mène. Les clés déjà saisies sont conservées. Les moteurs prêts restent toujours visibles.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Utilisation, pour chaque membre&lt;/strong&gt; : Réglages &amp;gt; Utilisation s&#39;affiche pour tout le monde, aussi en mode Simple, et ne montre que votre propre utilisation (vos conversations et les routines faites en votre nom). La vue de toute l&#39;organisation reste dans la console, pour les administrateurs.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Utilisation : Coût en haut&lt;/strong&gt; : la carte Coût passe au-dessus de Forfait. Forfait ne montre que les fournisseurs connectés qui répondent, et disparaît s&#39;il n&#39;y en a aucun.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Organisation&lt;/strong&gt; : les réglages Routines dans la conversation, Tours en groupe et Appels MCP passent de Général &amp;gt; Avancé à Organisation. Sur un ordinateur seul, ils restent dans Général &amp;gt; Avancé.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Plugins et GitHub dans Connecter des applications&lt;/strong&gt; : les marketplaces autorisés, les jetons GitHub et l&#39;application OAuth GitHub de l&#39;organisation sont maintenant dans Connecter des applications &amp;gt; Gérer &amp;gt; Avancé, pour les administrateurs.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Pages retirées de l&#39;app&lt;/strong&gt; : Personnes, Installations et Partage dans l&#39;organisation relèvent de Sagax Business, comme Activité, Courriel et Jumeler des appareils en 0.5.3. Le partage d&#39;un bot par son propriétaire ne change pas.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Fil de conversation&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Ligne de tour plus sobre&lt;/strong&gt; : un tour du bot se résume par sa durée, par exemple « A travaillé 9 s », en petit texte gris. Un clic déplie le détail des étapes, inchangé.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Conversation fantôme corrigée&lt;/strong&gt; : quand rien n&#39;est sélectionné, la page reste vide au lieu d&#39;afficher une conversation que vous aviez fermée. Fermer la conversation ouverte la quitte, aussi depuis un autre appareil.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Ordinateur et navigateur&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Choix de l&#39;ordinateur en menu déroulant&lt;/strong&gt; : dans l&#39;onglet Ordinateur du bot, un menu déroulant remplace la rangée de pastilles.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Fenêtre du navigateur en français&lt;/strong&gt; : les textes de la fenêtre du navigateur du bot sont traduits.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Navigateur des bots rétabli sur les serveurs&lt;/strong&gt; : le navigateur intégré des bots démarre de nouveau sur les serveurs (Chrome ne pouvait plus lancer un de ses composants).&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Sur iPhone et iPad&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Navigateur du bot comme la VM&lt;/strong&gt; : l&#39;onglet Ordinateur montre un aperçu en direct du navigateur, avec son état, et « Prendre le contrôle » l&#39;ouvre en plein écran (toucher pour cliquer, glisser pour défiler, clavier). Le bot reprend la main après 8 s sans action.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Widgets interactifs&lt;/strong&gt; : les cartes, listes, formulaires, tableaux et graphiques envoyés par un bot s&#39;affichent dans le fil. Un toucher ou un envoi devient votre message suivant.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Skins verrouillés visibles&lt;/strong&gt; : tous les personnages et tous les skins s&#39;affichent. Un skin verrouillé porte un cadenas et nomme le succès qui le débloque ; un toucher l&#39;affiche en aperçu, sans rien enregistrer. Un skin gagné débloque son personnage.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Utilisation&lt;/strong&gt; : l&#39;iPhone et l&#39;iPad montrent aussi votre propre utilisation, avec Coût en haut et seulement les fournisseurs connectés dans Forfait.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Data&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Fenêtre Data plus claire&lt;/strong&gt; : si le serveur n&#39;offre pas encore la fenêtre Data, la ligne de Réglages &amp;gt; Expérimental est grisée avec la raison, et « Ouvrir la fenêtre Data » affiche un message au lieu de ne rien faire.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Hébergement&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Kubernetes&lt;/strong&gt; : trois corrections pour les serveurs hébergés sur Kubernetes. Le nœud préchauffé se réchauffe bien, le provisionneur démarre, et il joint l&#39;API du cluster.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Installation&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;macOS&lt;/strong&gt; (Apple Silicon : &lt;code&gt;arm64&lt;/code&gt;, Intel : &lt;code&gt;x64&lt;/code&gt;) : ouvrez &lt;code&gt;Sagax-0.5.4-arm64.dmg&lt;/code&gt; ou &lt;code&gt;Sagax-0.5.4-x64.dmg&lt;/code&gt; et glissez Sagax dans Applications. Signée (Developer ID) et notariée par Apple.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Windows&lt;/strong&gt; (x64 et arm64) : lancez &lt;code&gt;Sagax-0.5.4-setup.exe&lt;/code&gt;. Non signé : SmartScreen affiche un éditeur inconnu ; choisissez &lt;strong&gt;Informations complémentaires&lt;/strong&gt;, puis &lt;strong&gt;Exécuter quand même&lt;/strong&gt;. Versions portables : &lt;code&gt;Sagax-0.5.4-win-x64.zip&lt;/code&gt; et &lt;code&gt;Sagax-0.5.4-win-arm64.zip&lt;/code&gt;.&lt;/p&gt;
+&lt;h2&gt;English&lt;/h2&gt;
+&lt;p&gt;Sagax 0.5.4 continues the simplification of 0.5.3: shorter Settings, one place for keys, every member sees their own usage, a quieter turn line and, on iPhone and iPad, the bot&#39;s browser and widgets as on desktop.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;General: one account card&lt;/strong&gt;: your photo, name, label (edited in place), email and Sign out fit in one card. Name and email are no longer repeated; the server and organization show on hover.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Models and voice: one place for keys&lt;/strong&gt;: every key (models, voice, images) is added in the Keys section. When voice or image generation lacks its key, an &quot;Add in Keys&quot; link takes you there. Keys you already entered are kept. Ready engines are always visible.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Usage, for every member&lt;/strong&gt;: Settings &amp;gt; Usage shows for everyone, in Simple mode too, and only shows your own usage (your conversations and the routines run on your behalf). The whole organization&#39;s view stays in the console, for administrators.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Usage: Cost on top&lt;/strong&gt;: the Cost card moves above Plan. Plan only lists connected providers that answer, and is hidden when there are none.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Organization&lt;/strong&gt;: Routines in conversation, Group turns and MCP calls move from General &amp;gt; Advanced to Organization. On a standalone computer, they stay in General &amp;gt; Advanced.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Plugins and GitHub in Connect apps&lt;/strong&gt;: the organization&#39;s allowed marketplaces, GitHub tokens and GitHub OAuth app now live in Connect apps &amp;gt; Manage &amp;gt; Advanced, for administrators.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Pages leaving the app&lt;/strong&gt;: People, Installations and Organization sharing belong to Sagax Business, like Activity, Email and Pair devices in 0.5.3. A bot owner sharing their bot is unchanged.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Quieter turn line&lt;/strong&gt;: a bot turn is summed up by its duration, for example &quot;Worked 9s&quot;, in small grey text. Click to expand the steps, unchanged.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Ghost conversation fixed&lt;/strong&gt;: when nothing is selected, the page stays empty instead of showing a conversation you had closed. Closing the open conversation leaves it, from another device too.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Computer picker in a drop-down menu&lt;/strong&gt;: in the bot&#39;s Computer tab, a drop-down menu replaces the row of chips.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Browser window in French&lt;/strong&gt;: the texts of the bot&#39;s browser window are translated.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Bots&#39; browser back on servers&lt;/strong&gt;: the bots&#39; built-in browser starts again on servers (Chrome could no longer launch one of its components).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;On iPhone and iPad&lt;/strong&gt;: the bot&#39;s browser works like the VM, with a live preview, its status and a full-screen Take control (tap to click, drag to scroll, keyboard; the bot takes back control after 8 s without action). Interactive widgets (cards, lists, forms, tables, charts) show in the thread, and a tap or a submit becomes your next message. Every character and skin shows; a locked skin has a padlock, names the achievement that unlocks it, and a tap previews it without saving anything; an earned skin unlocks its character. Usage shows your own usage, with Cost on top and only connected providers under Plan.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Clearer Data window&lt;/strong&gt;: if the server does not offer the Data window yet, its row under Settings &amp;gt; Experimental is greyed out with the reason, and &quot;Open the Data window&quot; shows a message instead of doing nothing.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Kubernetes&lt;/strong&gt;: three fixes for servers hosted on Kubernetes. The warm node warms up, the provisioner starts, and it reaches the cluster API.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;macOS builds are signed with a Developer ID and notarized by Apple. Windows (x64 and arm64, one installer) is unsigned: SmartScreen shows an unknown publisher; choose More info, then Run anyway.&lt;/p&gt;</content>
+    <author>
+      <name>jencryzthers</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/7398629?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1391258042/pulsa-v0.5.3</id>
+    <updated>2026-10-15T18:03:13Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/pulsatrixtechnologies/Sagax/releases/tag/pulsa-v0.5.3"/>
+    <title>Sagax 0.5.3</title>
+    <content type="html">&lt;p&gt;Sagax 0.5.3 simplifie les menus et les réglages, laisse le propriétaire d&#39;un bot décider de ses permissions, ne montre que les modèles qui fonctionnent, configure la synchro de la mémoire toute seule, rend le fil plus discret et donne au navigateur du bot le même aperçu en direct que la VM.&lt;/p&gt;
+&lt;h2&gt;Menus simplifiés&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Environ deux fois moins d&#39;éléments dans les menus&lt;/strong&gt; : chaque menu garde l&#39;essentiel, les actions rares sont regroupées dans un sous-menu ou retirées.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Réglages réduits&lt;/strong&gt; : moins de pages et d&#39;options, sans doublons ; les réglages techniques sont regroupés dans une page « Avancé ». Activité, Courriel et Jumeler des appareils ne sont plus dans l&#39;app (ils relèvent de Sagax Business).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Un seul menu « … » par bot et par conversation&lt;/strong&gt; : le même menu partout, dans la barre latérale comme dans « Tous les fils ».&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Éditeur du bot en 6 groupes&lt;/strong&gt; : les réglages d&#39;un bot sont rangés en six groupes clairs au lieu de 14 catégories.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Création d&#39;un bot sur une seule page&lt;/strong&gt; : tout se remplit au même endroit, le reste sous « Plus d&#39;options ».&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Une ligne par tour dans le fil&lt;/strong&gt; : chaque tour du bot se résume en une ligne (durée et outils utilisés), que vous pouvez déplier ; les étapes identiques sont regroupées.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Mode Simple plus léger&lt;/strong&gt; : une approbation n&#39;offre que deux choix et le menu de modèles se résume à « Tous les modèles ».&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Sur iPhone et iPad : menus simplifiés&lt;/strong&gt; : le même menu de fil et le même menu « … » du bot que sur le bureau, l&#39;éditeur du bot en 6 groupes, et des réglages allégés (Modèles et voix, page Avancé, votre utilisation).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Sur iPad : activités en cours&lt;/strong&gt; : en haut de l&#39;onglet Détails du bot, seulement quand quelque chose roule.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;VM locale démarrée automatiquement&lt;/strong&gt; : elle démarre seule quand le bot en a besoin. Son état et le bouton Réinitialiser sont dans Réglages &amp;gt; Ordinateur.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Traduction française complète&lt;/strong&gt; de l&#39;interface.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Permissions des bots&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Un bot agit avec vos droits&lt;/strong&gt; : sur un serveur d&#39;organisation, les demandes d&#39;un bot vous arrivent à vous, son propriétaire, au lieu d&#39;aller à un administrateur. Seul ce qui dépasse vos droits reste une demande pour l&#39;administrateur.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Trois modes par bot&lt;/strong&gt; : Approbation (par défaut, le bot vous demande), Approbation automatique, et Bypass (avec un avertissement et une confirmation, seulement si votre organisation le permet, et toujours journalisé).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Vos règles, retenues par personne&lt;/strong&gt; : sur une demande, choisissez Toujours autoriser, Autoriser une fois, Refuser ou Toujours refuser. La règle ne vaut que pour vous : elle ne répond jamais pour le bot de quelqu&#39;un d&#39;autre.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Page Permissions du bot&lt;/strong&gt; : le mode du bot et la liste de vos règles, à modifier ou supprimer. Une suppression, un changement en lot ou un message envoyé à l&#39;extérieur demande toujours votre accord, sauf si une règle autorise ce type d&#39;action.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Agents temporaires&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Agents créés à la demande&lt;/strong&gt; : un agent créé par un autre outil ou par un bot est temporaire. Il disparaît après 24 h sans activité.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Consulter et retirer&lt;/strong&gt; : on peut lire la fiche d&#39;un agent, et le retirer. Un agent retiré est archivé, pas effacé : ses conversations restent 30 jours.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Gardes&lt;/strong&gt; : un agent temporaire ne crée pas d&#39;autres agents, et chaque personne en a au plus 10 actifs. Ils n&#39;encombrent pas la liste de vos bots dans l&#39;app.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Modèles&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Menu de modèles plus court&lt;/strong&gt; : Rechercher, Auto, le modèle du bot, vos favoris, puis un sous-menu par fournisseur au lieu d&#39;une longue liste.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Seulement les modèles qui fonctionnent&lt;/strong&gt; : un modèle dont le moteur n&#39;est pas installé, pas permis ou sans compte pour le payer est caché. À la création d&#39;un bot, Sagax choisit un modèle qui fonctionne.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Réglages &amp;gt; Modèles et voix&lt;/strong&gt; : une seule page pour le modèle Auto et toutes les clés (modèles et voix). La clé de voix Grok fait maintenant partie de la clé xAI.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Mémoire&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Synchro de la mémoire sans jeton à coller&lt;/strong&gt; : sur un serveur d&#39;organisation relié à Perspicax, Réglages &amp;gt; Mémoire ne demande plus d&#39;adresse ni de jeton. La synchro se configure et tourne toute seule, pour la personne connectée seulement.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Ordinateur et navigateur&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Le navigateur du bot comme la VM&lt;/strong&gt; : l&#39;onglet Ordinateur montre un aperçu en direct du navigateur, avec son état (démarrage, en marche, éteint) et la même fenêtre pour en prendre le contrôle.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Fil de conversation&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Étapes discrètes&lt;/strong&gt; : les outils utilisés par le bot s&#39;affichent en lignes grises, comme « Réflexion », avec une phrase claire au lieu du nom technique. Un clic déplie le détail.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Activités en cours à un seul endroit&lt;/strong&gt; : en haut de l&#39;onglet Détails du bot, au lieu d&#39;un panneau séparé parfois vide.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Widgets et vidéo&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Widgets interactifs&lt;/strong&gt; : un bot peut afficher une carte, une liste, un formulaire, un tableau ou un graphique. Un clic ou un envoi devient votre message suivant.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Vidéos YouTube&lt;/strong&gt; : un lien YouTube se joue dans un lecteur dans le fil, au lieu d&#39;une carte « Ouvrir ».&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Widgets ConnectWise plus fiables&lt;/strong&gt; : le bot connaît le format exact attendu, donc le widget s&#39;affiche au lieu d&#39;un bloc de code.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Vidéos en direct et enregistrements&lt;/strong&gt; : les flux vidéo relayés par Sagax jouent maintenant dans Chrome, Windows et sur iPhone et iPad, pas seulement dans Safari.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Sécurité&lt;/strong&gt; : le relais vidéo refuse les adresses internes et privées. Une liste d&#39;hôtes permis est offerte aux administrateurs (&lt;code&gt;SAGAX_MEDIA_PROXY_ALLOW_HOSTS&lt;/code&gt;).&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Sécurité&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Permissions des outils en observation&lt;/strong&gt; : chaque appel d&#39;outil passe maintenant par un contrôle de permissions qui note ce qu&#39;il aurait refusé, sans rien bloquer pour l&#39;instant.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Durcissements&lt;/strong&gt; : une série de correctifs de sécurité dans le traitement du texte, des notes et des transcriptions.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Terminal&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Terminal mis à jour&lt;/strong&gt; : le terminal intégré passe à une nouvelle version de son moteur d&#39;affichage.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Apparence&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Nouvelle icône&lt;/strong&gt; : le logo Pulsatrix devient l&#39;icône par défaut sur macOS, Windows, Linux, le web et iOS. Le hibou reste offert dans le sélecteur sous le nom « Hibou ».&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Midnight&lt;/strong&gt; : le thème Midnight reprend le thème sombre de Grok Bot, en gris neutres.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Skins de mascotte&lt;/strong&gt; : tous les skins sont visibles dans Réglages du bot &amp;gt; Apparence. Ceux qui restent à gagner portent un cadenas et nomment le succès qui les débloque ; un skin gagné débloque sa mascotte.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Raccourcis dans la barre latérale&lt;/strong&gt; (Réglages &amp;gt; Apparence, mode Avancé) : Applications connectées et Parcourir les bots au pied de la barre latérale.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Simplifications&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Fiche d&#39;une personne&lt;/strong&gt; (bureau et iOS) : seulement « Message », sans « Fermer la conversation ».&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Connecter des applications&lt;/strong&gt; : « N connectés » à côté de la recherche, sans menu « Tous les types » ni bouton « Parcourir les bots ».&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Bibliothèque du bot&lt;/strong&gt; : le lien vers les plugins est retiré ; les plugins restent dans Connecter des applications.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Data&lt;/strong&gt; : la vue Data s&#39;ouvre dans sa propre fenêtre, derrière les fonctions expérimentales.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Installation&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;macOS&lt;/strong&gt; (Apple Silicon : &lt;code&gt;arm64&lt;/code&gt;, Intel : &lt;code&gt;x64&lt;/code&gt;) : ouvrez &lt;code&gt;Sagax-0.5.3-arm64.dmg&lt;/code&gt; ou &lt;code&gt;Sagax-0.5.3-x64.dmg&lt;/code&gt; et glissez Sagax dans Applications. Signée (Developer ID) et notariée par Apple.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Windows&lt;/strong&gt; (x64 et arm64) : lancez &lt;code&gt;Sagax-0.5.3-setup.exe&lt;/code&gt;. Non signé : SmartScreen affiche un éditeur inconnu ; choisissez &lt;strong&gt;Informations complémentaires&lt;/strong&gt;, puis &lt;strong&gt;Exécuter quand même&lt;/strong&gt;. Versions portables : &lt;code&gt;Sagax-0.5.3-win-x64.zip&lt;/code&gt; et &lt;code&gt;Sagax-0.5.3-win-arm64.zip&lt;/code&gt;.&lt;/p&gt;
+&lt;h2&gt;English&lt;/h2&gt;
+&lt;p&gt;Sagax 0.5.3 simplifies menus and settings, lets a bot&#39;s owner decide its permissions, shows only the models that work, sets up memory sync on its own, makes the thread quieter and gives the bot&#39;s browser the same live preview as the VM.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Simpler menus&lt;/strong&gt;: about half as many items; rare actions sit under More or are gone; Settings has fewer pages and no duplicates, with technical settings grouped under Advanced; Activity, Email and Pair devices leave the app (they belong to Sagax Business); one &quot;…&quot; menu per bot and per conversation; the bot editor is organized in 6 groups instead of 14 categories; creating a bot fits on one page; each turn in the thread is one line (time and tools used) you can expand, with identical steps grouped; Simple mode offers two choices on an approval; the local VM starts on its own, with its status and Reset under Settings &amp;gt; Computer; the French interface is fully translated.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;On iPhone and iPad: simpler menus&lt;/strong&gt;: the same thread menu and bot &quot;…&quot; menu as on desktop, the bot editor in 6 groups, and lighter settings (Models and voice, Advanced page, your usage). &lt;strong&gt;On iPad&lt;/strong&gt;, ongoing activity sits at the top of the bot&#39;s Details tab, only while something runs.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Bot permissions&lt;/strong&gt;: on an organization server, a bot acts with its owner&#39;s rights, so its requests go to you, not to an administrator; only what goes beyond your rights still goes to an administrator. Each bot has a mode: Approval (default), Automatic approval, or Bypass (with a warning and a confirmation, only if your organization allows it, always logged). On a request, choose Always allow, Allow once, Deny or Always deny; your rules apply to you only. The bot&#39;s Permissions page shows the mode and your rules, to edit or delete. A deletion, a bulk change or a message sent outside always asks, unless a rule allows that kind of action.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Temporary agents&lt;/strong&gt;: an agent created by another tool or by a bot is temporary and goes away after 24 h without activity. You can read an agent&#39;s profile and remove it; a removed agent is archived, not erased, and its conversations stay 30 days. A temporary agent cannot create agents, each person has at most 10 active, and they stay out of your bot list.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Shorter model menu&lt;/strong&gt;: Search, Auto, the bot&#39;s model, your favorites, then one sub-menu per provider instead of a long flat list.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Only models that work&lt;/strong&gt;: a model whose engine is not installed, not allowed or has nothing paying for it is hidden. Creating a bot picks a model that works.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Settings &amp;gt; Models and voice&lt;/strong&gt;: one page for the Auto model and every key (models and voice). The Grok voice key is now part of the xAI key.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Memory sync without a pasted token&lt;/strong&gt;: on an organization server linked to Perspicax, Settings &amp;gt; Memory no longer asks for an address or a token. Sync sets itself up and runs on its own, for the signed-in person only.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The bot&#39;s browser works like the VM&lt;/strong&gt;: the Computer tab shows a live preview of the browser, with its status (starting, running, off) and the same take-over window.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Quiet steps&lt;/strong&gt;: tools the bot uses show as grey lines, like Thinking, with a plain sentence instead of the technical name. Click to expand the detail.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Ongoing activity in one place&lt;/strong&gt;: at the top of the bot&#39;s Details tab, instead of a separate panel that was sometimes empty.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Interactive widgets&lt;/strong&gt;: a bot can show a card, list, form, table or chart. A click or a submit becomes your next message.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;YouTube videos&lt;/strong&gt; play in a player in the thread instead of an Open card. &lt;strong&gt;ConnectWise widgets&lt;/strong&gt; render reliably: the bot knows the exact format.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Live videos and recordings&lt;/strong&gt; relayed by Sagax now play in Chrome, on Windows and on iPhone and iPad, not only in Safari. The relay refuses internal and private addresses; administrators can allow hosts with &lt;code&gt;SAGAX_MEDIA_PROXY_ALLOW_HOSTS&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;New icon&lt;/strong&gt;: the Pulsatrix logo is the default icon on macOS, Windows, Linux, the web and iOS. The owl stays available in the picker as &quot;Owl&quot;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Midnight&lt;/strong&gt; now matches Grok Bot&#39;s dark theme, in neutral greys.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Tool permissions in observation&lt;/strong&gt;: every tool call now goes through a permission check that records what it would have refused, without blocking anything yet.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Security hardening&lt;/strong&gt;: a series of security fixes in how text, notes and transcripts are processed.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Updated terminal&lt;/strong&gt;: the built-in terminal moves to a new version of its display engine.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Mascot skins&lt;/strong&gt;: every skin is visible under Bot settings &amp;gt; Appearance. Locked ones show a padlock and name the achievement that unlocks them; an earned skin unlocks its mascot.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Sidebar shortcuts&lt;/strong&gt; (Settings &amp;gt; Appearance, Advanced mode): Connected apps and Browse bots at the foot of the sidebar.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Simplifications&lt;/strong&gt;: a person&#39;s card (desktop and iOS) offers only Message; Connect apps shows &quot;N connected&quot; next to search, without the All types menu or the Browse bots button; the plugins link leaves the bot&#39;s Library (plugins stay in Connect apps); Data opens in its own window, behind Experimental features.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;macOS builds are signed with a Developer ID and notarized by Apple. Windows (x64 and arm64, one installer) is unsigned: SmartScreen shows an unknown publisher; choose More info, then Run anyway.&lt;/p&gt;</content>
+    <author>
+      <name>jencryzthers</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/7398629?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1391258042/pulsa-v0.5.2</id>
+    <updated>2026-10-14T16:03:35Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/pulsatrixtechnologies/Sagax/releases/tag/pulsa-v0.5.2"/>
+    <title>Sagax 0.5.2</title>
+    <content type="html">&lt;p&gt;Sagax 0.5.2 rend les appels vocaux plus calmes et plus cohérents, empêche le serveur de manquer de mémoire au redémarrage, ajoute des réglages d&#39;effort propres à chaque modèle et prépare les sandboxes sur Kubernetes.&lt;/p&gt;
+&lt;h2&gt;Appel vocal&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Conversation en duplex&lt;/strong&gt; : éteinte par défaut. La révision 3 du réglage éteint aussi le duplex chez ceux qui l&#39;avaient allumé volontairement : en 0.5.x, un allumage volontaire et le défaut d&#39;alors s&#39;enregistraient de la même façon. Le commutateur des réglages avancés n&#39;a aucun effet tant que le serveur n&#39;a pas &lt;code&gt;SAGAX_VOICE_FULL_DUPLEX=1&lt;/code&gt;. Pour le rallumer : ce réglage côté serveur, puis le commutateur.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Raccrocher&lt;/strong&gt; : vous pouvez raccrocher, et le bot aussi quand vous lui dites au revoir ou que la conversation est terminée. Il dit un court au revoir avant de raccrocher, et refuse tant qu&#39;un travail lancé pour vous tourne encore.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Plus de tâches en parallèle pendant un appel&lt;/strong&gt; : ce que vous dites pendant que le bot réfléchit ou utilise un outil rejoint ce tour au lieu de lancer une deuxième tâche en parallèle.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Plus de phrases toutes faites&lt;/strong&gt; : le bot ne dit plus « Je regarde. » à chaque outil et ne lit plus les étiquettes des outils. Il annonce une attente une seule fois, dans ses propres mots, seulement quand elle sera vraiment longue.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Plus de note « sujets ouverts »&lt;/strong&gt; : chaque phrase dite pendant l&#39;appel n&#39;est plus présentée au bot comme un travail encore en cours en arrière-plan.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Serveur&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Démarrage sans pic de mémoire&lt;/strong&gt; : la version des moteurs enregistrée à la construction de l&#39;image n&#39;est plus relancée au démarrage. Pendant les 5 premières minutes, au plus 2 processus moteur à la fois servent au démarrage (sondes de version, de connexion et de modèles, routines en retard) ; une routine rattrapée ferme son moteur dès qu&#39;elle a fini. Un tour lancé par une personne, un appel ou un échange entre bots n&#39;attend jamais. Réglages : &lt;code&gt;SAGAX_BOOT_ENGINE_SLOTS&lt;/code&gt; (0 = éteint) et &lt;code&gt;SAGAX_BOOT_ENGINE_WINDOW_MS&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Sandboxes Kubernetes sur un pool dédié&lt;/strong&gt; : le provisionneur peut placer les pods de sandbox sur un pool de nœuds réservé avec &lt;code&gt;SAGAX_SANDBOX_K8S_NODE_SELECTOR&lt;/code&gt; (ex. &lt;code&gt;sagax.io/pool=sandboxes&lt;/code&gt;) et &lt;code&gt;SAGAX_SANDBOX_K8S_TOLERATION&lt;/code&gt; (ex. &lt;code&gt;sagax.io/pool=sandboxes:NoSchedule&lt;/code&gt;). Optionnels ; une valeur mal formée refuse le démarrage.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Réveil du cluster de sandboxes&lt;/strong&gt; : si le cluster Kubernetes est arrêté quand personne ne l&#39;utilise, Sagax le redémarre lui-même au premier besoin (une commande du bot, Démarrer, Reprendre) avec un webhook secret (&lt;code&gt;SAGAX_SANDBOX_K8S_WAKE_URL&lt;/code&gt;), puis attend qu&#39;il réponde (&lt;code&gt;SAGAX_SANDBOX_K8S_WAKE_TIMEOUT_MS&lt;/code&gt;, 8 minutes par défaut). La conversation affiche l&#39;attente ; les lectures (onglet Ordinateur, statut) ne réveillent jamais le cluster. Sans la variable, rien ne change.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Image Docker&lt;/strong&gt; : image publiée pour amd64 et arm64, signée et attestée, avec moins de vulnérabilités (base plus légère, paquets à jour). Les deux architectures utilisent le même navigateur (Chrome for Testing) et le même contrôle à la publication.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Sécurité&lt;/strong&gt; : la règle qui bloque les suppressions destructrices (&lt;code&gt;rm&lt;/code&gt;) est évaluée en temps linéaire.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Approbations&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Carte en langage clair&lt;/strong&gt; : une demande d&#39;approbation dit ce que le bot veut faire en mots simples, et devient un reçu d&#39;une ligne une fois répondue.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;« Toujours permettre »&lt;/strong&gt; sur un outil MCP devient une règle du bot, valable dans toutes ses conversations (elle apparaît dans Accès &amp;gt; Toujours permis). Le bot ne peut pas se l&#39;accorder lui-même pendant un tour. Les outils entre coéquipiers attendent votre réponse quand la revue entre pairs est éteinte.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Modèles&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Effort propre à chaque modèle&lt;/strong&gt; : le choix d&#39;effort n&#39;offre que les niveaux que le modèle accepte vraiment, et « Défaut » nomme celui du modèle (ex. « Défaut (High) »). Changer de modèle garde un niveau qu&#39;il accepte, sinon revient à son défaut. Le serveur applique la même règle, y compris juste après un redémarrage.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Réglages du modèle dans le menu du composeur&lt;/strong&gt; (mode Avancé) : version rapide quand elle existe, fenêtre de contexte, sous-menus Effort et Modèle.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Modèles locaux&lt;/strong&gt; : plusieurs modèles sous un même nom gardent ce qui les distingue.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Interface&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Lignes « Aller à la conversation »&lt;/strong&gt; consécutives regroupées en une seule puce.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Mascotte flottante&lt;/strong&gt; : le sommeil se voit clairement pour chaque personnage, et la grappe reste hors du Dock et de la barre des tâches.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Agents lancés&lt;/strong&gt; : ils vont dans la section Code seulement s&#39;ils ont vraiment travaillé sur du code.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Succès&lt;/strong&gt; : le crabe Claude se débloque en connectant Claude ; sur iOS, récompenses surprises, crabe verrouillé caché et « Nouveau bot » qui respecte les déblocages.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Installation&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;macOS&lt;/strong&gt; (Apple Silicon : &lt;code&gt;arm64&lt;/code&gt;, Intel : &lt;code&gt;x64&lt;/code&gt;) : ouvrez &lt;code&gt;Sagax-0.5.2-arm64.dmg&lt;/code&gt; ou &lt;code&gt;Sagax-0.5.2-x64.dmg&lt;/code&gt; et glissez Sagax dans Applications. Signée (Developer ID) et notariée par Apple.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Windows&lt;/strong&gt; (x64 et arm64) : lancez &lt;code&gt;Sagax-0.5.2-setup.exe&lt;/code&gt;. Non signé : SmartScreen affiche un éditeur inconnu ; choisissez &lt;strong&gt;Informations complémentaires&lt;/strong&gt;, puis &lt;strong&gt;Exécuter quand même&lt;/strong&gt;. Versions portables : &lt;code&gt;Sagax-0.5.2-win-x64.zip&lt;/code&gt; et &lt;code&gt;Sagax-0.5.2-win-arm64.zip&lt;/code&gt;.&lt;/p&gt;
+&lt;h2&gt;English&lt;/h2&gt;
+&lt;p&gt;Sagax 0.5.2 makes voice calls calmer and more coherent, keeps the server from running out of memory on restart, adds per-model effort settings and readies sandboxes on Kubernetes.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Full-duplex conversation&lt;/strong&gt;: off by default. Settings revision 3 also turns duplex off for people who had enabled it on purpose: in 0.5.x a voluntary on and the old default were stored the same way. The Advanced switch has no effect unless the server has &lt;code&gt;SAGAX_VOICE_FULL_DUPLEX=1&lt;/code&gt;. To turn it back on: that server setting, then the switch.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Hang up&lt;/strong&gt;: you can hang up, and so can the bot when you say goodbye or the conversation is over. It says a short goodbye first, and refuses while work it started for you is still running.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;No parallel tasks on a call&lt;/strong&gt;: what you say while the bot thinks or runs a tool joins that turn instead of starting a second task.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;No stock phrases&lt;/strong&gt;: the bot no longer says &quot;Let me check.&quot; for every tool or reads tool labels aloud. It mentions a wait once, in its own words, only when it will really take a while.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;No &quot;open topics&quot; note&lt;/strong&gt;: lines said on the call are no longer presented to the bot as work still running in the background.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Startup without a memory spike&lt;/strong&gt;: the engine versions recorded when the image was built are not run again at startup. For the first 5 minutes at most 2 engine processes run at once for startup work (version, sign-in and model probes, overdue routines); a caught-up routine closes its engine when it is done. A person&#39;s own turn, a call or a bot-to-bot exchange never waits. Settings: &lt;code&gt;SAGAX_BOOT_ENGINE_SLOTS&lt;/code&gt; (0 = off) and &lt;code&gt;SAGAX_BOOT_ENGINE_WINDOW_MS&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Kubernetes sandboxes on a dedicated pool&lt;/strong&gt;: &lt;code&gt;SAGAX_SANDBOX_K8S_NODE_SELECTOR&lt;/code&gt; (e.g. &lt;code&gt;sagax.io/pool=sandboxes&lt;/code&gt;) and &lt;code&gt;SAGAX_SANDBOX_K8S_TOLERATION&lt;/code&gt; (e.g. &lt;code&gt;sagax.io/pool=sandboxes:NoSchedule&lt;/code&gt;) place sandbox pods on a reserved node pool. Optional; a malformed value refuses the start.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Sandbox cluster wake-up&lt;/strong&gt;: when the Kubernetes cluster is stopped while idle, Sagax starts it on first need (a bot command, Start, Resume) through a secret webhook (&lt;code&gt;SAGAX_SANDBOX_K8S_WAKE_URL&lt;/code&gt;), then waits for it (&lt;code&gt;SAGAX_SANDBOX_K8S_WAKE_TIMEOUT_MS&lt;/code&gt;, 8 minutes by default). The conversation shows the wait; reads (Computer tab, status) never wake the cluster. Without the variable nothing changes.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Docker image&lt;/strong&gt;: published for amd64 and arm64, signed and attested, with fewer vulnerabilities (slimmer base, updated packages). Both architectures ship the same browser (Chrome for Testing) and pass the same publish check.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Security&lt;/strong&gt;: the rule that blocks destructive &lt;code&gt;rm&lt;/code&gt; commands is evaluated in linear time.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Plain-language approval card&lt;/strong&gt;: an approval request says what the bot wants to do in plain words, and becomes a one-line receipt once answered. &lt;strong&gt;Always allow&lt;/strong&gt; on an MCP tool becomes the bot&#39;s rule for every conversation (it shows under Access &amp;gt; Always allowed). The bot cannot grant it to itself during a turn. Teammate tools wait for your answer when peer review is off.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Per-model effort&lt;/strong&gt;: the effort choice offers only the levels the model really takes, and Default names the model&#39;s own (e.g. &quot;Default (High)&quot;). Switching models keeps a level it takes, otherwise its default runs. The server applies the same rule. The composer menu (Advanced) ends with the model&#39;s settings: fast variant when there is one, context window, Effort and Model sub-menus. Local models sharing one name keep what tells them apart.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Interface&lt;/strong&gt;: consecutive &quot;Go to conversation&quot; lines fold into one chip; the floating mascot&#39;s sleep is unmistakable for every character and its cluster stays off the Dock and taskbar; launched agents go to Coding only when they did code work; the Claude crab unlocks when you connect Claude, and on iOS surprise rewards, a hidden locked crab and New Bot respecting unlocks.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;macOS builds are signed with a Developer ID and notarized by Apple. Windows (x64 and arm64, one installer) is unsigned: SmartScreen shows an unknown publisher; choose More info, then Run anyway.&lt;/p&gt;</content>
+    <author>
+      <name>jencryzthers</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/7398629?s=60&amp;v=4"/>
+  </entry>
+</feed>

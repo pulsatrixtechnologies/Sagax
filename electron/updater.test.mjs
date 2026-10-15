@@ -8,12 +8,13 @@ import localOriginModule from "./local-origin.cjs";
 const LOCAL = "http://127.0.0.1:8799";
 const OTHER = "https://bots.example.test";
 
-const fixture = vi.hoisted(() => ({ autoUpdater: null, handlers: new Map() }));
+const fixture = vi.hoisted(() => ({ autoUpdater: null, handlers: new Map(), fetch: null }));
 
 vi.mock("electron", () => ({
   app: { isPackaged: true, getPath: () => "/unused-updater-test-log" },
   clipboard: { writeText: vi.fn() },
   ipcMain: { handle: (name, handler) => fixture.handlers.set(name, handler) },
+  net: { fetch: (...args) => fixture.fetch(...args) },
 }));
 vi.mock("node:module", () => ({
   createRequire: () => () => ({ autoUpdater: fixture.autoUpdater }),
@@ -47,6 +48,7 @@ async function load(allowed = pageAllowed) {
   autoUpdater.quitAndInstall = vi.fn();
   autoUpdater.setFeedURL = vi.fn();
   fixture.autoUpdater = autoUpdater;
+  fixture.fetch = vi.fn(async () => ({ ok: false }));
   const updater = await import("./updater.mjs");
   updater.registerUpdaterIpc({ pageAllowed: allowed });
   return { updater, autoUpdater, handlers: fixture.handlers };
@@ -129,6 +131,23 @@ it("downloads an update by itself: the first check after launch starts it, and n
   const statuses = local.webContents.send.mock.calls.map(([, state]) => state.status);
   expect(statuses).not.toContain("available");
   expect(statuses.at(-1)).toBe("downloaded");
+});
+
+it("an update found without notes shows our release body, read from GitHub's API", async () => {
+  const local = page(LOCAL);
+  const { updater } = await load();
+  fixture.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ tag_name: "pulsa-v2.0.0", body: "Quoi de neuf\n\n## English\n\nWhat's new" }) }));
+  updater.attachUpdaterWindow({ webContents: local.webContents });
+  updater.startUpdater();
+
+  await vi.advanceTimersByTimeAsync(15_000);
+  await settle();
+
+  expect(fixture.fetch).toHaveBeenCalledTimes(1);
+  expect(fixture.fetch.mock.calls[0][0]).toBe("https://api.github.com/repos/pulsatrixtechnologies/sagax/releases/tags/pulsa-v2.0.0");
+  const last = local.webContents.send.mock.calls.at(-1)[1];
+  expect(last.status).toBe("downloaded");
+  expect(last.notes).toBe("Quoi de neuf\n\n## English\n\nWhat's new");
 });
 
 it("this app's own page reads and drives the update channels; another server's page is refused", async () => {

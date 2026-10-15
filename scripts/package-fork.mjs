@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkReleaseNotes } from "./check-release-notes.mjs";
+import { embedFeeds } from "./embed-feed-release-notes.mjs";
 
 const target = process.argv[2];
 if (target !== "mac" && target !== "win") {
@@ -19,10 +20,8 @@ if (!/^\d+\.\d+\.\d+$/.test(fork ?? "")) {
   console.error("package.json forkVersion must be X.Y.Z");
   process.exit(1);
 }
-const notes = checkReleaseNotes({
-  root: join(dirname(fileURLToPath(import.meta.url)), ".."),
-  version: fork,
-});
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const notes = checkReleaseNotes({ root, version: fork });
 if (!notes.ok) {
   console.error(notes.message);
   process.exit(1);
@@ -53,4 +52,14 @@ const result = spawnSync("pnpm", args, {
   stdio: "inherit",
   env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: target === "mac" && macIdentity ? "true" : "false" },
 });
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+
+// The notes travel with the update: write docs/releases/<fork>.md into the
+// feed electron-builder just wrote, as its releaseNotes.
+const feed = join(root, "release", target === "win" ? "latest.yml" : "latest-mac.yml");
+const embedded = embedFeeds({ root, version: fork, feeds: [feed] });
+if (!embedded.ok) {
+  console.error(embedded.message);
+  process.exit(1);
+}
+console.log(`release notes ${fork} written into ${feed}`);

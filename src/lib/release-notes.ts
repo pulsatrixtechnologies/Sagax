@@ -43,7 +43,9 @@ export interface WhatsNewDecision {
 export const RELEASE_NOTES_SEEN_KEY = "sagax.releaseNotes.seen.v1";
 
 const RELEASE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-const ENGLISH_HEADING = /^## English[ \t]*$/m;
+// "## English" in the release file; <h2>English</h2> in GitHub's atom feed
+// (HTML), which an old feed or a failed API read can still bring.
+const ENGLISH_HEADING = /^(?:## English|<h2[^>]*>\s*English\s*<\/h2>)[ \t]*$/m;
 
 interface ParsedVersion {
   core: [number, number, number];
