@@ -76,7 +76,8 @@ function pageOrigin(event) {
  * @param {import("electron").IpcMain} deps.ipcMain
  * @param {() => import("electron").BrowserWindow | null} deps.getMainWindow
  * @param {(event: import("electron").IpcMainInvokeEvent) => boolean} deps.isTrustedMain
- * @param {(origin: string) => Promise<boolean>} deps.featureEnabled the server's `features.dataWindow`
+ * @param {(origin: string) => Promise<boolean>} deps.featureEnabled the server's `features.dataWindow`;
+ *   rejects when the server could not be asked (no answer, not 2xx, not JSON)
  * @param {(url: string) => void} [deps.openExternal] a link out of the window (validated by the caller)
  * @param {() => unknown} [deps.icon]
  * @param {(line: string) => void} [deps.log]
@@ -109,20 +110,27 @@ export function createDataWindows(deps) {
     return Boolean(main && !main.isDestroyed() && event?.sender === main.webContents);
   };
 
-  /** "created", "focused", or "refused" (not the main window's page, a bad
-   * request, the experimental switch off, or too many windows). */
+  /** "created" or "focused"; "off" when the page's server answered that its
+   * experimental switch is off; "unavailable" when the switch could not be
+   * read (the server did not answer, or not with its config); "refused"
+   * otherwise (not the main window's page, a bad request, too many windows).
+   * Only "off" means the switch is off: the page says so only then. */
   async function open(event, raw) {
     if (!fromMainWindow(event)) return "refused";
     const request = sanitizeDataWindowRequest(raw);
     const origin = pageOrigin(event);
     if (!request || !origin) return "refused";
-    let enabled = false;
+    let enabled;
     try {
       enabled = (await featureEnabled(origin)) === true;
     } catch (error) {
-      log(`data window: could not read the experimental switch (${error?.message ?? error})`);
+      log(`data window: could not read the experimental switch from ${origin} (${error?.message ?? error})`);
+      return "unavailable";
     }
-    if (!enabled) return "refused";
+    if (!enabled) {
+      log(`data window: ${origin} reports the experimental switch off`);
+      return "off";
+    }
 
     const existing = live(request.botId);
     if (existing && existing.origin === origin) {

@@ -741,6 +741,14 @@ function ExperimentalFeaturesRow() {
   const [saving, setSaving] = useState<ExperimentalFeature | null>(null);
   const [error, setError] = useState("");
 
+  // The switches show the server's saved state, read again when this card
+  // opens: never a copy this page kept from earlier.
+  useEffect(() => {
+    let live = true;
+    api<ConfigStatus>("/api/config").then((config) => { if (live) dispatch({ type: "configStatus", config }); }, () => {});
+    return () => { live = false; };
+  }, [dispatch]);
+
   const toggle = async (feature: ExperimentalFeature, next: boolean) => {
     if (saving) return;
     setSaving(feature);

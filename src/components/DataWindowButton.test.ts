@@ -10,7 +10,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({ dataWindow: false, dataView: null as null | { botId: string; threadId: string; cardId: string } }));
 const dispatch = vi.hoisted(() => vi.fn());
 const openDataWindow = vi.hoisted(() => vi.fn(async () => "created"));
+const api = vi.hoisted(() => vi.fn(async () => ({ features: { dataWindow: false } })));
 vi.mock("@/state/store", () => ({
+  api,
   useStore: () => ({ state: { config: { features: { dataWindow: fixture.dataWindow } }, dataView: fixture.dataView }, dispatch }),
 }));
 vi.mock("@/lib/data-window", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/data-window")>(), openDataWindow }));
@@ -40,6 +42,7 @@ afterEach(() => {
   fixture.dataView = null;
   dispatch.mockClear();
   openDataWindow.mockClear();
+  api.mockClear();
   vi.unstubAllGlobals();
 });
 
@@ -61,14 +64,30 @@ describe("Data item", () => {
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("blocked") }));
   });
 
-  it("says the window is off when the desktop refuses to open it, instead of doing nothing", async () => {
-    // A server that does not report the switch on (an organization server
-    // older than the Data window) makes the desktop refuse: say so.
+  it("says the window is off only when the server answered off, and rereads the config", async () => {
+    // The desktop asked the server again: its switch is off. This page's
+    // config was stale, so it is read again and Settings shows the truth.
     fixture.dataWindow = true;
-    openDataWindow.mockImplementationOnce(async () => "refused");
+    openDataWindow.mockImplementationOnce(async () => "off");
     const container = render(createElement(DataWindowProbe, { bot: { id: "scout", name: "Scout" } }));
     container.querySelector<HTMLButtonElement>("[data-data-window-button]")!.click();
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("The Data window is off") }));
+    expect(api).toHaveBeenCalledWith("/api/config");
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "configStatus", config: { features: { dataWindow: false } } }));
+  });
+
+  it("never says the window is off when the desktop could not ask the server, or refused for another reason", async () => {
+    fixture.dataWindow = true;
+    const container = render(createElement(DataWindowProbe, { bot: { id: "scout", name: "Scout" } }));
+    const button = container.querySelector<HTMLButtonElement>("[data-data-window-button]")!;
+    openDataWindow.mockImplementationOnce(async () => "unavailable");
+    button.click();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("could not check") }));
+    openDataWindow.mockImplementationOnce(async () => "refused");
+    button.click();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("could not open") }));
+    expect(dispatch).not.toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("is off") });
+    expect(api).not.toHaveBeenCalled();
   });
 
   it("is absent on the companion connection, where Data is not served", () => {
