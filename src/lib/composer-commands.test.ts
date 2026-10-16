@@ -9,6 +9,8 @@ import {
   engineCommandInsertion,
   groupCommandTargets,
   groupMenuLimitPerBot,
+  goalSubcommandBlock,
+  goalSubcommandFromComposer,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
   type ComposerSlashCommand,
@@ -40,6 +42,33 @@ describe("composer slash commands", () => {
     );
     expect(goalTextFromComposer("/goalie says hello")).toBeNull();
     expect(goalTextFromComposer("discuss /goal later")).toBeNull();
+  });
+
+  it("keeps the menu open on /goal's subcommands, never on the goal itself", () => {
+    expect(composerSlashTrigger("/goal ", 6)).toEqual({ query: "goal ", start: 0, end: 6 });
+    expect(composerSlashTrigger("/goal st", 8)).toEqual({ query: "goal st", start: 0, end: 8 });
+    expect(composerSlashTrigger("/goal stop now", 14)).toBeNull();
+    expect(composerSlashTrigger("/goalie ", 8)).toBeNull();
+  });
+
+  it("reads a typed subcommand alone, and leaves it out of the goal text", () => {
+    expect(goalSubcommandFromComposer("/goal stop")).toBe("stop");
+    expect(goalSubcommandFromComposer("/GOAL Status ")).toBe("status");
+    expect(goalSubcommandFromComposer("/goal stop the server")).toBeNull();
+    expect(goalSubcommandFromComposer("/goal ship")).toBeNull();
+    expect(goalTextFromComposer("/goal stop")).toBeNull();
+    expect(goalTextFromComposer("/goal stop the server")).toBe("stop the server");
+  });
+
+  it("says why a subcommand cannot run from the room's latest goal run", () => {
+    expect(goalSubcommandBlock("status", undefined)).toBe("noGoal");
+    expect(goalSubcommandBlock("status", "completed")).toBeNull();
+    expect(goalSubcommandBlock("stop", "working")).toBeNull();
+    expect(goalSubcommandBlock("stop", "stopped")).toBe("notRunning");
+    expect(goalSubcommandBlock("resume", "stopped")).toBeNull();
+    expect(goalSubcommandBlock("resume", "working")).toBe("alreadyRunning");
+    expect(goalSubcommandBlock("resume", "completed")).toBe("completed");
+    expect(goalSubcommandBlock("pause", "working")).toBe("pauseUnsupported");
   });
 
   it("offers setup as a slash command id and keeps the typed token", () => {
@@ -82,10 +111,25 @@ describe("composer command menu (Sagax and the engine)", () => {
     { name: "mcp__github__review_pr", description: "Review a PR", group: "mcp", argumentHint: "<pr>" },
   ];
 
-  it("lists every command grouped Sagax, Engine, Plugins, MCP for a bare slash", () => {
+  it("lists /goal's subcommands under the goal heading, matched as typed after /goal", () => {
+    const goal: ComposerSlashCommand[] = [
+      { id: "goal", label: "/goal", description: "Keep a team working" },
+      { id: "goal-status", label: "/goal status", description: "Where it stands" },
+      { id: "goal-stop", label: "/goal stop", description: "Stop it" },
+      { id: "learn", label: "/learn", description: "Write a skill" },
+    ];
+    expect(composerCommandMenu(goal, [], "").map((item) => [item.group, item.label])).toEqual([
+      ["goal", "/goal"], ["goal", "/goal status"], ["goal", "/goal stop"], ["sagax", "/learn"],
+    ]);
+    expect(composerCommandMenu(goal, [], "goal ").map((item) => item.label)).toEqual(["/goal status", "/goal stop"]);
+    expect(composerCommandMenu(goal, [], "goal st").map((item) => item.label)).toEqual(["/goal status", "/goal stop"]);
+    expect(composerCommandMenu(goal, [], "goal sto").map((item) => item.label)).toEqual(["/goal stop"]);
+  });
+
+  it("lists every command grouped Objective, Sagax, Engine, Plugins, MCP for a bare slash", () => {
     const menu = composerCommandMenu(sagax, engine, "");
     expect(menu.map((item) => [item.group, item.label])).toEqual([
-      ["sagax", "/goal"], ["sagax", "/setup"],
+      ["goal", "/goal"], ["sagax", "/setup"],
       ["engine", "/compact"], ["engine", "/engine:goal"], ["engine", "/context"], ["engine", "/model"],
       ["plugins", "/pulsatrix-flow:using-px-flow"],
       ["mcp", "/mcp__github__review_pr"],
@@ -150,7 +194,7 @@ describe("group slash commands (per bot)", () => {
       "bot:pixel:engine:compact",
       "bot:pixel:engine:review",
     ]);
-    expect(items.map(composerMenuSection)).toEqual(["sagax", "bot:scout", "bot:pixel", "bot:pixel"]);
+    expect(items.map(composerMenuSection)).toEqual(["goal", "bot:scout", "bot:pixel", "bot:pixel"]);
     const pixelCompact = items[2]!;
     if (pixelCompact.kind !== "engine") throw new Error("engine item expected");
     expect(engineCommandInsertion(pixelCompact)).toBe("@Pixel /compact ");

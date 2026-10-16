@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, Loader2, Plus, Trash2, X } from "lucide-react";
 import { api, BotEditorStore, useStore, type Bot, type ConfigStatus, type ModelSelection } from "@/state/store";
 import { BotCreationDraft, EMPTY_BOT_DEFAULTS } from "@/lib/bot-creation-draft";
 import { createConfiguredBot, preparedBotTemplate } from "@/lib/create-configured-bot";
@@ -25,7 +25,7 @@ import { PermissionsSection } from "./bot-settings/PermissionsSection";
 import { VoiceSection } from "./bot-settings/VoiceSection";
 import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
 import { BotEditorContext } from "./bot-settings/BotEditorContext";
-import { inputCls } from "./bot-settings/field";
+import { CompactRow, ConfirmPill, FIELD, FieldRow, PILL, PillSelect, PRIMARY_PILL, Switch, type PillOption, DIALOG, GROUP_CARD } from "./SettingsPrimitives";
 import { RoutineEditor } from "./RoutinesPage";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
@@ -78,10 +78,10 @@ export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSel
     window.addEventListener("keydown", onKey, true);
     return () => { window.removeEventListener("keydown", onKey, true); if (opener?.isConnected) opener.focus(); };
   }, []);
-  return <div data-dialog-backdrop className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+  return <div data-dialog-backdrop className={cn(DIALOG.backdrop, "z-[70]")}
     onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t("newBot.create")} tabIndex={-1}
-      className="w-full max-w-sm rounded-[14px] border border-border bg-elevated p-5 text-ink"
+      className={`${DIALOG.frame} max-w-sm`}
       onKeyDown={event => {
         if (event.key === "Escape") { event.stopPropagation(); close(); }
         if (event.key === "Tab") {
@@ -91,15 +91,15 @@ export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSel
           else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0]?.focus(); }
         }
       }}>
-      <h2 className="mb-2 text-[17px] font-semibold">{t("newBot.create")}</h2>
-      <p data-new-bot-quick className="mb-4 text-[13px] leading-[18px] text-ink-secondary">{t("newBot.quickCreate")}</p>
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={close} className="ui-button">{t("common.cancel")}</button>
+      <div className={DIALOG.header}><h2 className={DIALOG.title}>{t("newBot.create")}</h2></div>
+      <p data-new-bot-quick className="px-5 pb-4 text-[13px] leading-[18px] text-ink-secondary">{t("newBot.quickCreate")}</p>
+      <div className={DIALOG.footer}>
+        <button type="button" onClick={close} className={PILL}>{t("common.cancel")}</button>
         <button type="button" disabled={state.botCreationPending} onClick={() => dispatch({ type: "newBot", ...(section !== undefined ? { section } : {}), ...(preserveSelection ? { preserveSelection } : {}), onCreated: bot => {
           close();
           if (bot && onCreated) void Promise.resolve(onCreated(bot)).catch(cause => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
         } })}
-          className="ui-button ui-button-primary disabled:opacity-40">{t("newBot.create")}</button>
+          className={PRIMARY_PILL}>{t("newBot.create")}</button>
       </div>
     </div>
   </div>;
@@ -119,13 +119,14 @@ export function BotsReadOnlyDialog({ onClose }: { onClose: () => void }) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
-  return <div data-dialog-backdrop className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+  return <div data-dialog-backdrop className={cn(DIALOG.backdrop, "z-[70]")}
     onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div role="dialog" aria-modal="true" aria-label={t("sidebar.newBot")} tabIndex={-1}
-      className="w-full max-w-sm rounded-[14px] border border-border bg-elevated p-5 text-ink">
-      <p role="note" data-bots-read-only className="mb-4 text-[13px] leading-[18px] text-ink-secondary">{botsReadOnlyText(state.config)}</p>
-      <div className="flex justify-end">
-        <button type="button" autoFocus onClick={onClose} className="ui-button">{t("common.close")}</button>
+      className={`${DIALOG.frame} max-w-sm`}>
+      <div className={DIALOG.header}><h2 className={DIALOG.title}>{t("sidebar.newBot")}</h2></div>
+      <p role="note" data-bots-read-only className="px-5 pb-4 text-[13px] leading-[18px] text-ink-secondary">{botsReadOnlyText(state.config)}</p>
+      <div className={DIALOG.footer}>
+        <button type="button" autoFocus onClick={onClose} className={PRIMARY_PILL}>{t("common.close")}</button>
       </div>
     </div>
   </div>;
@@ -297,52 +298,54 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
     },
   };
   const title = defaultsMode ? t("newBot.defaults") : t("sidebar.newBot");
-  return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-3 sm:p-5">
+  const visibilityRow = choosesVisibility ? (
+    <div data-new-bot-visibility>
+      <CompactRow label={t("botSettings.visibility.title")}>
+        <PillSelect<VisibilityMode>
+          value={audience}
+          disabled={saving}
+          ariaLabel={t("botSettings.visibility.title")}
+          options={[
+            { value: "everyone", label: t("botSettings.visibility.everyone") },
+            { value: "admins", label: t("botSettings.visibility.admins") },
+            { value: "people", label: t("botSettings.visibility.people") },
+          ]}
+          onChange={setAudience}
+        />
+      </CompactRow>
+      {audience === "people" && (
+        <FieldRow label={t("botSettings.visibility.peopleLabel")}>
+          <input
+            value={people}
+            disabled={saving}
+            onChange={(event) => setPeople(event.target.value)}
+            placeholder={t("botSettings.visibility.peoplePlaceholder")}
+            className={FIELD}
+          />
+        </FieldRow>
+      )}
+    </div>
+  ) : null;
+  return <div className={cn(DIALOG.backdrop, "z-[70]")}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={title} aria-busy={saving} tabIndex={-1}
-      className="flex h-[min(760px,94dvh)] w-full max-w-[900px] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated outline-none">
-      <div className="flex shrink-0 items-center justify-between border-b border-hairline/40 px-5 py-4">
-        <h2 className="text-[17px] font-semibold text-ink">{title}</h2>
+      className={`${DIALOG.frame} h-[min(760px,94dvh)] max-w-[720px]`}>
+      <div className={DIALOG.header}>
+        <h2 className={DIALOG.title}>{title}</h2>
         <button type="button" onClick={() => closeRef.current()} aria-label={t("common.close")}
-          className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary disabled:opacity-40"><X size={18} className="pointer-events-none" /></button>
+          className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
       </div>
-        {choosesVisibility && (
-          <div className="flex flex-wrap items-center gap-2 px-5 pt-3 text-[13px] text-ink-secondary" data-new-bot-visibility>
-            <label className="flex items-center gap-2">
-              {t("botSettings.visibility.title")}
-              <select
-                value={audience}
-                disabled={saving}
-                onChange={(event) => setAudience(event.target.value as VisibilityMode)}
-                className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
-              >
-                <option value="everyone">{t("botSettings.visibility.everyone")}</option>
-                <option value="admins">{t("botSettings.visibility.admins")}</option>
-                <option value="people">{t("botSettings.visibility.people")}</option>
-              </select>
-            </label>
-            {audience === "people" && (
-              <input
-                value={people}
-                disabled={saving}
-                onChange={(event) => setPeople(event.target.value)}
-                placeholder={t("botSettings.visibility.peoplePlaceholder")}
-                aria-label={t("botSettings.visibility.peopleLabel")}
-                className="min-w-[16rem] flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
-              />
-            )}
-          </div>
-        )}
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-5">
-        {!ready && !error && <div role="status" className="flex items-center gap-2 text-[13px] text-ink-secondary"><Loader2 size={16} className="animate-spin" />{t("newBot.loading")}</div>}
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 pb-4 pt-2">
+        {!ready && !error && <div role="status" className="flex items-center gap-2 px-1 text-[13px] text-ink-secondary"><Loader2 size={16} className="animate-spin" />{t("newBot.loading")}</div>}
+        {visibilityRow && <div className={cn(GROUP_CARD, "mx-auto mb-5 max-w-[640px]")}>{visibilityRow}</div>}
         {ready && <fieldset disabled={saving} className="mx-auto min-w-0 max-w-[640px]">
           <BotEditorStore value={scopedStore}><BotEditorContext.Provider value={{ request: draft.request, draft: true, uploadAvatar: draft.uploadAvatar }}>
             <DraftPage draft={draft} defaultsMode={defaultsMode} moreOpen={moreOpen} onToggleMore={() => setMoreOpen(open => !open)} onImported={() => closeRef.current()} />
           </BotEditorContext.Provider></BotEditorStore>
         </fieldset>}
       </div>
-      {error && <p role="alert" className="max-h-24 overflow-y-auto border-t border-hairline/40 px-5 py-3 text-[13px] text-danger">{error}</p>}
+      {error && <p role="alert" className="mx-5 mb-2 max-h-24 overflow-y-auto rounded-xl bg-danger/10 px-3.5 py-2 text-[12.5px] text-danger">{error}</p>}
       {ready && startKind === "none" && (
-        <div role="status" data-new-bot-no-model className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-hairline/40 px-5 py-3 text-[13px] text-warning">
+        <div role="status" data-new-bot-no-model className="mx-5 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-warning/10 px-3.5 py-2 text-[12.5px] text-warning">
           <span>{t("newBot.model.none")}</span>
           <button type="button" data-new-bot-model-settings onClick={() => {
             closeRef.current();
@@ -351,14 +354,14 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
         </div>
       )}
       {ready && (startKind === "auto" || startKind === "first") && (
-        <p role="status" data-new-bot-model-switched className="border-t border-hairline/40 px-5 py-2 text-[12.5px] text-ink-secondary">
+        <p role="status" data-new-bot-model-switched className="px-6 pb-2 text-[12px] text-ink-secondary">
           {t(startKind === "auto" ? "newBot.model.switchedAuto" : "newBot.model.switchedFirst")}
         </p>
       )}
-      <div className="flex shrink-0 justify-end gap-2 border-t border-hairline/40 px-5 py-3">
-        <button type="button" onClick={() => closeRef.current()} className="rounded-lg px-4 py-2 text-[13px] text-ink-secondary hover:bg-control">{t("common.cancel")}</button>
+      <div className={DIALOG.footer}>
+        <button type="button" onClick={() => closeRef.current()} className={PILL}>{t("common.cancel")}</button>
         <button type="button" disabled={!ready || saving || (!defaultsMode && !bot.name.trim())} onClick={() => void save()}
-          className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40">
+          className={PRIMARY_PILL}>
           {saving && <Loader2 size={15} className="animate-spin" />}{t(defaultsMode ? "newBot.saveDefaults" : "newBot.create")}
         </button>
       </div>
@@ -385,25 +388,35 @@ export function DraftPage({ draft, defaultsMode, moreOpen, onToggleMore, onImpor
   const member = viewerIsOrgMember(state.config);
   const sections = SECTIONS.filter(id => !member || !ADMIN_SECTIONS.has(id));
   const teams = [...new Set([...(state.sections ?? []), ...state.bots.map(existing => existing.section ?? ""), bot.section ?? ""])].filter(Boolean);
-  return <div className="space-y-4">
-    <StartingRole draft={draft} defaultsMode={defaultsMode} onImported={onImported} />
+  // Start from and Team are one card of compact rows, as Settings draws
+  // them; the avatar, name and description follow; More options is the
+  // last row, folded.
+  return <div className="flex flex-col gap-5">
+    <div className={GROUP_CARD}>
+      <StartingRole draft={draft} defaultsMode={defaultsMode} onImported={onImported} />
+      {!member && teams.length > 0 && <div data-new-bot-team>
+        <CompactRow label={t("newBot.team")}>
+          <PillSelect
+            value={bot.section ?? ""}
+            ariaLabel={t("newBot.team")}
+            options={[{ value: "", label: t("sidebar.section.general") }, ...teams.map(name => ({ value: name, label: name }))]}
+            onChange={section => draft.patch({ section })}
+          />
+        </CompactRow>
+      </div>}
+    </div>
     <IdentitySection bot={bot} patch={derived.patch} activeState={derived.activeState} mascotMotion={null} part="main"
       namePlaceholder={defaultsMode ? t("newBot.randomName") : undefined} />
-    {!member && teams.length > 0 && <label data-new-bot-team className="block text-[13px] text-ink-secondary">{t("newBot.team")}
-      <select className={cn(inputCls, "mt-1.5")} value={bot.section ?? ""} onChange={event => draft.patch({ section: event.target.value })}>
-        <option value="">{t("sidebar.section.general")}</option>{teams.map(name => <option key={name}>{name}</option>)}
-      </select>
-    </label>}
-    <div data-new-bot-more className="border-t border-hairline/40 pt-3">
+    <div data-new-bot-more className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated">
       <button type="button" aria-expanded={moreOpen} aria-controls="new-bot-more-options" onClick={onToggleMore}
-        className="flex items-center gap-1.5 rounded-md py-1 text-[13px] font-medium text-ink hover:text-ink-secondary">
-        <ChevronRight size={14} aria-hidden="true" className={cn("transition-transform motion-reduce:transition-none", moreOpen && "rotate-90")} />
+        className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 text-left text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none">
         {t("newBot.moreOptions")}
+        <ChevronDown size={14} aria-hidden="true" className={cn("shrink-0 text-ink-secondary transition-transform motion-reduce:transition-none", moreOpen && "rotate-180")} />
       </button>
-      {moreOpen && <div id="new-bot-more-options" className="mt-3 space-y-4">
+      {moreOpen && <div id="new-bot-more-options" className="flex flex-col gap-4 px-3.5 pb-3.5 pt-1">
         <nav aria-label={t("newBot.sections")} className="flex flex-wrap gap-1">
           {sections.map(id => <button key={id} type="button" data-new-bot-section={id} onClick={() => setActive(id)} aria-current={active === id ? "page" : undefined}
-            className={cn("shrink-0 rounded-lg px-3 py-1.5 text-left text-[13px]", active === id ? "bg-control text-ink" : "text-ink-secondary hover:bg-control/50")}>{sectionLabel(id)}</button>)}
+            className={cn("min-h-[44px] shrink-0 rounded-full px-3 text-[13px] leading-[18px] transition-colors md:h-7 md:min-h-0 motion-reduce:transition-none", active === id ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover hover:text-ink")}>{sectionLabel(id)}</button>)}
         </nav>
         <DraftSection active={sections.includes(active) ? active : "identity"} draft={draft} derived={derived} />
       </div>}
@@ -487,7 +500,6 @@ export function StartingRole({ draft, defaultsMode, onImported }: { draft: BotCr
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
-  const roles = BOT_ROLES.map(role => <option key={role.id} value={role.id}>{role.title}</option>);
   const canImport = !defaultsMode && showBotZipImport(state.config);
   // Browse templates and Import from zip are two more ways to start: they
   // are offered in the same list, and picking one opens it (the list keeps
@@ -499,53 +511,74 @@ export function StartingRole({ draft, defaultsMode, onImported }: { draft: BotCr
   };
   return <div>
     {zipOpen && <BotZipImportDialog onClose={() => setZipOpen(false)} onImported={() => onImported?.()} />}
-    <label className="block text-[13px] text-ink-secondary">{t("newBot.startingRole")}
-      <select data-new-bot-start className={cn(inputCls, "mt-1.5")} value={draft.preset ? `preset:${draft.preset.id}` : ""} onChange={event => onPick(event.target.value)}>
-        <option value="">{t("newBot.customSettings")}</option>
-        {presetGroups(presets).map(group => <optgroup key={group.label} label={group.label}>
-          {group.presets.map(preset => <option key={preset.id} value={`preset:${preset.id}`}>{preset.name}</option>)}
-        </optgroup>)}
-        {presets.length || !defaultsMode ? <optgroup label={t("newBot.builtInRoles")}>{roles}</optgroup> : roles}
-        {!defaultsMode && <optgroup label={t("newBot.otherStarts")}>
-          <option value={BROWSE_TEMPLATES} data-new-bot-browse-templates="">{t("newBot.browseTemplatesOption")}</option>
-          {canImport && <option value={IMPORT_ZIP} data-new-bot-import-zip="">{t("newBot.importZipOption")}</option>}
-        </optgroup>}
-      </select>
-    </label>
-    {chosen && <div className="mt-2 space-y-1 rounded-lg bg-card px-3 py-2.5 text-[12.5px] text-ink-secondary" data-new-bot-preset>
+    <div data-new-bot-start>
+      <CompactRow label={t("newBot.startingRole")}>
+        <PillSelect
+          value={draft.preset ? `preset:${draft.preset.id}` : ""}
+          ariaLabel={t("newBot.startingRole")}
+          options={startOptions(presets, defaultsMode, canImport)}
+          onChange={onPick}
+        />
+      </CompactRow>
+    </div>
+    {chosen && <div className="mx-3.5 mb-2 flex flex-col gap-1 rounded-lg bg-inset px-3 py-2.5 text-[12.5px] text-ink-secondary" data-new-bot-preset>
       {presetSummaryLines(chosen).map((line, index) => <p key={index} className="break-words">{line}</p>)}
-      {chosen.source === "file" && <button type="button" onClick={() => void remove(chosen)}
-        className="mt-1 rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-control hover:text-ink">{t("newBot.presetRemove")}</button>}
+      {chosen.source === "file" && <div className="mt-1">
+        <ConfirmPill label={t("newBot.presetRemove")} confirmLabel={t("common.confirmRemove")} onConfirm={() => void remove(chosen)} />
+      </div>}
     </div>}
-    {error && <p role="alert" className="mt-2 text-[12.5px] text-danger">{error}</p>}
+    {error && <p role="alert" className="px-3.5 pb-2 text-[12.5px] text-danger">{error}</p>}
   </div>;
+}
+
+/** The Start from menu: presets first (grouped as the server groups them),
+ * then the built-in roles, then the other ways to start. Pure, for tests. */
+export function startOptions(presets: BotPreset[], defaultsMode: boolean, canImport: boolean): PillOption<string>[] {
+  const options: PillOption<string>[] = [{ value: "", label: t("newBot.customSettings") }];
+  for (const group of presetGroups(presets)) {
+    for (const preset of group.presets) options.push({ value: `preset:${preset.id}`, label: preset.name, group: group.label });
+  }
+  const rolesGroup = presets.length || !defaultsMode ? t("newBot.builtInRoles") : undefined;
+  for (const role of BOT_ROLES) options.push({ value: role.id, label: role.title, ...(rolesGroup ? { group: rolesGroup } : {}) });
+  if (!defaultsMode) {
+    options.push({ value: BROWSE_TEMPLATES, label: t("newBot.browseTemplatesOption"), group: t("newBot.otherStarts") });
+    if (canImport) options.push({ value: IMPORT_ZIP, label: t("newBot.importZipOption"), group: t("newBot.otherStarts") });
+  }
+  return options;
 }
 
 /** Exported for tests. */
 export function DraftMemory({ draft }: { draft: BotCreationDraft }) {
   const [path, setPath] = useState("MEMORY.md");
   const [name, setName] = useState("");
-  return <div className="space-y-3">
-    <select className={inputCls} aria-label={t("newBot.memory.file")} value={path} onChange={event => setPath(event.target.value)}>
-      {[...new Set(["MEMORY.md", ...Object.keys(draft.template.memory)])].map(file => <option key={file}>{file}</option>)}
-    </select>
+  return <div className="flex flex-col gap-3">
+    <div className="flex justify-start">
+      <PillSelect
+        value={path}
+        ariaLabel={t("newBot.memory.file")}
+        options={[...new Set(["MEMORY.md", ...Object.keys(draft.template.memory)])].map(file => ({ value: file, label: file }))}
+        onChange={setPath}
+      />
+    </div>
     <MarkdownEditor ariaLabel={t("newBot.memory.contents")} dataField="new-bot-memory" minHeight={288} value={draft.template.memory[path] ?? ""} onChange={value => draft.setMemory(path, value)} />
-    <div className="flex gap-2"><input className={inputCls} aria-label={t("newBot.memory.newTopic")} placeholder={t("newBot.memory.topicName")} value={name} onChange={event => setName(event.target.value)} />
-      <button type="button" aria-label={t("newBot.memory.addTopic")} disabled={!/^[a-zA-Z0-9_-]+$/.test(name)} className="rounded-lg bg-control px-3 disabled:opacity-40" onClick={() => { const next = `memory/${name}.md`; if (!(next in draft.template.memory)) draft.setMemory(next, ""); setPath(next); setName(""); }}><Plus size={16} /></button>
-      {path !== "MEMORY.md" && <button type="button" aria-label={t("newBot.memory.removeTopic")} className="rounded-lg bg-control px-3" onClick={() => { draft.setMemory(path, null); setPath("MEMORY.md"); }}><Trash2 size={16} /></button>}
+    <div className="flex items-center gap-2"><input className={FIELD} aria-label={t("newBot.memory.newTopic")} placeholder={t("newBot.memory.topicName")} value={name} onChange={event => setName(event.target.value)} />
+      <button type="button" aria-label={t("newBot.memory.addTopic")} title={t("newBot.memory.addTopic")} disabled={!/^[a-zA-Z0-9_-]+$/.test(name)} className={PILL} onClick={() => { const next = `memory/${name}.md`; if (!(next in draft.template.memory)) draft.setMemory(next, ""); setPath(next); setName(""); }}><Plus size={14} aria-hidden="true" /></button>
+      {path !== "MEMORY.md" && <ConfirmPill label={t("newBot.memory.removeTopic")} confirmLabel={t("common.confirmRemove")} onConfirm={() => { draft.setMemory(path, null); setPath("MEMORY.md"); }}><Trash2 size={14} aria-hidden="true" /></ConfirmPill>}
     </div>
   </div>;
 }
 
 function DraftRoutines({ draft }: { draft: BotCreationDraft }) {
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
-  return <div className="space-y-3">
-    <button type="button" className="rounded-lg bg-accent px-3 py-2 text-[13px] text-accent-ink" onClick={() => setEditing("new")}>{t("computer.routines.create")}</button>
-    {draft.routines.map(routine => <div key={routine.id} className="flex items-center gap-2 rounded-lg bg-card p-3">
-      <button type="button" className="min-w-0 flex-1 text-left text-[13px]" onClick={() => setEditing(routine)}>{routine.name}</button>
-      <label className="flex items-center gap-1.5 text-[12px] text-ink-secondary"><input type="checkbox" checked={routine.enabled} onChange={event => draft.setRoutineEnabled(routine.id, event.target.checked)} />{t("newBot.routine.enabled")}</label>
-      <button type="button" aria-label={t("newBot.routine.remove", { name: routine.name })} onClick={() => draft.removeRoutine(routine.id)} className="rounded p-1.5 hover:bg-control"><Trash2 size={15} /></button>
-    </div>)}
+  return <div className="flex flex-col gap-3">
+    {draft.routines.length > 0 && <div className="flex flex-col rounded-xl border-[0.5px] border-border py-1.5">
+      {draft.routines.map(routine => <div key={routine.id} className="flex min-h-[44px] items-center gap-3 px-3.5 py-1.5">
+        <button type="button" className="min-w-0 flex-1 truncate text-left text-[13px] text-ink hover:underline" onClick={() => setEditing(routine)}>{routine.name}</button>
+        <Switch checked={routine.enabled} aria-label={`${routine.name} · ${t("newBot.routine.enabled")}`} title={t("newBot.routine.enabled")} onClick={() => draft.setRoutineEnabled(routine.id, !routine.enabled)} />
+        <ConfirmPill label={t("newBot.routine.remove", { name: routine.name })} confirmLabel={t("common.confirmRemove")} onConfirm={() => draft.removeRoutine(routine.id)}><Trash2 size={14} aria-hidden="true" /></ConfirmPill>
+      </div>)}
+    </div>}
+    <div><button type="button" className={PILL} onClick={() => setEditing("new")}><Plus size={14} aria-hidden="true" />{t("computer.routines.create")}</button></div>
     {editing && <RoutineEditor routine={editing === "new" ? undefined : editing} bots={[draft.bot]} lockedBotId={draft.id} onClose={() => setEditing(null)} />}
   </div>;
 }

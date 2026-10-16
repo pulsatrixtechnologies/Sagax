@@ -29,6 +29,25 @@ describe("ComposerCommandMenu", () => {
     expect(markup).toContain("Refresh engine commands");
   });
 
+  it("lists /goal and its subcommands under Goal, a blocked one dimmed with its reason", () => {
+    const items = composerCommandMenu([
+      { id: "goal", label: "/goal", description: "Keep a team working", argumentHint: "<goal>" },
+      { id: "goal-status", label: "/goal status", description: "Where it stands" },
+      { id: "goal-pause", label: "/goal pause", description: "Pause it", unavailableReason: "Not available yet" },
+      { id: "learn", label: "/learn", description: "Write a skill" },
+    ], [], "");
+    const markup = renderToStaticMarkup(createElement(ComposerCommandMenu, {
+      items, highlight: 0, loading: false, onPick: () => {}, onHighlight: () => {},
+    }));
+    expect(markup.indexOf(">Goal<")).toBeLessThan(markup.indexOf("/goal status"));
+    expect(markup.indexOf("/goal status")).toBeLessThan(markup.indexOf(">Sagax<"));
+    expect(markup).toContain("&lt;goal&gt;");
+    expect(markup).toContain("Not available yet");
+    expect(markup).not.toContain("Pause it");
+    expect(markup.match(/aria-disabled="true"/g)?.length).toBe(1);
+    expect(markup).toContain("Esc to close");
+  });
+
   it("lists a group's engine commands under each bot's name", () => {
     const compact = { name: "compact", description: "Free up context", group: "engine" as const };
     const items = composerGroupCommandMenu([{ id: "goal", label: "/goal", description: "Keep a team working" }], [
@@ -38,7 +57,7 @@ describe("ComposerCommandMenu", () => {
     const markup = renderToStaticMarkup(createElement(ComposerCommandMenu, {
       items, highlight: 0, loading: false, onPick: () => {}, onHighlight: () => {},
     }));
-    for (const text of ["Sagax", "Scout", "Pixel", "/goal", "/compact", "/review"]) expect(markup).toContain(text);
+    for (const text of ["Goal", "Scout", "Pixel", "/goal", "/compact", "/review"]) expect(markup).toContain(text);
     // one heading per bot, never the engine groups
     expect(markup.match(/>Pixel</g)?.length).toBe(1);
     expect(markup).not.toContain(">Plugins<");

@@ -247,7 +247,7 @@ export function WelcomeFlow({
             {logo ? (
               <img src={logo} alt="" width={72} height={72} className="h-[72px] w-[72px] object-contain" />
             ) : (
-              <PulsatrixMark size={hello ? 72 : 40} />
+              <PulsatrixMark size={hello ? 72 : 40} ground="app" />
             )}
           </div>
           {title && (

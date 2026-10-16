@@ -42,13 +42,25 @@ import { InlineEditableText } from "./bot-settings/InlineEditableText";
 import { canEditPersonLabel, savePersonLabel, usePersonLabel } from "@/lib/person-labels";
 import { PERSON_LABEL_MAX } from "../../shared/person-label";
 import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
+import { DescribedRow, FoldRow, PILL, SettingsGroup } from "./SettingsPrimitives";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-hairline-weak px-3 py-2.5 text-[13px] last:border-b-0">
+    <div className="flex min-h-[36px] items-start justify-between gap-4 px-3.5 py-2 text-[13px] leading-[18px]">
       <span className="shrink-0 text-ink-secondary">{label}</span>
       <span className="min-w-0 text-right text-ink [overflow-wrap:anywhere]">{children}</span>
     </div>
+  );
+}
+
+/** A list of what the viewer shares with this person, folded under a count
+ * pill as Settings folds its long lists; a plain row when there is none. */
+function SharedList({ cardId, label, empty, count, children }: { cardId: string; label: string; empty: string; count: number; children: React.ReactNode }) {
+  if (!count) return <DescribedRow label={label} description={empty} />;
+  return (
+    <FoldRow cardId={cardId} defaultOpen={count <= 5} label={label} count={count}>
+      <ul className="flex flex-col gap-0.5">{children}</ul>
+    </FoldRow>
   );
 }
 
@@ -138,7 +150,7 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
                   if (dm) dispatch({ type: "select", id: dm.id });
                   else dispatch({ type: "openPeopleDm", principalId: person!.principalId });
                 }}
-                className="ui-button inline-flex items-center gap-1.5"
+                className={PILL}
               >
                 <MessageSquare size={14} aria-hidden />
                 {t("personPanel.message")}
@@ -180,12 +192,12 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
           </div>
         </div>
 
-        <div role="tabpanel" id="person-panel-profile" aria-labelledby="person-tab-profile" hidden={tab !== "profile"} className="flex flex-col gap-6 px-4 pb-6 pt-2">
+        <div role="tabpanel" id="person-panel-profile" aria-labelledby="person-tab-profile" hidden={tab !== "profile"} className="flex flex-col gap-5 px-4 pb-6 pt-2">
           {!person && directory && (
-            <p role="note" className="rounded-lg bg-raised/60 px-3 py-2 text-[12.5px] text-ink-secondary">{t("personPanel.notInDirectory")}</p>
+            <p role="note" className="rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-2.5 text-[12.5px] text-ink-secondary">{t("personPanel.notInDirectory")}</p>
           )}
           {person && (
-            <section className="overflow-hidden rounded-xl border border-hairline-weak">
+            <SettingsGroup groupId="person-about" title={t("personPanel.about")}>
               {person.email && (
                 <Field label={t("personPanel.email")}>
                   <a href={`mailto:${person.email}`} className="inline-flex items-center gap-1 text-accent hover:underline"><Mail size={12} aria-hidden />{person.email}</a>
@@ -197,41 +209,36 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
                   ? teams.map((team) => (team.manager ? t("personPanel.teamManager", { name: team.name }) : team.name)).join(", ")
                   : <span className="text-ink-secondary">{t("personPanel.noTeams")}</span>}
               </Field>
-            </section>
+            </SettingsGroup>
           )}
 
-          <section className="flex flex-col gap-2" data-person-section="groups">
-            <h3 className="text-[13px] text-ink-secondary">{t("personPanel.sharedGroups")}</h3>
-            {groups.length ? (
-              <ul className="overflow-hidden rounded-xl border border-hairline-weak">
+          <SettingsGroup groupId="person-shared" title={t("personPanel.inCommon")}>
+            <div data-person-section="groups">
+              <SharedList cardId="person-panel.groups" label={t("personPanel.sharedGroups")} empty={t("personPanel.noSharedGroups")} count={groups.length}>
                 {groups.map((group) => (
-                  <li key={group.id} className="border-b border-hairline-weak last:border-b-0">
-                    <button type="button" onClick={() => dispatch({ type: "select", id: group.id })} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-ink hover:bg-hover">
+                  <li key={group.id}>
+                    <button type="button" onClick={() => dispatch({ type: "select", id: group.id })} className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-ink hover:bg-hover md:min-h-0">
                       <Users size={14} className="shrink-0 text-ink-secondary" aria-hidden />
                       <span className="truncate">{group.name}</span>
                     </button>
                   </li>
                 ))}
-              </ul>
-            ) : <p className="text-[12.5px] text-ink-secondary">{t("personPanel.noSharedGroups")}</p>}
-          </section>
-
-          <section className="flex flex-col gap-2" data-person-section="bots">
-            <h3 className="text-[13px] text-ink-secondary">{t("personPanel.sharedBots")}</h3>
-            {bots.length ? (
-              <ul className="overflow-hidden rounded-xl border border-hairline-weak">
+              </SharedList>
+            </div>
+            <div data-person-section="bots">
+              <SharedList cardId="person-panel.bots" label={t("personPanel.sharedBots")} empty={t("personPanel.noSharedBots")} count={bots.length}>
                 {bots.map((bot) => (
-                  <li key={bot.id} className="border-b border-hairline-weak last:border-b-0">
-                    <button type="button" onClick={() => dispatch({ type: "select", id: bot.id })} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-ink hover:bg-hover">
+                  <li key={bot.id}>
+                    <button type="button" onClick={() => dispatch({ type: "select", id: bot.id })} className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-ink hover:bg-hover md:min-h-0">
                       <BotAvatar bot={bot} state="idle" size={24} animated={false} />
                       <span className="min-w-0 flex-1 truncate">{bot.name}</span>
                       {bot.title && <span className="shrink-0 truncate text-[12px] text-ink-secondary">{bot.title}</span>}
                     </button>
                   </li>
                 ))}
-              </ul>
-            ) : <p className="text-[12.5px] text-ink-secondary">{t("personPanel.noSharedBots")}</p>}
-          </section>
+              </SharedList>
+            </div>
+          </SettingsGroup>
 
           {person && org?.viewerRole === "admin" && (
             <PersonConnectionsSection principalId={person.principalId} />
@@ -243,7 +250,7 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
               target="_blank"
               rel="noopener noreferrer"
               data-person-manage
-              className="inline-flex items-center gap-1.5 self-start text-[13px] text-accent hover:underline"
+              className={`${PILL} self-start`}
             >
               <ExternalLink size={14} aria-hidden />
               {t("personPanel.manage")}

@@ -11,15 +11,14 @@ import { emailGateDone } from "@/lib/analytics";
 import { currentStep } from "@/lib/guided-tour";
 import { anchorFor, cardAnswered, nextSpotlight, placementFor, tourComplete, type ChatObservation, type SpotlightId } from "@/lib/first-conversation";
 import { t } from "@/lib/i18n";
-import type { MausState } from "@/lib/mascot";
 import { api, useStore } from "@/state/store";
 import { Spotlight } from "./Spotlight";
 
-const COPY: Record<SpotlightId, { key: "onboarding.spot.composer" | "onboarding.spot.model" | "onboarding.spot.approval" | "onboarding.spot.connector"; mascot: MausState }> = {
-  "spot.composer": { key: "onboarding.spot.composer", mascot: "happy" },
-  "spot.model": { key: "onboarding.spot.model", mascot: "curious" },
-  "spot.approval": { key: "onboarding.spot.approval", mascot: "suspicious" },
-  "spot.connector": { key: "onboarding.spot.connector", mascot: "curious" },
+const COPY: Record<SpotlightId, { key: "onboarding.spot.composer" | "onboarding.spot.model" | "onboarding.spot.approval" | "onboarding.spot.connector"}> = {
+  "spot.composer": { key: "onboarding.spot.composer" },
+  "spot.model": { key: "onboarding.spot.model" },
+  "spot.approval": { key: "onboarding.spot.approval" },
+  "spot.connector": { key: "onboarding.spot.connector" },
 };
 
 export function FirstConversationTour({ quiet = false }: { quiet?: boolean }) {
@@ -95,7 +94,6 @@ export function FirstConversationTour({ quiet = false }: { quiet?: boolean }) {
       key={active}
       anchor={anchorFor(active)}
       placement={placementFor(active)}
-      mascot={copy.mascot}
       primary={{ label: t("onboarding.spot.gotIt"), onClick: dismiss }}
       onDone={dismiss}
     >

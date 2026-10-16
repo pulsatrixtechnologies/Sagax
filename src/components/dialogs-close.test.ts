@@ -8,10 +8,14 @@ import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(__dirname, "..");
+/** Screenshot galleries (src/gallery, excluded in tsconfig.json too): static
+ * Playwright pages with sample frames, not shipped in the app. */
+const NOT_SHIPPED = new Set([join(ROOT, "gallery")]);
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
+    if (NOT_SHIPPED.has(path)) return [];
     if (statSync(path).isDirectory()) return sources(path);
     return name.endsWith(".tsx") && !/\.test\.tsx?$/.test(name) ? [path] : [];
   });

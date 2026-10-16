@@ -742,18 +742,20 @@ const Bubble = memo(function Bubble({
             onReply={() => onReply(message)}
             requestId={message.id.startsWith("optimistic-") ? undefined : message.id}
             react={react}
+            view={<>
+              {message.kind === "text" && text && !peer && (
+                <SpeakMenuItem text={text} botId={botId} messageId={message.id} voiceId={voiceId} tts={tts} localVoice={localVoice} />
+              )}
+              {text && (
+                <MessageMenuItem
+                  label={t(viewRaw ? "chat.showRenderedMarkdown" : "chat.showRawMarkdown")}
+                  icon={viewRaw ? <Eye {...HOVER_ICON} /> : <Code {...HOVER_ICON} />}
+                  active={viewRaw}
+                  onSelect={() => setViewRaw((r) => !r)}
+                />
+              )}
+            </>}
           >
-            {text && (
-              <MessageMenuItem
-                label={t(viewRaw ? "chat.showRenderedMarkdown" : "chat.showRawMarkdown")}
-                icon={viewRaw ? <Eye {...HOVER_ICON} /> : <Code {...HOVER_ICON} />}
-                active={viewRaw}
-                onSelect={() => setViewRaw((r) => !r)}
-              />
-            )}
-            {message.kind === "text" && text && !peer && (
-              <SpeakMenuItem text={text} botId={botId} messageId={message.id} voiceId={voiceId} tts={tts} localVoice={localVoice} />
-            )}
             {!busy && onRegenerate && (
               <MessageMenuItem label={t("chat.regenerate")} icon={<RefreshCw {...HOVER_ICON} />} onSelect={onRegenerate} />
             )}
@@ -879,14 +881,14 @@ function RoutineRunRow({ message, botId }: { message: Message; botId: string }) 
   );
 }
 
-/** A conversation with nothing in it yet: who it is with, and a prompt. */
+/** A conversation with nothing in it yet: its name and a prompt. */
 function EmptyChat({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
   const advanced = useAdvancedMode();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
-      <BotAvatar bot={bot} state="idle" size={64} motion="none" motionKey={0} animated={false} />
-      {/* Simple mode renames in the bot's settings only. */}
+      {/* No mascot here: the header already shows the bot (JC 2026-10-16).
+          Simple mode renames in the bot's settings only. */}
       {!advanced ? <div className="text-[17px] font-semibold text-ink">{bot.name}</div> : <RenameTitle
         value={bot.name}
         onCommit={(name) => {

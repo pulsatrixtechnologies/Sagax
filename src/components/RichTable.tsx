@@ -11,7 +11,7 @@
 import { Children, isValidElement, useDeferredValue, useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Download, Maximize2, Search, Table2, WrapText, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Download, Expand, Maximize2, Search, Table2, WrapText, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -28,6 +28,7 @@ import {
   type SortState,
 } from "@/lib/rich-blocks";
 import { useCopyFeedback } from "./rich-ui";
+import { ViewerDialog } from "./ViewerDialog";
 
 export interface TableModel {
   header: Array<{ content: ReactNode; text: string }>;
@@ -96,13 +97,62 @@ export function tableModelFromDelimited(code: string, lang = "csv"): TableModel 
 
 export interface ModelTableProps { model: TableModel; dir?: "ltr" | "rtl"; caption?: string }
 
+/** A cell longer than this, or with more lines than CELL_EXPAND_LINES, is
+ * clamped in the table and opens whole in a dialog. */
+export const CELL_EXPAND_CHARS = 140;
+export const CELL_EXPAND_LINES = 4;
+
+export function cellNeedsExpand(text: string): boolean {
+  const value = text.trim();
+  return value.length > CELL_EXPAND_CHARS || value.split(/\r?\n/).length > CELL_EXPAND_LINES;
+}
+
+/** A long cell: its first lines, and a button that opens the whole value
+ * (rendered as in the table: links, code, math) with Copy. */
+export function ExpandableCell({ content, text, column }: { content: ReactNode; text: string; column: string }) {
+  const [opener, setOpener] = useState<HTMLElement | null>(null);
+  const { copied, copy } = useCopyFeedback();
+  return (
+    <div className="group/cell relative min-w-[10rem] max-w-[32rem]">
+      <div className="line-clamp-4 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{content}</div>
+      <button
+        type="button"
+        onClick={(event) => setOpener(event.currentTarget)}
+        className="mt-0.5 inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] text-accent hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+        aria-label={t("rich.table.expandCell", { column: column || "" })}
+        title={t("rich.table.expandCell", { column: column || "" })}
+      >
+        <Expand size={11} aria-hidden="true" />
+        {t("rich.table.showAll")}
+      </button>
+      {opener && (
+        <ViewerDialog
+          size="compact"
+          title={column || t("rich.table.cell")}
+          returnFocus={opener}
+          onClose={() => setOpener(null)}
+          bodyClassName="overflow-auto"
+          actions={
+            <button type="button" className="table-action" onClick={() => void copy("cell", text)} aria-label={copied === "cell" ? t("rich.copied") : t("rich.table.copyCell")} title={t("rich.table.copyCell")}>
+              {copied === "cell" ? <Check size={15} className="text-success" /> : <Copy size={15} />}
+            </button>
+          }
+        >
+          <div dir="auto" className="whitespace-pre-wrap break-words p-4 text-[13.5px] leading-relaxed [overflow-wrap:anywhere]">{content}</div>
+        </ViewerDialog>
+      )}
+    </div>
+  );
+}
+
 /** A message table (`model`) or a file preview (`columns` and `rows`). */
 export function RichTable(props: ModelTableProps | RichTableProps) {
   return "model" in props ? <ModelTable {...props} /> : <GridTable {...props} />;
 }
 
-function ModelTable({ model, dir, caption }: ModelTableProps) {
+function ModelTable({ model, dir, caption, large = false }: ModelTableProps & { large?: boolean }) {
   const [sort, setSort] = useState<SortState>(null);
+  const [fullscreen, setFullscreen] = useState<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
   const { copied, copy } = useCopyFeedback();
   const width = model.header.length;
@@ -156,8 +206,24 @@ function ModelTable({ model, dir, caption }: ModelTableProps) {
           {copied === "md" ? <Check size={11} className="text-success" aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
           Markdown
         </button>
+        {!large && (
+          <button
+            type="button"
+            onClick={(event) => setFullscreen(event.currentTarget)}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-raised hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            aria-label={t("rich.table.fullscreen")}
+            title={t("rich.table.fullscreen")}
+          >
+            <Maximize2 size={11} aria-hidden="true" />
+          </button>
+        )}
       </div>
-      <div className="max-h-[min(70vh,34rem)] overflow-auto overscroll-x-contain" tabIndex={0} role="region" aria-label={caption ?? t("rich.table.region")}>
+      {fullscreen && (
+        <TableDialog title={caption ?? t("rich.table.region")} returnFocus={fullscreen} onClose={() => setFullscreen(null)}>
+          <ModelTable model={model} dir={dir} caption={caption} large />
+        </TableDialog>
+      )}
+      <div className={cn("overflow-auto overscroll-x-contain", large ? "max-h-[calc(94dvh-10rem)]" : "max-h-[min(70vh,34rem)]")} tabIndex={0} role="region" aria-label={caption ?? t("rich.table.region")}>
         <table dir={dir} className="w-full border-collapse text-[12.5px]">
           <thead>
             <tr>
@@ -213,7 +279,9 @@ function ModelTable({ model, dir, caption }: ModelTableProps) {
                           align === "right" ? "text-end" : align === "center" ? "text-center" : "text-start",
                         )}
                       >
-                        {row.cells[column] ?? ""}
+                        {cellNeedsExpand(row.text[column] ?? "")
+                          ? <ExpandableCell content={row.cells[column] ?? ""} text={row.text[column] ?? ""} column={headerText[column] ?? ""} />
+                          : row.cells[column] ?? ""}
                       </td>
                     );
                   })}
@@ -373,7 +441,9 @@ function TableViewport({ columns, rows, order, name, wrap, large, sort, onSort, 
           {columns.map((column, index) => {
             const cell = rows[order[item.index]!]![index];
             return <td key={index} className="border-b border-hairline/20 px-3 py-2.5 align-top tabular-nums" style={{ textAlign: cell?.align ?? alignment(column, index), verticalAlign: cell?.vAlign }}>
-              <div dir="auto" title={!wrap ? cell?.text : undefined} className={wrap ? "whitespace-pre-wrap break-words [overflow-wrap:anywhere]" : "truncate"}>{cell?.content ?? cell?.text}</div>
+              {cell && cellNeedsExpand(cell.text)
+                ? <ExpandableCell content={cell.content ?? cell.text} text={cell.text} column={column.text} />
+                : <div dir="auto" title={!wrap ? cell?.text : undefined} className={wrap ? "whitespace-pre-wrap break-words [overflow-wrap:anywhere]" : "truncate"}>{cell?.content ?? cell?.text}</div>}
             </td>;
           })}
         </tr>)}

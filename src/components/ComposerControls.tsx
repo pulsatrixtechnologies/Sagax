@@ -6,7 +6,7 @@
 // square, the timer (14/22, tabular) and an 18 x 13 px level meter, then a
 // Send arrow. The + opens a menu above it, aligned on its start edge.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, Clock, Loader2, Mic, Paperclip, Plus } from "lucide-react";
+import { ArrowUp, Check, Clock, Loader2, Mic, Paperclip, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { formatDictationTime } from "@/lib/composer-dictation";
@@ -42,11 +42,19 @@ export interface PlusMenuItem {
   icon: ReactNode;
   onSelect: () => void;
   disabled?: boolean;
+  /** Rows of one group sit together; a hairline separates the groups. */
+  group?: "add" | "modes";
+  /** A mode: a checkbox row, checked while it is on. */
+  checked?: boolean;
+  /** What else reaches it (`/goal`), at the row's end. */
+  hint?: string;
 }
 
-/** The + at the start of the composer and its menu: Attach files, Teach a
- * task, then the conversation's own settings as rows that open beside it
- * (`rows`, rendered by their owners: approval level, workspace). */
+/** The + at the start of the composer and its menu, in groups (Grok Bot's
+ * composer actions, Cursor's grouped menus): add (Attach files, Teach a
+ * task), modes (Goal, Setup), then the conversation's own settings as rows
+ * that open beside it (`rows`, rendered by their owners: approval level,
+ * workspace). */
 export function ComposerPlusMenu({
   items,
   rows,
@@ -133,23 +141,35 @@ export function ComposerPlusMenu({
           )}
           {...motion.exitProps}
         >
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="menuitem"
-              disabled={item.disabled}
-              data-composer-plus-item={item.id}
-              onClick={() => {
-                close();
-                item.onSelect();
-              }}
-              className="flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left text-[13px] leading-[18px] text-ink hover:bg-hover focus-visible:bg-hover focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
-            >
-              <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">{item.icon}</span>
-              <span className="min-w-0 flex-1 truncate">{item.label}</span>
-            </button>
-          ))}
+          {items.map((item, index) => {
+            const startsGroup = index > 0 && (items[index - 1]!.group ?? "add") !== (item.group ?? "add");
+            const mode = item.checked !== undefined;
+            return (
+              <div key={item.id} className="contents">
+                {startsGroup && <div role="separator" className="mx-2 my-1 h-[0.5px] bg-border" />}
+                <button
+                  type="button"
+                  role={mode ? "menuitemcheckbox" : "menuitem"}
+                  aria-checked={mode ? item.checked : undefined}
+                  disabled={item.disabled}
+                  data-composer-plus-item={item.id}
+                  data-composer-plus-group={item.group ?? "add"}
+                  onClick={() => {
+                    close();
+                    item.onSelect();
+                  }}
+                  className="flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left text-[13px] leading-[18px] text-ink hover:bg-hover focus-visible:bg-hover focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
+                >
+                  <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">{item.icon}</span>
+                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  {item.hint && <span className="shrink-0 font-mono text-[11px] text-ink-tertiary">{item.hint}</span>}
+                  {mode && (
+                    <Check size={14} aria-hidden="true" className={cn("shrink-0 text-accent", !item.checked && "invisible")} />
+                  )}
+                </button>
+              </div>
+            );
+          })}
           {rows && (() => {
             const content = rows(() => close(true));
             return content ? (

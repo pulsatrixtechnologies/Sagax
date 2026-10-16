@@ -1,4 +1,4 @@
-import { useId, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
+import { Fragment, useId, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { Check, ChevronDown, ChevronRight, CircleHelp, Copy, ExternalLink, X } from "lucide-react";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
@@ -460,9 +460,10 @@ export function UnitField({
 /** Grok Bot's grey pill button, 44 px tall on a touch screen. */
 export const PILL = "ui-button min-h-[44px] disabled:opacity-50 md:min-h-0";
 
-/** `disabled` keeps a choice listed but not choosable (an engine that is not
- * ready, a saved value that is gone). */
-export type PillOption<T extends string> = { value: T; label: string; disabled?: boolean };
+/** `group` heads a run of options in the open list (a native <optgroup>):
+ * a grey line the arrows skip. `disabled` keeps a choice listed but not
+ * choosable (an engine that is not ready, a saved value that is gone). */
+export type PillOption<T extends string> = { value: T; label: string; group?: string; disabled?: boolean };
 
 /** Grok Bot's borderless pill menu ("Follow System ⌄"): the current value
  * and a chevron; the choices open in a small list under it. A listbox, so
@@ -557,11 +558,15 @@ export function PillSelect<T extends string>({
           }}
           className="popover-surface absolute right-0 top-full z-40 mt-1 flex max-h-[280px] w-max min-w-[180px] max-w-[min(18rem,calc(100vw-2rem))] flex-col gap-0.5 overflow-y-auto rounded-xl border-[0.5px] border-border bg-elevated p-1.5"
         >
-          {options.map((option) => {
+          {options.map((option, index) => {
             const selected = option.value === value;
+            const heading = option.group && option.group !== options[index - 1]?.group ? option.group : null;
             return (
+              <Fragment key={option.value}>
+              {heading && (
+                <li role="presentation" data-pill-group="" className="px-2 pb-0.5 pt-1.5 text-[11.5px] leading-4 text-ink-secondary first:pt-0.5">{heading}</li>
+              )}
               <li
-                key={option.value}
                 role="option"
                 aria-selected={selected}
                 aria-disabled={option.disabled || undefined}
@@ -578,6 +583,7 @@ export function PillSelect<T extends string>({
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
                 <Check size={14} aria-hidden="true" className={cn("shrink-0 text-ink-secondary", !selected && "invisible")} />
               </li>
+              </Fragment>
             );
           })}
         </ul>
@@ -815,6 +821,69 @@ export function LinkRow({ label, onClick, external, rowId }: { label: string; on
     >
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <Icon size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+    </button>
+  );
+}
+
+/** A text field or text area as Settings draws them. */
+export const FIELD = "min-h-[44px] w-full min-w-0 rounded-lg border-[0.5px] border-border bg-inset px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:min-h-0";
+
+/** A field of a settings group's card: its label above, the control filling
+ * the row, and at most one short grey line under it. The whole row is the
+ * <label>, so a click on the words focuses the field. */
+export function FieldRow({ label, hint, hintId, children, rowId }: {
+  label: React.ReactNode;
+  hint?: React.ReactNode;
+  /** For the field's aria-describedby. */
+  hintId?: string;
+  children: React.ReactNode;
+  rowId?: string;
+}) {
+  return (
+    <label data-settings-row={rowId} className="flex min-w-0 flex-col gap-1.5 px-3.5 py-2.5">
+      <span className="text-[13px] leading-[18px] text-ink">{label}</span>
+      {children}
+      {hint && <span id={hintId} className="text-[12px] leading-4 text-ink-secondary">{hint}</span>}
+    </label>
+  );
+}
+
+/** A destructive action asked twice, in place: a grey pill with red words,
+ * then, once clicked, Grok Bot's filled red pill that does it. Leaving the
+ * pill (Tab, a click elsewhere) or Escape disarms it. */
+export function ConfirmPill({ label, confirmLabel, ariaLabel, title, onConfirm, disabled, children }: {
+  label: string;
+  /** The armed pill's words ("Remove for good"). */
+  confirmLabel: string;
+  ariaLabel?: string;
+  title?: string;
+  onConfirm: () => void;
+  disabled?: boolean;
+  /** What the unarmed pill shows instead of `label` (an icon). */
+  children?: React.ReactNode;
+}) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      data-confirm-pill={armed ? "armed" : ""}
+      aria-label={armed ? confirmLabel : ariaLabel ?? label}
+      title={armed ? confirmLabel : title ?? label}
+      onClick={() => {
+        if (!armed) { setArmed(true); return; }
+        setArmed(false);
+        onConfirm();
+      }}
+      onBlur={() => setArmed(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && armed) { event.preventDefault(); event.stopPropagation(); setArmed(false); }
+      }}
+      className={armed
+        ? `${DANGER_PILL} min-h-[44px] shrink-0 md:min-h-0`
+        : `${PILL} shrink-0 bg-transparent text-danger enabled:hover:bg-danger/10`}
+    >
+      {armed ? confirmLabel : children ?? label}
     </button>
   );
 }

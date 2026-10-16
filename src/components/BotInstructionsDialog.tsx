@@ -4,6 +4,9 @@ import { BookOpen, X } from "lucide-react";
 
 import { BotAvatar } from "./Avatar";
 import { normalizeState } from "@/lib/mascot";
+import { t } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
+import { PRIMARY_PILL, SettingsGroup, DIALOG } from "./SettingsPrimitives";
 import type { Bot } from "@/state/store";
 
 export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: Bot; onClose: () => void; inline?: boolean }) {
@@ -52,7 +55,7 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
 
   const content = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6"
+      className={cn(DIALOG.backdrop, "z-50")}
       onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
       <div
@@ -61,57 +64,55 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
         aria-modal="true"
         aria-labelledby="bot-instructions-title"
         tabIndex={-1}
-        className="animate-pop-in flex max-h-[min(760px,calc(100dvh-2rem))] w-full max-w-[760px] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated outline-none"
+        className={`animate-pop-in ${DIALOG.frame} max-w-[680px]`}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-hairline/40 px-6 pb-4 pt-6 sm:px-8 sm:pt-7">
+        <header className={DIALOG.header}>
           <div className="flex min-w-0 items-center gap-3">
             <BotAvatar
               bot={bot}
               state={normalizeState(bot.mascotExpression) ?? "idle"}
-              size={38}
+              size={36}
               motion="none"
               motionKey={0}
               animated={false}
             />
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-accent-text">
-                <BookOpen size={15} />
-                <span className="text-[11px] font-semibold uppercase tracking-[0.08em]">Bot instructions</span>
-              </div>
-              <h2 id="bot-instructions-title" className="mt-0.5 truncate text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">
+              <h2 id="bot-instructions-title" className={`${DIALOG.title} truncate`}>
                 {bot.name}
               </h2>
-              {bot.title && <p className="mt-0.5 truncate text-[12.5px] text-ink-secondary">{bot.title}</p>}
+              <p className={`${DIALOG.subtitle} truncate`}>{bot.title || t("botInstructions.title")}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={close}
-            aria-label="Close bot instructions"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary"
+            aria-label={t("botInstructions.close")}
+            className={cn(DIALOG.close, "disabled:opacity-40")}
           >
-            <X size={18} />
+            <X size={18} className="pointer-events-none" />
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 sm:px-8 sm:py-6">
-          {bot.description.trim() ? (
-            <div className="whitespace-pre-wrap break-words rounded-xl border border-hairline/50 bg-inset px-4 py-4 text-[13.5px] leading-6 text-ink">
-              {bot.description}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-hairline bg-inset px-5 py-12 text-center">
-              <BookOpen size={22} className="mx-auto text-ink-tertiary" />
-              <p className="mt-3 text-[13px] font-medium text-ink">No instructions yet</p>
-              <p className="mt-1 text-[12px] text-ink-secondary">Add them from this bot’s profile.</p>
-            </div>
-          )}
+        <div className={DIALOG.body}>
+          <SettingsGroup groupId="bot-instructions" title={t("botInstructions.title")} plain>
+            {bot.description.trim() ? (
+              <div className="whitespace-pre-wrap break-words rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3 text-[13px] leading-6 text-ink">
+                {bot.description}
+              </div>
+            ) : (
+              <div className="rounded-xl border-[0.5px] border-dashed border-border bg-elevated px-5 py-10 text-center">
+                <BookOpen size={20} aria-hidden="true" className="mx-auto text-ink-tertiary" />
+                <p className="mt-3 text-[13px] text-ink">{t("botInstructions.empty")}</p>
+                <p className="mt-1 text-[12px] text-ink-secondary">{t("botInstructions.emptyHint")}</p>
+              </div>
+            )}
+          </SettingsGroup>
+          <p className="-mt-3 px-1 text-[12px] text-ink-secondary">{t("botInstructions.everyTurn")}</p>
         </div>
 
-        <footer className="flex items-center justify-between gap-4 border-t border-hairline/40 px-6 py-4 text-[11.5px] text-ink-secondary sm:px-8">
-          <span>Included in this bot’s context on every turn.</span>
-          <button type="button" onClick={close} className="rounded-lg bg-control px-3.5 py-2 text-[13px] font-medium text-ink hover:bg-raised-hover">
-            Done
+        <footer className={DIALOG.footer}>
+          <button type="button" onClick={close} className={PRIMARY_PILL}>
+            {t("botInstructions.done")}
           </button>
         </footer>
       </div>

@@ -12,7 +12,7 @@
 // exception: fenced blocks and inline spans pin dir="ltr" and isolate
 // themselves, so a snippet never reorders and never scrambles the RTL
 // sentence holding it.
-import { memo, use, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, memo, Suspense, use, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { HighlighterCore } from "shiki/core";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -28,6 +28,7 @@ import {
   Info,
   Lightbulb,
   LoaderCircle,
+  Maximize2,
   MessageSquareWarning,
   OctagonAlert,
   RotateCcw,
@@ -74,6 +75,7 @@ import { WidgetFrame } from "./WidgetFrame";
 import { ChartBlock } from "./ChartBlock";
 import { RichTable, tableModelFromDelimited, tableModelFromMarkdown } from "./RichTable";
 import { TableFileButton } from "./TableFilePreview";
+import { exportableMermaidSource, inlineDiagramMaxHeight, inlineDiagramSize, svgSize } from "@/lib/diagram-view";
 import { youtubeVideoId } from "../../shared/video-widget.ts";
 import { YouTubeMiniPlayer } from "./video/YouTubeMiniPlayer";
 
@@ -252,7 +254,8 @@ const highlightKey = (lang: string, code: string) => `${lang}:${hash(code)}`;
 // and HTML that big is never cached (HIGHLIGHT_CACHE_MAX_CHARS), so every
 // remount froze the window again. Chat snippets sit far below the bound.
 export const HIGHLIGHT_MAX_CHARS = 100_000;
-const mermaidKey = (scheme: "dark" | "light", code: string) => `${scheme}:${hash(code)}`;
+// the text size is part of the key: diagrams follow the app's text scale
+const mermaidKey = (scheme: "dark" | "light", code: string, fontSize = MERMAID_DEFAULT_FONT_PX) => `${scheme}:${fontSize}:${hash(code)}`;
 
 // A markdown link whose target is a file on this machine: bots hand over
 // bot-created documents as absolute paths or file:// URLs. Web links stay
@@ -582,6 +585,70 @@ export interface MermaidDiagramProps {
 }
 
 const MERMAID_FONT = '"Inter", -apple-system, BlinkMacSystemFont, "SF UI Text", "Segoe UI", system-ui, sans-serif';
+const MERMAID_DEFAULT_FONT_PX = 14;
+
+/** The app's text size where the diagram sits, so a diagram's labels follow
+ * the app text size (and window zoom) instead of a fixed 16 px. */
+function mermaidFontPx(element: HTMLElement | null): number {
+  if (!element || typeof window === "undefined" || typeof window.getComputedStyle !== "function") return MERMAID_DEFAULT_FONT_PX;
+  try {
+    const value = Number.parseFloat(window.getComputedStyle(element).fontSize);
+    return Number.isFinite(value) && value >= 8 && value <= 40 ? Math.round(value) : MERMAID_DEFAULT_FONT_PX;
+  } catch {
+    return MERMAID_DEFAULT_FONT_PX;
+  }
+}
+
+// Every diagram type scales to its container (useMaxWidth); the inline frame
+// then sets the exact size (inlineDiagramSize) so nothing overflows the column.
+const MERMAID_FIT = { useMaxWidth: true } as const;
+function mermaidConfig(scheme: "dark" | "light", fontSize: number) {
+  return {
+    startOnLoad: false,
+    securityLevel: "strict" as const,
+    suppressErrorRendering: true,
+    theme: scheme === "light" ? "default" as const : "dark" as const,
+    fontFamily: MERMAID_FONT,
+    themeVariables: { fontSize: `${fontSize}px` },
+    flowchart: MERMAID_FIT, sequence: MERMAID_FIT, gantt: MERMAID_FIT, class: MERMAID_FIT, state: MERMAID_FIT,
+    er: MERMAID_FIT, journey: MERMAID_FIT, pie: MERMAID_FIT, mindmap: MERMAID_FIT, timeline: MERMAID_FIT,
+    gitGraph: MERMAID_FIT, quadrantChart: MERMAID_FIT, requirement: MERMAID_FIT, sankey: MERMAID_FIT,
+    xyChart: MERMAID_FIT, block: MERMAID_FIT, packet: MERMAID_FIT, architecture: MERMAID_FIT, c4: MERMAID_FIT,
+  };
+}
+
+async function renderMermaid(code: string, scheme: "dark" | "light", fontSize: number): Promise<string> {
+  const module = await import("mermaid");
+  mermaidRenderId += 1;
+  module.default.initialize(mermaidConfig(scheme, fontSize));
+  const out = await module.default.render(`omb-mermaid-${mermaidRenderId}`, code);
+  return out.svg;
+}
+
+const DiagramViewer = lazy(() => import("./DiagramViewer"));
+
+/** Width of the frame's content box and the window height, followed live
+ * (sidebar, side panel and window resizes) for the inline diagram size. */
+function useDiagramBox(element: HTMLElement | null): { width: number; viewport: number } | null {
+  const [box, setBox] = useState<{ width: number; viewport: number } | null>(null);
+  useEffect(() => {
+    if (!element || typeof window === "undefined") return;
+    const measure = () => {
+      const width = element.clientWidth;
+      const viewport = window.innerHeight;
+      setBox((current) => current && current.width === width && current.viewport === viewport ? current : { width, viewport });
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(element);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [element]);
+  return box;
+}
 
 /**
  * Mermaid fence renderer: draws the diagram instead of highlighting its
@@ -591,20 +658,32 @@ const MERMAID_FONT = '"Inter", -apple-system, BlinkMacSystemFont, "SF UI Text", 
  * injected; a diagram that fails to parse falls back to its source with the
  * error above it.
  *
+ * Inline, the diagram fits the column: scaled to its width and under a
+ * height cap (inlineDiagramSize), never past its natural size. When fitting
+ * makes the labels too small to read, the frame says so and opens the full
+ * window viewer (pan, zoom, export) on a click.
+ *
  * @param props - Component props containing the mermaid source.
  * @returns Rendered diagram, or the source with the parse error.
  */
 export function MermaidDiagram({ code }: MermaidDiagramProps) {
   const frame = useRef<HTMLDivElement | null>(null);
+  const [canvas, setCanvas] = useState<HTMLDivElement | null>(null);
   const [skinEpoch, setSkinEpoch] = useState(0);
   // a diagram drawn before paints in its first frame, in the page's scheme;
   // the effect below re-checks the scheme against the frame itself
-  const [svg, setSvg] = useState<string | null>(() =>
-    mermaidCache.get(mermaidKey(mermaidScheme(typeof document === "undefined" ? null : document.documentElement), code)) ?? null);
+  const [svg, setSvg] = useState<string | null>(() => {
+    const root = typeof document === "undefined" ? null : document.documentElement;
+    return mermaidCache.get(mermaidKey(mermaidScheme(root), code, mermaidFontPx(root))) ?? null;
+  });
   // stable for the same SVG, so a re-render keeps the drawn diagram's DOM
   const markup = useMemo(() => (svg ? { __html: svg } : null), [svg]);
+  const natural = useMemo(() => (svg ? svgSize(svg) : null), [svg]);
+  const box = useDiagramBox(canvas);
+  const fitted = natural && box && box.width > 0 ? inlineDiagramSize(natural, box.width, inlineDiagramMaxHeight(box.viewport)) : null;
   const [error, setError] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
+  const [viewer, setViewer] = useState<HTMLElement | null>(null);
   const { state: copied, copy } = useCopyFeedback(code);
 
   // Skins are stamped on <html>, a subtree could someday carry its own, so
@@ -619,7 +698,8 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
 
   useEffect(() => {
     const scheme = mermaidScheme(frame.current);
-    const key = mermaidKey(scheme, code);
+    const fontSize = mermaidFontPx(frame.current);
+    const key = mermaidKey(scheme, code, fontSize);
     const cached = mermaidCache.get(key);
     if (cached) {
       setSvg(cached);
@@ -627,26 +707,15 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
       return;
     }
     let alive = true;
-    import("mermaid")
-      .then((module) => {
-        mermaidRenderId += 1;
-        module.default.initialize({
-          startOnLoad: false,
-          securityLevel: "strict",
-          suppressErrorRendering: true,
-          theme: scheme === "light" ? "default" : "dark",
-          fontFamily: MERMAID_FONT,
-        });
-        return module.default.render(`omb-mermaid-${mermaidRenderId}`, code);
-      })
+    renderMermaid(code, scheme, fontSize)
       .then((out) => {
         if (!alive) return;
         if (mermaidCache.size >= MERMAID_CACHE_MAX) {
           const first = mermaidCache.keys().next().value;
           if (first) mermaidCache.delete(first);
         }
-        mermaidCache.set(key, out.svg);
-        setSvg(out.svg);
+        mermaidCache.set(key, out);
+        setSvg(out);
         setError(null);
       })
       .catch((cause: unknown) => {
@@ -659,15 +728,38 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
     };
   }, [code, skinEpoch]);
 
+  const openViewer = (event: { currentTarget: HTMLElement }) => setViewer(event.currentTarget);
+  const scheme = mermaidScheme(frame.current);
+  const exportBackground = () => {
+    try {
+      const color = frame.current ? window.getComputedStyle(frame.current).backgroundColor : "";
+      return color && color !== "rgba(0, 0, 0, 0)" && color !== "transparent" ? color : scheme === "light" ? "#ffffff" : "#1b1b1f";
+    } catch {
+      return scheme === "light" ? "#ffffff" : "#1b1b1f";
+    }
+  };
+
   // Diagrams read left-to-right whatever language surrounds them, so the
   // frame pins its own direction rather than inheriting the message's.
   return (
-    <div ref={frame} dir="ltr" className="my-2 overflow-hidden rounded-lg border border-hairline/40 bg-inset">
+    <div ref={frame} dir="ltr" className="my-2 min-w-0 max-w-full overflow-hidden rounded-lg border border-hairline/40 bg-inset">
       <div className="flex items-center justify-between gap-2 border-b border-hairline/30 bg-raised/30 px-3 py-1.5 text-xs">
         <span title="Mermaid diagram" className="min-w-0 truncate rounded border border-hairline/40 bg-raised px-1.5 py-0.5 text-[11px] font-medium tracking-wide text-ink select-none">
           Mermaid diagram
         </span>
         <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+          {svg && !error && (
+            <button
+              type="button"
+              onClick={openViewer}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-raised hover:text-ink"
+              title={t("diagram.fullscreen")}
+              aria-label={t("diagram.fullscreen")}
+            >
+              <Maximize2 size={12} aria-hidden="true" />
+              <span className="hidden sm:inline">{t("diagram.expand")}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowSource((visible) => !visible)}
@@ -715,13 +807,47 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
         </p>
       )}
       {markup && (
-        <div
-          className="overflow-x-auto p-3 [&_svg]:!max-w-full"
-          dangerouslySetInnerHTML={markup}
-        />
+        <div ref={setCanvas} className="min-w-0 p-3">
+          <div
+            data-mermaid-fit={fitted ? (fitted.cramped ? "cramped" : "fit") : "pending"}
+            className={fitted
+              ? "relative mx-auto [&_svg]:!block [&_svg]:!h-full [&_svg]:!w-full [&_svg]:!max-w-none"
+              : "relative mx-auto max-w-full [&_svg]:!h-auto [&_svg]:!max-w-full"}
+            style={fitted ? { width: fitted.width, height: fitted.height } : undefined}
+          >
+            <div className="size-full" dangerouslySetInnerHTML={markup} />
+            {fitted?.cramped && (
+              <button
+                type="button"
+                onClick={openViewer}
+                className="absolute inset-0 flex items-end justify-end rounded bg-transparent p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                aria-label={t("diagram.tooSmall")}
+                title={t("diagram.tooSmall")}
+              >
+                <span className="inline-flex items-center gap-1 rounded-md border border-hairline/50 bg-panel/95 px-2 py-1 text-[11px] font-medium text-ink shadow-sm">
+                  <Maximize2 size={12} aria-hidden="true" />
+                  {t("diagram.expand")}
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
       )}
       {(showSource || !svg || error) && (
         <pre className="overflow-x-auto p-3 text-[12px] leading-[18px] text-ink">{code}</pre>
+      )}
+      {viewer && svg && (
+        <Suspense fallback={null}>
+          <DiagramViewer
+            svg={svg}
+            code={code}
+            title={t("diagram.title")}
+            background={exportBackground()}
+            renderForExport={() => renderMermaid(exportableMermaidSource(code), scheme, mermaidFontPx(frame.current))}
+            onClose={() => setViewer(null)}
+            returnFocus={viewer}
+          />
+        </Suspense>
       )}
     </div>
   );

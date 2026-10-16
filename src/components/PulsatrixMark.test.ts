@@ -32,6 +32,15 @@ describe("Pulsatrix owl mark", () => {
     expect(html).not.toContain("pulsatrix-mark-on-");
   });
 
+  it("follows the app's panel ground on app surfaces: white on dark skins, navy on light ones", () => {
+    const html = renderToStaticMarkup(createElement(PulsatrixMark, { size: 72, ground: "app" }));
+    expect(html).toContain('data-pulsatrix-mark="app"');
+    expect(html).toContain("pulsatrix-mark-app");
+    expect(html).not.toContain("pulsatrix-mark-on-");
+    expect(css).toMatch(/\.pulsatrix-mark-app \{\s*color: #ffffff;/);
+    expect(css).toMatch(/\[data-skin="pulsatrix-light"\][^{]*\.pulsatrix-mark-app \{\s*color: #03153c;/);
+  });
+
   it("shows the dark-ground file on the navy and dark rails, the light-ground one on light rails", () => {
     const light = new Set(["atelier", "lagoon", "linen", "daylight", "retro98", "meadow"]);
     for (const id of SKIN_IDS) {

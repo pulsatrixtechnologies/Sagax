@@ -4,6 +4,8 @@ import { Loader2, Trash2, X } from "lucide-react";
 import type { CommandAllowRule, CommandAllowlistResponse } from "../../shared/command-allowlist";
 import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
+import { ConfirmPill, FIELD, FieldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, DIALOG } from "./SettingsPrimitives";
 
 // Electron collects -webkit-app-region from layout boxes and ignores z-index,
 // so the chat header's drag strip swallows clicks that land on top of it.
@@ -110,7 +112,7 @@ export function CommandAllowlistDialog({ botId, botName, threadId, onClose }: {
     <div
       data-thread-overlay
       style={overlayStyle}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+      className={cn(DIALOG.backdrop, "z-50")}
       onMouseDown={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
@@ -135,62 +137,75 @@ export function CommandAllowlistDialog({ botId, botName, threadId, onClose }: {
         aria-describedby={scopeId}
         aria-busy={loading || Boolean(saving) || undefined}
         tabIndex={-1}
-        className="flex max-h-[85dvh] w-full max-w-[520px] flex-col overflow-hidden rounded-2xl border border-hairline/50 bg-panel shadow-2xl"
+        className={`${DIALOG.frame} max-w-[540px]`}
       >
-        <div className="flex shrink-0 items-start justify-between gap-4 px-5 pt-5">
+        <div className={DIALOG.header}>
           <div className="min-w-0">
-            <h2 id={titleId} className="text-[16px] font-semibold text-ink">{t("commandAllowlist.title")}</h2>
-            <p className="mt-1 text-[12px] text-ink-secondary">{t("commandAllowlist.forBot", { name: botName })}</p>
+            <h2 id={titleId} className={DIALOG.title}>{t("commandAllowlist.title")}</h2>
+            <p className={DIALOG.subtitle}>{t("commandAllowlist.forBot", { name: botName })}</p>
           </div>
           <button ref={closeRef} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={onClose} aria-label={t("commandAllowlist.close")}
-            className="shrink-0 rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink"><X size={17} className="pointer-events-none" /></button>
+            className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-          <p id={scopeId} className="mt-3 text-[12px] leading-relaxed text-ink-secondary">{t("commandAllowlist.scope")}</p>
-          {loading && <p role="status" className="mt-5 flex items-center gap-2 text-[13px] text-ink-secondary">
+        <div className={DIALOG.body}>
+          {loading && <p role="status" className="flex items-center gap-2 px-1 text-[13px] text-ink-secondary">
             <Loader2 size={15} className="animate-spin" aria-hidden="true" />{t("commandAllowlist.loading")}
           </p>}
-          {error && <div role="alert" className="mt-4 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">
+          {error && <div role="alert" className="rounded-xl bg-danger/10 px-3.5 py-2.5 text-[12.5px] text-danger">
             <p>{error}</p>
             {!data && !loading && <button type="button" onClick={() => setRevision((value) => value + 1)}
-              className="mt-2 underline underline-offset-2">{t("commandAllowlist.retry")}</button>}
+              className={`${PILL} mt-2`}>{t("commandAllowlist.retry")}</button>}
           </div>}
-          {data && !loading && <>
-            {data.rules.length ? <ul className="mt-4 divide-y divide-hairline/25 rounded-xl border border-hairline/40">
-              {data.rules.map((rule) => <li key={rule.id} className="flex items-start gap-3 p-3">
-                <div className="min-w-0 flex-1">
-                  <pre tabIndex={0} className="max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-ink">{rule.command}</pre>
-                  <p className="mt-1.5 break-words text-[11px] text-ink-secondary">{providerName(rule.providerInstanceId)}</p>
-                  <p className="mt-0.5 break-all font-mono text-[11px] text-ink-secondary">{rule.cwd}</p>
-                </div>
-                <button type="button" disabled={Boolean(saving)} onClick={() => void save(rule)}
-                  aria-label={t("commandAllowlist.removeAria", { command: rule.command })}
-                  title={t(saving === rule.id ? "commandAllowlist.removing" : "commandAllowlist.remove")}
-                  className="shrink-0 rounded-md p-1.5 text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40">
-                  {saving === rule.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                </button>
-              </li>)}
-            </ul> : <p className="mt-4 rounded-xl bg-inset px-3 py-4 text-[13px] text-ink-secondary">{t("commandAllowlist.empty")}</p>}
-            {data.supported ? <form className="mt-5 border-t border-hairline/30 pt-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-              <p className="text-[12px] text-ink-secondary">{t("commandAllowlist.provider")}: <span className="text-ink">{providerName(data.context.providerInstanceId)}</span></p>
-              <label className="mt-3 block text-[12px] text-ink-secondary">{t("commandAllowlist.command")}
+          <SettingsGroup
+            groupId="command-allowlist-rules"
+            title={t("commandAllowlist.saved")}
+            accessory={<>
+              <HelpTip label={t("settings.moreAbout", { title: t("commandAllowlist.title") })}><span id={scopeId}>{t("commandAllowlist.scope")}</span></HelpTip>
+              {data && !loading && data.rules.length > 0 && <span className="ml-auto text-[12.5px] tabular-nums text-ink-secondary">{data.rules.length}</span>}
+            </>}
+          >
+            {data && !loading && (data.rules.length ? data.rules.map((rule) => <div key={rule.id} className="flex items-start gap-3 px-3.5 py-2.5">
+              <div className="min-w-0 flex-1">
+                <pre tabIndex={0} className="max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-ink">{rule.command}</pre>
+                <p className="mt-1 break-all text-[12px] leading-4 text-ink-secondary">{providerName(rule.providerInstanceId)} · <span className="font-mono">{rule.cwd}</span></p>
+              </div>
+              <ConfirmPill
+                disabled={Boolean(saving)}
+                onConfirm={() => void save(rule)}
+                label={t(saving === rule.id ? "commandAllowlist.removing" : "commandAllowlist.remove")}
+                ariaLabel={t("commandAllowlist.removeAria", { command: rule.command })}
+                confirmLabel={t("common.confirmRemove")}
+              >
+                {saving === rule.id ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+              </ConfirmPill>
+            </div>) : <p className="px-3.5 py-2.5 text-[13px] text-ink-secondary">{t("commandAllowlist.empty")}</p>)}
+          </SettingsGroup>
+          {data && !loading && (data.supported ? <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
+            <SettingsGroup
+              groupId="command-allowlist-add"
+              title={t("commandAllowlist.add")}
+              accessory={<span className="ml-auto min-w-0 truncate text-[12.5px] text-ink-secondary">{providerName(data.context.providerInstanceId)}</span>}
+            >
+              <FieldRow label={t("commandAllowlist.command")} hint={t("commandAllowlist.exact")} hintId={exactId}>
                 <textarea value={command} onChange={(event) => setCommand(event.target.value)} disabled={Boolean(saving)} required rows={2} spellCheck={false}
                   aria-describedby={exactId}
-                  className="mt-1.5 w-full resize-y rounded-lg border border-hairline/50 bg-inset px-3 py-2 font-mono text-[12px] text-ink focus:border-accent/60 focus:outline-none disabled:opacity-50" />
-              </label>
-              <p id={exactId} className="mt-1 text-[11px] leading-relaxed text-ink-secondary">{t("commandAllowlist.exact")}</p>
-              <label className="mt-3 block text-[12px] text-ink-secondary">{t("commandAllowlist.folder")}
+                  onKeyDown={(event) => {
+                    // Enter adds; Shift+Enter keeps a line break for a multi-line command.
+                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void save(); }
+                  }}
+                  className={`${FIELD} resize-y font-mono text-[12px]`} />
+              </FieldRow>
+              <FieldRow label={t("commandAllowlist.folder")}>
                 <input value={cwd} onChange={(event) => setCwd(event.target.value)} disabled={Boolean(saving)} required spellCheck={false}
-                  className="mt-1.5 w-full rounded-lg border border-hairline/50 bg-inset px-3 py-2 font-mono text-[12px] text-ink focus:border-accent/60 focus:outline-none disabled:opacity-50" />
-              </label>
-              <div className="mt-4 flex justify-end">
-                <button type="submit" disabled={Boolean(saving) || !command.trim() || !cwd.trim()}
-                  className="rounded-lg bg-accent px-3.5 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
+                  className={`${FIELD} font-mono text-[12px]`} />
+              </FieldRow>
+              <div className="flex justify-end px-3.5 pb-1.5 pt-1">
+                <button type="submit" disabled={Boolean(saving) || !command.trim() || !cwd.trim()} className={PRIMARY_PILL}>
                   {t(saving === "add" ? "commandAllowlist.adding" : "commandAllowlist.add")}
                 </button>
               </div>
-            </form> : <p className="mt-4 text-[12px] leading-relaxed text-ink-secondary">{t("commandAllowlist.unsupported")}</p>}
-          </>}
+            </SettingsGroup>
+          </form> : <p className="px-1 text-[12px] text-ink-secondary">{t("commandAllowlist.unsupported")}</p>)}
         </div>
       </div>
     </div>

@@ -62,7 +62,7 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "onChatLink"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "onChatLink", "desktopLanguage"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -101,6 +101,9 @@ if (isLocalPage && !desktopRemoteClient && process.argv.includes("--omb-company-
     }
   });
 }
+
+// undefined until the page first asks main (desktopLanguage.get).
+let desktopLanguageCache;
 
 const bridge = {
   /** Host platform ("darwin" | "win32" | "linux") — for platform-aware UI. */
@@ -252,6 +255,29 @@ const bridge = {
   /** Tell the window which skin the page wears, so the native chrome the
    * renderer cannot paint (the Windows caption-button overlay) matches. */
   applySkin: (skin) => ipcRenderer.invoke("desktop:skin", skin),
+  /** The language last chosen in this app, on any of its pages (the local
+   * page or an organization server's page drawn from this bundle), kept by
+   * main (electron/desktop-language.mjs). get() is synchronous so the first
+   * render already speaks it: a locale code, "" for the system language,
+   * or null when never chosen. set() updates the cache at once. */
+  desktopLanguage: {
+    get: () => {
+      if (desktopLanguageCache === undefined) {
+        try {
+          const value = ipcRenderer.sendSync("desktop-language:get");
+          desktopLanguageCache = typeof value === "string" ? value : null;
+        } catch {
+          desktopLanguageCache = null;
+        }
+      }
+      return desktopLanguageCache;
+    },
+    set: (language) => {
+      if (typeof language !== "string") return Promise.resolve(null);
+      desktopLanguageCache = language;
+      return ipcRenderer.invoke("desktop-language:set", language).catch(() => null);
+    },
+  },
   /** The person's custom app icon (Settings > Appearance): the page sends
    * the PNGs it drew through the system template; main keeps and shows
    * them on the Dock (macOS) or the windows and taskbar (Windows). */

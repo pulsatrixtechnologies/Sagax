@@ -18,6 +18,9 @@ export type MessageMenuItem = {
   onSelect: () => void;
   title?: string;
   disabled?: boolean;
+  /** "view": changes how the message is shown (read aloud, raw markdown),
+   * listed in the menu's last section. */
+  section?: "view";
 };
 
 /** Where a message row starts: the element that hovering, focusing or
@@ -26,6 +29,14 @@ export const MESSAGE_ROW = "data-message-row";
 
 const INTERACTIVE = "a, button, input, textarea, select, summary, label, [role=button], [contenteditable=true]";
 const LONG_PRESS_MS = 450;
+
+/** The menu's entries, or nothing when there are none. */
+function entries(items: MessageMenuItem[]): ReactNode {
+  if (items.length === 0) return null;
+  return items.map((item) => (
+    <MenuEntry key={item.key} icon={item.icon} label={item.label} title={item.title} disabled={item.disabled} onSelect={item.onSelect} />
+  ));
+}
 
 function focusVisible(target: EventTarget | null): boolean {
   try {
@@ -39,8 +50,9 @@ function focusVisible(target: EventTarget | null): boolean {
  * the same tray as a 1:1 message). They show only while the pointer is over
  * the message, or keyboard focus is inside it, and on a touch screen after a
  * tap or a long press on the message. The "…" menu starts with the quick
- * reactions, then Reply, Copy, Copy request ID, then `menu` (read aloud,
- * raw markdown, pin, edit). `forceOpen` keeps the row out while a control in
+ * reactions, then Reply, Copy, Copy request ID, then `menu`: edit,
+ * regenerate and pin, then its "view" entries (read aloud, raw markdown)
+ * in a last section. `forceOpen` keeps the row out while a control in
  * it has to stay reachable, like the stop button of a message being read
  * aloud. The row mirrors on the user side so the first control stays
  * nearest the bubble. */
@@ -149,12 +161,9 @@ export function MessageActions({
       data-testid="message-actions"
       data-shown={shown ? "true" : undefined}
     >
-      <MessageHoverActions side={side} onReply={onReply} copy={copy} requestId={requestId} react={react} persistent={persistent} onOpenChange={setMenuOpen}>
-        {menu.length > 0
-          ? menu.map((item) => (
-            <MenuEntry key={item.key} icon={item.icon} label={item.label} title={item.title} disabled={item.disabled} onSelect={item.onSelect} />
-          ))
-          : null}
+      <MessageHoverActions side={side} onReply={onReply} copy={copy} requestId={requestId} react={react} persistent={persistent} onOpenChange={setMenuOpen}
+        view={entries(menu.filter((item) => item.section === "view"))}>
+        {entries(menu.filter((item) => item.section !== "view"))}
       </MessageHoverActions>
     </div>
   );

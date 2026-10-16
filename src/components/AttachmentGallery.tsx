@@ -1,7 +1,7 @@
 // A compact message-level gallery. Image pixels keep the existing attachment
 // path validation; local files and videos only load after an explicit action
 // through the server's exact-message file authorization.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { Check, ChevronDown, ChevronUp, Download, FileText, Film, LoaderCircle, Music, Play, RotateCcw, X } from "lucide-react";
 import { attachmentBasename, FILE_MAX_BYTES, type TranscriptFileAttachment, type TranscriptImageAttachment } from "@/lib/composer-attachments";
@@ -382,35 +382,53 @@ function AudioAttachment({ file, message }: { file: GalleryFile; message: Messag
   );
 }
 
-/** A PDF is a document card: its name, its kind, and a save action. The
- * desktop window has no PDF plugin, so the file opens in the person's own
- * viewer once saved rather than in an embedded frame. */
+const PdfViewer = lazy(() => import("./PdfViewer"));
+
+/** A PDF is a document card: its name and its kind. A click opens it in the
+ * app's own viewer (pdf.js: pages, zoom, search); the download button saves
+ * a copy to open in the person's own reader. */
 function PdfAttachment({ file, message }: { file: GalleryFile; message: MessageAttachmentContext }) {
   const save = useLocalFileSave(file.path, file.name, message);
+  const [viewer, setViewer] = useState<HTMLElement | null>(null);
   return (
-    <button
-      type="button"
-      onClick={() => void save.save()}
-      disabled={save.state === "saving"}
-      aria-label={t("attach.saveAria", { name: file.name })}
-      title={save.state === "saved" && save.savedTo ? t("attach.savedTo", { path: save.savedTo }) : t("attach.pdfOpen", { name: file.name })}
-      className="flex w-72 max-w-full items-center gap-3 rounded-xl border border-hairline/30 bg-inset/60 p-2.5 text-left transition-colors hover:bg-raised/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-wait motion-reduce:transition-none"
-    >
-      <span className="relative flex h-12 w-10 shrink-0 flex-col items-center justify-center rounded-md border border-hairline/40 bg-panel text-danger">
-        <FileText size={18} aria-hidden="true" />
-        <span className="mt-0.5 text-[8.5px] font-bold tracking-wider">PDF</span>
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12.5px] font-medium text-ink">{file.name}</span>
-        <span role={save.state === "failed" ? "alert" : undefined} className={cn("block text-[11px]", save.state === "failed" ? "text-danger" : "text-ink-secondary")}>
-          {save.state === "failed" ? save.reason : save.state === "saving" ? t("attach.downloading") : save.state === "saved" ? t("attach.downloaded") : t("attach.pdfDocument")}
+    <div className="flex w-72 max-w-full items-stretch overflow-hidden rounded-xl border border-hairline/30 bg-inset/60">
+      <button
+        type="button"
+        onClick={(event) => setViewer(event.currentTarget)}
+        aria-label={t("pdf.preview", { name: file.name })}
+        title={t("pdf.preview", { name: file.name })}
+        className="flex min-w-0 flex-1 items-center gap-3 p-2.5 text-left transition-colors hover:bg-raised/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 motion-reduce:transition-none"
+      >
+        <span className="relative flex h-12 w-10 shrink-0 flex-col items-center justify-center rounded-md border border-hairline/40 bg-panel text-danger">
+          <FileText size={18} aria-hidden="true" />
+          <span className="mt-0.5 text-[8.5px] font-bold tracking-wider">PDF</span>
         </span>
-      </span>
-      {save.state === "saving" ? <LoaderCircle size={14} className="shrink-0 animate-spin text-ink-secondary" />
-        : save.state === "saved" ? <Check size={14} className="shrink-0 text-success" />
-          : save.state === "failed" ? <RotateCcw size={14} className="shrink-0 text-danger" />
-            : <Download size={14} className="shrink-0 text-ink-secondary" />}
-    </button>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[12.5px] font-medium text-ink">{file.name}</span>
+          <span role={save.state === "failed" ? "alert" : undefined} className={cn("block text-[11px]", save.state === "failed" ? "text-danger" : "text-ink-secondary")}>
+            {save.state === "failed" ? save.reason : save.state === "saving" ? t("attach.downloading") : save.state === "saved" ? t("attach.downloaded") : t("attach.pdfDocument")}
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => void save.save()}
+        disabled={save.state === "saving"}
+        aria-label={t("attach.saveAria", { name: file.name })}
+        title={save.state === "saved" && save.savedTo ? t("attach.savedTo", { path: save.savedTo }) : t("attach.pdfOpen", { name: file.name })}
+        className="flex w-10 shrink-0 items-center justify-center border-s border-hairline/30 text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 disabled:cursor-wait motion-reduce:transition-none"
+      >
+        {save.state === "saving" ? <LoaderCircle size={14} className="animate-spin" />
+          : save.state === "saved" ? <Check size={14} className="text-success" />
+            : save.state === "failed" ? <RotateCcw size={14} className="text-danger" />
+              : <Download size={14} />}
+      </button>
+      {viewer && (
+        <Suspense fallback={null}>
+          <PdfViewer path={file.path} name={file.name} message={message} returnFocus={viewer} onClose={() => setViewer(null)} />
+        </Suspense>
+      )}
+    </div>
   );
 }
 

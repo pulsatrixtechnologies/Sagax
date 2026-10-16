@@ -1,9 +1,11 @@
 // The one menu of a thread (JC, 2026-10-14): the sidebar's thread rows and
 // the header's "All threads" picker open this same component, so a thread
-// offers the same actions wherever it is listed. One flat menu, no More
-// (JC, 2026-10-15): Rename, Pin, Archive, Snooze › | Copy link, Refresh
-// permissions | Delete. Only Snooze and Move to folder open a page.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+// offers the same actions wherever it is listed. One menu, no More (JC,
+// 2026-10-15), in short sections like Grok Bot's (JC, 2026-10-16):
+// Rename, Regenerate title, Pin, Move to folder › | Archive, Snooze › |
+// Copy link, Remove link | Refresh permissions | Delete in red. Only Snooze
+// and Move to folder open a page, one level down.
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, ChevronRight, Clock, FolderInput, Link2, Link2Off, Loader2, Pencil, Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
 import type { BotProject, Task } from "@/state/store";
@@ -133,24 +135,41 @@ export function ThreadMenuItems({ task, actions, folders = [], page, onPage, onC
     </>;
   }
 
-  const divider = <div className="mx-2 my-1 h-px bg-hairline/50" />;
-  const hasLinks = Boolean(actions.onCopyLink || actions.onRegenerateTitle || (actions.onRemoveLink && task.link) || refresh);
+  // Grok Bot's sections, Cursor's rule (JC, 2026-10-16): organize, put
+  // away, share, settings, then Delete alone in red. A divider goes only
+  // between two sections that have something in them.
+  const sections: ReactNode[][] = [
+    [
+      <Item key="rename" id="rename" icon={<Pencil size={12} />} label={t("task.renameAria")} onClick={run(actions.onRename)} />,
+      actions.onRegenerateTitle && <Item key="regenerate" id="regenerate" icon={regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+        label={regenerating ? t("task.regeneratingTitle") : t("task.regenerateTitle")} disabled={regenerating} busy={regenerating} onClick={onRegenerate} />,
+      actions.onPin && <Item key="pin" id="pin" icon={task.pinned === true ? <PinOff size={12} /> : <Pin size={12} />} label={task.pinned === true ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}
+        onClick={run(() => actions.onPin!(task.pinned !== true))} />,
+      canMove && <Item key="move" id="move" icon={<FolderInput size={12} />} label={t("folder.move")} trailing={sub} onClick={() => onPage("move")} />,
+    ],
+    [
+      actions.onArchive && <Item key="archive" id="archive" icon={archived ? <ArchiveRestore size={12} /> : <Archive size={12} />} label={archived ? t("task.unarchive") : t("task.archive")} disabled={busy}
+        onClick={run(() => actions.onArchive!(archived ? null : Date.now()))} />,
+      actions.onSnooze && <Item key="snooze" id="snooze" icon={<Clock size={12} />} label={snoozed ? t("task.snoozed") : t("task.snooze")} trailing={sub} onClick={() => onPage("snooze")} />,
+    ],
+    [
+      actions.onCopyLink && <Item key="copy-link" id="copy-link" icon={<Link2 size={12} />} label={t("task.copyLink")} onClick={run(actions.onCopyLink)} />,
+      actions.onRemoveLink && task.link && <Item key="remove-link" id="remove-link" icon={<Link2Off size={12} />} label={t("task.removeLink")} onClick={run(actions.onRemoveLink)} />,
+    ],
+    [
+      refresh && <Item key="refresh-permissions" id="refresh-permissions" icon={<RefreshCw size={12} />} label={t("task.refreshPermissions")} title={t("task.refreshPermissionsHint")} disabled={busy} onClick={run(refresh)} />,
+    ],
+    [
+      <Item key="delete" id="delete" icon={<Trash2 size={12} />} label={t("task.deleteAria")} danger disabled={busy} onClick={run(actions.onDelete)} />,
+    ],
+  ];
   return <>
-    <Item id="rename" icon={<Pencil size={12} />} label={t("task.renameAria")} onClick={run(actions.onRename)} />
-    {actions.onPin && <Item id="pin" icon={task.pinned === true ? <PinOff size={12} /> : <Pin size={12} />} label={task.pinned === true ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}
-      onClick={run(() => actions.onPin!(task.pinned !== true))} />}
-    {actions.onArchive && <Item id="archive" icon={archived ? <ArchiveRestore size={12} /> : <Archive size={12} />} label={archived ? t("task.unarchive") : t("task.archive")} disabled={busy}
-      onClick={run(() => actions.onArchive!(archived ? null : Date.now()))} />}
-    {actions.onSnooze && <Item id="snooze" icon={<Clock size={12} />} label={snoozed ? t("task.snoozed") : t("task.snooze")} trailing={sub} onClick={() => onPage("snooze")} />}
-    {canMove && <Item id="move" icon={<FolderInput size={12} />} label={t("folder.move")} trailing={sub} onClick={() => onPage("move")} />}
-    {hasLinks && divider}
-    {actions.onCopyLink && <Item id="copy-link" icon={<Link2 size={12} />} label={t("task.copyLink")} onClick={run(actions.onCopyLink)} />}
-    {actions.onRegenerateTitle && <Item id="regenerate" icon={regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-      label={regenerating ? t("task.regeneratingTitle") : t("task.regenerateTitle")} disabled={regenerating} busy={regenerating} onClick={onRegenerate} />}
-    {actions.onRemoveLink && task.link && <Item id="remove-link" icon={<Link2Off size={12} />} label={t("task.removeLink")} onClick={run(actions.onRemoveLink)} />}
-    {refresh && <Item id="refresh-permissions" icon={<RefreshCw size={12} />} label={t("task.refreshPermissions")} title={t("task.refreshPermissionsHint")} disabled={busy} onClick={run(refresh)} />}
-    {divider}
-    <Item id="delete" icon={<Trash2 size={12} />} label={t("task.deleteAria")} danger disabled={busy} onClick={run(actions.onDelete)} />
+    {sections.map((section) => section.filter(Boolean)).filter((section) => section.length > 0).map((section, index) => (
+      <Fragment key={index}>
+        {index > 0 && <div role="separator" className="mx-2 my-1 h-px bg-hairline/50" />}
+        {section}
+      </Fragment>
+    ))}
   </>;
 }
 

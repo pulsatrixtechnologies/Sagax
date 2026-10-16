@@ -4,6 +4,7 @@ import { Link2, Link2Off, Pin } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { copyText } from "@/lib/copy-text";
 import { threadLinkUrl } from "../../shared/thread-link";
+import { navigateThreadMenu } from "./BotProjects";
 
 export const ThreadLinkContext = createContext<{ link?: string; assign: (link: string | null) => void } | null>(null);
 
@@ -30,13 +31,18 @@ export function useThreadLinkMenu(href: string | undefined) {
       event.preventDefault();
       setAt({ left: Math.max(8, Math.min(event.clientX, window.innerWidth - 228)), top: Math.max(8, Math.min(event.clientY, window.innerHeight - 100)) });
     },
-    menu: at && createPortal(<div ref={menuRef} role="group" aria-label={url} style={at}
+    // A menu like the thread menu's: Copy link first, then the thread's own
+    // link (JC, 2026-10-16), with the arrows moving between them.
+    menu: at && createPortal(<div ref={menuRef} role="menu" aria-label={url} style={at} data-thread-link-menu=""
       className="fixed z-50 w-[220px] rounded-lg border border-hairline/50 bg-card p-1 shadow-xl"
-      onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setAt(null); } }}>
-      <button type="button" onClick={run(() => thread.assign(assigned ? null : url))} className={ITEM_CLASS}>
+      onKeyDown={(event) => {
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setAt(null); }
+        else navigateThreadMenu(event);
+      }}>
+      <button type="button" role="menuitem" onClick={run(() => void copyText(url))} className={ITEM_CLASS}><Link2 size={12} />{t("task.copyLink")}</button>
+      <button type="button" role="menuitem" onClick={run(() => thread.assign(assigned ? null : url))} className={ITEM_CLASS}>
         {assigned ? <Link2Off size={12} /> : <Pin size={12} />}{t(assigned ? "task.unassignLink" : "task.assignLink")}
       </button>
-      <button type="button" onClick={run(() => void copyText(url))} className={ITEM_CLASS}><Link2 size={12} />{t("task.copyLink")}</button>
     </div>, document.body),
   };
 }

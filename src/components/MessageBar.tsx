@@ -7,8 +7,8 @@ export { MessageMenuItem };
 /** The quiet controls beside a 1:1 message: react, reply and "…" in a row
  * (MessageHoverActions.tsx, Grok Bot's tray, JC 2026-10-15), the time under
  * them. The "…" menu starts with the quick reactions, then Reply, Copy,
- * Copy request ID, then the entries passed as children (raw markdown, read
- * aloud, regenerate, edit, pin).
+ * Copy request ID, then the entries passed as children (edit, regenerate,
+ * pin), then the `view` entries (read aloud, raw markdown).
  *
  * Hover or keyboard focus on the message reveals it, touch screens always
  * show it. It always takes its room, shown or not, so the message never
@@ -24,6 +24,7 @@ export function MessageBar({
   visible = false,
   persistent,
   children,
+  view,
 }: {
   side: "user" | "bot";
   time: string;
@@ -38,6 +39,9 @@ export function MessageBar({
   persistent?: ReactNode;
   /** The menu's own entries, as MessageMenuItem. */
   children?: ReactNode;
+  /** The entries that change how the message is shown (read aloud, raw
+   * markdown), in the menu's last section. */
+  view?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const mirrored = side === "user";
@@ -54,7 +58,7 @@ export function MessageBar({
           : "opacity-0 focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100",
       )}
     >
-      <MessageHoverActions side={side} onReply={onReply} copy={copy} requestId={requestId} react={react} persistent={persistent} onOpenChange={setOpen}>
+      <MessageHoverActions side={side} onReply={onReply} copy={copy} requestId={requestId} react={react} persistent={persistent} onOpenChange={setOpen} view={view}>
         {children}
       </MessageHoverActions>
       <span data-message-time className="px-1 text-[11px] tabular-nums leading-4 whitespace-nowrap text-ink-tertiary">

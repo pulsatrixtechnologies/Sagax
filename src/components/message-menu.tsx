@@ -19,8 +19,9 @@ function pinItem(pin: PinAction | undefined): MessageMenuItem[] {
   }];
 }
 
-/** A bot answer: read aloud, raw markdown, regenerate, pin. Reply, Copy and
- * Copy request ID come first in every message's menu (MessageHoverActions). */
+/** A bot answer: regenerate, pin, then read aloud and raw markdown in the
+ * view section. Reply, Copy and Copy request ID come first in every
+ * message's menu (MessageHoverActions). */
 export function useBotMessageMenu({
   text,
   botId,
@@ -47,7 +48,10 @@ export function useBotMessageMenu({
   pin?: PinAction;
 }): MessageMenuItem[] {
   const speak = useSpeakAction({ text, botId, messageId, voiceId, tts, localVoice });
+  // What changes the message first, then how it is shown (JC, 2026-10-16).
   const items: MessageMenuItem[] = [];
+  if (onRegenerate) items.push({ key: "regenerate", icon: <RefreshCw {...ACTION_ICON} />, label: t("chat.regenerate"), onSelect: onRegenerate });
+  items.push(...pinItem(pin));
   if (canSpeak && text) {
     items.push({
       key: "speak",
@@ -56,6 +60,7 @@ export function useBotMessageMenu({
       title: speak.label,
       disabled: !speak.ready,
       onSelect: speak.toggle,
+      section: "view",
     });
   }
   if (text) {
@@ -64,10 +69,9 @@ export function useBotMessageMenu({
       icon: viewRaw ? <Eye {...ACTION_ICON} /> : <Code {...ACTION_ICON} />,
       label: t(viewRaw ? "chat.showRenderedMarkdown" : "chat.showRawMarkdown"),
       onSelect: onToggleRaw,
+      section: "view",
     });
   }
-  if (onRegenerate) items.push({ key: "regenerate", icon: <RefreshCw {...ACTION_ICON} />, label: t("chat.regenerate"), onSelect: onRegenerate });
-  items.push(...pinItem(pin));
   return items;
 }
 

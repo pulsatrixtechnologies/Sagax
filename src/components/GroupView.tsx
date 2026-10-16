@@ -75,7 +75,7 @@ import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
-import { GoalRunCard } from "./GoalRunCard";
+import { GoalRunCard, GoalRunHeaderChip } from "./GoalRunCard";
 import { AccessCard } from "./AccessCard";
 import { AttachmentGallery, MessageAttachmentGallery, replyAttachmentGroup } from "./AttachmentGallery";
 import { ConversationGalleryProvider } from "./ConversationGallery";
@@ -572,6 +572,19 @@ export const Transcript = memo(function Transcript({
       ...(retryRequest.replyToId ? { replyToId: retryRequest.replyToId } : {}),
     });
   }, [dispatch, group.id, group.threadId, retryRequest, roomBusy]);
+  // Only the newest goal card of the task offers Resume or Run again; an
+  // older receipt stays a record of what happened.
+  const latestGoalRunMessageId = useMemo(
+    () => [...transcript].reverse().find((message) => message.kind === "goal.run" && message.goalRun)?.id,
+    [transcript],
+  );
+  const stopGoalRun = useCallback(() => {
+    dispatch({ type: "interruptGroup", groupId: group.id, threadId: group.threadId });
+  }, [dispatch, group.id, group.threadId]);
+  const runGoalAgain = useCallback((goal: string) => {
+    if (!goal.trim() || roomBusy) return;
+    dispatch({ type: "sendGroup", groupId: group.id, text: goal, threadId: group.threadId, mode: "goal" });
+  }, [dispatch, group.id, group.threadId, roomBusy]);
   const focus = state.focusMessage;
   const focusedId = focus && !focus.consumed && focus.threadId === group.threadId ? focus.messageId : null;
   // Who wrote each item, and whether it continues the run above it: one
@@ -780,7 +793,13 @@ export const Transcript = memo(function Transcript({
             </div>
           ) : m.kind === "goal.run" ? (
             <div className="flex justify-start">
-              <GoalRunCard message={m} />
+              <GoalRunCard
+                message={m}
+                onStop={stopGoalRun}
+                onRunAgain={m.id === latestGoalRunMessageId && m.goalRun?.goal && !roomBusy
+                  ? () => runGoalAgain(m.goalRun!.goal)
+                  : undefined}
+              />
             </div>
           ) : m.kind === "routine.run" ? (
             <div className="flex justify-start">
@@ -1116,6 +1135,12 @@ export function GroupView({ group: stored }: { group: Group }) {
   // others read them and may leave (src/lib/group-owner.ts).
   const ownsRoom = viewerOwnsGroup(group, state.config);
   const editable = !remoteClient && ownsRoom;
+  // The task's goal, while it runs: the header carries a reminder that
+  // brings its card into view.
+  const activeGoalMessage = useMemo(() => {
+    const latest = [...group.messages].reverse().find((message) => message.kind === "goal.run" && message.goalRun);
+    return latest?.goalRun?.status === "working" ? latest : undefined;
+  }, [group.messages]);
   // The working folder touches the host or sandbox filesystem: on an
   // organization server it stays an admin's, even for the group's owner.
   const folderEditable = group.ownerId === undefined || viewerIsOrgAdmin(state.config) || viewerCan(state.config, "folders.roomWorkingFolder");
@@ -1349,6 +1374,12 @@ export function GroupView({ group: stored }: { group: Group }) {
           // control row 16px (visual only) below the 26px overlay.
           style={controlsShiftStyle}
         >
+          {activeGoalMessage?.goalRun && (
+            <GoalRunHeaderChip
+              run={activeGoalMessage.goalRun}
+              onShow={() => dispatch({ type: "focusMessage", threadId: group.threadId, messageId: activeGoalMessage.id })}
+            />
+          )}
           {!panelOpen && <ExportTranscriptMenu
             title={group.name}
             messages={group.messages}

@@ -19,6 +19,7 @@ import { InlineEditableText } from "./bot-settings/InlineEditableText";
 import { DescriptionInfo } from "./bot-settings/DescriptionInfo";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { normalizeState } from "@/lib/mascot";
+import { HelpTip } from "./SettingsPrimitives";
 
 export const GROUP_PANEL_TABS = ["details", "instructions", "memory", "advanced"] as const;
 export type GroupPanelTab = (typeof GROUP_PANEL_TABS)[number];
@@ -136,7 +137,7 @@ export function GroupPanel({
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize settings"
+        aria-label={t("computer.resizeAria")}
         aria-valuemin={SETTINGS_MIN_WIDTH}
         aria-valuemax={SETTINGS_MAX_WIDTH}
         aria-valuenow={settingsWidth}
@@ -244,19 +245,23 @@ export function GroupPanel({
         </div>
 
         {readOnlyNote && (
-          <p role="note" className="mx-4 mb-3 rounded-lg bg-card px-3 py-2 text-[12px] text-ink-secondary">{t("groupPanel.ownerOnly")}</p>
+          <p role="note" className="mx-4 mb-3 rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-2.5 text-[12.5px] text-ink-secondary">{t("groupPanel.ownerOnly")}</p>
         )}
 
         {tab === "details" && (
-          <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
+          <div className="flex flex-col gap-5 px-4 pb-6 pt-2">
             {details}
           </div>
         )}
 
         {tab === "instructions" && (
           <div className="flex flex-col gap-2 px-4 pb-6 pt-2">
-            <label id={`group-bulletin-label-${group.id}`} htmlFor={`group-bulletin-${group.id}`} className="text-[13px] text-ink-secondary">{t("groupPanel.instructions")}</label>
-            <p className="text-[12px] text-ink-secondary">{t("groupPanel.instructionsDetail")}</p>
+            {/* As a Settings group: the grey heading outside the editor, the
+                longer explanation behind its (?) */}
+            <div className="flex min-w-0 items-center gap-1.5 px-1">
+              <label id={`group-bulletin-label-${group.id}`} htmlFor={`group-bulletin-${group.id}`} className="text-[13px] leading-[18px] text-ink-secondary">{t("groupPanel.instructions")}</label>
+              <HelpTip label={t("settings.moreAbout", { title: t("groupPanel.instructions") })}>{t("groupPanel.instructionsDetail")}</HelpTip>
+            </div>
             <MarkdownEditor
               id={`group-bulletin-${group.id}`}
               ariaLabelledBy={`group-bulletin-label-${group.id}`}

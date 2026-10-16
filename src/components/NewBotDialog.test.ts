@@ -28,7 +28,7 @@ vi.mock("@/state/store", async importOriginal => {
 import { setLocale } from "@/lib/i18n";
 import { BotEditorContext } from "./bot-settings/BotEditorContext";
 import { BotCreationDraft, EMPTY_BOT_DEFAULTS } from "@/lib/bot-creation-draft";
-import { LocalNewBotDialog as NewBotDialog, DraftPage, BotsReadOnlyDialog, CompanionNewBotDialog, DefaultBotSettings, NewBotDialog as RoutedNewBotDialog, newBotStartMode } from "./NewBotDialog";
+import { LocalNewBotDialog as NewBotDialog, DraftPage, BotsReadOnlyDialog, CompanionNewBotDialog, DefaultBotSettings, NewBotDialog as RoutedNewBotDialog, newBotStartMode, startOptions } from "./NewBotDialog";
 
 type Node = ReactElement<{ children?: ReactNode; role?: string; "aria-label"?: string; onClick?: () => void; onMouseDown?: (event: unknown) => void; onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void; disabled?: boolean }>;
 function nodes(value: ReactNode): Node[] {
@@ -54,7 +54,8 @@ describe("bot draft dialog", () => {
     fixture.admin = true;
     vi.stubGlobal("window", {});
     expect(render().html).toContain("Who can see it");
-    expect(render().html).toContain("Admins only");
+    // a pill menu (2026-10-16): the current choice shows, the others open under it
+    expect(render().html).toContain("Everyone who can sign in");
     expect(render(true).html).not.toContain("Who can see it");
     fixture.admin = false;
     expect(render().html).not.toContain("Who can see it");
@@ -143,8 +144,8 @@ describe("bot draft dialog", () => {
       // the label is under More options, the team only when there is one to pick
       expect(html).not.toContain("Label (optional)");
       expect(html).not.toContain("data-new-bot-team");
-      // the other starts are in the same list
-      expect(html).toContain("Template from the catalog…");
+      // the other starts are in the same pill menu
+      expect(startOptions([], false, true).map(option => option.label)).toEqual(expect.arrayContaining(["Template from the catalog…", "Zip file…"]));
     });
     it("lists the nine sections, translated, under More options", () => {
       const html = page({ moreOpen: true });

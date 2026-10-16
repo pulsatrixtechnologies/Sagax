@@ -1,6 +1,6 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, Clock, Square, Target, Users, X } from "lucide-react";
+import { ArrowUp, Clock, Square, Target, Users, Wand2, X } from "lucide-react";
 import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -101,8 +101,12 @@ import {
   composerSlashTrigger,
   engineCommandInsertion,
   groupCommandTargets,
+  goalSubcommandBlock,
+  goalSubcommandFromComposer,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
+  GOAL_SUBCOMMANDS,
+  type GoalSubcommand,
   type ComposerMenuItem,
   type ComposerSlashCommand,
   type GroupEngineCommands,
@@ -397,14 +401,38 @@ export function Composer({
   // /learn: also the + menu's "Teach a task"
   const learnAvailable = skillAuthoringEnabled(state.config) &&
     (group ? (members ?? []).some(supportsAgents) : supportsAgents(bot));
+  // The room's latest goal run, its card in the transcript: what /goal
+  // status, resume and stop act on.
+  const latestGoalRun = useMemo(() => {
+    if (!group || group.dm) return null;
+    for (let index = group.messages.length - 1; index >= 0; index -= 1) {
+      const message = group.messages[index]!;
+      if (message.kind === "goal.run" && message.goalRun) return { messageId: message.id, run: message.goalRun };
+    }
+    return null;
+  }, [group]);
+  const goalStatus = latestGoalRun?.run.status;
   const commandCandidates = useMemo((): ComposerMenuItem[] => {
     if (!slash || slash.start === dismissedSlashAt) return [];
     const available: ComposerSlashCommand[] = [];
-    if (group && !group.dm) available.push({
-      id: "goal",
-      label: "/goal",
-      description: t("composer.command.goalDesc"),
-    });
+    if (group && !group.dm) {
+      available.push({
+        id: "goal",
+        label: "/goal",
+        description: t("composer.command.goalDesc"),
+        argumentHint: t("composer.command.goalHint"),
+      });
+      // its subcommands, under the same Objective heading (JC, 2026-10-16)
+      for (const sub of GOAL_SUBCOMMANDS) {
+        const block = goalSubcommandBlock(sub, goalStatus);
+        available.push({
+          id: `goal-${sub}`,
+          label: `/goal ${sub}`,
+          description: t(`composer.goal.sub.${sub}`),
+          ...(block ? { unavailableReason: t(`composer.goal.block.${block}`) } : {}),
+        });
+      }
+    }
     if (learnAvailable) {
       available.push({
         id: "learn",
@@ -426,7 +454,7 @@ export function Composer({
         mention: target.mention,
       })), slash.query)
       : composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId, learnAvailable]);
+  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId, learnAvailable, goalStatus]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot. In a room, tag a
@@ -501,10 +529,47 @@ export function Composer({
     });
   };
 
+  /** /goal status, resume, stop: picked in the "/" menu or typed and sent.
+   * Status shows the run's card, resume starts its goal again (there is no
+   * pause path yet), stop interrupts the room as the Stop button does. */
+  const runGoalSubcommand = (sub: GoalSubcommand): boolean => {
+    if (!group || goalSubcommandBlock(sub, goalStatus) || !latestGoalRun) return false;
+    if (sub === "status") {
+      dispatch({ type: "focusMessage", threadId: group.threadId, messageId: latestGoalRun.messageId });
+      editText("");
+      setChannelMode("chat");
+      return true;
+    }
+    if (sub === "stop") {
+      dispatch({ type: "interruptGroup", groupId: group.id, threadId });
+      editText("");
+      setChannelMode("chat");
+      return true;
+    }
+    if (sub === "resume") {
+      const goal = latestGoalRun.run.goal;
+      editText(goal);
+      setChannelMode("goal");
+      setCaret(goal.length);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.setSelectionRange(goal.length, goal.length);
+      });
+      return true;
+    }
+    return false;
+  };
+
   const pickCommand = (item: ComposerMenuItem | undefined) => {
     if (!slash || !item) return;
     // What the chat cannot run stays listed, with its reason, but inserts nothing.
     if (item.kind === "engine" && item.unavailable) return;
+    if (item.kind === "sagax" && item.command.unavailableReason) return;
+    if (item.kind === "sagax" && item.command.id.startsWith("goal-")) {
+      setDismissedSlashAt(slash.start);
+      runGoalSubcommand(item.command.id.slice("goal-".length) as GoalSubcommand);
+      return;
+    }
     const command = item.kind === "sagax" ? item.command : null;
     const replacement = item.kind === "engine"
       ? engineCommandInsertion(item)
@@ -769,6 +834,14 @@ export function Composer({
       return;
     }
     if (locked || attachmentPending) return;
+    // `/goal stop` typed whole runs the subcommand, never a goal named "stop"
+    const typedGoalSub = group && !group.dm ? goalSubcommandFromComposer(text) : null;
+    if (typedGoalSub) {
+      const block = goalSubcommandBlock(typedGoalSub, goalStatus);
+      if (block) dispatch({ type: "error", message: t(`composer.goal.block.${block}`) });
+      else runGoalSubcommand(typedGoalSub);
+      return;
+    }
     if (
       attachments.some((attachment) => attachment.kind === "image") &&
       !imageTargetsSupport(effectiveText, effectiveChannelMode)
@@ -969,25 +1042,74 @@ export function Composer({
   const dictationShortcut = isMacPlatform() ? "⌘D" : "Ctrl+D";
   // The CTA (Voice, or Send once typed) wears the open bot's color.
   const ctaTone = !group && bot ? botCtaColors(bot.color) : null;
+  // Put a command at the start of the draft, keeping what follows it.
+  const startDraftWith = (command: "/learn " | "/setup ") => {
+    const rest = text.replace(/^\/(?:learn|setup)\s*/, "");
+    editText(`${command}${rest}`);
+    setChannelMode("chat");
+    const at = command.length;
+    setCaret(at);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(at, at);
+    });
+  };
+  const goalModeOn = effectiveChannelMode === "goal";
+  // Goal mode off: also what the chip does (a typed /goal loses its token).
+  const leaveGoalMode = () => {
+    markDraftEdited(draftId);
+    if (typedGoalText !== null) {
+      const nextCaret = Math.max(0, caret - (text.length - typedGoalText.length));
+      editText(typedGoalText);
+      setCaret(nextCaret);
+      setChannelMode("chat");
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.setSelectionRange(nextCaret, nextCaret);
+      });
+      return;
+    }
+    setChannelMode("chat");
+  };
+  // The + menu in groups (JC, 2026-10-16, after Grok Bot and Cursor): add
+  // (files, teach a task), then the modes (a room's goal, a bot's setup),
+  // then this conversation's settings (the rows below).
   const plusItems: PlusMenuItem[] = [
-    { id: "attach", label: t("composer.plus.attach"), icon: ATTACH_ICON, onSelect: () => fileInput.current?.click() },
+    { id: "attach", group: "add", label: t("composer.plus.attach"), icon: ATTACH_ICON, onSelect: () => fileInput.current?.click() },
     ...(learnAvailable ? [{
       id: "teach",
+      group: "add" as const,
       label: t("composer.plus.teach"),
       icon: <RecordMark />,
+      hint: "/learn",
+      // the same as picking /learn in the "/" menu
+      onSelect: () => startDraftWith("/learn "),
+    }] : []),
+    ...(group && !group.dm ? [{
+      id: "goal",
+      group: "modes" as const,
+      label: t("composer.plus.goalMode"),
+      icon: <Target size={15} aria-hidden="true" />,
+      hint: "/goal",
+      checked: goalModeOn,
       onSelect: () => {
-        // the same as picking /learn in the "/" menu
-        const rest = text.replace(/^\/learn\s*/, "");
-        const next = `/learn ${rest}`;
-        editText(next);
-        setChannelMode("chat");
-        const at = "/learn ".length;
-        setCaret(at);
-        requestAnimationFrame(() => {
-          inputRef.current?.focus();
-          inputRef.current?.setSelectionRange(at, at);
-        });
+        if (goalModeOn) {
+          leaveGoalMode();
+          return;
+        }
+        markDraftEdited(draftId);
+        setChannelMode("goal");
+        requestAnimationFrame(() => inputRef.current?.focus());
       },
+    }] : []),
+    ...(!group && supportsAgents(bot) ? [{
+      id: "setup",
+      group: "modes" as const,
+      label: t("composer.plus.setup"),
+      icon: <Wand2 size={15} aria-hidden="true" />,
+      hint: "/setup",
+      // the same as picking /setup in the "/" menu
+      onSelect: () => startDraftWith("/setup "),
     }] : []),
   ];
   const showPlaceRow = Boolean(modeBot && !remoteClient && (advanced || Boolean(composerTask?.surface)));
@@ -1193,35 +1315,21 @@ export function Composer({
           />
           {!locked && (
             <div className="flex flex-wrap items-center gap-2">
-              {/* One + (Grok Bot's): attach, teach a task, and this
-                  conversation's approval level and workspace as rows that
-                  open beside it (JC, 2026-10-15). */}
+              {/* One + (Grok Bot's): attach and teach a task, the modes
+                  (goal, setup), then this conversation's approval level and
+                  workspace as rows that open beside it (JC, 2026-10-15/16). */}
               <ComposerPlusMenu items={plusItems} rows={plusRows} />
-              {/* /goal starts the mode (the "/" menu); the chip appears only
-                  while it is on, says so, and turns it off (JC, 2026-10-14:
-                  one entry, the chip only when it shows the current goal). */}
-              {group && !group.dm && effectiveChannelMode === "goal" && (
+              {/* /goal or the + menu's Goal mode starts it; the chip appears
+                  only while it is on, says so, and turns it off (JC,
+                  2026-10-14: the chip only when it shows the current goal). */}
+              {group && !group.dm && goalModeOn && (
                 <button
                   type="button"
                   data-composer-goal
                   aria-pressed
                   aria-label={t("composer.goal.aria")}
                   title={t("composer.goal.title")}
-                  onClick={() => {
-                    markDraftEdited(draftId);
-                    if (typedGoalText !== null) {
-                      const nextCaret = Math.max(0, caret - (text.length - typedGoalText.length));
-                      editText(typedGoalText);
-                      setCaret(nextCaret);
-                      setChannelMode("chat");
-                      requestAnimationFrame(() => {
-                        inputRef.current?.focus();
-                        inputRef.current?.setSelectionRange(nextCaret, nextCaret);
-                      });
-                      return;
-                    }
-                    setChannelMode("chat");
-                  }}
+                  onClick={leaveGoalMode}
                   className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border border-accent/35 bg-accent/10 px-3 text-[13px] text-accent transition-colors"
                 >
                   <Target size={14} aria-hidden="true" />
