@@ -243,8 +243,8 @@ const sagax = {
     const data = path.join(runDir, "data");
     const userData = path.join(runDir, "userData");
     const home = path.join(runDir, "home");
-    cpSync(this.fixture, data, { recursive: true });
-    if (this.master) cpSync(this.master, userData, { recursive: true });
+    execFileSync("cp", ["-cR", this.fixture, data]);
+    if (this.master) execFileSync("cp", ["-cR", this.master, userData]);
     else mkdirSync(userData, { recursive: true });
     for (const f of ["SingletonLock", "SingletonSocket", "SingletonCookie", "DevToolsActivePort"]) rmSync(path.join(userData, f), { force: true });
     mkdirSync(home, { recursive: true });
@@ -256,6 +256,7 @@ const sagax = {
     writeFileSync(configPath, JSON.stringify(config, null, 2));
     writeFileSync(path.join(userData, "window-state.json"), JSON.stringify({ bounds: WINDOW, maximized: false }));
     const exe = path.join(this.app, "Contents/MacOS/Sagax");
+    this.spawnedAt = Date.now();
     return spawn(exe, [`--user-data-dir=${userData}`, `--remote-debugging-port=${this.port}`, "--use-mock-keychain", ...CHROMIUM_FLAGS], {
       env: { ...process.env, HOME: home, SAGAX_PERF_BENCH: "1", SAGAX_PERF_PORT: "18999", SAGAX_DATA_DIR: data },
       stdio: ["ignore", "ignore", "ignore"], detached: true,
@@ -299,6 +300,7 @@ const grok = {
     for (const f of ["SingletonLock", "SingletonSocket", "SingletonCookie", "DevToolsActivePort"]) rmSync(path.join(userData, f), { force: true });
     writeFileSync(path.join(userData, "window-state.json"), JSON.stringify({ version: 1, normalBounds: WINDOW, isMaximized: false }));
     const exe = path.join(this.appPath, "Contents/MacOS/Grok Bot");
+    this.spawnedAt = Date.now();
     return spawn(exe, [`--user-data-dir=${userData}`, `--remote-debugging-port=${this.port}`, ...CHROMIUM_FLAGS], {
       env: { ...process.env }, stdio: ["ignore", "ignore", "ignore"], detached: true,
     });
@@ -401,8 +403,10 @@ async function launch(adapter, round) {
   const runDir = path.join(WORK, `${adapter.name}-${round}`);
   mkdirSync(runDir, { recursive: true });
   const load = os.loadavg();
-  const t0 = Date.now();
+  // The clock starts at the spawn, after the copies each app makes of its
+  // profile and data (a Sagax copy is a real copy and took up to a second).
   const child = adapter.launch(runDir);
+  const t0 = adapter.spawnedAt;
   child.unref();
   let target = null;
   const deadline = Date.now() + 90000;
