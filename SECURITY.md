@@ -124,8 +124,18 @@ release.
   attribute. The engine's live stream (which sends each command, script
   included, to its clients) is paused around the write; if it cannot be
   paused, nothing is typed. Every later browser result is redacted (the value and its common
-  encodings, and user:pass pairs in base64; a value shorter than four
-  characters as a whole word; the length of a masked password). The vault routes answer the
+  encodings, and user:pass pairs in base64; every piece of six characters
+  or more of a secret; whatever the filled fields hold now, edited or
+  revealed; a value shorter than four characters as a whole word; the length
+  of a masked password). The engine's raw answer is redacted before any
+  trimming or shaping, so a cut through a value never leaves its prefix.
+  After a fill, keys and typing are refused when the target or the focused
+  element is a filled field (the field also loses focus and gets
+  `autocomplete="off"`), and every screenshot is refused until a restart. The
+  Browser panel does not turn the engine's stream back on while a fill holds
+  the session. Chromium's own password saving is not turned off at launch
+  (agent-browser exposes no launch option for it here); headless Chrome
+  shows no save prompt, but a persistent profile could keep form data. The vault routes answer the
   desktop's own app, a paired session, or on a headless server a loopback
   caller only when the operator sets `SAGAX_CREDENTIAL_VAULT_LOOPBACK=1`;
   reads are POSTs. The optional 1Password CLI runs only from a fixed install

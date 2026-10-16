@@ -1,7 +1,7 @@
 import { killCliTree, spawnCli } from "./procs.ts";
 import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
 import { randomBytes } from "node:crypto";
-import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formStaysOnOrigin, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript } from "./credential-fill.ts";
+import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formStaysOnOrigin, parseEvalArray, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript } from "./credential-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
 
 export interface BrowserSpawnSpec {
@@ -95,6 +95,36 @@ export function cssSelectorArgument(params: unknown): string | null {
 }
 const REFS_ONLY = "In this browser a saved login is allowed or was filled, so elements are addressed only by their @eN refs from a snapshot, never by a CSS selector. Take a snapshot and pass the ref.";
 
+/** Tools that type or press keys into the page. */
+function keyboardTool(name: string | undefined): boolean {
+  return typeof name === "string" && /^agent_browser_(press|type|fill|keyboard|key|insert)/.test(name);
+}
+
+/** The @eN ref a keyboard tool aims at, if any. */
+function elementRef(params: unknown): string | null {
+  const args = (params as { arguments?: unknown } | null)?.arguments;
+  if (!args || typeof args !== "object") return null;
+  for (const key of ELEMENT_ARGUMENTS) {
+    const value = (args as Record<string, unknown>)[key];
+    if (typeof value === "string" && ACCESSIBILITY_REF.test(value.trim())) return value.trim();
+  }
+  return null;
+}
+
+/** "free" unless the focus is on a field Sagax filled (or inside a frame,
+ * which the top document cannot see into). */
+const FOCUS_ON_FILLED_SCRIPT = `(() => {'use strict';
+const el = document.activeElement;
+if (!el) return 'free';
+if (el.tagName === 'IFRAME' || el.hasAttribute('data-sagax-filled')) return 'filled';
+return 'free';
+})()`;
+/** The current contents of the fields Sagax filled, edited or not. */
+const FILLED_VALUES_SCRIPT = `(() => {'use strict';
+return JSON.stringify(Array.from(document.querySelectorAll('[data-sagax-filled]')).map((el) => typeof el.value === 'string' ? el.value : '').filter(Boolean).slice(0, 20));
+})()`;
+const KEYS_INTO_FILLED_REFUSAL = "That field holds a saved login Sagax filled: it cannot be typed into or edited, and keys are not sent to it. Act on another field, or submit the form.";
+
 /** The bot's script, run only if the page is still on `origin`: the check is
  * in the same evaluation, so nothing can switch the document in between. */
 function guardScript(params: unknown, origin: string): unknown {
@@ -113,7 +143,7 @@ const BROWSER_FILLING = "The browser is busy typing a saved login. Try again in 
 const EXCLUSIVE_WAIT_MS = 15_000;
 const SCRIPTS_OFF_AFTER_FILL = "Scripts in the page are turned off in this browser since Sagax filled a saved login in it, so nothing can read it back. Use snapshots, clicks, fills and get_text, or call restart_browser to start a clean browser.";
 const SCRIPTS_OFF_WHILE_ALLOWED = "Scripts in the page are turned off in this browser while you are allowed to use a saved login, so nothing can capture it. Use snapshots, clicks, fills and get_text.";
-const SCREENSHOT_AFTER_FILL_REFUSAL = "Screenshots are turned off on a site where Sagax filled a saved credential, so the value cannot appear in an image. Use a snapshot or get_text here.";
+const SCREENSHOT_AFTER_FILL_REFUSAL = "Screenshots are turned off in this browser since Sagax filled a saved login in it, so the value cannot appear in an image. Use a snapshot or get_text, or call restart_browser.";
 
 const FIELD_NAMES: Record<VaultFillField, string> = { username: "user name", password: "password", totp: "one-time code", apiKey: "API key" };
 
@@ -489,9 +519,30 @@ export class BrowserRuntime {
           guardedParams = guardScript(params, origin);
         }
         if (method === "tools/call" && toolName === "agent_browser_screenshot" && this.redactor.hasTaint(session)) {
-          const origin = await this.engineOrigin(entry.client);
-          beforeDispatch?.();
-          if (!origin || this.redactor.isTainted(session, origin)) return toolText(SCREENSHOT_AFTER_FILL_REFUSAL, true);
+          return toolText(SCREENSHOT_AFTER_FILL_REFUSAL, true);
+        }
+        // Keys and typing on a browser where a login was filled: never into
+        // a filled field (editing it, or copying from it, would defeat the
+        // redaction of its value). The target is focused and checked first,
+        // with the session held alone so nothing moves the focus in between.
+        let releaseKeys: (() => void) | null = null;
+        if (method === "tools/call" && keyboardTool(toolName) && this.redactor.hasTaint(session)) {
+          if (!await this.holdExclusive(session)) return toolText(BROWSER_FILLING, true);
+          releaseKeys = () => { this.gate(session).exclusive = false; };
+          try {
+            const target = elementRef(params);
+            if (target) {
+              const clicked = await entry.client.rpc("tools/call", { name: "agent_browser_click", arguments: { selector: target } });
+              beforeDispatch?.();
+              if ((clicked as { isError?: unknown } | null)?.isError === true) { releaseKeys(); return toolText(`${target} could not be focused; nothing was typed.`, true); }
+            }
+            const focused = parseWrite(await entry.client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: FOCUS_ON_FILLED_SCRIPT, timeoutMs: 5_000 } }));
+            beforeDispatch?.();
+            if (focused !== "free") { releaseKeys(); return toolText(KEYS_INTO_FILLED_REFUSAL, true); }
+          } catch (error) {
+            releaseKeys();
+            throw error;
+          }
         }
         // The model sees slimmed schemas and text-only, bounded results; the
         // launch/session parameters OMB owns never reach the engine from a call.
@@ -515,16 +566,28 @@ export class BrowserRuntime {
           beforeDispatch?.();
           if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
         }
-        let result = await entry.client.rpc(method, request);
+        let result: unknown;
+        try {
+          result = await entry.client.rpc(method, request);
+        } finally {
+          releaseKeys?.();
+        }
         beforeDispatch?.(); // A turn revoked while the tool ran receives no result.
         if (method === "tools/list") {
           const tools = withRestartTool(slimBrowserToolList(result));
           this.toolLists.set(session, tools);
           return tools;
         }
+        // Redact the engine's raw answer before anything shapes or trims it:
+        // a cut through a value would otherwise leave its prefix whole. What
+        // the filled fields hold now (edited, partial) is redacted too.
+        if (this.redactor.hasTaint(session)) await this.refreshFilledValues(session, entry.client);
+        result = this.redactor.redact(session, result);
+        if (before) before = this.redactor.redact(session, before);
         if (before && result && typeof result === "object" && (result as { isError?: boolean }).isError !== true &&
             this.gate(session).owner === null) {
-          const after = await observePage();
+          const observed = await observePage();
+          const after = observed ? this.redactor.redact(session, observed) : null;
           beforeDispatch?.();
           if (after) {
             const action = result as { content?: unknown[] };
@@ -549,6 +612,7 @@ export class BrowserRuntime {
             if (error instanceof TransportError) throw error;
             observation = { isError: true, content: [] };
           }
+          observation = this.redactor.redact(session, observation);
           beforeDispatch?.();
           const navigation = result as { content?: unknown[] };
           const page = observation as { content?: unknown[]; isError?: boolean } | null;
@@ -605,6 +669,24 @@ export class BrowserRuntime {
   private async engineOrigin(client: BrowserClient): Promise<string> {
     const href = await this.engineUrl(client);
     try { return href ? new URL(href).origin : ""; } catch { return ""; }
+  }
+
+  /** Learn what the filled fields of the page hold now, so an edited or
+   * partial value is redacted like the value itself. Never returned. */
+  private async refreshFilledValues(session: string, client: BrowserClient): Promise<void> {
+    try {
+      const answer = await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: FILLED_VALUES_SCRIPT, timeoutMs: 5_000 } });
+      const parsed = parseEvalArray(answer);
+      for (const value of parsed) this.redactor.remember(session, value);
+    } catch (error) {
+      if (error instanceof TransportError) throw error;
+    }
+  }
+
+  /** Whether a fill holds this session now (the Browser panel does not
+   * turn the engine's stream back on meanwhile). */
+  filling(session: string): boolean {
+    return this.gates.get(session)?.exclusive === true;
   }
 
   /** Hold the session alone: new agent actions are refused, then wait for
@@ -678,7 +760,7 @@ export class BrowserRuntime {
     if (!resolved.ok) return toolText(resolved.message, true);
     // Remembered before the value leaves: anything the engine says from now
     // on, including an error that quotes it, is redacted.
-    this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp" });
+    this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp", pieces: request.field !== "username" });
     this.redactor.taint(session, origin);
     // The engine's stream would broadcast the write, value included, to its
     // clients: it is off while the write runs.

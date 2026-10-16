@@ -3446,7 +3446,11 @@ session, and screenshots and preview frames are refused after a fill. While
 a grant is held or after a fill, selector-taking tools accept only `@eN`
 refs (`cssSelectorArgument`: no CSS value oracle). The write runs with the
 engine's live stream paused (`pauseBrowserStream`; the Browser panel picks
-the stream up again). On a headless server the vault
+the stream up again, never while `filling`). Raw engine answers are redacted
+before shaping and trimming; after a fill, keyboard tools refuse a filled
+target or focus (`data-sagax-filled`), the current contents of filled
+fields are redacted too (`refreshFilledValues`), and every screenshot is
+refused. On a headless server the vault
 routes need a paired session (or `SAGAX_CREDENTIAL_VAULT_LOOPBACK=1`). The
 `op` CLI runs only from `/opt/homebrew/bin/op`, `/usr/local/bin/op` or
 `/usr/bin/op`, with no folder above it writable by others, located again

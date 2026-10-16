@@ -393,6 +393,9 @@ export class BrowserLive {
     const resetting = this.sessionResets.get(viewer.session);
     if (resetting) await resetting;
     let status = await this.command(viewer, ["stream", "status"], STATUS_PROBE_MS);
+    // A fill_credential write runs with the stream off (the stream sends
+    // each command, script included): never turn it back on meanwhile.
+    if (status.enabled !== true && typeof this.runtime.filling === "function" && this.runtime.filling(viewer.session)) throw new BrowserBusyError("The browser is typing a saved login. The live view comes back in a moment.");
     if (status.enabled !== true) {
       try { status = await this.command(viewer, ["stream", "enable"]); }
       catch (error) {

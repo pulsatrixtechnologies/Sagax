@@ -152,12 +152,29 @@ const problem = judge({ el }, ${JSON.stringify(field)});
 if (problem) return problem;
 if (document.activeElement !== el) el.focus();
 if (document.activeElement !== el) return 'focus';
+el.setAttribute('autocomplete', 'off');
+el.setAttribute('data-sagax-filled', '1');
 const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
 Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)});
 el.dispatchEvent(new Event('input', { bubbles: true }));
 el.dispatchEvent(new Event('change', { bubbles: true }));
+el.blur();
 return 'ok';
 })()`;
+}
+
+/** A JSON array of strings answered by an eval, or [] for anything else. */
+export function parseEvalArray(result: unknown): string[] {
+  const content = (result as { content?: unknown; isError?: unknown } | null);
+  if (!content || content.isError === true || !Array.isArray(content.content)) return [];
+  const part = (content.content as unknown[]).find((item) => typeof (item as { text?: unknown } | null)?.text === "string") as { text: string } | undefined;
+  try {
+    let value: unknown = JSON.parse(part?.text ?? "");
+    if (typeof value === "string") value = JSON.parse(value);
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0 && item.length <= 16_384) : [];
+  } catch {
+    return [];
+  }
 }
 
 /** The write's bare answer, or null when the result is anything else. */
@@ -237,6 +254,7 @@ export function problemText(problem: string, field: VaultFillField): string {
 // ---------------------------------------------------------------- redaction
 
 const MIN_REDACT_LENGTH = 4;
+const MIN_PIECE_LENGTH = 6;
 const SHORT_LIVED_MS = 5 * 60_000;
 
 function htmlEntities(value: string, hex: boolean): string {
@@ -297,7 +315,10 @@ export class SecretRedactor {
     this.now = now;
   }
 
-  remember(session: string, value: string, options: { shortLived?: boolean } = {}): void {
+  /** pieces: also every part of four characters or more (a secret such as
+   * a password, an API key or a code; not a user name, whose parts are
+   * ordinary words and domains). */
+  remember(session: string, value: string, options: { shortLived?: boolean; pieces?: boolean } = {}): void {
     if (!value) return;
     let values = this.sessions.get(session);
     if (!values) this.sessions.set(session, values = new Map());
@@ -307,6 +328,17 @@ export class SecretRedactor {
     const known = raw.slice(-8);
     if (!options.shortLived && value.length >= MIN_REDACT_LENGTH && !raw.includes(value)) raw.push(value);
     for (const variant of value.length >= MIN_REDACT_LENGTH ? variants(value) : [value]) values.set(variant, until);
+    // Every piece of six characters or more: an edited, partial or copied
+    // part of the value is hidden too (up to 128 characters of it). Shorter
+    // pieces would hide ordinary words of every page; what an edited field
+    // holds now is also learned from the page itself (refreshFilledValues).
+    const head = options.pieces ? [...value].slice(0, 128) : [];
+    for (let start = 0; start + MIN_PIECE_LENGTH <= head.length; start++) {
+      for (let end = start + MIN_PIECE_LENGTH; end <= head.length; end++) {
+        if (end - start === head.length) continue;
+        values.set(head.slice(start, end).join(""), until);
+      }
+    }
     // A pair such as user:pass, as HTTP Basic sends it in base64.
     if (value.length >= MIN_REDACT_LENGTH && !options.shortLived) {
       for (const other of known) {

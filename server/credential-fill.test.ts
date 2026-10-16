@@ -185,6 +185,10 @@ lines.on('line', (line) => {
     if (name === 'agent_browser_get_url') result = text(engineUrl);
     else if (name === 'agent_browser_open') { load(args.url); result = text('opened ' + args.url); }
     else if (name === 'agent_browser_tab_switch') { load(process.env.OTHER_TAB_URL); result = text('switched'); }
+    // The site itself changing the field (a "show password" toggle, its own script).
+    else if (name === 'test_site_edit') { const el = win.document.querySelector(args.selector); if (args.type) el.setAttribute('type', args.type); if (typeof args.value === 'string') el.value = args.value; result = text('edited'); }
+    else if (name === 'agent_browser_press') { const el = args.selector ? win.document.querySelector(refs[args.selector] || args.selector) : win.document.activeElement; if (el && args.key === 'Backspace' && typeof el.value === 'string') el.value = el.value.slice(0, -1); result = text('pressed'); }
+    else if (name === 'agent_browser_type') { const el = win.document.querySelector(refs[args.selector] || args.selector); if (el) el.value += args.text; result = text('typed'); }
     else if (name === 'agent_browser_click') { const el = win.document.querySelector(refs[args.selector] || args.selector); if (!el) result = { isError: true, content: [{ type: 'text', text: 'Element not found' }] }; else { el.focus(); result = text(JSON.stringify({ data: { clicked: args.selector } })); } }
     else if (name === 'agent_browser_fill') { const el = win.document.querySelector(refs[args.selector] || args.selector); if (!el) result = { isError: true, content: [{ type: 'text', text: 'Element not found: ' + args.selector }] }; else { el.value = args.text; result = text(JSON.stringify({ data: { filled: args.selector, text: args.text } })); } }
     else if (name === 'agent_browser_eval') { try { result = text(JSON.stringify(win.eval(args.script))); } catch (error) { result = { isError: true, content: [{ type: 'text', text: 'Evaluation failed: ' + error.message }] }; } }
@@ -193,16 +197,18 @@ lines.on('line', (line) => {
     else if (name === 'agent_browser_snapshot') result = text(Object.entries(values()).map(([id, value]) => 'textbox #' + id + ' value="' + value + '"').join('\n'));
     else result = text('unknown ' + name);
   }
-  fs.writeFileSync(process.env.STATE_FILE, JSON.stringify({ values: values(), calls, argvs, url: engineUrl }));
+  const active = win.document.activeElement;
+  const attrs = Object.fromEntries(Array.from(win.document.querySelectorAll('input')).map((el) => [el.id, { autocomplete: el.getAttribute('autocomplete'), filled: el.getAttribute('data-sagax-filled') }]));
+  fs.writeFileSync(process.env.STATE_FILE, JSON.stringify({ values: values(), calls, argvs, url: engineUrl, focused: active && active.id ? active.id : '', attrs }));
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\n');
 });
 `;
 
-function engine(url: string, options: { html?: string; script?: string; otherTab?: string } = {}): { spec: BrowserSpawnSpec; inputs: () => Record<string, string>; calls: () => string[]; argvs: () => string[][]; url: () => string } {
+function engine(url: string, options: { html?: string; script?: string; otherTab?: string } = {}): { spec: BrowserSpawnSpec; inputs: () => Record<string, string>; calls: () => string[]; argvs: () => string[][]; url: () => string; focused: () => string; attrs: () => Record<string, { autocomplete: string | null; filled: string | null }> } {
   const dir = mkdtempSync(join(tmpdir(), "sagax-fill-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const state = join(dir, "state.json");
-  const read = () => existsSync(state) ? JSON.parse(readFileSync(state, "utf8")) as { values: Record<string, string>; calls: string[]; argvs: string[][]; url: string } : { values: {}, calls: [], argvs: [], url: "" };
+  const read = () => existsSync(state) ? JSON.parse(readFileSync(state, "utf8")) as { values: Record<string, string>; calls: string[]; argvs: string[][]; url: string; focused: string; attrs: Record<string, { autocomplete: string | null; filled: string | null }> } : { values: {}, calls: [], argvs: [], url: "", focused: "", attrs: {} };
   return {
     spec: { command: process.execPath, args: ["-e", FAKE_ENGINE], env: {
       PATH: process.env.PATH, PAGE_URL: url, PAGE_HTML: options.html ?? PAGE, STATE_FILE: state, NODE_PATH: join(process.cwd(), "node_modules"),
@@ -213,6 +219,8 @@ function engine(url: string, options: { html?: string; script?: string; otherTab
     calls: () => read().calls,
     argvs: () => read().argvs,
     url: () => read().url,
+    focused: () => read().focused,
+    attrs: () => read().attrs,
   };
 }
 
@@ -274,6 +282,63 @@ describe("fill_credential through the browser runtime", () => {
     expect(result.content[0]!.text).toContain("only filled on");
     expect(evil.inputs().pass).toBe("");
     expect(JSON.stringify(evil.calls())).not.toContain(FAKE_PASSWORD);
+  });
+
+  it("FOURTH B1: redacts the raw engine answer before trimming, so a cut through the value leaves no prefix", async () => {
+    const html = '<form action="/s"><input id="search" type="text"><input id="pass" type="password"></form>';
+    // The trim keeps 512 characters (mcp-trim MIN_BUDGET) of a 512 budget;
+    // the filler puts the password's first `kept` characters before that cut.
+    for (const kept of [4, 5, 8, 15]) {
+      const dir = mkdtempSync(join(tmpdir(), "sagax-fill-trim-"));
+      cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+      const vault = new CredentialVault(dir, () => ({ kind: "key", key: Buffer.alloc(32, 8) }));
+      const item = vault.create(LOCAL_VAULT_PRINCIPAL, { kind: "login", name: "Example", password: FAKE_PASSWORD, domains: ["example.test"] });
+      vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
+      const runtime = new BrowserRuntime({ requestTimeoutMs: 5_000, takeoverTimeoutMs: 100, idleMs: 5_000, resultBudget: 512 });
+      cleanups.push(() => runtime.closeAll());
+      const access = fillResolverFor(vault, { principalId: LOCAL_VAULT_PRINCIPAL, botId: "bot-a", threadId: "t1" });
+      const site = engine("https://example.test/login", { html });
+      expect((await call(runtime, "trim", site.spec, "fill_credential", { credential: vaultHandle(item.id), field: "password" }, access)).isError).toBeUndefined();
+      // Filler typed into an earlier field moves where the trim cuts.
+      await call(runtime, "trim", site.spec, "agent_browser_type", { selector: "@e4", text: "y".repeat(512 - kept - 46) }, access);
+      const snapshot = await call(runtime, "trim", site.spec, "agent_browser_snapshot", {}, access);
+      const text = snapshot.content[0]!.text;
+      expect(text, `kept ${kept}: the cut must fall in the password's place`).toContain('#pass value="');
+      for (let size = 4; size <= FAKE_PASSWORD.length; size++) expect(text, `kept ${kept}`).not.toContain(FAKE_PASSWORD.slice(0, size));
+    }
+  });
+
+  it("FOURTH B2: no keys into a filled field, the field loses focus, and an edited or revealed value stays hidden", async () => {
+    const { vault, item, runtime, handle, access } = setup();
+    vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
+    const site = engine("https://example.test/login");
+    expect((await call(runtime, "keys", site.spec, "fill_credential", { credential: handle, field: "password", target: "@e2" }, access("bot-a", "t1"))).isError).toBeUndefined();
+    expect(site.focused()).not.toBe("pass");
+    expect(site.attrs().pass).toEqual({ autocomplete: "off", filled: "1" });
+    // Aimed at the filled field, or with the focus on it: refused, nothing changes.
+    const typed = await call(runtime, "keys", site.spec, "agent_browser_type", { selector: "@e2", text: "x" }, access("bot-a", "t1"));
+    expect(typed.content[0]!.text).toContain("cannot be typed into");
+    const pressed = await call(runtime, "keys", site.spec, "agent_browser_press", { key: "Backspace", selector: "@e2" }, access("bot-a", "t1"));
+    expect(pressed.content[0]!.text).toContain("cannot be typed into");
+    expect(site.inputs().pass).toBe(FAKE_PASSWORD);
+    // Another field still takes keys.
+    expect((await call(runtime, "keys", site.spec, "agent_browser_type", { selector: "@e4", text: "hello" }, access("bot-a", "t1"))).isError).toBeUndefined();
+    // The site shows the password, then shortens it: whatever the field holds is hidden.
+    for (const value of [FAKE_PASSWORD, "fake", "Pa5"]) {
+      await call(runtime, "keys", site.spec, "test_site_edit", { selector: "#pass", type: "text", value }, access("bot-a", "t1"));
+      const snapshot = await call(runtime, "keys", site.spec, "agent_browser_snapshot", {}, access("bot-a", "t1"));
+      expect(snapshot.content[0]!.text).toContain(`#pass value="${REDACTED_CREDENTIAL}"`);
+    }
+  });
+
+  it("FOURTH S1: no screenshot at all once a login was filled, whatever tab is shown", async () => {
+    const { vault, item, runtime, handle, access } = setup();
+    vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
+    const site = engine("https://example.test/login", { otherTab: "https://other.test/" });
+    await call(runtime, "shot", site.spec, "fill_credential", { credential: handle, field: "password" }, access("bot-a", "t1"));
+    await call(runtime, "shot", site.spec, "agent_browser_tab_switch", { index: 1 }, access("bot-a", "t1"));
+    expect(site.url()).toBe("https://other.test/");
+    expect(await call(runtime, "shot", site.spec, "agent_browser_screenshot", {}, access("bot-b", "t9"))).toMatchObject({ isError: true });
   });
 
   it("THIRD BLOCKER: once a login is allowed or filled, elements are addressed by @eN refs only (no CSS value oracle)", async () => {
@@ -343,10 +408,13 @@ describe("fill_credential through the browser runtime", () => {
     await inside;
     await expect(call(runtime, "excl", site.spec, "agent_browser_tab_switch", { index: 1 })).rejects.toThrow(/busy typing/);
     await expect(call(runtime, "excl", site.spec, "agent_browser_eval", { script: "1" })).rejects.toThrow(/busy typing/);
+    // The Browser panel does not turn the engine's stream back on meanwhile.
+    expect(runtime.filling("excl")).toBe(true);
     release();
     expect((await filling).isError).toBeUndefined();
     expect(site.inputs().pass).toBe(FAKE_PASSWORD);
     expect(site.url()).toBe("https://example.test/login");
+    expect(runtime.filling("excl")).toBe(false);
   });
 
   it("NEW BLOCKER 3: after a fill, no script runs in that browser for any bot or conversation, until a restart; before, a script carries its origin guard", async () => {
