@@ -17,7 +17,7 @@ describe("tool grants page model", () => {
   });
   it("has every Tool access string in French", () => {
     const keys = Object.keys(en).filter((k) => k.startsWith("settings.toolAccess."));
-    expect(keys.length).toBe(27);
+    expect(keys.length).toBe(29);
     for (const k of keys) expect((fr as Record<string, string>)[k], k).toBeTruthy();
   });
 });

@@ -162,8 +162,8 @@ describe("Settings > Organization on a Perspicax server", () => {
   };
   it("shows the link, the role and the console link", () => {
     const markup = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org, onChanged: () => {} }));
-    expect(markup).toContain("You are linked to Pulsatrix");
-    expect(markup).toContain("You are an admin of this organization.");
+    // #584: link state and role on one grey line under the organization's name
+    expect(markup).toContain("Linked to Pulsatrix · Admin");
     expect(markup).toContain("Manage in Perspicax");
     expect(markup).toContain('href="https://px.example.test/console/"');
     expect(markup).not.toContain("type=\"checkbox\"");
@@ -196,9 +196,8 @@ describe("Settings > Organization on a Perspicax server", () => {
   });
   it("gives a member the state, the link and the same explanation", () => {
     const markup = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: { ...org, viewerRole: "member", link: { state: "error", error: "link_refused" } }, onChanged: () => {} }));
-    expect(markup).toContain("The link to Perspicax has a problem (link_refused).");
-    expect(markup).toContain("You are a member of this organization.");
-    expect(markup).not.toContain("You are linked to Pulsatrix");
+    expect(markup).toContain("The link to Perspicax has a problem (link_refused). · Member");
+    expect(markup).not.toContain("Linked to Pulsatrix");
     expect(markup).not.toContain("Who pays for a turn");
     expect(markup).not.toContain("Last sync");
     expect(markup).not.toContain("Routines in my name");

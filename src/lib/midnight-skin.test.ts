@@ -94,7 +94,7 @@ const GROK_BOT_SAND_DARK: Record<string, string> = {
   "--color-sidebar-ink": "#f5f5f5",
   "--color-sidebar-ink-secondary": "#f5f5f5a8",
   "--color-sidebar-hover": "#f5f5f50f",
-  "--color-sidebar-selected": "#f5f5f51a",
+  "--color-sidebar-selected": "#f5f5f514", // 8 % (#575, #202020 measured on Grok Bot)
   "--color-accent": "#f5f5f5",
   "--color-accent-border": "#dbdbdb",
   "--color-accent-ink": "#121212",
