@@ -105,7 +105,12 @@ export interface BotActTargetLike {
   method?: string;
   path?: string;
   write?: boolean;
+  /** A screen command's name (createRoutine, deleteRoutine...). */
+  command?: string;
 }
+
+const ROUTINE_PATH = /^\/api\/routines(?:\/|$)/;
+const ROUTINE_GRANT_COMMANDS = new Set(["createRoutine", "updateRoutine", "runRoutine"]);
 
 const SEND_PATH = /\/(?:messages|send|mail|email[\w-]*|nudges|invite[\w-]*|share[\w-]*|publish[\w-]*)(?:\/|$)/i;
 
@@ -119,6 +124,10 @@ export function botActClasses(target: BotActTargetLike | undefined): StepUpClass
   const write = target.kind === "route" ? method !== "GET" && method !== "HEAD" : target.write !== false;
   if (!write) return [];
   if (method === "DELETE") out.add("destructive");
+  // a routine runs later without asking: a standing grant; removing one is a delete
+  if (target.kind === "route" && target.path && ROUTINE_PATH.test(target.path)) out.add(method === "DELETE" ? "destructive" : "always-grant");
+  if (target.kind === "ui" && target.command && ROUTINE_GRANT_COMMANDS.has(target.command)) out.add("always-grant");
+  if (target.kind === "ui" && target.command === "deleteRoutine") out.add("destructive");
   if (target.path && SEND_PATH.test(target.path)) out.add("external-send");
   if (target.path && PUBLISH_TOOL.test(target.path.replace(/\//g, "_"))) out.add("publish-page");
   out.add("irreversible");

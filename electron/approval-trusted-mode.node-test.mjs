@@ -427,3 +427,14 @@ test("safe Ask timeouts do not enqueue a redundant recovery", async () => {
   await assert.rejects(coordinator.request(proc, "bot-1", "ask"), /did not answer/);
   assert.equal(proc.messages.length, 1);
 });
+
+test("a security key allowance rides on its own request only, and must look like one", async () => {
+  const proc = fakeProcess();
+  const coordinator = createTrustedApprovalModeCoordinator({ randomId: () => REQUEST_ID });
+  const allowance = "a".repeat(43);
+  void coordinator.request(proc, "bot-1", "auto", { threadId: "thread-1", threadOnly: true, stepUpAllowance: allowance }).catch(() => {});
+  assert.equal(proc.messages.at(-1).stepUpAllowance, allowance);
+  assert.equal(proc.messages.at(-1).requestId, REQUEST_ID);
+  const other = createTrustedApprovalModeCoordinator({ randomId: () => REQUEST_ID_2 });
+  await assert.rejects(other.request(fakeProcess(), "bot-1", "auto", { threadId: "thread-1", threadOnly: true, stepUpAllowance: "short" }), /allowance/);
+});

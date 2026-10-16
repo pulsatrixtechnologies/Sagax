@@ -282,11 +282,30 @@ in `server/routes/security-keys.ts`. Rules, covered by
 - A bot never reaches these settings through act: `shared/bot-act.ts`
   refuses `/always-allow`, `/command-allowlist`, `/permission-mode`,
   `/tool-grants`, `/api/security-keys`, `/api/custom-rules`,
-  `/api/approval-rules` and any `alwaysAllow`, `autoApprove` or `stepUp`
-  field.
-- The desktop's trusted approval channel carries no step-up: the app asks
-  `POST /api/security-keys/approval-mode` first, which uses the step-up and
-  leaves a one-time allowance (60 seconds) for that bot, thread and level.
+  `/api/approval-rules`, the `refreshTaskPermissions` command and any
+  `alwaysAllow`, `autoApprove`, `refreshPermissions` or `stepUp` field, at
+  any depth (deeper than it reads is refused). An act path the URL parser
+  would change (`/./`, an empty or dot segment, an encoded character, a
+  backslash) is refused, so the guard reads the path the server routes.
+  Routines written or run through act are always-grant, deleted ones
+  destructive.
+- An Allow with no live card is refused for a person who chose any class.
+- A looser approval level covers a thread, a bot, a new Full thread, a
+  permission refresh (with always-grant when it brings Always allow keys)
+  and "all threads to Full" (every thread's own level counts). The desktop's
+  trusted approval channel carries no step-up: the app asks
+  `POST /api/security-keys/approval-mode` first (`op`: bot, thread, refresh,
+  all-threads), which uses the step-up and returns a one-time allowance id
+  (60 seconds) for that operation, bot, thread and level; the channel's
+  request carries it (`stepUpAllowance`) and the server spends it on any
+  try.
+- Removing `security-keys.json` (and its digest) is noticed at start
+  (`.security-keys-used`) and audited as `security_keys.file_removed`.
+- Follow-ups, not covered yet: New bot defaults, bot creation and a bot zip
+  import can give standing permissions without a key; Settings > Bot >
+  Auto-review (`autoReviewDefault`) starts new conversations in a reviewed
+  level without a key; the classes that apply are the answerer's only, not
+  the bot owner's combined with them.
 - RP ID: the https host the request came through (`x-forwarded-proto`), or
   `SAGAX_WEBAUTHN_RP_ID` (with `SAGAX_WEBAUTHN_ORIGINS`); never an IP address.
   The desktop's own page (127.0.0.1) runs the ceremony in a small window on

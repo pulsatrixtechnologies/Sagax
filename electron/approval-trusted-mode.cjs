@@ -158,6 +158,14 @@ function createTrustedApprovalModeCoordinator({ randomId, timeoutMs = 10_000 } =
     } catch (error) {
       return Promise.reject(error);
     }
+    // A one-time security key allowance for exactly this change
+    // (server/routes/security-keys.ts), carried by this request only.
+    if (options.stepUpAllowance !== undefined) {
+      if (typeof options.stepUpAllowance !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(options.stepUpAllowance)) {
+        return Promise.reject(new Error("invalid security key allowance"));
+      }
+      message = { ...message, stepUpAllowance: options.stepUpAllowance };
+    }
     if (!proc || typeof proc.postMessage !== "function") {
       return Promise.reject(new Error("The embedded bot server is unavailable"));
     }

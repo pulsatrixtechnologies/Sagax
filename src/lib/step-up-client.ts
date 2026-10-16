@@ -208,29 +208,36 @@ export function forgetStepUp(target: StepUpTarget): void {
 
 /** A looser approval level the desktop's trusted channel will apply: ask
  * the server first, which asks the person's key when they chose
- * "rule-change" and leaves a one-time allowance for that exact change. */
-export async function authorizeApprovalMode(botId: string, thread: string, mode: string): Promise<void> {
-  const body = { botId, thread, mode };
+ * "rule-change" and returns a one-time allowance for that exact operation,
+ * which the channel's request then carries. */
+export async function authorizeApprovalMode(botId: string, op: string, thread: string, mode: string): Promise<string | undefined> {
+  const body = { botId, op, thread, mode };
+  let answer: { allowance?: string };
   try {
-    await post("/api/security-keys/approval-mode", body);
+    answer = await post<{ allowance?: string }>("/api/security-keys/approval-mode", body);
   } catch (error) {
     const refusal = (error as { body?: { code?: string; target?: StepUpTarget } }).body;
     if (refusal?.code !== "step_up_required" || !refusal.target) throw error;
     const confirmed = await stepUp(refusal.target);
-    await post("/api/security-keys/approval-mode", { ...body, stepUp: confirmed });
+    answer = await post<{ allowance?: string }>("/api/security-keys/approval-mode", { ...body, stepUp: confirmed });
   }
+  return answer.allowance;
 }
 
 type ApprovalBridgeLike = { setMode: (botId: string, mode: any, options?: any) => Promise<any> };
+type ModeOptions = { threadId?: string; threadOnly?: boolean; allThreads?: boolean; refreshPermissions?: boolean; [key: string]: unknown };
 
 /** The desktop's approval bridge, asking the key first for a looser level. */
 export function stepUpApprovals<T extends ApprovalBridgeLike>(bridge: T | undefined): T | undefined {
   if (!bridge) return bridge;
   return {
     ...bridge,
-    setMode: async (botId: string, mode: string, options?: { threadId?: string; threadOnly?: boolean }) => {
-      if (mode !== "ask") await authorizeApprovalMode(botId, options?.threadOnly && options.threadId ? options.threadId : "*", mode);
-      return bridge.setMode(botId, mode, options);
+    setMode: async (botId: string, mode: string, options?: ModeOptions) => {
+      if (mode === "ask" && !options?.refreshPermissions) return bridge.setMode(botId, mode, options);
+      const scoped = Boolean(options?.threadOnly && options.threadId);
+      const op = options?.allThreads ? "all-threads" : options?.refreshPermissions ? "refresh" : scoped ? "thread" : "bot";
+      const allowance = await authorizeApprovalMode(botId, op, scoped ? options!.threadId! : "*", mode);
+      return bridge.setMode(botId, mode, allowance ? { ...options, stepUpAllowance: allowance } : options);
     },
   } as T;
 }

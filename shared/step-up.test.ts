@@ -92,3 +92,13 @@ describe("hardening (security review)", () => {
     expect(approvalModeLoosens(undefined, "auto")).toBe(true);
   });
 });
+
+describe("bot act routines (re-review)", () => {
+  it("a routine written or run through act is a standing grant; a delete is destructive", () => {
+    expect(botActClasses({ kind: "route", method: "POST", path: "/api/routines" })).toContain("always-grant");
+    expect(botActClasses({ kind: "route", method: "PATCH", path: "/api/routines/r1" })).toContain("always-grant");
+    expect(botActClasses({ kind: "route", method: "DELETE", path: "/api/routines/r1" })).toContain("destructive");
+    for (const command of ["createRoutine", "updateRoutine", "runRoutine"]) expect(botActClasses({ kind: "ui", command, write: true })).toContain("always-grant");
+    expect(botActClasses({ kind: "ui", command: "deleteRoutine", write: true })).toContain("destructive");
+  });
+});

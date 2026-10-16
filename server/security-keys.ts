@@ -21,8 +21,8 @@
 // Expired ceremonies are dropped. A restart drops them all.
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -90,6 +90,9 @@ export class SecurityKeyStore {
    * documented recovery: an operator removing a person's entry by hand).
    * Read once at start; the caller audits it. */
   editedOutside = false;
+  /** The file (and its digest) is gone though this server had saved keys:
+   * a person's keys removed wholesale outside Sagax. */
+  removedOutside = false;
 
   constructor(file: string) {
     this.file = file;
@@ -100,11 +103,18 @@ export class SecurityKeyStore {
     return `${this.file}.sha256`;
   }
 
+  /** Written once keys were saved: its presence without the file says the
+   * file was removed. */
+  private usedMarker(): string {
+    return join(dirname(this.file), ".security-keys-used");
+  }
+
   private load(): void {
     let raw: string;
     try {
       raw = readFileSync(this.file, "utf8");
     } catch {
+      if (existsSync(this.digestFile()) || existsSync(this.usedMarker())) this.removedOutside = true;
       return;
     }
     try {
@@ -129,6 +139,7 @@ export class SecurityKeyStore {
     const text = JSON.stringify(this.data, null, 2);
     writeFileAtomic(this.file, text, { mode: 0o600 });
     writeFileAtomic(this.digestFile(), createHash("sha256").update(text).digest("hex"), { mode: 0o600 });
+    if (!existsSync(this.usedMarker())) writeFileAtomic(this.usedMarker(), "security keys were saved here\n", { mode: 0o600 });
   }
 
   private entry(person: string): PersonEntry | undefined {
@@ -291,7 +302,7 @@ export class SecurityKeys {
   /** Changes a verified step-up already authorized for a path that cannot
    * carry one (the desktop's trusted approval channel), by person and key.
    * Each used once, within STEP_UP_USE_MS. */
-  private readonly allowances = new Map<string, number>();
+  private readonly allowances = new Map<string, { person: string; key: string; until: number }>();
 
   constructor(options: SecurityKeysOptions) {
     this.store = options.store;
@@ -313,16 +324,23 @@ export class SecurityKeys {
     return requiredClasses(this.store.anyClasses(), classes);
   }
 
-  allow(person: string, key: string): void {
-    this.allowances.set(`${person}\n${key}`, this.now() + STEP_UP_USE_MS);
+  /** Leave a one-time allowance for exactly this change; its random id is
+   * what the request that applies the change carries. */
+  allow(person: string, key: string): string {
+    const now = this.now();
+    for (const [id, entry] of this.allowances) if (entry.until < now) this.allowances.delete(id);
+    const id = randomBytes(32).toString("base64url");
+    this.allowances.set(id, { person, key, until: now + STEP_UP_USE_MS });
+    return id;
   }
 
-  /** Use an allowance once. */
-  takeAllowance(person: string, key: string): boolean {
-    const id = `${person}\n${key}`;
-    const until = this.allowances.get(id);
+  /** Use an allowance once: the same person, the same change, in time. Any
+   * attempt spends it. */
+  takeAllowance(id: unknown, person: string, key: string): boolean {
+    if (typeof id !== "string" || !id) return false;
+    const entry = this.allowances.get(id);
     this.allowances.delete(id);
-    return until !== undefined && this.now() <= until;
+    return Boolean(entry && entry.person === person && entry.key === key && this.now() <= entry.until);
   }
 
   keys(person: string): SecurityKeyView[] {

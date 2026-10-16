@@ -103,19 +103,26 @@ it("an Allow in a chosen class needs the person's key, bound to that card, once"
     await api("PUT", "/api/security-keys/classes", { classes: ["destructive", "rule-change", "always-grant"] });
     const looser = await call("PATCH", `/api/bots/${bot.id}/tasks/${idle}`, { approvalMode: "auto", acknowledgeLocalAuto: true });
     expect(looser.status, JSON.stringify(looser.body)).toBe(403);
-    expect(looser.body).toMatchObject({ code: "step_up_required", target: { kind: "settings", action: "approval-mode", detail: { botId: bot.id, thread: idle, mode: "auto" } } });
+    expect(looser.body).toMatchObject({ code: "step_up_required", target: { kind: "settings", action: "approval-mode", detail: { op: "thread", botId: bot.id, thread: idle, mode: "auto" } } });
     const forMode = await api("POST", "/api/security-keys/begin", { target: looser.body.target, via: "desktop-window" });
     await ceremony(forMode);
     await api("PATCH", `/api/bots/${bot.id}/tasks/${idle}`, { approvalMode: "auto", acknowledgeLocalAuto: true, stepUp: forMode.ceremonyId });
     // back to Ask tightens: no key
     await api("PATCH", `/api/bots/${bot.id}/tasks/${idle}`, { approvalMode: "ask" });
+    // a permission refresh copying the bot's Auto onto the thread loosens too
+    const refresh = await call("PATCH", `/api/bots/${bot.id}/tasks/${idle}`, { refreshPermissions: true, acknowledgeLocalAuto: true });
+    expect(refresh.status, JSON.stringify(refresh.body)).toBe(403);
+    expect(refresh.body).toMatchObject({ code: "step_up_required", target: { action: "approval-mode", detail: { op: "refresh", thread: idle } } });
 
     // the desktop's Full goes through a one-time allowance asked here first
-    const full = await call("POST", "/api/security-keys/approval-mode", { botId: bot.id, thread: "*", mode: "full" });
+    const full = await call("POST", "/api/security-keys/approval-mode", { botId: bot.id, op: "bot", thread: "*", mode: "full" });
     expect(full.body).toMatchObject({ code: "step_up_required" });
     const forFull = await api("POST", "/api/security-keys/begin", { target: full.body.target, via: "desktop-window" });
     await ceremony(forFull);
-    await api("POST", "/api/security-keys/approval-mode", { botId: bot.id, thread: "*", mode: "full", stepUp: forFull.ceremonyId });
+    const allowed = await api("POST", "/api/security-keys/approval-mode", { botId: bot.id, op: "bot", thread: "*", mode: "full", stepUp: forFull.ceremonyId });
+    expect(allowed.allowance).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    // the step-up for "bot Full" does not count for "all threads to Full"
+    expect((await call("POST", "/api/security-keys/approval-mode", { botId: bot.id, op: "all-threads", thread: "*", mode: "full", stepUp: forFull.ceremonyId })).status).toBe(403);
 
     // a saved command runs without asking: it needs the key ("always-grant")
     const saved = await call("POST", `/api/bots/${bot.id}/command-allowlist`, { command: "printf saved", cwd: dataDir, providerInstanceId: "claude" });

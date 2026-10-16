@@ -219,3 +219,24 @@ describe("security review: a bot never widens its own approvals through act", ()
     expect(refused({ method: "PATCH", path: "/api/bots/b1", body: { name: "New name" } })).toBe(false);
   });
 });
+
+describe("security review: no path trick or nesting gets past the guard", () => {
+  const client = () => "client" as const;
+  const ok = (raw: unknown) => decideBotAct({ raw, mode: "full", scopes: ["admin", "client"], neededScope: client }).ok;
+  it("refuses a dot segment, an empty segment or a path the URL parser would change", () => {
+    expect(ok({ method: "POST", path: "/api/./custom-rules", body: { when: "x", behavior: "allow", botId: null } })).toBe(false);
+    expect(ok({ method: "POST", path: "/api/./security-keys/register", body: { name: "k" } })).toBe(false);
+    expect(ok({ method: "PATCH", path: "/api/./approval-rules/rule_1", body: { behavior: "allow" } })).toBe(false);
+    expect(ok({ method: "DELETE", path: "/api/approval-rules/./rule_1" })).toBe(false);
+    expect(ok({ method: "POST", path: "/api/custom-rules/", body: { when: "x" } })).toBe(false);
+    expect(ok({ method: "POST", path: "/api/%2e/custom-rules" })).toBe(false);
+    expect(ok({ method: "POST", path: "/api\\custom-rules" })).toBe(false);
+  });
+  it("refuses a permission refresh and anything nested deeper than it reads", () => {
+    expect(ok({ method: "PATCH", path: "/api/bots/b1/tasks/t1", body: { refreshPermissions: true } })).toBe(false);
+    expect(ok({ ui: "refreshTaskPermissions", input: { botId: "b1", threadId: "t1" } })).toBe(false);
+    let deep: Record<string, unknown> = { name: "x" };
+    for (let i = 0; i < 12; i++) deep = { inner: deep };
+    expect(ok({ method: "PATCH", path: "/api/bots/b1", body: deep })).toBe(false);
+  });
+});

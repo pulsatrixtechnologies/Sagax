@@ -7,9 +7,10 @@
 //   POST   /api/security-keys/register           { name, via?, stepUp? } -> ceremony
 //   DELETE /api/security-keys/:id                { stepUp }
 //   POST   /api/security-keys/begin              { target, via? } -> ceremony
-//   POST   /api/security-keys/approval-mode      { botId, thread, mode, stepUp? }
+//   POST   /api/security-keys/approval-mode      { botId, op, thread, mode, stepUp? }
 //          a looser approval level the desktop's trusted channel will apply:
-//          the step-up is used here and leaves a one-time allowance
+//          the step-up is used here and returns a one-time `allowance` id,
+//          bound to that operation, which the channel's request carries
 //
 // Public (`securityKeyCeremonyRoutes`, before the auth gate): the ceremony id
 // (32 random bytes, two minutes, one answer) is the authorization, as the
@@ -60,8 +61,8 @@ export interface SecurityKeyRouteDeps {
   /** A looser approval level asked ahead of the desktop's trusted channel:
    * null when it needs no key or the step-up was used (an allowance is
    * left), else the refusal. */
-  authorizeApprovalMode: (auth: RequestAuth, person: string, input: { botId: string; thread: string; mode: string; stepUp: unknown }) =>
-    { status: number; body: unknown } | null;
+  authorizeApprovalMode: (auth: RequestAuth, person: string, input: { botId: string; op: string; thread: string; mode: string; stepUp: unknown }) =>
+    { status: number; body: unknown };
   /** The first key: a sign-in this recent (a session's age), or this
    * computer's own person. */
   recentSignIn: (auth: RequestAuth) => boolean;
@@ -239,9 +240,8 @@ export function createSecurityKeyRoutes(deps: SecurityKeyRouteDeps): RouteHandle
       if (typeof body.botId !== "string" || !/^[\w-]{1,128}$/.test(body.botId) || typeof body.thread !== "string" || !/^(?:\*|[\w-]{1,128})$/.test(body.thread) || typeof body.mode !== "string") {
         return json(res, 400, { error: "botId, thread and mode are required" });
       }
-      const refused = deps.authorizeApprovalMode(auth, me, { botId: body.botId, thread: body.thread, mode: body.mode, stepUp: body.stepUp });
-      if (refused) return json(res, refused.status, refused.body);
-      return json(res, 200, { ok: true });
+      const answer = deps.authorizeApprovalMode(auth, me, { botId: body.botId, op: typeof body.op === "string" ? body.op : "", thread: body.thread, mode: body.mode, stepUp: body.stepUp });
+      return json(res, answer.status, answer.body);
     }
 
     const item = /^\/api\/security-keys\/([A-Za-z0-9_-]{1,1400})$/.exec(path);

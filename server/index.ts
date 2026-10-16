@@ -1531,6 +1531,10 @@ if (securityKeys.store.editedOutside) {
   console.warn("[security-keys] security-keys.json was changed outside Sagax since it last wrote it (a recovery, or tampering).");
   orgAudit({ category: "approval", action: "security_keys.file_edited", target: { kind: "file", id: "security-keys.json" }, actor: { kind: "cli" } });
 }
+if (securityKeys.store.removedOutside) {
+  console.warn("[security-keys] security-keys.json was removed outside Sagax: every person's keys and chosen classes are gone.");
+  orgAudit({ category: "approval", action: "security_keys.file_removed", target: { kind: "file", id: "security-keys.json" }, actor: { kind: "cli" } });
+}
 const securityKeyCeremonies = securityKeyCeremonyRoutes({ keys: securityKeys });
 // 2026-10-16: people's custom auto-review rules, in their own words
 // (shared/custom-rules.ts, server/custom-rules-review.ts).
@@ -6908,8 +6912,15 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
   // (POST /api/security-keys/approval-mode), this channel carries none.
   {
     const scoped = message.threadOnly === true && typeof threadId === "string";
-    const from = scoped ? approvalModeFor(store.projectBotForTask(botId, threadId as string) ?? existing) : currentMode;
-    if (approvalModeStepUpGate(localPrincipalId(), botId, scoped ? threadId as string : "*", from, mode, undefined)) {
+    const refresh = message.refreshPermissions === true && scoped ? refreshWidens(botId, threadId as string) : null;
+    const op = message.allThreads === true ? "all-threads" : message.refreshPermissions === true ? "refresh" : scoped ? "thread" : "bot";
+    const froms = message.allThreads === true ? everyThreadMode(existing)
+      : refresh ? [refresh.from]
+        : [scoped ? approvalModeFor(store.projectBotForTask(botId, threadId as string) ?? existing) : currentMode];
+    if (approvalModeStepUpGate({
+      person: localPrincipalId(), botId, op, thread: scoped ? threadId as string : "*", froms, to: mode,
+      allowance: message.stepUpAllowance, widensAllow: refresh?.widensAllow === true,
+    })) {
       respond({ ok: false, error: "This approval level needs your security key. Confirm it with your key and try again." });
       return true;
     }
@@ -24148,12 +24159,18 @@ ROUTES.push(createSecurityKeyRoutes({
     const bot = store.bot(input.botId);
     if (!bot) return { status: 404, body: { error: "no such bot" } };
     if (!isApprovalMode(input.mode)) return { status: 400, body: { error: "mode must be an approval level" } };
-    const from = input.thread === "*" ? approvalModeFor(bot) : approvalModeFor(store.projectBotForTask(bot.id, input.thread) ?? bot);
-    if (!approvalModeLoosens(from, input.mode)) return null;
-    const refused = approvalModeStepUpGate(person, bot.id, input.thread, from, input.mode, input.stepUp);
+    if (!["bot", "thread", "refresh", "all-threads"].includes(input.op)) return { status: 400, body: { error: "op must be bot, thread, refresh or all-threads" } };
+    if ((input.op === "thread" || input.op === "refresh") === (input.thread === "*")) return { status: 400, body: { error: "a thread operation names its thread" } };
+    const refresh = input.op === "refresh" ? refreshWidens(bot.id, input.thread) : null;
+    const froms = input.op === "all-threads" ? everyThreadMode(bot)
+      : refresh ? [refresh.from]
+        : [input.thread === "*" ? approvalModeFor(bot) : approvalModeFor(store.projectBotForTask(bot.id, input.thread) ?? bot)];
+    const gate = { person, botId: bot.id, op: input.op, thread: input.thread, froms, to: input.mode, widensAllow: refresh?.widensAllow === true };
+    // nothing looser: nothing to sign, no allowance
+    if (!froms.some((from) => approvalModeLoosens(from, input.mode)) && !gate.widensAllow) return { status: 200, body: { ok: true } };
+    const refused = approvalModeStepUpGate({ ...gate, stepUp: input.stepUp });
     if (refused) return refused;
-    securityKeys.allow(person, approvalModeAllowanceKey(bot.id, input.thread, input.mode));
-    return null;
+    return { status: 200, body: { ok: true, allowance: securityKeys.allow(person, approvalModeAllowanceKey(input.op, bot.id, input.thread, input.mode)) } };
   },
   userName: (auth) => auth.kind === "session"
     ? (auth.session.email ?? auth.session.label ?? "Sagax").trim() || "Sagax"
@@ -25755,21 +25772,46 @@ function alwaysAllowStepUpGate(person: string | null, botId: string, threadId: s
 }
 
 /** An approval level made looser needs the person's key when they chose
- * "rule-change": a step-up for exactly this bot, thread and level, or an
- * allowance a step-up gave for it a moment ago (the desktop's trusted
- * channel carries none). `thread` is a thread id or "*" (the bot). */
-function approvalModeStepUpGate(person: string | null, botId: string, thread: string, from: string | undefined, to: string, stepUp: unknown): StepUpDecision {
-  if (!approvalModeLoosens(from, to)) return null;
-  const bot = store.bot(botId);
-  const required = securityKeys.required(person, ["rule-change"], bot ? approvalOwnerId(bot) || null : null);
+ * "rule-change" (and "always-grant" when a refresh brings Always allow
+ * keys): a step-up for exactly this operation, bot, thread and level, or
+ * the one-time allowance a step-up left for it (the desktop's trusted
+ * channel carries none). `op`: bot, thread, refresh, all-threads, new-task;
+ * `thread`: a thread id or "*". `froms`: every level the change replaces
+ * (all threads of a bot, for "all-threads"). */
+function approvalModeStepUpGate(input: {
+  person: string | null; botId: string; op: string; thread: string; froms: Array<string | undefined>; to: string;
+  stepUp?: unknown; allowance?: unknown; widensAllow?: boolean;
+}): StepUpDecision {
+  const classes: Array<"rule-change" | "always-grant"> = [];
+  if (input.froms.some((from) => approvalModeLoosens(from, input.to))) classes.push("rule-change");
+  if (input.widensAllow) classes.push("always-grant");
+  if (!classes.length) return null;
+  const bot = store.bot(input.botId);
+  const required = securityKeys.required(input.person, classes, bot ? approvalOwnerId(bot) || null : null);
   if (!required.length) return null;
-  if (!person) return { status: 403, body: { error: "A looser approval level needs the person's security key.", code: "step_up_required", classes: required } };
-  if (securityKeys.takeAllowance(person, approvalModeAllowanceKey(botId, thread, to))) return null;
-  return settingsStepUp(securityKeys, person, "approval-mode", { botId, thread, mode: to }, stepUp, required);
+  if (!input.person) return { status: 403, body: { error: "A looser approval level needs the person's security key.", code: "step_up_required", classes: required } };
+  if (input.allowance !== undefined && securityKeys.takeAllowance(input.allowance, input.person, approvalModeAllowanceKey(input.op, input.botId, input.thread, input.to))) return null;
+  return settingsStepUp(securityKeys, input.person, "approval-mode", { op: input.op, botId: input.botId, thread: input.thread, mode: input.to }, input.stepUp, required);
 }
 
-function approvalModeAllowanceKey(botId: string, thread: string, mode: string): string {
-  return `approval-mode\n${botId}\n${thread}\n${mode}`;
+function approvalModeAllowanceKey(op: string, botId: string, thread: string, mode: string): string {
+  return `approval-mode\n${op}\n${botId}\n${thread}\n${mode}`;
+}
+
+/** The levels an all-threads change replaces: the bot's and each thread's. */
+function everyThreadMode(bot: BotRecord): string[] {
+  return [approvalModeFor(bot), ...store.tasks(bot.id).map((task) => approvalModeFor(store.projectBotForTask(bot.id, task.threadId) ?? bot))];
+}
+
+/** A refresh copies the bot's saved level and Always allow keys onto one
+ * thread: what it would widen. */
+function refreshWidens(botId: string, threadId: string): { from: string; to: string; widensAllow: boolean } | null {
+  const bot = store.bot(botId);
+  const current = store.projectBotForTask(botId, threadId);
+  if (!bot || !current) return null;
+  const to = approvalModeFor({ ...bot, approvalGrant: undefined });
+  const widensAllow = (bot.alwaysAllow ?? []).some((key) => !(current.alwaysAllow ?? []).includes(key));
+  return { from: approvalModeFor(current), to, widensAllow };
 }
 
 function stepUpAnswerOf(body: Record<string, unknown> | null | undefined): StepUpAnswer {
@@ -36982,7 +37024,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (target.busy) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
         if (target.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
         if (!supportsApprovalMode(target.modelSelection, "full")) return json(res, 400, { error: "This provider does not support Full access" });
-        const fullStepUp = approvalModeStepUpGate(ruleManager(auth), target.id, "*", approvalModeFor(target), "full", patchStepUp);
+        const fullStepUp = approvalModeStepUpGate({ person: ruleManager(auth), botId: target.id, op: "bot", thread: "*", froms: [approvalModeFor(target)], to: "full", stepUp: patchStepUp });
         if (fullStepUp) return json(res, fullStepUp.status, fullStepUp.body);
         const before = approvalModeFor(target);
         const updated = store.patchBot(target.id, {
@@ -37325,7 +37367,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         });
       }
       if (approvalChangeRequested && existingBot) {
-        const modeStepUp = approvalModeStepUpGate(ruleManager(auth), existingBot.id, "*", currentApprovalMode, requestedApprovalMode, patchStepUp);
+        const modeStepUp = approvalModeStepUpGate({ person: ruleManager(auth), botId: existingBot.id, op: "bot", thread: "*", froms: [currentApprovalMode], to: requestedApprovalMode, stepUp: patchStepUp });
         if (modeStepUp) return json(res, modeStepUp.status, modeStepUp.body);
       }
       if (body.approvalMode !== undefined || body.autoApprove !== undefined) {
@@ -39179,7 +39221,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!supportsApprovalMode(bot.modelSelection, "full")) {
           return json(res, 400, { error: "This provider does not support Full access" });
         }
-        const fullStepUp = approvalModeStepUpGate(ruleManager(auth), bot.id, "*", "ask", "full", body.stepUp);
+        const fullStepUp = approvalModeStepUpGate({ person: ruleManager(auth), botId: bot.id, op: "new-task", thread: "*", froms: ["ask"], to: "full", stepUp: body.stepUp });
         if (fullStepUp) return json(res, fullStepUp.status, fullStepUp.body);
       }
       if (phoneSecretSubmissions.hasBot(bot.id)) {
@@ -39299,6 +39341,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const widensMode = approvalRank[nextMode] > approvalRank[approvalModeFor(current)];
         const nextAllow = profile.alwaysAllow ?? [];
         const widensAllow = nextAllow.some((key) => !(current.alwaysAllow ?? []).includes(key));
+        // a refresh that widens needs the person's key, like the desktop channel
+        const refreshStepUp = approvalModeStepUpGate({
+          person: ruleManager(auth), botId: profile.id, op: "refresh", thread: m[2]!, froms: [approvalModeFor(current)], to: nextMode, stepUp: taskStepUp, widensAllow,
+        });
+        if (refreshStepUp) return json(res, refreshStepUp.status, refreshStepUp.body);
         if ((widensMode || widensAllow) && auth.kind === "loopback" && !DESKTOP_MANAGED && !req.headers.origin && store.bots.some((bot) => bot.busy)) {
           return json(res, 409, { error: "Change approval mode from the app or a paired device while bots are working." });
         }
@@ -39375,7 +39422,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (mode === "auto" && current.computer === "local" && approvalModeFor(current) !== "auto" && body.acknowledgeLocalAuto !== true) {
           return json(res, 400, { error: "Auto mode on this computer requires confirming the warning first (acknowledgeLocalAuto)" });
         }
-        const modeStepUp = approvalModeStepUpGate(ruleManager(auth), current.id, m[2]!, approvalModeFor(current), mode, taskStepUp);
+        const modeStepUp = approvalModeStepUpGate({ person: ruleManager(auth), botId: current.id, op: "thread", thread: m[2]!, froms: [approvalModeFor(current)], to: mode, stepUp: taskStepUp });
         if (modeStepUp) return json(res, modeStepUp.status, modeStepUp.body);
         patch.approvalMode = mode;
         patch.autoApprove = mode === "auto";

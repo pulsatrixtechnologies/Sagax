@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 
 import type { RiskClass } from "../shared/custom-rules.ts";
 import {
+  STEP_UP_CLASSES,
   canonicalJson,
   cardContentText,
   normalizeAnswer,
@@ -62,7 +63,13 @@ export function approvalStepUp(input: {
 }): StepUpDecision {
   const { keys, person, threadId, requestId, card, behavior } = input;
   if (behavior !== "allow") return null;
-  if (!card || card.answered || card.dismissed || card.expired) return null;
+  if (!card || card.answered || card.dismissed || card.expired) {
+    // No live card to read: nothing tells what this Allow would do. For a
+    // person who chose any class, it is refused, never let through.
+    const any = keys.required(person, STEP_UP_CLASSES, input.policyPerson);
+    if (!any.length) return null;
+    return { status: 409, body: { error: "This approval is no longer waiting.", code: "step_up_failed", classes: any, reason: "wrong-target" } };
+  }
   const normalized = normalizeAnswer(input.answer);
   const answer = { always: normalized.always, rememberCommand: normalized.rememberCommand, rule: normalized.rule };
   const classes = [...new Set([...stepUpClassesForCard(card, input.risks, answer), ...(input.extraClasses ?? [])])];

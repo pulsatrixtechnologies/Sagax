@@ -29,7 +29,7 @@ async function serve(person: string | null = "pr_alice", options: { recent?: boo
     person: () => person,
     userName: () => "alice@example.com",
     approvalGrants: () => options.label ? { grants: ["g"], label: options.label, summary: "rm /tmp/report.txt" } : { status: 404, error: "none" },
-    authorizeApprovalMode: () => null,
+    authorizeApprovalMode: () => ({ status: 200, body: { ok: true } }),
     recentSignIn: () => options.recent ?? true,
     audit: (row) => audits.push(row.action),
     env: {},

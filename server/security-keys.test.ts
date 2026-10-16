@@ -352,3 +352,35 @@ describe("the saved file", () => {
     expect(reread.credentials(ALICE)).toEqual([]);
   });
 });
+
+describe("re-review", () => {
+  it("refuses an Allow with no live card for a person who chose a class; passes for one who chose none", async () => {
+    await register(ALICE, fakeAuthenticator());
+    keys.setClasses(ALICE, ["money"]);
+    expect(gate(undefined, undefined)).toMatchObject({ status: 409 });
+    expect(gate(deleteCard({ answered: "allow" }), undefined)).toMatchObject({ status: 409 });
+    expect(gate(undefined, undefined, BOB)).toBeNull();
+  });
+
+  it("an allowance is used once, by its person, for its exact change, in time", () => {
+    const id = keys.allow(ALICE, "approval-mode\nbot\nb1\n*\nfull");
+    expect(keys.takeAllowance(id, ALICE, "approval-mode\nnew-task\nb1\n*\nfull")).toBe(false);
+    expect(keys.takeAllowance(id, ALICE, "approval-mode\nbot\nb1\n*\nfull")).toBe(false); // spent by the wrong try
+    const fresh = keys.allow(ALICE, "approval-mode\nbot\nb1\n*\nfull");
+    expect(keys.takeAllowance(fresh, BOB, "approval-mode\nbot\nb1\n*\nfull")).toBe(false);
+    const right = keys.allow(ALICE, "k");
+    expect(keys.takeAllowance(right, ALICE, "k")).toBe(true);
+    expect(keys.takeAllowance(right, ALICE, "k")).toBe(false);
+    const late = keys.allow(ALICE, "k");
+    clock += STEP_UP_USE_MS + 1;
+    expect(keys.takeAllowance(late, ALICE, "k")).toBe(false);
+  });
+
+  it("notices the keys file removed outside Sagax", async () => {
+    await register(ALICE, fakeAuthenticator());
+    const file = join(dir, "security-keys.json");
+    rmSync(file);
+    rmSync(`${file}.sha256`);
+    expect(new SecurityKeyStore(file).removedOutside).toBe(true);
+  });
+});
