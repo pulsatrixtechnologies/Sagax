@@ -497,9 +497,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   // The routines badge sits at the right edge of the row; under the name,
   // the viewer's own title and points, each only while its "Show my ..."
   // switch is on. Nothing under the name when both are off.
-  const activeRoutines = activeRoutineCount(state.routines, state.bots, viewerActorId(state.config));
-  const badgeEnabled = useShowRoutinesBadge();
-  const showBadge = badgeEnabled && activeRoutines > 0;
   const snapshot = memberLine && achievements.status === "ready" ? achievements.snapshot : undefined;
   const titleName = snapshot && snapshot.settings.showTitle !== false ? achievementTitleName(snapshot.settings.title) : null;
   const pointsText = snapshot && snapshot.settings.showPoints !== false ? formatPoints(snapshot.points) : null;
@@ -666,34 +663,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
       )}
     />
   );
-  const routinesLabel = t(
-    routineAttention
-      ? (activeRoutines === 1 ? "sidebar.profile.activeRoutinesOneAttention" : "sidebar.profile.activeRoutinesAttention")
-      : (activeRoutines === 1 ? "sidebar.profile.activeRoutinesOne" : "sidebar.profile.activeRoutines"),
-    { count: activeRoutines },
-  );
-  const routinesBadge = showBadge && !avatarOnly ? (
-    // the right edge of the row, vertically centred against the avatar
-    <div className="flex shrink-0 items-center" data-routines-line="">
-      <button
-        type="button"
-        data-active-routines={activeRoutines}
-        data-attention={routineAttention ? "" : undefined}
-        title={routinesLabel}
-        aria-label={routinesLabel}
-        onClick={(event) => {
-          event.stopPropagation();
-          dispatch({ type: "showRoutines" });
-        }}
-        className={cn(
-          "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[14px] font-medium leading-[20px] tabular-nums text-accent-text hover:bg-sidebar-hover",
-        )}
-      >
-        <CalendarClock size={18} strokeWidth={2.2} aria-hidden="true" />
-        <span>{activeRoutines}</span>
-      </button>
-    </div>
-  ) : null;
+  const routinesBadge = !avatarOnly ? <SidebarRoutinesBadge /> : null;
 
   const approvalsLabel = t("organization.adminApprovals.badge", { count: adminApprovals });
   const approvalsBadge = adminApprovals > 0 ? (
@@ -759,6 +729,47 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
         </div>
       )}
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
+    </div>
+  );
+}
+
+/** The active routines count (calendar icon and number) that opens
+ * Automations, while "Show active routines" is on and one runs. Beside the
+ * name in the wide row, and to the right of Connect apps in Grok Bot's foot
+ * (JC, 2026-10-16: it had vanished with the avatar-only foot). A failed run
+ * not seen yet turns its label into a warning. */
+export function SidebarRoutinesBadge() {
+  const { state, dispatch } = useStore();
+  const activeRoutines = activeRoutineCount(state.routines, state.bots, viewerActorId(state.config));
+  const badgeEnabled = useShowRoutinesBadge();
+  const routineAttention = state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt);
+  if (!badgeEnabled || activeRoutines <= 0) return null;
+  const routinesLabel = t(
+    routineAttention
+      ? (activeRoutines === 1 ? "sidebar.profile.activeRoutinesOneAttention" : "sidebar.profile.activeRoutinesAttention")
+      : (activeRoutines === 1 ? "sidebar.profile.activeRoutinesOne" : "sidebar.profile.activeRoutines"),
+    { count: activeRoutines },
+  );
+  return (
+    // the right edge of the row, vertically centred against the avatar
+    <div className="flex shrink-0 items-center" data-routines-line="">
+      <button
+        type="button"
+        data-active-routines={activeRoutines}
+        data-attention={routineAttention ? "" : undefined}
+        title={routinesLabel}
+        aria-label={routinesLabel}
+        onClick={(event) => {
+          event.stopPropagation();
+          dispatch({ type: "showRoutines" });
+        }}
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[14px] font-medium leading-[20px] tabular-nums text-accent-text hover:bg-sidebar-hover",
+        )}
+      >
+        <CalendarClock size={18} strokeWidth={2.2} aria-hidden="true" />
+        <span>{activeRoutines}</span>
+      </button>
     </div>
   );
 }

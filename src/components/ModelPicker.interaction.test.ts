@@ -268,12 +268,12 @@ describe("ModelPicker with a signed-out or missing Claude", () => {
   });
 });
 
-describe("the way into API keys", () => {
+describe("the way into model providers (Add a provider, JC 2026-10-16)", () => {
   it("opens Settings on the API keys section from the picker footer", () => {
     fixture.instances = [codex];
     const opened = open(bot("codex", "gpt-5.6"));
     const entry = opened.nodes.find((node) => node.props["data-model-add-api-keys"]);
-    expect(opened.html).toContain("Add API keys");
+    expect(opened.html).toContain("Add a provider");
     (entry!.props.onClick as () => void)();
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "connections" });
   });
@@ -287,14 +287,15 @@ describe("the way into API keys", () => {
     };
     fixture.instances = [codex, openai];
     const opened = open(bot("codex", "gpt-5.6"));
-    expect(opened.html).toContain("Add or change API keys");
-    expect(opened.html).not.toContain(">Add API keys<");
+    expect(opened.html).toContain("Add or change a provider");
+    expect(opened.html).not.toContain(">Add a provider<");
   });
 
-  it("ends the rail's API keys group with a way to add one", () => {
+  it("ends the rail, under every group, with Add a provider", () => {
     fixture.instances = [codex];
     const opened = open(bot("codex", "gpt-5.6"));
-    expect(opened.html).toContain(">API keys<");
+    // no API key provider: no empty API keys heading above the button
+    expect(opened.html).not.toContain(">API keys<");
     const add = rail(opened)!.props as { onAddApiKeys?: () => void };
     add.onAddApiKeys!();
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "connections" });

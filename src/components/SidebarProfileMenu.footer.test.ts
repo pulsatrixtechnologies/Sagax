@@ -16,7 +16,7 @@ vi.mock("@/state/store", async (importOriginal) => {
   return { ...original, useStore: () => ({ state: { ...original.initialState, ...fixture.state }, dispatch: vi.fn() }) };
 });
 
-import { SidebarProfileMenu } from "./SidebarProfileMenu";
+import { SidebarProfileMenu, SidebarRoutinesBadge } from "./SidebarProfileMenu";
 
 /** The account trigger's opening tag (its class says how the name sits). */
 const accountTag = (html: string) => /<span[^>]*data-sidebar-account="[^"]*"[^>]*>/.exec(html)?.[0] ?? "";
@@ -227,5 +227,38 @@ describe("the footer avatar (Grok Bot's foot, 2026-10-16)", () => {
     expect(html).not.toContain("data-presence");
     // the dot only draws once presence is known, so the source says it too
     expect(readFileSync("src/components/SidebarProfileMenu.tsx", "utf8")).not.toContain("<PresenceDot");
+  });
+});
+
+describe("the routines badge in Grok Bot's foot (JC, 2026-10-16)", () => {
+  const active = () => {
+    fixture.state = {
+      config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
+      bots: [{ id: "b1" }] as AppState["bots"],
+      routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
+    };
+  };
+
+  it("stands on its own, right of Connect apps, while the switch is on and a routine runs", () => {
+    active();
+    const html = renderToStaticMarkup(createElement(SidebarRoutinesBadge));
+    expect(html).toContain('data-active-routines="1"');
+    expect(html).toContain("data-routines-line");
+  });
+
+  it("draws nothing with the switch off or no active routine", () => {
+    active();
+    fixture.badge = false;
+    expect(renderToStaticMarkup(createElement(SidebarRoutinesBadge))).toBe("");
+    fixture.badge = true;
+    fixture.state = { ...fixture.state, routines: [] };
+    expect(renderToStaticMarkup(createElement(SidebarRoutinesBadge))).toBe("");
+  });
+
+  it("is wired right after the Connect apps pill in the sidebar foot", () => {
+    const source = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
+    const pill = source.indexOf("<SidebarConnectApps onOpen=");
+    expect(pill).toBeGreaterThan(-1);
+    expect(source.indexOf("<SidebarRoutinesBadge />", pill)).toBeGreaterThan(pill);
   });
 });

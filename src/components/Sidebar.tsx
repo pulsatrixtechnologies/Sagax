@@ -159,7 +159,7 @@ import { SidebarPlaces } from "./SidebarPlaces";
 import { PulsatrixMark } from "./PulsatrixMark";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 
-import { profileInitials, SidebarProfileMenu } from "./SidebarProfileMenu";
+import { profileInitials, SidebarProfileMenu, SidebarRoutinesBadge } from "./SidebarProfileMenu";
 import { SidebarConnectApps } from "./ConnectAppsPill";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
@@ -3327,6 +3327,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           <div data-sidebar-account-row className="flex items-center gap-2">
             <SidebarProfileMenu avatarOnly places={accountPlaces} />
             <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
+            {/* the active routines count, right of the pill, while Settings
+                shows it on the account row (JC, 2026-10-16) */}
+            <SidebarRoutinesBadge />
           </div>
         )}
       </div>

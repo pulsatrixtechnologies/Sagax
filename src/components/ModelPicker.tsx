@@ -554,32 +554,37 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
           </button>
         )}
         {renderGroup(t("model.rail.cloud"), subscription)}
-        {renderGroup(t("model.rail.apiKeys"), api, onAddApiKeys && (
+        {renderGroup(t("model.rail.apiKeys"), api)}
+        {renderGroup(t("model.rail.local"), local)}
+        {/* Add a provider ends the rail, under every group: it opens Model
+            providers and accounts, which is more than API keys (JC,
+            2026-10-16) */}
+        {onAddApiKeys && (
           <button type="button" data-rail-add-api-key onClick={onAddApiKeys}
-            className="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-hairline px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink">
+            className="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-hairline px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink sm:mt-2">
             <Plus size={14} aria-hidden="true" /> {t("model.addApiKeys")}
           </button>
-        ))}
-        {renderGroup(t("model.rail.local"), local)}
+        )}
       </nav>
     );
   }
   return (
     <div className="flex w-14 shrink-0 flex-col gap-1 overflow-y-auto border-r border-hairline/40 bg-panel p-2">
       {renderGroup(t("model.rail.cloud"), subscription, undefined, "px-0 pb-0.5 pt-0.5 text-center text-[9px]")}
-      {renderGroup(t("model.rail.apiKeys"), api, onAddApiKeys && (
+      {renderGroup(t("model.rail.apiKeys"), api, undefined, cn("px-0 pb-0.5 text-center text-[9px] leading-tight", subscription.length > 0 ? "pt-2" : "pt-0.5"))}
+      {renderGroup(t("model.rail.local"), local, undefined, "px-0 pb-0.5 pt-2 text-center text-[9px]")}
+      {onAddApiKeys && (
         <button
           type="button"
           data-rail-add-api-key
           onClick={onAddApiKeys}
           aria-label={apiKeysLabel(instances)}
           title={apiKeysLabel(instances)}
-          className="flex size-9 items-center justify-center rounded-lg border border-dashed border-hairline text-ink-secondary hover:bg-control/60 hover:text-ink"
+          className="mt-2 flex size-9 items-center justify-center rounded-lg border border-dashed border-hairline text-ink-secondary hover:bg-control/60 hover:text-ink"
         >
           <Plus size={16} aria-hidden="true" />
         </button>
-      ), cn("px-0 pb-0.5 text-center text-[9px] leading-tight", subscription.length > 0 ? "pt-2" : "pt-0.5"))}
-      {renderGroup(t("model.rail.local"), local, undefined, "px-0 pb-0.5 pt-2 text-center text-[9px]")}
+      )}
     </div>
   );
 }
