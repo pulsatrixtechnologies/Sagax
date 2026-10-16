@@ -67,7 +67,7 @@ function ChangeRow({ change, ctx }: { change: DevChange; ctx: DevPodContext }) {
         aria-label={t("devPods.changes.more", { title: change.title })}
         title={t("devPods.changes.more", { title: change.title })}
         onClick={() => setOpen((value) => !value)}
-        className={cn("flex size-6 shrink-0 items-center justify-center rounded-md text-ink-secondary hover:bg-hover hover:text-ink", !open && "opacity-60 group-hover/change:opacity-100")}
+        className={cn("flex size-6 shrink-0 items-center justify-center rounded-md text-ink-secondary hover:bg-hover hover:text-ink", !open && "opacity-60 touch:opacity-100 focus-visible:opacity-100 group-hover/change:opacity-100")}
       >
         <MoreHorizontal size={14} />
       </button>

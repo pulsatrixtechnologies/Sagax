@@ -61,7 +61,7 @@ function Bubble({ message }: { message: Message }) {
   const mine = message.role === "user";
   return (
     <div className={mine ? "flex justify-end" : "flex justify-start"}>
-      <div className={mine ? "w-fit max-w-[min(80%,560px)] rounded-[18px] bg-bubble-user px-3.5 py-2 text-[14px] text-bubble-user-ink" : "max-w-[min(94%,780px)] whitespace-pre-wrap text-[14px] leading-6 text-ink"}>{message.text}</div>
+      <div className={mine ? "w-fit max-w-[min(80%,560px)] rounded-[18px] bg-bubble-user px-3.5 py-2 text-[14px] text-ink" : "max-w-[min(94%,780px)] whitespace-pre-wrap text-[14px] leading-6 text-ink"}>{message.text}</div>
     </div>
   );
 }

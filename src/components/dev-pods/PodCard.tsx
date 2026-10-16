@@ -134,7 +134,7 @@ export function PodFrame({
           aria-label={t("devPods.menu.aria", { name: title })}
           title={t("devPods.menu.aria", { name: title })}
           onClick={() => setMenuOpen((value) => !value)}
-          className={cn(HEADER_ICON, "opacity-0 focus-visible:opacity-100 group-hover/podhead:opacity-100", menuOpen && "opacity-100")}
+          className={cn(HEADER_ICON, "opacity-0 touch:opacity-100 focus-visible:opacity-100 group-hover/podhead:opacity-100", menuOpen && "opacity-100")}
         >
           <MoreHorizontal size={14} />
         </button>
