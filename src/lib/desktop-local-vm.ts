@@ -131,3 +131,27 @@ export function installChoices(platform: string | undefined): InstallChoice[] {
   if (platform === "darwin") return ["orbstack-download", "docker-download", "orbstack-brew"];
   return ["docker-download", "podman-download"];
 }
+
+/** Opening the Local VM row runs the one-click setup by itself when a check
+ * is not ready and what is missing needs nothing from the person (JC,
+ * 2026-10-16): create the VM, repair Sagax's own broken one, start a
+ * stopped engine or VM. Never an install (no runtime), never a foreign
+ * container (or one holding the viewer's port), never while the person
+ * paused it, never while a setup or an action already runs, and never when
+ * the organization's policy turned the Local VM off. The caller makes one
+ * attempt per opening. */
+export function localVmAutoSetup(status: DesktopLocalVmStatus | null, connected: boolean, pending: LocalVmAction | null, allowed = true): boolean {
+  if (!allowed || !connected || !status || pending !== null) return false;
+  if (status.setup?.state === "running" || status.install?.state === "running") return false;
+  if (status.setup?.state === "error" && (status.setup.code === "port_in_use" || status.setup.code === "foreign_container" || status.setup.code === "no_runtime")) return false;
+  const view = localVmView(status, connected, pending);
+  if (view.state === "running" || view.state === "paused" || view.state === "starting") return false;
+  if (view.problem === "no_runtime" || view.problem === "foreign" || view.problem === "not_connected") return false;
+  return view.canPlay;
+}
+
+/** Every check is ready: the VM runs, nothing to repair, no failed setup. */
+export function localVmReady(status: DesktopLocalVmStatus | null, connected: boolean, pending: LocalVmAction | null): boolean {
+  const view = localVmView(status, connected, pending);
+  return view.state === "running" && view.problem === null && status?.setup?.state !== "error";
+}
