@@ -9,11 +9,12 @@ import { describe, expect, it } from "vitest";
 
 import { chosenComputer, computerChoices, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import { localVmView, parseLocalVmAnswer, runtimeSummaryKey, type DesktopLocalVmStatus } from "@/lib/desktop-local-vm";
-import { formatBytes, powerState } from "@/lib/server-environment";
+import { formatBytes, powerState, type ServerEnvironmentStatus } from "@/lib/server-environment";
+import { Globe, Laptop, Server } from "lucide-react";
 import { BOT_SECTIONS } from "../bot-settings/sections";
 import { OrgComputerSettings } from "../settings/OrgComputerSettings";
 import { ComputerScreen, controlsAlwaysShown, showsControlBar, showsStateChip } from "./ComputerScreen";
-import { activeComputer, OrgComputerTab, setupProgress } from "./OrgComputerTab";
+import { activeComputer, OrgComputerTab, retryStartsCluster, ScreenPicker, serverDot, serverScreenState, ServerComputerScreen, setupProgress, wakingHint } from "./OrgComputerTab";
 import { SandboxDesktopModal } from "./SandboxDesktopModal";
 import { WorksOnControl, worksOnTip } from "./WorksOnSetting";
 
@@ -177,6 +178,90 @@ describe("Computer tab on an organization server", () => {
   it("keeps the caption on one line, with the whole name in its tooltip", () => {
     const markup = renderToStaticMarkup(createElement(ComputerScreen, { source: "local", state: "off", caption: "Assistant's screen · Jean-Christophes-Macbook-Pro.local", controls: {} }));
     expect(markup).toMatch(/<figcaption class="truncate[^"]*" title="Assistant&#x27;s screen · Jean-Christophes-Macbook-Pro.local">/);
+  });
+});
+
+// JC 2026-10-15: the cloud's cluster sleeps outside office hours and the
+// server wakes it (up to 9 minutes). The screen says "Starting" with one
+// quiet line, never "Error", during that window; an error screen shows its
+// Retry alone (no control bar over it) and one message only.
+describe("the cloud screen while its cluster wakes", () => {
+  const WAKING: ServerEnvironmentStatus = { configured: true, state: "unavailable", error: "cluster_starting", waking: { since: 1, elapsedMs: 30_000 } };
+  const DOWN: ServerEnvironmentStatus = { configured: true, state: "unavailable", error: "unreachable" };
+  const render = (initial: ServerEnvironmentStatus) => renderToStaticMarkup(createElement(ServerComputerScreen, { caption: "Luna's screen", initial }));
+
+  it("reads starting while waking, an error only without it", () => {
+    expect(serverScreenState(WAKING, null)).toBe("starting");
+    expect(serverScreenState(DOWN, null)).toBe("error");
+    expect(serverScreenState({ configured: true, state: "stopped" }, null)).toBe("off");
+    expect(serverScreenState({ configured: true, state: "stopped", waking: { since: 1, elapsedMs: 0 } }, null)).toBe("starting");
+    expect(serverScreenState({ configured: true, state: "running", waking: { since: 1, elapsedMs: 0 } }, null)).toBe("running");
+    expect(serverScreenState(null, null)).toBe("starting");
+  });
+
+  it("shows the quiet line under Starting only while the cluster wakes", () => {
+    const waking = render(WAKING);
+    expect(waking).toContain('data-computer-screen="starting"');
+    expect(waking).toMatch(/data-screen-hint=""[^>]*text-\[11px\][^>]*text-ink-tertiary/);
+    expect(waking).toContain("The environment was asleep outside office hours. Starting can take a few minutes.");
+    expect(waking).not.toContain("cannot be reached");
+    expect(waking).not.toContain(">Try again<");
+    expect(waking).not.toMatch(/text-danger|text-warning/);
+    for (const quiet of [render({ configured: true, state: "stopped" }), render(DOWN)]) expect(quiet).not.toContain("data-screen-hint");
+  });
+
+  it("adds how long only after two minutes", () => {
+    expect(wakingHint(null)).toBeUndefined();
+    expect(wakingHint(90_000)).toBe("The environment was asleep outside office hours. Starting can take a few minutes.");
+    expect(wakingHint(3 * 60_000 + 20_000)).toBe("The environment was asleep outside office hours. Starting can take a few minutes. For 3 min so far.");
+    expect(render({ ...WAKING, waking: { since: 1, elapsedMs: 4 * 60_000 } })).toContain("For 4 min so far.");
+  });
+
+  it("shows Retry alone on an error: no control bar over it, one message", () => {
+    expect(showsControlBar("error", { play: undefined }, [{ label: "Try again", onClick: () => {} }])).toBe(false);
+    expect(showsControlBar("error", { play: undefined }, [])).toBe(true);
+    const error = render(DOWN);
+    expect(error).toContain('data-computer-screen="error"');
+    expect(error).toMatch(/<button[^>]*>Try again<\/button>/);
+    expect(error).not.toContain("data-screen-controls");
+    expect(error.match(/cannot be reached/g)).toHaveLength(1);
+    expect(error).not.toContain('role="alert"');
+    // the action error line still shows where the screen says nothing else
+    const off = renderToStaticMarkup(createElement(ComputerScreen, { source: "server", state: "off", caption: "c", error: "That did not work. Try again in a moment." }));
+    expect(off).toContain('role="alert"');
+  });
+
+  it("starts the cluster again on Retry after a cluster error, only reads again otherwise", () => {
+    expect(retryStartsCluster({ configured: true, state: "unavailable", error: "cluster_start_timeout" })).toBe(true);
+    expect(retryStartsCluster({ configured: true, state: "unavailable", error: "cluster_starting" })).toBe(true);
+    expect(retryStartsCluster(DOWN)).toBe(false);
+    expect(retryStartsCluster(null)).toBe(false);
+  });
+
+  it("gives the cloud its dot: asleep while waking, neutral after the limit", () => {
+    expect(serverDot(WAKING, null)).toBe("asleep");
+    expect(serverDot({ configured: true, state: "unavailable", error: "cluster_start_timeout" }, null)).toBe("offline");
+    expect(serverDot({ configured: true, state: "running" }, null)).toBe("online");
+    expect(serverDot({ configured: true, state: "paused" }, null)).toBe("asleep");
+    expect(serverDot({ configured: true, state: "stopped" }, null)).toBe("offline");
+    expect(serverDot({ configured: true, state: "stopped" }, "start")).toBe("asleep");
+    expect(serverDot(null, null)).toBe("offline");
+  });
+
+  it("draws a labelled dot on each choice and on the closed button", () => {
+    const markup = renderToStaticMarkup(createElement(ScreenPicker, {
+      items: [
+        { key: "server", label: "Cloud", icon: Server, dot: "asleep" },
+        { key: "desktop:d1", label: "MBP", icon: Laptop, dot: "online" },
+        { key: "browser", label: "Browser", icon: Globe, dot: "offline" },
+      ],
+      chosen: "server",
+      onPick: () => {},
+    }));
+    expect(markup.match(/data-screen-dot="asleep"/g)).toHaveLength(2);
+    expect(markup).toMatch(/aria-label="Asleep" title="Asleep" data-screen-dot="asleep" class="[^"]*bg-warning/);
+    expect(markup).toMatch(/aria-label="Online" title="Online" data-screen-dot="online" class="[^"]*bg-success/);
+    expect(markup).toMatch(/aria-label="Offline" title="Offline" data-screen-dot="offline" class="[^"]*bg-ink-tertiary/);
   });
 });
 

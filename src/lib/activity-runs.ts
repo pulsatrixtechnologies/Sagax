@@ -34,7 +34,7 @@ export function statusActivity(message: Message): { kind: "recovery" | "notice" 
   if (name?.startsWith("recovery:")) return { kind: "recovery", text: name.slice("recovery:".length).trim() };
   // The Kubernetes cluster of the server environments is starting
   // (server/sandbox-k8s-wake.ts): the server's fixed rows, in the person's language.
-  if (name === SANDBOX_WAKE_NOTICE) return { kind: "notice", text: t("chat.sandboxWaking") };
+  if (name === SANDBOX_WAKE_NOTICE) return { kind: "notice", text: t("chat.sandboxWakingAsleep") };
   if (name === SANDBOX_WAKE_TIMEOUT_NOTICE) return { kind: "notice", text: t("chat.sandboxWakeTimeout") };
   // Auto changed where the bot works (shared/workspace-line.ts).
   const workspace = parseWorkspaceLine(name);

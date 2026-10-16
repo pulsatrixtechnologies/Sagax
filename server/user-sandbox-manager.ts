@@ -28,6 +28,11 @@ export interface UserSandboxView {
   idleMinutes: number | null;
   pendingDeletionAt: number | null;
   error?: string;
+  /** The Kubernetes cluster of the environments is being woken (it was
+   * stopped outside office hours): since when, and for how long so far (the
+   * screen's clock may differ from the server's). Only while a status read
+   * fails during the wake window; never the webhook or another detail. */
+  waking?: { since: number; elapsedMs: number };
 }
 
 export { UserSandboxUnavailable };
@@ -177,6 +182,18 @@ export class UserSandboxManager {
     }
   }
 
+  /** This person's environment waits for its cluster to wake, or null. */
+  private clusterWaking(principalId: string, botId?: string): { since: number; elapsedMs: number } | null {
+    const waker = this.options.kubernetesWaker;
+    if (!waker || !this.options.kubernetes) return null;
+    try {
+      if ((this.options.backendFor?.(principalId, botId) ?? "docker") !== "kubernetes") return null;
+    } catch {
+      return null;
+    }
+    return waker.wakeState();
+  }
+
   async status(principalId: string, botId?: string): Promise<UserSandboxView> {
     const pendingDeletionAt = this.pendingDeletionAt(principalId);
     try {
@@ -193,6 +210,16 @@ export class UserSandboxManager {
         ...(info?.egress === "missing" ? { error: "egress_policy" } : {}),
       };
     } catch (error) {
+      // The cluster is waking (or just woke and is settling): the screen says
+      // "starting" with a quiet hint, never an error, for the wake window.
+      const waking = this.clusterWaking(principalId, botId);
+      if (waking) {
+        return {
+          state: "unavailable", lastUsedAt: null, workspaceBytes: null, overQuota: false, limits: null, idleMinutes: null, pendingDeletionAt,
+          error: "cluster_starting",
+          waking,
+        };
+      }
       // The Kubernetes cluster is stopped (server/sandbox-k8s-wake.ts): the
       // environment is off, and Start or the next bot turn starts it.
       if (error instanceof UserSandboxUnavailable && error.code === "cluster_stopped") {

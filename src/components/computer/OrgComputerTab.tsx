@@ -33,6 +33,7 @@ import {
 } from "@/lib/desktop-local-vm";
 import { t } from "@/lib/i18n";
 import { orgComputerFor, type EffectivePlace } from "@/lib/place";
+import { reportScreenDot, SCREEN_DOT_CLASS, SCREEN_DOT_LABEL_KEY, screenDot, useScreenDots, type ScreenDot } from "@/lib/screen-status";
 import {
   formatBytes, loadServerEnvironment, loadServerEnvironmentStats, powerServerEnvironment, powerState,
   type PowerAction, type ServerEnvironmentStats, type ServerEnvironmentStatus,
@@ -46,6 +47,13 @@ const STATS_IDLE_REFRESH_MS = 15_000;
 const LOCAL_STATUS_MS = 10_000;
 const LOCAL_SETUP_MS = 2_000;
 const LOCAL_FRAME_MS = 4_000;
+/** The server screen re-reads its status this often while it starts (a
+ * cluster waking), and slowly while it is off or failed (a bot turn may wake
+ * it meanwhile). Never while it runs. */
+const SERVER_STARTING_MS = 5_000;
+const SERVER_IDLE_MS = 20_000;
+/** From this long, the waking hint also says for how long. */
+const WAKING_ELAPSED_FROM_MS = 2 * 60_000;
 
 export type ComputerSource = "local" | "server";
 
@@ -66,8 +74,10 @@ export function activeComputer(bridge: DesktopBridgeStatus, place: EffectivePlac
   return { source: "server", reason: "none" };
 }
 
-export function OrgComputerTab({ bridge, place, computerOff, botName, initialLocal = null, browser = null }: {
+export function OrgComputerTab({ bridge, place, computerOff, botName, botId, initialLocal = null, browser = null }: {
   bridge: DesktopBridgeStatus;
+  /** This bot, for its browser's dot in the picker. */
+  botId?: string;
   /** The bot's Works on (Auto when unset). */
   place: EffectivePlace;
   computerOff: boolean; botName: string;
@@ -88,6 +98,16 @@ export function OrgComputerTab({ bridge, place, computerOff, botName, initialLoc
   const worksOnKey = active.source === "server" ? "server" : chosenComputer(choices, "local", bridge, null)?.key ?? null;
   const [details, setDetails] = useState(false);
   const caption = t("computer.screenOf", { name: botName });
+  const dots = useScreenDots();
+  // The cloud's dot while another screen is shown: one read, no polling.
+  const serverShown = !showingBrowser && source === "server";
+  const serverKnown = dots.server !== undefined;
+  useEffect(() => {
+    if (serverShown || serverKnown) return;
+    let alive = true;
+    loadServerEnvironment().then((status) => { if (alive) reportScreenDot("server", serverDot(status, null)); }).catch(() => {});
+    return () => { alive = false; };
+  }, [serverShown, serverKnown]);
   return (
     <div className="flex flex-col gap-3" data-org-computer={source === "server" ? "user-sandbox" : "user-desktop"} data-works-on={place}>
       {(choices.length > 1 || browser !== null) && (
@@ -98,8 +118,9 @@ export function OrgComputerTab({ bridge, place, computerOff, botName, initialLoc
               label: choice.source === "server" ? t("orgComputer.choice.cloud") : choice.name,
               icon: choice.source === "server" ? Server : Laptop,
               here: choice.key === worksOnKey,
+              dot: dots[choice.key] ?? "offline",
             })),
-            ...(browser !== null ? [{ key: "browser", label: t("computer.view.browser"), icon: Globe }] : []),
+            ...(browser !== null ? [{ key: "browser", label: t("computer.view.browser"), icon: Globe, dot: (botId ? dots[`browser:${botId}`] : undefined) ?? "offline" }] : []),
           ]}
           chosen={showingBrowser ? "browser" : chosen?.key ?? null}
           onPick={setPicked}
@@ -140,6 +161,14 @@ export interface ScreenPickerItem {
   icon: LucideIcon;
   /** The bot works here: a dot, and the tooltip says so. */
   here?: boolean;
+  /** Its state (src/lib/screen-status.ts): asleep, online or offline. */
+  dot?: ScreenDot;
+}
+
+/** The small state dot of a screen, right of its name. */
+export function ScreenStatusDot({ dot }: { dot: ScreenDot }) {
+  const label = t(SCREEN_DOT_LABEL_KEY[dot]);
+  return <span role="img" aria-label={label} title={label} data-screen-dot={dot} className={`size-[7px] shrink-0 rounded-full ${SCREEN_DOT_CLASS[dot]}`} />;
 }
 
 /** The Computer tab's one screen chooser, a drop-down (#518 menus): one
@@ -213,6 +242,7 @@ export function ScreenPicker({ items, chosen, onPick }: { items: ScreenPickerIte
         <CurrentIcon size={12} aria-hidden="true" />
         <span className="max-w-[180px] truncate">{current.label}</span>
         {current.here && <span aria-hidden="true" data-works-here="" className="size-1.5 shrink-0 rounded-full bg-accent" />}
+        {current.dot && <ScreenStatusDot dot={current.dot} />}
         <ChevronDown size={12} aria-hidden="true" className={open ? "rotate-180 text-ink-secondary" : "text-ink-secondary"} />
       </button>
       <div ref={list} id={`${id}-list`} role="listbox" aria-label={t("orgComputer.choice.label")} tabIndex={-1} hidden={!open}
@@ -229,6 +259,7 @@ export function ScreenPicker({ items, chosen, onPick }: { items: ScreenPickerIte
               <Icon size={13} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
               {item.here && <span data-works-here="" className="size-1.5 shrink-0 rounded-full bg-accent"><span className="sr-only">{t("orgComputer.choice.worksHereShort")}</span></span>}
+              {item.dot && <ScreenStatusDot dot={item.dot} />}
               {selected ? <Check size={13} aria-hidden="true" /> : <span aria-hidden="true" className="w-[13px]" />}
             </div>
           );
@@ -254,17 +285,54 @@ function usePageVisible(): boolean {
   return visible;
 }
 
+/** The cloud screen's state: "starting" while the environment's cluster
+ * wakes (it slept outside office hours), never an error in that window. */
+export function serverScreenState(status: ServerEnvironmentStatus | null, pending: PowerAction | null): ScreenState {
+  if (!status) return "starting";
+  const power = powerState(status.state, pending);
+  if (status.waking && power !== "running" && power !== "paused") return "starting";
+  if (!status.configured) return "off";
+  return power === "unavailable" ? "error" : power;
+}
+
+/** The cloud's dot in the picker. */
+export function serverDot(status: ServerEnvironmentStatus | null, pending: PowerAction | null): ScreenDot {
+  return screenDot(status ? serverScreenState(status, pending) : "off", Boolean(status?.waking));
+}
+
+/** The quiet line under "Starting" while the cluster wakes, with how long
+ * so far once it has been a while (never alarming). */
+export function wakingHint(elapsedMs: number | null): string | undefined {
+  if (elapsedMs === null) return undefined;
+  const hint = t("computerScreen.wakingHint");
+  return elapsedMs >= WAKING_ELAPSED_FROM_MS ? `${hint} ${t("computerScreen.wakingSince", { minutes: Math.floor(elapsedMs / 60_000) })}` : hint;
+}
+
+/** Retry on an error the cluster caused starts it again (it may have gone
+ * back to sleep); any other error only reads the status again. */
+export function retryStartsCluster(status: ServerEnvironmentStatus | null): boolean {
+  return Boolean(status?.configured && status.error?.startsWith("cluster_"));
+}
+
 /** The person's server environment on the screen. */
 export function ServerComputerScreen({ caption, initial = null }: { caption: string; initial?: ServerEnvironmentStatus | null }) {
+  const visible = usePageVisible();
   const [status, setStatus] = useState<ServerEnvironmentStatus | null>(initial);
   const [pending, setPending] = useState<PowerAction | null>(null);
   const [error, setError] = useState("");
   // "Take control" opens the large window; the square stays view-only.
   const [takeover, setTakeover] = useState(false);
-  const load = useCallback(async () => {
-    try { setStatus(await loadServerEnvironment()); } catch { setStatus({ configured: true, state: "unavailable" }); }
-    announceServerEnvironment();
+  // When the waking answer came, to count the time on this screen's clock.
+  const [wakingSeen, setWakingSeen] = useState<{ elapsedMs: number; at: number } | null>(() => initial?.waking ? { elapsedMs: initial.waking.elapsedMs, at: Date.now() } : null);
+  const [, setTick] = useState(0);
+  const show = useCallback((next: ServerEnvironmentStatus) => {
+    setStatus(next);
+    setWakingSeen(next.waking ? { elapsedMs: next.waking.elapsedMs, at: Date.now() } : null);
   }, []);
+  const load = useCallback(async () => {
+    try { show(await loadServerEnvironment()); } catch { show({ configured: true, state: "unavailable" }); }
+    announceServerEnvironment();
+  }, [show]);
   useEffect(() => { if (!initial) void load(); }, [load, initial]);
 
   const act = async (action: PowerAction) => {
@@ -277,7 +345,7 @@ export function ServerComputerScreen({ caption, initial = null }: { caption: str
         if (!window.confirm(t("orgComputer.confirmRunning"))) return;
         next = await powerServerEnvironment(action, true);
       }
-      if (next) { setStatus(next); announceServerEnvironment(); }
+      if (next) { show(next); announceServerEnvironment(); }
     } catch {
       setError(t("orgComputer.actionFailed"));
       await load();
@@ -287,15 +355,33 @@ export function ServerComputerScreen({ caption, initial = null }: { caption: str
   };
 
   const power = powerState(status?.state, pending);
-  const state: ScreenState = !status ? "starting" : !status.configured || power === "unavailable" ? (status.configured ? "error" : "off") : power;
+  const state = serverScreenState(status, pending);
+  const waking = state === "starting" && status?.waking !== undefined;
+  // Re-read while it starts (the cluster may take minutes), slowly while it
+  // is off or failed, never while it runs or the page is hidden.
+  const pollMs = !status || !visible ? 0 : state === "starting" ? SERVER_STARTING_MS : state === "off" || state === "error" ? SERVER_IDLE_MS : 0;
+  useEffect(() => {
+    if (!pollMs) return;
+    const timer = window.setInterval(() => void load(), pollMs);
+    return () => window.clearInterval(timer);
+  }, [pollMs, load]);
+  // The elapsed time in the hint moves on its own between reads.
+  useEffect(() => {
+    if (!waking) return;
+    const timer = window.setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(timer);
+  }, [waking]);
+  useEffect(() => { if (status) reportScreenDot("server", serverDot(status, pending)); }, [status, pending]);
+
   const busy = pending !== null || !status;
   const message = !status ? undefined
     : !status.configured ? t("serverEnvironment.notConfigured")
-    : power === "unavailable" ? t("computerScreen.serverUnavailable")
+    : state === "error" ? t("computerScreen.serverUnavailable")
     : state === "off" ? t("computerScreen.serverOff")
     : undefined;
+  const hint = waking && wakingSeen ? wakingHint(wakingSeen.elapsedMs + Math.max(0, Date.now() - wakingSeen.at)) : undefined;
   const controls = {
-    play: status?.configured && power === "off" ? () => void act("start") : undefined,
+    play: status?.configured && power === "off" && !waking ? () => void act("start") : undefined,
     resume: power === "paused" ? () => void act("resume") : undefined,
     pause: power === "running" ? () => void act("pause") : undefined,
     stop: power === "running" || power === "paused" ? () => void act("shutdown") : undefined,
@@ -312,10 +398,12 @@ export function ServerComputerScreen({ caption, initial = null }: { caption: str
         state={state}
         caption={caption}
         message={message}
+        hint={hint}
         busy={busy}
-        error={error || undefined}
+        // An error screen already says what failed: no second line under it.
+        error={state === "error" ? undefined : error || undefined}
         live={live}
-        actions={state === "error" ? [{ label: t("computerScreen.retry"), onClick: () => void load() }] : []}
+        actions={state === "error" ? [{ label: t("computerScreen.retry"), onClick: () => void (retryStartsCluster(status) ? act("start") : load()) }] : []}
         controls={controls}
       />
       {takeover && (
@@ -373,6 +461,9 @@ export function LocalComputerScreen({ bridge, caption, initial = null, desktopId
   const connected = Boolean(desktop?.capabilities?.localVm);
   const vm = useDesktopLocalVm(connected, initial, desktopId);
   const view = localVmView(vm.status, connected, vm.pending);
+  const dotKey = desktop ? `desktop:${desktop.id}` : null;
+  const dot = !connected ? "offline" : vm.status ? screenDot(view.state) : null;
+  useEffect(() => { if (dotKey && dot) reportScreenDot(dotKey, dot); }, [dotKey, dot]);
   const [frame, setFrame] = useState<string | null>(null);
   const running = view.state === "running";
   useEffect(() => {

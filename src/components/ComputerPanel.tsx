@@ -1592,6 +1592,7 @@ export function ComputerPanel({
         place={livePlace}
         computerOff={livePlace === "off"}
         botName={bot.name}
+        botId={bot.id}
         browser={browserOffered ? <BrowserPanel bot={bot} /> : null}
       />
       {!embedded && <div className="mt-6">

@@ -94,7 +94,7 @@ describe("groupActivityRuns", () => {
   });
 
   it("shows the cluster wake rows as notices in the person's language", () => {
-    expect(statusActivity(tool(SANDBOX_WAKE_NOTICE))).toEqual({ kind: "notice", text: "The server environment is starting. This can take a few minutes." });
+    expect(statusActivity(tool(SANDBOX_WAKE_NOTICE))).toEqual({ kind: "notice", text: "The environment was asleep outside office hours. Starting can take a few minutes." });
     expect(statusActivity(tool(SANDBOX_WAKE_TIMEOUT_NOTICE))).toEqual({ kind: "notice", text: "The server environment did not start in time. Send the message again in a few minutes." });
   });
 

@@ -128,6 +128,9 @@ export class SandboxClusterWaker {
   private lastPostOk = false;
   private probing: Promise<boolean> | null = null;
   private waking: Promise<void> | null = null;
+  /** When the latest wake started (this process's clock), for the screen's
+   * "it was asleep" hint. Never the URL, never anything else. */
+  private wakeStartedAt: number | null = null;
   /** Webhook POSTs sent by this process (tests and diagnostics). */
   posts = 0;
   private readonly options: SandboxClusterWakerOptions;
@@ -149,6 +152,18 @@ export class SandboxClusterWaker {
   /** A wake is in progress. */
   get starting(): boolean {
     return this.waking !== null;
+  }
+
+  /** The cluster is being woken: since when (epoch ms) and for how long. Kept for the whole
+   * wake window (the timeout), even after the provisioner first answered:
+   * a cluster just started may still fail a call while it settles, and a
+   * status read that fails in that window is "starting", not an error.
+   * Null outside a wake and once the window is over. */
+  wakeState(): { since: number; elapsedMs: number } | null {
+    const since = this.wakeStartedAt;
+    if (since === null) return null;
+    const elapsedMs = Math.max(0, this.now() - since);
+    return this.waking || elapsedMs < this.options.settings.timeoutMs ? { since, elapsedMs } : null;
   }
 
   /** Resolve when the provisioner can be called. `onWait` runs once when this
@@ -197,7 +212,8 @@ export class SandboxClusterWaker {
   }
 
   private async run(): Promise<void> {
-    const deadline = this.now() + this.options.settings.timeoutMs;
+    this.wakeStartedAt = this.now();
+    const deadline = this.wakeStartedAt + this.options.settings.timeoutMs;
     this.log("sandbox wake: the Kubernetes provisioner is unreachable; starting its cluster");
     await this.postIfDue();
     let delay = BACKOFF_FIRST_MS;

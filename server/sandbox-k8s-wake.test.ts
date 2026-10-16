@@ -10,6 +10,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CONTROL_PLANE_ENV, stripControlPlaneEnv } from "./config.ts";
+import { json as sendJson, readBody } from "./harness/http.ts";
+import type { RequestAuth } from "./request-auth.ts";
+import { createComputerStatusRoutes } from "./routes/computer-status.ts";
+import { dispatchRoutes } from "./routes/table.ts";
+import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
 import {
   DEFAULT_WAKE_TIMEOUT_MS, POST_WINDOW_MS, SandboxClusterWaker, provisionerNotReached, provisionerUnreachable, sandboxWakeSettingsFromEnv,
 } from "./sandbox-k8s-wake.ts";
@@ -317,6 +322,113 @@ describe("the cluster wake", () => {
     await expect(manager.exec(ALICE, { argv: ["true"] })).rejects.toMatchObject({ code: "unreachable" });
     expect((await manager.status(ALICE)).state).toBe("unavailable");
     expect(calls).toEqual(["kubernetes:exec", "kubernetes:status", "kubernetes:info"]);
+  });
+});
+
+/** The Computer tab's two status routes over a real manager: the web one
+ * (/api/me/server-environment) and the phone's (/api/computer/status). */
+async function statusRoutes(manager: UserSandboxManager) {
+  const auth = { kind: "session", via: "cookie", scopes: ["client"], session: { id: "s", principalId: ALICE } } as unknown as RequestAuth;
+  const routes = [
+    createUserSandboxRoutes({ manager: () => manager, organization: true }),
+    createComputerStatusRoutes({ organization: () => true, sandbox: () => manager, local: {} as never, mayManageLocal: () => false }),
+  ];
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (!await dispatchRoutes(routes, { req, res, url, path: url.pathname, method: req.method ?? "GET", auth, json: sendJson, readBody })) sendJson(res, 404, {});
+  });
+  await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const read = async () => {
+    const web = await (await fetch(`${base}/api/me/server-environment`)).text();
+    const phone = await (await fetch(`${base}/api/computer/status`)).text();
+    expectNoSecret([web, phone]);
+    return { web: JSON.parse(web) as Record<string, unknown>, phone: JSON.parse(phone) as Record<string, unknown> };
+  };
+  return { read, close: () => new Promise<void>((done) => server.close(() => done())) };
+}
+
+describe("the Computer tab while the cluster wakes", () => {
+  it("says waking, with since when, during the wake, and leaks nothing of the webhook", async () => {
+    let release = () => {};
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const r = rig({ upAfterProbes: 3, hold });
+    const routes = await statusRoutes(r.manager);
+    try {
+      const startedAt = clock;
+      const waking = r.manager.exec(ALICE, { argv: ["true"] });
+      await vi.waitFor(() => expect(r.waker.starting).toBe(true));
+      const { web, phone } = await routes.read();
+      expect(web).toMatchObject({ configured: true, state: "unavailable", error: "cluster_starting", waking: { since: startedAt, elapsedMs: 0 } });
+      expect(phone).toMatchObject({ kind: "org-sandbox", problem: "cluster_starting", waking: { since: startedAt, elapsedMs: 0 } });
+      expect(Object.keys(web.waking as object).sort()).toEqual(["elapsedMs", "since"]);
+      release();
+      await waking;
+      // Up again: the status answers, no waking.
+      const after = await routes.read();
+      expect(after.web).toMatchObject({ state: "running" });
+      expect(after.web).not.toHaveProperty("waking");
+      expect(after.phone).not.toHaveProperty("waking");
+    } finally {
+      await routes.close();
+    }
+  });
+
+  it("has no waking field when nothing wakes: a warm cluster, or a stopped one only read", async () => {
+    const warm = rig();
+    warm.cluster.up = true;
+    const stopped = rig();
+    for (const r of [warm, stopped]) {
+      const routes = await statusRoutes(r.manager);
+      try {
+        const { web, phone } = await routes.read();
+        expect(web).not.toHaveProperty("waking");
+        expect(phone).not.toHaveProperty("waking");
+      } finally {
+        await routes.close();
+      }
+    }
+    expect((await stopped.manager.status(ALICE)).state).toBe("stopped");
+  });
+
+  it("stays starting while a just woken cluster settles, and stops saying so after the wake window", async () => {
+    const r = rig({ upAfterProbes: 2, timeoutMs: 5 * 60_000 });
+    const startedAt = clock;
+    await r.manager.power(ALICE, "start");
+    // The provisioner answered once, then fails again while the cluster settles.
+    r.cluster.up = false;
+    expect(await r.manager.status(ALICE)).toMatchObject({ state: "unavailable", error: "cluster_starting", waking: { since: startedAt } });
+    clock = startedAt + 5 * 60_000;
+    const late = await r.manager.status(ALICE);
+    expect(late).not.toHaveProperty("waking");
+    expect(late.error).not.toBe("cluster_starting");
+  });
+
+  it("drops waking once a wake timed out, and never says it on the Docker route", async () => {
+    const r = rig({ upAfterProbes: Number.POSITIVE_INFINITY, timeoutMs: 30_000 });
+    await expect(r.manager.exec(ALICE, { argv: ["true"] })).rejects.toMatchObject({ code: "cluster_start_timeout" });
+    expect(await r.manager.status(ALICE)).not.toHaveProperty("waking");
+
+    let release = () => {};
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    let route: "docker" | "kubernetes" = "kubernetes";
+    const shared = rig({ upAfterProbes: 3, hold });
+    const manager = new UserSandboxManager({
+      client: fakeProvisioner({ up: false }, [], "docker"),
+      kubernetes: fakeProvisioner(shared.cluster, [], "kubernetes"),
+      kubernetesWaker: shared.waker,
+      backendFor: () => route,
+      instance: "default",
+      stateFile: join(dir, "deletions-docker.json"),
+      now: () => clock,
+    });
+    const waking = manager.exec(ALICE, { argv: ["true"] });
+    await vi.waitFor(() => expect(shared.waker.starting).toBe(true));
+    route = "docker";
+    expect(await manager.status(ALICE)).not.toHaveProperty("waking");
+    route = "kubernetes";
+    release();
+    await waking;
   });
 });
 

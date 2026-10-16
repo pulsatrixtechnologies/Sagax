@@ -10,6 +10,7 @@ import { createBrowserControl, type BrowserInteraction, type BrowserTakeStatus }
 import { resolveAddressBarInput } from "@/lib/browser-address";
 import { cn } from "@/lib/cn";
 import type { ScreenState } from "@/lib/desktop-local-vm";
+import { browserDot, reportScreenDot } from "@/lib/screen-status";
 import { ComputerScreen, type ScreenAction } from "./computer/ComputerScreen";
 import { SandboxDesktopModal } from "./computer/SandboxDesktopModal";
 
@@ -482,6 +483,9 @@ export function BrowserComputerScreen({ bot }: { bot: Bot }) {
   const waiting = bot.tasks?.some((task) => task.activity === "waiting-on-you") === true;
   const state: ScreenState = takeover || (preview.state === "live" && preview.frame) ? "running"
     : preview.state === "offline" ? "off" : preview.state === "error" ? "error" : "starting";
+  // The picker's dot: green while a browser session is live, neutral otherwise.
+  const session = takeover || preview.state === "busy" || (preview.state === "live" && Boolean(preview.frame) && !preview.blank);
+  useEffect(() => { reportScreenDot(`browser:${bot.id}`, browserDot(session)); }, [bot.id, session]);
   const message = preview.state === "offline" ? t("browser.preview.offline", { name: bot.name })
     : preview.state === "error" ? t("browser.preview.failed")
     : preview.state === "busy" ? t("browser.preview.busy", { name: bot.name })

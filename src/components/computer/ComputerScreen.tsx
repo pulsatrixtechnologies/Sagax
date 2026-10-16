@@ -12,10 +12,11 @@
 //
 // Nothing on the screen overlaps: when nothing is live, the bar sits under
 // the state in the screen's own flow (the screen grows rather than clip),
-// and a machine that is off with its own primary action (Démarrer) shows
-// that button alone, without the bar. The caption stays on one line.
+// and a screen that shows a state with its own action (Démarrer on a machine
+// that is off, Réessayer on an error) shows that button alone, without the
+// bar. The caption stays on one line.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, Loader2, Monitor, Pause, Play, Square } from "lucide-react";
+import { AlertTriangle, Loader2, Monitor, Moon, Pause, Play, Square } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import type { ScreenState } from "@/lib/desktop-local-vm";
@@ -48,11 +49,14 @@ export function controlsAlwaysShown(state: ScreenState): boolean {
 }
 
 /** Whether the Play / Pause / Stop bar is drawn at all: not for a screen
- * with no power (the bot's browser), and not on a machine that is off when
- * the screen already offers its primary action (Démarrer replaces Play). */
+ * with no power (the bot's browser), and not over a state that offers its
+ * own action (Démarrer replaces Play on a machine that is off, Réessayer
+ * stands alone on an error): the bar never meets those buttons. */
 export function showsControlBar(state: ScreenState, controls: ScreenControls | undefined, actions: ScreenAction[]): boolean {
   if (!controls) return false;
-  return !(state === "off" && actions.some((action) => action.primary));
+  if (state === "off") return !actions.some((action) => action.primary);
+  if (state === "error" || state === "starting") return actions.length === 0;
+  return true;
 }
 
 /** Classes of a control that shows only while the screen's controls are
@@ -68,7 +72,7 @@ function useControlsRevealed(): [boolean, HoverIntent | null] {
 }
 
 export function ComputerScreen({
-  state, caption, live, message, actions = [], controls, busy = false, error, source, icon,
+  state, caption, live, message, hint, actions = [], controls, busy = false, error, source, icon,
 }: {
   state: ScreenState;
   caption: string;
@@ -76,6 +80,9 @@ export function ComputerScreen({
   live?: ReactNode;
   /** What the screen says when nothing is live (never raw output). */
   message?: string | undefined;
+  /** One quiet line under the state (small, tertiary, no alert colour): why
+   * a start takes longer than usual, never a problem. */
+  hint?: string | undefined;
   actions?: ScreenAction[];
   /** Play / Pause / Stop; a screen without power (the browser) has none. */
   controls?: ScreenControls | undefined;
@@ -116,6 +123,12 @@ export function ComputerScreen({
             <Icon size={28} aria-hidden="true" className={cn(state === "starting" && "animate-spin", state === "error" && "text-warning")} />
             <span className="text-[13px] font-medium text-ink">{screenStateLabel(state)}</span>
             {message && <p role="status" className="text-[12px] leading-relaxed">{message}</p>}
+            {hint && (
+              <p role="note" data-screen-hint="" className="flex items-start justify-center gap-1 text-[11px] leading-snug text-ink-tertiary">
+                <Moon size={11} aria-hidden="true" className="mt-[2px] shrink-0 opacity-70" />
+                <span>{hint}</span>
+              </p>
+            )}
             {actions.length > 0 && (
               <div className="mt-1 flex flex-wrap justify-center gap-2">
                 {actions.map((action) => (

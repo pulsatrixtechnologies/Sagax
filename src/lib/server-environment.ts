@@ -13,6 +13,9 @@ export interface ServerEnvironmentStatus {
   idleMinutes?: number | null;
   pendingDeletionAt?: number | null;
   error?: string;
+  /** The environments' cluster is waking (it slept outside office hours):
+   * since when on the server, and for how long so far. */
+  waking?: { since: number; elapsedMs: number };
 }
 
 export function loadServerEnvironment(): Promise<ServerEnvironmentStatus> {
