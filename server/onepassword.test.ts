@@ -1,13 +1,43 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import { fieldValue, locateOp, OnePassword, safeBinaryPath, type ExecFileFn, type FetchFn } from "./onepassword.ts";
 
 const FAKE_OP = "/opt/fake-1password/bin/op";
 const located = async () => FAKE_OP;
+
+// safeBinaryPath checks every folder up to the root. On Linux tmpdir() is
+// /tmp, which everyone may write (1777), and the test setup points HOME
+// below it: a binary there is rightly refused. The fixtures go under the
+// first base whose whole chain belongs to root or to this user and is not
+// writable by group or others (the checkout's node_modules/.cache on Linux).
+function chainIsPrivate(folder: string): boolean {
+  const uid = typeof process.getuid === "function" ? process.getuid() : -1;
+  for (let at = folder; ; at = dirname(at)) {
+    const stats = statSync(at);
+    if ((stats.mode & 0o022) !== 0 || (stats.uid !== 0 && stats.uid !== uid)) return false;
+    if (dirname(at) === at) return true;
+  }
+}
+function privateBase(): string | null {
+  for (const base of [tmpdir(), homedir(), join(process.cwd(), "node_modules", ".cache")]) {
+    try {
+      mkdirSync(base, { recursive: true });
+      const real = realpathSync(base);
+      if (chainIsPrivate(real)) return real;
+    } catch {
+      // try the next base
+    }
+  }
+  return null;
+}
+// POSIX mode bits and owners: Windows has neither, and safeBinaryPath is
+// always null there.
+const posixBase = process.platform === "win32" ? null : privateBase();
+const posixOnly = it.skipIf(posixBase === null);
 
 // Fake 1Password answers; no real account or secret is involved.
 const ITEM = {
@@ -64,8 +94,35 @@ describe("1Password", () => {
     await expect(op.readField({ via: "cli", vaultId: "v1", itemId: "--help" }, "password")).resolves.toBeNull();
   });
 
-  it("accepts a binary only when neither it nor its folder is writable by others", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "sagax-op-"));
+  it("never accepts a binary on Windows, where mode bits and owners say nothing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-op-win-"));
+    try {
+      const file = join(dir, "op");
+      writeFileSync(file, "#!/bin/sh\n");
+      expect(safeBinaryPath(file, "win32")).toBeNull();
+      if (process.platform === "win32") expect(safeBinaryPath(file)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    await expect(locateOp("win32")).resolves.toBeNull();
+  });
+
+  // Linux: /tmp is 1777, so a binary below it never runs, whatever its own mode.
+  it.skipIf(process.platform === "win32" || posixBase === realpathSync(tmpdir()))("refuses a binary below a temp folder everyone may write", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-op-shared-"));
+    try {
+      chmodSync(dir, 0o755);
+      const file = join(dir, "op");
+      writeFileSync(file, "#!/bin/sh\n");
+      chmodSync(file, 0o755);
+      expect(safeBinaryPath(file)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixOnly("accepts a binary only when neither it nor its folder is writable by others", async () => {
+    const dir = mkdtempSync(join(posixBase!, "sagax-op-"));
     try {
       chmodSync(dir, 0o755);
       const file = join(dir, "op");
@@ -85,8 +142,8 @@ describe("1Password", () => {
     await expect(locateOp("win32")).resolves.toBeNull();
   });
 
-  it("refuses a binary under any folder others can write, and locates again before every run", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "sagax-op-up-"));
+  posixOnly("refuses a binary under any folder others can write", async () => {
+    const dir = mkdtempSync(join(posixBase!, "sagax-op-up-"));
     const middle = join(dir, "open");
     const inner = join(middle, "bin");
     try {
@@ -103,6 +160,9 @@ describe("1Password", () => {
       chmodSync(middle, 0o755);
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("locates op again before every run", async () => {
     const locate = vi.fn(located);
     const exec = vi.fn<ExecFileFn>(async (_command, args) => args[0] === "account" ? JSON.stringify([{ account_uuid: "x" }]) : args[0] === "item" ? "[]" : "2.30.0");
     const op = new OnePassword({ env: {}, exec, organization: () => false, locate });

@@ -69,8 +69,12 @@ function owned(stats: { uid: number }): boolean {
 /** The real path of a file that may run: a regular file belonging to root
  * or to this user, not writable by group or others, and every folder above
  * it up to the root the same (a writable folder anywhere above lets someone
- * swap a folder in). Null otherwise. */
-export function safeBinaryPath(path: string): string | null {
+ * swap a folder in). Null otherwise, and always null on Windows: Node
+ * reports synthetic mode bits there (0o666, or 0o444 when read-only) and a
+ * uid of 0 for every file, so neither check would say anything about the
+ * real owner or ACL. */
+export function safeBinaryPath(path: string, platform: NodeJS.Platform = process.platform): string | null {
+  if (platform === "win32") return null;
   try {
     const real = realpathSync(path);
     const file = statSync(real);
