@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, Bell, Check, Coins, Download, ExternalLink, FlaskConical, KeyRound, Monitor, Palette, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, Bell, Check, Coins, Download, ExternalLink, FileText, FlaskConical, KeyRound, Monitor, Palette, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { connectedAppsEnabled, decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -37,6 +37,7 @@ import { currentSettingsSection, isMovedOrganizationCard } from "@/lib/settings-
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
 import { CredentialsSettings } from "./settings/CredentialsSettings";
+import { PublishedPagesSettings } from "./PublishedPages";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { workspacesAvailable } from "./WorkspacesSection";
 import { applySkin, readSkin, visibleSkins, type SkinId } from "@/lib/skins";
@@ -111,6 +112,8 @@ export const SECTIONS: Array<{
   { id: "usage", group: "workspace", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing", "plan", "forfait", "coût", "usage", "spend", "this month", "ce mois-ci", "last 30 days", "30 derniers jours", "by bot", "par bot", "by model", "par modèle", "renews", "renouvelle", "sagax business"] },
   // 2026-10-15: People and Installations are hidden in the app, like Email,
   // Activity and Pair devices (settings-sections.ts HIDDEN).
+  // 2026-10-16: pages a bot proposed and the person published (Grok Bot's canvases).
+  { id: "pages", group: "workspace", labelKey: "settings.section.pages", icon: FileText, keywords: ["pages", "published", "publiées", "canvas", "canevas", "share", "partager", "link", "lien", "revoke", "révoquer", "expiry", "expiration", "site", "html", "markdown"] },
   { id: "backups", group: "workspace", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery", "backup", "sauvegarde", "exporter", "restaurer", "replace", "remplacer", "mot de passe"] },
   // 0.5.6: this app's updates and the pre-release channel (were in General
   // and General > Advanced). Shown where the desktop app answers.
@@ -854,6 +857,7 @@ export function SettingsModal() {
 
             {section === "usage" && <UsageSection />}
             {section === "credentials" && <CredentialsSettings />}
+            {section === "pages" && <PublishedPagesSettings />}
             {/* Privacy (2026-10-14): a group of Notifications on an organization server. */}
             {section === "notifications" && <NotificationSettings privacy={allowed("privacy")} />}
             </div>

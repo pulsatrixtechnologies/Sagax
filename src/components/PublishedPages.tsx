@@ -1,0 +1,360 @@
+// Published pages (shared/published-pages.ts, server/routes/published-pages.ts).
+//
+// PagePublishCard is the approval card under a bot's propose_page row: the
+// person previews the page in a sandboxed frame (opaque origin, no network)
+// and only their Publish, with who can see it and until when, puts it
+// online. PublishedPagesSettings is Settings > Pages publiées: every page of
+// the person, its link, who can see it, its expiry, its versions, Revoke
+// and Delete.
+import { useCallback, useEffect, useState } from "react";
+import { Check, Copy, ExternalLink, Eye, EyeOff, FileText, Globe, Loader2, Lock, Trash2, Users, XCircle } from "lucide-react";
+
+import { copyText } from "@/lib/copy-text";
+import { t } from "@/lib/i18n";
+import type { LocaleKey } from "@/locales";
+import { api, type Message } from "@/state/store";
+import {
+  PAGE_ACCESS,
+  PAGE_EXPIRY_CHOICES,
+  PAGE_FRAME_SANDBOX,
+  type PageAccess,
+  type PublishedPageSummary,
+} from "../../shared/published-pages";
+
+const ACCESS_LABEL: Record<PageAccess, LocaleKey> = {
+  private: "pages.access.private",
+  org: "pages.access.org",
+  link: "pages.access.link",
+};
+const ACCESS_HINT: Record<PageAccess, LocaleKey> = {
+  private: "pages.access.privateHint",
+  org: "pages.access.orgHint",
+  link: "pages.access.linkHint",
+};
+const ACCESS_ICON = { private: Lock, org: Users, link: Globe } as const;
+
+/** The expiry a choice of hours stands for (0: never). Pure. */
+export function expiryFromHours(hours: number, now = Date.now()): number | null {
+  return hours > 0 ? now + hours * 60 * 60 * 1000 : null;
+}
+
+/** The body of POST /api/pages/:id/publish. Pure. */
+export function publishBody(version: number, access: PageAccess, hours: number, now = Date.now()) {
+  return { version, access, expiresAt: expiryFromHours(hours, now) };
+}
+
+function expiryLabel(hours: number): string {
+  if (hours === 0) return t("pages.expiry.never");
+  if (hours === 24) return t("pages.expiry.day");
+  if (hours === 7 * 24) return t("pages.expiry.week");
+  return t("pages.expiry.month");
+}
+
+function when(at: number): string {
+  return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function openPage(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/** One version in a frame sandboxed to scripts only: no same-origin, so it
+ * cannot reach the app, its cookies or its API; its CSP forbids every
+ * request. */
+export function PagePreviewFrame({ pageId, version, title }: { pageId: string; version: number; title: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    api<{ version: { html: string } }>(`/api/pages/${encodeURIComponent(pageId)}/versions/${version}`)
+      .then((answer) => { if (live) setHtml(answer.version.html); })
+      .catch((cause) => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { live = false; };
+  }, [pageId, version]);
+  if (error) return <p role="alert" className="text-[12px] text-danger">{error}</p>;
+  if (html === null) return <Loader2 size={14} className="animate-spin text-ink-secondary" />;
+  return (
+    <iframe
+      data-page-preview
+      title={t("pages.previewTitle", { title })}
+      sandbox={PAGE_FRAME_SANDBOX}
+      srcDoc={html}
+      referrerPolicy="no-referrer"
+      allow=""
+      className="h-[360px] w-full rounded-lg border border-hairline/40 bg-white"
+    />
+  );
+}
+
+function AccessPicker({ value, onChange, name, disabled }: { value: PageAccess; onChange(access: PageAccess): void; name: string; disabled?: boolean }) {
+  return (
+    <fieldset className="space-y-1" disabled={disabled}>
+      <legend className="mb-1 text-[12px] font-medium text-ink">{t("pages.whoCanSee")}</legend>
+      {PAGE_ACCESS.map((access) => {
+        const Icon = ACCESS_ICON[access];
+        return (
+          <label key={access} className="flex cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-[12.5px] hover:bg-raised/50">
+            <input type="radio" name={name} value={access} checked={value === access} onChange={() => onChange(access)} className="mt-0.5" />
+            <Icon size={13} aria-hidden="true" className="mt-0.5 text-ink-secondary" />
+            <span>
+              <span className="text-ink">{t(ACCESS_LABEL[access])}</span>
+              <span className="block text-[11.5px] text-ink-tertiary">{t(ACCESS_HINT[access])}</span>
+            </span>
+          </label>
+        );
+      })}
+    </fieldset>
+  );
+}
+
+function ExpirySelect({ value, onChange, disabled }: { value: number; onChange(hours: number): void; disabled?: boolean }) {
+  return (
+    <label className="flex items-center gap-2 text-[12.5px] text-ink">
+      {t("pages.expiry.label")}
+      <select value={value} disabled={disabled} onChange={(event) => onChange(Number(event.target.value))}
+        className="rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]">
+        {value < 0 && <option value={-1} disabled>{t("pages.expiry.change")}</option>}
+        {PAGE_EXPIRY_CHOICES.map((hours) => <option key={hours} value={hours}>{expiryLabel(hours)}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function LinkRow({ page }: { page: PublishedPageSummary }) {
+  const [copied, setCopied] = useState(false);
+  if (!page.url) return null;
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-raised/45 px-2.5 py-1.5 text-[12px]">
+      <span className="min-w-0 flex-1 truncate text-ink" title={page.url}>{page.url}</span>
+      <button type="button" aria-label={t("pages.copyLink")} title={t("pages.copyLink")} onClick={() => void copyText(page.url!).then((result) => setCopied(result === "copied"))}
+        className="rounded p-1 text-ink-secondary hover:bg-hover hover:text-ink">
+        {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+      </button>
+      <button type="button" aria-label={t("pages.open")} title={t("pages.open")} onClick={() => openPage(page.url!)}
+        className="rounded p-1 text-ink-secondary hover:bg-hover hover:text-ink">
+        <ExternalLink size={13} />
+      </button>
+      {page.reachable === false && <span className="text-warning">{t("pages.localOnly")}</span>}
+    </div>
+  );
+}
+
+/** The approval card of a bot's proposal (message field `pagePublish`). */
+export function PagePublishCard({ message }: { message: Message }) {
+  const ref = message.pagePublish!;
+  const [page, setPage] = useState<PublishedPageSummary | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const [access, setAccess] = useState<PageAccess>("private");
+  const [hours, setHours] = useState(0);
+  const [confirmLink, setConfirmLink] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const answer = await api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(ref.pageId)}`);
+      setPage(answer.page);
+    } catch {
+      setMissing(true);
+    }
+  }, [ref.pageId]);
+  useEffect(() => { void load(); }, [load]);
+
+  const version = page?.versions.find((entry) => entry.n === ref.version);
+  const act = async (path: string, body: unknown) => {
+    setBusy(true);
+    setError("");
+    try {
+      const answer = await api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(ref.pageId)}/${path}`, { method: "POST", body: JSON.stringify(body) });
+      setPage(answer.page);
+      setConfirmLink(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const publish = () => {
+    if (access === "link" && !confirmLink) {
+      setConfirmLink(true);
+      return;
+    }
+    void act("publish", publishBody(ref.version, access, hours));
+  };
+
+  if (missing) {
+    return <div className="chat-text w-fit max-w-[min(80%,560px)] rounded-[18px] bg-card px-3 py-[7px] text-[13px] text-ink">{message.text}</div>;
+  }
+  const live = page?.status === "published" && page.currentVersion === ref.version;
+  const state = !version ? null : live ? "published" : version.state === "declined" ? "declined" : page?.currentVersion && page.currentVersion > ref.version ? "superseded" : "proposed";
+  return (
+    <article data-page-card={ref.pageId} aria-label={t("pages.cardAria", { title: ref.title })}
+      className="my-2 w-full max-w-[640px] overflow-hidden rounded-xl border border-hairline/40 bg-panel shadow-sm">
+      <header className="flex items-center gap-2 border-b border-hairline/30 bg-raised/30 px-3 py-2 text-[12px] text-ink-secondary">
+        <FileText size={14} aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate font-medium text-ink">{ref.title}</span>
+        <span>{t("pages.versionN", { n: String(ref.version) })}</span>
+      </header>
+      <div className="space-y-3 px-3 py-3">
+        {!page && <Loader2 size={14} className="animate-spin text-ink-secondary" />}
+        {page && (
+          <>
+            <button type="button" onClick={() => setPreview((value) => !value)}
+              className="flex items-center gap-1.5 text-[12.5px] text-accent hover:underline">
+              {preview ? <EyeOff size={13} /> : <Eye size={13} />}{preview ? t("pages.hidePreview") : t("pages.preview")}
+            </button>
+            {preview && <PagePreviewFrame pageId={ref.pageId} version={ref.version} title={ref.title} />}
+            {state === "proposed" && (
+              <>
+                <p className="text-[12px] text-ink-secondary">{t("pages.reviewIntro")}</p>
+                <AccessPicker value={access} onChange={(next) => { setAccess(next); setConfirmLink(false); }} name={`page-access-${message.id}`} disabled={busy} />
+                <ExpirySelect value={hours} onChange={setHours} disabled={busy} />
+                {confirmLink && <p role="alert" className="text-[12px] text-warning">{t("pages.confirmLink")}</p>}
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" data-page-publish disabled={busy} onClick={publish}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white disabled:opacity-40">
+                    {busy && <Loader2 size={13} className="animate-spin" />}{confirmLink ? t("pages.publishConfirm") : t("pages.publish")}
+                  </button>
+                  <button type="button" data-page-decline disabled={busy} onClick={() => void act("decline", { version: ref.version })}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/60 px-3 py-1.5 text-[12.5px] text-ink hover:bg-raised disabled:opacity-40">
+                    <XCircle size={13} />{t("pages.decline")}
+                  </button>
+                </div>
+              </>
+            )}
+            {state === "published" && (
+              <>
+                <p className="text-[12px] text-success">{t("pages.publishedAs", { access: t(ACCESS_LABEL[page.access]) })}</p>
+                <LinkRow page={page} />
+              </>
+            )}
+            {state === "declined" && <p className="text-[12px] text-ink-secondary">{t("pages.declined")}</p>}
+            {state === "superseded" && <p className="text-[12px] text-ink-secondary">{t("pages.superseded")}</p>}
+            {page.status === "revoked" && state !== "declined" && <p className="text-[12px] text-ink-secondary">{t("pages.revokedNote")}</p>}
+          </>
+        )}
+        {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+      </div>
+    </article>
+  );
+}
+
+function PageRow({ page, onChange, onRemoved }: { page: PublishedPageSummary; onChange(page: PublishedPageSummary): void; onRemoved(id: string): void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [previewing, setPreviewing] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const call = async (path: string, init: RequestInit) => {
+    setBusy(true);
+    setError("");
+    try {
+      const answer = await api<{ page?: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(page.id)}${path}`, init);
+      if (answer.page) onChange(answer.page);
+      else onRemoved(page.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const published = page.status === "published";
+  const status = published ? (page.expired ? t("pages.status.expired") : t("pages.status.published")) : page.status === "revoked" ? t("pages.status.revoked") : t("pages.status.draft");
+  return (
+    <li data-published-page={page.id} className="space-y-2 rounded-lg border border-hairline/40 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <FileText size={14} aria-hidden="true" className="text-ink-secondary" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{page.title}</span>
+        <span className="rounded-full bg-raised px-2 py-0.5 text-[11px] text-ink-secondary">{status}</span>
+      </div>
+      <p className="text-[11.5px] text-ink-tertiary">
+        {t("pages.updated", { when: when(page.updatedAt) })}
+        {page.expiresAt !== null && ` · ${t("pages.expiresOn", { when: when(page.expiresAt) })}`}
+      </p>
+      {published && (
+        <>
+          <LinkRow page={page} />
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-[12.5px] text-ink">
+              {t("pages.whoCanSee")}
+              <select value={page.access} disabled={busy} onChange={(event) => void call("", { method: "PATCH", body: JSON.stringify({ access: event.target.value }) })}
+                className="rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]">
+                {PAGE_ACCESS.map((access) => <option key={access} value={access}>{t(ACCESS_LABEL[access])}</option>)}
+              </select>
+            </label>
+            <ExpirySelect value={-1} disabled={busy} onChange={(hours) => void call("", { method: "PATCH", body: JSON.stringify({ expiresAt: expiryFromHours(hours) }) })} />
+            <button type="button" data-page-revoke disabled={busy} onClick={() => void call("/revoke", { method: "POST", body: "{}" })}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[12.5px] text-danger hover:bg-danger/10 disabled:opacity-40">
+              <XCircle size={13} />{t("pages.revoke")}
+            </button>
+          </div>
+        </>
+      )}
+      <details className="text-[12px]">
+        <summary className="cursor-pointer text-ink-secondary">{t("pages.versions", { count: String(page.versions.length) })}</summary>
+        <ul className="mt-1.5 space-y-1.5">
+          {page.versions.slice().reverse().map((version) => (
+            <li key={version.n} className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-ink">{t("pages.versionN", { n: String(version.n) })}</span>
+                <span className="text-ink-tertiary">{when(version.createdAt)}</span>
+                {page.currentVersion === version.n && <span className="text-success">{t("pages.status.published")}</span>}
+                {version.state === "declined" && <span className="text-ink-tertiary">{t("pages.status.declined")}</span>}
+                <button type="button" onClick={() => setPreviewing(previewing === version.n ? null : version.n)} className="text-accent hover:underline">
+                  {previewing === version.n ? t("pages.hidePreview") : t("pages.preview")}
+                </button>
+                {published && page.currentVersion !== version.n && version.state !== "declined" && (
+                  <button type="button" disabled={busy} onClick={() => void call("/publish", { method: "POST", body: JSON.stringify({ version: version.n, access: page.access, expiresAt: page.expiresAt !== null && page.expiresAt > Date.now() ? page.expiresAt : null }) })}
+                    className="text-accent hover:underline disabled:opacity-40">{t("pages.publishThis")}</button>
+                )}
+              </div>
+              {previewing === version.n && <PagePreviewFrame pageId={page.id} version={version.n} title={version.title} />}
+            </li>
+          ))}
+        </ul>
+      </details>
+      <div className="flex justify-end">
+        {confirmDelete ? (
+          <span className="flex items-center gap-2 text-[12px]">
+            {t("pages.deleteConfirm")}
+            <button type="button" disabled={busy} onClick={() => void call("", { method: "DELETE" })} className="rounded px-1.5 py-1 text-danger hover:bg-danger/10">{t("pages.delete")}</button>
+            <button type="button" onClick={() => setConfirmDelete(false)} className="rounded px-1.5 py-1 text-ink-secondary hover:bg-hover">{t("pages.cancel")}</button>
+          </span>
+        ) : (
+          <button type="button" onClick={() => setConfirmDelete(true)} className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[12px] text-ink-secondary hover:bg-hover">
+            <Trash2 size={12} />{t("pages.delete")}
+          </button>
+        )}
+      </div>
+      {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+    </li>
+  );
+}
+
+/** Settings > Pages publiées. */
+export function PublishedPagesSettings() {
+  const [pages, setPages] = useState<PublishedPageSummary[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api<{ pages: PublishedPageSummary[] }>("/api/pages")
+      .then((answer) => setPages(answer.pages))
+      .catch((cause) => { setPages([]); setError(cause instanceof Error ? cause.message : String(cause)); });
+  }, []);
+  return (
+    <section data-settings-card="pages" className="space-y-3">
+      <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("pages.settingsIntro")}</p>
+      {pages === null && <Loader2 size={14} className="animate-spin text-ink-secondary" />}
+      {pages?.length === 0 && !error && <p className="text-[12.5px] text-ink-tertiary">{t("pages.empty")}</p>}
+      {pages && pages.length > 0 && (
+        <ul className="space-y-2">
+          {pages.map((page) => (
+            <PageRow key={page.id} page={page}
+              onChange={(next) => setPages((current) => (current ?? []).map((entry) => (entry.id === next.id ? next : entry)))}
+              onRemoved={(id) => setPages((current) => (current ?? []).filter((entry) => entry.id !== id))} />
+          ))}
+        </ul>
+      )}
+      {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+    </section>
+  );
+}

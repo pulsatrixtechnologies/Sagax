@@ -242,7 +242,7 @@ export interface SecretRequestCardData {
   error?: string;
 }
 
-export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "routineToggle"> {
+export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "routineToggle" | "pagePublish"> {
   id: string;
   role: "bot" | "user";
   kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "routines";
@@ -1205,7 +1205,9 @@ export type AppSettingsSection =
   | "backups"
   | "workspaces"
   /** This app's updates and the pre-release channel (0.5.6; were in General). */
-  | "updates";
+  | "updates"
+  /** Pages a bot proposed and the person published (src/components/PublishedPages.tsx). */
+  | "pages";
 
 export type BotSettingsSection =
   | "overview"

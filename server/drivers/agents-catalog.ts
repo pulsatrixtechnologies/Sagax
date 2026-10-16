@@ -13,6 +13,7 @@
 import { CREDENTIAL_TARGETS } from "../../shared/credential-request.ts";
 import { OPTIONS_CARD_LIMITS, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
 import { agentToolAnnotations } from "../agent-tool-policy.ts";
+import { PAGE_TOOL_DEFINITIONS } from "./agents-page-tools.ts";
 import { WIDGET_TOOL_DEFINITIONS } from "./agents-widget-tools.ts";
 import { ARTIFACT_TOOL_DEFINITIONS } from "./agents-artifact-tools.ts";
 import { CLAIM_TOOL_NAMES } from "../perspicax-claims.ts";
@@ -449,6 +450,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   },
   ...WIDGET_TOOL_DEFINITIONS,
   ...ARTIFACT_TOOL_DEFINITIONS,
+  ...PAGE_TOOL_DEFINITIONS,
   {
     name: "post_to_room",
     description:
@@ -1488,7 +1490,8 @@ const CHIEF_TARGET_TOOL_NAMES = new Set(["propose_profile", "propose_model"]);
 // Ordinary direct chats use this same bounded coordinator. Goal-owned turns
 // retain their independent loop and cannot start a second coordinator.
 const ROOM_ONLY_TOOLS = new Set(["list_room_targets", "coordinate_bots", "send_to_bot"]);
-const ROOM_REPLACED_TOOLS = new Set(["ask_bot", "delegate_bot", "check_delegation", "wait_delegation", "start_thread"]);
+// propose_page is absent from rooms: a page belongs to one person's conversation.
+const ROOM_REPLACED_TOOLS = new Set(["ask_bot", "delegate_bot", "check_delegation", "wait_delegation", "start_thread", "propose_page"]);
 const EXTERNAL_TOOL_NAMES = new Set(["list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation"]);
 const WATCHER_TOOL_NAMES = new Set(["create_options_card"]);
 

@@ -739,6 +739,9 @@ export interface WireMessage {
   /** thread chips: "Opened thread #Title on @X". */
   /** `gone` is stamped at read time when the target thread no longer exists. */
   threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
+  /** A bot's page proposal (shared/published-pages.ts): the card the person
+   * reviews and publishes it from. `text` is the fallback line. */
+  pagePublish?: { pageId: string; version: number; title: string };
   /** A published Data result, linked to its bot's main viewer. */
   dataResult?: { botId: string; cardId: string; title: string; kind: "table" | "chart" | "text"; sql?: string };
   /** user messages: the Data result the person was viewing when they sent

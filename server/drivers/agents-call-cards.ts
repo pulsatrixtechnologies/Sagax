@@ -7,12 +7,13 @@
 // (createAgentCard) tells them apart by the body's `tool` and is where a
 // widget is stored; the checks here only save a round trip.
 import { parseOptionsCardInput, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
+import { parsePageProposal } from "../../shared/published-pages.ts";
 import { parseWidgetInput, widgetAdvice } from "../../shared/widget.ts";
 
 import type { ToolCallContext, ToolCallResult } from "./agents-call.ts";
 import type { Json } from "./agents-client.ts";
 
-export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", "show_widget", "update_widget"]);
+export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", "show_widget", "update_widget", "propose_page"]);
 
 const CARD_ROUTE = "/api/internal/options-card";
 
@@ -30,6 +31,20 @@ export async function callCardTool(name: string, args: Json, context: ToolCallCo
     });
     return {
       text: `Rendered the native options card in this Watcher thread (message ${String(result.messageId ?? "created")}). Wait for the person's click or custom response; the card itself authorizes no external action.`,
+    };
+  }
+
+  if (name === "propose_page") {
+    const parsed = parsePageProposal(args);
+    if (!parsed.ok) return { text: parsed.error, isError: true };
+    const { ok, body } = await apiResponse(CARD_ROUTE, {
+      method: "POST",
+      body: JSON.stringify({ tool: "propose_page", ...args }),
+    });
+    if (!ok) return { text: String(body.error ?? "Could not propose that page."), isError: true };
+    const pageId = String(body.pageId ?? "");
+    return {
+      text: `Proposed page ${pageId}, version ${Number(body.version ?? 1)}. It is NOT published: the person reviews it on its card and decides whether to publish it and who can see it. Do not say it is online. To revise it, call propose_page again with page_id "${pageId}".`,
     };
   }
 

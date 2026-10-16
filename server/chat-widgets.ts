@@ -11,6 +11,7 @@ import {
   parseWidgetInput, resolveWidgetAction, widgetActions, widgetFields, widgetToText, WIDGET_LIMITS,
   type WidgetAction, type WidgetNode, type WidgetPayload, type WidgetRoot, type WidgetSettled,
 } from "../shared/widget.ts";
+import { parsePageProposal, type PageKind } from "../shared/published-pages.ts";
 import type { MausColor } from "../shared/wire.ts";
 import { createOptionsCard } from "./options-card.ts";
 import { isSecretName, mask, redactSecretsInText } from "./redact.ts";
@@ -26,7 +27,7 @@ export interface AgentCardStore {
 
 export type AgentCardResult =
   /** `masked`: something in the widget read as a secret and was stored masked. */
-  | { ok: true; messageId: string; masked?: true }
+  | { ok: true; messageId: string; masked?: true; pageId?: string; version?: number }
   | { ok: false; status: 400 | 403 | 404 | 409; error: string };
 
 const ROOM_REFUSAL = "Widgets are not available in rooms yet. Answer in text.";
@@ -130,9 +131,14 @@ export function createAgentCard(args: {
    * it, so it must not be offered back to that session as a message it has
    * not seen (server/delta-context.ts Handoffs.authored). */
   authored?(messageId: string): void;
+  /** propose_page (server/published-pages.ts): stores a proposed version,
+   * never a published one. Absent: the tool is refused. */
+  proposePage?(input: { pageId?: string; title: string; kind: PageKind; content: string }):
+    { ok: true; pageId: string; version: number } | { ok: false; status: 400 | 404 | 409; error: string };
 }): AgentCardResult {
   const { store, bot, threadId, input } = args;
   if (!isRecord(input) || input.tool === undefined) return createOptionsCard(args);
+  if (input.tool === "propose_page") return proposePageCard(args, input);
   if (input.tool !== "show_widget" && input.tool !== "update_widget") {
     return { ok: false, status: 400, error: "tool: must be show_widget or update_widget." };
   }
@@ -162,6 +168,28 @@ export function createAgentCard(args: {
   if (!patched) return { ok: false, status: 404, error: NO_SUCH_WIDGET };
   args.authored?.(patched.id);
   return { ok: true, messageId: patched.id, ...(widget.masked ? { masked: true as const } : {}) };
+}
+
+/** A bot's page proposal: the version is stored as proposed and the row the
+ * person publishes it from (`pagePublish`) is written. Nothing is served
+ * until the person's Publish (server/routes/published-pages.ts). */
+function proposePageCard(args: Parameters<typeof createAgentCard>[0], input: Record<string, unknown>): AgentCardResult {
+  const { store, threadId } = args;
+  if (store.groupByThread(threadId)) return { ok: false, status: 409, error: "Pages are not available in rooms. Propose it in a direct conversation." };
+  if (!args.proposePage) return { ok: false, status: 403, error: "Published pages are not available on this server." };
+  const parsed = parsePageProposal(input);
+  if (!parsed.ok) return { ok: false, status: 400, error: parsed.error };
+  const proposed = args.proposePage(parsed.value);
+  if (!proposed.ok) return proposed;
+  const title = redactSecretsInText(parsed.value.title);
+  const message = store.appendMessage(threadId, {
+    role: "bot",
+    kind: "text",
+    text: `Page proposed: ${title} (version ${proposed.version}). Review it, then choose who can see it before publishing.`,
+    pagePublish: { pageId: proposed.pageId, version: proposed.version, title },
+  });
+  args.authored?.(message.id);
+  return { ok: true, messageId: message.id, pageId: proposed.pageId, version: proposed.version };
 }
 
 /** The widget's stored payload, when the row is a widget of this thread. */

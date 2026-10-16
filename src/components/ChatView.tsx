@@ -99,6 +99,7 @@ import { ThreadRefText } from "./ThreadRefs";
 import { optionsCardRow } from "./OptionsCardRow";
 import { MessageBoundary } from "./MessageBoundary";
 import { WidgetMessage } from "./widget/WidgetMessage";
+import { PagePublishCard } from "./PublishedPages";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
 import { GlyphRippleLayer, useGlyphRippleShown } from "./GlyphRippleLayer";
@@ -1212,6 +1213,10 @@ const MessagesList = memo(function MessagesList({
           }
           if (m.state === "waiting-on-owner") return <OwnerWait ownerName={m.ownerName ?? ""} />;
           if (m.state === "owner-settled") return <OwnerSettled message={m} />;
+          // a bot's page proposal: its approval card (src/components/PublishedPages.tsx)
+          if (m.pagePublish && m.role === "bot") {
+            return <MessageBoundary fallbackText={m.text ?? ""}><PagePublishCard message={m} /></MessageBoundary>;
+          }
           // a widget row whose tree never arrived still reads as its text
           switch (m.kind === "widget" && !m.widget ? "text" : m.kind) {
             case "access":

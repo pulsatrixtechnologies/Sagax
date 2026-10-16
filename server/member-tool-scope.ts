@@ -65,6 +65,8 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   update_artifact: "conversation",
   list_artifacts: "read",
   delete_artifact: "conversation",
+  // a page proposal: a card in the member's own conversation; publishing is theirs
+  propose_page: "conversation",
   send_voice_note: "conversation",
   end_call: "conversation",
   request_credential: "conversation",

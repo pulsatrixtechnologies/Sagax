@@ -511,6 +511,12 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // once they allow it (server/email-draft-send.ts)
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/email-drafts$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/email-drafts\/[\w-]+$/ },
+  // published pages: a person's own pages only (server/routes/published-pages.ts
+  // checks the owner on every call; a bot's shell never publishes)
+  { methods: ["GET"], path: /^\/api\/pages$/ },
+  { methods: ["GET", "PATCH", "DELETE"], path: /^\/api\/pages\/[\w-]+$/ },
+  { methods: ["GET"], path: /^\/api\/pages\/[\w-]+\/versions\/\d+$/ },
+  { methods: ["POST"], path: /^\/api\/pages\/[\w-]+\/(?:publish|decline|revoke)$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/cards\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/secret-cards\/[\w-]+\/(?:resume|dismiss)$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/ },

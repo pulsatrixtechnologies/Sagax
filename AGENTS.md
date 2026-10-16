@@ -3808,6 +3808,54 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
   (`EmojiCatalogGrid`, `ComposerEmojiButton`); stored in the bare form
   (`canonicalEmoji`) so both pickers make one chip.
 
+## Published pages (2026-10-16, Grok Bot canvases)
+
+A bot proposes a page (HTML, Markdown or a small one-file static app) with
+the agents tool `propose_page`; the person publishes it from its card
+(`shared/published-pages.ts`, store `server/published-pages.ts`
+(`published-pages.json` and `published-pages.key`, both 0600), renderer
+`server/published-pages-render.ts`, routes `server/routes/published-pages.ts`,
+UI `src/components/PublishedPages.tsx`: the chat card and Settings > Pages
+publiées). Keep these rules, covered by `server/published-pages.test.ts` and
+`src/components/PublishedPages.test.ts`:
+
+- Publishing is an outward action and only the person does it. The tool
+  goes through the internal card route (`createAgentCard`, tool
+  `propose_page`) and stores a `proposed` version plus a bot row with
+  `pagePublish`; whatever the bot sends (access, publish flags) is ignored.
+  `POST /api/pages/:id/publish` needs an explicit `access` and is answered
+  only for a person: a session (on an organization server, one with a
+  principal, and only for that person's own pages; another person's page
+  reads as 404) or this computer's owner on a one-person server, never a
+  bot's shell on a shared server (`isPerson`). Choosing "Toute personne
+  ayant le lien" asks a second press on the card. Not available in rooms.
+- Who can see it: `private` (its person: the bot owner's principal on an
+  organization server, the owner on a one-person server), `org` (any human,
+  enabled person signed in to this server; never a guest), `link` (anyone
+  holding the link). Expiry: never, or a time within a year. Revoke drops
+  the link id at once; publishing again mints a new link, so a revoked link
+  never comes back. A bad signature, a revoked or expired page and a reader
+  who may not see it all get the same 404 page.
+- Isolation, every answer of `GET /pages/view/<id>.<hmac>` (answered before
+  the auth gate, after the template links): `Content-Security-Policy` with
+  `sandbox allow-scripts allow-modals allow-forms` (Markdown: bare
+  `sandbox`, `script-src 'none'`), never `allow-same-origin`, so the page
+  has an opaque origin even opened in a tab and cannot read the Sagax
+  cookie, storage or API; `default-src 'none'`, `connect-src 'none'`,
+  `form-action 'none'`, `frame-ancestors 'none'`, data:/blob: images only;
+  `no-store`, `no-referrer`, `nosniff`, no Set-Cookie. The app's preview is
+  the same document in an iframe sandboxed to `PAGE_FRAME_SANDBOX` (no
+  same-origin, no popups, no top navigation) with the CSP as a meta tag.
+  Markdown is rendered by our own escaper (no raw HTML, links http(s) and
+  mailto only). Title and content lose secret-shaped text before storage.
+- Versions: each `propose_page` with `page_id` (same conversation only)
+  adds a version that waits for its own Publish; readers keep the
+  published one. Up to 20 versions per page, 200 pages per server.
+- Not done yet: a separate origin for pages (a `SAGAX_PAGES_ORIGIN` host)
+  on top of the sandbox, multi-file apps, an admin audit row per publish
+  (the page keeps its own history), the phone apps' card (they show the
+  row's text).
+
 ## Voice notes, microphone choice, logs and feedback (2026-10-16)
 
 - Voice notes (+ > Record a voice note, `src/components/useVoiceNoteRecorder.ts`,

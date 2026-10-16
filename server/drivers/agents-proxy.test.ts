@@ -685,6 +685,7 @@ describe("agents-proxy MCP surface", () => {
       "update_artifact",
       "list_artifacts",
       "delete_artifact",
+      "propose_page",
       "post_to_room",
       "react_to_message",
       "remove_reaction",

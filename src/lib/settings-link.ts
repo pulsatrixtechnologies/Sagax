@@ -37,6 +37,7 @@ const SECTION_LABEL = {
   memory: "settings.section.organization",
   updates: "settings.updates.title",
   security: "settings.section.security",
+  pages: "settings.section.pages",
 } as const satisfies Record<AppSettingsSection, LocaleKey>;
 
 export type SettingsLinkTarget = { section: AppSettingsSection; cardId?: string };
