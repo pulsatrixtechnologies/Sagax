@@ -18,6 +18,7 @@ import { removeTempDir, waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 import { fixtureApi } from "./preview-fixture.ts";
+import { openSettingsPageJs } from "./ui-click.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLI = join(ROOT, "scripts", "control-omb.ts");
@@ -212,7 +213,7 @@ describe("control-omb ui drives the real renderer", () => {
     // Settings is its own chunk (src/components/lazy-screens.tsx): opened before
     // the idle prefetch has fetched it, it paints once the chunk arrives.
     await expect.poll(() => evaluate(`(() => {
-      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Models and accounts');
+      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Models and voice');
       tab?.click();
       return Boolean(tab);
     })()`), { timeout: 10_000 }).toBe(true);
@@ -290,6 +291,9 @@ describe("control-omb ui drives the real renderer", () => {
     const scopeShot = join(evidenceDir, "model-dropdown.png");
     mkdirSync(evidenceDir, { recursive: true });
     await ui("screenshot", info.ui, "--out", scopeShot);
+    // Models sit in a submenu per provider (#477): open the bot's provider first.
+    await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-provider="${originalBot.modelSelection.instanceId}"]').click(); true`);
+    await expect.poll(async () => (await ui("eval", info.ui, "--js", `Boolean(document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]'))`)).result, { timeout: 10_000 }).toBe(true);
     await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]').click(); true`);
     await expect.poll(async () => (await savedBot()).modelSelection.model, { timeout: 10_000 }).toBe(nextModel.id);
     expect((await savedBot()).tasks.find((task: any) => task.threadId === originalBot.threadId).modelSelection.model).toBe(nextModel.id);
@@ -321,8 +325,10 @@ describe("control-omb ui drives the real renderer", () => {
     expect(transcript).toContain('StaticText "hello"'); // the sent turn
     // (a) the fake engine's reply text, as a transcript row
     expect(transcript).toContain(`StaticText "${REPLY}"`);
-    // (b) the scripted Bash call rendered as a tool chip, named by its tool
-    expect(transcript).toMatch(/StaticText "Bash"/);
+    // (b) the scripted calls (Bash among them) folded into one tool chip, the
+    // Grok Bot way: "Worked" with its count and failure, then "Used 3 tools"
+    expect(transcript).toContain('button "Worked, 3 tools, 1 failed, press to see the detail"');
+    expect(transcript).toMatch(/button "Used 3 tools/);
     expect(tree).not.toContain("Not logged in");
     expect(tree).not.toContain("Execution timeline");
     // The run card: the three scripted commands all go through the control
@@ -411,7 +417,7 @@ describe("control-omb ui drives the real renderer", () => {
 
     await ui("click", info.ui, "--name", "You");
     await ui("click", info.ui, "--name", "Settings");
-    await ui("click", info.ui, "--name", "Appearance");
+    await expect.poll(async () => (await ui("eval", info.ui, "--js", openSettingsPageJs("Appearance"))).result, { timeout: 10_000 }).toBe(true);
     await ui("eval", info.ui, "--js", `(() => {
       const sw = document.querySelector('[aria-label="Show the Inspector button"]');
       if (!sw) throw new Error("Show the Inspector button is missing");
@@ -419,8 +425,16 @@ describe("control-omb ui drives the real renderer", () => {
       return true;
     })()`);
     await ui("click", info.ui, "--name", "Close settings");
-    await expect.poll(async () => (await ui("snapshot", info.ui)).snapshot, { timeout: 10_000 }).toContain("Inspector");
-    await ui("click", info.ui, "--name", "Inspector");
+    // The Inspector is an item of the conversation's "More options" menu. The
+    // settings window is still closing on the first tries: open until it shows.
+    await expect.poll(async () => (await ui("eval", info.ui, "--js", `(() => {
+      if (document.querySelector('[data-conversation-inspector]')) return true;
+      const more = document.querySelector('main button[aria-label="More options"]');
+      if (more && more.getAttribute("aria-expanded") !== "true") more.click();
+      return false;
+    })()`)).result, { timeout: 10_000 }).toBe(true);
+    await ui("eval", info.ui, "--js", "document.querySelector('[data-conversation-inspector]').click(); true");
+    await expect.poll(async () => (await ui("snapshot", info.ui)).snapshot, { timeout: 10_000 }).toContain('complementary "Inspector"');
     const inspected = await ui("snapshot", info.ui);
     const runLog = (inspected.snapshot as string).slice((inspected.snapshot as string).indexOf('complementary "Inspector"'));
     expect(runLog).toContain('tab "Run Log" [selected');
@@ -431,14 +445,19 @@ describe("control-omb ui drives the real renderer", () => {
     await ui("screenshot", info.ui, "--out", join(evidenceDir, "run-log.png"));
 
     // Existing technical views remain reachable by accessible tab references.
-    const [eventsTab] = refsNamed(inspected, "Events", "tab");
-    expect(eventsTab).toBeDefined();
-    await ui("click", info.ui, "--ref", eventsTab);
-    const events = await ui("snapshot", info.ui);
-    expect(events.snapshot).toContain("turn.started");
-    const [rawTab] = refsNamed(events, "Raw", "tab");
-    await ui("click", info.ui, "--ref", rawTab);
-    expect((await ui("snapshot", info.ui)).snapshot).toContain('tab "Raw" [selected');
+    // The Inspector slides in: a click during the slide can miss, so retry by
+    // a fresh reference until the tab is selected.
+    const selectTab = (name: string) => expect.poll(async () => {
+      const current = await ui("snapshot", info.ui);
+      if ((current.snapshot as string).includes(`tab "${name}" [selected`)) return true;
+      const [ref] = refsNamed(current, name, "tab");
+      expect(ref).toBeDefined();
+      await ui("click", info.ui, "--ref", ref);
+      return false;
+    }, { timeout: 10_000 }).toBe(true);
+    await selectTab("Events");
+    await expect.poll(async () => (await ui("snapshot", info.ui)).snapshot, { timeout: 10_000 }).toContain("turn.started");
+    await selectTab("Raw");
     await ui("click", info.ui, "--name", "Close the Inspector");
     expect((await ui("snapshot", info.ui)).snapshot).not.toContain('complementary "Inspector"');
 

@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { clickByAccessibleNameJs, openProfileAria, overlaysOpenJs } from "./ui-click.ts";
+import { clickByAccessibleNameJs, openPanelAria, overlaysOpenJs } from "./ui-click.ts";
 
 describe("renderer e2e click helpers", () => {
-  it("uses the possessive profile aria from chat.openProfileAria", () => {
-    expect(openProfileAria("Quill")).toBe("Open Quill's profile");
-    expect(openProfileAria("Quill")).not.toBe("Open Quill profile");
+  it("uses the possessive panel aria from chat.openPanelAria", () => {
+    expect(openPanelAria("Quill")).toBe("Open Quill's panel");
+    expect(openPanelAria("Quill")).not.toBe("Open Quill panel");
   });
 
   it("embeds the accessible name in a DOM click that bypasses hit-testing", () => {

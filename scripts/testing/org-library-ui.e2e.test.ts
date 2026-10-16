@@ -11,7 +11,7 @@ import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 import { openTemplatesCatalog } from "./compose-flow.ts";
-import { clickAccessible, openProfileAria } from "./ui-click.ts";
+import { clickAccessible, openPanelAria } from "./ui-click.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURES = join(ROOT, "shared", "package-fixtures");
@@ -153,9 +153,12 @@ describe("the organization library in the real renderer", () => {
     // bot first: after the catalog closes the header may still be on another bot.
     const deskBot = bots[0] as { id: string; name: string };
     await evaluate(`document.querySelector(${JSON.stringify(`[data-sidebar-bot-row="${deskBot.id}"]`)})?.click(); true`);
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain(openProfileAria(deskBot.name));
-    await click(openProfileAria(deskBot.name));
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain(openPanelAria(deskBot.name));
+    await click(openPanelAria(deskBot.name));
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("From Sales desk 1.3.0 · Acme Partners");
+    // Edit bot sits in the panel's Bot menu.
+    await click("Bot menu");
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain('menuitem "Edit bot"');
     await click("Edit bot");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Skills");
     await click("Skills");

@@ -9,7 +9,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import { BOT_ROLES } from "../../src/lib/bot-roles.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
-import { openNewBotDialog } from "./compose-flow.ts";
+import { chooseStartFromJs, openNewBotDialog, START_FROM } from "./compose-flow.ts";
 import { clickAccessible } from "./ui-click.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -58,22 +58,22 @@ describe("bot setup and tools in the real renderer", () => {
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const openPersona = async (section: string) => {
       await press("Escape");
-      await click("Open agent profile");
-      // The pencil on the mascot (data-edit-persona) opens the persona editor.
-      await expect.poll(snapshot, { timeout: 10_000 }).toContain('button "Edit bot"');
+      // The chat header's bot pill opens the bot panel ("Open <name>'s panel");
+      // Edit bot sits in its Bot menu.
+      await expect.poll(() => evaluate(`(() => {
+        const pill = [...document.querySelectorAll("main button[aria-label]")].find((button) => /^Open .+'s panel$/.test(button.getAttribute("aria-label")));
+        pill?.click();
+        return Boolean(pill);
+      })()`), { timeout: 10_000 }).toBe(true);
+      await expect.poll(snapshot, { timeout: 10_000 }).toContain('button "Bot menu"');
+      await click("Bot menu");
+      await expect.poll(snapshot, { timeout: 10_000 }).toContain('menuitem "Edit bot"');
       await click("Edit bot");
       await expect.poll(snapshot, { timeout: 10_000 }).toContain(section);
       await click(section);
     };
-    const chooseRole = async (roleId: string) => {
-      await expect.poll(snapshot, { timeout: 10_000 }).toContain("Starting role");
-      await evaluate(`(() => {
-        const select = [...document.querySelectorAll('[role=dialog] select')].find(el => [...el.options].some(option => option.value === ${JSON.stringify(roleId)}));
-        if (!select || select.disabled) throw new Error("Starting role is unavailable");
-        select.value = ${JSON.stringify(roleId)};
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
-      })()`);
+    const chooseRole = async (title: string) => {
+      await expect.poll(() => evaluate(chooseStartFromJs(title)), { timeout: 10_000 }).toBe(true);
     };
     const dialogCount = () => evaluate("document.querySelectorAll('[role=dialog]').length");
     const original = await bots();
@@ -167,13 +167,8 @@ describe("bot setup and tools in the real renderer", () => {
     await press("Escape");
     await openPersona("Usage");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("All bots");
-    await expect.poll(() => evaluate("(() => { const row = document.querySelector('[data-persona-pane=usage]'); const rect = row?.getBoundingClientRect(); return rect ? Math.max(-rect.top, rect.bottom - innerHeight) : 9999; })()"), { timeout: 10_000 }).toBeLessThanOrEqual(1);
-    const search = await ui("snapshot", "--interactive");
-    const searchRef = Object.entries(search.refs as Record<string, { role: string; name: string }>)
-      .find(([, entry]) => entry.role === "textbox" && entry.name === "Search the categories");
-    expect(searchRef).toBeDefined();
-    await ui("type", "--ref", `@${searchRef![0]}`, "--text", "tokens");
-    expect(await evaluate("document.querySelector('[aria-label=\"Search the categories\"]')?.value")).toBe("tokens");
+    await expect.poll(() => evaluate("(() => { const row = document.querySelector('[data-persona-current=usage]'); const rect = row?.getBoundingClientRect(); return rect ? Math.max(-rect.top, rect.bottom - innerHeight) : 9999; })()"), { timeout: 10_000 }).toBeLessThanOrEqual(1);
+    // The editor lost its category search in #518: the left nav is the way in.
     await ui("screenshot", "--out", `${info.logPath}.settings.png`);
 
     // A failed profile step must roll back the incomplete bot and leave the
@@ -195,14 +190,14 @@ describe("bot setup and tools in the real renderer", () => {
     })()`);
     const ops = BOT_ROLES.find((role) => role.id === "ops")!;
     await openNewBotDialog({ click, evaluate, snapshot });
-    await chooseRole(ops.id);
+    await chooseRole(ops.title);
     await click("Create bot");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Fixture preset rejected");
     expect((await bots()).map(bot => bot.id)).toEqual(beforeFailure.map(bot => bot.id));
     expect(await dialogCount()).toBe(1);
     await click("Create bot");
     await expect.poll(async () => (await bots()).length, { timeout: 10_000 }).toBe(beforeFailure.length + 1);
-    await expect.poll(async () => !(await snapshot()).includes("Starting role"), { timeout: 10_000 }).toBe(true);
+    await expect.poll(async () => !(await snapshot()).includes(START_FROM), { timeout: 10_000 }).toBe(true);
     await press("Escape");
     await expect.poll(dialogCount, { timeout: 10_000 }).toBe(0);
     expect((await bots()).filter(bot => !beforeFailure.some(old => old.id === bot.id))).toMatchObject([{ name: ops.name, soul: ops.soul }]);

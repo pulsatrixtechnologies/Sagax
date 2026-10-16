@@ -1,10 +1,11 @@
 // Compose "Create new Bot" dispatches `{ type: "newBot" }` and closes: instant
-// create, no NewBotDialog, no Starting role, no Browse templates.
+// create, no NewBotDialog, no Start from, no Browse templates.
 // Templates live in Browse Bots (sidebar), behind features.templates.
 // NewBotDialog stays on Team map → manage a named team → New Bot.
 // Unassigned (`data-team-key=""`) has no New Bot: TeamDialog.managing is
 // Boolean(section) && !rename, and an empty key is falsy.
 
+import { jsLiteral } from "./js-literal.mjs";
 import { clickAccessible, dismissOverlays } from "./ui-click.ts";
 
 export type CatalogFlow = {
@@ -52,7 +53,10 @@ export async function openTemplatesCatalog(flow: CatalogFlow): Promise<void> {
     }, 12_000, "Browse Bots template tools");
     if (catalogHome(await flow.snapshot())) return;
   }
-  await until(async () => (await flow.snapshot()).includes("Browse Bots"), 12_000, "Browse Bots");
+  // Browse Bots sits in the Connect apps window (#594); the sidebar keeps its
+  // own entry only on the icon rail.
+  if (!(await flow.snapshot()).includes('button "Browse Bots"')) await flow.click("Connect apps");
+  await until(async () => (await flow.snapshot()).includes('button "Browse Bots"'), 12_000, "Browse Bots");
   await flow.click("Browse Bots");
   await until(async () => {
     const next = await flow.snapshot();
@@ -64,12 +68,41 @@ export async function openTemplatesCatalog(flow: CatalogFlow): Promise<void> {
   }, 12_000, "Browse Bots template tools");
 }
 
-/** NewBotDialog with Starting role: Team map, a named team, New Bot. */
+/** New Bot's first row (newBot.startingRole): a pill menu since #596, no
+ * native select. */
+export const START_FROM = "Start from";
+
+/** Open Start from if it is closed, then pick the option with this label.
+ * True once picked; poll it, the first call only opens the menu. */
+export function chooseStartFromJs(label: string): string {
+  return `(() => {
+    const dialog = [...document.querySelectorAll("[role=dialog]")].at(-1);
+    const pill = dialog?.querySelector('button[aria-label="${START_FROM}"]');
+    if (!pill || pill.disabled) return false;
+    const list = document.querySelector('[role=listbox][aria-label="${START_FROM}"]');
+    if (!list) { pill.click(); return false; }
+    const option = [...list.querySelectorAll("[role=option]")].find((item) => item.textContent.trim() === ${jsLiteral(label)});
+    option?.click();
+    return Boolean(option);
+  })()`;
+}
+
+/** The group headings of the open Start from menu, opening it if needed. */
+export function startFromGroupsJs(): string {
+  return `(() => {
+    const dialog = [...document.querySelectorAll("[role=dialog]")].at(-1);
+    const list = document.querySelector('[role=listbox][aria-label="${START_FROM}"]');
+    if (!list) { dialog?.querySelector('button[aria-label="${START_FROM}"]')?.click(); return null; }
+    return [...list.querySelectorAll("[data-pill-group]")].map((heading) => heading.textContent.trim()).join(" | ");
+  })()`;
+}
+
+/** NewBotDialog with Start from: Team map, a named team, New Bot. */
 export async function openNewBotDialog(flow: NewBotFlow): Promise<void> {
-  const hasStartingRole = async () => (await flow.snapshot()).includes("Starting role");
+  const hasStartingRole = async () => (await flow.snapshot()).includes(START_FROM);
   const createBotReady = async () => Boolean(await flow.evaluate(`Boolean([...document.querySelectorAll("[role=dialog] button")].find((button) => (button.textContent || "").trim() === "Create bot"))`));
   if (await hasStartingRole() && await createBotReady()) return;
-  await dismissOverlays(flow, (snap) => snap.includes("Starting role") && snap.includes("Create bot"));
+  await dismissOverlays(flow, (snap) => snap.includes(START_FROM) && snap.includes("Create bot"));
   const click = (name: string) => clickAccessible(flow, name);
 
   const hasNewBot = async () => {

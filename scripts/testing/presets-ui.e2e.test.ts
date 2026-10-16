@@ -8,8 +8,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
-import { jsLiteral } from "./js-literal.mjs";
-import { openNewBotDialog, openTemplatesCatalog } from "./compose-flow.ts";
+import { chooseStartFromJs, openNewBotDialog, openTemplatesCatalog, START_FROM, startFromGroupsJs } from "./compose-flow.ts";
 import { clickAccessible } from "./ui-click.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -96,7 +95,7 @@ describe("Preset bots in the real renderer", () => {
     await ui("screenshot", "--out", evidence("import-preview"));
     await click("Add presets");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Preset bots added to New bot: 1");
-    const [filePreset] = (await api("/api/bot-presets")).presets as Array<{ id: string }>;
+    const [filePreset] = (await api("/api/bot-presets")).presets as Array<{ id: string; name: string }>;
 
     // An organization preset, as the organization library stores one.
     const presetsFile = join(info!.dataDir, "org-library", "presets.json");
@@ -116,7 +115,9 @@ describe("Preset bots in the real renderer", () => {
     await click("Include my New bot defaults as a preset");
     await expect.poll(snapshot, { timeout: 20_000 }).toContain('term "Preset bots"');
     expect(await snapshot()).toContain('StaticText "1 · Sky"');
-    expect(await snapshot()).toContain("Never their model, folder, computer, approval level or connected apps.");
+    // The hint sits behind the switch's help button (a closed <details>), so it
+    // is in the dialog's text but not in the accessibility snapshot.
+    expect(await evaluate(`[...document.querySelectorAll('[role=dialog]')].some((dialog) => dialog.textContent.includes("Never their model, folder, computer, approval level or connected apps."))`)).toBe(true);
     await ui("screenshot", "--out", evidence("share-team"));
     await click("Cancel");
     await ui("press", "--keys", "Escape");
@@ -124,27 +125,26 @@ describe("Preset bots in the real renderer", () => {
 
     // New bot: organization presets, then imported ones, above the built-in roles.
     const bots = async () => (await api("/api/bots")).bots as Array<{ id: string; name: string; installedPackage?: Record<string, unknown> }>;
-    const create = async (value: string, expected: string, shot: string) => {
+    const create = async (label: string, expected: string, shot: string) => {
       const before = await bots();
       await openNewBotDialog(newBot);
       await expect.poll(async () => (await ui("eval", "--js", "[...document.querySelectorAll('[role=dialog] button')].find(button => button.textContent.trim() === 'Create bot')?.disabled")).result, { timeout: 20_000 }).toBe(false);
-      await expect.poll(() => evaluate("[...document.querySelectorAll('[role=dialog] select optgroup')].map(group => group.label).join(' | ')"), { timeout: 10_000 })
+      // Start from is a pill menu (#596): presets by source, then the roles.
+      await expect.poll(async () => String(await evaluate(startFromGroupsJs())).split(" | ").slice(0, 3).join(" | "), { timeout: 10_000 })
         .toBe("From Acme Partners | Imported presets | Built-in roles");
-      // Native select popups do not take routed keys reliably in headless
-      // Chrome; the real select's change handler runs without the OS popup.
-      await evaluate(`(() => { const select = [...document.querySelectorAll('[role=dialog] select')].find(item => item.querySelector('optgroup')); select.value = ${jsLiteral(value)}; select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      await expect.poll(() => evaluate(chooseStartFromJs(label)), { timeout: 10_000 }).toBe(true);
       await expect.poll(snapshot, { timeout: 10_000 }).toContain(expected);
       await ui("screenshot", "--out", evidence(shot));
       await click("Create bot");
       await expect.poll(async () => (await bots()).length, { timeout: 15_000 }).toBe(before.length + 1);
-      await expect.poll(async () => !(await snapshot()).includes("Starting role"), { timeout: 10_000 }).toBe(true);
+      await expect.poll(async () => !(await snapshot()).includes(START_FROM), { timeout: 10_000 }).toBe(true);
       return (await bots()).find((bot) => !before.some((old) => old.id === bot.id))!;
     };
-    const fromFile = await create(`preset:${filePreset!.id}`, "Skills, added switched off: follow-up", "new-bot-file");
+    const fromFile = await create(filePreset!.name, "Skills, added switched off: follow-up", "new-bot-file");
     expect(fromFile).toMatchObject({ name: expect.stringMatching(/^Sky/), installedPackage: { source: "file", presetKey: "new-bot-defaults" } });
     expect((await api(`/api/bots/${fromFile.id}/skills`)).skills).toEqual([expect.objectContaining({ name: "follow-up", enabled: false })]);
     expect((await api(`/api/bots/${fromFile.id}/memory/file?path=MEMORY.md`)).text).toBe("- Customers first.\n");
-    const fromOrg = await create("preset:org-preset-1", "Skills, added switched on: follow-up", "new-bot-org");
+    const fromOrg = await create(orgRow.name, "Skills, added switched on: follow-up", "new-bot-org");
     expect(fromOrg.installedPackage).toMatchObject({ source: "org", presetKey: "new-bot-defaults", ref: "acme/sky" });
     expect((await api(`/api/bots/${fromOrg.id}/skills`)).skills).toEqual([expect.objectContaining({ name: "follow-up", enabled: true })]);
     process.stdout.write(`${JSON.stringify({ fixture: info!, savedFile: true, presetsInNewBot: 2 })}\n`);

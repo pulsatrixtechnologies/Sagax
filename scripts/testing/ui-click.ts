@@ -4,8 +4,9 @@
 // hittable again.
 import { jsLiteral } from "./js-literal.mjs";
 
-export function openProfileAria(name: string): string {
-  return `Open ${name}'s profile`;
+/** The chat header's bot pill (chat.openPanelAria): it opens the bot panel. */
+export function openPanelAria(name: string): string {
+  return `Open ${name}'s panel`;
 }
 
 export function clickByAccessibleNameJs(name: string): string {
@@ -36,6 +37,17 @@ export function clickByAccessibleNameJs(name: string): string {
     if (!el) return false;
     el.click();
     return true;
+  })()`;
+}
+
+/** Settings > a page, by its entry in the left nav. A page name can also be a
+ * section heading elsewhere (General has an Appearance section), so a click
+ * by accessible name is ambiguous. False until the lazy Settings chunk paints. */
+export function openSettingsPageJs(page: string): string {
+  return `(() => {
+    const entry = [...document.querySelectorAll('[role="dialog"] nav button')].find((button) => button.textContent.trim() === ${jsLiteral(page)});
+    entry?.click();
+    return Boolean(entry);
   })()`;
 }
 

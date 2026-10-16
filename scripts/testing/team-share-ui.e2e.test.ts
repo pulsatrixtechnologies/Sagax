@@ -78,8 +78,18 @@ describe("Share team in the real renderer", () => {
     // Save, but every skill box is drawn from the refusal.
     const saveDisabled = () => evaluate(`[...document.querySelectorAll('[role=dialog] button')].find((button) => button.textContent === "Save file").disabled`);
     await expect.poll(snapshot, { timeout: 20_000 }).toContain("This team is too large to share (4 MB).");
+    // The skill boxes sit in the folded "Include skills" row (#596): unfold it.
+    await expect.poll(() => evaluate(`(() => {
+      const fold = document.querySelector('[role=dialog] button[aria-label="Include skills"][aria-expanded]');
+      if (fold?.getAttribute("aria-expanded") === "false") fold.click();
+      return fold?.getAttribute("aria-expanded") === "true";
+    })()`), { timeout: 10_000 }).toBe(true);
+    // The starter-notes line is the help behind the notes switch (a closed
+    // <details>): in the dialog's text, not in the accessibility snapshot.
+    const notesHelp = () => evaluate(`[...document.querySelectorAll('[role=dialog]')].map((dialog) => dialog.textContent).join(" ").match(/Starter notes are (not )?included/)?.[0] ?? null`);
     let dialog = await snapshot();
-    for (const line of ["research-brief", "fill-01", "fill-30", "Starter notes are included", "Save file"]) expect(dialog).toContain(line);
+    for (const line of ["research-brief", "fill-01", "fill-30", "Save file"]) expect(dialog).toContain(line);
+    expect(await notesHelp()).toBe("Starter notes are included");
     expect(dialog).not.toContain("What's in the file");
     expect(await saveDisabled()).toBe(true);
     await ui("screenshot", "--out", join(ROOT, ".omb-scratch", "verify-evidence", "share-team-refused.png"));
@@ -91,9 +101,9 @@ describe("Share team in the real renderer", () => {
     expect(dialog).not.toContain("too large to share");
     // Starter notes are in by default; unticking takes them out, ticking puts them back.
     await click("Include starter notes (each bot's MEMORY.md and topic notes)");
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Starter notes are not included");
+    await expect.poll(notesHelp, { timeout: 10_000 }).toBe("Starter notes are not included");
     await click("Include starter notes (each bot's MEMORY.md and topic notes)");
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Starter notes are included");
+    await expect.poll(notesHelp, { timeout: 10_000 }).toBe("Starter notes are included");
     // 31 ticked on one bot cannot fit: a sentence, the boxes stay, no Save.
     await click("fill-01");
     await expect.poll(snapshot, { timeout: 20_000 }).toContain("Scout has more than 30 skills. Choose fewer skills and try again.");

@@ -113,34 +113,6 @@ function elapsedSeconds(text: string): number {
   return -1;
 }
 
-/** Threads default to the chat header. The timer case needs the list under
- * the bot in the sidebar so `data-sidebar-thread-row` stays mounted. */
-async function putThreadsInSidebar(handle: string): Promise<void> {
-  await ui("click", handle, "--name", "You");
-  await ui("click", handle, "--name", "Settings");
-  await ui("click", handle, "--name", "Appearance");
-  await ui("eval", handle, "--js", `(() => {
-    const select = document.querySelector('select[aria-label="Threads location"]');
-    if (!(select instanceof HTMLSelectElement)) throw new Error("Threads location is missing");
-    select.value = "sidebar";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-    return select.value;
-  })()`);
-  await ui("click", handle, "--name", "Close settings");
-}
-
-/** Selection can already expand a thread list. Click only its collapsed DOM
- * chevron, avoiding both accidental collapse and transient duplicate AX names. */
-async function expandThreads(handle: string, name: string): Promise<void> {
-  const collapsed = JSON.stringify(`button[aria-label="Expand ${name} threads"]`);
-  const expanded = JSON.stringify(`button[aria-label="Collapse ${name} threads"]`);
-  await waitUntil(async () => (await ui("eval", handle, "--js", `(() => {
-    if (document.querySelector(${expanded})) return true;
-    document.querySelector(${collapsed})?.click();
-    return false;
-  })()`)).result, 10_000, `${name}'s thread list to expand`);
-}
-
 /** Poll a probe until it returns a truthy value; fail with the last result. */
 async function waitUntil<T>(probe: () => Promise<T>, timeoutMs: number, what: string): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -184,8 +156,26 @@ describe("the thinking timer stays anchored across a thread switch", () => {
     const api = fixtureApi(info.url);
     const evaluate = async (js: string) => (await ui("eval", info.ui, "--js", js)).result;
     const timerText = () => evaluate(`document.querySelector('.turn-presence .tabular-nums')?.textContent ?? null`);
-    const selectThread = (threadId: string) => evaluate(`document.querySelector('[data-sidebar-thread-row="${threadId}"]')?.click(); true`);
-    const isCurrent = (threadId: string) => evaluate(`Boolean(document.querySelector('[data-sidebar-thread-row="${threadId}"][aria-current="page"]'))`);
+    // A bot's threads live in the chat header's thread picker ("All threads"),
+    // in either Threads location: nothing unfolds under the bot row any more
+    // (Sidebar.threads-location.layout.test.ts). Its rows are mounted only
+    // while the picker is open.
+    const openPicker = () => evaluate(`(() => {
+      if (!document.querySelector('[data-sidebar-thread-row]')) document.querySelector('main button[aria-label="All threads"]')?.click();
+      return Boolean(document.querySelector('[data-sidebar-thread-row]'));
+    })()`);
+    const selectThread = async (threadId: string) => {
+      await waitUntil(openPicker, 10_000, "the thread picker to open");
+      await evaluate(`document.querySelector('[data-sidebar-thread-row="${threadId}"]')?.click(); true`);
+    };
+    const closePicker = () => waitUntil(() => evaluate(`(() => {
+      if (document.querySelector('[data-sidebar-thread-row]')) document.querySelector('main button[aria-label="All threads"]')?.click();
+      return !document.querySelector('[data-sidebar-thread-row]');
+    })()`), 10_000, "the thread picker to close");
+    const isCurrent = async (threadId: string) => {
+      await waitUntil(openPicker, 10_000, "the thread picker to open");
+      return evaluate(`Boolean(document.querySelector('[data-sidebar-thread-row="${threadId}"][aria-current="page"]'))`);
+    };
     const taskOf = async (threadId: string) =>
       (await api("GET", "/api/bots")).bots.find((bot: any) => bot.id === info.botId).tasks.find((task: any) => task.threadId === threadId);
 
@@ -193,14 +183,12 @@ describe("the thinking timer stays anchored across a thread switch", () => {
     // POST the sidebar's "New thread" menu item dispatches.
     const busyThread = (await api("GET", "/api/bots")).bots.find((bot: any) => bot.id === info.botId).threadId;
     const otherThread = (await api("POST", `/api/bots/${info.botId}/tasks`, {})).task.threadId;
-    await putThreadsInSidebar(info.ui);
-    // Expand Pepper's thread list if selection has not already opened it.
-    await expandThreads(info.ui, "Pepper");
-    await waitUntil(() => evaluate(`Boolean(document.querySelector('[data-sidebar-thread-row="${otherThread}"]'))`), 10_000, "the new thread's sidebar row to appear");
+    await waitUntil(async () => (await openPicker()) && evaluate(`Boolean(document.querySelector('[data-sidebar-thread-row="${otherThread}"]'))`), 10_000, "the new thread's picker row to appear");
     // Creating a thread selects it on the server. Pin the original thread in
     // the renderer before sending the turn whose stamp this case observes.
     await selectThread(busyThread);
     await waitUntil(() => isCurrent(busyThread), 10_000, "the original thread to become current");
+    await closePicker();
 
     // The composer sends; the hang-mode engine accepts the turn and holds it.
     await ui("type", info.ui, "--name", "Message Pepper", "--text", "hello");
@@ -226,9 +214,11 @@ describe("the thinking timer stays anchored across a thread switch", () => {
     // Switch to the other thread, dwell, and come back.
     await selectThread(otherThread);
     await waitUntil(() => isCurrent(otherThread), 10_000, "the other thread to become current");
+    await closePicker();
     await new Promise((done) => setTimeout(done, 3_000));
     await selectThread(busyThread);
     await waitUntil(() => isCurrent(busyThread), 10_000, "the busy thread to become current again");
+    await closePicker();
 
     // The readout resumes from the stamp — a restart would show single
     // digits after a 13+ second turn.
