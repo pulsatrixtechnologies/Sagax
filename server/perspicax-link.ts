@@ -212,6 +212,21 @@ export interface AvatarImage {
   contentType: "image/png" | "image/jpeg";
 }
 
+/** 2026-10-16 (Perspicax 1.8.31): where the signed-in person sets or removes
+ * their own avatar from Sagax. Bearer link token plus the person's sign-in
+ * access token in SUBJECT_TOKEN_HEADER: never the link token alone. */
+export const OWN_AVATAR_PATH = "/api/v1/pulsabot/people/me/avatar";
+export const SUBJECT_TOKEN_HEADER = "x-perspicax-subject-token";
+export const OWN_AVATAR_TIMEOUT_MS = 10_000;
+const OWN_AVATAR_ANSWER_MAX_BYTES = 8 * 1024;
+/** What a write of the person's own avatar did: `avatar` the directory's new
+ * version (null once removed). `subject`: Perspicax refused the person's
+ * sign-in token; `unsupported`: an older Perspicax without the route;
+ * `rejected`: Perspicax refused the image (its message kept). */
+export type OwnAvatarWrite =
+  | { ok: true; avatar: string | null }
+  | { ok: false; error: "link" | "subject" | "unsupported" | "rejected" | "unreachable"; status?: number; message?: string };
+
 /** What an image's first bytes say it is; only a PNG or a JPEG is served. */
 export function avatarContentType(bytes: Uint8Array): AvatarImage["contentType"] | null {
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return "image/png";
@@ -842,6 +857,81 @@ export class PerspicaxDirectory {
     }
     this.avatarCache.set(cacheKey, image);
     return image;
+  }
+
+  /** Drop every cached avatar of a subject (their photo changed). */
+  forgetAvatar(sub: string): void {
+    for (const key of this.avatarCache.keys()) if (key.startsWith(`${sub}\u0000`)) this.avatarCache.delete(key);
+  }
+
+  /** 2026-10-16: the signed-in person sets (an image) or removes (null)
+   * their own Perspicax avatar: `PUT`/`DELETE` OWN_AVATAR_PATH with both the
+   * link token (`Authorization: Bearer`, which server calls) and the
+   * person's live sign-in access token (SUBJECT_TOKEN_HEADER, who). The link
+   * token alone opens no person on that route, so this server can only
+   * change the photo of the person whose token it holds. A 401 re-reads the
+   * link file once. Never logs a token or the image; never throws. */
+  async writeOwnAvatar(subjectToken: string, image: AvatarImage | null): Promise<OwnAvatarWrite> {
+    let link = this.link ?? this.readLink();
+    if (!link) return { ok: false, error: "link" };
+    const call = (token: string) => {
+      const headers: Record<string, string> = { accept: "application/json", authorization: `Bearer ${token}`, [SUBJECT_TOKEN_HEADER]: subjectToken };
+      let body: FormData | undefined;
+      if (image) {
+        body = new FormData();
+        body.append("file", new Blob([new Uint8Array(image.bytes)], { type: image.contentType }), image.contentType === "image/png" ? "avatar.png" : "avatar.jpg");
+      }
+      return this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}${OWN_AVATAR_PATH}`, {
+        method: image ? "PUT" : "DELETE",
+        redirect: "error",
+        signal: AbortSignal.timeout(OWN_AVATAR_TIMEOUT_MS),
+        headers,
+        ...(body ? { body } : {}),
+      });
+    };
+    let response: Response;
+    try {
+      response = await call(link.linkToken);
+      if (response.status === 401) {
+        void response.body?.cancel().catch(() => {});
+        const again = this.readLink();
+        if (!again) return { ok: false, error: "link" };
+        link = again;
+        response = await call(link.linkToken);
+      }
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    let text: string | null;
+    try {
+      text = await readLimited(response, OWN_AVATAR_ANSWER_MAX_BYTES);
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    let parsed: Record<string, unknown> = {};
+    try {
+      const value: unknown = text ? JSON.parse(text) : null;
+      if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+    } catch {
+      /* not JSON */
+    }
+    const status = response.status;
+    if (status === 401) return { ok: false, error: "link", status };
+    if (status === 403) return { ok: false, error: parsed.code === "subject" ? "subject" : "link", status };
+    // An older Perspicax has no such route (the GET-only `{sub}/avatar` answers 405).
+    if (status === 404 || status === 405) return { ok: false, error: "unsupported", status };
+    if (status === 400 || status === 413 || status === 422) {
+      const message = typeof parsed.message === "string" ? parsed.message.slice(0, 200) : undefined;
+      return { ok: false, error: "rejected", status, ...(message ? { message } : {}) };
+    }
+    if (status !== 200) return { ok: false, error: "unreachable", status };
+    const value = parsed.value && typeof parsed.value === "object" ? (parsed.value as Record<string, unknown>) : {};
+    const avatar = value.avatar;
+    if (image) {
+      if (typeof avatar !== "string" || !/^[0-9A-Za-z_-]{1,64}$/.test(avatar)) return { ok: false, error: "unreachable", status };
+      return { ok: true, avatar };
+    }
+    return { ok: true, avatar: null };
   }
 
   start(intervalMs: number): void {

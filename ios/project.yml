@@ -141,8 +141,8 @@ targets:
           Sagax finds your computer on this network so your bots can
           reach you here.
         NSCameraUsageDescription: >-
-          Sagax uses the camera only to scan a pairing QR code shown on
-          your computer.
+          Sagax uses the camera to scan a pairing QR code shown on your
+          computer and, when you choose it, to take your profile photo.
         NSMicrophoneUsageDescription: >-
           Sagax listens while you dictate a message to a bot or talk with
           one on a call.

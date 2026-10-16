@@ -6,8 +6,10 @@
 //             email [copy]
 //             Managed by your organization · Edit in Perspicax
 //
-// On an organization server (Pulsatrix Perspicax) the name, email and avatar
-// are Perspicax's and read-only; the server and the organization stay one
+// On an organization server (Pulsatrix Perspicax) the name and email are
+// Perspicax's and read-only; the signed-in person changes their own photo
+// from the avatar (OwnAvatarField: crop, then written to Perspicax as them,
+// 2026-10-16); the server and the organization stay one
 // hover away, on "Managed by your organization". On a personal server the
 // operator edits name, email and photo here; the label stays; the action is
 // the desktop's server switcher instead of Sign out. Sign out is the
@@ -28,6 +30,7 @@ import { useDesktopWorkspace } from "../DesktopWorkspaceSwitcher";
 import type { ServerModeState } from "../ServerModeSettings";
 import { profileInitials, profileLabel } from "../SidebarProfileMenu";
 import { MyLabelField } from "./MyLabelField";
+import { OwnAvatarField, OwnAvatarStatusLine, type OwnAvatarStatus } from "./OwnAvatarField";
 
 type LockedServer = Extract<ServerModeState, { active: true }>;
 
@@ -57,6 +60,10 @@ export function AccountCard({ lockedServer }: { lockedServer: LockedServer | nul
   const operator = !managed && !(viewer && !viewer.operator);
   const organization = (org?.org.name || lockedServer?.name || "").trim();
   const [signOutFailed, setSignOutFailed] = useState(false);
+  const [photoStatus, setPhotoStatus] = useState<OwnAvatarStatus>({ kind: "idle" });
+  // 2026-10-16: on an organization server the signed-in person changes their
+  // own photo here; it is written to Perspicax as them (OwnAvatarField).
+  const ownPhotoPrincipal = managed && viewer && !viewer.operator ? viewer.principalId?.trim() || null : null;
   const workspace = useDesktopWorkspace();
   const switcher = !lockedServer && workspace.available;
 
@@ -80,6 +87,14 @@ export function AccountCard({ lockedServer }: { lockedServer: LockedServer | nul
             email={managed?.email || viewer?.email || ""}
             avatarUrl={managed?.avatarUrl}
             action={action}
+            avatar={ownPhotoPrincipal ? (
+              <OwnAvatarField
+                principalId={ownPhotoPrincipal}
+                avatarUrl={managed?.avatarUrl}
+                initials={profileInitials({ name: managed?.name || viewer?.name || "", email: managed?.email || viewer?.email || "" })}
+                onStatus={setPhotoStatus}
+              />
+            ) : undefined}
           >
             {managed ? (
               <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] leading-4 text-ink-secondary">
@@ -102,6 +117,7 @@ export function AccountCard({ lockedServer }: { lockedServer: LockedServer | nul
             ) : null}
           </ReadOnlyIdentity>
         )}
+      <OwnAvatarStatusLine status={photoStatus} />
       {signOutFailed && <p role="alert" className="mt-2 text-[12px] text-danger">{t("settings.serverMode.signOutFailed")}</p>}
       {workspace.error && <p role="alert" className="mt-2 text-[12px] text-danger">{workspace.error}</p>}
     </div>
@@ -138,20 +154,22 @@ function CopyEmailButton({ state, copy }: ReturnType<typeof useCopyFeedback>) {
   );
 }
 
-function ReadOnlyIdentity({ name, email, avatarUrl, action, children }: {
+function ReadOnlyIdentity({ name, email, avatarUrl, avatar, action, children }: {
   name: string;
   email: string;
   avatarUrl?: string;
+  /** Replaces the picture (the person's own photo button). */
+  avatar?: React.ReactNode;
   action: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center gap-3 text-left" data-testid="account-identity">
-      {avatarUrl ? (
+      {avatar ?? (avatarUrl ? (
         <img src={avatarUrl} alt="" width={36} height={36} className="size-9 shrink-0 rounded-full object-cover" />
       ) : (
         <InitialsAvatar initials={profileInitials({ name, email })} size={36} />
-      )}
+      ))}
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium leading-[18px] text-ink">{profileLabel({ name, email })}</div>
         <MyLabelField />

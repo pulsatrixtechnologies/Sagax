@@ -2026,6 +2026,60 @@ final class Session: ObservableObject {
         }
     }
 
+    /// The signed-in person's own photo on an organization server
+    /// (2026-10-16): the cropped 256 px square goes to PUT /api/me/avatar,
+    /// which writes it to Perspicax as them. On success the photo is kept
+    /// under its new version at once (no download), and the session names
+    /// it. Nil on success, else the sentence to show.
+    func setOwnPhoto(_ data: Data, mime: String) async -> String? {
+        guard let client, let connectionID = connection?.id else { return String(localized: "Perspicax could not be reached. Try again.") }
+        do {
+            let answer = try await client.setOwnAvatar(data, mime: mime)
+            applyOwnPhoto(answer, data: data, connectionID: connectionID)
+            return nil
+        } catch {
+            return Self.ownPhotoMessage(error)
+        }
+    }
+
+    /// Remove the signed-in person's own photo: the initial again, here and
+    /// in Perspicax. Nil on success, else the sentence to show.
+    func removeOwnPhoto() async -> String? {
+        guard let client, let connectionID = connection?.id else { return String(localized: "Perspicax could not be reached. Try again.") }
+        do {
+            let answer = try await client.removeOwnAvatar()
+            applyOwnPhoto(answer, data: nil, connectionID: connectionID)
+            return nil
+        } catch {
+            return Self.ownPhotoMessage(error)
+        }
+    }
+
+    private func applyOwnPhoto(_ answer: OwnAvatarAnswer, data: Data?, connectionID: String) {
+        account?.avatarUrl = answer.avatarUrl
+        let store = AccountPhotoStore.shared
+        if let avatar = answer.avatar, let data {
+            let image = store.store(data, avatar: avatar, connectionID: connectionID)
+            if connection?.id == connectionID { accountPhoto = image }
+        } else {
+            store.forget(connectionID)
+            if connection?.id == connectionID { accountPhoto = nil }
+        }
+    }
+
+    static func ownPhotoMessage(_ error: Error) -> String {
+        switch (error as? OwnAvatarError)?.refusal {
+        case .sessionOnly: return String(localized: "Only a person signed in with Pulsatrix can change this photo.")
+        case .signInAgain: return String(localized: "Your Pulsatrix sign-in has expired. Sign in again, then retry.")
+        case .type: return String(localized: "Choose a PNG, JPEG or WebP image.")
+        case .unreadable: return String(localized: "This image could not be read.")
+        case .tooLarge: return String(localized: "This image is too large.")
+        case .rejected: return String(localized: "Perspicax refused this image. Try another one.")
+        case .outdated: return String(localized: "Your organization's Perspicax must be updated before the photo can be changed from Sagax.")
+        case .unreachable, .none: return String(localized: "Perspicax could not be reached. Try again.")
+        }
+    }
+
     /// Switch Account shows each saved connection's own photo. The ones not
     /// in use are asked once, each through its own server and bearer, with a
     /// short timeout; one that does not answer keeps its last photo.

@@ -67450,6 +67450,216 @@
         }
       }
     },
+    "Change Photo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changer la photo"
+          }
+        }
+      }
+    },
+    "Remove Photo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer la photo"
+          }
+        }
+      }
+    },
+    "Choose from Library": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir dans la photothèque"
+          }
+        }
+      }
+    },
+    "Take Photo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prendre une photo"
+          }
+        }
+      }
+    },
+    "Remove your photo?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer votre photo ?"
+          }
+        }
+      }
+    },
+    "Your initials will show instead, in Sagax and in Perspicax.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos initiales s'afficheront à la place, dans Sagax et dans Perspicax."
+          }
+        }
+      }
+    },
+    "Crop your photo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recadrer la photo"
+          }
+        }
+      }
+    },
+    "Use This Photo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser cette photo"
+          }
+        }
+      }
+    },
+    "Zoom": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom"
+          }
+        }
+      }
+    },
+    "Drag to place your face in the circle. The photo is saved in Pulsatrix Perspicax and shown everywhere you appear.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glissez pour placer votre visage dans le cercle. La photo est enregistrée dans Pulsatrix Perspicax et s'affiche partout où vous apparaissez."
+          }
+        }
+      }
+    },
+    "Saving your photo…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrement de la photo…"
+          }
+        }
+      }
+    },
+    "Photo updated.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo mise à jour."
+          }
+        }
+      }
+    },
+    "Photo removed.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo retirée."
+          }
+        }
+      }
+    },
+    "This image could not be read.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de lire cette image."
+          }
+        }
+      }
+    },
+    "This image is too large.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette image est trop volumineuse."
+          }
+        }
+      }
+    },
+    "Only a person signed in with Pulsatrix can change this photo.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seule une personne connectée avec Pulsatrix peut changer cette photo."
+          }
+        }
+      }
+    },
+    "Your Pulsatrix sign-in has expired. Sign in again, then retry.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre connexion Pulsatrix a expiré. Reconnectez-vous, puis réessayez."
+          }
+        }
+      }
+    },
+    "Choose a PNG, JPEG or WebP image.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez une image PNG, JPEG ou WebP."
+          }
+        }
+      }
+    },
+    "Perspicax refused this image. Try another one.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Perspicax a refusé cette image. Essayez-en une autre."
+          }
+        }
+      }
+    },
+    "Your organization's Perspicax must be updated before the photo can be changed from Sagax.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le Perspicax de votre organisation doit être mis à jour avant de pouvoir changer la photo depuis Sagax."
+          }
+        }
+      }
+    },
+    "Perspicax could not be reached. Try again.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre Perspicax. Réessayez."
+          }
+        }
+      }
+    },
     "Playback speed": {
       "localizations": {
         "fr": {

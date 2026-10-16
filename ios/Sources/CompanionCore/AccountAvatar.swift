@@ -106,3 +106,66 @@ extension AccountAvatar {
         return bytes.count == 12 && bytes.starts(with: Array("RIFF".utf8)) && Array(bytes[8..<12]) == Array("WEBP".utf8)
     }
 }
+
+// MARK: - The person's own photo (PUT/DELETE /api/me/avatar, 2026-10-16)
+
+/// What the server answers after the person's own photo changed: the new
+/// versioned route of their photo, nil once removed.
+public struct OwnAvatarAnswer: Decodable, Equatable, Sendable {
+    public var ok: Bool
+    public var avatarUrl: String?
+    public var avatar: AccountAvatar? { AccountAvatar(avatarUrl) }
+}
+
+/// Why the server refused the person's own photo (`code` of the answer).
+public enum OwnAvatarRefusal: String, Sendable {
+    case sessionOnly = "avatar_session_only"
+    case signInAgain = "avatar_sign_in_again"
+    case type = "avatar_type"
+    case unreadable = "avatar_unreadable"
+    case tooLarge = "avatar_too_large"
+    case rejected = "avatar_rejected"
+    case outdated = "avatar_perspicax_outdated"
+    case unreachable = "avatar_unreachable"
+}
+
+public struct OwnAvatarError: Error, Equatable, Sendable {
+    public let refusal: OwnAvatarRefusal?
+    public let status: Int?
+}
+
+extension CompanionClient {
+    /// The largest image this app sends: the 256 px square it cropped.
+    public static let ownAvatarMaxBytes = 256 * 1024
+
+    /// Set the signed-in person's own photo on an organization server: the
+    /// 256 px square, PNG or JPEG. The server writes it to Perspicax as them.
+    public func setOwnAvatar(_ data: Data, mime: String) async throws -> OwnAvatarAnswer {
+        guard mime == "image/png" || mime == "image/jpeg", data.count <= Self.ownAvatarMaxBytes, AccountAvatar.isImage(data) else {
+            throw OwnAvatarError(refusal: .type, status: nil)
+        }
+        var request = try makeRequest("PUT", "/api/me/avatar")
+        request.setValue(mime, forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+        return try await ownAvatarCall(request)
+    }
+
+    /// Remove the signed-in person's own photo (back to the initial).
+    public func removeOwnAvatar() async throws -> OwnAvatarAnswer {
+        try await ownAvatarCall(try makeRequest("DELETE", "/api/me/avatar"))
+    }
+
+    private func ownAvatarCall(_ request: URLRequest) async throws -> OwnAvatarAnswer {
+        let (data, response) = try await perform(request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            struct Refusal: Decodable { var code: String? }
+            let code = (try? JSONDecoder().decode(Refusal.self, from: data))?.code
+            throw OwnAvatarError(refusal: code.flatMap(OwnAvatarRefusal.init(rawValue:)), status: status)
+        }
+        guard let answer = try? JSONDecoder().decode(OwnAvatarAnswer.self, from: data), answer.ok else {
+            throw OwnAvatarError(refusal: .unreachable, status: status)
+        }
+        return answer
+    }
+}

@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { personAvatarSrc } from "@/lib/profile-management";
+import { PERSON_AVATAR_EVENT } from "@/lib/person-avatars";
 import type { OrgGithubTokenPublic } from "../../shared/org-github-tokens";
 
 export interface PerspicaxOrg {
@@ -67,7 +68,10 @@ export function useOrgPeople(): Map<string, OrgDirectoryPerson> {
   useEffect(() => {
     let alive = true;
     void loadOrgPeople().then((value) => { if (alive) setPeople(value); });
-    return () => { alive = false; };
+    // A photo changed (src/lib/person-avatars.ts): read the directory again.
+    const reload = () => { void loadOrgPeople(true).then((value) => { if (alive) setPeople(value); }); };
+    window.addEventListener(PERSON_AVATAR_EVENT, reload);
+    return () => { alive = false; window.removeEventListener(PERSON_AVATAR_EVENT, reload); };
   }, []);
   return people;
 }

@@ -1178,6 +1178,9 @@ export type ServerFrame =
   /** A person's custom label changed (server/routes/person-labels.ts); null
    * cleared it. Every stream. */
   | { kind: "person.label"; principalId: string; label: string | null }
+  /** A person changed their own photo from Sagax (server/routes/me-avatar.ts):
+   * the new versioned URL, null once removed. Every stream. */
+  | { kind: "person.avatar"; principalId: string; avatarUrl: string | null }
   /** Organization server (2026-10-08), admins' streams only: how many
    * approvals wait for an organization admin, and the ones that just arrived. */
   | { kind: "org.approvals"; count: number; added: Array<{ requestId: string; botName: string; ownerName?: string; requestedBy?: string; tool?: string; summary?: string }> }

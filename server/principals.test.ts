@@ -12,6 +12,18 @@ function registry() {
 }
 
 describe("principal registry", () => {
+  it("keeps the person's own avatar version set from Sagax, clears it with null, and ignores a malformed one", () => {
+    const { path, reg } = registry();
+    const a = reg.forSubject({ iss: "https://px.example", sub: "u1", claims: { name: "Ada" } });
+    expect(reg.setAvatar(a.id, "0123456789abcdef")?.avatar).toBe("0123456789abcdef");
+    expect(reg.setAvatar(a.id, "not a version!")?.avatar).toBe("0123456789abcdef");
+    expect(reg.setAvatar("pr_00000000-0000-4000-8000-0000000000ff", "abc")).toBeNull();
+    const again = new PrincipalRegistry({ path, now: () => 2000, newId: () => "unused" });
+    expect(again.byId(a.id)?.avatar).toBe("0123456789abcdef");
+    expect(again.setAvatar(a.id, null)?.avatar).toBeUndefined();
+    expect(JSON.parse(readFileSync(path, "utf8")).principals[0]).not.toHaveProperty("avatar");
+  });
+
   it("keeps a person's label across a restart, clears it with null, and reads a malformed one as absent", () => {
     const { path, reg } = registry();
     const a = reg.forSubject({ iss: "https://px.example", sub: "u1", claims: { name: "Ada" } });

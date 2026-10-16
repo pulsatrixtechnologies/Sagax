@@ -925,6 +925,7 @@ import { TemplateLinks } from "./template-links.ts";
 import { createTeamBotFromThreadRoutes } from "./routes/team-bot-from-thread.ts";
 import { awaySkipsDetail, LocalAwayTracker, verdictFromPresence, type AwayVerdict } from "./routine-away.ts";
 import { createPersonLabelRoutes } from "./routes/person-labels.ts";
+import { createMeAvatarRoutes } from "./routes/me-avatar.ts";
 import { createMediaWidgetRoutes, handleMediaProxy } from "./routes/media-widgets.ts";
 import { initMediaProxy } from "./media-proxy.ts";
 import { videoMessagesFromTool } from "./video-widget-turn.ts";
@@ -26446,6 +26447,36 @@ ROUTES.push(createRoutineAwayRoutes<Routine>({
   },
   clear: (id) => routines?.clearAwaySkips(id) ?? null,
   onWire: (routine) => routineOnWire(routine),
+}));
+// The signed-in person's own photo (server/routes/me-avatar.ts): written to
+// Perspicax with their own sign-in token, then shown everywhere at once.
+ROUTES.push(createMeAvatarRoutes({
+  organization: () => IDENTITY.kind === "perspicax" && perspicaxDirectory !== null,
+  person: (auth) => {
+    if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return null;
+    const principalId = auth.session.principalId?.trim().toLowerCase();
+    const person = principalId ? principals.byId(principalId) : undefined;
+    if (!person?.subject || person.subject.iss !== IDENTITY.issuer || person.disabledAt !== undefined) return null;
+    return { principalId: person.id, sub: person.subject.sub };
+  },
+  subjectToken: async (principalId) => {
+    const person = principals.byId(principalId);
+    if (!idpSessions || !person?.subject) return { ok: false, error: "no_session" };
+    const outcome = await idpSessions.subjectToken({ iss: person.subject.iss, sub: person.subject.sub });
+    return outcome.ok ? { ok: true, token: outcome.token } : { ok: false, error: outcome.error };
+  },
+  write: (token, image) => perspicaxDirectory
+    ? perspicaxDirectory.writeOwnAvatar(token, image)
+    : Promise.resolve({ ok: false as const, error: "link" as const }),
+  applied: ({ principalId, sub, avatar }) => {
+    perspicaxDirectory?.forgetAvatar(sub);
+    const person = principals.setAvatar(principalId, avatar);
+    const avatarUrl = personAvatarUrl(person) ?? null;
+    broadcast({ kind: "person.avatar", principalId, avatarUrl });
+    // Perspicax also asks for it after the audit row; coalesced either way.
+    directoryRefresh.request();
+    return avatarUrl;
+  },
 }));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;

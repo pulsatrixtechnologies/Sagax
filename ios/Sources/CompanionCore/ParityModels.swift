@@ -198,12 +198,19 @@ public struct AuthSession: Decodable, Equatable, Sendable {
     /// organization server (or a stored `/api/attachments/...` picture).
     /// Read through `avatar`; never an address to fetch as is.
     public var avatarUrl: String?
+    /// `perspicax` on an organization server: the name and email are
+    /// Perspicax's, and the person changes their own photo through
+    /// PUT /api/me/avatar (2026-10-16).
+    public var profileManagedBy: String?
+
+    /// Whether this person may change their own photo from the phone.
+    public var ownPhotoEditable: Bool { profileManagedBy == "perspicax" && kind == "session" && principalId != nil }
 
     /// The photo this phone may request from its own server, or nil.
     public var avatar: AccountAvatar? { AccountAvatar(avatarUrl) }
 
     private enum CodingKeys: String, CodingKey {
-        case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role, avatarUrl
+        case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role, avatarUrl, profileManagedBy
     }
 
     public init(from decoder: Decoder) throws {
@@ -224,6 +231,7 @@ public struct AuthSession: Decodable, Equatable, Sendable {
         // address on Perspicax, which the phone never calls.
         let avatar = try? values.decodeIfPresent(String.self, forKey: .avatarUrl)
         avatarUrl = avatar.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+        profileManagedBy = try? values.decodeIfPresent(String.self, forKey: .profileManagedBy)
     }
 
     public var isAdmin: Bool { scopes.contains("admin") }

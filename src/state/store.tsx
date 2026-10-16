@@ -77,6 +77,7 @@ import { openLiveEvents, publishLiveFrame, publishMissedFrames } from "@/lib/liv
 import { receiveAchievementsFrame } from "@/lib/achievements";
 import { announceServerPreferences } from "@/lib/user-preferences-sync";
 import { applyPersonLabel } from "@/lib/person-labels";
+import { announcePersonAvatar, withViewerAvatar } from "@/lib/person-avatars";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -5166,6 +5167,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "person.label":
           applyPersonLabel(frame.principalId, frame.label);
           break;
+        // a person changed their own photo (src/lib/person-avatars.ts)
+        case "person.avatar": {
+          const change = { principalId: frame.principalId, avatarUrl: frame.avatarUrl };
+          const config = stateRef.current.config;
+          const next = config ? withViewerAvatar(config, change) : config;
+          if (next && next !== config) rawDispatch({ type: "configStatus", config: next });
+          announcePersonAvatar(change);
+          break;
+        }
         // a read position moved (src/lib/read-receipts-feed.ts)
         case "thread.read":
           receiveThreadReadFrame(frame);

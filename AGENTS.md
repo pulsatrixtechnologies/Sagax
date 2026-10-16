@@ -660,6 +660,29 @@ onboarding tests:
   keeps it per connection keyed by the versioned URL; it reads the session
   again at each foreground (`ios/UITests/OrgAvatarUITests.swift`,
   `PARITY_ORG=1 node ios/parity/fixture-server.mjs`).
+- The person changes their own photo from Sagax (2026-10-16,
+  `server/routes/me-avatar.ts`): `PUT /api/me/avatar` (raw PNG or JPEG, at
+  most 12 MiB; a 256 px square under 256 KiB is sent as is, anything else is
+  centre cropped and scaled with resvg) and `DELETE /api/me/avatar`. Only
+  the session's own person (403 `avatar_session_only` otherwise, a solo
+  server PASSes). The write goes to Perspicax `PUT`/`DELETE
+  /api/v1/pulsabot/people/me/avatar` (Perspicax 2026-10-16 and later) with
+  the link token as Bearer AND the person's live sign-in access token
+  (`IdpSessionManager.subjectToken`) in `X-Perspicax-Subject-Token`
+  (`PerspicaxDirectory.writeOwnAvatar`): never the link token alone, and no
+  person is named in the request, so nobody changes someone else's photo.
+  On success the principal's version is set (`PrincipalRegistry.setAvatar`),
+  the cached image dropped (`forgetAvatar`), the directory asked again and
+  every stream gets `person.avatar` (`src/lib/person-avatars.ts` patches the
+  viewer's config and reloads the directory). An expired Perspicax sign-in
+  is 409 `avatar_sign_in_again`, never 401 (clients read 401 as their own
+  session ending); an older Perspicax is 501 `avatar_perspicax_outdated`.
+  Desktop: `src/components/settings/OwnAvatarField.tsx` (crop window,
+  `src/lib/avatar-crop.ts`). iPhone: `ios/App/AccountOwnPhoto.swift`
+  (library or camera, crop, `Session.setOwnPhoto`, shown when the session's
+  `profileManagedBy` is `perspicax`). Tests: `server/routes/me-avatar.test.ts`,
+  `server/perspicax-own-avatar.test.ts`, `src/lib/person-avatars.test.ts`,
+  `src/lib/avatar-crop.test.ts`, `ios/Tests/CompanionCoreTests/OwnAvatarTests.swift`.
 - A personal computer whose desktop app is signed in to an organization
   server serves its owner's avatar the same way
   (`server/owner-identity.ts`, `electron/owner-identity.mjs`): main reads

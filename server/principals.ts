@@ -519,6 +519,20 @@ export class PrincipalRegistry {
     return { ...found };
   }
 
+  /** The person's own avatar version once Perspicax accepted a change made
+   * from Sagax (server/routes/me-avatar.ts); null removes it. A malformed
+   * version changes nothing. The next directory confirms it. */
+  setAvatar(id: string, version: string | null): Principal | null {
+    const found = this.principals.find((p) => p.id === id);
+    if (!found) return null;
+    if (version !== null && !AVATAR_VERSION_REGEX.test(version)) return { ...found };
+    if ((found.avatar ?? null) === version) return { ...found };
+    if (version) found.avatar = version;
+    else delete found.avatar;
+    this.persist();
+    return { ...found };
+  }
+
   setEmail(id: string, email: string): Principal | null {
     const found = this.principals.find((p) => p.id === id);
     if (!found) return null;

@@ -335,6 +335,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["PUT"], path: /^\/api\/me\/bot-overrides\/[\w-]+$/ },
   // the desktop's look on a personal computer, for the phone's "Same as my computer"
   { methods: ["GET", "PUT"], path: /^\/api\/me\/appearance$/ },
+  // own photo on an organization server (server/routes/me-avatar.ts): written
+  // to Perspicax with the session person's own sign-in token, never anyone else's
+  { methods: ["PUT", "DELETE"], path: /^\/api\/me\/avatar$/ },
   // own achievements (server/routes/achievements.ts: the session's person only),
   // and colleagues' points (shared unless that person stored public false)
   { methods: ["GET"], path: /^\/api\/me\/achievements$/ },

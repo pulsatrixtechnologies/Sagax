@@ -32,6 +32,12 @@ struct AccountSettingsView: View {
             SettingsCard {
                 AccountCardRow(name: model.displayName, detail: model.detail, photo: session.accountPhoto)
             }
+            // Organization server: the person changes their own photo here;
+            // it is written to Perspicax as them (AccountOwnPhoto.swift).
+            if session.account?.ownPhotoEditable == true {
+                SettingsSpacer(SettingsMetrics.cardGap)
+                AccountOwnPhotoRows()
+            }
             // Card bottom to the next card top: 49, the label between.
             SettingsSectionLabel(text: "Switch Account")
                 .padding(.top, 0.33)
