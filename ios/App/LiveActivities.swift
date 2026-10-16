@@ -28,7 +28,7 @@ final class LiveActivityCoordinator {
         AnswerApprovalIntent.handler = { [weak self, weak session] threadId, requestId, choice, isPermission in
             await self?.answer(session: session, threadId: threadId, requestId: requestId, choice: choice, isPermission: isPermission)
         }
-        cancellable = session.$state.combineLatest(session.$isDemo)
+        cancellable = session.statePublisher.combineLatest(session.$isDemo)
             .debounce(for: .milliseconds(400), scheduler: DispatchQueue.main)
             // No Live Activity for the demo's made-up bots.
             .sink { [weak self] state, isDemo in self?.sync(isDemo ? CompanionState() : state) }

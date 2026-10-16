@@ -676,6 +676,28 @@ final class StreamingTests: XCTestCase {
         XCTAssertEqual(state.streaming["t1"], "the answer")
     }
 
+    func testOnlyATokenIsStreamedText() {
+        // The app folds these without republishing the whole session; a
+        // frame that ends the stream must never be mistaken for one.
+        XCTAssertTrue(delta("a").isStreamedText)
+        XCTAssertTrue(delta("a", kind: "reasoning_text").isStreamedText)
+        XCTAssertFalse(Frame.runtime(RuntimeEvent(type: "turn.completed", threadId: "t1", delta: nil, streamKind: nil)).isStreamedText)
+        XCTAssertFalse(Frame.message(threadId: "t1", message: Message(id: "m1", role: .bot, kind: .text, at: 1, text: "done")).isStreamedText)
+    }
+
+    func testATokenChangesOnlyTheLiveText() {
+        var state = CompanionState()
+        state.apply(.message(threadId: "t1", message: Message(id: "m1", role: .user, kind: .text, at: 1, text: "hi")))
+        let before = state
+        state.apply(delta("Hel"))
+        state.apply(delta("think", kind: "reasoning_text"))
+        state.streaming = before.streaming
+        state.reasoning = before.reasoning
+        XCTAssertEqual(state.updates, before.updates)
+        XCTAssertEqual(state.transcript(forThread: "t1"), before.transcript(forThread: "t1"))
+        XCTAssertEqual(state.unreadCount, before.unreadCount)
+    }
+
     func testAnUnknownStreamKindIsDroppedRatherThanGuessedAt() {
         var state = CompanionState()
         state.apply(delta("???", kind: "some_future_kind"))

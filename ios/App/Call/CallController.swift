@@ -264,8 +264,9 @@ final class CallController: ObservableObject {
         VoiceNoteCenter.shared.beginInputOwnership(.call)
         observeAudioSession()
 
-        stateSink = session.$state.sink { [weak self] state in
-            // @Published sends the new value before it is stored: read this one
+        stateSink = session.statePublisher.sink { [weak self] state in
+            // read the value handed over; streamed tokens arrive here at
+            // most once per display frame (Session.statePublisher)
             DispatchQueue.main.async { self?.observe(state) }
         }
 
