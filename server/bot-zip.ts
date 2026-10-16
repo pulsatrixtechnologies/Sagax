@@ -994,6 +994,9 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
           ...(typeof raw.projectId === "string" && keptProjects.has(raw.projectId) ? { projectId: raw.projectId } : {}),
           ...(typeof raw.archivedAt === "number" ? { archivedAt: raw.archivedAt } : {}),
           ...(raw.pinned === true ? { pinned: true } : {}),
+          // confidential is permanent: exports leave such threads out, and an
+          // import never makes one ordinary (server/confidential-threads.ts)
+          ...(raw.confidential === true ? { confidential: true as const } : {}),
           ...(typeof raw.updatedAt === "number" ? { updatedAt: raw.updatedAt } : {}),
           ...(typeof raw.snoozedUntil === "number" ? { snoozedUntil: raw.snoozedUntil } : {}),
           ...(typeof taskMode === "string" && isApprovalMode(taskMode) && taskMode !== "full" && taskMode !== "custom" ? { approvalMode: taskMode } : {}),

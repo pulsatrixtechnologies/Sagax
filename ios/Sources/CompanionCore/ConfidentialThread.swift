@@ -48,3 +48,76 @@ public struct NewThreadChoice: Equatable, Sendable {
 
     public static let confidentialThread = NewThreadChoice(confidential: true)
 }
+
+// MARK: - Surfaces outside the chat
+
+/// What a confidential thread shows on a surface that is not the chat
+/// itself: home-screen widgets, the Dynamic Island, a banner built on the
+/// device, the share sheet. Never its words, never its title (a title is
+/// taken from the first message): at most « Fil confidentiel ».
+public enum ConfidentialRedaction {
+    /// The only text such a surface carries; also the server's push body.
+    public static let placeholder = "Fil confidentiel"
+
+    /// A notification banner built on the device from a live frame: the
+    /// server already sends the placeholder, and the device never trusts
+    /// that alone.
+    public static func notificationBody(_ body: String, confidential: Bool) -> String {
+        confidential ? placeholder : body
+    }
+
+    /// The Live Activity text of an update: the placeholder and no card
+    /// (an ask in a confidential thread is answered in the chat only).
+    public static func liveActivity(for update: ChatUpdate, botName: String) -> (headline: String, line: String, card: OptionCard?) {
+        if update.isConfidential { return (placeholder, "", nil) }
+        let headline = update.kind == .needsYou ? "\(botName) needs you" : "\(botName) is working"
+        let line = update.line.isEmpty ? (update.card?.title ?? "") : update.line
+        return (headline, line, update.card)
+    }
+
+    /// The share sheet's line under a bot: its open thread's title, or the
+    /// placeholder when that thread is confidential.
+    public static func shareSubtitle(for bot: Bot) -> String {
+        guard let task = bot.tasks?.first(where: { $0.threadId == bot.threadId }) else { return "Bot" }
+        return "Bot · \(task.isConfidential ? placeholder : task.title)"
+    }
+}
+
+extension ChatUpdate {
+    /// The update is about a confidential thread.
+    public var isConfidential: Bool { ConfidentialBanner.shows(for: chat) }
+}
+
+extension Bot {
+    /// This bot record with every confidential thread's record left out, so
+    /// no title of one rides along with another thread's row.
+    public func withoutConfidentialTasks() -> Bot {
+        guard let tasks, tasks.contains(where: \.isConfidential) else { return self }
+        var copy = self
+        copy.tasks = tasks.filter { !$0.isConfidential }
+        return copy
+    }
+}
+
+extension Chat {
+    /// The chat as a surface outside the conversation may keep it.
+    public var withoutConfidentialTasks: Chat {
+        if case let .bot(bot) = self { return .bot(bot.withoutConfidentialTasks()) }
+        return self
+    }
+}
+
+extension CompanionState {
+    /// Whether `threadId` is one of a bot's confidential threads.
+    public func isConfidentialThread(_ threadId: String) -> Bool {
+        bots.contains { $0.tasks?.contains { $0.threadId == threadId && $0.isConfidential } == true }
+    }
+
+    /// The updates a home-screen widget may keep: none about a confidential
+    /// thread, and no confidential thread's record on any other row.
+    public var widgetUpdates: [ChatUpdate] {
+        updates.filter { !$0.isConfidential }.map {
+            ChatUpdate(chat: $0.chat.withoutConfidentialTasks, kind: $0.kind, line: $0.line, card: $0.card)
+        }
+    }
+}

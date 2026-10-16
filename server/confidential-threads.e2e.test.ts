@@ -20,6 +20,12 @@
 //         it, and the console's organization queue does not list it
 //   CT-8  delete: messages, logs, the folder, the attachment and the
 //         decision summaries are gone
+//   CT-9  (security review) a peer's ask never lands in a confidential
+//         thread, even the bot owner's selected one; from a confidential
+//         thread ask_bot is refused and start_thread opens a confidential
+//         child; the team backup leaves it out; a thread already working in
+//         a shared folder is not converted; notifications carry only
+//         « Fil confidentiel »
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -206,6 +212,9 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
               { server: "agents", tool: "propose_routine", arguments: { name: "Leak", instructions: `${SECRET} every day`, schedule: { type: "interval", every_minutes: 60 } }, when: "MAKE-ROUTINE" },
               { server: "agents", tool: "session_search", arguments: { query: SECRET }, when: "SEARCH-SECRET" },
               { server: "agents", tool: "list_threads", arguments: {}, when: "LIST-THREADS" },
+              { server: "agents", tool: "ask_bot", arguments: { bot_id: "Equipe", message: "PEER-HELLO from a teammate" }, when: "ASK-EQUIPE" },
+              { server: "agents", tool: "start_thread", arguments: { title: "Enfant", message: "child work" }, when: "OPEN-CHILD" },
+              { server: "agents", tool: "coordinate_bots", arguments: { bot_ids: ["Messager"], message: "COORD leak", request_key: "leak-1" }, when: "COORD-OUT" },
             ]),
           },
           config: { cli: FAKE_CLAUDE, fullAuto: true },
@@ -424,4 +433,82 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     }
     expect(decisions).not.toContain(SECRET);
   }, 30_000);
+
+  it("CT-9: peers, children, backups, shared folders and notifications", async () => {
+    // B1: Bob opens a confidential thread on his own bot: it is his selected
+    // thread, yet a teammate's ask lands in an ordinary one
+    const own = await api("POST", `/api/bots/${botId}/tasks`, bob, { title: `Bob ${SECRET}`, confidential: true });
+    expect(own.status, own.text).toBe(201);
+    const bobSecret = own.body.task.threadId as string;
+    const messenger = await api("POST", "/api/bots", bob, { name: "Messager" });
+    expect(messenger.status, messenger.text).toBe(201);
+    const messengerId = messenger.body.bot.id as string;
+    expect((await api("PATCH", `/api/bots/${messengerId}`, bob, { modelSelection: { instanceId: "claude", model: "fake-model" } })).status).toBe(200);
+    // a routine's turn asks Equipe with ask_bot (a Direct turn would coordinate instead)
+    const routine = await api("POST", "/api/routines", bob, { name: "Ask Equipe", botId: messengerId, prompt: "ASK-EQUIPE now.", enabled: false,
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
+    expect(routine.status, routine.text).toBe(201);
+    const ran = await api("POST", `/api/routines/${routine.body.routine.id}/run`, bob, {});
+    expect(ran.status, ran.text).toBeLessThan(300);
+    expect(JSON.stringify(await messagesOf(bob, bobSecret))).not.toContain("PEER-HELLO");
+    const landed = await waitFor(async () => {
+      const equipe = ((await api("GET", "/api/bots", bob)).body.bots as Array<{ id: string; tasks: Array<{ threadId: string }> }>).find((bot) => bot.id === botId)!;
+      for (const task of equipe.tasks) if (JSON.stringify(await messagesOf(bob, task.threadId)).includes("PEER-HELLO")) return task.threadId;
+      return null;
+    });
+    expect(landed).not.toBe(bobSecret);
+    expect(JSON.stringify(await messagesOf(bob, bobSecret))).not.toContain("PEER-HELLO");
+
+    // B2: from a confidential thread, ask_bot is refused and a child thread is confidential
+    const fresh = await api("POST", `/api/bots/${botId}/tasks`, ana, { title: "Encore", confidential: true });
+    const anaSecret2 = fresh.body.task.threadId as string;
+    const anaBefore = (await messagesOf(ana, anaSecret2)).length;
+    expect((await api("POST", `/api/bots/${botId}/messages`, ana, { text: `${SECRET}-BETA COORD-OUT OPEN-CHILD`, threadId: anaSecret2 })).status).toBe(202);
+    await waitFor(async () => replied(await messagesOf(ana, anaSecret2), anaBefore), 60_000);
+    const refused = readDump().find((entry) => entry.tool === "coordinate_bots");
+    expect(refused?.ok, JSON.stringify(readDump())).toBe(false);
+    expect(refused?.text ?? "").toMatch(/confidential/i);
+    const anaTasks = ((await api("GET", "/api/bots", ana)).body.bots as Array<{ id: string; tasks: Array<{ title: string; confidential?: boolean }> }>).find((bot) => bot.id === botId)!.tasks;
+    expect(anaTasks.find((task) => task.title === "Enfant")?.confidential, JSON.stringify(anaTasks)).toBe(true);
+
+    // B3: the team backup leaves confidential threads out
+    const backup = await api("POST", "/api/teams/export", bob, { format: "backup" });
+    expect(backup.status, backup.text.slice(0, 300)).toBe(200);
+    expect(backup.text).not.toContain(SECRET);
+    expect(backup.text).not.toContain(bobSecret);
+    expect(backup.text).not.toContain(anaSecret2);
+
+    // S2: a thread already working in the bot's project folder stays ordinary
+    const project = join(data, "projects", "shared");
+    mkdirSync(project, { recursive: true });
+    const projectBot = await api("POST", "/api/bots", bob, { name: "Projet" });
+    const projectId = projectBot.body.bot.id as string;
+    const setCwd = await api("PATCH", `/api/bots/${projectId}`, bob, { modelSelection: { instanceId: "claude", model: "fake-model" }, cwd: project });
+    expect(setCwd.status, setCwd.text).toBe(200);
+    const projectThread = projectBot.body.bot.threadId as string;
+    const projectBefore = (await messagesOf(bob, projectThread)).length;
+    expect((await api("POST", `/api/bots/${projectId}/messages`, bob, { text: "work here", threadId: projectThread })).status).toBe(202);
+    await waitFor(async () => replied(await messagesOf(bob, projectThread), projectBefore), 60_000);
+    // once the turn has settled
+    const convert = await waitFor(async () => {
+      const tried = await api("PATCH", `/api/bots/${projectId}/tasks/${projectThread}`, bob, { confidential: true, confirmConfidential: true });
+      return /Stop this thread/.test(tried.text) ? null : tried;
+    });
+    expect(convert.status, convert.text).toBe(409);
+    expect(convert.body.code, convert.text).toBe("confidential_shared_folder");
+
+    // S5: a notification about a confidential thread says only « Fil confidentiel »
+    const anaStream = await openStream(ana);
+    const quiet = (await messagesOf(ana, anaSecret2)).length;
+    expect((await api("POST", `/api/bots/${botId}/messages`, ana, { text: `${SECRET}-GAMMA`, threadId: anaSecret2 })).status).toBe(202);
+    await waitFor(async () => replied(await messagesOf(ana, anaSecret2), quiet), 60_000);
+    await sleep(800);
+    const notices = anaStream.text().split("\n").filter((line) => line.includes('"kind":"notify"') && line.includes(anaSecret2));
+    expect(notices.length, anaStream.text().slice(-1500)).toBeGreaterThan(0);
+    for (const line of notices) {
+      expect(line).toContain("Fil confidentiel");
+      expect(line).not.toContain("hello from fake claude");
+    }
+    anaStream.close();
+  }, 240_000);
 });

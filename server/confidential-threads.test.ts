@@ -303,3 +303,52 @@ describe("the workspace backup (an admin export)", () => {
     expect(existsSync(file)).toBe(true);
   });
 });
+
+describe("security review: Perspicax outbound calls and the personal scope", () => {
+  it("confirms every call that sends the thread's words out, reads pass", async () => {
+    const { perspicaxConfidentialVerdict } = await import("./confidential-threads.ts");
+    for (const name of ["ask_person", "send_prompt", "sagax_send", "sagax_nudge", "flow_action", "review_write", "tickets__write", "backups__agent_write", "endpoints__action", "phones__Bucket_write", "mcp__perspicax_acme__send_prompt"]) {
+      expect(perspicaxConfidentialVerdict(name, {}), name).toBe("confirm");
+    }
+    for (const name of ["api_search", "identity", "tickets__query", "memory_recall", "flow"]) {
+      expect(perspicaxConfidentialVerdict(name, {}), name).toBe("pass");
+    }
+    expect(perspicaxConfidentialVerdict("memory_write", { scope: "org" })).toBe("refuse");
+  });
+
+  it("writes the personal scope in, and the digest binds scope, tags, directory title and searchable", async () => {
+    const { pinPersonalScope, outboundCallDigest } = await import("./confidential-threads.ts");
+    const args: Record<string, unknown> = { topic: "t", body: "b" };
+    pinPersonalScope(args);
+    expect(args.scope).toBe("me");
+    const base = { scope: "me", topic: "t", body: "b", tags: ["a"], directory_title: "D", searchable: true };
+    const digest = memoryWriteDigest(base);
+    for (const change of [{ scope: "org" }, { tags: ["b"] }, { directory_title: "E" }, { searchable: false }, { title: "x" }]) {
+      expect(memoryWriteDigest({ ...base, ...change }), JSON.stringify(change)).not.toBe(digest);
+    }
+    expect(outboundCallDigest("x__send_prompt", { b: 1, a: { d: 2, c: 3 } })).toBe(outboundCallDigest("send_prompt", { a: { c: 3, d: 2 }, b: 1 }));
+    expect(outboundCallDigest("send_prompt", { a: 1 })).not.toBe(outboundCallDigest("send_prompt", { a: 2 }));
+  });
+
+  it("refuses the routes that hand content to another bot, room or channel", () => {
+    for (const path of ["/api/internal/ask-bot", "/api/internal/delegate-bot", "/api/internal/coordinate-bots", "/api/internal/post-to-room", "/api/internal/create-room", "/api/internal/manage-room", "/api/internal/act"]) {
+      expect(confidentialInternalRefusal(path, "POST"), path).toMatchObject({ code: "confidential_thread" });
+    }
+    expect(confidentialInternalRefusal("/api/internal/room-targets", "GET")).toBeNull();
+  });
+
+  it("an MCP audit row of a confidential thread names no resource", async () => {
+    const { createMcpAuditInternalRoutes } = await import("./routes/mcp-audit-internal.ts");
+    const rows: Array<Record<string, unknown>> = [];
+    const route = createMcpAuditInternalRoutes({ append: (row) => rows.push(row as Record<string, unknown>), confidential: (threadId) => threadId === "secret" });
+    for (const threadId of ["secret", "open"]) {
+      await route({
+        res: {} as ServerResponse, path: "/api/internal/mcp-audit", method: "POST", json: () => {},
+        capability: { botId: "b", threadId, generation: "g" },
+        readBody: async () => ({ tool: "t", permission: "p", reason: "r", decision: "allowed", scope: "self", resource: "payroll.csv" }),
+      } as unknown as Parameters<typeof route>[0]);
+    }
+    expect(JSON.stringify(rows[0])).not.toContain("payroll");
+    expect(JSON.stringify(rows[1])).toContain("payroll");
+  });
+});

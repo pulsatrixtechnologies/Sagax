@@ -271,6 +271,32 @@ describe("the upkeep loop", () => {
     expect(aboutMeAdded).toEqual(["The person is vegetarian"]);
   });
 
+  it("writes nothing for a thread that turned confidential while the model answered (server/confidential-threads.ts)", async () => {
+    ensureWorkspace(BOT.id);
+    let confidential = false;
+    const service = createMemoryUpkeep({
+      bots: () => [BOT], bot: (id) => (id === BOT.id ? BOT : undefined), busy: () => false, addToAboutMe: () => 0,
+      sourceLabel: () => 'chat "Plans"', quietMs: () => 60_000, tidyHour: () => 3, now: () => clock,
+      capturable: () => !confidential,
+      engine: () => ({ generateText: async () => {
+        confidential = true;
+        return JSON.stringify([{ text: "The merger target is Kestrel", kind: "fact", confidence: 0.9 }]);
+      } }),
+    });
+    const report = await service.capture({ botId: BOT.id, threadId: "t1", turns: [{ person: "the merger target is Kestrel", bot: "Noted." }] });
+    expect(report).toMatchObject({ added: 0, note: "the conversation is confidential" });
+    expect(readFileSync(join(workspaceDir(BOT.id), "MEMORY.md"), "utf8")).not.toContain("Kestrel");
+    // and a confidential thread is not even asked about
+    const asked: string[] = [];
+    const before = createMemoryUpkeep({
+      bots: () => [BOT], bot: (id) => (id === BOT.id ? BOT : undefined), busy: () => false, addToAboutMe: () => 0,
+      sourceLabel: () => "x", quietMs: () => 60_000, tidyHour: () => 3, now: () => clock, capturable: () => false,
+      engine: () => ({ generateText: async (prompt: string) => { asked.push(prompt); return "[]"; } }),
+    });
+    await before.capture({ botId: BOT.id, threadId: "t1", turns: [{ person: "secret", bot: "ok" }] });
+    expect(asked).toEqual([]);
+  });
+
   it("captures onto a full MEMORY.md: every fact lands, the oldest entries move to the archive, both journaled", async () => {
     const old = Array.from({ length: 200 }, (_, i) => `- 2026-08-01 · old fact ${i}`);
     writeMemoryFile(BOT.id, `${old.join("\n")}\n`);

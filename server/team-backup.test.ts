@@ -391,3 +391,28 @@ describe("additive portable team backups", () => {
     expect(store.group(group.id)?.memberIds).toEqual([chief.id, scout.id]);
   });
 });
+
+describe("confidential threads in portable backups (server/confidential-threads.ts)", () => {
+  beforeEach(() => rmSync(DATA_DIR, { recursive: true, force: true }));
+
+  it("leave a confidential thread out, and an import keeps the flag should one arrive", () => {
+    const { store, routines, scout } = fixture();
+    const secret = store.createTask(scout.id, "Merger plan", true, undefined, undefined, undefined, undefined, undefined, false, undefined, true)!;
+    store.appendMessage(secret.threadId, { role: "user", kind: "text", text: "CONFIDENTIAL-KESTREL", at: 300 });
+    expect(store.bot(scout.id)!.threadId).toBe(secret.threadId);
+    const backup = createTeamBackup(store, routines.listRoutines(), "Everything");
+    const text = JSON.stringify(backup);
+    expect(text).not.toContain("CONFIDENTIAL-KESTREL");
+    expect(text).not.toContain("Merger plan");
+    expect(text).not.toContain(secret.threadId);
+    const source = backup.bots.find((bot) => bot.name === "Scout")!;
+    expect(source.tasks.some((task) => task.key === source.activeTask)).toBe(true);
+    // a crafted backup carrying a confidential thread restores it confidential
+    const crafted = JSON.parse(text) as typeof backup;
+    crafted.bots.find((bot) => bot.name === "Scout")!.tasks[0]!.confidential = true;
+    const restored = importTeamBackup(store, routines, parseTeamBackup(crafted), selection());
+    const scoutCopy = restored.bots.find((bot) => bot.name.startsWith("Scout"))!;
+    expect(store.tasks(scoutCopy.id).some((task) => task.confidential === true)).toBe(true);
+  });
+});
+

@@ -55,13 +55,16 @@ final class LiveActivityCoordinator {
             let face = MausState.forBot(bot, last: state.visibleTranscript(forThread: bot.threadId).last)
             let kind = update.kind == .needsYou ? "needsYou" : "working"
             if since[bot.id]?.kind != kind { since[bot.id] = (kind, Date()) }
+            // A confidential thread shows « Fil confidentiel » and nothing
+            // it said, and its asks are answered in the chat only.
+            let text = ConfidentialRedaction.liveActivity(for: update, botName: bot.name)
             let content = BotActivityAttributes.ContentState(
                 face: face.rawValue,
                 kind: update.kind == .needsYou ? "needsYou" : "working",
-                headline: update.kind == .needsYou ? "\(bot.name) needs you" : "\(bot.name) is working",
-                line: update.line.isEmpty ? (update.card?.title ?? "") : update.line,
+                headline: text.headline,
+                line: text.line,
                 threadId: update.chat.threadId,
-                card: update.card,
+                card: text.card,
                 since: since[bot.id]?.at ?? Date()
             )
             if lastSent[bot.id] == content { continue }

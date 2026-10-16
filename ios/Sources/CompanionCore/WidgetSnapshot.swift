@@ -107,8 +107,9 @@ extension WidgetSnapshot {
 }
 
 extension CompanionState {
-    /// Freezes the current `updates` for the widget extension, one row per
-    /// update. `face` resolves each chat's mascot at write time — a closure
+    /// Freezes the current `widgetUpdates` for the widget extension, one
+    /// row per update: never one about a confidential thread, never a
+    /// confidential thread's record on another row. `face` resolves each chat's mascot at write time: a closure
     /// because the mascot tables live in the app target, above Core; the
     /// widget only ever sees the resulting string.
     public func widgetSnapshot(
@@ -120,7 +121,7 @@ extension CompanionState {
         WidgetSnapshot(
             writtenAt: now,
             connectionID: connectionID,
-            rows: updates.map { update in
+            rows: widgetUpdates.map { update in
                 WidgetSnapshot.Row(
                     chat: update.chat,
                     kind: update.kind,

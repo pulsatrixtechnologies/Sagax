@@ -237,6 +237,22 @@ remembered, exported, logged or shared beyond its owner
   `stripConfidentialMessages`, `confidentialBackupPath`) and the Perspicax
   work log. Decision rows are metadata only (`bindConfidentialDecisions`,
   `scrubThreadDecisions`).
+- Nothing leaves to another bot, room or channel: `ask-bot`, `delegate-bot`,
+  `coordinate-bots`, `post-to-room`, `create-room`, `manage-room`, `act`,
+  `start_thread` on another bot and the agent API refuse
+  (`CONFIDENTIAL_PEER_REFUSED`); Perspicax outbound calls and every
+  `<profile>__write`/`__action` wait for the owner's card with the exact
+  arguments (`perspicaxConfidentialVerdict`, `outboundCallDigest`); a
+  personal memory write has `scope: "me"` written in (`pinPersonalScope`).
+  Threads it opens inherit the flag and owner. A turn that names no thread
+  never lands in a confidential one (`peerThreadFor`, also `startTurn`'s
+  default). AI clients never list, read or write one (`personAgentThreads`).
+- Team backup and organization copy leave it out (`team-backup.ts`); every
+  import keeps `confidential: true` if it ever arrives. Notifications say
+  « Fil confidentiel » only (`notify`, iOS widgets, Live Activities).
+  A thread already pinned to a shared folder is not converted
+  (`privateFolderThread`, 409 `confidential_shared_folder`); a Cloud home
+  guest cannot open one (`CLOUD_GUEST_CONFIDENTIAL`).
 - Approvals: `approvalOwnerId(bot, threadId)` is the thread owner for a
   confidential thread; a card they could not answer is refused in the fold
   (`confidentialCardAnswerable`, decision source `confidential`).

@@ -277,6 +277,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     const at = now().getTime();
     const off: CaptureReport = { at, added: 0, topics: 0, aboutMe: 0, note: "upkeep is off" };
     if (!upkeepEnabled(bot)) return off;
+    if (deps.capturable && !deps.capturable(batch.threadId)) return { ...off, note: "the conversation is confidential" };
     const engine = deps.engine(bot.id);
     if (!engine?.generateText) {
       const report = { at, added: 0, topics: 0, aboutMe: 0, note: NO_TEXT_ENGINE };
@@ -297,6 +298,8 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       record(bot.id, { lastCapture: report });
       return report;
     }
+    // The thread may have turned confidential while the model answered.
+    if (deps.capturable && !deps.capturable(batch.threadId)) return { ...off, note: "the conversation is confidential" };
     if (paused) {
       // a backup began while the model answered: run it again after
       deferred.push(batch);
@@ -562,7 +565,11 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     },
     flushThread: (threadId) => buffer.flush(threadId),
     dropBot: (botId) => buffer.dropBot(botId),
-    dropThread: (threadId) => buffer.dropThread(threadId),
+    dropThread: (threadId) => {
+      buffer.dropThread(threadId);
+      // a batch waiting for a backup to finish goes too
+      for (let index = deferred.length - 1; index >= 0; index -= 1) if (deferred[index]!.threadId === threadId) deferred.splice(index, 1);
+    },
     capture: (batch) => track(capture(batch)),
     tidy,
     status(botId) {

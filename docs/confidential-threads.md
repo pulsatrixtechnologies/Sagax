@@ -26,11 +26,20 @@ Code: `server/confidential-threads.ts` (the rules), with the enforcement in
   `{ "confidential": true, "confirmConfidential": true }`; without the
   confirmation the server answers 400 `confirm_confidential`).
 - **By default**: on an organization server an admin can make every new
-  thread confidential (Settings > Organisation, « Nouveaux fils
+  thread a person opens (the New thread menu, their first thread on a
+  bot) confidential (Settings > Organisation, « Nouveaux fils
   confidentiels par défaut »; `PATCH /api/org/settings`
   `{ "confidentialThreadsByDefault": true }`, audited as `org.settings`).
   The person can still open an ordinary thread explicitly
   (`confidential: false`).
+
+A thread that already works in a shared folder (the bot's project folder,
+or one chosen when it was opened) is not converted (409
+`confidential_shared_folder`): its files and checkpoints already live with
+that folder. The person opens a new confidential thread instead. On an
+OMB Cloud home only its owner opens confidential threads: the owner holds
+the disk and every conversation on it, so a guest's could never be kept
+from them.
 
 **It is permanent.** The server refuses any change back
 (`confidential: false` on a confidential thread is 409
@@ -52,20 +61,27 @@ title; a stamp on a Markdown export the person makes of their own thread.
 | Daily log line (`memory/log/<day>.md`) | one per turn | none |
 | `memory_update`, `memory_log`, group and team memory, rules, docs, skill staging | allowed | refused (403 `confidential_thread`) |
 | Perspicax `memory_write` to a team or `org`, `memory_propose`, `memory_promote` | allowed | refused |
-| Perspicax `memory_write` to the person's own tier (`me`) | allowed | waits for the owner's Allow on a card; on Allow the bot is asked to repeat that exact write, which a one-shot pass lets through |
+| Perspicax `memory_write` to the person's own tier (`me`) | allowed | `scope: "me"` is written in (an omitted scope never falls to Perspicax's own default); then it waits for the owner's Allow on a card; on Allow the bot is asked to repeat that exact write (scope, topic, title, body, tags, directory title, searchable), which a one-shot pass lets through |
+| Perspicax calls that send content out (`ask_person`, `send_prompt`, `sagax_send`, `sagax_nudge`, `flow_action`, `review_write`, every `<profile>__write` / `__action`, ...) | allowed | the same card, showing the tool and its exact arguments; a JSON-RPC batch is refused |
+| Peers, rooms and channels (`ask_bot`, `delegate_bot`, `coordinate_bots`, `post_to_room`, `create_room`, `manage_room`, `act`, `start_thread` on another bot, the agent API) | allowed | refused |
+| Turns that name no thread (peer asks, asides, delegations, automation) | the bot's selected thread | never a confidential thread, even its owner's selected one: the bot owner's newest ordinary conversation, else a new one |
+| Threads it opens (`start_thread` on itself, parallel tasks) | ordinary | confidential, same owner |
+| AI clients (member API: `read_transcript`, `read_latest_page`, `send_prompt`, ...) | the person's threads | never listed, read or written |
 | Recall: auto-recall, recent-work brief, `session_search`, `session_read`, `list_threads` from any other thread | narrowed per person | the thread never feeds another thread, its owner's included |
-| Bot zip (owner route and console package) | included with conversations | left out: messages, files, task record, id |
+| Bot zip (owner route and console package), team backup (`POST /api/teams/export` `backup`), organization copy (`POST /api/org/export`) | included with conversations | left out: messages, files, task record, id; an import that ever carries the flag restores it confidential |
 | Console file browser (`tasks`, `attachments` roots) | listed | left out of listings, reads as 404 |
 | Workspace backup (an admin export) | full | task record kept as an empty "Confidential thread" (id, dates, flag); messages, read marks and follow-ups removed from the message database snapshot (vacuumed), event and native logs, legacy transcript, work folder and its own attachments left out |
 | Approval cards and their notifications | bot owner | the thread owner only; a card they could not answer (an organization admin card, another person's machine) is refused instead of shown to anyone else; never in the console's organization queue |
-| Incidents | Primary Bot report with 300 characters of the request and reply | no text: the console's problem log and the owner's notification say only « un tour d'un fil confidentiel a échoué »; no Primary Bot report |
+| Incidents and refused turns | Primary Bot report with 300 characters of the request and reply; problem log row with title and notice | no text: the console's problem log and the owner's notification say only « un tour d'un fil confidentiel a échoué »; no Primary Bot report |
+| Notifications (in app, push relay, iOS banners, Live Activities, widgets, share sheet) | the reply's first words | « Fil confidentiel » only; widgets leave the thread out |
+| MCP permission audit rows | tool, permission, decision, resource | no resource |
 | `[omb-turn]` server log line | first 70 characters of the prompt | `text=(confidential)` |
 | Perspicax work log row | metadata row per turn | none |
 | Built-in browser | the bot's persistent profile (`bot-<id>`) or a shared one | a throwaway guest session of that thread (`conf-<thread>-<random>`), never saved, discarded at the end of each turn and when the thread is deleted |
 | Where it works | the speaker's or, for a routine, the bot owner's environment; the bot's project folder | always the thread owner's environment, and the thread's own folder (`task-workspaces/<bot>/<thread>`); a new confidential thread may not take another working folder |
 | Routines | can be proposed or created with results in the thread | refused (`propose_routine` and `POST /api/routines` with that `resultsThreadId`) |
 | Artifacts (`save_artifact`, ...) | saved | refused: an artifact outlives the thread and an admin may open it |
-| Decision log | rows with the call's summary | rows with ids, time, tool name, decision and who answered only; rows written before the thread turned confidential are stripped the same way |
+| Decision log | rows with the call's summary | rows with ids, time, tool name, decision and who answered only; rows written before the thread turned confidential are stripped the same way, and so are rows that land after it was deleted |
 
 ## Deleting a confidential thread
 
@@ -93,6 +109,13 @@ end-to-end encryption, and it does not hide the thread from:
   threads included until those backups expire.
 - **The model provider.** Every turn is sent to the engine the bot runs on,
   as any turn is.
+- **Perspicax.** A call the person allows (a card) or a read through a
+  Perspicax profile is seen by Perspicax and the outside system behind it,
+  and Perspicax keeps its own audit and journal of those calls.
+- **Automation threads.** The organization default does not make a
+  routine's run, a webhook's thread or a teammate's work thread
+  confidential: their results are delivered elsewhere by design. A
+  confidential thread cannot start any of them.
 - **The person's own environment and tools.** The bot's file tools run on
   the host or the person's environment, which is directory organization,
   not a sandbox between threads: the prompt tells a confidential turn to

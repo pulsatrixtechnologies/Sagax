@@ -41,6 +41,10 @@
 /** The one text an incident about a confidential thread carries. */
 export const CONFIDENTIAL_INCIDENT_TEXT = "un tour d'un fil confidentiel a échoué";
 
+/** The body of every notification (in-app, push, Live Activity) about a
+ * confidential thread. */
+export const CONFIDENTIAL_NOTICE_BODY = "Fil confidentiel";
+
 /** The prompt slot of the [omb-turn] log line for a confidential thread. */
 export const CONFIDENTIAL_LOG_TEXT = "(confidential)";
 
@@ -97,14 +101,27 @@ const REFUSED_INTERNAL_ROUTES: Record<string, string> = {
   "/api/internal/routine-requests": "routine",
   // an artifact outlives the thread and an admin may open it
   "/api/internal/artifacts": "artifact",
+  // nothing of it goes to another bot, a room or a channel
+  "/api/internal/ask-bot": "peer",
+  "/api/internal/delegate-bot": "peer",
+  "/api/internal/coordinate-bots": "peer",
+  "/api/internal/post-to-room": "peer",
+  "/api/internal/create-room": "peer",
+  "/api/internal/manage-room": "peer",
+  // a bot acting as the person reaches other conversations through their routes
+  "/api/internal/act": "peer",
 };
+
+export const CONFIDENTIAL_PEER_REFUSED = "This is a confidential thread: nothing from it goes to another bot, agent, room or channel. Do the work here, or ask the person to continue from an ordinary thread.";
 
 /** The refusal for an internal write from a confidential thread, or null. */
 export function confidentialInternalRefusal(path: string, method: string): { error: string; code: "confidential_thread" } | null {
   if (method !== "POST") return null;
   const what = REFUSED_INTERNAL_ROUTES[path];
   if (!what) return null;
-  const error = what === "artifact"
+  const error = what === "peer"
+    ? CONFIDENTIAL_PEER_REFUSED
+    : what === "artifact"
     ? "This is a confidential thread: no artifact is saved from it. Give the result here in the conversation instead."
     : what === "routine"
     ? "This is a confidential thread: no routine can be created from it. Ask the person to set the routine up from an ordinary thread."
@@ -131,13 +148,53 @@ export function perspicaxMemoryVerdict(name: string, args: Record<string, unknow
   return "refuse";
 }
 
+/** Perspicax tools that send a confidential thread's words to someone or
+ * somewhere else (a person, another agent, an outside system): each call
+ * waits for the owner's Allow on a card showing exactly what leaves. */
+const OUTBOUND_PERSPICAX_TOOLS = new Set([
+  "ask_person", "send_prompt", "sagax_send", "sagax_nudge", "sagax_approve", "sagax_routine_run", "create_agent",
+  "flow_action", "review_write", "api_upload", "claim", "work_open",
+]);
+
+/** The verdict for any Perspicax call from a confidential thread: memory
+ * as perspicaxMemoryVerdict, outbound tools and every external write or
+ * action (`<profile>__write`, `__action`, `Thing_write`) confirmed, reads pass. */
+export function perspicaxConfidentialVerdict(name: string, args: Record<string, unknown> | undefined): PerspicaxMemoryVerdict {
+  const memory = perspicaxMemoryVerdict(name, args);
+  if (memory !== "pass") return memory;
+  const tool = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
+  if (OUTBOUND_PERSPICAX_TOOLS.has(tool)) return "confirm";
+  if (/(?:^|_)(?:write|action)$/i.test(tool)) return "confirm";
+  return "pass";
+}
+
+/** What a confirmed outbound call must match when it is retried: its tool
+ * and its arguments, keys sorted. */
+export function outboundCallDigest(name: string, args: Record<string, unknown> | undefined): string {
+  const sorted = (value: unknown): unknown => Array.isArray(value)
+    ? value.map(sorted)
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.keys(value as Record<string, unknown>).sort().map((key) => [key, sorted((value as Record<string, unknown>)[key])]))
+      : value;
+  const tool = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
+  return JSON.stringify([tool, sorted(args ?? {})]);
+}
+
 export const PERSPICAX_MEMORY_REFUSED = "This is a confidential thread: nothing from it goes to a team or organization memory. Keep it in this thread; do not retry.";
 
-/** What a confirmable memory write must match when it is retried: the
- * fields the person saw on the card. */
+/** What a confirmable memory write must match when it is retried: every
+ * field that decides what is written and who reads it. */
 export function memoryWriteDigest(args: Record<string, unknown> | undefined): string {
-  const field = (key: string) => (typeof args?.[key] === "string" ? (args[key] as string) : "");
-  return JSON.stringify([field("topic"), field("title"), field("body")]);
+  const value = (key: string) => (args?.[key] === undefined ? null : args[key]);
+  return JSON.stringify(["scope", "topic", "title", "body", "tags", "directory_title", "searchable"].map((key) => [key, value(key)]));
+}
+
+/** A personal write goes to "me" and nowhere else: Perspicax's own default
+ * audience for an omitted scope may be wider, so the scope is written in
+ * before the call is judged, confirmed and sent. */
+export function pinPersonalScope(args: Record<string, unknown>): void {
+  const scope = typeof args.scope === "string" ? args.scope.trim() : "";
+  if (!scope) args.scope = "me";
 }
 
 const PASS_TTL_MS = 10 * 60_000;

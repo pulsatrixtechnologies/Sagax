@@ -26,12 +26,15 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         (try? await center.requestAuthorization(options: [.alert, .badge, .sound])) == true
     }
 
-    func deliver(_ notification: NotificationFrame, sequence: Int?) {
+    func deliver(_ notification: NotificationFrame, sequence: Int?, confidential: Bool = false) {
         // the conversation on a live call is heard, not buzzed
         if CallQuiet.shared.silences(threadId: notification.threadId) { return }
         let content = UNMutableNotificationContent()
-        content.title = notification.title
-        content.body = notification.body
+        // a confidential thread's banner never carries its words nor its
+        // title (taken from its first message); the bot's name replaces
+        // the title below when there is one
+        content.title = confidential ? ConfidentialRedaction.placeholder : notification.title
+        content.body = ConfidentialRedaction.notificationBody(notification.body, confidential: confidential)
         // Settings > Haptics > Notification sounds: off keeps the banner.
         content.sound = NotificationSounds.isEnabled ? .default : nil
         content.categoryIdentifier = notification.isBlocking ? "SAGAX_APPROVAL" : "SAGAX_UPDATE"

@@ -86,7 +86,11 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
     if (options.threads && store.bot(record.id) && !options.threads(record.id)) {
       return [{ key: record.threadId, title: "Conversation", createdAt: record.createdAt, activeLeafId: null, messages: [] }];
     }
-    const tasks = record.tasks?.length ? record.tasks : [{ threadId: record.threadId, title: "Conversation", createdAt: record.createdAt }];
+    const all = record.tasks?.length ? record.tasks : [{ threadId: record.threadId, title: "Conversation", createdAt: record.createdAt }];
+    // A confidential thread (server/confidential-threads.ts) never leaves in
+    // a backup or a package: not its messages, title nor id.
+    const tasks = all.filter((task) => !("confidential" in task && task.confidential === true));
+    if (!tasks.length) return [{ key: `conversation-${record.id}`, title: "Conversation", createdAt: record.createdAt, activeLeafId: null, messages: [] }];
     return tasks.map((task) => ({
       key: task.threadId, title: typed(task.title), createdAt: task.createdAt,
       // Whether the first message already named this task travels with it:
@@ -158,7 +162,10 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
       ...(bot.connectorTools ? { connectorTools: structuredClone(bot.connectorTools) } : {}),
       ...(bot.toolScope !== undefined ? { toolScope: structuredClone(bot.toolScope) } : {}),
       memory: options.memory && !options.memory(bot.id) ? undefined : memoryFor(bot.id, options.scrub),
-      activeTask: bot.threadId, tasks: history(bot),
+      ...(() => {
+        const tasks = history(bot);
+        return { activeTask: tasks.some((task) => task.key === bot.threadId) ? bot.threadId : tasks[0]!.key, tasks };
+      })(),
     })),
     groups,
     routines: validRoutines.map((routine) => ({
@@ -289,6 +296,8 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
         const closer = task.closedBy && botIds.get(task.closedBy.botId);
         if (task.closedBy && closer) record.closedBy = { botId: closer, name: task.closedBy.name, at: task.closedBy.at };
         if (task.pinned === true) record.pinned = true;
+        // confidential is permanent: an import never makes one ordinary
+        if (task.confidential === true) record.confidential = true;
         const newest = task.messages.reduce((max, message) => Math.max(max, message.at), task.createdAt);
         record.updatedAt = newest;
         return record;

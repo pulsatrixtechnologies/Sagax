@@ -83,7 +83,7 @@ final class WidgetSyncBridge {
         } since: { update in
             sinceClock.stamp(for: update.chat, kind: update.kind)
         }
-        sinceClock.forget(absentFrom: state.updates.map(\.chat))
+        sinceClock.forget(absentFrom: state.widgetUpdates.map(\.chat))
         guard snapshot != lastWritten else { return }
         do {
             try store.write(snapshot)

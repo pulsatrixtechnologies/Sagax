@@ -645,11 +645,11 @@ final class ShareViewModel: ObservableObject {
         let bots = fleet.bots
             .filter { $0.hidden != true }
             .map { bot in
-                let task = bot.tasks?.first(where: { $0.threadId == bot.threadId })?.title
                 return ShareDestination(
                     id: "bot:\(bot.id)", routeID: bot.id, threadID: bot.threadId,
                     name: bot.name,
-                    subtitle: task.map { "Bot · \($0)" } ?? "Bot",
+                    // never a confidential thread's title (taken from its first message)
+                    subtitle: ConfidentialRedaction.shareSubtitle(for: bot),
                     kind: .bot,
                     latestActivity: bot.messages?.map(\.at).max() ?? bot.createdAt,
                     supportsImages: imageCapableInstances.contains(bot.modelSelection.instanceId)
