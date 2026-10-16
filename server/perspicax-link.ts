@@ -135,8 +135,9 @@ const personSchema = z.object({
   /** Perspicax migration 0063 (2026-10-16, JC): the engine instance ids this
    * person may run on the accounts the organization provides (the org key
    * of Settings > Connections). [] = none, the default for every member.
-   * Absent from an older Perspicax: none too (serverEngines). */
-  sagax_server_engines: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,80}$/)).max(100).optional().catch(undefined),
+   * Absent from an older Perspicax: none too (serverEngines). `*` gives
+   * every engine (the admin API may send it; the console does not offer it). */
+  sagax_server_engines: z.array(z.string().regex(/^(?:\*|[A-Za-z0-9_-]{1,80})$/)).max(100).optional().catch(undefined),
   /** 2026-10-09: the person's effective Sagax permissions (computed by
    * Perspicax: the union of its default permission set, the sets given to
    * the person and the sets of their teams, since Perspicax 0051; every key

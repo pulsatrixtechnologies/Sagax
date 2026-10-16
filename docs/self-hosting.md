@@ -833,7 +833,8 @@ id).
   its xAI key) serve an organization admin always, and a member only for
   the engine instances Perspicax lists on their person sheet
   (`sagax_server_engines` in the directory: engine instance ids such as
-  `grok`, `xaiApi`, `claudeApi`, and `xaiVoice` for voice mode). The
+  `grok`, `xaiApi`, `claudeApi`, and `xaiVoice` for voice mode; `*` for
+  every one, which the admin API accepts and the console does not offer). The
   default is none, for existing and new members: an admin checks the
   engines on the person's sheet in the Perspicax console (Sagax > People >
   the person > "Moteurs fournis par l'organisation"), or with

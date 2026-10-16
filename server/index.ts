@@ -22995,7 +22995,7 @@ function serverEngineAllowedFor(principalId: string, instanceId: string): boolea
     }
     return false;
   }
-  return list.includes(instanceId);
+  return list.includes("*") || list.includes(instanceId);
 }
 /** A person's Perspicax subject (only from this server's issuer) and
  * whether they are disabled. */

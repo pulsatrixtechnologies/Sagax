@@ -295,6 +295,35 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     daveStream.close();
   }, 60_000);
 
+  it("2026-10-16: the organization's key serves bob only for the engines Perspicax gives him", async () => {
+    const setBob = (list: string[] | undefined) => {
+      idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === BOB.sub ? { ...person, sagax_server_engines: list } : person));
+    };
+    // a bot of its own, so the cards here never meet the other cases'
+    const own = await createBot(alice, "Yves", "claude");
+    expect((await api("POST", `/api/bots/${own.id}/direct-grants`, alice, { userId: bobId })).status).toBe(200);
+    setBob(["codex"]);
+    const bob = await signIn(BOB);
+    const refused = () => api("POST", `/api/bots/${own.id}/messages`, bob, { text: `not given ${Date.now()}` });
+    const card = await waitFor(async () => {
+      expect((await refused()).status).toBe(202);
+      await sleep(400);
+      const bot = (await botsOf(bob)).find((b) => b.id === own.id);
+      return bot?.messages.find((m) => m.kind === "access" && (m as { access?: { cause?: string } }).access?.cause === "server_engine_not_allowed") ?? null;
+    }, 30_000);
+    expect(card.access).toMatchObject({ reason: "no_access", engine: "Claude", botId: own.id, payer: "speaker", payerPrincipalId: bobId, cause: "server_engine_not_allowed" });
+    // once the directory says so, nothing runs on the organization's key for him
+    const before = readFileSync(dump, "utf8");
+    expect((await refused()).status).toBe(202);
+    await sleep(1_000);
+    expect(readFileSync(dump, "utf8")).toBe(before);
+    // his engines page says the organization's key does not serve him here
+    const mine = (await api("GET", "/api/me/engines", bob)).body.engines as Array<{ instanceId: string; orgKey: boolean; orgKeyNotGiven?: boolean; myTurns: string }>;
+    expect(mine.find((engine) => engine.instanceId === "claude")).toMatchObject({ orgKey: false, orgKeyNotGiven: true, myTurns: "none" });
+    setBob(undefined);
+    await signIn(BOB);
+  }, 60_000);
+
   it("S3-5 (C): removing bob's grant ends his stream and the bot is gone for him at once", async () => {
     const bob = await signIn(BOB);
     const stream = await openStream(bob);

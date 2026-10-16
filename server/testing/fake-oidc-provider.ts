@@ -69,6 +69,11 @@ export interface FakeDirectoryPerson {
   /** Perspicax migration 0046: "off" when an admin manages this person's
    * plugins, skills and MCP servers; absent from an older Perspicax. */
   sagax_integrations?: "manage" | "off";
+  /** Perspicax migration 0063: the engines this person may run on the
+   * organization's key. Absent here: `["*"]` (every engine), so fixtures
+   * written before keep their organization key; null leaves the field out
+   * (an older Perspicax). */
+  sagax_server_engines?: string[] | null;
   /** 2026-10-09: the person's effective Sagax permissions, as Perspicax
    * computes them; absent from an older Perspicax. */
   permissions?: string[] | null;
@@ -392,8 +397,9 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       if (headers.authorization !== `Bearer ${provider.linkToken}`) return send(res, 401, { error: "unauthorized" });
       const body = JSON.stringify({
         server_id: provider.serverId,
-        people: [...provider.directoryPeople].sort((a, b) => a.sub.localeCompare(b.sub)).map(({ omitRoutineDelegation, ...person }) => ({
+        people: [...provider.directoryPeople].sort((a, b) => a.sub.localeCompare(b.sub)).map(({ omitRoutineDelegation, sagax_server_engines, ...person }) => ({
           ...person,
+          ...(sagax_server_engines === null ? {} : { sagax_server_engines: sagax_server_engines ?? ["*"] }),
           ...(omitRoutineDelegation ? {} : { routine_delegation: routineDelegationOf(person) }),
           ...(provider.avatarsEnabled ? { avatar: provider.avatarVersion(person.sub) } : {}),
           provider_keys: person.provider_keys ?? ["anthropic", "openai"].filter((name) => provider.providerKeys.has(`${person.sub}/${name}`)),
