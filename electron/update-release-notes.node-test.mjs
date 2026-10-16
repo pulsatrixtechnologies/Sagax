@@ -18,7 +18,8 @@ const fixture = (name) => readFileSync(new URL(`./fixtures/update-feed/${name}`,
 const ATOM = fixture("releases.atom");
 const FEED = fixture("latest-mac-0.5.4.yml");
 const RELEASE = JSON.parse(fixture("release-pulsa-v0.5.4.json"));
-const NOTES = readFileSync(new URL("../docs/releases/0.5.4.md", import.meta.url), "utf8");
+// A Windows checkout may hand the notes over with CRLF; the YAML feed carries LF.
+const NOTES = readFileSync(new URL("../docs/releases/0.5.4.md", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const RELEASES = "https://github.com/pulsatrixtechnologies/sagax/releases";
 
 function loadUpdater() {
