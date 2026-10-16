@@ -307,7 +307,7 @@ import { approvalPlain, describeAllowRule, mcpAllowKey } from "../shared/approva
 import { ownerDecision, ruleCandidateFor, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
-import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
+import { customRuleCandidate, customRuleNotice, factsForCall, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-draft-send.ts";
@@ -866,6 +866,11 @@ import { createBotLibraryRoutes } from "./routes/bot-library.ts";
 import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
 import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
 import { createOwnerApprovalRoutes } from "./routes/owner-approvals.ts";
+import { SecurityKeys, SecurityKeyStore } from "./security-keys.ts";
+import { alwaysAllowStepUp, approvalGrantsFor, approvalStepUp, type StepUpDecision } from "./step-up-gate.ts";
+import { createSecurityKeyRoutes, securityKeyCeremonyRoutes, settingsStepUp } from "./routes/security-keys.ts";
+import { SETTINGS_ACTION_CLASS, type StepUpAnswer, type StepUpRefusal, type StepUpSettingsAction } from "../shared/step-up.ts";
+import type { RiskClass } from "../shared/custom-rules.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createComputerCareRoutes } from "./routes/computer-care.ts";
 import { createBrowserNetworkRoutes } from "./routes/browser-network.ts";
@@ -1513,6 +1518,9 @@ const commandAllowlist = new CommandAllowlistStore(join(DATA_DIR, "command-allow
 // 2026-10-14: owners' approval rules and their bots' permission modes
 // (docs/superpowers/specs/2026-10-14-bot-owner-permissions.md).
 const ownerApprovals = new OwnerApprovalStore(join(DATA_DIR, "owner-approvals.json"));
+// Security keys for sensitive approvals (server/security-keys.ts).
+const securityKeys = new SecurityKeys({ store: new SecurityKeyStore(join(DATA_DIR, "security-keys.json")) });
+const securityKeyCeremonies = securityKeyCeremonyRoutes({ keys: securityKeys });
 // 2026-10-16: people's custom auto-review rules, in their own words
 // (shared/custom-rules.ts, server/custom-rules-review.ts).
 const customRules = new CustomRuleStore(join(DATA_DIR, "custom-approval-rules.json"));
@@ -9251,6 +9259,10 @@ async function answerCardFromConsole(viewer: OrgAdminViewer, threadId: string, r
   if (approvalTypeOf(card) !== "tool" || approvalHostOf(bot).kind !== "fleet") {
     return { ok: false, status: 403, code: "not_decidable", message: "Open this approval in Sagax to answer it." };
   }
+  // The console carries no security key: a card that needs one is answered in Sagax.
+  if (stepUpGate(viewer.principalId, threadId, requestId, decision, {}, undefined)) {
+    return { ok: false, status: 403, code: "not_decidable", message: "This approval needs a security key. Open it in Sagax to answer it." };
+  }
   const answerer = `${viewer.name} (console)`;
   const actor: DecisionActor = { kind: "session", sessionId: "console", label: answerer, userId: viewer.principalId };
   const group = store.groupByThread(threadId);
@@ -9838,6 +9850,10 @@ async function respondToCard(input: {
   }
   const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
   if (refusal) return { ok: false, status: 403, error: refusal };
+  // A spoken Allow carries no security key: a card that needs one is
+  // answered on screen (or on the phone), never let through by voice.
+  const stepUpRefusal = stepUpGate(ruleManager(auth), threadId, requestId, behavior, {}, undefined);
+  if (stepUpRefusal) return { ok: false, status: 403, error: "This approval needs your security key. Approve it on screen." };
   const bot = store.botByThread(threadId);
   if (!bot) return { ok: false, status: 404, error: "The chat is gone." };
   const cardMessage = store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId);
@@ -24088,9 +24104,44 @@ ROUTES.push(createOwnerApprovalRoutes({
     ...(row.after ? { after: row.after } : {}),
     actor: orgAuditActor(auth),
   }),
+  stepUp: (_auth, personId, action, detail, stepUp) => settingsStepUpGate(personId, action, detail, stepUp),
   journalMode: (bot, before, after) => appendDecision(DATA_DIR, {
     threadId: bot.threadId, botId: bot.id, botName: bot.name, tool: "permission-mode",
     summary: `Permission mode: ${before} to ${after}`, decision: "user-approved", source: "user",
+  }),
+}));
+// 2026-10-16 (wave 2, package E): security keys and passkeys for sensitive
+// approvals (server/security-keys.ts, server/routes/security-keys.ts,
+// shared/step-up.ts). The Allow of a card in a class the answering person
+// chose needs a step-up signed by their key for that very card, its
+// content and that answer (`stepUpGate`, called by every answer path).
+ROUTES.push(createSecurityKeyRoutes({
+  keys: securityKeys,
+  person: ruleManager,
+  userName: (auth) => auth.kind === "session"
+    ? (auth.session.email ?? auth.session.label ?? "Sagax").trim() || "Sagax"
+    : (cfg.profile?.email ?? "Sagax"),
+  approvalGrants: (auth, _person, target) => {
+    const message = store.messagesFor(target.threadId).find((row) => row.card?.requestId === target.requestId);
+    const card = message?.card;
+    if (!message || !card || card.answered || card.dismissed || card.expired) return { status: 404, error: "This approval is no longer waiting." };
+    // only who may answer the card may ask a step-up for it
+    const adminCheck = adminApprovalCheck(auth, target.threadId, target.requestId);
+    if (adminCheck === "refused") return { status: 403, error: ADMIN_APPROVAL_REQUIRED.error };
+    const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, target.threadId, target.requestId);
+    if (ownerRefusal) return { status: 403, error: ownerRefusal };
+    const refusal = cardAnswerRefusal(auth, target.threadId, target.requestId, "allow");
+    if (refusal) return { status: 403, error: refusal };
+    const found = approvalGrantsFor({ threadId: target.threadId, requestId: target.requestId, card, botId: message.from?.botId ?? store.botByThread(target.threadId)?.id, answer: target.answer });
+    if ("error" in found) return found;
+    const grants = found.grants;
+    return { grants, label: (card.plain?.title ?? card.title ?? "").slice(0, 200) };
+  },
+  audit: (row, auth) => orgAudit({
+    category: "approval", action: row.action, target: { kind: "person", id: row.personId },
+    ...(row.before ? { before: row.before } : {}),
+    ...(row.after ? { after: row.after } : {}),
+    actor: orgAuditActor(auth),
   }),
 }));
 // 2026-10-16: an email draft's Send: an approval card, then the send on Allow
@@ -24100,6 +24151,7 @@ ROUTES.push(createEmailDraftRoutes({ ask: requestEmailDraftSend, status: emailDr
 ROUTES.push(createCustomRuleRoutes({
   store: customRules,
   manager: ruleManager,
+  stepUp: (_auth, personId, detail, stepUp) => settingsStepUpGate(personId, "custom-rules.allow", detail, stepUp),
   ownedBots: botsOwnedBy,
   home: serverHome(),
   bindingFor: (personId, where) => {
@@ -25617,6 +25669,60 @@ function ruleManager(auth: RequestAuth): string | null {
   if (auth.kind === "session" && isBotActSession(auth.session)) return null;
   const id = approvalCallerUserId(auth);
   return id ? id : null;
+}
+
+// ── security key step-up (wave 2, package E) ───────────────────────────
+/** The call's risk classes as custom rules read them. A card that cannot
+ * be read is in every one of them (fail closed). */
+function cardRiskClasses(card: NonNullable<Message["card"]>): RiskClass[] {
+  if (!card.tool) return [];
+  try {
+    const binding = card.customRuleCandidate?.binding;
+    return factsForCall({
+      tool: card.tool,
+      ...(card.mcpTool ? { mcpTool: card.mcpTool } : {}),
+      ...(card.toolInput ? { input: card.toolInput } : {}),
+      ...(card.toolHints ? { hints: card.toolHints } : {}),
+      ...(binding?.command ? { command: binding.command } : {}),
+      summary: card.subtitle,
+    }).risks;
+  } catch {
+    return ["destructive", "irreversible", "money", "external-send"];
+  }
+}
+
+/** Every answer path asks this before an Allow goes anywhere
+ * (server/step-up-gate.ts). A path that cannot carry a step-up (a Live
+ * call, the console, an AI client) passes none and is refused for a card
+ * that needs one: never let through silently. */
+function stepUpGate(person: string | null, threadId: string, requestId: string, behavior: string, answer: StepUpAnswer, stepUp: unknown): StepUpDecision {
+  const card = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId)?.card;
+  return approvalStepUp({ keys: securityKeys, person, threadId, requestId, card, behavior, answer, risks: card ? cardRiskClasses(card) : [], stepUp });
+}
+
+/** A standing grant (Always allow) saved from a card: its own grant of the
+ * same step-up. */
+function alwaysAllowStepUpGate(person: string | null, botId: string, threadId: string, requestId: string, key: string, stepUp: unknown): StepUpDecision {
+  const card = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId)?.card;
+  return alwaysAllowStepUp({ keys: securityKeys, person, botId, threadId, requestId, card, key, risks: card ? cardRiskClasses(card) : [], stepUp });
+}
+
+function stepUpAnswerOf(body: Record<string, unknown> | null | undefined): StepUpAnswer {
+  return {
+    always: body?.always === true,
+    rememberCommand: body?.rememberCommand === true,
+    rule: body?.rule === "allow" || body?.rule === "deny" ? body.rule : null,
+  };
+}
+
+/** A settings change that loosens a protection: the person's key when they
+ * chose the class that protects it. */
+function settingsStepUpGate(person: string, action: StepUpSettingsAction, detail: Record<string, unknown>, stepUp: unknown): { status: number; body: StepUpRefusal } | null {
+  const protectedBy = SETTINGS_ACTION_CLASS[action];
+  if (!protectedBy) return null;
+  const required = securityKeys.required(person, [protectedBy]);
+  if (!required.length) return null;
+  return settingsStepUp(securityKeys, person, action, detail, stepUp, required);
 }
 
 /** "Always allow" or "Always deny" on a card: save the owner's rule before
@@ -29970,6 +30076,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (await orgMember(req, res, url)) return;
     // 2026-10-11: Perspicax's link routes, the link token only.
     if (await orgLink(req, res, url)) return;
+    // 2026-10-16: a security key ceremony, its own id only (server/routes/security-keys.ts).
+    if (await securityKeyCeremonies(req, res, url)) return;
     // An organization server signs people in with Pulsatrix only: the
     // interim email codes and invitation links are refused outright.
     if (IDENTITY.kind === "perspicax") {
@@ -36713,6 +36821,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the card it came from may remember it.
       const refusal = cardAnswerRefusal(auth, bot.threadId, pending.card!.requestId!, "allow");
       if (refusal) return json(res, 403, { error: refusal });
+      const stepUpRefusal = alwaysAllowStepUpGate(ruleManager(auth), bot.id, bot.threadId, pending.card!.requestId!, allowKey, body.stepUp);
+      if (stepUpRefusal) return json(res, stepUpRefusal.status, stepUpRefusal.body);
       store.patchTask(bot.id, bot.threadId, {
         alwaysAllow: [...new Set([...(bot.alwaysAllow ?? []), allowKey])].slice(0, 200),
       });
@@ -37252,7 +37362,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!Array.isArray(body.alwaysAllow) || body.alwaysAllow.some((t: unknown) => typeof t !== "string")) {
           return json(res, 400, { error: "alwaysAllow must be a list of tool keys" });
         }
-        patch.alwaysAllow = [...new Set(body.alwaysAllow as string[])].slice(0, 200);
+        const nextAllow = [...new Set(body.alwaysAllow as string[])].slice(0, 200);
+        patch.alwaysAllow = nextAllow;
+        // A standing grant added here (a room card's Always allow) needs the
+        // person's key like the card itself, when they chose "always-grant".
+        const added = nextAllow.filter((key) => !(existingBot?.alwaysAllow ?? []).includes(key));
+        if (added.length) {
+          const person = ruleManager(auth);
+          for (const key of added) {
+            const pending = pendingApprovalCards().find((entry) => entry.bot.id === m![1] && entry.card.allowKey === key);
+            const refused = pending
+              ? alwaysAllowStepUpGate(person, m![1]!, pending.threadId, pending.card.requestId!, key, body.stepUp)
+              : securityKeys.required(person, ["always-grant"]).length
+                ? { status: 403, body: { error: "Always allow needs your security key: give it from the approval card.", code: "step_up_required", classes: ["always-grant"] } }
+                : null;
+            if (refused) return json(res, refused.status, refused.body);
+          }
+        }
       }
       // What "the proof of a human" above actually rests on. In the packaged
       // desktop it is real: every mutation here already carried the owner
@@ -38550,6 +38676,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, bot.threadId, String(body.requestId), behavior);
       if (refusal) return json(res, 403, { error: refusal });
+      const stepUpRefusal = stepUpGate(ruleManager(auth), bot.threadId, String(body.requestId), behavior, stepUpAnswerOf(body), body.stepUp);
+      if (stepUpRefusal) return json(res, stepUpRefusal.status, stepUpRefusal.body);
       if (body.rememberCommand === true) {
         const refusal = commandRememberRefusal(auth, bot.threadId, String(body.requestId), behavior);
         if (refusal) return json(res, 403, { error: refusal });
@@ -38663,6 +38791,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
       if (refusal) return json(res, 403, { error: refusal });
+      const stepUpRefusal = stepUpGate(ruleManager(auth), threadId, requestId, behavior, stepUpAnswerOf(body), body.stepUp);
+      if (stepUpRefusal) return json(res, stepUpRefusal.status, stepUpRefusal.body);
       if (body.rememberCommand === true) {
         const refusal = commandRememberRefusal(auth, threadId, requestId, behavior);
         if (refusal) return json(res, 403, { error: refusal });

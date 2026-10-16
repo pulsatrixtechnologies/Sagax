@@ -38,7 +38,13 @@ export interface OwnerApprovalRouteDeps {
   audit: (row: { action: string; botId?: string; personId: string; before?: Record<string, unknown>; after?: Record<string, unknown> }, auth: RequestAuth) => void;
   /** One journal row for a mode change. */
   journalMode: (bot: { id: string; name: string; threadId: string }, before: BotPermissionMode, after: BotPermissionMode) => void;
+  /** 2026-10-16 (security keys): a change that loosens (a rule that allows,
+   * a looser mode) needs the person's key when they chose "rule-change"
+   * (shared/step-up.ts). Null lets it through; else the refusal. */
+  stepUp?: (auth: RequestAuth, personId: string, action: "approval-rules.allow" | "permission-mode", detail: Record<string, unknown>, stepUp: unknown) => { status: number; body: unknown } | null;
 }
+
+const MODE_RANK: Record<BotPermissionMode, number> = { approval: 0, auto: 1, bypass: 2 };
 
 export function legacyRuleId(botId: string, key: string): string {
   return `legacy_${Buffer.from(`${botId}\n${key}`).toString("base64url")}`;
@@ -122,6 +128,19 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
         deps.audit({ action: "approval.rule.remove", personId: me, before: { rule: id } }, auth);
         return json(res, 200, { ok: true });
       }
+      const current = deps.store.rulesOf(me).find((rule) => rule.id === id);
+      const widens = body.behavior === "allow"
+        ? current?.behavior !== "allow" || body.anyTarget === true || body.botId === null
+        : body.behavior === undefined && current?.behavior === "allow" && (body.anyTarget === true || body.botId === null);
+      if (current && widens && deps.stepUp) {
+        const refused = deps.stepUp(auth, me, "approval-rules.allow", {
+          id,
+          ...(isRuleBehavior(body.behavior) ? { behavior: body.behavior } : {}),
+          ...(body.botId !== undefined ? { botId: body.botId } : {}),
+          ...(body.anyTarget === true ? { anyTarget: true } : {}),
+        }, body.stepUp);
+        if (refused) return json(res, refused.status, refused.body);
+      }
       const updated = deps.store.update(me, id, {
         ...(isRuleBehavior(body.behavior) ? { behavior: body.behavior } : {}),
         ...(typeof body.description === "string" ? { description: body.description } : {}),
@@ -151,6 +170,10 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
         if (refusal) return json(res, 403, { error: refusal, code: "bypass_not_allowed" });
       }
       const before = deps.store.modeOf(botId, ownerId);
+      if (MODE_RANK[next] > MODE_RANK[before] && deps.stepUp) {
+        const refused = deps.stepUp(auth, me, "permission-mode", { botId, mode: next }, body.stepUp);
+        if (refused) return json(res, refused.status, refused.body);
+      }
       try {
         deps.store.setMode(botId, ownerId, next);
       } catch (error) {

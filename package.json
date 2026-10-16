@@ -111,6 +111,7 @@
     "@lezer/markdown": "1.8.0",
     "@novnc/novnc": "1.7.0",
     "@resvg/resvg-js": "2.6.2",
+    "@simplewebauthn/server": "14.0.3",
     "@tanstack/react-virtual": "^3.14.13",
     "@trycua/cua-driver": "0.33.0",
     "@xterm/addon-fit": "^0.11.0",

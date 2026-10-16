@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, Bell, Check, Coins, Download, ExternalLink, FlaskConical, KeyRound, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, Bell, Check, Coins, Download, ExternalLink, FlaskConical, KeyRound, Monitor, Palette, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { connectedAppsEnabled, decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -46,6 +46,7 @@ import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { AccountCard } from "./settings/AccountCard";
 import { DefaultBotSettings } from "./NewBotDialog";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
+import { SecurityKeySettings } from "./SecurityKeySettings";
 import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
@@ -98,6 +99,9 @@ export const SECTIONS: Array<{
   { id: "notifications", group: "you", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
   // 2026-10-16: the credential vault (logins, API keys, notes; 1Password).
   { id: "credentials", group: "you", labelKey: "settings.section.credentials", icon: KeyRound, keywords: ["credentials", "identifiants", "vault", "coffre", "password", "mot de passe", "login", "connexion", "totp", "2fa", "one-time code", "code à usage unique", "1password", "api key", "clé api", "autofill", "remplissage"] },
+  // 2026-10-16 (wave 2, package E): security keys and passkeys, and which
+  // approvals need one. Each person's own.
+  { id: "security", group: "you", labelKey: "settings.section.security", icon: ShieldCheck, keywords: ["security", "sécurité", "security key", "clé de sécurité", "passkey", "clé d'accès", "yubikey", "webauthn", "touch id", "face id", "step-up", "sensitive", "sensibles", "approvals", "approbations"] },
   // Models and voice (2026-10-14): Integrations and Models and accounts in
   // one page; Connected apps and Decision model are cards of it.
   { id: "engines", group: "ai", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées", "decision", "jev", "typesafe", "routing", "auto", "who answers", "auto model", "modèle auto", "moteurs", "needs setup", "à configurer", "voice engine", "moteur de voix", "fish audio", "live calls", "appels en direct", "image provider", "fournisseur d'images", "génération d'images", "cloud coding agents", "microphone", "micro", "audio", "input device", "entrée audio"] },
@@ -843,6 +847,8 @@ export function SettingsModal() {
             )}
 
             {section === "backups" && <WorkspaceBackupSettings />}
+
+            {section === "security" && <SecurityKeySettings />}
 
             {section === "computer" && <LocalComputerSection />}
 

@@ -1,0 +1,103 @@
+// Real isolated server + native Claude permission broker + a software
+// security key (server/testing/fake-authenticator.ts). No real model calls,
+// user profiles, shell commands or live application data are used.
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { connect, type Socket } from "node:net";
+import { join } from "node:path";
+import { expect, it } from "vitest";
+import { launchVerificationServer } from "../scripts/control-omb.ts";
+import { fakeAuthenticator } from "./testing/fake-authenticator.ts";
+
+it("an Allow in a chosen class needs the person's key, bound to that card, once", async () => {
+  const fixture = await launchVerificationServer({ FAKE_CLAUDE_MODE: "hang" });
+  const { url, dataDir } = fixture.info;
+  const port = new URL(url).port;
+  const localhost = `http://localhost:${port}`;
+  const sockets: Socket[] = [];
+  const call = async (method: string, path: string, body?: unknown) => {
+    const response = await fetch(url + path, { method, headers: { origin: url, "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(10_000) });
+    return { status: response.status, body: await response.json() as any };
+  };
+  const api = async (method: string, path: string, body?: unknown, status = 200) => {
+    const result = await call(method, path, body);
+    expect(result.status, `${method} ${path}: ${JSON.stringify(result.body)}`).toBe(status);
+    return result.body;
+  };
+  const key = fakeAuthenticator();
+  /** What the ceremony page does: fetch the options, ask the key, post. */
+  const ceremony = async (start: { ceremonyId: string; kind: string }) => {
+    const options = (await api("GET", `/api/security-keys/ceremony/${start.ceremonyId}`)).options;
+    const response = start.kind === "register" ? key.register(options, localhost, "localhost") : key.assert(options, localhost, "localhost");
+    await api("POST", `/api/security-keys/ceremony/${start.ceremonyId}`, { response });
+  };
+  const card = async (thread: string, id: string) =>
+    (await api("GET", `/api/threads/${thread}/messages?limit=100`)).messages.find((message: any) => message.card?.requestId === id)?.card;
+  const ask = async (socketPath: string, command: string) => {
+    const socket = connect(socketPath);
+    sockets.push(socket);
+    await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+    const id = randomUUID();
+    let buffer = "";
+    const reply = new Promise<any>((resolve, reject) => {
+      socket.once("error", reject);
+      socket.setTimeout(15_000, () => socket.destroy(new Error(`Permission reply timed out: ${id}`)));
+      socket.on("data", (chunk) => {
+        buffer += chunk;
+        if (buffer.includes("\n")) resolve(JSON.parse(buffer.split("\n")[0]!));
+      });
+    });
+    void reply.catch(() => {});
+    socket.write(JSON.stringify({ t: "ask", id, tool: "Bash", input: { command } }) + "\n");
+    await expect.poll(async () => Boolean(await card(threadId, id)), { timeout: 15_000 }).toBe(true);
+    return { id, reply };
+  };
+  let threadId = "";
+  try {
+    // a key, then the class
+    await ceremony(await api("POST", "/api/security-keys/register", { name: "Fixture key", via: "desktop-window" }));
+    await api("PUT", "/api/security-keys/classes", { classes: ["destructive"] });
+
+    const bot = (await api("POST", "/api/bots", { name: "Step-up fixture", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
+    threadId = bot.threadId;
+    await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.threadId}`, { approvalMode: "ask" });
+    const dump = join(dataDir, "fake-claude-dump.json");
+    rmSync(dump, { force: true });
+    await api("POST", `/api/bots/${bot.id}/messages`, { threadId, text: "Hold this verification task while its approvals are exercised." }, 202);
+    await expect.poll(() => existsSync(dump), { timeout: 15_000 }).toBe(true);
+    const socketPath = JSON.parse(readFileSync(dump, "utf8")).mcpConfig.mcpServers.ogb.args.at(-1) as string;
+
+    const first = await ask(socketPath, "rm /tmp/sagax-step-up-fixture-a");
+    // no key: refused, with what to sign
+    const refused = await call("POST", `/api/threads/${threadId}/respond`, { requestId: first.id, behavior: "allow" });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ code: "step_up_required", classes: ["destructive"], target: { kind: "approval", requestId: first.id } });
+    expect((await card(threadId, first.id)).answered).toBeUndefined();
+    // the AI client and voice paths carry no key either: same refusal
+    expect((await call("POST", `/api/bots/${bot.id}/respond`, { threadId, requestId: first.id, behavior: "allow" })).status).toBe(403);
+
+    const second = await ask(socketPath, "rm /tmp/sagax-step-up-fixture-b");
+    // a step-up signed for the second card does not approve the first
+    const forSecond = await api("POST", "/api/security-keys/begin", { target: { kind: "approval", threadId, requestId: second.id, answer: {} }, via: "desktop-window" });
+    await ceremony(forSecond);
+    expect((await call("POST", `/api/threads/${threadId}/respond`, { requestId: first.id, behavior: "allow", stepUp: forSecond.ceremonyId })).body)
+      .toMatchObject({ code: "step_up_failed", reason: "wrong-target" });
+
+    // the right one, once
+    const forFirst = await api("POST", "/api/security-keys/begin", { target: refused.body.target, via: "desktop-window" });
+    await ceremony(forFirst);
+    expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: first.id, behavior: "allow", stepUp: forFirst.ceremonyId })).outcome).toBe("allowed-once");
+    expect(await first.reply).toMatchObject({ id: first.id, behavior: "allow" });
+    // replayed on another card: refused
+    expect((await call("POST", `/api/threads/${threadId}/respond`, { requestId: second.id, behavior: "allow", stepUp: forFirst.ceremonyId })).status).toBe(403);
+
+    // declining never needs a key
+    await api("POST", `/api/threads/${threadId}/respond`, { requestId: second.id, behavior: "deny" });
+    expect(await second.reply).toMatchObject({ id: second.id, behavior: "deny" });
+    await api("POST", `/api/bots/${bot.id}/interrupt`, { threadId });
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await fixture.close();
+  }
+}, 90_000);

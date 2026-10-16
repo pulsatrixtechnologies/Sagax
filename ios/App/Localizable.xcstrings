@@ -68257,6 +68257,36 @@
           }
         }
       }
+    },
+    "This approval needs your security key, and this address cannot use one. Approve it from the desktop app or a browser on https.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette approbation demande votre clé de sécurité, et cette adresse ne peut pas en utiliser. Approuvez depuis l'app de bureau ou un navigateur en https."
+          }
+        }
+      }
+    },
+    "The security key request was cancelled. Nothing was approved.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La demande de clé de sécurité a été annulée. Rien n'a été approuvé."
+          }
+        }
+      }
+    },
+    "Your security key did not confirm this. Nothing was approved.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre clé de sécurité n'a pas confirmé. Rien n'a été approuvé."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

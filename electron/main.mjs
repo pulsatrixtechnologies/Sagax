@@ -108,6 +108,7 @@ import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDes
 import { createOrgLibrary } from "./org-library.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
 import { createOrgMemoryCache } from "./org-memory-cache.mjs";
+import { createSecurityKeyWindow } from "./security-key-window.mjs";
 import { openFolderInObsidian } from "./obsidian-vault.mjs";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
 import { keepUserDataInPlace, RUNTIME_NAME } from "./user-data-location.mjs";
@@ -3728,6 +3729,14 @@ const orgMemoryCache = () => (orgMemoryCacheInstance ??= createOrgMemoryCache({
   decrypt: (data) => safeStorage.decryptString(data),
   orgServer: orgMemoryServerCall,
   source: () => currentBundledOrigin,
+}));
+// Security keys for the local page (electron/security-key-window.mjs).
+let securityKeyCeremony = null;
+ipcMain.handle("security-key:ceremony", localOnly("security-key:ceremony", (_event, pageUrl) => {
+  securityKeyCeremony ??= createSecurityKeyWindow({
+    BrowserWindow, session, port: () => SERVER_PORT, parent: () => mainWindow, french: /^fr\b/i.test(app.getLocale()),
+  });
+  return securityKeyCeremony(pageUrl);
 }));
 ipcMain.handle("org-memory:state", desktopUiOnly("org-memory:state", () => orgMemoryCache().state()));
 ipcMain.handle("org-memory:auto", desktopUiOnly("org-memory:auto", () => orgMemoryCache().auto()));

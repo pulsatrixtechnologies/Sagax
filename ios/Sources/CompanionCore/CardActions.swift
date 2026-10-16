@@ -241,6 +241,8 @@ public struct ApprovalDecision: Hashable, Sendable {
     public var rememberCommand: Bool
     /// "Always allow": saved on the bot BEFORE the answer is sent.
     public var alwaysAllowKey: String?
+    /// A verified security key step-up for this answer (Client+StepUp.swift).
+    public var stepUp: String?
 
     public init(
         requestId: String, behavior: String, message: String? = nil, reviewedSha256: String? = nil,

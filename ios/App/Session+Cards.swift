@@ -9,12 +9,43 @@ extension Session {
     /// One dock decision. "Always allow" saves the bot's grant BEFORE the
     /// answer goes out: the bot may ask again within milliseconds.
     func decide(_ choice: ApprovalDockRules.Choice, on pending: PendingApproval, in chat: Chat) async {
-        let decision = ApprovalDockRules.decision(choice, for: pending)
+        var decision = ApprovalDockRules.decision(choice, for: pending)
         let thread = pending.answerThread(conversation: chat.threadId)
+        // A step-up made for this card covers its Always allow and its
+        // Allow, each once (server/step-up-gate.ts): one Face ID, not two.
+        var stepUp: String?
         if let key = decision.alwaysAllowKey, let botId = askingBotId(pending, in: chat) {
-            await perform { try await $0.alwaysAllow(botId: botId, key: key, threadId: thread) }
+            await perform { client in
+                stepUp = try await Self.withStepUp(client) { stepUp in
+                    try await client.alwaysAllow(botId: botId, key: key, threadId: thread, stepUp: stepUp)
+                }
+            }
         }
-        await perform { try await $0.respond(threadId: thread, decision: decision) }
+        decision.stepUp = stepUp
+        let answer = decision
+        await perform { client in
+            _ = try await Self.withStepUp(client, first: answer.stepUp) { stepUp in
+                var sent = answer
+                sent.stepUp = stepUp
+                try await client.respond(threadId: thread, decision: sent)
+            }
+        }
+    }
+
+    /// Run `send`; when the server asks for the person's security key, run
+    /// the step-up once and send again with it. Returns the step-up used.
+    /// A step-up that did not count is retried once with a fresh one.
+    @discardableResult
+    static func withStepUp(_ client: CompanionClient, first: String? = nil, _ send: (String?) async throws -> Void) async throws -> String? {
+        do {
+            try await send(first)
+            return first
+        } catch let refusal as StepUpRequired {
+            if refusal.failed && first == nil { throw refusal }
+            let fresh = try await SecurityKeyStepUp.shared.confirm(refusal, with: client)
+            try await send(fresh)
+            return fresh
+        }
     }
 
     /// "Allow all read-only (N)": one allow per read-only ask, nothing else.

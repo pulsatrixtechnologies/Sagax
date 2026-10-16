@@ -1737,10 +1737,12 @@ public struct CompanionClient: Sendable {
 
     /// Remember a grant so the same tool stops asking. The harness decides
     /// the key and puts it on the card; the phone never derives its own.
-    public func alwaysAllow(botId: String, key: String, threadId: String? = nil) async throws {
+    public func alwaysAllow(botId: String, key: String, threadId: String? = nil, stepUp: String? = nil) async throws {
         var body = ["allowKey": key]
         if let threadId { body["threadId"] = threadId }
-        try await send(try makeRequest("POST", "/api/bots/\(botId)/always-allow", body: body))
+        if let stepUp { body["stepUp"] = stepUp }
+        let (data, response) = try await perform(try makeRequest("POST", "/api/bots/\(botId)/always-allow", body: body))
+        try Self.checkStepUp(response, data)
     }
 
     /// Starts one more account authorization for a toolkit. Revocation is

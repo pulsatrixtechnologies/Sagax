@@ -1,0 +1,490 @@
+// Security keys and passkeys (WebAuthn) for sensitive approvals: each
+// person's registered keys, the classes they chose (shared/step-up.ts), and
+// the short-lived ceremonies that register a key or sign a step-up.
+//
+// On disk: security-keys.json (mode 0600), one entry per person. A key is
+// its credential id, its public key and its signature counter, plus the RP
+// ID (the address) it was made on; never a secret.
+//
+// A ceremony is held in memory only:
+//   - created by the signed-in person (`beginRegistration`,
+//     `beginAssertion`), with a random id and challenge (32 bytes each),
+//     the RP ID and the origins it may answer from, and for a step-up the
+//     grants it will authorize, each computed by the server from the live
+//     card or change (never from the client's words);
+//   - completed once (`complete`): the browser's answer is verified by
+//     @simplewebauthn/server against that challenge, RP ID and origins, and
+//     against one of this person's keys for that RP ID;
+//   - a verified step-up authorizes each of its grants once
+//     (`consume`), for the same person, within a short time. Any mismatch
+//     (another person, another card, a changed card) burns the ceremony.
+// Expired ceremonies are dropped. A restart drops them all.
+
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from "@simplewebauthn/server";
+import { z } from "zod";
+
+import { writeFileAtomic } from "./atomic.ts";
+import {
+  STEP_UP_CLASSES,
+  isStepUpClass,
+  requiredClasses,
+  type SecurityKeyView,
+  type StepUpClass,
+  type StepUpFailure,
+} from "../shared/step-up.ts";
+
+/** How long a ceremony waits for the key, from its start. */
+export const CEREMONY_TTL_MS = 2 * 60_000;
+/** How long a verified step-up may be used, from its verification. */
+export const STEP_UP_USE_MS = 60_000;
+const MAX_KEYS_PER_PERSON = 20;
+const MAX_CEREMONIES_PER_PERSON = 8;
+const MAX_CEREMONIES = 2_000;
+const MAX_NAME = 80;
+
+const credentialSchema = z.object({
+  id: z.string().min(1).max(1_400),
+  publicKey: z.string().min(1).max(4_000),
+  counter: z.number().int().min(0),
+  transports: z.array(z.string().max(40)).max(10).optional(),
+  rpId: z.string().min(1).max(253),
+  name: z.string().max(MAX_NAME),
+  createdAt: z.number(),
+  lastUsedAt: z.number().optional(),
+  deviceType: z.enum(["singleDevice", "multiDevice"]).optional(),
+  backedUp: z.boolean().optional(),
+});
+
+const personSchema = z.object({
+  /** WebAuthn user handle: random, never the person's id or email. */
+  userHandle: z.string().min(1).max(200),
+  credentials: z.array(credentialSchema).max(MAX_KEYS_PER_PERSON),
+  classes: z.array(z.enum(STEP_UP_CLASSES)),
+});
+
+const fileSchema = z.object({
+  version: z.literal(1),
+  people: z.record(z.string(), personSchema),
+});
+
+type StoredCredential = z.infer<typeof credentialSchema>;
+type PersonEntry = z.infer<typeof personSchema>;
+
+export class SecurityKeyStore {
+  private data: z.infer<typeof fileSchema> = { version: 1, people: {} };
+  /** The file exists but could not be read: every chosen class refuses
+   * (whose choice it was is unknown) and nothing is written over it. */
+  unreadable = false;
+
+  private readonly file: string;
+
+  constructor(file: string) {
+    this.file = file;
+    this.load();
+  }
+
+  private load(): void {
+    let raw: string;
+    try {
+      raw = readFileSync(this.file, "utf8");
+    } catch {
+      return;
+    }
+    try {
+      this.data = fileSchema.parse(JSON.parse(raw));
+    } catch {
+      this.unreadable = true;
+      console.error("[security-keys] security-keys.json could not be read; sensitive approvals are refused until it is repaired.");
+    }
+  }
+
+  private save(): void {
+    if (this.unreadable) throw Object.assign(new Error("Saved security keys could not be read. Repair security-keys.json first."), { status: 503 });
+    mkdirSync(dirname(this.file), { recursive: true });
+    writeFileAtomic(this.file, JSON.stringify(this.data, null, 2), { mode: 0o600 });
+  }
+
+  private entry(person: string): PersonEntry | undefined {
+    return this.data.people[person];
+  }
+
+  private ensure(person: string): PersonEntry {
+    const found = this.data.people[person];
+    if (found) return found;
+    const created: PersonEntry = { userHandle: randomBytes(32).toString("base64url"), credentials: [], classes: [] };
+    this.data.people[person] = created;
+    return created;
+  }
+
+  userHandle(person: string): string {
+    const found = this.entry(person);
+    if (found) return found.userHandle;
+    const created = this.ensure(person);
+    this.save();
+    return created.userHandle;
+  }
+
+  credentials(person: string): StoredCredential[] {
+    return (this.entry(person)?.credentials ?? []).map((credential) => ({ ...credential }));
+  }
+
+  classes(person: string): StepUpClass[] {
+    return [...(this.entry(person)?.classes ?? [])];
+  }
+
+  addCredential(person: string, credential: StoredCredential): void {
+    const entry = this.ensure(person);
+    if (entry.credentials.some((existing) => existing.id === credential.id)) {
+      throw Object.assign(new Error("This key is already registered."), { status: 409 });
+    }
+    // A credential id is unique across people too: never two owners.
+    for (const other of Object.values(this.data.people)) {
+      if (other.credentials.some((existing) => existing.id === credential.id)) {
+        throw Object.assign(new Error("This key is already registered."), { status: 409 });
+      }
+    }
+    if (entry.credentials.length >= MAX_KEYS_PER_PERSON) {
+      throw Object.assign(new Error(`At most ${MAX_KEYS_PER_PERSON} keys per person.`), { status: 409 });
+    }
+    entry.credentials.push(credential);
+    this.save();
+  }
+
+  /** Remove one key. The last key takes the chosen classes with it: the
+   * step-up that removed it was the person's own. */
+  removeCredential(person: string, id: string): boolean {
+    const entry = this.entry(person);
+    if (!entry) return false;
+    const before = entry.credentials.length;
+    entry.credentials = entry.credentials.filter((credential) => credential.id !== id);
+    if (entry.credentials.length === before) return false;
+    if (!entry.credentials.length) entry.classes = [];
+    this.save();
+    return true;
+  }
+
+  setClasses(person: string, classes: readonly StepUpClass[]): void {
+    const entry = this.ensure(person);
+    entry.classes = STEP_UP_CLASSES.filter((name) => classes.includes(name));
+    this.save();
+  }
+
+  touch(person: string, id: string, counter: number, at: number): void {
+    const credential = this.entry(person)?.credentials.find((candidate) => candidate.id === id);
+    if (!credential) return;
+    credential.counter = counter;
+    credential.lastUsedAt = at;
+    this.save();
+  }
+}
+
+export type CeremonyKind = "register" | "assert";
+
+interface Ceremony {
+  id: string;
+  kind: CeremonyKind;
+  person: string;
+  rpId: string;
+  origins: string[];
+  challenge: string;
+  createdAt: number;
+  options: Record<string, unknown>;
+  /** What the page shows while it waits for the key. */
+  label: string;
+  /** register: the name the key will carry. */
+  name?: string;
+  /** assert: what it authorizes, each once. */
+  grants: string[];
+  used: Set<string>;
+  verifiedAt?: number;
+}
+
+export interface CeremonyStart {
+  ceremonyId: string;
+  /** PublicKeyCredentialCreationOptionsJSON or ...RequestOptionsJSON. */
+  options: Record<string, unknown>;
+  expiresAt: number;
+}
+
+export type ConsumeResult = { ok: true } | { ok: false; reason: StepUpFailure };
+
+export interface SecurityKeysOptions {
+  store: SecurityKeyStore;
+  rpName?: string;
+  now?: () => number;
+}
+
+function sameText(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/** The digest a grant names: the server hashes the content, the ceremony
+ * keeps only the digest. */
+export function grantDigest(parts: readonly string[]): string {
+  return createHash("sha256").update(parts.join("\u0000")).digest("base64url");
+}
+
+export function viewOf(credential: StoredCredential): SecurityKeyView {
+  return {
+    id: credential.id,
+    name: credential.name,
+    createdAt: credential.createdAt,
+    rpId: credential.rpId,
+    ...(credential.lastUsedAt ? { lastUsedAt: credential.lastUsedAt } : {}),
+    ...(credential.deviceType ? { deviceType: credential.deviceType } : {}),
+    ...(credential.backedUp !== undefined ? { backedUp: credential.backedUp } : {}),
+  };
+}
+
+/** The origins a ceremony on this RP ID may answer from: https on that
+ * host, and on localhost http or https on any port (this computer). */
+export function originAllowed(origin: string, rpId: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.origin !== origin) return false;
+  if (rpId === "localhost") return url.hostname === "localhost" && (url.protocol === "http:" || url.protocol === "https:");
+  return url.protocol === "https:" && url.hostname === rpId && (url.port === "" || url.port === "443");
+}
+
+export class SecurityKeys {
+  readonly store: SecurityKeyStore;
+  private readonly rpName: string;
+  private readonly now: () => number;
+  private readonly ceremonies = new Map<string, Ceremony>();
+
+  constructor(options: SecurityKeysOptions) {
+    this.store = options.store;
+    this.rpName = options.rpName ?? "Sagax";
+    this.now = options.now ?? Date.now;
+  }
+
+  /** The classes this person chose that a call in `classes` falls in.
+   * Unreadable keys: every class of the call (fail closed). */
+  required(person: string | null, classes: readonly StepUpClass[]): StepUpClass[] {
+    if (!classes.length) return [];
+    if (this.store.unreadable) return [...classes];
+    if (!person) return [];
+    return requiredClasses(this.store.classes(person), classes);
+  }
+
+  keys(person: string): SecurityKeyView[] {
+    return this.store.credentials(person).map(viewOf);
+  }
+
+  hasKey(person: string, rpId?: string | null): boolean {
+    return this.store.credentials(person).some((credential) => rpId === undefined || credential.rpId === rpId);
+  }
+
+  private prune(): void {
+    const now = this.now();
+    for (const [id, ceremony] of this.ceremonies) {
+      const end = ceremony.verifiedAt !== undefined ? ceremony.verifiedAt + STEP_UP_USE_MS : ceremony.createdAt + CEREMONY_TTL_MS;
+      if (now > end) this.ceremonies.delete(id);
+    }
+  }
+
+  private admit(person: string): void {
+    this.prune();
+    const mine = [...this.ceremonies.values()].filter((ceremony) => ceremony.person === person);
+    // the oldest of this person's ceremonies gives way, never another's
+    if (mine.length >= MAX_CEREMONIES_PER_PERSON) {
+      mine.sort((a, b) => a.createdAt - b.createdAt);
+      for (const old of mine.slice(0, mine.length - MAX_CEREMONIES_PER_PERSON + 1)) this.ceremonies.delete(old.id);
+    }
+    if (this.ceremonies.size >= MAX_CEREMONIES) {
+      throw Object.assign(new Error("Too many security key requests are waiting. Try again in a minute."), { status: 429 });
+    }
+  }
+
+  async beginRegistration(person: string, input: { rpId: string; origins: string[]; name: string; userName: string; label: string }): Promise<CeremonyStart> {
+    if (this.store.unreadable) throw Object.assign(new Error("Saved security keys could not be read. Repair security-keys.json first."), { status: 503 });
+    this.admit(person);
+    const existing = this.store.credentials(person);
+    const options = await generateRegistrationOptions({
+      rpName: this.rpName,
+      rpID: input.rpId,
+      userName: input.userName.slice(0, 64) || "Sagax",
+      userID: Buffer.from(this.store.userHandle(person), "base64url"),
+      attestationType: "none",
+      // the same authenticator twice adds nothing
+      excludeCredentials: existing.filter((credential) => credential.rpId === input.rpId)
+        .map((credential) => ({ id: credential.id, ...(credential.transports ? { transports: credential.transports } : {}) })),
+      authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
+      timeout: CEREMONY_TTL_MS,
+    });
+    const id = randomBytes(32).toString("base64url");
+    const ceremony: Ceremony = {
+      id, kind: "register", person, rpId: input.rpId, origins: input.origins,
+      challenge: options.challenge, createdAt: this.now(), options: options as unknown as Record<string, unknown>,
+      label: input.label, name: input.name.trim().slice(0, MAX_NAME) || "Security key", grants: [], used: new Set(),
+    };
+    this.ceremonies.set(id, ceremony);
+    return { ceremonyId: id, options: ceremony.options, expiresAt: ceremony.createdAt + CEREMONY_TTL_MS };
+  }
+
+  /** A step-up for these grants, signed by one of this person's keys made
+   * on this RP ID. None there: refused (`no_key`), never skipped. */
+  async beginAssertion(person: string, input: { rpId: string; origins: string[]; grants: string[]; label: string }): Promise<CeremonyStart | { error: "no_key" }> {
+    if (this.store.unreadable) throw Object.assign(new Error("Saved security keys could not be read. Repair security-keys.json first."), { status: 503 });
+    const credentials = this.store.credentials(person).filter((credential) => credential.rpId === input.rpId);
+    if (!credentials.length) return { error: "no_key" };
+    this.admit(person);
+    const options = await generateAuthenticationOptions({
+      rpID: input.rpId,
+      allowCredentials: credentials.map((credential) => ({ id: credential.id, ...(credential.transports ? { transports: credential.transports } : {}) })),
+      userVerification: "preferred",
+      timeout: CEREMONY_TTL_MS,
+    });
+    const id = randomBytes(32).toString("base64url");
+    const ceremony: Ceremony = {
+      id, kind: "assert", person, rpId: input.rpId, origins: input.origins,
+      challenge: options.challenge, createdAt: this.now(), options: options as unknown as Record<string, unknown>,
+      label: input.label, grants: [...new Set(input.grants)], used: new Set(),
+    };
+    this.ceremonies.set(id, ceremony);
+    return { ceremonyId: id, options: ceremony.options, expiresAt: ceremony.createdAt + CEREMONY_TTL_MS };
+  }
+
+  /** What the ceremony page needs: its kind, options and label. Only while
+   * the ceremony still waits for its key. */
+  pending(id: string): { kind: CeremonyKind; options: Record<string, unknown>; label: string; rpId: string } | null {
+    this.prune();
+    const ceremony = this.ceremonies.get(id);
+    if (!ceremony || ceremony.verifiedAt !== undefined) return null;
+    return { kind: ceremony.kind, options: ceremony.options, label: ceremony.label, rpId: ceremony.rpId };
+  }
+
+  /** Verify the browser's answer once. The ceremony is spent whatever the
+   * outcome: a failed answer starts over. */
+  async complete(id: string, response: unknown): Promise<{ ok: true; kind: CeremonyKind } | { ok: false; status: number; error: string }> {
+    this.prune();
+    const ceremony = this.ceremonies.get(id);
+    if (!ceremony || ceremony.verifiedAt !== undefined) return { ok: false, status: 404, error: "This security key request has expired. Start again." };
+    if (!response || typeof response !== "object" || Array.isArray(response)) {
+      this.ceremonies.delete(id);
+      return { ok: false, status: 400, error: "The security key's answer could not be read." };
+    }
+    const origins = ceremony.origins;
+    if (ceremony.kind === "register") {
+      this.ceremonies.delete(id);
+      try {
+        const verified = await verifyRegistrationResponse({
+          response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"],
+          expectedChallenge: ceremony.challenge,
+          expectedOrigin: origins,
+          expectedRPID: ceremony.rpId,
+          requireUserVerification: false,
+        });
+        if (!verified.verified) return { ok: false, status: 400, error: "The security key could not be verified." };
+        const info = verified.registrationInfo;
+        this.store.addCredential(ceremony.person, {
+          id: info.credential.id,
+          publicKey: Buffer.from(info.credential.publicKey).toString("base64url"),
+          counter: info.credential.counter,
+          ...(info.credential.transports?.length ? { transports: info.credential.transports.slice(0, 10) } : {}),
+          rpId: ceremony.rpId,
+          name: ceremony.name ?? "Security key",
+          createdAt: this.now(),
+          deviceType: info.credentialDeviceType,
+          backedUp: info.credentialBackedUp,
+        });
+        return { ok: true, kind: "register" };
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status === 409 || status === 503) return { ok: false, status, error: (error as Error).message };
+        return { ok: false, status: 400, error: "The security key could not be verified." };
+      }
+    }
+    const credentialId = typeof (response as { id?: unknown }).id === "string" ? (response as { id: string }).id : "";
+    const credential = this.store.credentials(ceremony.person).find((candidate) => candidate.rpId === ceremony.rpId && sameText(candidate.id, credentialId));
+    if (!credential) {
+      this.ceremonies.delete(id);
+      return { ok: false, status: 400, error: "This key is not one of yours for this address." };
+    }
+    try {
+      const verified = await verifyAuthenticationResponse({
+        response: response as Parameters<typeof verifyAuthenticationResponse>[0]["response"],
+        expectedChallenge: ceremony.challenge,
+        expectedOrigin: origins,
+        expectedRPID: ceremony.rpId,
+        credential: {
+          id: credential.id,
+          publicKey: new Uint8Array(Buffer.from(credential.publicKey, "base64url")),
+          counter: credential.counter,
+          ...(credential.transports ? { transports: credential.transports } : {}),
+        },
+        requireUserVerification: false,
+      });
+      if (!verified.verified) {
+        this.ceremonies.delete(id);
+        return { ok: false, status: 400, error: "The security key could not be verified." };
+      }
+      const at = this.now();
+      this.store.touch(ceremony.person, credential.id, verified.authenticationInfo.newCounter, at);
+      ceremony.verifiedAt = at;
+      return { ok: true, kind: "assert" };
+    } catch {
+      this.ceremonies.delete(id);
+      return { ok: false, status: 400, error: "The security key could not be verified." };
+    }
+  }
+
+  /** Use one grant of a verified step-up. Each grant once; the ceremony
+   * goes when every grant is used, or on any mismatch. */
+  consume(id: unknown, person: string | null, grant: string): ConsumeResult {
+    if (this.store.unreadable) return { ok: false, reason: "unreadable" };
+    if (typeof id !== "string" || !id) return { ok: false, reason: "missing" };
+    const ceremony = this.ceremonies.get(id);
+    if (!ceremony || ceremony.kind !== "assert") return { ok: false, reason: "missing" };
+    const now = this.now();
+    if (ceremony.verifiedAt === undefined) {
+      if (now > ceremony.createdAt + CEREMONY_TTL_MS) {
+        this.ceremonies.delete(id);
+        return { ok: false, reason: "expired" };
+      }
+      return { ok: false, reason: "not-verified" };
+    }
+    if (now > ceremony.verifiedAt + STEP_UP_USE_MS) {
+      this.ceremonies.delete(id);
+      return { ok: false, reason: "expired" };
+    }
+    if (!person || !sameText(ceremony.person, person)) {
+      this.ceremonies.delete(id);
+      return { ok: false, reason: "wrong-person" };
+    }
+    if (ceremony.used.has(grant)) return { ok: false, reason: "used" };
+    if (!ceremony.grants.includes(grant)) {
+      this.ceremonies.delete(id);
+      return { ok: false, reason: "wrong-target" };
+    }
+    ceremony.used.add(grant);
+    if (ceremony.grants.every((candidate) => ceremony.used.has(candidate))) this.ceremonies.delete(id);
+    return { ok: true };
+  }
+
+  /** For tests and the settings page: whether a ceremony is still held. */
+  holds(id: string): boolean {
+    this.prune();
+    return this.ceremonies.has(id);
+  }
+
+  setClasses(person: string, classes: readonly unknown[]): StepUpClass[] {
+    const picked = STEP_UP_CLASSES.filter((name) => classes.some((value) => isStepUpClass(value) && value === name));
+    this.store.setClasses(person, picked);
+    return picked;
+  }
+}

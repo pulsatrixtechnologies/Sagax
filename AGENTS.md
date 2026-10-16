@@ -226,6 +226,57 @@ covered by `server/meetings/*.test.ts` and `server/routes/meetings.test.ts`:
   `DATA_DIR/meetings/live.json` (ids of running meetings, 0600) is kept.
 - The transcript reaches the bot's summary turn behind `wrapUntrusted`.
 
+## Security keys for sensitive approvals (2026-10-16)
+
+A person may ask that some kinds of approval need one of their security keys
+or passkeys (WebAuthn) on top of the tap: Settings > Security
+(`src/components/SecurityKeySettings.tsx`). Classes and classifier in
+`shared/step-up.ts`; keys, ceremonies and verification (`@simplewebauthn/server`)
+in `server/security-keys.ts`; the decision in `server/step-up-gate.ts`; routes
+in `server/routes/security-keys.ts`. Rules, covered by
+`server/security-keys.test.ts`, `server/routes/security-keys.test.ts`,
+`server/security-keys.e2e.test.ts`, `shared/step-up.test.ts` and
+`src/state/store.step-up.test.ts`:
+
+- Classes: destructive, irreversible, money, external-send (the risk classes
+  custom rules read from the call), always-grant (Always allow, remember a
+  command, an owner rule that allows), publish-page, rule-change (an owner
+  rule from a card, a tool that edits rules; in Settings, a custom or owner
+  rule that allows and a looser permission mode). Each person's own, on an
+  organization server too: the answering person's choice applies.
+- Every answer path asks `stepUpGate` before an Allow: both `/respond`
+  routes, `/always-allow`, a bot PATCH adding an `alwaysAllow` key, a Live
+  call (`respondToCard`) and the console (`answerCardFromConsole`). Paths
+  that cannot carry a step-up (voice, console, AI clients through
+  `sagax_approve`) are refused for a card that needs one, never let through.
+  Declining never needs a key.
+- A step-up is a ceremony (32 random bytes, 2 minutes to answer, 60 seconds
+  to use once verified) bound to the person and to grants the server
+  computes: the card's thread, request id, a SHA-256 of its content
+  (`cardContentText`) and the answer's widening parts; an Always allow is its
+  own grant (bot and key). Each grant is used once; any mismatch (another
+  person, another card, a changed card) burns the ceremony. A replayed
+  WebAuthn answer fails on its challenge, a cloned key on its counter.
+- No key for this address (RP ID), a removed key, or an unreadable
+  `security-keys.json` (0600): refused. Removing a key, removing a class or
+  adding a second key needs an existing key; the last key removed clears the
+  classes. Recovery when every key is lost: remove the person's entry from
+  `security-keys.json` on the server.
+- RP ID: the https host the request came through (`x-forwarded-proto`), or
+  `SAGAX_WEBAUTHN_RP_ID` (with `SAGAX_WEBAUTHN_ORIGINS`); never an IP address.
+  The desktop's own page (127.0.0.1) runs the ceremony in a small window on
+  `http://localhost:<port>` (`electron/security-key-window.mjs`, RP ID
+  `localhost`). The phone opens the same ceremony page in an
+  AuthenticationServices sheet (`ios/App/SecurityKeyStepUp.swift`), https
+  servers only. Keys are per RP ID: a key made on one address does not
+  answer on another.
+- The public ceremony routes (`/api/security-keys/ceremony/:id`, its page,
+  its answer) run before the auth gate, as the MCP sign-in callback does;
+  the id is the authorization and the answer must be signed by the
+  person's own key. JSON only, `no-store`, a nonce CSP on the page.
+- Not covered: provider-native auto modes, Full access and rules that
+  already allow run without a card, so without a key.
+
 ## Conversations with a person have threads like a bot (2026-10-09)
 
 A direct conversation between two people (`peopleDm`, server/people-dms.ts)

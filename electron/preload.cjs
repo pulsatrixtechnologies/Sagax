@@ -514,6 +514,13 @@ const bridge = {
     openInObsidian: () => ipcRenderer.invoke("org-memory:open-obsidian"),
     showFolder: () => ipcRenderer.invoke("org-memory:show-folder"),
   },
+  /** Settings > Security and approvals that need a security key: the
+   * desktop's own page is on 127.0.0.1, which WebAuthn never accepts as an
+   * address, so the key runs in a small window on localhost
+   * (electron/security-key-window.mjs). Local page only. */
+  securityKey: {
+    ceremony: pageUrl => ipcRenderer.invoke("security-key:ceremony", pageUrl),
+  },
   computerSharing: {
     state: id => ipcRenderer.invoke("sharing:state", id),
     chooseFolder: () => ipcRenderer.invoke("sharing:folder"),

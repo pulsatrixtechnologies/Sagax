@@ -523,6 +523,12 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // them to the person and never to a bot's act copy of a session.
   { methods: ["GET", "POST"], path: /^\/api\/custom-rules$/ },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/custom-rules\/[\w-]+$/ },
+  // 2026-10-16: a person's own security keys and the approvals that need
+  // one (server/routes/security-keys.ts); always the caller's own.
+  { methods: ["GET"], path: /^\/api\/security-keys$/ },
+  { methods: ["PUT"], path: /^\/api\/security-keys\/classes$/ },
+  { methods: ["POST"], path: /^\/api\/security-keys\/(?:register|begin)$/ },
+  { methods: ["DELETE"], path: /^\/api\/security-keys\/[A-Za-z0-9_-]{1,1400}$/ },
   // rooms
   { methods: ["GET", "POST"], path: /^\/api\/groups$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/messages$/ },

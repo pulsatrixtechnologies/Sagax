@@ -48,6 +48,10 @@ export interface CustomRuleRouteDeps {
   bindingFor?: (personId: string, card: { threadId: string; requestId: string }) => CustomRuleBinding | null | undefined;
   audit: (row: { action: string; personId: string; botId?: string | null; before?: Record<string, unknown>; after?: Record<string, unknown> }, auth: RequestAuth) => void;
   home?: string;
+  /** 2026-10-16 (security keys): an allow rule saved or changed needs the
+   * person's key when they chose "rule-change" (shared/step-up.ts). Null
+   * lets it through; else the refusal to answer. */
+  stepUp?: (auth: RequestAuth, personId: string, detail: Record<string, unknown>, stepUp: unknown) => { status: number; body: unknown } | null;
 }
 
 export type CustomRuleView = CustomRule & { compiled: CompiledRule };
@@ -141,6 +145,10 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
           });
         }
       }
+      if (behavior === "allow" && deps.stepUp) {
+        const refused = deps.stepUp(auth, me, { op: "add", when: when.trim(), botId, riskScope, ...(card ? { fromCard: { threadId: card.threadId, requestId: card.requestId } } : {}) }, body.stepUp);
+        if (refused) return json(res, refused.status, refused.body);
+      }
       let rule: CustomRule;
       try {
         rule = deps.store.add({ ownerId: me, botId, when, behavior, riskScope, ...(binding ? { binding } : {}) });
@@ -183,6 +191,18 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       if (exact && nextBehavior === "allow" && !before.binding) return json(res, 400, EXACT_FROM_CARD_REFUSAL);
       if (before.binding && body.botId !== undefined && body.botId !== before.botId) {
         return json(res, 400, { error: "An exact command is allowed for the bot that asked it only.", code: "exact_command_one_bot" });
+      }
+      // a rule that allows after this change: the person's key, when chosen
+      if (nextBehavior === "allow" && deps.stepUp) {
+        const refused = deps.stepUp(auth, me, {
+          op: "update", id,
+          ...(typeof body.when === "string" ? { when: body.when } : {}),
+          ...(isCustomRuleBehavior(body.behavior) ? { behavior: body.behavior } : {}),
+          ...(body.botId !== undefined ? { botId: body.botId } : {}),
+          ...(riskScope !== undefined ? { riskScope } : {}),
+          ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
+        }, body.stepUp);
+        if (refused) return json(res, refused.status, refused.body);
       }
       let updated: CustomRule | null;
       try {

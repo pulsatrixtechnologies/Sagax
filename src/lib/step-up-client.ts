@@ -1,0 +1,207 @@
+// The app's side of security keys (shared/step-up.ts, server/routes/security-keys.ts):
+// start a ceremony, ask the browser for the key (WebAuthn), and post its
+// answer. Where this page cannot use WebAuthn (the desktop's own page on
+// 127.0.0.1), the desktop runs the same ceremony in a small window on
+// localhost. Nothing here decides anything: the server verifies.
+//
+// No import of the store: the store's `api` calls `stepUpForRefusal` when
+// a route refuses with `step_up_required`, then sends the request again.
+
+import { t } from "@/lib/i18n";
+import { usableRpId, type StepUpTarget } from "../../shared/step-up";
+
+interface CeremonyStart {
+  ceremonyId: string;
+  kind: "register" | "assert";
+  rpId: string;
+  options: Record<string, any>;
+  expiresAt: number;
+  pageUrl: string;
+}
+
+/** A ceremony that did not end with a verified key, in the person's words. */
+export class StepUpError extends Error {
+  readonly code: string;
+  constructor(code: string, message?: string) {
+    super(message ?? stepUpMessage(code));
+    this.name = "StepUpError";
+    this.code = code;
+  }
+}
+
+export function stepUpMessage(code: string): string {
+  switch (code) {
+    case "cancelled": return t("security.stepUp.cancelled");
+    case "expired": return t("security.stepUp.expired");
+    case "no_key": return t("security.stepUp.noKey");
+    case "no_rp": return t("security.stepUp.noAddress");
+    case "unsupported": return t("security.stepUp.unsupported");
+    case "busy": return t("security.stepUp.busy");
+    default: return t("security.stepUp.failed");
+  }
+}
+
+const b64 = (buffer: ArrayBuffer | ArrayBufferView): string => {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  let text = "";
+  for (const byte of bytes) text += String.fromCharCode(byte);
+  return btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
+const unb64 = (text: string): Uint8Array<ArrayBuffer> => {
+  const normal = text.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(normal + "===".slice((normal.length + 3) % 4));
+  const out = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let index = 0; index < binary.length; index++) out[index] = binary.charCodeAt(index);
+  return out;
+};
+
+/** Whether this page runs WebAuthn itself; otherwise the desktop's window. */
+function pageCanAsk(): boolean {
+  if (typeof window === "undefined" || !window.PublicKeyCredential || !navigator.credentials) return false;
+  return usableRpId(location.hostname, location.protocol) !== null && window.isSecureContext;
+}
+
+function via(): "page" | "desktop-window" {
+  return !pageCanAsk() && typeof window !== "undefined" && window.ogb?.securityKey ? "desktop-window" : "page";
+}
+
+/** Whether this app can use a security key here at all. */
+export function securityKeysUsable(): boolean {
+  return pageCanAsk() || Boolean(typeof window !== "undefined" && window.ogb?.securityKey);
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const code = typeof json?.code === "string" ? json.code : "failed";
+    const known = ["no_key", "no_rp"].includes(code);
+    throw Object.assign(new StepUpError(code, known ? undefined : typeof json?.error === "string" ? json.error : undefined), { body: json, status: response.status });
+  }
+  return json as T;
+}
+
+function credentialJson(credential: PublicKeyCredential, kind: "register" | "assert"): Record<string, unknown> {
+  const common = {
+    id: credential.id,
+    rawId: b64(credential.rawId),
+    type: credential.type,
+    clientExtensionResults: credential.getClientExtensionResults(),
+    ...(credential.authenticatorAttachment ? { authenticatorAttachment: credential.authenticatorAttachment } : {}),
+  };
+  if (kind === "register") {
+    const response = credential.response as AuthenticatorAttestationResponse;
+    return {
+      ...common,
+      response: {
+        clientDataJSON: b64(response.clientDataJSON),
+        attestationObject: b64(response.attestationObject),
+        transports: typeof response.getTransports === "function" ? response.getTransports() : [],
+      },
+    };
+  }
+  const response = credential.response as AuthenticatorAssertionResponse;
+  return {
+    ...common,
+    response: {
+      clientDataJSON: b64(response.clientDataJSON),
+      authenticatorData: b64(response.authenticatorData),
+      signature: b64(response.signature),
+      ...(response.userHandle ? { userHandle: b64(response.userHandle) } : {}),
+    },
+  };
+}
+
+/** Run a started ceremony to its end: the key's answer is verified by the
+ * server, or this throws. */
+async function runCeremony(start: CeremonyStart): Promise<void> {
+  if (via() === "desktop-window") {
+    const outcome = await window.ogb!.securityKey!.ceremony(start.pageUrl);
+    if (!outcome.ok) throw new StepUpError(outcome.error ?? "failed");
+    return;
+  }
+  const options = start.options;
+  let credential: Credential | null;
+  try {
+    credential = start.kind === "register"
+      ? await navigator.credentials.create({
+        publicKey: {
+          ...options,
+          challenge: unb64(options.challenge),
+          user: { ...options.user, id: unb64(options.user.id) },
+          excludeCredentials: (options.excludeCredentials ?? []).map((entry: { id: string }) => ({ ...entry, id: unb64(entry.id) })),
+        } as unknown as PublicKeyCredentialCreationOptions,
+      })
+      : await navigator.credentials.get({
+        publicKey: {
+          ...options,
+          challenge: unb64(options.challenge),
+          allowCredentials: (options.allowCredentials ?? []).map((entry: { id: string }) => ({ ...entry, id: unb64(entry.id) })),
+        } as unknown as PublicKeyCredentialRequestOptions,
+      });
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    throw new StepUpError(name === "NotAllowedError" ? "cancelled" : "failed");
+  }
+  if (!credential) throw new StepUpError("cancelled");
+  await post(`/api/security-keys/ceremony/${start.ceremonyId}`, { response: credentialJson(credential as PublicKeyCredential, start.kind) });
+}
+
+/** Add a key. A person who already has one confirms with it first (the
+ * server says so; the store's `api` is not used here, so it is handled in
+ * place). */
+export async function registerSecurityKey(name: string): Promise<void> {
+  let start: CeremonyStart;
+  try {
+    start = await post<CeremonyStart>("/api/security-keys/register", { name, via: via() });
+  } catch (error) {
+    const body = (error as { body?: { code?: string; target?: StepUpTarget } }).body;
+    if (body?.code !== "step_up_required" || !body.target) throw error;
+    const confirmed = await stepUp(body.target);
+    start = await post<CeremonyStart>("/api/security-keys/register", { name, via: via(), stepUp: confirmed });
+  }
+  await runCeremony(start);
+}
+
+/** Recent step-ups by target: one ceremony may authorize two requests
+ * (a card's Always allow, then its Allow). */
+const recent = new Map<string, { id: string; at: number }>();
+const RECENT_MS = 55_000;
+
+function targetKey(target: StepUpTarget): string | null {
+  return target.kind === "approval" ? `${target.threadId}\n${target.requestId}` : null;
+}
+
+/** Ask the person's key for this target; the ceremony id to send as
+ * `stepUp`. */
+export async function stepUp(target: StepUpTarget): Promise<string> {
+  if (!securityKeysUsable()) throw new StepUpError("unsupported");
+  const start = await post<CeremonyStart>("/api/security-keys/begin", { target, via: via() });
+  await runCeremony(start);
+  const key = targetKey(target);
+  if (key) recent.set(key, { id: start.ceremonyId, at: Date.now() });
+  return start.ceremonyId;
+}
+
+/** A step-up that may already cover this target (made a moment ago for the
+ * same card), without asking the key again. */
+export function recentStepUp(target: StepUpTarget): string | undefined {
+  const key = targetKey(target);
+  if (!key) return undefined;
+  const found = recent.get(key);
+  if (!found || Date.now() - found.at > RECENT_MS) {
+    recent.delete(key);
+    return undefined;
+  }
+  return found.id;
+}
+
+export function forgetStepUp(target: StepUpTarget): void {
+  const key = targetKey(target);
+  if (key) recent.delete(key);
+}
