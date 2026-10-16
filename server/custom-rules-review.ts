@@ -21,6 +21,7 @@ import {
   ruleCoversCall,
   type CallFacts,
   type CustomRule,
+  type CustomRuleBinding,
   type CustomRuleCandidate,
   type CustomRuleDecision,
   type CustomRuleNotice,
@@ -33,6 +34,9 @@ export interface CustomRuleCall {
   mcpTool?: string;
   input?: string;
   command?: string;
+  /** What the engine reports: compared only by an exact command's binding. */
+  cwd?: string;
+  providerInstanceId?: string;
   paths?: readonly string[];
   summary?: string;
   hints?: { readOnly?: boolean; destructive?: boolean };
@@ -74,6 +78,8 @@ export function factsForCall(call: CustomRuleCall, home: string | undefined = se
     ...(call.mcpTool ? { mcpTool: call.mcpTool } : {}),
     ...(call.input !== undefined ? { input: call.input } : {}),
     ...(call.command !== undefined ? { command: call.command } : {}),
+    ...(call.cwd ? { cwd: call.cwd } : {}),
+    ...(call.providerInstanceId ? { providerInstanceId: call.providerInstanceId } : {}),
     ...(call.paths ? { paths: call.paths } : {}),
     ...(call.hints ? { hints: call.hints } : {}),
     ...(classKey ? { classKey } : {}),
@@ -108,7 +114,10 @@ export function customRuleNotice(decision: CustomRuleDecision): CustomRuleNotice
 export function customRuleCandidate(facts: CallFacts, language: string | undefined, home: string | undefined = serverHome()): CustomRuleCandidate | undefined {
   const when = candidateWhen(facts, language ?? "fr");
   if (!ruleCoversCall(compileRule(when, home, realPath), facts, "allow")) return undefined;
-  return { when, risks: [...facts.risks] };
+  const binding: CustomRuleBinding | undefined = facts.command
+    ? { tool: facts.tool, command: facts.command, ...(facts.cwd ? { cwd: facts.cwd } : {}), ...(facts.providerInstanceId ? { providerInstanceId: facts.providerInstanceId } : {}) }
+    : undefined;
+  return { when, risks: [...facts.risks], ...(binding ? { binding } : {}) };
 }
 
 /** Whether a saved rule covers the call of an open card: the check behind

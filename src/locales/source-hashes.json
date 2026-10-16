@@ -12097,7 +12097,9 @@
       "botPanel.permissions.approvals": "2bfc3471571e5c008cb26bd839b0d4cbcb1132fc9d6c8206bb595fa26e83a45b",
       "persona.group.security": "8f6fb4eb7f42c0e245e29e63f5b82cc3ba19852681d1ed9aed291f59cf75ec0e",
       "persona.group.activity": "38da1505ca8373288489495101b14f24ac95078f520ad64df18272aa6054f750",
-      "customRules.shellFamily": "8a3714825d40eeb58b2f96689841697f588d58a1fcbabee159825fb9d2321d4d"
+      "customRules.shellFamily": "8a3714825d40eeb58b2f96689841697f588d58a1fcbabee159825fb9d2321d4d",
+      "customRules.exactFromCard": "c321caf844b2b928de1ef3ddbcd71d96c830e4ea67f5941c8f36ba2b7961df16",
+      "customRules.gitHooks": "6a97041d62681db8d882fb735e079a1c2950e67e8b44d30210346279ad7cf485"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

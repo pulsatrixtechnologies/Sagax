@@ -23,9 +23,11 @@
 //     read as policy.
 //   - The shell: an allow is only an exact command line ("la commande
 //     exacte `...`", what "Toujours permettre ceci" proposes on a shell
-//     card) or a folder read rule over a plain read (cat, head, tail, wc,
-//     ls, stat; own short flags; absolute paths; no link). A family of
-//     commands is never allowed (`shellFamily`, refused by the route).
+//     card, bound to that card's line, tool, folder and engine instance)
+//     or a folder read rule over a plain read of the engine's own shell
+//     (cat, head, tail, wc, ls, stat; own short flags; absolute paths; no
+//     link). A family of commands is never allowed (`shellFamily`, refused
+//     by the route); a folder allow never covers an MCP tool.
 //     Deny and ask rules read every word of the line and fail closed on
 //     anything they cannot place.
 //   - The decision at request.opened is this deterministic matcher only.
@@ -61,8 +63,21 @@ export interface CustomRule {
    * default: an allow rule never covers a risky call implicitly. */
   riskScope: RiskClass[];
   enabled: boolean;
+  /** An exact command allow rule is bound to the card it was made from:
+   * that command line, that tool and server, that working folder and that
+   * engine instance. Without a binding an exact command never allows. */
+  binding?: CustomRuleBinding;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface CustomRuleBinding {
+  /** `facts.tool`: `bash`, or `<server>__<tool>` for an MCP shell tool. */
+  tool: string;
+  /** The command line exactly, only its outer spaces and tabs trimmed. */
+  command: string;
+  cwd?: string;
+  providerInstanceId?: string;
 }
 
 /** What a card or a transcript row says about the rule that decided. */
@@ -83,6 +98,9 @@ export interface CustomRuleNotice {
 export interface CustomRuleCandidate {
   when: string;
   risks: RiskClass[];
+  /** A shell card: where its exact command was asked (kept by the server
+   * on the card; a rule saved from the card takes it from there). */
+  binding?: CustomRuleBinding;
 }
 
 export type ActionKind = "read" | "write" | "delete" | "command" | "send" | "web" | "payment";
@@ -125,8 +143,14 @@ export interface CallFacts {
   linked?: boolean;
   products: string[];
   risks: RiskClass[];
-  /** A shell call: its command line, whitespace folded. */
+  /** A shell call: its command line exactly, outer spaces and tabs trimmed. */
   command?: string;
+  /** The same line with white space folded, for deny and ask rules. */
+  commandFolded?: string;
+  /** The folder and engine instance the engine reports for a shell call
+   * (only an exact command's binding compares them). */
+  cwd?: string;
+  providerInstanceId?: string;
   /** A shell call that only reads (a known pure reader, every argument a
    * readable path, no chaining, redirection, substitution or wrapper). */
   pureRead?: boolean;
@@ -278,7 +302,8 @@ export function compileRule(when: string, home?: string, resolve?: (absolute: st
   // words are not read as actions, folders or tools
   const commands: string[] = [];
   const text = when.slice(0, MAX_RULE_TEXT).replace(/(?:commande exacte|exact command)\s*`([^`]{1,400})`/gi, (_, command: string) => {
-    commands.push(normalizeCommand(command));
+    const folded = normalizeCommand(command);
+    if (folded) commands.push(folded);
     return " ";
   });
   const list = words(text);
@@ -333,7 +358,7 @@ const SHELL_IRREVERSIBLE = /\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r|\bmkfs
 /** Chaining, pipes, redirection, substitution, process substitution, line
  * continuation, quotes and brace expansion: what a folder or family rule
  * cannot read. `$HOME` alone is fine. */
-const SHELL_OPAQUE = /[;&|`<>(){}\n\\'"*?[\]]|\$(?!HOME\b|\{HOME\})/;
+const SHELL_OPAQUE = /[;&|`<>(){}\n\\'"*?[\],%^@]|\$(?!HOME\b|\{HOME\})/;
 /** Programs that only read the paths they are given, with no flag that
  * writes, runs or reaches the network. find, rg, tree, less, awk, sed and
  * xargs are not here: each has a flag that deletes, runs or writes. */
@@ -343,7 +368,7 @@ const PURE_READERS = new Set(["ls", "cat", "head", "tail", "wc", "stat"]);
  * `wc --files0-from=<list>` and the like read other files or write. head and
  * tail also take `-n N`, `-c N` and `-N`. */
 const READER_FLAGS: Record<string, string> = {
-  ls: "1aAdFhlrRStu", cat: "bensvtAET", head: "qv", tail: "fFqrv", wc: "clmw", stat: "",
+  ls: "1aAdFhlrRStu", cat: "bensvtAET", head: "qv", tail: "qrv", wc: "clmw", stat: "",
 };
 
 /** Whether every flag of a pure reader is one it may carry; numbers after
@@ -511,7 +536,9 @@ export function readShell(line: string, home?: string, resolve?: (absolute: stri
       // a repository's own configuration (core.fsmonitor, a pager, an
       // external diff) runs code even for a read: any global option, or any
       // git at all, is never a plain read
-      if (segmentWords[run.index + 1]?.startsWith("-")) risks.add("irreversible");
+      // hooks, aliases and the repository's own configuration can run code
+      // for any git command: an exact git rule needs the irreversible tick
+      risks.add("irreversible");
       if (sub === "push") { actions.add("send"); risks.add("external-send"); risks.add("irreversible"); }
       else if (!GIT_READS.has(sub)) { actions.add("write"); risks.add("irreversible"); }
       continue;
@@ -582,9 +609,18 @@ const MAX_SCAN_STRINGS = 256;
 function pathLikeStrings(value: unknown, key = "", depth = 0, into: string[] = []): string[] | null {
   if (depth > MAX_SCAN_DEPTH || into.length > MAX_SCAN_STRINGS) return null;
   if (typeof value === "string") {
-    const text = value.trim();
-    if (!text || text.includes("\n")) return into;
-    const looksLikePlace = /^(file:|~\/|~$|\/|\$HOME\b|\$\{HOME\}|[A-Za-z]:[\\/])/i.test(text);
+    // a URL parser drops tabs and line breaks inside a value: so does this
+    const text = value.replace(/[\t\n\r]/g, "").trim();
+    if (!text) return into;
+    // a JSON object or list inside a string is scanned too
+    if (/^[[{]/.test(text)) {
+      try {
+        return pathLikeStrings(JSON.parse(text), key, depth + 1, into);
+      } catch {
+        // not JSON: read as text below
+      }
+    }
+    const looksLikePlace = /^(file:|~|\/|\$HOME\b|\$\{HOME\}|[A-Za-z]:[\\/]|\\\\)/i.test(text);
     if (looksLikePlace || (PATH_KEY.test(key) && !/^https?:/i.test(text))) into.push(text);
     return into;
   }
@@ -634,6 +670,16 @@ export interface CallInput {
   home?: string;
   /** The server's realpath, so a symbolic link is matched where it points. */
   resolve?: (absolute: string) => string;
+  /** What the engine reports for a shell call: only an exact command's
+   * binding compares them, nothing else trusts them. */
+  cwd?: string;
+  providerInstanceId?: string;
+}
+
+/** Only outer spaces and tabs go: a line break, a carriage return or any
+ * other character at either end keeps the line different. */
+export function trimCommand(line: string): string {
+  return line.replace(/^[ \t]+|[ \t]+$/g, "");
 }
 
 /** Read one call. The arguments only ever narrow what a rule can match. */
@@ -647,7 +693,7 @@ export function callFacts(call: CallInput): CallFacts {
   const risks = new Set<RiskClass>();
   let paths: string[] | null = [];
   let realPaths: string[] | null = [];
-  let shell: { command: string; pureRead: boolean; opaque: boolean } | undefined;
+  let shell: { command: string; commandFolded: string; pureRead: boolean; opaque: boolean } | undefined;
   let linked = false;
   const addPath = (raw: string) => {
     if (paths === null || realPaths === null) return;
@@ -680,7 +726,11 @@ export function callFacts(call: CallInput): CallFacts {
     if (reading.pureRead || actions.has("read") || actions.has("delete") || actions.has("write")) objects.add("file");
     paths = reading.paths;
     realPaths = reading.realPaths;
-    shell = { command: normalizeCommand(line), pureRead: reading.pureRead, opaque: reading.opaque };
+    // a shell tool of an MCP server runs on another machine or shell (a
+    // PC bridge, a sandbox, a remote exec): its line is never a plain read
+    // here, and this disk's links and home say nothing about that machine
+    const local = !parsed.server;
+    shell = { command: trimCommand(line), commandFolded: normalizeCommand(line), pureRead: local && reading.pureRead, opaque: reading.opaque || !local };
   } else {
     // a server's own readOnlyHint never makes a call a read for a custom
     // rule; only a destructive hint is kept (it can only tighten)
@@ -700,7 +750,7 @@ export function callFacts(call: CallInput): CallFacts {
     const unknownPath = () => { paths = null; realPaths = null; };
     if (found === null) unknownPath();
     for (const value of found ?? []) {
-      if (/^[A-Za-z]:[\\/]/.test(value) || /%[0-9a-f]{2}/i.test(value) && !/^file:/i.test(value)) { unknownPath(); continue; }
+      if (/^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\") || /%[0-9a-f]{2}/i.test(value) && !/^file:/i.test(value)) { unknownPath(); continue; }
       if (!/^file:/i.test(value)) { addPath(value); continue; }
       try {
         const url = new URL(value);
@@ -738,7 +788,11 @@ export function callFacts(call: CallInput): CallFacts {
     ...(linked ? { linked: true } : {}),
     products,
     risks: [...risks],
-    ...(shell ? { command: shell.command, pureRead: shell.pureRead, opaque: shell.opaque } : {}),
+    ...(shell ? {
+      command: shell.command, commandFolded: shell.commandFolded, pureRead: shell.pureRead, opaque: shell.opaque,
+      ...(call.cwd ? { cwd: call.cwd } : {}),
+      ...(call.providerInstanceId ? { providerInstanceId: call.providerInstanceId } : {}),
+    } : {}),
   };
 }
 
@@ -751,7 +805,7 @@ export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavio
   if (!compiled.recognized) return false;
   // an exact command rule covers that one command line and nothing else
   if (compiled.commands.length) {
-    if (facts.command === undefined || !compiled.commands.includes(facts.command)) return false;
+    if (!facts.command || !facts.commandFolded || !compiled.commands.includes(facts.commandFolded)) return false;
     return compiled.tools.length === 0 && compiled.products.length === 0 && compiled.paths.length === 0;
   }
   // shell: an allow is an exact command line, or a read rule over a pure
@@ -781,6 +835,9 @@ export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavio
     const raw = facts.paths;
     const real = facts.realPaths;
     if (behavior === "allow") {
+      // an MCP tool may act on another machine (a PC bridge, a sandbox, a
+      // cloud computer): this server's disk says nothing about its folders
+      if (facts.server !== undefined) return false;
       // allow: every path inside, both as written and where it really points
       if (!raw || !real || raw.length === 0 || real.length === 0) return false;
       if (facts.linked) return false;
@@ -802,6 +859,16 @@ export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavio
   return true;
 }
 
+/** The exact command, tool, folder and engine instance of a bound rule
+ * against one call. A rule without a binding never allows a command. */
+export function bindingMatches(binding: CustomRuleBinding | undefined, facts: CallFacts): boolean {
+  if (!binding || facts.command === undefined || !facts.command) return false;
+  return binding.command === facts.command
+    && binding.tool === facts.tool
+    && (binding.cwd ?? "") === (facts.cwd ?? "")
+    && (binding.providerInstanceId ?? "") === (facts.providerInstanceId ?? "");
+}
+
 export type CustomRuleDecision =
   | { kind: "deny" | "ask" | "allow"; rule: CustomRule }
   | { kind: "none"; riskBlocked?: { rule: CustomRule; missing: RiskClass[] } };
@@ -815,7 +882,13 @@ const BEHAVIOR_WEIGHT: Record<CustomRuleBehavior, number> = { deny: 3, ask: 2, a
 export function evaluateCustomRules(rules: readonly CustomRule[], facts: CallFacts, options: { botId?: string; home?: string; resolve?: (absolute: string) => string } = {}): CustomRuleDecision {
   const matching = rules
     .filter((rule) => rule.enabled && (rule.botId === null || options.botId === undefined || rule.botId === options.botId))
-    .filter((rule) => ruleCoversCall(compileRule(rule.when, options.home, options.resolve), facts, rule.behavior))
+    .filter((rule) => {
+      const compiled = compileRule(rule.when, options.home, options.resolve);
+      if (!ruleCoversCall(compiled, facts, rule.behavior)) return false;
+      // an exact command allows only where it was approved
+      if (rule.behavior === "allow" && compiled.commands.length) return bindingMatches(rule.binding, facts);
+      return true;
+    })
     .sort((a, b) => BEHAVIOR_WEIGHT[b.behavior] - BEHAVIOR_WEIGHT[a.behavior] || Number(b.botId !== null) - Number(a.botId !== null) || a.createdAt - b.createdAt);
   const top = matching[0];
   if (!top) return { kind: "none" };
@@ -899,7 +972,7 @@ export function candidateWhen(facts: CallFacts, language = "fr"): string {
   // a shell card proposes its exact command line, never a family of
   // commands (like a saved command of the command allowlist)
   if (facts.command !== undefined) {
-    if (!facts.command || facts.command.includes("`") || facts.command.length > 400) return "";
+    if (!facts.command || facts.command.includes("`") || facts.command.length > 400 || [...facts.command].some((char) => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f)) return "";
     return fr ? `la commande exacte \`${facts.command}\`` : `the exact command \`${facts.command}\``;
   }
   const folder = facts.paths && facts.paths.length

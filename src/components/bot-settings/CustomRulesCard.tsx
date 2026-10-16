@@ -45,12 +45,13 @@ export function customRulesForBot(rules: readonly CustomRuleRow[], botId: string
 export function customRuleError(failure: unknown): string {
   if (failure instanceof ApiError && failure.body?.code === "rule_not_covering") return t("customRules.notCovering");
   if (failure instanceof ApiError && failure.body?.code === "shell_family_allow") return t("customRules.shellFamily");
+  if (failure instanceof ApiError && failure.body?.code === "exact_command_from_card") return t("customRules.exactFromCard");
   return t("customRules.error", { error: failure instanceof Error ? failure.message : String(failure) });
 }
 
 /** The editor of one rule. `risks` are the kinds the person must tick for
  * the rule to cover a given card (from "Toujours permettre ceci"). */
-export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, onSave, busy = false }: {
+export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, onSave, busy = false, fromCard = false }: {
   botName: string;
   initial: CustomRuleDraft;
   risks?: readonly RiskClass[];
@@ -58,6 +59,9 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
   onCancel: () => void;
   onSave: (draft: CustomRuleDraft) => void;
   busy?: boolean;
+  /** Made from an approval card ("Toujours permettre ceci"): an exact
+   * command may be allowed, bound to that card. */
+  fromCard?: boolean;
 }) {
   const [when, setWhen] = useState(initial.when);
   const [behavior, setBehavior] = useState<CustomRuleBehavior>(initial.behavior);
@@ -66,6 +70,8 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
   const compiled = when.trim() ? compileRule(when) : null;
   const recognized = compiled ? compiled.recognized : true;
   const shellFamily = behavior === "allow" && compiled?.shellFamily === true;
+  const exactOutsideCard = behavior === "allow" && !fromCard && (compiled?.commands.length ?? 0) > 0;
+  const blocked = shellFamily || exactOutsideCard;
   const shownRisks = risks?.length ? RISK_CLASSES.filter((risk) => risks.includes(risk) || riskScope.includes(risk)) : RISK_CLASSES;
   return (
     <form
@@ -73,7 +79,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
       data-custom-rule-form
       onSubmit={(event) => {
         event.preventDefault();
-        if (!when.trim() || busy || shellFamily) return;
+        if (!when.trim() || busy || blocked) return;
         onSave({ when: when.trim(), behavior, allBots, riskScope: behavior === "allow" ? riskScope : [] });
       }}
     >
@@ -91,6 +97,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
       </label>
       {!recognized && <p role="note" className="text-[12px] text-warning" data-custom-rule-unrecognized>{t("customRules.unrecognized")}</p>}
       {shellFamily && <p role="alert" className="text-[12px] text-danger" data-custom-rule-shell-family>{t("customRules.shellFamily")}</p>}
+      {exactOutsideCard && <p role="alert" className="text-[12px] text-danger" data-custom-rule-exact-card>{t("customRules.exactFromCard")}</p>}
       <label className="flex items-center justify-between gap-3 text-[12.5px] text-ink-secondary">
         {t("customRules.form.should")}
         <select
@@ -134,7 +141,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
         </button>
         <button
           type="submit"
-          disabled={!when.trim() || busy || shellFamily}
+          disabled={!when.trim() || busy || blocked}
           className="rounded-full bg-accent px-3 py-1 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40"
         >
           {saveLabel ?? t("customRules.form.save")}

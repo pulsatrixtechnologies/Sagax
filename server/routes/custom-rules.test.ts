@@ -104,7 +104,11 @@ describe("custom rules routes", () => {
     expect(refused.status).toBe(400);
     expect(refused.body.code).toBe("shell_family_allow");
     expect((await call("", "POST", { when: "exécuter des commandes", behavior: "deny", botId: null })).status).toBe(201);
-    expect((await call("", "POST", { when: "la commande exacte `git status`", behavior: "allow", botId: null })).status).toBe(201);
+    // an exact command is allowed only from its card
+    const outside = await call("", "POST", { when: "la commande exacte `git status`", behavior: "allow", botId: null });
+    expect(outside.status).toBe(400);
+    expect(outside.body.code).toBe("exact_command_from_card");
+    expect((await call("", "POST", { when: "la commande exacte `git status`", behavior: "deny", botId: null })).status).toBe(201);
     const ask = await call("", "POST", { when: "exécuter des commandes dans ~/Documents", behavior: "ask", botId: null });
     expect((await call(`/${ask.body.rule.id}`, "PATCH", { behavior: "allow" })).body.code).toBe("shell_family_allow");
   });

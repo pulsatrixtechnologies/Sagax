@@ -493,7 +493,11 @@ export function AlwaysAllowThis({ candidate, bot, threadId, requestId, className
   }
   return (
     <div className="order-first w-full basis-full" data-always-allow-this>
+      {candidate.binding && /^git\b/.test(candidate.binding.command.replace(/^.*\//, "")) && (
+        <p role="note" className="mb-1.5 text-[12px] text-warning" data-custom-rule-git-hooks>{t("customRules.gitHooks")}</p>
+      )}
       <CustomRuleForm
+        fromCard
         botName={bot.name}
         initial={{ when: candidate.when, behavior: "allow", allBots: false, riskScope: [] }}
         risks={candidate.risks}

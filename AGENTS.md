@@ -703,11 +703,18 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   (route 400 `shell_family_allow`, the editor says "Pour le shell, seules
   des commandes exactes peuvent être permises automatiquement"); they stay
   valid as Refuser or Demander d'abord. A shell line is allowed only by
-  "la commande exacte `...`" (what "Toujours permettre ceci" proposes on a
-  shell card, risk classes still ticked), or by a folder read rule when the
-  line is a plain read: cat, head, tail, wc, ls or stat, their own short
+  "la commande exacte `...`" made from its card with "Toujours permettre
+  ceci" (route 400 `exact_command_from_card` otherwise), bound to that exact
+  line (outer spaces and tabs trimmed, nothing else), that tool and server,
+  that working folder and that engine instance, risk classes still ticked
+  (any git is irreversible: hooks and repository settings run code); or by
+  a folder read rule when the engine's own shell (never an MCP shell tool,
+  which may run on another machine) runs a plain read: cat, head, tail, wc, ls or stat, their own short
   flags only (no long flag, no `=`, no attached value, no `-L`/`-H`), every
-  operand an absolute path inside the folder, no link on the way. git, fd,
+  operand an absolute path inside the folder, no link on the way, no
+  `,`, `%`, `^` or `@` (PowerShell and cmd read them). A folder allow never
+  covers an MCP tool at all: this server's disk says nothing about another
+  machine's folders. git, fd,
   rg, sort, uniq, tree, less, more, file and the grep family are never
   covered by a family rule. Chaining, redirection, substitution, quotes,
   control characters, `!` or a wildcard make a line opaque.
@@ -716,7 +723,8 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   `rg --pre`, `sort -o`, `tree -o`, `git --output`, `git -c`, `git push`
   after global options); a relative path, a flag value, an operand-less
   reader, a path under any MCP key that names a place (path, uri, file,
-  dir, src, dest, target), a `file:` URL in any case, `$HOME`/`${HOME}`, an
+  dir, src, dest, target), a `file:` URL in any case (tabs and line breaks
+  inside dropped first), a JSON string, `~user`, `$HOME`/`${HOME}`, a UNC or an
   encoded or Windows path, or a scan cut short by depth or count leaves the
   paths unknown, which a folder deny catches. A cwd is never taken from the
   engine or the tool's arguments for an allow.

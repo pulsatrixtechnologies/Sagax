@@ -24,6 +24,7 @@ import {
   parseRuleSentence,
   type CompiledRule,
   type CustomRule,
+  type CustomRuleBinding,
   type RiskClass,
 } from "../../shared/custom-rules.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -37,6 +38,10 @@ export interface CustomRuleRouteDeps {
   /** The open card a rule is made from: whether this rule covers its call,
    * and mark it. Null when there is no such open card of this person. */
   fromCard?: (personId: string, card: { threadId: string; requestId: string }, rule: CustomRule) => "covered" | "not-covered" | null;
+  /** The binding of an open shell card of this person (its exact command,
+   * tool, folder and engine instance): null when there is no such open
+   * card, undefined when the card is not a shell command. */
+  bindingFor?: (personId: string, card: { threadId: string; requestId: string }) => CustomRuleBinding | null | undefined;
   audit: (row: { action: string; personId: string; botId?: string | null; before?: Record<string, unknown>; after?: Record<string, unknown> }, auth: RequestAuth) => void;
   home?: string;
 }
@@ -45,6 +50,13 @@ export type CustomRuleView = CustomRule & { compiled: CompiledRule };
 
 /** For the shell, only exact command lines may be allowed automatically:
  * a family of commands ("run commands") cannot be told safe. */
+/** An exact command is allowed from its own card only, bound to where it
+ * was asked; its words cannot be edited into another command. */
+export const EXACT_FROM_CARD_REFUSAL = {
+  error: "An exact command can be allowed only from its approval card (Always allow this), where it is bound to that folder and tool.",
+  code: "exact_command_from_card",
+} as const;
+
 export const SHELL_FAMILY_REFUSAL = {
   error: "For the shell, only exact commands can be allowed automatically. Use \"la commande exacte `...`\", or Ask first or Refuse.",
   code: "shell_family_allow",
@@ -94,9 +106,18 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
         ? body.fromCard as { threadId?: unknown; requestId?: unknown }
         : undefined;
       if (card && (typeof card.threadId !== "string" || typeof card.requestId !== "string")) return json(res, 400, { error: "fromCard names a threadId and a requestId" });
+      // an exact command is allowed only where it was asked: from its card
+      let binding: CustomRuleBinding | undefined;
+      if (behavior === "allow" && compileRule(when, deps.home).commands.length) {
+        if (!card || !deps.bindingFor) return json(res, 400, EXACT_FROM_CARD_REFUSAL);
+        const found = deps.bindingFor(me, { threadId: card.threadId as string, requestId: card.requestId as string });
+        if (found === null) return json(res, 404, { error: "No such open approval.", code: "no_card" });
+        if (!found) return json(res, 409, { error: "This rule would not cover this approval.", code: "rule_not_covering" });
+        binding = found;
+      }
       let rule: CustomRule;
       try {
-        rule = deps.store.add({ ownerId: me, botId: body.botId as string | null, when, behavior, riskScope });
+        rule = deps.store.add({ ownerId: me, botId: body.botId as string | null, when, behavior, riskScope, ...(binding ? { binding } : {}) });
       } catch (error) {
         const status = (error as { status?: number }).status ?? 500;
         return json(res, status, { error: error instanceof Error ? error.message : String(error) });
@@ -140,6 +161,11 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       const nextBehavior = isCustomRuleBehavior(body.behavior) ? body.behavior : before.behavior;
       const nextWhen = typeof body.when === "string" ? body.when : before.when;
       if (nextBehavior === "allow" && compileRule(nextWhen, deps.home).shellFamily) return json(res, 400, SHELL_FAMILY_REFUSAL);
+      // an exact command rule's words are its binding: they do not change,
+      // and an unbound one never becomes an allow
+      const exact = compileRule(nextWhen, deps.home).commands.length > 0 || compileRule(before.when, deps.home).commands.length > 0;
+      if (exact && typeof body.when === "string" && body.when.trim() !== before.when) return json(res, 400, EXACT_FROM_CARD_REFUSAL);
+      if (exact && nextBehavior === "allow" && !before.binding) return json(res, 400, EXACT_FROM_CARD_REFUSAL);
       let updated: CustomRule | null;
       try {
         updated = deps.store.update(me, id, {

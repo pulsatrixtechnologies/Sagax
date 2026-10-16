@@ -12009,6 +12009,9 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
           ...(typeof event.input === "string" ? { input: event.input } : {}),
           ...(event.command?.command ? { command: event.command.command } : {}),
+          // compared only by an exact command's binding
+          ...(event.command?.cwd ? { cwd: event.command.cwd } : {}),
+          providerInstanceId: event.providerInstanceId ?? asker!.modelSelection.instanceId,
           ...(event.paths?.length ? { paths: event.paths } : {}),
           summary: event.summary,
         }
@@ -23785,6 +23788,15 @@ ROUTES.push(createCustomRuleRoutes({
   manager: ruleManager,
   ownedBots: botsOwnedBy,
   home: serverHome(),
+  bindingFor: (personId, where) => {
+    const message = store.messagesFor(where.threadId).find((row) => row.card?.requestId === where.requestId);
+    const card = message?.card;
+    if (!message || !card || card.requestType !== "permission" || card.answered || card.dismissed || card.expired || card.adminApproval) return null;
+    const botId = message.from?.botId ?? store.botByThread(where.threadId)?.id;
+    const bot = botId ? store.bot(botId) : undefined;
+    if (!bot || approvalOwnerId(bot).toLowerCase() !== personId.toLowerCase()) return null;
+    return card.customRuleCandidate?.binding;
+  },
   fromCard: (personId, where, rule) => {
     const message = store.messagesFor(where.threadId).find((row) => row.card?.requestId === where.requestId);
     const card = message?.card;
@@ -23793,7 +23805,11 @@ ROUTES.push(createCustomRuleRoutes({
     const bot = botId ? store.bot(botId) : undefined;
     if (!bot || approvalOwnerId(bot).toLowerCase() !== personId.toLowerCase()) return null;
     if (rule.botId !== null && rule.botId !== bot.id) return "not-covered";
-    const call: CustomRuleCall = { tool: card.tool, ...(card.mcpTool ? { mcpTool: card.mcpTool } : {}), ...(card.toolInput ? { input: card.toolInput } : {}), summary: card.subtitle };
+    const binding = card.customRuleCandidate?.binding;
+    const call: CustomRuleCall = {
+      tool: card.tool, ...(card.mcpTool ? { mcpTool: card.mcpTool } : {}), ...(card.toolInput ? { input: card.toolInput } : {}), summary: card.subtitle,
+      ...(binding ? { command: binding.command, ...(binding.cwd ? { cwd: binding.cwd } : {}), ...(binding.providerInstanceId ? { providerInstanceId: binding.providerInstanceId } : {}) } : {}),
+    };
     if (!ruleCoversCard(rule, call, bot.id)) return "not-covered";
     store.patchMessage(where.threadId, message.id, { card: { ...card, customRuleSaved: { id: rule.id, when: rule.when } } });
     return "covered";

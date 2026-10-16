@@ -18,6 +18,7 @@ import {
   RISK_CLASSES,
   type CustomRule,
   type CustomRuleBehavior,
+  type CustomRuleBinding,
   type RiskClass,
 } from "../shared/custom-rules.ts";
 
@@ -31,6 +32,12 @@ const ruleSchema = z.object({
   behavior: z.enum(CUSTOM_RULE_BEHAVIORS),
   riskScope: z.array(z.enum(RISK_CLASSES)).max(RISK_CLASSES.length),
   enabled: z.boolean(),
+  binding: z.object({
+    tool: z.string().min(1).max(300),
+    command: z.string().min(1).max(4000),
+    cwd: z.string().max(4000).optional(),
+    providerInstanceId: z.string().max(200).optional(),
+  }).optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -44,6 +51,7 @@ export interface NewCustomRule {
   when: string;
   behavior: CustomRuleBehavior;
   riskScope?: RiskClass[];
+  binding?: CustomRuleBinding;
 }
 
 export interface CustomRulePatch {
@@ -108,7 +116,7 @@ export class CustomRuleStore {
     if (this.unreadable) return [];
     return this.data.rules
       .filter((rule) => same(rule.ownerId, ownerId) && (botId === undefined || rule.botId === null || rule.botId === botId))
-      .map((rule) => ({ ...rule, riskScope: [...rule.riskScope] }));
+      .map((rule) => ({ ...rule, riskScope: [...rule.riskScope], ...(rule.binding ? { binding: { ...rule.binding } } : {}) }));
   }
 
   get(ownerId: string, id: string): CustomRule | undefined {
@@ -120,7 +128,8 @@ export class CustomRuleStore {
     const when = cleanText(input.when);
     if (!when) throw Object.assign(new Error("A rule needs words."), { status: 400 });
     const riskScope = input.behavior === "allow" ? cleanScope(input.riskScope) : [];
-    const existing = this.data.rules.find((rule) => same(rule.ownerId, input.ownerId) && rule.botId === input.botId && rule.when.toLowerCase() === when.toLowerCase());
+    const existing = this.data.rules.find((rule) => same(rule.ownerId, input.ownerId) && rule.botId === input.botId && rule.when.toLowerCase() === when.toLowerCase()
+      && JSON.stringify(rule.binding ?? null) === JSON.stringify(input.binding ?? null));
     const at = this.now();
     if (existing) {
       existing.behavior = input.behavior;
@@ -141,6 +150,7 @@ export class CustomRuleStore {
       behavior: input.behavior,
       riskScope,
       enabled: true,
+      ...(input.binding ? { binding: { ...input.binding } } : {}),
       createdAt: at,
       updatedAt: at,
     };

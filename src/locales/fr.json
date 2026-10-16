@@ -8268,5 +8268,7 @@
   "botPanel.permissions.approvals": "Approbations",
   "persona.group.security": "Sécurité",
   "persona.group.activity": "Suivi",
-  "customRules.shellFamily": "Pour le shell, seules des commandes exactes peuvent être permises automatiquement. Écrivez « la commande exacte `...` », ou choisissez Demander d'abord ou Refuser."
+  "customRules.shellFamily": "Pour le shell, seules des commandes exactes peuvent être permises automatiquement. Écrivez « la commande exacte `...` », ou choisissez Demander d'abord ou Refuser.",
+  "customRules.exactFromCard": "Une commande exacte ne peut être permise que depuis sa carte d'approbation (Toujours permettre ceci) : elle est alors liée à ce dossier et à cet outil.",
+  "customRules.gitHooks": "Une commande git peut exécuter les hooks et réglages du dépôt lui-même : la permettre permet aussi ce qu'ils font. Cochez les actions irréversibles seulement si vous faites confiance à ce dépôt."
 }
