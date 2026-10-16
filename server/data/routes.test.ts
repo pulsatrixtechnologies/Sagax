@@ -279,4 +279,62 @@ describe("the Data routes", () => {
     expect((svg.body as Buffer).toString()).toBe("<svg>3</svg>");
     expect((await call("GET", "/api/bots/bot-1/data/cards/c_9/image")).status).toBe(404);
   });
+
+  it("works on the viewer's own Data scope, and refuses a scope that is not theirs", async () => {
+    const asked: Array<{ auth: string; bot: string; thread: string | undefined }> = [];
+    const opened: string[] = [];
+    const exportedFor: string[] = [];
+    const databases = new Map<string, FakeDataDatabase>();
+    const { call, sheets, frames } = await serve({
+      scope: (auth, bot, thread) => {
+        asked.push({ auth: auth.kind, bot: bot.id, thread });
+        if (thread === "t-not-mine") return null;
+        return thread ? `${bot.id}~t-0123456789abcdef` : `${bot.id}~p-0123456789abcdef`;
+      },
+      engine: {
+        unavailable: () => null,
+        forBot: async (key) => {
+          opened.push(key);
+          let database = databases.get(key);
+          if (!database) {
+            database = new FakeDataDatabase(key);
+            database.tables.set(key.includes("~t-") ? "thread_rows" : "my_rows", { columns: [{ name: "id", type: "INTEGER" }], rows: [[1]] });
+            databases.set(key, database);
+          }
+          return database;
+        },
+      },
+      exportRoots: (bot, key) => { exportedFor.push(key); return [bot.cwd!]; },
+    });
+    const sheet = await call("GET", "/api/bots/bot-1/data");
+    expect(sheet.status).toBe(200);
+    expect(sheet.body.tables.map((table: { name: string }) => table.name)).toEqual(["my_rows"]);
+    // the sheet names the real bot, never the scope key
+    expect(sheet.body.sheet.botId).toBe("bot-1");
+    await call("POST", "/api/bots/bot-1/data/run", { sql: "SELECT id FROM my_rows", title: "Mine" });
+    expect(sheets.for("bot-1~p-0123456789abcdef").cards().map((card) => card.title)).toEqual(["Mine"]);
+    expect(sheets.for("bot-1").cards()).toEqual([]);
+    expect(frames.length).toBeGreaterThan(0);
+    await call("POST", "/api/bots/bot-1/data/export", { cardId: "c_1", format: "csv" });
+    expect(exportedFor).toEqual(["bot-1~p-0123456789abcdef"]);
+    // a confidential thread's database, for its owner
+    const thread = await call("GET", "/api/bots/bot-1/data?thread=t-mine");
+    expect(thread.body.tables.map((table: { name: string }) => table.name)).toEqual(["thread_rows"]);
+    // someone else's: answered like a bot with no Data, nothing opened
+    const before = opened.length;
+    const refused = await call("GET", "/api/bots/bot-1/data?thread=t-not-mine");
+    expect(refused.status).toBe(404);
+    expect(opened.length).toBe(before);
+    expect(new Set(opened)).toEqual(new Set(["bot-1~p-0123456789abcdef", "bot-1~t-0123456789abcdef"]));
+    expect(asked.map((entry) => entry.thread)).toContain("t-not-mine");
+    expect(asked.every((entry) => entry.auth === "loopback" && entry.bot === "bot-1")).toBe(true);
+  });
+
+  it("defaults to the bot id when no scope is given", async () => {
+    const opened: string[] = [];
+    const database = new FakeDataDatabase("bot-1");
+    const { call } = await serve({ engine: { unavailable: () => null, forBot: async (key) => { opened.push(key); return database; } } });
+    expect((await call("GET", "/api/bots/bot-1/data")).status).toBe(200);
+    expect(opened).toEqual(["bot-1"]);
+  });
 });

@@ -5,10 +5,17 @@
 // histograms, export, and a server-rendered image of a chart card. In the
 // route table (server/routes/README.md): already authenticated, admin scope
 // by default (request-auth.ts). Every error is `{ error: DataError }`.
+//
+// Each request works on the viewer's own Data scope (scope.ts): on an
+// organization server a person other than the bot's owner sees their own
+// database and sheet on a shared bot, never the owner's or another
+// person's. `?thread=<id>` asks for a confidential thread's database, which
+// only that thread's owner reaches.
 import type { ServerResponse } from "node:http";
 import { z } from "zod";
 
 import { DATA_LIMITS, type DataError, type DataErrorCode } from "../../shared/data-surface.ts";
+import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteContext, type RouteHandler } from "../routes/table.ts";
 import type { DataSheetRegistry } from "./sheet.ts";
 import { cancelCardRun, exportData, renderCard, resultRelation, showCard, toDataError, type DataContext } from "./tools.ts";
@@ -21,8 +28,12 @@ export interface DataRouteDeps {
   compileChart: ChartCompiler;
   validateVegaLite: VegaLiteValidator;
   renderer: ChartRenderer;
-  /** Folders an export may land in for this bot, most preferred first. */
-  exportRoots(bot: { id: string; cwd?: string }): string[];
+  /** Folders an export may land in for this bot and scope, most preferred first. */
+  exportRoots(bot: { id: string; cwd?: string }, scopeKey: string): string[];
+  /** The viewer's Data scope key on this bot (scope.ts dataScopeKey), or
+   * null to refuse (a confidential thread that is not theirs). Absent: the
+   * bot id, one database per bot. */
+  scope?(auth: RequestAuth, bot: { id: string }, threadId: string | undefined): string | null;
 }
 
 const ROUTE = /^\/api\/bots\/([\w-]+)\/data(?:\/(.+))?$/;
@@ -113,11 +124,15 @@ export function createDataRoutes(deps: DataRouteDeps): RouteHandler {
     // The person's own actions abort with the request, like a closed tab.
     const abort = new AbortController();
     res.once("close", () => { if (!res.writableEnded) abort.abort(); });
-    const database = await deps.engine.forBot(bot.id);
-    const sheet = deps.sheets.for(bot.id);
+    const thread = ctx.url.searchParams.get("thread") ?? undefined;
+    const scopeKey = deps.scope ? deps.scope(ctx.auth, bot, thread) : bot.id;
+    // A thread that is not the viewer's answers like a bot with no Data at all.
+    if (scopeKey === null) return replyError(ctx, { code: "source_not_found", message: "no such bot" });
+    const database = await deps.engine.forBot(scopeKey);
+    const sheet = deps.sheets.for(scopeKey);
     const context: DataContext = {
       database, sheet, compileChart: deps.compileChart, validateVegaLite: deps.validateVegaLite, renderer: deps.renderer,
-      exportRoots: () => deps.exportRoots(bot), signal: abort.signal, connection: "panel", by: "person",
+      exportRoots: () => deps.exportRoots(bot, scopeKey), signal: abort.signal, connection: "panel", by: "person",
     };
     try {
       if (rest === "" && method === "GET") {

@@ -169,6 +169,7 @@ import { BUILT_IN_DATA_SYSTEM_PROMPT } from "./data/instructions.ts";
 import { DATA_INTERNAL_MCP_PATH, dataRpc } from "./data/rpc.ts";
 import { createDataRoutes } from "./data/routes.ts";
 import { DataSheetRegistry } from "./data/sheet.ts";
+import { dataFrameAllowed, dataScopeAudience, dataScopeBotId, dataScopeFolder, dataScopeKey, dataScopeKind, dataScopeThread, forgetDataScopes, type DataScopeKind } from "./data/scope.ts";
 import { DataFailure } from "./data/types.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
 import { instructionsLead } from "../shared/instructions-lead.ts";
@@ -4441,30 +4442,89 @@ async function browserIntegration(botId: string, profile: string | undefined, tu
 let engineUnavailableLogged = false;
 
 // ── the Data tools (server/data) ──
-// One sheet store per bot, shared by the tools (internal MCP route) and the
-// panel routes; a pruned or deleted card's result table is dropped with it.
+// One sheet store per Data scope, shared by the tools (internal MCP route)
+// and the panel routes; a pruned or deleted card's result table is dropped
+// with it. A scope is the bot id, or on an organization server a key of one
+// person's own (or one confidential thread's) on that bot (data/scope.ts),
+// so a person never reads the tables another person loaded on a shared bot.
 const dataSheets = new DataSheetRegistry({
-  broadcast: (frame) => broadcast({ ...frame }),
-  dropResult: async (botId, name) => {
+  broadcast: (frame, scopeKey) => broadcast({ ...frame, ...dataFrameAudience(scopeKey) }),
+  dropResult: async (scopeKey, name) => {
     if (dataEngine.unavailable() !== null) return;
-    await (await dataEngine.forBot(botId)).dropResult(name);
+    await (await dataEngine.forBot(scopeKey)).dropResult(name);
   },
 });
+/** Who a scope's "data" frames reach (dataFrameAllowed in sseFrameFor): on
+ * an organization server the bot scope goes to the bot's owner only, a
+ * person's scope to that person, a confidential thread's to its owner. A
+ * solo server's bot scope reaches every client, as before. */
+function dataFrameAudience(scopeKey: string): { audience?: string; dataScope?: DataScopeKind } {
+  const kind = dataScopeKind(scopeKey);
+  if (kind === "bot") {
+    if (IDENTITY.kind !== "perspicax") return {};
+    const bot = store.bot(scopeKey);
+    return { audience: bot ? effectiveBotOwner(bot) : "", dataScope: "bot" };
+  }
+  // A key this process never computed reaches nobody.
+  return { audience: dataScopeAudience(scopeKey) ?? "", dataScope: kind };
+}
+/** The Data scope of a turn: the speaker's (turnSpeakerPrincipals) on an
+ * organization server, the bot's for its owner, a routine or a solo server,
+ * the thread's own for a confidential thread. Null: refused. */
+function dataScopeForTurn(bot: BotRecord, threadId: string): string | null {
+  const organization = IDENTITY.kind === "perspicax";
+  return dataScopeKey({
+    botId: bot.id, organization, ownerPrincipalId: effectiveBotOwner(bot),
+    principalId: organization ? turnSpeakerPrincipals.get(threadId) : undefined, threadId,
+  });
+}
+/** The Data scope the Data tab shows a viewer: the bot's for its owner (or
+ * the operator at this computer on a solo server), the viewer's own for
+ * anyone else on an organization server; `threadId` asks for a confidential
+ * thread's, which only its owner reaches. Null: refused. */
+function dataScopeForViewer(auth: RequestAuth, bot: { id: string }, threadId: string | undefined): string | null {
+  const record = store.bot(bot.id);
+  if (!record) return null;
+  if (threadId && store.botByThread(threadId)?.id !== record.id) return null;
+  const organization = IDENTITY.kind === "perspicax";
+  const principalId = auth.kind === "session" ? channelViewerId(auth) : organization ? localPrincipalId() : undefined;
+  return dataScopeKey({ botId: record.id, organization, ownerPrincipalId: effectiveBotOwner(record), principalId, threadId });
+}
 /** Organization server (2026-10-16): Data runs inside the Sagax server,
- * so a bot's database reaches only its own folders (its bot folder, its
- * workspace and its task workspaces) and https, never the server's files,
- * another person's attachments or the private network. That makes the Data
- * tools the person's own, like the agents tools: they never ask. */
-function dataConfinedRoots(botId: string): string[] | null {
-  return IDENTITY.kind === "perspicax" ? [workspaceDir(botId), join(TASK_WORKSPACES_DIR, botId)] : null;
+ * so a bot's database reaches only its own folders (its scope folder, its
+ * workspace and its task workspaces; a confidential thread's only that
+ * thread's folder) and no network at all (an https load is downloaded by
+ * the server through the private-address guard, data/download.ts), never
+ * the server's files, another person's attachments or the private network.
+ * That makes the Data tools the person's own, like the agents tools: they
+ * never ask. */
+function dataConfinedRoots(scopeKey: string): string[] | null {
+  if (IDENTITY.kind !== "perspicax") return null;
+  const botId = dataScopeBotId(scopeKey);
+  if (dataScopeKind(scopeKey) === "thread") {
+    const thread = dataScopeThread(scopeKey);
+    return thread ? [join(TASK_WORKSPACES_DIR, botId, thread)] : [];
+  }
+  return [workspaceDir(botId), join(TASK_WORKSPACES_DIR, botId)];
 }
 if (IDENTITY.kind === "perspicax") dataEngine.setConfinement?.(dataConfinedRoots);
+/** Where a confined https load is downloaded before DuckDB reads it: the
+ * scope's own folder, which only that scope's database reaches. */
+function dataDownloadDir(scopeKey: string): string {
+  return join(dataScopeFolder(scopeKey), "data-downloads");
+}
 /** Where a bot's exports may land, most preferred first: the person's
  * Downloads when it exists, the bot's working folder, its workspace. On an
  * organization server only the bot's workspace (the server's Downloads and
- * working folders are nobody's). */
-function dataExportRoots(bot: { id: string; cwd?: string }): string[] {
-  if (IDENTITY.kind === "perspicax") return [workspaceDir(bot.id)];
+ * working folders are nobody's), or a confidential thread's own folder. */
+function dataExportRoots(bot: { id: string; cwd?: string }, scopeKey: string = bot.id): string[] {
+  if (IDENTITY.kind === "perspicax") {
+    if (dataScopeKind(scopeKey) === "thread") {
+      const thread = dataScopeThread(scopeKey);
+      return thread ? [join(TASK_WORKSPACES_DIR, bot.id, thread)] : [];
+    }
+    return [workspaceDir(bot.id)];
+  }
   const downloads = join(homedir(), "Downloads");
   return [...(existsSync(downloads) ? [downloads] : []), ...(bot.cwd ? [bot.cwd] : []), workspaceDir(bot.id)];
 }
@@ -9960,6 +10020,9 @@ function sseFrameFor(
   // A read position in a conversation between two people follows both
   // people's "Send read receipts" choice (server/read-receipts.ts).
   if (payload?.kind === "thread.read" && !threadReadFrameAllowed(payload, client.viewerId)) return null;
+  // A Data sheet reaches the person whose scope it is (data/scope.ts).
+  // This is before the admin short-circuit: an admin does not see it.
+  if (payload?.kind === "data" && !dataFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "bot-act" && !botActFrameAllowed(typeof payload.audience === "string" ? payload.audience : "", client.viewerId, localPrincipalId())) return null;
   if (payload) {
     const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
@@ -18641,7 +18704,9 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           await forgetTemporaryBrowser(bot.id);
           // The bot's database and sheet go with the bot; a failure here
           // must not undo a deletion the store already made durable.
+          // Every scope of it too: each person's and each confidential thread's.
           dataSheets.delete(bot.id);
+          forgetDataScopes(bot.id);
           if (dataEngine.unavailable() === null) await dataEngine.deleteBot(bot.id).catch((error) => console.warn(`data: could not delete ${bot.id}'s database`, error));
         } catch (error) {
           if (browserCleanupRequest) {
@@ -30928,6 +30993,7 @@ ROUTES.push(createDataRoutes({
   sheets: dataSheets,
   compileChart, validateVegaLite, renderer: chartRenderer,
   exportRoots: dataExportRoots,
+  scope: dataScopeForViewer,
 }));
 ROUTES.push(createLiveRoutes({
   enabled: () => liveCallsEnabled(),
@@ -32422,26 +32488,31 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }) });
       }
       // The Data tools (harness-mcp-proxy data): DuckDB runs here on the
-      // bot's own database; the agent process holds only the turn's capability.
+      // turn's own Data scope (the bot's, or the speaker's own on a shared
+      // bot of an organization server, data/scope.ts); the agent process
+      // holds only the turn's capability.
       if (method === "POST" && path === DATA_INTERNAL_MCP_PATH) {
         const body = await readInternalBody();
         const unavailable = dataEngine.unavailable();
         if (unavailable !== null) return json(res, 503, { error: `Data tools are unavailable: ${unavailable}` });
+        const scopeKey = dataScopeForTurn(internalSender, internalCapability.threadId);
+        if (scopeKey === null) return json(res, 403, { error: "This thread's Data belongs to another person." });
         const abort = new AbortController();
         res.once("close", () => { if (!res.writableEnded) abort.abort(); });
         let database;
         try {
-          database = await dataEngine.forBot(internalSender.id);
+          database = await dataEngine.forBot(scopeKey);
         } catch (error) {
           if (error instanceof DataFailure) return json(res, 503, { error: error.message });
           throw error;
         }
         requireActiveInternalCapability();
         return json(res, 200, { result: await dataRpc(body, {
-          database, sheet: dataSheets.for(internalSender.id),
+          database, sheet: dataSheets.for(scopeKey),
           compileChart, validateVegaLite, renderer: chartRenderer,
-          exportRoots: () => dataExportRoots(internalSender),
-          confinedRoots: () => dataConfinedRoots(internalSender.id),
+          exportRoots: () => dataExportRoots(internalSender, scopeKey),
+          confinedRoots: () => dataConfinedRoots(scopeKey),
+          downloadDir: () => dataDownloadDir(scopeKey),
           signal: abort.signal, assertActive: requireActiveInternalCapability,
           onShow: (card) => {
             // The receipt names the tool that ran; the card's title lives in

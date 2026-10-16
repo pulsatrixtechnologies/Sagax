@@ -131,4 +131,29 @@ describe("DataSheetStore", () => {
     expect(existsSync(join(dir, "b2", SHEET_FILE))).toBe(false);
     expect(registry.for("b2").cards()).toEqual([]);
   });
+
+  it("keeps a derived Data scope's sheet under its bot, with the real bot id, and deletes it with the bot", async () => {
+    const dir = freshDir();
+    const frames: Array<{ botId: string; key: string; cards: number }> = [];
+    const dropped: string[] = [];
+    const registry = new DataSheetRegistry({
+      broadcast: (frame, key) => frames.push({ botId: frame.botId, key, cards: frame.sheet.cards.length }),
+      dropResult: async (key, name) => { dropped.push(`${key}:${name}`); },
+      dir: (botId) => join(dir, botId),
+    });
+    const person = "b1~p-0123456789abcdef";
+    await registry.for(person).addCard({ kind: "table", title: "mine", by: "bot", status: "ready", result: "c_1" });
+    await registry.for("b1").addCard({ kind: "table", title: "owner's", by: "bot", status: "ready" });
+    // one person's cards never show on the bot's sheet
+    expect(registry.for("b1").cards().map((card) => card.title)).toEqual(["owner's"]);
+    expect(registry.for(person).sheet()).toMatchObject({ botId: "b1", cards: [{ title: "mine" }] });
+    expect(existsSync(join(dir, "b1", "data-scopes", "p-0123456789abcdef", SHEET_FILE))).toBe(true);
+    expect(frames).toEqual([{ botId: "b1", key: person, cards: 1 }, { botId: "b1", key: "b1", cards: 1 }]);
+    await registry.for(person).removeCard("c_1");
+    expect(dropped).toEqual([`${person}:c_1`]);
+    registry.delete("b1");
+    expect(existsSync(join(dir, "b1", "data-scopes"))).toBe(false);
+    expect(existsSync(join(dir, "b1", SHEET_FILE))).toBe(false);
+    expect(registry.for(person).cards()).toEqual([]);
+  });
 });

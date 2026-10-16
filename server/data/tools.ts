@@ -7,6 +7,7 @@
 // bounded by rows and bytes before it leaves (the gate's trimming is only the
 // backstop). Failures are structured DataErrors the model can act on.
 import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
@@ -25,6 +26,7 @@ import {
   type OmbChartSpec,
 } from "../../shared/data-surface.ts";
 import { compileToolSchema, schemaProblems } from "../mcp-schema-validator.ts";
+import { downloadGuarded } from "./download.ts";
 import type { DataSheetStore } from "./sheet.ts";
 import { DataFailure, type BotDatabase, type ChartCompiler, type ChartRenderer, type DataConnection, type DataExtension, type RunOptions, type RunResult, type VegaLiteValidator } from "./types.ts";
 
@@ -381,6 +383,12 @@ export interface DataContext {
   /** Organization server: the only folders a load may read (the bot's own),
    * and https the only remote source. Absent: not confined. */
   confinedRoots?: () => string[] | null;
+  /** Confined only: the folder (inside the confined roots) an https source
+   * is downloaded to before DuckDB reads it. */
+  downloadDir?: () => string;
+  /** Confined only: fetches an https source to a local file through the
+   * private-address guard. Default downloadGuarded; tests pass a fake. */
+  download?: (url: string, destination: string, signal: AbortSignal) => Promise<unknown>;
   by: DataCard["by"];
 }
 
@@ -411,6 +419,9 @@ export interface LoadPlan {
   extensions?: DataExtension[];
   /** For databases: ATTACH options and which tables to snapshot. */
   attach?: { type: "postgres" | "mysql" | "sqlite"; connection: string; table?: string };
+  /** Confined only: an https source the server downloads first (download.ts),
+   * then reads from a local file with `reader`. The URL is never in SQL. */
+  download?: { url: string; reader: "csv" | "tsv" | "json" | "parquet" | "xlsx"; suffix: string };
   warnings: string[];
 }
 
@@ -506,6 +517,7 @@ export function planLoad(input: LoadInput, confinedRoots: readonly string[] | nu
     const gid = /[?#&]gid=(\d+)/.exec(source)?.[1] ?? (input.sheet && /^\d+$/.test(input.sheet) ? input.sheet : undefined);
     const exportUrl = `https://docs.google.com/spreadsheets/d/${gsheet[1]}/export?format=csv${gid ? `&gid=${gid}` : ""}`;
     warnings.push("Loaded through the sheet's public CSV export; the sheet must be shared with anyone who has the link.");
+    if (confinedRoots) return [{ kind: "gsheet", source: stripCredentials(source), stem: input.name ?? "sheet", download: { url: exportUrl, reader: "csv", suffix: ".csv" }, warnings }];
     return [{ kind: "gsheet", source: stripCredentials(source), stem: input.name ?? "sheet", reader: `read_csv(${quoteLiteral(exportUrl)}${csvOptions(input.options)})`, extensions: ["httpfs"], warnings }];
   }
   const database = /^(postgres(ql)?|mysql):\/\//i.exec(source);
@@ -517,6 +529,12 @@ export function planLoad(input: LoadInput, confinedRoots: readonly string[] | nu
     const pathname = (() => { try { return new URL(source).pathname; } catch { return source; } })();
     const reader = readerFor(extensionOf(pathname), kind === "url" ? undefined : kind);
     if (!reader || reader === "sqlite") throw fail("source_unsupported", `No reader for ${extensionOf(pathname) || "a URL without a file extension"}.`, { hint: "Pass kind: csv, tsv, json, parquet or xlsx." });
+    if (confinedRoots) {
+      // The downloaded file keeps the reader's extension and the URL's
+      // compression, so DuckDB reads it as it would have read the URL.
+      const suffix = `.${reader}${COMPRESSION.exec(pathname)?.[0]?.toLowerCase() ?? ""}`;
+      return [{ kind: "url", source: stripCredentials(source), stem: input.name ?? (stemOf(pathname) || "download"), download: { url: source, reader, suffix }, ...(reader === "xlsx" ? { extensions: ["excel" as const] } : {}), warnings }];
+    }
     const extensions: DataExtension[] = [/^(az|azure):\/\//i.test(source) ? "azure" : "httpfs"];
     if (reader === "xlsx") extensions.push("excel");
     return [{ kind: "url", source: stripCredentials(source), stem: input.name ?? (stemOf(pathname) || "download"), reader: readerExpression(reader, source, input, false), extensions, warnings }];
@@ -558,10 +576,12 @@ export function planLoad(input: LoadInput, confinedRoots: readonly string[] | nu
 /** Organization server (2026-10-16): Data runs inside the Sagax server, so
  * a load may read only the bot's own folders, and from the network only
  * https (a database connection or another scheme could reach the server's
- * private network). DuckDB enforces the same rule underneath
- * (confineConnection in engine.ts); this check only says it clearly first. */
+ * private network). DuckDB enforces the file rule underneath and has no
+ * network at all (confineConnection in engine.ts); an https source is
+ * downloaded by the server through the private-address guard (download.ts).
+ * This check only says it clearly first. */
 export function confinedSourceCheck(source: string, kind: LoadKind, roots: readonly string[]): void {
-  const hint = "On an organization server, Data reads https URLs and files in this bot's own workspace. Put the file there (or publish it at an https address) and load it again.";
+  const hint = "On an organization server, Data reads public https URLs and files in this bot's own workspace. Put the file there (or publish it at a public https address) and load it again.";
   if (kind === "postgres" || kind === "mysql" || /^(postgres(ql)?|mysql):\/\//i.test(source)) {
     throw fail("source_unsupported", "Database connections are not available to Data on an organization server.", { hint });
   }
@@ -569,7 +589,7 @@ export function confinedSourceCheck(source: string, kind: LoadKind, roots: reado
     if (/^https:\/\//i.test(source)) return;
     throw fail("source_unsupported", "Only https addresses can be loaded on an organization server.", { hint });
   }
-  if (kind === "url" || kind === "gsheet") return;
+  if (kind === "url" || kind === "gsheet") throw fail("source_unsupported", "Only https addresses can be loaded on an organization server.", { hint });
   const local = source.startsWith("~") ? source : resolve(source);
   const inside = isAbsolute(local) && roots.some((root) => {
     const base = resolve(root);
@@ -620,6 +640,10 @@ export async function loadData(ctx: DataContext, input: LoadInput): Promise<Load
   });
   for (const plan of plans) {
     warnings.push(...plan.warnings);
+    if (plan.download) {
+      await loadDownloaded(ctx, plan, input, async (relation) => create(unique(plan.stem), relation, plan, recordedOptions(plan)));
+      continue;
+    }
     if (plan.reader) {
       await create(unique(plan.stem), plan.reader, plan, recordedOptions(plan));
       continue;
@@ -656,6 +680,23 @@ export async function loadData(ctx: DataContext, input: LoadInput): Promise<Load
     }
   }
   return { tables, warnings, elapsedMs: Date.now() - started };
+}
+
+/** A confined https load: the server downloads the file into the scope's
+ * own folder through the guard, DuckDB reads it from there, and the file
+ * goes once its rows are in the table. */
+async function loadDownloaded(ctx: DataContext, plan: LoadPlan, input: LoadInput, create: (relation: string) => Promise<void>): Promise<void> {
+  const { url, reader, suffix } = plan.download!;
+  const dir = ctx.downloadDir?.();
+  if (!dir) throw fail("source_unsupported", "This bot has no folder to download into.", { hint: "Put the file in this bot's workspace and load it from there." });
+  const file = join(dir, `${randomUUID()}${suffix}`);
+  try {
+    await (ctx.download ?? ((source, destination, signal) => downloadGuarded(source, destination, { signal })))(url, file, ctx.signal);
+    ctx.signal.throwIfAborted();
+    await create(readerExpression(reader, file, input, false));
+  } finally {
+    await rm(file, { force: true }).catch(() => undefined);
+  }
 }
 
 // ── data_describe ──

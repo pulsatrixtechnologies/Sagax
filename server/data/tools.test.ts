@@ -718,5 +718,65 @@ describe("a confined load (organization server)", () => {
     expect(refused("s3://bucket/x.parquet")).toBe("source_unsupported");
     expect(refused("postgres://u:p@db/shop")).toBe("source_unsupported");
     expect(refused("db", "mysql")).toBe("source_unsupported");
+    // a URL kind without an https address is refused, never read as a file
+    expect(refused("internal.example/a.csv", "url")).toBe("source_unsupported");
+    expect(refused("/etc/hosts", "gsheet")).toBe("source_unsupported");
+  });
+
+  it("plans an https source as a server download, never as a URL in SQL", () => {
+    const roots = [freshDir()];
+    const [url] = planLoad({ source: "https://example.com/files/Sales.csv.gz?token=abc" }, roots);
+    expect(url).toMatchObject({ kind: "url", stem: "Sales", source: "https://example.com/files/Sales.csv.gz?token=***", download: { url: "https://example.com/files/Sales.csv.gz?token=abc", reader: "csv", suffix: ".csv.gz" } });
+    expect(url!.reader).toBeUndefined();
+    expect(url!.extensions).toBeUndefined();
+    expect(planLoad({ source: "https://example.com/book.xlsx" }, roots)[0]).toMatchObject({ download: { reader: "xlsx", suffix: ".xlsx" }, extensions: ["excel"] });
+    expect(planLoad({ source: "https://example.com/export", kind: "parquet" }, roots)[0]).toMatchObject({ download: { reader: "parquet", suffix: ".parquet" } });
+    const [sheet] = planLoad({ source: "https://docs.google.com/spreadsheets/d/1AbC_d-e/edit#gid=42" }, roots);
+    expect(sheet).toMatchObject({ kind: "gsheet", download: { url: "https://docs.google.com/spreadsheets/d/1AbC_d-e/export?format=csv&gid=42", reader: "csv", suffix: ".csv" } });
+    expect(sheet!.reader).toBeUndefined();
+  });
+
+  it("downloads into the scope's folder, reads the local copy, records the URL and removes the copy", async () => {
+    const downloads = join(freshDir(), "data-downloads");
+    const fetched: Array<{ url: string; destination: string }> = [];
+    const { ctx, database, sheet } = context({
+      confinedRoots: () => [downloads],
+      downloadDir: () => downloads,
+      download: async (url, destination) => {
+        fetched.push({ url, destination });
+        mkdirSync(downloads, { recursive: true });
+        writeFileSync(destination, "x\n1\n");
+      },
+    });
+    const out = await loadData(ctx, { source: "https://example.com/files/Sales.csv?token=abc" });
+    expect(fetched).toHaveLength(1);
+    expect(fetched[0]!.url).toBe("https://example.com/files/Sales.csv?token=abc");
+    expect(fetched[0]!.destination.startsWith(downloads)).toBe(true);
+    expect(fetched[0]!.destination).toMatch(/\.csv$/);
+    const sqls = database.calls.filter((call) => call.method === "run").map((call) => call.sql!);
+    expect(sqls).toEqual([`CREATE OR REPLACE TABLE "sales" AS SELECT * FROM read_csv('${fetched[0]!.destination}')`]);
+    expect(sqls.join(" ")).not.toContain("https://");
+    expect(out.tables[0]).toMatchObject({ name: "sales", source: "https://example.com/files/Sales.csv?token=***" });
+    expect(sheet.sheet().sources[0]).toMatchObject({ kind: "url", source: "https://example.com/files/Sales.csv?token=***" });
+    expect(existsSync(fetched[0]!.destination)).toBe(false);
+    // a Google Sheet is downloaded as its CSV export and recorded as the sheet
+    await loadData(ctx, { source: "https://docs.google.com/spreadsheets/d/1AbC/edit" });
+    expect(fetched[1]!.url).toBe("https://docs.google.com/spreadsheets/d/1AbC/export?format=csv");
+    expect(sheet.sheet().sources.find((source) => source.name === "sheet")).toMatchObject({ kind: "gsheet", source: "https://docs.google.com/spreadsheets/d/1AbC/edit" });
+  });
+
+  it("passes a refused download on as is, and leaves nothing behind", async () => {
+    const downloads = join(freshDir(), "data-downloads");
+    const { ctx, database } = context({
+      confinedRoots: () => [downloads],
+      downloadDir: () => downloads,
+      download: async () => { throw new DataFailure({ code: "source_unsupported", message: "The address 169.254.169.254 is not on the public internet (metadata); Data does not download from it." }); },
+    });
+    const refused = await failure(loadData(ctx, { source: "https://169.254.169.254/latest/meta-data/x.csv" }));
+    expect(refused).toMatchObject({ code: "source_unsupported" });
+    expect(database.calls.filter((call) => call.method === "run")).toEqual([]);
+    // no folder to download into: refused before any request
+    const { ctx: bare } = context({ confinedRoots: () => [downloads], download: async () => { throw new Error("must not run"); } });
+    expect(await failure(loadData(bare, { source: "https://example.com/a.csv" }))).toMatchObject({ code: "source_unsupported" });
   });
 });

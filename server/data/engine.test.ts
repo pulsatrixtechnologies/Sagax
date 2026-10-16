@@ -642,10 +642,74 @@ describe("a confined database (organization server)", () => {
     expect((await free.run(`SELECT count(*) FROM read_csv('${join(root, "outside.csv")}')`, bot)).rows).toEqual([["1"]]);
   });
 
-  it("confines through allowed_directories, https only, and a locked configuration", async () => {
+  it("refuses every remote source from SQL, https included: no network at all", async () => {
+    const extra = join(root, "confined-net");
+    mkdirSync(extra, { recursive: true });
+    const e = engine({ confine: () => [extra] });
+    const db = await e.forBot("netless");
+    for (const sql of [
+      "SELECT * FROM read_csv('https://example.com/a.csv')",
+      "SELECT * FROM read_csv('https://169.254.169.254/latest/meta-data')",
+      "SELECT * FROM read_parquet('https://127.0.0.1/x.parquet')",
+      "SELECT * FROM read_text('https://10.0.0.1/x')",
+    ]) {
+      const refused = await failure(db.run(sql, bot));
+      // refused by the confinement itself, before any connection is tried
+      expect(refused.error.message).toMatch(/^Permission Error: Cannot access file .* disabled by configuration/);
+    }
+  });
+
+  it("loads a confined https source from the server's downloaded copy in the scope's own folder", async () => {
+    const { loadData } = await import("./tools.ts");
+    const { DataSheetStore } = await import("./sheet.ts");
+    const scopeFolder = join(root, "bots", "dl");
+    const downloads = join(scopeFolder, "data-downloads");
+    const e = engine({ confine: () => [] });
+    const database = await e.forBot("dl");
+    const fetched: string[] = [];
+    const ctx = {
+      database,
+      sheet: new DataSheetStore({ botId: "dl", dir: scopeFolder }),
+      compileChart: () => { throw new Error("unused"); },
+      validateVegaLite: async () => ({}),
+      renderer: { svg: async () => "", png: async () => Buffer.alloc(0) },
+      exportRoots: () => [],
+      signal: new AbortController().signal,
+      connection: "bot" as const,
+      by: "bot" as const,
+      confinedRoots: () => [],
+      downloadDir: () => downloads,
+      download: async (url: string, destination: string) => {
+        fetched.push(url);
+        mkdirSync(downloads, { recursive: true });
+        writeFileSync(destination, "region,total\neast,3\nwest,4\n");
+      },
+    };
+    const out = await loadData(ctx, { source: "https://example.com/reports/sales.csv?sig=abc" });
+    expect(fetched).toEqual(["https://example.com/reports/sales.csv?sig=abc"]);
+    expect(out.tables[0]).toMatchObject({ name: "sales", rowCount: 2, source: "https://example.com/reports/sales.csv?sig=***" });
+    expect((await database.run("SELECT sum(total) FROM sales", bot)).rows).toEqual([["7"]]);
+  });
+
+  it("keeps a derived Data scope's database under its bot's folder and deletes it with the bot", async () => {
+    const e = engine();
+    const scoped = await e.forBot("owned~p-0123456789abcdef");
+    await scoped.run("CREATE OR REPLACE TABLE mine AS SELECT 1 AS one", bot);
+    const own = await e.forBot("owned");
+    await own.run("CREATE OR REPLACE TABLE shared AS SELECT 2 AS two", bot);
+    expect(existsSync(join(root, "bots", "owned", "data-scopes", "p-0123456789abcdef", "data.duckdb"))).toBe(true);
+    // one person's tables are not in the bot's database, nor the other way round
+    expect((await own.listTables()).map((table) => table.name)).toEqual(["shared"]);
+    expect((await scoped.listTables()).map((table) => table.name)).toEqual(["mine"]);
+    await e.deleteBot("owned");
+    expect(existsSync(join(root, "bots", "owned", "data-scopes"))).toBe(false);
+    expect(existsSync(join(root, "bots", "owned", "data.duckdb"))).toBe(false);
+  });
+
+  it("confines through allowed_directories, no remote source, and a locked configuration", async () => {
     const { confinementStatements } = await import("./engine.ts");
     expect(confinementStatements(["/data/bots/a", "/data/workspaces/a/"])).toEqual([
-      "SET allowed_directories = ['/data/bots/a/', '/data/workspaces/a/', 'https://']",
+      "SET allowed_directories = ['/data/bots/a/', '/data/workspaces/a/']",
       "SET enable_external_access = false",
       "SET lock_configuration = true",
     ]);

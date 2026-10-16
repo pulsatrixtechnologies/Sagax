@@ -20,8 +20,8 @@ import { join } from "node:path";
 import type * as DuckDB from "@duckdb/node-api";
 
 import { DATA_LIMITS, DATA_RESULTS_SCHEMA } from "../../shared/data-surface.ts";
-import { botFolder as defaultBotFolder } from "../bot-folder.ts";
 import { DATA_DIR } from "../config.ts";
+import { DATA_SCOPES_DIR, dataScopeBotId, dataScopeFolder } from "./scope.ts";
 import {
   DataFailure,
   type BotDatabase,
@@ -54,7 +54,8 @@ const RESULT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const PLAIN_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
 export interface DataEngineOptions {
-  /** Where a bot's database lives. Default: the bot folder (DATA_DIR/bots/<id>). */
+  /** Where a bot's database lives. Default: the bot folder (DATA_DIR/bots/<id>).
+   * A derived scope key (scope.ts) lives under its bot's folder. */
   botFolder?: (botId: string) => string;
   /** Holds the shared extension directory. Default: DATA_DIR. */
   dataDir?: string;
@@ -74,17 +75,21 @@ export type DataConfinement = (botId: string) => string[] | null;
 
 /** Extensions a confined database loads before it locks: once locked,
  * DuckDB can neither install nor load one. Best effort: an extension that
- * cannot be fetched now is simply missing, and its reader fails clearly. */
-export const CONFINED_EXTENSIONS: readonly DataExtension[] = ["httpfs", "excel", "sqlite"];
+ * cannot be fetched now is simply missing, and its reader fails clearly.
+ * No httpfs: a confined database has no network at all. */
+export const CONFINED_EXTENSIONS: readonly DataExtension[] = ["excel", "sqlite"];
 
 /** The statements that confine a database (2026-10-16, organization
- * server): no file outside `folders`, no remote source but https, and the
+ * server): no file outside `folders`, no remote source at all, and the
  * configuration locked so no statement can lift it. DuckDB checks every
  * reader, COPY, ATTACH and table function against this, on every
- * connection of the instance. */
+ * connection of the instance. An https load is downloaded by the server
+ * first, through the private-address guard (download.ts), and read from
+ * the scope's own folder: SQL never reaches the network, so a query cannot
+ * reach the server's private network or a cloud metadata endpoint. */
 export function confinementStatements(folders: readonly string[]): string[] {
   const dirs = [...new Set(folders.filter(Boolean).map((folder) => (folder.endsWith("/") || folder.endsWith("\\") ? folder : `${folder}/`)))];
-  const list = [...dirs, "https://"].map(quoteLiteral).join(", ");
+  const list = dirs.map(quoteLiteral).join(", ");
   return [
     `SET allowed_directories = [${list}]`,
     "SET enable_external_access = false",
@@ -801,7 +806,8 @@ class Engine implements DataEngine {
     this.env = options.env ?? process.env;
     this.dataDir = options.dataDir ?? DATA_DIR;
     this.idleMs = options.idleMs ?? IDLE_CLOSE_MS;
-    this.folder = options.botFolder ?? defaultBotFolder;
+    const botFolder = options.botFolder;
+    this.folder = (key) => dataScopeFolder(key, botFolder);
     if (options.binding) this.loaded = { binding: options.binding };
     this.confine = options.confine;
   }
@@ -850,12 +856,15 @@ class Engine implements DataEngine {
     return db;
   }
 
+  /** Deletes the bot's database and every derived scope of it (each
+   * person's and each confidential thread's, scope.ts), open or not. */
   async deleteBot(botId: string): Promise<void> {
-    const db = this.databases.get(botId);
-    this.databases.delete(botId);
-    await db?.close();
+    const keys = [...this.databases.keys()].filter((key) => key === botId || dataScopeBotId(key) === botId);
+    const open = keys.map((key) => this.databases.get(key)!);
+    for (const key of keys) this.databases.delete(key);
+    await Promise.all(open.map((db) => db.close()));
     const folder = this.folder(botId);
-    for (const name of [DATA_DB_FILE, `${DATA_DB_FILE}.wal`, DATA_TMP_DIR]) {
+    for (const name of [DATA_DB_FILE, `${DATA_DB_FILE}.wal`, DATA_TMP_DIR, DATA_SCOPES_DIR]) {
       // Windows keeps a just-closed file busy for a moment; rm retries EBUSY/EPERM.
       await rm(join(folder, name), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     }

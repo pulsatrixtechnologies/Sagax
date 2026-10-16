@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { DATA_LIMITS, type DataBroadcast, type DataCard, type DataSheet, type DataSource } from "../../shared/data-surface.ts";
 import { writeFileAtomic } from "../atomic.ts";
 import { botFolder } from "../bot-folder.ts";
+import { DATA_SCOPES_DIR, dataScopeBotId, dataScopeFolder } from "./scope.ts";
 
 export const SHEET_FILE = "sheet.json";
 
@@ -198,36 +199,54 @@ export class DataSheetStore {
   }
 }
 
-/** One store per bot for the whole server: the tools (internal MCP route)
- * and the panel routes must see the same cards. */
+export interface DataSheetRegistryDeps {
+  /** Sends a scope's sheet; `scopeKey` says whose it is (scope.ts). The
+   * frame's botId is always the real bot id. */
+  broadcast: (frame: DataBroadcast, scopeKey: string) => void;
+  dropResult: (scopeKey: string, name: string) => Promise<void>;
+  /** The folder a bot's sheet lives in. Default: the bot folder. A derived
+   * scope's sheet lives under it (`data-scopes/<suffix>`). */
+  dir?: (botId: string) => string;
+}
+
+/** One store per Data scope for the whole server: the tools (internal MCP
+ * route) and the panel routes must see the same cards. A scope is a bot id,
+ * or a key derived from it for one person or one confidential thread
+ * (scope.ts). */
 export class DataSheetRegistry {
   private readonly stores = new Map<string, DataSheetStore>();
-  private readonly deps: { broadcast: (frame: DataBroadcast) => void; dropResult: (botId: string, name: string) => Promise<void>; dir?: (botId: string) => string };
-  constructor(deps: { broadcast: (frame: DataBroadcast) => void; dropResult: (botId: string, name: string) => Promise<void>; dir?: (botId: string) => string }) { this.deps = deps; }
+  private readonly deps: DataSheetRegistryDeps;
+  constructor(deps: DataSheetRegistryDeps) { this.deps = deps; }
 
-  for(botId: string): DataSheetStore {
-    let store = this.stores.get(botId);
+  private dirOf(scopeKey: string): string {
+    return dataScopeFolder(scopeKey, this.deps.dir ?? botFolder);
+  }
+
+  for(scopeKey: string): DataSheetStore {
+    let store = this.stores.get(scopeKey);
     if (!store) {
       store = new DataSheetStore({
-        botId,
-        dir: this.deps.dir?.(botId),
-        broadcast: this.deps.broadcast,
-        dropResult: (name) => this.deps.dropResult(botId, name),
+        botId: dataScopeBotId(scopeKey),
+        dir: this.dirOf(scopeKey),
+        broadcast: (frame) => this.deps.broadcast(frame, scopeKey),
+        dropResult: (name) => this.deps.dropResult(scopeKey, name),
       });
-      this.stores.set(botId, store);
+      this.stores.set(scopeKey, store);
     }
     return store;
   }
 
   /** Drops the in-memory store (a test, or a bot whose folder is gone). */
-  forget(botId: string): void {
-    this.stores.delete(botId);
+  forget(scopeKey: string): void {
+    this.stores.delete(scopeKey);
   }
 
-  /** When a bot is deleted: forget the store and remove its sheet.json. */
+  /** When a bot is deleted: forget its stores (every scope of it) and
+   * remove its sheet.json and the derived scopes' folders. */
   delete(botId: string): void {
-    const dir = this.deps.dir?.(botId) ?? botFolder(botId);
-    this.stores.delete(botId);
+    for (const key of this.stores.keys()) if (dataScopeBotId(key) === botId) this.stores.delete(key);
+    const dir = this.dirOf(botId);
     rmSync(join(dir, SHEET_FILE), { force: true });
+    rmSync(join(dir, DATA_SCOPES_DIR), { recursive: true, force: true });
   }
 }
