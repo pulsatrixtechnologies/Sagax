@@ -90,11 +90,10 @@ final class ModelMenuTests: XCTestCase {
         XCTAssertEqual(ModelFavorites.toggled([], "no-separator"), [])
     }
 
-    func testSimpleIsTheDefaultExceptForAnOrganizationAdmin() {
-        XCTAssertTrue(ModelMenu.isSimple(stored: nil, organization: false, role: nil))
-        XCTAssertTrue(ModelMenu.isSimple(stored: nil, organization: true, role: "member"))
-        XCTAssertFalse(ModelMenu.isSimple(stored: nil, organization: true, role: "admin"))
-        XCTAssertTrue(ModelMenu.isSimple(stored: "simple", organization: true, role: "owner"))
-        XCTAssertFalse(ModelMenu.isSimple(stored: "advanced", organization: false, role: nil))
+    func testAdvancedIsTheDefaultForEveryone() {
+        XCTAssertFalse(ModelMenu.isSimple(stored: nil))
+        XCTAssertFalse(ModelMenu.isSimple(stored: "advanced"))
+        XCTAssertFalse(ModelMenu.isSimple(stored: "1"))
+        XCTAssertTrue(ModelMenu.isSimple(stored: "simple"))
     }
 }

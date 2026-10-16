@@ -57,7 +57,7 @@ struct ModelMenuSheet: View {
 
     @State private var instances: [Instance] = []
     @State private var allowedEngines: [String]?
-    @State private var simple = true
+    @State private var simple = false
     @State private var loaded = false
     @State private var page: Page = .root
     @State private var query = ""
@@ -129,8 +129,7 @@ struct ModelMenuSheet: View {
             instances = await session.modelInstances()
             allowedEngines = await session.configStatus()?.allowedEngines
             let stored = await favorites.load(session)
-            let role = await session.configStatus()?.viewer?.role
-            simple = ModelMenu.isSimple(stored: stored, organization: organization, role: role)
+            simple = ModelMenu.isSimple(stored: stored)
             loaded = true
         }
         .accessibilityIdentifier("model-menu")

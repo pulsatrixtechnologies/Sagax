@@ -7,7 +7,7 @@ import {
 import { bootstrapBrand } from "./lib/brand";
 import { applySkin, readSkin } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
-import { retireLegacyInterfaceMode } from "./lib/interface-mode";
+import { migrateInterfaceModeToAdvancedOnce, retireLegacyInterfaceMode } from "./lib/interface-mode";
 import { BrowserSignInPage } from "./pair/BrowserSignInPage";
 import { PairPage } from "./pair/PairPage";
 import { rememberOpenThreadHash } from "./lib/open-thread-hash";
@@ -102,6 +102,10 @@ async function chooseRoot(): Promise<React.ReactNode> {
     // 404). The main window reports it; a Data window beside it does not.
     if (!dataWindow) void startPresence();
   }
+  // Once per person: a stored Simple becomes Advanced (2026-10-16). After
+  // the organization record above, so its marker counts and no device moves
+  // the person twice; a Simple chosen afterwards stays.
+  migrateInterfaceModeToAdvancedOnce();
   // The desktop app on a personal computer hands its look to the paired
   // phone (Same as my computer) and wears a look the phone chose
   // (src/lib/desktop-appearance-sync.ts). Elsewhere the route answers 404.

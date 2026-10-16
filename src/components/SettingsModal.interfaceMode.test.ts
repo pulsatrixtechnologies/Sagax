@@ -34,7 +34,17 @@ afterEach(() => {
 const render = () => renderToStaticMarkup(createElement(SettingsModal));
 
 describe("Settings Simple and Advanced", () => {
-  it("starts in Simple, with the switch in Appearance and technical sections hidden", () => {
+  it("starts in Advanced: the switch is on and the technical sections show", () => {
+    const html = render();
+    expect(html).toContain('aria-label="Advanced mode"');
+    expect(html).toContain('aria-checked="true"');
+    for (const id of ["engines", "usage", "computer", "experimental"]) {
+      expect(html, id).toContain(`<option value="${id}"`);
+    }
+  });
+
+  it("in Simple (chosen), the switch stays in Appearance and technical sections hide", () => {
+    stored.set("sagax.interfaceMode.v1", "simple");
     const html = render();
     expect(html).toContain('aria-label="Advanced mode"');
     expect(html).toContain('aria-checked="false"');

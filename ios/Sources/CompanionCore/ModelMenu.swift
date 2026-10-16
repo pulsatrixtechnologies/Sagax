@@ -260,13 +260,12 @@ public enum ModelMenu {
     /// The synced preference that holds the choice.
     public static let interfaceModeKey = "sagax.interfaceMode.v1"
 
-    /// Simple unless chosen otherwise; an organization owner or admin
-    /// starts on Advanced. An explicit choice always wins.
-    public static func isSimple(stored: String?, organization: Bool, role: String?) -> Bool {
-        if stored == "simple" { return true }
-        if stored == "advanced" { return false }
-        guard organization else { return true }
-        return !(role == "owner" || role == "admin")
+    /// Advanced unless Simple was chosen (2026-10-16: Advanced is the
+    /// default for everyone, solo or organization, any role). The one-time
+    /// move of a stored Simple to Advanced runs on the desktop and the
+    /// organization server; this app only reads the choice.
+    public static func isSimple(stored: String?) -> Bool {
+        stored == "simple"
     }
 }
 

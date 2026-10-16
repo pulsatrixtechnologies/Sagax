@@ -1,10 +1,10 @@
 // A person's preferences on an organization server (server/user-preferences.ts,
 // server/routes/user-preferences.ts): their own record, known keys only.
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createUserPreferenceStore, preferencesFrameAllowed } from "./user-preferences.ts";
+import { createUserPreferenceStore, migrateToAdvancedOnce, preferencesFrameAllowed } from "./user-preferences.ts";
 import { createUserPreferenceRoutes, USER_PREFERENCES_PATH } from "./routes/user-preferences.ts";
 import { PASS } from "./routes/table.ts";
 import { CLIENT_ALLOW } from "./request-auth.ts";
@@ -21,7 +21,8 @@ describe("per-person preference store", () => {
     expect(store.get(ADA)).toEqual({ stored: true, preferences: { "omb-skin": "midnight", "omb-language": "fr" }, updatedAt: 1000 });
     expect(store.get(BOB).stored).toBe(false);
     const again = createUserPreferenceStore(dir);
-    expect(again.get(ADA).preferences).toEqual({ "omb-skin": "midnight", "omb-language": "fr" });
+    // a restart also marks the record (the one-time move to Advanced)
+    expect(again.get(ADA).preferences).toMatchObject({ "omb-skin": "midnight", "omb-language": "fr" });
     expect(readFileSync(join(dir, "user-preferences.json"), "utf8")).not.toContain("omb-drafts");
     if (process.platform !== "win32") expect(statSync(join(dir, "user-preferences.json")).mode & 0o777).toBe(0o600);
     expect(() => store.get("local-owner")).toThrow(/not a person/);
@@ -33,6 +34,52 @@ describe("per-person preference store", () => {
     store.put(BOB, { "sagax.sidebarSections.v1": JSON.stringify({ sections: [{ name: "Mine", items: ["bot:b1"] }] }) });
     expect(JSON.parse(store.get(ADA).preferences["sagax.sidebarSections.v1"]!).sections[0].name).toBe("Ventes");
     expect(JSON.parse(store.get(BOB).preferences["sagax.sidebarSections.v1"]!).sections[0].name).toBe("Mine");
+  });
+});
+
+describe("one-time move to Advanced on the organization server", () => {
+  const MODE = "sagax.interfaceMode.v1";
+  const MARK = "sagax.advancedModeMigratedAt.v1";
+  const at = Date.parse("2026-10-16T14:00:00.000Z");
+  const seed = (people: Record<string, Record<string, string>>) => {
+    const dir = mkdtempSync(join(tmpdir(), "omb-prefs-"));
+    const file = { version: 1, people: Object.fromEntries(Object.entries(people).map(([id, preferences]) => [id, { preferences, updatedAt: 1 }])) };
+    writeFileSync(join(dir, "user-preferences.json"), JSON.stringify(file));
+    return dir;
+  };
+
+  it("moves each stored Simple to Advanced once, marks everyone, and writes the file", () => {
+    const dir = seed({ [ADA]: { [MODE]: "simple", "omb-skin": "paper" }, [BOB]: { "omb-language": "fr" } });
+    const store = createUserPreferenceStore(dir, () => at);
+    expect(store.get(ADA).preferences).toEqual({ [MODE]: "advanced", [MARK]: "2026-10-16T14:00:00.000Z", "omb-skin": "paper" });
+    // a person with no choice keeps the Advanced default and gets the marker
+    expect(store.get(BOB).preferences).toEqual({ "omb-language": "fr", [MARK]: "2026-10-16T14:00:00.000Z" });
+    const onDisk = JSON.parse(readFileSync(join(dir, "user-preferences.json"), "utf8"));
+    expect(onDisk.people[ADA].preferences[MODE]).toBe("advanced");
+    expect(onDisk.people[BOB].preferences[MARK]).toBe("2026-10-16T14:00:00.000Z");
+  });
+
+  it("respects Simple chosen after the move, across restarts", () => {
+    const dir = seed({ [ADA]: { [MODE]: "simple" } });
+    const store = createUserPreferenceStore(dir, () => at);
+    store.merge(ADA, { [MODE]: "simple" }, []);
+    for (let start = 0; start < 3; start += 1) {
+      const again = createUserPreferenceStore(dir, () => at + 86_400_000 * (start + 1));
+      expect(again.get(ADA).preferences).toEqual({ [MODE]: "simple", [MARK]: "2026-10-16T14:00:00.000Z" });
+    }
+  });
+
+  it("keeps the marker when a client replaces or trims the record", () => {
+    const store = createUserPreferenceStore(seed({ [ADA]: { [MODE]: "simple" } }), () => at);
+    store.put(ADA, { [MODE]: "simple", "omb-skin": "paper" });
+    expect(store.get(ADA).preferences[MARK]).toBe("2026-10-16T14:00:00.000Z");
+    store.merge(ADA, {}, [MARK]);
+    expect(store.get(ADA).preferences).toEqual({ [MODE]: "simple", "omb-skin": "paper", [MARK]: "2026-10-16T14:00:00.000Z" });
+  });
+
+  it("leaves a marked record as it is", () => {
+    expect(migrateToAdvancedOnce({ [MODE]: "simple", [MARK]: "2026-10-16T13:00:00.000Z" }, "later")).toBeNull();
+    expect(migrateToAdvancedOnce({ [MODE]: "advanced" }, "now")).toEqual({ [MODE]: "advanced", [MARK]: "now" });
   });
 });
 

@@ -13,6 +13,23 @@ import { z } from "zod";
 import { cleanUserPreferences, isUserPreferenceKey, type UserPreferences } from "../shared/user-preferences.ts";
 import { writeFileAtomic } from "./atomic.ts";
 
+// The one-time move to Advanced (src/lib/interface-mode.ts, 2026-10-16).
+const INTERFACE_MODE_KEY = "sagax.interfaceMode.v1";
+const MIGRATION_KEY = "sagax.advancedModeMigratedAt.v1";
+
+/**
+ * Once per person: a record without the marker has a stored Simple turned
+ * into Advanced, and gets the marker. A record with the marker is left as
+ * it is, so Simple chosen afterwards stays. Returns the record to keep, or
+ * null when nothing changed.
+ */
+export function migrateToAdvancedOnce(preferences: UserPreferences, at: string): UserPreferences | null {
+  if (preferences[MIGRATION_KEY]) return null;
+  const next: UserPreferences = { ...preferences, [MIGRATION_KEY]: at };
+  if (next[INTERFACE_MODE_KEY] === "simple") next[INTERFACE_MODE_KEY] = "advanced";
+  return next;
+}
+
 const PRINCIPAL_ID = /^pr_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** More people than an organization server serves; a bound, not a quota. */
 export const MAX_PEOPLE = 10_000;
@@ -52,8 +69,24 @@ export function createUserPreferenceStore(dataDir: string, now: () => number = D
     if (!existsSync(file)) return people;
     try {
       const parsed = fileSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+      let migrated = false;
+      const at = new Date(now()).toISOString();
       for (const [id, entry] of Object.entries(parsed.people)) {
-        if (PRINCIPAL_ID.test(id)) people[id] = { preferences: cleanUserPreferences(entry.preferences), updatedAt: entry.updatedAt };
+        if (!PRINCIPAL_ID.test(id)) continue;
+        const preferences = cleanUserPreferences(entry.preferences);
+        const moved = migrateToAdvancedOnce(preferences, at);
+        if (moved) migrated = true;
+        people[id] = { preferences: moved ?? preferences, updatedAt: moved ? now() : entry.updatedAt };
+      }
+      // Written once, the first time this version reads the file: the markers
+      // keep every later start (and every device) from moving anyone again.
+      if (migrated) {
+        try {
+          writeFileAtomic(file, `${JSON.stringify({ version: 1, people }, null, 2)}\n`, { mode: 0o600 });
+        } catch (error) {
+          // The move holds in memory; the next save writes it.
+          console.warn(`user preferences: ${file} could not be written after the move to Advanced (${error instanceof Error ? error.message : String(error)})`);
+        }
       }
     } catch (error) {
       // A damaged file costs people their synced choices, never the server.
@@ -70,6 +103,10 @@ export function createUserPreferenceStore(dataDir: string, now: () => number = D
     requirePerson(principalId);
     const all = load();
     if (!all[principalId] && Object.keys(all).length >= MAX_PEOPLE) throw Object.assign(new Error("too many people"), { status: 507 });
+    // The marker is never dropped: a client that does not know it (a PUT of
+    // the whole record, a remove) cannot make the move run again.
+    const marker = all[principalId]?.preferences[MIGRATION_KEY];
+    if (marker && !preferences[MIGRATION_KEY]) preferences = { ...preferences, [MIGRATION_KEY]: marker };
     const entry = { preferences, updatedAt: now() };
     all[principalId] = entry;
     writeFileAtomic(file, `${JSON.stringify({ version: 1, people: all }, null, 2)}\n`, { mode: 0o600 });

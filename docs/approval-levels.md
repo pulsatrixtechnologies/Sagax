@@ -23,6 +23,12 @@ bot settings differ: in Simple mode they stack two choices, **Ask me first**
 (Ask for approval) and **Decide for me** (Approve for me), and another saved
 level stays until one of the two is picked.
 
+Advanced is the default for everyone, solo or organization, owner, admin or
+member. A person who had Simple saved was moved to Advanced once, the first
+time the version with this default started; a marker
+(`sagax.advancedModeMigratedAt.v1`, kept per person on an organization
+server) stops it from happening again, so Simple chosen afterwards stays.
+
 Full access is an elevated-risk standing approval. Full and Custom can only be
 enabled from a packaged local desktop app, where the choice crosses a private
 process channel rather than the bot-accessible HTTP API. They are hidden in

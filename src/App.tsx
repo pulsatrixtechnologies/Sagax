@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot as BotIcon, Loader2, Menu, Plus } from "lucide-react";
-import { setInterfaceModeRole, useAdvancedMode } from "@/lib/interface-mode";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOrgMemoryAuto } from "@/lib/org-memory";
 import { openBot, openNotificationTarget, StoreProvider, useStore } from "@/state/store";
@@ -22,7 +22,6 @@ import {
   AchievementsModal, ActivityPanel, BotCatalogModal, BotSettingsDialog, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
   PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 } from "@/components/lazy-screens";
-import { useServerMode } from "@/components/ServerModeSettings";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
 import { ReleaseNotesPrompt } from "@/components/ReleaseNotesPrompt";
 import { UpdateBanner } from "@/components/UpdateBanner";
@@ -165,24 +164,18 @@ function Shell() {
   // Someone with no bot of their own still opens on a group they are in.
   const { group, bot } = mainConversation(state.bots, state.groups, state.selectedId, state.sidebarHiddenKeys);
   const calendarOpen = state.activeView === "routines";
-  // Simple is the default until an explicit choice or an organization
-  // owner/admin is known. The choice itself is written only on the switch.
+  // Advanced is the default for everyone (2026-10-16). The choice itself
+  // is written only on the switch.
   const advanced = useAdvancedMode();
   const org = usePerspicaxOrg();
   // Settings > Memory sets itself up and syncs on an organization server
   // signed in with Perspicax (desktop app only).
   useOrgMemoryAuto(org !== null);
-  const serverMode = useServerMode();
-  useEffect(() => {
-    const viewer = state.config?.viewer;
-    const organization = viewer?.profileManagedBy === "perspicax" || org !== null || serverMode?.active === true;
-    setInterfaceModeRole({ organization, role: viewer?.role ?? null });
-  }, [org, serverMode, state.config?.viewer]);
   // Simple does not offer the inspector or the computer panel. Closing them
   // leaves their saved settings as they were. Connect apps stays open in
-  // Simple (JC, 2026-10-16): its pill is in every sidebar, and an
-  // organization member starts on Simple, so closing it here made the pill
-  // do nothing for them. What they may change inside is the server's call.
+  // Simple (JC, 2026-10-16): its pill is in every sidebar, and a person who
+  // chose Simple must still reach it. What they may change inside is the
+  // server's call.
   useEffect(() => {
     if (advanced) return;
     if (state.inspectorOpen) dispatch({ type: "toggleInspector", open: false });

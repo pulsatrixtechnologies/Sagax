@@ -44,6 +44,9 @@ export const USER_PREFERENCE_KEYS = [
   "omb-analytics-opt-out",
   // Simple or Advanced (src/lib/interface-mode.ts). "simple" | "advanced".
   "sagax.interfaceMode.v1",
+  // the one-time move from Simple to Advanced was done for this person (an
+  // ISO date; src/lib/interface-mode.ts, server/user-preferences.ts)
+  "sagax.advancedModeMigratedAt.v1",
   // where bots work for this person (organization server: their computer
   // through the desktop app, or their server environment; shared/bot-workplace.ts)
   "sagax.botWorkplace.v1",
