@@ -117,6 +117,40 @@ export function resolveSurface(input: {
   return { computer: undefined, browser: browserOn, pinned: null, note: "" };
 }
 
+/** Whether a turn records where an Auto conversation landed (an auto pin,
+ * `surfaceSource: "auto"`). Solo server: an Auto conversation the person did
+ * not pin remembers its first place (issue #1650). Organization server:
+ * never. Auto there picks per step and resets with each message
+ * (server/auto-computer.ts), so a turn that used the built-in browser must
+ * not become the conversation's setting: the composer then showed Browser
+ * and the next turns lost the person's computer (JC 2026-10-16). */
+export function autoPinRecorded(input: {
+  organization: boolean;
+  /** The bot's Works on; undefined = Auto. */
+  worksOn: Destination;
+  teamComputer: boolean;
+  runOnCloud: boolean;
+  /** The turn was held to a pin already. */
+  pinned: boolean;
+  computerSkipped: boolean;
+  taskSource: "user" | "auto" | undefined;
+  taskExists: boolean;
+}): boolean {
+  if (input.organization) return false;
+  return input.worksOn === undefined && !input.teamComputer && !input.runOnCloud && !input.pinned && !input.computerSkipped &&
+    input.taskExists && input.taskSource !== "user";
+}
+
+/** The conversation pin a turn honours. A person's pin (and a legacy pin of
+ * unknown origin) always; an Auto-recorded one only on a solo server, since
+ * an organization server never treats where Auto landed as a choice
+ * (autoPinRecorded). */
+export function honouredPin(task: { surface?: Surface; surfaceSource?: "user" | "auto" } | null | undefined, organization: boolean): Surface | null {
+  if (!task?.surface) return null;
+  if (organization && task.surfaceSource === "auto") return null;
+  return task.surface;
+}
+
 /** The conversation works on the built-in browser: its Works on is Browser,
  * or it is pinned there. Auto without a pin only falls back to the browser. */
 export function browserIsThePlace(plan: SurfacePlan): boolean {

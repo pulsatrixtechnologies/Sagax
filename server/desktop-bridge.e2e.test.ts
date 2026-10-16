@@ -54,6 +54,7 @@ let BASE = "";
 let child: ChildProcess;
 let home: string;
 let mcpDump = "";
+let browserStub = "";
 let prompts = "";
 let log = "";
 let idp: FakeOidcProvider;
@@ -191,7 +192,14 @@ posixOnly("organization server: the desktop bridge", () => {
     writeFileSync(join(home, "sandboxd-key"), `${SANDBOXD_KEY}\n`, { mode: 0o400 });
     mcpDump = join(home, "mcp-dump.json");
     prompts = join(home, "prompts.jsonl");
+    // The built-in browser is on, as on a real organization server: an Auto
+    // turn mounts it beside the computers (a stub engine, never a Chrome).
+    browserStub = join(home, "agent-browser");
+    writeFileSync(browserStub, ["#!/bin/sh",
+      `if [ "$1" = session ]; then printf '%s\\n' '{"success":true,"data":{"sessions":[]}}'; fi`,
+      "exit 0"].join("\n"), { mode: 0o755 });
     writeFileSync(join(data, "config.json"), JSON.stringify({
+      features: { browser: true },
       organization: { memberBotsUseOrgKey: true },
       instances: {
         claude: {
@@ -236,6 +244,7 @@ posixOnly("organization server: the desktop bridge", () => {
         SAGAX_SANDBOXD_URL: `http://127.0.0.1:${(provisioner.address() as AddressInfo).port}`,
         SAGAX_SANDBOXD_KEY_FILE: join(home, "sandboxd-key"),
         SAGAX_SANDBOX_INSTANCE: INSTANCE,
+        SAGAX_AGENT_BROWSER_PATH: browserStub,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -389,6 +398,22 @@ posixOnly("organization server: the desktop bridge", () => {
     expect((await lines()).slice(already)).toEqual(["notice: Workspace: On your computer"]);
     await turn(alice, aliceBot, "run it");
     expect((await lines()).length).toBe(already + 1);
+  }, 120_000);
+
+  it("Auto stays Auto: a turn that had the built-in browser pins nothing, and the next one still has her computer", async () => {
+    // JC 2026-10-16: he chose Auto, the composer came back on Browser, and
+    // the bot lost sagax-desktop for the rest of the conversation.
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: null })).status).toBe(200);
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}/tasks/${aliceBot.threadId}`, alice, { surface: null })).status).toBe(200);
+    await turn(alice, aliceBot, "run it");
+    expect(dump().servers).toEqual(expect.arrayContaining(["browser", "sagax-desktop", "sagax-environment", "sagax-computer"]));
+    const task = (JSON.parse(readFileSync(join(home, ".openmausbot", "bots.json"), "utf8")) as any[])
+      .find((bot: any) => bot.id === aliceBot.id)?.tasks.find((entry: any) => entry.threadId === aliceBot.threadId);
+    expect(task?.surface).toBeUndefined();
+    expect(task?.surfaceSource).toBeUndefined();
+    await turn(alice, aliceBot, "run it");
+    expect(dump().servers).toEqual(expect.arrayContaining(["sagax-desktop", "sagax-environment", "sagax-computer"]));
+    expect(lastPrompt()).toContain("This bot's Workspace is Auto");
   }, 120_000);
 
   it("Auto: a sub-agent opened with its own workspace works in the cloud while the conversation stays on her computer", async () => {

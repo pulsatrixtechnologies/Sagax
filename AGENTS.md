@@ -2086,6 +2086,13 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
   "Working on" chip. Claude pre-allows only `mcp__sagax-computer`. Rooms are
   unchanged. Tests: `server/auto-computer.test.ts`,
   `server/desktop-bridge.e2e.test.ts`.
+- Auto never becomes the conversation's setting (JC 2026-10-16): an
+  organization server records no auto pin (`autoPinRecorded`,
+  `server/surface.ts`), honours only a person's pin (`honouredPin`) and
+  sweeps the auto pins an older build left at start. Where a turn worked
+  (the built-in browser included) never rewrites the person's choice, and
+  never drops `sagax-desktop` from the next turns. Tests:
+  `server/surface.test.ts`, `server/desktop-bridge.e2e.test.ts`.
 - A bridge is bound to the person of the session that registered it and to
   a secret only the desktop's main process holds; every poll, result and the
   tunnel re-check that the session is live and still that person. A turn's

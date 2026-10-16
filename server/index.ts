@@ -678,7 +678,7 @@ import { startAutoVmClaim, type AutoVmClaimSlot, type AutoVmClaimTable } from ".
 import { CONTROL_ACT_WITHIN_MS, CONTROL_BUSY, CONTROL_HANDED_BACK, CONTROL_WAIT_MS, CONTROL_WAITED, controlRefusal, type ControlState } from "./control-client.ts";
 import { computerFreeAfterText, computerParkedText, computerPersonAwayText, computerStoppedWaitingText, computerWaitingText, type ComputerHolder } from "./computer-wait.ts";
 import { modelContextWindow } from "./model-context-window.ts";
-import { browserIsThePlace, cloudPlaceRefusal, computerSkippedNote, computerToolsRefusal, parseSurface, PlaceUnavailableError, placeUnavailable, resolveSurface, surfaceLabel, surfaceOfComputerKind, surfacePrompt, type ComputerWant, type PlaceSource, type Surface } from "./surface.ts";
+import { autoPinRecorded, browserIsThePlace, cloudPlaceRefusal, computerSkippedNote, computerToolsRefusal, honouredPin, parseSurface, PlaceUnavailableError, placeUnavailable, resolveSurface, surfaceLabel, surfaceOfComputerKind, surfacePrompt, type ComputerWant, type PlaceSource, type Surface } from "./surface.ts";
 import { cloudRefusal, type PlaceRow } from "../shared/place-view.ts";
 import {
   PendingTurnCancellations,
@@ -11298,7 +11298,7 @@ function turnSurfacePlan(bot: BotRecord, runOn?: RoutineRunOn, threadId?: string
   });
   return resolveSurface({
     destination: remote.forceCloud ? "cloud" : bot.computer,
-    pinnedSurface: remote.forceCloud || !threadId ? null : store.taskByThread(bot.id, threadId)?.surface,
+    pinnedSurface: remote.forceCloud || !threadId ? null : honouredPin(store.taskByThread(bot.id, threadId), IDENTITY.kind === "perspicax"),
     browserOn: builtInBrowserEnabled(cfg) && bot.browser !== false && instance?.adapter.capabilities.browserMcp === true,
   });
 }
@@ -11437,8 +11437,9 @@ function continueComputerSelection(threadId: string, generation: string | undefi
     if (store.activePath(threadId).findLast(message => message.role === "user" && message.kind === "text")?.id !== selection.source.id) return;
     // The model picked this surface through select_computer; the person
     // never chose it in the composer or thread settings. It is the
-    // machine's record, so a later Works on change may sweep it.
-    store.patchTask(bot.id, threadId, { surface, surfaceSource: "auto" });
+    // machine's record, so a later Works on change may sweep it. An
+    // organization server never records it (autoPinRecorded).
+    if (IDENTITY.kind !== "perspicax") store.patchTask(bot.id, threadId, { surface, surfaceSource: "auto" });
     const text = `The computer selection is now ${surfaceLabel(surface)}. Continue the user's original request using the tools mounted for this turn; verify the result before claiming success.\n\n${selection.text}`;
     void startTurn(bot.id, text, { threadId, userMessage: selection.source, computerSelectionContinuation: true, speaker: turnSpeakers.get(threadId), dataContext: selection.dataContext }).catch(error => {
       if (store.taskByThread(bot.id, threadId)) store.appendMessage(threadId, { role: "bot", kind: "activity",
@@ -16302,8 +16303,16 @@ async function startTurn(
       const autoPinAllowed = () => {
         const liveBot = store.bot(bot.id);
         const liveTask = store.taskByThread(bot.id, threadId);
-        return liveBot?.computer === undefined && !teamComputer && opts?.runOn !== "cloud" && !plan.pinned && !computerSkipped &&
-          Boolean(liveTask && liveTask.surfaceSource !== "user");
+        return autoPinRecorded({
+          organization: IDENTITY.kind === "perspicax",
+          worksOn: liveBot?.computer,
+          teamComputer: Boolean(teamComputer),
+          runOnCloud: opts?.runOn === "cloud",
+          pinned: Boolean(plan.pinned),
+          computerSkipped: Boolean(computerSkipped),
+          taskSource: liveTask?.surfaceSource,
+          taskExists: Boolean(liveTask),
+        });
       };
       const pinAutoSurface = (surface: Surface) => {
         if (warmOnly) return;
@@ -41642,11 +41651,13 @@ restoreChannelMessages();
 
 // Repair known auto pins that conflict with Works on before dispatch starts.
 // Legacy pins have no provenance and may be deliberate person selections:
-// preserve them rather than guessing. The sweep is idempotent.
+// preserve them rather than guessing. The sweep is idempotent. An
+// organization server records no auto pin (autoPinRecorded): the ones an
+// older build left on Auto bots go too, so the composer says Auto again.
 {
   let movedAutoPins = 0;
   for (const bot of store.bots) {
-    if (bot.computer !== undefined) movedAutoPins += store.clearAutoSurfacePins(bot.id, bot.computer);
+    if (bot.computer !== undefined || IDENTITY.kind === "perspicax") movedAutoPins += store.clearAutoSurfacePins(bot.id, bot.computer);
   }
   if (movedAutoPins) console.log(`Works on: moved ${movedAutoPins} auto-pinned thread(s) to their bot's current Works on`);
 }

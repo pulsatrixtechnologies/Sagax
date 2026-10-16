@@ -415,6 +415,20 @@ describe("Store", () => {
     expect(reloaded.taskByThread(bot.id, autoMismatch.threadId)!.surface).toBeUndefined();
   });
 
+  // An organization server sweeps an Auto bot's auto pins at start (it
+  // records none): Auto as the destination clears every one, never a person's.
+  it("clears every auto surface pin, and only those, when the destination is Auto", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const autoBrowser = store.createTask(bot.id, "Auto browser", false)!;
+    const personBrowser = store.createTask(bot.id, "Person browser", false)!;
+    store.patchTask(bot.id, autoBrowser.threadId, { surface: "browser", surfaceSource: "auto" });
+    store.patchTask(bot.id, personBrowser.threadId, { surface: "browser", surfaceSource: "user" });
+    expect(store.clearAutoSurfacePins(bot.id, undefined)).toBe(1);
+    expect(store.taskByThread(bot.id, autoBrowser.threadId)?.surface).toBeUndefined();
+    expect(store.taskByThread(bot.id, personBrowser.threadId)).toMatchObject({ surface: "browser", surfaceSource: "user" });
+  });
+
   // Every turn re-saves the same resume cursor and the same context model;
   // each rewrite of bots.json used to cost an fsync (~4 ms on macOS) on the
   // event loop while putting back identical bytes.
