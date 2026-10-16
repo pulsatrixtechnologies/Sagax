@@ -42,6 +42,13 @@ describe("SwitchRow", () => {
     expect(markup).toContain("Help");
   });
 
+  it("names the switch by its label alone when a help button sits beside it", () => {
+    const withHelp = renderToStaticMarkup(createElement(SwitchRow, { label: "Include pictures", help: "Why", checked: false, onChange: () => {} }));
+    expect(withHelp).toMatch(/<button[^>]*aria-label="Include pictures"[^>]*role="switch"/);
+    const plain = renderToStaticMarkup(createElement(SwitchRow, { label: "Enable", checked: false, onChange: () => {} }));
+    expect(plain).not.toMatch(/<button[^>]*aria-label=[^>]*role="switch"/);
+  });
+
   it("clicking the switch reports the opposite of the current state", () => {
     const onChange = vi.fn();
     const tree = SwitchRow({ label: "Enable", checked: true, onChange }) as any;

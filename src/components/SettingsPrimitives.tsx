@@ -63,7 +63,9 @@ export function SwitchRow({
         </span>
         {description && <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-secondary">{description}</span>}
       </span>
-      <Switch checked={checked} disabled={disabled} onClick={() => onChange(!checked)} />
+      {/* The label wraps the help button too, so without its own name the
+          switch would read "X More about X". */}
+      <Switch checked={checked} disabled={disabled} onClick={() => onChange(!checked)} aria-label={help && typeof label === "string" ? label : undefined} />
     </label>
   );
 }
