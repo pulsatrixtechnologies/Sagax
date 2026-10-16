@@ -40,7 +40,7 @@ import { rm as removeDirectory } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
-import { basename, extname, join, sep } from "node:path";
+import { basename, join, sep } from "node:path";
 import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntimeGrant } from "./external-runtime.ts";
 
 import { z } from "zod";
@@ -286,6 +286,8 @@ import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts"
 import { registerEnginesBinDir } from "./engine-install.ts";
 import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineCheck } from "./engines-self-check.ts";
 import { engineStartGate, type EngineSlot } from "./engine-start-gate.ts";
+import { serveStaticUi } from "./static-ui.ts";
+import type { EarlyListener } from "./early-listener.ts";
 import { appendUsage, parseUsageRange, readUsage, flushUsageLedger, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
 import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
@@ -1083,22 +1085,6 @@ const WEBHOOK_PORT = Number(process.env.SAGAX_WEBHOOK_PORT || PORT + 1);
 // Behind a proxy or tunnel, the base URL senders should use (docs/self-hosting.md).
 const WEBHOOK_PUBLIC_URL = process.env.SAGAX_WEBHOOK_PUBLIC_URL || undefined;
 const STATIC_DIR = process.env.SAGAX_STATIC_DIR || null;
-const MIME: Record<string, string> = {
-  ".html": "text/html",
-  ".js": "text/javascript",
-  ".css": "text/css",
-  ".txt": "text/plain; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".mp3": "audio/mpeg",
-  ".ico": "image/x-icon",
-  ".json": "application/json",
-  ".webmanifest": "application/manifest+json",
-  ".woff2": "font/woff2",
-  ".mjs": "text/javascript",
-  ".wasm": "application/wasm",
-  ".onnx": "application/octet-stream",
-};
 
 ensureDirs();
 initMediaProxy(DATA_DIR);
@@ -23374,44 +23360,9 @@ let mcpProbesInFlight = 0;
 const claudeUpdatesInFlight = new Set<string>();
 
 // ── HTTP plumbing ─────────────────────────────────────────────────────
-/** The web UI's pages: never framed by another page (a hidden frame could
- * otherwise act on a pair or sign-in page unseen), and they send no Referer.
- * Nothing frames the web UI: the desktop app shows it in its own window. */
-const PAGE_HEADERS = { "content-security-policy": "frame-ancestors 'none'", "x-frame-options": "DENY", "referrer-policy": "no-referrer" } as const;
-
-/** The built UI, when this process serves it (SAGAX_STATIC_DIR: set by the
- * desktop app and by the container image). Public by design: it is the same
- * bundle anyone can download, holds no secrets, and a remote browser must be
- * able to load /pair before it has a session. Returns false when there is
- * nothing to serve so the caller can answer 404. */
+/** The built UI (server/static-ui.ts). */
 function serveStatic(res: ServerResponse, path: string): boolean {
-  if (!STATIC_DIR) return false;
-  const safe = path === "/" ? "/index.html" : path.replace(/\.\./g, "");
-  const file = join(STATIC_DIR, safe);
-  try {
-    const data = readFileSync(file);
-    const type = MIME[extname(file)] ?? "application/octet-stream";
-    // Vite puts a content hash in the name of every file it writes under
-    // /assets/, so a URL there never changes: the browser keeps it instead of
-    // downloading the bundle on every load. That only holds while public/ has
-    // no assets/ dir (index.test.ts checks). Pages are revalidated, so a new
-    // build shows up on the next load.
-    const cache = type === "text/html" ? "no-cache" : safe.startsWith("/assets/") ? "public, max-age=31536000, immutable" : null;
-    res.writeHead(200, { "content-type": type, ...(type === "text/html" ? PAGE_HEADERS : {}), ...(cache ? { "cache-control": cache } : {}) });
-    res.end(data);
-    return true;
-  } catch {
-    // SPA fallback. Never immutable: a missing chunk answered with the page
-    // must not stay cached under the chunk's URL.
-    try {
-      const data = readFileSync(join(STATIC_DIR, "index.html"));
-      res.writeHead(200, { "content-type": "text/html", "cache-control": "no-cache", ...PAGE_HEADERS });
-      res.end(data);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+  return serveStaticUi(res, STATIC_DIR, path);
 }
 
 // Loopback-only enforcement: the harness runs on 127.0.0.1 but accepts
@@ -41912,7 +41863,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   }
 };
 
-const server = createServer(handleRequest);
+// The packaged desktop opened the port before this module loaded and has
+// answered the page from it meanwhile (server/early-listener.ts): take it over.
+const earlyListener = (globalThis as { __sagaxEarlyListener?: EarlyListener | null }).__sagaxEarlyListener ?? null;
+const server = earlyListener?.server ?? createServer(handleRequest);
 desktopViewer.attach(server, handleRequest);
 /** The desktop bridge's network tunnel (organization mode): the WebSocket a
  * person's desktop app opens, checked against their live session and the
@@ -42102,7 +42056,7 @@ hideEarlierAgentThreads();
 hideBotThreadsOnce();
 migrateBotRuntimeSettings();
 
-server.listen(PORT, "127.0.0.1", async () => {
+const onListening = async () => {
   companyRuntimeReady();
   console.log(`openmausbot server on http://127.0.0.1:${PORT}`);
   // Words queued before the restart start first, ahead of anything sent from
@@ -42145,7 +42099,13 @@ server.listen(PORT, "127.0.0.1", async () => {
   // leftovers, and a sweep ahead of it would wake delegators of stopped
   // routine runs whose handoffs the loop above discards instead.
   setInterval(expireDelegationsNow, DELEGATION_SWEEP_MS).unref();
-});
+};
+if (earlyListener) {
+  earlyListener.adopt(handleRequest);
+  void onListening();
+} else {
+  server.listen(PORT, "127.0.0.1", onListening);
+}
 
 // A second listener for `openmausbot serve --tunnel` (server/tunnel.ts): the
 // connector gateway on this machine forwards public traffic to this IPC path.

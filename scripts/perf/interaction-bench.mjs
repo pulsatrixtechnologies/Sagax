@@ -431,7 +431,18 @@ async function launch(adapter, round) {
     const advanced = await cdp.eval(`localStorage.getItem("sagax.interfaceMode.v1")`);
     if (advanced !== "advanced") throw new Error("sagax: Advanced mode not set before first paint");
   }
-  return { session, runDir, startup: { toInteractive: readyAt - t0, sincePageStart: pageReady, load1: load[0] } };
+  // Sagax writes each step of its start to server.log: keep where the time
+  // went (relative to the spawn) beside the total.
+  const phases = {};
+  if (adapter.kind === "sagax") {
+    try {
+      for (const line of readFileSync(path.join(runDir, "userData", "logs", "server.log"), "utf8").split("\n")) {
+        const m = /^\[(.+?)\] startup: (.+?) \(\+(\d+)ms\)$/.exec(line);
+        if (m) phases[m[2]] = { sinceSpawn: Date.parse(m[1]) - t0, sinceMain: Number(m[3]) };
+      }
+    } catch {}
+  }
+  return { session, runDir, startup: { toInteractive: readyAt - t0, sincePageStart: pageReady, load1: load[0], phases } };
 }
 
 async function prime(adapter) {
@@ -596,6 +607,7 @@ const SCENARIOS = {
     if (!info) throw new Error("no transcript scroller");
     await sleep(500);
     const framesP = s.cdp.eval(`window.__bench.frames(2600)`, 20000);
+    framesP.catch(() => {}); // a window that goes away mid-scroll fails the sample, not the run
     const before = await s.cdp.eval(`window.__benchScroller.scrollTop`);
     for (let i = 0; i < 120; i++) {
       await s.cdp.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: info.x, y: info.y, deltaX: 0, deltaY: -120 });
@@ -632,6 +644,9 @@ const SCENARIOS = {
     return r;
   },
 };
+
+// A promise left pending by a page that went away must not end the run.
+process.on("unhandledRejection", (error) => log(`  ! unhandled: ${error instanceof Error ? error.message : String(error)}`));
 
 const ORDER = ["bot", "thread", "botMenu", "avatar", "settings", "settingsPage", "apps", "typing", "model", "send", "scroll"];
 const wanted = opts.scenarios ? opts.scenarios.split(",") : ["startup", ...ORDER];

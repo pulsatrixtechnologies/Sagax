@@ -49,6 +49,8 @@ const requireBanner = {
 // Every file run as its own process. Keep in sync with the spawn sites above.
 const ENTRY_POINTS = [
   "index.ts",
+  // the packaged desktop's early port (desktop-entry.mjs imports it first)
+  "early-listener.ts",
   "message-search.worker.ts",
   // the `openmausbot` command (serve/pair/sessions/status) for the npm
   // package, the container image and checkouts; pair-cli.ts stays as an alias

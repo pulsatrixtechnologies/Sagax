@@ -657,6 +657,8 @@ app.on("second-instance", (_event, commandLine) => {
 // alternate ports until one binds AND identifies as ours (the probe checks
 // our API shape, not just a 200).
 let serverProc = null;
+/** Settles once the local server answers /api/health (startServerOn). */
+let localServerAnswering = Promise.resolve();
 let serverReady = !app.isPackaged;
 let secureCredentials = {};
 let secureCredentialState = null;
@@ -1775,8 +1777,24 @@ async function startServerOn(port, dataDir = runningDataDir ?? startupEnvironmen
   }));
   proc.stdout?.on("data", (d) => slog(`[out] ${String(d).trimEnd()}`));
   proc.stderr?.on("data", (d) => slog(`[err] ${String(d).trimEnd()}`));
+  // The packaged server opens its port before it loads (desktop-entry.mjs,
+  // server/early-listener.ts) and says so on its private parent port: that
+  // is this child, on this port, so the window can open now. Its requests
+  // wait in the port until the server answers them.
+  let portOpen = false;
+  let resolvePortOpen;
+  const portOpened = new Promise((resolve) => { resolvePortOpen = resolve; });
   proc.on("message", (message) => {
     if (!serverSupervisor.isCurrent(proc)) return;
+    // Only on this computer's own data folder: a named environment that
+    // fails while it loads must still fail the boot, so startup falls back
+    // to the default folder (startServerPackaged's caller) as before.
+    if (message?.type === "sagax:server-port-open" && message.port === port && !portOpen && dataDir === desktopDataDir()) {
+      portOpen = true;
+      slog(`port ${port} open, the server is loading`);
+      resolvePortOpen({ outcome: "ready" });
+      return;
+    }
     try {
       if (trustedApprovalMode.receive(proc, message)) return;
       if (managedDesktopRelay.receive(proc, message)) return;
@@ -1812,7 +1830,7 @@ async function startServerOn(port, dataDir = runningDataDir ?? startupEnvironmen
   // The probe itself is deadline-bounded (a hung health endpoint cannot wedge
   // us here forever) and reports WHY it gave up, so the error page can tell
   // port conflict apart from slow startup.
-  const identity = await pollServerIdentity({
+  const probe = pollServerIdentity({
     port,
     // Getter, not value: proc.pid stays undefined until the async `spawn`
     // event fires, and capturing it here would make the probe judge our own
@@ -1821,6 +1839,10 @@ async function startServerOn(port, dataDir = runningDataDir ?? startupEnvironmen
     bootTimeoutMs: SERVER_BOOT_TIMEOUT_MS,
     isExited: () => exited || desktopShutdownStarted,
   });
+  // Main's own time-boxed calls to the server (refreshSharedComputersAllowed)
+  // wait for this, not for the open port.
+  localServerAnswering = probe.then(() => undefined, () => undefined);
+  const identity = await Promise.race([portOpened, probe]);
   if (identity.outcome === "ready" && serverSupervisor.isCurrent(proc)) return { proc };
   if (identity.outcome === "exited") {
     slog(`child on port ${port} exited before answering /api/health`);
@@ -2243,6 +2265,9 @@ async function refreshSharedComputersAllowed() {
       .catch(() => false);
     return sharedComputersAllowed;
   }
+  // The window may open while the server still loads (startServerOn): the
+  // three seconds below are the server's to answer in, not its start.
+  await localServerAnswering;
   sharedComputersAllowed = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/config`, { signal: AbortSignal.timeout(3_000) })
     .then((res) => (res.ok ? res.json() : null))
     .then((status) => status?.features?.sharedComputers === true)
@@ -4615,8 +4640,12 @@ app.whenReady().then(async () => {
       app.quit();
     },
   });
-  await startupScreen.ready;
-  startupPhase("loading screen shown");
+  // The loading screen paints while startup goes on: waiting for it first
+  // held the local server back by the time a window takes to show, on every
+  // launch. Its status lines and the workspace's hand-over work whether it
+  // is on screen yet or not (startup-screen.mjs publishes on load, and
+  // attach() waits for React).
+  void startupScreen.ready.then(() => startupPhase("loading screen shown"));
   if (desktopShutdownStarted) return;
   session.defaultSession.on("will-download", (_event, item) => {
     item.setSavePath(collisionFreeDownloadPath(app.getPath("downloads"), item.getFilename()));

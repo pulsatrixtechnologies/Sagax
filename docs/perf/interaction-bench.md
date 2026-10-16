@@ -79,6 +79,12 @@ Options: `--apps sagax` (or `grok`) to run one app, `--scenarios
 startup,bot,typing` to run a subset, `--label` to name the run, `--keep` to
 keep the per-launch folders.
 
+For Sagax each startup sample also keeps the steps of the desktop's own
+start from its server.log (`phases`: loading screen, local server started
+and ready, window created), each as `sinceSpawn` and `sinceMain` (from the
+main process's first line, which leaves out Electron's own launch, the
+noisiest part on a busy machine).
+
 `results.json` holds every sample (`apps.<app>.cold|warm.<scenario>[]`, the
 startup and memory samples) and `summary`, the median and p95 per scenario.
 Compare two builds in the same run, in alternation with Grok Bot as the

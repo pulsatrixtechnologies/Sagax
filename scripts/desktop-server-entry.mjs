@@ -24,6 +24,23 @@ if (cacheRoot) {
   }
 }
 
+// Open the port before loading the server: the desktop window asks for its
+// page while index.js loads and starts (early-listener.js, built from
+// server/early-listener.ts). If the port cannot be opened here, index.js
+// listens itself and the desktop waits for /api/health, as before.
+const port = Number(process.env.SAGAX_PORT);
+if (process.env.SAGAX_DESKTOP_PARENT === "1" && process.env.SAGAX_STATIC_DIR && Number.isInteger(port) && port > 0) {
+  try {
+    const { PORT_OPEN_MESSAGE, startEarlyListener } = await import("./early-listener.js");
+    globalThis.__sagaxEarlyListener = await startEarlyListener({ port, staticDir: process.env.SAGAX_STATIC_DIR });
+    // The desktop opens its window on this (electron/main.mjs startServerOn):
+    // its requests wait in the port until the server can answer them.
+    if (globalThis.__sagaxEarlyListener) process.parentPort?.postMessage({ type: PORT_OPEN_MESSAGE, port });
+  } catch {
+    globalThis.__sagaxEarlyListener = null;
+  }
+}
+
 await import("./index.js");
 
 // Node writes new entries when the process exits normally; a crash or a
