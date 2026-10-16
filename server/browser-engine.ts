@@ -643,6 +643,42 @@ export function setBrowserViewport(binaryPath: string, env: NodeJS.ProcessEnv, t
   });
 }
 
+/** One `stream status|enable|disable` command for a session's daemon. The
+ * response's data, or null on any failure. */
+export function browserStreamCommand(binaryPath: string, env: NodeJS.ProcessEnv, action: "status" | "enable" | "disable", timeoutMs = 10_000): Promise<Record<string, unknown> | null> {
+  return new Promise((settle) => {
+    let child: ReturnType<typeof spawn>;
+    try { child = spawn(binaryPath, ["stream", action, "--json", "--no-webmcp"], { env: browserRuntimeEnv(env), stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); }
+    catch { settle(null); return; }
+    let output = "";
+    let settled = false;
+    const finish = (value: Record<string, unknown> | null) => { if (!settled) { settled = true; clearTimeout(timer); settle(value); } };
+    const timer = setTimeout(() => { child.kill("SIGKILL"); finish(null); }, timeoutMs);
+    timer.unref?.();
+    child.stdout?.on("data", (chunk: Buffer) => { if (output.length < 65_536) output += String(chunk); });
+    child.on("error", () => finish(null));
+    child.on("close", (code) => {
+      try {
+        const parsed = JSON.parse(output) as { success?: unknown; data?: unknown };
+        finish(code === 0 && parsed?.success === true && parsed.data && typeof parsed.data === "object" ? parsed.data as Record<string, unknown> : null);
+      } catch { finish(null); }
+    });
+  });
+}
+
+/** Pause a session's live stream for the write of a fill (the engine sends
+ * each command, script included, to its stream clients). Null when its
+ * state cannot be read or it does not turn off; otherwise the function that
+ * turns it back on (nothing to do when it was off). */
+export async function pauseBrowserStream(binaryPath: string, env: NodeJS.ProcessEnv): Promise<(() => Promise<void>) | null> {
+  const status = await browserStreamCommand(binaryPath, env, "status");
+  if (!status) return null;
+  if (status.enabled !== true) return async () => {};
+  const disabled = await browserStreamCommand(binaryPath, env, "disable");
+  if (!disabled) return null;
+  return async () => { await browserStreamCommand(binaryPath, env, "enable"); };
+}
+
 /** How long a settled-frame capture may take before the turn gives up on it.
  * The poller runs beside a live turn, so a hung browser must not hold the
  * transcript open; a missing picture is better than a stuck fold. */

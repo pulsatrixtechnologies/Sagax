@@ -591,7 +591,7 @@ import { recordRoutineToggle, routineToggleForViewer } from "./routine-chat-even
 import { nextOccurrence, ROUTINE_RESTARTED, RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineMemoryHint, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
-import { BUILT_IN_BROWSER_SYSTEM_PROMPT } from "./browser-engine.ts";
+import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserRuntimeEnv } from "./browser-runtime.ts";
 import { BrowserLive } from "./browser-live.ts";
 import {
@@ -4253,6 +4253,9 @@ const browserRuntime = new BrowserRuntime({
     return closed;
   },
   applyViewport: (spec) => setBrowserViewport(spec.command, spec.env),
+  // fill_credential's write runs with the engine's live stream off (it
+  // broadcasts every command); the Browser panel picks the stream up again.
+  pauseStream: (session, spec) => pauseBrowserStream(spec.command, { ...spec.env, AGENT_BROWSER_SESSION: session }),
 });
 const browserLive = new BrowserLive({ runtime: browserRuntime });
 // Every browser session this server has used, with its launch settings. The

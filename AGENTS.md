@@ -3442,7 +3442,11 @@ that session is redacted (value, encodings, user:pass in base64), script
 tools are refused in the whole browser while the bot holds a grant and,
 after any fill, for every bot until a restart; a bot's eval carries an
 origin guard; a fill refuses on an origin where a script ran in that browser
-session, and screenshots are refused on a filled site. On a headless server the vault
+session, and screenshots and preview frames are refused after a fill. While
+a grant is held or after a fill, selector-taking tools accept only `@eN`
+refs (`cssSelectorArgument`: no CSS value oracle). The write runs with the
+engine's live stream paused (`pauseBrowserStream`; the Browser panel picks
+the stream up again). On a headless server the vault
 routes need a paired session (or `SAGAX_CREDENTIAL_VAULT_LOOPBACK=1`). The
 `op` CLI runs only from `/opt/homebrew/bin/op`, `/usr/local/bin/op` or
 `/usr/bin/op`, with no folder above it writable by others, located again

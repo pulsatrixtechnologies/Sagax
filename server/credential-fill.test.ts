@@ -124,6 +124,13 @@ describe("redaction", () => {
     expect(redactor.redactText("s", `Authorization: Basic ${basic}`)).toBe(`Authorization: Basic ${REDACTED_CREDENTIAL}`);
   });
 
+  it("hides a short user name as a whole word only, and masks the length of bullet runs", () => {
+    const redactor = new SecretRedactor();
+    redactor.remember("s", "ada");
+    expect(redactor.redactText("s", "user ada signed in; adam stays")).toBe(`user ${REDACTED_CREDENTIAL} signed in; adam stays`);
+    expect(redactor.redactText("s", 'textbox "Password" value="\u2022\u2022\u2022\u2022\u2022"')).toBe('textbox "Password" value="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"');
+  });
+
   it("forgets a one-time code after a while", () => {
     let now = 0;
     const redactor = new SecretRedactor(() => now);
@@ -269,6 +276,59 @@ describe("fill_credential through the browser runtime", () => {
     expect(JSON.stringify(evil.calls())).not.toContain(FAKE_PASSWORD);
   });
 
+  it("THIRD BLOCKER: once a login is allowed or filled, elements are addressed by @eN refs only (no CSS value oracle)", async () => {
+    const { vault, item, runtime, handle, access } = setup();
+    const site = engine("https://example.test/login");
+    const oracle = 'input[type=password][value^="f"]';
+    // Nothing allowed or filled yet: a CSS selector still works.
+    expect((await call(runtime, "css", site.spec, "agent_browser_click", { selector: "#search" }, access("bot-a", "t1"))).isError).toBeUndefined();
+    vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
+    // Allowed: fill_credential's own target refuses CSS, auto and refs work.
+    const cssTarget = await call(runtime, "css", site.spec, "fill_credential", { credential: handle, field: "password", target: oracle }, access("bot-a", "t1"));
+    expect(cssTarget.content[0]!.text).toContain("@eN refs");
+    expect((await call(runtime, "css", site.spec, "fill_credential", { credential: handle, field: "password", target: "@e2" }, access("bot-a", "t1"))).isError).toBeUndefined();
+    // Filled: every selector-taking tool refuses CSS for every bot, even one with no grant.
+    for (const [name, args] of [
+      ["agent_browser_click", { selector: oracle }],
+      ["agent_browser_wait_for_selector", { selector: `input:has([value^="f"])` }],
+      ["agent_browser_get_text", { selector: "input" }],
+      ["agent_browser_snapshot", { selector: "form" }],
+    ] as const) {
+      const refused = await call(runtime, "css", site.spec, name, args, access("bot-b", "t9"));
+      expect(refused, name).toMatchObject({ isError: true });
+      expect(refused.content[0]!.text).toContain("@eN refs");
+    }
+    expect((await call(runtime, "css", site.spec, "agent_browser_click", { selector: "@e4" }, access("bot-b", "t9"))).isError).toBeUndefined();
+  });
+
+  it("pauses the engine's live stream around the write, and types nothing if it cannot", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-fill-stream-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const vault = new CredentialVault(dir, () => ({ kind: "key", key: Buffer.alloc(32, 4) }));
+    const item = vault.create(LOCAL_VAULT_PRINCIPAL, { kind: "login", name: "Example", password: FAKE_PASSWORD, domains: ["example.test"] });
+    vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
+    const order: string[] = [];
+    let allow = true;
+    const runtime = new BrowserRuntime({
+      requestTimeoutMs: 5_000, takeoverTimeoutMs: 100, idleMs: 5_000,
+      pauseStream: async () => { order.push("pause"); return allow ? async () => { order.push("resume"); } : null; },
+    });
+    cleanups.push(() => runtime.closeAll());
+    const access = fillResolverFor(vault, { principalId: LOCAL_VAULT_PRINCIPAL, botId: "bot-a", threadId: "t1" });
+    const site = engine("https://example.test/login");
+    expect((await call(runtime, "st", site.spec, "fill_credential", { credential: vaultHandle(item.id), field: "password" }, access)).isError).toBeUndefined();
+    expect(order).toEqual(["pause", "resume"]);
+    expect(site.inputs().pass).toBe(FAKE_PASSWORD);
+    allow = false;
+    const other = engine("https://example.test/login");
+    const refused = await call(runtime, "st2", other.spec, "fill_credential", { credential: vaultHandle(item.id), field: "password" }, access);
+    expect(refused.content[0]!.text).toContain("could not be paused");
+    expect(other.inputs().pass).toBe("");
+    // No frame of a browser where a login was filled.
+    await expect(runtime.previewFrame("st", async () => "frame")).rejects.toThrow(/Frames of this browser are off/);
+    await expect(runtime.previewFrame("fresh", async () => "frame")).resolves.toBe("frame");
+  });
+
   it("NEW BLOCKER 2: a fill holds the browser alone; a tab switch in the middle is refused", async () => {
     const { vault, item, runtime, handle, access } = setup();
     vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
@@ -349,7 +409,7 @@ describe("fill_credential through the browser runtime", () => {
     const guarded = { resolve: spy, armed: base.armed };
     const framed = await call(runtime, "framed", site.spec, "fill_credential", { credential: handle, field: "password", target: "@e3" }, guarded);
     expect(framed.content[0]!.text).toContain("inside a frame");
-    const wrongInput = await call(runtime, "framed", site.spec, "fill_credential", { credential: handle, field: "password", target: "#search" }, guarded);
+    const wrongInput = await call(runtime, "framed", site.spec, "fill_credential", { credential: handle, field: "password", target: "@e4" }, guarded);
     expect(wrongInput.content[0]!.text).toContain("only typed into a password field");
     // The vault is never asked for a value the page would not receive.
     expect(spy).not.toHaveBeenCalled();

@@ -115,8 +115,17 @@ release.
   scripts are refused in it until a restart; a fill is refused on an origin
   where any bot ran a script in that browser session until a restart; a
   bot's script carries an origin guard in the same evaluation; screenshots
-  are refused on a filled site. Every later browser result is redacted (the value and its common
-  encodings, and user:pass pairs in base64). The vault routes answer the
+  are refused on a filled site, and no preview or settled frame of that
+  browser is captured until a restart. While a login is allowed or after a
+  fill, elements are addressed only by accessibility refs (`@eN`), never by a
+  CSS selector, in every selector-taking tool including `fill_credential`'s
+  target: a selector such as `[value^="a"]` would otherwise read, one
+  character at a time, a value a framework mirrored into the `value`
+  attribute. The engine's live stream (which sends each command, script
+  included, to its clients) is paused around the write; if it cannot be
+  paused, nothing is typed. Every later browser result is redacted (the value and its common
+  encodings, and user:pass pairs in base64; a value shorter than four
+  characters as a whole word; the length of a masked password). The vault routes answer the
   desktop's own app, a paired session, or on a headless server a loopback
   caller only when the operator sets `SAGAX_CREDENTIAL_VAULT_LOOPBACK=1`;
   reads are POSTs. The optional 1Password CLI runs only from a fixed install

@@ -298,7 +298,7 @@ export class SecretRedactor {
   }
 
   remember(session: string, value: string, options: { shortLived?: boolean } = {}): void {
-    if (value.length < MIN_REDACT_LENGTH && !options.shortLived) return;
+    if (!value) return;
     let values = this.sessions.get(session);
     if (!values) this.sessions.set(session, values = new Map());
     const until = options.shortLived ? this.now() + SHORT_LIVED_MS : Number.POSITIVE_INFINITY;
@@ -360,12 +360,22 @@ export class SecretRedactor {
     for (const [value, until] of values) if (until <= now) values.delete(value);
     if (!values.size) return null;
     const sorted = [...values.keys()].sort((left, right) => right.length - left.length);
-    return new RegExp(sorted.map(escapeRegExp).join("|"), "g");
+    // A short value (a 3-letter user name) is hidden only as a whole word,
+    // so it does not eat every word that contains it. Masked characters, the
+    // way an accessibility tree shows a password, lose their count.
+    const parts = sorted.map((value) => value.length < MIN_REDACT_LENGTH
+      ? `(?<![\\p{L}\\p{N}_])${escapeRegExp(value)}(?![\\p{L}\\p{N}_])`
+      : escapeRegExp(value));
+    return new RegExp([...parts, "[\u2022\u25CF]{2,}"].join("|"), "gu");
+  }
+
+  private replace(text: string, pattern: RegExp): string {
+    return text.replace(pattern, (match) => /^[\u2022\u25CF]+$/u.test(match) ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : REDACTED_CREDENTIAL);
   }
 
   redactText(session: string, text: string): string {
     const pattern = this.pattern(session);
-    return pattern ? text.replace(pattern, REDACTED_CREDENTIAL) : text;
+    return pattern ? this.replace(text, pattern) : text;
   }
 
   /** Every string inside a tool result (text parts, structured content). */
@@ -373,7 +383,7 @@ export class SecretRedactor {
     const pattern = this.pattern(session);
     if (!pattern) return value;
     const walk = (node: unknown, depth: number): unknown => {
-      if (typeof node === "string") return node.replace(pattern, REDACTED_CREDENTIAL);
+      if (typeof node === "string") return this.replace(node, pattern);
       if (depth > 32 || !node || typeof node !== "object") return node;
       if (Array.isArray(node)) return node.map((item) => walk(item, depth + 1));
       return Object.fromEntries(Object.entries(node).map(([key, item]) => [key, key === "data" && (node as { type?: unknown }).type === "image" ? item : walk(item, depth + 1)]));

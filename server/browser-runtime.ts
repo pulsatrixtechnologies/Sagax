@@ -76,6 +76,25 @@ export interface CredentialFillAccess {
   armed(): boolean;
 }
 
+/** Argument names that address an element. On a browser where a login was
+ * filled, or while the bot may use one, only an accessibility ref (@eN) is
+ * accepted there: a CSS selector can test an input's value attribute
+ * (`[value^="a"]`, `:has(...)`), which frameworks mirror from what was typed,
+ * and so guess a secret one character at a time from found / not found. */
+const ELEMENT_ARGUMENTS = ["selector", "target", "ref", "element", "sel", "locator"];
+const ACCESSIBILITY_REF = /^@?e\d{1,6}$/;
+export function cssSelectorArgument(params: unknown): string | null {
+  const args = (params as { arguments?: unknown } | null)?.arguments;
+  if (!args || typeof args !== "object" || Array.isArray(args)) return null;
+  for (const key of ELEMENT_ARGUMENTS) {
+    const value = (args as Record<string, unknown>)[key];
+    if (value === undefined || value === null || value === "") continue;
+    if (typeof value !== "string" || !ACCESSIBILITY_REF.test(value.trim())) return key;
+  }
+  return null;
+}
+const REFS_ONLY = "In this browser a saved login is allowed or was filled, so elements are addressed only by their @eN refs from a snapshot, never by a CSS selector. Take a snapshot and pass the ref.";
+
 /** The bot's script, run only if the page is still on `origin`: the check is
  * in the same evaluation, so nothing can switch the document in between. */
 function guardScript(params: unknown, origin: string): unknown {
@@ -304,6 +323,12 @@ interface Gate {
  * one-time page sizing. */
 type ClientEntry = { key: string; client: BrowserClient; viewport?: Promise<unknown> };
 
+/** The engine's live stream sends every command it runs, script included,
+ * to each stream client. Before the write of a fill the runtime pauses it:
+ * the returned function turns it back on; null means it could not be
+ * paused, and nothing is typed. */
+export type PauseStream = (session: string, spec: BrowserSpawnSpec) => Promise<(() => Promise<void>) | null>;
+
 /** Closes one session's native browser daemon; true only when it is gone. */
 export type CloseBrowser = (session: string, spec: BrowserSpawnSpec) => Promise<boolean>;
 
@@ -321,13 +346,15 @@ export class BrowserRuntime {
   private options: { requestTimeoutMs: number; takeoverTimeoutMs: number; idleMs: number; maxPending: number; resultBudget: number; recoveryCheckMs: number };
   private closeBrowser: CloseBrowser;
   private applyViewport?: ApplyViewport;
+  private pauseStream?: PauseStream;
   /** Values filled into each session, hidden from every later result. */
   readonly redactor = new SecretRedactor();
 
-  constructor({ closeBrowser, applyViewport, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser; applyViewport?: ApplyViewport } = {}) {
+  constructor({ closeBrowser, applyViewport, pauseStream, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser; applyViewport?: ApplyViewport; pauseStream?: PauseStream } = {}) {
     this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: DEFAULT_BROWSER_RESULT_BUDGET, recoveryCheckMs: 30_000, ...options };
     this.closeBrowser = closeBrowser ?? (async () => false);
     this.applyViewport = applyViewport;
+    this.pauseStream = pauseStream;
   }
 
   private gate(session: string): Gate {
@@ -373,6 +400,9 @@ export class BrowserRuntime {
    * stuck click kept the engine busy for about two minutes after the click
    * ended, so neither recovery nor a restart could reach it. */
   async previewFrame<T>(session: string, capture: () => Promise<T>): Promise<T> {
+    // No picture of a browser where a saved login was filled: a user name, a
+    // one-time code or an API key may be on screen. Until a restart.
+    if (this.redactor.hasTaint(session)) throw new Error("Frames of this browser are off since a saved login was filled in it.");
     if (this.gate(session).agents > 0) throw new Error("The browser is busy with an agent action.");
     return this.withAgentAction(session, capture);
   }
@@ -392,6 +422,9 @@ export class BrowserRuntime {
 
   private async agentRpcUnredacted(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, credentials?: CredentialFillAccess): Promise<unknown> {
     if (method !== "tools/list" && method !== "tools/call") throw new Error("Unsupported browser method.");
+    if (method === "tools/call" && cssSelectorArgument(params) !== null && (this.redactor.hasTaint(session) || credentials?.armed())) {
+      return toolText(REFS_ONLY, true);
+    }
     // tools/list bypasses withAgentAction (a human may hold control), so it
     // must refuse the closing window itself or its client outlives restart().
     if (method !== "tools/call" && this.gate(session).closing) throw new Error("The browser is closing. Try again shortly.");
@@ -436,7 +469,7 @@ export class BrowserRuntime {
       }
       try {
         if (method === "tools/call" && toolName === FILL_CREDENTIAL_TOOL) {
-          return await this.fillCredential(session, entry.client, params, beforeDispatch, credentials);
+          return await this.fillCredential(session, spec, entry.client, params, beforeDispatch, credentials);
         }
         let guardedParams = params;
         if (method === "tools/call" && scriptTool(toolName)) {
@@ -602,19 +635,19 @@ export class BrowserRuntime {
    * engine's command over stdin, never on a command line (agent-browser
    * 0.38.2 mcp.rs call_eval): no process list shows it. The result names the
    * item and the field, never the value. */
-  private async fillCredential(session: string, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess | undefined): Promise<unknown> {
+  private async fillCredential(session: string, spec: BrowserSpawnSpec, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess | undefined): Promise<unknown> {
     const request = parseFillArguments(params);
     if (typeof request === "string") return toolText(request, true);
     if (!credentials) return toolText("Saved credentials are not available to you here; nothing was filled.", true);
     if (!await this.holdExclusive(session)) return toolText(BROWSER_FILLING, true);
     try {
-      return await this.fillHeld(session, client, request, beforeDispatch, credentials);
+      return await this.fillHeld(session, spec, client, request, beforeDispatch, credentials);
     } finally {
       this.gate(session).exclusive = false;
     }
   }
 
-  private async fillHeld(session: string, client: BrowserClient, request: Exclude<ReturnType<typeof parseFillArguments>, string>, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess): Promise<unknown> {
+  private async fillHeld(session: string, spec: BrowserSpawnSpec, client: BrowserClient, request: Exclude<ReturnType<typeof parseFillArguments>, string>, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess): Promise<unknown> {
     const stillOurs = () => {
       beforeDispatch?.();
       if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
@@ -647,9 +680,18 @@ export class BrowserRuntime {
     // on, including an error that quotes it, is redacted.
     this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp" });
     this.redactor.taint(session, origin);
-    const written = parseWrite(await client.rpc("tools/call", {
-      name: "agent_browser_eval", arguments: { script: writeScript(nonce, request.field, origin, resolved.value), timeoutMs: 5_000 },
-    }));
+    // The engine's stream would broadcast the write, value included, to its
+    // clients: it is off while the write runs.
+    const resume = this.pauseStream ? await this.pauseStream(session, spec) : async () => {};
+    if (!resume) return toolText("The browser's live view could not be paused, so nothing was typed. Try again.", true);
+    let written: string | null;
+    try {
+      written = parseWrite(await client.rpc("tools/call", {
+        name: "agent_browser_eval", arguments: { script: writeScript(nonce, request.field, origin, resolved.value), timeoutMs: 5_000 },
+      }));
+    } finally {
+      await resume().catch(() => undefined);
+    }
     beforeDispatch?.();
     if (written !== "ok") return toolText(problemText(written ?? "fill_failed", request.field), true);
     return toolText(`Filled the ${FIELD_NAMES[request.field]} of "${resolved.label}" on ${new URL(href).host}. You do not see the value; check the page and submit the form when ready.`);
