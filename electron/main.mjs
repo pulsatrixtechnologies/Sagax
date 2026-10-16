@@ -13,6 +13,7 @@ import { createAndroidDeviceController } from "./android-device.mjs";
 import { finishSpeech, startSpeech, stopSpeech } from "./speech.mjs";
 import { openBlankTerminal } from "./terminal-launch.mjs";
 import { pasteMenuItem } from "./paste-menu-item.mjs";
+import { blockPageFrameNavigation } from "./page-frame-guard.mjs";
 import { attachUpdaterWindow, startUpdater, registerUpdaterIpc } from "./updater.mjs";
 import {
   buildDiagnosticsReport,
@@ -3333,6 +3334,13 @@ function createWindow({ deferNavigation = false } = {}) {
   // server, inside this preload-bearing window.
   win.webContents.on("will-frame-navigate", (details) => {
     if (details.isMainFrame) return;
+    // A published page's preview frame may only reload its own address
+    // (electron/page-frame-guard.mjs): never carry data out by navigating.
+    if (blockPageFrameNavigation(details)) {
+      details.preventDefault();
+      slog("blocked a published page's frame navigation");
+      return;
+    }
     let target = null;
     let page = null;
     try {

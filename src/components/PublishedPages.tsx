@@ -6,19 +6,18 @@
 // online. PublishedPagesSettings is Settings > Pages publiées: every page of
 // the person, its link, who can see it, its expiry, its versions, Revoke
 // and Delete.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Check, Copy, ExternalLink, Eye, EyeOff, FileText, Globe, Loader2, Lock, Trash2, Users, XCircle } from "lucide-react";
 
 import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { api, type Message } from "@/state/store";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { api, useStore, type Message } from "@/state/store";
 import {
   PAGE_ACCESS,
   PAGE_EXPIRY_CHOICES,
-  pageFrameSandbox,
   type PageAccess,
-  type PageKind,
   type PublishedPageSummary,
 } from "../../shared/published-pages";
 
@@ -59,54 +58,43 @@ function openPage(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-/** A frame load after the first one means the page navigated its frame
- * away from the document we gave it. Pure. */
-export function frameEscaped(loads: number): boolean {
-  return loads > 1;
-}
-
-/** One version in a frame sandboxed to scripts only (Markdown: nothing): no
- * same-origin, so it cannot reach the app, its cookies or its API; no top
- * navigation, popups, modals or forms; its CSP forbids every request. If it
- * navigates its own frame anyway, the frame is reset and the person told. */
+/** One version, previewed exactly as readers get it: the server's wrapper
+ * (banner "not a Sagax screen", no script) framing the page in a sandbox
+ * with scripts only, its frame pinned by CSP to its own path. The app never
+ * hands the page a srcdoc; the desktop app also blocks any navigation of
+ * that frame other than its own address (electron/page-frame-guard.mjs). */
 export function PagePreviewFrame({ pageId, version, title }: { pageId: string; version: number; title: string }) {
-  const [doc, setDoc] = useState<{ html: string; kind: PageKind } | null>(null);
+  const [path, setPath] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [generation, setGeneration] = useState(0);
-  const [escaped, setEscaped] = useState(false);
-  const loads = useRef(0);
   useEffect(() => {
     let live = true;
-    api<{ version: { html: string; kind: PageKind } }>(`/api/pages/${encodeURIComponent(pageId)}/versions/${version}`)
-      .then((answer) => { if (live) setDoc({ html: answer.version.html, kind: answer.version.kind }); })
+    api<{ version: { previewPath: string } }>(`/api/pages/${encodeURIComponent(pageId)}/versions/${version}`)
+      .then((answer) => {
+        if (!live) return;
+        const src = previewSrc(answer.version.previewPath);
+        if (src) setPath(src);
+        else setError(t("pages.previewUnavailable"));
+      })
       .catch((cause) => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
     return () => { live = false; };
   }, [pageId, version]);
   if (error) return <p role="alert" className="text-[12px] text-danger">{error}</p>;
-  if (doc === null) return <Loader2 size={14} className="animate-spin text-ink-secondary" />;
+  if (path === null) return <Loader2 size={14} className="animate-spin text-ink-secondary" />;
   return (
-    <>
-      {escaped && <p role="alert" className="mb-1 text-[12px] text-warning">{t("pages.previewEscaped")}</p>}
-      <iframe
-        key={generation}
-        data-page-preview
-        title={t("pages.previewTitle", { title })}
-        sandbox={pageFrameSandbox(doc.kind)}
-        srcDoc={doc.html}
-        referrerPolicy="no-referrer"
-        allow=""
-        onLoad={() => {
-          loads.current += 1;
-          if (frameEscaped(loads.current)) {
-            loads.current = 0;
-            setEscaped(true);
-            setGeneration((value) => value + 1);
-          }
-        }}
-        className="h-[360px] w-full rounded-lg border border-hairline/40 bg-white"
-      />
-    </>
+    <iframe
+      data-page-preview
+      title={t("pages.previewTitle", { title })}
+      src={path}
+      referrerPolicy="no-referrer"
+      allow=""
+      className="h-[400px] w-full rounded-lg border border-hairline/40 bg-white"
+    />
   );
+}
+
+/** Only this server's own preview wrapper path is ever framed. Pure. */
+export function previewSrc(path: string): string | null {
+  return /^\/pages\/preview\/[A-Za-z0-9_-]{8,40}\/\d{1,4}$/.test(path) ? path : null;
 }
 
 function AccessPicker({ value, onChange, name, disabled }: { value: PageAccess; onChange(access: PageAccess): void; name: string; disabled?: boolean }) {
@@ -354,8 +342,57 @@ function PageRow({ page, onChange, onRemoved }: { page: PublishedPageSummary; on
   );
 }
 
+/** Organization admins: every page of the server, and Revoke (audited on
+ * the server). No content, no publish, no access change from here. */
+function OrganizationPages() {
+  const [pages, setPages] = useState<Array<PublishedPageSummary & { ownerId: string | null }> | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => {
+    api<{ pages: Array<PublishedPageSummary & { ownerId: string | null }> }>("/api/admin/pages")
+      .then((answer) => setPages(answer.pages))
+      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, []);
+  const revoke = async (id: string) => {
+    setBusy(id);
+    setError("");
+    try {
+      const answer = await api<{ page: PublishedPageSummary & { ownerId: string | null } }>(`/api/admin/pages/${encodeURIComponent(id)}/revoke`, { method: "POST", body: "{}" });
+      setPages((current) => (current ?? []).map((entry) => (entry.id === id ? answer.page : entry)));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const live = (pages ?? []).filter((page) => page.status === "published");
+  return (
+    <section data-settings-card="pages.organization" className="space-y-2 border-t border-hairline/40 pt-3">
+      <h3 className="text-[13px] font-medium text-ink">{t("pages.admin.title")}</h3>
+      <p className="text-[12px] text-ink-secondary">{t("pages.admin.intro")}</p>
+      {pages !== null && live.length === 0 && <p className="text-[12px] text-ink-tertiary">{t("pages.admin.empty")}</p>}
+      <ul className="space-y-1.5">
+        {live.map((page) => (
+          <li key={page.id} data-admin-page={page.id} className="flex items-center gap-2 rounded-lg bg-raised/45 px-2.5 py-1.5 text-[12px]">
+            <span className="min-w-0 flex-1 truncate text-ink">{page.title}</span>
+            <span className="text-ink-tertiary">{t(ACCESS_LABEL[page.access])}</span>
+            <button type="button" disabled={busy === page.id} onClick={() => void revoke(page.id)}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-danger hover:bg-danger/10 disabled:opacity-40">
+              <XCircle size={13} />{t("pages.revoke")}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+    </section>
+  );
+}
+
 /** Settings > Pages publiées. */
 export function PublishedPagesSettings() {
+  const { state } = useStore();
+  const organization = usePerspicaxOrg() !== null;
+  const admin = organization && (state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner");
   const [pages, setPages] = useState<PublishedPageSummary[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -378,6 +415,7 @@ export function PublishedPagesSettings() {
         </ul>
       )}
       {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+      {admin && <OrganizationPages />}
     </section>
   );
 }

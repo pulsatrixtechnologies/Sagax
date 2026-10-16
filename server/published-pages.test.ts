@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAgentCard, type AgentCardStore } from "./chat-widgets.ts";
 import { json, readBody } from "./harness/http.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
-import { escapeHtml, markdownToHtml, pageDocument, wrapperBanner } from "./published-pages-render.ts";
+import { bannerName, escapeHtml, FRAME_PRELUDE, markdownToHtml, pageDocument, wrapperBanner } from "./published-pages-render.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import {
   createPublishedPageRoutes,
@@ -88,7 +88,7 @@ function frameSrc(wrapper: string): string {
 async function read(pages: PublishedPages, path: string, viewer: PageViewer): Promise<{ wrapper: Answer; frame?: Answer }> {
   const wrapper = await hit(options(pages, viewer), path);
   if (wrapper.status !== 200) return { wrapper };
-  return { wrapper, frame: await hit(options(pages, null), frameSrc(wrapper.body), { "sec-fetch-dest": "iframe" }) };
+  return { wrapper, frame: await hit(options(pages, viewer), frameSrc(wrapper.body), { "sec-fetch-dest": "iframe" }) };
 }
 
 const session = (principalId?: string): RequestAuth => ({
@@ -277,7 +277,9 @@ describe("wrapper and sandboxed frame", () => {
     expect(wrapper.headers["x-frame-options"]).toBe("DENY");
     expect(wrapper.headers["set-cookie"]).toBeUndefined();
     expect(frame!.status).toBe(200);
-    expect(frame!.body).toBe(HTML);
+    expect(frame!.body).toContain("<h1>Rapport</h1>");
+    // the prelude runs first: WebRTC and resource hints removed
+    expect(frame!.body.indexOf(FRAME_PRELUDE)).toBe("<!doctype html>".length);
   });
 
   it("the page itself: sandbox without same-origin, top navigation, popups, modals or forms; no network", async () => {
@@ -334,11 +336,17 @@ describe("wrapper and sandboxed frame", () => {
     expect(html).toContain("<pre><code>&lt;b&gt;x&lt;/b&gt;</code></pre>");
   });
 
-  it("the app's preview carries the CSP as a meta tag", () => {
-    const doc = pageDocument({ kind: "html", title: "R", content: HTML }, { meta: true });
-    expect(doc.startsWith("<!doctype html><meta http-equiv=\"Content-Security-Policy\"")).toBe(true);
-    expect(doc).toContain("connect-src &#39;none&#39;");
-    expect(pageCsp("html", { meta: true })).not.toContain("sandbox");
+  it("an HTML page starts with the prelude; Markdown has no script at all", () => {
+    expect(pageDocument({ kind: "html", title: "R", content: HTML }).startsWith(`<!doctype html>${FRAME_PRELUDE}`)).toBe(true);
+    expect(pageDocument({ kind: "html", title: "R", content: "<p>x</p>" }).startsWith(FRAME_PRELUDE)).toBe(true);
+    expect(pageDocument({ kind: "markdown", title: "R", content: "# x" })).not.toContain("<script");
+  });
+
+  it("the banner keeps names to one short line", () => {
+    expect(bannerName("  Scout\n the   bot ")).toBe("Scout the bot");
+    const long = bannerName("x".repeat(200));
+    expect(long.length).toBe(60);
+    expect(wrapperBanner({ botName: "y".repeat(500), personName: "Alice", lang: "en" }).length).toBeLessThan(200);
   });
 
   it("only GET and HEAD, and the reading paths never reach the API", async () => {
@@ -458,12 +466,13 @@ describe("revocation, expiry and versions", () => {
     const { id, path } = published(pages, "link", "pr_alice");
     const second = pages.propose({ pageId: id, botId: "bot1", threadId: "t1", title: "Rapport v2", kind: "markdown", content: "# v2" });
     expect(second.ok && second.version.n).toBe(2);
-    expect((await read(pages, path, null)).frame?.body).toBe(HTML);
+    expect((await read(pages, path, null)).frame?.body).toContain("<h1>Rapport</h1>");
     pages.publish(id, { version: 2, access: "link", expiresAt: null });
     expect((await read(pages, path, null)).frame?.body).toContain("<h1>v2</h1>");
     expect(pages.propose({ pageId: id, botId: "bot2", threadId: "t2", title: "x", kind: "html", content: "x" }).ok).toBe(false);
     const preview = await call(routes(pages), session("pr_alice"), "GET", `/api/pages/${id}/versions/1`);
-    expect(preview.body!.version.html).toContain("Content-Security-Policy");
+    expect(preview.body!.version.previewPath).toBe(`/pages/preview/${id}/1`);
+    expect(preview.body!.version.html).toBeUndefined();
   });
 
   it("delete removes the page, its content files and its link", async () => {
@@ -525,5 +534,135 @@ describe("input checks", () => {
     expect(validExpiry(now, now).ok).toBe(false);
     expect(validExpiry(now + 400 * 24 * 60 * 60 * 1000, now).ok).toBe(false);
     expect(validExpiry("tomorrow", now).ok).toBe(false);
+  });
+});
+
+describe("the app's preview (review of #646, round 2)", () => {
+  it("its person gets the same wrapper and banner, framed by the app only, for a version never published", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_alice");
+    const alice: PageViewer = { principalId: "pr_alice", computerOwner: false };
+    const wrapper = await hit(options(pages, alice), `/pages/preview/${page.id}/1`);
+    expect(wrapper.status).toBe(200);
+    expect(wrapper.body).toContain("Aperçu d&#39;une page proposée par Scout pour Alice");
+    expect(wrapper.body).not.toContain("<script");
+    const csp = String(wrapper.headers["content-security-policy"]);
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).toContain(`frame-src sagax.example.com/pages/preview-frame/${page.id}/1;`);
+    expect(wrapper.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    const src = frameSrc(wrapper.body);
+    expect(src.startsWith(`/pages/preview-frame/${page.id}/1?t=`)).toBe(true);
+    const frame = await hit(options(pages, alice), src, { "sec-fetch-dest": "iframe" });
+    expect(frame.status).toBe(200);
+    expect(String(frame.headers["content-security-policy"])).toMatch(/; sandbox allow-scripts$/);
+    expect(frame.body).toContain("<h1>Rapport</h1>");
+  });
+
+  it("nobody else previews: another person, nobody signed in, or someone holding the ticket", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_alice");
+    const alice: PageViewer = { principalId: "pr_alice", computerOwner: false };
+    const bob: PageViewer = { principalId: "pr_bob", computerOwner: false };
+    expect((await hit(options(pages, bob), `/pages/preview/${page.id}/1`)).status).toBe(404);
+    expect((await hit(options(pages, null), `/pages/preview/${page.id}/1`)).status).toBe(404);
+    const src = frameSrc((await hit(options(pages, alice), `/pages/preview/${page.id}/1`)).body);
+    expect((await hit(options(pages, bob), src, { "sec-fetch-dest": "iframe" })).status).toBe(404);
+    expect((await hit(options(pages, null), src, { "sec-fetch-dest": "iframe" })).status).toBe(404);
+    expect((await hit(options(pages, alice), src, { "sec-fetch-dest": "document" })).status).toBe(404);
+    // a reading ticket never opens a preview frame, nor the other way round
+    expect((await hit(options(pages, alice), src.replace("/pages/preview-frame/", "/pages/frame/"), { "sec-fetch-dest": "iframe" })).status).toBe(404);
+  });
+});
+
+describe("the frame checks its reader again (review of #646, round 2)", () => {
+  it("on the app's origin: the live session, not only the ticket", async () => {
+    const { pages } = store();
+    const { id, path } = published(pages, "private", "pr_alice");
+    const alice: PageViewer = { principalId: "pr_alice", computerOwner: false };
+    const src = frameSrc((await hit(options(pages, alice), path)).body);
+    expect((await hit(options(pages, alice), src, { "sec-fetch-dest": "iframe" })).status).toBe(200);
+    // the same ticket, presented without Alice's session
+    expect((await hit(options(pages, null), src, { "sec-fetch-dest": "iframe" })).status).toBe(404);
+    expect((await hit(options(pages, { principalId: "pr_bob", computerOwner: false }), src, { "sec-fetch-dest": "iframe" })).status).toBe(404);
+    // and Alice's page turned to org: anyone signed in reads it
+    pages.update(id, { access: "org" });
+    expect((await hit(options(pages, { principalId: "pr_bob", computerOwner: false }), src, { "sec-fetch-dest": "iframe" })).status).toBe(200);
+  });
+
+  it("on the separate origin: the ticket's reader, still active", async () => {
+    const separate = { pagesOrigin: new URL("https://pages.example.net"), appOrigin: new URL("https://sagax.example.com") };
+    const { pages } = store();
+    const { path } = published(pages, "private", "pr_alice");
+    const alice: PageViewer = { principalId: "pr_alice", computerOwner: false };
+    const src = new URL(frameSrc((await hit(options(pages, alice, separate), path)).body));
+    const at = `${src.pathname}${src.search}`;
+    const frame = (active: boolean) => hit({ ...options(pages, null, separate), viewerActive: () => active }, at, { host: "pages.example.net", "sec-fetch-dest": "iframe" });
+    expect((await frame(true)).status).toBe(200);
+    expect((await frame(false)).status).toBe(404);
+  });
+});
+
+describe("a disabled or deleted person's pages, and admin revoke (review of #646, round 2)", () => {
+  it("nothing of a disabled person is served, wrapper or frame", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", "pr_alice");
+    const src = frameSrc((await hit(options(pages, null), path)).body);
+    const gone = { ...options(pages, null), ownerActive: () => false };
+    expect((await hit(gone, path)).status).toBe(404);
+    expect((await hit(gone, src, { "sec-fetch-dest": "iframe" })).status).toBe(404);
+  });
+
+  it("an organization admin lists every page and revokes one, audited; others are refused", async () => {
+    const { pages } = store();
+    const { id, path } = published(pages, "link", "pr_alice");
+    const rows: unknown[] = [];
+    const handler = createPublishedPageRoutes({
+      pages,
+      owner: (auth) => auth.kind === "session" ? auth.session.principalId : undefined,
+      isPerson: () => true,
+      isAdmin: (auth) => auth.kind === "session" && auth.session.principalId === "pr_admin",
+      audit: (_auth, _req, row) => rows.push(row),
+      origin: () => "https://sagax.example.com",
+      reachable: () => true,
+      now: () => now,
+    });
+    expect((await call(handler, session("pr_bob"), "GET", "/api/admin/pages")).status).toBe(403);
+    expect((await call(handler, session("pr_bob"), "POST", `/api/admin/pages/${id}/revoke`)).status).toBe(403);
+    const listed = await call(handler, session("pr_admin"), "GET", "/api/admin/pages");
+    expect(listed.body!.pages.map((page: { id: string; ownerId: string }) => [page.id, page.ownerId])).toEqual([[id, "pr_alice"]]);
+    const revoked = await call(handler, session("pr_admin"), "POST", `/api/admin/pages/${id}/revoke`);
+    expect(revoked.body!.page.status).toBe("revoked");
+    expect(rows).toEqual([{ action: "page.revoke", target: { kind: "page", id, name: "Rapport" } }]);
+    expect((await read(pages, path, null)).wrapper.status).toBe(404);
+  });
+});
+
+describe("per-person bytes and the pages host (review of #646, round 2)", () => {
+  it("a person's pages are capped in bytes, for new pages and new versions alike", () => {
+    const { pages } = store();
+    const big = "x".repeat(PAGE_LIMITS.contentBytes);
+    const ids: string[] = [];
+    for (let p = 0; p < PAGE_LIMITS.bytesPerOwner / PAGE_LIMITS.contentBytes / PAGE_LIMITS.versions; p += 1) {
+      const first = proposed(pages, "pr_alice", { botId: `b${p}`, content: big });
+      ids.push(first.page.id);
+      for (let v = 1; v < PAGE_LIMITS.versions; v += 1) expect(pages.propose({ pageId: first.page.id, botId: `b${p}`, threadId: "t1", title: "x", kind: "html", content: big }).ok).toBe(true);
+    }
+    expect(pages.propose({ botId: "bz", threadId: "t1", title: "x", kind: "html", content: "x", ownerId: "pr_alice" })).toMatchObject({ ok: false, code: "owner_full" });
+    expect(pages.propose({ pageId: ids[0], botId: "b0", threadId: "t1", title: "x", kind: "html", content: "x" })).toMatchObject({ ok: false, code: "owner_full" });
+    expect(pages.propose({ botId: "bz", threadId: "t1", title: "x", kind: "html", content: "x", ownerId: "pr_bob" }).ok).toBe(true);
+  }, 120_000);
+
+  it("SAGAX_PAGES_ORIGIN without a known app origin: that host serves nothing at all", async () => {
+    const { pages } = store();
+    const { path } = published(pages);
+    const src = frameSrc((await hit(options(pages, null), path)).body);
+    const fenced = { ...options(pages, OWNER), pagesHost: "pages.example.net" };
+    for (const other of [src, path, "/", "/api/pages", "/api/health"]) {
+      const { req, res, done } = request(other, "GET", { host: "pages.example.net", "sec-fetch-dest": "iframe" });
+      expect(handlePagesOriginRequest(fenced, req, res, new URL(other, "http://x").pathname, "GET")).toBe(true);
+      expect((await done).status).toBe(404);
+    }
+    const app = request("/api/pages", "GET", { host: "sagax.example.com" });
+    expect(handlePagesOriginRequest(fenced, app.req, app.res, "/api/pages", "GET")).toBe(false);
   });
 });

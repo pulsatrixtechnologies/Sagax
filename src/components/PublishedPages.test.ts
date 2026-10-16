@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import { pageFrameSandbox } from "../../shared/published-pages";
-import { expiryFromHours, frameEscaped, publishBody } from "./PublishedPages";
+import { expiryFromHours, previewSrc, publishBody } from "./PublishedPages";
 
 describe("published page card", () => {
   it("publishBody carries the version, the access the person picked and the expiry", () => {
@@ -19,8 +19,10 @@ describe("published page card", () => {
     expect(pageFrameSandbox("markdown")).toBe("");
   });
 
-  it("a second load of the preview frame is a navigation away and resets it", () => {
-    expect(frameEscaped(1)).toBe(false);
-    expect(frameEscaped(2)).toBe(true);
+  it("frames only this server's own preview wrapper path, never srcdoc or another address", () => {
+    expect(previewSrc("/pages/preview/abcdefgh12345678/2")).toBe("/pages/preview/abcdefgh12345678/2");
+    for (const bad of ["https://evil.example/pages/preview/abcdefgh12345678/2", "//evil.example/x", "javascript:alert(1)", "/pages/preview/../api/config", "/pages/frame/x.y", ""]) {
+      expect(previewSrc(bad)).toBeNull();
+    }
   });
 });

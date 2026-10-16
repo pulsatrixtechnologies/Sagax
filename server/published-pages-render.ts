@@ -11,7 +11,27 @@
 // with a permanent banner (no script, nothing to dismiss) that embeds the
 // page in a frame sandboxed to scripts only, whose navigation the wrapper's
 // `frame-src` limits to the page's own frame path.
-import { pageCsp, type PageKind } from "../shared/published-pages.ts";
+import { PAGE_BANNER_NAME_MAX, pageCsp, type PageKind } from "../shared/published-pages.ts";
+
+/** Run first in every HTML page (frame and preview), best effort: what CSP
+ * does not stop everywhere. WebRTC constructors are removed for good
+ * (non-configurable), and resource hints (dns-prefetch, preconnect,
+ * prefetch, prerender, preload, modulepreload) are removed, including ones
+ * added later. A hint the browser's preload scanner reads before this runs
+ * can still resolve a name: documented as residual. */
+export const FRAME_PRELUDE = "<script>(function(){try{var w=window;"
+  + "[\"RTCPeerConnection\",\"webkitRTCPeerConnection\",\"mozRTCPeerConnection\",\"RTCDataChannel\",\"RTCRtpSender\",\"RTCRtpReceiver\",\"RTCRtpTransceiver\",\"RTCIceCandidate\",\"RTCSessionDescription\",\"RTCDtlsTransport\",\"RTCIceTransport\",\"RTCSctpTransport\",\"RTCCertificate\"].forEach(function(n){try{Object.defineProperty(w,n,{value:undefined,writable:false,configurable:false})}catch(e){}});"
+  + "var bad=/^(dns-prefetch|preconnect|prefetch|prerender|preload|modulepreload)$/i;"
+  + "function hint(el){return el&&el.tagName===\"LINK\"&&String(el.getAttribute(\"rel\")||\"\").split(/\\s+/).some(function(r){return bad.test(r)})}"
+  + "function strip(root){if(!root||root.nodeType!==1)return;if(hint(root)){root.remove();return}var l=root.querySelectorAll(\"link[rel]\");for(var i=0;i<l.length;i++)if(hint(l[i]))l[i].remove()}"
+  + "new MutationObserver(function(ms){ms.forEach(function(m){if(m.type===\"attributes\"){strip(m.target);return}m.addedNodes.forEach(strip)})}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:[\"rel\"]});"
+  + "strip(document.documentElement)}catch(e){}})();</script>";
+
+/** A name for the banner: one line, at most PAGE_BANNER_NAME_MAX characters. Pure. */
+export function bannerName(name: string): string {
+  const line = name.replace(/\s+/g, " ").trim();
+  return line.length <= PAGE_BANNER_NAME_MAX ? line : `${line.slice(0, PAGE_BANNER_NAME_MAX - 1).trimEnd()}…`;
+}
 
 export function escapeHtml(text: string): string {
   return text
@@ -126,11 +146,11 @@ export function pageDocument(input: { kind: PageKind; title: string; content: st
       + `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>`
       + `<style>${MARKDOWN_STYLE}</style></head><body>${markdownToHtml(input.content)}</body></html>`;
   }
-  if (!meta) return input.content;
+  const head = `${meta}${FRAME_PRELUDE}`;
   const doctype = /^\s*<!doctype[^>]*>/i.exec(input.content);
   return doctype
-    ? `${doctype[0]}${meta}${input.content.slice(doctype[0].length)}`
-    : `${meta}${input.content}`;
+    ? `${doctype[0]}${head}${input.content.slice(doctype[0].length)}`
+    : `${head}${input.content}`;
 }
 
 export interface WrapperInput {
@@ -142,13 +162,22 @@ export interface WrapperInput {
    * origin or the separate pages origin. */
   frameUrl: string;
   lang: "fr" | "en";
+  /** The app's preview of a version not yet (or no longer) published. */
+  preview?: boolean;
 }
 
 /** The banner's words. Pure. */
-export function wrapperBanner(input: Pick<WrapperInput, "botName" | "personName" | "lang">): string {
+export function wrapperBanner(input: Pick<WrapperInput, "botName" | "personName" | "lang" | "preview">): string {
+  const bot = bannerName(input.botName);
+  const person = bannerName(input.personName);
+  if (input.preview) {
+    return input.lang === "fr"
+      ? `Aperçu d'une page proposée par ${bot} pour ${person} : ceci n'est pas un écran Sagax, n'y entrez jamais de mot de passe.`
+      : `Preview of a page proposed by ${bot} for ${person}: this is not a Sagax screen, never enter a password here.`;
+  }
   return input.lang === "fr"
-    ? `Page publiée par ${input.botName} pour ${input.personName} : ceci n'est pas un écran Sagax, n'y entrez jamais de mot de passe.`
-    : `Page published by ${input.botName} for ${input.personName}: this is not a Sagax screen, never enter a password here.`;
+    ? `Page publiée par ${bot} pour ${person} : ceci n'est pas un écran Sagax, n'y entrez jamais de mot de passe.`
+    : `Page published by ${bot} for ${person}: this is not a Sagax screen, never enter a password here.`;
 }
 
 /** The reader's document: banner, then the page in its sandboxed frame. No

@@ -5,9 +5,13 @@
 // app (src/components/PagePublishCard.tsx, PublishedPagesSettings.tsx).
 //
 // The isolation rules live here so both sides read the same words: a page is
-// always served and previewed in a sandbox without `allow-same-origin` (an
-// opaque origin: no Sagax cookie, storage or API) and under a CSP that
-// forbids every network request.
+// always served and previewed inside a Sagax wrapper, in a sandbox without
+// `allow-same-origin` (an opaque origin: no Sagax cookie, storage or API) and
+// under a CSP that blocks fetch, XHR, beacons, remote images, scripts and
+// fonts. Not everything is a CSP request: WebRTC (RTCPeerConnection to a
+// STUN or TURN server) and dns-prefetch or preconnect hints are not covered
+// by CSP everywhere; a best-effort prelude script removes them (see
+// FRAME_PRELUDE in server/published-pages-render.ts).
 
 export type PageKind = "html" | "markdown";
 export type PageAccess = "private" | "org" | "link";
@@ -26,6 +30,8 @@ export const PAGE_LIMITS = {
   pagesPerOwner: 50,
   pagesPerBot: 50,
   pages: 500,
+  /** Every kept version's content of one person's pages, together. */
+  bytesPerOwner: 50 * 1024 * 1024,
   /** Every kept version's content on the server, together. */
   totalBytes: 100 * 1024 * 1024,
   /** The farthest expiry a person can set. */
@@ -38,6 +44,12 @@ export const PAGE_VIEW_PREFIX = "/pages/view/";
 /** The page itself, only ever inside the wrapper's frame (a short-lived frame
  * ticket in `?t=`, `frame-ancestors` limited to the wrapper's origin). */
 export const PAGE_FRAME_PREFIX = "/pages/frame/";
+/** The app's own preview of a version (its person only, any state): a
+ * wrapper the app frames, and the page in it. */
+export const PAGE_PREVIEW_PREFIX = "/pages/preview/";
+export const PAGE_PREVIEW_FRAME_PREFIX = "/pages/preview-frame/";
+/** The banner shows at most this much of a bot's or a person's name. */
+export const PAGE_BANNER_NAME_MAX = 60;
 /** How long a frame ticket the wrapper mints stays valid. */
 export const PAGE_FRAME_TICKET_MS = 5 * 60 * 1000;
 
@@ -54,7 +66,8 @@ export function pageFrameSandbox(kind: PageKind): string {
  * directives a meta tag ignores). `sandbox` without `allow-same-origin` gives
  * it an opaque origin: no Sagax cookie, storage or API. `default-src 'none'`
  * and `connect-src 'none'` stop every request (no fetch, no beacon, no remote
- * image, script or font). A Markdown page runs no script. `frameAncestors`
+ * image, script or font; WebRTC and resource hints are only removed best
+ * effort by the prelude). A Markdown page runs no script. `frameAncestors`
  * names who may frame it: the wrapper's origin. */
 export function pageCsp(kind: PageKind, options: { meta?: boolean; frameAncestors?: string } = {}): string {
   const directives = [

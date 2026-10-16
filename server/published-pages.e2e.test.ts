@@ -23,6 +23,13 @@ it("serves a published page in its wrapper and sandboxed frame, and stops at onc
     };
     // nothing to read before the person publishes
     expect((await api(`/api/pages/${id}`)).body.page).toMatchObject({ status: "draft" });
+    // the app previews it through the wrapper, never a srcdoc
+    const previewPath: string = (await api(`/api/pages/${id}/versions/1`)).body.version.previewPath;
+    const preview = await fetch(`${url}${previewPath}`);
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get("content-security-policy")).toContain(`/pages/preview-frame/${id}/1;`);
+    const previewFrame = /<iframe src="([^"]+)"/.exec(await preview.text())![1]!.replace(/&amp;/g, "&");
+    expect((await fetch(`${url}${previewFrame}`, { headers: { "sec-fetch-dest": "iframe" } })).status).toBe(200);
     const published = await api(`/api/pages/${id}/publish`, "POST", { version: 1, access: "link", expiresAt: null });
     expect(published.status).toBe(200);
     const path: string = published.body.page.path;

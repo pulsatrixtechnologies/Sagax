@@ -43,7 +43,7 @@ import {
 } from "../shared/published-pages.ts";
 
 const TOKEN = /^([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{32})$/;
-const TICKET = /^(\d{10,16})\.([A-Za-z0-9_-]{32})$/;
+const TICKET = /^(\d{10,16})\.([A-Za-z0-9_-]{1,200})\.([A-Za-z0-9_-]{32})$/;
 const PAGE_ID = /^[A-Za-z0-9_-]{8,40}$/;
 const CONTENT_CACHE_BYTES = 16 * 1024 * 1024;
 
@@ -141,21 +141,26 @@ export class PublishedPages {
     return given.length === expected.length && timingSafeEqual(given, expected) ? match[1]! : null;
   }
 
-  /** A five-minute ticket for the page's own frame, bound to its link. */
-  frameTicket(linkId: string): string {
+  /** A five-minute ticket for a page frame: bound to its subject (a live
+   * link, `link:<linkId>`, or a preview, `preview:<pageId>:<n>`) and to the
+   * reader the wrapper served (`viewer`: anon, owner, member or p:<id>). */
+  frameTicket(subject: string, viewer: string): string {
     const exp = this.clock() + PAGE_FRAME_TICKET_MS;
-    return `${exp}.${this.mac(`sagax-published-page-frame:v1:${linkId}:${exp}`)}`;
+    const who = Buffer.from(viewer).toString("base64url");
+    return `${exp}.${who}.${this.mac(`sagax-published-page-frame:v2:${subject}:${exp}:${viewer}`)}`;
   }
 
-  private ticketValid(linkId: string, ticket: string): boolean {
+  /** The reader a valid ticket for this subject carries; null otherwise. */
+  verifyFrameTicket(subject: string, ticket: string): string | null {
     const match = TICKET.exec(ticket);
-    if (!match) return false;
+    if (!match || !subject) return null;
     const exp = Number(match[1]);
     const now = this.clock();
-    if (!Number.isSafeInteger(exp) || exp < now || exp > now + PAGE_FRAME_TICKET_MS) return false;
-    const expected = Buffer.from(this.mac(`sagax-published-page-frame:v1:${linkId}:${exp}`));
-    const given = Buffer.from(match[2]!);
-    return given.length === expected.length && timingSafeEqual(given, expected);
+    if (!Number.isSafeInteger(exp) || exp < now || exp > now + PAGE_FRAME_TICKET_MS) return null;
+    const viewer = Buffer.from(match[2]!, "base64url").toString("utf8");
+    const expected = Buffer.from(this.mac(`sagax-published-page-frame:v2:${subject}:${exp}:${viewer}`));
+    const given = Buffer.from(match[3]!);
+    return given.length === expected.length && timingSafeEqual(given, expected) ? viewer : null;
   }
 
   /** The index, read again only when the file changed. */
@@ -280,8 +285,14 @@ export class PublishedPages {
     if (input.pageId && (!page || page.threadId !== input.threadId)) {
       return refuse(404, "not_found", "page_id: no page of this conversation has that id. Leave it out to propose a new page.");
     }
-    const total = pages.reduce((sum, entry) => sum + entry.versions.reduce((inner, version) => inner + version.bytes, 0), 0);
+    const sizeOf = (entry: PageRecord) => entry.versions.reduce((inner, version) => inner + version.bytes, 0);
+    const total = pages.reduce((sum, entry) => sum + sizeOf(entry), 0);
     if (total + bytes > PAGE_LIMITS.totalBytes) return refuse(409, "server_full", "Published pages are full on this server; the person must delete some first.");
+    // The person's own share, for a new page and for a new version alike
+    // (a new version counts against the page's person).
+    const person = page ? page.ownerId : input.ownerId;
+    const theirs = pages.filter((entry) => sameOwner(entry.ownerId, person)).reduce((sum, entry) => sum + sizeOf(entry), 0);
+    if (theirs + bytes > PAGE_LIMITS.bytesPerOwner) return refuse(409, "owner_full", "This person's pages are full; they must delete some first.");
     if (!page) {
       if (pages.length >= PAGE_LIMITS.pages) return refuse(409, "too_many", `This server keeps at most ${PAGE_LIMITS.pages} pages; the person must delete one first.`);
       if (pages.filter((entry) => sameOwner(entry.ownerId, input.ownerId)).length >= PAGE_LIMITS.pagesPerOwner) {
@@ -401,13 +412,6 @@ export class PublishedPages {
     if (page.expiresAt !== null && page.expiresAt <= this.clock()) return null;
     const version = page.versions.find((entry) => entry.n === page.currentVersion);
     return version ? { page: structuredClone(page), version: { ...version } } : null;
-  }
-
-  /** The page a frame request opens: the reading token plus a live frame
-   * ticket the wrapper minted for that same link. */
-  openFrame(token: string, ticket: string): { page: PageRecord; version: PageVersionRecord } | null {
-    const opened = this.open(token);
-    return opened && this.ticketValid(opened.page.linkId!, ticket) ? opened : null;
   }
 
   summary(page: PageRecord, origin: string, reachable: boolean): PublishedPageSummary {

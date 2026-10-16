@@ -6133,6 +6133,11 @@ ROUTES.push(createPublishedPageRoutes({
       return false;
     }
   },
+  // Revoke for organization admins (audited); on a one-person server its owner.
+  isAdmin: (auth) => IDENTITY.kind === "perspicax"
+    ? auth.kind === "session" && auth.scopes.includes("admin")
+    : computerOwner(auth),
+  audit: (auth, req, row) => appendAdminAction(DATA_DIR, { category: "security", ...row, actor: adminActorFor(auth, req) }),
 }));
 
 /** Who is reading a published page (handlePublishedPagePublic): a session
@@ -6157,9 +6162,11 @@ function publishedPageViewer(req: IncomingMessage): PageViewer {
   return null;
 }
 
-/** SAGAX_PAGES_ORIGIN: a separate origin for the page frames, used only when
- * this app's own public origin is known and differs from it (the frames'
- * only allowed ancestor). Read on each request: the custom domain can change. */
+/** SAGAX_PAGES_ORIGIN: a separate origin for the page frames. Read once at
+ * start. Used only when this app's own public origin is known and differs
+ * from it (the frames' only allowed ancestor); pagesSeparation() checks that
+ * on each request, since the custom domain can change. Whether used or not,
+ * that host never serves the app (handlePagesOriginRequest). */
 const PAGES_ORIGIN = (() => {
   const raw = process.env.SAGAX_PAGES_ORIGIN?.trim();
   if (!raw) return null;
@@ -6189,6 +6196,18 @@ function publishedPageOptions(): PublicPageOptions {
       const personName = (person ? personDisplayName(person) : cfg.profile?.name?.trim()) || "Sagax";
       return { botName, personName };
     },
+    // nothing of a disabled or deleted person is served
+    ownerActive: (page) => {
+      if (IDENTITY.kind !== "perspicax" || !page.ownerId) return true;
+      const person = principals.byId(page.ownerId);
+      return Boolean(person && person.disabledAt === undefined && !person.consoleDisabled);
+    },
+    viewerActive: (viewer) => {
+      if (IDENTITY.kind !== "perspicax" || !viewer?.principalId) return true;
+      const person = principals.byId(viewer.principalId);
+      return Boolean(person && person.kind === "human" && person.disabledAt === undefined && !person.consoleDisabled);
+    },
+    pagesHost: PAGES_ORIGIN?.host ?? null,
     separate: pagesSeparation(),
   };
 }

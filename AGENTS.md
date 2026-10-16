@@ -3816,8 +3816,9 @@ the agents tool `propose_page`; the person publishes it from its card
 `server/published-pages-render.ts`, routes `server/routes/published-pages.ts`,
 UI `src/components/PublishedPages.tsx`: the chat card and Settings > Pages
 publiées). Keep these rules, covered by `server/published-pages.test.ts`,
-`server/published-pages.e2e.test.ts` and `src/components/PublishedPages.test.ts`
-(security review of #646 folded in):
+`server/published-pages.e2e.test.ts`, `server/published-pages-prelude.test.ts`,
+`src/components/PublishedPages.test.ts` and `electron/page-frame-guard.node-test.mjs`
+(two security reviews of #646 folded in):
 
 - Publishing is an outward action and only the person does it. The tool
   goes through the internal card route (`createAgentCard`, tool
@@ -3839,7 +3840,11 @@ publiées). Keep these rules, covered by `server/published-pages.test.ts`,
   the link). Expiry: never, or a time within a year. Revoke drops the link
   id at once (and every frame ticket with it); publishing again mints a new
   link. A bad signature, a revoked or expired page and a reader who may not
-  see it all get the same 404 page.
+  see it all get the same 404 page. Nothing of a person disabled or deleted
+  in the organization is served (`ownerActive`). Organization admins see
+  every page and can Revoke one (`GET /api/admin/pages`,
+  `POST /api/admin/pages/:id/revoke`, admin activity row `page.revoke`,
+  category security); they cannot publish, change access or read content.
 - Isolation. The reader never lands on the page itself. `GET
   /pages/view/<id>.<hmac>` (before the auth gate and the cookie re-issue: no
   Set-Cookie) is a Sagax wrapper with a permanent banner, "Page publiée par
@@ -3853,37 +3858,56 @@ publiées). Keep these rules, covered by `server/published-pages.test.ts`,
   allow-top-navigation), open a window (no allow-popups), show prompt() (no
   allow-modals) or submit a form (no allow-forms, `form-action 'none'`).
   `GET /pages/frame/<token>?t=<ticket>` serves the page only with the
-  wrapper's five-minute HMAC ticket and only when `Sec-Fetch-Dest`, if sent,
-  is `iframe`; its CSP is `sandbox` without allow-same-origin (opaque
+  wrapper's five-minute HMAC ticket (bound to the page and to the reader the
+  wrapper served) and only when `Sec-Fetch-Dest`, if sent, is `iframe`; the
+  frame checks the reader again: the live session on the app's origin, or
+  the ticket's reader, still an active person, on the separate origin. Its CSP is `sandbox` without allow-same-origin (opaque
   origin: no Sagax cookie, storage or API), `default-src 'none'`,
   `connect-src 'none'`, `frame-src 'none'`, data:/blob: images only, and
   `frame-ancestors` the wrapper's origin. No allow-modals or allow-forms
-  anywhere. Markdown is rendered by our own escaper: no raw HTML, links
+  anywhere. Not everything is a CSP request: every HTML page starts with
+  `FRAME_PRELUDE`, a best-effort script that makes the WebRTC constructors
+  (RTCPeerConnection and kin) undefined and non-configurable and removes
+  `<link rel>` resource hints (dns-prefetch, preconnect, prefetch,
+  prerender, preload, modulepreload), including ones added or changed
+  later. Markdown is rendered by our own escaper: no raw HTML, links
   written as text with their address. Title and content lose secret-shaped
   text before storage.
 - Separate origin: `SAGAX_PAGES_ORIGIN=https://pages.example.com` (an
-  origin, no path) serves the frames there, and that host answers nothing
-  but `/pages/frame/` (no app, API or sign-in: `handlePagesOriginRequest`
-  runs first in `handleRequest`). It is used only when the app's own public
-  origin is known (organization public origin or custom domain) and
-  differs; the frames' `frame-ancestors` is then that app origin, and the
-  app origin no longer serves frames. The wrapper stays on the app origin
-  (it checks the reader's session).
-- The app's preview: the same document in an iframe sandboxed the same way
-  (scripts only, Markdown nothing), CSP as a meta tag, and a navigation
-  guard: a second load of the frame resets it and says so.
+  origin, no path; read once at start) serves the frames there. That host
+  never serves the app: `handlePagesOriginRequest` runs first in
+  `handleRequest` and answers only frame paths, or nothing at all (404)
+  while the separation is off. The separation is on only when the app's own
+  public origin is known (organization public origin or custom domain,
+  checked on each request) and differs; the frames' `frame-ancestors` is
+  then that app origin, and the app origin no longer serves frames. The
+  wrappers stay on the app origin (they check the reader's session).
+- The app's preview is the reader's path, never a srcdoc: `GET
+  /api/pages/:id/versions/:n` answers `previewPath`
+  (`/pages/preview/<id>/<n>`, the page's person only, any version state),
+  the same no-script wrapper with a preview banner ("Aperçu d'une page
+  proposée par ... : ceci n'est pas un écran Sagax ..."), framed by the app
+  (`frame-ancestors 'self'`), which frames `/pages/preview-frame/<id>/<n>`
+  with a preview ticket under the same sandbox and CSP, `frame-src` pinned
+  to that path. In the desktop app `will-frame-navigate` also blocks any
+  navigation of a page frame other than its own exact address
+  (`electron/page-frame-guard.mjs`).
 - Storage and caps: the index `published-pages.json` (0600, no content) is
   read again only when its mtime or size changes; each version's content is
   `published-pages/<pageId>/<n>` (0600, folders 0700), cached in memory once
   read. At most 50 pages per person and per bot, 500 per server, 20
   versions per page (the published one is never dropped), 512 KB per
-  version, 100 MB for all content.
+  version, 50 MB per person (checked for new versions too) and 100 MB for
+  all content. The banner shows at most 60 characters of each name.
 - Residual risks (documented, not closed): the page can still draw a fake
   login form inside its own frame under the banner (nothing it types can
   leave: no network, no navigation out, no form submission); the frame-src
   path match relies on the browser's Host (a reverse proxy must pass it
   through, as Caddy does); `dns-prefetch` hints are not covered by CSP in
-  every browser. Not done: multi-file apps, an admin audit row per publish
+  every browser and the preload scanner may read a hint before the prelude
+  removes it; WebRTC in a browser that exposes it under a name the prelude
+  does not know. `frame-src` path pinning against a frame's own navigation
+  needs a manual check in Chrome, Firefox and Safari before release. Not done: multi-file apps, an admin audit row per publish
   (the page keeps its own history), the phone apps' card (they show the
   row's text).
 

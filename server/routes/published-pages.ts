@@ -23,8 +23,12 @@
 // one-person server):
 //   GET    /api/pages                       { pages: [...] }
 //   GET    /api/pages/:id                   { page }
-//   GET    /api/pages/:id/versions/:n       { version: { n, kind, title, html } }
-//          html carries the CSP as a meta tag, for the app's sandboxed preview
+//   GET    /api/pages/:id/versions/:n       { version: { n, kind, title, state, previewPath } }
+//          previewPath: /pages/preview/<id>/<n>, the wrapper the app frames
+//   GET    /pages/preview/<id>/<n>          (before the gate) the page's person
+//          only: the same wrapper (banner) framing /pages/preview-frame/...
+//   GET    /api/admin/pages                 organization admins: every page
+//   POST   /api/admin/pages/:id/revoke      organization admins (audited)
 //   POST   /api/pages/:id/publish           { version, access, expiresAt|null }
 //          the person's approval: the only way a version is published
 //   POST   /api/pages/:id/decline           { version }
@@ -33,10 +37,19 @@
 //   DELETE /api/pages/:id
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { PageError, PageRecord, PublishedPages } from "../published-pages.ts";
+import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from "../published-pages.ts";
 import { pageDocument, wrapperDocument } from "../published-pages-render.ts";
 import type { RequestAuth } from "../request-auth.ts";
-import { PAGE_ACCESS, PAGE_FRAME_PREFIX, PAGE_VIEW_PREFIX, pageCsp, validExpiry, type PageAccess } from "../../shared/published-pages.ts";
+import {
+  PAGE_ACCESS,
+  PAGE_FRAME_PREFIX,
+  PAGE_PREVIEW_FRAME_PREFIX,
+  PAGE_PREVIEW_PREFIX,
+  PAGE_VIEW_PREFIX,
+  pageCsp,
+  validExpiry,
+  type PageAccess,
+} from "../../shared/published-pages.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 /** Who is reading: null for nobody signed in. `principalId` is the person
@@ -53,13 +66,40 @@ export function pageReadable(page: Pick<PageRecord, "access" | "ownerId">, viewe
   return (viewer.principalId ?? "").toLowerCase() === page.ownerId.toLowerCase();
 }
 
+/** Whether this reader is the page's own person (the preview). Pure. */
+export function pageOwnedBy(page: Pick<PageRecord, "ownerId">, viewer: PageViewer): boolean {
+  return pageReadable({ access: "private", ownerId: page.ownerId }, viewer);
+}
+
+/** A viewer as a frame ticket carries it, and back. Pure. */
+export function viewerKey(viewer: PageViewer): string {
+  if (!viewer) return "anon";
+  if (viewer.principalId) return `p:${viewer.principalId.toLowerCase()}`;
+  return viewer.computerOwner ? "owner" : "member";
+}
+export function viewerFromKey(key: string): PageViewer {
+  if (key === "owner") return { computerOwner: true };
+  if (key === "member") return { computerOwner: false };
+  if (key.startsWith("p:") && key.length > 2) return { principalId: key.slice(2), computerOwner: false };
+  return null;
+}
+
 export interface PublicPageOptions {
   pages: PublishedPages | null;
   viewer(req: IncomingMessage): PageViewer;
   /** The banner's names: the bot, and the person it published for. */
   names(page: PageRecord): { botName: string; personName: string };
+  /** False when the page's person was disabled or deleted: nothing of theirs
+   * is served. Absent: always active. */
+  ownerActive?(page: PageRecord): boolean;
+  /** Whether a viewer a ticket carries is still a person allowed in (not
+   * disabled), for frames on the separate origin, which see no cookie. */
+  viewerActive?(viewer: PageViewer): boolean;
+  /** The host of SAGAX_PAGES_ORIGIN when it is set, used or not: that host
+   * never serves the app. */
+  pagesHost?: string | null;
   /** SAGAX_PAGES_ORIGIN and this app's own origin (the frames' only
-   * ancestor). Both, or no separate origin at all. */
+   * ancestor), when both are known: frames are then served there only. */
   separate?: { pagesOrigin: URL; appOrigin: URL } | null;
 }
 
@@ -98,18 +138,34 @@ function tokenAfter(path: string, prefix: string): string {
   }
 }
 
-function serveWrapper(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): true {
-  const token = tokenAfter(path, PAGE_VIEW_PREFIX);
-  const opened = token && options.pages ? options.pages.open(token) : null;
-  if (!opened || !pageReadable(opened.page, options.viewer(req))) return notFound(req, res, method);
-  const { page, version } = opened;
-  const ticket = options.pages!.frameTicket(page.linkId!);
-  const framePath = `${PAGE_FRAME_PREFIX}${token}`;
+function query(req: IncomingMessage, name: string): string {
+  try {
+    return new URL(req.url ?? "/", "http://x").searchParams.get(name) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+const ownerActive = (options: PublicPageOptions, page: PageRecord) => options.ownerActive?.(page) ?? true;
+
+/** A preview address: `<pageId>/<n>`. */
+function previewTarget(options: PublicPageOptions, rest: string): { page: PageRecord; version: PageVersionRecord } | null {
+  const match = /^([A-Za-z0-9_-]{8,40})\/(\d{1,4})$/.exec(rest);
+  if (!match || !options.pages) return null;
+  const page = options.pages.get(match[1]!);
+  const version = page?.versions.find((entry) => entry.n === Number(match[2]));
+  return page && version ? { page, version } : null;
+}
+
+/** The wrapper: banner, then the page in its sandboxed frame. `preview` is
+ * the app's own preview of a version (its person only; framed by the app). */
+function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, method: string,
+  input: { page: PageRecord; version: PageVersionRecord; framePath: string; ticket: string; preview: boolean }): true {
   const separate = options.separate ?? null;
   const host = hostOf(req);
   // A host-source with a path: the frame may load this page's frame path and
   // nothing else, so the page cannot navigate its frame to another site.
-  const frameSource = separate ? `${separate.pagesOrigin.origin}${framePath}` : host ? `${host}${framePath}` : "'self'";
+  const frameSource = separate ? `${separate.pagesOrigin.origin}${input.framePath}` : host ? `${host}${input.framePath}` : "'self'";
   const csp = [
     "default-src 'none'",
     "script-src 'none'",
@@ -119,72 +175,105 @@ function serveWrapper(options: PublicPageOptions, req: IncomingMessage, res: Ser
     `child-src ${frameSource}`,
     "base-uri 'none'",
     "form-action 'none'",
-    "frame-ancestors 'none'",
+    input.preview ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
   ].join("; ");
-  res.setHeader("cross-origin-opener-policy", "same-origin");
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": csp, "x-frame-options": "DENY" });
-  const names = options.names(page);
+  if (!input.preview) res.setHeader("cross-origin-opener-policy", "same-origin");
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": csp, "x-frame-options": input.preview ? "SAMEORIGIN" : "DENY" });
+  const names = options.names(input.page);
   res.end(method === "HEAD" ? undefined : wrapperDocument({
-    title: version.title,
-    kind: version.kind,
+    title: input.version.title,
+    kind: input.version.kind,
     botName: names.botName,
     personName: names.personName,
-    frameUrl: `${separate ? separate.pagesOrigin.origin : ""}${framePath}?t=${encodeURIComponent(ticket)}`,
+    frameUrl: `${separate ? separate.pagesOrigin.origin : ""}${input.framePath}?t=${encodeURIComponent(input.ticket)}`,
     lang: language(req),
+    preview: input.preview,
   }));
   return true;
 }
 
+function serveWrapper(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): true {
+  const token = tokenAfter(path, PAGE_VIEW_PREFIX);
+  const opened = token && options.pages ? options.pages.open(token) : null;
+  const viewer = options.viewer(req);
+  if (!opened || !ownerActive(options, opened.page) || !pageReadable(opened.page, viewer)) return notFound(req, res, method);
+  const subject = `link:${opened.page.linkId!}`;
+  return sendWrapper(options, req, res, method, { ...opened, framePath: `${PAGE_FRAME_PREFIX}${token}`, ticket: options.pages!.frameTicket(subject, viewerKey(viewer)), preview: false });
+}
+
+function servePreviewWrapper(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): true {
+  const rest = tokenAfter(path, PAGE_PREVIEW_PREFIX);
+  const target = previewTarget(options, rest);
+  const viewer = options.viewer(req);
+  if (!target || !ownerActive(options, target.page) || !pageOwnedBy(target.page, viewer)) return notFound(req, res, method);
+  const subject = `preview:${target.page.id}:${target.version.n}`;
+  return sendWrapper(options, req, res, method, { ...target, framePath: `${PAGE_PREVIEW_FRAME_PREFIX}${rest}`, ticket: options.pages!.frameTicket(subject, viewerKey(viewer)), preview: true });
+}
+
+/** The page itself. Never the main entry; the ticket the wrapper minted for
+ * this page and this reader; and the reader checked again: the live cookie
+ * on the app's origin, or the ticket's reader (still active) on the
+ * separate origin, which sees no cookie. */
 function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): true {
-  // Never the main entry: a browser that names the destination must name a frame.
   const dest = req.headers["sec-fetch-dest"];
   if (typeof dest === "string" && dest !== "iframe") return notFound(req, res, method);
-  const token = tokenAfter(path, PAGE_FRAME_PREFIX);
-  let ticket = "";
-  try {
-    ticket = new URL(req.url ?? "/", "http://x").searchParams.get("t") ?? "";
-  } catch {
-    ticket = "";
+  const pages = options.pages;
+  if (!pages) return notFound(req, res, method);
+  const preview = path.startsWith(PAGE_PREVIEW_FRAME_PREFIX);
+  let target: { page: PageRecord; version: PageVersionRecord } | null;
+  let subject: string;
+  if (preview) {
+    target = previewTarget(options, tokenAfter(path, PAGE_PREVIEW_FRAME_PREFIX));
+    subject = target ? `preview:${target.page.id}:${target.version.n}` : "";
+  } else {
+    target = pages.open(tokenAfter(path, PAGE_FRAME_PREFIX));
+    subject = target ? `link:${target.page.linkId!}` : "";
   }
-  const opened = token && ticket && options.pages ? options.pages.openFrame(token, ticket) : null;
-  const content = opened ? options.pages!.content(opened.page.id, opened.version.n) : null;
-  if (!opened || content === null) return notFound(req, res, method);
-  const { version } = opened;
+  const bound = target ? pages.verifyFrameTicket(subject, query(req, "t")) : null;
+  if (!target || bound === null || !ownerActive(options, target.page)) return notFound(req, res, method);
+  const reader = options.separate ? viewerFromKey(bound) : options.viewer(req);
+  if (options.separate && reader && options.viewerActive && !options.viewerActive(reader)) return notFound(req, res, method);
+  const allowed = preview ? pageOwnedBy(target.page, reader) : pageReadable(target.page, reader);
+  const content = allowed ? pages.content(target.page.id, target.version.n) : null;
+  if (content === null) return notFound(req, res, method);
   const ancestors = options.separate ? options.separate.appOrigin.origin : "'self'";
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(version.kind, { frameAncestors: ancestors }) });
-  res.end(method === "HEAD" ? undefined : pageDocument({ kind: version.kind, title: version.title, content, lang: language(req) }));
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(target.version.kind, { frameAncestors: ancestors }) });
+  res.end(method === "HEAD" ? undefined : pageDocument({ kind: target.version.kind, title: target.version.title, content, lang: language(req) }));
   return true;
 }
 
-/** On the separate pages origin (SAGAX_PAGES_ORIGIN), the server answers the
- * page frames and nothing else: no app, no API, no sign-in. True when the
- * request was for that origin (it is then answered). */
+function refuseMethod(res: ServerResponse): true {
+  res.writeHead(405, { allow: "GET, HEAD", "content-type": "text/plain; charset=utf-8", "content-security-policy": "default-src 'none'; sandbox" });
+  res.end();
+  return true;
+}
+
+const isFramePath = (path: string) => path.startsWith(PAGE_FRAME_PREFIX) || path.startsWith(PAGE_PREVIEW_FRAME_PREFIX);
+
+/** On the pages origin (SAGAX_PAGES_ORIGIN), the server answers the page
+ * frames and nothing else: no app, no API, no sign-in. When the app's own
+ * origin is unknown the separation is off and that host answers nothing at
+ * all. True when the request was for that host (it is then answered). */
 export function handlePagesOriginRequest(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): boolean {
-  const separate = options.separate;
-  if (!separate || hostOf(req) !== separate.pagesOrigin.host.toLowerCase()) return false;
+  const pagesHost = (options.separate?.pagesOrigin.host ?? options.pagesHost ?? "").toLowerCase();
+  if (!pagesHost || hostOf(req) !== pagesHost) return false;
   common(res);
-  if (method !== "GET" && method !== "HEAD") {
-    res.writeHead(405, { allow: "GET, HEAD", "content-type": "text/plain; charset=utf-8", "content-security-policy": "default-src 'none'; sandbox" });
-    res.end();
-    return true;
-  }
-  if (!path.startsWith(PAGE_FRAME_PREFIX)) return notFound(req, res, method);
+  if (method !== "GET" && method !== "HEAD") return refuseMethod(res);
+  if (!options.separate || !isFramePath(path)) return notFound(req, res, method);
   return serveFrame(options, req, res, path, method);
 }
 
-/** Answer a published page's wrapper or frame on the app's origin; false
- * when the request is not one. */
+/** Answer a published page's wrapper, preview or frame on the app's origin;
+ * false when the request is not one. */
 export function handlePublishedPagePublic(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): boolean {
   const view = path.startsWith(PAGE_VIEW_PREFIX);
-  const frame = path.startsWith(PAGE_FRAME_PREFIX);
-  if (!view && !frame) return false;
+  const previewWrapper = path.startsWith(PAGE_PREVIEW_PREFIX);
+  const frame = isFramePath(path);
+  if (!view && !previewWrapper && !frame) return false;
   common(res);
-  if (method !== "GET" && method !== "HEAD") {
-    res.writeHead(405, { allow: "GET, HEAD", "content-type": "text/plain; charset=utf-8", "content-security-policy": "default-src 'none'; sandbox" });
-    res.end();
-    return true;
-  }
+  if (method !== "GET" && method !== "HEAD") return refuseMethod(res);
   if (view) return serveWrapper(options, req, res, path, method);
+  if (previewWrapper) return servePreviewWrapper(options, req, res, path, method);
   // With a separate pages origin, frames live there only.
   if (options.separate) return notFound(req, res, method);
   return serveFrame(options, req, res, path, method);
@@ -202,6 +291,10 @@ export interface PublishedPageRouteDeps {
   /** Where links point: the server's public address, else the request's. */
   origin(req: IncomingMessage): string;
   reachable(origin: string): boolean;
+  /** An organization admin (the admin routes below). */
+  isAdmin?(auth: RequestAuth): boolean;
+  /** Write an admin activity row (category security) for an admin's act. */
+  audit?(auth: RequestAuth, req: IncomingMessage, row: { action: string; target: { kind: string; id: string; name?: string } }): void;
   now?(): number;
 }
 
@@ -220,6 +313,26 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     return deps.pages.summary(page, origin, deps.reachable(origin));
   };
   return async ({ req, res, path, method, auth, json, readBody }) => {
+    // Organization admins: every page, and Revoke (audited). Never publish,
+    // change access or read another person's content from here.
+    if (path === "/api/admin/pages" || path.startsWith("/api/admin/pages/")) {
+      res.setHeader("cache-control", "no-store");
+      if (!deps.isAdmin?.(auth)) return json(res, 403, { error: "Only an organization admin manages every page.", code: "admin_only" });
+      if (path === "/api/admin/pages" && method === "GET") {
+        return json(res, 200, { pages: deps.pages.list(undefined).map((page) => ({ ...wire(page, req), ownerId: page.ownerId ?? null })) });
+      }
+      const revoke = /^\/api\/admin\/pages\/([\w-]+)\/revoke$/.exec(path);
+      if (revoke && method === "POST") {
+        const page = deps.pages.get(revoke[1]!);
+        if (!page) return json(res, 404, { error: "This page does not exist.", code: "not_found" });
+        const result = deps.pages.revoke(page.id, deps.owner(auth) ?? "admin");
+        if (failed(result)) return json(res, result.status, { error: result.error, code: result.code });
+        const title = result.versions.at(-1)?.title;
+        deps.audit?.(auth, req, { action: "page.revoke", target: { kind: "page", id: page.id, ...(title ? { name: title } : {}) } });
+        return json(res, 200, { page: { ...wire(result, req), ownerId: result.ownerId ?? null } });
+      }
+      return PASS;
+    }
     if (path !== "/api/pages" && !path.startsWith("/api/pages/")) return PASS;
     res.setHeader("cache-control", "no-store");
     if (!deps.isPerson(auth)) return json(res, 403, { error: "Only a signed-in person manages published pages.", code: "person_only" });
@@ -240,9 +353,9 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     if (versionPath !== undefined && method === "GET") {
       const version = page.versions.find((entry) => entry.n === Number(versionPath));
       if (!version) return json(res, 404, { error: "This version does not exist.", code: "no_version" });
-      const content = deps.pages.content(page.id, version.n);
-      if (content === null) return json(res, 404, { error: "This version's content is missing.", code: "no_content" });
-      return json(res, 200, { version: { n: version.n, kind: version.kind, title: version.title, state: version.state, html: pageDocument({ kind: version.kind, title: version.title, content }, { meta: true }) } });
+      // Never the content: the app previews a version through the same
+      // wrapper and sandboxed frame readers get (no srcdoc in the app).
+      return json(res, 200, { version: { n: version.n, kind: version.kind, title: version.title, state: version.state, previewPath: `${PAGE_PREVIEW_PREFIX}${page.id}/${version.n}` } });
     }
     if (!action && method === "GET") return json(res, 200, { page: wire(page, req) });
     if (!action && method === "DELETE") {
