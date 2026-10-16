@@ -25,7 +25,10 @@ type Node = ReactElement<{ children?: ReactNode; type?: string; value?: string; 
 function nodes(value: ReactNode): Node[] {
   if (!isValidElement(value)) return [];
   const node = value as Node;
-  return [node, ...Children.toArray(node.props.children).flatMap(nodes)];
+  // A settings row (DescribedRow) carries what it opens in `below`, and a
+  // group its heading's extras in `accessory`: walk them too.
+  const extra = node.props as { below?: ReactNode; accessory?: ReactNode };
+  return [node, ...Children.toArray(node.props.children).flatMap(nodes), ...nodes(extra.below), ...nodes(extra.accessory)];
 }
 
 function render(props: Parameters<typeof OrgDirectory>[0]) {
@@ -67,7 +70,8 @@ describe("OrgDirectory", () => {
       onCreate() {},
       onInvite() {},
     }).html;
-    expect(html).toContain("Example");
+    // A solo server's name was its host name: no row for it (0.5.6).
+    expect(html).not.toContain(">Example<");
     expect(html).toContain("zachary@example.test");
     expect(html).not.toContain("Create organization");
   });
@@ -87,7 +91,7 @@ describe("OrgDirectory", () => {
     view.nodes.find((node) => node.type === "button" && node.props.children === "Revoke")!.props.onClick!();
     expect(onRevoke).toHaveBeenCalledExactlyOnceWith("tok-1");
   });
-  it("splits the directory into collapsible cards: invite open, people and pending folded with counts", () => {
+  it("draws Grok-style rows: address, invite, people and pending folded behind count pills", () => {
     const html = render({
       org: { name: "Example", host: { kind: "server", url: "https://server.example.com" } },
       people: [{ id: "a@example.test", role: "owner" }, { id: "b@example.test", role: "member" }],
@@ -95,15 +99,17 @@ describe("OrgDirectory", () => {
       onCreate() {},
       onInvite() {},
     }).html;
-    expect(html).toContain('data-settings-card="organization.directory" data-open="true"');
-    expect(html).toContain('data-settings-card="organization.invite" data-open="true"');
-    expect(html).toContain('data-settings-card="organization.people" data-open="false"');
-    expect(html).toContain('data-settings-card="organization.pending" data-open="false"');
-    expect(html).toContain(">2 people<");
-    expect(html).toContain(">1 pending<");
+    expect(html).toContain('data-settings-group="people"');
+    for (const id of ["organization.directory", "organization.invite", "organization.people", "organization.pending"]) expect(html, id).toContain(`data-settings-card="${id}"`);
+    expect(html).toContain('aria-label="2 people"');
+    expect(html).toContain('aria-label="1 pending"');
+    expect(html.match(/data-count-pill=""/g)).toHaveLength(2);
     // folded, not removed
+    expect(html.match(/<ul hidden=""/g)).toHaveLength(2);
     expect(html).toContain("b@example.test");
     expect(html).toContain("c@example.test");
+    // no card titled with the organization's (host) name
+    expect(html).not.toContain(">Example<");
   });
   it("lists people by email, falling back to a short id", () => {
     const html = render({

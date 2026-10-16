@@ -1,6 +1,7 @@
 // Settings > Models and voice, keys: per-person API keys for external cloud
 // coding agents (Cursor, Claude Code, Codex). Under "More providers" until
 // one is saved (src/components/EnginesSettings.tsx).
+import { cn } from "@/lib/cn";
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "@/state/store";
@@ -13,7 +14,7 @@ import {
   testCloudAgentProvider,
   type CloudAgentProviderRow,
 } from "@/lib/cloud-agent-providers";
-import { FoldRow } from "../SettingsPrimitives";
+import { FoldRow, PILL } from "../SettingsPrimitives";
 
 const inputClass = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none";
 
@@ -116,7 +117,7 @@ function ProviderRow({ row, onChanged }: { row: CloudAgentProviderRow; onChanged
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="ui-button min-h-[44px] md:min-h-0"
+              className={PILL}
               disabled={busy}
               onClick={() => void run(async () => { await testCloudAgentProvider(api, row.provider); setNote(t("cloudAgentProviders.test.ok")); })}
             >
@@ -124,7 +125,7 @@ function ProviderRow({ row, onChanged }: { row: CloudAgentProviderRow; onChanged
             </button>
             <button
               type="button"
-              className="ui-button min-h-[44px] md:min-h-0"
+              className={PILL}
               disabled={busy}
               onClick={() => { setEditing(true); setNote(null); }}
             >
@@ -132,7 +133,7 @@ function ProviderRow({ row, onChanged }: { row: CloudAgentProviderRow; onChanged
             </button>
             <button
               type="button"
-              className="ui-button min-h-[44px] text-danger md:min-h-0"
+              className={cn(PILL, "text-danger")}
               disabled={busy}
               onClick={() => void run(async () => { await removeCloudAgentProvider(api, row.provider); })}
             >
@@ -162,14 +163,14 @@ function ProviderRow({ row, onChanged }: { row: CloudAgentProviderRow; onChanged
             </button>
             <button
               type="button"
-              className="ui-button min-h-[44px] disabled:opacity-50 md:min-h-0"
+              className={PILL}
               disabled={busy || !token.trim()}
               onClick={() => void run(async () => { await testCloudAgentProvider(api, row.provider, token); setNote(t("cloudAgentProviders.test.ok")); })}
             >
               {t("cloudAgentProviders.test")}
             </button>
             {row.configured && (
-              <button type="button" className="ui-button min-h-[44px] bg-transparent text-ink-secondary md:min-h-0" disabled={busy} onClick={() => { setEditing(false); setToken(""); setNote(null); }}>
+              <button type="button" className={cn(PILL, "bg-transparent text-ink-secondary")} disabled={busy} onClick={() => { setEditing(false); setToken(""); setNote(null); }}>
                 {t("common.cancel")}
               </button>
             )}

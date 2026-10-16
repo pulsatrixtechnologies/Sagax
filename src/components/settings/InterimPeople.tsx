@@ -7,7 +7,8 @@ import { useEffect, useState } from "react";
 import { activeLocale, t } from "@/lib/i18n";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
-import { Card } from "../SettingsPrimitives";
+import { cn } from "@/lib/cn";
+import { CountPill, DANGER_PILL, DescribedRow, PILL, PillSelect } from "../SettingsPrimitives";
 
 export interface InterimPerson {
   principalId: string;
@@ -31,6 +32,7 @@ export function InterimPeople({ until, onChanged }: { until: number; onChanged: 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
 
   const load = async () => {
     try {
@@ -77,49 +79,58 @@ export function InterimPeople({ until, onChanged }: { until: number; onChanged: 
   };
 
   const date = new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium" }).format(new Date(until));
+  const list = people ?? [];
+  // 0.5.6 (JC): one Grok-style row (its window in grey, the count pill
+  // that unfolds the people); attaching asks first, in a red pill.
   return (
-    <Card cardId="organization.interimPeople" title={t("interim.title")} summary={people ? String(people.length) : ""}>
-      <div className="flex flex-col gap-3 text-[13px]" data-interim-people>
-        <p className="leading-relaxed text-ink-secondary">{t("interim.intro")}</p>
-        <p className="text-ink-secondary">{t("interim.until", { date })}</p>
-        <ul className="flex flex-col divide-y divide-hairline/40">
-          {(people ?? []).map((person) => {
-            const target = targetOf(person);
-            return (
-              <li key={person.principalId} className="flex min-w-0 flex-col gap-2 py-2">
-                <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-                  <span className="min-w-0 break-all text-ink">{person.email}</span>
-                  <span className="text-[12px] text-ink-secondary">{t("interim.counts", { bots: person.bots, rooms: person.rooms, routines: person.routines })}</span>
-                </div>
-                {confirming === person.principalId ? (
-                  <div role="group" aria-label={t("interim.attach")} className="flex flex-col gap-2 rounded-lg border border-hairline/40 p-3">
-                    <p className="text-ink">{t("interim.confirm", { from: person.email, to: nameOf(target) })}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" className="ui-button" autoFocus disabled={busy} onClick={() => setConfirming(null)}>{t("interim.cancel")}</button>
-                      <button type="button" className="ui-button text-danger" disabled={busy} onClick={() => void attach(person)}>{t("interim.attach")}</button>
+    <div data-settings-card="organization.interimPeople" data-interim-people>
+      <DescribedRow
+        label={t("interim.title")}
+        rowId="interimPeople"
+        description={t("interim.until", { date })}
+        below={open && (
+          <div className="mt-2 flex flex-col gap-2 text-[13px]">
+            <p className="text-[12px] leading-4 text-ink-secondary">{t("interim.intro")}</p>
+            <ul className="flex flex-col gap-1" aria-label={t("interim.title")}>
+              {list.map((person) => {
+                const target = targetOf(person);
+                return (
+                  <li key={person.principalId} className="flex min-w-0 flex-col gap-1.5 rounded-lg bg-inset px-3 py-2">
+                    <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                      <span className="min-w-0 break-all text-ink">{person.email}</span>
+                      <span className="text-[12px] text-ink-secondary">{t("interim.counts", { bots: person.bots, rooms: person.rooms, routines: person.routines })}</span>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex min-w-0 flex-1 basis-48 items-center gap-2 text-ink-secondary">
-                      <span className="shrink-0">{t("interim.pick")}</span>
-                      <select className="min-w-0 flex-1 rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-ink" value={target} disabled={busy}
-                        onChange={(event) => setPicked((current) => ({ ...current, [person.principalId]: event.target.value }))}>
-                        <option value="">{t("interim.choose")}</option>
-                        {directory.map((entry) => <option key={entry.principalId} value={entry.principalId}>{entry.name} ({entry.login})</option>)}
-                      </select>
-                    </label>
-                    <button type="button" className="ui-button" disabled={busy || !target} onClick={() => setConfirming(person.principalId)}>{t("interim.attach")}</button>
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-        {notice && <p role="status" className="text-ink">{notice}</p>}
-        {error && <p role="alert" className="text-danger">{error}</p>}
-        <button type="button" className="ui-button w-fit" disabled={busy} onClick={() => void closeNow()}>{t("interim.closeNow")}</button>
-      </div>
-    </Card>
+                    {confirming === person.principalId ? (
+                      <div role="group" aria-label={t("interim.attach")} className="flex flex-wrap items-center justify-end gap-2">
+                        <p className="mr-auto min-w-0 text-[12px] text-ink">{t("interim.confirm", { from: person.email, to: nameOf(target) })}</p>
+                        <button type="button" className={PILL} autoFocus disabled={busy} onClick={() => setConfirming(null)}>{t("interim.cancel")}</button>
+                        <button type="button" className={cn(DANGER_PILL, "min-h-[44px] md:min-h-0")} disabled={busy} onClick={() => void attach(person)}>{t("interim.attach")}</button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <span className="mr-auto text-[12px] text-ink-secondary">{t("interim.pick")}</span>
+                        <PillSelect
+                          value={target}
+                          ariaLabel={t("interim.pick")}
+                          disabled={busy}
+                          onChange={(next) => setPicked((current) => ({ ...current, [person.principalId]: next }))}
+                          options={[{ value: "", label: t("interim.choose") }, ...directory.map((entry) => ({ value: entry.principalId, label: entry.name }))]}
+                        />
+                        <button type="button" className={PILL} disabled={busy || !target} onClick={() => setConfirming(person.principalId)}>{t("interim.attach")}</button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {notice && <p role="status" className="text-[12px] text-ink">{notice}</p>}
+            {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+            <button type="button" className={cn(PILL, "self-start")} disabled={busy} onClick={() => void closeNow()}>{t("interim.closeNow")}</button>
+          </div>
+        )}
+      >
+        <CountPill count={list.length} open={open} label={t("interim.title")} onToggle={() => setOpen((value) => !value)} />
+      </DescribedRow>
+    </div>
   );
 }

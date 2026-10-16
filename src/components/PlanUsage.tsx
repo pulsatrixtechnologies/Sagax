@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
 import { perspicaxKeysUrl, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { connectedPlanRows, planRows, type PlanRow, type PlanUsageReport, type PlanWindow } from "@/lib/plan-usage";
 import { usageLocale } from "@/lib/usage-personal";
-import { CompactRow, SettingsGroup } from "./SettingsPrimitives";
+import { CompactRow, PILL, SettingsGroup } from "./SettingsPrimitives";
 
 function formatResetDistance(resetsAt: string | null, now: number): string | null {
   if (!resetsAt) return null;
@@ -264,7 +264,7 @@ export function PlanUsageView({ report, loading, now, onRefresh, issuer }: PlanU
               target="_blank"
               rel="noreferrer noopener"
               data-plan-keys-link
-              className="ui-button min-h-[44px] md:min-h-0"
+              className={PILL}
             >
               {t("myEngines.manageKeys")} <ExternalLink size={12} aria-hidden="true" />
             </a>

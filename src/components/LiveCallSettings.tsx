@@ -1,12 +1,13 @@
 import { useCallback, useState } from "react";
 
+import { cn } from "@/lib/cn";
 import { LIVE_VOICE_OPTIONS } from "../../shared/live-call";
 import { t } from "@/lib/i18n";
 import { liveDisclosure } from "@/lib/call-mode";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import type { LiveSettings } from "../../shared/wire";
 import { SettingsText } from "./SettingsLink";
-import { PillSelect, SwitchRow } from "./SettingsPrimitives";
+import { PILL, PillSelect, SwitchRow } from "./SettingsPrimitives";
 
 const IDLE_CHOICES = [1, 2, 3, 5, 10, 15, 30, 60];
 
@@ -128,7 +129,7 @@ export function LiveCallInstallationSettings() {
           {live.separateKey ? t("call.live.separateKey") : live.configured ? t("call.live.usesOpenAiKey") : t("call.live.needsOpenAiKey")}
         </span>
         {live.separateKey && (
-          <button type="button" className="ui-button min-h-[44px] shrink-0 text-danger md:min-h-0" disabled={saving} onClick={() => void removeKey()}>
+          <button type="button" className={cn(PILL, "shrink-0 text-danger")} disabled={saving} onClick={() => void removeKey()}>
             {t("call.live.keyRemove")}
           </button>
         )}

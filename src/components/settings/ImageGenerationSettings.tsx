@@ -4,6 +4,7 @@
 // optional key and the xAI key (Grok images) are rows of the Keys list on the
 // same page, and this card says whether the chosen provider's key is saved,
 // with "Add in Keys" when it is not (one place for every key).
+import { cn } from "@/lib/cn";
 import { useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 
@@ -12,7 +13,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { normalizeImageGenerationUrl, type AvatarImageProvider } from "../../../shared/image-generation";
 import { KeyInKeys, type KeyRowId } from "./ProviderKeys";
-import { DescribedRow, PillSelect } from "../SettingsPrimitives";
+import { DescribedRow, PILL, PillSelect } from "../SettingsPrimitives";
 
 const PROVIDER_LABEL: Record<AvatarImageProvider, LocaleKey> = {
   openai: "imageGen.provider.openai",
@@ -32,7 +33,7 @@ const PROVIDER_KEY_ROW: Record<AvatarImageProvider, KeyRowId> = {
 };
 
 const INPUT_CLASS = "w-full min-w-0 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-secondary focus:outline-none disabled:opacity-50";
-const BUTTON_CLASS = "ui-button min-h-[44px] shrink-0 disabled:opacity-50 md:min-h-0";
+const BUTTON_CLASS = cn(PILL, "shrink-0");
 
 /** `keysLink`: the Keys list is on this page, so a missing key links to its
  * row (false in a remote window, where the list is not shown). */

@@ -178,14 +178,15 @@ describe("Model providers on an organization server", () => {
 });
 
 describe("who sees the Keys group", () => {
-  it("keeps the keys to the admins in an organization, to whoever manages keys elsewhere, never in a remote window", async () => {
+  it("keeps the keys to the admins and to members allowed to manage engines in an organization, to whoever manages keys elsewhere, never in a remote window", async () => {
     const { keysShown } = await import("./EnginesSettings");
-    const viewer = (role: "owner" | "admin" | "member", operator = false, capabilities?: Record<string, boolean>) =>
-      ({ viewer: { role, operator, principalId: "p", email: "", name: "", canCreateBots: true, ...(capabilities ? { capabilities } : {}) } }) as never;
+    const viewer = (role: "owner" | "admin" | "member", operator = false, capabilities?: Record<string, boolean>, permissions?: string[]) =>
+      ({ viewer: { role, operator, principalId: "p", email: "", name: "", canCreateBots: true, ...(capabilities ? { capabilities } : {}), ...(permissions ? { permissions } : {}) } }) as never;
     expect(keysShown({ member: false, remote: false, organization: true, config: viewer("admin") })).toBe(true);
     expect(keysShown({ member: false, remote: false, organization: true, config: viewer("owner") })).toBe(true);
-    // a member allowed to manage the server's engines still sees no key
-    expect(keysShown({ member: false, remote: false, organization: true, config: viewer("member") })).toBe(false);
+    // a member sees the keys only when their profile includes engines.manage (JC, 2026-10-16)
+    expect(keysShown({ member: false, remote: false, organization: true, config: viewer("member", false, undefined, []) })).toBe(false);
+    expect(keysShown({ member: false, remote: false, organization: true, config: viewer("member", false, undefined, ["engines.manage"]) })).toBe(true);
     expect(keysShown({ member: true, remote: false, organization: true, config: viewer("member") })).toBe(false);
     expect(keysShown({ member: false, remote: true, organization: false, config: undefined })).toBe(false);
     expect(keysShown({ member: false, remote: false, organization: false, config: undefined })).toBe(true);

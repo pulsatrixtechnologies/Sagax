@@ -25,7 +25,7 @@ import {
   type ConfigSection,
   type TestableProvider,
 } from "../ApiKeys";
-import { FoldRow, HelpTip, requestSettingsCard } from "../SettingsPrimitives";
+import { FoldRow, HelpTip, PILL, requestSettingsCard } from "../SettingsPrimitives";
 
 export type KeyRowId = "openai" | "anthropic" | "xai" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage" | "openrouter" | "mistral" | "openaiCompat" | "opencodeGo";
 
@@ -209,7 +209,7 @@ export function ProviderKeyRows({ rows }: { rows: readonly KeyRowId[] }) {
               type="button"
               onClick={() => openProviderKeyDialog(id)}
               aria-label={`${saved ? t("providerKeys.manage") : t("providerKeys.add")} · ${t(row.nameKey)}`}
-              className="ui-button min-h-[44px] shrink-0 md:min-h-0"
+              className={cn(PILL, "shrink-0")}
             >
               {saved ? t("providerKeys.manage") : t("providerKeys.add")}
             </button>

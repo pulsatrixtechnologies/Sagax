@@ -175,7 +175,8 @@ describe("Settings > Organization (cards from General > Advanced, 2026-10-15)", 
     expect(html).toContain("Routines in the conversation");
     expect(switchNamed("Run routines in the conversation")?.checked).toBe(true);
     expect(html).toContain('data-settings-card="organization.roomTurns"');
-    expect(html).toContain(">12 min per turn<");
+    // 0.5.6: a row with its minutes field, no folded card
+    expect(html).toMatch(/id="room-turn-timeout"[^>]*value="12"/);
     expect(html).toContain('data-settings-card="organization.mcpCalls"');
     expect(html.indexOf("Routines in the conversation")).toBeLessThan(html.indexOf("Group turns"));
     // the cards another branch moves to each bot are not here

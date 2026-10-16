@@ -404,16 +404,17 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
   );
 }
 
-/** In an organization, keys are the admins' (2026-10-16): an owner, an
- * admin or the server's operator. Elsewhere whoever may manage the
- * installation's keys. Never in a remote window, where the key store is not
- * this server's. */
+/** In an organization, keys are for an owner, an admin, the server's
+ * operator, or a member whose profile includes engines.manage (JC,
+ * 2026-10-16: as before). Elsewhere whoever may manage the installation's
+ * keys. Never in a remote window, where the key store is not this
+ * server's. */
 export function keysShown(input: { member: boolean; remote: boolean; organization: boolean; config: ConfigStatus | null | undefined }): boolean {
-  if (input.member || input.remote || !canManageKeys(input.config)) return false;
+  if (input.member || input.remote) return false;
   const viewer = input.config?.viewer;
   // an older server names no viewer: the screen it had
-  if (!input.organization || !viewer) return true;
-  return viewer.operator || viewerIsOrgAdmin(input.config);
+  if (!input.organization || !viewer) return canManageKeys(input.config);
+  return viewer.operator || viewerIsOrgAdmin(input.config) || viewerCan(input.config, "engines.manage");
 }
 
 /** Settings > Models and voice (2026-10-14), laid out as Grok Bot's settings

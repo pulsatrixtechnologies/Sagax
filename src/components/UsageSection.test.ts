@@ -242,7 +242,7 @@ describe("Usage laid out as Grok Bot's", () => {
     expect(html).toContain(">Coût<");
     expect(html.indexOf('data-settings-row="month"')).toBeLessThan(html.indexOf('data-settings-row="days30"'));
     expect(html).toMatch(/data-settings-card="usage.breakdown" data-open="false"/);
-    expect(html).toMatch(/data-disclosure-pill=""[^>]*>2</);
+    expect(html).toMatch(/data-count-pill=""[^>]*>2</);
     // still in the page while folded
     expect(html).toContain("Hibou");
     expect(html).not.toContain("data-usage-org-link");

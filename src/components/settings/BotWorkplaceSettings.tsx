@@ -12,7 +12,7 @@ import { Link2 } from "lucide-react";
 import { activeLocale, t } from "@/lib/i18n";
 import { currentDesktop, readWorkplace, useDesktopBridgeStatus, writeWorkplace, type DesktopBridgeActivity, type DesktopBridgeDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import { DEFAULT_BOT_WORKPLACE, type BotWorkplace } from "../../../shared/bot-workplace";
-import { DescribedRow, DisclosurePill, PillSelect, Switch } from "../SettingsPrimitives";
+import { CountPill, DescribedRow, PillSelect, Switch } from "../SettingsPrimitives";
 
 function when(ms: number): string {
   return new Intl.DateTimeFormat(activeLocale(), { dateStyle: "short", timeStyle: "short" }).format(new Date(ms));
@@ -90,11 +90,11 @@ export function BotWorkplaceSettings({ status: given }: { status?: DesktopBridge
             </ul>
           )}
         >
-          <DisclosurePill
-            open={showOthers}
-            onToggle={() => setShowOthers((open) => !open)}
-            label={t(showOthers ? "computer.others.hide" : "computer.others.show")}
+          <CountPill
             count={others.length}
+            open={showOthers}
+            label={t(showOthers ? "computer.others.hide" : "computer.others.show")}
+            onToggle={() => setShowOthers((open) => !open)}
           />
         </DescribedRow>
       )}

@@ -24,7 +24,7 @@ import { t } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { setOrgApprovalsCount, useOrgApprovalsVersion } from "@/lib/org-approvals";
 import { api } from "@/state/store";
-import { Card } from "./SettingsPrimitives";
+import { CountPill, DescribedRow, PILL, SettingsGroup } from "./SettingsPrimitives";
 import { InterimPeople } from "./settings/InterimPeople";
 
 import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
@@ -66,10 +66,18 @@ export function showInterimCard(admin: boolean, interim: PerspicaxOrg["settings"
   return admin && Boolean(interim?.until) && ((interim?.people ?? 0) > 0 || shownBefore);
 }
 
-export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; onChanged: () => void | Promise<void> }) {
+export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = null }: {
+  org: PerspicaxOrg;
+  onChanged: () => void | Promise<void>;
+  /** More rows of the organization's bots group (routines, group turns, MCP calls). */
+  botRows?: React.ReactNode;
+  /** What follows the two groups (This computer). */
+  after?: React.ReactNode;
+}) {
   const admin = org.viewerRole === "admin";
   const [approvals, setApprovals] = useState<PendingAdminApproval[] | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
+  const [showApprovals, setShowApprovals] = useState(false);
   const interim = org.settings.interimAttach;
   const [interimShown, setInterimShown] = useState(false);
   const interimVisible = showInterimCard(admin, interim, interimShown);
@@ -104,54 +112,72 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
     }
   };
 
+  // 0.5.6 (JC): Grok Bot's layout. "Organization": its name, the link and
+  // the viewer's role on one grey line, Manage in Perspicax as a pill; the
+  // people from before Perspicax folded behind a count. "Organization's
+  // bots": the commands waiting for an admin (folded, with a count), Full
+  // access, and the rows the page adds (routines, group turns, MCP calls).
+  const linked = org.link.state === "ok";
+  const role = admin ? t("organization.role.adminShort") : t("organization.role.memberShort");
+  const waiting = approvals ?? [];
   return (
     <>
-      <Card cardId="organization.perspicax" title={org.org.name} summary={linkStateLine(org.link)}>
-        <div className="flex flex-col gap-3 text-[13px]" data-perspicax-org>
-          <p role="status" className={org.link.state === "ok" ? "text-ink" : "text-warning"}>{linkStateLine(org.link)}</p>
-          <p className="text-ink-secondary">{admin ? t("organization.role.admin") : t("organization.role.member")}</p>
-          <a
-            href={perspicaxConsoleUrl(org.org.identity.issuer)}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="ui-button flex w-fit items-center gap-1.5"
+      <SettingsGroup title={t("settings.section.organization")} groupId="organization">
+        <div data-settings-card="organization.perspicax" data-perspicax-org>
+          <DescribedRow
+            label={org.org.name}
+            rowId="perspicax"
+            description={<span role="status" className={linked ? undefined : "text-warning"}>{linked ? t("organization.link.okShort") : linkStateLine(org.link)} · {role}</span>}
           >
-            <ExternalLink size={13} aria-hidden="true" />
-            {t("organization.manageInPerspicax")}
-          </a>
+            <a href={perspicaxConsoleUrl(org.org.identity.issuer)} target="_blank" rel="noreferrer noopener" className={`${PILL} inline-flex items-center gap-1.5`}>
+              {t("organization.manageInPerspicax")}
+              <ExternalLink size={12} aria-hidden="true" className="text-ink-secondary" />
+            </a>
+          </DescribedRow>
         </div>
-      </Card>
-      {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
-      {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
-      {admin && (
-        <Card cardId="organization.adminApprovals" title={t("organization.adminApprovals.title")} summary={approvals?.length ? String(approvals.length) : ""}>
-          {!approvals?.length ? (
-            <p className="text-[13px] text-ink-secondary">{t("organization.adminApprovals.empty")}</p>
-          ) : (
-            <ul className="flex flex-col divide-y divide-hairline/40">
-              {approvals.map((approval) => (
-                <li key={`${approval.threadId}:${approval.requestId}`} className="flex min-w-0 flex-col gap-2 py-2">
-                  <div className="flex min-w-0 items-baseline justify-between gap-2">
-                    <span className="truncate text-[13px] text-ink">{approvalWho(approval)}</span>
-                    {approval.tool && <span className="shrink-0 font-mono text-[11px] text-ink-secondary">{approval.tool}</span>}
-                  </div>
-                  {approval.summary && (
-                    <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[12px] text-ink">{approval.summary}</pre>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className="ui-button text-danger" disabled={answering !== null} onClick={() => void answer(approval, "deny")}>
-                      {t("organization.adminApprovals.deny")}
-                    </button>
-                    <button type="button" className="ui-button" disabled={answering !== null} onClick={() => void answer(approval, "allow")}>
-                      {t("organization.adminApprovals.allow")}
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      )}
+        {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
+      </SettingsGroup>
+      <SettingsGroup title={t("organization.group.bots")} groupId="organizationBots">
+        {admin && (
+          <div data-settings-card="organization.adminApprovals">
+            <DescribedRow
+              label={t("organization.adminApprovals.title")}
+              rowId="adminApprovals"
+              description={waiting.length ? approvalWho(waiting[0]!) : t("organization.adminApprovals.empty")}
+              below={showApprovals && waiting.length > 0 && (
+                <ul className="mt-2 flex flex-col gap-1" aria-label={t("organization.adminApprovals.title")}>
+                  {waiting.map((approval) => (
+                    <li key={`${approval.threadId}:${approval.requestId}`} className="flex min-w-0 flex-col gap-1.5 rounded-lg bg-inset px-3 py-2">
+                      <div className="flex min-w-0 items-baseline justify-between gap-2">
+                        <span className="truncate text-[13px] text-ink">{approvalWho(approval)}</span>
+                        {approval.tool && <span className="shrink-0 text-[12px] text-ink-secondary">{approval.tool}</span>}
+                      </div>
+                      {approval.summary && (
+                        <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-app/40 px-2.5 py-1.5 font-mono text-[12px] text-ink">{approval.summary}</pre>
+                      )}
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button type="button" className={`${PILL} text-danger`} disabled={answering !== null} onClick={() => void answer(approval, "deny")}>
+                          {t("organization.adminApprovals.deny")}
+                        </button>
+                        <button type="button" className={PILL} disabled={answering !== null} onClick={() => void answer(approval, "allow")}>
+                          {t("organization.adminApprovals.allow")}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            >
+              {waiting.length > 0 && (
+                <CountPill count={waiting.length} open={showApprovals} label={t("organization.adminApprovals.title")} onToggle={() => setShowApprovals((value) => !value)} />
+              )}
+            </DescribedRow>
+          </div>
+        )}
+        {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
+        {botRows}
+      </SettingsGroup>
+      {after}
     </>
   );
 }

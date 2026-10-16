@@ -2,7 +2,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { copyText } from "@/lib/copy-text";
 import type { OrgRole } from "../../server/org-directory.ts";
 import { t } from "@/lib/i18n";
-import { Card, cardCount } from "./SettingsPrimitives";
+import { Card, CountPill, DANGER_PILL, DescribedRow, PILL, SettingsGroup, cardCount } from "./SettingsPrimitives";
 import { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
 
 export type OrgPersonView = { id: string; role: OrgRole; email?: string };
@@ -25,7 +25,7 @@ function CopyLinkButton({ link }: { link: string }) {
   return (
     <button
       type="button"
-      className="ui-button"
+      className={PILL}
       onClick={() => {
         void copyText(link).then((result) => setCopied(result === "copied"));
       }}
@@ -73,6 +73,8 @@ export function OrgDirectory({
   const [email, setEmail] = useState("");
   const [editing, setEditing] = useState(false);
   const [address, setAddress] = useState("");
+  const [showPeople, setShowPeople] = useState(false);
+  const [showPending, setShowPending] = useState(false);
 
   if (!org) {
     return (
@@ -85,121 +87,170 @@ export function OrgDirectory({
   const currentAddress = org.host?.kind === "server" ? org.host.url : "";
   const nextHost = orgHostFromInput(address);
 
+  // 0.5.6 (JC): Grok Bot's rows under a People heading. The server's address
+  // (when it has one) with Edit, Invite with its field at the right, then
+  // the people and the pending invitations folded behind a count. A solo
+  // server's own invitations carry no organization name worth a row (it was
+  // this computer's host name), so none is drawn.
   return (
     <>
-    <Card collapsible cardId="organization.directory" title={org.name} summary={org.host ? currentAddress || t("settings.card.notSet") : cardCount("people", people.length)}>
-      {/* A solo server's own invitations carry no organization address. */}
-      {org.host && <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-secondary">
-        <span>{t("org.serverAddress")}:</span>
-        <span className="break-all text-ink">{currentAddress || "-"}</span>
-        {canManage && onUpdateHost && !editing && (
-          <button type="button" className="ui-button" onClick={() => { setAddress(currentAddress); setEditing(true); }}>
-            {t("org.editAddress")}
-          </button>
-        )}
-      </div>}
-      {editing && (
-        <form
-          className="mt-2 flex flex-col gap-2"
-          onSubmit={async (event: FormEvent) => {
-            event.preventDefault();
-            if (!nextHost || !onUpdateHost) return;
-            try {
-              await onUpdateHost(nextHost);
-              setEditing(false);
-            } catch {
-              // The parent shows the error; keep the draft so it can be corrected.
-            }
-          }}
-        >
-          <input
-            name="org-server-address-edit"
-            value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            placeholder="https://…"
-            autoCapitalize="none" autoCorrect="off" autoComplete="off" spellCheck={false}
-            className={inputClass}
-          />
-          {address.trim() && !nextHost && <span className="text-[12px] text-ink-secondary">{t("org.addressInvalid")}</span>}
-          <div className="flex gap-2">
-            <button type="submit" disabled={!nextHost} className="ui-button ui-button-primary disabled:opacity-50">{t("org.saveAddress")}</button>
-            <button type="button" className="ui-button" onClick={() => setEditing(false)}>{t("org.cancel")}</button>
-          </div>
-        </form>
-      )}
-      {invitesOff && <p className="mt-3 text-[12.5px] text-ink-secondary">{t("org.managedInPerspicax")}</p>}
-    </Card>
-    {canManage && domainSettings}
-    {canManage && !invitesOff && (
-      <Card collapsible cardId="organization.invite" title={t("org.inviteTitle")} summary={t("settings.card.inviteSummary")}>
-        {lastInvite?.link && (
-          <div role="status" className="mb-3 rounded-lg border-[0.5px] border-border bg-elevated p-3">
-            <p className="text-[13px] text-ink">{t("org.inviteLinkReady", { email: lastInvite.email })}</p>
-            <code dir="ltr" className="mt-2 block select-all break-all text-[12px] text-ink-secondary">{lastInvite.link}</code>
-            <div className="mt-2"><CopyLinkButton link={lastInvite.link} /></div>
+      <SettingsGroup title={t("org.people")} groupId="people">
+        {org.host && (
+          <div data-settings-card="organization.directory">
+            <DescribedRow
+              label={t("org.serverAddress")}
+              rowId="serverAddress"
+              description={<span className="break-all">{currentAddress || "-"}</span>}
+              below={editing && (
+                <form
+                  className="mt-2 flex flex-col gap-2"
+                  onSubmit={async (event: FormEvent) => {
+                    event.preventDefault();
+                    if (!nextHost || !onUpdateHost) return;
+                    try {
+                      await onUpdateHost(nextHost);
+                      setEditing(false);
+                    } catch {
+                      // The parent shows the error; keep the draft so it can be corrected.
+                    }
+                  }}
+                >
+                  <input
+                    name="org-server-address-edit"
+                    aria-label={t("org.serverAddress")}
+                    value={address}
+                    onChange={(event) => setAddress(event.target.value)}
+                    placeholder="https://…"
+                    autoCapitalize="none" autoCorrect="off" autoComplete="off" spellCheck={false}
+                    className={inputClass}
+                  />
+                  {address.trim() && !nextHost && <span className="text-[12px] text-ink-secondary">{t("org.addressInvalid")}</span>}
+                  <div className="flex justify-end gap-2">
+                    <button type="button" className={PILL} onClick={() => setEditing(false)}>{t("org.cancel")}</button>
+                    <button type="submit" disabled={!nextHost} className="ui-button ui-button-primary min-h-[44px] disabled:opacity-50 md:min-h-0">{t("org.saveAddress")}</button>
+                  </div>
+                </form>
+              )}
+            >
+              {canManage && onUpdateHost && !editing && (
+                <button type="button" className={PILL} onClick={() => { setAddress(currentAddress); setEditing(true); }}>
+                  {t("org.editAddress")}
+                </button>
+              )}
+            </DescribedRow>
           </div>
         )}
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={async (event: FormEvent) => {
-            event.preventDefault();
-            const value = email.trim();
-            if (!value) return;
-            try {
-              await onInvite(value);
-              setEmail("");
-            } catch {
-              // Keep the address so a refused invite can be corrected.
-            }
-          }}
-        >
-          <label className="flex flex-col gap-1.5 text-[13px] text-ink">
-            {t("org.inviteEmail")}
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className={inputClass}
-            />
-          </label>
-          <button type="submit" className="ui-button w-fit">
-            {t("org.invite")}
-          </button>
-        </form>
-      </Card>
-    )}
-      {canManage && (
-        <Card collapsible cardId="organization.people" defaultOpen={false} title={t("org.people")} summary={cardCount("people", people.length)}>
-          <ul className="divide-y divide-hairline/40">
-            {people.map((person) => (
-              <li key={person.id} className="flex justify-between gap-2 py-2 text-[13px] text-ink">
-                <span className="break-all" title={person.id}>{personLabel(person)}</span>
-                <span className="shrink-0 text-ink-secondary">{roleLabel(person.role)}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-      {canManage && !invitesOff && pendingInvites.length > 0 && (
-        <Card collapsible cardId="organization.pending" defaultOpen={false} title={t("org.pendingInvites")} summary={t("settings.card.pending", { count: pendingInvites.length })}>
-          <ul className="divide-y divide-hairline/40">
-            {pendingInvites.map((invite) => (
-              <li key={invite.token ?? invite.email} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-[13px] text-ink-secondary">
-                <span className="break-all">{invite.email}</span>
-                {canManage && (invite.link || (invite.token && onRevoke)) && (
-                  <span className="flex gap-2">
-                    {invite.link && <CopyLinkButton link={invite.link} />}
-                    {invite.token && onRevoke && (
-                      <button type="button" className="ui-button" onClick={() => void onRevoke(invite.token!)}>{t("org.revoke")}</button>
-                    )}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-[12px] text-ink-secondary">{t("org.pendingHint")}</p>
-        </Card>
-      )}
+        {canManage && !invitesOff && (
+          <div data-settings-card="organization.invite">
+            <DescribedRow
+              label={t("org.inviteTitle")}
+              rowId="invite"
+              below={lastInvite?.link && (
+                <div role="status" className="mt-2 rounded-lg bg-inset px-3 py-2">
+                  <p className="text-[12px] text-ink">{t("org.inviteLinkReady", { email: lastInvite.email })}</p>
+                  <div className="mt-1.5 flex min-w-0 items-center gap-2">
+                    <code dir="ltr" className="min-w-0 flex-1 select-all break-all text-[12px] text-ink-secondary">{lastInvite.link}</code>
+                    <CopyLinkButton link={lastInvite.link} />
+                  </div>
+                </div>
+              )}
+            >
+              <form
+                className="flex min-w-0 flex-wrap items-center justify-end gap-2"
+                onSubmit={async (event: FormEvent) => {
+                  event.preventDefault();
+                  const value = email.trim();
+                  if (!value) return;
+                  try {
+                    await onInvite(value);
+                    setEmail("");
+                  } catch {
+                    // Keep the address so a refused invite can be corrected.
+                  }
+                }}
+              >
+                <input
+                  type="email"
+                  aria-label={t("org.inviteEmail")}
+                  placeholder={t("org.inviteEmail")}
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="h-7 min-h-[44px] w-52 min-w-0 rounded-lg border-[0.5px] border-border bg-inset px-2.5 text-[13px] text-ink outline-none placeholder:text-ink-secondary focus:border-focus md:min-h-0"
+                />
+                <button type="submit" className={PILL}>{t("org.invite")}</button>
+              </form>
+            </DescribedRow>
+          </div>
+        )}
+        {(canManage || invitesOff) && (
+          <div data-settings-card="organization.people">
+            <DescribedRow
+              label={t("org.people")}
+              rowId="people"
+              description={invitesOff ? t("org.managedInPerspicax") : undefined}
+              below={canManage && (
+                <ul hidden={!showPeople} className="mt-2 flex flex-col gap-0.5" aria-label={t("org.people")}>
+                  {people.map((person) => (
+                    <li key={person.id} className="flex min-w-0 items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-[13px] hover:bg-hover">
+                      <span className="min-w-0 break-all text-ink" title={person.id}>{personLabel(person)}</span>
+                      <span className="shrink-0 text-[12px] text-ink-secondary">{roleLabel(person.role)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            >
+              {canManage && <CountPill count={people.length} open={showPeople} label={cardCount("people", people.length)} onToggle={() => setShowPeople((open) => !open)} />}
+            </DescribedRow>
+          </div>
+        )}
+        {canManage && !invitesOff && pendingInvites.length > 0 && (
+          <div data-settings-card="organization.pending">
+            <DescribedRow
+              label={t("org.pendingInvites")}
+              rowId="pending"
+              description={t("org.pendingHint")}
+              below={(
+                <ul hidden={!showPending} className="mt-2 flex flex-col gap-0.5" aria-label={t("org.pendingInvites")}>
+                  {pendingInvites.map((invite) => (
+                    <li key={invite.token ?? invite.email} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-[13px]">
+                      <span className="min-w-0 break-all text-ink">{invite.email}</span>
+                      {(invite.link || (invite.token && onRevoke)) && (
+                        <span className="flex gap-2">
+                          {invite.link && <CopyLinkButton link={invite.link} />}
+                          {invite.token && onRevoke && (
+                            <button
+                              type="button"
+                              className={`${DANGER_PILL} min-h-[44px] md:min-h-0`}
+                              onClick={() => {
+                                if (!confirmRevoke(invite.email)) return;
+                                void onRevoke(invite.token!);
+                              }}
+                            >
+                              {t("org.revoke")}
+                            </button>
+                          )}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            >
+              <CountPill count={pendingInvites.length} open={showPending} label={t("settings.card.pending", { count: pendingInvites.length })} onToggle={() => setShowPending((open) => !open)} />
+            </DescribedRow>
+          </div>
+        )}
+      </SettingsGroup>
+      {canManage && domainSettings}
     </>
   );
+}
+
+/** Revoking an invitation asks first: its link stops working at once. */
+function confirmRevoke(email: string): boolean {
+  try {
+    return typeof window === "undefined" || typeof window.confirm !== "function" ? true : window.confirm(t("org.revokeConfirm", { email }));
+  } catch {
+    return true;
+  }
 }

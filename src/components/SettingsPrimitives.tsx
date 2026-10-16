@@ -341,6 +341,7 @@ export function SettingsGroup({
   title,
   groupId,
   accessory,
+  plain,
   children,
 }: {
   title: string;
@@ -348,6 +349,9 @@ export function SettingsGroup({
   groupId: string;
   /** Shown after the heading, as Grok Bot's "Your computer · <name>". */
   accessory?: React.ReactNode;
+  /** The children are cards of their own (forms with several fields): the
+   * heading only, no card around them. */
+  plain?: boolean;
   children: React.ReactNode;
 }) {
   const headingId = useId();
@@ -357,10 +361,104 @@ export function SettingsGroup({
         <h3 id={headingId} className="shrink-0 text-[13px] font-normal leading-[18px] text-ink-secondary">{title}</h3>
         {accessory}
       </div>
-      <div className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5 empty:hidden">{children}</div>
+      <div className={plain ? "flex flex-col gap-2 empty:hidden" : "flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5 empty:hidden"}>{children}</div>
     </section>
   );
 }
+
+/** Grok Bot's count pill ("2 ⌄"): how many items a row holds, and the
+ * button that unfolds them under the row. */
+export function CountPill({ count, open, onToggle, label, controls }: {
+  /** Without a count the pill shows the chevron alone. */
+  count?: number;
+  open: boolean;
+  onToggle: () => void;
+  label: string;
+  /** The id of what it unfolds. */
+  controls?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-controls={controls}
+      aria-label={label}
+      onClick={onToggle}
+      data-count-pill=""
+      className="inline-flex h-7 min-h-[44px] items-center gap-1 rounded-full px-2.5 text-[13px] text-ink tabular-nums transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 aria-expanded:bg-hover motion-reduce:transition-none md:min-h-0"
+    >
+      {count}
+      <ChevronDown size={13} aria-hidden="true" className={cn("text-ink-secondary transition-transform motion-reduce:transition-none", open && "rotate-180")} />
+    </button>
+  );
+}
+
+/** A small number field with its unit ("5 min"), for a row's right side.
+ * It saves on blur and on Enter, as the forms it replaces did. */
+export function UnitField({
+  id,
+  value,
+  unit,
+  label,
+  min,
+  max,
+  step = 1,
+  decimal,
+  disabled,
+  invalid,
+  describedBy,
+  onChange,
+  onCommit,
+}: {
+  id?: string;
+  value: string;
+  unit: string;
+  label: string;
+  min: number;
+  max: number;
+  step?: number;
+  decimal?: boolean;
+  disabled?: boolean;
+  invalid?: boolean;
+  describedBy?: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+}) {
+  return (
+    <span
+      data-unit-field=""
+      className={cn(
+        "inline-flex h-7 min-h-[44px] items-center gap-1 rounded-lg border-[0.5px] bg-inset pl-2 pr-2.5 md:min-h-0",
+        invalid ? "border-danger/60" : "border-border focus-within:border-focus",
+        disabled && "opacity-50",
+      )}
+    >
+      <input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        inputMode={decimal ? "decimal" : "numeric"}
+        value={value}
+        disabled={disabled}
+        aria-label={label}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={onCommit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        className="w-14 min-w-0 bg-transparent text-right text-[13px] tabular-nums text-ink focus:outline-none disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      />
+      <span aria-hidden="true" className="text-[13px] text-ink-secondary">{unit}</span>
+    </span>
+  );
+}
+
+/** Grok Bot's grey pill button, 44 px tall on a touch screen. */
+export const PILL = "ui-button min-h-[44px] disabled:opacity-50 md:min-h-0";
 
 export type PillOption<T extends string> = { value: T; label: string };
 
@@ -541,35 +639,8 @@ export function DescribedRow({
 /** Grok Bot's filled red pill, for a reset that erases. */
 export const DANGER_PILL = "ui-button bg-danger font-medium text-danger-ink enabled:hover:brightness-110 disabled:opacity-50";
 
-/** Grok Bot's count pill ("1 ⌄"): opens and closes what a row holds (a
- * list, a few settings). Without `count` it shows the chevron alone. */
-export function DisclosurePill({ open, onToggle, label, count, controls }: {
-  open: boolean;
-  onToggle: () => void;
-  /** What the pill opens, for screen readers ("Show other computers"). */
-  label: string;
-  count?: number;
-  controls?: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-expanded={open}
-      aria-controls={controls}
-      aria-label={label}
-      title={label}
-      onClick={onToggle}
-      data-disclosure-pill=""
-      className="inline-flex h-7 min-h-[44px] items-center gap-1 rounded-full px-2.5 text-[13px] text-ink tabular-nums transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 aria-expanded:bg-hover motion-reduce:transition-none md:min-h-0"
-    >
-      {count !== undefined && count}
-      <ChevronDown size={13} aria-hidden="true" className={cn("text-ink-secondary transition-transform motion-reduce:transition-none", open && "rotate-180")} />
-    </button>
-  );
-}
-
 /** A row of a settings group that folds what it holds under a count pill
- * (Grok Bot's "Other computers 1 ⌄"). `cardId` remembers the choice on this
+ * (Grok Bot's "Other computers 1 ⌄", a CountPill). `cardId` remembers the choice on this
  * device and lets a search or a link open it (requestSettingsCard). The body
  * stays mounted while folded, so drafts and saves are unaffected. */
 export function FoldRow({ cardId, defaultOpen = false, label, description, help, icon, count, toggleLabel, controls, children }: {
@@ -598,7 +669,7 @@ export function FoldRow({ cardId, defaultOpen = false, label, description, help,
         below={<div id={bodyId} hidden={!open} className="mt-2">{children}</div>}
       >
         {controls}
-        <DisclosurePill open={open} onToggle={toggle} label={toggleLabel ?? label} count={count} controls={bodyId} />
+        <CountPill open={open} onToggle={toggle} label={toggleLabel ?? label} count={count} controls={bodyId} />
       </DescribedRow>
     </div>
   );

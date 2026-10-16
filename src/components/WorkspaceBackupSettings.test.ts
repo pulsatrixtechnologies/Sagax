@@ -24,7 +24,10 @@ type Node = ReactElement<{ children?: ReactNode; type?: string; disabled?: boole
 function nodes(value: ReactNode): Node[] {
   if (!isValidElement(value)) return [];
   const node = value as Node;
-  return [node, ...Children.toArray(node.props.children).flatMap(nodes)];
+  // A settings row (DescribedRow) carries what it opens in `below`, and a
+  // group its heading's extras in `accessory`: walk them too.
+  const extra = node.props as { below?: ReactNode; accessory?: ReactNode };
+  return [node, ...Children.toArray(node.props.children).flatMap(nodes), ...nodes(extra.below), ...nodes(extra.accessory)];
 }
 function render(recovery: boolean | "restart" = false) {
   fixture.index = 0; fixture.effects = [];

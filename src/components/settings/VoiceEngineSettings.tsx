@@ -14,7 +14,7 @@ import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { KeyInKeys, keyRowSaved, type KeyRowId } from "./ProviderKeys";
-import { DescribedRow, PillSelect } from "../SettingsPrimitives";
+import { DescribedRow, PILL, PillSelect } from "../SettingsPrimitives";
 
 const FISH_MODELS = [
   { value: "s2.1-pro", label: "voice.fish.modelPro" },
@@ -23,7 +23,7 @@ const FISH_MODELS = [
 type FishModel = (typeof FISH_MODELS)[number]["value"];
 
 const INPUT_CLASS = "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none";
-const SAVE_CLASS = "ui-button min-h-[44px] shrink-0 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-0";
+const SAVE_CLASS = cn(PILL, "shrink-0 disabled:cursor-not-allowed");
 
 /** The key row of the list a cloud voice engine runs on. */
 export function voiceKeyRow(provider: string | undefined): KeyRowId | null {

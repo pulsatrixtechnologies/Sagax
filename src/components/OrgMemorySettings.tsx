@@ -9,7 +9,7 @@
 // vault lives under Application Support, out of iCloud Drive, OneDrive and
 // Time Machine, and is erased when the person leaves the organization.
 import { useState } from "react";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import {
   orgMemoryStatus,
@@ -23,7 +23,7 @@ import {
   type OrgMemoryState,
 } from "@/lib/org-memory";
 import type { LocaleKey } from "@/locales";
-import { SettingRow } from "./SettingsPrimitives";
+import { DescribedRow, PILL } from "./SettingsPrimitives";
 
 /** What the page says when Obsidian did not open the vault. */
 type OpenProblem = "not_installed" | "add_vault" | "failed";
@@ -52,7 +52,11 @@ export function OrgMemorySettings() {
   const bridge = typeof window === "undefined" ? undefined : window.ogb?.orgMemory;
   const org = usePerspicaxOrg();
   if (!bridge) {
-    return <p className="text-[13px] leading-relaxed text-ink-secondary">{t("settings.memory.desktopOnly")}</p>;
+    return (
+      <div data-settings-card="organization.memory">
+        <DescribedRow label={t("settings.section.memory")} rowId="memory" description={t("settings.memory.desktopOnly")} />
+      </div>
+    );
   }
   return <OrgMemoryPanel bridge={bridge} orgName={org?.org.name ?? null} />;
 }
@@ -69,11 +73,14 @@ export function OrgMemoryPanel({ bridge, orgName, initial = null, initialOpenPro
   const title = state?.connected
     ? t("settings.memory.syncedWith", { org: orgName || "Perspicax" })
     : status === "failed" ? t("settings.memory.notSynced") : t("settings.memory.settingUp");
+  const when = state?.lastSyncAt
+    ? t("settings.memory.lastSync", { when: new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(state.lastSyncAt)) })
+    : t("settings.memory.neverSynced");
   const subtitle = status === "syncing" || status === "setting-up"
-    ? t("settings.memory.syncing")
+    ? `${title} · ${t("settings.memory.syncing")}`
     : status === "failed" && errorKey
-      ? <span role="alert" className="text-warning">{t(errorKey)}</span>
-      : state?.lastSyncAt ? t("settings.memory.lastSync", { when: new Date(state.lastSyncAt).toLocaleString() }) : t("settings.memory.neverSynced");
+      ? <>{title} · <span role="alert" className="text-warning">{t(errorKey)}</span></>
+      : `${title} · ${when}`;
 
   const openInObsidian = async () => {
     setOpening(true);
@@ -87,51 +94,51 @@ export function OrgMemoryPanel({ bridge, orgName, initial = null, initialOpenPro
     }
   };
 
-  return (
-    <div className="space-y-3">
-      <p className="text-[13px] leading-relaxed text-ink-secondary">{t("settings.memory.intro")}</p>
-      {state?.cloudFolder && <p role="alert" className="text-[13px] text-danger">{t("settings.memory.cloudFolder", { place: state.cloudFolder })}</p>}
-      {state?.lastError && !state.autoError && <p role="alert" className="text-[13px] text-warning">{state.lastError}</p>}
-
-      <div className="rounded-[14px] border-[0.5px] border-border py-1">
-        <SettingRow title={title} subtitle={subtitle}>
-          <div className="flex flex-wrap gap-2">
-            {status === "failed" && (
-              <button type="button" className="ui-button" disabled={running} onClick={() => void runOrgMemoryAuto(bridge)}>
-                {t("settings.memory.retry")}
-              </button>
-            )}
-            {state?.cloned && (
-              <button type="button" className="ui-button" disabled={opening} onClick={() => void openInObsidian()}>
-                {t("settings.memory.openInObsidian")}
-              </button>
-            )}
-          </div>
-        </SettingRow>
-        {(state?.pendingCount ?? 0) > 0 && (
-          <SettingRow title={t("settings.memory.pending")} subtitle={t("settings.memory.pendingHint")}>
-            <span className="text-[13px] tabular-nums">{t("settings.memory.pendingCount", { count: String(state?.pendingCount ?? 0) })}</span>
-          </SettingRow>
-        )}
-      </div>
+  // 0.5.6 (JC): Grok-style rows of "This computer": the memory (its state
+  // and last sync on one grey line, Open in Obsidian as a pill), then what
+  // waits for a review, as a count.
+  const notes = (
+    <>
+      {state?.cloudFolder && <p role="alert" className="mt-1.5 text-[12px] text-danger">{t("settings.memory.cloudFolder", { place: state.cloudFolder })}</p>}
+      {state?.lastError && !state.autoError && <p role="alert" className="mt-1.5 text-[12px] text-warning">{state.lastError}</p>}
       {problem && (
-        <div role="alert" className="flex flex-wrap items-center gap-2 text-[13px]">
+        <div role="alert" className="mt-1.5 flex flex-wrap items-center gap-2 text-[12px]">
           <span className={problem === "add_vault" ? "text-ink-secondary" : "text-danger"}>{t(OPEN_KEY[problem])}</span>
           {state?.cloned && typeof bridge.showFolder === "function" && (
-            <button type="button" className="ui-button" onClick={() => void bridge.showFolder().catch(() => false)}>
+            <button type="button" className={PILL} onClick={() => void bridge.showFolder().catch(() => false)}>
               {t("settings.memory.showFolder")}
             </button>
           )}
         </div>
       )}
-
       {(attention > 0 || refused > 0) && (
-        <p className="text-[12px] text-ink-secondary">
+        <p className="mt-1.5 text-[12px] text-ink-secondary">
           {[
             attention > 0 ? t("settings.memory.attentionCount", { count: String(attention) }) : null,
             refused > 0 ? t("settings.memory.refusedCount", { count: String(refused) }) : null,
           ].filter(Boolean).join(" · ")}
         </p>
+      )}
+    </>
+  );
+  return (
+    <div data-settings-card="organization.memory" data-org-memory={status}>
+      <DescribedRow label={t("settings.section.memory")} rowId="memory" description={subtitle} below={notes}>
+        {status === "failed" && (
+          <button type="button" className={PILL} disabled={running} onClick={() => void runOrgMemoryAuto(bridge)}>
+            {t("settings.memory.retry")}
+          </button>
+        )}
+        {state?.cloned && (
+          <button type="button" className={PILL} disabled={opening} onClick={() => void openInObsidian()}>
+            {t("settings.memory.openInObsidian")}
+          </button>
+        )}
+      </DescribedRow>
+      {(state?.pendingCount ?? 0) > 0 && (
+        <DescribedRow label={t("settings.memory.pending")} rowId="memoryPending">
+          <span className="px-2.5 text-[13px] tabular-nums text-ink">{t("settings.memory.pendingCount", { count: String(state?.pendingCount ?? 0) })}</span>
+        </DescribedRow>
       )}
     </div>
   );

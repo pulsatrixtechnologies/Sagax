@@ -6,7 +6,7 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Archive, Bell, Check, Coins, Download, ExternalLink, FlaskConical, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled } from "@/lib/feature-flags";
+import { connectedAppsEnabled, decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -18,6 +18,7 @@ import { brand } from "@/lib/brand";
 import { useServerMode } from "./ServerModeSettings";
 import { ApiKeyRow, credentialCopy } from "./ApiKeys";
 import { DecisionModelSettings } from "./DecisionModelSettings";
+import { GeneralAdvancedSettings, generalAdvancedShown, isSoloDesktop } from "./settings/AdvancedSettings";
 import { useUpdaterState } from "@/lib/updater";
 import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
@@ -25,7 +26,7 @@ import { peopleListServed, readMembership } from "../lib/membership";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { canEditConfig, canManageBackups, canManageComputers, viewerCan } from "@/lib/viewer";
 import { OrganizationSettings } from "./OrganizationSettings";
-import { Card, CompactRow, DescribedRow, PillSelect, SettingRow, SettingsGroup, Switch, requestSettingsCard, takeRequestedSettingsCard } from "./SettingsPrimitives";
+import { CompactRow, DescribedRow, PILL, PillSelect, requestSettingsCard, SettingRow, SettingsGroup, Switch, takeRequestedSettingsCard } from "./SettingsPrimitives";
 import { OrgMemorySettings } from "./OrgMemorySettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
@@ -38,14 +39,9 @@ import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { workspacesAvailable } from "./WorkspacesSection";
 import { applySkin, readSkin, visibleSkins, type SkinId } from "@/lib/skins";
 import { readRetroUnlocked } from "@/lib/retro98";
-import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { AboutMeEditor, aboutMeFirstLine } from "./AboutMeSettings";
-import { McpCallTimeoutSettings } from "./McpCallTimeoutSettings";
-import { PeopleToolAccessSettings } from "./ToolAccessSettings";
-import { mcpCallTimeoutMinutes } from "@/lib/mcp-call-timeout";
 import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { AccountCard } from "./settings/AccountCard";
-import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
 import { DefaultBotSettings } from "./NewBotDialog";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { cn } from "@/lib/cn";
@@ -55,6 +51,8 @@ import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/l
 
 // The threads choice moved with Appearance (0.5.6); old imports still work.
 export { chooseThreadsView } from "./settings/AppearanceSettings";
+
+export { GeneralAdvancedSettings, generalAdvancedShown, isSoloDesktop };
 
 const COMPOSIO_PLATFORM_URL = "https://platform.composio.dev";
 
@@ -75,9 +73,9 @@ export const SECTIONS: Array<{
 }> = [
   // 0.5.6 (JC): General is laid out as Grok Bot's (Account, Appearance,
   // System); Updates is a page of its own, as there.
-  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "theme", "thème", "language", "langue", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
+  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "nettoyage", "grants", "autorisations", "theme", "thème", "language", "langue", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
   // 2026-10-14: Memory is a card of this page (it was its own section).
-  { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy", ...ORGANIZATION_ADVANCED_KEYWORDS] },
+  { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy", "full access", "accès complet", "approvals", "approbations", "waiting for an admin", "en attente", "people from before", "rattacher", "invite", "inviter", "invitation", "people", "personnes", "this computer", "cet ordinateur", "serveurs", "oublier", "forget", ...ORGANIZATION_ADVANCED_KEYWORDS] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
   // 2026-10-14: Privacy is a card of this page on an organization server.
   { id: "notifications", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
@@ -92,7 +90,7 @@ export const SECTIONS: Array<{
   { id: "updates", labelKey: "settings.updates.title", icon: Download, keywords: ["updates", "update", "version", "mise à jour", "mises à jour", "prerelease", "pre-release", "beta", "bêta", "restart"] },
   // 2026-10-15: People and Installations are hidden in the app, like Email,
   // Activity and Pair devices (settings-sections.ts HIDDEN).
-  { id: "backups", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery"] },
+  { id: "backups", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery", "backup", "sauvegarde", "exporter", "restaurer", "replace", "remplacer", "mot de passe"] },
 ];
 
 /** Former sections that are a card of another page now (2026-10-14), by the
@@ -110,6 +108,7 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "general.aboutMe": ["about me"],
   "general.threadCleanup": ["cleanup", "retention", "event log", "event-log", "log size"],
   "organization.mcpCalls": ["mcp", "timeout", "tool call"],
+  "organization.fullAccess": ["full access", "accès complet"],
   "connections.integrations": ["box", "vps"],
   "connections.image": ["image", "avatar", "gpt image"],
   "engines.moreProviders": ["openrouter", "mistral", "opencode", "base url", "compatible", "cursor", "cloud agent", "elevenlabs", "fish audio", "image key"],
@@ -121,7 +120,7 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "connections.cloudAgents": ["cursor", "cloud agent", "cloud coding"],
   "usage.breakdown": ["by bot", "by model", "par bot", "par modèle"],
   "organization.memory": ["obsidian", "vault"],
-  "backups.import": ["import", "restore"],
+  "backups.import": ["import", "restore", "restaurer"],
 };
 
 export function cardsMatching(query: string): string[] {
@@ -196,7 +195,7 @@ function ConnectedAppsGroup({ config }: { config: ConfigStatus | null | undefine
           description={<span data-connected-apps-state={config?.composio.mode ?? "unavailable"}>{connectedAppsSummary(config)}</span>}
           below={<div className="mt-2"><ApiKeyRow section="composio" bare /></div>}
         >
-          <a href={COMPOSIO_PLATFORM_URL} target="_blank" rel="noopener noreferrer" className="ui-button min-h-[44px] md:min-h-0">
+          <a href={COMPOSIO_PLATFORM_URL} target="_blank" rel="noopener noreferrer" className={PILL}>
             platform.composio.dev
             <ExternalLink size={12} aria-hidden="true" />
           </a>
@@ -436,171 +435,6 @@ function MicrophoneRow() {
         </button>
       )}
     </CompactRow>
-  );
-}
-
-function RoutinesInConversationRow() {
-  const { state, dispatch } = useStore();
-  const enabled = routinesInConversationEnabled(state.config);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const toggle = async () => {
-    if (saving) return;
-    setSaving(true);
-    setError("");
-    try {
-      const config: ConfigStatus = await api("/api/config", {
-        method: "PATCH",
-        body: JSON.stringify({ features: { routinesInConversation: !enabled } }),
-      });
-      dispatch({ type: "configStatus", config });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("settings.routinesInConversation.error"));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingRow
-      title={t("settings.routinesInConversation.title")}
-      subtitle={t("settings.routinesInConversation.short")}
-      help={t("settings.routinesInConversation.subtitle")}
-      message={error ? <p role="alert" className="text-danger">{error}</p> : null}
-    >
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.routinesInConversation.aria")}
-        disabled={saving}
-        onClick={() => void toggle()}
-        className="disabled:cursor-wait disabled:opacity-50"
-      />
-    </SettingRow>
-  );
-}
-
-/** Writes a redacted diagnostics file to a location the user picks. The
- * report holds versions, configured-or-not booleans and the server.log tail:
- * never credential values (the desktop shell does not read secret fields). */
-function DiagnosticsRow() {
-  const [exporting, setExporting] = useState(false);
-  const [result, setResult] = useState<{ kind: "success" | "error"; message: string } | null>(null);
-
-  const exportDiagnostics = async () => {
-    if (!window.ogb?.exportDiagnostics || exporting) return;
-    setExporting(true);
-    setResult(null);
-    try {
-      const path = await window.ogb.exportDiagnostics();
-      if (path) setResult({ kind: "success", message: t("settings.diagnostics.saved", { path }) });
-    } catch (e) {
-      setResult({ kind: "error", message: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  return (
-    <SettingRow
-      title={t("settings.diagnostics.title")}
-      subtitle={t("settings.diagnostics.short")}
-      help={t("settings.diagnostics.subtitle")}
-      message={result ? (
-        <p role={result.kind === "error" ? "alert" : "status"} className={cn("break-all", result.kind === "error" ? "text-danger" : "text-success")}>
-          {result.message}
-        </p>
-      ) : null}
-    >
-      <button
-        onClick={() => void exportDiagnostics()}
-        disabled={exporting}
-        aria-label={t("settings.diagnostics.aria")}
-        className="ui-button"
-      >
-        {exporting ? t("settings.diagnostics.exporting") : t("settings.diagnostics.export")}
-      </button>
-    </SettingRow>
-  );
-}
-
-/** The desktop app in "No server" mode: Settings > Organization is hidden
- * there (nothing to show until it joins one). */
-export function isSoloDesktop(config: ConfigStatus | null | undefined): boolean {
-  const remoteActive = window.ogb?.remoteClient?.active === true;
-  return !remoteActive && Boolean(launchBridges(window.ogb)) && config?.onboarding?.launchMode !== "server";
-}
-
-/** Organization > routines in the conversation, group turns and MCP calls
- * (2026-10-15, JC: they were in General > Advanced; they set how the bots of
- * the organization work). Admin or owner only, in Advanced mode, as before.
- * A desktop with no server shows them in General > Advanced instead
- * (Organization is hidden there): same cards, same ids. */
-export function OrganizationAdvancedCards() {
-  const { state } = useStore();
-  const remoteActive = window.ogb?.remoteClient?.active === true;
-  if (!canEditConfig(state.config)) return null;
-  return (
-    <>
-      {!remoteActive && (
-        <div className="rounded-[14px] border-[0.5px] border-border py-1" data-settings-card="organization.routinesInConversation">
-          <RoutinesInConversationRow />
-        </div>
-      )}
-      <Card
-        collapsible
-        cardId="organization.roomTurns"
-        defaultOpen={false}
-        title={t("settings.roomTurns.title")}
-        subtitle={t("settings.roomTurns.subtitle")}
-        summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
-      >
-        <RoomTurnTimeoutSettings />
-      </Card>
-      <Card
-        collapsible
-        cardId="organization.mcpCalls"
-        defaultOpen={false}
-        title={t("settings.mcpCalls.title")}
-        subtitle={t("settings.mcpCalls.subtitle")}
-        summary={`${mcpCallTimeoutMinutes(state.config)} ${t("settings.mcpCalls.minutes")}`}
-      >
-        <McpCallTimeoutSettings />
-      </Card>
-    </>
-  );
-}
-
-/** Whether General > Advanced holds anything for this viewer: its cards are
- * an installation editor's, but for Diagnostics, which is the desktop app's. */
-export function generalAdvancedShown(config: ConfigStatus | null | undefined): boolean {
-  return canEditConfig(config) || Boolean(typeof window !== "undefined" && window.ogb?.exportDiagnostics);
-}
-
-/** General > Advanced (2026-10-14): the technical cards of General on a page
- * of their own, shown in Advanced mode. 2026-10-15: routines in the
- * conversation, group turns and MCP calls moved to Organization; they stay
- * here on a desktop with no server, where Organization is hidden. Their
- * saved values apply whether or not anyone looks. */
-export function GeneralAdvancedSettings() {
-  const { state } = useStore();
-  const editConfig = canEditConfig(state.config);
-  return (
-    <div className="flex flex-col gap-3" data-general-advanced="">
-      {isSoloDesktop(state.config) && <OrganizationAdvancedCards />}
-      {editConfig && (
-        <>
-          {/* 2026-10-15: Tool access, Parallel conversations and Automatic
-              recovery are each bot's own, in its editor (Permissions and
-              Model pages). A person's grants stay here. */}
-          <PeopleToolAccessSettings />
-          <ThreadCleanupSettings />
-        </>
-      )}
-      <div className="rounded-[14px] border-[0.5px] border-border py-1 empty:hidden">
-        <DiagnosticsRow />
-      </div>
-    </div>
   );
 }
 
@@ -874,19 +708,18 @@ export function SettingsModal() {
             </h2>
             <div className="flex flex-col gap-3 px-4 pb-6 pt-4 sm:px-8">
             <LicenseExpiryBanner config={state.config} />
+            {/* 0.5.6 (JC): Grok Bot's layout (OrganizationSettings): grey
+                headings over cards of rows. Memory and, from General >
+                Advanced (2026-10-15), routines in the conversation, group
+                turns and MCP calls are rows of its groups. */}
             {section === "organization" && (
-              <>
-                {allowed("organization") && <OrganizationSettings />}
-                {/* Memory (2026-10-14): a card of Organization, not a page. */}
-                {memoryShown && (
-                  <Card collapsible cardId="organization.memory" title={t("settings.section.memory")}>
+              allowed("organization")
+                ? <OrganizationSettings advanced={advanced} memoryShown={memoryShown} />
+                : memoryShown && (
+                  <SettingsGroup title={t("settings.thisComputer.title")} groupId="thisComputer">
                     <OrgMemorySettings />
-                  </Card>
-                )}
-                {/* From General > Advanced (2026-10-15): routines in the
-                    conversation, group turns, MCP calls. */}
-                {advanced && allowed("organization") && <OrganizationAdvancedCards />}
-              </>
+                  </SettingsGroup>
+                )
             )}
             {section === "general" && (
               <>

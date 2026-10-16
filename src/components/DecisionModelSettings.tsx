@@ -11,7 +11,7 @@ import { api, useStore, type ConfigStatus } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { CompactRow, DescribedRow, HelpTip, SettingsGroup, Switch } from "./SettingsPrimitives";
+import { CompactRow, DescribedRow, HelpTip, PILL, SettingsGroup, Switch } from "./SettingsPrimitives";
 
 const KEY_URL = "https://typesafe.ai";
 
@@ -171,7 +171,7 @@ export function DecisionModelSettings() {
                   onClick={() => void save()}
                   disabled={saving || (!draft && !ownKey)}
                   title={clearing ? t("keys.removeKey") : t("common.save")}
-                  className={cn("ui-button min-h-[44px] shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 md:min-h-0", clearing && "text-danger")}
+                  className={cn(PILL, "shrink-0 cursor-pointer disabled:cursor-not-allowed", clearing && "text-danger")}
                 >
                   {saving ? <Loader2 size={13} className="animate-spin" /> : clearing ? t("keys.clear") : <><Check size={13} />{t("common.save")}</>}
                 </button>
@@ -180,7 +180,7 @@ export function DecisionModelSettings() {
                   data-testid="decider-test"
                   onClick={() => void test()}
                   disabled={testing || saving || (!draft && !configured)}
-                  className="ui-button min-h-[44px] shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 md:min-h-0"
+                  className={cn(PILL, "shrink-0 cursor-pointer disabled:cursor-not-allowed")}
                 >
                   {testing ? t("keys.testing") : t("keys.test")}
                 </button>

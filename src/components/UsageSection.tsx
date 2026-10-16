@@ -28,7 +28,7 @@ import {
 } from "@/lib/usage-personal";
 import { PlanUsage } from "./PlanUsage";
 import { perspicaxConsoleUrl } from "./PerspicaxOrgSettings";
-import { CompactRow, DescribedRow, FoldRow, SettingsGroup } from "./SettingsPrimitives";
+import { CompactRow, DescribedRow, FoldRow, PILL, SettingsGroup } from "./SettingsPrimitives";
 
 export interface PersonalUsage {
   month: PersonalUsageSummary;
@@ -197,7 +197,7 @@ export function CostCard({ usage, error, consoleUrl = null }: { usage: PersonalU
               target="_blank"
               rel="noopener noreferrer"
               data-usage-org-link
-              className="ui-button min-h-[44px] md:min-h-0"
+              className={PILL}
             >
               {t("usage.personal.openConsole")}
               <ExternalLink size={12} aria-hidden="true" />

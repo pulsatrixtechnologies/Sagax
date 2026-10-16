@@ -11,7 +11,7 @@ import { serverModeBridge } from "@/lib/launch";
 import { sharedComputersEnabled } from "@/lib/feature-flags";
 import { useStore } from "@/state/store";
 import { ComputerSharingSettings } from "./ComputerSharingSettings";
-import { Card } from "./SettingsPrimitives";
+import { Card, DescribedRow, PILL } from "./SettingsPrimitives";
 
 export type ServerModeState = { active: false } | { active: true; id: string; name: string; origin: string };
 
@@ -52,11 +52,22 @@ export function ServerModeComputerAccess() {
   const [open, setOpen] = useState(false);
   if (!serverMode?.active || !window.ogb?.computerSharing) return null;
   const offered = sharedComputersEnabled(state.config);
+  // 0.5.6 (JC): a Grok-style row of "This computer"; the access choices
+  // open under it.
   return (
-    <Card cardId="organization.serverModeComputer" title={t("settings.serverMode.computerTitle")} subtitle={t("settings.serverMode.computerBody")}>
-      {!offered ? <p className="text-[13px] text-ink-secondary">{t("settings.serverMode.computerOff")}</p>
-        : open ? <ComputerSharingSettings key={serverMode.id} workspace={serverMode} onClose={() => setOpen(false)} />
-        : <button type="button" onClick={() => setOpen(true)} className="ui-button">{t("settings.serverMode.computerOpen")}</button>}
-    </Card>
+    <div data-settings-card="organization.serverModeComputer">
+      <DescribedRow
+        label={t("settings.serverMode.computerTitle")}
+        rowId="serverModeComputer"
+        description={offered ? t("settings.serverMode.computerShort") : t("settings.serverMode.computerOff")}
+        below={offered && open && <div className="mt-2"><ComputerSharingSettings key={serverMode.id} workspace={serverMode} onClose={() => setOpen(false)} /></div>}
+      >
+        {offered && (
+          <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className={PILL}>
+            {t("settings.serverMode.computerOpen")}
+          </button>
+        )}
+      </DescribedRow>
+    </div>
   );
 }

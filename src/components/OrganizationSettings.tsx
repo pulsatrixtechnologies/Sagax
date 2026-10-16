@@ -10,6 +10,9 @@ import { OrgDirectory, type OrgPersonView, type PendingInviteView } from "./OrgD
 import type { OrgRole } from "../../server/org-directory.ts";
 import { isPerspicaxOrg, type PerspicaxOrg } from "@/lib/perspicax-org";
 import { ServerModeComputerAccess } from "./ServerModeSettings";
+import { OrgMemorySettings } from "./OrgMemorySettings";
+import { SettingsGroup } from "./SettingsPrimitives";
+import { OrganizationBotRows } from "./settings/OrganizationBotRules";
 
 type ServerInvites = { org: { name: string }; people: OrgPersonView[]; pendingInvites: PendingInviteView[]; viewerRole?: OrgRole | null };
 
@@ -73,8 +76,12 @@ function ServerInvitesDirectory() {
 }
 
 /** Settings → Organization is Perspicax (or a solo server's own invitations).
- * The hosted Sagax Admin portal is not offered here. */
-export function OrganizationSettings() {
+ * The hosted Sagax Admin portal is not offered here. 0.5.6 (JC): Grok Bot's
+ * layout, grey headings over cards of rows. On an organization server:
+ * Organization, Organization's bots (with routines, group turns and MCP
+ * calls in Advanced mode), This computer (its access for the bots, the
+ * memory). On a solo server: Servers, People, Organization's bots. */
+export function OrganizationSettings({ advanced = false, memoryShown = false }: { advanced?: boolean; memoryShown?: boolean } = {}) {
   const { state: store } = useStore();
   const remoteActive = window.ogb?.remoteClient?.active === true;
   const [orgReady, setOrgReady] = useState(false);
@@ -128,19 +135,16 @@ export function OrganizationSettings() {
   const hasSavedServers = (servers?.count ?? 0) > 0;
   const showJoinOnly = !hasSavedServers && !connectedToAnotherServer;
 
-  // Server mode: this person's own computer for the organization's bots.
-  if (perspicaxOrg) return <>
-    <PerspicaxOrgSettings org={perspicaxOrg} onChanged={() => loadOrg()} />
-    <ServerModeComputerAccess />
-  </>;
-
-  const directory = (
-    <>
-      {orgReady && !remoteActive && <ServerInvitesDirectory />}
-      {orgReady && !remoteActive && store.config?.viewer?.operator !== false && <CustomDomainSettings />}
-      {directoryError && <p role="alert" className="text-[13px] text-danger">{directoryError}</p>}
-    </>
+  const botRows = advanced ? <OrganizationBotRows /> : null;
+  const thisComputer = (
+    <SettingsGroup title={t("settings.thisComputer.title")} groupId="thisComputer">
+      <ServerModeComputerAccess />
+      {memoryShown && <OrgMemorySettings />}
+    </SettingsGroup>
   );
+
+  // Server mode: this person's own computer for the organization's bots.
+  if (perspicaxOrg) return <PerspicaxOrgSettings org={perspicaxOrg} onChanged={() => loadOrg()} botRows={botRows} after={thisComputer} />;
 
   // No server joined yet: the join card.
   // Otherwise, show the servers this desktop already connects to (switch,
@@ -150,14 +154,20 @@ export function OrganizationSettings() {
   // 2026-10-14: one "Connect to a server" card holds the three ways in
   // (Perspicax, a Sagax server's link, another computer); open while
   // nothing is connected yet. A desktop that is another computer's client
-  // keeps that connection's card, with Disconnect.
-  const joinOrConnect = !orgReady ? null : <>
-    {!showJoinOnly && <ConnectedWorkspacesSettings />}
-    {remoteActive && <RemoteComputerSection />}
-    <ConnectServerWizard defaultOpen={showJoinOnly} />
-  </>;
+  // keeps that connection's card, with Disconnect. The forms keep their
+  // cards under the Servers heading; the domain card joins them.
   return <>
-    {joinOrConnect}
-    {directory}
+    {orgReady && (
+      <SettingsGroup plain title={t("settings.servers.unnamed")} groupId="servers">
+        {!showJoinOnly && <ConnectedWorkspacesSettings />}
+        {remoteActive && <RemoteComputerSection />}
+        <ConnectServerWizard defaultOpen={showJoinOnly} />
+        {!remoteActive && store.config?.viewer?.operator !== false && <CustomDomainSettings />}
+      </SettingsGroup>
+    )}
+    {orgReady && !remoteActive && <ServerInvitesDirectory />}
+    {directoryError && <p role="alert" className="text-[13px] text-danger">{directoryError}</p>}
+    <SettingsGroup title={t("organization.group.bots")} groupId="organizationBots">{botRows}</SettingsGroup>
+    {thisComputer}
   </>;
 }

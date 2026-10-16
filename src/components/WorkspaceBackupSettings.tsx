@@ -4,10 +4,12 @@ import type { WorkspaceBackupSummary } from "../../shared/workspace-backup";
 import { api, useStore } from "@/state/store";
 import { canManageBackups } from "@/lib/viewer";
 import { t } from "@/lib/i18n";
+import { DANGER_PILL, DescribedRow, HelpTip, PILL, SettingsGroup } from "./SettingsPrimitives";
 import { applyWorkspaceClientState, collectWorkspaceClientState, WORKSPACE_RESTORE_MARKER } from "@/lib/workspace-backup-client";
 
 type BackupStatus = { busy: boolean; pendingRestore?: boolean; lastRestoreId?: string };
-const inputClass = "w-full rounded-lg border border-hairline/50 bg-inset px-3 py-2 text-[14px] text-ink disabled:opacity-50";
+const inputClass = "w-full rounded-lg border-[0.5px] border-border bg-inset px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-focus disabled:opacity-50";
+const primaryPill = "ui-button ui-button-primary min-h-[44px] gap-1.5 self-end font-medium disabled:opacity-50 md:min-h-0";
 const buttonClass = "cursor-pointer inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-accent-ink disabled:opacity-40";
 const validPassword = (value: string) => value.length >= 12 && value.length <= 1024;
 
@@ -158,52 +160,67 @@ function WorkspaceBackupForm() {
   });
 
   const disabled = busy !== null || !status || status.busy || Boolean(status.pendingRestore);
-  // 2026-10-14 (JC: "too many containers for simple backups"): one card, one
-  // short sentence with what is included right under it (2026-10-15, JC: no
-  // need to fold it), and two actions side by side; each opens its own form
-  // in place.
-  const actionClass = (open: boolean) => `cursor-pointer inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] ${open ? "border-accent/50 bg-accent/10 text-ink" : "border-hairline/50 text-ink hover:bg-hover"}`;
-  return <section data-settings-card="backups" className="flex flex-col gap-3 rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
-    <div>
-      <h3 className="text-[13px] font-medium text-ink">{t("backup.title")}</h3>
-      <p className="mt-0.5 text-[13px] leading-[18px] text-ink-secondary">{t("backup.short")}</p>
-      <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[12.5px] leading-[17px] text-ink-secondary" data-backup-included>
+  // 0.5.6 (JC): Grok Bot's layout. A grey "Full backup" heading (what is
+  // included behind its info button), then two rows, Export and Restore,
+  // each a pill that opens its form under the row. Replacing the
+  // installation is a red pill, after the typed REPLACE.
+  const toggle = (which: "export" | "import") => setOpen((current) => current === which ? null : which);
+  return <SettingsGroup
+    title={t("backup.title")}
+    groupId="backups"
+    accessory={<HelpTip label={t("backup.included")}>
+      <ul className="list-disc space-y-1 pl-4" data-backup-included>
         <li>{t("backup.scope")}</li>
         <li>{t("backup.excluded")}</li>
         <li className="text-warning">{t("backup.privacy")}</li>
       </ul>
+    </HelpTip>}
+  >
+    <div data-settings-card="backups" className="flex flex-col">
+      {error && <p role="alert" className="break-words px-3.5 py-1.5 text-[12px] text-danger">{error}</p>}
+      {status?.pendingRestore ? <div className="px-3.5 py-2.5"><WorkspaceBackupRestartNotice /></div> : <>
+        {(!status || status.busy) && <div role="status" className="flex items-center gap-2 px-3.5 py-1.5 text-[12px] text-ink-secondary"><span>{status?.busy ? t("backup.serverBusy") : t("backup.checkStatus")}</span><button type="button" onClick={() => void refresh()} className="cursor-pointer underline">{t("connectors.action.retry")}</button></div>}
+        <DescribedRow
+          label={t("backup.exportAction")}
+          rowId="backupExport"
+          description={t("backup.short")}
+          below={open === "export" && <form data-backup-form="export" className="mt-2 flex flex-col gap-2.5" onSubmit={(event) => { event.preventDefault(); void exportBackup(); }}>
+            <label className="text-[12px] text-ink-secondary">{t("backup.exportPassword")}<input type="password" autoComplete="new-password" minLength={12} maxLength={1024} required disabled={disabled} value={exportPassword} onChange={(event) => setExportPassword(event.target.value)} className={`${inputClass} mt-1`} /></label>
+            <label className="text-[12px] text-ink-secondary">{t("backup.confirmPassword")}<input type="password" autoComplete="new-password" minLength={12} maxLength={1024} required disabled={disabled} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={`${inputClass} mt-1`} /></label>
+            <p className="text-[12px] leading-4 text-ink-secondary">{t("backup.passwordHint")}</p>
+            <p className="text-[12px] leading-4 text-warning">{t("backup.privacy")}</p>
+            <button type="submit" disabled={disabled || !validPassword(exportPassword) || exportPassword !== confirmPassword} className={primaryPill}>{busy === "export" ? <Loader2 aria-hidden="true" size={14} className="animate-spin" /> : <Download aria-hidden="true" size={14} />}{busy === "export" ? t("backup.exporting") : t("backup.export")}</button>
+            {download && <a href={download.url} download={download.filename} className="self-end break-all text-[12px] text-accent-text underline">{t("backup.downloadAgain", { filename: download.filename })}</a>}
+          </form>}
+        >
+          <button type="button" aria-expanded={open === "export"} data-backup-action="export" onClick={() => toggle("export")} className={PILL}>{t("backup.exportPill")}</button>
+        </DescribedRow>
+        <div data-settings-card="backups.import">
+          <DescribedRow
+            label={t("backup.restoreAction")}
+            rowId="backupRestore"
+            description={t("backup.restoreHint")}
+            below={open === "import" && <div data-backup-form="import" className="mt-2 flex flex-col gap-2.5">
+              <form className="flex flex-col gap-2.5" onSubmit={(event) => { event.preventDefault(); void previewBackup(); }}>
+                {/* The dialog offers .sagaxbackup only. An older .ombbackup still uploads: the server reads the bytes, not the name. */}
+                <label className="text-[12px] text-ink-secondary">{t("backup.file")}<input type="file" accept=".sagaxbackup" disabled={disabled} onChange={(event) => { setFile(event.target.files?.[0] ?? null); setUploadedId(null); setPreview(null); setConfirmation(""); setImportPassword(""); setError(null); }} className="mt-1 block w-full min-w-0 rounded-lg border-[0.5px] border-border bg-inset p-1.5 text-[13px] text-ink file:mr-3 file:rounded-full file:border-0 file:bg-control file:px-2.5 file:py-1 file:text-ink disabled:opacity-50" /></label>
+                {!preview && <><label className="text-[12px] text-ink-secondary">{t("backup.importPassword")}<input type="password" autoComplete="off" maxLength={1024} required disabled={disabled || !file} value={importPassword} onChange={(event) => setImportPassword(event.target.value)} className={`${inputClass} mt-1`} /></label><button type="submit" disabled={disabled || !file || !importPassword} className={primaryPill}>{busy === "preview" ? <Loader2 aria-hidden="true" size={14} className="animate-spin" /> : <Upload aria-hidden="true" size={14} />}{busy === "preview" ? t("backup.validating") : t("backup.validate")}</button></>}
+              </form>
+              {preview && <div className="flex flex-col gap-2.5">
+                <WorkspaceBackupSummaryView summary={preview.summary} />
+                <p className="text-[12px] leading-4 text-danger">{t("backup.replaceWarning")}</p>
+                <p className="text-[12px] leading-4 text-danger">{t("backup.trustWarning")}</p>
+                <label className="text-[12px] text-ink-secondary">{t("backup.confirmReplace")}<input value={confirmation} autoComplete="off" spellCheck={false} disabled={disabled} onChange={(event) => setConfirmation(event.target.value)} className={`${inputClass} mt-1`} /></label>
+                <button type="button" disabled={disabled || confirmation !== "REPLACE"} onClick={() => void restoreBackup()} className={`${DANGER_PILL} min-h-[44px] self-end md:min-h-0`}>{busy === "restore" ? t("backup.restoring") : t("backup.replace")}</button>
+              </div>}
+            </div>}
+          >
+            <button type="button" aria-expanded={open === "import"} data-backup-action="import" onClick={() => toggle("import")} className={PILL}>{t("backup.restorePill")}</button>
+          </DescribedRow>
+        </div>
+      </>}
     </div>
-    {error && <p role="alert" className="break-words text-[13px] text-danger">{error}</p>}
-    {status?.pendingRestore ? <div className="rounded-xl border border-warning/40 bg-warning/10 p-4 text-ink"><WorkspaceBackupRestartNotice /></div> : <>
-      {(!status || status.busy) && <div role="status" className="flex items-center gap-3 text-[13px] text-ink-secondary"><span>{status?.busy ? t("backup.serverBusy") : t("backup.checkStatus")}</span><button type="button" onClick={() => void refresh()} className="cursor-pointer underline">{t("connectors.action.retry")}</button></div>}
-      <div className="flex flex-wrap gap-2" role="group" aria-label={t("backup.title")}>
-        <button type="button" aria-expanded={open === "export"} data-backup-action="export" onClick={() => setOpen((current) => current === "export" ? null : "export")} className={actionClass(open === "export")}><Download aria-hidden="true" size={14} />{t("backup.exportAction")}</button>
-        <button type="button" aria-expanded={open === "import"} data-backup-action="import" onClick={() => setOpen((current) => current === "import" ? null : "import")} className={actionClass(open === "import")}><Upload aria-hidden="true" size={14} />{t("backup.restoreAction")}</button>
-      </div>
-      {open === "export" && <form data-backup-form="export" className="flex flex-col gap-3 border-t border-hairline/30 pt-3" onSubmit={(event) => { event.preventDefault(); void exportBackup(); }}>
-        <p className="text-[12.5px] leading-[17px] text-ink-secondary">{t("backup.passwordHint")}</p>
-        <label className="text-[13px] text-ink">{t("backup.exportPassword")}<input type="password" autoComplete="new-password" minLength={12} maxLength={1024} required disabled={disabled} value={exportPassword} onChange={(event) => setExportPassword(event.target.value)} className={`${inputClass} mt-1`} /></label>
-        <label className="text-[13px] text-ink">{t("backup.confirmPassword")}<input type="password" autoComplete="new-password" minLength={12} maxLength={1024} required disabled={disabled} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={`${inputClass} mt-1`} /></label>
-        <button type="submit" disabled={disabled || !validPassword(exportPassword) || exportPassword !== confirmPassword} className={`${buttonClass} self-start`}>{busy === "export" ? <Loader2 aria-hidden="true" size={15} className="animate-spin" /> : <Download aria-hidden="true" size={15} />}{busy === "export" ? t("backup.exporting") : t("backup.export")}</button>
-        {download && <a href={download.url} download={download.filename} className="break-all text-[13px] text-accent-text underline">{t("backup.downloadAgain", { filename: download.filename })}</a>}
-      </form>}
-      {open === "import" && <div data-backup-form="import" className="flex flex-col gap-3 border-t border-hairline/30 pt-3">
-        <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); void previewBackup(); }}>
-          <p className="text-[12.5px] leading-[17px] text-ink-secondary">{t("backup.importHint")}</p>
-          {/* The dialog offers .sagaxbackup only. An older .ombbackup still uploads: the server reads the bytes, not the name. */}
-          <label className="text-[13px] text-ink">{t("backup.file")}<input type="file" accept=".sagaxbackup" disabled={disabled} onChange={(event) => { setFile(event.target.files?.[0] ?? null); setUploadedId(null); setPreview(null); setConfirmation(""); setImportPassword(""); setError(null); }} className="mt-1 block w-full min-w-0 rounded-lg border border-hairline/50 bg-inset p-2 text-[13px] text-ink file:mr-3 file:rounded file:border-0 file:bg-control file:px-2 file:py-1 file:text-ink disabled:opacity-50" /></label>
-          {!preview && <><label className="text-[13px] text-ink">{t("backup.importPassword")}<input type="password" autoComplete="off" maxLength={1024} required disabled={disabled || !file} value={importPassword} onChange={(event) => setImportPassword(event.target.value)} className={`${inputClass} mt-1`} /></label><button type="submit" disabled={disabled || !file || !importPassword} className={`${buttonClass} self-start`}>{busy === "preview" ? <Loader2 aria-hidden="true" size={15} className="animate-spin" /> : <Upload aria-hidden="true" size={15} />}{busy === "preview" ? t("backup.validating") : t("backup.validate")}</button></>}
-        </form>
-        {preview && <div className="flex flex-col gap-3">
-          <WorkspaceBackupSummaryView summary={preview.summary} />
-          <p className="text-[13px] leading-relaxed text-danger">{t("backup.replaceWarning")}</p>
-          <p className="text-[13px] leading-relaxed text-danger">{t("backup.trustWarning")}</p>
-          <label className="text-[13px] text-ink">{t("backup.confirmReplace")}<input value={confirmation} autoComplete="off" spellCheck={false} disabled={disabled} onChange={(event) => setConfirmation(event.target.value)} className={`${inputClass} mt-1`} /></label>
-          <button type="button" disabled={disabled || confirmation !== "REPLACE"} onClick={() => void restoreBackup()} className="cursor-pointer self-start rounded-lg bg-danger px-3 py-2 text-[13px] font-medium text-danger-ink disabled:opacity-40">{busy === "restore" ? t("backup.restoring") : t("backup.replace")}</button>
-        </div>}
-      </div>}
-    </>}
-  </section>;
+  </SettingsGroup>;
 }
 
 function pendingRestoreId(): string | null {
