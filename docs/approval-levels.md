@@ -85,11 +85,22 @@ when such a turn asked.
 
 ### A member's bot on an organization server
 
-A bot whose owner is a member (not an organization admin) runs at its own
-level like any bot since 2026-10-16: Ask, Auto-accept edits and Approve for
-me pass through to the provider. Custom stays Ask (a `config.toml` on the
-shared server is not the member's), and Full keeps the organization rules
-above. Every organization turn withholds the engines' own tools that act on
+A bot whose owner is a member (not an organization admin) runs Ask as Ask.
+Its Auto-accept edits and Approve for me pass through to the provider only
+while an organization admin allows them: **Settings > Organization >
+Automatic approval levels for members' bots**, or `memberAutoApproval` in
+the admin API's `POST settings` (off unless an admin turns it on; each
+change is an `org.settings` row; `server/member-auto-approval.ts`). While it
+is off those levels run as Ask, and a change of a member's bot (or one of
+its threads) to one of them is refused with 403 `member_auto_not_allowed`;
+when it is on, a looser level still needs the person's security key when
+they chose the rule-change class. Once per organization server, unless the
+setting was already on, every saved Auto-accept edits or Approve for me
+level of a member's bot (the bot's own and each thread's) was set back to
+Ask (`organization.memberAutoResetAt` records the pass), so turning the
+setting on brings no earlier level back. Custom stays Ask (a `config.toml`
+on the shared server is not the member's), and Full keeps the organization
+rules above. Every organization turn withholds the engines' own tools that act on
 the server (shell, files, fetch: `docs/user-sandbox.md`), so what reaches
 Sagax is a Sagax tool, routed per tool: a card that would act on the shared
 server or beyond the owner's own rights still goes to an organization admin

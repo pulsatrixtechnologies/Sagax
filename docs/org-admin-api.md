@@ -904,7 +904,7 @@ never a message; a routine failure carries `routineId`.
 
 ```json
 {
-  "org": { "orgKeyConfigured": true, "allowFullAccess": true, "memberEnvironmentAutonomy": true, "pluginMarketplaces": { "mode": "any" }, "github": { "clientId": null, "fromEnvironment": false }, "interimAttach": { "until": null, "people": 0 } },
+  "org": { "orgKeyConfigured": true, "allowFullAccess": true, "memberEnvironmentAutonomy": true, "memberAutoApproval": false, "pluginMarketplaces": { "mode": "any" }, "github": { "clientId": null, "fromEnvironment": false }, "interimAttach": { "until": null, "people": 0 } },
   "policies": {
     "allowedMarketplaces": null,
     "allowedEngines": ["claude", "codex"],
@@ -921,14 +921,19 @@ server environment, their Local VM) without a card
 ([approval levels](approval-levels.md#the-owners-own-environment)).
 `confidentialThreadsByDefault` (off unless an admin turns it on in Sagax,
 Settings > Organisation, 2026-10-16): new threads start confidential
-([confidential threads](confidential-threads.md)); read only here. `null` in a
+([confidential threads](confidential-threads.md)); read only here.
+`memberAutoApproval` (off unless an admin turns it on, 2026-10-16): a bot a
+member owns runs Approve for me and Auto-accept edits as such; off, they run
+as Ask and a member cannot choose them
+([approval levels](approval-levels.md#a-members-bot-on-an-organization-server)).
+Turning it on brings back no level saved before. `null` in a
 policy list means any. `defaults` are the New bot defaults (engine, model,
 approval level).
 
 ### `POST settings`
 
 ```json
-{ "allowFullAccess": false, "memberEnvironmentAutonomy": true, "pluginMarketplaces": { "mode": "list", "allow": ["acme/plugins", "acme/*"] }, "allowedEngines": ["claude"], "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }, "interimAttachDays": 0 }
+{ "allowFullAccess": false, "memberEnvironmentAutonomy": true, "memberAutoApproval": false, "pluginMarketplaces": { "mode": "list", "allow": ["acme/plugins", "acme/*"] }, "allowedEngines": ["claude"], "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }, "interimAttachDays": 0 }
 ```
 
 Any subset. Answers `{settings}` (the GET shape). Refusals: 400

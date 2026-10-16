@@ -185,8 +185,18 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     // a new bot cannot carry a folder either
     expect((await api("POST", "/api/bots", bob, { name: "Twig", cwd: folder })).body).toMatchObject({ permission: "folders.botWorkingFolder" });
     bob = await bobWith([...MEMBER_DEFAULT_PERMISSIONS, "bots.approvalLevel", "folders.botWorkingFolder"]);
-    const allowed = await api("PATCH", `/api/bots/${id}`, bob, { approvalMode: "auto" });
-    expect(allowed.status, allowed.text).toBe(200);
+    // 2026-10-16: the permission opens the field; Approve for me on a
+    // member's bot also needs the organization's setting (off by default)
+    const notAllowed = await api("PATCH", `/api/bots/${id}`, bob, { approvalMode: "auto" });
+    expect(notAllowed.status, notAllowed.text).toBe(403);
+    expect(notAllowed.body).toMatchObject({ code: "member_auto_not_allowed" });
+    expect((await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: true })).status).toBe(200);
+    try {
+      const allowed = await api("PATCH", `/api/bots/${id}`, bob, { approvalMode: "auto" });
+      expect(allowed.status, allowed.text).toBe(200);
+    } finally {
+      expect((await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: false })).status).toBe(200);
+    }
     const moved = await api("PATCH", `/api/bots/${id}`, bob, { cwd: folder });
     expect(moved.status, moved.text).toBe(200);
     // still never the fields no permission opens

@@ -28,6 +28,7 @@ import { CountPill, DescribedRow, PILL, SettingsGroup } from "./SettingsPrimitiv
 import { InterimPeople } from "./settings/InterimPeople";
 
 import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
+import { OrgMemberAutoApprovalPolicy } from "./settings/OrgMemberAutoApprovalPolicy";
 import { OrgMemberEnvironmentPolicy } from "./settings/OrgMemberEnvironmentPolicy";
 import { OrgConfidentialThreadsDefault } from "./settings/OrgConfidentialThreadsDefault";
 
@@ -179,6 +180,7 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
         {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
         {admin && <OrgMemberEnvironmentPolicy initial={org.settings.memberEnvironmentAutonomy !== false} onChanged={onChanged} />}
         {admin && <OrgConfidentialThreadsDefault initial={org.settings.confidentialThreadsByDefault === true} onChanged={onChanged} />}
+        {admin && <OrgMemberAutoApprovalPolicy initial={org.settings.memberAutoApproval === true} onChanged={onChanged} />}
         {botRows}
       </SettingsGroup>
       {after}

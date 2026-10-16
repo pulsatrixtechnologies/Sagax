@@ -28,6 +28,9 @@ export interface PerspicaxOrg {
     /** New threads start confidential unless the person picks an ordinary
      * one (absent: off). */
     confidentialThreadsByDefault?: boolean;
+    /** Whether members' bots run Auto and Auto-accept edits as such
+     * (absent: off, they run as Ask). */
+    memberAutoApproval?: boolean;
     /** Where bots' Claude Code plugins may come from (any by default). */
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     /** The organization's GitHub OAuth App for "Connecter GitHub". */

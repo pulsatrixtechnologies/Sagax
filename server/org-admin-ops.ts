@@ -57,6 +57,7 @@ export interface OpsDeps {
 export interface SettingsChanges {
   allowFullAccess?: boolean;
   memberEnvironmentAutonomy?: boolean;
+  memberAutoApproval?: boolean;
   pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
   allowedEngines?: string[] | null;
   defaults?: { engine?: string | null; model?: string | null; approvalMode?: string | null };
@@ -83,7 +84,7 @@ export async function timed(check: () => Promise<TestResult | null>): Promise<{ 
 }
 
 function settingsChanges(body: Record<string, unknown>): SettingsChanges | string {
-  const extra = onlyKeys(body, ["allowFullAccess", "memberEnvironmentAutonomy", "pluginMarketplaces", "allowedEngines", "defaults", "interimAttachDays"]);
+  const extra = onlyKeys(body, ["allowFullAccess", "memberEnvironmentAutonomy", "memberAutoApproval", "pluginMarketplaces", "allowedEngines", "defaults", "interimAttachDays"]);
   if (extra) return extra;
   if (!Object.keys(body).length) return "Send at least one setting.";
   const out: SettingsChanges = {};
@@ -94,6 +95,10 @@ function settingsChanges(body: Record<string, unknown>): SettingsChanges | strin
   if (body.memberEnvironmentAutonomy !== undefined) {
     if (typeof body.memberEnvironmentAutonomy !== "boolean") return "memberEnvironmentAutonomy is true or false.";
     out.memberEnvironmentAutonomy = body.memberEnvironmentAutonomy;
+  }
+  if (body.memberAutoApproval !== undefined) {
+    if (typeof body.memberAutoApproval !== "boolean") return "memberAutoApproval is true or false.";
+    out.memberAutoApproval = body.memberAutoApproval;
   }
   if (body.pluginMarketplaces !== undefined) {
     const value = objectBody(body.pluginMarketplaces);

@@ -403,4 +403,44 @@ posixOnly("organization server environments (user-sandbox)", () => {
     expect(got.status, got.text).toBe(200);
     expect(got.body).toMatchObject({ backend: "sandbox", configured: true });
   });
+
+  it("2026-10-16: a member's bot runs Auto and Auto-accept edits only while the organization allows them", async () => {
+    // the one-time reset ran at start (nothing to reset here) and left its marker
+    const saved = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8")) as { organization?: { memberAutoResetAt?: unknown; memberAutoApproval?: unknown } };
+    expect(typeof saved.organization?.memberAutoResetAt).toBe("number");
+    expect(saved.organization?.memberAutoApproval).toBeUndefined();
+    expect(log).not.toContain("set back to Ask");
+    expect((await api("GET", "/api/org", alice)).body.settings.memberAutoApproval).toBe(false);
+    const fern = await createBot(bob, "Fern");
+    const level = (mode: string) => api("PATCH", `/api/bots/${fern.id}/tasks/${fern.threadId}`, bob, { approvalMode: mode });
+    const permissionMode = () => {
+      const argv = (JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[] }).argv;
+      return argv[argv.indexOf("--permission-mode") + 1];
+    };
+    try {
+      // off (the default): refused with a clear code
+      for (const mode of ["auto", "edits"]) {
+        const refused = await level(mode);
+        expect(refused.status, refused.text).toBe(403);
+        expect(refused.body).toMatchObject({ code: "member_auto_not_allowed" });
+      }
+      // only an admin turns it on
+      expect((await api("PATCH", "/api/org/settings", bob, { memberAutoApproval: true })).status).toBe(403);
+      const on = await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: true });
+      expect(on.status, on.text).toBe(200);
+      expect(on.body.settings.memberAutoApproval).toBe(true);
+      const chosen = await level("auto");
+      expect(chosen.status, chosen.text).toBe(200);
+      if (existsSync(engineDump)) rmSync(engineDump);
+      await turn(bob, fern, "auto while allowed");
+      expect(permissionMode()).toBe("auto");
+      // turned off again: the saved Auto runs as Ask
+      expect((await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: false })).status).toBe(200);
+      rmSync(engineDump, { force: true });
+      await turn(bob, fern, "auto while refused");
+      expect(permissionMode()).toBe("default");
+    } finally {
+      await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: false });
+    }
+  }, 120_000);
 });
