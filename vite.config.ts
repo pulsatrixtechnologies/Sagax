@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import react from "@vitejs/plugin-react";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { DurationSequencer } from "./scripts/testing/duration-sequencer.ts";
 import { hostTimeout } from "./server/testing/host-timeout.ts";
@@ -16,7 +17,11 @@ const baseVersion = pkg.baseVersion ?? pkg.version;
 const forkVersion = pkg.forkVersion ?? pkg.version;
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // React Compiler, opt-in per file or function with the "use memo"
+  // directive (annotation mode) while it is proven on the hot views: the chat
+  // and room transcripts and their rows. Files without the directive are not
+  // touched; the preset's filter skips them before Babel parses anything.
+  plugins: [react(), babel({ presets: [reactCompilerPreset({ compilationMode: "annotation" })] }), tailwindcss()],
   define: {
     __APP_VERSION__: JSON.stringify(forkVersion),
     __BASE_VERSION__: JSON.stringify(baseVersion),

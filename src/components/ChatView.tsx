@@ -35,7 +35,7 @@ import { messageActionClass } from "@/components/MessageActions";
 import { TurnRunLine } from "./TurnRunLine";
 import { useHoverDwell } from "@/hooks/use-hover-dwell";
 import { useSpeech } from "@/lib/tts/useSpeech";
-import { localSystemVoiceActive } from "@/lib/local-voice";
+import { useActiveLocale, useLocalSystemVoice, useRemoteClient } from "@/lib/render-reads";
 import { computerStartLine } from "@/lib/computer-start";
 import { useCaptionChrome, useDesktopCapabilities, useMacInsetChrome } from "@/components/DesktopCapabilities";
 import {
@@ -124,7 +124,7 @@ import { CallOverlay, VoiceCallDock } from "./CallView";
 import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
 import { useShowInspectorButton } from "@/lib/inspector-preferences";
-import { activeLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
 import { viewerActorId } from "@/lib/viewer";
@@ -232,6 +232,19 @@ function useDrawnBots(bots: readonly Bot[]): readonly Bot[] {
   return cache.current.bots;
 }
 
+/** The fields of a bot its "Seen" face draws. */
+const seenFaceKey = (bot: Bot) =>
+  [bot.id, bot.name, bot.color, bot.mascotLook, bot.mascotSkin, bot.avatarUrl, bot.avatarCrop, bot.avatarZoom, bot.avatarFocusX, bot.avatarFocusY].join("\u0001");
+
+/** `bot`, holding the same object until a field its Seen face draws changes,
+ * so the caption is not rebuilt on every bot frame. */
+function useSeenFaceBot(bot: Bot): Bot {
+  const key = seenFaceKey(bot);
+  const cache = useRef({ key, bot });
+  if (cache.current.key !== key) cache.current = { key, bot };
+  return cache.current.bot;
+}
+
 /** Reply to one message: the curved back arrow beside the bubble, in a
  * room and in a 1:1 chat alike (JC, 2026-10-14). */
 export function ReplyAction({ onReply, className = messageActionClass }: { onReply: () => void; className?: string }) {
@@ -294,6 +307,7 @@ export function ErrorRow({
    * Code is too old for the model. */
   claudeUpdateInstance?: InstanceInfo;
 }) {
+  "use memo";
   const { capabilities, ready } = useDesktopCapabilities();
   const failedPermissions = missingMacCuaPermissions(message);
   const currentPermissions = missingMacCuaPermissions(capabilities.localComputer.message);
@@ -363,6 +377,7 @@ function PlaceFailedRow({ place, botId, threadId, onRetry }: {
   threadId?: string;
   onRetry?: () => void;
 }) {
+  "use memo";
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
   const seat = usePlaceSeat(state.config, capabilities.host.platform);
@@ -394,6 +409,7 @@ export function FailedTurnRow({ tool, engine, onRetry, botId, threadId }: {
   botId?: string;
   threadId?: string;
 }) {
+  "use memo";
   if (tool.place && botId) return <PlaceFailedRow place={tool.place} botId={botId} threadId={threadId} onRetry={onRetry} />;
   const signedOut = signedOutEngine(tool, engine);
   // A signed-out engine: its sign-in card is the whole answer, no error row or
@@ -508,6 +524,7 @@ const Bubble = memo(function Bubble({
   replyTarget?: Message;
   onReply: (message: Message) => void;
 }) {
+  "use memo";
   const { botId, threadId, botName, viewerName, voiceId, tts, localVoice, busy, bots, mentionPeers, focus, dispatch, onBranch, reactionSelf } = useChatRows();
   // Emoji reactions (src/components/Reactions.tsx): the smiley of the hover
   // row and the head of its "…" menu, the chips under the bubble.
@@ -517,7 +534,7 @@ const Bubble = memo(function Bubble({
     onPick: (emoji: string) => toggleReactionOn(message.id, emoji),
     mine: myReactions(message.reactions, reactionSelf),
   } : undefined;
-  const remoteClient = window.ogb?.remoteClient?.active === true;
+  const remoteClient = useRemoteClient();
   // A user-role line another bot delivered (ask_bot, delegate_bot,
   // start_thread) is that bot speaking, not the person: it takes the
   // bot side of the chat under the peer's name, with the model-facing
@@ -804,6 +821,7 @@ const Bubble = memo(function Bubble({
  * rows that predate Message.peerAsk; a peer since renamed or deleted still
  * shows the name the line carries. Renders with its bubble. */
 function PeerLabel({ peer, autoModel }: { peer: PeerLine; autoModel?: Message["autoModel"] }) {
+  "use memo";
   const { bots } = useChatRows();
   const author =
     bots.find((b) => b.id === peer.botId) ?? bots.find((b) => b.name === peer.name);
@@ -837,6 +855,7 @@ function PeerLabel({ peer, autoModel }: { peer: PeerLine; autoModel?: Message["a
 
 /** A tool run as a quiet step row (StepRow), or a receipt that opens a conversation. */
 const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { message: Message; place?: EffectivePlace }) {
+  "use memo";
   const { bots, dispatch, botDmIds } = useChatRows();
   const tool = message.tool;
   if (!tool) return null;
@@ -866,6 +885,7 @@ const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { m
 /** A routine run's receipt. It opens the run's own thread, so it follows
  * the whole store to know whether that thread is still there. */
 function RoutineRunRow({ message, botId }: { message: Message; botId: string }) {
+  "use memo";
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
   const executionThreadId = message.routineRun?.executionThreadId;
@@ -915,6 +935,11 @@ function EmptyChat({ bot }: { bot: Bot }) {
  * message on the branch or the chat's ChatRows change. Each row inside is
  * memoized on its own message, so a patched tool chip renders that chip and
  * nothing else. */
+/** The messages one listed item draws. */
+function listedItemMessages(item: ListedItem): readonly Message[] {
+  return item.kind === "message" ? [item.message] : item.kind === "exchange" ? item.run.messages : item.messages;
+}
+
 const MessagesList = memo(function MessagesList({
   messages,
   transcript,
@@ -959,6 +984,7 @@ const MessagesList = memo(function MessagesList({
   /** The bot's "Seen" caption, under the last message it consumed. */
   seen?: { messageId: string; faces: SeenFace[] } | null;
 }) {
+  "use memo";
   // Sagax's extras below (access cards, bot-to-bot exchange chips, who is
   // viewing) read the store; the rows inside stay memoized on ChatRows.
   const { state } = useStore();
@@ -970,6 +996,10 @@ const MessagesList = memo(function MessagesList({
   // swallows them. Person lines and replies to the person stay in the groups.
   // The locale refreshes the turn labels when the language changes.
   const items = useMemo(() => {
+    // The turn labels are catalog strings: read the locale here so a
+    // language change derives them again (the React Compiler keys this
+    // memo on what the callback reads).
+    void locale;
     // The plan reads the whole transcript. A tail window still hides every
     // spoken line of a call that started above it.
     const plan = voiceCallPlan(transcript);
@@ -1005,7 +1035,6 @@ const MessagesList = memo(function MessagesList({
     flush();
     // Two or more "Go to conversation" lines in a row become one chip.
     return collapseGotoLines(listed, (item) => silentChatItem(item, showToolCalls)) as ListedItem[];
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the locale re-derives the turn labels
   }, [messages, transcript, botId, botName, selfColor, locale, owners, showToolCalls]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const newestMessageId = messages.at(-1)?.id;
@@ -1017,12 +1046,11 @@ const MessagesList = memo(function MessagesList({
   // row out of the DOM, and there is nothing for the scroll to land on.
   const focusedId = focus && !focus.consumed ? focus.messageId : null;
   const unreadIds = useMemo(() => unreadMessageIds(messages, unreadDividerId), [messages, unreadDividerId]);
-  let dividerPlaced = false;
-  const dividerAbove = (rows: readonly Message[]) => {
-    if (!unreadIds || dividerPlaced || !rows.some((row) => unreadIds.has(row.id))) return null;
-    dividerPlaced = true;
-    return <NewMessagesDivider fading={unreadDividerFading} />;
-  };
+  // The New divider goes above the first item holding an unread message.
+  const dividerIndex = useMemo(() => unreadIds
+    ? items.findIndex((item) => listedItemMessages(item).some((row) => unreadIds.has(row.id)))
+    : -1, [items, unreadIds]);
+  const dividerAbove = (index: number) => index === dividerIndex ? <NewMessagesDivider fading={unreadDividerFading} /> : null;
   return (
     <>
       {items.map((item, i) => {
@@ -1042,9 +1070,7 @@ const MessagesList = memo(function MessagesList({
         }
         const first = edgeOf(item).first;
         const newDay = startsNewStretch(prev?.at, first.at);
-        const divider = dividerAbove(
-          item.kind === "message" ? [item.message] : item.kind === "exchange" ? item.run.messages : item.messages,
-        );
+        const divider = dividerAbove(i);
         if (item.kind === "gotoGroup") {
           return (
             <div key={item.id} className="contents">
@@ -1301,6 +1327,7 @@ function PinnedBanner({
   onJump: (messageId: string) => void;
   onUnpin?: () => void;
 }) {
+  "use memo";
   const pinned = messages.find((m) => m.id === pinnedId);
   if (!pinned || pinned.kind !== "text") return null;
   const pinnedPeer = peerLine(pinned);
@@ -1340,13 +1367,14 @@ function PinnedBanner({
 export type SideChat = { header: ReactNode; label: string };
 
 export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) {
+  "use memo";
   const showInspector = useShowInspectorButton();
   const advanced = useAdvancedMode();
   const bot = useMemo(() => currentTaskBot(profile), [profile]);
   const dataItem = useDataWindowItem(bot);
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
-  const remoteClient = window.ogb?.remoteClient?.active === true;
+  const remoteClient = useRemoteClient();
   // Without a native title bar (macOS inset lights, frameless Windows) this
   // header is the window drag region. On Windows the icon row also shifts
   // below the 26px-tall corner the renderer-drawn caption buttons occupy.
@@ -1359,7 +1387,7 @@ export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) 
   // their own; several people talk together in a group.
   const perspicaxOrg = usePerspicaxOrg();
   const privateHint = showPrivateConversationHint({ org: perspicaxOrg !== null, viewerId: viewerActorId(state.config), bot });
-  const exchangeColumn = useExchangeColumn();
+  const { node: exchangeColumnNode, ref: exchangeColumnRef } = useExchangeColumn();
   const composerDockRef = useRef<HTMLDivElement>(null);
   const composerDock = useComposerDockPad(composerDockRef);
   // A guest on an OMB Cloud home writes only in conversations it opened.
@@ -1414,17 +1442,16 @@ export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) 
   }, [messages, threadReads.reads, bot.id]);
   // "Seen by" and the bot's face; its name and the time in the tooltip.
   // Rebuilt when the place or the bot's look changes, not on every bot frame.
+  const seenBot = useSeenFaceBot(bot);
   const seenRow = useMemo(() => seenPlace ? {
     messageId: seenPlace.messageId,
     faces: [{
-      participantId: `bot:${bot.id}`,
-      name: bot.name,
+      participantId: `bot:${seenBot.id}`,
+      name: seenBot.name,
       at: seenPlace.at,
-      avatar: <BotAvatar bot={bot} state="happy" size={SEEN_AVATAR_SIZE} motion="none" motionKey={0} animated={false} />,
+      avatar: <BotAvatar bot={seenBot} state="happy" size={SEEN_AVATAR_SIZE} motion="none" motionKey={0} animated={false} />,
     } satisfies SeenFace],
-  } : null,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  [seenPlace, bot.id, bot.name, bot.color, bot.mascotLook, bot.mascotSkin, bot.avatarUrl, bot.avatarCrop, bot.avatarZoom, bot.avatarFocusX, bot.avatarFocusY]);
+  } : null, [seenPlace, seenBot]);
   // The bot's run in the current ask — every command it ran, the control-CLI
   // ones verified — for the run card. Saving mirrors the /learn gate: the
   // flag, an engine with the agents tools, and a bot that can take a message
@@ -1480,13 +1507,13 @@ export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) 
   const focus = state.focusMessage?.threadId === bot.threadId ? state.focusMessage : null;
   const showToolCalls = showToolCallRows(state.config);
   const tts = state.config?.tts;
-  const localVoice = localSystemVoiceActive();
-  const locale = activeLocale();
+  const localVoice = useLocalSystemVoice();
+  const locale = useActiveLocale();
   const viewerName = state.config?.profile?.name?.trim() || undefined;
   const busy = Boolean(bot.busy);
   // read when a citation is clicked, so the rows need not change per message
   const branch = useRef(messages);
-  branch.current = messages;
+  useLayoutEffect(() => { branch.current = messages; }, [messages]);
   const onBranch = useCallback((messageId: string) => branch.current.some((m) => m.id === messageId), []);
   const hasMore = Boolean(bot.hasMore);
   const reactionSelfKey = reactionSelfIds(state.config, threadReads.self).join("\n");
@@ -1602,8 +1629,8 @@ export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) 
   const Root = side ? "section" : "main";
   return (
     <ThreadLinkContext value={threadLink}>
-    <ExchangeColumnProvider node={exchangeColumn.node}>
-    <Root ref={exchangeColumn.ref} aria-label={side?.label} data-side-chat={side ? "" : undefined} className="app-glow relative isolate flex h-full min-w-0 flex-1 flex-col bg-app">
+    <ExchangeColumnProvider node={exchangeColumnNode}>
+    <Root ref={exchangeColumnRef} aria-label={side?.label} data-side-chat={side ? "" : undefined} className="app-glow relative isolate flex h-full min-w-0 flex-1 flex-col bg-app">
       {/* The older call mode covers the thread while the bot is on the line;
           a voice mode call docks at the top of the banner stack below */}
       {!side && <>

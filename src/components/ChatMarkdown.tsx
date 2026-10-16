@@ -416,6 +416,7 @@ export interface CodeBlockProps {
  * @returns Rendered code block element.
  */
 export function CodeBlock({ code, lang }: CodeBlockProps) {
+  "use memo";
   // a block highlighted before (revisiting a thread) paints highlighted in
   // its first frame instead of plain first and highlighted after the effect
   const highlightable = code.length <= HIGHLIGHT_MAX_CHARS;
@@ -861,6 +862,7 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
 // middle or modifier click, which calls shell.openExternal without the main
 // process' containment check.
 function LocalFileLink({ filePath, name, children, message }: { filePath: string; name?: string; children?: ReactNode; message?: MessageAttachmentContext }) {
+  "use memo";
   const save = useLocalFileSave(filePath, name, message);
   if (!message) {
     return <span title="Unavailable legacy file reference" className="break-words text-ink-secondary">{children}</span>;
@@ -941,6 +943,7 @@ export function markdownImageOpenUrl(src: string): string | undefined {
 // Display only: the stored markdown, exports, and the model's own context
 // all keep the raw ~~text~~.
 function Spoiler({ children }: { children?: ReactNode }) {
+  "use memo";
   const [revealed, setRevealed] = useState(false);
   if (!revealed) {
     return (
@@ -1170,6 +1173,7 @@ const fileName = (path: string) => path.split(/[\\/]/).at(-1) ?? path;
 // An external link: the hover card, and the thread link menu on a right
 // click (assign the link to the open thread) when one is offered.
 function ExternalLink({ href, github, children }: { href: string; github: ReturnType<typeof githubRefFromProps>; children?: ReactNode }) {
+  "use memo";
   const linkMenu = useThreadLinkMenu(href);
   const Icon = github ? GITHUB_REF_ICONS[github.kind] : null;
   return (
@@ -1246,6 +1250,7 @@ const CALLOUT_STYLE: Record<CalloutKind, { icon: typeof Info; tone: string; labe
 };
 
 export function Callout({ kind, title, dir, children }: { kind: CalloutKind; title?: string; dir?: "ltr" | "rtl"; children?: ReactNode }) {
+  "use memo";
   const style = CALLOUT_STYLE[kind];
   const Icon = style.icon;
   return (

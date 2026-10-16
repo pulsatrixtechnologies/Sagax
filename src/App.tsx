@@ -38,7 +38,7 @@ import { reportAchievement } from "@/lib/achievements";
 import { FloatingBotsHost } from "@/components/FloatingBotsHost";
 import { CallEngineHost } from "@/components/CallView";
 import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
-import { setLocale, t } from "@/lib/i18n";
+import { activeLocale, setLocale, t } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { normalizeInboxDeepLink } from "@/lib/inbox-deep-link";
@@ -134,6 +134,9 @@ function Shell() {
     setLocale(language || globalThis.navigator?.language);
     setLocaleEpoch((epoch) => epoch + 1);
   }, [language]);
+  // The conversation views are compiled by the React Compiler, which keeps a
+  // catalog string it built once; a language change mounts them afresh.
+  const uiLocale = activeLocale();
   const [paletteOpen, setPaletteOpen] = useState(false);
   // the palette and the shortcuts sheet each teach a habit (achievements)
   useEffect(() => {
@@ -385,7 +388,7 @@ function Shell() {
       />
       <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col">
       {composeOpen && (group || bot) ? (
-        group ? <GroupView key={group.id} group={group} /> : bot ? <ChatView bot={bot} /> : null
+        group ? <GroupView key={`${group.id}:${uiLocale}`} group={group} /> : bot ? <ChatView key={uiLocale} bot={bot} /> : null
       ) : calendarFillsMain ? (
         <RoutinesPage fill onBack={closeCalendar} onOpenRoom={openCalendarRoom} />
       ) : mainIsTeamMap ? (
@@ -400,9 +403,9 @@ function Shell() {
       ) : noEngines ? (
         <NoEngines />
       ) : group ? (
-        <GroupView key={group.id} group={group} />
+        <GroupView key={`${group.id}:${uiLocale}`} group={group} />
       ) : bot ? (
-        <ChatView bot={bot} />
+        <ChatView key={uiLocale} bot={bot} />
       ) : (
         state.connected ? (
           // Connected with no bot: an empty state that invites creating one,
