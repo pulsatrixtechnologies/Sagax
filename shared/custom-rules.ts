@@ -989,6 +989,10 @@ export function candidateWhen(facts: CallFacts, language = "fr"): string {
     if (!facts.command || facts.command.includes("`") || facts.command.length > 400 || [...facts.command].some((char) => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f)) return "";
     return fr ? `la commande exacte \`${facts.command}\`` : `the exact command \`${facts.command}\``;
   }
+  // a path the call names but this server cannot read (a Windows drive or
+  // UNC path, an encoded or relative path): a rule without its folder would
+  // cover every file, so nothing is offered and the card stays
+  if (facts.paths === null) return "";
   const folder = facts.paths && facts.paths.length
     ? (() => {
       const first = facts.paths[0]!;

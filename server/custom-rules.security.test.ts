@@ -20,6 +20,11 @@ const bound = (when: string, facts: { tool: string; command?: string; cwd?: stri
 const bash = (command: string) => factsForCall({ tool: "Bash", input: JSON.stringify({ command }) }, home);
 const readCard = factsForCall({ tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/Documents/a.txt" }) }, home);
 const readRule = candidateWhen(readCard);
+// factsForCall resolves each path on this disk (realPath). On Windows that
+// turns /Users/jc/... into D:\Users\jc\..., a path no rule reads: every
+// folder allow then fails closed (see "Windows paths" below), so the cases
+// that expect an allow inside the folder are POSIX only.
+const posixOnly = it.skipIf(process.platform === "win32");
 
 const ATTACKS = [
   "find ~/Documents -delete",
@@ -64,7 +69,7 @@ const ATTACKS = [
 ];
 
 describe("B1: a read rule never covers a shell line with side effects", () => {
-  it("the read card's candidate names the folder, not the shell", () => {
+  posixOnly("the read card's candidate names the folder, not the shell", () => {
     expect(readRule).toBe("la lecture de fichiers dans ~/Documents");
   });
 
@@ -74,7 +79,7 @@ describe("B1: a read rule never covers a shell line with side effects", () => {
     expect(evaluateCustomRules([rule("lire les fichiers dans ~/")], facts, { home, botId: "bot-1" }).kind).toBe("none");
   });
 
-  it("a plain pure read inside the folder is still covered", () => {
+  posixOnly("a plain pure read inside the folder is still covered", () => {
     expect(evaluateCustomRules([rule(readRule)], bash("cat ~/Documents/a.txt"), { home, botId: "bot-1" }).kind).toBe("allow");
     expect(evaluateCustomRules([rule(readRule)], bash("head -n 5 ~/Documents/a.txt"), { home, botId: "bot-1" }).kind).toBe("allow");
     expect(bash("find ~/Documents -name x").pureRead).toBe(false);
@@ -385,7 +390,7 @@ describe("round 5: exact commands are bound to their card; folder rules never re
     expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], shellAt(command), { home, botId: "bot-1" }).kind).toBe("none");
   });
 
-  it("plain reads inside the folder stay covered", () => {
+  posixOnly("plain reads inside the folder stay covered", () => {
     for (const command of ["ls -R ~/Documents", "ls -l ~/Documents", "cat ~/Documents/a ~/Documents/b", "head -c 99999999 ~/Documents/a", "stat ~/Documents", "wc ~/Documents/a"]) {
       expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], shellAt(command), { home, botId: "bot-1" }).kind, command).toBe("allow");
     }
@@ -431,7 +436,7 @@ describe("paths, tools and products", () => {
     expect(normalizePath("~-/x", home)).toBeNull();
   });
 
-  it("a symbolic link is matched where it really points", () => {
+  posixOnly("a symbolic link is matched where it really points", () => {
     mkdirSync(join(dir, "home", "Documents"), { recursive: true });
     mkdirSync(join(dir, "secret"), { recursive: true });
     symlinkSync(join(dir, "secret"), join(dir, "home", "Documents", "link"));
@@ -456,5 +461,40 @@ describe("paths, tools and products", () => {
     expect(lookalike.products).not.toContain("connectwise");
     expect(callFacts({ tool: "mcp__perspicax_gox__cw_psa__query", input: "{}" }).products).toContain("connectwise");
     expect(callFacts({ tool: "mcp__evil_perspicax__cw_dump", input: "{}" }).products).toEqual([]);
+  });
+});
+
+// Folder rules read POSIX paths only. A Windows path (a drive letter, a
+// UNC share, or a POSIX path the server's realpath turns into one) is a
+// path the rules cannot read: an allow never covers it, a deny or ask still
+// catches it, and "Toujours permettre ceci" offers nothing rather than a
+// rule over every file. These run on every platform.
+describe("Windows paths fail closed", () => {
+  const toDrive = (absolute: string) => `D:${absolute.replaceAll("/", "\\")}`;
+  const resolvedOnWindows = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/Documents/a.txt" }), home, resolve: toDrive });
+  const native = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "C:\\Users\\jc\\.ssh\\id_rsa" }), home: "C:\\Users\\jc" });
+  const unc = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "\\\\host\\share\\x" }), home });
+
+  it("an allow over a folder never covers them", () => {
+    for (const facts of [resolvedOnWindows, native, unc]) {
+      expect(facts.paths).toBeNull();
+      expect(evaluateCustomRules([rule("la lecture de fichiers dans ~/Documents")], facts, { home, resolve: toDrive, botId: "bot-1" }).kind).toBe("none");
+    }
+  });
+
+  it("a deny or ask over a folder still catches them", () => {
+    for (const facts of [resolvedOnWindows, native, unc]) {
+      expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents"), rule("jamais lire les fichiers dans ~/.ssh", "deny")], facts, { home, resolve: toDrive, botId: "bot-1" }).kind).toBe("deny");
+      expect(ruleCoversCall(compileRule("lire les fichiers dans ~/.ssh", home, toDrive), facts, "ask")).toBe(true);
+    }
+  });
+
+  it("offers no rule that would drop the folder", () => {
+    for (const facts of [resolvedOnWindows, native, unc]) {
+      expect(candidateWhen(facts)).toBe("");
+      expect(customRuleCandidate(facts, "fr", home)).toBeUndefined();
+    }
+    // a shell card still proposes its exact command, bound to that card
+    expect(customRuleCandidate(callFacts({ tool: "Bash", input: JSON.stringify({ command: "type C:\\x.txt" }), home }), "fr", home)?.when).toBe("la commande exacte `type C:\\x.txt`");
   });
 });

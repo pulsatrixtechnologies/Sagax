@@ -43,6 +43,12 @@ describe("autoVerdict with a custom rule", () => {
   });
 });
 
+// reviewCustomRules resolves each path on this disk: on Windows
+// /Users/jc/... becomes D:\Users\jc\..., which no folder rule reads, so a
+// folder allow fails closed there (server/custom-rules.security.test.ts,
+// "Windows paths fail closed") and no candidate is offered.
+const windows = process.platform === "win32";
+
 describe("reviewCustomRules and the rule notice", () => {
   const read = { tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/Documents/plan.md" }), paths: ["/Users/jc/Documents/plan.md"] };
   const send = { tool: "mcp__outlook__send_mail", input: JSON.stringify({ to: ["a@example.com"], subject: "Bonjour" }) };
@@ -54,7 +60,7 @@ describe("reviewCustomRules and the rule notice", () => {
     const denied = reviewCustomRules([allow, ask, deny], read, "b1", HOME).decision;
     expect(customRuleNotice(denied)).toEqual({ id: deny.id, when: deny.when, behavior: "deny", botId: null, outcome: "denied" });
     expect(customRuleNotice(reviewCustomRules([allow, ask], read, "b1", HOME).decision)?.outcome).toBe("held");
-    expect(customRuleNotice(reviewCustomRules([allow], read, "b1", HOME).decision)?.outcome).toBe("approved");
+    expect(customRuleNotice(reviewCustomRules([allow], read, "b1", HOME).decision)?.outcome).toBe(windows ? undefined : "approved");
     expect(customRuleNotice(reviewCustomRules([], read, "b1", HOME).decision)).toBeUndefined();
   });
 
@@ -72,9 +78,13 @@ describe("reviewCustomRules and the rule notice", () => {
   it("offers a candidate rule that covers its own card, and refuses one that does not", () => {
     const { facts } = reviewCustomRules([], read, "b1", HOME);
     const candidate = customRuleCandidate(facts, "fr", HOME);
-    expect(candidate).toEqual({ when: "la lecture de fichiers dans ~/Documents", risks: [] });
-    expect(ruleCoversCard(rule(candidate!.when, "allow", { botId: "b1" }), read, "b1", HOME)).toBe(true);
-    expect(ruleCoversCard(rule(candidate!.when, "allow", { botId: "b2" }), read, "b1", HOME)).toBe(false);
+    if (windows) {
+      expect(candidate).toBeUndefined();
+    } else {
+      expect(candidate).toEqual({ when: "la lecture de fichiers dans ~/Documents", risks: [] });
+      expect(ruleCoversCard(rule(candidate!.when, "allow", { botId: "b1" }), read, "b1", HOME)).toBe(true);
+      expect(ruleCoversCard(rule(candidate!.when, "allow", { botId: "b2" }), read, "b1", HOME)).toBe(false);
+    }
     const sendCandidate = customRuleCandidate(reviewCustomRules([], send, "b1", HOME).facts, "fr", HOME);
     expect(sendCandidate?.risks).toEqual(["external-send"]);
     expect(ruleCoversCard(rule(sendCandidate!.when, "allow"), send, "b1", HOME)).toBe(false);

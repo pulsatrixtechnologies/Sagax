@@ -72,7 +72,8 @@ describe("custom rules routes", () => {
     expect(saved.status).toBe(201);
     expect(saved.body.rule).toMatchObject({ behavior: "allow", when: "la lecture de fichiers dans ~/Documents", botId: "bot-a", riskScope: [], enabled: true });
     expect(saved.body.rule.compiled).toMatchObject({ recognized: true, actions: ["read"], paths: ["~/Documents"] });
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix mode bits (Node reports 0o666)
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
 
     const ask = await call("", "POST", { text: "jamais d'envoi de courriel sans moi", botId: null });
     expect(ask.body.rule).toMatchObject({ behavior: "ask", when: "envoi de courriel", botId: null });
