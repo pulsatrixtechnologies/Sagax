@@ -288,6 +288,7 @@ import { registerEnginesBinDir } from "./engine-install.ts";
 import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineCheck } from "./engines-self-check.ts";
 import { engineStartGate, type EngineSlot } from "./engine-start-gate.ts";
 import { serveStaticUi } from "./static-ui.ts";
+import { coalescedRun } from "./coalesced-run.ts";
 import type { EarlyListener } from "./early-listener.ts";
 import { appendUsage, parseUsageRange, readUsage, flushUsageLedger, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
 import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
@@ -5169,7 +5170,19 @@ const selectionContext = {
 /** First-run setup can create its bot before an account or model list is
  * ready. Fill only genuinely unset choices when an engine becomes ready;
  * intentional bot and thread selections are never replaced. */
-async function refreshUnsetModelSelections(instances?: readonly SelectableInstance[]): Promise<void> {
+// Reading the engines probes every engine CLI (a version, a login, a model
+// list: one process each). At start it was asked for again by each model
+// list that landed while the previous read still ran: seven full reads and
+// about a hundred processes in the first seconds, beside the window's first
+// requests (2026-10-16, interaction bench). Callers that ask while a read
+// runs share one more read after it (server/coalesced-run.ts), so each still
+// gets an answer read after it asked.
+const refreshUnsetModelSelectionsShared = coalescedRun(() => refreshUnsetModelSelectionsFrom());
+function refreshUnsetModelSelections(instances?: readonly SelectableInstance[]): Promise<void> {
+  return instances ? refreshUnsetModelSelectionsFrom(instances) : refreshUnsetModelSelectionsShared();
+}
+
+async function refreshUnsetModelSelectionsFrom(instances?: readonly SelectableInstance[]): Promise<void> {
   const selectable = selectableInstances<SelectableInstance>(instances ?? await registry.describe());
   bootSelection = await defaultSelection(undefined, selectable.filter(instance => readyToRun(instance, selectionContext)));
   if (hostedModels || !bootSelection.instanceId || !bootSelection.model) return;

@@ -28,6 +28,7 @@ import { evictStartupCacheOnce } from "./startup-cache-eviction.mjs";
 import { activateExistingWindow, releaseSingleInstanceLock } from "./single-instance.mjs";
 import { pollServerIdentity } from "./server-boot-probe.mjs";
 import { createServerSupervisor } from "./server-supervisor.mjs";
+import { createBootUiHandler } from "./boot-ui.mjs";
 import { serverChildLaunch } from "./server-child-launch.mjs";
 import { packageUrlFromCommandLine, packageUrlFromDeepLink } from "./package-link.mjs";
 import { createOrganizationEntry, ORGANIZATION_DEEP_LINK, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
@@ -660,6 +661,65 @@ app.on("second-instance", (_event, commandLine) => {
 let serverProc = null;
 /** Settles once the local server answers /api/health (startServerOn). */
 let localServerAnswering = Promise.resolve();
+// The loading screen, once per launch (see app.whenReady).
+let startupScreenOpened = false;
+function openStartupScreen() {
+  if (startupScreenOpened || desktopShutdownStarted) return;
+  startupScreenOpened = true;
+  if (mainWindow && !mainWindow.isDestroyed()) return;
+  startupScreen = createStartupScreen({
+    BrowserWindow, iconPath: APP_ICON, isQuitting: () => desktopShutdownStarted,
+    onQuit: () => app.quit(),
+    onHide: desktopTray ? (win) => desktopTray.hide(win) : undefined,
+    isHidden: () => desktopTray?.isHidden() ?? false,
+    onShow: (win) => desktopTray?.windowShown(win),
+    onFinished: () => { startupScreen = null; },
+    onOpenLogs: () => {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+      void shell.openPath(LOG_DIR).then((error) => { if (error) slog(`startup: open logs failed: ${error}`); });
+    },
+    onRetry: () => {
+      slog("startup: retry requested from the loading screen");
+      app.relaunch();
+      app.quit();
+    },
+  });
+  // The loading screen paints while startup goes on: waiting for it first
+  // held the local server back by the time a window takes to show, on every
+  // launch. Its status lines and the workspace's hand-over work whether it
+  // is on screen yet or not (startup-screen.mjs publishes on load, and
+  // attach() waits for React).
+  void startupScreen.ready.then(() => startupPhase("loading screen shown"));
+}
+
+// The first page load comes from this app's bundle while the server loads
+// (electron/boot-ui.mjs), once per launch.
+let bootUiUsed = false;
+function installBootUi(port) {
+  if (!app.isPackaged || bootUiUsed) return;
+  bootUiUsed = true;
+  const { protocol } = session.defaultSession;
+  if (protocol.isProtocolHandled("http")) return;
+  const boot = createBootUiHandler({
+    origin: () => `http://127.0.0.1:${port}`,
+    staticDir: path.join(process.resourcesPath, "ui"),
+    readFile: (file) => fs.promises.readFile(file),
+    fetch: (request, init) => net.fetch(request, init),
+    release: () => {
+      try { protocol.unhandle("http"); } catch {}
+      slog("boot UI: http handed back to the network");
+    },
+  });
+  try {
+    protocol.handle("http", boot.handler);
+  } catch (error) {
+    slog(`boot UI: could not take over http (${error?.message ?? error})`);
+    return;
+  }
+  // Never longer than the start itself.
+  const fallback = setTimeout(boot.release, 15_000);
+  fallback.unref?.();
+}
 let serverReady = !app.isPackaged;
 let secureCredentials = {};
 let secureCredentialState = null;
@@ -1772,6 +1832,7 @@ async function startServerOn(port, dataDir = runningDataDir ?? startupEnvironmen
     env: childEnv,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  openStartupScreen();
   let resolveServerExit;
   utilityServerExits.set(proc, new Promise((resolve) => {
     resolveServerExit = resolve;
@@ -1793,6 +1854,7 @@ async function startServerOn(port, dataDir = runningDataDir ?? startupEnvironmen
     if (message?.type === "sagax:server-port-open" && message.port === port && !portOpen && dataDir === desktopDataDir()) {
       portOpen = true;
       slog(`port ${port} open, the server is loading`);
+      installBootUi(port);
       resolvePortOpen({ outcome: "ready" });
       return;
     }
@@ -4631,29 +4693,12 @@ app.whenReady().then(async () => {
       slog(`system tray unavailable: ${error?.message ?? error}`);
     }
   }
-  startupScreen = createStartupScreen({
-    BrowserWindow, iconPath: APP_ICON, isQuitting: () => desktopShutdownStarted,
-    onQuit: () => app.quit(),
-    onHide: desktopTray ? (win) => desktopTray.hide(win) : undefined,
-    isHidden: () => desktopTray?.isHidden() ?? false,
-    onShow: (win) => desktopTray?.windowShown(win),
-    onFinished: () => { startupScreen = null; },
-    onOpenLogs: () => {
-      fs.mkdirSync(LOG_DIR, { recursive: true });
-      void shell.openPath(LOG_DIR).then((error) => { if (error) slog(`startup: open logs failed: ${error}`); });
-    },
-    onRetry: () => {
-      slog("startup: retry requested from the loading screen");
-      app.relaunch();
-      app.quit();
-    },
-  });
-  // The loading screen paints while startup goes on: waiting for it first
-  // held the local server back by the time a window takes to show, on every
-  // launch. Its status lines and the workspace's hand-over work whether it
-  // is on screen yet or not (startup-screen.mjs publishes on load, and
-  // attach() waits for React).
-  void startupScreen.ready.then(() => startupPhase("loading screen shown"));
+  // The loading screen opens just after the local server is forked
+  // (startServerOn): building its window takes the main thread for about a
+  // tenth of a second, and the server's start no longer waits behind it.
+  // When no local server starts (server mode, a remote connection), it opens
+  // a moment later, unless the workspace is already up.
+  setTimeout(openStartupScreen, 150).unref?.();
   if (desktopShutdownStarted) return;
   session.defaultSession.on("will-download", (_event, item) => {
     item.setSavePath(collisionFreeDownloadPath(app.getPath("downloads"), item.getFilename()));

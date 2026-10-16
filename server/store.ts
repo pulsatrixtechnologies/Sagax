@@ -87,9 +87,14 @@ export const groupWireProjectionIsExact: GroupWireProjectionIsExact = true;
 // Unicode's complete emoji sequences include flags, skin tones and ZWJ
 // combinations. Also allow unqualified single symbols (e.g. ♥), but not
 // standalone components such as a digit, skin tone or regional indicator.
-const projectEmojiPattern = new RegExp("^(?!\\p{Emoji_Component}$)(?:\\p{RGI_Emoji}|[\\p{Emoji}--\\p{Emoji_Component}])$", "v");
+// Compiled on first use: building this set-notation pattern took about 12 ms
+// of every server start (interaction bench, 2026-10-16), whether or not a
+// project has an emoji.
+let projectEmojiPattern: RegExp | null = null;
 export function isProjectEmoji(value: unknown): value is string {
-  return typeof value === "string" && value.length <= 64 && projectEmojiPattern.exec(value)?.[0] === value;
+  if (typeof value !== "string" || value.length > 64) return false;
+  projectEmojiPattern ??= new RegExp("^(?!\\p{Emoji_Component}$)(?:\\p{RGI_Emoji}|[\\p{Emoji}--\\p{Emoji_Component}])$", "v");
+  return projectEmojiPattern.exec(value)?.[0] === value;
 }
 
 /** One task = one conversation with its own context. Extends the shared
