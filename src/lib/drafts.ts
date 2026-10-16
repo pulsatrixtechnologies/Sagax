@@ -334,6 +334,18 @@ export function restoreComposerDraft(id: string, draft: DraftRestore): void {
   for (const listener of restoreListeners.get(id) ?? []) listener(draft);
 }
 
+/** Switches a composer to Goal or back to chat without touching its text or
+ * attachments (the command palette's Goal: Start). Same restore path as
+ * appendComposerDraft, so a mounted Composer shows the chip at once. */
+export function setComposerChannelMode(id: string, mode: ChannelMode): void {
+  const store = getStore();
+  restoreComposerDraft(id, {
+    text: getDraft(store, id),
+    attachments: getDraftAttachments(store, id),
+    channelMode: mode,
+  });
+}
+
 /** Puts prepared text into a thread's composer without sending it: after a
  * blank line when the person has already typed something, never in its
  * place. Attachments and channel mode stay. It writes through the restore

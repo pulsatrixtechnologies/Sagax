@@ -141,6 +141,7 @@ function Shell() {
     if (state.shortcutsOpen) reportAchievement("shortcuts.opened");
   }, [state.shortcutsOpen]);
   const [composeOpen, setComposeOpen] = useState(false);
+  const openCompose = useCallback(() => setComposeOpen(true), []);
   const [localVmWorkspaceBotId, setLocalVmWorkspaceBotId] = useState<string | null>(null);
   // the Browser tab, expanded into the main column (the small preview in
   // the panel hands off to this and back)
@@ -474,7 +475,7 @@ function Shell() {
       )}
       {/* mounted after the modals: same z-50 tier, so DOM order keeps the
           palette on top when one of them is open underneath */}
-      <CommandPalette onOpenChange={setPaletteOpen} />
+      <CommandPalette onOpenChange={setPaletteOpen} onNewConversation={openCompose} />
       <StagedOrgImport />
       <RetroAssistantHost />
       <AchievementToaster />
