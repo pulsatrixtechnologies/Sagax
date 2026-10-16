@@ -38,6 +38,12 @@ import { DiagramViewer } from "./DiagramViewer";
 let host: HTMLDivElement;
 let root: Root;
 const flush = async () => { for (let i = 0; i < 6; i += 1) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); };
+// The PDF viewer is a lazy chunk (React.lazy and pdfjs): on a busy runner its
+// first import takes longer than a few ticks, so wait for what it draws.
+const settle = async (ready: () => boolean, ms = 4_000) => {
+  const deadline = Date.now() + ms;
+  while (!ready() && Date.now() < deadline) await flush();
+};
 const button = (label: string | RegExp) => [...document.querySelectorAll<HTMLButtonElement>("button")].find((element) => {
   const name = element.getAttribute("aria-label") ?? element.textContent ?? "";
   return typeof label === "string" ? name === label : label.test(name);
@@ -164,7 +170,7 @@ describe("file previews", () => {
     vi.stubGlobal("fetch", fetchMock);
     await act(async () => root.render(createElement(FilePreviewButton, { path: "/w/Contrat.pdf", name: "Contrat.pdf", message })));
     await act(async () => button("View PDF: Contrat.pdf")!.click());
-    await flush();
+    await settle(() => document.querySelectorAll("[data-pdf-page]").length === 3);
     expect(fetchMock).toHaveBeenCalledWith("/api/threads/t/messages/m/file", expect.objectContaining({ method: "POST" }));
     expect(pdf.getDocument).toHaveBeenCalledWith(expect.objectContaining({ enableXfa: false }));
     expect(document.querySelectorAll("[data-pdf-page]")).toHaveLength(3);
@@ -190,7 +196,7 @@ describe("file previews", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>nope</html>")));
     await act(async () => root.render(createElement(FilePreviewButton, { path: "/w/fake.pdf", name: "fake.pdf", message })));
     await act(async () => button("View PDF: fake.pdf")!.click());
-    await flush();
+    await settle(() => document.querySelector("dialog [role=alert]") !== null);
     expect(document.querySelector("dialog [role=alert]")!.textContent).toContain("not a readable PDF");
   });
 
