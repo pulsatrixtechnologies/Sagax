@@ -149,6 +149,16 @@ export function ownerScopedTool(tool: string, ownerScopedMcpServer?: (server: st
   return ownerScopedMcpServer(server);
 }
 
+/** 2026-10-16 (hotfix 0.5.10): a claude.ai connector (`claude_ai_<Service>`)
+ * acts as the account the turn runs on. On an organization server those
+ * connectors are mounted only when the turn runs on the speaker's own Claude
+ * subscription (harness-connectors.ts claudeAiConnectorsForTurn), so they are
+ * that person's own rights, like a personal connection: the owner answers
+ * the card, not an admin. On any other access they are nobody's. */
+export function claudeAiOwnerScopedServer(server: string, via: string | undefined): boolean {
+  return via === "subscription" && /^claude_ai_[A-Za-z0-9]/i.test(server);
+}
+
 /** Whether a permission card of a member's bot on an organization server
  * waits for an organization admin (JC rule until per-owner containers). Every
  * bot shares one container, one user and one HOME, so a write to the shared

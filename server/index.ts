@@ -1067,7 +1067,7 @@ import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-eg
 import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
 import { archiveInlineTexts, archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -26372,6 +26372,7 @@ function ownerScopedMcpServerFor(bot: BotRecord, threadId: string): (server: str
   return (server) => {
     const name = server.toLowerCase();
     if (name.startsWith("perspicax_") || name === "composio") return true;
+    if (claudeAiOwnerScopedServer(server, turnAccessByThread.get(threadId)?.via)) return true;
     const has = (names: Iterable<string>) => [...names].some((candidate) => candidate.toLowerCase() === name);
     try {
       if (has(Object.entries(engineMcpServers(bot)).filter(([, spec]) => "url" in spec).map(([key]) => key))) return true;

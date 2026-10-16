@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -156,6 +156,20 @@ describe("the admin gate on a member's bot", () => {
     expect(ownerGate("mcp__my_remote__create_issue")).toBe(false);
     expect(ownerGate("WebSearch")).toBe(false);
     expect(ownerGate("TodoWrite")).toBe(false);
+  });
+  it("lets the owner answer a claude.ai connector only on their own subscription", () => {
+    const viaGate = (tool: string, via: string | undefined) => memberBotAdminApproval({
+      tool, workspaceRoot: root,
+      ownerScopedMcpServer: (server) => claudeAiOwnerScopedServer(server, via),
+    });
+    expect(viaGate("mcp__claude_ai_Pulsatrix_Perspicax__cw_psa__query", "subscription")).toBe(false);
+    expect(viaGate("mcp__claude_ai_Microsoft_365__outlook_email_search", "subscription")).toBe(false);
+    expect(viaGate("mcp__claude_ai_Pulsatrix_Perspicax__cw_psa__query", "org-key")).toBe(true);
+    expect(viaGate("mcp__claude_ai_Pulsatrix_Perspicax__cw_psa__query", "speaker-key")).toBe(true);
+    expect(viaGate("mcp__claude_ai_Pulsatrix_Perspicax__cw_psa__query", undefined)).toBe(true);
+    expect(viaGate("mcp__claude_ai___x", "subscription")).toBe(true);
+    // a shell-named connector tool is still a command
+    expect(viaGate("mcp__claude_ai_Thing__bash", "subscription")).toBe(true);
   });
   it("still sends to an admin what goes beyond the owner's rights", () => {
     // an unknown server, a host-level built-in server, a shell, a fetch from the host
