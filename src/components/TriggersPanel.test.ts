@@ -97,15 +97,18 @@ afterEach(() => {
 });
 
 describe("Triggers pop-up", () => {
-  it("reads as a sentence on glass: When [source] → [bot] should", () => {
-    const { html } = render();
+  it("reads as a sentence in a Settings window: When [source] → [bot] should", () => {
+    const { html, nodes: tree } = render();
     expect(html).toContain(">Triggers</h2>");
     expect(html).toContain("Start a task the moment something happens, without asking.");
-    expect(html).toContain("glass-surface");
+    expect(html).not.toContain("glass-surface");
+    expect(html).toContain("data-dialog-close");
     expect(html).toContain(">When</span>");
     expect(html).toContain(">should</span>");
-    for (const label of ["Another app sends a link request", "Typeform", "Zapier", "GitHub", "Stripe"]) expect(html).toContain(`>${label}</option>`);
-    expect(html).toContain('<option value="atlas">Atlas</option>');
+    // The source and the bot are pill menus (PillSelect): their choices.
+    const menu = (label: string) => tree.find((node) => node.props.ariaLabel === label)!.props.options as Array<{ value: string; label: string }>;
+    expect(menu(t("triggers.sourceAria")).map((option) => option.label)).toEqual(["Another app sends a link request", "Typeform", "Zapier", "GitHub", "Stripe", "Something else…"]);
+    expect(menu(t("triggers.botAria"))).toContainEqual({ value: "atlas", label: "Atlas" });
     expect(html).toContain("Create trigger");
     expect(html).toContain("No triggers yet");
   });
@@ -193,7 +196,7 @@ describe("Triggers pop-up", () => {
 
   it("closes through the store", () => {
     const { nodes: tree } = render();
-    const close = tree.find((node) => node.props["aria-label"] === "Close triggers")!;
+    const close = tree.find((node) => node.props.label === "Close triggers")!; // the round DialogCloseButton
     (close.props.onClick as () => void)();
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleTriggers", open: false });
   });

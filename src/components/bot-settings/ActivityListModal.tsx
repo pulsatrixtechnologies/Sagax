@@ -4,13 +4,15 @@
 // sub-agents), newest first, narrowed by status (running, finished, failed)
 // and by words. A card opens ActivityDetailModal above this one.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { activityStatusActive, historyItems, loadBotActivity, type BotActivityFilter, type BotActivityItem, type HistoryStatus } from "@/lib/bot-activity";
 import { ActivityList } from "./ActivitySection";
+import { DIALOG, DialogCloseButton } from "../SettingsPrimitives";
+import { ACTIVITY_DIALOG } from "./ActivityDetailModal";
 
 const POLL_MS = 4_000;
 const FILTERS: BotActivityFilter[] = ["coding", "other"];
@@ -22,9 +24,10 @@ const STATUS_KEYS = {
   failed: "botPanel.history.status.failed",
 } as const;
 
+// Settings' borderless pills (2026-10-16): the chosen one filled.
 const chip = (selected: boolean) => cn(
-  "rounded-md px-2 py-1 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
-  selected ? "bg-elevated-hover text-ink" : "text-ink-secondary hover:text-ink",
+  "inline-flex h-7 min-h-[44px] items-center rounded-full px-2.5 text-[13px] leading-[18px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none md:min-h-0",
+  selected ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover hover:text-ink",
 );
 
 export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, onStop, stopping }: {
@@ -78,7 +81,7 @@ export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, on
       role="dialog"
       aria-labelledby="activity-list-title"
       data-activity-list={filter}
-      className="m-auto w-[min(560px,calc(100%-32px))] max-h-[85vh] overflow-hidden rounded-2xl border border-hairline/50 bg-panel p-0 text-ink shadow-2xl backdrop:bg-black/60 backdrop:backdrop-blur-xs"
+      className={ACTIVITY_DIALOG}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onKeyDown={(event) => {
         // Escape closes this layer only, never the bot panel under it.
@@ -88,18 +91,10 @@ export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, on
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div className="relative flex max-h-[85vh] flex-col">
-        <button
-          type="button"
-          aria-label={t("common.close")}
-          title={t("common.close")}
-          onClick={onClose}
-          className="absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-full text-ink-secondary hover:bg-hover hover:text-ink"
-        >
-          <X size={16} />
-        </button>
-        <div className="border-b border-hairline/40 px-5 pb-3 pt-4">
-          <h2 id="activity-list-title" className="text-[15px] font-semibold leading-snug text-ink">{t("botPanel.history.title")}</h2>
-          <p className="mt-0.5 text-[12.5px] text-ink-secondary">{t("botPanel.list.window")}</p>
+        <DialogCloseButton label={t("common.close")} onClick={onClose} />
+        <div className={DIALOG.header}>
+          <h2 id="activity-list-title" className={DIALOG.title}>{t("botPanel.history.title")}</h2>
+          <p className={DIALOG.subtitle}>{t("botPanel.list.window")}</p>
           <div role="tablist" className="mt-3 flex gap-1">
             {FILTERS.map((id) => (
               <button
@@ -123,7 +118,7 @@ export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, on
                 </button>
               ))}
             </div>
-            <label className="ml-auto flex min-w-[160px] flex-1 items-center gap-1.5 rounded-md border border-hairline/50 bg-card px-2 py-1">
+            <label className="ml-auto flex min-w-[160px] flex-1 items-center gap-1.5 rounded-lg border-[0.5px] border-border bg-inset px-2.5 py-1.5 focus-within:border-focus">
               <Search size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
               <input
                 type="search"
@@ -132,12 +127,12 @@ export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, on
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder={t("botPanel.history.search")}
                 aria-label={t("botPanel.history.search")}
-                className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-tertiary"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-secondary"
               />
             </label>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3">
           <ActivityList items={items && historyItems(items, status, search)} error={error} onOpen={onOpen} onStop={onStop} stopping={stopping} now={now} emptyKey="botPanel.list.empty" />
         </div>
       </div>

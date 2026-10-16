@@ -6,7 +6,7 @@
 //
 // Only the bot's owner sees it: the server keeps both to them
 // (GET/PUT /api/bots/:id/permission-mode, /api/approval-rules).
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Pencil, ShieldAlert, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -14,7 +14,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api, type Bot } from "@/state/store";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { PaneEmpty, PaneSection } from "./PaneSection";
+import { DescribedRow, FoldRow, HelpTip, PILL, PillSelect, PRIMARY_PILL, SettingsGroup } from "../SettingsPrimitives";
 
 export type BotPermissionMode = "approval" | "auto" | "bypass";
 export type RuleBehavior = "allow" | "ask" | "deny";
@@ -56,6 +56,8 @@ export function rulesForBot(rules: readonly OwnerRuleRow[], botId: string): Owne
 }
 
 const LONG_TEXT = 110;
+/** Rules shown open; a longer list folds under its count. */
+const RULES_SHOWN = 5;
 
 function RuleText({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
@@ -95,27 +97,27 @@ function RuleEditor({ rule, botId, onCancel, onSave }: {
           className="rounded-md bg-raised px-2 py-1.5 text-[13px] text-ink outline-none focus:ring-1 focus:ring-accent"
         />
       </label>
-      <label className="flex items-center justify-between gap-3 text-[12.5px] text-ink-secondary">
+      <div className="flex items-center justify-between gap-3 text-[12.5px] text-ink-secondary">
         {t("botPanel.rules.behavior")}
-        <select
+        <PillSelect<RuleBehavior>
           value={behavior}
-          onChange={(event) => setBehavior(event.target.value as RuleBehavior)}
-          className="rounded-md bg-raised px-2 py-1 text-[13px] text-ink"
-        >
-          {(["allow", "ask", "deny"] as const).map((value) => <option key={value} value={value}>{t(BEHAVIOR_LABEL[value])}</option>)}
-        </select>
-      </label>
-      <label className="flex items-center justify-between gap-3 text-[12.5px] text-ink-secondary">
+          ariaLabel={t("botPanel.rules.behavior")}
+          onChange={setBehavior}
+          options={(["allow", "ask", "deny"] as const).map((value) => ({ value, label: t(BEHAVIOR_LABEL[value]) }))}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3 text-[12.5px] text-ink-secondary">
         {t("botPanel.rules.appliesTo")}
-        <select
+        <PillSelect<"this" | "all">
           value={allBots ? "all" : "this"}
-          onChange={(event) => setAllBots(event.target.value === "all")}
-          className="rounded-md bg-raised px-2 py-1 text-[13px] text-ink"
-        >
-          <option value="this">{t("botPanel.rules.thisBot")}</option>
-          <option value="all">{t("botPanel.rules.allBots")}</option>
-        </select>
-      </label>
+          ariaLabel={t("botPanel.rules.appliesTo")}
+          onChange={(next) => setAllBots(next === "all")}
+          options={[
+            { value: "this", label: t("botPanel.rules.thisBot") },
+            { value: "all", label: t("botPanel.rules.allBots") },
+          ]}
+        />
+      </div>
       {scoped && !rule.legacy && (
         <label className="flex items-center gap-2 text-[12.5px] text-ink-secondary">
           <input type="checkbox" checked={anyTarget} onChange={(event) => setAnyTarget(event.target.checked)} />
@@ -123,13 +125,13 @@ function RuleEditor({ rule, botId, onCancel, onSave }: {
         </label>
       )}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="rounded-full px-3 py-1 text-[13px] text-ink-secondary hover:bg-control">
+        <button type="button" onClick={onCancel} className={PILL}>
           {t("botPanel.rules.cancel")}
         </button>
         <button
           type="button"
           onClick={() => onSave({ behavior, description, botId: allBots ? null : botId, anyTarget })}
-          className="rounded-full bg-accent px-3 py-1 text-[13px] font-medium text-accent-ink hover:brightness-110"
+          className={PRIMARY_PILL}
         >
           {t("botPanel.rules.save")}
         </button>
@@ -138,11 +140,15 @@ function RuleEditor({ rule, botId, onCancel, onSave }: {
   );
 }
 
-export function OwnerPermissionsCard({ bot }: { bot: Pick<Bot, "id" | "name"> }) {
+/** `leading`: the Permissions page's other approval rows (the approval
+ * level, contacting other bots), drawn first in the same Approvals group;
+ * they show while the owner's mode loads or when it cannot be read. */
+export function OwnerPermissionsCard({ bot, leading }: { bot: Pick<Bot, "id" | "name">; leading?: ReactNode }) {
   const [mode, setMode] = useState<BotPermissionMode | null>(null);
   const [canBypass, setCanBypass] = useState(false);
   const [rules, setRules] = useState<OwnerRuleRow[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<OwnerRuleRow | null>(null);
   const [confirmBypass, setConfirmBypass] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -209,96 +215,116 @@ export function OwnerPermissionsCard({ bot }: { bot: Pick<Bot, "id" | "name"> })
       .catch((failure: unknown) => setError(t("botPanel.rules.error", { error: failure instanceof Error ? failure.message : String(failure) })));
   };
 
-  if (mode === null) return null;
+  const groupTitle = t("botPanel.permissions.approvals");
+  if (mode === null) return leading ? <SettingsGroup title={groupTitle} groupId="approvals">{leading}</SettingsGroup> : null;
 
   return (
     <>
-      <PaneSection title={t("botPanel.permissionMode.title")} help={t("botPanel.permissionMode.help")} data-permission-mode={mode}>
-        <div className="flex gap-1 rounded-lg bg-inset p-0.5" role="radiogroup" aria-label={t("botPanel.permissionMode.title")}>
-          {MODES.map((option) => {
-            const disabled = option.id === "bypass" && !canBypass && mode !== "bypass";
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={mode === option.id}
-                disabled={disabled}
-                title={disabled ? t("botPanel.permissionMode.bypassUnavailable") : t(option.help)}
-                onClick={() => choose(option.id)}
-                className={cn(
-                  "flex-1 rounded-md px-2.5 py-1.5 text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-40",
-                  mode === option.id ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink",
-                )}
-              >
-                {t(option.label)}
-              </button>
-            );
-          })}
+      {/* 2026-10-16 (JC): drawn like Settings: the mode in a pill menu
+          with its one grey line, the rules as rows folded under their
+          count once the list is long. */}
+      <SettingsGroup title={groupTitle} groupId="approvals">
+        {leading}
+        <div data-permission-mode={mode}>
+          <DescribedRow
+            label={t("botPanel.permissionMode.title")}
+            help={t("botPanel.permissionMode.help")}
+            description={
+              <span className={cn("flex items-start gap-1.5", mode === "bypass" && "text-warning")}>
+                {mode === "bypass" && <ShieldAlert size={13} aria-hidden="true" className="mt-px shrink-0" />}
+                {t(MODES.find((option) => option.id === mode)!.help)}
+              </span>
+            }
+          >
+            <PillSelect<BotPermissionMode>
+              value={mode}
+              ariaLabel={t("botPanel.permissionMode.title")}
+              onChange={choose}
+              options={MODES.map((option) => ({
+                value: option.id,
+                label: option.id === "bypass" && !canBypass && mode !== "bypass" ? `${t(option.label)} · ${t("botPanel.permissionMode.bypassUnavailable")}` : t(option.label),
+                disabled: option.id === "bypass" && !canBypass && mode !== "bypass",
+              }))}
+            />
+          </DescribedRow>
         </div>
-        <p className={cn("mt-2 flex items-start gap-1.5 text-[12.5px]", mode === "bypass" ? "text-warning" : "text-ink-secondary")}>
-          {mode === "bypass" && <ShieldAlert size={14} className="mt-0.5 shrink-0" />}
-          {t(MODES.find((option) => option.id === mode)!.help)}
-        </p>
-      </PaneSection>
+      </SettingsGroup>
 
-      <PaneSection title={t("botPanel.rules.title")} help={t("botPanel.rules.help")} data-owner-rules={String(rules.length)}>
-        {rules.length === 0 ? (
-          <PaneEmpty>{t("botPanel.rules.empty")}</PaneEmpty>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-hairline/40">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-b border-hairline/40 bg-inset px-3 py-1.5 text-[12px] font-medium text-ink-secondary">
-              <span>{t("botPanel.rules.action")}</span>
-              <span>{t("botPanel.rules.behavior")}</span>
-              <span className="sr-only">{t("botPanel.rules.edit")}</span>
-            </div>
-            <div className="divide-y divide-hairline/40">
-              {rules.map((rule) => (
-                <div key={rule.id} className="px-3 py-2" data-owner-rule-row={rule.behavior}>
-                  {editing === rule.id ? (
-                    <RuleEditor rule={rule} botId={bot.id} onCancel={() => setEditing(null)} onSave={(patch) => saveRule(rule, patch)} />
-                  ) : (
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-3">
-                      <div className="min-w-0">
-                        <RuleText text={rule.description} />
-                        <div className="mt-0.5 flex flex-wrap gap-1.5 text-[11.5px] text-ink-tertiary">
-                          {rule.botId === null && <span>{t("botPanel.rules.allBots")}</span>}
-                          {rule.destructive && <span className="text-warning">{t(KIND_LABEL[rule.destructive])}</span>}
-                          {rule.legacy && <span>{t("botPanel.rules.migrated")}</span>}
+      <SettingsGroup title={t("botPanel.rules.title")} groupId="ownerRules"
+        accessory={<HelpTip label={t("settings.moreAbout", { title: t("botPanel.rules.title") })}>{t("botPanel.rules.help")}</HelpTip>}>
+        <div data-owner-rules={String(rules.length)}>
+          {rules.length === 0 ? (
+            <p className="px-3.5 py-2.5 text-[12.5px] leading-[18px] text-ink-secondary">{t("botPanel.rules.empty")}</p>
+          ) : (
+            <FoldRow
+              cardId="bot.permissions.rules"
+              defaultOpen={rules.length <= RULES_SHOWN}
+              label={t("botPanel.rules.title")}
+              count={rules.length}
+            >
+              <div className="-mx-3.5 divide-y divide-hairline/40 border-t border-hairline/40">
+                {rules.map((rule) => (
+                  <div key={rule.id} className="px-3.5 py-2" data-owner-rule-row={rule.behavior}>
+                    {editing === rule.id ? (
+                      <RuleEditor rule={rule} botId={bot.id} onCancel={() => setEditing(null)} onSave={(patch) => saveRule(rule, patch)} />
+                    ) : (
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-3">
+                        <div className="min-w-0">
+                          <RuleText text={rule.description} />
+                          <div className="mt-0.5 flex flex-wrap gap-1.5 text-[11.5px] text-ink-tertiary">
+                            {rule.botId === null && <span>{t("botPanel.rules.allBots")}</span>}
+                            {rule.destructive && <span className="text-warning">{t(KIND_LABEL[rule.destructive])}</span>}
+                            {rule.legacy && <span>{t("botPanel.rules.migrated")}</span>}
+                          </div>
+                        </div>
+                        <span className={cn("whitespace-nowrap text-[12.5px]", rule.behavior === "deny" ? "text-danger" : rule.behavior === "allow" ? "text-success" : "text-ink-secondary")}>
+                          {t(BEHAVIOR_LABEL[rule.behavior])}
+                        </span>
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            aria-label={t("botPanel.rules.edit")}
+                            title={t("botPanel.rules.edit")}
+                            onClick={() => setEditing(rule.id)}
+                            className="ui-icon-button"
+                          >
+                            <Pencil size={14} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={t("botPanel.rules.remove")}
+                            title={t("botPanel.rules.remove")}
+                            onClick={() => setRemoving(rule)}
+                            className="ui-icon-button hover:text-danger"
+                          >
+                            <Trash2 size={14} aria-hidden="true" />
+                          </button>
                         </div>
                       </div>
-                      <span className={cn("whitespace-nowrap text-[12.5px]", rule.behavior === "deny" ? "text-danger" : rule.behavior === "allow" ? "text-success" : "text-ink-secondary")}>
-                        {t(BEHAVIOR_LABEL[rule.behavior])}
-                      </span>
-                      <div className="flex items-center gap-0.5">
-                        <button
-                          type="button"
-                          aria-label={t("botPanel.rules.edit")}
-                          title={t("botPanel.rules.edit")}
-                          onClick={() => setEditing(rule.id)}
-                          className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={t("botPanel.rules.remove")}
-                          title={t("botPanel.rules.remove")}
-                          onClick={() => removeRule(rule)}
-                          className="rounded-md p-1 text-ink-secondary hover:bg-danger/10 hover:text-danger"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {error && <div role="alert" className="mt-2 text-[12px] text-danger">{error}</div>}
-      </PaneSection>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </FoldRow>
+          )}
+          {error && <div role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{error}</div>}
+        </div>
+      </SettingsGroup>
+
+      {/* Removing a rule asks first, in a red pill (2026-10-16). */}
+      <ConfirmDialog
+        open={removing !== null}
+        title={t("botPanel.rules.removeTitle")}
+        body={removing?.description ?? ""}
+        confirmLabel={t("botPanel.rules.remove")}
+        tone="danger"
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          const rule = removing;
+          setRemoving(null);
+          if (rule) removeRule(rule);
+        }}
+      />
 
       <ConfirmDialog
         open={confirmBypass}

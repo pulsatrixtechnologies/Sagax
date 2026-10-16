@@ -14,8 +14,9 @@ import { useBotEditor } from "./BotEditorContext";
 import { skillAuthoringEnabled, skillsLibraryEnabled } from "@/lib/feature-flags";
 import { viewerBotsReadOnly, viewerIntegrationsManagedByAdmin } from "@/lib/viewer";
 import { IntegrationsManagedNotice } from "../settings/MyConnectionsSettings";
-import { Switch } from "../SettingsPrimitives";
+import { DIALOG, DialogCloseButton, PILL, PillSelect, PRIMARY_PILL, Switch } from "../SettingsPrimitives";
 import { inputCls } from "./field";
+import { cn } from "@/lib/cn";
 import { PaneEmpty, PaneSection } from "./PaneSection";
 import { OrgSkillsCard } from "./OrgSkillsCard";
 import { SkillUpload } from "./SkillUpload";
@@ -243,8 +244,8 @@ export function SkillReviewDialog({
       aria-labelledby="skill-review-title"
       className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 p-6"
     >
-      <div className="flex max-h-[min(760px,90vh)] w-full max-w-2xl flex-col rounded-2xl bg-card p-5 shadow-2xl">
-        <div id="skill-review-title" className="text-[16px] font-semibold text-ink">
+      <div className={cn(DIALOG.frame, DIALOG.width.xl, "max-h-[min(760px,90vh)] p-5")}>
+        <div id="skill-review-title" className={DIALOG.title}>
           {t("botPanel.skills.reviewTitle", { name: skill.name })}
         </div>
         <div className="mt-1 break-all text-[11.5px] text-ink-secondary">
@@ -268,7 +269,7 @@ export function SkillReviewDialog({
             type="button"
             disabled={working}
             onClick={onCancel}
-            className="rounded-lg px-4 py-2 text-[13px] font-medium text-ink-secondary hover:bg-raised disabled:opacity-40"
+            className={PILL}
           >
             {t("common.cancel")}
           </button>
@@ -276,7 +277,7 @@ export function SkillReviewDialog({
             type="button"
             disabled={working}
             onClick={onEnable}
-            className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-accent-ink disabled:opacity-40"
+            className={PRIMARY_PILL}
           >
             {t("botPanel.skills.enableReviewed")}
           </button>
@@ -420,23 +421,21 @@ export function SkillsSection({ bot }: { bot: Bot }) {
           <div className="flex flex-col gap-1.5">
             {libraryPool.length > 0 ? (
               <div className="flex items-center gap-2">
-                <select
-                  aria-label={t("botPanel.skills.addAria")}
+                <PillSelect
+                  ariaLabel={t("botPanel.skills.addAria")}
                   value={addFromLibrary}
                   disabled={Boolean(working)}
-                  onChange={(e) => setAddFromLibrary(e.target.value)}
-                  className={inputCls + " truncate"}
-                >
-                  <option value="">{t("botPanel.skills.addPlaceholder")}</option>
-                  {libraryPool.map((skill) => (
-                    <option key={skill.name} value={skill.name}>{skill.name}</option>
-                  ))}
-                </select>
+                  onChange={setAddFromLibrary}
+                  options={[
+                    { value: "", label: t("botPanel.skills.addPlaceholder") },
+                    ...libraryPool.map((skill) => ({ value: skill.name, label: skill.name })),
+                  ]}
+                />
                 <button
                   type="button"
                   disabled={!addFromLibrary || Boolean(working)}
                   onClick={() => void addToBot()}
-                  className="shrink-0 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
+                  className={cn(PRIMARY_PILL, "ml-auto shrink-0")}
                 >
                   {t("common.add")}
                 </button>
@@ -497,9 +496,9 @@ export function SkillsSection({ bot }: { bot: Bot }) {
         ) : skills.length === 0 ? (
           <div className="mt-3"><PaneEmpty>{t("botPanel.skills.empty")}</PaneEmpty></div>
         ) : (
-          <div className="mt-3 divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
+          <div className="-mx-3.5 mt-3 divide-y divide-hairline/40 border-t border-hairline/40">
             {skills.map((skill) => (
-              <div key={skill.name} className="px-3 py-2.5">
+              <div key={skill.name} className="px-3.5 py-2.5">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -574,16 +573,10 @@ export function SkillsSection({ bot }: { bot: Bot }) {
           aria-labelledby="skill-view-title"
           className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 p-6"
         >
-          <div className="flex max-h-[min(760px,90vh)] w-full max-w-2xl flex-col rounded-2xl bg-card p-5 shadow-2xl">
-            <div className="flex items-center justify-between gap-3">
-              <div id="skill-view-title" className="text-[16px] font-semibold text-ink">{viewing.name}</div>
-              <button
-                type="button"
-                onClick={() => setViewing(null)}
-                className="rounded-md px-2 py-1 text-[13px] text-ink-secondary hover:bg-control hover:text-ink"
-              >
-                {t("botPanel.skills.close")}
-              </button>
+          <div className={cn(DIALOG.frame, DIALOG.width.xl, "max-h-[min(760px,90vh)] p-5")}>
+            <DialogCloseButton label={t("botPanel.skills.close")} onClick={() => setViewing(null)} />
+            <div className="pr-10">
+              <div id="skill-view-title" className={DIALOG.title}>{viewing.name}</div>
             </div>
             <pre
               tabIndex={0}

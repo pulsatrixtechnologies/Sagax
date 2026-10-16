@@ -12,6 +12,19 @@ import { AccessCard, accessCardLines } from "../AccessCard";
 import { setLocale } from "@/lib/i18n";
 import { PerspicaxOrgSettings, perspicaxConsoleUrl, showInterimCard } from "../PerspicaxOrgSettings";
 
+// The pill menu shows only its current value until opened: draw its
+// choices as a plain list so the markup shows which levels are offered.
+vi.mock("../SettingsPrimitives", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../SettingsPrimitives")>();
+  const { createElement: h } = await import("react");
+  return {
+    ...actual,
+    PillSelect: (props: { ariaLabel: string; value: string; options: ReadonlyArray<{ value: string; label: string }> }) =>
+      h("ul", { "aria-label": props.ariaLabel, "data-value": props.value }, props.options.map((option) => h("li", { key: option.value }, option.label))),
+  };
+});
+
+
 const OWNER = "pr_00000000-0000-4000-8000-0000000000a0";
 const BOB = "pr_00000000-0000-4000-8000-0000000000b0";
 const DAVE = "pr_00000000-0000-4000-8000-0000000000d0";

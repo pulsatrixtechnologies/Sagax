@@ -4,9 +4,10 @@
 // tools. An editor adds only the profiles they hold; a profile someone else
 // put on the bot stays checked, shown as not held, and may be removed.
 // GET and PUT /api/bots/:id/perspicax (server/bot-perspicax.ts).
+import { cn } from "@/lib/cn";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { HelpTip } from "../SettingsPrimitives";
+import { GROUP_CARD, HelpTip, PILL, PRIMARY_PILL } from "../SettingsPrimitives";
 
 import { api, ApiError, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -107,7 +108,7 @@ export function PerspicaxProfileControl({
           type="button"
           disabled={saving}
           onClick={onRemove}
-          className="ml-6 mt-1 rounded-md bg-control px-2 py-0.5 text-[12px] text-ink hover:bg-control/70 disabled:opacity-50"
+          className={cn(PILL, "ml-6 mt-1")}
         >
           {t("botSettings.perspicax.remove")}
         </button>
@@ -189,7 +190,7 @@ export function PerspicaxSection({ bot }: { bot: Pick<Bot, "id"> }) {
       {rows.length === 0 ? (
         <p className="text-[13px] text-ink-secondary">{t("botSettings.perspicax.none")}</p>
       ) : (
-        <ul className="flex flex-col divide-y divide-hairline/40" aria-label={t("botSettings.perspicax.title")}>
+        <ul className={cn(GROUP_CARD, "divide-y divide-hairline/40 px-3.5 py-0.5")} aria-label={t("botSettings.perspicax.title")}>
           {rows.map((row) => (
             <PerspicaxProfileControl
               key={row.profile.id}
@@ -203,18 +204,18 @@ export function PerspicaxSection({ bot }: { bot: Pick<Bot, "id"> }) {
         </ul>
       )}
       {answer.canEdit ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {saved && !changed && <span className="mr-auto text-[12px] text-ink-secondary" role="status">{t("botSettings.perspicax.saved")}</span>}
+          {error && <span className="mr-auto text-[12px] text-danger" role="alert">{t(error)}</span>}
           <button
             type="button"
             disabled={!changed || saving}
             onClick={() => void save()}
-            className="flex items-center gap-1 rounded-md bg-control px-3 py-1 text-[12.5px] text-ink hover:bg-control/70 disabled:opacity-50"
+            className={cn(PRIMARY_PILL, "gap-1")}
           >
             {saving && <Loader2 size={12} className="animate-spin" aria-hidden="true" />}
             {t("botSettings.perspicax.save")}
           </button>
-          {saved && !changed && <span className="text-[12px] text-ink-secondary" role="status">{t("botSettings.perspicax.saved")}</span>}
-          {error && <span className="text-[12px] text-danger" role="alert">{t(error)}</span>}
         </div>
       ) : (
         <p className="text-[12px] text-ink-secondary">{t("botSettings.perspicax.readOnly")}</p>

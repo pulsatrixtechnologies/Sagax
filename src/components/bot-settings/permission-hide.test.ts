@@ -2,10 +2,23 @@
 // that still looks choosable is the same failure.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { GrantEditor } from "./GrantEditor";
 import { InlineEditableText } from "./InlineEditableText";
+
+// The pill menu shows only its current value until opened: draw its
+// choices as a plain list so the markup shows which levels are offered.
+vi.mock("../SettingsPrimitives", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../SettingsPrimitives")>();
+  const { createElement: h } = await import("react");
+  return {
+    ...actual,
+    PillSelect: (props: { ariaLabel: string; value: string; options: ReadonlyArray<{ value: string; label: string }> }) =>
+      h("ul", { "aria-label": props.ariaLabel, "data-value": props.value }, props.options.map((option) => h("li", { key: option.value }, option.label))),
+  };
+});
+
 
 describe("controls a person cannot use", () => {
   it("shows a bot name as text, with no pencil and no field", () => {

@@ -6,6 +6,8 @@
 // at once (server side). The editor shows to whoever may administer the
 // grants (the owner, manage holders, organization admins, team managers
 // for their teams), from GET /api/bots/:id/grants.
+import { cn } from "@/lib/cn";
+import { GROUP_CARD } from "../SettingsPrimitives";
 import { useEffect, useMemo, useState } from "react";
 
 import { api, useStore, type Bot } from "@/state/store";
@@ -58,14 +60,17 @@ export function SharingSection({ bot }: { bot: Bot }) {
     <div className="flex flex-col gap-3" data-bot-sharing>
       <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("botSettings.sharing.notice")}</p>
       {isOwner && !mayShare && <p role="note" data-sharing-permission className="text-[12.5px] leading-relaxed text-ink-secondary">{permissionMissingText("sharing.grants")}</p>}
-      <GrantEditor
-        key={`${bot.id}:${directory ? "directory" : "loading"}`}
-        botId={bot.id}
-        ownerId={bot.ownerUserId}
-        initialGrants={rows}
-        initialAdminister={ownerAdminister}
-        directory={directory}
-      />
+      {/* Settings' card (2026-10-16) */}
+      <div className={cn(GROUP_CARD, "px-3.5 py-2.5")}>
+        <GrantEditor
+          key={`${bot.id}:${directory ? "directory" : "loading"}`}
+          botId={bot.id}
+          ownerId={bot.ownerUserId}
+          initialGrants={rows}
+          initialAdminister={ownerAdminister}
+          directory={directory}
+        />
+      </div>
     </div>
   );
 }

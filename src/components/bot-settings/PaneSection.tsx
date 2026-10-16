@@ -1,17 +1,24 @@
-// One section of a persona editor pane: a short title, an optional info
-// button for the longer explanation, an optional action at the right, then
-// the controls. Sections are separated by a hairline, never boxed in a card,
-// so a pane reads as one page (Settings layout rule: one card level).
+// One section of a bot editor page, drawn like a Settings group (JC
+// 2026-10-16: every window follows Settings): a short grey heading outside
+// the card, an optional info button for the longer explanation, an optional
+// action at the right of the heading, then the controls in one rounded
+// card. `plain` keeps the heading only, for a body that is a list or a
+// card of its own.
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { HelpTip } from "../SettingsPrimitives";
 
+/** The card a section's controls sit in (a SettingsGroup's card, with
+ * room for free-form controls rather than rows). */
+export const PANE_CARD = "rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3";
+
 export function PaneSection({
   title,
   help,
   action,
+  plain,
   children,
   className,
   ...rest
@@ -21,20 +28,22 @@ export function PaneSection({
   help?: ReactNode;
   /** A button or link at the right of the title. */
   action?: ReactNode;
+  /** The heading only: the body draws its own list or card. */
+  plain?: boolean;
   children?: ReactNode;
   className?: string;
 } & Record<`data-${string}`, string | undefined>) {
   const label = typeof title === "string" ? title : "";
   return (
-    <section {...rest} className={cn("border-t border-hairline/40 pt-5 first:border-t-0 first:pt-0", className)}>
+    <section {...rest} data-pane-section="" className={cn("flex min-w-0 flex-col gap-2", className)}>
       {(title || action) && (
-        <div className="mb-3 flex min-h-6 items-center gap-1.5">
-          {title && <h3 className="min-w-0 text-[13px] font-medium text-ink">{title}</h3>}
+        <div className="flex min-h-6 items-center gap-1.5 px-1">
+          {title && <h3 className="flex min-w-0 items-center gap-1.5 text-[13px] font-normal leading-[18px] text-ink-secondary">{title}</h3>}
           {help && <HelpTip label={t("settings.moreAbout", { title: label })}>{help}</HelpTip>}
           {action && <div className="ml-auto flex shrink-0 items-center gap-2">{action}</div>}
         </div>
       )}
-      {children}
+      {children && (plain ? <div className="flex min-w-0 flex-col gap-2">{children}</div> : <div className={PANE_CARD}>{children}</div>)}
     </section>
   );
 }

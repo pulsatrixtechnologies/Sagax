@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, ChevronRight, FilePen, Hand, ListChecks, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, FilePen, Hand, ListChecks, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
 import { reportAchievement } from "@/lib/achievements";
 
 import { approvalModeFor, hasNativeAutoReview, supportsApprovalMode, type ApprovalMode } from "../../shared/approval-mode";
@@ -240,7 +240,7 @@ export function ApprovalModeSelector({
     );
   }
   return (
-    <div className={cn("relative flex items-center", (wide || row) && "w-full")} ref={wrapperRef}>
+    <div className={cn("relative flex items-center", row && "w-full")} ref={wrapperRef}>
       {row ? (
         <button
           ref={triggerRef}
@@ -278,21 +278,22 @@ export function ApprovalModeSelector({
         title={disabled ? t("approvalMode.busy") : wide ? undefined : current.chip}
         onClick={() => setOpen((value) => !value)}
         className={cn(
+          // The bot editor's row (2026-10-16): Settings' borderless pill menu.
           wide
-            ? "flex h-10 w-full items-center justify-between rounded-lg border border-hairline/40 bg-inset px-3.5 text-[13px] text-ink hover:bg-raised"
+            ? "inline-flex h-7 min-h-[44px] max-w-[260px] items-center gap-1 rounded-full px-2.5 text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 aria-expanded:bg-hover motion-reduce:transition-none md:min-h-0"
             : "flex size-8 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-control hover:text-ink",
           triggerDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-ink-secondary",
         )}
       >
         {wide ? (
-          <span className="flex min-w-0 items-center gap-2">
-            <CurrentIcon size={14} className="shrink-0 opacity-70" />
+          <span className="flex min-w-0 items-center gap-1.5">
+            <CurrentIcon size={14} aria-hidden="true" className="shrink-0 opacity-70" />
             <span className="truncate">{current.label}</span>
           </span>
         ) : (
           <CurrentIcon size={16} className="shrink-0 opacity-80" />
         )}
-        {wide && <span aria-hidden className="text-[11px] text-ink-secondary">⌄</span>}
+        {wide && <ChevronDown size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />}
       </button>
       )}
 
@@ -312,7 +313,6 @@ export function ApprovalModeSelector({
             "absolute z-40 flex w-[260px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5",
             row ? "bottom-0 left-full ml-2" : menuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2",
             !row && (align === "right" ? "right-0" : "left-0"),
-            wide && "w-full min-w-[260px]",
             motion.className,
           )}
         >

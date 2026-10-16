@@ -16,7 +16,6 @@ import {
   Send,
   Trash2,
   Webhook,
-  X,
 } from "lucide-react";
 
 import { BotAvatar } from "@/components/Avatar";
@@ -29,6 +28,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
+import { DIALOG, DialogCloseButton, PILL, PRIMARY_PILL } from "./SettingsPrimitives";
 
 export function relativeTime(at?: number) {
   if (!at) return "Never";
@@ -158,13 +158,16 @@ export function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhoo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={webhook ? t("webhookEditor.editTitle") : t("webhookEditor.newTitle")} tabIndex={-1} className="flex max-h-[90vh] w-full max-w-[590px] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated">
-        <div className="flex items-start justify-between border-b border-hairline/40 px-5 py-4"><div><div className="text-[17px] font-semibold text-ink">{webhook ? t("webhookEditor.editTitle") : t("webhookEditor.newTitle")}</div><div className="mt-1 text-[12px] text-ink-secondary">{t("webhookEditor.subtitle")}</div></div><button onClick={onClose} aria-label={t("webhookEditor.close")} className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary"><X size={18} /></button></div>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+    // 2026-10-16 (JC): drawn like Settings (DIALOG): the app background, the
+    // title at the top left, the round close button, pills at the bottom.
+    <div className={DIALOG.backdrop} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={webhook ? t("webhookEditor.editTitle") : t("webhookEditor.newTitle")} tabIndex={-1} className={cn(DIALOG.frame, DIALOG.width.lg, "max-h-[90vh]")}>
+        <DialogCloseButton label={t("webhookEditor.close")} onClick={onClose} />
+        <div className={DIALOG.header}><div className={DIALOG.title}>{webhook ? t("webhookEditor.editTitle") : t("webhookEditor.newTitle")}</div><div className={DIALOG.subtitle}>{t("webhookEditor.subtitle")}</div></div>
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-5 pt-3">
           <div><div className="mb-2 text-[12px] font-medium text-ink-secondary">{t("webhookEditor.who")}</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{bots.map((bot) => <button key={bot.id} type="button" data-initial-focus={botId === bot.id ? "" : undefined} onClick={() => setBotId(bot.id)} className={cn("flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left", botId === bot.id ? "border-accent/70 bg-accent/10" : "border-hairline/50 bg-inset hover:bg-raised/60")}><BotAvatar bot={bot} state={botId === bot.id ? "happy" : "idle"} size={38} animated={false} /><span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{bot.name}</span></button>)}</div></div>
           <div className="rounded-xl border border-accent/20 bg-accent/5 px-3.5 py-3 text-[11.5px] leading-relaxed text-ink-secondary">{t("webhookEditor.sendTask")} <code className="text-ink">{`{"task":"${t("webhookEditor.sampleTask")}"}`}</code>. {t("webhookEditor.keeps")}</div>
-          <details className="group rounded-xl border border-hairline/45 bg-inset/45 px-4 py-3" open={Boolean(webhook)}>
+          <details className="group rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3" open={Boolean(webhook)}>
             <summary className="cursor-pointer text-[12.5px] font-medium text-ink">{t("webhookEditor.advanced")}</summary>
             <div className="mt-4 space-y-4">
               <label className="block"><span className="mb-1.5 block text-[11.5px] font-medium text-ink-secondary">{t("webhookEditor.name")} <span className="font-normal">· {t("webhookEditor.optional")}</span></span><input value={name} onChange={(event) => setName(event.target.value)} placeholder={suggestedName(prompt, bots.find((bot) => bot.id === botId))} className="w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong" /></label>
@@ -176,7 +179,7 @@ export function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhoo
           </details>
           {error && <div className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-[12px] text-danger">{error}</div>}
         </div>
-        <div className="flex justify-end gap-2 border-t border-hairline/40 px-5 py-4"><button onClick={onClose} className="rounded-xl px-4 py-2 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink">{t("common.cancel")}</button><button disabled={saving || !botId} onClick={() => void save()} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40">{saving && <Loader2 size={14} className="animate-spin" />}{webhook ? t("webhookEditor.save") : t("webhookEditor.create")}</button></div>
+        <div className={DIALOG.footer}><button type="button" onClick={onClose} className={PILL}>{t("common.cancel")}</button><button type="button" disabled={saving || !botId} onClick={() => void save()} className={cn(PRIMARY_PILL, "gap-2")}>{saving && <Loader2 size={14} aria-hidden="true" className="animate-spin motion-reduce:animate-none" />}{webhook ? t("webhookEditor.save") : t("webhookEditor.create")}</button></div>
       </div>
     </div>
   );
@@ -345,14 +348,14 @@ export function WebhooksPanel({
             <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-accent/10 text-accent"><Send size={23} /></div>
             <h3 className="text-[16px] font-semibold text-ink">Create your first webhook</h3>
             <p className="mx-auto mt-2 max-w-[420px] text-[12.5px] leading-relaxed text-ink-secondary">Choose a MAUS, copy one command, and every request becomes a new task in its chat.</p>
-            <button onClick={() => setEditor("new")} disabled={bots.length === 0} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40"><Plus size={15} />Create webhook</button>
+            <button onClick={() => setEditor("new")} disabled={bots.length === 0} className={cn(PRIMARY_PILL, "mt-5 gap-2")}><Plus size={15} />Create webhook</button>
             {bots.length === 0 && <p className="mt-3 text-[12px] text-warning">Create a MAUS first, then come back here.</p>}
           </div>
         ) : selected && (
-          <div className="min-h-[580px] overflow-hidden rounded-2xl border border-hairline/45 bg-panel/25 md:grid md:grid-cols-[250px_minmax(0,1fr)]">
-            <aside className="border-b border-hairline/40 bg-inset/35 p-2.5 md:border-r md:border-b-0">
+          <div className="min-h-[580px] overflow-hidden rounded-[14px] border-[0.5px] border-border bg-elevated md:grid md:grid-cols-[250px_minmax(0,1fr)]">
+            <aside className="border-b border-hairline-weak bg-panel p-2.5 md:border-r md:border-b-0">
               <div className="flex items-center justify-between px-2 py-2">
-                <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-secondary">Your webhooks</span>
+                <span className="text-[13px] text-ink-secondary">Your webhooks</span>
                 <span className="text-[10px] tabular-nums text-ink-secondary">{state.webhooks.length}</span>
               </div>
               <nav className="flex gap-1 overflow-x-auto md:block md:space-y-1 md:overflow-visible">
@@ -360,7 +363,7 @@ export function WebhooksPanel({
                   const bot = bots.find((candidate) => candidate.id === webhook.botId);
                   const status = statusFor(webhook);
                   return (
-                    <button key={webhook.id} onClick={() => { setSelectedId(webhook.id); setTab("setup"); setError(""); }} className={cn("flex min-w-[210px] items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left transition-colors md:w-full md:min-w-0", webhook.id === selected.id ? "bg-raised text-ink shadow-sm" : "text-ink-secondary hover:bg-raised/55 hover:text-ink")}>
+                    <button key={webhook.id} onClick={() => { setSelectedId(webhook.id); setTab("setup"); setError(""); }} className={cn("flex min-w-[210px] items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left transition-colors md:w-full md:min-w-0", webhook.id === selected.id ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover hover:text-ink")}>
                       {bot ? <BotAvatar bot={bot} state={webhook.enabled ? "idle" : "sleeping"} size={36} animated={false} label={bot.name} /> : <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-raised text-ink-secondary"><Webhook size={16} /></div>}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[12.5px] font-medium">{webhook.name}</span>
@@ -382,8 +385,8 @@ export function WebhooksPanel({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!selected.verificationPending && <button disabled={Boolean(working)} onClick={() => void invoke(selected, "toggle")} className={cn("flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11.5px] font-medium", selected.enabled ? "bg-raised text-ink-secondary hover:text-ink" : "bg-accent text-accent-ink hover:brightness-110")}>{selected.enabled ? <Pause size={13} /> : <Play size={13} />}{selected.enabled ? "Pause" : "Enable"}</button>}
-                  <details className="relative"><summary className="list-none rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink"><MoreHorizontal size={17} /></summary><div className="absolute right-0 top-full z-20 mt-1 w-[180px] rounded-xl border border-hairline/50 bg-card p-1.5 shadow-2xl"><button onClick={() => setEditor(selected)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] text-ink hover:bg-raised">Edit settings</button><button onClick={() => void invoke(selected, "delete")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] text-danger hover:bg-danger/10"><Trash2 size={13} />Delete</button></div></details>
+                  {!selected.verificationPending && <button disabled={Boolean(working)} onClick={() => void invoke(selected, "toggle")} className={cn(selected.enabled ? PILL : PRIMARY_PILL, "gap-1.5")}>{selected.enabled ? <Pause size={13} /> : <Play size={13} />}{selected.enabled ? "Pause" : "Enable"}</button>}
+                  <details className="relative"><summary className="list-none rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink"><MoreHorizontal size={17} /></summary><div className="popover-surface absolute right-0 top-full z-20 mt-1 w-[180px] rounded-xl border-[0.5px] border-border bg-elevated p-1.5"><button onClick={() => setEditor(selected)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] text-ink hover:bg-raised">Edit settings</button><button onClick={() => void invoke(selected, "delete")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] text-danger hover:bg-danger/10"><Trash2 size={13} />Delete</button></div></details>
                 </div>
               </div>
 
@@ -398,7 +401,7 @@ export function WebhooksPanel({
                     <h4 className="text-[14px] font-semibold text-ink">Send a task</h4>
                     <p className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">Every request needs this webhook&apos;s bearer token in an <code className="text-ink">Authorization</code> header. Copy this command into Terminal and press Return; it starts a real task in {selectedBot?.name ?? "this MAUS"}&apos;s chat. Send the task text in the request body.</p>
                     {credential ? (
-                      <div className="mt-4 overflow-hidden rounded-xl border border-hairline/45 bg-inset">
+                      <div className="mt-4 overflow-hidden rounded-xl border-[0.5px] border-border bg-inset">
                         <div className="flex items-center justify-between border-b border-hairline/45 px-3.5 py-2"><span className="text-[9.5px] font-medium uppercase tracking-wider text-ink-secondary">Terminal</span><div className="flex items-center gap-1"><button onClick={() => void createAndCopyCommand(selected)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink">{copiedId === selected.id && copiedKind === "command" ? <Check size={12} className="text-success" /> : <Copy size={12} />}{copiedId === selected.id && copiedKind === "command" ? "Copied" : "Copy command"}</button><button onClick={() => void createAndCopyCommand(selected, false, "token")} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink">{copiedId === selected.id && copiedKind === "token" ? <Check size={12} className="text-success" /> : <Copy size={12} />}{copiedId === selected.id && copiedKind === "token" ? "Copied" : "Copy token"}</button><button onClick={() => void createAndCopyCommand(selected, true)} className="rounded-lg p-1.5 text-ink-secondary hover:bg-raised hover:text-ink" title="Regenerate token"><RotateCw size={12} /></button></div></div>
                         <pre className="overflow-x-auto p-4 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-ink-secondary">{command}</pre>
                         <p className="border-t border-hairline/45 px-3.5 py-2 text-[10.5px] leading-relaxed text-warning">Copy it now. The full token is shown only this once; afterwards only its last 4 characters ({selected.tokenLast4}) stay visible.</p>
@@ -406,23 +409,23 @@ export function WebhooksPanel({
                     ) : selected.tokenPending ? (
                       <div className="mt-4">
                         <p className="max-w-[560px] rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3 text-[11px] leading-relaxed text-ink">This webhook now needs a bearer token; copy it here. Its old URL no longer works, so update every sender once you have the token. It is shown a single time.</p>
-                        <button disabled={Boolean(working) || !ingress?.available} onClick={() => void createAndCopyCommand(selected)} className="mt-3 flex items-center gap-2 rounded-xl bg-accent px-3.5 py-2.5 text-[12px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40">{working === `${selected.id}:command` ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}Show token and copy command</button>
+                        <button disabled={Boolean(working) || !ingress?.available} onClick={() => void createAndCopyCommand(selected)} className={cn(PRIMARY_PILL, "mt-3 gap-2")}>{working === `${selected.id}:command` ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}Show token and copy command</button>
                       </div>
                     ) : (
                       <div className="mt-4">
                         <p className="max-w-[560px] text-[11px] leading-relaxed text-ink-secondary">Token <code className="text-ink">{maskedToken(selected)}</code>. The full token was shown once, when it was created. Regenerate it to get a new one; the current token stops working immediately.</p>
-                        <button disabled={Boolean(working) || !ingress?.available} onClick={() => void createAndCopyCommand(selected, true)} className="mt-3 flex items-center gap-2 rounded-xl bg-accent px-3.5 py-2.5 text-[12px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40">{working === `${selected.id}:command` ? <Loader2 size={14} className="animate-spin" /> : <RotateCw size={14} />}Regenerate token</button>
+                        <button disabled={Boolean(working) || !ingress?.available} onClick={() => void createAndCopyCommand(selected, true)} className={cn(PRIMARY_PILL, "mt-3 gap-2")}>{working === `${selected.id}:command` ? <Loader2 size={14} className="animate-spin" /> : <RotateCw size={14} />}Regenerate token</button>
                       </div>
                     )}
                     <div className="mt-3 flex items-start gap-2 text-[10.5px] leading-relaxed text-ink-secondary"><Laptop size={12} className="mt-0.5 shrink-0" /><span>Keep Sagax open so it can receive requests.</span></div>
 
-                    {selected.verificationSample && !selected.enabled && <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-y border-success/20 bg-success/5 px-3.5 py-3"><div><div className="flex items-center gap-2 text-[11.5px] font-medium text-success"><Check size={13} />Request received</div><p className="mt-1 max-w-[520px] truncate font-mono text-[10px] text-ink-secondary">{selected.verificationSample.preview || "Empty payload"}</p></div><button disabled={Boolean(working)} onClick={() => void invoke(selected, "toggle")} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[11px] font-medium text-accent-ink hover:brightness-110"><Play size={12} />Turn on</button></div>}
+                    {selected.verificationSample && !selected.enabled && <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-y border-success/20 bg-success/5 px-3.5 py-3"><div><div className="flex items-center gap-2 text-[11.5px] font-medium text-success"><Check size={13} />Request received</div><p className="mt-1 max-w-[520px] truncate font-mono text-[10px] text-ink-secondary">{selected.verificationSample.preview || "Empty payload"}</p></div><button disabled={Boolean(working)} onClick={() => void invoke(selected, "toggle")} className={cn(PRIMARY_PILL, "gap-1.5")}><Play size={12} />Turn on</button></div>}
 
                     <div className="mt-7 border-t border-hairline/35 pt-5">
                       <div className="grid gap-4 text-[11.5px] sm:grid-cols-2"><div><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Tasks go to</div><div className="mt-1.5 font-medium text-ink">{selectedBot?.name ?? "Deleted MAUS"}</div></div><div><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Runs on</div><div className="mt-1.5 font-medium text-ink">{selected.runOn === "cloud" ? "Cloud computer" : "This computer"}</div></div></div>
                     </div>
 
-                    <details className="group mt-5 border-t border-hairline/35 pt-4"><summary className="flex cursor-pointer list-none items-center justify-between text-[11.5px] font-medium text-ink"><span>Advanced</span><ChevronDown size={14} className="text-ink-secondary transition-transform group-open:rotate-180" /></summary><div className="mt-4 space-y-3 text-[10.5px] leading-relaxed text-ink-secondary">{selected.prompt ? <p><span className="font-medium text-ink">Default instruction:</span> {selected.prompt}</p> : <p>The task or message sent with each request becomes the MAUS instruction.</p>}{selected.eventTypes?.length ? <p><span className="font-medium text-ink">Accepted events:</span> {selected.eventTypes.join(", ")}</p> : <p>All event types are accepted.</p>}<p><span className="font-medium text-ink">Unfinished tasks at once:</span> {selected.maxPendingRuns ?? WEBHOOK_DEFAULT_MAX_PENDING_RUNS}. More requests get HTTP 429 until one finishes.</p><button onClick={() => setEditor(selected)} className="rounded-lg border border-hairline/50 px-3 py-2 text-[11px] font-medium text-ink hover:bg-raised">Edit settings</button></div></details>
+                    <details className="group mt-5 border-t border-hairline/35 pt-4"><summary className="flex cursor-pointer list-none items-center justify-between text-[11.5px] font-medium text-ink"><span>Advanced</span><ChevronDown size={14} className="text-ink-secondary transition-transform group-open:rotate-180" /></summary><div className="mt-4 space-y-3 text-[10.5px] leading-relaxed text-ink-secondary">{selected.prompt ? <p><span className="font-medium text-ink">Default instruction:</span> {selected.prompt}</p> : <p>The task or message sent with each request becomes the MAUS instruction.</p>}{selected.eventTypes?.length ? <p><span className="font-medium text-ink">Accepted events:</span> {selected.eventTypes.join(", ")}</p> : <p>All event types are accepted.</p>}<p><span className="font-medium text-ink">Unfinished tasks at once:</span> {selected.maxPendingRuns ?? WEBHOOK_DEFAULT_MAX_PENDING_RUNS}. More requests get HTTP 429 until one finishes.</p><button onClick={() => setEditor(selected)} className={PILL}>Edit settings</button></div></details>
                   </div>
                 </div>
               ) : (

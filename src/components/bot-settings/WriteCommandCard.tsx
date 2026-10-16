@@ -2,6 +2,8 @@
 // bot follows when someone types `/name` in a chat. Saved as an ordinary
 // skill through the bot-creation template route, so it is listed, switched
 // off, and removed with the bot's other skills above.
+import { cn } from "@/lib/cn";
+import { HelpTip, PRIMARY_PILL } from "../SettingsPrimitives";
 import { SquareSlash } from "lucide-react";
 import { useState } from "react";
 
@@ -64,14 +66,16 @@ export function WriteCommandCard({ bot, taken, onSaved }: { bot: Bot; taken: rea
   };
 
   return (
-    <div className="rounded-xl bg-card p-4">
-      <div className="flex items-center gap-2">
-        <SquareSlash size={16} className="text-ink-secondary" />
-        <div className="text-[15px] font-medium text-ink">{t("skills.write.title")}</div>
+    // 2026-10-16 (JC): a grey heading over a Settings card; the hint is
+    // behind the info button.
+    <section className="flex flex-col gap-2" data-write-command="">
+      <div className="flex items-center gap-1.5 px-1">
+        <SquareSlash size={14} aria-hidden="true" className="text-ink-secondary" />
+        <h3 className="text-[13px] font-normal leading-[18px] text-ink-secondary">{t("skills.write.title")}</h3>
+        <HelpTip label={t("settings.moreAbout", { title: t("skills.write.title") })}>{t("skills.write.hint")}</HelpTip>
       </div>
-      <div className="mt-1 text-[12px] leading-relaxed text-ink-secondary">{t("skills.write.hint")}</div>
       <form
-        className="mt-3 flex flex-col gap-2"
+        className="flex flex-col gap-2 rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3"
         onSubmit={(e) => {
           e.preventDefault();
           void save();
@@ -112,13 +116,13 @@ export function WriteCommandCard({ bot, taken, onSaved }: { bot: Bot; taken: rea
           <button
             type="submit"
             disabled={saving || Boolean(problem)}
-            className="shrink-0 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
+            className={cn(PRIMARY_PILL, "shrink-0")}
           >
             {saving ? t("skills.write.saving") : t("skills.write.save")}
           </button>
         </div>
         {error && <div role="alert" className="text-[12px] text-danger">{error}</div>}
       </form>
-    </div>
+    </section>
   );
 }

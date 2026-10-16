@@ -81,7 +81,7 @@ class FakeElement {
   querySelector = vi.fn((_selector: string): FakeElement | null => null);
   querySelectorAll = vi.fn((): FakeElement[] => []);
 }
-const VOICE_PICKER = "select[data-voice-picker]:not([disabled])";
+const VOICE_PICKER = "[data-voice-picker] button:not([disabled])";
 const FIRST_FIELD = "input:not([disabled]), select:not([disabled])";
 /** A pane holding these fields, found the way a browser would. */
 function paneWith(fields: { voicePicker?: FakeElement; firstField?: FakeElement }) {
@@ -229,7 +229,8 @@ describe("voice set-up pop-up", () => {
   it("finds the voice picker where VoiceSettings draws it, which is only once the engine is set up", async () => {
     const actual = await vi.importActual<typeof import("./VoiceSettings")>("./VoiceSettings");
     const card = () => renderToStaticMarkup(createElement(actual.VoiceSettings, { bot: pepper, onPatch: () => {} }));
-    const pickerTag = (html: string) => html.match(/<select\b[^>]*>/g)?.find((tag) => tag.includes("data-voice-picker"));
+    // The picker is a pill menu (a button) inside the data-voice-picker span.
+    const pickerTag = (html: string) => html.match(/data-voice-picker[^>]*>\s*<div[^>]*>\s*<button\b[^>]*>/)?.[0];
 
     // The engine key is not on this card. Until the engine is set up, the
     // card points at Settings and draws no picker.

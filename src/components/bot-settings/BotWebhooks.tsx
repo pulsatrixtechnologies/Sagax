@@ -15,6 +15,7 @@ import { viewerBotsReadOnly } from "@/lib/viewer";
 import type { WebhookTrigger } from "@/lib/webhooks";
 import { WebhookEditor, maskedToken, statusFor, terminalCommand, useWebhookActions } from "../WebhooksPanel";
 import { PaneEmpty, PaneSection } from "./PaneSection";
+import { PILL } from "../SettingsPrimitives";
 
 const iconButton = "flex size-7 shrink-0 items-center justify-center rounded-md text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40";
 
@@ -41,7 +42,7 @@ export function BotWebhooks({ bot }: { bot: Bot }) {
           type="button"
           data-new-webhook=""
           onClick={() => setEditor("new")}
-          className="flex items-center gap-1.5 rounded-lg bg-control px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-raised-hover"
+          className={cn(PILL, "gap-1.5")}
         >
           <Plus size={13} aria-hidden="true" />
           {t("botWebhooks.new")}
@@ -53,14 +54,14 @@ export function BotWebhooks({ bot }: { bot: Bot }) {
       {webhooks.length === 0 ? (
         <PaneEmpty>{t("botPanel.access.noWebhooks")}</PaneEmpty>
       ) : (
-        <ul className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
+        <ul className="-mx-3.5 -my-1 divide-y divide-hairline/40">
           {webhooks.map((webhook) => {
             const status = statusFor(webhook);
             const credential = credentials[webhook.id];
             const busy = working !== null && working.startsWith(`${webhook.id}:`);
             const copied = (kind: "command" | "token") => copiedId === webhook.id && copiedKind === kind;
             return (
-              <li key={webhook.id} data-bot-webhook={webhook.id} className="px-3 py-2">
+              <li key={webhook.id} data-bot-webhook={webhook.id} className="px-3.5 py-2">
                 <div className="flex items-center gap-2">
                   {manage ? (
                     <button

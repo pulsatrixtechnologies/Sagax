@@ -5,18 +5,17 @@
 // types, where it runs, how many at once, rotating the private URL, the
 // delivery log — stays one "Advanced options" away on each trigger.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, Copy, ExternalLink, Laptop, Cloud, Link2, Loader2, Pencil, RotateCw, Trash2, Webhook, X, Zap } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Copy, ExternalLink, Laptop, Cloud, Link2, Loader2, Pencil, RotateCw, Trash2, Webhook, Zap } from "lucide-react";
 
 import { BotAvatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
-import { glassPopupFrameStyle } from "@/lib/glass-popup";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { WEBHOOK_DEFAULT_MAX_PENDING_RUNS, webhookActivationDefaults, type WebhookTrigger, type WebhookTriggerInput } from "@/lib/webhooks";
 import { api, openBotThread, useStore, type Bot } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
 
-import { Switch } from "./SettingsPrimitives";
+import { DANGER_PILL, DIALOG, DialogCloseButton, GROUP_CARD, PILL, PillSelect, PRIMARY_PILL, Switch } from "./SettingsPrimitives";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import {
   WebhookEditor,
@@ -63,8 +62,6 @@ export function triggerInput(draft: { source: string; customName: string; botId:
   };
 }
 
-const selectClass =
-  "min-h-9 max-w-full rounded-xl border border-hairline/40 bg-control/70 px-3 py-1.5 text-[13.5px] font-medium text-ink focus:border-focus";
 
 export function TriggersPanel() {
   const { state, dispatch } = useStore();
@@ -94,7 +91,7 @@ export function TriggersPanel() {
           'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
         ) ?? [],
       ).filter((element) => element.getClientRects().length > 0);
-    (dialog?.querySelector<HTMLElement>("select") ?? dialog)?.focus();
+    (dialog?.querySelector<HTMLElement>("[data-pill-select]") ?? dialog)?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       // The full editor, when open, owns Escape and its own focus trap.
       if (event.defaultPrevented || editingRef.current) return;
@@ -148,50 +145,46 @@ export function TriggersPanel() {
   };
 
   return (
+    // 2026-10-16 (JC): drawn like Settings: its frame, the title at the top
+    // left, the round close button, grey headings over rounded cards, pill
+    // menus and pill buttons.
     <div
-      className="glass-popup-frame"
-      style={glassPopupFrameStyle()}
+      className={DIALOG.backdrop}
       onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
-      {/* A sibling, not the parent: a backdrop-filter on an ancestor would
-          stop the pop-up's own glass from seeing the app behind it. */}
-      <div aria-hidden="true" className="glass-scrim pointer-events-none absolute inset-0" />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="triggers-title"
         tabIndex={-1}
-        className="glass-surface glass-popup animate-pop-in relative flex flex-col overflow-hidden rounded-[24px] outline-none"
+        className={cn(DIALOG.frame, DIALOG.width.xl, "h-[min(700px,calc(100dvh-96px))]")}
       >
-        <header className="flex items-start justify-between gap-4 px-6 pb-4 pt-6 sm:px-8 sm:pt-7">
-          <div className="min-w-0">
-            <h2 id="triggers-title" className="text-[22px] font-semibold tracking-[-0.01em] text-ink">{t("triggers.title")}</h2>
-            <p className="mt-1 text-[13px] text-ink-secondary">{t("triggers.subtitle")}</p>
-          </div>
-          <button onClick={close} aria-label={t("triggers.close")} className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink">
-            <X size={21} />
-          </button>
+        <DialogCloseButton label={t("triggers.close")} onClick={close} />
+        <header className={DIALOG.headerWide}>
+          <h2 id="triggers-title" className={DIALOG.title}>{t("triggers.title")}</h2>
+          <p className={DIALOG.subtitle}>{t("triggers.subtitle")}</p>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 sm:px-8">
+        <div className={DIALOG.bodyWide}>
           {/* the builder: one sentence */}
           <form
             data-trigger-builder
-            className="glass-card rounded-2xl p-4 sm:p-5"
+            className={cn(GROUP_CARD, "px-3.5 py-3")}
             onSubmit={(event) => {
               event.preventDefault();
               void create();
             }}
           >
-            <div className="flex flex-wrap items-center gap-2 text-[14px] text-ink">
-              <Zap size={16} className="shrink-0 text-accent-text" aria-hidden="true" />
-              <span className="font-medium">{t("triggers.when")}</span>
-              <select aria-label={t("triggers.sourceAria")} value={source} onChange={(event) => setSource(event.target.value)} className={selectClass}>
-                {TRIGGER_SOURCES.map((entry) => (
-                  <option key={entry.id} value={entry.id}>{triggerSourceLabel(entry.id)}</option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-ink">
+              <Zap size={15} className="shrink-0 text-accent-text" aria-hidden="true" />
+              <span>{t("triggers.when")}</span>
+              <PillSelect
+                ariaLabel={t("triggers.sourceAria")}
+                value={source}
+                onChange={setSource}
+                options={TRIGGER_SOURCES.map((entry) => ({ value: entry.id, label: triggerSourceLabel(entry.id) }))}
+              />
               {source === "custom" && (
                 <input
                   value={customName}
@@ -199,16 +192,18 @@ export function TriggersPanel() {
                   aria-label={t("triggers.source.customAria")}
                   placeholder={t("triggers.source.customPlaceholder")}
                   maxLength={80}
-                  className="min-h-9 min-w-[200px] flex-1 rounded-xl border border-hairline/40 bg-inset px-3 py-1.5 text-[13.5px] text-ink placeholder:text-ink-tertiary"
+                  className="h-7 min-w-[200px] flex-1 rounded-lg border-[0.5px] border-border bg-inset px-2.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-focus focus:outline-none"
                 />
               )}
-              <ArrowRight size={15} className="shrink-0 text-ink-tertiary" aria-hidden="true" />
-              <select aria-label={t("triggers.botAria")} value={chosenBot} disabled={bots.length === 0} onChange={(event) => setBotId(event.target.value)} className={selectClass}>
-                {bots.map((bot) => (
-                  <option key={bot.id} value={bot.id}>{bot.name}</option>
-                ))}
-              </select>
-              <span className="font-medium">{t("triggers.should")}</span>
+              <ArrowRight size={14} className="shrink-0 text-ink-tertiary" aria-hidden="true" />
+              <PillSelect
+                ariaLabel={t("triggers.botAria")}
+                value={chosenBot}
+                disabled={bots.length === 0}
+                onChange={setBotId}
+                options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
+              />
+              <span>{t("triggers.should")}</span>
             </div>
             <MarkdownEditor
               value={prompt}
@@ -225,30 +220,30 @@ export function TriggersPanel() {
               <button
                 type="submit"
                 disabled={creating || !chosenBot}
-                className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40"
+                className={cn(PRIMARY_PILL, "gap-2")}
               >
-                {creating && <Loader2 size={14} className="animate-spin" />}
+                {creating && <Loader2 size={14} aria-hidden="true" className="animate-spin motion-reduce:animate-none" />}
                 {t("triggers.create")}
               </button>
             </div>
           </form>
 
-          {error && <div role="alert" className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-[12px] text-danger">{error}</div>}
+          {error && <div role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-[12px] text-danger">{error}</div>}
           {ingress && !ingress.available && (
-            <div role="status" className="mt-3 flex items-center gap-2 rounded-xl border border-danger/25 bg-danger/10 px-3.5 py-3 text-[12px] text-danger">
+            <div role="status" className="flex items-center gap-2 rounded-xl border border-danger/25 bg-danger/10 px-3.5 py-3 text-[12px] text-danger">
               <span className="size-1.5 shrink-0 rounded-full bg-danger" />{t("triggers.receiverUnavailable")}{ingress.error ? ` ${ingress.error}` : ""}
             </div>
           )}
 
-          <section aria-labelledby="triggers-yours" className="mt-7">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 id="triggers-yours" className="text-[12px] font-medium uppercase tracking-[0.08em] text-ink-tertiary">{t("triggers.yours")}</h3>
-              <span className="text-[11px] tabular-nums text-ink-tertiary">{state.webhooks.length}</span>
+          <section aria-labelledby="triggers-yours" className="flex flex-col gap-2">
+            <div className="flex items-center gap-1.5 px-1">
+              <h3 id="triggers-yours" className="text-[13px] leading-[18px] text-ink-secondary">{t("triggers.yours")}</h3>
+              <span className="text-[12px] tabular-nums text-ink-tertiary">{state.webhooks.length}</span>
             </div>
             {state.webhooks.length === 0 ? (
-              <div className="glass-card rounded-2xl px-5 py-8 text-center text-[12.5px] text-ink-secondary">{t("triggers.empty")}</div>
+              <div className={cn(GROUP_CARD, "px-3.5 py-6 text-center text-[13px] text-ink-secondary")}>{t("triggers.empty")}</div>
             ) : (
-              <ul className="space-y-2">
+              <ul className={cn(GROUP_CARD, "divide-y divide-hairline/40 py-0")}>
                 {state.webhooks.map((webhook) => (
                   <TriggerRow
                     key={webhook.id}
@@ -326,20 +321,20 @@ function TriggerRow({
   const waitingForTest = Boolean(webhook.verificationPending && !webhook.enabled);
   const botName = bot?.name ?? t("triggers.deletedBot");
   return (
-    <li data-trigger-row={webhook.id} className="glass-card rounded-2xl">
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3.5">
+    <li data-trigger-row={webhook.id}>
+      <div className="flex flex-wrap items-center gap-3 px-3.5 py-2.5">
         {bot ? (
           <BotAvatar bot={bot} state={webhook.enabled ? "idle" : "sleeping"} size={34} animated={false} label={bot.name} />
         ) : (
           <div className="flex size-[34px] shrink-0 items-center justify-center rounded-xl bg-raised text-ink-secondary"><Webhook size={16} /></div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5 text-[13.5px] font-medium text-ink">
+          <div className="flex min-w-0 items-center gap-1.5 text-[13px] leading-[18px] text-ink">
             <span className="truncate">{webhook.name}</span>
             <ArrowRight size={13} className="shrink-0 text-ink-tertiary" aria-hidden="true" />
             <span className="truncate">{botName}</span>
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-secondary">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] leading-4 text-ink-secondary">
             <span className={cn("size-1.5 rounded-full", status.dot)} />
             <span className={status.tone}>{status.label}</span>
             <span aria-hidden="true">·</span>
@@ -354,7 +349,7 @@ function TriggerRow({
           type="button"
           disabled={busy || (!hasCredential && !ingressAvailable)}
           onClick={() => onCopy("command", !hasCredential && !webhook.tokenPending)}
-          className="flex items-center gap-1.5 rounded-lg bg-control/70 px-2.5 py-1.5 text-[12px] font-medium text-ink hover:bg-raised-hover disabled:opacity-40"
+          className={cn(PILL, "gap-1.5")}
         >
           {copied === "command" ? <Check size={13} className="text-success" /> : working === `${webhook.id}:command` ? <Loader2 size={13} className="animate-spin" /> : hasCredential ? <Copy size={13} /> : <Link2 size={13} />}
           {copied === "command" ? t("triggers.copied") : t(hasCredential ? "triggers.copyCommand" : webhook.tokenPending ? "triggers.showToken" : "triggers.regenerateToken")}
@@ -367,8 +362,11 @@ function TriggerRow({
           onClick={onToggle}
         />
       </div>
-      <details className="group border-t border-hairline/25 px-4 py-2.5">
-        <summary className="cursor-pointer text-[12px] font-medium text-ink-secondary hover:text-ink">{t("triggers.advanced")}</summary>
+      <details className="group/advanced px-3.5 pb-2.5">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-full px-1 text-[12.5px] text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 [&::-webkit-details-marker]:hidden">
+          {t("triggers.advanced")}
+          <ChevronDown size={13} aria-hidden="true" className="transition-transform group-open/advanced:rotate-180 motion-reduce:transition-none" />
+        </summary>
         <div className="mt-3 space-y-3 pb-2 text-[11.5px] leading-relaxed text-ink-secondary">
           <div className="rounded-xl border border-accent-border/30 bg-inset/60 px-3 py-2.5">
             {t("triggers.requestTask")} <code className="text-ink">{JSON.stringify({ task: t("triggers.sampleTask") })}</code>. {t("triggers.keepsSetup")}
@@ -392,17 +390,17 @@ function TriggerRow({
           )}
           <div className="flex flex-wrap gap-2">
             {(hasCredential || webhook.tokenPending) && (
-              <button type="button" disabled={busy || (!hasCredential && !ingressAvailable)} onClick={() => onCopy("command", false)} className="flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised disabled:opacity-40">
+              <button type="button" disabled={busy || (!hasCredential && !ingressAvailable)} onClick={() => onCopy("command", false)} className={cn(PILL, "gap-1.5")}>
                 {copied === "command" ? <Check size={12} className="text-success" /> : <Copy size={12} />}{t(copied === "command" ? "triggers.copied" : hasCredential ? "engineSetup.copyCommand" : "triggers.showToken")}
               </button>
             )}
-            <button type="button" disabled={busy || !ingressAvailable} onClick={() => onCopy("command", true)} className="flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised disabled:opacity-40">
+            <button type="button" disabled={busy || !ingressAvailable} onClick={() => onCopy("command", true)} className={cn(PILL, "gap-1.5")}>
               <RotateCw size={12} />{t("triggers.regenerateToken")}
             </button>
-            <button type="button" disabled={busy} onClick={onEdit} className="flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised disabled:opacity-40">
+            <button type="button" disabled={busy} onClick={onEdit} className={cn(PILL, "gap-1.5")}>
               <Pencil size={12} />{t("triggers.editSettings")}
             </button>
-            <button type="button" disabled={busy} onClick={onDelete} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11.5px] font-medium text-danger hover:bg-danger/10 disabled:opacity-40">
+            <button type="button" disabled={busy} onClick={onDelete} className={cn(DANGER_PILL, "gap-1.5")}>
               <Trash2 size={12} />{t("common.delete")}
             </button>
           </div>

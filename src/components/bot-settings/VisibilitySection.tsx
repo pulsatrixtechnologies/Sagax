@@ -6,7 +6,7 @@
 // (server/bot-visibility.ts). No confirmation step: it is a setting.
 import { useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
-import { HelpTip } from "../SettingsPrimitives";
+import { DescribedRow, GROUP_CARD, PILL, PillSelect, PRIMARY_PILL } from "../SettingsPrimitives";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
@@ -113,38 +113,37 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
 
   return (
     <div className="flex flex-col gap-3" data-bot-visibility>
-      <div className="flex items-center gap-1.5 text-[12.5px] text-ink-secondary">
-        <span>{t("botSettings.visibility.subtitle")}</span>
-        <HelpTip label={t("settings.moreAbout", { title: t("botSettings.visibility.title") })}>{t("botSettings.visibility.rooms")}</HelpTip>
-      </div>
-      <div role="radiogroup" aria-label={t("botSettings.visibility.title")} className="flex flex-col gap-1.5">
-        {OPTIONS.map((option) => (
-          <label key={option.mode} className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
-            <input
-              type="radio"
-              name={`visibility-${bot.id}`}
-              value={option.mode}
-              checked={mode === option.mode}
-              disabled={busy}
-              onChange={() => { setMode(option.mode); setStatus(null); setError(null); }}
-            />
-            {t(option.key)}
-          </label>
-        ))}
-      </div>
-      {mode === "people" && (
-        <label className="flex flex-col gap-1 text-[12px] text-ink-secondary">
-          {t("botSettings.visibility.peopleLabel")}
-          <textarea
-            value={people}
-            onChange={(e) => { setPeople(e.target.value); setStatus(null); }}
-            placeholder={t("botSettings.visibility.peoplePlaceholder")}
-            rows={4}
+      {/* 2026-10-16 (JC): drawn like Settings: one card row with the
+          audience in a pill menu, the list of people under it. */}
+      <div className={GROUP_CARD}>
+        <DescribedRow
+          label={t("botSettings.visibility.title")}
+          description={t("botSettings.visibility.subtitle")}
+          help={t("botSettings.visibility.rooms")}
+          rowId="visibility"
+          below={mode === "people" && (
+            <label className="mt-2.5 flex flex-col gap-1.5 text-[12px] text-ink-secondary">
+              {t("botSettings.visibility.peopleLabel")}
+              <textarea
+                value={people}
+                onChange={(e) => { setPeople(e.target.value); setStatus(null); }}
+                placeholder={t("botSettings.visibility.peoplePlaceholder")}
+                rows={4}
+                disabled={busy}
+                className="rounded-lg border-[0.5px] border-border bg-inset px-3 py-2 font-mono text-[12.5px] text-ink placeholder:text-ink-secondary focus:border-focus focus:outline-none"
+              />
+            </label>
+          )}
+        >
+          <PillSelect
+            value={mode}
+            ariaLabel={t("botSettings.visibility.title")}
             disabled={busy}
-            className="rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12.5px] text-ink placeholder:text-ink-secondary focus:outline-none"
+            onChange={(next) => { setMode(next); setStatus(null); setError(null); }}
+            options={OPTIONS.map((option) => ({ value: option.mode, label: t(option.key) }))}
           />
-        </label>
-      )}
+        </DescribedRow>
+      </div>
       {mixed.length > 0 && (
         <div className="flex flex-col gap-2 rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[12px] leading-relaxed text-ink-secondary" data-visibility-mixed-rooms>
           <p>{t("botSettings.visibility.mixedRooms", { rooms: mixed.map((room) => JSON.stringify(room.name)).join(", ") })}</p>
@@ -155,7 +154,7 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
                 type="button"
                 disabled={busy}
                 onClick={() => void resetRoom(room.id)}
-                className="rounded-md bg-control px-2 py-1 text-[12px] text-ink hover:bg-control/70 disabled:opacity-50"
+                className={PILL}
               >
                 {t("botSettings.visibility.resetRoom", { room: JSON.stringify(room.name) })}
               </button>
@@ -163,12 +162,12 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
           </div>
         </div>
       )}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-end gap-3">
         <button
           type="button"
           onClick={() => void save()}
           disabled={busy || !dirty}
-          className={cn("flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50")}
+          className={cn(PRIMARY_PILL, "gap-1.5", "disabled:opacity-50")}
         >
           {busy && <Loader2 size={13} className="animate-spin" />}
           {busy ? t("botSettings.visibility.saving") : t("botSettings.visibility.save")}

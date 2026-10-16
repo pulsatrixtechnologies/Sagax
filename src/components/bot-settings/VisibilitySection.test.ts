@@ -43,10 +43,11 @@ describe("bot visibility form", () => {
   it("renders the stored choice, with the list when it names people", () => {
     const people = render(bot({ people: ["ada@example.test"] }));
     expect(people).toContain("Only these people");
-    expect(people).toMatch(/checked="" value="people"/);
+    // the audience is a pill menu showing the stored choice
+    expect(people).toMatch(/aria-label="Who can see it"[^>]*title="Only these people"/);
     expect(people).toContain("ada@example.test</textarea>");
     const everyone = render(bot());
-    expect(everyone).toMatch(/checked="" value="everyone"/);
+    expect(everyone).toMatch(/aria-label="Who can see it"[^>]*title="Everyone who can sign in"/);
     expect(everyone).not.toContain("<textarea");
   });
 });

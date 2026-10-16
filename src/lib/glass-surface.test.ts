@@ -58,17 +58,8 @@ describe("glass surface", () => {
     }
   });
 
-  // Sagax keeps its own Settings and Apps modals; the Triggers pop-up is drawn on the glass pane.
-  it("is what the Triggers pop-up is drawn on", () => {
-    for (const file of ["TriggersPanel.tsx"]) {
-      const source = readFileSync(join(src, "components", file), "utf8");
-      expect(source, file).toContain("glass-surface");
-      // the scrim is a sibling: a backdrop-filter on an ancestor would hide
-      // the app from the pane's own blur
-      expect(source, file).toContain('className="glass-scrim pointer-events-none absolute inset-0"');
-    }
-  });
-
+  // 2026-10-16 (JC): every window follows Settings, the Triggers pop-up
+  // included (DIALOG frame); the glass pane stays available for others.
   it("sits in a safe area clear of the window's own buttons, at every window size", () => {
     const frame = rule(".glass-popup-frame");
     expect(frame).toContain("position: fixed");
@@ -82,13 +73,5 @@ describe("glass surface", () => {
     expect(glassPopupTopInset("mac-inset")).toBe(56);
     expect(glassPopupTopInset("win-caption")).toBe(56);
     expect(glassPopupTopInset("native")).toBe(24);
-    for (const file of ["TriggersPanel.tsx"]) {
-      const source = readFileSync(join(src, "components", file), "utf8");
-      expect(source, file).toContain('className="glass-popup-frame"');
-      expect(source, file).toContain("style={glassPopupFrameStyle()}");
-      expect(source, file).toMatch(/className="glass-surface glass-popup /);
-      // no viewport-sized caps left fighting the safe area
-      expect(source, file).not.toMatch(/100dvh/);
-    }
   });
 });

@@ -6,7 +6,7 @@ import { useAdvancedMode } from "@/lib/interface-mode";
 import { EffortRow, ModelPicker } from "../ModelPicker";
 import { X } from "lucide-react";
 import { canEditBotField } from "@/lib/bot-capabilities";
-import { cn } from "@/lib/cn";
+import { CompactRow, HelpTip, PillSelect, SettingsGroup } from "../SettingsPrimitives";
 import { t } from "@/lib/i18n";
 import { useStore, type Bot } from "@/state/store";
 import { botWithViewerSettings, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
@@ -23,50 +23,54 @@ export function ModelSection({ bot }: { bot: Bot }) {
   const override = useViewerBotOverride(bot.id, viewerLocal);
   const shown = viewerLocal ? botWithViewerSettings(bot, override) : bot;
   const modelVariants = state.instances.find((instance) => instance.instanceId === shown.modelSelection.instanceId)?.capabilities?.modelVariants;
+  const effortTitle = modelVariants ? t("botPanel.model.reasoning") : t("botPanel.model.effort");
+  // Says what the app does, not what the engine ends up at: Codex applies a
+  // level to the whole thread and has no way to take one back, so
+  // "currently: engine default" was a promise we could not keep for a
+  // thread that had already been sent one. Sending nothing is true on
+  // every engine.
+  const effortHelp = viewerLocal
+    ? t("botPanel.model.forYou")
+    : modelVariants
+      ? (draft ? t("botPanel.model.reasoningStart") : t("botPanel.model.reasoningGroups"))
+      : `${t("botPanel.model.effortHelp")}${shown.modelSelection.effort ? "" : t("botPanel.model.effortDefault")}`;
+  // 2026-10-16 (JC): drawn like Settings: one group of rows (the model's
+  // pill, the effort's pill menu), then recovery and backups as groups.
   return (
-    <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-hairline/40 p-4">
-        <ModelPicker
+    <div className="flex flex-col gap-5">
+      <SettingsGroup title={t("botSettings.nav.model")} groupId="botModel">
+        <div className="px-3.5 py-2.5">
+          <ModelPicker
+            bot={shown}
+            contained
+            viewerLocal={viewerLocal}
+            label={
+              <div>
+                <div className="text-[13px] leading-[18px] text-ink">{t("botPanel.model.default")}</div>
+                <div className="mt-0.5 text-[12px] leading-4 text-ink-secondary">
+                  {viewerLocal ? t("botPanel.model.forYou") : draft ? t("botPanel.model.starting") : t("botPanel.model.groups")}
+                </div>
+              </div>
+            }
+          />
+          {/* Right below the picker, so it shows the moment the model changes. */}
+          {!draft && <ThreadModelsLine bot={bot} className="mt-2" />}
+        </div>
+        {/* Share the model picker's effort choices, but edit the profile
+            default. Simple keeps the saved effort and does not show it. */}
+        {advanced && <EffortRow
           bot={shown}
-          contained
           viewerLocal={viewerLocal}
+          pill={{ label: effortTitle, help: effortHelp }}
+          className="px-3.5 py-2.5"
           label={
             <div>
-              <div className="text-[13px] font-medium text-ink">{t("botPanel.model.default")}</div>
-              <div className="mt-0.5 text-[13px] text-ink-secondary">
-                {viewerLocal ? t("botPanel.model.forYou") : draft ? t("botPanel.model.starting") : t("botPanel.model.groups")}
-              </div>
+              <div className="text-[13px] leading-[18px] text-ink">{effortTitle}</div>
+              <div className="mt-0.5 text-[12px] leading-4 text-ink-secondary">{effortHelp}</div>
             </div>
           }
-        />
-        {/* Right below the picker, so it shows the moment the model changes. */}
-        {!draft && <ThreadModelsLine bot={bot} className="mt-3" />}
-      </div>
-
-      {/* Share the model picker's effort choices, but edit the profile default.
-          Simple keeps the saved effort and does not show the control. */}
-      {advanced && <EffortRow
-        bot={shown}
-        viewerLocal={viewerLocal}
-        className="rounded-xl border border-hairline/40 p-4"
-        label={
-          <div>
-            <div className="text-[13px] font-medium text-ink">{modelVariants ? t("botPanel.model.reasoning") : t("botPanel.model.effort")}</div>
-            {/* Says what the app does, not what the engine ends up at:
-                Codex applies a level to the whole thread and has no way to
-                take one back, so "currently: engine default" was a promise
-                we could not keep for a thread that had already been sent
-                one. Sending nothing is true on every engine. */}
-            <div className="mt-0.5 text-[13px] text-ink-secondary">
-              {viewerLocal
-                ? t("botPanel.model.forYou")
-                : modelVariants
-                ? (draft ? t("botPanel.model.reasoningStart") : t("botPanel.model.reasoningGroups"))
-                : `${t("botPanel.model.effortHelp")}${shown.modelSelection.effort ? "" : t("botPanel.model.effortDefault")}`}
-            </div>
-          </div>
-        }
-      />}
+        />}
+      </SettingsGroup>
       {/* 2026-10-15: this bot's automatic recovery (it was Settings >
           General > Advanced for every bot), then its ordered backups. */}
       {advanced && !draft && canEditBotField(state.config, bot, "automaticRecovery") && <BotRecoverySettings key={`recovery:${bot.id}`} bot={bot} />}
@@ -95,49 +99,40 @@ function FallbackChain({ bot, onChange }: { bot: Bot; onChange: (fallback: Bot["
     onChange([...chain, { instanceId, model: instance.models.default }]);
   };
 
+  const title = t("botPanel.model.backups");
   return (
-    <div className="rounded-xl bg-card p-4">
-      <div className="text-[15px] font-medium text-ink">{t("botPanel.model.backups")}</div>
-      <div className="mt-0.5 text-[13px] text-ink-secondary">
-        {t("botPanel.model.backupsHelp")}
-      </div>
-      {chain.length > 0 && (
-        <ol className="mt-3 flex flex-col gap-1">
-          {chain.map((entry, index) => (
-            <li key={entry.instanceId} className="flex items-center gap-2 rounded-lg bg-inset px-3 py-1.5 text-[13px]">
-              <span className="w-4 shrink-0 tabular-nums text-ink-secondary">{index + 1}.</span>
-              <span className="min-w-0 flex-1 truncate text-ink">{nameOf(entry.instanceId)}</span>
-              <span className="shrink-0 truncate text-[11.5px] text-ink-secondary">{entry.model}</span>
-              <button
-                type="button"
-                onClick={() => onChange(chain.filter((candidate) => candidate.instanceId !== entry.instanceId))}
-                aria-label={t("botPanel.model.removeFallback", { name: nameOf(entry.instanceId) })}
-                className="shrink-0 rounded p-0.5 text-ink-secondary hover:text-ink"
-              >
-                <X size={13} />
-              </button>
-            </li>
-          ))}
-        </ol>
-      )}
-      {chain.length < 5 && (
-        <div className={cn("flex items-center gap-2", chain.length > 0 ? "mt-2" : "mt-3")}>
-          <select
-            value=""
-            onChange={(event) => add(event.target.value)}
-            aria-label={t("botPanel.model.addFallback")}
-            disabled={available.length === 0}
-            className="rounded-lg border border-hairline/40 bg-inset px-2 py-1 text-[13px] text-ink disabled:opacity-50"
+    <SettingsGroup
+      title={title}
+      groupId="botBackups"
+      accessory={<HelpTip label={t("settings.moreAbout", { title })}>{t("botPanel.model.backupsHelp")}</HelpTip>}
+    >
+      {chain.map((entry, index) => (
+        <CompactRow key={entry.instanceId} label={`${index + 1}. ${nameOf(entry.instanceId)}`}>
+          <span className="min-w-0 max-w-[180px] truncate text-[12px] text-ink-secondary">{entry.model}</span>
+          <button
+            type="button"
+            onClick={() => onChange(chain.filter((candidate) => candidate.instanceId !== entry.instanceId))}
+            aria-label={t("botPanel.model.removeFallback", { name: nameOf(entry.instanceId) })}
+            className="ui-icon-button shrink-0"
           >
-            <option value="">{available.length === 0 ? t("botPanel.model.noEngine") : t("botPanel.model.addEngine")}</option>
-            {available.map((instance) => (
-              <option key={instance.instanceId} value={instance.instanceId}>
-                {instance.displayName}
-              </option>
-            ))}
-          </select>
-        </div>
+            <X size={13} aria-hidden="true" />
+          </button>
+        </CompactRow>
+      ))}
+      {chain.length < 5 && (
+        <CompactRow label={t("botPanel.model.addFallback")}>
+          <PillSelect
+            value=""
+            ariaLabel={t("botPanel.model.addFallback")}
+            disabled={available.length === 0}
+            onChange={add}
+            options={[
+              { value: "", label: available.length === 0 ? t("botPanel.model.noEngine") : t("botPanel.model.addEngine"), disabled: true },
+              ...available.map((instance) => ({ value: instance.instanceId, label: instance.displayName })),
+            ]}
+          />
+        </CompactRow>
       )}
-    </div>
+    </SettingsGroup>
   );
 }

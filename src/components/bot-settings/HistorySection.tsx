@@ -11,6 +11,7 @@
 // confirmation and the loading/error split. A first-load failure never
 // reaches this component; a failed reload with rows already on screen
 // arrives as refreshError.
+import { PILL } from "../SettingsPrimitives";
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 
@@ -189,7 +190,8 @@ export function HistorySection({
       {refreshError && (
         <div className="text-[12.5px] text-ink-secondary">{t("botPanel.history.refresh")}</div>
       )}
-      <ol className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40" data-history-versions="">
+      {/* Settings' card (2026-10-16): one rounded card, a row per version. */}
+      <ol className="flex flex-col divide-y divide-hairline/40 overflow-clip rounded-xl border-[0.5px] border-border bg-elevated" data-history-versions="">
         {versions.map((version, index) => {
           const current = index === 0;
           const expanded = open === version.id;
@@ -198,12 +200,12 @@ export function HistorySection({
           const skipped = plan?.ok === true ? plan.skipped.map(historyField).join(", ") : "";
           const restored = version.via === "restore" || version.via === "rollback";
           return (
-            <li key={`${bot.id}-${version.id}`} data-history-version={version.id} className="px-3 py-2.5">
+            <li key={`${bot.id}-${version.id}`} data-history-version={version.id} className="px-3.5 py-2.5">
               <button
                 type="button"
                 aria-expanded={expanded}
                 onClick={() => setOpen(expanded ? null : version.id)}
-                className="flex w-full items-start gap-2 text-left"
+                className="flex w-full items-start gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 <ChevronRight size={14} aria-hidden="true" className={`mt-1 shrink-0 text-ink-secondary transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`} />
                 <span className="min-w-0 flex-1">
@@ -234,7 +236,7 @@ export function HistorySection({
                         data-history-restore={version.id}
                         disabled={restoring || !restorable}
                         onClick={() => onRestore(version.id, plan?.ok ? Object.keys(plan.patch).map(historyField).join(", ") : "")}
-                        className="rounded-md border border-border px-2.5 py-1 text-[12.5px] font-medium text-ink hover:bg-hover disabled:opacity-50"
+                        className={PILL}
                       >
                         {t("botPanel.history.restoreVersion")}
                       </button>

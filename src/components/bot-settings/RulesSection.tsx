@@ -12,6 +12,7 @@
 // category. A set whose file does not exist yet opens on the starter
 // template (three example rules in a comment, which never loads); nothing
 // is written until the person saves.
+import { ConfirmDialog } from "../ConfirmDialog";
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -40,7 +41,7 @@ import {
 import { rulesCount } from "@/lib/workspace-files";
 import type { Bot } from "@/state/store";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
-import { HelpTip, Switch } from "../SettingsPrimitives";
+import { HelpTip, PILL, Switch } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 
 /** The starter template. Mirrors server/rule-sets.ts RULES_TEMPLATE (a test
@@ -58,7 +59,8 @@ Examples (copy a line below the comment to use it):
 -->
 `;
 
-const buttonCls = "rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50";
+// Settings' grey pill (2026-10-16).
+const buttonCls = PILL;
 const iconButtonCls = "flex size-7 shrink-0 items-center justify-center rounded-md text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-30";
 
 const FALLBACK_BUDGETS: RulesListing["budgets"] = {
@@ -217,8 +219,11 @@ export function RulesSection({ bot, active, initial }: { bot: Bot; active: boole
     });
   };
 
-  const remove = (set: RuleSetWire) => {
-    if (!window.confirm(t("persona.rules.sets.deleteConfirm", { name: ruleSetLabel(set) }))) return;
+  // Deleting a set asks first in the app's dialog, with a red pill
+  // (2026-10-16, Settings' rule for what erases).
+  const [removing, setRemoving] = useState<RuleSetWire | null>(null);
+  const remove = (set: RuleSetWire) => setRemoving(set);
+  const deleteSet = (set: RuleSetWire) => {
     void run(async () => {
       const result = await deleteRuleSet(bot.id, set.id);
       dropDraft(set.id);
@@ -260,7 +265,7 @@ export function RulesSection({ bot, active, initial }: { bot: Bot; active: boole
         {totalOver && <p role="alert" className="text-[12.5px] text-danger">{t("persona.rules.sets.totalOver")}</p>}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-hairline/40" data-rule-sets="">
+      <div className="overflow-clip rounded-xl border-[0.5px] border-border bg-elevated" data-rule-sets="">
         {listing !== null && sets.length === 0 && (
           <div className="px-3 py-3 text-[12.5px] text-ink-secondary">{t("persona.rules.sets.empty")}</div>
         )}
@@ -457,6 +462,19 @@ export function RulesSection({ bot, active, initial }: { bot: Bot; active: boole
         </div>
       )}
       {error && <p role="alert" className="text-[12.5px] text-danger">{error}</p>}
+      <ConfirmDialog
+        open={removing !== null}
+        title={t("persona.rules.sets.delete", { name: removing ? ruleSetLabel(removing) : "" })}
+        body={removing ? t("persona.rules.sets.deleteConfirm", { name: ruleSetLabel(removing) }) : ""}
+        confirmLabel={t("common.delete")}
+        tone="danger"
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          const set = removing;
+          setRemoving(null);
+          if (set) deleteSet(set);
+        }}
+      />
     </div>
   );
 }

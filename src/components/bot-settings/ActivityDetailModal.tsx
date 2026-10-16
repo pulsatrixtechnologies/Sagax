@@ -7,7 +7,7 @@
 // The server decides what this person may read (server/routes/bot-activity.ts):
 // a routine run seen without its thread comes with no steps and no thread.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ExternalLink, FileText, Loader2, Send, Square, X } from "lucide-react";
+import { ExternalLink, FileText, Loader2, Send, Square } from "lucide-react";
 
 import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -23,8 +23,14 @@ import {
 import { ActivityCard, ActivityStatusIcon } from "./ActivityCard";
 import { ActivitySteps } from "./ActivitySteps";
 import { AccessCard, type AccessViewer } from "../AccessCard";
+import { DIALOG, DialogCloseButton, GROUP_CARD, PILL, PRIMARY_PILL } from "../SettingsPrimitives";
+import { cn } from "@/lib/cn";
 
 const POLL_MS = 3_000;
+
+/** The activity windows' native <dialog>, drawn like Settings (2026-10-16):
+ * the app background, 14 px corners, a hairline border. */
+export const ACTIVITY_DIALOG = "m-auto w-[min(560px,calc(100%-32px))] max-h-[85vh] overflow-hidden rounded-[14px] border border-border bg-app p-0 text-ink backdrop:bg-black/50";
 
 function formatTime(at: number): string {
   return new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -32,9 +38,9 @@ function formatTime(at: number): string {
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 items-baseline justify-between gap-3 py-1.5">
-      <dt className="shrink-0 text-[12px] text-ink-secondary">{label}</dt>
-      <dd className="min-w-0 truncate text-right text-[12.5px] text-ink">{children}</dd>
+    <div className="flex min-h-[36px] min-w-0 items-center justify-between gap-3 px-3.5 py-1.5">
+      <dt className="shrink-0 text-[13px] text-ink">{label}</dt>
+      <dd className="min-w-0 truncate text-right text-[13px] text-ink-secondary">{children}</dd>
     </div>
   );
 }
@@ -58,7 +64,7 @@ function SteerBox({ onSteer }: { onSteer: (text: string) => Promise<void> }) {
   };
   return (
     <section className="mt-4" data-activity-steer="">
-      <label htmlFor="activity-steer" className="mb-1.5 block text-[12px] font-medium text-ink-secondary">{t("activity.steer.label")}</label>
+      <label htmlFor="activity-steer" className="mb-2 block px-1 text-[13px] text-ink-secondary">{t("activity.steer.label")}</label>
       <div className="flex items-center gap-2">
         <input
           id="activity-steer"
@@ -66,15 +72,15 @@ function SteerBox({ onSteer }: { onSteer: (text: string) => Promise<void> }) {
           onChange={(event) => { setText(event.target.value); if (state !== "sending") setState("idle"); }}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }}
           placeholder={t("activity.steer.placeholder")}
-          className="min-w-0 flex-1 rounded-lg border border-hairline/40 bg-inset px-3 py-1.5 text-[12.5px] text-ink placeholder:text-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40"
+          className="min-w-0 flex-1 rounded-lg border-[0.5px] border-border bg-inset px-3 py-1.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-focus focus:outline-none"
         />
         <button
           type="button"
           onClick={() => void submit()}
           disabled={!text.trim() || state === "sending"}
-          className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+          className={cn(PRIMARY_PILL, "shrink-0 gap-1")}
         >
-          {state === "sending" ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+          {state === "sending" ? <Loader2 size={12} aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : <Send size={12} aria-hidden="true" />}
           {t("activity.steer.send")}
         </button>
       </div>
@@ -106,16 +112,16 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
   const duration = (shown.endedAt ?? now) - shown.startedAt;
   return (
     <>
-      <div className="flex items-start gap-3 border-b border-hairline/40 px-5 py-4">
-        <span className="mt-0.5"><ActivityStatusIcon status={shown.status} size={18} /></span>
+      <div className={cn(DIALOG.header, "flex items-start gap-3")}>
+        <span className="mt-1"><ActivityStatusIcon status={shown.status} size={18} /></span>
         <div className="min-w-0 flex-1">
-          <h2 id="activity-detail-title" className="break-words text-[15px] font-semibold leading-snug text-ink">{shown.title}</h2>
-          <p data-activity-detail-status className="mt-0.5 text-[12.5px] text-ink-secondary">
+          <h2 id="activity-detail-title" className={cn(DIALOG.title, "break-words")}>{shown.title}</h2>
+          <p data-activity-detail-status className={DIALOG.subtitle}>
             {shown.parallel ? `${t("botPanel.activity.parallel")} · ` : ""}{activityStatusLabel(shown.status)}
           </p>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3">
         {detail === null && error && <p role="alert" className="py-2 text-[12.5px] text-danger">{t("botPanel.activity.error")}</p>}
         {detail?.note && <p className="mb-2 rounded-lg bg-warning/10 px-3 py-2 text-[12.5px] text-ink">{detail.note}</p>}
         {detail?.access && (
@@ -123,7 +129,7 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
             <AccessCard access={detail.access} viewer={viewer ?? { principalId: null, admin: false }} onSignIn={onSignIn} />
           </div>
         )}
-        <dl className="divide-y divide-hairline-weak">
+        <dl className={GROUP_CARD}>
           <Fact label={t("botPanel.activity.started")}>{formatTime(shown.startedAt)}</Fact>
           {shown.endedAt !== undefined && <Fact label={t("botPanel.activity.ended")}>{formatTime(shown.endedAt)}</Fact>}
           <Fact label={t("botPanel.activity.duration")}>{formatActivityDuration(duration)}</Fact>
@@ -149,7 +155,7 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
 
         {detail && detail.children.length > 0 && (
           <section className="mt-4">
-            <h3 className="mb-2 text-[12px] font-medium text-ink-secondary">{t("botPanel.activity.children")}</h3>
+            <h3 className="mb-2 px-1 text-[13px] text-ink-secondary">{t("botPanel.activity.children")}</h3>
             <ul className="flex flex-col gap-1.5">
               {detail.children.map((child) => (
                 <li key={child.id}><ActivityCard item={child} onOpen={onOpenChild} /></li>
@@ -160,7 +166,7 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
 
         {detail && (detail.threadId || detail.steps.length > 0) && (
           <section className="mt-4">
-            <h3 className="mb-2 text-[12px] font-medium text-ink-secondary">{t("botPanel.activity.steps")}</h3>
+            <h3 className="mb-2 px-1 text-[13px] text-ink-secondary">{t("botPanel.activity.steps")}</h3>
             {detail.steps.length === 0 ? (
               <p className="text-[12.5px] text-ink-secondary">{t("botPanel.activity.stepsEmpty")}</p>
             ) : (
@@ -171,7 +177,7 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
 
         {detail && detail.files.length > 0 && (
           <section className="mt-4">
-            <h3 className="mb-2 text-[12px] font-medium text-ink-secondary">{t("botPanel.activity.files")}</h3>
+            <h3 className="mb-2 px-1 text-[13px] text-ink-secondary">{t("botPanel.activity.files")}</h3>
             <ul className="flex flex-col gap-1">
               {detail.files.map((file) => (
                 <li key={file} className="flex min-w-0 items-center gap-2 text-[12px] text-ink">
@@ -183,15 +189,15 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
           </section>
         )}
       </div>
-      <div className="flex items-center justify-end gap-2 border-t border-hairline/40 px-5 py-3">
+      <div className={DIALOG.footer}>
         {running && detail?.canStop && (
           <button
             type="button"
             onClick={onStop}
             disabled={stopping}
-            className="flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-2 text-[12.5px] font-medium text-danger hover:bg-danger/10 disabled:opacity-60"
+            className={cn(PILL, "gap-1.5 text-danger")}
           >
-            {stopping ? <Loader2 size={13} className="animate-spin" /> : <Square size={12} fill="currentColor" />}
+            {stopping ? <Loader2 size={13} aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : <Square size={12} aria-hidden="true" fill="currentColor" />}
             {t("botPanel.activity.stop")}
           </button>
         )}
@@ -199,9 +205,9 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
           <button
             type="button"
             onClick={() => onOpenThread(shown.botId, shown.threadId!)}
-            className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-white hover:opacity-90"
+            className={cn(PRIMARY_PILL, "gap-1.5")}
           >
-            <ExternalLink size={13} />
+            <ExternalLink size={13} aria-hidden="true" />
             {t("botPanel.activity.openThread")}
           </button>
         )}
@@ -278,7 +284,7 @@ export function ActivityDetailModal({ item, onClose, onChanged }: {
       role="dialog"
       aria-labelledby="activity-detail-title"
       data-activity-detail={current.id}
-      className="m-auto w-[min(560px,calc(100%-32px))] max-h-[85vh] overflow-hidden rounded-2xl border border-hairline/50 bg-panel p-0 text-ink shadow-2xl backdrop:bg-black/60 backdrop:backdrop-blur-xs"
+      className={ACTIVITY_DIALOG}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onKeyDown={(event) => {
         // Escape closes this layer only, never the bot panel under it.
@@ -288,15 +294,7 @@ export function ActivityDetailModal({ item, onClose, onChanged }: {
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div className="relative flex max-h-[85vh] flex-col">
-        <button
-          type="button"
-          aria-label={t("common.close")}
-          title={t("common.close")}
-          onClick={onClose}
-          className="absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-full text-ink-secondary hover:bg-hover hover:text-ink"
-        >
-          <X size={16} />
-        </button>
+        <DialogCloseButton label={t("common.close")} onClick={onClose} />
         <ActivityDetailBody
           item={current}
           detail={detail}

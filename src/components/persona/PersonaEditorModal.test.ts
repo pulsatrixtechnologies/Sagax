@@ -271,9 +271,11 @@ describe("persona editor pages", () => {
     expect(html).toContain(">Pepper<");
     expect(html).toContain(">Research<");
     expect(html).toContain("Finds sources.");
-    for (const label of ["Engine", "Model", "Owner", "Sharing"]) expect(html).toContain(`>${label}</dt>`);
-    expect(html).toContain(">opus</dd>");
-    expect(html).toContain(">You</dd>");
+    // the facts are compact Settings rows (label at the left, value at the right)
+    expect(html).toContain('data-settings-group="personaSummary"');
+    for (const label of ["Engine", "Model", "Owner", "Sharing"]) expect(html).toMatch(new RegExp(`>${label}</div><div[^>]*><span[^>]*>`));
+    expect(html).toMatch(/>opus<\/span>/);
+    expect(html).toMatch(/>You<\/span>/);
     expect(html).not.toContain("data-persona-action");
   });
 

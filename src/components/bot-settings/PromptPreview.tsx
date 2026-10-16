@@ -26,7 +26,7 @@ export function PromptPreview({
   onToggle: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-hairline/40 p-4">
+    <div className="rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3">
       <button
         type="button"
         onClick={onToggle}

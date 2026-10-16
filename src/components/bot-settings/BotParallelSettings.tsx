@@ -7,50 +7,61 @@ import { t } from "@/lib/i18n";
 import { BOT_THREAD_LIMITS, botParallelLimit, botThreadLimit } from "@/lib/bot-runtime-settings";
 import { useStore, type Bot } from "@/state/store";
 import { MAX_PARALLEL_PER_PERSON, parseBusySendPreference } from "../../../shared/parallel-tasks";
-import { PaneSection } from "./PaneSection";
+import { DescribedRow, HelpTip, PillSelect, SettingsGroup } from "../SettingsPrimitives";
 import { useBotRuntimeSettings } from "./useBotRuntimeSettings";
-
-const SELECT = "mt-2 cursor-pointer rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink disabled:opacity-50";
 
 export function BotParallelSettings({ bot }: { bot: Bot }) {
   const { state } = useStore();
   const { shown, save, saving, error } = useBotRuntimeSettings(bot);
   const threads = botThreadLimit(shown, state.config);
   const perPerson = botParallelLimit(shown, state.config);
-  const ids = { threads: `bot-threads-${bot.id}`, busy: `bot-busy-send-${bot.id}`, perPerson: `bot-parallel-${bot.id}` };
+  const title = t("botPanel.parallel.title");
+  // 2026-10-16 (JC): drawn like Settings: compact rows with pill menus, the
+  // explanations behind the info buttons.
   return (
-    <PaneSection data-bot-parallel="" title={t("botPanel.parallel.title")} help={t("botPanel.parallel.help")}>
-      <label htmlFor={ids.threads} className="block text-[13px] font-medium text-ink">{t("botPanel.parallel.threads")}</label>
-      <select id={ids.threads} value={threads} disabled={saving}
-        aria-describedby={`${ids.threads}-help`}
-        onChange={(event) => { const value = Number(event.target.value); if (value !== threads) void save({ maxConcurrentThreads: value }); }}
-        className={SELECT}>
-        {BOT_THREAD_LIMITS.map((limit) => <option key={limit} value={limit}>{limit}</option>)}
-      </select>
-      <p id={`${ids.threads}-help`} className="mt-2 text-[12px] leading-relaxed text-ink-secondary">{t("botPanel.parallel.threadsHelp")}</p>
-
-      <label htmlFor={ids.busy} className="mt-4 block text-[13px] font-medium text-ink">{t("botPanel.parallel.busySend")}</label>
-      <select id={ids.busy} value={shown.busySend ?? ""} disabled={saving}
-        onChange={(event) => { if (event.target.value) void save({ busySend: parseBusySendPreference(event.target.value) }); }}
-        className={SELECT}>
-        {/* Absent: each person keeps their own earlier default. */}
-        {!shown.busySend && <option value="">{t("botPanel.parallel.busySendPersonal")}</option>}
-        <option value="ask">{t("settings.threads.busySend.ask")}</option>
-        <option value="steer">{t("composer.busy.choice.steer")}</option>
-        <option value="parallel">{t("composer.busy.choice.parallel")}</option>
-        <option value="after">{t("composer.busy.choice.after")}</option>
-      </select>
-      <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">{t("settings.threads.busySend.help")}</p>
-
-      <label htmlFor={ids.perPerson} className="mt-4 block text-[13px] font-medium text-ink">{t("botPanel.parallel.perPerson")}</label>
-      <select id={ids.perPerson} value={perPerson} disabled={saving}
-        onChange={(event) => { const value = Number(event.target.value); if (value !== perPerson) void save({ maxParallelPerPerson: value }); }}
-        className={SELECT}>
-        {Array.from({ length: MAX_PARALLEL_PER_PERSON }, (_, i) => i + 1).map((limit) => <option key={limit} value={limit}>{limit}</option>)}
-      </select>
-      <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">{t("botPanel.parallel.perPersonHelp")}</p>
-      {saving && <p role="status" className="mt-2 text-[12px] text-ink-secondary">{t("settings.threads.saving")}</p>}
-      {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
-    </PaneSection>
+    <div data-bot-parallel="">
+      <SettingsGroup
+        title={title}
+        groupId="botParallel"
+        accessory={<HelpTip label={t("settings.moreAbout", { title })}>{t("botPanel.parallel.help")}</HelpTip>}
+      >
+        <DescribedRow label={t("botPanel.parallel.threads")} help={t("botPanel.parallel.threadsHelp")} rowId="botThreads">
+          <PillSelect
+            value={String(threads)}
+            ariaLabel={t("botPanel.parallel.threads")}
+            disabled={saving}
+            onChange={(next) => { const value = Number(next); if (value !== threads) void save({ maxConcurrentThreads: value }); }}
+            options={BOT_THREAD_LIMITS.map((limit) => ({ value: String(limit), label: String(limit) }))}
+          />
+        </DescribedRow>
+        <DescribedRow label={t("botPanel.parallel.busySend")} help={t("settings.threads.busySend.help")} rowId="botBusySend">
+          <PillSelect
+            value={shown.busySend ?? ""}
+            ariaLabel={t("botPanel.parallel.busySend")}
+            disabled={saving}
+            onChange={(next) => { if (next) void save({ busySend: parseBusySendPreference(next) }); }}
+            options={[
+              // Absent: each person keeps their own earlier default.
+              ...(!shown.busySend ? [{ value: "", label: t("botPanel.parallel.busySendPersonal") }] : []),
+              { value: "ask", label: t("settings.threads.busySend.ask") },
+              { value: "steer", label: t("composer.busy.choice.steer") },
+              { value: "parallel", label: t("composer.busy.choice.parallel") },
+              { value: "after", label: t("composer.busy.choice.after") },
+            ]}
+          />
+        </DescribedRow>
+        <DescribedRow label={t("botPanel.parallel.perPerson")} help={t("botPanel.parallel.perPersonHelp")} rowId="botPerPerson">
+          <PillSelect
+            value={String(perPerson)}
+            ariaLabel={t("botPanel.parallel.perPerson")}
+            disabled={saving}
+            onChange={(next) => { const value = Number(next); if (value !== perPerson) void save({ maxParallelPerPerson: value }); }}
+            options={Array.from({ length: MAX_PARALLEL_PER_PERSON }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
+          />
+        </DescribedRow>
+        {saving && <p role="status" className="px-3.5 pb-2 text-[12px] text-ink-secondary">{t("settings.threads.saving")}</p>}
+        {error && <p role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{error}</p>}
+      </SettingsGroup>
+    </div>
   );
 }

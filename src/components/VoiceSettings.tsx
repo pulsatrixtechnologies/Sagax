@@ -20,7 +20,7 @@ import {
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { SettingsText } from "./SettingsLink";
-import { Switch } from "./SettingsPrimitives";
+import { CompactRow, DescribedRow, GROUP_CARD, PILL, PillSelect, Switch } from "./SettingsPrimitives";
 
 
 
@@ -108,128 +108,91 @@ export function VoiceSettings({
   const selectedVoice = usesLocalSystem ? deviceVoice : (bot.voice ?? "");
   const ready = usesLocalSystem || (hostConfigured && Boolean(selectedVoice || tts.voice));
 
-  return (
-    <div className="rounded-xl bg-card p-4">
-      <div className="text-[15px] font-medium text-ink">{t("botPanel.voice.voice")}</div>
-      <div className="mt-0.5 text-[13px] text-ink-secondary">
-        {localMacClient
-          ? t("voice.bot.macIntro")
-          : workspaceConfigurationLocked
-            ? t("voice.bot.lockedIntro")
-            : t("voice.bot.intro")}
-      </div>
+  const voiceOptions = [
+    {
+      value: "",
+      label: loadingVoices
+        ? t("botPanel.voice.loading")
+        : usesLocalSystem
+          ? t("botPanel.voice.macDefault")
+          : tts.voice
+            ? t("botPanel.voice.installDefault")
+            : t("botPanel.voice.pick"),
+    },
+    ...(selectedVoice && !voices.some((voice) => voice.id === selectedVoice) ? [{ value: selectedVoice, label: t("botPanel.voice.current") }] : []),
+    ...voices.map((voice) => ({ value: voice.id, label: voice.description ? `${voice.label}: ${voice.description}` : voice.label })),
+  ];
+  const deviceOptions = [
+    { value: "system" as const, label: t("botPanel.voice.macVoices") },
+    // The host's audio is offered once the host has a voice engine.
+    ...(hostConfigured || deviceProvider === "host" ? [{ value: "host" as const, label: hostProviderLabel }] : []),
+  ];
 
+  // 2026-10-16 (JC): drawn like Settings: one card of compact rows (label
+  // at the left, control at the right), the voice in a pill menu, the
+  // explanations behind the info buttons.
+  return (
+    <div className={GROUP_CARD} data-voice-settings="">
       {!configured && (
-        workspaceConfigurationLocked
-          ? <p className="mt-3 text-[13px] text-ink-secondary">{t("voice.bot.hostUnset")}</p>
-          : (
-            <p className="mt-3 text-[13px] text-ink-secondary">
-              <SettingsText text={t("voice.bot.setup")} links={{ settings: { section: "engines", cardId: "connections.voice" } }} />
-            </p>
-          )
+        <DescribedRow
+          label={t("botPanel.voice.voice")}
+          description={workspaceConfigurationLocked
+            ? t("voice.bot.hostUnset")
+            : <SettingsText text={t("voice.bot.setup")} links={{ settings: { section: "engines", cardId: "connections.voice" } }} />}
+        />
       )}
 
       {localMacClient && (
-        <div className="mt-4">
-          <div className="mb-2 text-[13px] text-ink-secondary">{t("botPanel.voice.mac")}</div>
-          <div className="inline-flex rounded-xl bg-inset p-1" role="radiogroup" aria-label={t("botPanel.voice.mac")}>
-            {([
-              { value: "system", label: t("botPanel.voice.macVoices"), available: true },
-              { value: "host", label: hostProviderLabel, available: hostConfigured },
-            ] as const).map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={deviceProvider === option.value}
-                disabled={!option.available}
-                title={!option.available ? t("botPanel.voice.hostUnsetTitle") : undefined}
-                onClick={() => chooseDeviceProvider(option.value)}
-                className={cn(
-                  "rounded-lg px-3.5 py-1.5 text-[12.5px] transition-colors disabled:opacity-50",
-                  deviceProvider === option.value ? "bg-raised text-ink shadow" : "text-ink-secondary hover:text-ink",
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <DescribedRow label={t("botPanel.voice.mac")} help={t("voice.bot.macIntro")}>
+          <PillSelect<RemoteVoiceProvider>
+            value={deviceProvider}
+            ariaLabel={t("botPanel.voice.mac")}
+            onChange={chooseDeviceProvider}
+            options={deviceOptions}
+          />
+        </DescribedRow>
       )}
 
       {configured && (
-        <div className="mt-4">
-          <div className="mb-1.5 text-[13px] text-ink-secondary">{t("botPanel.voice.voice")}</div>
-          <div className="flex gap-2">
-            <select
+        <CompactRow label={t("botPanel.voice.voice")}>
+          <span data-voice-picker="" className="inline-flex min-w-0">
+            <PillSelect
               value={selectedVoice}
-              onChange={(e) => chooseVoice(e.target.value)}
-              aria-label={t("botPanel.voice.whose", { name: bot.name })}
-              data-voice-picker
-              className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink focus:outline-none"
-            >
-              <option value="">
-                {loadingVoices
-                  ? t("botPanel.voice.loading")
-                  : usesLocalSystem
-                    ? t("botPanel.voice.macDefault")
-                    : tts.voice
-                      ? t("botPanel.voice.installDefault")
-                      : t("botPanel.voice.pick")}
-              </option>
-              {selectedVoice && !voices.some((voice) => voice.id === selectedVoice) && (
-                <option value={selectedVoice}>{t("botPanel.voice.current")}</option>
-              )}
-              {voices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.label}
-                  {v.description ? `: ${v.description}` : ""}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => void speaker.speak(t("botPanel.voice.sample"), { voiceId: bot.voice, botId: bot.id })}
-              disabled={!ready}
-              title={ready ? t("botPanel.voice.hear") : t("botPanel.voice.pickFirst")}
-              aria-label={t("botPanel.voice.hear")}
-              className="flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Volume2 size={14} /> {t("botPanel.voice.try")}
-            </button>
-          </div>
-        </div>
+              ariaLabel={t("botPanel.voice.whose", { name: bot.name })}
+              onChange={chooseVoice}
+              options={voiceOptions}
+            />
+          </span>
+          <button
+            type="button"
+            onClick={() => void speaker.speak(t("botPanel.voice.sample"), { voiceId: bot.voice, botId: bot.id })}
+            disabled={!ready}
+            title={ready ? t("botPanel.voice.hear") : t("botPanel.voice.pickFirst")}
+            aria-label={t("botPanel.voice.hear")}
+            className={cn(PILL, "gap-1.5 disabled:cursor-not-allowed")}
+          >
+            <Volume2 size={13} aria-hidden="true" /> {t("botPanel.voice.try")}
+          </button>
+        </CompactRow>
       )}
 
-      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/40 pt-4">
-        <div>
-          <div className="text-[13px] font-medium text-ink">{t("botPanel.voice.read")}</div>
-          <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">
-            {t("botPanel.voice.readHelp")}
-          </div>
-        </div>
+      <DescribedRow label={t("botPanel.voice.read")} help={t("botPanel.voice.readHelp")}>
         <Switch
           checked={Boolean(bot.speakReplies)}
           aria-label={t("botPanel.voice.readAria")}
           onClick={() => onPatch({ speakReplies: !bot.speakReplies })}
         />
-      </div>
+      </DescribedRow>
 
-      <div className="mt-4 flex items-center justify-between gap-4">
-        <div>
-          <div className="text-[13px] font-medium text-ink">{t("botPanel.voice.notes")}</div>
-          <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">
-            {t("botPanel.voice.notesHelp")}
-          </div>
-        </div>
+      <DescribedRow label={t("botPanel.voice.notes")} help={t("botPanel.voice.notesHelp")}>
         <Switch
           checked={bot.voiceNotes !== false}
           aria-label={t("botPanel.voice.notesAria")}
           onClick={() => onPatch({ voiceNotes: bot.voiceNotes === false })}
         />
-      </div>
+      </DescribedRow>
 
-      {error && <div role="alert" className="mt-2 text-[12px] text-danger">{error}</div>}
+      {error && <div role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{error}</div>}
     </div>
   );
 }

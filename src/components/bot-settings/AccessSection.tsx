@@ -23,7 +23,7 @@ import { useDesktopCapabilities } from "../DesktopCapabilities";
 import { BrowserUnavailableNote, SettingsText } from "../SettingsLink";
 import { CloudBackendPicker } from "../CloudBackendPicker";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { Switch } from "../SettingsPrimitives";
+import { PILL, PillSelect, Switch } from "../SettingsPrimitives";
 import { ProposalStatus } from "./ProposalStatus";
 import { ToolSelectionCard } from "./ToolSelectionCard";
 import { preloadConnectedApps, type ConnectorInventory } from "../PluginsPanel";
@@ -77,14 +77,14 @@ function WorkingFolder({ bot }: { bot: Bot }) {
     <PaneSection title={t("botPanel.access.folder")} help={t("botPanel.access.folderHelp")}>
       {canPick ? (
         <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1 truncate rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12.5px] text-ink" title={bot.cwd}>
+          <div className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink" title={bot.cwd}>
             {bot.cwd ? shortPath(bot.cwd, home) : <span className="text-ink-secondary">{t("botPanel.access.private")}</span>}
           </div>
-          <button onClick={() => void pick()} disabled={saving} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50">
-            <FolderOpen size={14} /> {t("botPanel.access.choose")}
+          <button type="button" onClick={() => void pick()} disabled={saving} className={cn(PILL, "shrink-0 gap-1.5")}>
+            <FolderOpen size={13} aria-hidden="true" /> {t("botPanel.access.choose")}
           </button>
           {bot.cwd && (
-            <button onClick={() => void save(null)} disabled={saving} className="shrink-0 rounded-lg px-2 py-2 text-[13px] text-ink-secondary hover:text-ink disabled:opacity-50">
+            <button type="button" onClick={() => void save(null)} disabled={saving} className={cn(PILL, "shrink-0")}>
               {t("botPanel.access.clear")}
             </button>
           )}
@@ -104,7 +104,7 @@ function WorkingFolder({ bot }: { bot: Bot }) {
             value={draft ?? bot.cwd ?? ""}
             onChange={(e) => setDraft(e.target.value)}
           />
-          <button type="submit" disabled={saving || draft === null} className="shrink-0 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50">
+          <button type="submit" disabled={saving || draft === null} className={cn(PILL, "shrink-0")}>
             {t("common.save")}
           </button>
         </form>
@@ -167,29 +167,27 @@ function McpServersCard({ bot, patch }: {
       ) : servers.length === 0 ? (
         <PaneEmpty>{t("botAccess.mcpEmpty")}</PaneEmpty>
       ) : (
-        <div className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
+        <div className="-mx-3.5 -mt-1 divide-y divide-hairline/40">
           {servers.map((server) => (
-            <div key={server.name} className="flex items-center justify-between gap-3 px-3 py-2">
+            <div key={server.name} className="flex min-h-[44px] items-center justify-between gap-3 px-3.5 py-2">
               <div className="min-w-0 flex-1">
                 <div className="truncate font-mono text-[12.5px] text-ink">{server.name}</div>
                 {!server.enabled && <div className="text-[11.5px] text-ink-secondary">{t("botAccess.mcpDisabled")}</div>}
               </div>
               {server.accounts && mounted.has(server.name) && (
-                <select
-                  value={mcpAccountFor(server, bot.mcpAccounts)}
-                  disabled={!!error}
-                  onChange={(event) => patch({ mcpAccounts: withMcpAccount(bot.mcpAccounts, server.name, event.target.value) })}
-                  aria-label={t("botAccess.mcpAccountAria", { name: server.name })}
-                  data-mcp-account={server.name}
-                  className="max-w-[45%] shrink truncate rounded-lg border border-hairline/40 bg-inset px-2 py-1 text-[12px] text-ink disabled:opacity-50"
-                >
-                  {server.accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {(account.id === "default" ? t("botAccess.mcpAccountFirst") : account.label ?? account.id)
-                        + (account.connected ? "" : ` (${t("mcp.accounts.notSignedIn")})`)}
-                    </option>
-                  ))}
-                </select>
+                <span data-mcp-account={server.name} className="inline-flex min-w-0 max-w-[45%]">
+                  <PillSelect
+                    value={mcpAccountFor(server, bot.mcpAccounts)}
+                    disabled={!!error}
+                    onChange={(account) => patch({ mcpAccounts: withMcpAccount(bot.mcpAccounts, server.name, account) })}
+                    ariaLabel={t("botAccess.mcpAccountAria", { name: server.name })}
+                    options={server.accounts.map((account) => ({
+                      value: account.id,
+                      label: (account.id === "default" ? t("botAccess.mcpAccountFirst") : account.label ?? account.id)
+                        + (account.connected ? "" : ` (${t("mcp.accounts.notSignedIn")})`),
+                    }))}
+                  />
+                </span>
               )}
               <Switch
                 checked={mounted.has(server.name)}
@@ -205,7 +203,7 @@ function McpServersCard({ bot, patch }: {
       <div className="mt-3 flex items-center gap-2">
         <ManageInConnectApps surface="mcp" />
         {!usesAll && servers && servers.length > 0 && (
-          <button type="button" disabled={!!bot.busy || error} onClick={() => { if (!bot.busy && !error) patch({ mcpServers: null }); }} className="rounded-lg px-2 py-2 text-[13px] text-ink-secondary hover:text-ink disabled:opacity-50">
+          <button type="button" disabled={!!bot.busy || error} onClick={() => { if (!bot.busy && !error) patch({ mcpServers: null }); }} className={cn(PILL, "ml-auto")}>
             {t("botAccess.mcpUseAll")}
           </button>
         )}
@@ -713,15 +711,15 @@ export function AccessSection({
           {alwaysAllow.length === 0 ? (
             <PaneEmpty>{t("botPanel.access.nothing")}</PaneEmpty>
           ) : (
-            <div className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
+            <div className="-mx-3.5 -my-1 divide-y divide-hairline/40">
               {alwaysAllow.map((entry) => (
-                <div key={entry} className="flex items-center justify-between gap-3 px-3 py-2">
+                <div key={entry} className="flex min-h-[44px] items-center justify-between gap-3 px-3.5 py-2">
                   <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{entry}</span>
                   <button
                     type="button"
                     aria-label={t("botPanel.access.removeAlways", { entry })}
                     onClick={() => patch({ alwaysAllow: alwaysAllow.filter((key) => key !== entry) })}
-                    className="shrink-0 rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-danger/10 hover:text-danger"
+                    className={cn(PILL, "shrink-0")}
                   >
                     {t("botPanel.access.remove")}
                   </button>

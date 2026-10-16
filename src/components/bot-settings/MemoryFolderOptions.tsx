@@ -127,7 +127,7 @@ export function MemoryFolderOptions({ bot, active, showOptions, onChanged }: {
         />
       )}
       {showOptions && (
-        <div className="flex flex-col gap-4 rounded-xl border border-hairline/40 p-3" data-folder-options="">
+        <div className="flex flex-col gap-4 rounded-xl border-[0.5px] border-border bg-elevated p-3" data-folder-options="">
           {bot.memoryEnabled !== false && (
             <MemoryUpkeepCard
               enabled={bot.memoryUpkeep !== false}

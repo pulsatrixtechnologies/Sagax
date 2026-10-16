@@ -45,13 +45,14 @@ function render() {
   return {
     html,
     toggle: all.find(node => node.type === Switch)!,
-    engine: all.find(node => node.props.id === "bot-recovery-engine-b1")!,
-    model: all.find(node => node.props.id === "bot-recovery-model-b1")!,
+    // the backup provider and model are pill menus, found by their spoken name
+    engine: all.find(node => node.props.ariaLabel === "Backup provider")!,
+    model: all.find(node => node.props.ariaLabel === "Backup model")!,
     save: all.find(node => node.type === "button" && node.props.type === "button")!,
   };
 }
 const click = (node: Node) => (node.props.onClick as () => void)();
-const choose = (node: Node, value: string) => (node.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } });
+const choose = (node: Node, value: string) => (node.props.onChange as (next: string) => void)(value);
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
 beforeEach(() => {
@@ -76,9 +77,8 @@ describe("BotRecoverySettings (per bot, 2026-10-15)", () => {
     expect(view.html).toContain("Only this thread switches; bot defaults stay unchanged.");
     expect(view.html).toContain("Permissions stay unchanged; some provider switches need confirmation.");
     expect(view.html).toContain("can incur charges from its provider");
-    expect(view.html).toContain('for="bot-recovery-engine-b1"');
-    expect(view.html).toContain('for="bot-recovery-model-b1"');
-    expect(view.html).toContain('aria-describedby="bot-recovery-b1-help"');
+    expect(view.html).toContain('aria-label="Backup provider"');
+    expect(view.html).toContain('aria-label="Backup model"');
     expect(view.html).toContain("data-bot-recovery");
   });
 

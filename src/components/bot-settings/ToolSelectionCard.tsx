@@ -4,7 +4,7 @@ import type { Bot } from "@/state/store";
 import { narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope";
 import { TOOL_SCOPE_SUPPORT } from "../../../shared/tool-scope-support";
 import { useBotEditor } from "./BotEditorContext";
-import { SwitchRow } from "../SettingsPrimitives";
+import { PillSelect, PRIMARY_PILL, SwitchRow } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 import { PaneSection } from "./PaneSection";
 
@@ -56,14 +56,19 @@ export function ToolSelectionCard({ bot, engineKind }: { bot: Bot; engineKind?: 
   return <PaneSection title={t("botAccess.tools.title")} help={t("botAccess.tools.description")}>
     {!saved.ok && <p role="alert" className="mb-2 text-[12px] text-danger">{t("botAccess.tools.corrupt")}</p>}
     {saved.ok && scope?.allow?.length === 0 && <p role="status" className="mb-2 text-[12px] text-ink-secondary">{t("botAccess.tools.none")}</p>}
-    <label className="block text-[13px] text-ink-secondary">
+    <div className="flex min-h-[28px] items-center justify-between gap-4 text-[13px] text-ink">
       {t("botAccess.tools.mode")}
-      <select aria-label={t("botAccess.tools.title")} disabled={saving || !!bot.busy} value={fields.custom ? "custom" : "all"}
-        className={`${inputCls} mt-1 text-[13px]`} onChange={event => change({ custom: event.target.value === "custom", onlyListed: fields.custom ? fields.onlyListed : true })}>
-        <option value="all">{t("botAccess.tools.all")}</option>
-        <option value="custom">{t("botAccess.tools.custom")}</option>
-      </select>
-    </label>
+      <PillSelect<"all" | "custom">
+        ariaLabel={t("botAccess.tools.title")}
+        disabled={saving || !!bot.busy}
+        value={fields.custom ? "custom" : "all"}
+        onChange={(next) => change({ custom: next === "custom", onlyListed: fields.custom ? fields.onlyListed : true })}
+        options={[
+          { value: "all", label: t("botAccess.tools.all") },
+          { value: "custom", label: t("botAccess.tools.custom") },
+        ]}
+      />
+    </div>
     {fields.custom && <fieldset disabled={saving || !!bot.busy} className="mt-3 flex flex-col gap-3">
       <SwitchRow label={t("botAccess.tools.onlyListed")} checked={fields.onlyListed} onChange={(next) => change({ onlyListed: next })} />
       <label className="text-[13px] text-ink-secondary">{t("botAccess.tools.allow")}
@@ -86,7 +91,7 @@ export function ToolSelectionCard({ bot, engineKind }: { bot: Bot; engineKind?: 
     {bot.busy && <p className="mt-2 text-[12px] text-ink-secondary">{t("botAccess.tools.busy")}</p>}
     <div className="mt-3 flex flex-wrap items-center gap-3">
       {draft && <button type="button" disabled={saving || !!bot.busy || !draft || !parsed.ok} onClick={() => void save()}
-        className="rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50">
+        className={PRIMARY_PILL}>
         {t(saving ? "botAccess.tools.saving" : "botAccess.tools.save")}
       </button>}
       <a href="https://github.com/pulsatrixtechnologies/sagax/blob/main/docs/tool-selection.md" target="_blank" rel="noreferrer" className="text-[12px] text-ink-secondary underline">{t("botAccess.tools.examples")}</a>

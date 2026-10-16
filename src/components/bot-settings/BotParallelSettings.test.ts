@@ -40,10 +40,16 @@ function render() {
   function Capture() { fixture.index = 0; tree = BotParallelSettings({ bot: fixture.bot }); return tree; }
   const html = renderToStaticMarkup(createElement(Capture));
   const all = nodes(tree);
-  const byId = (id: string) => all.find((node) => node.props.id === id)!;
-  return { html, threads: byId("bot-threads-b1"), busy: byId("bot-busy-send-b1"), perPerson: byId("bot-parallel-b1") };
+  // Each limit is a pill menu (PillSelect), found by its spoken name.
+  const byLabel = (label: string) => all.find((node) => node.props.ariaLabel === label)!;
+  return {
+    html,
+    threads: byLabel("Maximum running conversations for this bot"),
+    busy: byLabel("When someone writes while this bot is working"),
+    perPerson: byLabel("Parallel tasks per person on this bot"),
+  };
 }
-const choose = (node: Node, value: string) => (node.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } });
+const choose = (node: Node, value: string) => (node.props.onChange as (next: string) => void)(value);
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
 beforeEach(() => {
@@ -58,8 +64,8 @@ describe("BotParallelSettings (per bot, 2026-10-15)", () => {
     const view = render();
     expect(view.html).toContain("Parallel conversations");
     expect(view.html).toContain("Maximum running conversations for this bot");
-    expect(view.threads.props.value).toBe(4);
-    expect(view.perPerson.props.value).toBe(2);
+    expect(view.threads.props.value).toBe("4");
+    expect(view.perPerson.props.value).toBe("2");
     expect(view.busy.props.value).toBe("");
     expect(view.html).toContain("Each person&#x27;s own choice");
   });
@@ -67,8 +73,8 @@ describe("BotParallelSettings (per bot, 2026-10-15)", () => {
   it("shows the bot's own values", () => {
     fixture.bot = { ...fixture.bot, maxConcurrentThreads: 1, maxParallelPerPerson: 5, busySend: "after" };
     const view = render();
-    expect(view.threads.props.value).toBe(1);
-    expect(view.perPerson.props.value).toBe(5);
+    expect(view.threads.props.value).toBe("1");
+    expect(view.perPerson.props.value).toBe("5");
     expect(view.busy.props.value).toBe("after");
     expect(view.html).not.toContain("Each person&#x27;s own choice");
   });
@@ -78,7 +84,7 @@ describe("BotParallelSettings (per bot, 2026-10-15)", () => {
     choose(render().threads, "6");
     await flush();
     expect(fixture.api).toHaveBeenCalledWith("/api/bots/b1/runtime-settings", { method: "PATCH", body: JSON.stringify({ maxConcurrentThreads: 6 }) });
-    expect(render().threads.props.value).toBe(6);
+    expect(render().threads.props.value).toBe("6");
     fixture.api.mockResolvedValue({ stored: { maxConcurrentThreads: 6, busySend: "parallel" } });
     choose(render().busy, "parallel");
     await flush();

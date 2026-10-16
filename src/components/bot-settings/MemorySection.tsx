@@ -42,13 +42,14 @@ import {
   markMemoryReviewed,
 } from "@/lib/memory";
 import { ApiError, useStore, type Bot } from "@/state/store";
-import { HelpTip, SwitchRow } from "../SettingsPrimitives";
+import { HelpTip, PILL, SwitchRow } from "../SettingsPrimitives";
 import { AdvancedFold } from "./AdvancedFold";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import { inputCls } from "./field";
 import { PaneEmpty, PaneSection } from "./PaneSection";
 
-const buttonCls = "rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50";
+// Settings' grey pill (2026-10-16).
+const buttonCls = PILL;
 const quietButtonCls = "rounded-md px-2 py-1 text-[12.5px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50";
 
 interface Editing {

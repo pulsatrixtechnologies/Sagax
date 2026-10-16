@@ -273,12 +273,13 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
                   aria-expanded={sections.length > 1 ? open : undefined}
                   className={categoryNavItemClass(open && subPages.length === 0)}
                 >
-                  <Icon size={15} className="shrink-0" aria-hidden="true" />
+                  {/* Settings' nav item: 15 px icon with the thinner stroke */}
+                  <Icon size={15} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate">{personaGroupLabel(id)}</span>
                   {locked && <Lock size={12} aria-label={t("persona.lockedBadge")} className="shrink-0 text-ink-tertiary" />}
                 </button>
                 {subPages.length > 0 && (
-                  <ul data-persona-subnav={id} aria-label={personaGroupLabel(id)} className="mb-1 ml-[17px] flex flex-col gap-0.5 border-l border-hairline/60 pl-2">
+                  <ul data-persona-subnav={id} aria-label={personaGroupLabel(id)} className="mb-1 flex flex-col gap-0.5">
                     {subPages.map((page) => (
                       <li key={page}>
                         <button
@@ -287,7 +288,7 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
                           data-locked={lockOf(page) !== null || unavailable(page) ? "" : undefined}
                           onClick={() => choosePage(page)}
                           aria-current={current === page ? "page" : undefined}
-                          className={cn(categoryNavItemClass(current === page), "w-full py-[5px] text-[12.5px]", current === page ? "" : "text-ink-secondary")}
+                          className={cn(categoryNavItemClass(current === page), "w-full pl-[33px]", current === page ? "" : "text-ink-secondary")}
                         >
                           <span className="min-w-0 flex-1 truncate">{personaCategoryLabel(page)}</span>
                         </button>
@@ -328,7 +329,7 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
           </div>
           <div ref={paneRef} className={CATEGORY_MODAL.pane} data-persona-pane={currentGroup} data-persona-current={current}>
             <h2 className={CATEGORY_MODAL.heading}>{title}</h2>
-            <div className={CATEGORY_MODAL.body}>
+            <div className={cn(CATEGORY_MODAL.body, "flex flex-col")}>
               {/* Every page keeps its place in the tree, so a section kept
                   mounted never remounts when the page changes. */}
               {pages.map((id) => {

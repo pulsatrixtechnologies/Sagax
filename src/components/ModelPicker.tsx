@@ -22,6 +22,7 @@ import { EngineGroupLabel } from "./EngineGroupLabel";
 import { ModelMenuItem, ModelSearchList, type ModelMenuRow, type ModelMenuSection } from "./ModelMenu";
 import { ChatGptPlanStatus } from "./ChatGptPlanStatus";
 import { cn } from "@/lib/cn";
+import { DescribedRow, PillSelect } from "./SettingsPrimitives";
 import { useMenuMotion } from "./MenuMotion";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { t } from "@/lib/i18n";
@@ -113,6 +114,7 @@ export function EffortRow({
   className,
   label,
   compact = false,
+  pill,
 }: {
   bot: Bot;
   threadId?: string;
@@ -122,6 +124,9 @@ export function EffortRow({
   className?: string;
   label?: ReactNode;
   compact?: boolean;
+  /** A Settings row (the bot editor, 2026-10-16): the label at the left,
+   * the levels in a pill menu at the right. */
+  pill?: { label: string; help?: ReactNode };
 }) {
   const { state, dispatch } = useStore();
   const selection = bot.modelSelection;
@@ -137,6 +142,27 @@ export function EffortRow({
   const modelDefault = modelDefaultEffort(option, instance?.capabilities?.effortLevels);
   // A level stored before the model changed reads as Default, which is what runs.
   const current = selection.effort && levels.includes(selection.effort) ? selection.effort : undefined;
+  const chooseEffort = (effort: EffortLevel | undefined) => {
+    if (viewerLocal) {
+      saveViewerChoice(dispatch, bot.id, { effort: effort ?? null });
+      return;
+    }
+    dispatch({ type: "setModel", botId: bot.id, threadId, ...(updateBotDefault ? { updateBotDefault: true } : {}), selection: { ...selection, effort } });
+  };
+
+  if (pill) return (
+    <DescribedRow label={pill.label} help={pill.help} rowId="effort">
+      <PillSelect
+        value={current ?? ""}
+        ariaLabel={t("model.effort.aria")}
+        onChange={(next) => chooseEffort(levels.find((level) => level === next))}
+        options={[
+          { value: "", label: modelDefault ? t("model.effort.defaultWith", { level: effortLabel(modelDefault) }) : t("model.defaultTag") },
+          ...levels.map((level) => ({ value: level, label: effortLabel(level) })),
+        ]}
+      />
+    </DescribedRow>
+  );
 
   if (compact) return (
     <label className={cn("flex items-center justify-between gap-3", className)}>
@@ -1626,9 +1652,11 @@ export function ModelPicker({
   return (
     <div ref={rootRef} className={cn(contained ? "w-full" : "relative", className)}>
       {contained ? (
-        <div className="flex w-full flex-col gap-3">
-          {label}
-          <div className="self-start">{trigger}</div>
+        // A Settings row (the bot editor): the label at the left, the
+        // model's pill at the right, wrapping under it when narrow.
+        <div className="flex w-full flex-wrap items-center justify-between gap-x-5 gap-y-2">
+          <div className="min-w-0 flex-1 basis-[200px]">{label}</div>
+          <div className="ml-auto shrink-0">{trigger}</div>
         </div>
       ) : (
         trigger

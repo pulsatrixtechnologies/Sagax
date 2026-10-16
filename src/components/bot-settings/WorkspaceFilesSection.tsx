@@ -47,13 +47,15 @@ import {
 import type { LocaleKey } from "@/locales";
 import type { Bot, BotSettingsSection } from "@/state/store";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
-import { HelpTip } from "../SettingsPrimitives";
+import { ConfirmDialog } from "../ConfirmDialog";
+import { HelpTip, PILL } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 import { RulesCounter } from "./RulesSection";
 import { MemoryToggleCard, topicTemplate } from "./MemorySection";
 import { MemoryFolderOptions } from "./MemoryFolderOptions";
 
-const buttonCls = "rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50";
+// Settings' grey pill (2026-10-16).
+const buttonCls = PILL;
 const iconButtonCls = "rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50";
 /** sha256 of "": a save that expects it creates the file and refuses to
  * overwrite one that already exists. */
@@ -298,8 +300,11 @@ export function WorkspaceFilesSection({
     else void createDoc(newName, `# ${newName.trim().replace(/\.md$/i, "")}\n`).then(() => setCreating(null));
   };
 
-  const removeMemoryFile = (entry: WorkspaceEntry) => {
-    if (!window.confirm(t("botPanel.memory.confirmDelete", { name: entryName(entry.path) }))) return;
+  // A delete asks first in the app's own dialog, with a red pill
+  // (2026-10-16, Settings' rule for what erases).
+  const [removing, setRemoving] = useState<{ path: string; name: string; memory: boolean } | null>(null);
+  const removeMemoryFile = (entry: WorkspaceEntry) => setRemoving({ path: entry.path, name: entryName(entry.path), memory: true });
+  const deleteMemoryFile = (entry: { path: string }) => {
     void run(async () => {
       await deleteMemoryDoc(bot.id, entry.path);
       if (open?.path === entry.path) setOpen(null);
@@ -318,8 +323,8 @@ export function WorkspaceFilesSection({
     void file.text().then((text) => createDoc(file.name.replace(/\.markdown$/i, ".md"), text), (reason: unknown) => setError(errorText(reason)));
   };
 
-  const removeDoc = (path: string) => {
-    if (!window.confirm(t("persona.files.confirmDelete", { path }))) return;
+  const removeDoc = (path: string) => setRemoving({ path, name: entryName(path), memory: false });
+  const deleteDoc = (path: string) => {
     void run(async () => {
       await deleteWorkspaceDoc(bot.id, path);
       if (open?.path === path) setOpen(null);
@@ -397,7 +402,7 @@ export function WorkspaceFilesSection({
       </div>
 
       {creating && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-hairline/40 p-2" data-files-create={creating}>
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border-[0.5px] border-border bg-elevated p-2" data-files-create={creating}>
           {memoryEditable && (
             <div role="radiogroup" aria-label={t("persona.files.newKindLabel")} className="flex gap-0.5 rounded-lg bg-control p-0.5">
               {(["doc", "topic"] as const).map((kind) => (
@@ -446,7 +451,7 @@ export function WorkspaceFilesSection({
       {listing === null && !error && <p className="text-[12.5px] text-ink-secondary">{t("persona.files.loading")}</p>}
       {listing?.truncated && <p className="text-[12.5px] text-ink-secondary">{t("persona.files.truncated")}</p>}
 
-      <ul className="flex flex-col divide-y divide-hairline/30 rounded-xl border border-hairline/40" data-files-list="">
+      <ul className="flex flex-col divide-y divide-hairline/40 overflow-clip rounded-xl border-[0.5px] border-border bg-elevated" data-files-list="">
         {rows.map((entry) => {
           const depth = entryDepth(entry.path);
           const name = entryName(entry.path);
@@ -571,6 +576,21 @@ export function WorkspaceFilesSection({
           <li className="px-3 py-2 text-[12.5px] text-ink-secondary">{t("persona.files.empty")}</li>
         )}
       </ul>
+      <ConfirmDialog
+        open={removing !== null}
+        title={t(removing?.memory ? "botPanel.memory.delete" : "persona.files.delete", { name: removing?.name ?? "" })}
+        body={removing ? (removing.memory ? t("botPanel.memory.confirmDelete", { name: removing.name }) : t("persona.files.confirmDelete", { path: removing.path })) : ""}
+        confirmLabel={t("common.delete")}
+        tone="danger"
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          const target = removing;
+          setRemoving(null);
+          if (!target) return;
+          if (target.memory) deleteMemoryFile(target);
+          else deleteDoc(target.path);
+        }}
+      />
     </div>
   );
 }

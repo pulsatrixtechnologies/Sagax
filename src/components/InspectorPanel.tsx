@@ -188,8 +188,8 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
       </div>
 
       <div className="content-card-body flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-hairline/40 px-4 pb-3">
-        <div role="tablist" aria-label={t("inspector.views")} className="flex rounded-lg bg-inset p-0.5" onKeyDown={(event) => {
+      <div className="flex items-center gap-2 border-b-[0.5px] border-hairline-weak px-4 pb-2.5">
+        <div role="tablist" aria-label={t("inspector.views")} className="flex gap-1" onKeyDown={(event) => {
           const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
           const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
           const next = event.key === "ArrowRight" ? (current + 1) % tabs.length
@@ -210,9 +210,10 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
               aria-controls={`inspector-panel-${l}`}
               tabIndex={lens === l ? 0 : -1}
               onClick={() => setLens(l)}
+              // Settings' borderless pills (2026-10-16): the chosen one filled.
               className={cn(
-                "rounded-md px-2.5 py-1 text-[12px] font-medium capitalize",
-                lens === l ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink",
+                "inline-flex h-7 min-h-[44px] items-center rounded-full px-2.5 text-[13px] leading-[18px] capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none md:min-h-0",
+                lens === l ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover hover:text-ink",
               )}
             >
               {l === "run" ? t("inspector.run.title") : l}
@@ -222,7 +223,7 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
         {lens !== "run" && <span className="ml-auto text-[11px] text-ink-secondary">
           {page ? (shown < total ? `last ${shown} of ${total}` : `${shown} entries`) : "loading…"}
         </span>}
-        {lens !== "run" && <button onClick={() => managedRefresh.current()} className="rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink" title="Reload from disk">
+        {lens !== "run" && <button type="button" onClick={() => managedRefresh.current()} className="ui-icon-button" title="Reload from disk" aria-label="Reload from disk">
           <RefreshCw size={14} />
         </button>}
       </div>

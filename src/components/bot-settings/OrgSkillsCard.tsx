@@ -68,9 +68,9 @@ export function OrgSkillsCard({ bot, onAdded }: { bot: Bot; onAdded: () => void 
 
   return (
     <PaneSection title={t("orgLibrary.tab", { name: organization })} help={t("orgLibrary.skillsHint")}>
-      <div className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
+      <div className="-mx-3.5 -my-1 divide-y divide-hairline/40">
         {skills.map((skill) => (
-          <div key={`${skill.installId}:${skill.name}`} className="flex items-center gap-2 px-3 py-2.5">
+          <div key={`${skill.installId}:${skill.name}`} className="flex items-center gap-2 px-3.5 py-2.5">
             <div className="min-w-0 flex-1">
               <div className="truncate font-mono text-[12.5px] text-ink">{skill.name}</div>
               <div className="mt-0.5 line-clamp-2 text-[11.5px] text-ink-secondary">{skill.description}</div>

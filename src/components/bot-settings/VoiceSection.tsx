@@ -5,7 +5,7 @@ import { t } from "@/lib/i18n";
 import { requestNotificationPermission } from "@/lib/notify";
 import { useStore, type Bot } from "@/state/store";
 import { saveViewerBotOverride, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
-import { SwitchRow } from "../SettingsPrimitives";
+import { DescribedRow, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { PaneSection } from "./PaneSection";
 import { VoiceSettings } from "../VoiceSettings";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
@@ -31,14 +31,17 @@ export function VoiceSection({
 
   return (
     <div className="flex flex-col gap-5">
-      {showVoice && <VoiceSettings bot={bot} onPatch={patch} />}
+      {showVoice && <PaneSection title={t("botPanel.voice.voice")} plain><VoiceSettings bot={bot} onPatch={patch} /></PaneSection>}
 
-      <PaneSection title={t("botPanel.remote.notifications")}>
-        <SwitchRow
+      <SettingsGroup title={t("botPanel.remote.notifications")} groupId="botNotifications">
+        <DescribedRow
           label={t("botPanel.voice.notifyHelp")}
           description={viewerLocal ? t("botPanel.voice.notifyForYou") : undefined}
+        >
+          <Switch
           checked={notifications}
-          onChange={() => {
+          aria-label={t("botPanel.voice.notifyHelp")}
+          onClick={() => {
             const enabled = !notifications;
             if (enabled && !draft) void requestNotificationPermission();
             if (viewerLocal) {
@@ -49,8 +52,9 @@ export function VoiceSection({
             }
             patch({ notifications: enabled });
           }}
-        />
-      </PaneSection>
+          />
+        </DescribedRow>
+      </SettingsGroup>
     </div>
   );
 }

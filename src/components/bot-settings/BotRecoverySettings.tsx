@@ -8,11 +8,8 @@ import { useState } from "react";
 import { t } from "@/lib/i18n";
 import { botRecovery, type BotRecovery } from "@/lib/bot-runtime-settings";
 import { useStore, type Bot } from "@/state/store";
-import { Switch } from "../SettingsPrimitives";
-import { PaneSection } from "./PaneSection";
+import { CompactRow, DescribedRow, HelpTip, PillSelect, PRIMARY_PILL, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { useBotRuntimeSettings } from "./useBotRuntimeSettings";
-
-const SELECT = "mt-2 w-full min-w-0 cursor-pointer rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink disabled:opacity-50";
 
 export function BotRecoverySettings({ bot }: { bot: Bot }) {
   const { state } = useStore();
@@ -23,49 +20,64 @@ export function BotRecoverySettings({ bot }: { bot: Bot }) {
   const engine = engines.find((instance) => instance.instanceId === value.backup?.instanceId);
   const models = engine?.models.options.filter((model) => engine.snapshot.authenticated !== false || model.custom) ?? [];
   const ready = models.some((model) => model.id === value.backup?.model);
-  const ids = { enabled: `bot-recovery-${bot.id}`, engine: `bot-recovery-engine-${bot.id}`, model: `bot-recovery-model-${bot.id}` };
   const submit = async () => {
     if (!draft || saving || (draft.enabled && !ready)) return;
     const body: BotRecovery = { enabled: draft.enabled, ...(draft.backup?.model ? { backup: draft.backup } : {}) };
     if (await save({ automaticRecovery: body })) setDraft(null);
   };
+  const title = t("settings.recovery.title");
+  // 2026-10-16 (JC): drawn like Settings: the switch, the backup provider
+  // and model as pill menus, Save as a pill; the detail behind the info
+  // buttons.
   return (
-    <PaneSection data-bot-recovery="" title={t("settings.recovery.title")} help={t("settings.recovery.scope")}>
-      <div className="flex items-center justify-between gap-4">
-        <label htmlFor={ids.enabled} className="text-[13px] font-medium text-ink">{t("settings.recovery.enable")}</label>
-        <Switch id={ids.enabled} checked={value.enabled} disabled={saving}
-          aria-describedby={`${ids.enabled}-help`}
-          onClick={() => setDraft({ ...value, enabled: !value.enabled })} />
-      </div>
-      <p id={`${ids.enabled}-help`} className="mt-2 text-[12px] leading-relaxed text-ink-secondary">{t("settings.recovery.help")}</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="min-w-0">
-          <label htmlFor={ids.engine} className="block text-[13px] font-medium text-ink">{t("settings.recovery.engine")}</label>
-          <select id={ids.engine} value={value.backup?.instanceId ?? ""} disabled={saving || !value.enabled}
-            onChange={(event) => setDraft({ enabled: value.enabled, ...(event.target.value ? { backup: { instanceId: event.target.value, model: "" } } : {}) })}
-            className={SELECT}>
-            <option value="">{t("settings.recovery.chooseEngine")}</option>
-            {value.backup && !engine && <option value={value.backup.instanceId} disabled>{t("settings.recovery.unavailable", { name: value.backup.instanceId })}</option>}
-            {engines.map((instance) => <option key={instance.instanceId} value={instance.instanceId}
-              disabled={!instance.models.options.some((model) => instance.snapshot.authenticated !== false || model.custom)}>{instance.displayName}</option>)}
-          </select>
+    <div data-bot-recovery="">
+      <SettingsGroup
+        title={title}
+        groupId="botRecovery"
+        accessory={<HelpTip label={t("settings.moreAbout", { title })}>{t("settings.recovery.scope")}</HelpTip>}
+      >
+        <DescribedRow label={t("settings.recovery.enable")} help={t("settings.recovery.help")} rowId="botRecoveryEnabled">
+          <Switch checked={value.enabled} disabled={saving}
+            aria-label={t("settings.recovery.enable")}
+            onClick={() => setDraft({ ...value, enabled: !value.enabled })} />
+        </DescribedRow>
+        <CompactRow label={t("settings.recovery.engine")} rowId="botRecoveryEngine">
+          <PillSelect
+            value={value.backup?.instanceId ?? ""}
+            ariaLabel={t("settings.recovery.engine")}
+            disabled={saving || !value.enabled}
+            onChange={(next) => setDraft({ enabled: value.enabled, ...(next ? { backup: { instanceId: next, model: "" } } : {}) })}
+            options={[
+              { value: "", label: t("settings.recovery.chooseEngine") },
+              ...(value.backup && !engine ? [{ value: value.backup.instanceId, label: t("settings.recovery.unavailable", { name: value.backup.instanceId }), disabled: true }] : []),
+              ...engines.map((instance) => ({
+                value: instance.instanceId,
+                label: instance.displayName,
+                disabled: !instance.models.options.some((model) => instance.snapshot.authenticated !== false || model.custom),
+              })),
+            ]}
+          />
+        </CompactRow>
+        <DescribedRow label={t("settings.recovery.model")} help={t("settings.recovery.charges")} rowId="botRecoveryModel">
+          <PillSelect
+            value={value.backup?.model ?? ""}
+            ariaLabel={t("settings.recovery.model")}
+            disabled={saving || !value.enabled || !engine}
+            onChange={(next) => setDraft({ enabled: value.enabled, backup: { instanceId: engine!.instanceId, model: next } })}
+            options={[
+              { value: "", label: t("settings.recovery.chooseModel") },
+              ...(value.backup?.model && !ready ? [{ value: value.backup.model, label: t("settings.recovery.unavailable", { name: value.backup.model }), disabled: true }] : []),
+              ...models.map((model) => ({ value: model.id, label: model.label })),
+            ]}
+          />
+        </DescribedRow>
+        <div className="flex flex-wrap items-center justify-end gap-3 px-3.5 py-2">
+          {value.enabled && !ready && <p className="mr-auto text-[12px] text-ink-secondary">{t("settings.recovery.required")}</p>}
+          <button type="button" disabled={!draft || saving || (value.enabled && !ready)} onClick={() => void submit()}
+            className={PRIMARY_PILL}>{saving ? t("settings.threads.saving") : t("common.save")}</button>
         </div>
-        <div className="min-w-0">
-          <label htmlFor={ids.model} className="block text-[13px] font-medium text-ink">{t("settings.recovery.model")}</label>
-          <select id={ids.model} value={value.backup?.model ?? ""} disabled={saving || !value.enabled || !engine}
-            onChange={(event) => setDraft({ enabled: value.enabled, backup: { instanceId: engine!.instanceId, model: event.target.value } })}
-            className={SELECT}>
-            <option value="">{t("settings.recovery.chooseModel")}</option>
-            {value.backup?.model && !ready && <option value={value.backup.model} disabled>{t("settings.recovery.unavailable", { name: value.backup.model })}</option>}
-            {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-          </select>
-        </div>
-      </div>
-      <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">{t("settings.recovery.charges")}</p>
-      {value.enabled && !ready && <p className="mt-2 text-[12px] text-ink-secondary">{t("settings.recovery.required")}</p>}
-      <button type="button" disabled={!draft || saving || (value.enabled && !ready)} onClick={() => void submit()}
-        className="mt-3 cursor-pointer rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-accent-ink disabled:opacity-50">{saving ? t("settings.threads.saving") : t("common.save")}</button>
-      {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
-    </PaneSection>
+        {error && <p role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{error}</p>}
+      </SettingsGroup>
+    </div>
   );
 }

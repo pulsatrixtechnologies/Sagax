@@ -10,7 +10,6 @@ import { Star } from "lucide-react";
 import { useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { canEditBotField, showBotRename } from "@/lib/bot-capabilities";
-import { cn } from "@/lib/cn";
 import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
 import { viewerActorId } from "@/lib/viewer";
 import { botEngine } from "@/lib/failed-turn";
@@ -18,7 +17,7 @@ import { useOrgPeople } from "@/lib/perspicax-org";
 import { BOT_PROFILE_LIMITS } from "../../../shared/bot-profile";
 import { BotProfileAvatarCard } from "../BotProfileAvatarCard";
 import { InlineEditableText } from "../bot-settings/InlineEditableText";
-import { inputCls } from "../bot-settings/field";
+import { CompactRow, SettingsGroup } from "../SettingsPrimitives";
 import type { useBotSettingsDerived } from "../bot-settings/useBotSettingsDerived";
 
 /** "Model" in the summary: Auto, or the engine's label for the model, with
@@ -42,10 +41,9 @@ export function personaSharingSummary(bot: Bot): string {
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-[11.5px] leading-4 text-ink-secondary">{label}</dt>
-      <dd className="mt-0.5 truncate text-[13px] leading-5 text-ink">{children}</dd>
-    </div>
+    <CompactRow label={label}>
+      <span className="min-w-0 max-w-[260px] truncate text-[13px] leading-[18px] text-ink-secondary">{children}</span>
+    </CompactRow>
   );
 }
 
@@ -99,30 +97,32 @@ export function PersonaOverview({ bot, derived }: {
         </div>
       </div>
 
-      <div>
-        <label htmlFor={`persona-description-${bot.id}`} className="mb-1.5 block text-[13px] text-ink-secondary">{t("persona.overview.description")}</label>
+      {/* Settings' layout (2026-10-16): grey headings outside the cards,
+          the summary as compact rows (label at the left, value at the right). */}
+      <section className="flex flex-col gap-2" data-persona-description="">
+        <label htmlFor={`persona-description-${bot.id}`} className="px-1 text-[13px] leading-[18px] text-ink-secondary">{t("persona.overview.description")}</label>
         {canDescribe ? (
           <textarea
             id={`persona-description-${bot.id}`}
-            className={cn(inputCls, "min-h-[64px] resize-y leading-relaxed")}
+            className="min-h-[72px] w-full resize-y rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-2.5 text-[13px] leading-relaxed text-ink placeholder:text-ink-secondary focus:border-focus focus:outline-none"
             maxLength={BOT_PROFILE_LIMITS.description}
             placeholder={t("botPanel.identity.blurbPlaceholder")}
             value={bot.description}
             onChange={(event) => derived.patch({ description: event.target.value })}
           />
         ) : (
-          <p id={`persona-description-${bot.id}`} className="text-[13px] leading-relaxed text-ink">
+          <p id={`persona-description-${bot.id}`} className="rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-2.5 text-[13px] leading-relaxed text-ink">
             {bot.description.trim() || <span className="text-ink-secondary">{t("persona.overview.noDescription")}</span>}
           </p>
         )}
-      </div>
+      </section>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-hover p-3 sm:grid-cols-4">
+      <SettingsGroup title={t("persona.overview.summaryTitle")} groupId="personaSummary">
         <Fact label={t("persona.overview.engine")}>{engine?.displayName ?? bot.modelSelection.instanceId}</Fact>
         <Fact label={t("persona.overview.model")}>{personaModelSummary(bot, engine)}</Fact>
         <Fact label={t("persona.overview.owner")}>{owner}</Fact>
         <Fact label={t("persona.overview.sharing")}>{personaSharingSummary(bot)}</Fact>
-      </dl>
+      </SettingsGroup>
 
     </div>
   );

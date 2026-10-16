@@ -162,13 +162,17 @@ describe("Bot folder: the memory's one interface", () => {
     expect(fixture.saveMemoryDoc).toHaveBeenCalledWith("pepper", "MEMORY.md", "- likes coffee\n", "h0");
   });
 
-  it("deletes a memory topic from its row", async () => {
-    vi.stubGlobal("confirm", () => true);
+  it("deletes a memory topic from its row, after the red confirmation", async () => {
     fixture.deleteMemoryDoc.mockResolvedValue({ overview: {} });
     render();
     await click('[data-file-delete="memory/clients.md"]');
+    expect(fixture.deleteMemoryDoc).not.toHaveBeenCalled();
+    // the app's ConfirmDialog is portaled to the body
+    const confirm = document.querySelector<HTMLButtonElement>("[data-confirm-action]")!;
+    expect(document.querySelector('[data-confirm-tone="danger"]')).not.toBeNull();
+    await act(async () => { confirm.click(); });
+    await flush();
     expect(fixture.deleteMemoryDoc).toHaveBeenCalledWith("pepper", "memory/clients.md");
-    vi.unstubAllGlobals();
   });
 
   it("keeps tidying and the memory's change log in the folder's ... menu", async () => {

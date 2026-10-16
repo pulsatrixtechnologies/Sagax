@@ -27,7 +27,7 @@ import { ApprovalModeSelector } from "../ApprovalModeSelector";
 import { CommandAllowlistDialog } from "../CommandAllowlistDialog";
 import { FullAccessWarning } from "../FullAccessWarning";
 import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
-import { SwitchRow } from "../SettingsPrimitives";
+import { DescribedRow, HelpTip, PILL, PillSelect, SettingsGroup, Switch, SwitchRow, UnitField } from "../SettingsPrimitives";
 import { ManagedTeamsSettings } from "./ManagedTeamsSettings";
 import { OwnerPermissionsCard } from "./OwnerPermissionsCard";
 import { BotToolAccess } from "./BotToolAccess";
@@ -112,6 +112,54 @@ export function PermissionsSection({
   const showParallel = advanced && !draft && canEditBotField(state.config, bot, "maxConcurrentThreads");
   if (!showPrimaryUi && !showApproval && !showContactUi && !showOutboundUi && !showOwnerPermissions && !showToolAccess && !showParallel) return null;
 
+  const approvalSelector = showApproval && (
+    <ApprovalModeSelector
+      approvalMode={bot.approvalMode}
+      autoApprove={bot.autoApprove}
+      providerName={engine?.displayName ?? bot.name}
+      driverKind={engine?.driverKind ?? ""}
+      onSelect={setApprovalMode}
+      menuDirection="down"
+      align="right"
+      wide
+      disabled={Boolean(bot.busy)}
+      trustedModesAvailable={trustedModesAvailable}
+      orgFullAccess={orgFullAccess}
+      onManageCommandAllowlist={advanced && !draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
+    />
+  );
+  const approvalRows = (showApproval || showContactUi) ? (
+    <>
+      {showApproval && (
+        <DescribedRow
+          label={t("botPanel.permissions.approval")}
+          help={draft ? t("botPanel.permissions.approvalDraft") : t("botPanel.permissions.approvalHelp")}
+          rowId="approvalLevel"
+          // Simple draws its two choices under the label.
+          below={!advanced && <div className="mt-2">{approvalSelector}</div>}
+        >
+          <ProposalStatus bot={bot} />
+          {advanced && approvalSelector}
+        </DescribedRow>
+      )}
+      {showContactUi && (
+        <DescribedRow
+          label={t("botPanel.permissions.ask")}
+          help={bot.approvePeerComms ? t("botPanel.permissions.askOn") : t("botPanel.permissions.askOff")}
+          description={!bot.approvePeerComms && !canCoordinate ? t("botPanel.permissions.cannotContact") : undefined}
+          rowId="askBeforeContact"
+        >
+          <Switch
+            checked={Boolean(bot.approvePeerComms)}
+            aria-label={t("botPanel.permissions.ask")}
+            disabled={!bot.approvePeerComms && !canCoordinate}
+            onClick={() => patch({ approvePeerComms: !bot.approvePeerComms })}
+          />
+        </DescribedRow>
+      )}
+    </>
+  ) : null;
+
   return (
     <div className="flex flex-col gap-5">
       {showPrimaryUi && <PaneSection title={<>{t("botPanel.permissions.primarySection")}{showTeams && bot.chiefOfStaff && <ProposalStatus bot={bot} />}</>}>
@@ -141,39 +189,12 @@ export function PermissionsSection({
         />}
       </PaneSection>}
 
-      {showContactUi && <PaneSection title={<>{t("botPanel.permissions.contactSection")}<ProposalStatus bot={bot} /></>}>
-        <SwitchRow
-          label={t("botPanel.permissions.ask")}
-          help={bot.approvePeerComms ? t("botPanel.permissions.askOn") : t("botPanel.permissions.askOff")}
-          checked={Boolean(bot.approvePeerComms)}
-          disabled={!bot.approvePeerComms && !canCoordinate}
-          onChange={() => patch({ approvePeerComms: !bot.approvePeerComms })}
-        />
-        {!bot.approvePeerComms && !canCoordinate && <p className="mt-1 text-[12px] text-ink-secondary">{t("botPanel.permissions.cannotContact")}</p>}
-      </PaneSection>}
-
-      {showApproval && <PaneSection
-        title={<>{t("botPanel.permissions.approval")}<ProposalStatus bot={bot} /></>}
-        help={draft ? t("botPanel.permissions.approvalDraft") : t("botPanel.permissions.approvalHelp")}
-      >
-        <ApprovalModeSelector
-          approvalMode={bot.approvalMode}
-          autoApprove={bot.autoApprove}
-          providerName={engine?.displayName ?? bot.name}
-          driverKind={engine?.driverKind ?? ""}
-          onSelect={setApprovalMode}
-          menuDirection="down"
-          wide
-          disabled={Boolean(bot.busy)}
-          trustedModesAvailable={trustedModesAvailable}
-          orgFullAccess={orgFullAccess}
-          onManageCommandAllowlist={advanced && !draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
-        />
-      </PaneSection>}
-
-      {/* 2026-10-14: the owner's permission mode and rules (the server
-          answers only the owner; anyone else sees nothing here) */}
-      {showOwnerPermissions && <OwnerPermissionsCard key={bot.id} bot={bot} />}
+      {/* 2026-10-16 (JC): one Approvals group of rows like Settings: the
+          approval level, the owner's permission mode (OwnerPermissionsCard)
+          and contacting other bots. */}
+      {showOwnerPermissions
+        ? <OwnerPermissionsCard key={bot.id} bot={bot} leading={approvalRows} />
+        : approvalRows && <SettingsGroup title={t("botPanel.permissions.approvals")} groupId="approvals">{approvalRows}</SettingsGroup>}
 
       {showToolAccess && <BotToolAccess key={`tools:${bot.id}`} bot={bot} />}
       {showParallel && <BotParallelSettings key={`parallel:${bot.id}`} bot={bot} />}
@@ -188,12 +209,12 @@ export function PermissionsSection({
       {!draft && advanced && (showApproval || showOutboundUi) && <AdvancedFold id="permissions">
         {showApproval && approvalMode === "full" && trustedModesAvailable && <button
           type="button" disabled={Boolean(bot.busy)}
-          className="self-start text-[13px] text-ink-secondary hover:text-ink hover:underline disabled:opacity-40"
+          className={cn(PILL, "self-start")}
           onClick={() => { setAllThreads(true); setFullAccessTarget(bot.id); }}
         >{t("botPanel.permissions.applyFull")}</button>}
         {showApproval && ownerOrAdmin === true && <button
           type="button"
-          className="self-start text-[13px] text-ink-secondary hover:text-ink hover:underline"
+          className={cn(PILL, "self-start")}
           onClick={() => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name })}
         >{t("commandAllowlist.manage")}</button>}
         {showOutboundUi && <OutboundControl key={bot.id} bot={bot} onChange={(outbound) => patch({ outbound })} />}
@@ -264,56 +285,42 @@ function OutboundControl({ bot, onChange }: { bot: Bot; onChange: (policy: Outbo
     if (parsed !== policy.dailyCap) onChange({ policy: policy.policy, dailyCap: parsed });
   };
 
+  const title = t("botPanel.permissions.outbound");
+  // 2026-10-16 (JC): drawn like Settings: the policy in a pill menu, the
+  // daily cap as a small number field with its unit.
   return (
-    <PaneSection title={t("botPanel.permissions.outbound")} help={t("botPanel.permissions.outboundHelp")}>
-      <div className="flex gap-1 rounded-lg bg-inset p-0.5">
-        {(
-          [
-            ["ask", "botPanel.permissions.askEvery", "botPanel.permissions.askEveryHint"],
-            ["allow", "botPanel.permissions.allowDaily", "botPanel.permissions.allowDailyHint"],
-          ] as const
-        ).map(([value, label, hint]) => (
-          <button
-            key={value}
-            title={t(hint)}
-            type="button"
-            aria-pressed={policy.policy === value}
-            onClick={() => {
-              if (value !== policy.policy) onChange({ policy: value, dailyCap: policy.dailyCap });
-            }}
-            className={cn(
-              "flex-1 rounded-md px-2.5 py-1.5 text-[13px] font-medium",
-              policy.policy === value ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink",
-            )}
-          >
-            {t(label)}
-          </button>
-        ))}
-      </div>
+    <SettingsGroup title={title} groupId="outbound"
+      accessory={<HelpTip label={t("settings.moreAbout", { title })}>{t("botPanel.permissions.outboundHelp")}</HelpTip>}>
+      <DescribedRow
+        label={t("botPanel.permissions.outboundPolicy")}
+        description={t(policy.policy === "allow" ? "botPanel.permissions.allowDailyHint" : "botPanel.permissions.askEveryHint")}
+      >
+        <PillSelect<OutboundPolicy["policy"]>
+          value={policy.policy}
+          ariaLabel={title}
+          onChange={(value) => { if (value !== policy.policy) onChange({ policy: value, dailyCap: policy.dailyCap }); }}
+          options={[
+            { value: "ask", label: t("botPanel.permissions.askEvery") },
+            { value: "allow", label: t("botPanel.permissions.allowDaily") },
+          ]}
+        />
+      </DescribedRow>
       {policy.policy === "allow" && (
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-[13px] text-ink-secondary">
-          <label className="flex items-center gap-2">
-            {t("botPanel.permissions.upTo")}
-            <input
-              type="number"
-              min={1}
-              max={1000}
-              value={capDraft}
-              onChange={(event) => setCapDraft(event.target.value)}
-              onBlur={commitCap}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") (event.target as HTMLInputElement).blur();
-              }}
-              aria-label={t("botPanel.permissions.dailyLimit")}
-              className="w-20 rounded-md bg-inset px-2 py-1 text-[13px] text-ink tabular-nums outline-none focus:ring-1 focus:ring-accent"
-            />
-            {t("botPanel.permissions.aDay")}
-          </label>
-          <span className="tabular-nums">
-            {today === null ? "" : t("botPanel.permissions.usedToday", { today: String(today), cap: String(policy.dailyCap) })}
-          </span>
-        </div>
+        <DescribedRow
+          label={t("botPanel.permissions.dailyLimit")}
+          description={today === null ? undefined : t("botPanel.permissions.usedToday", { today: String(today), cap: String(policy.dailyCap) })}
+        >
+          <UnitField
+            value={capDraft}
+            unit={t("botPanel.permissions.aDay")}
+            label={t("botPanel.permissions.dailyLimit")}
+            min={1}
+            max={1000}
+            onChange={setCapDraft}
+            onCommit={commitCap}
+          />
+        </DescribedRow>
       )}
-    </PaneSection>
+    </SettingsGroup>
   );
 }

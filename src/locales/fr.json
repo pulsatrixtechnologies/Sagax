@@ -877,7 +877,6 @@
   "botPanel.permissions.outbound": "Envois en votre nom",
   "botPanel.permissions.outboundHelp": "Courriels, messages, publications, invitations et paiements par les applications connectées. La lecture et les brouillons ne comptent jamais. Cela s'applique à chaque niveau d'approbation, y compris l'accès complet.",
   "botPanel.permissions.primary": "Bot principal",
-  "botPanel.permissions.upTo": "Jusqu'à",
   "botPanel.permissions.usedToday": "{today} sur {cap} utilisés aujourd'hui",
   "botPanel.prompt.bytes": "{count} octets",
   "botPanel.prompt.error": "Impossible de charger l'aperçu du prompt.",
@@ -4685,8 +4684,6 @@
   "vm.vps.unavailable": "Inventaire des ordinateurs VPS indisponible : {reason}",
   "vm.vpsRemoveError": "Impossible de supprimer cet ordinateur VPS",
   "voice.bot.hostUnset": "L'hôte n'a pas configuré de moteur vocal.",
-  "voice.bot.intro": "La voix de ce bot pour les appels et les réponses parlées.",
-  "voice.bot.lockedIntro": "Choisissez la voix de ce bot et si les réponses sont lues.",
   "voice.bot.macIntro": "Choisissez si ce Mac parle avec ses voix installées ou avec l'audio de l'hôte.",
   "voice.bot.setup": "Configurez le moteur vocal dans {settings}.",
   "voice.engine.address": "Adresse du serveur Chatterbox",
@@ -7766,5 +7763,9 @@
   "updates.problem.reopen": "Quittez et rouvrez {app} avant de réessayer la mise à jour.",
   "updates.problem.dismiss": "Fermer",
   "updates.problem.retry": "Réessayer",
-  "achievements.settings.title": "Réglages"
+  "achievements.settings.title": "Réglages",
+  "persona.overview.summaryTitle": "En bref",
+  "botPanel.rules.removeTitle": "Supprimer cette règle ?",
+  "botPanel.permissions.outboundPolicy": "Avant d'envoyer",
+  "botPanel.permissions.approvals": "Approbations"
 }

@@ -4,6 +4,7 @@
 // (name, description, scan warnings, the files that are not imported) or
 // why it is refused. Nothing is added until the person confirms, and then
 // the skills arrive switched off, to be read and switched on in the list.
+import { cn } from "@/lib/cn";
 import { Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -11,6 +12,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { ApiError } from "@/state/store";
 import { useBotEditor } from "./BotEditorContext";
+import { PILL, PRIMARY_PILL } from "../SettingsPrimitives";
 
 /** Mirrors server/skill-upload.ts. */
 export const SKILL_UPLOAD_MAX_FILES = 10;
@@ -224,7 +226,7 @@ export function SkillUpload({ botId, disabled, onAdded }: { botId: string; disab
           aria-label={t("botPanel.skills.upload.aria")}
           disabled={disabled || phase !== "idle"}
           onClick={() => input.current?.click()}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
+          className={cn(PILL, "shrink-0 gap-1.5")}
         >
           <Upload size={14} aria-hidden="true" />
           {phase === "reading" ? t("botPanel.skills.upload.reading") : t("botPanel.skills.upload.button")}
@@ -258,7 +260,7 @@ export function SkillUpload({ botId, disabled, onAdded }: { botId: string; disab
               data-skill-upload-add=""
               disabled={phase !== "idle" || refused || count === 0}
               onClick={() => void add()}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-semibold text-accent-ink disabled:opacity-40"
+              className={PRIMARY_PILL}
             >
               {phase === "adding" ? t("botPanel.skills.upload.adding") : t("botPanel.skills.upload.add", { count: String(count) })}
             </button>
