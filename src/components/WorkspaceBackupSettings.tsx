@@ -172,6 +172,7 @@ function WorkspaceBackupForm() {
       <ul className="list-disc space-y-1 pl-4" data-backup-included>
         <li>{t("backup.scope")}</li>
         <li>{t("backup.excluded")}</li>
+        <li className="text-warning">{t("backup.privacy")}</li>
       </ul>
     </HelpTip>}
   >

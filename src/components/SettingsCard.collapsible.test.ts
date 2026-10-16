@@ -226,9 +226,9 @@ describe("Settings → General, compact", () => {
       expect(html).not.toContain(`data-settings-card="${id}"`);
     }
     const advanced = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GeneralAdvancedSettings)));
-    for (const id of ["general.threadCleanup"]) {
-      expect(advanced).toContain(`data-settings-card="${id}" data-open="false"`);
-    }
+    // 0.5.6: Grok-style rows under grey headings, nothing folded
+    expect(advanced).toContain('data-settings-group="threadCleanup"');
+    expect(advanced).toContain('data-settings-card="general.threadCleanup"');
     // 2026-10-15: each bot's own now, in its editor (bot-settings/)
     for (const id of ["general.threads", "general.recovery", "general.toolAccess"]) {
       expect(advanced).not.toContain(`data-settings-card="${id}"`);
