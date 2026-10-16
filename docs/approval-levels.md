@@ -119,6 +119,39 @@ harness's own agents tools (coordinating teammates, threads, memory) never
 ask on Claude, Codex or API models: Sagax authorizes each of those
 routes itself.
 
+### Sagax's own tools never ask (2026-10-16)
+
+Sagax's own person-scoped tools never ask, on any engine and at any level
+(`server/sagax-internal-tools.ts`, a reviewed list of exact names):
+
+- the **Data** tools (`data_load`, `data_describe`, `data_sql`, `data_show`,
+  `data_export`): the bot's own DuckDB database;
+- the **agents** tools a bot runs in its own scope
+  (`server/member-tool-scope.ts`: its teammates, threads, rooms, memory,
+  skills and own setup). The host-level ones (`act`, `add_mcp_server`,
+  `attach_file`, `vm_exec`, `shared_computer`, the cloud agent tools) keep
+  their card.
+
+Claude pre-allows them, Codex mounts Data with `approve`, the chat engines
+run them without a card, and the Grok gate lets Data through. An engine
+that asks anyway (Grok Build in default mode asks about every MCP call
+behind its `use_tool`) gets an automatic answer from the server
+(`sagax-internal` in the decision log), after the grant guard, the safety
+review and the person's own rules: a safety hold, a Deny or Ask rule and a
+sandbox widening still reach a person. On an organization server a
+member's Data call is never an admin card.
+
+On an organization server Data runs inside the Sagax server, so each bot's
+database is **confined** (`server/data/engine.ts` `confineConnection`):
+after loading `httpfs`, `excel` and `sqlite`, it sets `allowed_directories`
+to the bot's own folder, its workspace and its task workspaces plus
+`https://`, turns `enable_external_access` off and locks the configuration.
+DuckDB then refuses every other file (the server's data, another person's
+attachments), every other scheme (`http://`, `s3://`, `az://`) and database
+connections (`postgres://`, `mysql://`), on the bot's and the panel's
+connections alike; `data_load` says so first (`confinedSourceCheck`).
+Exports land in the bot's workspace. A solo server is unchanged.
+
 Auto-accept edits and Ask card whatever the provider asks about. Approve for
 me cards whatever the provider's reviewer leaves for you, with the note "The
 provider requires your approval for this action." A sandbox widening is held

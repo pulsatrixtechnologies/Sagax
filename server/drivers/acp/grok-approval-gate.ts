@@ -26,6 +26,7 @@ import { isFlowToolsServer, isPerspicaxBridge, PERSPICAX_READ_ONLY_TOOLS } from 
 import { FLOW_TOOL_NAMES, FLOW_TOOLS_MCP_NAME } from "../../flow-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../../auto-computer.ts";
 import { cloudOnlyBot } from "../../cloud-only-bots.ts";
+import { DATA_MCP_SERVER, DATA_TOOL_NAMES } from "../../sagax-internal-tools.ts";
 
 export const GROK_APPROVAL_GATE_FILE = "grok-approval-gate.json";
 
@@ -51,6 +52,8 @@ export function grokApprovalGateEnabled(botId: string | undefined, dataDir: stri
  * server and any annotation it sends, gets none: all its calls ask. */
 export function gateReadOnlyTools(server: { name: string; builtin: boolean; spec?: McpServerSpec }, botId?: string, dataDir: string = DATA_DIR): string[] {
   if (server.builtin && server.name === "agents") return [...READ_ONLY_AGENT_TOOL_NAMES];
+  // The bot's own database (sagax-internal-tools.ts): never a card.
+  if (server.builtin && server.name === DATA_MCP_SERVER) return [...DATA_TOOL_NAMES];
   // A cloud-only bot's Works on is forced to fixed cloud (cloud-only-bots.ts,
   // turnWorksOn), so computer_select only reports ("you already work on the
   // cloud") or refuses: it can never switch computers. Every other bot's

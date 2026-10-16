@@ -158,6 +158,10 @@ export type AutoVerdictSource =
   /** The person allowed this exact email draft on its approval card
    * (server/email-draft-send.ts): one send, these recipients and subject. */
   | "email-draft-approval"
+  /** 2026-10-16: one of Sagax's own person-scoped tools
+   * (server/sagax-internal-tools.ts: Data, the agents tools in the bot's own
+   * scope), which never ask. */
+  | "sagax-internal"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -196,6 +200,10 @@ export function autoVerdict(
     customRule?: { behavior: "allow" | "ask" | "deny"; id: string };
     /** The person allowed this exact email draft on its own card. */
     emailDraftApproved?: boolean;
+    /** One of Sagax's own person-scoped tools (sagax-internal-tools.ts):
+     * approved after a safety hold, the person's rules and the outbound
+     * guard had their say, never for a sandbox widening or a gate card. */
+    sagaxInternal?: boolean;
   },
 ): AutoVerdict {
   // A question is for a person, whatever channel it arrived on — and
@@ -220,6 +228,13 @@ export function autoVerdict(
   // risk scope was checked against the call before it got here.
   if (context?.customRule?.behavior === "allow" && !context.requiresExplicitApproval) {
     return { approve: `approved ${tool} (your rule)`, source: "custom-rule" };
+  }
+  // Sagax's own person-scoped tools (sagax-internal-tools.ts, a reviewed
+  // list of exact names) never ask, a gate card included (the agents writes
+  // a Grok gate holds): the grant guard, the safety review and the person's
+  // own rules already had their say above.
+  if (context?.sagaxInternal && !context.requiresExplicitApproval) {
+    return { approve: `approved ${tool} (Sagax tool)`, source: "sagax-internal" };
   }
   // Full's promise is literal: even a sandbox widening is approved. Entering
   // Full is separately consent-gated by the bot PATCH endpoint, and the

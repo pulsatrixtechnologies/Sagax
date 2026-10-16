@@ -102,6 +102,10 @@ export interface DataEngine {
   /** Closes the bot's database and deletes its files. */
   deleteBot(botId: string): Promise<void>;
   closeAll(): Promise<void>;
+  /** Organization server: confines every database opened afterwards to the
+   * bot's own folder plus the folders this returns (engine.ts
+   * confineConnection); null for a bot that is not confined. */
+  setConfinement?(confine: ((botId: string) => string[] | null) | undefined): void;
 }
 
 /** The chart compiler: a bot's small spec plus the result's columns → the

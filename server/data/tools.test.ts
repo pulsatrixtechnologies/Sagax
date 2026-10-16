@@ -692,3 +692,31 @@ describe("runDataTool", () => {
     expect(described.structuredContent).toMatchObject({ code: "write_refused" });
   });
 });
+
+describe("a confined load (organization server)", () => {
+  it("reads only https and the bot's own folders", async () => {
+    const { confinedSourceCheck } = await import("./tools.ts");
+    const root = mkdtempSync(join(tmpdir(), "omb-data-confined-"));
+    dirs.push(root);
+    mkdirSync(join(root, "ws"), { recursive: true });
+    writeFileSync(join(root, "ws", "a.csv"), "x\n1\n");
+    writeFileSync(join(root, "secret.csv"), "x\n1\n");
+    symlinkSync(join(root, "secret.csv"), join(root, "ws", "link.csv"));
+    const roots = [join(root, "ws")];
+    const refused = (source: string, kind: Parameters<typeof confinedSourceCheck>[1] = "auto") => {
+      try { confinedSourceCheck(source, kind, roots); return null; } catch (error) { return (error as DataFailure).error?.code ?? "thrown"; }
+    };
+    expect(refused(join(root, "ws", "a.csv"))).toBeNull();
+    expect(refused(join(root, "ws", "*.csv"))).toBeNull();
+    expect(refused("https://example.com/a.csv")).toBeNull();
+    expect(refused(join(root, "secret.csv"))).toBe("source_unsupported");
+    expect(refused(join(root, "ws", "link.csv"))).toBe("source_unsupported");
+    expect(refused(join(root, "ws", "..", "secret.csv"))).toBe("source_unsupported");
+    expect(refused("/etc/hosts")).toBe("source_unsupported");
+    expect(refused("~/x.csv")).toBe("source_unsupported");
+    expect(refused("http://169.254.169.254/x.csv")).toBe("source_unsupported");
+    expect(refused("s3://bucket/x.parquet")).toBe("source_unsupported");
+    expect(refused("postgres://u:p@db/shop")).toBe("source_unsupported");
+    expect(refused("db", "mysql")).toBe("source_unsupported");
+  });
+});

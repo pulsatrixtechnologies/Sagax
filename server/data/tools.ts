@@ -378,6 +378,9 @@ export interface DataContext {
   signal: AbortSignal;
   /** The bot's connection for tool calls, the panel's for the person. */
   connection: DataConnection;
+  /** Organization server: the only folders a load may read (the bot's own),
+   * and https the only remote source. Absent: not confined. */
+  confinedRoots?: () => string[] | null;
   by: DataCard["by"];
 }
 
@@ -492,8 +495,9 @@ export function tableNameFrom(stem: string): string {
 
 /** Where `source` leads and how DuckDB reads it. Local paths are checked
  * here so a missing file is `source_not_found` before any SQL runs. */
-export function planLoad(input: LoadInput): LoadPlan[] {
+export function planLoad(input: LoadInput, confinedRoots: readonly string[] | null = null): LoadPlan[] {
   const { source } = input;
+  if (confinedRoots) confinedSourceCheck(source, input.kind ?? "auto", confinedRoots);
   const kind = input.kind ?? "auto";
   const warnings: string[] = [];
   const gsheet = /^https?:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/.exec(source);
@@ -551,6 +555,35 @@ export function planLoad(input: LoadInput): LoadPlan[] {
   return [{ kind: reader === "tsv" ? "csv" : reader, source: local, stem: input.name ?? (input.sheet ? `${stemOf(local)}_${input.sheet}` : stemOf(local)), reader: readerExpression(reader, local, input, false), ...(reader === "xlsx" ? { extensions: ["excel" as const] } : {}), warnings }];
 }
 
+/** Organization server (2026-10-16): Data runs inside the Sagax server, so
+ * a load may read only the bot's own folders, and from the network only
+ * https (a database connection or another scheme could reach the server's
+ * private network). DuckDB enforces the same rule underneath
+ * (confineConnection in engine.ts); this check only says it clearly first. */
+export function confinedSourceCheck(source: string, kind: LoadKind, roots: readonly string[]): void {
+  const hint = "On an organization server, Data reads https URLs and files in this bot's own workspace. Put the file there (or publish it at an https address) and load it again.";
+  if (kind === "postgres" || kind === "mysql" || /^(postgres(ql)?|mysql):\/\//i.test(source)) {
+    throw fail("source_unsupported", "Database connections are not available to Data on an organization server.", { hint });
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) {
+    if (/^https:\/\//i.test(source)) return;
+    throw fail("source_unsupported", "Only https addresses can be loaded on an organization server.", { hint });
+  }
+  if (kind === "url" || kind === "gsheet") return;
+  const local = source.startsWith("~") ? source : resolve(source);
+  const inside = isAbsolute(local) && roots.some((root) => {
+    const base = resolve(root);
+    const real = (path: string) => { try { return realpathSync(path); } catch { return path; } };
+    // the deepest existing ancestor, resolved, must stay under the root
+    let probe = local;
+    while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
+    const rel = real(probe);
+    const baseReal = real(base);
+    return rel === baseReal || rel.startsWith(baseReal + sep);
+  });
+  if (!inside) throw fail("source_unsupported", `${source} is outside this bot's own folders.`, { hint });
+}
+
 const DATABASE_TABLES_MAX = 25;
 
 export interface LoadedTable { name: string; rowCount: number; columns: DataColumn[]; source: string }
@@ -559,7 +592,7 @@ export interface LoadOutput { tables: LoadedTable[]; warnings: string[]; elapsed
 /** Loads every table the plan names, describes each, records each source. */
 export async function loadData(ctx: DataContext, input: LoadInput): Promise<LoadOutput> {
   const started = Date.now();
-  const plans = planLoad(input);
+  const plans = planLoad(input, ctx.confinedRoots?.() ?? null);
   const replace = input.replace !== false;
   const existing = new Set((await ctx.database.listTables()).map((table) => table.name.toLowerCase()));
   // The plan already applied `name`; here the stem becomes a valid, unused identifier.

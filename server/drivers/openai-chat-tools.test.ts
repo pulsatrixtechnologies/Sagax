@@ -359,8 +359,9 @@ describe("built-in Data provider parity", () => {
     const data = f.integrations!.custom!.audit as NonNullable<SendTurnInput["integrations"]>["data"];
     expect(f.instance.adapter.capabilities.dataMcp).toBe(true);
     await f.start({ integrations: { data }, system: BUILT_IN_DATA_SYSTEM_PROMPT });
-    await f.decide();
     expect(await f.completed()).toMatchObject({ ok: true });
+    // the bot's own database never asks (sagax-internal-tools.ts, 2026-10-16)
+    expect(f.recorder.events.some((event) => event.type === "request.opened")).toBe(false);
     expect(f.requests[0].tools?.map(tool => tool.function.name)).toContain("data_write");
     expect(f.requests[0].messages).toContainEqual({ role: "system", content: BUILT_IN_DATA_SYSTEM_PROMPT });
     expect(f.effects()).toEqual([{ name: "receipt", value: "done" }]);

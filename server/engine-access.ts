@@ -10,6 +10,7 @@ import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
+import { dataToolName } from "./sagax-internal-tools.ts";
 
 export type EngineAccessRefusal = "engine_missing" | "no_access";
 
@@ -170,6 +171,9 @@ export function memberBotAdminApproval(input: {
 }): boolean {
   if (serverCommandApproval(input)) return true;
   if (memberOwnScopeTool(input.tool?.trim())) return false;
+  // 2026-10-16: the Data tools are the bot's own database, confined to its
+  // own folders on an organization server (sagax-internal-tools.ts).
+  if (dataToolName(input.tool)) return false;
   if (ownerScopedTool(input.tool?.trim() ?? "", input.ownerScopedMcpServer)) return false;
   const tool = input.tool?.trim().toLowerCase() ?? "";
   if (!WORKSPACE_FILE_TOOLS.has(tool)) return true;

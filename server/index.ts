@@ -17,6 +17,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { ToolGrantStore } from "./tool-grants.ts";
+import { sagaxInternalTool } from "./sagax-internal-tools.ts";
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
 import { auditSampleFromEnv, deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, mcpPolicyEnv, permissionModeFromEnv, principalFromEnv } from "./mcp-permissions.ts";
@@ -4397,9 +4398,21 @@ const dataSheets = new DataSheetRegistry({
     await (await dataEngine.forBot(botId)).dropResult(name);
   },
 });
+/** Organization server (2026-10-16): Data runs inside the Sagax server,
+ * so a bot's database reaches only its own folders (its bot folder, its
+ * workspace and its task workspaces) and https, never the server's files,
+ * another person's attachments or the private network. That makes the Data
+ * tools the person's own, like the agents tools: they never ask. */
+function dataConfinedRoots(botId: string): string[] | null {
+  return IDENTITY.kind === "perspicax" ? [workspaceDir(botId), join(TASK_WORKSPACES_DIR, botId)] : null;
+}
+if (IDENTITY.kind === "perspicax") dataEngine.setConfinement?.(dataConfinedRoots);
 /** Where a bot's exports may land, most preferred first: the person's
- * Downloads when it exists, the bot's working folder, its workspace. */
+ * Downloads when it exists, the bot's working folder, its workspace. On an
+ * organization server only the bot's workspace (the server's Downloads and
+ * working folders are nobody's). */
 function dataExportRoots(bot: { id: string; cwd?: string }): string[] {
+  if (IDENTITY.kind === "perspicax") return [workspaceDir(bot.id)];
   const downloads = join(homedir(), "Downloads");
   return [...(existsSync(downloads) ? [downloads] : []), ...(bot.cwd ? [bot.cwd] : []), workspaceDir(bot.id)];
 }
@@ -12163,6 +12176,9 @@ bus.subscribe((event: RuntimeEvent) => {
             cwActionPasses.take(event.threadId, event.mcpTool ?? event.tool, event.input) !== null,
           ...(customDecision?.kind === "ask" ? { customRule: { behavior: "ask" as const, id: customDecision.rule.id } } : {}),
           emailDraftApproved: emailDraftCall && !adminApproval && !guestDriven && !event.requiresExplicitApproval,
+          // 2026-10-16: Sagax's own person-scoped tools never ask
+          // (sagax-internal-tools.ts), on any engine and at any level.
+          sagaxInternal: !adminApproval && !guestDriven && !event.requiresExplicitApproval && sagaxInternalTool(event.mcpTool ?? event.tool) !== null,
         })
         : null;
       // 2026-10-14 (bot owner permissions): what the owner decided ahead of
@@ -31607,6 +31623,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           database, sheet: dataSheets.for(internalSender.id),
           compileChart, validateVegaLite, renderer: chartRenderer,
           exportRoots: () => dataExportRoots(internalSender),
+          confinedRoots: () => dataConfinedRoots(internalSender.id),
           signal: abort.signal, assertActive: requireActiveInternalCapability,
           onShow: (card) => {
             // The receipt names the tool that ran; the card's title lives in

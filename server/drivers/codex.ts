@@ -1046,7 +1046,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           mountSelected("browser", "browser", turn.integrations.browser);
         }
         if (turn.integrations?.data) {
-          mountSelected("data", "data", turn.integrations.data);
+          // The bot's own database (confined to the bot's folders on an
+          // organization server): never asks, like the agents tools.
+          mountSelected("data", "data", turn.integrations.data, "approve");
         }
         // A custom server named like one in the user's own config.toml would
         // be merged with it by the `-c` override — a stdio command over a

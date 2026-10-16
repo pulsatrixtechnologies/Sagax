@@ -63,6 +63,46 @@ export interface DataEngineOptions {
   idleMs?: number;
   /** The loaded @duckdb/node-api module. Default: loaded from duckdbDirectory() on first use. */
   binding?: Binding;
+  /** Confinement (organization server): the folders a bot's database may
+   * read and write besides its own folder, or null for no confinement. */
+  confine?: DataConfinement;
+}
+
+/** The folders a confined bot's database may reach besides its own folder
+ * (its workspaces), or null when that bot is not confined. */
+export type DataConfinement = (botId: string) => string[] | null;
+
+/** Extensions a confined database loads before it locks: once locked,
+ * DuckDB can neither install nor load one. Best effort: an extension that
+ * cannot be fetched now is simply missing, and its reader fails clearly. */
+export const CONFINED_EXTENSIONS: readonly DataExtension[] = ["httpfs", "excel", "sqlite"];
+
+/** The statements that confine a database (2026-10-16, organization
+ * server): no file outside `folders`, no remote source but https, and the
+ * configuration locked so no statement can lift it. DuckDB checks every
+ * reader, COPY, ATTACH and table function against this, on every
+ * connection of the instance. */
+export function confinementStatements(folders: readonly string[]): string[] {
+  const dirs = [...new Set(folders.filter(Boolean).map((folder) => (folder.endsWith("/") || folder.endsWith("\\") ? folder : `${folder}/`)))];
+  const list = [...dirs, "https://"].map(quoteLiteral).join(", ");
+  return [
+    `SET allowed_directories = [${list}]`,
+    "SET enable_external_access = false",
+    "SET lock_configuration = true",
+  ];
+}
+
+/** Loads what a confined database will need, then confines it. */
+export async function confineConnection(connection: Pick<DuckDB.DuckDBConnection, "run">, folders: readonly string[]): Promise<void> {
+  for (const extension of CONFINED_EXTENSIONS) {
+    try {
+      await connection.run(`INSTALL ${extension} FROM core`);
+      await connection.run(`LOAD ${extension}`);
+    } catch {
+      // offline or not offered on this platform: its readers will say so
+    }
+  }
+  for (const statement of confinementStatements(folders)) await connection.run(statement);
 }
 
 /** The directory whose node_modules/@duckdb holds the binding: a packaged
@@ -258,6 +298,9 @@ interface Open {
   instance: DuckDB.DuckDBInstance;
   lanes: Record<DataConnection, Lane>;
   reserved: Set<string>;
+  /** The database is confined (confineConnection): extensions are already
+   * loaded and cannot be installed any more. */
+  confined: boolean;
 }
 
 /** How long a close waits for interrupted statements to finish before it
@@ -336,7 +379,9 @@ class BotDb implements BotDatabase {
       await bot.run(`CREATE SCHEMA IF NOT EXISTS ${DATA_RESULTS_SCHEMA}`);
       const keywords = await bot.runAndReadAll("SELECT keyword_name FROM duckdb_keywords() WHERE keyword_category = 'reserved'");
       const reserved = new Set(keywords.getRowsJson().map((row) => String(row[0]).toLowerCase()));
-      return { binding, instance, lanes: { bot: new Lane(bot), panel: new Lane(panel) }, reserved };
+      const roots = this.engine.confine?.(this.botId) ?? null;
+      if (roots) await confineConnection(bot, [folder, ...roots]);
+      return { binding, instance, lanes: { bot: new Lane(bot), panel: new Lane(panel) }, reserved, confined: roots !== null };
     } catch (error) {
       bot?.closeSync();
       panel?.closeSync();
@@ -420,7 +465,7 @@ class BotDb implements BotDatabase {
     const extensions = options.extensions ?? [];
     if (!extensions.length) return;
     const label = extensions.map((extension) => `INSTALL ${extension} FROM core`).join("; ");
-    await this.statement(options.connection, label, { timeoutMs: EXTENSION_INSTALL_TIMEOUT_MS, signal: options.signal }, (_open, conn) => loadExtensions(conn, extensions));
+    await this.statement(options.connection, label, { timeoutMs: EXTENSION_INSTALL_TIMEOUT_MS, signal: options.signal }, (open, conn) => open.confined ? Promise.resolve() : loadExtensions(conn, extensions));
   }
 
   async materialise(sql: string, name: string, options: RunOptions): Promise<MaterialiseResult> {
@@ -750,6 +795,7 @@ class Engine implements DataEngine {
   readonly dataDir: string;
   readonly idleMs: number;
   readonly folder: (botId: string) => string;
+  confine: DataConfinement | undefined;
 
   constructor(options: DataEngineOptions) {
     this.env = options.env ?? process.env;
@@ -757,6 +803,13 @@ class Engine implements DataEngine {
     this.idleMs = options.idleMs ?? IDLE_CLOSE_MS;
     this.folder = options.botFolder ?? defaultBotFolder;
     if (options.binding) this.loaded = { binding: options.binding };
+    this.confine = options.confine;
+  }
+
+  /** Confines every database opened from now on (an organization server
+   * sets it at start, before any bot's database opens). */
+  setConfinement(confine: DataConfinement | undefined): void {
+    this.confine = confine;
   }
 
   private load(): { binding: Binding } | { reason: string } {

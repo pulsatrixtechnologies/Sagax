@@ -615,3 +615,39 @@ describe("helpers", () => {
     expect(closeNames("x", Array.from({ length: 10 }, (_, i) => `x${i}`)).length).toBe(5);
   });
 });
+
+describe("a confined database (organization server)", () => {
+  it("reads its own folders, refuses every other file, and cannot be unlocked", async () => {
+    const extra = join(root, "confined-ws");
+    mkdirSync(extra, { recursive: true });
+    writeFileSync(join(extra, "a.csv"), "x\n1\n2\n");
+    writeFileSync(join(root, "outside.csv"), "x\n9\n");
+    const e = engine({ confine: (botId) => (botId === "locked" ? [extra] : null) });
+    const db = await e.forBot("locked");
+    expect((await db.run(`SELECT count(*) FROM read_csv('${join(extra, "a.csv")}')`, bot)).rows).toEqual([["2"]]);
+    await db.run("CREATE OR REPLACE TABLE t AS SELECT 1 AS one", bot);
+    for (const sql of [
+      `SELECT * FROM read_csv('${join(root, "outside.csv")}')`,
+      "SELECT * FROM read_text('/etc/hosts')",
+      "SELECT * FROM read_csv('http://169.254.169.254/latest')",
+      "SET enable_external_access = true",
+      "SET allowed_directories = ['/']",
+    ]) {
+      await expect(db.run(sql, bot)).rejects.toBeInstanceOf(DataFailure);
+    }
+    // the panel's connection is the same instance: confined too
+    await expect(db.run("SELECT * FROM read_text('/etc/hosts')", { ...bot, connection: "panel" })).rejects.toBeInstanceOf(DataFailure);
+    // a bot the policy does not name is not confined
+    const free = await e.forBot("free");
+    expect((await free.run(`SELECT count(*) FROM read_csv('${join(root, "outside.csv")}')`, bot)).rows).toEqual([["1"]]);
+  });
+
+  it("confines through allowed_directories, https only, and a locked configuration", async () => {
+    const { confinementStatements } = await import("./engine.ts");
+    expect(confinementStatements(["/data/bots/a", "/data/workspaces/a/"])).toEqual([
+      "SET allowed_directories = ['/data/bots/a/', '/data/workspaces/a/', 'https://']",
+      "SET enable_external_access = false",
+      "SET lock_configuration = true",
+    ]);
+  });
+});

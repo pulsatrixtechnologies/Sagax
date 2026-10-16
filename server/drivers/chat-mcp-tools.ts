@@ -36,7 +36,8 @@ export interface ChatToolSession {
    * catalog, so they need no card; call_tool is shown as the tool it runs.
    * Sagax's own agents server needs none either, as on Claude
    * (pre-allowed mcp__agents) and Codex (auto-approved mount): the harness
-   * authorizes each of its routes itself. */
+   * authorizes each of its routes itself. So does its Data server (the
+   * bot's own database). */
   view(name: string, args: Record<string, unknown>): ChatToolCallView;
   execute(name: string, args: Record<string, unknown>, signal: AbortSignal): Promise<ChatToolResult>;
   close(): Promise<void>;
@@ -320,7 +321,7 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   const deferred = new Map<string, ChatToolDefinition>();
   let searchName: string | undefined;
   let callName: string | undefined;
-  const registered = new Map<string, { client: ChatMcpClient; server: string; launch: string; builtInBrowser: boolean; agents: boolean; hostComputer: boolean; name: string; schema: ValidateFunction; searched: boolean }>();
+  const registered = new Map<string, { client: ChatMcpClient; server: string; launch: string; builtInBrowser: boolean; agents: boolean; data: boolean; hostComputer: boolean; name: string; schema: ValidateFunction; searched: boolean }>();
   try {
     if (signal.aborted) throw aborted();
     // Start independent servers concurrently; consume results in config order
@@ -344,13 +345,13 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
       // A bridge into a machine minted a fresh bearer this turn, so its
       // grants last a turn, as a warm engine restarts for it (perTurn).
       const launch = createHash("sha256").update(JSON.stringify(descriptor)).digest("hex");
-      return { name, client, launch, builtInBrowser: descriptor === integrations?.browser, agents: descriptor === integrations?.agents,
+      return { name, client, launch, builtInBrowser: descriptor === integrations?.browser, agents: descriptor === integrations?.agents, data: descriptor === integrations?.data,
         computer: descriptor === integrations?.localComputer,
         hostComputer: descriptor === integrations?.localComputer && integrations?.localComputer?.scope === "local-computer", tools };
     }));
     for (const mount of mounts) {
       if (mount.status === "rejected") throw mount.reason;
-      const { name: server, client, launch, builtInBrowser, agents, hostComputer, tools } = mount.value;
+      const { name: server, client, launch, builtInBrowser, agents, data, hostComputer, tools } = mount.value;
       const hostTool = builtInBrowser || mount.value.computer;
       const originalNames = new Set<string>();
       for (const tool of tools) {
@@ -371,7 +372,7 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
         const base = chatToolName(server, tool.name);
         let name = base;
         for (let index = 2; registered.has(name); index += 1) { const suffix = `_${index}`; name = base.slice(0, 64 - suffix.length) + suffix; }
-        registered.set(name, { client, server, launch, builtInBrowser, agents, hostComputer, name: tool.name, schema, searched: searchable.has(server) });
+        registered.set(name, { client, server, launch, builtInBrowser, agents, data, hostComputer, name: tool.name, schema, searched: searchable.has(server) });
         candidates.push({ definition: { type: "function", function: { name, description, parameters } },
           tier: toolTier({ hostTool, agents, directory: searchable.has(server) && isDirectoryTool(tool.name) }) });
       }
@@ -430,7 +431,9 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   const viewTool = (name: string, args: Record<string, unknown>): ChatToolCallView => {
     const tool = registered.get(name);
     const runs = tool ? target(tool, args) : name;
-    if (runs === undefined || tool?.agents) return { title: name, input: args, ask: false };
+    // Sagax's own Data tools are the bot's own database (confined on an
+    // organization server, data/engine.ts): no card either (2026-10-16).
+    if (runs === undefined || tool?.agents || tool?.data) return { title: name, input: args, ask: false };
     const grant = tool && !tool.hostComputer ? JSON.stringify([tool.server, tool.launch, runs]) : undefined;
     if (!tool?.searched || tool.name !== CALL_TOOL) return { title: name, input: args, ask: true, ...(grant ? { grant } : {}) };
     return { title: chatToolName(tool.server, runs), input: object(args.arguments) ? args.arguments : {}, ask: true, ...(grant ? { grant } : {}) };
