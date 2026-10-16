@@ -46,6 +46,8 @@ export function customRuleError(failure: unknown): string {
   if (failure instanceof ApiError && failure.body?.code === "rule_not_covering") return t("customRules.notCovering");
   if (failure instanceof ApiError && failure.body?.code === "shell_family_allow") return t("customRules.shellFamily");
   if (failure instanceof ApiError && failure.body?.code === "exact_command_from_card") return t("customRules.exactFromCard");
+  if (failure instanceof ApiError && failure.body?.code === "exact_command_no_cwd") return t("customRules.exactNoCwd");
+  if (failure instanceof ApiError && failure.body?.code === "exact_command_one_bot") return t("customRules.exactOneBot");
   return t("customRules.error", { error: failure instanceof Error ? failure.message : String(failure) });
 }
 

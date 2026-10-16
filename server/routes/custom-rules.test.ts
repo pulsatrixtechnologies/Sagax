@@ -10,7 +10,7 @@ import { json, readBody } from "../harness/http.ts";
 import { requiredScope, type RequestAuth } from "../request-auth.ts";
 import { createCustomRuleRoutes } from "./custom-rules.ts";
 import { dispatchRoutes } from "./table.ts";
-import type { CustomRule } from "../../shared/custom-rules.ts";
+import type { CustomRule, CustomRuleBinding } from "../../shared/custom-rules.ts";
 
 const servers: Server[] = [];
 const dirs: string[] = [];
@@ -23,6 +23,7 @@ interface Options {
   /** who the request is; null is a bot or a local service */
   person: string | null;
   card?: (personId: string, card: { threadId: string; requestId: string }, rule: CustomRule) => "covered" | "not-covered" | null;
+  binding?: (personId: string, card: { threadId: string; requestId: string }) => CustomRuleBinding | null | undefined;
 }
 
 async function serve(options: Options) {
@@ -36,6 +37,7 @@ async function serve(options: Options) {
     manager: () => options.person,
     ownedBots: (person) => person === "jc" ? [{ id: "bot-a", name: "Alpha" }, { id: "bot-b", name: "Beta" }] : [{ id: "bot-z", name: "Zed" }],
     ...(options.card ? { fromCard: options.card } : {}),
+    ...(options.binding ? { bindingFor: options.binding } : {}),
     audit: (row) => audits.push(row.action),
     home: "/Users/jc",
   })];
@@ -111,6 +113,33 @@ describe("custom rules routes", () => {
     expect((await call("", "POST", { when: "la commande exacte `git status`", behavior: "deny", botId: null })).status).toBe(201);
     const ask = await call("", "POST", { when: "exécuter des commandes dans ~/Documents", behavior: "ask", botId: null });
     expect((await call(`/${ask.body.rule.id}`, "PATCH", { behavior: "allow" })).body.code).toBe("shell_family_allow");
+  });
+
+  it("final review: an exact command is bound to its card's bot and launch folder, and its bot never changes", async () => {
+    const withCwd: CustomRuleBinding = { tool: "bash", command: "npm test", cwd: "/Users/jc/proj", botId: "bot-a" };
+    const { call } = await serve({ person: "jc", card: () => "covered", binding: (_person, card) => card.requestId === "no-cwd" ? { tool: "bash", command: "npm test", botId: "bot-a" } : withCwd });
+    const exact = { when: "la commande exacte `npm test`", behavior: "allow", fromCard: { threadId: "t1", requestId: "r1" } };
+    const allBots = await call("", "POST", { ...exact, botId: null });
+    expect(allBots.body.code).toBe("exact_command_one_bot");
+    const otherBot = await call("", "POST", { ...exact, botId: "bot-b" });
+    expect(otherBot.body.code).toBe("exact_command_one_bot");
+    const noCwd = await call("", "POST", { ...exact, botId: "bot-a", fromCard: { threadId: "t1", requestId: "no-cwd" } });
+    expect(noCwd.status).toBe(409);
+    expect(noCwd.body.code).toBe("exact_command_no_cwd");
+    const saved = await call("", "POST", { ...exact, botId: "bot-a" });
+    expect(saved.status).toBe(201);
+    expect(saved.body.rule.binding).toEqual(withCwd);
+    const moved = await call(`/${saved.body.rule.id}`, "PATCH", { botId: "bot-b" });
+    expect(moved.body.code).toBe("exact_command_one_bot");
+    expect((await call(`/${saved.body.rule.id}`, "PATCH", { botId: null })).body.code).toBe("exact_command_one_bot");
+  });
+
+  it("final review: a card refusal never changes or removes a rule the person already had", async () => {
+    const { call, store } = await serve({ person: "jc", card: () => "not-covered" });
+    const existing = store.add({ ownerId: "jc", botId: "bot-a", when: "l'envoi de courriels", behavior: "ask" });
+    const refused = await call("", "POST", { when: "l'envoi de courriels", behavior: "allow", botId: "bot-a", fromCard: { threadId: "t1", requestId: "r1" } });
+    expect(refused.status).toBe(409);
+    expect(store.rulesOf("jc")).toEqual([existing]);
   });
 
   it("one person never reads or edits another person's rules", async () => {

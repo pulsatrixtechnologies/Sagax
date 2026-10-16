@@ -34,6 +34,7 @@ const ruleSchema = z.object({
   enabled: z.boolean(),
   binding: z.object({
     tool: z.string().min(1).max(300),
+    botId: z.string().min(1).max(200).optional(),
     command: z.string().min(1).max(4000),
     cwd: z.string().max(4000).optional(),
     providerInstanceId: z.string().max(200).optional(),

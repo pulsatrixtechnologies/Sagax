@@ -23795,7 +23795,8 @@ ROUTES.push(createCustomRuleRoutes({
     const botId = message.from?.botId ?? store.botByThread(where.threadId)?.id;
     const bot = botId ? store.bot(botId) : undefined;
     if (!bot || approvalOwnerId(bot).toLowerCase() !== personId.toLowerCase()) return null;
-    return card.customRuleCandidate?.binding;
+    const binding = card.customRuleCandidate?.binding;
+    return binding ? { ...binding, botId: bot.id } : undefined;
   },
   fromCard: (personId, where, rule) => {
     const message = store.messagesFor(where.threadId).find((row) => row.card?.requestId === where.requestId);
@@ -23810,9 +23811,11 @@ ROUTES.push(createCustomRuleRoutes({
       tool: card.tool, ...(card.mcpTool ? { mcpTool: card.mcpTool } : {}), ...(card.toolInput ? { input: card.toolInput } : {}), summary: card.subtitle,
       ...(binding ? { command: binding.command, ...(binding.cwd ? { cwd: binding.cwd } : {}), ...(binding.providerInstanceId ? { providerInstanceId: binding.providerInstanceId } : {}) } : {}),
     };
-    if (!ruleCoversCard(rule, call, bot.id)) return "not-covered";
-    store.patchMessage(where.threadId, message.id, { card: { ...card, customRuleSaved: { id: rule.id, when: rule.when } } });
-    return "covered";
+    return ruleCoversCard(rule, call, bot.id) ? "covered" : "not-covered";
+  },
+  markCard: (where, rule) => {
+    const message = store.messagesFor(where.threadId).find((row) => row.card?.requestId === where.requestId);
+    if (message?.card) store.patchMessage(where.threadId, message.id, { card: { ...message.card, customRuleSaved: { id: rule.id, when: rule.when } } });
   },
   audit: (row, auth) => orgAudit({
     category: "approval", action: row.action,

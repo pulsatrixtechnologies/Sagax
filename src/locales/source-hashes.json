@@ -12098,8 +12098,10 @@
       "persona.group.security": "8f6fb4eb7f42c0e245e29e63f5b82cc3ba19852681d1ed9aed291f59cf75ec0e",
       "persona.group.activity": "38da1505ca8373288489495101b14f24ac95078f520ad64df18272aa6054f750",
       "customRules.shellFamily": "8a3714825d40eeb58b2f96689841697f588d58a1fcbabee159825fb9d2321d4d",
-      "customRules.exactFromCard": "c321caf844b2b928de1ef3ddbcd71d96c830e4ea67f5941c8f36ba2b7961df16",
-      "customRules.gitHooks": "6a97041d62681db8d882fb735e079a1c2950e67e8b44d30210346279ad7cf485"
+      "customRules.exactFromCard": "70acc4764c9e900bf07ea3a30c3d0f28d6dbaa3833f64d7f939d05630b7a30bb",
+      "customRules.gitHooks": "6a97041d62681db8d882fb735e079a1c2950e67e8b44d30210346279ad7cf485",
+      "customRules.exactNoCwd": "94dc626014f83dd6fa82fa2a547858d086092da1a35d88648273cce3d7a7c404",
+      "customRules.exactOneBot": "8ffbe18fa57d00842a69de36af7178083f73a0a797cf44b5c250c604bc72af05"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

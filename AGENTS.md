@@ -696,7 +696,8 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
 - Every automatic decision writes a decision row with the rule id; the
   transcript step and the card carry a rule notice with Edit rule. "Toujours
   permettre ceci" saves a rule from a card only when it covers that card
-  (409 `rule_not_covering` otherwise).
+  (409 `rule_not_covering` otherwise); the check runs before anything is
+  saved, so a refusal never changes or removes a rule the person had.
 - The shell (decided after four security reviews, 2026-10-16): an allow
   rule never names a family of commands. "exécuter des commandes",
   "commandes dans <dossier>" and the like are refused as allow rules
@@ -705,8 +706,11 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   valid as Refuser or Demander d'abord. A shell line is allowed only by
   "la commande exacte `...`" made from its card with "Toujours permettre
   ceci" (route 400 `exact_command_from_card` otherwise), bound to that exact
-  line (outer spaces and tabs trimmed, nothing else), that tool and server,
-  that working folder and that engine instance, risk classes still ticked
+  line (outer spaces and tabs trimmed, nothing else), that bot (never all
+  bots; its bot cannot be changed), that tool and server, the session's
+  launch folder the engine reports (the shell may `cd` between calls; a card
+  without one cannot be allowed, 409 `exact_command_no_cwd`) and that engine
+  instance, risk classes still ticked
   (any git is irreversible: hooks and repository settings run code); or by
   a folder read rule when the engine's own shell (never an MCP shell tool,
   which may run on another machine) runs a plain read: cat, head, tail, wc, ls or stat, their own short

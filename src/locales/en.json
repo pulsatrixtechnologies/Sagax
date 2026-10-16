@@ -8269,6 +8269,8 @@
   "persona.group.security": "Security",
   "persona.group.activity": "Activity",
   "customRules.shellFamily": "For the shell, only exact commands can be allowed automatically. Write \"the exact command `...`\", or choose Ask first or Refuse.",
-  "customRules.exactFromCard": "An exact command can be allowed only from its approval card (Always allow this): it is then bound to that folder and tool.",
-  "customRules.gitHooks": "A git command can run the repository's own hooks and settings: allowing it also allows what they do. Tick irreversible actions only if you trust this repository."
+  "customRules.exactFromCard": "An exact command can be allowed only from its approval card (Always allow this): it is then bound to this bot, this tool and the session's launch folder (the shell may change folder between commands).",
+  "customRules.gitHooks": "A git command can run the repository's own hooks and settings: allowing it also allows what they do. Tick irreversible actions only if you trust this repository.",
+  "customRules.exactNoCwd": "This command has no known launch folder, so it cannot be allowed automatically. Allow it once instead.",
+  "customRules.exactOneBot": "An exact command is allowed for the bot that asked it only, never for all your bots."
 }

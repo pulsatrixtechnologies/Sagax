@@ -23,7 +23,8 @@
 //     read as policy.
 //   - The shell: an allow is only an exact command line ("la commande
 //     exacte `...`", what "Toujours permettre ceci" proposes on a shell
-//     card, bound to that card's line, tool, folder and engine instance)
+//     card, bound to that card's line, bot, tool, the session's launch
+//     folder and engine instance)
 //     or a folder read rule over a plain read of the engine's own shell
 //     (cat, head, tail, wc, ls, stat; own short flags; absolute paths; no
 //     link). A family of commands is never allowed (`shellFamily`, refused
@@ -76,8 +77,12 @@ export interface CustomRuleBinding {
   tool: string;
   /** The command line exactly, only its outer spaces and tabs trimmed. */
   command: string;
+  /** The session's launch folder the engine reported (the shell may have
+   * moved with `cd` since). */
   cwd?: string;
   providerInstanceId?: string;
+  /** The bot whose card it was. */
+  botId?: string;
 }
 
 /** What a card or a transcript row says about the rule that decided. */
@@ -480,6 +485,13 @@ function programOf(words: readonly string[]): { index: number; program: string; 
     break;
   }
   return { index, program: index < words.length ? binaryOf(words[index]!) : "", wrapped, privileged };
+}
+
+/** The program a command line runs (past env assignments, wrappers and a
+ * leading path), for display: "git" for `env GIT_DIR=x /usr/bin/git log`. */
+export function shellProgram(line: string): string {
+  const words = line.trim().split(/\s+/).filter(Boolean);
+  return programOf(words).program;
 }
 
 /** Read one shell line. Every word of it is untrusted: it can only make the
@@ -886,7 +898,10 @@ export function evaluateCustomRules(rules: readonly CustomRule[], facts: CallFac
       const compiled = compileRule(rule.when, options.home, options.resolve);
       if (!ruleCoversCall(compiled, facts, rule.behavior)) return false;
       // an exact command allows only where it was approved
-      if (rule.behavior === "allow" && compiled.commands.length) return bindingMatches(rule.binding, facts);
+      if (rule.behavior === "allow" && compiled.commands.length) {
+        if (rule.botId === null || (rule.binding?.botId !== undefined && rule.binding.botId !== options.botId)) return false;
+        return bindingMatches(rule.binding, facts);
+      }
       return true;
     })
     .sort((a, b) => BEHAVIOR_WEIGHT[b.behavior] - BEHAVIOR_WEIGHT[a.behavior] || Number(b.botId !== null) - Number(a.botId !== null) || a.createdAt - b.createdAt);

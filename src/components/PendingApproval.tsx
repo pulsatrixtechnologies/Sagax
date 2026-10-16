@@ -20,6 +20,7 @@ import { describeApproval, isTechnicalText } from "@/lib/approval-describe";
 import { reviewedSkillSha256 } from "../../shared/skill-request";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { CustomRuleNoticeLine } from "./CustomRuleNotice";
+import { shellProgram } from "../../shared/custom-rules";
 import { CustomRuleForm, customRuleError } from "./bot-settings/CustomRulesCard";
 
 interface ApprovalLabels {
@@ -493,7 +494,7 @@ export function AlwaysAllowThis({ candidate, bot, threadId, requestId, className
   }
   return (
     <div className="order-first w-full basis-full" data-always-allow-this>
-      {candidate.binding && /^git\b/.test(candidate.binding.command.replace(/^.*\//, "")) && (
+      {candidate.binding && shellProgram(candidate.binding.command) === "git" && (
         <p role="note" className="mb-1.5 text-[12px] text-warning" data-custom-rule-git-hooks>{t("customRules.gitHooks")}</p>
       )}
       <CustomRuleForm

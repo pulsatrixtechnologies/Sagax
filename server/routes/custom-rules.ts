@@ -37,7 +37,11 @@ export interface CustomRuleRouteDeps {
   ownedBots: (personId: string) => ReadonlyArray<{ id: string; name: string }>;
   /** The open card a rule is made from: whether this rule covers its call,
    * and mark it. Null when there is no such open card of this person. */
+  /** Whether a rule (not yet saved) covers the call of an open card of
+   * this person; null when there is no such open card. */
   fromCard?: (personId: string, card: { threadId: string; requestId: string }, rule: CustomRule) => "covered" | "not-covered" | null;
+  /** Mark the card with the rule saved from it. */
+  markCard?: (card: { threadId: string; requestId: string }, rule: CustomRule) => void;
   /** The binding of an open shell card of this person (its exact command,
    * tool, folder and engine instance): null when there is no such open
    * card, undefined when the card is not a shell command. */
@@ -53,7 +57,7 @@ export type CustomRuleView = CustomRule & { compiled: CompiledRule };
 /** An exact command is allowed from its own card only, bound to where it
  * was asked; its words cannot be edited into another command. */
 export const EXACT_FROM_CARD_REFUSAL = {
-  error: "An exact command can be allowed only from its approval card (Always allow this), where it is bound to that folder and tool.",
+  error: "An exact command can be allowed only from its approval card (Always allow this), where it is bound to that bot, that tool and the session's launch folder.",
   code: "exact_command_from_card",
 } as const;
 
@@ -108,32 +112,43 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       if (card && (typeof card.threadId !== "string" || typeof card.requestId !== "string")) return json(res, 400, { error: "fromCard names a threadId and a requestId" });
       // an exact command is allowed only where it was asked: from its card
       let binding: CustomRuleBinding | undefined;
+      let botId = body.botId as string | null;
       if (behavior === "allow" && compileRule(when, deps.home).commands.length) {
         if (!card || !deps.bindingFor) return json(res, 400, EXACT_FROM_CARD_REFUSAL);
+        // an exact command belongs to the card's bot, never to all bots
+        if (botId === null) return json(res, 400, { error: "An exact command is allowed for the bot that asked it only.", code: "exact_command_one_bot" });
         const found = deps.bindingFor(me, { threadId: card.threadId as string, requestId: card.requestId as string });
         if (found === null) return json(res, 404, { error: "No such open approval.", code: "no_card" });
         if (!found) return json(res, 409, { error: "This rule would not cover this approval.", code: "rule_not_covering" });
+        // the session's launch folder is part of the binding: none, no rule
+        if (!found.cwd) return json(res, 409, { error: "This command has no known folder, so it cannot be allowed automatically.", code: "exact_command_no_cwd" });
+        if (found.botId && found.botId !== botId) return json(res, 400, { error: "An exact command is allowed for the bot that asked it only.", code: "exact_command_one_bot" });
         binding = found;
+        botId = found.botId ?? botId;
       }
-      let rule: CustomRule;
-      try {
-        rule = deps.store.add({ ownerId: me, botId: body.botId as string | null, when, behavior, riskScope, ...(binding ? { binding } : {}) });
-      } catch (error) {
-        const status = (error as { status?: number }).status ?? 500;
-        return json(res, status, { error: error instanceof Error ? error.message : String(error) });
-      }
+      // check the card before anything is saved: a refusal leaves every
+      // rule the person already has as it was
       if (card && deps.fromCard) {
-        const covered = deps.fromCard(me, { threadId: card.threadId as string, requestId: card.requestId as string }, rule);
+        const provisional: CustomRule = {
+          id: "provisional", ownerId: me, botId, when: when.trim(), behavior, riskScope: behavior === "allow" ? riskScope : [],
+          enabled: true, ...(binding ? { binding } : {}), createdAt: 0, updatedAt: 0,
+        };
+        const covered = deps.fromCard(me, { threadId: card.threadId as string, requestId: card.requestId as string }, provisional);
         if (covered !== "covered") {
-          // never keep a rule saved from a card it does not cover: the
-          // person would believe this action is now allowed
-          deps.store.remove(me, rule.id);
           return json(res, covered === null ? 404 : 409, {
             error: covered === null ? "No such open approval." : "This rule would not cover this approval. Make it narrower or ticked for this kind of action.",
             code: covered === null ? "no_card" : "rule_not_covering",
           });
         }
       }
+      let rule: CustomRule;
+      try {
+        rule = deps.store.add({ ownerId: me, botId, when, behavior, riskScope, ...(binding ? { binding } : {}) });
+      } catch (error) {
+        const status = (error as { status?: number }).status ?? 500;
+        return json(res, status, { error: error instanceof Error ? error.message : String(error) });
+      }
+      if (card) deps.markCard?.({ threadId: card.threadId as string, requestId: card.requestId as string }, rule);
       deps.audit({ action: "custom_rule.add", personId: me, botId: rule.botId, after: { rule: rule.id, when: rule.when, botId: rule.botId, behavior: rule.behavior, riskScope: rule.riskScope, ...(card ? { fromCard: true } : {}) } }, auth);
       return json(res, 201, { rule: view(rule) });
     }
@@ -166,6 +181,9 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       const exact = compileRule(nextWhen, deps.home).commands.length > 0 || compileRule(before.when, deps.home).commands.length > 0;
       if (exact && typeof body.when === "string" && body.when.trim() !== before.when) return json(res, 400, EXACT_FROM_CARD_REFUSAL);
       if (exact && nextBehavior === "allow" && !before.binding) return json(res, 400, EXACT_FROM_CARD_REFUSAL);
+      if (before.binding && body.botId !== undefined && body.botId !== before.botId) {
+        return json(res, 400, { error: "An exact command is allowed for the bot that asked it only.", code: "exact_command_one_bot" });
+      }
       let updated: CustomRule | null;
       try {
         updated = deps.store.update(me, id, {
