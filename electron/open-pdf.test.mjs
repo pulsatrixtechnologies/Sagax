@@ -94,8 +94,9 @@ describe("desktop:open-pdf writes a private temp copy and opens only that", () =
 });
 
 describe("desktop:open-pdf wiring", () => {
-  const main = fs.readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
-  const preload = fs.readFileSync(new URL("./preload.cjs", import.meta.url), "utf8");
+  // A Windows checkout may hand these files over with CRLF line endings.
+  const main = fs.readFileSync(new URL("./main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const preload = fs.readFileSync(new URL("./preload.cjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
   it("is a desktop-UI-only channel that opens through open-pdf.mjs", () => {
     expect(main).toMatch(/ipcMain\.handle\("desktop:open-pdf", desktopUiOnly\("desktop:open-pdf", async \(_event, bytes, name\) => \{\n\s+return openPdfInDefaultApp\(bytes, name, \{ openPath: \(file\) => shell\.openPath\(file\) \}\);/);
