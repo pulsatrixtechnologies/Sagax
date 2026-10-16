@@ -17,10 +17,12 @@ struct ChatListView: View {
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
     @AppStorage(PrefKey.updatesButton) var showUpdatesButton = false
     @AppStorage(PrefKey.rosterChromeAtTop) private var storedChromeAtTop = false
-    /// Search, + and the Updates pill at the top (the Personalization
-    /// switch). Never on an iPad: the avatar owns the top trailing corner
+    /// Search and + at the top (the Personalization switch "Search and + at
+    /// top"). Never on an iPad: the avatar owns the top trailing corner
     /// there, so the chrome stays at the bottom as on the iPhone's default
-    /// (JC, 2026-10-15).
+    /// (JC, 2026-10-15). The Updates pill never follows it: when the
+    /// "Updates button" switch is on, the pill is anchored to the bottom
+    /// safe area in every state (JC, 2026-10-16).
     private var rosterChromeAtTop: Bool {
         storedChromeAtTop && UIDevice.current.userInterfaceIdiom != .pad
     }
@@ -233,7 +235,7 @@ struct ChatListView: View {
             GeometryReader { _ in
             VStack(spacing: 0) {
                 header
-                if rosterChromeAtTop { bottomBar }
+                if rosterChromeAtTop { bottomBar(includesUpdates: false) }
                 StatusBanner()
 
                 ScrollView {
@@ -300,13 +302,25 @@ struct ChatListView: View {
                 }
                 // The list scrolls beneath the floating bar, and its end is
                 // inset by the bar's measured height rather than a guess.
+                // The Updates pill stays here even when search and + go to
+                // the top (JC, 2026-10-16).
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if !rosterChromeAtTop { bottomBar }
+                    if rosterChromeAtTop {
+                        updatesButton
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 8)
+                    } else {
+                        bottomBar(includesUpdates: true)
+                    }
                 }
             }
             // top-aligned: the roster fills downward from the header
             .frame(maxWidth: CompanionLayout.rosterWidth, maxHeight: .infinity, alignment: .top)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // With search at the top, the keyboard it raises must not lift
+            // the pill left alone at the bottom; with search in the bottom
+            // bar, the bar still rides the keyboard so its field shows.
+            .ignoresSafeArea(.keyboard, edges: rosterChromeAtTop ? .bottom : [])
             // a bot that stopped for you grows out of the island
             .overlay(alignment: .top) {
                 if CompanionLayout.supportsIslandPresentation {
@@ -673,7 +687,7 @@ struct ChatListView: View {
 
     // MARK: - Bottom bar
 
-    private var bottomBar: some View {
+    private func bottomBar(includesUpdates: Bool) -> some View {
         GlassGroup(spacing: 8) {
             HStack(spacing: 8) {
                 if searchOpen {
@@ -710,9 +724,15 @@ struct ChatListView: View {
                     .frame(height: 52)
                     .glassCapsule()
                 } else {
-                    ViewThatFits(in: .horizontal) {
-                        expandedBottomActions
-                        compactBottomActions
+                    if includesUpdates {
+                        ViewThatFits(in: .horizontal) {
+                            expandedBottomActions
+                            compactBottomActions
+                        }
+                    } else {
+                        Spacer(minLength: 0)
+                        searchButton
+                        newMenuButton
                     }
                 }
             }
@@ -1328,9 +1348,7 @@ extension ChatListView {
     /// Extra scroll clearance when search and + sit under the account row.
     private var standardTopChromeInset: CGFloat {
         guard rosterChromeAtTop else { return 0 }
-        var extra = Theme.Metric.glassLarge + 8
-        if showUpdatesButton { extra += 52 }
-        return extra
+        return Theme.Metric.glassLarge + 8
     }
 
     /// A home overlay (Settings, Search, New bot, New group, the + menu)
@@ -1341,21 +1359,20 @@ extension ChatListView {
 
     private var standardHome: some View {
         let headerClearance = HomeMetrics.headerTop + HomeMetrics.headerHeight + 8 + standardTopChromeInset
-        return Group {
-            if rosterChromeAtTop {
-                standardHomeScroll(headerClearance: headerClearance)
-            } else {
-                standardHomeScroll(headerClearance: headerClearance)
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        // Hidden, not removed, under an overlay: the inset
-                        // keeps its height, so nothing under it moves.
-                        AnyView(standardBottomBar)
-                            .opacity(homeOverlayOpen ? 0 : 1)
-                            .allowsHitTesting(!homeOverlayOpen)
-                            .accessibilityHidden(homeOverlayOpen)
-                    }
+        // One structure whatever the switches say: the bottom bar is always
+        // the scroll's bottom safe-area inset, never a row of the header, so
+        // the Updates pill cannot migrate to the top or float mid-screen
+        // (JC, 2026-10-16). With search and + at the top, the bar keeps the
+        // pill alone; with neither, it is empty and takes no height.
+        return standardHomeScroll(headerClearance: headerClearance)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // Hidden, not removed, under an overlay: the inset
+                // keeps its height, so nothing under it moves.
+                AnyView(standardBottomBar)
+                    .opacity(homeOverlayOpen ? 0 : 1)
+                    .allowsHitTesting(!homeOverlayOpen)
+                    .accessibilityHidden(homeOverlayOpen)
             }
-        }
         // Search and New bot focus a field as they open. They ignore the
         // keyboard themselves, but the home under them did not: its bottom
         // bar (Updates pill, search, +) rode the keyboard up the screen
@@ -1427,10 +1444,6 @@ extension ChatListView {
                     }
                 }
             }
-            if rosterChromeAtTop, showUpdatesButton {
-                updatesButton
-                    .padding(.horizontal, Theme.Metric.screenEdge - Theme.Metric.controlGap)
-            }
         }
         .padding(.horizontal, Theme.Metric.screenEdge)
         .padding(.top, HomeMetrics.headerTop)
@@ -1449,19 +1462,26 @@ extension ChatListView {
     }
 
     /// Search and + sit at the bottom by default, within thumb's reach; with
-    /// the Personalization switch on, the large Updates button leads the row.
+    /// the "Updates button" switch on, the large Updates button leads the
+    /// row. "Search and + at top" moves search and + only: the pill stays
+    /// here, alone, at the bottom.
+    @ViewBuilder
     private var standardBottomBar: some View {
-        HStack(spacing: Theme.Metric.controlGap) {
-            if showUpdatesButton {
-                updatesButton
-                    .frame(maxWidth: .infinity)
-            } else {
-                Spacer(minLength: 0)
+        if showUpdatesButton || !rosterChromeAtTop {
+            HStack(spacing: Theme.Metric.controlGap) {
+                if showUpdatesButton {
+                    updatesButton
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Spacer(minLength: 0)
+                }
+                if !rosterChromeAtTop {
+                    standardChromeTrailing
+                }
             }
-            standardChromeTrailing
+            .padding(.horizontal, Theme.Metric.screenEdge)
+            .padding(.bottom, 8)
         }
-        .padding(.horizontal, Theme.Metric.screenEdge)
-        .padding(.bottom, 8)
     }
 
     // MARK: Pinned
