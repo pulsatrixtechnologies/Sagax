@@ -6,6 +6,7 @@ import { expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb, verificationServerEnvironment } from "../scripts/control-omb.ts";
 import { waitForExit } from "./testing/cleanup.ts";
 import { readHandoffs } from "./testing/handoff-rows.ts";
+import { hostTimeout } from "./testing/host-timeout.ts";
 
 const primary = { instanceId: "opencodeGo", model: "fixture/recovery" };
 const backup = { instanceId: "claude", model: "claude-sonnet-5" };
@@ -337,7 +338,7 @@ it.each(["Stop", "new message"])("does not recover a superseded turn after %s", 
     const threadId = bot.activeTaskId;
     await api("PATCH", `/api/bots/${bot.id}/tasks/${threadId}`, { modelSelection: primary, updateBotDefault: true });
     const pendingSend = control("send", "--bot", bot.id, "--task", threadId, "--text", "SUPERSEDED_WORK_5U");
-    await expect.poll(() => calls().some((call) => call.method === "initialize"), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => calls().some((call) => call.method === "initialize"), { timeout: hostTimeout(20_000) }).toBe(true);
     if (action === "Stop") await control("interrupt", "--bot", bot.id, "--task", threadId);
     else await control("send", "--bot", bot.id, "--task", threadId, "--text", "NEW_INTENT_6V");
     // The process already holds the first failure. A new process will work;
@@ -347,7 +348,7 @@ it.each(["Stop", "new message"])("does not recover a superseded turn after %s", 
     await pendingSend;
     if (action === "Stop") await control("send", "--bot", bot.id, "--task", threadId, "--text", "NEW_INTENT_6V");
     const state = async () => (await api("GET", "/api/bots")).bots.find((entry: any) => entry.id === bot.id);
-    await expect.poll(() => calls().filter((call) => call.method === "session/prompt.result").length, { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => calls().filter((call) => call.method === "session/prompt.result").length, { timeout: hostTimeout(20_000) }).toBe(1);
     expect((await control("wait", "--bot", bot.id, "--task", threadId, "--timeout", "30")).status).toBe("settled");
     expect(backupPrompts()).toHaveLength(0);
     expect((await state()).tasks.find((task: any) => task.threadId === threadId)).toMatchObject({ modelSelection: primary, busy: false });
@@ -356,4 +357,4 @@ it.each(["Stop", "new message"])("does not recover a superseded turn after %s", 
       expect(messages.filter((message: any) => message.role === "user" && message.text === text)).toHaveLength(1);
     }
   });
-}, 90_000);
+}, hostTimeout(90_000));
