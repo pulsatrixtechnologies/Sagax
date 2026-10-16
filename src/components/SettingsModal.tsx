@@ -3,12 +3,10 @@
 // is the stuff shared by every bot: who you are, your keys, and the
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
-import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Archive, Bell, Check, Coins, Download, FlaskConical, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -26,24 +24,20 @@ import { LocalComputerSection } from "./LocalComputerSection";
 import { peopleListServed, readMembership } from "../lib/membership";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { canEditConfig, canManageBackups, canManageComputers, viewerCan } from "@/lib/viewer";
-import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { OrganizationSettings } from "./OrganizationSettings";
-import { Card, CompactRow, PillSelect, SettingRow, SettingsGroup, Switch, requestSettingsCard, cardCount, takeRequestedSettingsCard } from "./SettingsPrimitives";
-import { PrivacySettings } from "./PrivacySettings";
+import { Card, CompactRow, PillSelect, SettingRow, SettingsGroup, Switch, requestSettingsCard, takeRequestedSettingsCard } from "./SettingsPrimitives";
 import { OrgMemorySettings } from "./OrgMemorySettings";
 import { NotificationSettings } from "./NotificationSettings";
-import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
+import { AppearanceSettings } from "./settings/AppearanceSettings";
+import { ExperimentalSettings } from "./settings/ExperimentalSettings";
 import { currentSettingsSection, isMovedOrganizationCard } from "@/lib/settings-sections";
 
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { workspacesAvailable } from "./WorkspacesSection";
-import { SkinPicker } from "./SkinPicker";
-import { SidebarHiddenSettings } from "./SidebarHiddenSettings";
-import { SKINS, applySkin, readSkin, visibleSkins, type SkinId } from "@/lib/skins";
+import { applySkin, readSkin, visibleSkins, type SkinId } from "@/lib/skins";
 import { readRetroUnlocked } from "@/lib/retro98";
-import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { AboutMeEditor, aboutMeFirstLine } from "./AboutMeSettings";
 import { McpCallTimeoutSettings } from "./McpCallTimeoutSettings";
@@ -53,20 +47,14 @@ import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { AccountCard } from "./settings/AccountCard";
 import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
 import { DefaultBotSettings } from "./NewBotDialog";
-import { AppIconPicker, appIconAvailable } from "./settings/AppIconPicker";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { cn } from "@/lib/cn";
-import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
-import { setShowThreads, setThreadsLocation, useShowThreadsChoice, useThreadsLocationChoice, type ThreadsLocation } from "@/lib/thread-preferences";
-import { setShowUnreadyProviders, useShowUnreadyProviders } from "@/lib/unready-providers-preference";
-import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
-import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
-import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@/lib/send-key";
-import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
-import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
-import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
+
+// The threads choice moved with Appearance (0.5.6); old imports still work.
+export { chooseThreadsView } from "./settings/AppearanceSettings";
 
 const COMPOSIO_PLATFORM_URL = "https://platform.composio.dev";
 
@@ -90,10 +78,10 @@ export const SECTIONS: Array<{
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "theme", "thème", "language", "langue", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
   // 2026-10-14: Memory is a card of this page (it was its own section).
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy", ...ORGANIZATION_ADVANCED_KEYWORDS] },
-  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese"] },
+  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
   // 2026-10-14: Privacy is a card of this page on an organization server.
-  { id: "notifications", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
-  { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
+  { id: "notifications", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
+  { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles", "experimental", "expérimental", "data window", "fenêtre data", "decision model", "modèle de décision", "connected apps", "apps connectées", "compétences", "navigateur", "unavailable", "indisponible"] },
   // Models and voice (2026-10-14): Integrations and Models and accounts in
   // one page; Connected apps and Decision model are cards of it.
   { id: "engines", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées", "decision", "jev", "typesafe", "routing", "auto", "who answers"] },
@@ -420,255 +408,6 @@ function MicrophoneRow() {
   );
 }
 
-/** Desktop mascots: fly off to the screen edge while the bot works, back when done. */
-function FloatingFlyAwayRow() {
-  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
-  return (
-    <SettingRow title={t("settings.floatingBots.flyAway.title")} subtitle={t("settings.floatingBots.flyAway.subtitle")}>
-      <Switch
-        checked={prefs.flyAway}
-        aria-label={t("settings.floatingBots.flyAway.title")}
-        onClick={() => setFloatingFlyAway(!prefs.flyAway)}
-      />
-    </SettingRow>
-  );
-}
-
-/** Desktop mascots: Shiba barks out loud (off by default; the bark itself always shows). */
-function FloatingBarkSoundRow() {
-  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
-  return (
-    <SettingRow title={t("settings.floatingBots.barkSound.title")} subtitle={t("settings.floatingBots.barkSound.subtitle")}>
-      <Switch
-        checked={prefs.barkSound}
-        aria-label={t("settings.floatingBots.barkSound.title")}
-        onClick={() => setFloatingBarkSound(!prefs.barkSound)}
-      />
-    </SettingRow>
-  );
-}
-
-/** Desktop mascots: how often they move and play on their own. */
-function FloatingLivelinessRow() {
-  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
-  return (
-    <SettingRow title={t("settings.floatingBots.liveliness.title")} subtitle={t("settings.floatingBots.liveliness.subtitle")}>
-      <select
-        value={prefs.liveliness}
-        aria-label={t("settings.floatingBots.liveliness.title")}
-        onChange={(event) => setFloatingLiveliness(event.target.value as FloatingLiveliness)}
-        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
-      >
-        {FLOATING_LIVELINESS.map((level) => (
-          <option key={level} value={level}>{t(`settings.floatingBots.liveliness.${level}`)}</option>
-        ))}
-      </select>
-    </SettingRow>
-  );
-}
-
-/** Desktop mascots: the global call hotkey (press to call, again to mute, hold to talk), on unless switched off. */
-function FloatingHotkeyRow() {
-  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
-  // the desktop app only: a browser has no global keys
-  if (typeof window === "undefined" || !(window.ogb?.floatingBots as { hotkey?: unknown } | undefined)?.hotkey) return null;
-  const mac = /Mac/.test(navigator.platform || navigator.userAgent);
-  return (
-    <SettingRow title={t("settings.floatingBots.hotkey.title")} subtitle={t("settings.floatingBots.hotkey.subtitle")}>
-      <div className="flex items-center gap-2">
-        <select
-          value={prefs.hotkeyKeys}
-          disabled={!prefs.hotkey}
-          aria-label={t("settings.floatingBots.hotkey.keys")}
-          onChange={(event) => setFloatingHotkey({ keys: event.target.value as HotkeyChoice })}
-          className="w-full max-w-[200px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:opacity-50"
-        >
-          {HOTKEY_CHOICES.map((keys) => (
-            <option key={keys} value={keys}>{hotkeyLabel(keys, mac)}</option>
-          ))}
-        </select>
-        <Switch
-          checked={prefs.hotkey}
-          aria-label={t("settings.floatingBots.hotkey.title")}
-          onClick={() => setFloatingHotkey({ on: !prefs.hotkey })}
-        />
-      </div>
-    </SettingRow>
-  );
-}
-
-/** Desktop mascots: live captions beside the mascot during a call (a call setting, kept on this device). */
-function FloatingCaptionsRow() {
-  const call = useCallSettings();
-  const on = call.captions !== false;
-  return (
-    <SettingRow title={t("settings.floatingBots.captions.title")} subtitle={t("settings.floatingBots.captions.subtitle")}>
-      <Switch checked={on} aria-label={t("settings.floatingBots.captions.title")} onClick={() => writeCallSettings({ captions: !on })} />
-    </SettingRow>
-  );
-}
-
-function FontRow() {
-  const [current, setCurrent] = useState<FontId>(readFont);
-  return (
-    <SettingRow title={t("settings.font.title")} subtitle={t("settings.font.subtitle")}>
-      <select
-        value={current}
-        aria-label={t("settings.font.aria")}
-        onChange={(event) => {
-          // SAFETY: the options are rendered from FONT_IDS, so the value is always a member.
-          const id = event.target.value as FontId;
-          applyFont(id);
-          setCurrent(id);
-        }}
-        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
-      >
-        {FONT_IDS.map((id) => (
-          <option key={id} value={id}>{t(`settings.font.${id}`)}</option>
-        ))}
-      </select>
-    </SettingRow>
-  );
-}
-
-/** Which keys send a message (Enter, Shift+Enter or Ctrl/Cmd+Enter), on this device only. */
-function SendKeyRow() {
-  const sendKey = useSendKey();
-  return (
-    <SettingRow title={t("settings.sendKey.title")} subtitle={t("settings.sendKey.subtitle", { key: sendKeyLabel("mod-enter") })}>
-      <select
-        value={sendKey}
-        aria-label={t("settings.sendKey.title")}
-        onChange={(event) => setSendKey(parseSendKey(event.target.value))}
-        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
-      >
-        {SEND_KEYS.map((mode) => (
-          <option key={mode} value={mode}>{sendKeyLabel(mode)}</option>
-        ))}
-      </select>
-    </SettingRow>
-  );
-}
-
-function SidebarDensityRow() {
-  const density = useSidebarDensity();
-  const choose = (next: SidebarDensity) => setSidebarDensity(parseSidebarDensity(next));
-  return (
-    <SettingRow title={t("sidebar.density.title")} subtitle={t("settings.sidebarDensity.subtitle")}>
-      <select
-        aria-label={t("sidebar.density.chooseAria")}
-        value={density}
-        onChange={(event) => choose(event.target.value as SidebarDensity)}
-        className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
-      >
-        {SIDEBAR_DENSITIES.map((option) => (
-          <option key={option} value={option}>{t(option === "icons" ? "sidebar.density.iconsOnly" : option === "compact" ? "sidebar.density.compact" : "sidebar.density.comfortable")}</option>
-        ))}
-      </select>
-    </SettingRow>
-  );
-}
-
-type ThreadsView = "hidden" | ThreadsLocation;
-
-/** Hidden keeps the last place, for when threads come back. */
-export function chooseThreadsView(next: ThreadsView): void {
-  if (next === "hidden") {
-    setShowThreads(false);
-    return;
-  }
-  setThreadsLocation(next);
-  setShowThreads(true);
-}
-
-/** One choice for whether and where conversation threads show (2026-10-14:
- * it was "Conversations" on/off plus "Threads location", greyed while off).
- * Both stored values stay: hiding keeps the last place for when they return. */
-function ThreadsViewRow() {
-  const enabled = useShowThreadsChoice();
-  const location = useThreadsLocationChoice();
-  const value: ThreadsView = enabled ? location : "hidden";
-  return (
-    <SettingRow title={t("settings.threadsView.title")} subtitle={t("settings.threadsView.subtitle")} help={t("settings.threadDisplay.subtitle")}>
-      <select
-        aria-label={t("settings.threadsView.title")}
-        value={value}
-        onChange={(event) => chooseThreadsView(event.target.value as ThreadsView)}
-        className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
-      >
-        <option value="hidden">{t("settings.threadsView.hidden")}</option>
-        <option value="header">{t("settings.threadsLocation.header")}</option>
-        <option value="sidebar">{t("settings.threadsLocation.sidebar")}</option>
-      </select>
-    </SettingRow>
-  );
-}
-
-function ShowUnreadyProvidersRow() {
-  const enabled = useShowUnreadyProviders();
-  return (
-    <SettingRow title={t("settings.unreadyProviders.title")} subtitle={t("settings.unreadyProviders.subtitle")}>
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.unreadyProviders.show")}
-        onClick={() => setShowUnreadyProviders(!enabled)}
-      />
-    </SettingRow>
-  );
-}
-
-function InspectorButtonRow() {
-  const enabled = useShowInspectorButton();
-  return (
-    <SettingRow title={t("settings.inspectorButton.title")} subtitle={t("settings.inspectorButton.subtitle")}>
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.inspectorButton.show")}
-        onClick={() => setShowInspectorButton(!enabled)}
-      />
-    </SettingRow>
-  );
-}
-
-function SidebarLogoRow() {
-  const enabled = useShowSidebarLogo();
-  return (
-    <SettingRow title={t("settings.sidebarLogo.title")} subtitle={t("settings.sidebarLogo.subtitle")}>
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.sidebarLogo.show")}
-        onClick={() => setShowSidebarLogo(!enabled)}
-      />
-    </SettingRow>
-  );
-}
-
-function RoutinesBadgeRow() {
-  const enabled = useShowRoutinesBadge();
-  return (
-    <SettingRow title={t("settings.routinesBadge.title")} subtitle={t("settings.routinesBadge.subtitle")}>
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.routinesBadge.show")}
-        onClick={() => setShowRoutinesBadge(!enabled)}
-      />
-    </SettingRow>
-  );
-}
-
-function RunCardRow() {
-  const enabled = useShowRunCard();
-  return (
-    <SettingRow title={t("settings.runCard.title")} subtitle={t("settings.runCard.subtitle")}>
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.runCard.show")}
-        onClick={() => setShowRunCard(!enabled)}
-      />
-    </SettingRow>
-  );
-}
-
 function RoutinesInConversationRow() {
   const { state, dispatch } = useStore();
   const enabled = routinesInConversationEnabled(state.config);
@@ -707,217 +446,6 @@ function RoutinesInConversationRow() {
         className="disabled:cursor-wait disabled:opacity-50"
       />
     </SettingRow>
-  );
-}
-
-function ToolCallsRow() {
-  const { state, dispatch } = useStore();
-  const enabled = showToolCallsEnabled(state.config);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const toggle = async () => {
-    if (saving) return;
-    setSaving(true);
-    setError("");
-    try {
-      const config: ConfigStatus = await api("/api/config", {
-        method: "PATCH",
-        body: JSON.stringify({ features: { showToolCalls: !enabled } }),
-      });
-      dispatch({ type: "configStatus", config });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("settings.toolCalls.error"));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingRow
-      title={t("settings.toolCalls.title")}
-      subtitle={t("settings.toolCalls.short")}
-      help={<>{t("settings.toolCalls.subtitle")} {t("settings.toolCalls.detail")}</>}
-      message={error ? <p role="alert" className="text-danger">{error}</p> : null}
-    >
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.toolCalls.aria")}
-        disabled={saving}
-        onClick={() => void toggle()}
-        className="disabled:cursor-wait disabled:opacity-50"
-      />
-    </SettingRow>
-  );
-}
-
-// 2026-10-14: "Advanced routine and group settings" left this list. Routines
-// in the conversation and Group turns are in General > Advanced, a sub-page
-// only Advanced mode shows: one way to reach them, not two locks.
-type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel" | "dataWindow";
-
-function ExperimentalFeaturesRow() {
-  const { state, dispatch } = useStore();
-  const skillAuthoring = skillAuthoringEnabled(state.config);
-  const browser = builtInBrowserEnabled(state.config);
-  const connectedApps = connectedAppsEnabled(state.config);
-  const decisionModel = decisionModelEnabled(state.config);
-  const dataWindow = dataWindowEnabled(state.config);
-  // A server that predates the Data window (Sagax 0.5.2 and earlier, e.g. an
-  // organization server not updated yet) sends no dataWindow and refuses to
-  // save one: the row stays, greyed, with the reason.
-  const dataWindowServed = typeof state.config?.features?.dataWindow === "boolean";
-  const desktopBrowser = browserAvailable(state.config);
-  const browserInstallable = state.config?.browserEngine?.installable === true;
-  const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
-  const [saving, setSaving] = useState<ExperimentalFeature | null>(null);
-  const [error, setError] = useState("");
-
-  // The switches show the server's saved state, read again when this card
-  // opens: never a copy this page kept from earlier.
-  useEffect(() => {
-    let live = true;
-    api<ConfigStatus>("/api/config").then((config) => { if (live) dispatch({ type: "configStatus", config }); }, () => {});
-    return () => { live = false; };
-  }, [dispatch]);
-
-  const toggle = async (feature: ExperimentalFeature, next: boolean) => {
-    if (saving) return;
-    setSaving(feature);
-    setError("");
-    try {
-      const config: ConfigStatus = await api("/api/config", {
-        method: "PATCH",
-        body: JSON.stringify({ features: { [feature]: next } }),
-      });
-      dispatch({ type: "configStatus", config });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("settings.experimental.error"));
-    } finally {
-      setSaving(null);
-    }
-  };
-
-  return (
-    <Card
-      collapsible
-      cardId="experimental.features"
-      title={t("settings.experimental.title")}
-      subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel) + Number(dataWindow), total: 5 })}
-    >
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.skillAuthoring")}</div>
-          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
-            {t("settings.experimental.skillAuthoringDetail")}
-          </div>
-        </div>
-        <Switch
-          checked={skillAuthoring}
-          aria-label={t("settings.experimental.skillAuthoringAria")}
-          disabled={saving !== null}
-          onClick={() => void toggle("skillAuthoring", !skillAuthoring)}
-          className="disabled:cursor-wait disabled:opacity-50"
-        />
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4">
-        <div className="min-w-0">
-          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.browser")}</div>
-          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
-            {desktopBrowser
-              ? browser
-                ? t("settings.experimental.browserOn")
-                : t("settings.experimental.browserOff")
-              : browserBlockedOnWindows
-                ? t("settings.experimental.browserWindows")
-                : <BrowserUnavailableNote config={state.config} />}
-          </div>
-        </div>
-        <Switch
-          checked={browser}
-          aria-label={t("settings.experimental.browserAria")}
-          disabled={saving !== null || (!browser && !desktopBrowser && !browserInstallable)}
-          onClick={() => void toggle("browser", !browser)}
-          className="disabled:cursor-wait disabled:opacity-50"
-        />
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-connected-apps>
-        <div className="min-w-0">
-          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.connectedApps")}</div>
-          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
-            <SettingsText
-              text={t("settings.experimental.connectedAppsDetail")}
-              links={{
-                apiKeys: { section: "connections", cardId: "connections.apps" },
-                providers: { section: "engines" },
-              }}
-            />
-          </div>
-        </div>
-        <Switch
-          checked={connectedApps}
-          aria-label={t("settings.experimental.connectedAppsAria")}
-          disabled={saving !== null}
-          onClick={() => void toggle("connectedApps", !connectedApps)}
-          className="disabled:cursor-wait disabled:opacity-50"
-        />
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature="decisionModel">
-        <div className="min-w-0">
-          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.decisionModel")}</div>
-          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{t("settings.experimental.decisionModelDetail")}</div>
-        </div>
-        <Switch
-          checked={decisionModel}
-          aria-label={t("settings.experimental.decisionModel")}
-          disabled={saving !== null}
-          onClick={() => void toggle("decisionModel", !decisionModel)}
-          className="disabled:cursor-wait disabled:opacity-50"
-        />
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature="dataWindow">
-        <div className="min-w-0">
-          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.dataWindow")}</div>
-          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
-            {dataWindowServed ? t("settings.experimental.dataWindowDetail") : t("settings.experimental.dataWindowServerOld")}
-          </div>
-        </div>
-        <Switch
-          checked={dataWindow}
-          aria-label={t("settings.experimental.dataWindowAria")}
-          disabled={saving !== null || (!dataWindow && !dataWindowServed)}
-          onClick={() => void toggle("dataWindow", !dataWindow)}
-          className="disabled:cursor-wait disabled:opacity-50"
-        />
-      </div>
-      {error ? <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p> : null}
-    </Card>
-  );
-}
-
-/** Reads the skin when the collapsed summary mounts, so a skin picked while
- * the card was open is the one it names. */
-function CurrentSkinName() {
-  const id = readSkin();
-  return <>{SKINS.find((skin) => skin.id === id)?.name ?? id}</>;
-}
-
-function BrowserProfilesRow() {
-  const { state } = useStore();
-  const profiles = state.config?.browserProfiles ?? [];
-  if (!builtInBrowserEnabled(state.config) && profiles.length === 0) return null;
-  return (
-    <Card
-      collapsible
-      cardId="experimental.browserProfiles"
-      defaultOpen={false}
-      title={t("settings.profiles.title")}
-      subtitle={t("settings.profiles.sharedSubtitle")}
-      summary={cardCount("profiles", profiles.length)}
-    >
-      <BrowserProfilesManager />
-    </Card>
   );
 }
 
@@ -962,28 +490,6 @@ function DiagnosticsRow() {
         {exporting ? t("settings.diagnostics.exporting") : t("settings.diagnostics.export")}
       </button>
     </SettingRow>
-  );
-}
-
-/** The six desktop mascot rows in one folded card (2026-10-14: they were a
- * third of Appearance). Folded, every value set here still applies. */
-function DesktopMascotsCard() {
-  return (
-    <Card
-      collapsible
-      cardId="appearance.mascots"
-      defaultOpen={false}
-      title={t("settings.mascotsCard.title")}
-      subtitle={t("settings.mascotsCard.subtitle")}
-    >
-      <div className="-mx-3.5 -mb-1">
-        <FloatingFlyAwayRow />
-        <FloatingLivelinessRow />
-        <FloatingBarkSoundRow />
-        <FloatingHotkeyRow />
-        <FloatingCaptionsRow />
-      </div>
-    </Card>
   );
 }
 
@@ -1064,19 +570,6 @@ export function GeneralAdvancedSettings() {
         <DiagnosticsRow />
       </div>
     </div>
-  );
-}
-
-function InterfaceModeRow() {
-  const advanced = useAdvancedMode();
-  return (
-    <SettingRow title={t("settings.advancedMode.title")} subtitle={t("settings.advancedMode.subtitle")}>
-      <Switch
-        checked={advanced}
-        aria-label={t("settings.advancedMode.title")}
-        onClick={() => setAdvancedMode(!advanced)}
-      />
-    </SettingRow>
   );
 }
 
@@ -1421,56 +914,9 @@ export function SettingsModal() {
               </div>
             )}
 
-            {section === "appearance" && (
-              <>
-                <div className="rounded-[14px] border-[0.5px] border-border py-1">
-                  <InterfaceModeRow />
-                </div>
-                <Card
-                  collapsible
-                  cardId="appearance.skin"
-                  title={t("settings.skin.title")}
-                  subtitle={t("settings.skin.subtitle")}
-                  summary={<CurrentSkinName />}
-                >
-                  <SkinPicker />
-                </Card>
-                {appIconAvailable() && (
-                  <Card
-                    collapsible
-                    cardId="appearance.appIcon"
-                    defaultOpen={false}
-                    title={t("settings.appIcon.title")}
-                    subtitle={t("settings.appIcon.subtitle")}
-                  >
-                    <AppIconPicker />
-                  </Card>
-                )}
-                <div className="rounded-[14px] border-[0.5px] border-border py-1">
-                  <FontRow />
-                  <SendKeyRow />
-                  <SidebarDensityRow />
-                  <ThreadsViewRow />
-                  {/* Simple shows what most people change; the rest is Advanced (2026-10-14). */}
-                  {advanced && <SidebarLogoRow />}
-                  {advanced && <RoutinesBadgeRow />}
-                  {advanced && <InspectorButtonRow />}
-                  {advanced && <ShowUnreadyProvidersRow />}
-                  {/* Simple: the sidebar's own "Hidden (N)" row brings entries back. */}
-                  {advanced && <SidebarHiddenSettings />}
-                  {advanced && !remoteActive && editConfig && <ToolCallsRow />}
-                  {advanced && <RunCardRow />}
-                </div>
-                <DesktopMascotsCard />
-              </>
-            )}
+            {section === "appearance" && <AppearanceSettings />}
 
-            {section === "experimental" && (
-              <>
-                <ExperimentalFeaturesRow />
-                <BrowserProfilesRow />
-              </>
-            )}
+            {section === "experimental" && <ExperimentalSettings />}
 
             {section === "engines" && (
               <>
@@ -1514,18 +960,8 @@ export function SettingsModal() {
             {section === "computer" && <LocalComputerSection />}
 
             {section === "usage" && <UsageSection />}
-            {section === "notifications" && (
-              <>
-                <NotificationSettings />
-                {/* Privacy (2026-10-14): what other people of the organization see. */}
-                {allowed("privacy") && (
-                  <section data-settings-card="notifications.privacy" className="flex flex-col gap-2">
-                    <h3 className="mt-2 text-[13px] font-medium text-ink">{t("settings.section.privacy")}</h3>
-                    <PrivacySettings />
-                  </section>
-                )}
-              </>
-            )}
+            {/* Privacy (2026-10-14): a group of Notifications on an organization server. */}
+            {section === "notifications" && <NotificationSettings privacy={allowed("privacy")} />}
             </div>
           </div>
           )}

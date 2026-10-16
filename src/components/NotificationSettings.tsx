@@ -3,6 +3,8 @@
 // shell does it: electron/desktop-attention.mjs). Every switch is on by
 // default and kept on this computer only. Which bots may notify at all is
 // each bot's own setting, on the server.
+// 0.5.6 (JC): laid out as Grok Bot's Notifications group (grey heading,
+// compact rows, a switch each), with Privacy as the last group.
 import { t } from "@/lib/i18n";
 import {
   dockBadge,
@@ -14,9 +16,14 @@ import {
   useNotificationSounds,
   useNudgeSound,
 } from "@/lib/notification-preferences";
-import { SettingRow, Switch } from "./SettingsPrimitives";
+import { CompactRow, DescribedRow, SettingsGroup, Switch } from "./SettingsPrimitives";
+import { PrivacySettings } from "./PrivacySettings";
 
-export function NotificationSettings() {
+function ThisComputer() {
+  return <span className="min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary">· {t("settings.notifications.thisComputer")}</span>;
+}
+
+export function NotificationSettings({ privacy = false }: { privacy?: boolean }) {
   const sounds = useNotificationSounds();
   const persistent = useLocalSwitch(persistentNotifications);
   const badge = useLocalSwitch(dockBadge);
@@ -24,28 +31,34 @@ export function NotificationSettings() {
   const shake = useLocalSwitch(nudgeShake);
   return (
     <>
-      <p className="text-[13px] leading-[18px] text-ink-secondary">{t("settings.notifications.subtitle")}</p>
-      <div className="rounded-[14px] border-[0.5px] border-border py-1">
-        <SettingRow title={t("settings.notificationSounds.title")} subtitle={t("settings.notificationSounds.short")} help={t("settings.notificationSounds.subtitle")}>
+      <SettingsGroup title={t("settings.group.alerts")} groupId="alerts" accessory={<ThisComputer />}>
+        <CompactRow label={t("settings.notificationSounds.title")} rowId="notificationSounds">
           <Switch checked={sounds} aria-label={t("settings.notificationSounds.play")} onClick={() => setNotificationSounds(!sounds)} />
-        </SettingRow>
-        <SettingRow
-          title={t("settings.notifications.persistent.title")}
-          subtitle={t("settings.notifications.persistent.short")}
-          help={t("settings.notifications.persistent.help")}
-        >
+        </CompactRow>
+        {/* The one grey line kept: on macOS a Banner slides away whatever this says. */}
+        <DescribedRow label={t("settings.notifications.persistent.title")} description={t("settings.notifications.persistent.mac")} rowId="persistentNotifications">
           <Switch checked={persistent} aria-label={t("settings.notifications.persistent.title")} onClick={() => persistentNotifications.set(!persistent)} />
-        </SettingRow>
-        <SettingRow title={t("settings.notifications.badge.title")} subtitle={t("settings.notifications.badge.short")}>
+        </DescribedRow>
+        <CompactRow label={t("settings.notifications.badge.title")} rowId="dockBadge">
           <Switch checked={badge} aria-label={t("settings.notifications.badge.title")} onClick={() => dockBadge.set(!badge)} />
-        </SettingRow>
-        <SettingRow title={t("settings.nudgeSound.title")} subtitle={t("settings.nudgeSound.short")}>
+        </CompactRow>
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.group.nudges")} groupId="nudges" accessory={<ThisComputer />}>
+        <CompactRow label={t("settings.nudgeSound.title")} rowId="nudgeSound">
           <Switch checked={nudgeSound} aria-label={t("settings.nudgeSound.title")} onClick={() => setNudgeSound(!nudgeSound)} />
-        </SettingRow>
-        <SettingRow title={t("settings.nudgeShake.title")} subtitle={t("settings.nudgeShake.short")}>
+        </CompactRow>
+        <CompactRow label={t("settings.nudgeShake.title")} rowId="nudgeShake">
           <Switch checked={shake} aria-label={t("settings.nudgeShake.title")} onClick={() => nudgeShake.set(!shake)} />
-        </SettingRow>
-      </div>
+        </CompactRow>
+      </SettingsGroup>
+      {/* Privacy (2026-10-14): what other people of the organization see. */}
+      {privacy && (
+        <div data-settings-card="notifications.privacy">
+          <SettingsGroup title={t("settings.section.privacy")} groupId="privacy">
+            <PrivacySettings />
+          </SettingsGroup>
+        </div>
+      )}
     </>
   );
 }
