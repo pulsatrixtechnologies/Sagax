@@ -214,11 +214,11 @@ describe("never the bot's", () => {
     const proxy = readFileSync(join(import.meta.dirname, "harness-mcp-proxy.ts"), "utf8");
     expect(proxy).not.toMatch(/network-debug|browser\/network|BrowserNetworkDebug/);
     const index = readFileSync(join(import.meta.dirname, "index.ts"), "utf8");
-    const route = /\/\^\\\/api\\\/bots\\\/\(\[\\w-\]\+\)\\\/browser\\\/network\$\//;
-    expect(index).toMatch(route);
     expect(index).not.toMatch(/\/api\/internal\/[^"'`]*network/);
-    // the route is POST only
-    const block = index.slice(index.indexOf("const networkBrowserMatch"), index.indexOf("const networkBrowserMatch") + 600);
-    expect(block).toContain('if (method !== "POST") return json(res, 405');
+    expect(index).toContain("ROUTES.push(createBrowserNetworkRoutes(");
+    // the route lives in its module and is POST only
+    const route = readFileSync(join(import.meta.dirname, "routes", "browser-network.ts"), "utf8");
+    expect(route).toContain("/^\\/api\\/bots\\/([\\w-]+)\\/browser\\/network$/");
+    expect(route).toContain('if (method !== "POST") return json(res, 405');
   });
 });

@@ -594,7 +594,7 @@ import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserRuntimeEnv } from "./browser-runtime.ts";
 import { BrowserLive } from "./browser-live.ts";
-import { BrowserNetworkDebug, NetworkDebugError, parseNetworkDebugBody } from "./browser-network-debug.ts";
+import { BrowserNetworkDebug } from "./browser-network-debug.ts";
 import {
   agentBrowserFrame,
   agentBrowserIntegration,
@@ -867,6 +867,7 @@ import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
 import { createOwnerApprovalRoutes } from "./routes/owner-approvals.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createComputerCareRoutes } from "./routes/computer-care.ts";
+import { createBrowserNetworkRoutes } from "./routes/browser-network.ts";
 import { MaintenanceScheduler, MaintenanceStore, oldCheckpointRepos, type DiskSaverTarget, type MaintainedComputer } from "./computer-care.ts";
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
 import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
@@ -23505,6 +23506,16 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   terminalFeature.internalRoute,
 ];
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
+ROUTES.push(createBrowserNetworkRoutes({
+  bot: (id) => store.bot(id) ?? null,
+  browserEnabled: () => builtInBrowserEnabled(cfg),
+  browser: (botId, profile) => browserIntegration(botId, profile),
+  authorizeWorkspace: async (req, auth) => {
+    if (!HOSTED_WORKSPACE || auth.kind !== "session") return null;
+    return workspaceAccess ? await workspaceAccess.authorize(req, auth) : { status: 503, error: "Workspace sign-in is unavailable." };
+  },
+  debug: browserNetworkDebug,
+}));
 // Install statuses come from the organization library's own state, never
 // its file, so New bot cannot disagree with it. No organization: none.
 const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
@@ -34270,44 +34281,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 200, await browserLive.action({ viewerId: body.viewerId, botId: bot.id, owner, body }));
       }
       return json(res, 405, { error: "method not allowed" });
-    }
-    // The person's network debugger of the bot's browser. POST only: on the
-    // desktop a loopback change needs the app's own capability, so a bot's
-    // shell on the same machine cannot read it (a GET would be open to any
-    // local process). Not an internal route, not a tool: no bot reaches it.
-    const networkBrowserMatch = /^\/api\/bots\/([\w-]+)\/browser\/network$/.exec(path);
-    if (networkBrowserMatch) {
-      res.setHeader("cache-control", "no-store");
-      if (method !== "POST") return json(res, 405, { error: "method not allowed" });
-      const bot = store.bot(networkBrowserMatch[1]);
-      if (!bot) return json(res, 404, { error: "no such bot" });
-      if (!builtInBrowserEnabled(cfg) || bot.browser === false) {
-        return json(res, 409, { error: "Enable this bot's browser in its profile first." });
-      }
-      let request: ReturnType<typeof parseNetworkDebugBody>;
-      try { request = parseNetworkDebugBody(await readBody(req, 4_096)); }
-      catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : "Invalid network debugger action." }); }
-      const browser = await browserIntegration(bot.id, bot.browserProfile);
-      if (!browser) return json(res, 503, { error: "Install the browser engine first." });
-      if (HOSTED_WORKSPACE && auth.kind === "session") {
-        const failure = workspaceAccess
-          ? await workspaceAccess.authorize(req, auth)
-          : { status: 503, error: "Workspace sign-in is unavailable." };
-        if (failure) return json(res, failure.status, { error: failure.error });
-      }
-      const owner = auth.kind === "session" ? auth.session.id : "local-owner";
-      const target = { session: browser.session, botId: bot.id, owner };
-      try {
-        if (request.action === "start") return json(res, 200, await browserNetworkDebug.start({ ...target, spec: browser.spec }));
-        if (request.action === "refresh") return json(res, 200, await browserNetworkDebug.refresh({ ...target, includeHeaders: request.includeHeaders }));
-        if (request.action === "export") return json(res, 200, { har: browserNetworkDebug.exportHar({ ...target, includeHeaders: request.includeHeaders, version: "1" }) });
-        await browserNetworkDebug.stop(target);
-        return json(res, 200, { ok: true });
-      } catch (error) {
-        // A fixed message, never the engine's text or a captured value.
-        if (error instanceof NetworkDebugError) return json(res, error.status, { error: error.message });
-        return json(res, 500, { error: "The network debugger failed." });
-      }
     }
     if (method === "GET" && path === "/api/events") {
       const viewer = viewerFor(auth, path);
