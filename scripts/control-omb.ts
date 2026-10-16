@@ -386,6 +386,9 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   // A test's key for relaying an organization library into the fixture
   // (POST /api/testing/org-library); the route does not exist without it.
   if (parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY) childEnv.SAGAX_TEST_ORG_LIBRARY_KEY = parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY;
+  // The credential vault answers loopback on a headless server only when
+  // the operator opts in (server/routes/credential-vault.ts vaultPrincipalFor).
+  if (parentEnv.SAGAX_CREDENTIAL_VAULT_LOOPBACK === "1") childEnv.SAGAX_CREDENTIAL_VAULT_LOOPBACK = "1";
   // Live calls against server/testing/fake-openai-live.ts only: a loopback
   // URL, and a key that only ever reaches that fake.
   const liveUrl = parentEnv.SAGAX_OPENAI_LIVE_URL?.trim() ?? "";

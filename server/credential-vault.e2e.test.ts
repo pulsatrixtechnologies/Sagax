@@ -14,7 +14,7 @@ const FAKE_PASSWORD = "fake-e2e-Pa55word-xyz";
 it("asks for a login with a card, grants it once, resumes the bot with a handle and never echoes the value", async () => {
   const gates = mkdtempSync(join(tmpdir(), "sagax-vault-e2e-"));
   const gate = join(gates, "finish");
-  const fixture = await launchVerificationServer({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_SLOW_FINISH_GATE: gate });
+  const fixture = await launchVerificationServer({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_SLOW_FINISH_GATE: gate, SAGAX_CREDENTIAL_VAULT_LOOPBACK: "1" });
   const seen: string[] = [];
   const api = async (method: string, path: string, body?: unknown, expected = 200, token?: string) => {
     const response = await fetch(fixture.info.url + path, {
@@ -59,7 +59,7 @@ it("asks for a login with a card, grants it once, resumes the bot with a handle 
     const granted = await api("POST", `/api/bots/${bot.id}/vault-cards/${asked.messageId}/grant`, {
       threadId: bot.threadId,
       mode: "once",
-      item: { kind: "login", name: "Billing", username: "ada.fake@example.test", password: FAKE_PASSWORD, domains: ["example.test"] },
+      item: { kind: "login", name: "Billing", username: "ada.fake@example.test", password: FAKE_PASSWORD, domains: ["billing.example.test"] },
     });
     expect(granted.item).toMatchObject({ name: "Billing", hasPassword: true, grants: [{ botId: bot.id, mode: "once", threadId: bot.threadId }] });
     await expect.poll(async () => {

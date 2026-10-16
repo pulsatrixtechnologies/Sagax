@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import {
+  bindingUrl,
   MAX_VAULT_DOMAINS,
   MAX_VAULT_ITEMS,
   VAULT_GRANT_MODES,
@@ -365,7 +366,7 @@ export class CredentialVault {
     const domain = query.domain ? normalizeVaultDomain(query.domain) : null;
     const name = query.name?.trim().toLowerCase();
     return this.list(principalId).filter((item) =>
-      (domain && vaultDomainMatches(item.domains, `https://${domain}/`)) ||
+      (domain && vaultDomainMatches(item.domains, bindingUrl(domain))) ||
       (name && item.name.toLowerCase().includes(name)));
   }
 
@@ -374,6 +375,20 @@ export class CredentialVault {
     const item = this.load(principalId).items[itemId];
     if (!item) return false;
     return activeGrants(item, this.now()).some((grant) => grant.botId === botId && (grant.mode === "always" || grant.threadId === threadId));
+  }
+
+  /** Whether this bot may use any item in this conversation now: its own
+   * page scripts are then off in its browser (server/browser-runtime.ts). A
+   * vault that cannot be opened counts as armed, the safe side. */
+  armed(principalId: string, botId: string, threadId: string): boolean {
+    let items: Record<string, StoredVaultItem>;
+    try {
+      items = this.load(principalId).items;
+    } catch {
+      return true;
+    }
+    const now = this.now();
+    return Object.values(items).some((item) => activeGrants(item, now).some((grant) => grant.botId === botId && (grant.mode === "always" || grant.threadId === threadId)));
   }
 
   /** The value to fill, only for a granted bot and a page whose top-level
@@ -478,15 +493,22 @@ function applyInput(item: StoredVaultItem, input: VaultItemInput, creating: bool
   }
 }
 
-/** The browser runtime's resolver for one turn (server/browser-runtime.ts
- * CredentialFillResolver): this person's vault, this bot, this conversation. */
+/** The browser runtime's view of the vault for one turn
+ * (server/browser-runtime.ts CredentialFillAccess): this person's vault, this
+ * bot, this conversation. */
 export function fillResolverFor(
   vault: CredentialVault,
   context: { principalId: string; botId: string; threadId: string },
   readOnePassword?: OnePasswordFieldReader,
-): (request: { handle: string; field: VaultFillField; pageUrl: string }) => Promise<{ ok: true; value: string; label: string } | { ok: false; message: string }> {
-  return async (request) => {
-    const resolved = await vault.resolveForFill(context.principalId, { ...request, botId: context.botId, threadId: context.threadId }, readOnePassword);
-    return resolved.ok ? { ok: true, value: resolved.value, label: resolved.item.name } : { ok: false, message: resolved.message };
+): {
+  resolve(request: { handle: string; field: VaultFillField; pageUrl: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string }>;
+  armed(): boolean;
+} {
+  return {
+    async resolve(request) {
+      const resolved = await vault.resolveForFill(context.principalId, { ...request, botId: context.botId, threadId: context.threadId }, readOnePassword);
+      return resolved.ok ? { ok: true, value: resolved.value, label: resolved.item.name } : { ok: false, message: resolved.message };
+    },
+    armed: () => vault.armed(context.principalId, context.botId, context.threadId),
   };
 }

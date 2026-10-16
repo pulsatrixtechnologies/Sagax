@@ -112,38 +112,38 @@ function judge(found, field) {
   return null;
 }`;
 
-/** The probe: carries no secret. Answers the top-level URL, whether this
- * script runs in the top frame, and why the target would be refused. */
-export function probeScript(aim: Aim, field: VaultFillField): string {
-  return `(() => {${FINDER}
+/** The probe: carries no secret and is not trusted for the page's address
+ * (the runtime reads the URL from the engine, never from page script). It
+ * answers whether it runs in the top frame, why the target would be refused,
+ * and where the target's form posts; it marks the target with a one-time
+ * attribute so the engine's own fill (agent_browser_fill, typed by the
+ * engine, not by a page-visible script) reaches that exact element of the
+ * top document. A CSS attribute selector never crosses into a frame. */
+export function probeScript(aim: Aim, field: VaultFillField, nonce: string): string {
+  return `(() => {'use strict';${FINDER}
 const top = window.top === window;
-const problem = top ? judge(pick(${JSON.stringify(aim)}, ${JSON.stringify(field)}), ${JSON.stringify(field)}) : 'frame';
-return JSON.stringify({ href: location.href, origin: location.origin, top, problem });
-})()`;
-}
-
-/** The fill: the value is a JSON string literal inside the script, which
- * only the browser engine receives. The origin and frame checks run in the
- * same synchronous step as the write. */
-export function fillScript(aim: Aim, field: VaultFillField, expectedOrigin: string, value: string): string {
-  return `(() => {${FINDER}
-if (window.top !== window) return JSON.stringify({ ok: false, problem: 'frame' });
-if (location.origin !== ${JSON.stringify(expectedOrigin)}) return JSON.stringify({ ok: false, problem: 'moved' });
-const found = pick(${JSON.stringify(aim)}, ${JSON.stringify(field)});
+const found = top ? pick(${JSON.stringify(aim)}, ${JSON.stringify(field)}) : { frame: true };
 const problem = judge(found, ${JSON.stringify(field)});
-if (problem) return JSON.stringify({ ok: false, problem });
-const el = found.el;
-const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-el.focus();
-setter.call(el, ${JSON.stringify(value)});
-el.dispatchEvent(new Event('input', { bubbles: true }));
-el.dispatchEvent(new Event('change', { bubbles: true }));
-return JSON.stringify({ ok: true });
+const targets = [];
+if (!problem) {
+  const el = found.el;
+  el.setAttribute('data-sagax-fill', ${JSON.stringify(nonce)});
+  const form = el.form;
+  if (form) {
+    targets.push(new URL(form.getAttribute('action') || location.href, location.href).href);
+    for (const button of Array.from(form.querySelectorAll('[formaction]'))) targets.push(new URL(button.getAttribute('formaction'), location.href).href);
+  }
+}
+return JSON.stringify({ top, problem, targets });
 })()`;
 }
 
-export interface ProbeResult { href: string; origin: string; top: boolean; problem: string | null }
+export interface ProbeResult { top: boolean; problem: string | null; targets: string[] }
+
+/** The selector of the element a probe marked. */
+export function nonceSelector(nonce: string): string {
+  return `[data-sagax-fill="${nonce}"]`;
+}
 
 /** An eval result's JSON object: agent-browser returns the script's string
  * as a JSON string inside the text part. Null when it is anything else. */
@@ -163,8 +163,21 @@ export function parseEvalObject(result: unknown): Record<string, unknown> | null
 
 export function parseProbe(result: unknown): ProbeResult | null {
   const value = parseEvalObject(result);
-  if (!value || typeof value.href !== "string" || typeof value.origin !== "string" || typeof value.top !== "boolean") return null;
-  return { href: value.href, origin: value.origin, top: value.top, problem: typeof value.problem === "string" ? value.problem : null };
+  if (!value || typeof value.top !== "boolean") return null;
+  const targets = Array.isArray(value.targets) ? value.targets.filter((target): target is string => typeof target === "string").slice(0, 20) : [];
+  return { top: value.top, problem: typeof value.problem === "string" ? value.problem : null, targets };
+}
+
+/** Whether every place the form posts to stays on the page's own origin. A
+ * javascript: or data: action, or another origin, refuses the fill. */
+export function formStaysOnOrigin(targets: readonly string[], origin: string): boolean {
+  return targets.every((target) => {
+    try {
+      return new URL(target).origin === origin;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** What the bot hears when the target is refused. Never a value. */
@@ -177,6 +190,9 @@ export function problemText(problem: string, field: VaultFillField): string {
     case "not_password": return "A password is only typed into a password field (type=password); nothing was filled.";
     case "password_box": return "This is a password field; fill it with field password. Nothing was filled.";
     case "moved": return "The page changed before the value was typed; nothing was filled. Check the page and try again.";
+    case "cross_origin_form": return "This form sends to another site than the page; Sagax does not fill a login into it. Nothing was filled.";
+    case "scripted": return "You ran a script on this site in this browser, so Sagax will not fill a saved login here. Call restart_browser, open the page again, then fill without running scripts.";
+    case "fill_failed": return "The browser could not type into the field; nothing was filled. Take a new snapshot and pass the input's current ref.";
     default: return "The field could not be filled; nothing was typed.";
   }
 }
@@ -187,16 +203,41 @@ export function problemText(problem: string, field: VaultFillField): string {
 const MIN_REDACT_LENGTH = 4;
 const SHORT_LIVED_MS = 5 * 60_000;
 
-function variants(value: string): string[] {
+function htmlEntities(value: string, hex: boolean): string {
+  return [...value].map((char) => hex ? `&#x${char.codePointAt(0)!.toString(16)};` : `&#${char.codePointAt(0)};`).join("");
+}
+
+function htmlEscaped(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function unicodeEscaped(value: string): string {
+  return [...value].map((char) => {
+    const code = char.codePointAt(0)!;
+    return code > 0xffff ? char : `\\u${code.toString(16).padStart(4, "0")}`;
+  }).join("");
+}
+
+/** The value as a page, a log or a request could show it: itself, base64
+ * (padded or not, url-safe), hex in both cases, reversed, URL and form
+ * encoded, JSON, HTML (named, decimal and hex entities) and unicode escapes. */
+export function variants(value: string): string[] {
   const out = new Set<string>([value]);
   const bytes = Buffer.from(value, "utf8");
   out.add(bytes.toString("base64"));
   out.add(bytes.toString("base64").replace(/=+$/, ""));
   out.add(bytes.toString("base64url"));
   out.add(bytes.toString("hex"));
+  out.add(bytes.toString("hex").toUpperCase());
   out.add([...value].reverse().join(""));
   out.add(encodeURIComponent(value));
+  out.add(encodeURIComponent(value).replace(/%20/g, "+"));
+  out.add(encodeURIComponent(value).replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase()));
   out.add(JSON.stringify(value).slice(1, -1));
+  out.add(htmlEscaped(value));
+  out.add(htmlEntities(value, false));
+  out.add(htmlEntities(value, true));
+  out.add(unicodeEscaped(value));
   return [...out].filter((variant) => variant.length >= MIN_REDACT_LENGTH);
 }
 
@@ -210,6 +251,10 @@ function escapeRegExp(value: string): string {
 export class SecretRedactor {
   private readonly sessions = new Map<string, Map<string, number>>();
   private readonly tainted = new Map<string, Set<string>>();
+  /** The values themselves, for the pairs (user:pass) a page may encode. */
+  private readonly raw = new Map<string, string[]>();
+  /** Origins where the bot ran its own script in this browser session. */
+  private readonly scripted = new Map<string, Set<string>>();
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
@@ -221,7 +266,21 @@ export class SecretRedactor {
     let values = this.sessions.get(session);
     if (!values) this.sessions.set(session, values = new Map());
     const until = options.shortLived ? this.now() + SHORT_LIVED_MS : Number.POSITIVE_INFINITY;
+    let raw = this.raw.get(session);
+    if (!raw) this.raw.set(session, raw = []);
+    const known = raw.slice(-8);
+    if (!options.shortLived && value.length >= MIN_REDACT_LENGTH && !raw.includes(value)) raw.push(value);
     for (const variant of value.length >= MIN_REDACT_LENGTH ? variants(value) : [value]) values.set(variant, until);
+    // A pair such as user:pass, as HTTP Basic sends it in base64.
+    if (value.length >= MIN_REDACT_LENGTH && !options.shortLived) {
+      for (const other of known) {
+        for (const pair of [`${other}:${value}`, `${value}:${other}`]) {
+          const encoded = Buffer.from(pair, "utf8").toString("base64");
+          values.set(encoded, until);
+          values.set(encoded.replace(/=+$/, ""), until);
+        }
+      }
+    }
   }
 
   /** An origin where a credential was filled: the bot's own eval is refused there. */
@@ -239,9 +298,23 @@ export class SecretRedactor {
     return (this.tainted.get(session)?.size ?? 0) > 0;
   }
 
+  /** The bot ran agent_browser_eval on this origin: it could have left a
+   * listener or a planted field there, so no fill until a restart. */
+  scriptedOn(session: string, origin: string): void {
+    let origins = this.scripted.get(session);
+    if (!origins) this.scripted.set(session, origins = new Set());
+    origins.add(origin);
+  }
+
+  wasScripted(session: string, origin: string): boolean {
+    return this.scripted.get(session)?.has(origin) === true;
+  }
+
   forget(session: string): void {
     this.sessions.delete(session);
     this.tainted.delete(session);
+    this.raw.delete(session);
+    this.scripted.delete(session);
   }
 
   private pattern(session: string): RegExp | null {

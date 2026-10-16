@@ -3,7 +3,7 @@
 // here ever holds a value the server sent: the server never sends one, only
 // booleans that say one is saved. Values typed here go to the server once.
 import { api } from "@/state/store";
-import { vaultDomainMatches, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault";
+import { bindingUrl, vaultDomainMatches, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault";
 
 export type { VaultItemListing } from "../../shared/credential-vault";
 
@@ -72,7 +72,7 @@ export const dismissCard = (botId: string, messageId: string, threadId: string) 
 export function matchingItems(items: readonly VaultItemListing[], request: { domain?: string; name?: string }): VaultItemListing[] {
   const name = request.name?.trim().toLowerCase();
   return items.filter((item) => (item.kind === "login" || item.kind === "apiKey") && (
-    (request.domain && vaultDomainMatches(item.domains, `https://${request.domain}/`)) ||
+    (request.domain && vaultDomainMatches(item.domains, bindingUrl(request.domain))) ||
     (name && item.name.toLowerCase().includes(name))
   ));
 }

@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { fieldValue, OnePassword, type ExecFileFn, type FetchFn } from "./onepassword.ts";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { fieldValue, locateOp, OnePassword, safeBinaryPath, type ExecFileFn, type FetchFn } from "./onepassword.ts";
+
+const FAKE_OP = "/opt/fake-1password/bin/op";
+const located = async () => FAKE_OP;
 
 // Fake 1Password answers; no real account or secret is involved.
 const ITEM = {
@@ -15,15 +22,19 @@ const ITEM = {
 describe("1Password", () => {
   it("is off when op is absent, signed out, or on an organization server", async () => {
     const absent: ExecFileFn = vi.fn(async () => { throw new Error("ENOENT"); });
-    await expect(new OnePassword({ env: {}, exec: absent, organization: () => false }).status()).resolves.toEqual({ available: false, reason: "absent" });
+    await expect(new OnePassword({ env: {}, exec: absent, organization: () => false, locate: located }).status()).resolves.toEqual({ available: false, reason: "absent" });
+    // No trusted install path: op is never run, whatever PATH says.
+    const neverRun = vi.fn<ExecFileFn>(async () => "2.30.0");
+    await expect(new OnePassword({ env: { PATH: "/tmp/evil" }, exec: neverRun, organization: () => false, locate: async () => null }).status()).resolves.toEqual({ available: false, reason: "absent" });
+    expect(neverRun).not.toHaveBeenCalled();
     const signedOut: ExecFileFn = vi.fn(async (_command, args) => args[0] === "--version" ? "2.30.0\n" : "[]");
-    await expect(new OnePassword({ env: {}, exec: signedOut, organization: () => false }).status()).resolves.toMatchObject({ available: false, reason: "signed_out" });
+    await expect(new OnePassword({ env: {}, exec: signedOut, organization: () => false, locate: located }).status()).resolves.toMatchObject({ available: false, reason: "signed_out" });
     const exec = vi.fn<ExecFileFn>(async () => "[]");
     await expect(new OnePassword({ env: {}, exec, organization: () => true }).status()).resolves.toEqual({ available: false, reason: "organization" });
     expect(exec).not.toHaveBeenCalled();
   });
 
-  it("lists items through the CLI with an argument array and a clean OP_ environment", async () => {
+  it("BLOCKER 3: runs op only from its absolute path, with a short environment that carries no Sagax or provider key", async () => {
     const exec = vi.fn<ExecFileFn>(async (_command, args) => {
       if (args[0] === "--version") return "2.30.0";
       if (args[0] === "account") return JSON.stringify([{ account_uuid: "x" }]);
@@ -33,17 +44,45 @@ describe("1Password", () => {
       ]);
       return JSON.stringify(ITEM);
     });
-    const op = new OnePassword({ env: { PATH: "/usr/bin", OP_SESSION_x: "must-not-pass", OP_ACCOUNT: "fake.1password.test" }, exec, organization: () => false });
+    const op = new OnePassword({
+      env: { PATH: "/Users/someone/writable/bin", HOME: "/Users/someone", OP_SESSION_x: "must-not-pass", OP_ACCOUNT: "fake.1password.test", SAGAX_MCP_OAUTH_KEY: "ab".repeat(32), ANTHROPIC_API_KEY: "fake-provider-key", XAI_API_KEY: "fake-xai-key" },
+      exec, organization: () => false, locate: located,
+    });
     await expect(op.listItems()).resolves.toEqual([{ id: "abc123", vaultId: "v1", vaultName: "Private", title: "Example", category: "LOGIN", domains: ["login.example.test"] }]);
     await expect(op.readField({ via: "cli", vaultId: "v1", itemId: "abc123" }, "password")).resolves.toBe("fake-1p-password");
     const get = exec.mock.calls.find(([, args]) => args[1] === "get")!;
-    expect(get[0]).toBe("op");
+    expect(get[0]).toBe(FAKE_OP);
+    expect(exec.mock.calls.every(([command]) => command === FAKE_OP)).toBe(true);
+    expect(get[2].env.PATH).toBe("/usr/bin:/bin:/usr/sbin:/sbin");
+    expect(get[2].env.HOME).toBe("/Users/someone");
+    expect(Object.keys(get[2].env).filter((key) => /KEY|TOKEN|SECRET/.test(key))).toEqual([]);
     expect(get[1]).toEqual(["item", "get", "abc123", "--vault", "v1", "--reveal", "--format=json"]);
     expect(get[2].env.OP_SESSION_x).toBeUndefined();
     expect(get[2].env.OP_ACCOUNT).toBe("fake.1password.test");
     expect(get[2].env.OP_CACHE).toBe("false");
     // An id that is not one is never passed to the command.
     await expect(op.readField({ via: "cli", vaultId: "v1", itemId: "--help" }, "password")).resolves.toBeNull();
+  });
+
+  it("accepts a binary only when neither it nor its folder is writable by others", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-op-"));
+    try {
+      chmodSync(dir, 0o755);
+      const file = join(dir, "op");
+      writeFileSync(file, "#!/bin/sh\n");
+      chmodSync(file, 0o755);
+      expect(safeBinaryPath(file)).not.toBeNull();
+      chmodSync(file, 0o777);
+      expect(safeBinaryPath(file)).toBeNull();
+      chmodSync(file, 0o755);
+      chmodSync(dir, 0o777);
+      expect(safeBinaryPath(file)).toBeNull();
+      expect(safeBinaryPath(join(dir, "missing"))).toBeNull();
+    } finally {
+      chmodSync(dir, 0o755);
+      rmSync(dir, { recursive: true, force: true });
+    }
+    await expect(locateOp("win32")).resolves.toBeNull();
   });
 
   it("uses Connect when it is configured", async () => {

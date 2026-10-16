@@ -196,6 +196,21 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
   };
 }
 
+/** Whose vault a request reads. An organization server: the signed-in
+ * person only. Otherwise the one local vault, for a paired session, for the
+ * desktop's own loopback (its mutations carry Electron's per-launch
+ * capability), or for loopback on a headless server only when the operator
+ * opted in: there a bot's shell is a loopback caller too. */
+export function vaultPrincipalFor(auth: RequestAuth, context: { organization: boolean; desktop: boolean; loopbackOptIn: boolean; localPrincipal: string }): string | null {
+  if (context.organization) {
+    const id = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() : undefined;
+    return id || null;
+  }
+  if (auth.kind === "session") return context.localPrincipal;
+  if (auth.trust === "service") return null;
+  return context.desktop || context.loopbackOptIn ? context.localPrincipal : null;
+}
+
 /** A fresh vault card for a bot's request_login (kind "secret"). */
 export function vaultRequestCard(input: { principalId: string; botName: string; name?: string; domain?: string; reason?: string }): SecretRequestCardData {
   const what = input.domain ?? input.name ?? "a site";

@@ -24,7 +24,9 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
   const settled = secret.provided === true || secret.dismissed === true || secret.superseded === true;
   const [items, setItems] = useState<VaultItemListing[] | null>(null);
   const [choice, setChoice] = useState<string>("");
-  const [draft, setDraft] = useState({ name: site, domains: request?.domain ?? "", username: "", password: "", totpSeed: "" });
+  // The site field starts empty: the bot chose the name it asked for, and a
+  // look-alike must be typed by the person, not accepted with one click.
+  const [draft, setDraft] = useState({ name: "", domains: "", username: "", password: "", totpSeed: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +147,11 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
           </div>
           {choice === NEW && (
             <div className="flex flex-col gap-2">
+              {request.domain && (
+                <p role="note" className="text-[12px] leading-relaxed text-ink-secondary" data-vault-lookalike>
+                  {t("vault.card.checkSite", { site: request.domain })}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {field("name", t("vault.field.name"))}
                 {field("domains", t("vault.field.sites"))}

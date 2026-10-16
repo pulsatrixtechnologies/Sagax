@@ -92,7 +92,7 @@ import {
 import { VAULT_LOGIN_TARGET } from "../shared/credential-vault.ts";
 import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 import { OnePassword } from "./onepassword.ts";
-import { createCredentialVaultRoutes } from "./routes/credential-vault.ts";
+import { createCredentialVaultRoutes, vaultPrincipalFor } from "./routes/credential-vault.ts";
 import { createCredentialVaultInternalRoutes } from "./routes/credential-vault-internal.ts";
 
 import { createRoomTurnLevels } from "./room-turn-level.ts";
@@ -5805,7 +5805,7 @@ const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
 // a value. 1Password is an optional read-only source (server/onepassword.ts),
 // off on an organization server.
 const credentialVault = new CredentialVault(DATA_DIR, vaultKeySource);
-const onePassword = new OnePassword({ organization: () => IDENTITY.kind === "perspicax", path: augmentedPath });
+const onePassword = new OnePassword({ organization: () => IDENTITY.kind === "perspicax" });
 const readOnePasswordField = (ref: Parameters<OnePassword["readField"]>[0], field: Parameters<OnePassword["readField"]>[1]) => onePassword.readField(ref, field);
 /** Whose vault a turn on this conversation reads: the one local vault on a
  * desktop or a solo server; on an organization server the person the turn
@@ -5818,7 +5818,16 @@ function vaultPrincipalForThread(threadId: string): string | null {
 ROUTES.push(createCredentialVaultRoutes({
   vault: credentialVault,
   onePassword,
-  principal: (auth) => IDENTITY.kind !== "perspicax" ? LOCAL_VAULT_PRINCIPAL : sessionPrincipal(auth),
+  // A loopback caller is the owner only on the desktop (its mutations need
+  // Electron's per-launch capability). On a headless server a bot's shell is
+  // a loopback caller too, so the vault answers a paired session only,
+  // unless the operator opts in (SAGAX_CREDENTIAL_VAULT_LOOPBACK=1).
+  principal: (auth) => vaultPrincipalFor(auth, {
+    organization: IDENTITY.kind === "perspicax",
+    desktop: DESKTOP_MANAGED,
+    loopbackOptIn: process.env.SAGAX_CREDENTIAL_VAULT_LOOPBACK === "1",
+    localPrincipal: LOCAL_VAULT_PRINCIPAL,
+  }),
   botExists: (id) => Boolean(store.bot(id)),
   cards: {
     find: (botId, threadId, messageId) => secretMessage(botId, threadId, messageId)?.secret ?? null,
@@ -24243,6 +24252,7 @@ ROUTES.push(createAccountRoutes({
     }
     await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
     userPreferenceStore.remove(principalId);
+    try { credentialVault.drop(person); } catch (error) { console.warn(`account deletion: credential vault not removed: ${String(error)}`); }
     presence.forget(principalId);
     viewerBotOverrideStore.remove(principalId);
     achievementStore.remove(principalId);

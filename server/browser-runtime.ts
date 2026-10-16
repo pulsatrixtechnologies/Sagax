@@ -1,6 +1,7 @@
 import { killCliTree, spawnCli } from "./procs.ts";
 import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
-import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, fillScript, parseEvalObject, parseFillArguments, parseProbe, probeScript, problemText, SecretRedactor } from "./credential-fill.ts";
+import { randomBytes } from "node:crypto";
+import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formStaysOnOrigin, nonceSelector, parseFillArguments, parseProbe, probeScript, problemText, SecretRedactor } from "./credential-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
 
 export interface BrowserSpawnSpec {
@@ -63,12 +64,24 @@ export function ownsBrowserViewport(env: NodeJS.ProcessEnv): boolean {
 
 export class TransportError extends Error {}
 
-/** Resolves a fill_credential call to the value to type, for one turn: the
- * vault checks the bot's grant and the page's top-level URL against the
- * item's sites (server/credential-vault.ts). Built per call by the caller,
- * which knows the bot, the conversation and whose vault it is. */
-export type CredentialFillResolver = (request: { handle: string; field: VaultFillField; pageUrl: string }) =>
-  Promise<{ ok: true; value: string; label: string } | { ok: false; message: string }>;
+/** The vault as one turn's browser sees it (server/credential-vault.ts
+ * fillResolverFor), built per call by the caller, which knows the bot, the
+ * conversation and whose vault it is. */
+export interface CredentialFillAccess {
+  /** The value to type: the vault checks the bot's grant and the page's
+   * top-level URL (read from the engine) against the item's sites. */
+  resolve(request: { handle: string; field: VaultFillField; pageUrl: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string }>;
+  /** The bot holds a live grant on some item: its own scripts are off in
+   * the whole browser session, so it cannot plant a listener before a fill. */
+  armed(): boolean;
+}
+
+/** Tools that run the bot's own code in the page or reach into frames. */
+function scriptTool(name: string | undefined): boolean {
+  return typeof name === "string" && /eval|script|evaluate|frame|init|inject|addstyle|add_style|cdp/i.test(name);
+}
+const SCRIPTS_OFF_WHILE_ALLOWED = "Scripts in the page are turned off in this browser while you are allowed to use a saved login, so nothing can capture it. Use snapshots, clicks, fills and get_text.";
+const SCREENSHOT_AFTER_FILL_REFUSAL = "Screenshots are turned off on a site where Sagax filled a saved credential, so the value cannot appear in an image. Use a snapshot or get_text here.";
 
 const FIELD_NAMES: Record<VaultFillField, string> = { username: "user name", password: "password", totp: "one-time code", apiKey: "API key" };
 const EVAL_AFTER_FILL_REFUSAL = "agent_browser_eval is turned off on a site where Sagax filled a saved credential, so a script cannot read it back. Use snapshots, clicks and get_text here, or move to another site.";
@@ -348,7 +361,7 @@ export class BrowserRuntime {
     return this.withAgentAction(session, capture);
   }
 
-  async agentRpc(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, credentials?: CredentialFillResolver): Promise<unknown> {
+  async agentRpc(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, credentials?: CredentialFillAccess): Promise<unknown> {
     try {
       // A value Sagax filled never comes back to a bot, whatever tool reads the page.
       return this.redactor.redact(session, await this.agentRpcUnredacted(session, spec, method, params, beforeDispatch, credentials));
@@ -361,7 +374,7 @@ export class BrowserRuntime {
     }
   }
 
-  private async agentRpcUnredacted(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, credentials?: CredentialFillResolver): Promise<unknown> {
+  private async agentRpcUnredacted(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, credentials?: CredentialFillAccess): Promise<unknown> {
     if (method !== "tools/list" && method !== "tools/call") throw new Error("Unsupported browser method.");
     // tools/list bypasses withAgentAction (a human may hold control), so it
     // must refuse the closing window itself or its client outlives restart().
@@ -409,12 +422,20 @@ export class BrowserRuntime {
         if (method === "tools/call" && toolName === FILL_CREDENTIAL_TOOL) {
           return await this.fillCredential(session, entry.client, params, beforeDispatch, credentials);
         }
-        if (method === "tools/call" && toolName === "agent_browser_eval" && this.redactor.hasTaint(session)) {
-          const here = firstText(await entry.client.rpc("tools/call", { name: "agent_browser_get_url", arguments: {} })).trim();
+        if (method === "tools/call" && scriptTool(toolName)) {
+          // While the bot may use a saved login, no script of its own runs
+          // anywhere in this browser; before that, the origin is recorded so
+          // a later fill there refuses (a listener could still be waiting).
+          if (credentials?.armed()) return toolText(SCRIPTS_OFF_WHILE_ALLOWED, true);
+          const origin = await this.engineOrigin(entry.client);
           beforeDispatch?.();
-          let origin = "";
-          try { origin = new URL(here).origin; } catch { /* unknown page: refuse below */ }
           if (!origin || this.redactor.isTainted(session, origin)) return toolText(EVAL_AFTER_FILL_REFUSAL, true);
+          this.redactor.scriptedOn(session, origin);
+        }
+        if (method === "tools/call" && toolName === "agent_browser_screenshot" && this.redactor.hasTaint(session)) {
+          const origin = await this.engineOrigin(entry.client);
+          beforeDispatch?.();
+          if (!origin || this.redactor.isTainted(session, origin)) return toolText(SCREENSHOT_AFTER_FILL_REFUSAL, true);
         }
         // The model sees slimmed schemas and text-only, bounded results; the
         // launch/session parameters OMB owns never reach the engine from a call.
@@ -517,10 +538,26 @@ export class BrowserRuntime {
     }
   }
 
-  /** fill_credential (server/credential-fill.ts): focus, probe without the
-   * secret, resolve through the vault, then type with an in-page re-check.
-   * The result names the item and field only; the value goes to the engine. */
-  private async fillCredential(session: string, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillResolver | undefined): Promise<unknown> {
+  /** The active page's URL as the engine knows it (CDP), never as page
+   * script reports it. Empty when it cannot be read. */
+  private async engineUrl(client: BrowserClient): Promise<string> {
+    const text = firstText(await client.rpc("tools/call", { name: "agent_browser_get_url", arguments: {} })).trim();
+    try { return new URL(text).href; } catch { return ""; }
+  }
+
+  private async engineOrigin(client: BrowserClient): Promise<string> {
+    const href = await this.engineUrl(client);
+    try { return href ? new URL(href).origin : ""; } catch { return ""; }
+  }
+
+  /** fill_credential (server/credential-fill.ts). The page's address comes
+   * from the engine, not from page script; a probe with no secret marks the
+   * target in the top document; the vault answers only for a granted bot on
+   * a bound site; the engine types the value itself (agent_browser_fill:
+   * CDP input, no page-visible script carries it), into the marked element
+   * only, after the address is read again. The result names the item and
+   * the field, never the value. */
+  private async fillCredential(session: string, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess | undefined): Promise<unknown> {
     const request = parseFillArguments(params);
     if (typeof request === "string") return toolText(request, true);
     if (!credentials) return toolText("Saved credentials are not available to you here; nothing was filled.", true);
@@ -528,6 +565,11 @@ export class BrowserRuntime {
       beforeDispatch?.();
       if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
     };
+    const href = await this.engineUrl(client);
+    stillOurs();
+    if (!href) return toolText("The page's address could not be read; nothing was filled.", true);
+    const origin = new URL(href).origin;
+    if (this.redactor.wasScripted(session, origin)) return toolText(problemText("scripted", request.field), true);
     const aim = aimOf(request);
     if (request.ref) {
       const clicked = await client.rpc("tools/call", { name: "agent_browser_click", arguments: { selector: request.ref } });
@@ -536,26 +578,30 @@ export class BrowserRuntime {
         return toolText(`${request.ref} could not be focused; nothing was filled. Take a new snapshot and pass a current ref.`, true);
       }
     }
-    const probe = parseProbe(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: probeScript(aim, request.field), timeoutMs: 5_000 } }));
+    const nonce = randomBytes(16).toString("hex");
+    const probe = parseProbe(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: probeScript(aim, request.field, nonce), timeoutMs: 5_000 } }));
     stillOurs();
     if (!probe) return toolText("The page could not be read; nothing was filled.", true);
     if (!probe.top) return toolText(problemText("frame", request.field), true);
     if (probe.problem) return toolText(problemText(probe.problem, request.field), true);
-    const resolved = await credentials({ handle: request.credential, field: request.field, pageUrl: probe.href });
+    if ((await this.engineUrl(client)) !== href) return toolText(problemText("moved", request.field), true);
+    stillOurs();
+    if (!formStaysOnOrigin(probe.targets, origin)) return toolText(problemText("cross_origin_form", request.field), true);
+    const resolved = await credentials.resolve({ handle: request.credential, field: request.field, pageUrl: href });
     stillOurs();
     if (!resolved.ok) return toolText(resolved.message, true);
     // Remembered before the value leaves: anything the engine says from now
-    // on, including an error that quotes the script, is redacted.
+    // on, including an error that quotes it, is redacted.
     this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp" });
-    this.redactor.taint(session, probe.origin);
-    const filled = parseEvalObject(await client.rpc("tools/call", {
-      name: "agent_browser_eval", arguments: { script: fillScript(aim, request.field, probe.origin, resolved.value), timeoutMs: 5_000 },
-    }));
+    this.redactor.taint(session, origin);
+    if ((await this.engineUrl(client)) !== href) return toolText(problemText("moved", request.field), true);
+    stillOurs();
+    // A page that navigated away cannot hold the one-time mark, so the
+    // engine finds no element there and types nothing.
+    const filled = await client.rpc("tools/call", { name: "agent_browser_fill", arguments: { selector: nonceSelector(nonce), text: resolved.value } });
     beforeDispatch?.();
-    if (filled?.ok !== true) return toolText(problemText(typeof filled?.problem === "string" ? filled.problem : "unknown", request.field), true);
-    let host = probe.origin;
-    try { host = new URL(probe.href).host; } catch { /* keep the origin */ }
-    return toolText(`Filled the ${FIELD_NAMES[request.field]} of "${resolved.label}" on ${host}. You do not see the value; check the page and submit the form when ready.`);
+    if ((filled as { isError?: unknown } | null)?.isError === true) return toolText(problemText("fill_failed", request.field), true);
+    return toolText(`Filled the ${FIELD_NAMES[request.field]} of "${resolved.label}" on ${new URL(href).host}. You do not see the value; check the page and submit the form when ready.`);
   }
 
   /** This session's MCP client, started on first use. */

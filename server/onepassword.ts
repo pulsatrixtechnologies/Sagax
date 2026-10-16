@@ -11,10 +11,14 @@
 // host's 1Password account is not any one person's to share. Items are
 // listed for the picker (title, vault, sites); a picked item is saved in the
 // vault as a reference, and its fields are read only at fill time, never
-// cached, never listed, never logged. `op` runs with execFile and an
-// argument array, never a shell; its environment carries no other OP_*
-// variable than the two named above.
+// cached, never listed, never logged. `op` runs with execFile and an argument array, never
+// a shell, and only from a fixed install path (never from PATH): the file and
+// its folder must not be writable by others, and on macOS it must carry
+// AgileBits' code signature (team 2BUA8C4S2C). Its environment is a short
+// allowlist: no Sagax key, no provider key ever reaches it.
 import { execFile } from "node:child_process";
+import { realpathSync, statSync } from "node:fs";
+import { dirname } from "node:path";
 
 import { normalizeVaultDomain, type VaultFillField } from "../shared/credential-vault.ts";
 import type { OnePasswordRef } from "./credential-vault.ts";
@@ -43,6 +47,56 @@ export type FetchFn = (url: string, init: { headers: Record<string, string>; sig
 const ID = /^[a-z0-9]{1,64}$/i;
 const CLI_TIMEOUT_MS = 15_000;
 const MAX_ITEMS = 1_000;
+
+/** Where the official CLI installs, by platform. Nothing else is ever run. */
+export const OP_INSTALL_PATHS: Partial<Record<NodeJS.Platform, readonly string[]>> = {
+  darwin: ["/opt/homebrew/bin/op", "/usr/local/bin/op"],
+  linux: ["/usr/bin/op", "/usr/local/bin/op"],
+};
+export const AGILEBITS_TEAM_ID = "2BUA8C4S2C";
+const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+const ENV_ALLOWLIST = ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME"];
+
+function owned(stats: { uid: number }): boolean {
+  const uid = typeof process.getuid === "function" ? process.getuid() : -1;
+  return stats.uid === 0 || stats.uid === uid;
+}
+
+/** The real path of a file that may run: a regular file whose real path and
+ * folder belong to root or to this user and are not writable by group or
+ * others. Null otherwise. */
+export function safeBinaryPath(path: string): string | null {
+  try {
+    const real = realpathSync(path);
+    const file = statSync(real);
+    if (!file.isFile() || (file.mode & 0o022) !== 0 || !owned(file)) return null;
+    const folder = statSync(dirname(real));
+    if ((folder.mode & 0o022) !== 0 || !owned(folder)) return null;
+    return real;
+  } catch {
+    return null;
+  }
+}
+
+/** The first install path that passes safeBinaryPath and, on macOS, the
+ * AgileBits code signature. Null disables the CLI. */
+export async function locateOp(platform: NodeJS.Platform = process.platform): Promise<string | null> {
+  for (const candidate of OP_INSTALL_PATHS[platform] ?? []) {
+    const real = safeBinaryPath(candidate);
+    if (!real) continue;
+    if (platform !== "darwin") return real;
+    const signed = await new Promise<boolean>((resolve) => {
+      execFile("/usr/bin/codesign", ["--verify", "--strict", real], { timeout: 10_000 }, (verifyError) => {
+        if (verifyError) return resolve(false);
+        execFile("/usr/bin/codesign", ["-dv", "--verbose=2", real], { timeout: 10_000 }, (error, _stdout, stderr) => {
+          resolve(!error && new RegExp(`^TeamIdentifier=${AGILEBITS_TEAM_ID}$`, "m").test(String(stderr)));
+        });
+      });
+    });
+    if (signed) return real;
+  }
+  return null;
+}
 
 const defaultExec: ExecFileFn = (command, args, options) => new Promise((resolve, reject) => {
   execFile(command, args, { ...options, windowsHide: true, shell: false }, (error, stdout) => {
@@ -93,15 +147,16 @@ export class OnePassword {
   private readonly exec: ExecFileFn;
   private readonly fetch: FetchFn;
   private readonly organization: () => boolean;
-  private readonly path: () => string;
+  private readonly locate: () => Promise<string | null>;
+  private opPath: Promise<string | null> | null = null;
   private cachedStatus: { at: number; status: OnePasswordStatus } | null = null;
 
-  constructor(options: { env?: NodeJS.ProcessEnv; exec?: ExecFileFn; fetch?: FetchFn; organization: () => boolean; path?: () => string }) {
+  constructor(options: { env?: NodeJS.ProcessEnv; exec?: ExecFileFn; fetch?: FetchFn; organization: () => boolean; locate?: () => Promise<string | null> }) {
     this.env = options.env ?? process.env;
     this.exec = options.exec ?? defaultExec;
     this.fetch = options.fetch ?? ((url, init) => fetch(url, init) as ReturnType<FetchFn>);
     this.organization = options.organization;
-    this.path = options.path ?? (() => this.env.PATH ?? "");
+    this.locate = options.locate ?? (() => locateOp());
   }
 
   private connect(): { host: string; token: string } | null {
@@ -117,14 +172,15 @@ export class OnePassword {
     }
   }
 
-  /** The CLI's environment: plumbing, plus the service account and account
-   * choice when the operator set them; never another OP_ variable. */
+  /** The CLI's environment: a short allowlist and a system PATH, plus the
+   * service account and account choice when the operator set them. */
   private cliEnv(): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = {};
-    for (const [key, value] of Object.entries(this.env)) {
-      if (value !== undefined && !key.startsWith("OP_")) env[key] = value;
+    for (const key of ENV_ALLOWLIST) {
+      const value = this.env[key];
+      if (value !== undefined) env[key] = value;
     }
-    env.PATH = this.path();
+    env.PATH = SYSTEM_PATH;
     if (this.env.OP_SERVICE_ACCOUNT_TOKEN) env.OP_SERVICE_ACCOUNT_TOKEN = this.env.OP_SERVICE_ACCOUNT_TOKEN;
     if (this.env.OP_ACCOUNT) env.OP_ACCOUNT = this.env.OP_ACCOUNT;
     env.OP_CACHE = "false";
@@ -132,8 +188,15 @@ export class OnePassword {
     return env;
   }
 
+  private binary(): Promise<string | null> {
+    this.opPath ??= this.locate().catch(() => null);
+    return this.opPath;
+  }
+
   private async op(args: string[]): Promise<unknown> {
-    const out = await this.exec("op", args, { env: this.cliEnv(), timeout: CLI_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 });
+    const binary = await this.binary();
+    if (!binary) throw new Error("1Password CLI is not available");
+    const out = await this.exec(binary, args, { env: this.cliEnv(), timeout: CLI_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 });
     return JSON.parse(out);
   }
 
@@ -162,7 +225,9 @@ export class OnePassword {
       }
     } else {
       try {
-        await this.exec("op", ["--version"], { env: this.cliEnv(), timeout: 5_000, maxBuffer: 64 * 1024 });
+        const binary = await this.binary();
+        if (!binary) throw new Error("absent");
+        await this.exec(binary, ["--version"], { env: this.cliEnv(), timeout: 5_000, maxBuffer: 64 * 1024 });
         try {
           const accounts = await this.op(["account", "list", "--format=json"]);
           status = (Array.isArray(accounts) && accounts.length > 0) || this.env.OP_SERVICE_ACCOUNT_TOKEN

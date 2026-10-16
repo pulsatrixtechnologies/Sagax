@@ -72,7 +72,8 @@ describe("vault helpers", () => {
       item({ id: "c", kind: "note", name: "Example note", domains: [] }),
       item({ id: "d", name: "Look-alike", domains: ["example.test.evil.test"] }),
     ];
-    expect(matchingItems(items, { domain: "sso.example.test" }).map((row) => row.id)).toEqual(["a"]);
+    expect(matchingItems(items, { domain: "example.test" }).map((row) => row.id)).toEqual(["a"]);
+    expect(matchingItems(items, { domain: "sso.example.test" })).toEqual([]);
     expect(matchingItems(items, { name: "bill" }).map((row) => row.id)).toEqual(["b"]);
     expect(matchingItems(items, { name: "example" }).map((row) => row.id)).toEqual([]);
   });

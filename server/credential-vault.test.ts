@@ -82,26 +82,38 @@ describe("credential vault encryption", () => {
 });
 
 describe("domain binding", () => {
-  it("normalizes bound sites", () => {
+  it("normalizes bound sites: exact host, explicit wildcard, explicit port, localhost http only", () => {
     expect(normalizeVaultDomain("https://Login.Example.test/path?q=1")).toBe("login.example.test");
     expect(normalizeVaultDomain("example.test.")).toBe("example.test");
+    expect(normalizeVaultDomain("example.test:8443")).toBe("example.test:8443");
+    expect(normalizeVaultDomain("*.example.test")).toBe("*.example.test");
     expect(normalizeVaultDomain("localhost")).toBe("localhost");
+    expect(normalizeVaultDomain("http://localhost:3000")).toBe("http://localhost:3000");
+    expect(normalizeVaultDomain("http://example.test")).toBeNull();
+    expect(normalizeVaultDomain("http://localhost")).toBeNull();
+    expect(normalizeVaultDomain("*.co.uk")).toBeNull();
+    expect(normalizeVaultDomain("*.example.test:8443")).toBeNull();
     expect(normalizeVaultDomain("192.168.1.1")).toBeNull();
     expect(normalizeVaultDomain("[::1]")).toBeNull();
     expect(normalizeVaultDomain("nodot")).toBeNull();
   });
 
-  it("matches the site and its subdomains over https only, never a look-alike", () => {
+  it("matches the exact site by default, subdomains only by a wildcard, https only, never a look-alike", () => {
     const domains = ["example.test"];
     expect(vaultDomainMatches(domains, "https://example.test/login")).toBe(true);
-    expect(vaultDomainMatches(domains, "https://sso.example.test/")).toBe(true);
+    expect(vaultDomainMatches(domains, "https://sso.example.test/")).toBe(false);
+    expect(vaultDomainMatches(domains, "https://example.test:8443/")).toBe(false);
     expect(vaultDomainMatches(domains, "http://example.test/")).toBe(false);
     expect(vaultDomainMatches(domains, "https://example.test.evil.test/")).toBe(false);
     expect(vaultDomainMatches(domains, "https://badexample.test/")).toBe(false);
     expect(vaultDomainMatches(domains, "https://user:pass@example.test/")).toBe(false);
     expect(vaultDomainMatches(domains, "javascript:alert(1)")).toBe(false);
-    expect(vaultDomainMatches(["localhost"], "http://localhost:3000/")).toBe(true);
-    expect(vaultDomainMatches(["login.example.test"], "https://example.test/")).toBe(false);
+    expect(vaultDomainMatches(["*.example.test"], "https://sso.example.test/")).toBe(true);
+    expect(vaultDomainMatches(["*.example.test"], "https://example.test/")).toBe(false);
+    expect(vaultDomainMatches(["example.test:8443"], "https://example.test:8443/")).toBe(true);
+    expect(vaultDomainMatches(["http://localhost:3000"], "http://localhost:3000/")).toBe(true);
+    expect(vaultDomainMatches(["http://localhost:3000"], "http://localhost:4000/")).toBe(false);
+    expect(vaultDomainMatches(["localhost"], "http://localhost/")).toBe(false);
   });
 });
 
@@ -160,7 +172,8 @@ describe("grants", () => {
     const { vault: store } = vault();
     store.create(LOCAL_VAULT_PRINCIPAL, login);
     store.create(LOCAL_VAULT_PRINCIPAL, { kind: "apiKey", name: "Billing API", apiKey: "fake-api-key-value" });
-    expect(store.find(LOCAL_VAULT_PRINCIPAL, { domain: "sso.example.test" }).map((item) => item.name)).toEqual(["Example portal"]);
+    expect(store.find(LOCAL_VAULT_PRINCIPAL, { domain: "example.test" }).map((item) => item.name)).toEqual(["Example portal"]);
+    expect(store.find(LOCAL_VAULT_PRINCIPAL, { domain: "sso.example.test" })).toEqual([]);
     expect(store.find(LOCAL_VAULT_PRINCIPAL, { name: "billing" }).map((item) => item.name)).toEqual(["Billing API"]);
     expect(store.find(LOCAL_VAULT_PRINCIPAL, { domain: "other.test" })).toEqual([]);
   });

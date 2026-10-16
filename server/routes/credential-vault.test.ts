@@ -12,7 +12,7 @@ import { json, readBody } from "../harness/http.ts";
 import { OnePassword } from "../onepassword.ts";
 import { requiredScope, type RequestAuth } from "../request-auth.ts";
 import { TOOL_POLICY_ROWS } from "../tool-policy.generated.ts";
-import { createCredentialVaultRoutes, vaultRequestCard } from "./credential-vault.ts";
+import { createCredentialVaultRoutes, vaultPrincipalFor, vaultRequestCard } from "./credential-vault.ts";
 import { createCredentialVaultInternalRoutes } from "./credential-vault-internal.ts";
 import { dispatchInternalRoutes } from "./internal-route.ts";
 import { dispatchRoutes } from "./table.ts";
@@ -145,6 +145,26 @@ describe("credential vault routes", () => {
   });
 });
 
+describe("whose vault a request reads", () => {
+  const loopback: RequestAuth = { kind: "loopback", scopes: ["admin", "client"] };
+  const service: RequestAuth = { kind: "loopback", scopes: ["client"], trust: "service" };
+  const session = (principalId?: string) => ({ kind: "session", via: "cookie", scopes: ["client"], session: { id: "s1", ...(principalId ? { principalId } : {}) } }) as unknown as RequestAuth;
+  const solo = { organization: false, desktop: false, loopbackOptIn: false, localPrincipal: "local" };
+  it("answers loopback only on the desktop or with the operator's opt-in, never a service caller", () => {
+    expect(vaultPrincipalFor(loopback, solo)).toBeNull();
+    expect(vaultPrincipalFor(loopback, { ...solo, desktop: true })).toBe("local");
+    expect(vaultPrincipalFor(loopback, { ...solo, loopbackOptIn: true })).toBe("local");
+    expect(vaultPrincipalFor(service, { ...solo, desktop: true, loopbackOptIn: true })).toBeNull();
+    expect(vaultPrincipalFor(session(), solo)).toBe("local");
+  });
+  it("on an organization server, answers the signed-in person only", () => {
+    const org = { ...solo, organization: true, desktop: true, loopbackOptIn: true };
+    expect(vaultPrincipalFor(loopback, org)).toBeNull();
+    expect(vaultPrincipalFor(session("PR_Alice"), org)).toBe("pr_alice");
+    expect(vaultPrincipalFor(session(), org)).toBeNull();
+  });
+});
+
 describe("request_login internal route", () => {
   it("returns a granted handle at once, or posts a card", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sagax-vault-internal-"));
@@ -171,11 +191,11 @@ describe("request_login internal route", () => {
     };
     expect((await ask({})).status).toBe(400);
     expect((await ask({ domain: "not a site!" })).status).toBe(400);
-    const first = await ask({ domain: "login.example.test", reason: "to read the invoice" });
+    const first = await ask({ domain: "example.test", reason: "to read the invoice" });
     expect(first.status).toBe(201);
-    expect(posted[0]).toMatchObject({ target: "vaultLogin", vault: { domain: "login.example.test", principalId: LOCAL_VAULT_PRINCIPAL } });
+    expect(posted[0]).toMatchObject({ target: "vaultLogin", vault: { domain: "example.test", principalId: LOCAL_VAULT_PRINCIPAL } });
     vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
-    const second = await ask({ domain: "login.example.test" });
+    const second = await ask({ domain: "example.test" });
     expect(second).toMatchObject({ status: 200, body: { granted: [{ handle: vaultHandle(item.id), name: "Example", domains: ["example.test"], fields: ["username", "password", "totp"] }] } });
     expect(JSON.stringify(second)).not.toContain(FAKE_PASSWORD);
     expect(posted).toHaveLength(1);

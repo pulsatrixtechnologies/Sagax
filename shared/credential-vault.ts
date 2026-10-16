@@ -76,34 +76,53 @@ export interface VaultRequestCardData {
 }
 
 const HOST_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
+/** Second levels that registries sell under a country code (co.uk,
+ * com.au, gc.ca...): a wildcard under one of them would cover strangers. A
+ * heuristic, not the public suffix list; exact hosts are the default. */
+const SHARED_SECOND_LEVEL = /^(?:co|com|net|org|gov|edu|ac|or|ne|go|gob|gouv|nic|ltd|plc|sch|mil|gc|qc|on|bc|ab)\.[a-z]{2}$/;
 
-/** A bound domain as stored: lower case, no scheme, port, path or leading
- * dot, punycode for an international name. Null when it is not a host name
- * (an IP literal is refused: a login is bound to a name, not an address,
- * except localhost for a local test page). */
+/** A site binding as stored. Exact by default:
+ *
+ *   example.com             https://example.com only (default port)
+ *   example.com:8443        that host on that port, https
+ *   *.example.com           any subdomain of example.com, never the apex
+ *   http://localhost:3000   the one plain-http binding: localhost, with a port
+ *
+ * Lower case, punycode for an international name. Null when it is not one of
+ * these: an IP literal, a bare TLD, a wildcard on a shared suffix (co.uk), a
+ * plain-http binding other than localhost. */
 export function normalizeVaultDomain(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   let value = raw.trim().toLowerCase();
-  if (!value || value.length > 253 + 16) return null;
+  if (!value || value.length > 253 + 32) return null;
+  const http = value.startsWith("http://");
+  const wildcard = !http && /^(?:https:\/\/)?\*\./.test(value);
+  if (wildcard) value = value.replace(/^(?:https:\/\/)?\*\./, "");
   if (!/^[a-z][a-z0-9+.-]*:\/\//.test(value)) value = `https://${value}`;
-  let host: string;
+  let url: URL;
   try {
-    host = new URL(value).hostname;
+    url = new URL(value);
   } catch {
     return null;
   }
-  host = host.replace(/^\.+|\.+$/g, "");
-  if (host === "localhost") return host;
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.username || url.password) return null;
+  const host = url.hostname.replace(/^\.+|\.+$/g, "");
+  const port = url.port ? `:${url.port}` : "";
+  if (url.protocol === "http:") return host === "localhost" && port && !wildcard ? `http://localhost${port}` : null;
+  if (host === "localhost") return wildcard ? null : `localhost${port}`;
   if (!host || host.length > 253 || host.includes("[") || /^[0-9.]+$/.test(host)) return null;
   const labels = host.split(".");
   if (labels.length < 2 || !labels.every((label) => HOST_LABEL.test(label))) return null;
   if (/^[0-9]+$/.test(labels.at(-1)!)) return null;
-  return host;
+  if (wildcard && (SHARED_SECOND_LEVEL.test(host) || port)) return null;
+  return `${wildcard ? "*." : ""}${host}${port}`;
 }
 
-/** Whether a page may receive a value bound to these domains: https (http
- * only for localhost), and a host equal to a bound domain or under it. A
- * look-alike ("example.com.evil.test", "badexample.com") never matches. */
+/** Whether a page may receive a value bound to these sites (see
+ * normalizeVaultDomain): the same scheme, host and port, or a subdomain for
+ * a "*." binding. A look-alike ("example.com.evil.test", "badexample.com")
+ * never matches, nor a URL that carries a user name. */
 export function vaultDomainMatches(domains: readonly string[], pageUrl: string): boolean {
   let url: URL;
   try {
@@ -112,10 +131,21 @@ export function vaultDomainMatches(domains: readonly string[], pageUrl: string):
     return false;
   }
   if (url.username || url.password) return false;
+  if (url.protocol !== "https:" && url.protocol !== "http:") return false;
   const host = url.hostname.toLowerCase().replace(/\.+$/, "");
-  const local = host === "localhost";
-  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) return false;
-  return domains.some((domain) => host === domain || (!local && domain !== "localhost" && host.endsWith(`.${domain}`)));
+  const port = url.port ? `:${url.port}` : "";
+  return domains.some((domain) => {
+    if (domain.startsWith("http://")) return url.protocol === "http:" && `http://${host}${port}` === domain;
+    if (url.protocol !== "https:") return false;
+    if (domain.startsWith("*.")) return !port && host.endsWith(`.${domain.slice(2)}`);
+    return `${host}${port}` === domain;
+  });
+}
+
+/** A page URL a binding would match, for comparing a request with items. */
+export function bindingUrl(domain: string): string {
+  if (domain.startsWith("http://")) return `${domain}/`;
+  return `https://${domain.replace(/^\*\./, "www.")}/`;
 }
 
 export function isVaultFillField(value: unknown): value is VaultFillField {

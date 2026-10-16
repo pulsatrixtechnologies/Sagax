@@ -95,16 +95,34 @@ release.
   from the server's vault key (the OS keychain through Electron safeStorage
   on the desktop, a 0600 key file on a server), one file per person, bound to
   that person. A bot only ever holds an opaque handle: `fill_credential`
-  (`server/credential-fill.ts`) types the value into the bot's browser only
+  (`server/credential-fill.ts`) has the browser engine type the value
+  (agent_browser_fill, CDP input; no page-visible script carries it) only
   for a granted bot (once: that conversation for 15 minutes; always: until
-  revoked), only on a page whose top-level origin is one of the item's sites
-  over https, never into a frame, and redacts the value from every later
-  browser result. Any way for a bot, an AI client or another person to read a
-  value back (a tool result, an SSE event, a transcript, a log, a loopback
-  GET), to fill it on another origin or in a frame, or to grant itself an
-  item, is a vulnerability. Known limits, not vulnerabilities: a page script
-  of the bound site itself can read what was typed into its own form; a user
-  name and a one-time code can appear on screen in a screenshot.
+  revoked), only when the page's address as the engine reports it (never as
+  page script reports it) matches one of the item's sites, into an input of
+  the top document marked by a one-time attribute, never into a frame, never
+  into a form that posts to another origin. Sites are exact by default (host,
+  https, port); subdomains only through an explicit `*.example.com`, refused
+  on a shared suffix such as `co.uk`; plain http only for an explicit
+  `http://localhost:<port>`. While a bot may use a login, its own page
+  scripts (eval and any script or frame tool) are refused in its whole
+  browser, a fill is refused on an origin where any bot ran a script in that
+  browser session until a restart, and screenshots are refused on a filled
+  site. Every later browser result is redacted (the value and its common
+  encodings, and user:pass pairs in base64). The vault routes answer the
+  desktop's own app, a paired session, or on a headless server a loopback
+  caller only when the operator sets `SAGAX_CREDENTIAL_VAULT_LOOPBACK=1`;
+  reads are POSTs. The optional 1Password CLI runs only from a fixed install
+  path that nobody else can write, with AgileBits' code signature on macOS,
+  and a short environment with no Sagax or provider key. Any way for a bot,
+  an AI client or another person to read a value back (a tool result, an SSE
+  event, a transcript, a log, a loopback request), to fill it on another
+  origin, in a frame or into a cross-origin form, or to grant itself an
+  item, is a vulnerability. Known limits, not vulnerabilities: a script of
+  the bound site itself can read what was typed into its own form; a user
+  name or a one-time code can appear in a page read before it is redacted
+  on another site; on an organization server bots keep their browser
+  session (cookies) across the people they work for.
 - **Process spawning.** Spawning must never route user-influenced strings
   through a shell. Report any `shell: true` or `cmd.exe` string-building you
   find.
