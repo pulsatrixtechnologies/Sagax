@@ -67,6 +67,21 @@
     line-height: 24px;
   }
 }
+/* The composer's button groups (+ on the left; model, emoji, mic, Voice on
+   the right) sit in a band as tall as the field's first line with its
+   padding (20 + 12, 24 + 12 on a phone), centered in it. On one line every
+   button shares the field's middle, so the bar keeps equal margins above and
+   below; once the text wraps the row is end-aligned and the band, with its
+   buttons, stays on the last line, the same distance from the bottom
+   (Grok Bot's prompt bar, JC 2026-10-16). Must follow .chat-input-text. */
+.composer-band {
+  min-height: 32px;
+}
+@media (pointer: coarse), (max-width: 767px) {
+  .composer-band {
+    min-height: 36px;
+  }
+}
 .mention-editor textarea {
   position: relative;
   color: transparent;

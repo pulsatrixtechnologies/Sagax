@@ -1357,7 +1357,7 @@ export function Composer({
             }}
           />
           {!locked && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="composer-band flex flex-wrap items-center gap-2">
               {/* One + (Grok Bot's): attach and teach a task, the modes
                   (goal, setup), then this conversation's approval level and
                   workspace as rows that open beside it (JC, 2026-10-15/16). */}
@@ -1514,7 +1514,7 @@ export function Composer({
           aria-label={t("composer.placeholder.bot", { name: group ? group.name : (bot?.name ?? "") })}
             className="block max-h-[7.5rem] min-h-6 w-full resize-none overflow-y-auto bg-transparent chat-input-text px-1 py-1.5 placeholder:text-ink-secondary focus:outline-none"
           />
-          <div data-composer-actions className="flex items-center gap-1 @max-[30rem]/composer:ml-auto">
+          <div data-composer-actions className="composer-band flex items-center gap-1 @max-[30rem]/composer:ml-auto">
           {bot && !group && !remoteClient && (
             <ModelPicker inComposer key={bot.threadId} bot={bot} threadId={threadId} />
           )}

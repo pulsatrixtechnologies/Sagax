@@ -1,13 +1,15 @@
 /** Isolated gallery for Playwright screenshots of the composer's controls
  * after Grok Bot's prompt bar. Not shipped in the app.
  * ?skin=<id>&lang=<code>&color=<bot color>&name=<bot name>
- * &state=rest|typed|dictation|menu&mode=after|before
+ * &state=rest|typed|dictation|menu&mode=after|before&lines=1|3&dot=1
  * `before` draws the row as origin/main had it (paperclip, approval hand,
  * workspace globe, ringed mic, ink call button), for the side-by-side. */
-import { StrictMode, useState } from "react";
+import { StrictMode, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AudioLines, ChevronDown, Globe, Hand, Mic, Paperclip } from "lucide-react";
 import { ApprovalModeSelector } from "../components/ApprovalModeSelector";
+import { ComposerEmojiButton } from "../components/ComposerEmojiButton";
+import { MentionTextarea } from "../components/MentionTextarea";
 import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark } from "../components/ComposerControls";
 import { cn } from "../lib/cn";
 import { setLocale, t } from "../lib/i18n";
@@ -23,7 +25,12 @@ const state = params.get("state") ?? "rest";
 const before = params.get("mode") === "before";
 const color = params.get("color") ?? "teal";
 const name = params.get("name") ?? "Harrie";
-const typedText = state === "typed" ? "Peux-tu vérifier la sauvegarde de ce soir ?" : state === "dictation" ? "Rappelle-moi d'appeler" : "";
+const lines = Number(params.get("lines") ?? "1");
+// the warning dot of a Voice button whose voice is not set up yet
+const dot = params.get("dot") === "1";
+const typedText = lines > 1
+  ? Array.from({ length: lines }, (_, i) => `Ligne ${i + 1} du message`).join("\n")
+  : state === "typed" ? "Peux-tu vérifier la sauvegarde de ce soir ?" : state === "dictation" ? "Rappelle-moi d'appeler" : "";
 
 const PILL = "@container/composer relative z-[1] min-h-11 rounded-[22px] border-[0.5px] border-border bg-composer px-2 py-1.5 shadow-[0_2px_8px_-1px_#0000000d,0_1px_2px_#00000008,0_0_0_1px_#e4e4e40a]";
 
@@ -43,19 +50,51 @@ function ModelChip() {
   return <span className="flex h-7 items-center gap-1 rounded-full px-2 text-[12px] text-ink-secondary">Claude Sonnet 5 <ChevronDown size={12} /></span>;
 }
 
+/** The composer's field as the app draws it (MentionTextarea, same classes). */
+function RealField({ value }: { value: string }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  return (
+    <MentionTextarea
+      inputRef={ref}
+      peers={[]}
+      wrapperClassName="@max-[30rem]/composer:order-first @max-[30rem]/composer:basis-full"
+      readOnly
+      rows={1}
+      value={value}
+      placeholder={t("composer.placeholder.bot", { name })}
+      className="block max-h-[7.5rem] min-h-6 w-full resize-none overflow-y-auto bg-transparent chat-input-text px-1 py-1.5 placeholder:text-ink-secondary focus:outline-none"
+    />
+  );
+}
+
+/** ModelPicker's composer trigger, same classes. */
+function RealModelChip() {
+  return (
+    <button type="button" data-gallery-model="" className="flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink">
+      <span className="truncate">claude-sonnet-5</span>
+      <ChevronDown size={14} className="shrink-0" />
+    </button>
+  );
+}
+
 function After() {
   const tone = botCtaColors(color);
   const [seconds] = useState(4);
+  const emojiRef = useRef<HTMLTextAreaElement>(null);
   const dictating = state === "dictation";
+  // CallButton's markup: a relative wrapper, the round button, the dot
   const voice = (
-    <button type="button" aria-label={t("voiceMode.start", { name })} style={ctaStyle(tone)} className={cn(CTA_CIRCLE, tone ? CTA_TONED : CTA_DEFAULT)}>
-      <AudioLines size={16} strokeWidth={2.25} />
-    </button>
+    <div className="relative">
+      <button type="button" aria-label={t("voiceMode.start", { name })} data-composer-voice="" style={ctaStyle(tone)} className={cn(CTA_CIRCLE, tone ? CTA_TONED : CTA_DEFAULT)}>
+        <AudioLines size={16} strokeWidth={2.25} />
+        {dot && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-warning ring-2 ring-app" aria-hidden="true" />}
+      </button>
+    </div>
   );
   return (
     <div className={PILL}>
-      <div className="flex items-end gap-1">
-        <div className="flex items-center gap-2">
+      <div data-composer-row className="flex items-end gap-1 @max-[30rem]/composer:flex-wrap">
+        <div className="composer-band flex flex-wrap items-center gap-2">
           <ComposerPlusMenu
             initialOpen={state === "menu"}
             items={[
@@ -67,9 +106,10 @@ function After() {
             )}
           />
         </div>
-        <Field value={typedText} />
-        <div className="flex items-center gap-2">
-          <ModelChip />
+        <RealField value={typedText} />
+        <div data-composer-actions className="composer-band flex items-center gap-1 @max-[30rem]/composer:ml-auto">
+          <RealModelChip />
+          {!dictating && <ComposerEmojiButton inputRef={emojiRef} text={typedText} onInsert={() => {}} />}
           <ComposerMicButton onClick={() => {}} hidden={dictating} shortcut="⌘D" />
           {dictating ? (
             <DictationChip seconds={seconds} levels={[0.25, 0.6, 0.95, 0.5, 0.35]} processing={false} onStop={() => {}} onCancel={() => {}} onSend={() => {}} sendTone={tone} />

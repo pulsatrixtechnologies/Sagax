@@ -5,6 +5,8 @@
 // send arrow while something is typed, Voice otherwise, in the bot's color);
 // a grey mic that dictates into the field, with a recording pill, or opens
 // the Keys card when nothing can transcribe here.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createElement, type ComponentProps, type ReactElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
@@ -187,6 +189,35 @@ describe("composer controls (Grok Bot's prompt bar)", () => {
     expect($('[data-dictation-chip="recording"]')).not.toBeNull();
     press();
     expect($("[data-dictation-chip]")).toBeNull();
+  });
+
+  // JC, 2026-10-16: on one line the buttons sat 2 px below the bar's middle
+  // (28 px buttons end-aligned with a 32 px field). Both groups now sit in a
+  // band as tall as the field's first line and center in it.
+  it("centers the + and the right-hand buttons on the field's first line", () => {
+    render(createElement(Composer, { bot: bot("teal") }));
+    const row = $("[data-composer-row]")!;
+    expect(row.className).toContain("items-end");
+    const plusGroup = $('[aria-haspopup="menu"]')?.closest(".composer-band");
+    const actions = $("[data-composer-actions]")!;
+    expect(plusGroup?.parentElement).toBe(row);
+    for (const group of [plusGroup!, actions]) {
+      expect(group.classList).toContain("composer-band");
+      expect(group.classList).toContain("items-center");
+    }
+    expect(actions.querySelector("[data-composer-cta]")).not.toBeNull();
+  });
+
+  it("makes the band as tall as one line of the field with its padding", () => {
+    const css = readFileSync(resolve(__dirname, "../styles.css"), "utf8");
+    const px = (rule: RegExp) => Number(rule.exec(css)?.[1]);
+    const desktopLine = px(/\.chat-input-text,\s*\.mention-editor-mirror\s*\{[^}]*line-height:\s*(\d+)px/);
+    const phoneLine = px(/@media[^{]*\{\s*\.chat-input-text,\s*\.mention-editor-mirror\s*\{[^}]*line-height:\s*(\d+)px/);
+    const desktopBand = px(/^\.composer-band\s*\{\s*min-height:\s*(\d+)px/m);
+    const phoneBand = px(/@media[^{]*\{\s*\.composer-band\s*\{\s*min-height:\s*(\d+)px/);
+    // py-1.5 on the textarea: 6 px above and below the line
+    expect(desktopBand).toBe(desktopLine + 12);
+    expect(phoneBand).toBe(phoneLine + 12);
   });
 });
 
