@@ -72,7 +72,11 @@ describe("the organization's desktops for the admin console", () => {
     bridges.register(registration("Bob's PC"), "bob-session", "b".repeat(64));
     const listed = bridges.inventory();
     expect(listed.find((entry) => entry.person === ADA)).toEqual({ person: ADA, id: desktop.id, name: "Ada's Mac", platform: "darwin", online: true, lastSeenAt: expect.any(Number), localVm: true, version: "0.4.20" });
-    expect(JSON.stringify(listed)).not.toMatch(/aaaa|bbbb|session|attachments/);
+    // the secrets themselves, not a pattern: a random desktop id can hold "aaaa"
+    const json = JSON.stringify(listed);
+    expect(json).not.toContain(secret);
+    expect(json).not.toContain("b".repeat(64));
+    expect(json).not.toMatch(/session|attachments/);
     // a session that ended takes its desktop away
     people.delete("bob-session");
     expect(bridges.inventory().map((entry) => entry.person)).toEqual([ADA]);
