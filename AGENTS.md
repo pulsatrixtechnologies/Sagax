@@ -696,27 +696,41 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
 - Every automatic decision writes a decision row with the rule id; the
   transcript step and the card carry a rule notice with Edit rule. "Toujours
   permettre ceci" saves a rule from a card only when it covers that card
-  (409 `rule_not_covering` otherwise); on a shell card it proposes the
-  exact command line only. Shell lines are read word by word (`readShell`):
-  find, rg, tree, less, awk, sed, xargs and file are never reads; a pure
-  reader keeps to its own short flags (no long flag, no `=`, no attached
-  value); chaining, redirection, substitution, quotes or a wildcard
-  (`* ? [ ] { }`) make a line opaque (only an exact command rule allows it); `/bin/rm`, `env rm`, `sudo rm`, `xargs rm`,
-  network tools and interpreters are recognized anywhere. Paths: only this
-  person's home is `~` (`~user`, `~+`, `~-` refused), a wildcard path is
-  never a known path; rule folders and call paths are both resolved: an
-  allow needs every path inside as written and as resolved, a deny or ask
-  catches either, case-insensitively and in one Unicode form. A server's
-  readOnlyHint never makes a call a read. An allow on a folder never covers
-  a path through a symbolic link (it could change after the check). For a
-  deny or ask, an operand the matcher cannot place (relative with no known
-  working folder, a flag value, a path under any MCP key or a file:// URL)
-  is caught. A shell program outside a short benign list is irreversible
-  (fail closed); git is read past its global options (`-C`, `-c`,
-  `--git-dir`); `sudo` and a bare wrapper are irreversible. Tools are named whole, server included; products match known
-  server ids (or a Perspicax or Composio gateway's tool prefix). No model reviewer is
-  wired: `customRulesReviewPrompt`, `tightenCustomDecision` and
+  (409 `rule_not_covering` otherwise).
+- The shell (decided after four security reviews, 2026-10-16): an allow
+  rule never names a family of commands. "exécuter des commandes",
+  "commandes dans <dossier>" and the like are refused as allow rules
+  (route 400 `shell_family_allow`, the editor says "Pour le shell, seules
+  des commandes exactes peuvent être permises automatiquement"); they stay
+  valid as Refuser or Demander d'abord. A shell line is allowed only by
+  "la commande exacte `...`" (what "Toujours permettre ceci" proposes on a
+  shell card, risk classes still ticked), or by a folder read rule when the
+  line is a plain read: cat, head, tail, wc, ls or stat, their own short
+  flags only (no long flag, no `=`, no attached value, no `-L`/`-H`), every
+  operand an absolute path inside the folder, no link on the way. git, fd,
+  rg, sort, uniq, tree, less, more, file and the grep family are never
+  covered by a family rule. Chaining, redirection, substitution, quotes,
+  control characters, `!` or a wildcard make a line opaque.
+- Deny and ask rules match broadly and fail closed: words are read
+  anywhere in the line (`/bin/rm`, `env rm`, `sudo`, `xargs rm`, `fd -x`,
+  `rg --pre`, `sort -o`, `tree -o`, `git --output`, `git -c`, `git push`
+  after global options); a relative path, a flag value, an operand-less
+  reader, a path under any MCP key that names a place (path, uri, file,
+  dir, src, dest, target), a `file:` URL in any case, `$HOME`/`${HOME}`, an
+  encoded or Windows path, or a scan cut short by depth or count leaves the
+  paths unknown, which a folder deny catches. A cwd is never taken from the
+  engine or the tool's arguments for an allow.
+- Paths: only this person's home is `~` (`~user`, `~+`, `~-` refused); rule
+  folders and call paths are both resolved; an allow needs every path
+  inside as written and as resolved and none through a symbolic link; a
+  deny or ask catches either, case-insensitively and in one Unicode form.
+  A server's readOnlyHint never makes a call a read. Tools are named whole,
+  server included; products match known server ids (or a Perspicax or
+  Composio gateway's tool prefix). No model reviewer is wired:
+  `customRulesReviewPrompt`, `tightenCustomDecision` and
   `safetyReviewPrompt(call, policy)` are the tighten-only contract for one.
+- Tests: `server/custom-rules.security.test.ts` holds every probe input of
+  the four reviews; add each new bypass there.
 
 Email drafts (`src/components/EmailCard.tsx`, `shared/email-draft-send.ts`,
 `server/email-draft-send.ts`), covered by `server/email-draft-send.test.ts`

@@ -33,8 +33,6 @@ export interface CustomRuleCall {
   mcpTool?: string;
   input?: string;
   command?: string;
-  /** The folder a shell command runs in, when the engine says. */
-  cwd?: string;
   paths?: readonly string[];
   summary?: string;
   hints?: { readOnly?: boolean; destructive?: boolean };
@@ -76,7 +74,6 @@ export function factsForCall(call: CustomRuleCall, home: string | undefined = se
     ...(call.mcpTool ? { mcpTool: call.mcpTool } : {}),
     ...(call.input !== undefined ? { input: call.input } : {}),
     ...(call.command !== undefined ? { command: call.command } : {}),
-    ...(call.cwd ? { cwd: call.cwd } : {}),
     ...(call.paths ? { paths: call.paths } : {}),
     ...(call.hints ? { hints: call.hints } : {}),
     ...(classKey ? { classKey } : {}),

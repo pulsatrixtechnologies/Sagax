@@ -11832,7 +11832,7 @@
       "customRules.unrecognized": "5b1a2d0c5615e0be9ce8c85d0a178d8a3fd186acbc5f391e49a89b398c00b873",
       "customRules.unrecognizedShort": "e34e5c83e7e315c780e4590fc280d0871f4091377fc236442f4d4887028810c2",
       "customRules.title": "c601dc86d88cc32b011ccbb461ce88c988242ef18ad993dfd46ede47f900d610",
-      "customRules.help": "99f343ba155c307fd4c10e67fce3f7a9939722025209563da6ac0d58b948d2f8",
+      "customRules.help": "6ca61a5607b5823854db578723e13784574bfd66ef99d42ccd3ac7b6631ba7c9",
       "customRules.empty": "fde342908813b8737ca604b44f57deb572abd62a52c13a3cead0a70502a08ee6",
       "customRules.add": "bed79361ea53f5914e8f5b5aae68078eba52fd906ee1863b3cac4722f649decc",
       "customRules.edit": "464c4ffd019e1e9691dcf0537c797353ef2b1c1d4833d3d463e5b74ae4547344",
@@ -12096,7 +12096,8 @@
       "botPanel.permissions.outboundPolicy": "7d7177902ee140c59dca78d72b8b6440d4224b3ef947c8857854aec9b55dbc03",
       "botPanel.permissions.approvals": "2bfc3471571e5c008cb26bd839b0d4cbcb1132fc9d6c8206bb595fa26e83a45b",
       "persona.group.security": "8f6fb4eb7f42c0e245e29e63f5b82cc3ba19852681d1ed9aed291f59cf75ec0e",
-      "persona.group.activity": "38da1505ca8373288489495101b14f24ac95078f520ad64df18272aa6054f750"
+      "persona.group.activity": "38da1505ca8373288489495101b14f24ac95078f520ad64df18272aa6054f750",
+      "customRules.shellFamily": "8a3714825d40eeb58b2f96689841697f588d58a1fcbabee159825fb9d2321d4d"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

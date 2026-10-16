@@ -164,12 +164,14 @@ describe("round 3: a folder deny sees unplaced paths; a broad allow fails closed
     expect(evaluateCustomRules([sub, everyCommand], bash(command), { home }).kind).toBe("deny");
   });
 
-  it("a relative path is placed against the folder the command runs in", () => {
-    const inSub = callFacts({ tool: "Bash", command: "cat x", cwd: "/Users/jc/Documents/sub", home });
-    expect(inSub.paths).toEqual(["~/Documents/sub/x"]);
-    expect(evaluateCustomRules([sub, everyCommand], inSub, { home }).kind).toBe("deny");
-    const elsewhere = callFacts({ tool: "Bash", command: "cat x", cwd: "/Users/jc/Projects", home });
-    expect(evaluateCustomRules([sub, rule("lire les fichiers dans ~/Projects")], elsewhere, { home }).kind).toBe("allow");
+  it("a relative path is unknown: a deny catches it, an allow never covers it", () => {
+    const relative = callFacts({ tool: "Bash", command: "cat x", home });
+    expect(relative.paths).toBeNull();
+    expect(evaluateCustomRules([sub, everyCommand], relative, { home }).kind).toBe("deny");
+    expect(evaluateCustomRules([rule("lire les fichiers dans ~/")], relative, { home }).kind).toBe("none");
+    // a cwd in the tool's own arguments is never trusted
+    const spoof = callFacts({ tool: "Bash", input: JSON.stringify({ command: "cat .ssh/id_rsa", cwd: "/Users/jc/Documents" }), home });
+    expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], spoof, { home }).kind).toBe("none");
   });
 
   it.each([
@@ -196,10 +198,13 @@ describe("round 3: a folder deny sees unplaced paths; a broad allow fails closed
     expect(evaluateCustomRules([rule("permettre les commandes et les modifications de fichiers")], bash(command), { home }).kind).toBe("none");
   });
 
-  it("known benign commands stay coverable by a broad allow", () => {
-    for (const command of ["echo x", "printf x", "git status", "git -C ~/repo log", "ls ~/Documents"]) {
-      expect(evaluateCustomRules([rule("permettre les commandes shell et la lecture")], bash(command), { home }).kind, command).toBe("allow");
+  it("no family rule allows a shell command, not even a harmless one; an exact command rule does", () => {
+    for (const command of ["echo x", "printf x", "git status", "git -C ~/repo log", "true"]) {
+      expect(evaluateCustomRules([rule("permettre les commandes shell et la lecture", "allow", ["destructive", "irreversible", "external-send", "money"])], bash(command), { home }).kind, command).toBe("none");
+      expect(evaluateCustomRules([rule(`la commande exacte \`${command}\``, "allow", ["irreversible"])], bash(command), { home }).kind, command).toBe("allow");
     }
+    expect(compileRule("exécuter des commandes").shellFamily).toBe(true);
+    expect(compileRule("la commande exacte `git status`").shellFamily).toBe(false);
   });
 
   it("reader flags that follow links are not reads, control characters and history expansion are opaque", () => {
@@ -217,6 +222,97 @@ describe("round 3: a folder deny sees unplaced paths; a broad allow fails closed
     const nfd = "/Users/jc/Documents/Re\u0301u/x";
     const facts = callFacts({ tool: "Read", input: JSON.stringify({ file_path: nfd }), home });
     expect(evaluateCustomRules([rule("jamais lire les fichiers dans ~/Documents/R\u00e9u", "deny"), rule("lire des fichiers")], facts, { home }).kind).toBe("deny");
+  });
+});
+
+describe("round 4: no family rule allows the shell; side effects are seen by deny rules", () => {
+  const COMMANDS = rule("exécuter des commandes");
+  const READ = rule("lire les fichiers dans ~/Documents");
+  const HOME_READ = rule("lire les fichiers dans ~/");
+  const DENY_SSH = rule("jamais lire les fichiers dans ~/.ssh", "deny");
+  const shell = (command: string) => callFacts({ tool: "Bash", input: JSON.stringify({ command }), command, home });
+
+  it.each([
+    "sort -o /Users/jc/.zshrc /Users/jc/Documents/a.txt", "sort -o/Users/jc/.zshrc a.txt", "uniq /Users/jc/Documents/a.txt /Users/jc/.zshrc", "tree -o /Users/jc/.zshrc", "tree -o x",
+    "fd . -x kill -9 1", "fd -X chmod 777", "fd --exec killall Finder", "rg --pre kill x", "rg --pre=/usr/bin/killall x", "less -o /Users/jc/.zshrc /Users/jc/Documents/a.txt", "less -O/Users/jc/x a",
+    "file -C -m /Users/jc/Documents/m", "date -s 0000", "date 0101000070", "hostname evil", "printf -v X y", "env", "which ls", "xargs", "yes", "test -f x", "true", "sleep 99999", "cd /Users/jc/.ssh", "cd ..",
+    "grep -r k /Users/jc/.ssh", "find / -newer x", "find /Users/jc -fls /Users/jc/.zshrc", "tr a b", "cut -f1 /Users/jc/.ssh/id_rsa", "diff /Users/jc/.ssh/id_rsa /dev/null", "more /Users/jc/.ssh/id_rsa",
+    "git log --output=/Users/jc/.zshrc", "git diff --output=/Users/jc/.zshrc", "git -c core.fsmonitor=/tmp/x status", "git -c core.pager=kill log", "git -c diff.external=/tmp/x diff", "git show --ext-diff",
+    "git grep -Okill x", "git grep --open-files-in-pager=kill x", "git cat-file --textconv HEAD:a", "git -c core.sshCommand=/tmp/x status", "git --exec-path=/tmp status", "git -C /tmp/evilrepo status", "git ls-remote ext::sh", "git fetch", "git config user.name", "git config core.pager kill",
+    "git log -p --ext-diff", "git -c alias.log=x log", "git --config-env=core.pager=X log", "git blame --contents /Users/jc/.ssh/id_rsa a",
+    "fd -1 --exec git push origin main", "fd -1 --exec-batch defaults write com.apple.x k v", "fd -1 -x launchctl bootout gui/501", "fd -1 -x pkill Finder",
+    "sort -o /Users/jc/.ssh/authorized_keys /Users/jc/Downloads/key.txt", "sort --compress-program=/Users/jc/x -S 1 big", "git -C /Users/jc/Documents/r status",
+    "rg --pre /Users/jc/Documents/x.sh k", "rg --pre=x k", "fd -x rm", "fd -1 -x git reset --hard", "cd a", "cat ../secrets/k", "cat secrets/k",
+  ])("%s is never auto-allowed by a family rule", (command) => {
+    const facts = shell(command);
+    const all = ["destructive", "irreversible", "external-send", "money"] as CustomRule["riskScope"];
+    expect(evaluateCustomRules([rule("exécuter des commandes", "allow", all)], facts, { home }).kind).not.toBe("allow");
+    expect(evaluateCustomRules([COMMANDS], facts, { home }).kind).not.toBe("allow");
+    expect(evaluateCustomRules([READ], facts, { home }).kind).not.toBe("allow");
+    expect(evaluateCustomRules([HOME_READ, DENY_SSH], facts, { home }).kind).not.toBe("allow");
+  });
+
+  it.each([
+    ["fd -1 --exec git push origin main", "jamais envoyer de messages"],
+    ["fd -1 --exec-batch defaults write com.apple.x k v", "jamais écrire des fichiers"],
+    ["fd -1 -x launchctl bootout gui/501", "jamais écrire des fichiers"],
+    ["sort -o /Users/jc/.ssh/authorized_keys /Users/jc/Downloads/key.txt", "jamais écrire des fichiers"],
+    ["sort --compress-program=/Users/jc/x -S 1 big", "jamais écrire des fichiers"],
+    ["tree -o /Users/jc/.zshrc", "jamais écrire des fichiers"],
+    ["git log --output=/Users/jc/.zshrc", "jamais écrire des fichiers"],
+    ["rg --pre /Users/jc/Documents/x.sh k", "jamais écrire des fichiers"],
+    ["fd -x rm", "jamais supprimer des fichiers"],
+  ])("a deny rule sees the side effect of %s", (command, deny) => {
+    expect(evaluateCustomRules([COMMANDS, rule(deny, "deny")], shell(command), { home }).kind).toBe("deny");
+  });
+
+  it("only cat, head, tail, wc, ls and stat with absolute paths are plain reads", () => {
+    expect(evaluateCustomRules([READ], shell("cat /Users/jc/Documents/a.txt"), { home }).kind).toBe("allow");
+    for (const command of ["more /Users/jc/Documents/a.txt", "less /Users/jc/Documents/a.txt", "sort /Users/jc/Documents/a.txt", "uniq /Users/jc/Documents/a.txt", "tree /Users/jc/Documents", "fd . /Users/jc/Documents", "rg k /Users/jc/Documents", "du /Users/jc/Documents", "file /Users/jc/Documents/a.txt", "git -C /Users/jc/Documents log"]) {
+      expect(evaluateCustomRules([READ], shell(command), { home }).kind, command).toBe("none");
+    }
+  });
+
+  it("the editor and the route refuse a shell family allow", () => {
+    expect(compileRule("exécuter des commandes dans ~/Documents").shellFamily).toBe(true);
+    expect(compileRule("lire les fichiers dans ~/Documents").shellFamily).toBe(false);
+  });
+
+  it.each([
+    ["deep", { path: "/Users/jc/Documents/a", o: { a: { b: { c: { d: { e: { f: { g: { h: { i: "/Users/jc/.ssh/id_rsa" } } } } } } } } } }],
+    ["many", { path: "/Users/jc/Documents/a", list: [...Array(300).keys()].map((i) => `/Users/jc/Documents/f${i}`).concat(["/Users/jc/.ssh/id_rsa"]) }],
+    ["FILE: upper", { path: "/Users/jc/Documents/a", uri: "FILE:///Users/jc/.ssh/id_rsa" }],
+    ["File: mixed", { path: "/Users/jc/Documents/a", uri: "File:///Users/jc/.ssh/id_rsa" }],
+    ["%2e%2e", { uri: "file:///Users/jc/Documents/%2e%2e/.ssh/id_rsa" }],
+    ["..%2f", { uri: "file:///Users/jc/Documents/..%2f.ssh/id_rsa" }],
+    ["%252e double", { uri: "file:///Users/jc/Documents/%252e%252e/.ssh/id_rsa" }],
+    ["file://host", { uri: "file://evil/Users/jc/Documents/a" }],
+    ["space in path", { path: "/Users/jc/Documents/a", other: "/Users/jc/.ssh/id rsa" }],
+    ["relative under a path key", { path: "/Users/jc/Documents/a", src: "../.ssh/id_rsa" }],
+    ["array of objects", { files: [{ path: "/Users/jc/.ssh/id_rsa" }] }],
+    ["tilde user", { path: "~root/.ssh/id_rsa" }],
+    ["leading white space", { uri: "  file:///Users/jc/.ssh/id_rsa" }],
+    ["$HOME", { target: "$HOME/.ssh/id_rsa" }],
+    ["${HOME}", { path: "/Users/jc/Documents/a", target: "${HOME}/.ssh/id_rsa" }],
+    ["~ alone", { path: "/Users/jc/Documents/a", target: "~" }],
+    ["windows", { path: "/Users/jc/Documents/a", target: "C:\\Users\\jc\\.ssh" }],
+    ["encoded without scheme", { path: "/Users/jc/Documents/%2e%2e/.ssh/id_rsa" }],
+  ])("MCP %s: a folder read rule never allows it", (_name, args) => {
+    const facts = callFacts({ tool: "mcp__fs__read_text_file", input: JSON.stringify(args), home });
+    expect(evaluateCustomRules([READ], facts, { home }).kind).toBe("none");
+  });
+
+  it.each([
+    ["deep", { path: "/Users/jc/Documents/a", o: { a: { b: { c: { d: { e: { f: { g: { h: { i: "/Users/jc/.ssh/id_rsa" } } } } } } } } } }],
+    ["FILE: upper", { uri: "FILE:///Users/jc/.ssh/id_rsa" }],
+    ["space in path", { other: "/Users/jc/.ssh/id rsa" }],
+    ["relative under a path key", { src: "../.ssh/id_rsa" }],
+    ["$HOME", { target: "$HOME/.ssh/id_rsa" }],
+    ["${HOME}", { target: "${HOME}/.ssh/id_rsa" }],
+    ["%252e double", { uri: "file:///Users/jc/Documents/%252e%252e/.ssh/id_rsa" }],
+  ])("MCP %s: a deny on ~/.ssh catches it", (_name, args) => {
+    const facts = callFacts({ tool: "mcp__fs__read_text_file", input: JSON.stringify(args), home });
+    expect(evaluateCustomRules([READ, rule("lire des fichiers"), DENY_SSH], facts, { home }).kind).toBe("deny");
   });
 });
 

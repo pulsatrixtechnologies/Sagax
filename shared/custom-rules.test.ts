@@ -116,8 +116,9 @@ describe("evaluateCustomRules precedence", () => {
     expect(evaluateCustomRules([commands], rmrf).kind).toBe("none");
     const forcePush = callFacts({ tool: "Bash", command: "git push --force origin main", classKey: "git:force-push", home: HOME });
     expect(evaluateCustomRules([commands], forcePush).kind).toBe("none");
-    const scopedSend = rule("l'exécution de commandes, l'écriture et l'envoi", "allow", { riskScope: ["external-send"] });
-    const decision = evaluateCustomRules([scopedSend], forcePush);
+    // only the exact command can be allowed, and only with its classes ticked
+    const exact = rule("la commande exacte `git push --force origin main`", "allow", { riskScope: ["external-send"] });
+    const decision = evaluateCustomRules([exact], forcePush);
     expect(decision.kind === "none" && decision.riskBlocked?.missing).toEqual(["irreversible"]);
   });
 

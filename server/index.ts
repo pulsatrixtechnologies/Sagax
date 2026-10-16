@@ -12009,7 +12009,6 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
           ...(typeof event.input === "string" ? { input: event.input } : {}),
           ...(event.command?.command ? { command: event.command.command } : {}),
-          ...(event.command?.cwd ? { cwd: event.command.cwd } : {}),
           ...(event.paths?.length ? { paths: event.paths } : {}),
           summary: event.summary,
         }

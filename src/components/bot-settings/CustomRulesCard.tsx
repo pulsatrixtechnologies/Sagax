@@ -44,6 +44,7 @@ export function customRulesForBot(rules: readonly CustomRuleRow[], botId: string
 
 export function customRuleError(failure: unknown): string {
   if (failure instanceof ApiError && failure.body?.code === "rule_not_covering") return t("customRules.notCovering");
+  if (failure instanceof ApiError && failure.body?.code === "shell_family_allow") return t("customRules.shellFamily");
   return t("customRules.error", { error: failure instanceof Error ? failure.message : String(failure) });
 }
 
@@ -62,7 +63,9 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
   const [behavior, setBehavior] = useState<CustomRuleBehavior>(initial.behavior);
   const [allBots, setAllBots] = useState(initial.allBots);
   const [riskScope, setRiskScope] = useState<RiskClass[]>(initial.riskScope);
-  const recognized = when.trim() ? compileRule(when).recognized : true;
+  const compiled = when.trim() ? compileRule(when) : null;
+  const recognized = compiled ? compiled.recognized : true;
+  const shellFamily = behavior === "allow" && compiled?.shellFamily === true;
   const shownRisks = risks?.length ? RISK_CLASSES.filter((risk) => risks.includes(risk) || riskScope.includes(risk)) : RISK_CLASSES;
   return (
     <form
@@ -70,7 +73,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
       data-custom-rule-form
       onSubmit={(event) => {
         event.preventDefault();
-        if (!when.trim() || busy) return;
+        if (!when.trim() || busy || shellFamily) return;
         onSave({ when: when.trim(), behavior, allBots, riskScope: behavior === "allow" ? riskScope : [] });
       }}
     >
@@ -87,6 +90,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
         />
       </label>
       {!recognized && <p role="note" className="text-[12px] text-warning" data-custom-rule-unrecognized>{t("customRules.unrecognized")}</p>}
+      {shellFamily && <p role="alert" className="text-[12px] text-danger" data-custom-rule-shell-family>{t("customRules.shellFamily")}</p>}
       <label className="flex items-center justify-between gap-3 text-[12.5px] text-ink-secondary">
         {t("customRules.form.should")}
         <select
@@ -130,7 +134,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
         </button>
         <button
           type="submit"
-          disabled={!when.trim() || busy}
+          disabled={!when.trim() || busy || shellFamily}
           className="rounded-full bg-accent px-3 py-1 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40"
         >
           {saveLabel ?? t("customRules.form.save")}

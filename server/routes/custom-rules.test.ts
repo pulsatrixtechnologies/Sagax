@@ -98,6 +98,17 @@ describe("custom rules routes", () => {
     expect((await call("", "POST", { when: "la lecture", behavior: "maybe", botId: null })).status).toBe(400);
   });
 
+  it("refuses a shell family allow, and accepts it as a deny or an exact command", async () => {
+    const { call } = await serve({ person: "jc" });
+    const refused = await call("", "POST", { when: "exécuter des commandes", behavior: "allow", botId: null });
+    expect(refused.status).toBe(400);
+    expect(refused.body.code).toBe("shell_family_allow");
+    expect((await call("", "POST", { when: "exécuter des commandes", behavior: "deny", botId: null })).status).toBe(201);
+    expect((await call("", "POST", { when: "la commande exacte `git status`", behavior: "allow", botId: null })).status).toBe(201);
+    const ask = await call("", "POST", { when: "exécuter des commandes dans ~/Documents", behavior: "ask", botId: null });
+    expect((await call(`/${ask.body.rule.id}`, "PATCH", { behavior: "allow" })).body.code).toBe("shell_family_allow");
+  });
+
   it("one person never reads or edits another person's rules", async () => {
     const jc = await serve({ person: "jc" });
     const saved = await jc.call("", "POST", { when: "la lecture de fichiers", behavior: "allow", botId: null });

@@ -8003,7 +8003,7 @@
   "customRules.unrecognized": "Not recognized: name an action (read, write, send...), a folder or a tool in backticks. Until then, this rule allows nothing.",
   "customRules.unrecognizedShort": "Not recognized",
   "customRules.title": "Custom rules",
-  "customRules.help": "Write a short rule in plain words for each action. \"Refuse\" wins over \"Ask first\", which wins over \"Allow automatically\". These rules apply only to you, and the built-in safety checks always apply.",
+  "customRules.help": "Write a short rule in plain words for each action. \"Refuse\" wins over \"Ask first\", which wins over \"Allow automatically\". For the shell, only exact commands and plain reads of a folder can be allowed. These rules apply only to you, and the built-in safety checks always apply.",
   "customRules.empty": "No custom rule yet. Example: \"always allow reading files in ~/Documents\".",
   "customRules.add": "Add a rule",
   "customRules.edit": "Edit",
@@ -8267,5 +8267,6 @@
   "botPanel.permissions.outboundPolicy": "Before sending",
   "botPanel.permissions.approvals": "Approvals",
   "persona.group.security": "Security",
-  "persona.group.activity": "Activity"
+  "persona.group.activity": "Activity",
+  "customRules.shellFamily": "For the shell, only exact commands can be allowed automatically. Write \"the exact command `...`\", or choose Ask first or Refuse."
 }

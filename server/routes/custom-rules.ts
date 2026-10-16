@@ -43,6 +43,13 @@ export interface CustomRuleRouteDeps {
 
 export type CustomRuleView = CustomRule & { compiled: CompiledRule };
 
+/** For the shell, only exact command lines may be allowed automatically:
+ * a family of commands ("run commands") cannot be told safe. */
+export const SHELL_FAMILY_REFUSAL = {
+  error: "For the shell, only exact commands can be allowed automatically. Use \"la commande exacte `...`\", or Ask first or Refuse.",
+  code: "shell_family_allow",
+} as const;
+
 function riskScopeOf(value: unknown): RiskClass[] | null {
   if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every(isRiskClass)) return null;
@@ -82,6 +89,7 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       if (body.botId !== null && !ownsBot(me, body.botId)) return json(res, 400, { error: "a rule applies to one of your bots, or to all of them" });
       const riskScope = riskScopeOf(body.riskScope);
       if (!riskScope) return json(res, 400, { error: "riskScope lists destructive, irreversible, money or external-send" });
+      if (behavior === "allow" && compileRule(when, deps.home).shellFamily) return json(res, 400, SHELL_FAMILY_REFUSAL);
       const card = body.fromCard && typeof body.fromCard === "object"
         ? body.fromCard as { threadId?: unknown; requestId?: unknown }
         : undefined;
@@ -129,6 +137,9 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       if (body.botId !== undefined && body.botId !== null && !ownsBot(me, body.botId)) return json(res, 400, { error: "a rule applies to one of your bots, or to all of them" });
       const riskScope = body.riskScope === undefined ? undefined : riskScopeOf(body.riskScope);
       if (riskScope === null) return json(res, 400, { error: "riskScope lists destructive, irreversible, money or external-send" });
+      const nextBehavior = isCustomRuleBehavior(body.behavior) ? body.behavior : before.behavior;
+      const nextWhen = typeof body.when === "string" ? body.when : before.when;
+      if (nextBehavior === "allow" && compileRule(nextWhen, deps.home).shellFamily) return json(res, 400, SHELL_FAMILY_REFUSAL);
       let updated: CustomRule | null;
       try {
         updated = deps.store.update(me, id, {

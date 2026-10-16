@@ -8003,7 +8003,7 @@
   "customRules.unrecognized": "Non reconnue : nommez une action (lire, écrire, envoyer...), un dossier ou un outil entre accents graves. D'ici là, cette règle n'autorise rien.",
   "customRules.unrecognizedShort": "Non reconnue",
   "customRules.title": "Règles personnalisées",
-  "customRules.help": "Écrivez une règle courte en langage naturel pour chaque action. « Refuser » l'emporte sur « Demander d'abord », qui l'emporte sur « Autoriser automatiquement ». Ces règles ne s'appliquent qu'à vous, et les contrôles de sécurité intégrés s'appliquent toujours.",
+  "customRules.help": "Écrivez une règle courte en langage naturel pour chaque action. « Refuser » l'emporte sur « Demander d'abord », qui l'emporte sur « Autoriser automatiquement ». Pour le shell, seules des commandes exactes et la simple lecture d'un dossier peuvent être permises. Ces règles ne s'appliquent qu'à vous, et les contrôles de sécurité intégrés s'appliquent toujours.",
   "customRules.empty": "Aucune règle personnalisée pour l'instant. Exemple : « toujours permettre la lecture de fichiers dans ~/Documents ».",
   "customRules.add": "Ajouter une règle",
   "customRules.edit": "Modifier",
@@ -8267,5 +8267,6 @@
   "botPanel.permissions.outboundPolicy": "Avant d'envoyer",
   "botPanel.permissions.approvals": "Approbations",
   "persona.group.security": "Sécurité",
-  "persona.group.activity": "Suivi"
+  "persona.group.activity": "Suivi",
+  "customRules.shellFamily": "Pour le shell, seules des commandes exactes peuvent être permises automatiquement. Écrivez « la commande exacte `...` », ou choisissez Demander d'abord ou Refuser."
 }

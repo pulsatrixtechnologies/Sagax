@@ -21,11 +21,13 @@
 //     path outside the rule's folder, a shell command chaining another one,
 //     a `..` that climbs out): they never widen it, and their words are never
 //     read as policy.
-//   - A shell card is read word by word (readShell): only a known pure
-//     reader with plain path arguments is a "read"; deletion, network and
-//     running code are recognized behind `/bin/`, `env`, `sudo`, `xargs` or
-//     anywhere in a chained line. "Toujours permettre ceci" on a shell card
-//     proposes that exact command line, never a family of commands.
+//   - The shell: an allow is only an exact command line ("la commande
+//     exacte `...`", what "Toujours permettre ceci" proposes on a shell
+//     card) or a folder read rule over a plain read (cat, head, tail, wc,
+//     ls, stat; own short flags; absolute paths; no link). A family of
+//     commands is never allowed (`shellFamily`, refused by the route).
+//     Deny and ask rules read every word of the line and fail closed on
+//     anything they cannot place.
 //   - The decision at request.opened is this deterministic matcher only.
 //     customRulesReviewPrompt / tightenCustomDecision are the tighten-only
 //     contract for an isolated model reviewer; no reviewer is wired to them
@@ -100,6 +102,9 @@ export interface CompiledRule {
   products: string[];
   /** Exact command lines ("la commande exacte `...`"), whitespace folded. */
   commands: string[];
+  /** The words name running commands in general: an allow rule cannot be
+   * that (only exact command lines are allowed for the shell). */
+  shellFamily: boolean;
   /** Whether the text named anything the matcher can test. */
   recognized: boolean;
 }
@@ -306,7 +311,8 @@ export function compileRule(when: string, home?: string, resolve?: (absolute: st
   }
   const products = Object.entries(PRODUCTS).filter(([, product]) => has(product.words)).map(([key]) => key);
   const recognized = actions.length > 0 || tools.length > 0 || products.length > 0 || commands.length > 0;
-  return { actions, objects, paths, realPaths, tools, products, commands, recognized };
+  const shellFamily = actions.includes("command") && commands.length === 0;
+  return { actions, objects, paths, realPaths, tools, products, commands, shellFamily, recognized };
 }
 
 // ── calls ────────────────────────────────────────────────────────────────
@@ -331,14 +337,13 @@ const SHELL_OPAQUE = /[;&|`<>(){}\n\\'"*?[\]]|\$(?!HOME\b|\{HOME\})/;
 /** Programs that only read the paths they are given, with no flag that
  * writes, runs or reaches the network. find, rg, tree, less, awk, sed and
  * xargs are not here: each has a flag that deletes, runs or writes. */
-const PURE_READERS = new Set(["ls", "cat", "head", "tail", "wc", "stat", "du", "pwd", "realpath", "basename", "dirname", "md5", "md5sum", "sha1sum", "sha256sum"]);
+const PURE_READERS = new Set(["ls", "cat", "head", "tail", "wc", "stat"]);
 /** The short flags each pure reader may carry, as letters of one `-xyz`
  * word. No long flag, no `=`, no value attached to a flag: `file -f<list>`,
  * `wc --files0-from=<list>` and the like read other files or write. head and
  * tail also take `-n N`, `-c N` and `-N`. */
 const READER_FLAGS: Record<string, string> = {
-  ls: "1aAdFhlrRStu", cat: "bensvtAET", head: "qv", tail: "fFqrv", wc: "clmwL", stat: "",
-  du: "achkms", pwd: "LP", realpath: "", basename: "", dirname: "", md5: "", md5sum: "", sha1sum: "", sha256sum: "",
+  ls: "1aAdFhlrRStu", cat: "bensvtAET", head: "qv", tail: "fFqrv", wc: "clmw", stat: "",
 };
 
 /** Whether every flag of a pure reader is one it may carry; numbers after
@@ -371,6 +376,11 @@ const NETWORK = new Set(["curl", "wget", "scp", "sftp", "ftp", "rsync", "ssh", "
 const INTERPRETERS = new Set(["bash", "sh", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "python", "python2", "python3", "node", "deno", "bun", "perl", "ruby", "php", "osascript", "source", ".", "eval", "awk", "gawk", "lua", "pwsh", "powershell", "make", "npx", "pnpm", "npm", "yarn"]);
 const WRITERS = new Set(["cp", "mv", "mkdir", "touch", "chmod", "chown", "chgrp", "tee", "ln", "dd", "install", "sed", "patch", "tar", "zip", "unzip", "open"]);
 const FIND_SIDE_EFFECTS = /^-(delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/;
+/** Flags that make a reading program run another program or write a file
+ * (`fd -x`, `rg --pre`, `sort -o`, `sort --compress-program`, `tree -o`,
+ * `less -o`, `git log --output`, `git grep -O`, `--ext-diff`, `--textconv`,
+ * `git -c key=value`, `--config-env`, `--exec-path`). */
+const SIDE_EFFECT_FLAG = /^(-o|-O|-x|-X|-c|--output|--exec|--exec-batch|--pre|--pre-glob|--compress-program|--open-files-in-pager|--ext-diff|--textconv|--config-env|--exec-path|--log-file|--upload-pack|--receive-pack)(=|$)|^-[oOxX]./;
 
 /** Spaces and tabs folded; a line break stays a line break (it starts a
  * second command). */
@@ -454,7 +464,7 @@ function programOf(words: readonly string[]): { index: number; program: string; 
  * benign is irreversible. An operand that is not a path this module can
  * place (relative with no known folder, a flag value) leaves the paths
  * unknown (null), which a deny or ask rule on a folder catches. */
-export function readShell(line: string, home?: string, resolve?: (absolute: string) => string, cwd?: string): ShellReading {
+export function readShell(line: string, home?: string, resolve?: (absolute: string) => string): ShellReading {
   const actions = new Set<ActionKind>(["command"]);
   const risks = new Set<RiskClass>();
   // control characters other than space and tab, history expansion (`!`)
@@ -473,6 +483,11 @@ export function readShell(line: string, home?: string, resolve?: (absolute: stri
     if (NETWORK.has(bin)) { actions.add("send"); risks.add("external-send"); }
     if (INTERPRETERS.has(bin) || bin === "xargs") risks.add("irreversible");
     if (WRITERS.has(bin)) actions.add("write");
+    if (index > 0 && SIDE_EFFECT_FLAG.test(word) && !PURE_READERS.has(binaryOf(words[0] ?? ""))) { actions.add("write"); risks.add("irreversible"); }
+    if (bin === "git") {
+      const sub = gitSubcommand(words, index);
+      if (sub === "push") { actions.add("send"); risks.add("external-send"); }
+    }
     if (bin === "find" || bin === "fd") {
       for (const flag of words.slice(index + 1)) {
         if (FIND_SIDE_EFFECTS.test(flag)) {
@@ -493,6 +508,10 @@ export function readShell(line: string, home?: string, resolve?: (absolute: stri
     if (!run.program) continue;
     if (run.program === "git") {
       const sub = gitSubcommand(segmentWords, run.index);
+      // a repository's own configuration (core.fsmonitor, a pager, an
+      // external diff) runs code even for a read: any global option, or any
+      // git at all, is never a plain read
+      if (segmentWords[run.index + 1]?.startsWith("-")) risks.add("irreversible");
       if (sub === "push") { actions.add("send"); risks.add("external-send"); risks.add("irreversible"); }
       else if (!GIT_READS.has(sub)) { actions.add("write"); risks.add("irreversible"); }
       continue;
@@ -505,8 +524,6 @@ export function readShell(line: string, home?: string, resolve?: (absolute: stri
   if (actions.has("delete") || actions.has("write")) actions.add("command");
 
   const { index, program, wrapped } = programOf(words);
-  const folder = cwd ? normalizePath(cwd, home) : null;
-  const realFolder = cwd ? (resolve ? normalizePath(cwd, home, resolve) : folder) : null;
   let paths: string[] | null = [];
   let realPaths: string[] | null = [];
   let allPaths = true;
@@ -514,12 +531,10 @@ export function readShell(line: string, home?: string, resolve?: (absolute: stri
   const unknown = () => { paths = null; realPaths = null; allPaths = false; };
   const add = (word: string) => {
     if (paths === null || realPaths === null) return;
-    let raw = word;
-    if (!/^(~|\/|\$HOME)/.test(raw)) {
-      // relative: only against the folder the command runs in
-      if (!cwd || !folder) return unknown();
-      raw = `${cwd.replace(/\/+$/, "")}/${raw}`;
-    }
+    const raw = word;
+    // relative: the shell's real folder is not known here (an earlier `cd`
+    // may have moved it), so the path is unknown
+    if (!/^(~|\/|\$HOME|\$\{HOME\})/.test(raw)) return unknown();
     const path = normalizePath(raw, home);
     const real = resolve ? normalizePath(raw, home, resolve) : path;
     if (!path || !real) return unknown();
@@ -543,16 +558,8 @@ export function readShell(line: string, home?: string, resolve?: (absolute: stri
     }
   }
   const operandCount = reader ? reader.operands.length : words.slice(index + 1).filter((word) => !word.startsWith("-") && !/^\d+$/.test(word)).length;
-  if (!operandCount && program && paths !== null && realPaths !== null) {
-    // no operand: the program works where it runs
-    if (folder && realFolder) {
-      paths.push(folder);
-      realPaths.push(realFolder);
-      if (folder !== realFolder) linked = true;
-    } else if (reader || BENIGN.has(program)) {
-      unknown();
-    }
-  }
+  // no operand: the program works in a folder this module does not know
+  if (!operandCount && program && (reader || READING.has(program) || BENIGN.has(program))) unknown();
   if (opaque) { paths = null; realPaths = null; }
   const pureRead = !opaque && !wrapped && reader !== null && reader.ok && allPaths && paths !== null && (paths as string[]).length > 0
     && !actions.has("delete") && !actions.has("send") && !actions.has("write") && risks.size === 0;
@@ -563,15 +570,28 @@ export function readShell(line: string, home?: string, resolve?: (absolute: stri
   return { opaque, pureRead, paths, realPaths, linked, actions, risks };
 }
 
-/** String values anywhere in the arguments that read as a place. */
-function pathLikeStrings(value: unknown, depth = 0, into: string[] = []): string[] {
-  if (depth > 6 || into.length > 64) return into;
+const PATH_KEY = /path|uri|url|file|dir|folder|src|source|dest|target/i;
+const MAX_SCAN_DEPTH = 8;
+const MAX_SCAN_STRINGS = 256;
+
+/** String values anywhere in the arguments that name a place: under a key
+ * that says so (path, uri, file, dir, src, dest, target...) or reading as
+ * an absolute path, `~/`, `$HOME` or a `file:` URL under any key. Returns
+ * null when the scan cannot be complete (too deep, too many values): the
+ * paths are then unknown. */
+function pathLikeStrings(value: unknown, key = "", depth = 0, into: string[] = []): string[] | null {
+  if (depth > MAX_SCAN_DEPTH || into.length > MAX_SCAN_STRINGS) return null;
   if (typeof value === "string") {
-    if (/^(file:|~\/|\/|\$HOME\/)/.test(value.trim()) && !/\s/.test(value.trim())) into.push(value.trim());
-  } else if (Array.isArray(value)) {
-    for (const item of value) pathLikeStrings(item, depth + 1, into);
+    const text = value.trim();
+    if (!text || text.includes("\n")) return into;
+    const looksLikePlace = /^(file:|~\/|~$|\/|\$HOME\b|\$\{HOME\}|[A-Za-z]:[\\/])/i.test(text);
+    if (looksLikePlace || (PATH_KEY.test(key) && !/^https?:/i.test(text))) into.push(text);
+    return into;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) if (pathLikeStrings(item, key, depth + 1, into) === null) return null;
   } else if (value && typeof value === "object") {
-    for (const item of Object.values(value)) pathLikeStrings(item, depth + 1, into);
+    for (const [child, item] of Object.entries(value)) if (pathLikeStrings(item, child, depth + 1, into) === null) return null;
   }
   return into;
 }
@@ -614,8 +634,6 @@ export interface CallInput {
   home?: string;
   /** The server's realpath, so a symbolic link is matched where it points. */
   resolve?: (absolute: string) => string;
-  /** The folder a shell command runs in, when the engine says. */
-  cwd?: string;
 }
 
 /** Read one call. The arguments only ever narrow what a rule can match. */
@@ -655,8 +673,7 @@ export function callFacts(call: CallInput): CallFacts {
   } else if (commandText !== undefined || (!parsed.server && COMMAND_TOOLS.has(bare))) {
     objects.add("command");
     const line = commandText ?? "";
-    const cwd = call.cwd ?? stringsAt(args, ["cwd", "workdir", "working_directory", "dir"])[0];
-    const reading = readShell(line, call.home, call.resolve, cwd);
+    const reading = readShell(line, call.home, call.resolve);
     if (reading.linked) linked = true;
     for (const action of reading.actions) actions.add(action);
     for (const risk of reading.risks) risks.add(risk);
@@ -679,15 +696,21 @@ export function callFacts(call: CallInput): CallFacts {
   // any other argument that names a place (`uri`, `input_path`, a file://
   // URL under any key) is a path too, so a folder rule sees it
   if (!shell && args) {
-    for (const value of pathLikeStrings(args)) {
-      if (!value.startsWith("file:")) { addPath(value); continue; }
+    const found = pathLikeStrings(args);
+    const unknownPath = () => { paths = null; realPaths = null; };
+    if (found === null) unknownPath();
+    for (const value of found ?? []) {
+      if (/^[A-Za-z]:[\\/]/.test(value) || /%[0-9a-f]{2}/i.test(value) && !/^file:/i.test(value)) { unknownPath(); continue; }
+      if (!/^file:/i.test(value)) { addPath(value); continue; }
       try {
         const url = new URL(value);
-        if (url.host && url.host !== "localhost") { paths = null; realPaths = null; continue; }
-        addPath(decodeURIComponent(url.pathname));
+        if (url.host && url.host !== "localhost") { unknownPath(); continue; }
+        const decoded = decodeURIComponent(url.pathname);
+        // a value that still reads as encoded may be decoded again by the server
+        if (/%[0-9a-f]{2}/i.test(decoded)) { unknownPath(); continue; }
+        addPath(decoded);
       } catch {
-        paths = null;
-        realPaths = null;
+        unknownPath();
       }
     }
   }
@@ -731,9 +754,11 @@ export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavio
     if (facts.command === undefined || !compiled.commands.includes(facts.command)) return false;
     return compiled.tools.length === 0 && compiled.products.length === 0 && compiled.paths.length === 0;
   }
-  // a shell line a folder or family rule cannot read is allowed only by an
-  // exact command rule; a deny or ask still applies to it
-  if (behavior === "allow" && facts.command !== undefined && facts.opaque) return false;
+  // shell: an allow is an exact command line, or a read rule over a pure
+  // read (cat, head, tail, wc, ls, stat with their own flags and absolute
+  // paths). No family of commands is ever allowed: a deny or ask still
+  // applies to any shell line.
+  if (behavior === "allow" && facts.command !== undefined && (facts.opaque || facts.pureRead !== true)) return false;
   if (compiled.actions.length && !compiled.actions.some((action) => facts.actions.includes(action))) return false;
   if (behavior === "allow" && compiled.actions.length) {
     // an app's send or payment tool also reads as a generic write or run
