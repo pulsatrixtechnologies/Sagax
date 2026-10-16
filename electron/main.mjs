@@ -901,6 +901,16 @@ function composioBrokerUrl() {
   return normalizeManagedComposioBrokerUrl(process.env.SAGAX_COMPOSIO_BROKER_URL?.trim() || "");
 }
 
+// The interaction bench (docs/perf/interaction-bench.md) runs a copy of the
+// packaged app beside the installed one: its logs stay in its own userData,
+// it never takes the sagax:// links and never updates itself.
+const PERF_BENCH = process.env.SAGAX_PERF_BENCH === "1";
+if (PERF_BENCH) app.setAppLogsPath(path.join(app.getPath("userData"), "logs"));
+// The bench copy keeps off the installed app's ports (SAGAX_PERF_PORT).
+const PACKAGED_SERVER_PORTS = PERF_BENCH && Number(process.env.SAGAX_PERF_PORT) > 0
+  ? [Number(process.env.SAGAX_PERF_PORT)]
+  : [8799, 18799, 28799];
+
 // The packaged app has no terminal: everything about the server child's life
 // goes to server.log in the OS log dir (~/Library/Logs/openmausbot on macOS,
 // Console.app-visible; %APPDATA%\sagax\logs on Windows), which is also
@@ -1838,7 +1848,7 @@ async function startServerPackagedOnce() {
   let everyPortForeignOwned = true;
   for (let attempt = 0; attempt < 2; attempt++) {
     let sawForeignOwner = false;
-    for (const port of [8799, 18799, 28799]) {
+    for (const port of PACKAGED_SERVER_PORTS) {
       if (desktopShutdownStarted) return false;
       const started = await startServerOn(port);
       if (started.proc) {
@@ -4581,7 +4591,7 @@ app.whenReady().then(async () => {
   if (app.isPackaged) {
     // sagax:// is primary; openmausbot:// stays for one release (legacy-names.mjs).
     // A packaged launch smoke must not take sagax:// away from the installed app.
-    if (process.env.SAGAX_SMOKE_TEST !== "1") for (const scheme of URL_SCHEMES) app.setAsDefaultProtocolClient(scheme);
+    if (process.env.SAGAX_SMOKE_TEST !== "1" && !PERF_BENCH) for (const scheme of URL_SCHEMES) app.setAsDefaultProtocolClient(scheme);
     // Chromium adds this capability below JavaScript, so renderer requests
     // can mutate the local harness while a Full-access shell using curl
     // cannot impersonate the person operating the desktop app.
@@ -4835,7 +4845,7 @@ app.whenReady().then(async () => {
   }
   // in-app auto-update (packaged only) — checks GitHub releases and downloads
   // by itself; only "Restart to update", the person's click, installs
-  startUpdater();
+  if (!PERF_BENCH) startUpdater();
   refreshApplicationMenu();
   openWindowForLink = () => {
     if (!mainWindow || mainWindow.isDestroyed()) createWindow();
