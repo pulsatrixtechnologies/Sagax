@@ -16,7 +16,7 @@ vi.mock("../BotProfileAvatarCard", () => ({ BotProfileAvatarCard: () => null }))
 
 import { BotZipImportPanel } from "./BotZipImport";
 import { BotActionsMenu } from "./bot-settings/BotActionsMenu";
-import { StartingRole } from "./NewBotDialog";
+import { StartingRole, startOptions } from "./NewBotDialog";
 import { botZipExportUrl, botZipLineText } from "@/lib/bot-zip";
 import type { Bot } from "@/state/store";
 
@@ -102,18 +102,16 @@ describe("import from zip", () => {
     const draft = { preset: undefined, patch: vi.fn(), choosePreset: vi.fn(), uploadAvatar: vi.fn() };
     act(() => { root.render(createElement(StartingRole, { draft: draft as never, defaultsMode: false })); });
     await flush();
-    expect(container.querySelector("[data-new-bot-import-zip]")?.textContent).toBe("Zip file…");
-    const start = container.querySelector("[data-new-bot-start]") as HTMLSelectElement;
-    act(() => {
-      start.value = (container.querySelector("[data-new-bot-import-zip]") as HTMLOptionElement).value;
-      start.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    // the list keeps what it showed: picking an action never chooses a role
+    // the Start from pill (#596) lists the other ways to start after the roles
+    expect(container.querySelector("[data-new-bot-start]")).not.toBeNull();
+    const other = startOptions([], false, true).filter(option => option.value.startsWith("action:"));
+    expect(other.map(option => option.label)).toEqual(["Template from the catalog…", "Zip file…"]);
+    expect(new Set(other.map(option => option.group)).size).toBe(1);
     expect(draft.patch).not.toHaveBeenCalled();
-    expect(document.querySelector("[data-bot-zip-dialog]")).not.toBeNull();
     // the installation's defaults are not a bot: no import there
-    act(() => { root.render(createElement(StartingRole, { draft: draft as never, defaultsMode: true })); });
-    expect(container.querySelector("[data-new-bot-import-zip]")).toBeNull();
+    expect(startOptions([], true, true).some(option => option.value === "action:import-zip")).toBe(false);
+    // without the right to import, the option is not drawn
+    expect(startOptions([], false, false).some(option => option.value === "action:import-zip")).toBe(false);
   });
 });
 

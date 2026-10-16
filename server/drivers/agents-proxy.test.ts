@@ -1169,7 +1169,7 @@ describe("agents-proxy MCP surface", () => {
     const list = await rpc("tools/list");
     const start = list.result.tools.find((tool: { name: string }) => tool.name === "start_thread");
     expect(start.inputSchema.required).toEqual(["title", "message"]);
-    expect(Object.keys(start.inputSchema.properties)).toEqual(["title", "message", "bot_id", "folder", "report_back"]);
+    expect(Object.keys(start.inputSchema.properties)).toEqual(["title", "message", "bot_id", "folder", "report_back", "workspace"]);
     expect(start.description).toContain("Leave bot_id out to open it on yourself");
     expect(start.description).toContain("Do not use it for a question you need answered right now");
     expect(start.description).toContain("do not retry it");
