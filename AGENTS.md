@@ -36,6 +36,28 @@ isolation rather than sharing a server between tests. Suites pick free ports
 with `server/testing/ports.ts` and each vitest process gets its own Local VM
 namespace, so shards do not collide.
 
+## Workspace: Auto remembers no place (2026-10-16)
+
+JC: "Il doit toujours être en automatique, et le mode choisi à chaque tour
+lui-même." On every server (solo and organization):
+
+- Auto picks where to work on each turn from the request. No turn writes
+  where it worked (the built-in browser, a claimed VM, the host, the cloud
+  computer) to the conversation: the auto pin of issue #1650 is gone. The
+  composer's Workspace menu keeps showing Auto.
+- Only the person's explicit choice in the composer (`surfaceSource:
+  "user"`) or a legacy pin of unknown origin holds a place
+  (`honouredPin`, `server/surface.ts`).
+- A select_computer move (solo) holds the request it was made in, its
+  continuation and the card continuations under it
+  (`computerSelectionMoves`, in memory), and is dropped at the next fresh
+  request, a person's pin or a failure there.
+- At start, the auto pins an older build recorded are cleared, whatever the
+  bot's Works on (log line "auto-pinned thread(s)").
+- Tests: `server/surface.test.ts`, `server/surface-pins.e2e.test.ts`,
+  `server/host-lazy-claim.e2e.test.ts`, `server/group-local-vm.e2e.test.ts`,
+  `server/place-view.e2e.test.ts`, `server/desktop-bridge.e2e.test.ts`.
+
 ## Routines and webhooks: bearer token on every webhook (2026-10-08)
 
 A webhook triggers a MAUS task from outside (`server/webhooks.ts`,
@@ -2256,13 +2278,9 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
   "Working on" chip. Claude pre-allows only `mcp__sagax-computer`. Rooms are
   unchanged. Tests: `server/auto-computer.test.ts`,
   `server/desktop-bridge.e2e.test.ts`.
-- Auto never becomes the conversation's setting (JC 2026-10-16): an
-  organization server records no auto pin (`autoPinRecorded`,
-  `server/surface.ts`), honours only a person's pin (`honouredPin`) and
-  sweeps the auto pins an older build left at start. Where a turn worked
-  (the built-in browser included) never rewrites the person's choice, and
-  never drops `sagax-desktop` from the next turns. Tests:
-  `server/surface.test.ts`, `server/desktop-bridge.e2e.test.ts`.
+- Auto never becomes the conversation's setting: see "Workspace: Auto
+  remembers no place" above. Where a turn worked never drops
+  `sagax-desktop` from the next turns (`server/desktop-bridge.e2e.test.ts`).
 - A bridge is bound to the person of the session that registered it and to
   a secret only the desktop's main process holds; every poll, result and the
   tunnel re-check that the session is live and still that person. A turn's

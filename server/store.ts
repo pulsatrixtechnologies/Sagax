@@ -2808,9 +2808,12 @@ export class Store {
         // The engine this conversation ran on: its own, else the bot's.
         const moved = task.modelSelection ? retired(task.modelSelection) : botMoved;
         if (moved) {
+          // The conversation keeps the cloud computer it had, held like a
+          // person's pin until they clear it: Auto records no place
+          // (JC 2026-10-16), so an auto pin here would be dropped at once.
           if (!botMoved && computer === undefined && task.surface === undefined && keepsCloud) {
             taskPatch.surface = "cloud";
-            taskPatch.surfaceSource = "auto";
+            taskPatch.surfaceSource = "user";
           }
           // The machine's memory of where Auto landed: with no computer on
           // the new engine, the next turn would be refused there once.

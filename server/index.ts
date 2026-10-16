@@ -680,7 +680,7 @@ import { startAutoVmClaim, type AutoVmClaimSlot, type AutoVmClaimTable } from ".
 import { CONTROL_ACT_WITHIN_MS, CONTROL_BUSY, CONTROL_HANDED_BACK, CONTROL_WAIT_MS, CONTROL_WAITED, controlRefusal, type ControlState } from "./control-client.ts";
 import { computerFreeAfterText, computerParkedText, computerPersonAwayText, computerStoppedWaitingText, computerWaitingText, type ComputerHolder } from "./computer-wait.ts";
 import { modelContextWindow } from "./model-context-window.ts";
-import { autoPinRecorded, browserIsThePlace, cloudPlaceRefusal, computerSkippedNote, computerToolsRefusal, honouredPin, parseSurface, PlaceUnavailableError, placeUnavailable, resolveSurface, surfaceLabel, surfaceOfComputerKind, surfacePrompt, type ComputerWant, type PlaceSource, type Surface } from "./surface.ts";
+import { browserIsThePlace, cloudPlaceRefusal, computerSkippedNote, computerToolsRefusal, honouredPin, parseSurface, PlaceUnavailableError, placeUnavailable, resolveSurface, surfaceLabel, surfaceOfComputerKind, surfacePrompt, type ComputerWant, type PlaceSource, type Surface } from "./surface.ts";
 import { cloudRefusal, type PlaceRow } from "../shared/place-view.ts";
 import {
   PendingTurnCancellations,
@@ -3342,6 +3342,11 @@ const computerSelectionTurns = new Map<string, {
   selected?: Surface;
   previousSurface?: Surface;
 }>();
+/** Where select_computer moved a direct request (solo), held for that
+ * request only: its continuation and the card continuations under it. Never
+ * written to the conversation (Auto remembers no place, JC 2026-10-16), and
+ * dropped at the thread's next fresh request, a person's pin, or a failure. */
+const computerSelectionMoves = new Map<string, Surface>();
 // A bot can also run outside this server — a Telegram gateway, a Slack bot,
 // any long-lived engine process the harness did not spawn. That process never
 // receives a turn-scoped capability, so it cannot ask or delegate to its peers.
@@ -3735,11 +3740,11 @@ class ComputerWaitParked extends Error {
     this.generation = generation;
   }
 }
-/** A failed place never sticks: an Auto-recorded pin to it (a
- * select_computer switch, or where an earlier Auto turn landed) is the
- * machine's memory, not a choice, so the next message runs on Auto. A
- * person's pin stays. */
+/** A failed place never sticks: a select_computer move to it, or an auto
+ * pin an older build left, is the machine's, not a choice, so the next
+ * message runs on Auto. A person's pin stays. */
 function clearFailedAutoPin(botId: string, threadId: string, place: Surface): void {
+  if (computerSelectionMoves.get(threadId) === place) computerSelectionMoves.delete(threadId);
   const pinned = store.taskByThread(botId, threadId);
   if (pinned?.surface === place && pinned.surfaceSource === "auto") {
     store.patchTask(botId, threadId, { surface: undefined, surfaceSource: undefined });
@@ -11350,7 +11355,7 @@ function turnSurfacePlan(bot: BotRecord, runOn?: RoutineRunOn, threadId?: string
   });
   return resolveSurface({
     destination: remote.forceCloud ? "cloud" : bot.computer,
-    pinnedSurface: remote.forceCloud || !threadId ? null : honouredPin(store.taskByThread(bot.id, threadId), IDENTITY.kind === "perspicax"),
+    pinnedSurface: remote.forceCloud || !threadId ? null : honouredPin(store.taskByThread(bot.id, threadId)) ?? computerSelectionMoves.get(threadId) ?? null,
     browserOn: builtInBrowserEnabled(cfg) && bot.browser !== false && instance?.adapter.capabilities.browserMcp === true,
   });
 }
@@ -11488,10 +11493,8 @@ function continueComputerSelection(threadId: string, generation: string | undefi
     if (hasQueuedSteeredMessages(bot.id, threadId)) { drainQueuedSends(); return; }
     if (store.activePath(threadId).findLast(message => message.role === "user" && message.kind === "text")?.id !== selection.source.id) return;
     // The model picked this surface through select_computer; the person
-    // never chose it in the composer or thread settings. It is the
-    // machine's record, so a later Works on change may sweep it. An
-    // organization server never records it (autoPinRecorded).
-    if (IDENTITY.kind !== "perspicax") store.patchTask(bot.id, threadId, { surface, surfaceSource: "auto" });
+    // never chose it. It holds this request only, and is never recorded.
+    computerSelectionMoves.set(threadId, surface);
     const text = `The computer selection is now ${surfaceLabel(surface)}. Continue the user's original request using the tools mounted for this turn; verify the result before claiming success.\n\n${selection.text}`;
     void startTurn(bot.id, text, { threadId, userMessage: selection.source, computerSelectionContinuation: true, speaker: turnSpeakers.get(threadId), dataContext: selection.dataContext }).catch(error => {
       if (store.taskByThread(bot.id, threadId)) store.appendMessage(threadId, { role: "bot", kind: "activity",
@@ -15561,6 +15564,11 @@ async function startTurn(
   const task = store.taskByThread(bot.id, threadId);
   if (!task) throw Object.assign(new Error("no such task"), { status: 404 });
   if (hostedModels && !hostedModels.allows(bot.modelSelection)) throw Object.assign(new Error(hostedModels.error()), { status: 409 });
+  // A fresh request decides where to work again: a select_computer move
+  // held only the request it was made in.
+  if (!opts?.computerSelectionContinuation && !opts?.compactOnly && !warmOnly && (!opts?.cardContinuation || Boolean(opts?.coordination && !opts.coordination.resumed))) {
+    computerSelectionMoves.delete(threadId);
+  }
   const plan = turnSurfacePlan(bot, opts?.runOn, threadId);
   const instance = registry.get(bot.modelSelection.instanceId);
   if (!instance) {
@@ -16315,7 +16323,7 @@ async function startTurn(
       const namedPlace = teamComputer || wants === undefined || wants === "off" ? undefined : wants;
       const placeSource: PlaceSource | undefined = !namedPlace ? undefined
         : opts?.runOn === "cloud" ? "routine"
-        : plan.pinned ? (dispatchTask?.surfaceSource === "auto" ? "auto-pin" : "pin")
+        : plan.pinned ? (honouredPin(dispatchTask) ? "pin" : "auto-pin")
         : "works-on";
       // An engine that cannot use the cloud computer, or a Tool selection
       // that leaves its tools out, is refused here, before anything is
@@ -16343,34 +16351,6 @@ async function startTurn(
           throw new Error("the Local VM moved on to another turn");
         }
         return containerComputerFrame(undefined, undefined, localVmTarget);
-      };
-      /** Pin the conversation at the moment its seat is actually claimed
-       * (issue #1650): the same guards as the dispatch-time pin below, so
-       * a claim landing later in the turn records exactly what a mount-time
-       * pin would have — and a turn that never claims records nothing.
-       * The guard reads live bot and task state because a claim can land
-       * long after dispatch: a Works on change may have swept this
-       * thread's auto pins, or a person may have pinned it meanwhile, and
-       * a deferred claim must resurrect neither nor clobber either. */
-      const autoPinAllowed = () => {
-        const liveBot = store.bot(bot.id);
-        const liveTask = store.taskByThread(bot.id, threadId);
-        return autoPinRecorded({
-          organization: IDENTITY.kind === "perspicax",
-          worksOn: liveBot?.computer,
-          teamComputer: Boolean(teamComputer),
-          runOnCloud: opts?.runOn === "cloud",
-          pinned: Boolean(plan.pinned),
-          computerSkipped: Boolean(computerSkipped),
-          taskSource: liveTask?.surfaceSource,
-          taskExists: Boolean(liveTask),
-        });
-      };
-      const pinAutoSurface = (surface: Surface) => {
-        if (warmOnly) return;
-        if (autoPinAllowed()) {
-          store.patchTask(bot.id, threadId, { surface, surfaceSource: "auto" });
-        }
       };
       /** The exclusive Local VM claim sequence, verbatim from the old inline
        * attach path, shared by dispatch (eager) and the first-screen-call
@@ -16440,11 +16420,6 @@ async function startTurn(
         // forever. The web panel hid the gap by polling the screenshot
         // route itself.
         previewCapture = localVmPreviewFor(localVmTarget, claimThreadId);
-        // Pin on use: this runs for the dispatch-time claim of a VM created
-        // for the turn and for the gate-fired claim of a lazily mounted one
-        // alike — either way the conversation remembers the desktop this
-        // turn actually took, not one it merely mounted (issue #1650).
-        pinAutoSurface("vm");
         return { target: localVmTarget, runtime: localVm.runtime };
       };
 
@@ -16647,7 +16622,6 @@ async function startTurn(
             // The claim restarts the poller with the capture, the way the
             // Local VM's lazy claim does.
             onClaimed: (vpsCapture) => {
-              pinAutoSurface("cloud");
               adoptClaimedCapture(vpsCapture);
             },
             onRejected: surfaceLazyClaimRejection("the VPS computer"),
@@ -16745,7 +16719,6 @@ async function startTurn(
             onRejected: surfaceLazyClaimRejection("this computer"),
             claim: async () => {
               await bindTurnComputer(resourceOwner, "computer:host", true);
-              pinAutoSurface("local");
             },
           });
           integrations.localComputer = gatedLocalComputer(cua, controlIntegration(bot.id, threadId, dispatchClaimId, "this computer"));
@@ -16901,21 +16874,10 @@ async function startTurn(
           };
         }
       }
-      // An Auto conversation remembers where its first turn landed, so later
-      // turns stay there and the composer can show it. Explicit settings are
-      // not recorded: an auto pin yields to a later Works on change (which
-      // sweeps it — store.clearAutoSurfacePins); a person's pin does not.
-      // Pin on use (issue #1650): every computer that registers a claim
-      // slot — a ready Local VM, the VPS, the host fallback, a VM created
-      // for this turn — records its pin inside the claim itself, so a turn
-      // that only mounted tools records nothing. The built-in browser (no
-      // seat to claim) pins here.
-      if (!warmOnly && autoPinAllowed()) {
-        const claimSlot = autoVmClaims.get(threadId);
-        const pinsAtClaim = claimSlot?.owner.generation === resourceOwner.generation;
-        const used = pinsAtClaim ? null : mountedComputer ?? (integrations.browser ? "browser" : null);
-        if (used) store.patchTask(bot.id, threadId, { surface: used, surfaceSource: "auto" });
-      }
+      // Auto remembers no place (JC 2026-10-16): where this turn works, the
+      // built-in browser or a computer it claims, is never written to the
+      // conversation. The next message decides again; only the person's own
+      // pin holds a place (honouredPin).
       const computerSelection = computerSelectionTurns.get(threadId);
       if (computerSelection) computerSelection.mounted = mountedComputer ?? (integrations.browser ? "browser" : undefined);
       // A cancelled adapter can be between accepting sendTurn and revealing
@@ -34150,7 +34112,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // where the work is, and say which room it was.
           const roomTurn = activeGroupTurnForBot(bot.id);
           const target = blockedTarget({ ...bot, threadId: internalCapability.threadId }, roomTurn && { ...roomTurn.group, threadId: roomTurn.threadId });
-          const helpPlace = store.taskByThread(bot.id, internalCapability.threadId)?.surface ?? bot.computer;
+          const helpPlace = honouredPin(store.taskByThread(bot.id, internalCapability.threadId)) ?? computerSelectionMoves.get(internalCapability.threadId) ?? bot.computer;
           const helpWhere = helpPlace && helpPlace !== "off" ? ` on ${surfaceLabel(helpPlace)}` : "";
           notify(
             deliverableNotification("takeover", bot, target.threadId, `${snapshot.helpReason ?? "asked you to take over"}${helpWhere}`, {
@@ -39381,6 +39343,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Where this conversation works, chosen by the person and recorded as
         // theirs, so a later Works on change never sweeps it. Null follows the
         // bot's Works on again. Reachability is the turn's to judge.
+        computerSelectionMoves.delete(current.threadId);
         if (body.surface === null) {
           patch.surface = undefined;
           patch.surfaceSource = undefined;
@@ -42056,17 +42019,14 @@ restoreSteeredMessages();
 restoreAsideMessages(store);
 restoreChannelMessages();
 
-// Repair known auto pins that conflict with Works on before dispatch starts.
-// Legacy pins have no provenance and may be deliberate person selections:
-// preserve them rather than guessing. The sweep is idempotent. An
-// organization server records no auto pin (autoPinRecorded): the ones an
-// older build left on Auto bots go too, so the composer says Auto again.
+// Auto remembers no place (JC 2026-10-16): the auto pins an older build
+// recorded are cleared before dispatch starts, on every server, whatever the
+// bot's Works on. A person's pin and a legacy pin of unknown origin (it may be
+// theirs) stay. The sweep is idempotent.
 {
   let movedAutoPins = 0;
-  for (const bot of store.bots) {
-    if (bot.computer !== undefined || IDENTITY.kind === "perspicax") movedAutoPins += store.clearAutoSurfacePins(bot.id, bot.computer);
-  }
-  if (movedAutoPins) console.log(`Works on: moved ${movedAutoPins} auto-pinned thread(s) to their bot's current Works on`);
+  for (const bot of store.bots) movedAutoPins += store.clearAutoSurfacePins(bot.id, undefined);
+  if (movedAutoPins) console.log(`Auto: cleared ${movedAutoPins} auto-pinned thread(s); Auto picks where to work on each turn`);
 }
 // Organization server, once: every bot thread from before private threads
 // gets its owner (server/thread-privacy.ts), before anyone can read one.

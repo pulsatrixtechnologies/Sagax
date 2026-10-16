@@ -223,24 +223,19 @@ describe("a cloud computer that can't start, against the real server", () => {
     expect(row.tool.place).toEqual({ state: "cc-ended", params: { bot: "Ended Bot" }, source: "works-on" });
   }, 90_000);
 
-  it("an automatic pin that fails is cleared, and the row says the conversation is back on Auto", async () => {
+  it("an automatic pin an older build left is cleared at start, and the conversation runs on Auto", async () => {
     await start();
     const { bot } = await apiOk("POST", "/api/bots", { name: "Pinned Bot" });
     await stop();
-    // Where an earlier Auto turn landed (select_computer, or a claimed
-    // computer): the machine's memory, not a person's choice.
+    // Where an earlier Auto turn landed: the machine's memory, which Auto
+    // no longer keeps (JC 2026-10-16), never a person's choice.
     editSavedBot(bot.id, saved => {
       Object.assign(saved.tasks.find((task: any) => task.threadId === bot.threadId), { surface: "cloud", surfaceSource: "auto" });
     });
     await start();
-    createAnswer = DOWN;
-    await send(bot.id, bot.threadId, "Carry on on the desktop.");
-    const row = await failedRow(bot.threadId);
-    expect(row.tool.name).toBe("error: Cloud computers can't start right now. It isn't anything you did. This conversation is back on Auto. Send your message again.");
-    expect(row.tool.place).toEqual({ state: "cc-unavailable", params: { bot: "Pinned Bot" }, source: "auto-pin" });
-    await idle(bot.id);
     expect(savedTask(bot.id, bot.threadId)?.surface).toBeUndefined();
-    // And so it is: the next message runs on Auto, which never asks Boat.
+    // The next message runs on Auto, which never asks Boat.
+    createAnswer = DOWN;
     const createsBefore = creates;
     const after = (await messages(bot.threadId)).length;
     await send(bot.id, bot.threadId, "What is 2+2?");

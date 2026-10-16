@@ -547,9 +547,14 @@ describe("Group Local VM ownership on the real isolated server", () => {
       expect(boatPrompts).toHaveLength(0);
       expect(boatCalls.filter(call => call.method === "POST" && call.path === "/boxes")).toHaveLength(state === "wake" ? 0 : 1);
       expect(boatCalls.some(call => call.path.endsWith("/resume"))).toBe(state === "wake");
+      // The move held that request only (JC 2026-10-16: nothing is recorded,
+      // each turn decides again): the next message follows the bot's own
+      // Workspace, and the bot may select the cloud computer again.
+      expect((await api("GET", "/api/bots?messages=0")).bots.find((b: any) => b.id === bot.id).tasks[0]).not.toHaveProperty("surface");
       rmSync(dumpFile, { force: true });
       await api("POST", `/api/bots/${bot.id}/messages`, { text: "Inspect the current page on the same cloud VM" });
-      expect(harnessComputer(await dump())).toBe(true);
+      expect(harnessComputer(await dump())).toBe(false);
+      writeFileSync(finishFile, "finish");
       await idle(bot.id);
       expect(boatPrompts).toHaveLength(0);
       expect(boatCalls.filter(call => call.method === "POST" && call.path === "/boxes")).toHaveLength(state === "wake" ? 0 : 1);
@@ -595,13 +600,9 @@ describe("Group Local VM ownership on the real isolated server", () => {
       await idle(bot.id);
       const state = await api("GET", "/api/bots?messages=30");
       const saved = state.bots.find((b: any) => b.id === bot.id);
-      expect(saved.tasks.find((task: any) => task.threadId === bot.threadId).surface).toBe("vm");
-      // the model picked the VM: the pin is the machine's record, not the
-      // person's, so a Works on change sweeps it rather than the thread
-      // staying stuck on the machine's choice
-      await api("PATCH", `/api/bots/${bot.id}`, { computer: "local", approvalMode: "ask" });
-      const swept = (await api("GET", "/api/bots?messages=0")).bots.find((b: any) => b.id === bot.id);
-      expect(swept.tasks.find((task: any) => task.threadId === bot.threadId).surface).toBeUndefined();
+      // the model picked the VM for this request only: the conversation
+      // records no place, so the next message decides again (JC 2026-10-16)
+      expect(saved.tasks.find((task: any) => task.threadId === bot.threadId)).not.toHaveProperty("surface");
       expect(saved.messages.filter((message: any) => message.role === "user" && message.kind === "text")).toHaveLength(1);
       expect((await call("GET")).status).toBe(401);
     } finally {

@@ -267,7 +267,8 @@ describe("removing the Computer engine", () => {
       .toEqual([`This conversation now uses ${ENGINE_NAME}. ${REMOVED} It still works on Iris's cloud computer.`]);
     const mixedTask = movedMixed.tasks.find((task: any) => task.threadId === mixedConversation.threadId);
     expect(mixedTask.modelSelection).toEqual(replacement);
-    expect(mixedTask).toMatchObject({ surface: "cloud", surfaceAuto: true });
+    expect(mixedTask).toMatchObject({ surface: "cloud" });
+    expect(mixedTask).not.toHaveProperty("surfaceAuto");
 
     // New bots get the replacement at once, not after another restart.
     const defaults = await server.api("GET", "/api/bot-defaults");

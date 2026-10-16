@@ -1,5 +1,6 @@
 // Surface-pin provenance end to end: a person's pin survives a Works on
-// change, the machine's recorded pin yields, and the boot repair preserves
+// change, Auto records no pin at all (JC 2026-10-16: Auto picks each turn),
+// the boot repair clears the auto pins an older build left, and it preserves
 // unknown pins from before provenance existed. Real server, fake engine, and a
 // restartable fixture home so tests can seed bots.json between boots — the
 // sourceless pin shapes only exist on disk.
@@ -169,23 +170,19 @@ describe("surface pin provenance against the real server", () => {
     resetTurn();
     await apiOk("POST", `/api/bots/${bot.id}/messages`, { text: "Work slowly.", threadId: task.threadId });
     await busy(bot.id, task.threadId);
-    // The turn's first screen call claims the ready VM — a mount alone
-    // records nothing (issue #1650)…
+    // The turn's first screen call claims the ready VM, and the running
+    // Auto turn records nothing: the conversation stays on Auto.
     expect(await gate(mountedComputer(await dump()))).toEqual({ held: false, helpOpen: false });
-    // The running Auto turn records where it landed with explicit provenance.
-    await until(() => savedTask(bot.id, task.threadId)?.surface === "vm", Boolean);
     const refused = await api("PATCH", `/api/bots/${bot.id}/tasks/${task.threadId}`, { surface: "vm" });
     expect(refused.status).toBe(409);
-    const pinned = savedTask(bot.id, task.threadId)!;
-    expect(pinned.surface).toBe("vm");
-    expect(pinned.surfaceSource).toBe("auto");
+    expect(savedTask(bot.id, task.threadId)).not.toHaveProperty("surface");
     writeFileSync(finishFile, "finish");
     await idle(bot.id, task.threadId);
     await apiOk("DELETE", `/api/bots/${bot.id}`);
     await stop();
   });
 
-  it("sweeps only conflicting auto pins when Works on is set, and nothing when it returns to Auto", async () => {
+  it("clears every auto pin an older build left at boot, and keeps the person's pin", async () => {
     await start();
     const { bot } = await apiOk("POST", "/api/bots", { name: "Sweep Bot" });
     const [autoMismatch, personMismatch, autoMatch] = (await Promise.all([
@@ -200,17 +197,17 @@ describe("surface pin provenance against the real server", () => {
       Object.assign(saved.tasks.find((task: any) => task.threadId === autoMismatch.threadId), { surface: "local", surfaceSource: "auto" });
       Object.assign(saved.tasks.find((task: any) => task.threadId === autoMatch.threadId), { surface: "vm", surfaceSource: "auto" });
     });
-    await start(); // Works on is still Auto: the boot repair must leave them alone.
-    expect(output).not.toContain("auto-pinned");
-    expect(savedTask(bot.id, autoMismatch.threadId)?.surface).toBe("local");
-    await apiOk("PATCH", `/api/bots/${bot.id}`, { computer: "vm" });
+    await start(); // Auto remembers no place: both auto pins go, once.
+    expect(output.match(/auto-pinned thread/g)).toHaveLength(1);
     expect(savedTask(bot.id, autoMismatch.threadId)?.surface).toBeUndefined();
+    expect(savedTask(bot.id, autoMatch.threadId)?.surface).toBeUndefined();
     expect(savedTask(bot.id, personMismatch.threadId)).toMatchObject({ surface: "local", surfaceSource: "user" });
-    expect(savedTask(bot.id, autoMatch.threadId)?.surface).toBe("vm");
+    await apiOk("PATCH", `/api/bots/${bot.id}`, { computer: "vm" });
     await apiOk("PATCH", `/api/bots/${bot.id}`, { computer: null });
     expect(savedTask(bot.id, personMismatch.threadId)).toMatchObject({ surface: "local", surfaceSource: "user" });
-    expect(savedTask(bot.id, autoMatch.threadId)?.surface).toBe("vm");
-    expect(savedTask(bot.id, autoMismatch.threadId)?.surface).toBeUndefined();
+    await stop();
+    await start();
+    expect(output).not.toContain("auto-pinned thread");
     await apiOk("DELETE", `/api/bots/${bot.id}`);
     await stop();
   });
@@ -271,31 +268,28 @@ describe("surface pin provenance against the real server", () => {
     await stop();
   });
 
-  it("records future auto pins and moves them when Works on changes", async () => {
+  it("records no pin when an Auto turn claims the VM, and the next turn decides again", async () => {
     await start();
     const { bot } = await apiOk("POST", "/api/bots", { name: "New Auto Pin Bot" });
     const { task } = await apiOk("POST", `/api/bots/${bot.id}/tasks`, {});
     resetTurn();
     await apiOk("POST", `/api/bots/${bot.id}/messages`, { text: "Use the available computer.", threadId: task.threadId });
     expect(mountedComputer(await dump()).args.some((arg: string) => arg.includes("container-mcp"))).toBe(true);
-    // …and a turn that has only mounted the VM pins nothing yet: the first
-    // screen tools/call takes the seat and records the pin (issue #1650).
+    // The first screen tools/call takes the seat, and the conversation
+    // stays on Auto: nothing is recorded, before or after.
     expect(savedTask(bot.id, task.threadId)).not.toHaveProperty("surface");
     expect(await gate(mountedComputer(await dump()))).toEqual({ held: false, helpOpen: false });
-    await until(() => savedTask(bot.id, task.threadId)?.surface === "vm", Boolean);
-    expect(savedTask(bot.id, task.threadId)).toMatchObject({ surface: "vm", surfaceSource: "auto" });
-    expect(await threadState(bot.id, task.threadId)).not.toHaveProperty("surfaceSource");
-    // Clients see only that this pin is the machine's own record.
-    expect(await threadState(bot.id, task.threadId)).toMatchObject({ surface: "vm", surfaceAuto: true });
-    expect(savedTask(bot.id, task.threadId)).not.toHaveProperty("surfaceAuto");
     writeFileSync(finishFile, "finish");
     await idle(bot.id, task.threadId);
+    expect(savedTask(bot.id, task.threadId)).not.toHaveProperty("surface");
+    expect(savedTask(bot.id, task.threadId)).not.toHaveProperty("surfaceSource");
+    const thread = await threadState(bot.id, task.threadId);
+    expect(thread).not.toHaveProperty("surface");
+    expect(thread).not.toHaveProperty("surfaceAuto");
     await stop();
     await start();
-    expect(savedTask(bot.id, task.threadId)).toMatchObject({ surface: "vm", surfaceSource: "auto" });
+    expect(savedTask(bot.id, task.threadId)).not.toHaveProperty("surface");
     await apiOk("PATCH", `/api/bots/${bot.id}`, { computer: "off" });
-    expect(savedTask(bot.id, task.threadId)?.surface).toBeUndefined();
-    expect(savedTask(bot.id, task.threadId)?.surfaceSource).toBeUndefined();
     resetTurn();
     await apiOk("POST", `/api/bots/${bot.id}/messages`, { text: "Continue without a computer.", threadId: task.threadId });
     expect(mountedComputer(await dump())).toBeUndefined();
@@ -350,10 +344,10 @@ describe("surface pin provenance against the real server", () => {
     await stop();
   });
 
-  // A place that fails never sticks (the Hosted desktop incident): the
-  // machine's own pin to it is cleared so the next message runs on Auto,
-  // while a person's pin stays and the failure names the composer control.
-  it("clears a select_computer pin to a cloud computer that fails, and keeps a person's pin", async () => {
+  // A place that fails never sticks (the Hosted desktop incident): a
+  // select_computer move holds only that request, so the next message runs
+  // on Auto, while a person's pin stays and the failure names the composer.
+  it("a select_computer move to a cloud computer that fails leaves Auto, and a person's pin stays", async () => {
     await start();
     const { bot } = await apiOk("POST", "/api/bots", { name: "Failed place bot" });
     const { task } = await apiOk("POST", `/api/bots/${bot.id}/tasks`, {});

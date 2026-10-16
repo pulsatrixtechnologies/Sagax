@@ -159,22 +159,22 @@ describe("lazy host claim and pin on use (issue #1650)", () => {
     expect(computer.args.some((arg: string) => arg.includes("local-computer-proxy"))).toBe(true);
     // …but the turn pinned nothing and took no seat.
     expect(savedTask(holder.id, task.threadId)).not.toHaveProperty("surface");
-    // Another turn's first screen call claims instantly — proof the
-    // screen-less turn holds no computer:host claim — and pins its own
-    // conversation, never the screen-less one's.
+    // Another turn's first screen call claims instantly: proof the
+    // screen-less turn holds no computer:host claim. Neither conversation
+    // records a place (Auto picks each turn).
     const { bot: claimer } = await apiOk("POST", "/api/bots", { name: "Host Claim Bot" });
     const { task: claimTask } = await apiOk("POST", `/api/bots/${claimer.id}/tasks`, {});
     await apiOk("POST", `/api/bots/${claimer.id}/messages`, { text: "Work slowly too.", threadId: claimTask.threadId });
     await busy(claimer.id, claimTask.threadId);
     expect(await gate(mountedComputer(await dumpFor(claimer.id)))).toEqual({ held: false, helpOpen: false });
-    await until(() => savedTask(claimer.id, claimTask.threadId)?.surface === "local", Boolean);
+    expect(savedTask(claimer.id, claimTask.threadId)).not.toHaveProperty("surface");
     expect(savedTask(holder.id, task.threadId)).not.toHaveProperty("surface");
     writeFileSync(finishFile, "finish");
     await idle(holder.id, task.threadId);
     await idle(claimer.id, claimTask.threadId);
   });
 
-  itAutoHost("claims the seat and records the pin on the first screen tool call", async () => {
+  itAutoHost("claims the seat on the first screen tool call and records no pin", async () => {
     await start();
     const { bot } = await apiOk("POST", "/api/bots", { name: "Host Screen Bot" });
     const { task } = await apiOk("POST", `/api/bots/${bot.id}/tasks`, {});
@@ -185,9 +185,8 @@ describe("lazy host claim and pin on use (issue #1650)", () => {
     expect(savedTask(bot.id, task.threadId)).not.toHaveProperty("surface");
     // First screen tools/call: the gate fires the deferred exclusive claim…
     expect(await gate(computer)).toEqual({ held: false, helpOpen: false });
-    // …and the conversation pins the desktop this turn now actually holds.
-    await until(() => savedTask(bot.id, task.threadId)?.surface === "local", Boolean);
-    expect(savedTask(bot.id, task.threadId)).toMatchObject({ surface: "local", surfaceSource: "auto" });
+    // …and the conversation stays on Auto: holding the desktop is not a pin.
+    expect(savedTask(bot.id, task.threadId)).not.toHaveProperty("surface");
     // The seat stays held for the rest of the turn: another turn's first
     // screen call waits for it, then — still taken — is told so honestly,
     // through the real client, never as a person's hold.
@@ -233,7 +232,7 @@ describe("lazy host claim and pin on use (issue #1650)", () => {
     const next = await timed(gate(waiter.computer));
     expect(next.value).toEqual({ held: false, helpOpen: false });
     expect(next.ms).toBeLessThan(ACT_WITHIN_MS);
-    await until(() => savedTask(waiter.bot.id, waiter.threadId)?.surface === "local", Boolean);
+    expect(savedTask(waiter.bot.id, waiter.threadId)).not.toHaveProperty("surface");
 
     // A person takes the wheel: the call waits for them, and once they hand
     // it back it is answered without acting — the screen moved under them.

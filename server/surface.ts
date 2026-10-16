@@ -69,13 +69,10 @@ export function computerSkippedNote(cause: string): string {
 /** Decide what a turn mounts. One place per turn: a computer destination
  * mounts only that computer (web work happens in its own browser), a browser
  * destination mounts only the built-in browser, Off mounts nothing. A
- * conversation pin — set by the person from the composer, or by the
- * conversation's own first turn on Auto — wins over the bot's default, so a
- * thread never changes place under someone; only Off overrides it. An
- * Auto-recorded pin is the machine's memory, not a person's choice: it yields
- * when the bot's Works on later changes and no longer matches, while a
- * person's pin (including legacy pins of unknown origin) keeps winning until
- * they clear it. Auto without a pin leaves
+ * conversation pin (the person's, from the composer: honouredPin) wins over
+ * the bot's default, so a thread never changes place under someone; only Off
+ * overrides it. A select_computer move holds one request the same way and is
+ * never recorded: Auto remembers no place (JC 2026-10-16). Auto without a pin leaves
  * the computer choice to the dispatch, which then mounts the browser only
  * when no computer was reached. A pin the turn cannot honour is retained and
  * reported instead of being swapped silently. */
@@ -117,37 +114,14 @@ export function resolveSurface(input: {
   return { computer: undefined, browser: browserOn, pinned: null, note: "" };
 }
 
-/** Whether a turn records where an Auto conversation landed (an auto pin,
- * `surfaceSource: "auto"`). Solo server: an Auto conversation the person did
- * not pin remembers its first place (issue #1650). Organization server:
- * never. Auto there picks per step and resets with each message
- * (server/auto-computer.ts), so a turn that used the built-in browser must
- * not become the conversation's setting: the composer then showed Browser
- * and the next turns lost the person's computer (JC 2026-10-16). */
-export function autoPinRecorded(input: {
-  organization: boolean;
-  /** The bot's Works on; undefined = Auto. */
-  worksOn: Destination;
-  teamComputer: boolean;
-  runOnCloud: boolean;
-  /** The turn was held to a pin already. */
-  pinned: boolean;
-  computerSkipped: boolean;
-  taskSource: "user" | "auto" | undefined;
-  taskExists: boolean;
-}): boolean {
-  if (input.organization) return false;
-  return input.worksOn === undefined && !input.teamComputer && !input.runOnCloud && !input.pinned && !input.computerSkipped &&
-    input.taskExists && input.taskSource !== "user";
-}
-
-/** The conversation pin a turn honours. A person's pin (and a legacy pin of
- * unknown origin) always; an Auto-recorded one only on a solo server, since
- * an organization server never treats where Auto landed as a choice
- * (autoPinRecorded). */
-export function honouredPin(task: { surface?: Surface; surfaceSource?: "user" | "auto" } | null | undefined, organization: boolean): Surface | null {
-  if (!task?.surface) return null;
-  if (organization && task.surfaceSource === "auto") return null;
+/** The conversation pin a turn honours: the person's own pin, or a legacy
+ * pin of unknown origin (it may be theirs). Never an Auto-recorded one (an
+ * older build's `surfaceSource: "auto"`): Auto picks where to work on each
+ * turn and remembers no place, on every server (JC 2026-10-16). A turn that
+ * used the built-in browser once had the composer show Browser and the next
+ * turns lose the person's computer. */
+export function honouredPin(task: { surface?: Surface; surfaceSource?: "user" | "auto" } | null | undefined): Surface | null {
+  if (!task?.surface || task.surfaceSource === "auto") return null;
   return task.surface;
 }
 

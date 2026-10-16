@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   browserIsThePlace,
-  autoPinRecorded,
   cloudPlaceRefusal,
   computerSkippedNote,
   honouredPin,
@@ -303,36 +302,17 @@ describe("placeUnavailable", () => {
   });
 });
 
-// JC 2026-10-16: on an organization server the person chose Auto, the next
-// turn showed (and ran on) Browser, and the bot lost sagax-desktop. Auto there
-// picks per step and resets with each message: what a turn used is never the
-// conversation's setting.
-describe("auto pins", () => {
-  const solo = { organization: false, worksOn: undefined, teamComputer: false, runOnCloud: false, pinned: false, computerSkipped: false, taskSource: undefined, taskExists: true } as const;
-
-  it("an organization server never records where an Auto turn landed", () => {
-    expect(autoPinRecorded(solo)).toBe(true);
-    expect(autoPinRecorded({ ...solo, organization: true })).toBe(false);
-  });
-
-  it("a solo server records it only for an Auto conversation the person did not pin", () => {
-    expect(autoPinRecorded({ ...solo, worksOn: "cloud" })).toBe(false);
-    expect(autoPinRecorded({ ...solo, teamComputer: true })).toBe(false);
-    expect(autoPinRecorded({ ...solo, runOnCloud: true })).toBe(false);
-    expect(autoPinRecorded({ ...solo, pinned: true })).toBe(false);
-    expect(autoPinRecorded({ ...solo, computerSkipped: true })).toBe(false);
-    expect(autoPinRecorded({ ...solo, taskSource: "user" })).toBe(false);
-    expect(autoPinRecorded({ ...solo, taskExists: false })).toBe(false);
-    expect(autoPinRecorded({ ...solo, taskSource: "auto" })).toBe(true);
-  });
-
-  it("an organization server honours only the person's pin, never an Auto-recorded one", () => {
-    expect(honouredPin({ surface: "browser", surfaceSource: "auto" }, true)).toBeNull();
-    expect(honouredPin({ surface: "browser", surfaceSource: "user" }, true)).toBe("browser");
-    // a legacy pin of unknown origin may be the person's: it stays
-    expect(honouredPin({ surface: "local" }, true)).toBe("local");
-    expect(honouredPin({ surface: "browser", surfaceSource: "auto" }, false)).toBe("browser");
-    expect(honouredPin(undefined, true)).toBeNull();
-    expect(honouredPin({}, false)).toBeNull();
+// JC 2026-10-16: "Il doit toujours être en automatique, et le mode choisi à
+// chaque tour lui-même." Auto never remembers a place, on any server: where a
+// turn worked is never the conversation's setting. Only the person's own pin
+// (or a legacy pin of unknown origin, which may be theirs) holds a place.
+describe("honouredPin", () => {
+  it("honours the person's pin and never an Auto-recorded one", () => {
+    expect(honouredPin({ surface: "browser", surfaceSource: "auto" })).toBeNull();
+    expect(honouredPin({ surface: "vm", surfaceSource: "auto" })).toBeNull();
+    expect(honouredPin({ surface: "browser", surfaceSource: "user" })).toBe("browser");
+    expect(honouredPin({ surface: "local" })).toBe("local");
+    expect(honouredPin(undefined)).toBeNull();
+    expect(honouredPin({})).toBeNull();
   });
 });

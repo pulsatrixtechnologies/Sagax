@@ -134,10 +134,9 @@ describe("moving saved bots off the engine", () => {
     expect(reloaded.bot(bot.id)?.computer).toBeUndefined();
     const task = reloaded.taskByThread(bot.id, second.threadId)!;
     expect(task.modelSelection).toEqual(replacement);
-    // Pinned the way an Auto turn records where it landed, so a later Works
-    // on change still moves it.
+    // Held like a person's pin: Auto records no place (JC 2026-10-16).
     expect(task.surface).toBe("cloud");
-    expect(task.surfaceSource).toBe("auto");
+    expect(task.surfaceSource).toBe("user");
     expect(reloaded.taskByThread(bot.id, bot.threadId)?.surface).toBeUndefined();
   });
 
