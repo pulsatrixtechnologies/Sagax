@@ -45,6 +45,24 @@ AND the registry allows it for the person answering
 (`server/terminal-resources/registry.ts`, `terminalResourceAllowed`); a
 refusal leaves the card open.
 
+## The widget
+
+The terminal takes the whole width of the conversation column and refits its
+grid when the column changes (`src/lib/chat-bubble-width.ts`, fit addon). Its
+font stack leads with the bundled Symbols Nerd Font Mono, limited to the icon
+ranges, so prompt themes (Powerlevel10k, Oh My Posh, Starship) draw their
+icons (`src/components/terminal/terminal-font.ts`, license in
+`third_party/nerd-fonts-symbols`).
+
+**Detach** moves the same terminal (same xterm, same WebSocket, no new
+connection) into a floating window (`src/lib/floating-windows.ts`,
+`src/components/floating/`): several at once, stacked, focus on click, each
+closes on its own and brings the terminal back to its chat row. The session
+(`src/components/terminal/terminal-session.ts`) lives while the chat row or
+its window holds it, and ends a moment after both let go. Terminal windows
+are not reopened after a restart (the shell session is gone); their position
+and size are remembered per session.
+
 ## How each destination runs
 
 | Destination | Path |

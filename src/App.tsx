@@ -36,6 +36,7 @@ import { RetroAssistantHost } from "@/components/RetroAssistantHost";
 import { AchievementToaster } from "@/components/achievements/AchievementToaster";
 import { reportAchievement } from "@/lib/achievements";
 import { FloatingBotsHost } from "@/components/FloatingBotsHost";
+import { FloatingWindowsHost } from "@/components/floating/FloatingWindowsHost";
 import { CallEngineHost } from "@/components/CallView";
 import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
 import { activeLocale, setLocale, t } from "@/lib/i18n";
@@ -512,6 +513,8 @@ function Shell() {
           onClose={() => dispatch({ type: "toggleShortcuts", open: false })}
         />
       )}
+      {/* detached terminals and widgets: over the app, under the modals (z-40) */}
+      <FloatingWindowsHost />
       {/* mounted after the modals: same z-50 tier, so DOM order keeps the
           palette on top when one of them is open underneath */}
       <CommandPalette onOpenChange={setPaletteOpen} onNewConversation={openCompose} />

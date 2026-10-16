@@ -2,11 +2,13 @@
  * shipped in the app. The real TerminalChatEmbed is drawn in a bot bubble of
  * a transcript-sized column; its WebSocket is answered in the page with a
  * Powerlevel10k-style prompt (Nerd Font icons, Powerline separators), so
- * nothing connects anywhere.
+ * nothing connects anywhere. The second terminal and the floating windows
+ * host show detached terminals (several at once, stacked).
  * ?skin=<id>&lang=<code>&before=1 (bubble width before the fix)
  * &dom=1 (no WebGL: the DOM renderer the widget falls back to) */
 import { StrictMode, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import { FloatingWindowsHost } from "../components/floating/FloatingWindowsHost";
 import { TerminalChatEmbed } from "../components/terminal/TerminalChatEmbed";
 import { CHAT_BUBBLE_WIDTH_CLASS } from "../lib/chat-bubble-width";
 import { setLocale } from "../lib/i18n";
@@ -52,6 +54,9 @@ class GalleryWebSocket {
   onerror: (() => void) | null = null;
   onclose: (() => void) | null = null;
   constructor() {
+    // read by the screenshot script: a detach must not open a second socket
+    const counter = window as unknown as { galleryTerminalSockets?: number };
+    counter.galleryTerminalSockets = (counter.galleryTerminalSockets ?? 0) + 1;
     setTimeout(() => {
       this.onopen?.();
       this.onmessage?.({ data: PROMPT });
@@ -69,6 +74,13 @@ window.fetch = async (input, init) => {
 };
 
 const EMBED: TerminalEmbed = { sessionId: "gallery", status: "live", label: "Cet ordinateur", hostLabel: "Jean-Christophes-Macbook-Pro.local", provider: "desktop", resourceId: "mine" };
+const EMBED_2: TerminalEmbed = { sessionId: "gallery-2", status: "live", label: "Ordinateur infonuagique", hostLabel: "Environnement serveur", provider: "sandbox", resourceId: "mine" };
+// each visit starts without remembered windows
+try {
+  localStorage.removeItem("omb.floatingWindows.v1");
+} catch {
+  /* storage blocked */
+}
 
 const GLYPHS = "      3.11  ";
 
@@ -115,7 +127,13 @@ function Gallery() {
             <TerminalChatEmbed embed={EMBED} />
           </div>
         </div>
+        <div className="flex w-full flex-col items-start">
+          <div data-chat-bubble="" className={`rounded-[18px] bg-card px-3 py-[7px] text-[13px] leading-5 text-ink ${CHAT_BUBBLE_WIDTH_CLASS[before ? "fit" : "column"]}`}>
+            <TerminalChatEmbed embed={EMBED_2} />
+          </div>
+        </div>
       </div>
+      <FloatingWindowsHost />
     </div>
   );
 }
