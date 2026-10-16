@@ -59,7 +59,7 @@ final class Session: ObservableObject {
     private(set) var state = CompanionState() {
         didSet { stateDidChange() }
     }
-    /// The live text, for the few views that draw it (`LiveStreamReader`).
+    /// The live text, for the few views that draw it (`ChatLiveTail`).
     let streamingStore = StreamingStore()
     /// Every state change, including streamed tokens at most once per
     /// display frame. Starts with the current state, like `@Published`.

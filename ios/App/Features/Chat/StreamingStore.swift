@@ -80,16 +80,6 @@ final class FrameCoalescer {
     }
 }
 
-/// Re-renders only its content when the live text changes, so the screen
-/// around it does not. The content may read `session.state` too: the store
-/// publishes after the fold has already taken the tokens.
-struct LiveStreamReader<Content: View>: View {
-    @ObservedObject var store: StreamingStore
-    @ViewBuilder let content: (StreamingStore) -> Content
-
-    var body: some View { content(store) }
-}
-
 /// Calls `grew` each time a thread's live answer gets longer, from a view that
 /// observes the store instead of the screen that owns the scroll position.
 struct LiveStreamFollower: View {
@@ -105,4 +95,18 @@ struct LiveStreamFollower: View {
                 grew(length)
             }
     }
+}
+
+/// The chat composer's text, observed only by the composer (`composerSlot`).
+@MainActor
+final class ComposerDraftModel: ObservableObject {
+    @Published var text = ""
+}
+
+/// Re-renders its content, and only its content, when `model` publishes.
+struct ObservingView<Model: ObservableObject, Content: View>: View {
+    @ObservedObject var model: Model
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { content() }
 }

@@ -41,10 +41,39 @@ enum AttachmentImportError: LocalizedError {
     }
 }
 
+/// Thumbnails of the pictures waiting in the composer, decoded once per
+/// attachment off the main thread. The chip used to decode the full picture
+/// in `body`, on every keystroke while it was there.
+@MainActor
+enum PendingAttachmentThumbnails {
+    private static let cache = NSCache<NSUUID, UIImage>()
+    /// 34 pt at 3x, rounded up.
+    private static let maximumPixelSize = 120
+
+    static func cached(_ attachment: PendingMessageAttachment) -> UIImage? {
+        cache.object(forKey: attachment.id as NSUUID)
+    }
+
+    static func load(_ attachment: PendingMessageAttachment) async -> UIImage? {
+        if let hit = cached(attachment) { return hit }
+        let data = attachment.data
+        let size = maximumPixelSize
+        let decoded = await Task.detached(priority: .userInitiated) {
+            decodeAttachmentThumbnail(data, maximumPixelSize: size)
+        }.value
+        guard let cgImage = decoded.value else { return nil }
+        let image = UIImage(cgImage: cgImage)
+        cache.setObject(image, forKey: attachment.id as NSUUID)
+        return image
+    }
+}
+
 struct PendingAttachmentChip: View {
     @Environment(\.themePalette) var themePalette
     let attachment: PendingMessageAttachment
     let remove: () -> Void
+    @State private var thumbnail: UIImage?
+    @State private var thumbnailFailed = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -83,13 +112,24 @@ struct PendingAttachmentChip: View {
 
     @ViewBuilder
     private var preview: some View {
-        if attachment.kind == .image, let image = UIImage(data: attachment.data) {
+        if attachment.kind == .image, let image = thumbnail ?? PendingAttachmentThumbnails.cached(attachment) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
                 .frame(width: 34, height: 34)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .accessibilityHidden(true)
+        } else if attachment.kind == .image, !thumbnailFailed {
+            // decoding (a few milliseconds, once per attachment)
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Theme.cardRaised)
+                .frame(width: 34, height: 34)
+                .accessibilityHidden(true)
+                .task(id: attachment.id) {
+                    let image = await PendingAttachmentThumbnails.load(attachment)
+                    thumbnail = image
+                    thumbnailFailed = image == nil
+                }
         } else {
             Image(systemName: "doc.fill")
                 .font(.system(size: 15, weight: .medium))

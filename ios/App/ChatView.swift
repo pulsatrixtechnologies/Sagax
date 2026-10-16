@@ -38,7 +38,19 @@ struct ChatView: View {
     @Environment(\.desktopChat) var desktopChat
     /// The desktop transcript's tokens (set with `desktopChat`).
     @Environment(\.desktopChatText) var desktopChatText
-    @State var draft = ""
+    /// The composer's text. Held in a model this screen does not observe:
+    /// a keystroke re-renders the composer (`composerSlot` observes it), not
+    /// the transcript above it.
+    @State var draftModel = ComposerDraftModel()
+    var draft: String {
+        get { draftModel.text }
+        nonmutating set { if draftModel.text != newValue { draftModel.text = newValue } }
+    }
+    /// The field's binding to `draft`.
+    var draftBinding: Binding<String> {
+        let model = draftModel
+        return Binding(get: { model.text }, set: { if model.text != $0 { model.text = $0 } })
+    }
     @State var revealedMessageId: String?
     @State var showingTasks = false
     @State var showingComputer = false
