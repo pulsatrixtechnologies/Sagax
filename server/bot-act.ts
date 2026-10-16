@@ -73,6 +73,9 @@ export type BotActService = {
     answerer: BotActAnswerer;
     sharedServer: boolean;
   }): Promise<{ handled: false } | { handled: true; status: number; body: Record<string, unknown> }>;
+  /** What a waiting act card would do (its route and body), for the
+   * security key step-up; undefined once it is gone. */
+  target(requestId: string): ActTarget | undefined;
 };
 
 export function createBotActService(deps: BotActDeps): BotActService {
@@ -90,6 +93,9 @@ export function createBotActService(deps: BotActDeps): BotActService {
   const refuse = (status: number, error: string): BotActResult => ({ status, body: { error } });
 
   return {
+    target(requestId) {
+      return pending.get(requestId)?.target;
+    },
     async handle(input) {
       sweep();
       const actor = actorForTurn(input.facts);

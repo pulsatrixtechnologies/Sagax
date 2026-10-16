@@ -239,13 +239,21 @@ in `server/routes/security-keys.ts`. Rules, covered by
 `src/state/store.step-up.test.ts`:
 
 - Classes: destructive, irreversible, money, external-send (the risk classes
-  custom rules read from the call), always-grant (Always allow, remember a
-  command, an owner rule that allows), publish-page, rule-change (an owner
-  rule from a card, a tool that edits rules; in Settings, a custom or owner
-  rule that allows and a looser permission mode). Each person's own, on an
-  organization server too: the answering person's choice applies.
-- Every answer path asks `stepUpGate` before an Allow: both `/respond`
-  routes, `/always-allow`, a bot PATCH adding an `alwaysAllow` key, a Live
+  custom rules read from the call; any shell command that is not a plain
+  read, an opaque one included, is destructive and irreversible),
+  always-grant (Always allow, remember a command, a saved command, an owner
+  rule that allows, a routine created or changed), publish-page, rule-change
+  (an owner rule from a card, a tool that edits rules; in Settings, a rule
+  that allows, a deny or ask rule removed, turned off or softened, a looser
+  permission mode, and any looser approval level of a bot or a thread). A
+  terminal is destructive and irreversible. A bot act card is classed by its
+  route (DELETE destructive, any write irreversible, gone fails closed) and
+  its step-up is bound to that route. Each person's own, on an organization
+  server too: the answering person's choice applies; a caller with no person
+  (a bot acting for its person) gets the bot owner's classes, and with no
+  owner anyone's on the server, and is refused (it cannot sign).
+- Every answer path asks `stepUpGate` before an Allow, before anything that
+  settles a card (a bot act included): both `/respond` routes, `/always-allow`, a bot PATCH adding an `alwaysAllow` key, a Live
   call (`respondToCard`) and the console (`answerCardFromConsole`). Paths
   that cannot carry a step-up (voice, console, AI clients through
   `sagax_approve`) are refused for a card that needs one, never let through.
@@ -257,11 +265,28 @@ in `server/routes/security-keys.ts`. Rules, covered by
   own grant (bot and key). Each grant is used once; any mismatch (another
   person, another card, a changed card) burns the ceremony. A replayed
   WebAuthn answer fails on its challenge, a cloned key on its counter.
+- User verification is required (a PIN or biometrics, not a touch alone).
+  The signature counter never goes back, even for two answers verified at
+  once. The ceremony page shows the card's title, what it does and an
+  8-character fingerprint of what the key signs.
 - No key for this address (RP ID), a removed key, or an unreadable
   `security-keys.json` (0600): refused. Removing a key, removing a class or
-  adding a second key needs an existing key; the last key removed clears the
-  classes. Recovery when every key is lost: remove the person's entry from
-  `security-keys.json` on the server.
+  adding a second key (bound to its name and address) needs an existing
+  key; the first key needs a sign-in younger than 15 minutes (or this
+  computer's own person); every addition is audited. The last key removed
+  clears the classes.
+- Recovery when every key is lost: stop the server, remove the person's
+  entry from `security-keys.json`, start it again. The file's digest
+  (`security-keys.json.sha256`) no longer matches, so the start logs a
+  warning and writes a `security_keys.file_edited` audit row.
+- A bot never reaches these settings through act: `shared/bot-act.ts`
+  refuses `/always-allow`, `/command-allowlist`, `/permission-mode`,
+  `/tool-grants`, `/api/security-keys`, `/api/custom-rules`,
+  `/api/approval-rules` and any `alwaysAllow`, `autoApprove` or `stepUp`
+  field.
+- The desktop's trusted approval channel carries no step-up: the app asks
+  `POST /api/security-keys/approval-mode` first, which uses the step-up and
+  leaves a one-time allowance (60 seconds) for that bot, thread and level.
 - RP ID: the https host the request came through (`x-forwarded-proto`), or
   `SAGAX_WEBAUTHN_RP_ID` (with `SAGAX_WEBAUTHN_ORIGINS`); never an IP address.
   The desktop's own page (127.0.0.1) runs the ceremony in a small window on

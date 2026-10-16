@@ -205,3 +205,32 @@ export function forgetStepUp(target: StepUpTarget): void {
   const key = targetKey(target);
   if (key) recent.delete(key);
 }
+
+/** A looser approval level the desktop's trusted channel will apply: ask
+ * the server first, which asks the person's key when they chose
+ * "rule-change" and leaves a one-time allowance for that exact change. */
+export async function authorizeApprovalMode(botId: string, thread: string, mode: string): Promise<void> {
+  const body = { botId, thread, mode };
+  try {
+    await post("/api/security-keys/approval-mode", body);
+  } catch (error) {
+    const refusal = (error as { body?: { code?: string; target?: StepUpTarget } }).body;
+    if (refusal?.code !== "step_up_required" || !refusal.target) throw error;
+    const confirmed = await stepUp(refusal.target);
+    await post("/api/security-keys/approval-mode", { ...body, stepUp: confirmed });
+  }
+}
+
+type ApprovalBridgeLike = { setMode: (botId: string, mode: any, options?: any) => Promise<any> };
+
+/** The desktop's approval bridge, asking the key first for a looser level. */
+export function stepUpApprovals<T extends ApprovalBridgeLike>(bridge: T | undefined): T | undefined {
+  if (!bridge) return bridge;
+  return {
+    ...bridge,
+    setMode: async (botId: string, mode: string, options?: { threadId?: string; threadOnly?: boolean }) => {
+      if (mode !== "ask") await authorizeApprovalMode(botId, options?.threadOnly && options.threadId ? options.threadId : "*", mode);
+      return bridge.setMode(botId, mode, options);
+    },
+  } as T;
+}

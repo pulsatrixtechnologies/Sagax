@@ -7,6 +7,9 @@
 //   POST   /api/security-keys/register           { name, via?, stepUp? } -> ceremony
 //   DELETE /api/security-keys/:id                { stepUp }
 //   POST   /api/security-keys/begin              { target, via? } -> ceremony
+//   POST   /api/security-keys/approval-mode      { botId, thread, mode, stepUp? }
+//          a looser approval level the desktop's trusted channel will apply:
+//          the step-up is used here and leaves a one-time allowance
 //
 // Public (`securityKeyCeremonyRoutes`, before the auth gate): the ceremony id
 // (32 random bytes, two minutes, one answer) is the authorization, as the
@@ -53,7 +56,15 @@ export interface SecurityKeyRouteDeps {
   /** The grants and words of a step-up for a waiting card, computed from
    * the live card; or why there is none. */
   approvalGrants: (auth: RequestAuth, person: string, target: Extract<StepUpTarget, { kind: "approval" }>) =>
-    { grants: string[]; label: string } | { status: number; error: string };
+    { grants: string[]; label: string; summary?: string } | { status: number; error: string };
+  /** A looser approval level asked ahead of the desktop's trusted channel:
+   * null when it needs no key or the step-up was used (an allowance is
+   * left), else the refusal. */
+  authorizeApprovalMode: (auth: RequestAuth, person: string, input: { botId: string; thread: string; mode: string; stepUp: unknown }) =>
+    { status: number; body: unknown } | null;
+  /** The first key: a sign-in this recent (a session's age), or this
+   * computer's own person. */
+  recentSignIn: (auth: RequestAuth) => boolean;
   audit: (row: { action: string; personId: string; after?: Record<string, unknown>; before?: Record<string, unknown> }, auth: RequestAuth) => void;
   /** Pinned RP ID and origins (SAGAX_WEBAUTHN_RP_ID, SAGAX_WEBAUTHN_ORIGINS). */
   env?: NodeJS.ProcessEnv;
@@ -180,11 +191,16 @@ export function createSecurityKeyRoutes(deps: SecurityKeyRouteDeps): RouteHandle
       const body = (await readBody(req)) ?? {};
       const rp = relyingParty(req, body.via, deps.env);
       if (!rp) return json(res, 400, { error: "Security keys need this page on https or on this computer.", code: "no_rp" });
-      if (deps.keys.hasKey(me)) {
-        const refused = settingsStepUp(deps.keys, me, "security-keys.add", {}, body.stepUp, []);
-        if (refused) return json(res, refused.status, refused.body);
-      }
       const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
+      if (deps.keys.hasKey(me)) {
+        // bound to this key's name and address: a step-up for another add
+        // does not count
+        const refused = settingsStepUp(deps.keys, me, "security-keys.add", { name: name || "Security key", rpId: rp.rpId }, body.stepUp, []);
+        if (refused) return json(res, refused.status, refused.body);
+      } else if (!deps.recentSignIn(auth)) {
+        return json(res, 403, { error: "Sign in again, then add your first key.", code: "reauth_required" });
+      }
+      deps.audit({ action: "security_keys.add-started", personId: me, after: { rpId: rp.rpId, first: !deps.keys.hasKey(me) } }, auth);
       const start = await deps.keys.beginRegistration(me, { rpId: rp.rpId, origins: rp.origins, name: name || "Security key", userName: deps.userName(auth), label: "register" });
       return json(res, 200, ceremonyAnswer(start, "register", rp.rpId));
     }
@@ -197,21 +213,35 @@ export function createSecurityKeyRoutes(deps: SecurityKeyRouteDeps): RouteHandle
       if (!rp) return json(res, 400, { error: "Security keys need this page on https or on this computer.", code: "no_rp" });
       let grants: string[];
       let label: string;
+      let summary: string | undefined;
       if (target && target.kind === "approval" && typeof target.threadId === "string" && typeof target.requestId === "string") {
         const found = deps.approvalGrants(auth, me, target);
         if ("error" in found) return json(res, found.status, { error: found.error });
         ({ grants, label } = found);
+        summary = found.summary;
       } else if (target && target.kind === "settings" && isStepUpSettingsAction(target.action) && target.detail && typeof target.detail === "object" && !Array.isArray(target.detail)) {
         grants = [settingsGrant(target.action, target.detail)];
         label = target.action;
+        summary = canonicalJson(target.detail).slice(0, 300);
       } else {
         return json(res, 400, { error: "target must name a waiting approval or a settings change" });
       }
-      const start = await deps.keys.beginAssertion(me, { rpId: rp.rpId, origins: rp.origins, grants, label });
+      const start = await deps.keys.beginAssertion(me, { rpId: rp.rpId, origins: rp.origins, grants, label, ...(summary ? { summary } : {}) });
       if ("error" in start) {
         return json(res, 409, { error: "You have no security key for this address. Add one in Settings > Security.", code: "no_key", rpId: rp.rpId });
       }
       return json(res, 200, ceremonyAnswer(start, "assert", rp.rpId));
+    }
+
+    if (path === "/api/security-keys/approval-mode") {
+      if (method !== "POST") return json(res, 405, { error: "POST only" });
+      const body = (await readBody(req)) ?? {};
+      if (typeof body.botId !== "string" || !/^[\w-]{1,128}$/.test(body.botId) || typeof body.thread !== "string" || !/^(?:\*|[\w-]{1,128})$/.test(body.thread) || typeof body.mode !== "string") {
+        return json(res, 400, { error: "botId, thread and mode are required" });
+      }
+      const refused = deps.authorizeApprovalMode(auth, me, { botId: body.botId, thread: body.thread, mode: body.mode, stepUp: body.stepUp });
+      if (refused) return json(res, refused.status, refused.body);
+      return json(res, 200, { ok: true });
     }
 
     const item = /^\/api\/security-keys\/([A-Za-z0-9_-]{1,1400})$/.exec(path);
@@ -260,6 +290,7 @@ const PAGE_WORDS = {
     failed: "The security key did not answer. Close this window and try again.",
     expired: "This request has expired. Close this window and start again.",
     unsupported: "This browser cannot use security keys.",
+    digest: "Check:",
   },
   fr: {
     title: "Clé de sécurité",
@@ -270,6 +301,7 @@ const PAGE_WORDS = {
     failed: "La clé de sécurité n'a pas répondu. Fermez cette fenêtre et réessayez.",
     expired: "Cette demande a expiré. Fermez cette fenêtre et recommencez.",
     unsupported: "Ce navigateur ne peut pas utiliser de clé de sécurité.",
+    digest: "Vérification :",
   },
 } as const;
 
@@ -283,7 +315,7 @@ function escapeHtml(text: string): string {
 /** The page: one button (a user gesture, which Safari needs before a
  * passkey prompt), then the browser's own WebAuthn call. Its end is its
  * title (the desktop window reads it) and, for the phone, the app address. */
-export function ceremonyPage(input: { id: string; kind: "register" | "assert"; language?: string; phone: boolean }): { html: string; nonce: string } {
+export function ceremonyPage(input: { id: string; kind: "register" | "assert"; language?: string; phone: boolean; label?: string; summary?: string; digest?: string }): { html: string; nonce: string } {
   const nonce = randomBytes(16).toString("base64");
   const words = /^fr\b/i.test(input.language ?? "") ? PAGE_WORDS.fr : PAGE_WORDS.en;
   const config = JSON.stringify({ id: input.id, kind: input.kind, phone: input.phone, back: PHONE_RETURN, words }).replace(/</g, "\\u003c");
@@ -334,7 +366,7 @@ button.addEventListener("click", run);
 `;
   const html = `<!doctype html><html lang="${words === PAGE_WORDS.fr ? "fr" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(words.title)}</title>
 <style>body{font:15px -apple-system,system-ui,sans-serif;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#fff;color:#111}@media(prefers-color-scheme:dark){body{background:#1c1c1e;color:#f2f2f7}}main{max-width:360px;padding:24px;text-align:center}button{font:inherit;padding:10px 20px;border-radius:10px;border:0;background:#2563eb;color:#fff;cursor:pointer}button:disabled{opacity:.6}</style></head>
-<body><main><h1 style="font-size:18px">${escapeHtml(words.title)}</h1><p id="status">${escapeHtml(input.kind === "register" ? words.register : words.assert)}</p><button id="go" type="button">${escapeHtml(words.start)}</button></main>
+<body><main><h1 style="font-size:18px">${escapeHtml(words.title)}</h1>${input.kind === "assert" && input.label ? `<p id="what" style="font-weight:600">${escapeHtml(input.label)}</p>` : ""}${input.kind === "assert" && input.summary ? `<p id="detail" style="opacity:.75;font-size:13px;word-break:break-word">${escapeHtml(input.summary)}</p>` : ""}${input.digest ? `<p id="digest" style="opacity:.6;font-size:12px;font-family:ui-monospace,monospace">${escapeHtml(words.digest)} ${escapeHtml(input.digest)}</p>` : ""}<p id="status">${escapeHtml(input.kind === "register" ? words.register : words.assert)}</p><button id="go" type="button">${escapeHtml(words.start)}</button></main>
 <script nonce="${nonce}">${script}</script></body></html>`;
   return { html, nonce };
 }
@@ -356,6 +388,9 @@ export function securityKeyCeremonyRoutes(deps: { keys: SecurityKeys }) {
         kind: pending.kind,
         language: typeof req.headers["accept-language"] === "string" ? req.headers["accept-language"] : undefined,
         phone: url.searchParams.get("phone") === "1",
+        label: pending.label === "register" ? undefined : pending.label,
+        ...(pending.summary ? { summary: pending.summary } : {}),
+        digest: pending.digest,
       });
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalJson, cardContentText, requiredClasses, stepUpClassesForCard, usableRpId } from "./step-up.ts";
+import { approvalModeLoosens, botActClasses, canonicalJson, cardContentText, requiredClasses, riskClassesFromFacts, stepUpClassesForCard, usableRpId } from "./step-up.ts";
 import type { OptionCardData } from "./wire.ts";
 
 const base: OptionCardData = { title: "Allow?", subtitle: "", options: ["Allow", "Deny"], requestType: "permission", requestId: "r1" };
@@ -56,5 +56,39 @@ describe("RP ID", () => {
     expect(usableRpId("sagax.example.com", "https:")).toBe("sagax.example.com");
     expect(usableRpId("sagax.example.com", "http:")).toBeNull();
     expect(usableRpId("::1", "http:")).toBeNull();
+  });
+});
+
+describe("hardening (security review)", () => {
+  it("a bot act is classed by its route, and fails closed", () => {
+    expect(botActClasses({ kind: "route", method: "DELETE", path: "/api/bots/b1" })).toEqual(["destructive", "irreversible"]);
+    expect(botActClasses({ kind: "route", method: "POST", path: "/api/bots/b1/messages" })).toEqual(["irreversible", "external-send"]);
+    expect(botActClasses({ kind: "route", method: "PATCH", path: "/api/bots/b1" })).toEqual(["irreversible"]);
+    expect(botActClasses({ kind: "route", method: "GET", path: "/api/bots" })).toEqual([]);
+    expect(botActClasses({ kind: "ui", write: true })).toEqual(["irreversible"]);
+    expect(botActClasses(undefined)).toEqual(["irreversible"]);
+  });
+
+  it("a shell command that is not a plain read is destructive and irreversible", () => {
+    expect(riskClassesFromFacts({ command: "python3 -c 'x'", opaque: true, pureRead: false, risks: [] })).toEqual(["destructive", "irreversible"]);
+    expect(riskClassesFromFacts({ command: "cat a", opaque: false, pureRead: true, risks: [] })).toEqual([]);
+    expect(riskClassesFromFacts({ risks: ["money"] })).toEqual(["money"]);
+  });
+
+  it("a terminal and a routine are in a class", () => {
+    expect(stepUpClassesForCard({ ...base, terminalRequest: {} as never })).toEqual(["destructive", "irreversible"]);
+    expect(stepUpClassesForCard({ ...base, routineRequest: { operation: { action: "create" } } as never })).toEqual(["always-grant"]);
+    expect(stepUpClassesForCard({ ...base, routineRequest: { operation: { action: "update" } } as never })).toEqual(["always-grant"]);
+  });
+
+  it("knows which approval level changes loosen", () => {
+    expect(approvalModeLoosens("ask", "auto")).toBe(true);
+    expect(approvalModeLoosens("ask", "edits")).toBe(true);
+    expect(approvalModeLoosens("auto", "full")).toBe(true);
+    expect(approvalModeLoosens("full", "custom")).toBe(true);
+    expect(approvalModeLoosens("custom", "full")).toBe(true);
+    expect(approvalModeLoosens("full", "ask")).toBe(false);
+    expect(approvalModeLoosens("auto", "auto")).toBe(false);
+    expect(approvalModeLoosens(undefined, "auto")).toBe(true);
   });
 });

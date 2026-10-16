@@ -41,7 +41,7 @@ export interface OwnerApprovalRouteDeps {
   /** 2026-10-16 (security keys): a change that loosens (a rule that allows,
    * a looser mode) needs the person's key when they chose "rule-change"
    * (shared/step-up.ts). Null lets it through; else the refusal. */
-  stepUp?: (auth: RequestAuth, personId: string, action: "approval-rules.allow" | "permission-mode", detail: Record<string, unknown>, stepUp: unknown) => { status: number; body: unknown } | null;
+  stepUp?: (auth: RequestAuth, personId: string, action: "approval-rules.allow" | "permission-mode" | "rules.remove", detail: Record<string, unknown>, stepUp: unknown) => { status: number; body: unknown } | null;
 }
 
 const MODE_RANK: Record<BotPermissionMode, number> = { approval: 0, auto: 1, bypass: 2 };
@@ -92,7 +92,7 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
     if (rule && (method === "PATCH" || method === "DELETE")) {
       const me = deps.manager(auth);
       if (!me) return json(res, 403, { error: "Sign in to change your approval rules." });
-      const body = method === "PATCH" ? await readBody(req) : {};
+      const body = (await readBody(req)) ?? {};
       if (body.behavior !== undefined && !isRuleBehavior(body.behavior)) return json(res, 400, { error: "behavior must be allow, ask or deny" });
       if (body.description !== undefined && typeof body.description !== "string") return json(res, 400, { error: "description must be text" });
       if (body.botId !== undefined && body.botId !== null && (typeof body.botId !== "string" || !deps.ownedBots(me).some((bot) => bot.id === body.botId))) {
@@ -104,6 +104,11 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
         const bot = deps.ownedBots(me).find((candidate) => candidate.id === legacy.botId);
         if (!bot || !(bot.alwaysAllow ?? []).includes(legacy.key)) return json(res, 404, { error: "no such rule" });
         let converted: OwnerRule | null = null;
+        // an earlier per-bot Allow made a rule for every bot widens it
+        if (method === "PATCH" && body.botId === null && deps.stepUp) {
+          const refused = deps.stepUp(auth, me, "approval-rules.allow", { id, behavior: isRuleBehavior(body.behavior) ? body.behavior : "allow", botId: null, legacy: true }, body.stepUp);
+          if (refused) return json(res, refused.status, refused.body);
+        }
         if (method === "PATCH") {
           // editing an earlier rule makes it this person's own rule
           if (!legacy.key.startsWith("mcp:")) return json(res, 400, { error: "This rule is about another bot or room; remove it instead." });
@@ -122,6 +127,22 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
           before: { key: legacy.key }, ...(converted ? { after: { rule: converted.id, behavior: converted.behavior } } : {}),
         }, auth);
         return json(res, 200, converted ? { rule: converted } : { ok: true });
+      }
+      const existing = deps.store.rulesOf(me).find((candidate) => candidate.id === id);
+      // removing a deny or ask rule, or making one ask less, loosens
+      const loosensGuard = existing && existing.behavior !== "allow" && (method === "DELETE" ||
+        (isRuleBehavior(body.behavior) && body.behavior !== existing.behavior && !(existing.behavior === "ask" && body.behavior === "deny")) ||
+        body.anyTarget === true || (body.botId !== undefined && body.botId !== existing.botId));
+      if (loosensGuard && deps.stepUp && !(method === "PATCH" && body.behavior === "allow")) {
+        const refused = deps.stepUp(auth, me, "rules.remove", {
+          op: method === "DELETE" ? "remove-owner-rule" : "update-owner-rule", id,
+          ...(method === "PATCH" ? {
+            ...(isRuleBehavior(body.behavior) ? { behavior: body.behavior } : {}),
+            ...(body.botId !== undefined ? { botId: body.botId } : {}),
+            ...(body.anyTarget === true ? { anyTarget: true } : {}),
+          } : {}),
+        }, body.stepUp);
+        if (refused) return json(res, refused.status, refused.body);
       }
       if (method === "DELETE") {
         if (!deps.store.remove(me, id)) return json(res, 404, { error: "no such rule" });

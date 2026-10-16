@@ -96,6 +96,31 @@ it("an Allow in a chosen class needs the person's key, bound to that card, once"
     await api("POST", `/api/threads/${threadId}/respond`, { requestId: second.id, behavior: "deny" });
     expect(await second.reply).toMatchObject({ id: second.id, behavior: "deny" });
     await api("POST", `/api/bots/${bot.id}/interrupt`, { threadId });
+    const idle = (await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Approval level" }, 201)).task.threadId as string;
+    await api("PATCH", `/api/bots/${bot.id}/tasks/${idle}`, { approvalMode: "ask" });
+
+    // A looser approval level needs the key too, once "rule-change" is chosen
+    await api("PUT", "/api/security-keys/classes", { classes: ["destructive", "rule-change", "always-grant"] });
+    const looser = await call("PATCH", `/api/bots/${bot.id}/tasks/${idle}`, { approvalMode: "auto", acknowledgeLocalAuto: true });
+    expect(looser.status, JSON.stringify(looser.body)).toBe(403);
+    expect(looser.body).toMatchObject({ code: "step_up_required", target: { kind: "settings", action: "approval-mode", detail: { botId: bot.id, thread: idle, mode: "auto" } } });
+    const forMode = await api("POST", "/api/security-keys/begin", { target: looser.body.target, via: "desktop-window" });
+    await ceremony(forMode);
+    await api("PATCH", `/api/bots/${bot.id}/tasks/${idle}`, { approvalMode: "auto", acknowledgeLocalAuto: true, stepUp: forMode.ceremonyId });
+    // back to Ask tightens: no key
+    await api("PATCH", `/api/bots/${bot.id}/tasks/${idle}`, { approvalMode: "ask" });
+
+    // the desktop's Full goes through a one-time allowance asked here first
+    const full = await call("POST", "/api/security-keys/approval-mode", { botId: bot.id, thread: "*", mode: "full" });
+    expect(full.body).toMatchObject({ code: "step_up_required" });
+    const forFull = await api("POST", "/api/security-keys/begin", { target: full.body.target, via: "desktop-window" });
+    await ceremony(forFull);
+    await api("POST", "/api/security-keys/approval-mode", { botId: bot.id, thread: "*", mode: "full", stepUp: forFull.ceremonyId });
+
+    // a saved command runs without asking: it needs the key ("always-grant")
+    const saved = await call("POST", `/api/bots/${bot.id}/command-allowlist`, { command: "printf saved", cwd: dataDir, providerInstanceId: "claude" });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(403);
+    expect(saved.body).toMatchObject({ code: "step_up_required", target: { action: "command-allowlist" } });
   } finally {
     for (const socket of sockets) socket.destroy();
     await fixture.close();

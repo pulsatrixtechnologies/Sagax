@@ -19,7 +19,7 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-async function serve(person: string | null = "pr_alice") {
+async function serve(person: string | null = "pr_alice", options: { recent?: boolean; label?: string } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "sagax-security-keys-"));
   dirs.push(dir);
   const keys = new SecurityKeys({ store: new SecurityKeyStore(join(dir, "security-keys.json")) });
@@ -28,7 +28,9 @@ async function serve(person: string | null = "pr_alice") {
     keys,
     person: () => person,
     userName: () => "alice@example.com",
-    approvalGrants: () => ({ status: 404, error: "none" }),
+    approvalGrants: () => options.label ? { grants: ["g"], label: options.label, summary: "rm /tmp/report.txt" } : { status: 404, error: "none" },
+    authorizeApprovalMode: () => null,
+    recentSignIn: () => options.recent ?? true,
     audit: (row) => audits.push(row.action),
     env: {},
   })];
@@ -163,5 +165,36 @@ describe("relying party", () => {
   it("names a settings grant by its action and exact detail", () => {
     expect(settingsGrant("permission-mode", { botId: "b", mode: "auto" })).toBe(settingsGrant("permission-mode", { mode: "auto", botId: "b" }));
     expect(settingsGrant("permission-mode", { botId: "b", mode: "auto" })).not.toBe(settingsGrant("permission-mode", { botId: "b", mode: "bypass" }));
+  });
+});
+
+describe("security key routes, hardening", () => {
+  it("the first key needs a recent sign-in, and its start is audited", async () => {
+    const stale = await serve("pr_alice", { recent: false });
+    expect((await stale.call("/api/security-keys/register", "POST", { name: "Key", via: "desktop-window" })).body).toMatchObject({ code: "reauth_required" });
+    const fresh = await serve();
+    expect((await fresh.call("/api/security-keys/register", "POST", { name: "Key", via: "desktop-window" })).status).toBe(200);
+    expect(fresh.audits).toContain("security_keys.add-started");
+  });
+
+  it("a second key's step-up is bound to that key's name", async () => {
+    const { call, ceremony } = await serve();
+    const key = fakeAuthenticator();
+    expect((await ceremony((await call("/api/security-keys/register", "POST", { name: "First", via: "desktop-window" })).body, key)).status).toBe(200);
+    const refused = await call("/api/security-keys/register", "POST", { name: "Second", via: "desktop-window" });
+    expect(refused.body.target).toMatchObject({ action: "security-keys.add", detail: { name: "Second", rpId: "localhost" } });
+    const other = await call("/api/security-keys/begin", "POST", { target: { kind: "settings", action: "security-keys.add", detail: { name: "Other", rpId: "localhost" } }, via: "desktop-window" });
+    expect((await ceremony(other.body, key)).status).toBe(200);
+    expect((await call("/api/security-keys/register", "POST", { name: "Second", via: "desktop-window", stepUp: other.body.ceremonyId })).body).toMatchObject({ code: "step_up_failed" });
+  });
+
+  it("the ceremony page shows what the key signs", async () => {
+    const { call, ceremony } = await serve("pr_alice", { label: "Allow Alpha to delete a file?" });
+    expect((await ceremony((await call("/api/security-keys/register", "POST", { name: "K", via: "desktop-window" })).body, fakeAuthenticator())).status).toBe(200);
+    const begin = await call("/api/security-keys/begin", "POST", { target: { kind: "approval", threadId: "t", requestId: "r" }, via: "desktop-window" });
+    const page = String((await call(`/api/security-keys/ceremony/${begin.body.ceremonyId}/page`)).body);
+    expect(page).toContain("Allow Alpha to delete a file?");
+    expect(page).toContain("rm /tmp/report.txt");
+    expect(page).toMatch(/id="digest"/);
   });
 });

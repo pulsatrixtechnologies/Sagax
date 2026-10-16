@@ -72,7 +72,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
 import { t } from "@/lib/i18n";
-import { forgetStepUp, recentStepUp, stepUp } from "@/lib/step-up-client";
+import { forgetStepUp, recentStepUp, stepUp, stepUpApprovals } from "@/lib/step-up-client";
 import type { StepUpTarget } from "../../shared/step-up";
 import { permissionMissingMessage } from "@/lib/permissions";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
@@ -3512,7 +3512,7 @@ export async function persistBotUpdate(
   signal: AbortSignal,
   request: (path: string, init?: RequestInit) => Promise<{ bot: BotAnnouncement }> = api,
   trustedApprovals: TrustedApprovalBridge | undefined =
-    typeof window === "undefined" ? undefined : window.ogb?.approvals,
+    typeof window === "undefined" ? undefined : stepUpApprovals(window.ogb?.approvals),
   currentBot?: BotAnnouncement,
 ): Promise<BotAnnouncement> {
   const {
@@ -3845,7 +3845,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () =>
       createBotPatchQueue({
         send: (botId, patch, signal, currentBot) =>
-          persistBotUpdate(botId, patch, signal, api, window.ogb?.approvals, currentBot),
+          persistBotUpdate(botId, patch, signal, api, stepUpApprovals(window.ogb?.approvals), currentBot),
         reconcile: async (botId, signal) => {
           const result: { bots: BotAnnouncement[] } = await api(`/api/bots?messages=${MESSAGE_PAGE_SIZE}`, { signal });
           return result.bots.find((candidate) => candidate.id === botId) ?? null;
@@ -3938,7 +3938,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ? [...taskWrites.values()].filter((write) => write.botId === botId) : [];
       const promise = Promise.all([previous?.promise, ...defaults.map((write) => write.promise)].map((save) => save?.catch(() => {})))
         .then(async () => {
-          return persistTaskApproval(botId, threadId, patch, window.ogb?.approvals);
+          return persistTaskApproval(botId, threadId, patch, stepUpApprovals(window.ogb?.approvals));
         });
       // Later edits still get saved after an earlier failure, but a send
       // awaiting this batch must observe every rejected setting in it. A
@@ -4634,7 +4634,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const needsDesktop = mode === "full" || mode === "custom" || current === "custom";
           const refreshed = needsDesktop
             ? window.ogb?.approvals
-              ? window.ogb.approvals.setMode(action.botId, mode, {
+              ? stepUpApprovals(window.ogb.approvals)!.setMode(action.botId, mode, {
                 threadId: action.threadId, threadOnly: true, refreshPermissions: true, acknowledgeLocalAuto,
               })
               : Promise.reject(new Error("This approval change requires the packaged desktop app"))

@@ -58,6 +58,13 @@ export const STEP_UP_SETTINGS_ACTIONS = [
   "custom-rules.allow",
   "approval-rules.allow",
   "permission-mode",
+  /** A bot's or a thread's approval level made looser (Ask to Auto, Full...). */
+  "approval-mode",
+  /** An exact command saved so a bot runs it without asking. */
+  "command-allowlist",
+  /** A deny or ask rule removed, turned off or made to allow less; an owner
+   * rule removed or widened to every bot. */
+  "rules.remove",
 ] as const;
 export type StepUpSettingsAction = (typeof STEP_UP_SETTINGS_ACTIONS)[number];
 
@@ -75,7 +82,69 @@ export const SETTINGS_ACTION_CLASS: Readonly<Record<StepUpSettingsAction, StepUp
   "custom-rules.allow": "rule-change",
   "approval-rules.allow": "rule-change",
   "permission-mode": "rule-change",
+  "approval-mode": "rule-change",
+  "command-allowlist": "always-grant",
+  "rules.remove": "rule-change",
 };
+
+/** Approval levels by how much runs without asking. Custom is a provider
+ * config the app cannot read: any move to it, or from it to Full, loosens. */
+const MODE_RANK: Readonly<Record<string, number>> = { ask: 0, edits: 1, auto: 2, full: 3, custom: 3 };
+
+/** Whether going from one approval level to another lets more run unasked. */
+export function approvalModeLoosens(from: string | undefined, to: string): boolean {
+  const before = from ?? "ask";
+  if (before === to) return false;
+  if (to === "custom" || (to === "full" && before === "custom")) return true;
+  return (MODE_RANK[to] ?? 3) > (MODE_RANK[before] ?? 0);
+}
+
+/** What a bot asked to do through act, as the step-up reads it. */
+export interface BotActTargetLike {
+  kind: "route" | "ui";
+  method?: string;
+  path?: string;
+  write?: boolean;
+}
+
+const SEND_PATH = /\/(?:messages|send|mail|email[\w-]*|nudges|invite[\w-]*|share[\w-]*|publish[\w-]*)(?:\/|$)/i;
+
+/** A bot act's classes: a delete is destructive, a send reaches outside, and
+ * any other write is in a class too (irreversible), since the act names a
+ * route the step-up cannot read. Unknown (expired) fails closed. */
+export function botActClasses(target: BotActTargetLike | undefined): StepUpClass[] {
+  if (!target) return ["irreversible"];
+  const out = new Set<StepUpClass>();
+  const method = (target.method ?? "").toUpperCase();
+  const write = target.kind === "route" ? method !== "GET" && method !== "HEAD" : target.write !== false;
+  if (!write) return [];
+  if (method === "DELETE") out.add("destructive");
+  if (target.path && SEND_PATH.test(target.path)) out.add("external-send");
+  if (target.path && PUBLISH_TOOL.test(target.path.replace(/\//g, "_"))) out.add("publish-page");
+  out.add("irreversible");
+  return STEP_UP_CLASSES.filter((name) => out.has(name));
+}
+
+/** The facts of a shell call that matter to a step-up. */
+export interface ShellFactsLike {
+  command?: string;
+  pureRead?: boolean;
+  opaque?: boolean;
+  risks: readonly RiskClass[];
+}
+
+/** The call's risk classes: the rules' own, and for a shell command that is
+ * not a plain read (or cannot be read at all: `bash -c "$(...)"`,
+ * `python3 -c`, `node -e`), destructive and irreversible. When in doubt a
+ * command is in a class. */
+export function riskClassesFromFacts(facts: ShellFactsLike): RiskClass[] {
+  const out = new Set<RiskClass>(facts.risks);
+  if (facts.command !== undefined && (facts.opaque === true || facts.pureRead !== true)) {
+    out.add("destructive");
+    out.add("irreversible");
+  }
+  return [...out];
+}
 
 /** The refusal a route answers when a step-up is needed or failed. */
 export interface StepUpRefusal {
@@ -224,7 +293,14 @@ export function stepUpClassesForCard(
   if (card.ownerRule?.destructive === "external-message") out.add("external-send");
   if (card.outboundRequest || card.emailSendRequest) out.add("external-send");
   if (card.routineRequest?.operation?.action === "delete") out.add("destructive");
+  // a routine runs later without asking: a standing grant
+  if (card.routineRequest && ["create", "update", "resume", "run_now"].includes(card.routineRequest.operation?.action)) out.add("always-grant");
   if (card.teamSetupRequest?.deletion) out.add("destructive");
+  // an interactive shell can do anything a command can
+  if (card.terminalRequest) {
+    out.add("destructive");
+    out.add("irreversible");
+  }
   const tool = card.mcpTool ?? card.tool;
   if (tool) {
     const bare = bareToolName(tool);

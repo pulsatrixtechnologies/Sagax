@@ -293,17 +293,25 @@ export function decideBotAct(input: {
   };
 }
 
-const ESCALATION_KEYS = new Set(["approvalMode", "confirmFullAccess"]);
+const ESCALATION_KEYS = new Set(["approvalMode", "confirmFullAccess", "autoApprove", "alwaysAllow", "stepUp"]);
 
-/** A card answer, a permission decision, a /respond route, or any
- * approvalMode / confirmFullAccess field. Refused, not held: holding it
- * would still let Allow on this thread raise a sibling to Full. */
+/** Routes that widen what runs without asking, or touch the person's
+ * security keys (2026-10-16): standing grants, saved commands, rules,
+ * permission modes, tool grants. A bot acting for its person never calls
+ * them, whatever the method. */
+const ESCALATION_PATH = /\/(?:always-allow|command-allowlist(?:\/.*)?|permission-mode|tool-grants(?:\/.*)?)$|^\/api\/(?:security-keys|custom-rules|approval-rules)(?:\/|$)/;
+
+/** A card answer, a permission decision, a /respond route, a route that
+ * widens approvals, or any approvalMode / confirmFullAccess / alwaysAllow /
+ * autoApprove / stepUp field. Refused, not held: holding it would still let
+ * Allow on this thread raise a sibling to Full. */
 function escalatesApproval(target: ActTarget): boolean {
   if (target.kind === "ui") {
     if (target.command === "decideRequest" || target.command === "answerCard") return true;
     return recordHasEscalation(target.input);
   }
   if (target.path.endsWith("/respond")) return true;
+  if (ESCALATION_PATH.test(target.path.split("?")[0] ?? target.path)) return true;
   return recordHasEscalation(target.query) || recordHasEscalation(target.body);
 }
 

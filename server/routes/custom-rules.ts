@@ -51,7 +51,7 @@ export interface CustomRuleRouteDeps {
   /** 2026-10-16 (security keys): an allow rule saved or changed needs the
    * person's key when they chose "rule-change" (shared/step-up.ts). Null
    * lets it through; else the refusal to answer. */
-  stepUp?: (auth: RequestAuth, personId: string, detail: Record<string, unknown>, stepUp: unknown) => { status: number; body: unknown } | null;
+  stepUp?: (auth: RequestAuth, personId: string, action: "custom-rules.allow" | "rules.remove", detail: Record<string, unknown>, stepUp: unknown) => { status: number; body: unknown } | null;
 }
 
 export type CustomRuleView = CustomRule & { compiled: CompiledRule };
@@ -146,7 +146,7 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
         }
       }
       if (behavior === "allow" && deps.stepUp) {
-        const refused = deps.stepUp(auth, me, { op: "add", when: when.trim(), botId, riskScope, ...(card ? { fromCard: { threadId: card.threadId, requestId: card.requestId } } : {}) }, body.stepUp);
+        const refused = deps.stepUp(auth, me, "custom-rules.allow", { op: "add", when: when.trim(), botId, riskScope, ...(card ? { fromCard: { threadId: card.threadId, requestId: card.requestId } } : {}) }, body.stepUp);
         if (refused) return json(res, refused.status, refused.body);
       }
       let rule: CustomRule;
@@ -169,6 +169,14 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       const id = item[1]!;
       const before = deps.store.get(me, id);
       if (!before) return json(res, 404, { error: "no such rule" });
+      // a deny or ask rule removed, turned off or made to hold less loosens
+      // what the bot may do: the person's key, when they chose rule-change
+      const guarding = before.behavior !== "allow" && before.enabled !== false;
+      const delBody = method === "DELETE" ? (await readBody(req)) ?? {} : null;
+      if (method === "DELETE" && guarding && deps.stepUp) {
+        const refused = deps.stepUp(auth, me, "rules.remove", { op: "remove-custom-rule", id }, delBody?.stepUp);
+        if (refused) return json(res, refused.status, refused.body);
+      }
       if (method === "DELETE") {
         deps.store.remove(me, id);
         deps.audit({ action: "custom_rule.remove", personId: me, botId: before.botId, before: { rule: id, when: before.when, botId: before.botId, behavior: before.behavior, riskScope: before.riskScope } }, auth);
@@ -182,6 +190,21 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       const riskScope = body.riskScope === undefined ? undefined : riskScopeOf(body.riskScope);
       if (riskScope === null) return json(res, 400, { error: "riskScope lists destructive, irreversible, money or external-send" });
       const nextBehavior = isCustomRuleBehavior(body.behavior) ? body.behavior : before.behavior;
+      if (guarding && nextBehavior !== "allow" && deps.stepUp && (
+        body.enabled === false ||
+        (nextBehavior !== before.behavior && !(before.behavior === "ask" && nextBehavior === "deny")) ||
+        (typeof body.when === "string" && body.when.trim() !== before.when) ||
+        (body.botId !== undefined && body.botId !== before.botId)
+      )) {
+        const refused = deps.stepUp(auth, me, "rules.remove", {
+          op: "update-custom-rule", id,
+          ...(typeof body.when === "string" ? { when: body.when } : {}),
+          ...(isCustomRuleBehavior(body.behavior) ? { behavior: body.behavior } : {}),
+          ...(body.botId !== undefined ? { botId: body.botId } : {}),
+          ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
+        }, body.stepUp);
+        if (refused) return json(res, refused.status, refused.body);
+      }
       const nextWhen = typeof body.when === "string" ? body.when : before.when;
       if (nextBehavior === "allow" && compileRule(nextWhen, deps.home).shellFamily) return json(res, 400, SHELL_FAMILY_REFUSAL);
       // an exact command rule's words are its binding: they do not change,
@@ -194,7 +217,7 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       }
       // a rule that allows after this change: the person's key, when chosen
       if (nextBehavior === "allow" && deps.stepUp) {
-        const refused = deps.stepUp(auth, me, {
+        const refused = deps.stepUp(auth, me, "custom-rules.allow", {
           op: "update", id,
           ...(typeof body.when === "string" ? { when: body.when } : {}),
           ...(isCustomRuleBehavior(body.behavior) ? { behavior: body.behavior } : {}),

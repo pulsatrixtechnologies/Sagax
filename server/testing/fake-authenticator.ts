@@ -38,7 +38,7 @@ export interface FakeAuthenticator {
   /** The browser's answer to navigator.credentials.create(). */
   register(options: { challenge: string; rp?: { id?: string } }, origin: string, rpId?: string): Record<string, unknown>;
   /** The browser's answer to navigator.credentials.get(). */
-  assert(options: { challenge: string; rpId?: string }, origin: string, rpId?: string): Record<string, unknown>;
+  assert(options: { challenge: string; rpId?: string }, origin: string, rpId?: string, flags?: { userVerified?: boolean }): Record<string, unknown>;
 }
 
 export function fakeAuthenticator(): FakeAuthenticator {
@@ -71,13 +71,13 @@ export function fakeAuthenticator(): FakeAuthenticator {
         response: { clientDataJSON: b64url(clientData), attestationObject: b64url(attestationObject), transports: ["usb"] },
       };
     },
-    assert(options, origin, rpId) {
+    assert(options, origin, rpId, flags) {
       const id = rpId ?? options.rpId ?? "localhost";
       self.counter += 1;
       const clientData = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: options.challenge, origin, crossOrigin: false }));
       const count = Buffer.alloc(4);
       count.writeUInt32BE(self.counter);
-      const authData = Buffer.concat([sha256(id), Buffer.from([0x01 | 0x04]), count]);
+      const authData = Buffer.concat([sha256(id), Buffer.from([flags?.userVerified === false ? 0x01 : 0x01 | 0x04]), count]);
       const signature = sign("sha256", Buffer.concat([authData, sha256(clientData)]), privateKey);
       return {
         id: self.credentialId,

@@ -86,9 +86,18 @@ export class SecurityKeyStore {
 
   private readonly file: string;
 
+  /** The file changed outside this server since it last wrote it (the
+   * documented recovery: an operator removing a person's entry by hand).
+   * Read once at start; the caller audits it. */
+  editedOutside = false;
+
   constructor(file: string) {
     this.file = file;
     this.load();
+  }
+
+  private digestFile(): string {
+    return `${this.file}.sha256`;
   }
 
   private load(): void {
@@ -100,6 +109,14 @@ export class SecurityKeyStore {
     }
     try {
       this.data = fileSchema.parse(JSON.parse(raw));
+      let recorded: string | undefined;
+      try {
+        recorded = readFileSync(this.digestFile(), "utf8").trim();
+      } catch {
+        recorded = undefined;
+      }
+      const actual = createHash("sha256").update(raw).digest("hex");
+      if (recorded !== undefined && recorded !== actual) this.editedOutside = true;
     } catch {
       this.unreadable = true;
       console.error("[security-keys] security-keys.json could not be read; sensitive approvals are refused until it is repaired.");
@@ -109,7 +126,9 @@ export class SecurityKeyStore {
   private save(): void {
     if (this.unreadable) throw Object.assign(new Error("Saved security keys could not be read. Repair security-keys.json first."), { status: 503 });
     mkdirSync(dirname(this.file), { recursive: true });
-    writeFileAtomic(this.file, JSON.stringify(this.data, null, 2), { mode: 0o600 });
+    const text = JSON.stringify(this.data, null, 2);
+    writeFileAtomic(this.file, text, { mode: 0o600 });
+    writeFileAtomic(this.digestFile(), createHash("sha256").update(text).digest("hex"), { mode: 0o600 });
   }
 
   private entry(person: string): PersonEntry | undefined {
@@ -138,6 +157,18 @@ export class SecurityKeyStore {
 
   classes(person: string): StepUpClass[] {
     return [...(this.entry(person)?.classes ?? [])];
+  }
+
+  /** Every class anyone on this server chose. */
+  anyClasses(): StepUpClass[] {
+    const all = new Set<StepUpClass>();
+    for (const entry of Object.values(this.data.people)) for (const name of entry.classes) all.add(name);
+    return STEP_UP_CLASSES.filter((name) => all.has(name));
+  }
+
+  /** The counter this key last signed with. */
+  counter(person: string, id: string): number | undefined {
+    return this.entry(person)?.credentials.find((candidate) => candidate.id === id)?.counter;
   }
 
   addCredential(person: string, credential: StoredCredential): void {
@@ -180,7 +211,8 @@ export class SecurityKeyStore {
   touch(person: string, id: string, counter: number, at: number): void {
     const credential = this.entry(person)?.credentials.find((candidate) => candidate.id === id);
     if (!credential) return;
-    credential.counter = counter;
+    // never backwards: two answers verified at once keep the higher one
+    credential.counter = Math.max(credential.counter, counter);
     credential.lastUsedAt = at;
     this.save();
   }
@@ -197,8 +229,10 @@ interface Ceremony {
   challenge: string;
   createdAt: number;
   options: Record<string, unknown>;
-  /** What the page shows while it waits for the key. */
+  /** What the page shows while it waits for the key: the card's title or
+   * the change, and what it does. */
   label: string;
+  summary?: string;
   /** register: the name the key will carry. */
   name?: string;
   /** assert: what it authorizes, each once. */
@@ -218,6 +252,8 @@ export type ConsumeResult = { ok: true } | { ok: false; reason: StepUpFailure };
 
 export interface SecurityKeysOptions {
   store: SecurityKeyStore;
+  /** A key was added (audited by the caller). */
+  onRegistered?: (person: string, key: SecurityKeyView) => void;
   rpName?: string;
   now?: () => number;
 }
@@ -246,39 +282,47 @@ export function viewOf(credential: StoredCredential): SecurityKeyView {
   };
 }
 
-/** The origins a ceremony on this RP ID may answer from: https on that
- * host, and on localhost http or https on any port (this computer). */
-export function originAllowed(origin: string, rpId: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(origin);
-  } catch {
-    return false;
-  }
-  if (url.origin !== origin) return false;
-  if (rpId === "localhost") return url.hostname === "localhost" && (url.protocol === "http:" || url.protocol === "https:");
-  return url.protocol === "https:" && url.hostname === rpId && (url.port === "" || url.port === "443");
-}
-
 export class SecurityKeys {
   readonly store: SecurityKeyStore;
   private readonly rpName: string;
   private readonly now: () => number;
+  private readonly onRegistered?: (person: string, key: SecurityKeyView) => void;
   private readonly ceremonies = new Map<string, Ceremony>();
+  /** Changes a verified step-up already authorized for a path that cannot
+   * carry one (the desktop's trusted approval channel), by person and key.
+   * Each used once, within STEP_UP_USE_MS. */
+  private readonly allowances = new Map<string, number>();
 
   constructor(options: SecurityKeysOptions) {
     this.store = options.store;
     this.rpName = options.rpName ?? "Sagax";
     this.now = options.now ?? Date.now;
+    this.onRegistered = options.onRegistered;
   }
 
   /** The classes this person chose that a call in `classes` falls in.
    * Unreadable keys: every class of the call (fail closed). */
-  required(person: string | null, classes: readonly StepUpClass[]): StepUpClass[] {
+  required(person: string | null, classes: readonly StepUpClass[], fallback?: string | null): StepUpClass[] {
     if (!classes.length) return [];
     if (this.store.unreadable) return [...classes];
-    if (!person) return [];
-    return requiredClasses(this.store.classes(person), classes);
+    // Nobody is answering as a person (a bot acting for its person, a
+    // service): the bot owner's choice applies, and with no owner known,
+    // anyone's on this server. Such a caller cannot sign, so it is refused.
+    const who = person ?? fallback ?? null;
+    if (who) return requiredClasses(this.store.classes(who), classes);
+    return requiredClasses(this.store.anyClasses(), classes);
+  }
+
+  allow(person: string, key: string): void {
+    this.allowances.set(`${person}\n${key}`, this.now() + STEP_UP_USE_MS);
+  }
+
+  /** Use an allowance once. */
+  takeAllowance(person: string, key: string): boolean {
+    const id = `${person}\n${key}`;
+    const until = this.allowances.get(id);
+    this.allowances.delete(id);
+    return until !== undefined && this.now() <= until;
   }
 
   keys(person: string): SecurityKeyView[] {
@@ -323,7 +367,7 @@ export class SecurityKeys {
       // the same authenticator twice adds nothing
       excludeCredentials: existing.filter((credential) => credential.rpId === input.rpId)
         .map((credential) => ({ id: credential.id, ...(credential.transports ? { transports: credential.transports } : {}) })),
-      authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
+      authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
       timeout: CEREMONY_TTL_MS,
     });
     const id = randomBytes(32).toString("base64url");
@@ -338,7 +382,7 @@ export class SecurityKeys {
 
   /** A step-up for these grants, signed by one of this person's keys made
    * on this RP ID. None there: refused (`no_key`), never skipped. */
-  async beginAssertion(person: string, input: { rpId: string; origins: string[]; grants: string[]; label: string }): Promise<CeremonyStart | { error: "no_key" }> {
+  async beginAssertion(person: string, input: { rpId: string; origins: string[]; grants: string[]; label: string; summary?: string }): Promise<CeremonyStart | { error: "no_key" }> {
     if (this.store.unreadable) throw Object.assign(new Error("Saved security keys could not be read. Repair security-keys.json first."), { status: 503 });
     const credentials = this.store.credentials(person).filter((credential) => credential.rpId === input.rpId);
     if (!credentials.length) return { error: "no_key" };
@@ -346,14 +390,14 @@ export class SecurityKeys {
     const options = await generateAuthenticationOptions({
       rpID: input.rpId,
       allowCredentials: credentials.map((credential) => ({ id: credential.id, ...(credential.transports ? { transports: credential.transports } : {}) })),
-      userVerification: "preferred",
+      userVerification: "required",
       timeout: CEREMONY_TTL_MS,
     });
     const id = randomBytes(32).toString("base64url");
     const ceremony: Ceremony = {
       id, kind: "assert", person, rpId: input.rpId, origins: input.origins,
       challenge: options.challenge, createdAt: this.now(), options: options as unknown as Record<string, unknown>,
-      label: input.label, grants: [...new Set(input.grants)], used: new Set(),
+      label: input.label, ...(input.summary ? { summary: input.summary } : {}), grants: [...new Set(input.grants)], used: new Set(),
     };
     this.ceremonies.set(id, ceremony);
     return { ceremonyId: id, options: ceremony.options, expiresAt: ceremony.createdAt + CEREMONY_TTL_MS };
@@ -361,11 +405,17 @@ export class SecurityKeys {
 
   /** What the ceremony page needs: its kind, options and label. Only while
    * the ceremony still waits for its key. */
-  pending(id: string): { kind: CeremonyKind; options: Record<string, unknown>; label: string; rpId: string } | null {
+  pending(id: string): { kind: CeremonyKind; options: Record<string, unknown>; label: string; summary?: string; digest: string; rpId: string } | null {
     this.prune();
     const ceremony = this.ceremonies.get(id);
     if (!ceremony || ceremony.verifiedAt !== undefined) return null;
-    return { kind: ceremony.kind, options: ceremony.options, label: ceremony.label, rpId: ceremony.rpId };
+    return {
+      kind: ceremony.kind, options: ceremony.options, label: ceremony.label,
+      ...(ceremony.summary ? { summary: ceremony.summary } : {}),
+      // a short fingerprint of what the key signs
+      digest: (ceremony.grants[0] ?? ceremony.challenge).slice(0, 8),
+      rpId: ceremony.rpId,
+    };
   }
 
   /** Verify the browser's answer once. The ceremony is spent whatever the
@@ -387,7 +437,7 @@ export class SecurityKeys {
           expectedChallenge: ceremony.challenge,
           expectedOrigin: origins,
           expectedRPID: ceremony.rpId,
-          requireUserVerification: false,
+          requireUserVerification: true,
         });
         if (!verified.verified) return { ok: false, status: 400, error: "The security key could not be verified." };
         const info = verified.registrationInfo;
@@ -402,6 +452,8 @@ export class SecurityKeys {
           deviceType: info.credentialDeviceType,
           backedUp: info.credentialBackedUp,
         });
+        const added = this.store.credentials(ceremony.person).find((candidate) => candidate.id === info.credential.id);
+        if (added) this.onRegistered?.(ceremony.person, viewOf(added));
         return { ok: true, kind: "register" };
       } catch (error) {
         const status = (error as { status?: number }).status;
@@ -427,14 +479,23 @@ export class SecurityKeys {
           counter: credential.counter,
           ...(credential.transports ? { transports: credential.transports } : {}),
         },
-        requireUserVerification: false,
+        requireUserVerification: true,
       });
       if (!verified.verified) {
         this.ceremonies.delete(id);
         return { ok: false, status: 400, error: "The security key could not be verified." };
       }
+      // Another answer from this key may have been verified while this one
+      // was: its counter must still be ahead of the stored one (a clone, or
+      // the same answer twice, is not).
+      const newCounter = verified.authenticationInfo.newCounter;
+      const stored = this.store.counter(ceremony.person, credential.id) ?? 0;
+      if ((newCounter > 0 || stored > 0) && newCounter <= stored) {
+        this.ceremonies.delete(id);
+        return { ok: false, status: 400, error: "The security key could not be verified." };
+      }
       const at = this.now();
-      this.store.touch(ceremony.person, credential.id, verified.authenticationInfo.newCounter, at);
+      this.store.touch(ceremony.person, credential.id, newCounter, at);
       ceremony.verifiedAt = at;
       return { ok: true, kind: "assert" };
     } catch {

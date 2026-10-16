@@ -1,4 +1,5 @@
 import { api, persistBotUpdate, type Bot } from "@/state/store";
+import { stepUpApprovals } from "@/lib/step-up-client";
 import type { Routine } from "./routines";
 import type { BotCreationDraft } from "./bot-creation-draft";
 import { imageAttachmentFromFile } from "./composer-attachments";
@@ -35,7 +36,7 @@ export async function createConfiguredBot(
   draft: BotCreationDraft,
   request: typeof api = api,
   update: typeof persistBotUpdate = persistBotUpdate,
-  approvals = typeof window === "undefined" ? undefined : window.ogb?.approvals,
+  approvals = typeof window === "undefined" ? undefined : stepUpApprovals(window.ogb?.approvals),
   visibility?: BotVisibility,
   options?: { memberFieldsOnly?: boolean },
 ): Promise<{ bot: Bot; warnings: string[] }> {
