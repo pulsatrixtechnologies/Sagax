@@ -265,6 +265,34 @@ describe("the cloud screen while its cluster wakes", () => {
   });
 });
 
+describe("one dot per screen in the picker (JC 2026-10-15)", () => {
+  it("merges where the bot works into the state dot: one dot on the button and one per row, the detail in its label", () => {
+    const markup = renderToStaticMarkup(createElement(ScreenPicker, {
+      items: [
+        { key: "server", label: "Cloud", icon: Server, here: true, dot: "offline" },
+        { key: "desktop:d1", label: "MBP", icon: Laptop, dot: "online" },
+      ],
+      chosen: "server",
+      onPick: () => {},
+    }));
+    // two screens: two dots in the list, one more on the closed button
+    expect(markup.match(/shrink-0 rounded-full/g)).toHaveLength(3);
+    expect(markup).not.toContain("bg-accent");
+    expect(markup.match(/aria-label="Offline · this bot works here" title="Offline · this bot works here" data-screen-dot="offline" data-works-here=""/g)).toHaveLength(2);
+    expect(markup).toMatch(/aria-label="Online" title="Online" data-screen-dot="online" class/);
+  });
+
+  it("still marks where the bot works when the state is unknown", () => {
+    const markup = renderToStaticMarkup(createElement(ScreenPicker, {
+      items: [{ key: "server", label: "Cloud", icon: Server, here: true }, { key: "browser", label: "Browser", icon: Globe }],
+      chosen: "browser",
+      onPick: () => {},
+    }));
+    expect(markup.match(/shrink-0 rounded-full/g)).toHaveLength(1);
+    expect(markup).toMatch(/aria-label="this bot works here" title="this bot works here" data-works-here="" class="[^"]*bg-accent/);
+  });
+});
+
 describe("the bot's Works on", () => {
   it("uses the same place names as the composer chip, with the meaning in each tooltip", () => {
     const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: "cloud", onChange: () => {}, disabled: {}, organization: true }));

@@ -12,8 +12,8 @@
 //
 // Above the screen, when there is more than one to look at, a drop-down
 // (ScreenPicker): Cloud, then each of the person's online computers by its
-// name (a person with two PCs sees two), then the bot's browser, a dot on
-// the one the bot works on.
+// name (a person with two PCs sees two), then the bot's browser, one state
+// dot per screen whose label also names the one the bot works on.
 // Picking one only changes the screen shown (and where its Local VM
 // actions go, `desktopId`), never where the bot works.
 //
@@ -159,23 +159,32 @@ export interface ScreenPickerItem {
   key: string;
   label: string;
   icon: LucideIcon;
-  /** The bot works here: a dot, and the tooltip says so. */
+  /** The bot works here: said in the dot's label and the tooltip. */
   here?: boolean;
   /** Its state (src/lib/screen-status.ts): asleep, online or offline. */
   dot?: ScreenDot;
 }
 
-/** The small state dot of a screen, right of its name. */
-export function ScreenStatusDot({ dot }: { dot: ScreenDot }) {
-  const label = t(SCREEN_DOT_LABEL_KEY[dot]);
-  return <span role="img" aria-label={label} title={label} data-screen-dot={dot} className={`size-[7px] shrink-0 rounded-full ${SCREEN_DOT_CLASS[dot]}`} />;
+/** The one small dot of a screen, right of its name (JC 2026-10-15: never
+ * two). Its colour is the screen's state (src/lib/screen-status.ts: green
+ * online, yellow asleep or waking, grey offline); where the bot works is said
+ * in its label and tooltip ("Offline · this bot works here"). A screen whose
+ * state is unknown and where the bot works keeps an accent dot. */
+export function ScreenStatusDot({ dot, here = false }: { dot?: ScreenDot; here?: boolean }) {
+  if (!dot && !here) return null;
+  const worksHere = here ? t("orgComputer.choice.worksHereShort") : null;
+  const label = dot ? [t(SCREEN_DOT_LABEL_KEY[dot]), worksHere].filter(Boolean).join(" · ") : worksHere!;
+  return (
+    <span role="img" aria-label={label} title={label} data-screen-dot={dot} data-works-here={here ? "" : undefined}
+      className={`size-[7px] shrink-0 rounded-full ${dot ? SCREEN_DOT_CLASS[dot] : "bg-accent"}`} />
+  );
 }
 
 /** The Computer tab's one screen chooser, a drop-down (#518 menus): one
  * button names the screen shown (Cloud and each of the person's computers by
  * name on an organization server, then the bot's Browser; Screen and Browser
- * on a solo server) and opens the list of them. The dot marks where the bot
- * works. Keyboard: Enter, Space or the arrows open it; in the list the
+ * on a solo server) and opens the list of them. One dot per screen, its
+ * state; its label also says where the bot works. Keyboard: Enter, Space or the arrows open it; in the list the
  * arrows, Home and End move, Enter or Space pick, Escape and Tab close, and
  * focus comes back to the button. The list stays in the page while closed
  * (hidden), so a screen reader never meets a half-built one. */
@@ -241,8 +250,7 @@ export function ScreenPicker({ items, chosen, onPick }: { items: ScreenPickerIte
         className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full bg-control px-3 py-1 text-[12.5px] text-ink transition-colors hover:bg-raised-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
         <CurrentIcon size={12} aria-hidden="true" />
         <span className="max-w-[180px] truncate">{current.label}</span>
-        {current.here && <span aria-hidden="true" data-works-here="" className="size-1.5 shrink-0 rounded-full bg-accent" />}
-        {current.dot && <ScreenStatusDot dot={current.dot} />}
+        <ScreenStatusDot dot={current.dot} here={current.here} />
         <ChevronDown size={12} aria-hidden="true" className={open ? "rotate-180 text-ink-secondary" : "text-ink-secondary"} />
       </button>
       <div ref={list} id={`${id}-list`} role="listbox" aria-label={t("orgComputer.choice.label")} tabIndex={-1} hidden={!open}
@@ -258,8 +266,7 @@ export function ScreenPicker({ items, chosen, onPick }: { items: ScreenPickerIte
               className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 ${index === active && open ? "bg-raised-hover" : ""} ${selected ? "text-ink" : "text-ink-secondary"}`}>
               <Icon size={13} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              {item.here && <span data-works-here="" className="size-1.5 shrink-0 rounded-full bg-accent"><span className="sr-only">{t("orgComputer.choice.worksHereShort")}</span></span>}
-              {item.dot && <ScreenStatusDot dot={item.dot} />}
+              <ScreenStatusDot dot={item.dot} here={item.here} />
               {selected ? <Check size={13} aria-hidden="true" /> : <span aria-hidden="true" className="w-[13px]" />}
             </div>
           );
