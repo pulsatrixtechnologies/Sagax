@@ -124,7 +124,7 @@ describe("markdown fields", () => {
     });
     const skill = { name: "release-notes", description: "Writes notes", source: "local-import", enabled: true, tags: [], version: null, importedAt: "2026-10-08T00:00:00Z", warnings: [], assignedBots: [] };
     const onSaved = vi.fn();
-    render(createElement(SkillPage, { skill, onBack: vi.fn(), onClose: vi.fn(), onSaved, onDeleted: vi.fn() }) as ReactElement);
+    render(createElement(SkillPage, { skill, onBack: vi.fn(), onSaved, onDeleted: vi.fn() }) as ReactElement);
     await settle();
     const editor = await markdownEditorIn(host, "skill-instructions");
     expect(markdownText(editor)).toBe("## Steps\n\n1. Read the log");

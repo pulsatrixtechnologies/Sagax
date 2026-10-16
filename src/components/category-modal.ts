@@ -23,7 +23,41 @@ export const CATEGORY_MODAL = {
   titleBar: "shrink-0 px-4 pb-3 pr-12 pt-6 sm:px-8",
   title: "text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink",
   body: "px-4 pb-6 pt-4 sm:px-8",
+  /** The gray line under a title (Browse Bots, Connect apps). */
+  subtitle: "mt-0.5 text-[13px] leading-[18px] text-ink-secondary",
+  /** The filters, search and list of a browse pane (Browse Bots, Connect
+   * apps): one set of sizes so the two read as one window. */
+  toolbar: "shrink-0 px-4 sm:px-8",
+  chips: "flex flex-wrap items-center gap-1.5",
+  search: "flex min-w-0 flex-1 items-center gap-2.5 rounded-[14px] border border-transparent bg-hover px-4 py-2.5 focus-within:border-border-strong",
+  searchInput: "min-w-0 flex-1 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none",
+  list: "min-h-0 px-4 pb-7 pt-4 sm:px-8",
+  section: "mb-5",
+  sectionHead: "mb-1.5 flex items-center justify-between gap-3",
+  sectionTitle: "text-[13px] font-semibold text-ink",
+  sectionLink: "text-[12px] text-ink-secondary hover:text-ink",
+  grid: "grid grid-cols-1 gap-x-2 gap-y-0.5 md:grid-cols-2",
+  /** A secondary button in a title bar or beside the search (Browse Bots,
+   * N connected). */
+  outlineButton: "flex shrink-0 items-center gap-2 rounded-[14px] border border-border px-3.5 py-2.5 text-[13px] leading-[18px] text-ink hover:bg-hover",
 } as const;
+
+/** A filter pill: the chosen one filled with the accent. */
+export function categoryChipClass(active: boolean): string {
+  return cn(
+    "h-7 rounded-full border px-3 text-[12.5px] transition-colors motion-reduce:transition-none",
+    active ? "border-transparent bg-accent text-accent-ink" : "border-border text-ink-secondary hover:bg-hover hover:text-ink",
+  );
+}
+
+/** A row's button: Use, Connect, Add (primary); Open, Remove, Update
+ * (secondary, outlined). */
+export function cardActionClass(variant: "primary" | "secondary" = "primary"): string {
+  return cn(
+    "inline-flex shrink-0 items-center justify-center rounded-full px-3.5 py-1.5 text-[12.5px] font-medium leading-[18px] disabled:opacity-50",
+    variant === "primary" ? "bg-ink text-app hover:opacity-90" : "border border-border text-ink hover:bg-hover",
+  );
+}
 
 export function categoryNavItemClass(current: boolean): string {
   return cn(

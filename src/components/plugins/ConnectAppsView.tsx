@@ -1,13 +1,15 @@
 // Plugins, main view ("Connect apps"): every app, MCP server, catalog plugin
-// and skill in one list, with search across all of them, category chips and
+// and skill in one list, with search across all of them, category pills and
 // a short section per category. Installed rows open their detail page; the
-// others carry Add (nothing to sign in to) or Connect (an account). The
-// filter row is All plus one Category menu; the connection state refreshes
-// when the panel opens (Refresh stays in Manage).
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, LayoutGrid, Loader2, Search, X } from "lucide-react";
+// others carry Add (nothing to sign in to) or Connect (an account). Since
+// 2026-10-16 it has Browse Bots' layout (src/components/bot-catalog/
+// BotCatalogView.tsx, src/components/category-modal.ts): title and gray
+// subtitle (Browse Bots at the right), the pills, the search with
+// "N connected", then the sections in two columns. View all opens a section
+// as its own page, in the same window, under a breadcrumb.
+import { useEffect, useState, type ReactNode } from "react";
+import { ChevronRight, LayoutGrid, Loader2, Search } from "lucide-react";
 
-import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import {
@@ -19,13 +21,21 @@ import {
   type PluginSection,
   type PluginTypeFilter,
 } from "@/lib/plugins-model";
+import { Breadcrumb, type Crumb } from "../Breadcrumb";
+import { CATEGORY_MODAL, categoryChipClass } from "../category-modal";
 import { PluginIcon, PluginStatusLabel } from "./PluginParts";
 
-/** The row: All, then one Category menu that holds every category in the
- * section order. Kinds and sources are not in the row. */
+/** The pills: All, then each category in the section order (only those with
+ * a row, and the chosen one). Kinds and sources are not pills. */
 export const MAIN_CHIPS: PluginFilter[] = ["all"];
 export const CATEGORY_CHIPS: PluginFilter[] = [...CATEGORY_ORDER];
 export const TYPE_FILTERS: PluginTypeFilter[] = ["any", "apps", "mcp", "skills"];
+
+/** The pills shown for these rows: All, then the categories that have one. */
+export function categoryPills(items: readonly Pick<PluginItem, "category">[], filter: PluginFilter): PluginFilter[] {
+  const present = new Set<string>(items.map((item) => item.category));
+  return [...MAIN_CHIPS, ...CATEGORY_CHIPS.filter((chip) => present.has(chip) || chip === filter)];
+}
 
 const FILTER_KEY: Record<string, LocaleKey> = {
   all: "connectApps.filter.all",
@@ -70,69 +80,15 @@ export function sectionTitle(section: Pick<PluginSection, "id">, sourceLabel?: (
   return t(SECTION_KEY[section.id] ?? "connectApps.section.other");
 }
 
-/** A small menu under a pill: the Category menu. */
-function Dropdown<T extends string>({ label, active, options, value, onSelect, labelOf, align = "left", icon, ariaLabel }: {
-  label: string;
-  active: boolean;
-  options: T[];
-  value: string;
-  onSelect: (value: T) => void;
-  labelOf: (value: T) => string;
-  align?: "left" | "right";
-  icon?: ReactNode;
-  ariaLabel?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [open]);
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={ariaLabel}
-        onClick={() => setOpen((current) => !current)}
-        className={cn(
-          "flex h-7 items-center gap-1 rounded-full border px-3 text-[12.5px] transition-colors",
-          active ? "border-transparent bg-accent text-accent-ink" : "border-border text-ink-secondary hover:bg-hover hover:text-ink",
-        )}
-      >
-        {icon}
-        {label}
-        <ChevronDown size={13} aria-hidden="true" />
-      </button>
-      {open && (
-        <div role="menu" className={cn("absolute top-8 z-10 min-w-[180px] rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1", align === "right" ? "right-0" : "left-0")}>
-          {options.map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="menuitemradio"
-              aria-checked={value === option}
-              onClick={() => {
-                onSelect(option);
-                setOpen(false);
-              }}
-              className={cn("block w-full truncate rounded-lg px-3 py-1.5 text-left text-[12.5px]", value === option ? "bg-hover text-ink" : "text-ink-secondary hover:bg-hover hover:text-ink")}
-            >
-              {labelOf(option)}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 const PAGE = 60;
+
+/** A section opened alone (View all) in the panel's window: its title, the
+ * pages above it, and back. */
+export interface ConnectAppsSubpage {
+  title: string;
+  trail: readonly Crumb[];
+  onBack: () => void;
+}
 
 export interface ConnectAppsViewProps {
   items: PluginItem[];
@@ -141,26 +97,29 @@ export interface ConnectAppsViewProps {
   onSearch: (value: string) => void;
   filter: PluginFilter;
   onFilter: (filter: PluginFilter) => void;
-  /** the type filter at the end of the chip row */
+  /** the type filter (a View all on a kind or a source) */
   type?: PluginTypeFilter;
   onType?: (type: PluginTypeFilter) => void;
   /** marketplace (or other) sources: a type of their own and a section */
   extraSources?: string[];
   /** connectors a Claude account brings, counted in "N connected" */
   extraConnected?: number;
-  /** "Bot templates", beside the search (absent: no button) */
   sourceLabel?: (source: string) => string;
-  onClose: () => void;
   onOpenManage: () => void;
-  /** Browse bots, beside the search (2026-10-16: it left the avatar menu);
-   * absent, no button */
+  /** Browse Bots, top right beside the title (2026-10-16: it left the avatar
+   * menu, then the search row); absent, no button */
   onBrowseBots?: () => void;
+  /** View all on a section: the panel opens it as a page of its own (absent:
+   * the section's filter is applied in place) */
+  onViewAll?: (section: PluginSection) => void;
+  /** this view is a section opened alone: a breadcrumb and its title */
+  subpage?: ConnectAppsSubpage;
   onOpenItem: (item: PluginItem) => void;
   /** the row's Add / Connect button */
   renderAction: (item: PluginItem) => ReactNode;
   /** what goes under a row (an account name field, a status line) */
   renderBelow?: (item: PluginItem) => ReactNode;
-  /** notices between the chips and the list */
+  /** notices between the search and the list */
   notices?: ReactNode;
   /** the install scope (everyone, or one bot) under the title */
   scope?: ReactNode;
@@ -170,73 +129,84 @@ export interface ConnectAppsViewProps {
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
   const { items, loading, search, onSearch, filter, onFilter, type = "any", onType, extraSources = [], extraConnected = 0, sourceLabel,
-    onClose, onOpenManage, onBrowseBots, onOpenItem, renderAction, renderBelow, notices, scope, focus } = props;
+    onOpenManage, onBrowseBots, onViewAll, subpage, onOpenItem, renderAction, renderBelow, notices, scope, focus } = props;
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [filter, type, search]);
 
   const sections = mainSections(items, search, filter, type, extraSources, focus);
   const summary = connectedSummary(items, extraConnected);
-  const categoryActive = CATEGORY_CHIPS.includes(filter);
-  const single = sections.length === 1 && (search.trim() !== "" || filter !== "all" || type !== "any");
+  const single = subpage !== undefined || (sections.length === 1 && (search.trim() !== "" || filter !== "all" || type !== "any"));
   const viewAll = (section: PluginSection) => {
     if (!section.filter) return;
+    if (onViewAll) { onViewAll(section); return; }
     if ("filter" in section.filter) onFilter(section.filter.filter);
     else onType?.(section.filter.type);
   };
 
   return (
-    <>
-      <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6 sm:px-8">
-        <h2 id="plugins-title" className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">{t("connectApps.title")}</h2>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            data-tour="apps-close"
-            onClick={onClose}
-            aria-label={t("connectors.closeAria")}
-            className="flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary"
-          >
-            <X size={18} />
-          </button>
-        </div>
-      </header>
-
-      {scope && <div className="px-6 pb-3 sm:px-8">{scope}</div>}
-
-      <div className="px-6 sm:px-8">
-        <div className="flex items-center gap-2">
-          <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[14px] border border-transparent bg-hover px-4 py-2.5 focus-within:border-border-strong">
-            <Search size={16} className="shrink-0 text-ink-secondary" />
-            <input
-              value={search}
-              onChange={(event) => onSearch(event.target.value)}
-              placeholder={t("connectApps.searchPlaceholder")}
-              aria-label={t("connectApps.searchPlaceholder")}
-              className="min-w-0 flex-1 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
-            />
-          </label>
-          {onBrowseBots && (
+    <div className="flex min-h-0 flex-1 flex-col" data-plugins-main={subpage ? "section" : "home"}>
+      <header className={CATEGORY_MODAL.titleBar}>
+        {subpage && <Breadcrumb trail={subpage.trail} current={subpage.title} onBack={subpage.onBack} backData={{ "data-plugins-back": "" }} />}
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 id="plugins-title" className={CATEGORY_MODAL.title}>{subpage ? subpage.title : t("connectApps.title")}</h2>
+            {!subpage && <p className={CATEGORY_MODAL.subtitle}>{t("connectApps.subtitle")}</p>}
+          </div>
+          {!subpage && onBrowseBots && (
             <button
               type="button"
               data-plugins-browse-bots
               onClick={onBrowseBots}
-              className="flex shrink-0 items-center gap-2 rounded-[14px] border border-border px-3.5 py-2.5 text-[13px] leading-[18px] text-ink hover:bg-hover"
+              className={CATEGORY_MODAL.outlineButton}
             >
               <LayoutGrid size={16} className="text-ink-secondary" aria-hidden="true" />
               <span>{t("sidebar.browseBots")}</span>
             </button>
           )}
+        </div>
+        {scope && <div className="mt-3">{scope}</div>}
+      </header>
+
+      <div className={CATEGORY_MODAL.toolbar}>
+        {!subpage && (
+          <div className={CATEGORY_MODAL.chips} role="toolbar" aria-label={t("connectApps.filtersAria")} data-plugins-chips>
+            {categoryPills(items, filter).map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                aria-pressed={filter === chip}
+                data-plugins-chip={chip}
+                onClick={() => onFilter(chip)}
+                className={categoryChipClass(filter === chip)}
+              >
+                {filterLabel(chip, sourceLabel)}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className={subpage ? "flex items-center gap-2" : "mt-3 flex items-center gap-2"}>
+          <label className={CATEGORY_MODAL.search}>
+            <Search size={16} className="shrink-0 text-ink-secondary" aria-hidden="true" />
+            <input
+              value={search}
+              onChange={(event) => onSearch(event.target.value)}
+              placeholder={t("connectApps.searchPlaceholder")}
+              aria-label={t("connectApps.searchPlaceholder")}
+              data-plugins-search
+              className={CATEGORY_MODAL.searchInput}
+            />
+          </label>
           <button
             type="button"
             data-plugins-connected
             onClick={onOpenManage}
-            className="flex shrink-0 items-center gap-2 rounded-[14px] border border-border px-3.5 py-2.5 text-[13px] leading-[18px] text-ink hover:bg-hover"
+            className={CATEGORY_MODAL.outlineButton}
             aria-label={t("connectApps.manageAria", { count: summary.count })}
           >
             {summary.icons.length > 0 && (
               <span className="flex -space-x-1.5" aria-hidden="true">
                 {summary.icons.map((item) => (
-                  <span key={item.key} className="rounded-lg ring-2 ring-elevated">
+                  <span key={item.key} className="rounded-lg ring-2 ring-app">
                     <PluginIcon item={item} className="size-5 rounded-md" />
                   </span>
                 ))}
@@ -246,36 +216,11 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
             <ChevronRight size={14} className="text-ink-secondary" aria-hidden="true" />
           </button>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-1.5" role="toolbar" aria-label={t("connectApps.filtersAria")}>
-          {MAIN_CHIPS.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              aria-pressed={filter === chip}
-              onClick={() => onFilter(chip)}
-              className={cn(
-                "h-7 rounded-full border px-3 text-[12.5px] transition-colors",
-                filter === chip ? "border-transparent bg-accent text-accent-ink" : "border-border text-ink-secondary hover:bg-hover hover:text-ink",
-              )}
-            >
-              {filterLabel(chip, sourceLabel)}
-            </button>
-          ))}
-          <Dropdown
-            label={categoryActive ? filterLabel(filter, sourceLabel) : t("connectApps.filter.category")}
-            active={categoryActive}
-            options={CATEGORY_CHIPS}
-            ariaLabel={t("connectApps.filter.category")}
-            value={filter}
-            onSelect={onFilter}
-            labelOf={(chip) => filterLabel(chip, sourceLabel)}
-          />
-        </div>
       </div>
 
       {notices}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-4 sm:px-8" data-plugins-list>
+      <div className={`${CATEGORY_MODAL.pane} ${CATEGORY_MODAL.list}`} data-plugins-list>
         {loading && items.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-24 text-[13px] text-ink-secondary">
             <Loader2 size={14} className="animate-spin" /> {t("connectors.loadingCatalog")}
@@ -289,16 +234,18 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
           sections.map((section) => {
             const shown = single ? section.items.slice(0, limit) : section.items;
             return (
-              <section key={section.id} data-plugins-section={section.id} className="mb-5">
-                <div className="mb-1.5 flex items-center justify-between gap-3">
-                  <h3 className="text-[13px] font-semibold text-ink">{sectionTitle(section, sourceLabel)}</h3>
-                  {!single && section.filter && section.total > section.items.length && (
-                    <button type="button" onClick={() => viewAll(section)} className="text-[12px] text-ink-secondary hover:text-ink">
-                      {t("connectApps.viewAll")}
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 md:grid-cols-2">
+              <section key={section.id} data-plugins-section={section.id} className={CATEGORY_MODAL.section}>
+                {!subpage && (
+                  <div className={CATEGORY_MODAL.sectionHead}>
+                    <h3 className={CATEGORY_MODAL.sectionTitle}>{sectionTitle(section, sourceLabel)}</h3>
+                    {!single && section.filter && section.total > section.items.length && (
+                      <button type="button" data-plugins-view-all={section.id} onClick={() => viewAll(section)} className={CATEGORY_MODAL.sectionLink}>
+                        {t("connectApps.viewAll")}
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div className={CATEGORY_MODAL.grid}>
                   {shown.map((item) => (
                     <PluginRow key={item.key} item={item} onOpen={onOpenItem} action={renderAction(item)} below={renderBelow?.(item)} />
                   ))}
@@ -315,7 +262,7 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
           })
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -333,10 +280,10 @@ export function PluginRow({ item, onOpen, action, below }: { item: PluginItem; o
           className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
           aria-label={opens ? t("connectApps.openAria", { name: item.name }) : undefined}
         >
-          <PluginIcon item={item} />
+          <PluginIcon item={item} className="size-11" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium leading-[18px] text-ink">{item.name}</span>
-            <span className="block truncate text-[12px] leading-[18px] text-ink-tertiary" title={item.description}>{item.description}</span>
+            <span className="block truncate text-[12px] leading-[18px] text-ink-secondary" title={item.description}>{item.description}</span>
           </span>
         </button>
         {action ?? (item.installed ? <PluginStatusLabel status={item.status} /> : null)}
