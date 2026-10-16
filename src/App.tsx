@@ -15,6 +15,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { ChatView } from "@/components/ChatView";
 import { GroupView } from "@/components/GroupView";
 import { PersonPanel } from "@/components/PersonPanel";
+import { SideThreadPanel } from "@/components/SideThreadPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
 import {
@@ -441,6 +442,9 @@ function Shell() {
       )}
       {composeOpen && <ComposeToPicker onClose={() => setComposeOpen(false)} />}
       </div>
+      {/* A bot thread opened beside the main chat (Open beside, or
+          Option-click on a thread row); one at a time. */}
+      <SideThreadPanel />
       {/* The panels below are siblings, so their keys must differ even
           though each is remounted per bot. Two siblings keyed `bot.id`
           collide in React's keyed reconciliation whenever both are open

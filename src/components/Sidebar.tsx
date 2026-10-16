@@ -61,7 +61,7 @@ import { peopleDmPeer } from "@/lib/people-dm";
 import { BotRoleTag, PersonLabelTag } from "./LabelTag";
 import { SidebarUnreadThreads, sidebarUnreadThreads } from "./SidebarUnreadThreads";
 import { nudgeLineText } from "@/lib/nudge-line";
-import { Eye, UserRound } from "lucide-react";
+import { ChevronsRight, Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
 import { PersonAvatar } from "./MessageAuthor";
@@ -166,6 +166,8 @@ import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivit
 import { citationPreviewText } from "@/lib/citations";
 import { groupMemberBots } from "@/lib/group-members";
 import { plainPreviewText } from "@/lib/plain-preview";
+import { openSideThread } from "@/lib/side-thread";
+import { moveRailFocus } from "@/lib/sidebar-rail";
 import { isClientCancellation } from "../../shared/client-cancel";
 
 
@@ -452,7 +454,7 @@ export function GroupListItem({
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
       title={density === "icons" ? rowName : undefined}
-      aria-label={density === "icons" ? rowName : undefined}
+      aria-label={density === "icons" ? [rowName, groupStatus ? t("chat.activity.working") : null, group.unread ? t("task.unread") : null].filter(Boolean).join(" · ") : undefined}
       data-people-dm={peer ? peer.id : undefined}
     >
       {peer
@@ -474,6 +476,8 @@ export function GroupListItem({
       {density === "icons" && group.unread && (
         <span className="absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-unread" />
       )}
+      {/* the rail's only sign that the room is at work, like a bot's dot */}
+      {density === "icons" && groupStatus && <StatusDot tone="success" testId="room-working-dot" className="absolute right-1.5 top-1.5" sizeClassName="size-3" />}
     </button>
     {!group.dm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: rowName })} aria-expanded={expanded}
       onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
@@ -1790,6 +1794,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
       onPin: (task: Row, pinned: boolean) => patch(task, { pinned }),
       onSnooze: (task: Row, snoozedUntil: number | null) => patch(task, { snoozedUntil }),
       onLink: (task: Row, link: string | null) => patch(task, { link }),
+      onOpenAside: (task: Row) => openSideThread({ botId, threadId: task.threadId }),
       onRefreshPermissions: (task: Row) => {
         const current = latest.current;
         const mode = approvalModeFor(current);
@@ -3035,6 +3040,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
 
       {/* Bot list. GET /api/org 404 keeps this roster. */}
       <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto pb-6 pt-1", density === "icons" ? "px-2" : "pl-3 pr-[13px]")}
+        data-sidebar-rail={density === "icons" ? "" : undefined}
+        onKeyDown={density === "icons" ? moveRailFocus : undefined}
         onContextMenu={orgMode ? (event) => { if (event.target === event.currentTarget || (event.target as HTMLElement).dataset?.sidebarEmpty !== undefined) openOrgMenu(event, null, null); } : undefined}>
         {pinnedBots.length > 0 && (
           // The reference window's tiles: 95 x 115, 4px apart and centred as
@@ -3262,6 +3269,19 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </button>
         )}
         {density === "icons" && (
+          <button
+            type="button"
+            data-sidebar-compact-toggle
+            aria-pressed="true"
+            onClick={() => setSidebarCollapsed(false)}
+            aria-label={t("sidebar.compact.toggle")}
+            title={t("sidebar.compact.turnOff")}
+            className="flex h-9 w-full items-center justify-center rounded-lg px-2 text-sidebar-ink-secondary outline-none hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60"
+          >
+            <ChevronsRight size={20} aria-hidden="true" />
+          </button>
+        )}
+        {density === "icons" && (
           <SidebarPhoneButton
             density={density}
             onOpen={() => dispatch(phoneSettingsAction())}
@@ -3481,6 +3501,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize sidebar"
+        aria-description={t("sidebar.compact.edgeHint")}
         aria-valuemin={SIDEBAR_RAIL_WIDTH}
         aria-valuemax={SIDEBAR_MAX_WIDTH}
         aria-valuenow={density === "icons" ? SIDEBAR_RAIL_WIDTH : sidebarWidth}
@@ -3509,6 +3530,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         }}
         onDoubleClick={() => setSidebarCollapsed(density !== "icons")}
         onKeyDown={(event) => {
+          // Enter toggles the compact sidebar (the icons rail), as a
+          // window splitter does, like the double-click.
+          if (event.key === "Enter") {
+            event.preventDefault();
+            setSidebarCollapsed(density !== "icons");
+            return;
+          }
           const delta = event.key === "ArrowRight" ? 24 : event.key === "ArrowLeft" ? -24 : 0;
           if (!delta) return;
           event.preventDefault();

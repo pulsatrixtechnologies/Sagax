@@ -1,0 +1,81 @@
+// The compact sidebar (Grok Bot's "Activer ou désactiver la barre latérale
+// compacte"): the icons rail, its toggle in the rail's foot, Enter on the
+// edge, its arrow keys. The head keeps no collapse button (Sidebar.header).
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
+
+import { setLocale } from "@/lib/i18n";
+import { resetAchievementsForTests } from "@/lib/achievements";
+import type { SidebarDensity } from "@/lib/sidebar-preferences";
+import { StoreProvider } from "@/state/store";
+
+const fixture = vi.hoisted(() => ({ showLogo: true, density: "comfortable" as SidebarDensity, shortcuts: false }));
+
+vi.mock("@/lib/sidebar-preferences", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/sidebar-preferences")>(),
+  useSidebarDensity: () => fixture.density,
+}));
+
+vi.mock("@/lib/sidebar-shortcuts-preferences", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/sidebar-shortcuts-preferences")>(),
+  useSidebarShortcuts: () => fixture.shortcuts,
+  migrateSidebarShortcuts: () => false,
+}));
+
+vi.mock("@/lib/sidebar-logo-preferences", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/sidebar-logo-preferences")>(),
+  useShowSidebarLogo: () => fixture.showLogo,
+}));
+
+import { Sidebar } from "./Sidebar";
+
+const render = () => renderToStaticMarkup(
+  createElement(StoreProvider, null, createElement(Sidebar, { open: true, onClose: () => {} })),
+);
+
+beforeEach(() => {
+  vi.stubGlobal("window", { innerWidth: 1280, location: { protocol: "http:", search: "" } });
+  setLocale("en");
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  fixture.shortcuts = false;
+  fixture.density = "comfortable";
+  resetAchievementsForTests();
+  setLocale("en");
+});
+
+describe("compact sidebar", () => {
+  it("gives the rail a toggle back to the full sidebar, pressed, in its foot", () => {
+    fixture.density = "icons";
+    const html = render();
+    const toggle = (html.match(/<button[^>]*data-sidebar-compact-toggle[^>]*>/g) ?? [])[0] ?? "";
+    expect(toggle).toContain('aria-pressed="true"');
+    expect(toggle).toContain('aria-label="Turn the compact sidebar on or off"');
+    expect(toggle).toContain('title="Show the full sidebar"');
+    // in the foot, not the head
+    expect(html.indexOf("data-sidebar-compact-toggle")).toBeGreaterThan(html.indexOf("data-sidebar-foot"));
+    expect(html).toContain("data-sidebar-rail");
+    expect(html).toContain('aria-description="Enter turns the compact sidebar on or off"');
+  });
+
+  it.each(["comfortable", "compact"] as const)("has no rail toggle or rail keys at %s density", (density) => {
+    fixture.density = density;
+    const html = render();
+    expect(html).not.toContain("data-sidebar-compact-toggle");
+    expect(html).not.toContain("data-sidebar-rail");
+  });
+
+  it("speaks Québec French", () => {
+    fixture.density = "icons";
+    setLocale("fr");
+    const html = render();
+    expect(html).toContain('aria-label="Activer ou désactiver la barre latérale compacte"');
+    expect(html).toContain('title="Afficher la barre latérale complète"');
+    expect(html).toContain('aria-description="Entrée active ou désactive la barre latérale compacte"');
+  });
+});

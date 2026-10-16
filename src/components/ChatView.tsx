@@ -1,4 +1,4 @@
-import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
 import { downloadBotZip, showBotZipExport } from "@/lib/bot-zip";
 import { TeammatesWorkingChip } from "./TeammatesWorkingChip";
 import { ThreadLinkContext } from "@/components/ThreadLinkMenu";
@@ -1332,7 +1332,13 @@ function PinnedBanner({
   );
 }
 
-export function ChatView({ bot: profile }: { bot: Bot }) {
+/** The compact chat of a side thread (SideThreadPanel): its own header in
+ * place of the bot pill and controls, and none of the window-wide parts
+ * (calls, ⌘F, the app's error and notice banners), which stay with the
+ * main chat. */
+export type SideChat = { header: ReactNode; label: string };
+
+export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) {
   const showInspector = useShowInspectorButton();
   const advanced = useAdvancedMode();
   const bot = useMemo(() => currentTaskBot(profile), [profile]);
@@ -1368,6 +1374,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   );
   useEffect(() => setFindOpen(false), [bot.threadId]);
   useEffect(() => {
+    if (side) return;
     const onFind = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -1376,7 +1383,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
     };
     window.addEventListener("keydown", onFind);
     return () => window.removeEventListener("keydown", onFind);
-  }, []);
+  }, [side]);
 
   // only the active branch is rendered; forks stay reachable via ‹ › nav.
   // Keyed on the transcript alone: a bot frame that leaves it untouched
@@ -1591,16 +1598,19 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const resultsThreadId = routineExecution?.resultsThreadId ?? routineExecution?.sourceThreadId;
   const canOpenResults = resultsThreadId && [...state.bots, ...state.groups].some((owner) => owner.threadId === resultsThreadId || owner.tasks?.some((task) => task.threadId === resultsThreadId));
 
+  const Root = side ? "section" : "main";
   return (
     <ThreadLinkContext value={threadLink}>
     <ExchangeColumnProvider node={exchangeColumn.node}>
-    <main ref={exchangeColumn.ref} className="app-glow relative isolate flex h-full min-w-0 flex-1 flex-col bg-app">
+    <Root ref={exchangeColumn.ref} aria-label={side?.label} data-side-chat={side ? "" : undefined} className="app-glow relative isolate flex h-full min-w-0 flex-1 flex-col bg-app">
       {/* The older call mode covers the thread while the bot is on the line;
           a voice mode call docks at the top of the banner stack below */}
+      {!side && <>
       <CallOverlay bot={bot} />
       {(macInset || browser) && <div className="content-topbar-strip" />}
+      </>}
       {/* Header */}
-      <div
+      {side ? side.header : <div
         {...headerDragProps}
         className={cn(
           "content-topbar",
@@ -1664,7 +1674,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           />}
           <TaskPicker bot={bot} />
         </div>
-      </div>
+      </div>}
 
       <div className="content-card-body flex min-h-0 flex-1 flex-col">
       {/* Banners sit below the floating header; the wrapper vanishes when
@@ -1674,9 +1684,11 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           the name chip; collapsed it keeps its own small row, expanded its
           card hangs over the thread */}
       <VoiceCallDock bot={bot} />
+      {!side && <>
       <BotActivityPicker bot={bot} />
       <ThreadsOffReturnLink bot={bot} />
       <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />
+      </>}
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">
         <span className="min-w-0 flex-1 truncate">{t("routines.executionDetails", { name: routineExecution.routineName })}</span>
@@ -1685,8 +1697,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       </div>}
       {findOpen && <ChatFindBar threadId={bot.threadId} onClose={() => setFindOpen(false)} />}
 
-      <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />
-      <ChatNotice notice={state.notice} />
+      {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
+      {!side && <ChatNotice notice={state.notice} />}
 
       {/* Pinned message banner */}
       <PinnedBanner
@@ -1867,7 +1879,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       </div>
       </div>
 
-    </main>
+    </Root>
     </ExchangeColumnProvider>
     </ThreadLinkContext>
   );

@@ -2945,6 +2945,26 @@ and `sidebar-logo-preferences.test.ts`:
   `DesktopTheme.swift`) mirrors the head (no logo), tiles, headers with the
   folded count and rows.
 
+## Side thread and compact sidebar (Grok Bot parity, 2026-10-16)
+
+- Side thread (`src/lib/side-thread.ts`, `SideThreadPanel.tsx`): a bot
+  thread opens in a resizable column right of the main chat from its row's
+  menu (Open beside / Ouvrir à côté) or Option-click (Alt-click). One at a
+  time, this window's own (never the app store or the server); its width is
+  stored apart (`sagax.sideThread.width.v1`, 360 to 900 px, through
+  `DockedPanelResize` bounds). It is `ChatView` with `side` (its own header,
+  no calls, ⌘F, error or notice banners) over its own copy of the thread:
+  the newest page from `GET /api/threads/:id/messages`, then the live
+  `message`, `message.patch` and `thread` frames (`listenLiveFrames`), so a
+  remote client works the same. It closes itself when the main chat opens
+  that thread or the thread is gone. Rooms do not offer it. Tests:
+  `src/lib/side-thread.test.ts`, `ChatView.side.test.ts`, `ThreadMenu.test.ts`.
+- Compact sidebar = icons density, the rail (`sidebar-preferences.ts`). The
+  head keeps no collapse button (2026-10-02); the rail's foot has the
+  pressed toggle back, Enter on the edge toggles, and the arrow keys walk
+  the rail (`src/lib/sidebar-rail.ts`). A working room wears the green dot
+  like a bot. Tests: `Sidebar.compact.test.ts`, `src/lib/sidebar-rail.test.ts`.
+
 ## Primary Bot (formerly Chief of Staff)
 
 A person's Primary Bot is their main contact among their bots: it gets the
