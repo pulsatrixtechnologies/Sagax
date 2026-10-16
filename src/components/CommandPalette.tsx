@@ -33,6 +33,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { SearchHit } from "@/lib/search-hit";
 import { landOnSearchHit } from "@/lib/focus-message";
+import { navigate } from "@/lib/view-transitions";
 import { isMacPlatform } from "@/lib/keyboard-shortcuts";
 import { requestReleaseNotes } from "@/lib/release-notes-ui";
 import { setComposerChannelMode } from "@/lib/drafts";
@@ -226,10 +227,10 @@ export function CommandPalette({
         }
         return;
       case "bot":
-        openBot(dispatch, action.bot, showThreads);
+        navigate(() => openBot(dispatch, action.bot, showThreads));
         return;
       case "room":
-        dispatch({ type: "select", id: action.group.id });
+        navigate(() => dispatch({ type: "select", id: action.group.id }));
         return;
       case "newConversation":
         onNewConversation?.();

@@ -15,6 +15,7 @@ import { completionPatch } from "@/lib/onboarding";
 import { launchBridges } from "@/lib/launch";
 import { servedPage } from "@/lib/desktop";
 import { brand } from "@/lib/brand";
+import { navigate } from "@/lib/view-transitions";
 import { useServerMode } from "./ServerModeSettings";
 import { ApiKeyRow, credentialCopy } from "./ApiKeys";
 import { DecisionModelSettings } from "./DecisionModelSettings";
@@ -476,6 +477,8 @@ export function SettingsModal() {
       ? "appearance"
       : current;
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Closing goes back out of Settings with a quick page cross-fade.
+  const closeSettings = () => navigate(() => dispatch({ type: "toggleAppSettings", open: false }), "back", "page");
   const [query, setQuery] = useState("");
   useEffect(() => window.ogb?.environments?.onOpenSettings?.(() => setQuery("")), []);
   useEffect(() => window.ogb?.onOpenAppSettings?.(() => setQuery("")), []);
@@ -596,7 +599,7 @@ export function SettingsModal() {
         .some(child => child.getClientRects().length))) return;
       if (event.key === "Escape") {
         event.preventDefault();
-        dispatch({ type: "toggleAppSettings", open: false });
+        navigate(() => dispatch({ type: "toggleAppSettings", open: false }), "back", "page");
         return;
       }
       if (event.key !== "Tab" || !dialog) return;
@@ -633,8 +636,10 @@ export function SettingsModal() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6"
-      onMouseDown={(e) => e.target === e.currentTarget && dispatch({ type: "toggleAppSettings", open: false })}
+      // in: the backdrop fades and the sheet settles from 98% (starting:, the
+      // first paint); out: a quick page cross-fade (navigate, "back")
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 transition-opacity duration-base ease-out-quint starting:opacity-0 motion-reduce:transition-none sm:p-6"
+      onMouseDown={(e) => e.target === e.currentTarget && closeSettings()}
     >
       <div
         ref={dialogRef}
@@ -642,7 +647,7 @@ export function SettingsModal() {
         aria-modal="true"
         aria-labelledby="app-settings-title"
         tabIndex={-1}
-        className="flex h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))] overflow-hidden rounded-[14px] border border-border bg-app outline-none"
+        className="flex h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))] overflow-hidden rounded-[14px] border border-border bg-app outline-none transition-[opacity,scale] duration-base ease-out-quint starting:scale-98 starting:opacity-0 motion-reduce:transition-none"
       >
         {/* section nav */}
         <span id="app-settings-title" className="sr-only">{t("settings.title")}</span>
@@ -660,7 +665,7 @@ export function SettingsModal() {
                 if (e.key !== "Escape") return;
                 e.stopPropagation();
                 if (query) setQuery("");
-                else dispatch({ type: "toggleAppSettings", open: false });
+                else closeSettings();
               }}
               placeholder={t("settings.search")}
               aria-label={t("settings.searchAria")}
@@ -724,7 +729,7 @@ export function SettingsModal() {
 
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <button
-            onClick={() => dispatch({ type: "toggleAppSettings", open: false })}
+            onClick={closeSettings}
             aria-label={t("settings.close")}
             title={`${t("settings.close")} (${shortcutLabel("close-panel")})`}
             className="absolute right-2.5 top-2.5 z-10 flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary"

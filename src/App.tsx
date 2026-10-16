@@ -56,6 +56,7 @@ import { DataWindowViewSync } from "@/components/DataWindowButton";
 import { useExternalChatLinks } from "@/hooks/use-external-chat-links";
 import { ChatNotice } from "@/components/ChatErrorBanner";
 import { TeamBotFromThreadHost } from "@/components/TeamBotFromThreadDialog";
+import { navigate } from "@/lib/view-transitions";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -212,14 +213,14 @@ function Shell() {
         const target = bots[Number(e.key) - 1];
         if (target) {
           e.preventDefault();
-          openBot(dispatch, target, showThreads);
+          navigate(() => openBot(dispatch, target, showThreads));
         }
       } else if (e.shiftKey && (e.key === "[" || e.key === "]")) {
         const idx = bots.findIndex((b) => b.id === state.selectedId);
         const next = bots[(idx + (e.key === "]" ? 1 : -1) + bots.length) % bots.length];
         if (next) {
           e.preventDefault();
-          openBot(dispatch, next, showThreads);
+          navigate(() => openBot(dispatch, next, showThreads), e.key === "]" ? "forward" : "back");
         }
       }
     };

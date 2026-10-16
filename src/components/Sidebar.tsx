@@ -52,6 +52,7 @@ import { SIDEBAR_CIRCLE_BUTTON } from "@/lib/circle-button";
 import { searchMatchesThreads, useSearchDisclosure } from "@/lib/search-disclosure";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { animateSidebarSnap } from "@/lib/sidebar-motion";
+import { navigate } from "@/lib/view-transitions";
 import { lastNonReceipt } from "@/lib/receipts";
 import { activityPreview, botEngine } from "@/lib/failed-turn";
 import { activeLocale, t } from "@/lib/i18n";
@@ -432,7 +433,7 @@ export function GroupListItem({
       data-sidebar-group-row={group.id}
       // with no thread list open, the row is the conversation being looked at
       aria-current={selected && !expanded ? "page" : undefined}
-      onClick={() => dispatch({ type: "select", id: group.id })}
+      onClick={() => navigate(() => dispatch({ type: "select", id: group.id }))}
       onContextMenu={(e) => {
         e.preventDefault();
         onMenu({ groupId: group.id, x: e.clientX, y: e.clientY });
@@ -525,10 +526,10 @@ export function GroupThreadList({ group, selected, density = "comfortable", quer
   latest.current = group;
   const groupId = group.id;
   const actions = useMemo(() => ({
-    onSelect: (task: { threadId: string }) => {
+    onSelect: (task: { threadId: string }) => navigate(() => {
       if (task.threadId !== latest.current.threadId) dispatch({ type: "switchGroupTask", groupId, threadId: task.threadId });
       else dispatch({ type: "select", id: groupId });
-    },
+    }),
     onRename: (task: { threadId: string }, title: string) => dispatch({ type: "renameGroupTask", groupId, threadId: task.threadId, title }),
     onDelete: (task: { threadId: string }) => dispatch({ type: "deleteGroupTask", groupId, threadId: task.threadId }),
     onPin: (task: { threadId: string; title: string }, pinned: boolean) => dispatch({ type: "pinGroupTask", groupId, threadId: task.threadId, pinned, title: task.title }),
@@ -1795,7 +1796,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
         else if (intent === "leave") prefetch.leave(task.threadId);
         else prefetch.focus(task.threadId);
       } : undefined,
-      onSelect: (task: Row) => { if (task.threadId !== latest.current.threadId) dispatch({ type: "switchTask", botId, threadId: task.threadId }); else dispatch({ type: "select", id: botId }); },
+      onSelect: (task: Row) => navigate(() => { if (task.threadId !== latest.current.threadId) dispatch({ type: "switchTask", botId, threadId: task.threadId }); else dispatch({ type: "select", id: botId }); }),
       onRename: (task: Row, title: string) => dispatch({ type: "renameTask", botId, threadId: task.threadId, title }),
       onRegenerateTitle: generatedTitles ? (task: Row, onSettled: (ok: boolean) => void) => dispatch({ type: "regenerateTaskTitle", botId, threadId: task.threadId, onSettled }) : undefined,
       onDelete: (task: Row) => dispatch({ type: "deleteTask", botId, threadId: task.threadId }),
@@ -1877,7 +1878,7 @@ export function PersonThreadList({ group, name, selected, density = "comfortable
     type Row = { threadId: string };
     const patch = (task: Row, change: GroupTaskUpdatePatch) => dispatch({ type: "updateGroupTask", groupId, threadId: task.threadId, patch: change });
     return {
-      onSelect: (task: Row) => { if (task.threadId !== latest.current.threadId) dispatch({ type: "switchGroupTask", groupId, threadId: task.threadId }); else dispatch({ type: "select", id: groupId }); },
+      onSelect: (task: Row) => navigate(() => { if (task.threadId !== latest.current.threadId) dispatch({ type: "switchGroupTask", groupId, threadId: task.threadId }); else dispatch({ type: "select", id: groupId }); }),
       onRename: (task: Row, title: string) => dispatch({ type: "renameGroupTask", groupId, threadId: task.threadId, title }),
       onDelete: (task: Row) => dispatch({ type: "deleteGroupTask", groupId, threadId: task.threadId }),
       onMove: (task: Row, projectId: string | null) => patch(task, { projectId }),
@@ -2056,10 +2057,10 @@ export function BotListItem({
   // lands back on their latest conversation (see thread-home.ts).
   // With threads hidden a server that names the bot's main thread decides
   // (openBot, server/main-thread.ts); an older one without it keeps that rule.
-  const openConversation = () => {
+  const openConversation = () => navigate(() => {
     if (showThreads || bot.mainThreadId) openBot(dispatch, bot, showThreads);
     else for (const action of openBotConversationActions(bot, showThreads)) dispatch(action);
-  };
+  });
   const onSelect = (event: React.MouseEvent) => {
     if (renaming) return;
     const insideRenameInput = event.target instanceof HTMLInputElement;
@@ -2067,7 +2068,7 @@ export function BotListItem({
   };
   const openThread = (threadId: string) => {
     if (selected && threadId === bot.threadId) return;
-    dispatch({ type: "switchTask", botId: bot.id, threadId });
+    navigate(() => dispatch({ type: "switchTask", botId: bot.id, threadId }));
   };
 
   const row = (
