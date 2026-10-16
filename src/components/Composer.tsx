@@ -1,6 +1,6 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
+import { ArrowUp, Clock, Square, Target, Users, X } from "lucide-react";
 import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -110,6 +110,14 @@ import {
 import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerNoticeBand, WorkplaceNotice } from "./WorkplaceNotice";
+import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, type PlusMenuItem } from "./ComposerControls";
+import { useComposerDictation } from "./useComposerDictation";
+import { dictationEngine } from "@/lib/composer-dictation";
+import { botCtaColors } from "@/lib/voice-cta";
+import { useVoiceModeCheck } from "@/lib/voice-mode/api";
+import { requestSettingsCard } from "./SettingsPrimitives";
+import { openProviderKeyDialog } from "./settings/ProviderKeys";
+import { isMacPlatform } from "@/lib/keyboard-shortcuts";
 
 /** The active @mention query at the caret: the text between an `@` that
  * starts a word and the caret. null = no mention being typed. */
@@ -282,8 +290,6 @@ export function Composer({
     },
     [text, editText, editAttachments],
   );
-  const [recording, setRecording] = useState(false);
-  const [speechError, setSpeechError] = useState<string | null>(null);
   const [caret, setCaret] = useState(0);
   const [highlight, setHighlight] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null); // Esc'd this @
@@ -338,8 +344,6 @@ export function Composer({
     return () => cancelAnimationFrame(frame);
   }, [replyToId]);
   const mentionListRef = useRef<HTMLDivElement>(null);
-  // what was typed before the mic went on — partials append after it
-  const baseText = useRef("");
 
   // image paste is offered only when every bot that will actually answer
   // can open one. sendGroup routes to mentions, else the room default —
@@ -383,25 +387,25 @@ export function Composer({
   );
   const groupEngineCommands = useGroupHarnessCommands(api, groupTargets.map((target) => target.bot.id), group && !group.dm ? group.id : undefined, threadId || undefined, groupSlashOpen, commandViewerId);
   const commandListRef = useRef<HTMLDivElement>(null);
+  const supportsAgents = (candidate?: Bot) =>
+    Boolean(
+      candidate &&
+        state.instances.find(
+          (instance) => instance.instanceId === candidate.modelSelection.instanceId,
+        )?.capabilities?.agentsMcp,
+    );
+  // /learn: also the + menu's "Teach a task"
+  const learnAvailable = skillAuthoringEnabled(state.config) &&
+    (group ? (members ?? []).some(supportsAgents) : supportsAgents(bot));
   const commandCandidates = useMemo((): ComposerMenuItem[] => {
     if (!slash || slash.start === dismissedSlashAt) return [];
-    const supportsAgents = (candidate?: Bot) =>
-      Boolean(
-        candidate &&
-          state.instances.find(
-            (instance) => instance.instanceId === candidate.modelSelection.instanceId,
-          )?.capabilities?.agentsMcp,
-      );
     const available: ComposerSlashCommand[] = [];
     if (group && !group.dm) available.push({
       id: "goal",
       label: "/goal",
       description: t("composer.command.goalDesc"),
     });
-    if (
-      skillAuthoringEnabled(state.config) &&
-      (group ? (members ?? []).some(supportsAgents) : supportsAgents(bot))
-    ) {
+    if (learnAvailable) {
       available.push({
         id: "learn",
         label: "/learn",
@@ -422,7 +426,7 @@ export function Composer({
         mention: target.mention,
       })), slash.query)
       : composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId]);
+  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId, learnAvailable]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot. In a room, tag a
@@ -702,11 +706,13 @@ export function Composer({
     }
     dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId, patch: { approvalMode: mode } });
   };
-  // An icon left of the message field. Its menu holds this conversation's
+  // A row of the + menu. Its menu, beside it, holds this conversation's
   // level (the bot settings hold the bot's default): two choices in Simple,
   // the five levels in Advanced (ApprovalModeSelector).
-  const approvalControl = modeBot && approvalEngine && !remoteClient ? (
+  const approvalControlRow = (close: () => void) => modeBot && approvalEngine && !remoteClient ? (
     <ApprovalModeSelector
+      variant="row"
+      onDone={close}
       approvalMode={modeBot.approvalMode}
       autoApprove={modeBot.autoApprove}
       providerName={approvalEngine.displayName}
@@ -721,6 +727,8 @@ export function Composer({
   ) : null;
 
   const hasContent = Boolean(effectiveText.trim()) || attachments.length > 0;
+  const sendLabelFor = () => busy && canSteer ? t("composer.send.steer") : busy ? t("composer.send.queue") : t("composer.send.message");
+  const sendTitleFor = () => busy && canSteer ? t("composer.send.steer") : busy ? t("composer.send.queueHint") : `${t("chat.send")} (${sendLabel})`;
   const retroSkin = useRetroSkin();
   const retryFailedSend = (failed: FailedComposerSend) => {
     const failedMode = failed.channelMode ?? "chat";
@@ -923,61 +931,91 @@ export function Composer({
     editAttachments((prev) => [...prev, pasteAttachment(pasted)]);
   };
 
-  // native dictation: partials stream into the input while the Swift
-  // helper runs; the final transcript stays in the box, ready to edit/send
-  useEffect(() => {
-    if (!recording) return;
-    const bridge = window.ogb;
-    if (!bridge) {
-      setRecording(false);
-      return;
-    }
-    setSpeechError(null);
-    const offTranscript = bridge.onSpeechTranscript((line) => {
-      if (typeof line.text === "string") {
-        const base = baseText.current;
-        editText(base ? `${base} ${line.text}` : line.text);
-      }
-    });
-    const offEnd = bridge.onSpeechEnd(({ code, reason }) => {
-      setRecording(false);
-      if (code === 2) {
-        setSpeechError(t("composer.dictation.macOnly"));
-      } else if (code === 1) {
-        setSpeechError(t(
-          reason === "dictation-disabled"
-            ? "composer.dictation.disabled"
-            : reason === "speech-not-authorized"
-              ? "composer.dictation.permission"
-              : "composer.dictation.failed",
-        ));
-      }
-    });
-    void bridge.speechStart();
-    return () => {
-      offTranscript();
-      offEnd();
-      void bridge.speechStop();
-    };
-  }, [recording, editText]);
-
-  const toggleMic = () => {
-    if (!capabilities.dictation.available || !window.ogb) {
-      setSpeechError(t("composer.dictation.unavailable"));
-      return;
-    }
-    baseText.current = text.trim();
-    setRecording((r) => !r);
+  // Dictation (the grey mic): the Mac's own, else voice mode's speech to
+  // text for this bot, else the mic opens the Keys card (lib/composer-dictation).
+  const voiceCheck = useVoiceModeCheck(!group && bot && !remoteClient ? bot.id : "");
+  const engine = dictationEngine({
+    native: capabilities.dictation.available && Boolean(window.ogb),
+    xai: Boolean(!group && bot && voiceCheck.state === "ready" && voiceCheck.status.available),
+  });
+  const dictation = useComposerDictation({ engine, botId: bot?.id, threadId, text, editText });
+  const recording = dictation.phase === "recording";
+  const dictating = dictation.phase !== "idle";
+  const openDictationSetup = () => {
+    requestSettingsCard("engines.keys");
+    dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+    // the xAI key carries voice and dictation (2026-10-14)
+    openProviderKeyDialog("xai");
   };
+  const toggleMic = () => {
+    if (dictating) {
+      dictation.stop();
+      return;
+    }
+    if (!engine) {
+      openDictationSetup();
+      return;
+    }
+    void dictation.start();
+  };
+  // Send from the dictation pill: stop listening, then send what was heard
+  // once the field holds it (a transcript lands as the recording settles).
+  const sendAfterDictation = useRef(false);
+  useEffect(() => {
+    if (dictation.phase !== "idle" || !sendAfterDictation.current) return;
+    sendAfterDictation.current = false;
+    send();
+  });
+  const dictationShortcut = isMacPlatform() ? "⌘D" : "Ctrl+D";
+  // The CTA (Voice, or Send once typed) wears the open bot's color.
+  const ctaTone = !group && bot ? botCtaColors(bot.color) : null;
+  const plusItems: PlusMenuItem[] = [
+    { id: "attach", label: t("composer.plus.attach"), icon: ATTACH_ICON, onSelect: () => fileInput.current?.click() },
+    ...(learnAvailable ? [{
+      id: "teach",
+      label: t("composer.plus.teach"),
+      icon: <RecordMark />,
+      onSelect: () => {
+        // the same as picking /learn in the "/" menu
+        const rest = text.replace(/^\/learn\s*/, "");
+        const next = `/learn ${rest}`;
+        editText(next);
+        setChannelMode("chat");
+        const at = "/learn ".length;
+        setCaret(at);
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+          inputRef.current?.setSelectionRange(at, at);
+        });
+      },
+    }] : []),
+  ];
+  const showPlaceRow = Boolean(modeBot && !remoteClient && (advanced || Boolean(composerTask?.surface)));
+  const plusRows = (close: () => void) => (approvalControlRow(close) || showPlaceRow) ? (
+    <>
+      {approvalControlRow(close)}
+      {showPlaceRow && modeBot && (
+        <PlaceChip
+          variant="row"
+          bot={modeBot}
+          task={composerTask}
+          live={Boolean(modeBot.busy)}
+          disabled={Boolean(modeBot.busy)}
+          onPin={(surface) => dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId, patch: { surface } })}
+          onDone={close}
+        />
+      )}
+    </>
+  ) : null;
 
   return (
     <div className="pointer-events-none relative overflow-x-clip px-[max(16px,calc((100%-960px)/2))] pb-4">
       {/* No fill or hairline on this wrapper — those were the black frame
           in the pill's top corners. The dock overlays the transcript. */}
-      {speechError && (
+      {dictation.error && (
         <ComposerNoticeBand className="pointer-events-auto">
           <div className="w-full rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] text-warning">
-            {speechError}
+            {dictation.error}
           </div>
         </ComposerNoticeBand>
       )}
@@ -1154,16 +1192,11 @@ export function Composer({
             }}
           />
           {!locked && (
-            <div className="flex flex-wrap items-center gap-1">
-              <button
-                type="button"
-                onClick={() => fileInput.current?.click()}
-                aria-label={t("composer.attach")}
-                title={t("composer.attach")}
-                className="flex size-7 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-control hover:text-ink"
-              >
-                <Paperclip size={17} />
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* One + (Grok Bot's): attach, teach a task, and this
+                  conversation's approval level and workspace as rows that
+                  open beside it (JC, 2026-10-15). */}
+              <ComposerPlusMenu items={plusItems} rows={plusRows} />
               {/* /goal starts the mode (the "/" menu); the chip appears only
                   while it is on, says so, and turns it off (JC, 2026-10-14:
                   one entry, the chip only when it shows the current goal). */}
@@ -1195,19 +1228,6 @@ export function Composer({
                   /goal
                 </button>
               )}
-              {approvalControl}
-              {/* Where this conversation works (the bot settings hold the
-                  bot's Works on). Simple hides it like Works on, unless
-                  this conversation has a pinned place to take back. */}
-              {modeBot && !remoteClient && (advanced || Boolean(composerTask?.surface)) && (
-                <PlaceChip
-                  bot={modeBot}
-                  task={composerTask}
-                  live={Boolean(modeBot.busy)}
-                  disabled={Boolean(modeBot.busy)}
-                  onPin={(surface) => dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId, patch: { surface } })}
-                />
-              )}
             </div>
           )}
           <MentionTextarea
@@ -1232,6 +1252,12 @@ export function Composer({
             // an input method's keys pick its own candidates: its confirming
             // Enter must not pick a mention or command, nor its arrows move them
             if (imeComposing(e.nativeEvent)) return;
+            // ⌘D / Ctrl+D dictates (Grok Bot's shortcut), and stops it
+            if ((isMacPlatform() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "d") {
+              e.preventDefault();
+              toggleMic();
+              return;
+            }
             if (commandPickerOpen) {
               if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault();
@@ -1315,7 +1341,7 @@ export function Composer({
               }
               send();
             }
-            if (e.key === "Escape" && recording) setRecording(false);
+            if (e.key === "Escape" && recording) dictation.stop();
           }}
           // an upload in flight must not disable the box: a disabled element
           // drops keyboard focus and never gets it back, so the writer had to
@@ -1352,54 +1378,62 @@ export function Composer({
             <Square size={14} className="fill-current" />
           </button>
         )}
-        {!locked && !busy && !hasContent && capabilities.dictation.available && (
-          <button
+        {!locked && (
+          <ComposerMicButton
             onClick={toggleMic}
-            aria-label={recording ? t("composer.dictation.stop") : t("composer.dictation.start")}
-            className={cn(
-              "flex size-7 shrink-0 items-center justify-center rounded-full",
-              recording
-                ? "animate-pulse bg-danger/20 text-danger"
-                : "text-ink-secondary ring-1 ring-hairline/60 hover:bg-raised hover:text-ink",
-            )}
-            title={recording ? t("composer.dictation.stopHint") : t("composer.dictation.hint")}
-          >
-            <Mic size={18} />
-          </button>
+            hidden={dictating}
+            needsSetup={!engine}
+            shortcut={dictationShortcut}
+          />
         )}
-        {bot && !group && <CallButton bot={bot} />}
-        {group && <GroupCallButton group={group} members={members ?? []} />}
-        {(hasContent || retroSkin) && !locked && (
+        {!locked && dictating && (
+          <DictationChip
+            seconds={dictation.seconds}
+            levels={dictation.levels}
+            processing={dictation.phase === "processing"}
+            onStop={dictation.stop}
+            onCancel={dictation.cancel}
+            onSend={() => {
+              sendAfterDictation.current = true;
+              if (recording) dictation.stop();
+            }}
+            sendTone={ctaTone}
+          />
+        )}
+        {/* Hibou 98 draws Send as a labelled push button, always there */}
+        {retroSkin && !locked && (
           <button
             onClick={() => send()}
             disabled={attachmentPending || !hasContent}
-            data-r98-send={retroSkin ? "" : undefined}
-            aria-label={
-              busy && canSteer
-                  ? t("composer.send.steer")
-                  : busy
-                    ? t("composer.send.queue")
-                    : t("composer.send.message")
-            }
-            title={
-              busy && canSteer
-                  ? t("composer.send.steer")
-                  : busy
-                    ? t("composer.send.queueHint")
-                    : `${t("chat.send")} (${sendLabel})`
-            }
-            className={cn(
-              "flex size-7 shrink-0 items-center justify-center rounded-full text-white",
-              busy && !canSteer
-                  ? "bg-raised text-ink-secondary hover:bg-raised-hover"
-                  : "bg-accent hover:brightness-110",
-            )}
+            data-r98-send=""
+            aria-label={sendLabelFor()}
+            title={sendTitleFor()}
+            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:brightness-110"
           >
             {busy && !canSteer ? <Clock size={15} /> : <ArrowUp size={17} />}
-            {/* Hibou 98 draws Send as a labelled push button */}
-            {retroSkin && <span className="r98-send-label">{t("chat.send")}</span>}
+            <span className="r98-send-label">{t("chat.send")}</span>
           </button>
-          )}
+        )}
+        {/* No Send button: Enter sends. Grok Bot's round CTA turns into the
+            send arrow while something is typed, Voice otherwise. */}
+        {!dictating && (() => {
+          const sendButton = !retroSkin && !locked ? (
+            <ComposerSendButton
+              onClick={() => send()}
+              disabled={attachmentPending || !hasContent}
+              tone={ctaTone}
+              queued={busy && !canSteer}
+              label={sendLabelFor()}
+              title={sendTitleFor()}
+            />
+          ) : null;
+          const typed = Boolean(sendButton && hasContent);
+          if (bot && !group) {
+            return <ComposerCtaSeat typed={typed} send={sendButton} voice={<CallButton bot={bot} tone={ctaTone} />} />;
+          }
+          if (group) return typed ? sendButton : <GroupCallButton group={group} members={members ?? []} />;
+          return typed ? sendButton : null;
+        })()}
           {nudgePeer && <NudgeButton principalId={nudgePeer.id} name={nudgePeer.name} threadId={nudgePeer.threadId} />}
           {!nudgePeer && nudgeGroup && <NudgeButton groupId={nudgeGroup.id} name={nudgeGroup.name} />}
           </div>

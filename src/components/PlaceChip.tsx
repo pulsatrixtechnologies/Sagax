@@ -1,9 +1,10 @@
-import { Check } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
+import { focusFirstMenuItem, moveMenuFocus } from "@/lib/menu-keys";
 import type { LocaleKey } from "@/locales";
 import { instanceSupportsLocalComputer, localComputerDisabledReason, localComputerSelectable } from "@/lib/local-computer";
 import { effectivePlace, PLACES, placeLabelKey, placeOffered, type Place } from "@/lib/place";
@@ -75,7 +76,7 @@ const ORG_DESCRIPTION: Record<Place, LocaleKey> = {
  * effective place (the conversation's pin, else the bot's Works on), pulses
  * while a turn is acting there, and pins another place for this
  * conversation only. No confirmation card: choosing is the whole gesture. */
-export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpen = false }: {
+export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpen = false, variant = "icon", onDone }: {
   bot: Bot;
   task?: Pick<Task, "surface"> | null;
   live: boolean;
@@ -83,7 +84,14 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
   onPin: (surface: Place | null) => void;
   /** Tests: render with the menu open. */
   initialOpen?: boolean;
+  /** "row": a row of the composer's + menu (its places open beside it). */
+  variant?: "icon" | "row";
+  /** Called once a place is chosen, so the + menu around the row closes too. */
+  onDone?: () => void;
 }) {
+  const row = variant === "row";
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(initialOpen);
   const motion = useMenuMotion(open);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -100,13 +108,23 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
   useEffect(() => {
     if (!open) return;
     const outside = (event: MouseEvent) => { if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) setOpen(false); };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      if (row) triggerRef.current?.focus();
+    };
     document.addEventListener("mousedown", outside);
     document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("mousedown", outside); document.removeEventListener("keydown", escape); };
-  }, [open]);
+  }, [open, row]);
 
-  const choose = (surface: Place | null) => { setOpen(false); if (surface !== (task?.surface ?? null)) onPin(surface); };
+  useEffect(() => {
+    if (!open || !row) return;
+    const frame = requestAnimationFrame(() => focusFirstMenuItem(menuRef.current));
+    return () => cancelAnimationFrame(frame);
+  }, [open, row]);
+
+  const choose = (surface: Place | null) => { setOpen(false); if (surface !== (task?.surface ?? null)) onPin(surface); onDone?.(); };
   const botDefault = bot.computer ?? "auto";
   // A bot on Auto offers Auto itself as the unpinned default, rather than
   // "follow this bot's setting" spelled out to end in the same word. On an
@@ -114,7 +132,44 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
   const followsAuto = botDefault === "auto" && !organization;
 
   return (
-    <div className="relative flex items-center" ref={wrapperRef}>
+    <div className={cn("relative flex items-center", row && "w-full")} ref={wrapperRef}>
+      {row ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          role="menuitem"
+          aria-haspopup={off ? undefined : "menu"}
+          aria-expanded={off ? undefined : open}
+          aria-label={t("place.chipAria", { place: label })}
+          disabled={disabled}
+          title={off || disabled ? title : undefined}
+          data-testid="place-chip"
+          data-composer-plus-row="place"
+          onClick={() => {
+            if (off) {
+              dispatch({ type: "toggleSettings", open: true, section: "worksOn", botId: bot.id });
+              onDone?.();
+              return;
+            }
+            setOpen((value) => !value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight" && !off) { event.preventDefault(); setOpen(true); }
+          }}
+          className={cn(
+            "flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left text-[13px] leading-[18px] text-ink hover:bg-hover focus-visible:bg-hover focus-visible:outline-none aria-expanded:bg-hover",
+            disabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
+          )}
+        >
+          <span className="relative flex size-4 shrink-0 items-center justify-center">
+            <PlaceIcon place={effective} size={16} className="shrink-0" aria-hidden="true" />
+            {showLive && <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-success" aria-label={t("place.live")} />}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{t("composer.plus.workspace")}</span>
+          <span className="max-w-[110px] shrink-0 truncate text-ink-tertiary">{label}</span>
+          {!off && <ChevronRight size={14} className="shrink-0 text-ink-tertiary" aria-hidden="true" />}
+        </button>
+      ) : (
       <button
         type="button"
         aria-haspopup="menu"
@@ -142,10 +197,16 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
           {showLive && <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-success" aria-label={t("place.live")} />}
         </span>
       </button>
+      )}
       {motion.shown && (
         // Same surface and scale as the right-click menus. The title stays
         // on the menu's aria-label only.
-        <div role="menu" aria-label={t("place.chipTitle")} className={cn("absolute bottom-full left-0 z-40 mb-2 w-[260px] overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5", motion.className)} {...motion.exitProps}>
+        <div ref={menuRef} role="menu" aria-label={t("place.chipTitle")}
+          onKeyDown={(event) => {
+            if (moveMenuFocus(event.currentTarget, event.key, document.activeElement)) { event.preventDefault(); event.stopPropagation(); return; }
+            if (row && event.key === "ArrowLeft") { event.preventDefault(); event.stopPropagation(); setOpen(false); triggerRef.current?.focus(); }
+          }}
+          className={cn("absolute z-40 w-[260px]", row ? "bottom-0 left-full ml-2" : "bottom-full left-0 mb-2", "overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5", motion.className)} {...motion.exitProps}>
           <div className="flex flex-col gap-0.5">
             <button
               type="button"

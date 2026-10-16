@@ -10,6 +10,7 @@ import { AudioLines, PhoneOff } from "lucide-react";
 
 import { useStore } from "@/state/store";
 import { cn } from "@/lib/cn";
+import { CTA_CIRCLE, CTA_DEFAULT, CTA_TONED, ctaStyle, type BotCtaColors } from "@/lib/voice-cta";
 import { endCall, startCall, useOnCall } from "@/lib/call";
 import { t } from "@/lib/i18n";
 import { refreshVoiceMode, useVoiceModeCheck, type VoiceModeCheck } from "@/lib/voice-mode/api";
@@ -47,13 +48,15 @@ export function voiceUnavailableView(check: VoiceModeCheck, options: { group?: b
   return { title, lines: voiceAccessCardText({ cause: refusal.cause, admin, keysUrl: refusal.keysUrl }), actions, cause: refusal.cause };
 }
 
-export function VoiceModeCallButton({ targetId, targetName, botId, group, onStart }: {
+export function VoiceModeCallButton({ targetId, targetName, botId, group, onStart, tone }: {
   targetId: string;
   targetName: string;
   /** the bot to ask about (absent for a room) */
   botId?: string;
   group?: boolean;
   onStart: () => void;
+  /** The open bot's color for the fill (src/lib/voice-cta.ts). */
+  tone?: BotCtaColors | null;
 }) {
   const { dispatch } = useStore();
   const check = useVoiceModeCheck(botId ?? "");
@@ -114,12 +117,14 @@ export function VoiceModeCallButton({ targetId, targetName, botId, group, onStar
         data-voice-mode={available ? "xai" : "unavailable"}
         aria-label={label}
         title={label}
+        data-composer-voice=""
+        style={active ? undefined : ctaStyle(tone)}
         className={cn(
-          "relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors",
-          active ? "bg-danger text-white hover:brightness-110" : available ? "bg-ink text-app hover:brightness-110" : "bg-raised text-ink-tertiary",
+          CTA_CIRCLE,
+          active ? "bg-danger text-white hover:brightness-110" : tone ? CTA_TONED : available ? CTA_DEFAULT : "bg-raised text-ink-tertiary",
         )}
       >
-        {active ? <PhoneOff size={15} /> : <AudioLines size={15} />}
+        {active ? <PhoneOff size={15} /> : <AudioLines size={16} strokeWidth={2.25} />}
         {!available && !active && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-warning ring-2 ring-app" aria-hidden="true" />}
       </button>
 

@@ -7731,5 +7731,14 @@
   "settings.tours.title": "Visites guidées",
   "settings.account.copyEmail": "Copier le courriel",
   "settings.account.emailCopied": "Courriel copié",
-  "settings.advancedPage.summary": "Accès des personnes aux outils, nettoyage des conversations, diagnostic"
+  "settings.advancedPage.summary": "Accès des personnes aux outils, nettoyage des conversations, diagnostic",
+  "composer.plus.aria": "Actions de la barre de message",
+  "composer.plus.attach": "Joindre des fichiers",
+  "composer.plus.teach": "Apprendre une tâche",
+  "composer.plus.approval": "Autorisations",
+  "composer.plus.workspace": "Zone de travail",
+  "composer.dictation.holdHint": "Cliquez ou appuyez sur {shortcut} pour dicter",
+  "composer.dictation.needsKey": "La dictée demande une clé vocale : ouvrir Clés",
+  "composer.dictation.processing": "Transcription de la dictée…",
+  "composer.dictation.stopAria": "Arrêter la dictée, {time}"
 }

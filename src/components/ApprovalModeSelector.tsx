@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, FilePen, Hand, ListChecks, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Check, ChevronRight, FilePen, Hand, ListChecks, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
 import { reportAchievement } from "@/lib/achievements";
 
 import { approvalModeFor, hasNativeAutoReview, supportsApprovalMode, type ApprovalMode } from "../../shared/approval-mode";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
+import { focusFirstMenuItem, moveMenuFocus } from "@/lib/menu-keys";
 import type { LocaleKey } from "@/locales";
 import type { OrgFullAccess } from "@/lib/full-access";
 
@@ -101,6 +102,8 @@ export function ApprovalModeSelector({
   trustedModesAvailable = true,
   orgFullAccess,
   onManageCommandAllowlist,
+  variant = "icon",
+  onDone,
 }: {
   approvalMode?: ApprovalMode;
   autoApprove?: boolean;
@@ -116,12 +119,18 @@ export function ApprovalModeSelector({
   /** Organization server only (src/lib/full-access.ts). */
   orgFullAccess?: OrgFullAccess;
   onManageCommandAllowlist?: () => void;
+  /** "row": a row of the composer's + menu (its levels open beside it). */
+  variant?: "icon" | "row";
+  /** Called once a choice is made, so the + menu around the row closes too. */
+  onDone?: () => void;
 }) {
+  const row = variant === "row" && !wide;
   const advanced = useAdvancedMode();
   const [open, setOpen] = useState(false);
   const motion = useMenuMotion(open);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const savedMode = approvalModeFor({ approvalMode, autoApprove });
   // Old Antigravity Auto settings still ask. Do not display or silently grant
   // the new Auto/full-access behavior until the user explicitly selects it.
@@ -156,11 +165,21 @@ export function ApprovalModeSelector({
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      // a row of the + menu: Escape steps back to the row, not out of the menu
+      if (variant === "row") triggerRef.current?.focus();
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [open]);
+  }, [open, variant]);
+
+  // a menu opened from the + menu takes the keyboard at its first level
+  useEffect(() => {
+    if (!open || variant !== "row") return;
+    const frame = requestAnimationFrame(() => focusFirstMenuItem(menuRef.current));
+    return () => cancelAnimationFrame(frame);
+  }, [open, variant]);
 
   const CurrentIcon = current.Icon;
   // The allowlist is Advanced only: in Simple a busy bot greys the icon.
@@ -174,6 +193,7 @@ export function ApprovalModeSelector({
         setOpen(false);
         triggerRef.current?.focus();
         onManageCommandAllowlist();
+        onDone?.();
       }}
       className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
     >
@@ -220,7 +240,34 @@ export function ApprovalModeSelector({
     );
   }
   return (
-    <div className={cn("relative flex items-center", wide && "w-full")} ref={wrapperRef}>
+    <div className={cn("relative flex items-center", (wide || row) && "w-full")} ref={wrapperRef}>
+      {row ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          role="menuitem"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={t("approvalMode.triggerAria", { mode: current.label, provider: providerName })}
+          disabled={triggerDisabled}
+          title={disabled ? t("approvalMode.busy") : undefined}
+          data-composer-plus-row="approval"
+          onClick={() => setOpen((value) => !value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight") { event.preventDefault(); setOpen(true); }
+            if (event.key === "ArrowLeft" && open) { event.preventDefault(); event.stopPropagation(); setOpen(false); }
+          }}
+          className={cn(
+            "flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left text-[13px] leading-[18px] text-ink hover:bg-hover focus-visible:bg-hover focus-visible:outline-none aria-expanded:bg-hover",
+            triggerDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
+          )}
+        >
+          <CurrentIcon size={16} className="shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">{t("composer.plus.approval")}</span>
+          <span className="max-w-[110px] shrink-0 truncate text-ink-tertiary">{current.chip}</span>
+          <ChevronRight size={14} className="shrink-0 text-ink-tertiary" aria-hidden="true" />
+        </button>
+      ) : (
       <button
         ref={triggerRef}
         type="button"
@@ -247,18 +294,24 @@ export function ApprovalModeSelector({
         )}
         {wide && <span aria-hidden className="text-[11px] text-ink-secondary">⌄</span>}
       </button>
+      )}
 
       {motion.shown && (
         <div
+          ref={menuRef}
           role="menu"
           aria-label={t("approvalMode.menuAria", { provider: providerName })}
+          onKeyDown={(event) => {
+            if (moveMenuFocus(event.currentTarget, event.key, document.activeElement)) { event.preventDefault(); event.stopPropagation(); return; }
+            if (row && event.key === "ArrowLeft") { event.preventDefault(); event.stopPropagation(); setOpen(false); triggerRef.current?.focus(); }
+          }}
           {...motion.exitProps}
           className={cn(
             // Same surface and scale as the right-click menus: no heading,
             // 13px rows, and nothing listed that cannot be picked here.
             "absolute z-40 flex w-[260px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5",
-            menuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2",
-            align === "right" ? "right-0" : "left-0",
+            row ? "bottom-0 left-full ml-2" : menuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2",
+            !row && (align === "right" ? "right-0" : "left-0"),
             wide && "w-full min-w-[260px]",
             motion.className,
           )}
@@ -281,6 +334,7 @@ export function ApprovalModeSelector({
                       if (modesDisabled) return;
                       onSelect(choice.mode);
                       setOpen(false);
+                      onDone?.();
                     }}
                     className={cn(
                       "flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover",
@@ -322,6 +376,7 @@ export function ApprovalModeSelector({
                     if (optionDisabled) return;
                     onSelect(option.mode);
                     setOpen(false);
+                    onDone?.();
                   }}
                   className={cn(
                     "flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover",

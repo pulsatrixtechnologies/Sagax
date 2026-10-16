@@ -19,6 +19,7 @@
 // rather than listening to nothing.
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { AudioLines, Loader2, PhoneOff, X } from "lucide-react";
+import { CTA_CIRCLE, CTA_DEFAULT, CTA_TONED, ctaStyle, type BotCtaColors } from "@/lib/voice-cta";
 
 import { useShowThreads } from "@/lib/thread-preferences";
 import { openBot, useStore, visibleMessages, type Bot } from "@/state/store";
@@ -56,7 +57,8 @@ export function useOrganizationCall(botId?: string): boolean {
   return (check.state === "ready" && check.status.organization === true) || managedProfile(state.config?.viewer) !== null;
 }
 
-export function CallButton({ bot }: { bot: Bot }) {
+/** The composer's Voice button. `tone`: the open bot's color (src/lib/voice-cta.ts). */
+export function CallButton({ bot, tone }: { bot: Bot; tone?: BotCtaColors | null }) {
   const voiceMode = useVoiceModeStatus(bot.id);
   const organization = useOrganizationCall(bot.id);
   if (organization) {
@@ -65,6 +67,7 @@ export function CallButton({ bot }: { bot: Bot }) {
         targetId={bot.id}
         targetName={bot.name}
         botId={bot.id}
+        tone={tone}
         onStart={() => track("call_started", { driver: bot.modelSelection?.instanceId, voice: "xai" })}
       />
     );
@@ -77,6 +80,7 @@ export function CallButton({ bot }: { bot: Bot }) {
       setupBotId={bot.id}
       requireExplicitVoices={false}
       voiceMode={voiceMode}
+      tone={tone}
       onStart={() => track("call_started", { driver: bot.modelSelection?.instanceId, ...(voiceMode?.available ? { voice: "xai" } : {}) })}
     />
   );
@@ -90,6 +94,7 @@ export function CallTargetButton({
   requireExplicitVoices,
   voiceMode,
   onStart,
+  tone,
 }: {
   targetId: string;
   targetName: string;
@@ -103,6 +108,8 @@ export function CallTargetButton({
    * dictation helper. */
   voiceMode?: VoiceModeStatus | null;
   onStart: () => void;
+  /** The open bot's color for the fill; absent: the skin's ink. */
+  tone?: BotCtaColors | null;
 }) {
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
@@ -198,16 +205,20 @@ export function CallTargetButton({
         data-voice-mode={xaiVoice ? "xai" : undefined}
         aria-label={label}
         title={label}
+        data-composer-voice=""
+        style={active ? undefined : ctaStyle(tone)}
         className={cn(
-          "relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors",
+          CTA_CIRCLE,
           active
             ? "bg-danger text-white hover:brightness-110"
-            : unavailable
-              ? "bg-raised text-ink-tertiary"
-              : "bg-ink text-app hover:brightness-110",
+            : tone
+              ? CTA_TONED
+              : unavailable
+                ? "bg-raised text-ink-tertiary"
+                : CTA_DEFAULT,
         )}
       >
-        {active ? <PhoneOff size={15} /> : <AudioLines size={15} />}
+        {active ? <PhoneOff size={15} /> : <AudioLines size={16} strokeWidth={2.25} />}
         {unavailable && (
           <span className="absolute right-1 top-1 size-1.5 rounded-full bg-warning ring-2 ring-app" aria-hidden="true" />
         )}
