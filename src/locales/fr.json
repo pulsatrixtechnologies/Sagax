@@ -5851,6 +5851,7 @@
   "chat.export.download": "Télécharger en .md",
   "chat.export.botHeading": "Bot",
   "chat.export.botZip": "Exporter le bot (.zip)",
+  "chat.export.submenu": "Exporter",
   "mascot.skinPreview": "Aperçu : verrouillé, rien n'est enregistré",
   "chat.moreMenu.aria": "Plus d'options",
   "chat.openPanel": "Ouvrir le panneau du bot",

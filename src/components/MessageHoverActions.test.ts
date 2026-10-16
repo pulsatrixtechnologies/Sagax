@@ -186,6 +186,24 @@ describe("MessageHoverActions: the … menu", () => {
     expect(document.activeElement).toBe(q("[data-more-button]"));
   });
 
+  it("puts the view entries (read aloud, raw markdown) in a last section of their own", async () => {
+    const noop = () => {};
+    await act(async () => {
+      root.render(
+        createElement(MessageHoverActions, {
+          side: "bot",
+          copy: "x",
+          view: createElement(MessageMenuItem, { label: "Show raw Markdown", icon: null, onSelect: noop }),
+        }, createElement(MessageMenuItem, { label: "Regenerate", icon: null, onSelect: noop })),
+      );
+    });
+    await act(async () => q("[data-more-button]")!.click());
+    const menu = q("[data-message-menu]")!;
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((row) => row.textContent)).toEqual(["Copy", "Regenerate", "Show raw Markdown"]);
+    expect(menu.querySelectorAll('[role="separator"]')).toHaveLength(2);
+    expect(q("[data-menu-view]")!.textContent).toBe("Show raw Markdown");
+  });
+
   it("drops the divider before Sagax's entries when every one is hidden", async () => {
     await act(async () => {
       root.render(

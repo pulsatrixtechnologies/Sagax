@@ -29,6 +29,12 @@ function Row({ user }: { user: boolean }) {
       requestId="m_1"
       react={{ mine: [], onPick: () => {} }}
       visible={state !== "rest" && (user ? side === "user" : side === "bot")}
+      view={user ? undefined : (
+        <>
+          <MessageMenuItem label={t("chat.speak.read")} icon={<Volume2 {...HOVER_ICON} />} onSelect={() => {}} />
+          <MessageMenuItem label={t("chat.showRawMarkdown")} icon={<Code {...HOVER_ICON} />} onSelect={() => {}} />
+        </>
+      )}
     >
       {user ? (
         <>
@@ -37,8 +43,6 @@ function Row({ user }: { user: boolean }) {
         </>
       ) : (
         <>
-          <MessageMenuItem label={t("chat.showRawMarkdown")} icon={<Code {...HOVER_ICON} />} onSelect={() => {}} />
-          <MessageMenuItem label={t("chat.speak.read")} icon={<Volume2 {...HOVER_ICON} />} onSelect={() => {}} />
           <MessageMenuItem label={t("chat.regenerate")} icon={<RefreshCw {...HOVER_ICON} />} onSelect={() => {}} />
           <MessageMenuItem label={t("chat.pinMessage")} icon={<Pin {...HOVER_ICON} />} onSelect={() => {}} />
         </>

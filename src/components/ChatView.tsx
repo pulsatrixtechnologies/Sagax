@@ -742,18 +742,20 @@ const Bubble = memo(function Bubble({
             onReply={() => onReply(message)}
             requestId={message.id.startsWith("optimistic-") ? undefined : message.id}
             react={react}
+            view={<>
+              {message.kind === "text" && text && !peer && (
+                <SpeakMenuItem text={text} botId={botId} messageId={message.id} voiceId={voiceId} tts={tts} localVoice={localVoice} />
+              )}
+              {text && (
+                <MessageMenuItem
+                  label={t(viewRaw ? "chat.showRenderedMarkdown" : "chat.showRawMarkdown")}
+                  icon={viewRaw ? <Eye {...HOVER_ICON} /> : <Code {...HOVER_ICON} />}
+                  active={viewRaw}
+                  onSelect={() => setViewRaw((r) => !r)}
+                />
+              )}
+            </>}
           >
-            {text && (
-              <MessageMenuItem
-                label={t(viewRaw ? "chat.showRenderedMarkdown" : "chat.showRawMarkdown")}
-                icon={viewRaw ? <Eye {...HOVER_ICON} /> : <Code {...HOVER_ICON} />}
-                active={viewRaw}
-                onSelect={() => setViewRaw((r) => !r)}
-              />
-            )}
-            {message.kind === "text" && text && !peer && (
-              <SpeakMenuItem text={text} botId={botId} messageId={message.id} voiceId={voiceId} tts={tts} localVoice={localVoice} />
-            )}
             {!busy && onRegenerate && (
               <MessageMenuItem label={t("chat.regenerate")} icon={<RefreshCw {...HOVER_ICON} />} onSelect={onRegenerate} />
             )}

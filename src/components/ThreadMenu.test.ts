@@ -1,7 +1,8 @@
 // The one thread menu (JC, 2026-10-14): the sidebar's thread rows and the
-// header's All threads picker share it. One flat menu, no More (JC,
-// 2026-10-15): Rename, Pin, Archive, Snooze › | Copy link, Refresh
-// permissions | Delete.
+// header's All threads picker share it. One menu, no More (JC,
+// 2026-10-15), in Grok Bot's short sections (JC, 2026-10-16): Rename,
+// Regenerate title, Pin, Move › | Archive, Snooze › | Copy link, Remove
+// link | Refresh permissions | Delete.
 import { createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -45,7 +46,7 @@ function items(given: Props): Map<string, { onClick: () => void; disabled?: bool
 
 describe("the thread menu", () => {
   it("lists every action in one menu, Delete last, and no More", () => {
-    expect(ids(markup({ task: { ...task, link: "https://example.com/pr/1" } }))).toEqual(["rename", "pin", "archive", "snooze", "move", "copy-link", "regenerate", "remove-link", "refresh-permissions", "delete"]);
+    expect(ids(markup({ task: { ...task, link: "https://example.com/pr/1" } }))).toEqual(["rename", "regenerate", "pin", "move", "archive", "snooze", "copy-link", "remove-link", "refresh-permissions", "delete"]);
     const html = markup();
     for (const label of ["Rename thread", "Pin", "Archive", "Snooze", "Copy link", "Refresh permissions", "Delete thread"]) expect(html).toContain(label);
     expect(html).not.toContain(">More<");
@@ -60,13 +61,20 @@ describe("the thread menu", () => {
     expect(ids(renderToStaticMarkup(createElement(ThreadMenuItems, given)))).toEqual(["rename", "delete"]);
   });
 
-  it("keeps JC's order for the usual sidebar thread: Rename, Pin, Archive, Snooze | Copy link, Refresh permissions | Delete in red", () => {
+  it("groups the usual sidebar thread: Rename, Pin | Archive, Snooze | Copy link | Refresh permissions | Delete in red", () => {
     const { onMove: _move, onRegenerateTitle: _regenerate, onRemoveLink: _remove, ...actions } = allActions();
     const html = markup({ actions, folders: [] });
     expect(ids(html)).toEqual(["rename", "pin", "archive", "snooze", "copy-link", "refresh-permissions", "delete"]);
     expect(html).toMatch(/data-thread-menu-item="delete"[^>]*class="[^"]*text-danger/);
-    // two separators: before Copy link and before Delete
-    expect(html.match(/h-px bg-hairline/g)).toHaveLength(2);
+    // a separator before Archive, Copy link, Refresh permissions and Delete
+    expect(html.match(/role="separator"/g)).toHaveLength(4);
+    const order = html.split('role="separator"').map((part) => ids(part));
+    expect(order).toEqual([["rename", "pin"], ["archive", "snooze"], ["copy-link"], ["refresh-permissions"], ["delete"]]);
+  });
+
+  it("draws no divider around an empty section", () => {
+    const html = markup({ actions: { onRename: vi.fn(), onDelete: vi.fn() } });
+    expect(html.match(/role="separator"/g)).toHaveLength(1);
   });
 
   it("keeps Refresh permissions for Advanced mode", () => {
@@ -152,6 +160,6 @@ describe("the All threads picker's row menu", () => {
     expect(threadActions.onSnooze).toHaveBeenCalledWith("t1", 0);
     expect(threadActions.onCopyLink).toHaveBeenCalledWith("t1");
     expect(actions.onRegenerateTitle).toBeUndefined();
-    expect(ids(renderToStaticMarkup(createElement(ThreadMenuItems, props({ actions }))))).toEqual(["rename", "pin", "archive", "snooze", "move", "copy-link", "refresh-permissions", "delete"]);
+    expect(ids(renderToStaticMarkup(createElement(ThreadMenuItems, props({ actions }))))).toEqual(["rename", "pin", "move", "archive", "snooze", "copy-link", "refresh-permissions", "delete"]);
   });
 });

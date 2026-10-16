@@ -4,7 +4,7 @@
 // Sections are the person's own folders (src/lib/personal-sections.ts):
 // they share nothing, so there is no members or sharing item. A bot is
 // shared from its own panel; a group has its own people.
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronsDownUp, ChevronsUpDown, Pencil, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -42,18 +42,29 @@ const ITEM_KEYS = {
   onDelete: { label: "sidebar.section.delete", Icon: Trash2 },
 } as const satisfies Record<keyof OrgSectionMenuActions, { label: string; Icon: typeof Pencil }>;
 
+/** The section a menu item belongs to: organize (rename, move), view
+ * (fold), then Delete alone in red, each set apart by a divider (Grok Bot's
+ * sections, JC 2026-10-16). */
+const ITEM_SECTION: Record<keyof OrgSectionMenuActions, number> = {
+  onRename: 0, onMoveUp: 0, onMoveDown: 0, onCollapseAll: 1, onExpandAll: 1, onDelete: 2,
+};
+
 export function OrgSectionMenuItems({ items, actions }: { items: Array<keyof OrgSectionMenuActions>; actions: OrgSectionMenuActions }) {
   const item = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover";
+  const shown = items.filter((key) => Boolean(actions[key]));
   return (
     <>
-      {items.map((key, index) => {
-        const action = actions[key];
-        if (!action) return null;
+      {shown.map((key, index) => {
+        const action = actions[key]!;
         const { label, Icon } = ITEM_KEYS[key];
+        const divided = index > 0 && ITEM_SECTION[shown[index - 1]!] !== ITEM_SECTION[key];
         return (
-          <button key={key} type="button" role="menuitem" autoFocus={index === 0} className={cn(item, key === "onDelete" && "text-danger")} onClick={action}>
-            <Icon size={14} aria-hidden="true" />{t(label)}
-          </button>
+          <Fragment key={key}>
+            {divided && <div role="separator" data-section-menu-divider="" className="mx-2 my-1 h-[0.5px] bg-border" />}
+            <button type="button" role="menuitem" autoFocus={index === 0} className={cn(item, key === "onDelete" && "text-danger")} onClick={action}>
+              <Icon size={14} aria-hidden="true" />{t(label)}
+            </button>
+          </Fragment>
         );
       })}
     </>

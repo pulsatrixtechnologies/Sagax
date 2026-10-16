@@ -7516,6 +7516,7 @@
   "chat.export.empty": "No messages to export yet.",
   "chat.export.botHeading": "Bot",
   "chat.export.botZip": "Export the bot (.zip)",
+  "chat.export.submenu": "Export",
   "mascot.skinPreview": "Preview: locked, nothing is saved",
   "chat.moreMenu.aria": "More options",
   "chat.openPanel": "Open the bot panel",

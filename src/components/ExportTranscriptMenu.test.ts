@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The conversation's one "..." button (JC, 2026-10-14): share and export,
-// then the Inspector and the Data window when they are on. It replaces the
+// The conversation's one "..." button (JC, 2026-10-14): Copy, Export ›
+// (JC, 2026-10-16), then the Inspector and the Data window when they are on. It replaces the
 // header's separate Share, Inspector, Data and panel buttons.
 import { createElement } from "react";
 import { flushSync } from "react-dom";
@@ -38,15 +38,38 @@ describe("the conversation's ... menu", () => {
     expect(button.querySelector("svg.lucide-ellipsis, svg.lucide-more-horizontal")).not.toBeNull();
   });
 
-  it("lists the transcript exports, then the bot zip, the Inspector and Data when given", () => {
+  it("lists Copy, then Export › (the .md and the bot zip), then the Inspector and Data when given", () => {
     const onExportBot = vi.fn();
     const onToggleInspector = vi.fn();
     const onOpen = vi.fn();
     const container = render({ onExportBot, onToggleInspector, inspectorOpen: true, data: { label: "Open the Data window", onOpen } });
-    expect(open(container)).toEqual(["Copy as Markdown", "Download as .md", "Export the bot (.zip)", "Inspector", "Open the Data window"]);
+    expect(open(container)).toEqual(["Copy as Markdown", "Export", "Inspector", "Open the Data window"]);
+    // one divider, before the tools; no headings
+    expect(container.querySelectorAll('[role="separator"]')).toHaveLength(1);
+    expect(container.textContent).not.toContain("Export the conversation");
     expect(container.querySelector("[data-conversation-inspector]")!.getAttribute("aria-checked")).toBe("true");
+    const trigger = container.querySelector<HTMLButtonElement>("[data-export-submenu]")!;
+    expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+    flushSync(() => trigger.click());
+    const choices = container.querySelector("[data-export-choices]")!;
+    expect([...choices.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).toEqual(["Download as .md", "Export the bot (.zip)"]);
+    flushSync(() => choices.querySelector<HTMLButtonElement>("[data-export-bot-zip]")!.click());
+    expect(onExportBot).toHaveBeenCalledOnce();
+    flushSync(() => container.querySelector<HTMLButtonElement>("[data-conversation-menu]")!.click());
     flushSync(() => container.querySelector<HTMLButtonElement>("[data-data-window-button]")!.click());
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("closes the submenu with the left arrow and gives focus back to Export", () => {
+    const container = render({ onExportBot: vi.fn() });
+    open(container);
+    const trigger = container.querySelector<HTMLButtonElement>("[data-export-submenu]")!;
+    flushSync(() => trigger.click());
+    const choice = container.querySelector<HTMLButtonElement>("[data-export-choices] [role=menuitem]")!;
+    choice.focus();
+    flushSync(() => choice.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
+    expect(container.querySelector("[data-export-choices]")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("leaves out what is off: no Inspector in Simple mode, no Data without the experiment", () => {

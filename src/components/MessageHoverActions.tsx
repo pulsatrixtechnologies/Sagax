@@ -11,8 +11,9 @@
 //   reactions"): 32px round cells, 20px emoji, 4px apart, 6px inside;
 // - "…" opens a menu (12px corners, 6px inside, 200px wide at least) that
 //   starts with the same reactions, then Reply, Copy, Copy request ID, then
-//   Sagax's own entries (edit, read aloud, raw markdown, regenerate, pin)
-//   under a half-pixel divider. Rows are 30px high, 13px/18px text, 6px
+//   Sagax's own entries in two sections under half-pixel dividers (JC,
+//   2026-10-16): what changes the message (edit, regenerate, pin), then how
+//   it is shown (read aloud, raw markdown). Rows are 30px high, 13px/18px text, 6px
 //   corners, 8px between the 16px icon and the label.
 //
 // Keyboard: every popup takes focus on open, the arrows and Home/End move in
@@ -104,6 +105,17 @@ export function MessageMenuItem({
   );
 }
 
+/** One section of Sagax's own entries under a divider; the divider goes
+ * when every entry of the section is hidden. */
+function MenuSection({ extra = false, children }: { extra?: boolean; children: ReactNode }) {
+  return (
+    <div className="hidden flex-col gap-0.5 has-[>[role=menuitem]:not(.hidden)]:flex" data-menu-extra={extra ? "" : undefined} data-menu-view={extra ? undefined : ""}>
+      <div role="separator" className="-mx-1.5 my-1 border-t-[0.5px] border-border" />
+      {children}
+    </div>
+  );
+}
+
 /** The quick reactions in a row, then "more reactions". Shared by the pill
  * and the head of the "…" menu. */
 function QuickReactionRow({ mine, onPick, onMore }: { mine: readonly string[]; onPick: (emoji: string) => void; onMore: () => void }) {
@@ -188,7 +200,9 @@ export type HoverReactions = {
  * container a popup is open, so it keeps the row in view. `persistent`
  * holds controls of a mode the person turned on (raw markdown, reading
  * aloud), drawn after "…". `children` are Sagax's own menu entries
- * (MessageMenuItem), under Reply, Copy and Copy request ID. */
+ * (MessageMenuItem), under Reply, Copy and Copy request ID; `view` are the
+ * entries that change how the message is shown (read aloud, raw markdown),
+ * in a last section of their own. */
 export function MessageHoverActions({
   side,
   onReply,
@@ -198,6 +212,7 @@ export function MessageHoverActions({
   persistent,
   onOpenChange,
   children,
+  view,
 }: {
   side: "user" | "bot";
   onReply?: () => void;
@@ -209,6 +224,8 @@ export function MessageHoverActions({
   persistent?: ReactNode;
   onOpenChange?: (open: boolean) => void;
   children?: ReactNode;
+  /** The view entries (MessageMenuItem), after `children`. */
+  view?: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const reactRef = useRef<HTMLButtonElement>(null);
@@ -402,13 +419,8 @@ export function MessageHoverActions({
                 }}
               />
             )}
-            {children && (
-              // Sagax's own entries; the divider goes when every one is hidden
-              <div className="hidden flex-col gap-0.5 has-[>[role=menuitem]:not(.hidden)]:flex" data-menu-extra>
-                <div role="separator" className="-mx-1.5 my-1 border-t-[0.5px] border-border" />
-                {children}
-              </div>
-            )}
+            {children && <MenuSection extra>{children}</MenuSection>}
+            {view && <MenuSection>{view}</MenuSection>}
           </div>
         </CloseMenu.Provider>
       )}
