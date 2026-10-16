@@ -695,6 +695,16 @@ export const PRIMARY_PILL = `${PILL} ui-button-primary`;
  * rows that needs no grey heading (About's links). */
 export const GROUP_CARD = "flex flex-col overflow-clip rounded-xl border-[0.5px] border-border bg-elevated py-1.5";
 
+/** Settings' own window (SettingsModal): the dimmed layer and the
+ * 900 x 700 sheet, shrinking with the app window. A window that must be
+ * exactly as big as Settings (the task windows, 2026-10-16) reuses these;
+ * SettingsModal spells the same classes out (ActivitySection.test.ts keeps
+ * the two equal). */
+export const SETTINGS_WINDOW = {
+  backdrop: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 transition-opacity duration-base ease-out-quint starting:opacity-0 motion-reduce:transition-none sm:p-6",
+  frame: "flex h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))] overflow-hidden rounded-[14px] border border-border bg-app outline-none transition-[opacity,scale] duration-base ease-out-quint starting:scale-98 starting:opacity-0 motion-reduce:transition-none",
+} as const;
+
 /** A window drawn like Settings (2026-10-16, JC: every window of the app
  * follows Settings): its frame (14 px corners, hairline border, the app
  * background), the title at the top left in the Settings heading type, the

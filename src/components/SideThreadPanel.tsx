@@ -4,25 +4,21 @@
 // a resizable left edge (DockedPanelResize, its own stored width) and its
 // own copy of the thread's messages. Below the docked width it covers the
 // chat, like the other docked panels.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Loader2, Maximize2, X } from "lucide-react";
-import { api, MESSAGE_PAGE_SIZE, useStore, type Bot, type Message } from "@/state/store";
+import { useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
-import { listenLiveFrames } from "@/lib/live-events";
 import {
-  applySideFrame,
-  applySidePage,
   closeSideThread,
-  EMPTY_SIDE_TRANSCRIPT,
   SIDE_THREAD_DEFAULT_WIDTH,
   SIDE_THREAD_MAX_WIDTH,
   SIDE_THREAD_MIN_WIDTH,
   SIDE_THREAD_WIDTH_KEY,
   sideThreadRedundant,
   useSideThread,
-  type SideTranscript,
 } from "@/lib/side-thread";
+import { useSideTranscript } from "@/lib/use-side-transcript";
 import { BotAvatar } from "./Avatar";
 import { ChatView } from "./ChatView";
 import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
@@ -33,41 +29,6 @@ const SIDE_BOUNDS = {
   max: SIDE_THREAD_MAX_WIDTH,
   fallback: SIDE_THREAD_DEFAULT_WIDTH,
 };
-
-/** The thread's messages: the newest page, then the live stream. A frame
- * the stream could not replay reloads the page. */
-function useSideTranscript(threadId: string): SideTranscript & { failed: boolean } {
-  const [transcript, setTranscript] = useState<SideTranscript>(EMPTY_SIDE_TRANSCRIPT);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      api<{ messages?: Message[]; activeLeafId?: string | null }>(`/api/threads/${encodeURIComponent(threadId)}/messages?limit=${MESSAGE_PAGE_SIZE}`)
-        .then((page) => {
-          if (cancelled) return;
-          setFailed(false);
-          setTranscript((current) => applySidePage(current, page));
-        })
-        .catch(() => {
-          if (!cancelled) setFailed(true);
-        });
-    };
-    setTranscript(EMPTY_SIDE_TRANSCRIPT);
-    load();
-    const stop = listenLiveFrames({
-      onFrame: (frame) => {
-        if (!("threadId" in frame) || frame.threadId !== threadId) return;
-        setTranscript((current) => applySideFrame(current, frame as Parameters<typeof applySideFrame>[1], threadId));
-      },
-      onMissedFrames: load,
-    });
-    return () => {
-      cancelled = true;
-      stop();
-    };
-  }, [threadId]);
-  return { ...transcript, failed };
-}
 
 export function SideThreadPanel() {
   const side = useSideThread();

@@ -6,6 +6,7 @@
 // branch).
 import { AlertCircle, CheckCircle2, ChevronRight, CircleSlash, Clock, Hand, Loader2, Square } from "lucide-react";
 
+import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { activityStatusActive, activitySubtitle, type BotActivityItem, type BotActivityStatus } from "@/lib/bot-activity";
 
@@ -27,9 +28,11 @@ export function ActivityStatusIcon({ status, size = 16 }: { status: BotActivityS
   }
 }
 
-export function ActivityCard({ item, onOpen, now, onStop, stopping = false, where }: {
+export function ActivityCard({ item, onOpen, now, onStop, stopping = false, where, current = false }: {
   item: BotActivityItem;
   where?: string;
+  /** The entry History's right pane shows. */
+  current?: boolean;
   onOpen: (item: BotActivityItem) => void;
   now?: number;
   onStop?: (item: BotActivityItem) => void;
@@ -37,10 +40,11 @@ export function ActivityCard({ item, onOpen, now, onStop, stopping = false, wher
 }) {
   const stoppable = Boolean(onStop && item.canStop && item.threadId && activityStatusActive(item.status));
   return (
-    <div className="flex w-full items-center gap-1 rounded-xl border border-hairline-weak bg-card transition-colors hover:bg-hover">
+    <div className={cn("flex w-full items-center gap-1 rounded-xl border transition-colors", current ? "border-border bg-selected" : "border-hairline-weak bg-card hover:bg-hover")}>
       <button
         type="button"
         data-activity-card={item.id}
+        aria-current={current ? "true" : undefined}
         data-activity-status={item.status}
         onClick={() => onOpen(item)}
         aria-label={t("botPanel.coding.openAria", { title: item.title })}

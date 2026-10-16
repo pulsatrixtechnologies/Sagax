@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +12,8 @@ import type { BotActivityDetail, BotActivityItem } from "../../../shared/bot-act
 import { ActivityList, ActivitySection, CodeWorkList, PanelSections, panelSections, SectionHeader } from "./ActivitySection";
 import { LaunchedAgentsList } from "./LaunchedAgentsList";
 import type { BotLaunchedAgentItem } from "../../../shared/bot-launched-agents.ts";
-import { ActivityDetailBody } from "./ActivityDetailModal";
+import { ActivityDetailBody, ActivityDetailModal, activityViews } from "./ActivityDetailModal";
+import { SETTINGS_WINDOW } from "../SettingsPrimitives";
 import { ActivityListModal } from "./ActivityListModal";
 import { TeammatesWorkingChip } from "../TeammatesWorkingChip";
 import { activityLive, codingLive, codingWhere, codingWork, FINISHED_FADE_MS, FINISHED_LINGER_MS, formatActivityDuration, historyItems, isParallelWork, LiveActivity } from "@/lib/bot-activity";
@@ -131,6 +133,66 @@ describe("activity detail modal", () => {
     expect(html).not.toContain("Open thread");
     // a run without a card shows none
     expect(body({ item: finished, detail: { ...refused, access: undefined } })).not.toContain("data-activity-access");
+  });
+
+  it("opens at exactly the size of Settings, on Settings' layer", () => {
+    const window = renderToStaticMarkup(createElement(ActivityDetailModal, { item: running, onClose: () => {}, onChanged: () => {} }));
+    expect(window).toContain(`class="${SETTINGS_WINDOW.backdrop}"`);
+    expect(window).toContain("h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))]");
+    const history = renderToStaticMarkup(createElement(ActivityListModal, { botId: "pepper", filter: "coding", onFilter: () => {}, onClose: () => {}, onStop: () => {}, stopping: new Set<string>() }));
+    expect(history).toContain("h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))]");
+    // never the old 560 px native dialog
+    expect(window + history).not.toContain("560px");
+    expect(window + history).not.toContain("<dialog");
+    // the very classes Settings draws itself with
+    const settings = readFileSync(new URL("../SettingsModal.tsx", import.meta.url), "utf8");
+    expect(settings).toContain(`className="${SETTINGS_WINDOW.backdrop}"`);
+    expect(settings).toContain(`className="${SETTINGS_WINDOW.frame}"`);
+  });
+
+  it("puts the summary at the left and the steps at the right when wide", () => {
+    const html = body({ renderConversation: () => "LIVE", onSteer: async () => {} });
+    expect(html).toContain('data-activity-layout="columns"');
+    const left = html.slice(html.indexOf("data-activity-summary"), html.indexOf("data-activity-detail-right"));
+    expect(left).toContain("Started");
+    expect(left).toContain("Send a message to this task");
+    expect(left).toContain(">Stop<");
+    expect(left).toContain("Open thread");
+    expect(left).not.toContain("data-activity-step=");
+    const right = html.slice(html.indexOf("data-activity-detail-right"));
+    expect(right).toContain('data-activity-step="mcp__sagax-desktop__shell"');
+    expect(right).toContain('data-activity-view="steps"');
+    expect(right).toContain('data-activity-view="conversation"');
+    expect(right).not.toContain('data-activity-view="summary"');
+    expect(html).not.toContain("LIVE");
+  });
+
+  it("shows the task's live conversation in its window, the sub-agent's own once dived into", () => {
+    const seen: unknown[] = [];
+    const html = body({ initialView: "conversation", renderConversation: (target) => { seen.push(target); return "LIVE THREAD"; } });
+    expect(html).toContain("LIVE THREAD");
+    expect(html).toContain('aria-labelledby="activity-view-conversation"');
+    expect(seen).toEqual([{ botId: "pepper", threadId: "t1", title: running.title }]);
+    // a sub-agent opened in place is drawn from its own detail: its thread
+    const child = { ...detail, ...detail.children[0], steps: [], stepsTruncated: false, files: [], children: [], canStop: true };
+    seen.length = 0;
+    body({ item: detail.children[0], detail: child, initialView: "conversation", renderConversation: (target) => { seen.push(target); return "CHILD"; } });
+    expect(seen).toEqual([{ botId: "echo", threadId: "c1", title: "Write the lexer tests" }]);
+    // no thread to read, no Conversation
+    expect(body({ detail: { ...detail, threadId: undefined }, renderConversation: () => "LIVE" })).not.toContain('data-activity-view="conversation"');
+  });
+
+  it("has one column with a Summary view when narrow, and Back in History", () => {
+    const html = body({ wide: false, renderConversation: () => "LIVE", onBack: () => {}, onSteer: async () => {} });
+    expect(html).toContain('data-activity-layout="single"');
+    expect(html).toContain('data-activity-view="summary"');
+    expect(html).toContain("Send a message to this task");
+    expect(html).not.toContain('data-activity-step="mcp__sagax-desktop__shell"');
+    expect(html).toContain("data-activity-back");
+    expect(body({ wide: false, initialView: "steps" })).toContain('data-activity-step="mcp__sagax-desktop__shell"');
+    expect(activityViews(true, true, true)).toEqual(["steps", "conversation"]);
+    expect(activityViews(false, true, false)).toEqual(["summary", "steps"]);
+    expect(activityViews(false, false, false)).toEqual([]);
   });
 
   it("formats durations at a glance", () => {
@@ -503,10 +565,13 @@ describe("section headers and history", () => {
   });
 
   it("draws the history modal with its status filters and search", () => {
-    const html = renderToStaticMarkup(createElement(ActivityListModal, { botId: "pepper", filter: "other", onFilter: () => {}, onClose: () => {}, onOpen: () => {}, onStop: () => {}, stopping: new Set<string>() }));
+    const html = renderToStaticMarkup(createElement(ActivityListModal, { botId: "pepper", filter: "other", onFilter: () => {}, onClose: () => {}, onStop: () => {}, stopping: new Set<string>() }));
     expect(html).toContain(">History<");
     for (const id of ["all", "running", "finished", "failed"]) expect(html).toContain(`data-history-status="${id}"`);
     expect(html).toContain("data-history-search");
+    // master and detail in one window: the list, and the chosen entry beside it
+    expect(html).toContain("data-activity-history-list");
+    expect(html).toContain("Choose a task to see its details and its conversation here.");
   });
 
   it("lists the past newest first, by status and words", () => {

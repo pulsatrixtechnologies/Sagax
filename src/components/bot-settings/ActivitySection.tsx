@@ -19,7 +19,8 @@
 // Coding (the All history row shows only when neither is drawn); it replaces the separate rail that used to
 // open beside the chat. A section with nothing to show is not drawn, title
 // included. The section title opens ActivityListModal, the history (newest
-// first, by status, searchable), and a card opens ActivityDetailModal. The
+// first, by status, searchable, each entry's detail beside the list), and a
+// card opens ActivityDetailModal. The
 // list refetches when the bot's threads change (the store's event stream)
 // and polls while work runs.
 import { useCallback, useEffect, useState } from "react";
@@ -63,6 +64,8 @@ export interface CardActions {
   fading?: (item: BotActivityItem) => boolean;
   /** A third line under an entry (a coding job's repository and branch). */
   where?: (item: BotActivityItem) => string | undefined;
+  /** The entry shown beside the list (History's right pane). */
+  currentId?: string;
 }
 
 function Cards({ items, label, actions }: { items: BotActivityItem[]; label: string; actions: CardActions }) {
@@ -75,7 +78,7 @@ function Cards({ items, label, actions }: { items: BotActivityItem[]; label: str
           className={cn("transition-opacity ease-out", actions.fading?.(item) && "opacity-0")}
           style={{ transitionDuration: `${FINISHED_FADE_MS}ms` }}
         >
-          <ActivityCard item={item} onOpen={actions.onOpen} now={actions.now} onStop={actions.onStop} stopping={actions.stopping?.has(item.id)} where={actions.where?.(item)} />
+          <ActivityCard item={item} onOpen={actions.onOpen} now={actions.now} onStop={actions.onStop} stopping={actions.stopping?.has(item.id)} where={actions.where?.(item)} current={actions.currentId === item.id} />
         </li>
       ))}
     </ul>
@@ -85,7 +88,7 @@ function Cards({ items, label, actions }: { items: BotActivityItem[]; label: str
 /** A list of entries as it is drawn (the history modal's too): loading,
  * error, empty or the cards. Split out so it renders without the fetching
  * around it. */
-export function ActivityList({ items, error, onOpen, now, onStop, stopping, fading, where, label, emptyKey = "botPanel.coding.empty" }: {
+export function ActivityList({ items, error, onOpen, now, onStop, stopping, fading, where, currentId, label, emptyKey = "botPanel.coding.empty" }: {
   items: BotActivityItem[] | null;
   label?: string;
   error: boolean;
@@ -108,7 +111,7 @@ export function ActivityList({ items, error, onOpen, now, onStop, stopping, fadi
       </div>
     );
   }
-  return <Cards items={items} label={label ?? t("botPanel.coding.title")} actions={{ onOpen, now, onStop, stopping, fading, where }} />;
+  return <Cards items={items} label={label ?? t("botPanel.coding.title")} actions={{ onOpen, now, onStop, stopping, fading, where, currentId }} />;
 }
 
 /** One row of code work: an icon, a line, a quieter line; with a web page
@@ -360,7 +363,7 @@ export function ActivitySection({ bot }: { bot: Bot }) {
           filter={all}
           onFilter={setAll}
           onClose={() => setAll(null)}
-          onOpen={setOpen}
+          onChanged={() => { void feed.refresh(); }}
           onStop={stop}
           stopping={feed.stopping}
         />
