@@ -12,6 +12,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { normalizeImageGenerationUrl, type AvatarImageProvider } from "../../../shared/image-generation";
 import { KeyInKeys, type KeyRowId } from "./ProviderKeys";
+import { DescribedRow, PillSelect } from "../SettingsPrimitives";
 
 const PROVIDER_LABEL: Record<AvatarImageProvider, LocaleKey> = {
   openai: "imageGen.provider.openai",
@@ -31,7 +32,7 @@ const PROVIDER_KEY_ROW: Record<AvatarImageProvider, KeyRowId> = {
 };
 
 const INPUT_CLASS = "w-full min-w-0 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-secondary focus:outline-none disabled:opacity-50";
-const BUTTON_CLASS = "flex items-center justify-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[12.5px] text-ink hover:bg-raised-hover disabled:opacity-50";
+const BUTTON_CLASS = "ui-button min-h-[44px] shrink-0 disabled:opacity-50 md:min-h-0";
 
 /** `keysLink`: the Keys list is on this page, so a missing key links to its
  * row (false in a remote window, where the list is not shown). */
@@ -110,75 +111,74 @@ export function ImageGenerationSettings({ keysLink = true }: { keysLink?: boolea
     }
   };
 
+  // 0.5.6: rows of the Image generation group (Grok Bot's settings rows).
+  // The provider in a pill menu, its key in the grey line under it, what it
+  // is billed to behind the info button.
   return (
-    <div className="space-y-2.5">
-      <label className="block text-[13px] text-ink-secondary">
-        {t("imageGen.provider")}
-        <select
+    <>
+      <DescribedRow
+        label={t("imageGen.provider")}
+        help={t(PROVIDER_HINT[provider])}
+        rowId="imageProvider"
+        description={(
+          <KeyInKeys
+            row={PROVIDER_KEY_ROW[provider]}
+            saved={keyConfigured}
+            optional={provider === "custom"}
+            missing={provider === "custom" ? t("imageGen.key.none") : undefined}
+            link={keysLink}
+          />
+        )}
+        below={provider === "custom" && (
+          <div className="mt-2.5 flex flex-col gap-2">
+            <label className="block text-[12px] text-ink-secondary">
+              {t("imageGen.baseUrl")}
+              <input
+                type="url"
+                value={customUrl}
+                disabled={busy}
+                onChange={(event) => setUrlDraft(event.target.value)}
+                placeholder={t("imageGen.baseUrlPlaceholder")}
+                autoComplete="off"
+                className={`${INPUT_CLASS} mt-1`}
+              />
+            </label>
+            <label className="block text-[12px] text-ink-secondary">
+              {t("imageGen.model")}
+              <input
+                value={customModel}
+                disabled={busy}
+                onChange={(event) => setModelDraft(event.target.value)}
+                placeholder={t("imageGen.modelPlaceholder")}
+                aria-label={t("imageGen.model")}
+                autoComplete="off"
+                className={`${INPUT_CLASS} mt-1`}
+              />
+            </label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 flex-1 text-[12px] leading-4 text-ink-secondary">{t("imageGen.customNote")}</p>
+              <button
+                type="button"
+                onClick={() => void saveConnection()}
+                disabled={busy || !customUrl.trim() || !customModel.trim() || (!settingsDirty && configured)}
+                className={BUTTON_CLASS}
+              >
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                {t("imageGen.saveConnection")}
+              </button>
+            </div>
+          </div>
+        )}
+      >
+        <PillSelect
           value={provider}
-          onChange={(event) => void chooseProvider(event.target.value as AvatarImageProvider)}
+          ariaLabel={t("imageGen.provider")}
           disabled={busy || !state.config}
-          aria-label={t("imageGen.provider")}
-          className={`${INPUT_CLASS} mt-1`}
-        >
-          {(Object.keys(PROVIDER_LABEL) as AvatarImageProvider[]).map((value) => (
-            <option key={value} value={value}>{t(PROVIDER_LABEL[value])}</option>
-          ))}
-        </select>
-      </label>
-      <p className="text-[11.5px] leading-relaxed text-ink-secondary">{t(PROVIDER_HINT[provider])}</p>
-
-      {provider === "custom" && (
-        <>
-          <label className="block text-[11.5px] text-ink-secondary">
-            {t("imageGen.baseUrl")}
-            <input
-              type="url"
-              value={customUrl}
-              disabled={busy}
-              onChange={(event) => setUrlDraft(event.target.value)}
-              placeholder={t("imageGen.baseUrlPlaceholder")}
-              autoComplete="off"
-              className={`${INPUT_CLASS} mt-1`}
-            />
-          </label>
-          <label className="block text-[11.5px] text-ink-secondary">
-            {t("imageGen.model")}
-            <input
-              value={customModel}
-              disabled={busy}
-              onChange={(event) => setModelDraft(event.target.value)}
-              placeholder={t("imageGen.modelPlaceholder")}
-              aria-label={t("imageGen.model")}
-              autoComplete="off"
-              className={`${INPUT_CLASS} mt-1`}
-            />
-          </label>
-          <p className="text-[11px] leading-relaxed text-ink-secondary">{t("imageGen.customNote")}</p>
-        </>
-      )}
-
-      <KeyInKeys
-        row={PROVIDER_KEY_ROW[provider]}
-        saved={keyConfigured}
-        optional={provider === "custom"}
-        missing={provider === "custom" ? t("imageGen.key.none") : undefined}
-        link={keysLink}
-      />
-      {provider === "custom" && (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => void saveConnection()}
-            disabled={busy || !customUrl.trim() || !customModel.trim() || (!settingsDirty && configured)}
-            className={BUTTON_CLASS}
-          >
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-            {t("imageGen.saveConnection")}
-          </button>
-        </div>
-      )}
-      {error && <div role="alert" className="text-[12px] text-danger">{error}</div>}
-    </div>
+          onChange={(next) => void chooseProvider(next)}
+          options={(Object.keys(PROVIDER_LABEL) as AvatarImageProvider[]).map((value) => ({ value, label: t(PROVIDER_LABEL[value]) }))}
+        />
+      </DescribedRow>
+      {error && <div role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{error}</div>}
+    </>
   );
 }

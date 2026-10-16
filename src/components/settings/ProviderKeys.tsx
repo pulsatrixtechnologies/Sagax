@@ -25,7 +25,7 @@ import {
   type ConfigSection,
   type TestableProvider,
 } from "../ApiKeys";
-import { Card, HelpTip, requestSettingsCard } from "../SettingsPrimitives";
+import { FoldRow, HelpTip, requestSettingsCard } from "../SettingsPrimitives";
 
 export type KeyRowId = "openai" | "anthropic" | "xai" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage" | "openrouter" | "mistral" | "openaiCompat" | "opencodeGo";
 
@@ -178,11 +178,14 @@ export function keyRowForEngine(driverKind: string, instanceId: string): KeyRowI
   return null;
 }
 
+/** One row per key, as Grok Bot's settings rows: the provider and its state
+ * in a grey line at the left, one pill at the right. Rows of the Keys group
+ * card (no frame of their own). */
 export function ProviderKeyRows({ rows }: { rows: readonly KeyRowId[] }) {
   const { state } = useStore();
   const highlighted = useHighlightRow();
   return (
-    <ul className="divide-y divide-hairline/40 overflow-hidden rounded-xl border border-hairline/40" data-provider-keys="">
+    <ul className="flex flex-col" data-provider-keys="">
       {rows.map((id) => {
         const row = ROWS[id];
         const saved = state.config ? row.saved(state.config) : false;
@@ -193,19 +196,20 @@ export function ProviderKeyRows({ rows }: { rows: readonly KeyRowId[] }) {
             data-provider-key={id}
             data-key-saved={saved ? "true" : "false"}
             data-key-highlight={highlighted === id ? "true" : undefined}
-            className={cn("flex items-center gap-3 px-3.5 py-2.5 transition-colors motion-reduce:transition-none", highlighted === id && "bg-accent/10")}
+            className={cn("mx-1.5 flex min-h-[44px] items-center gap-3 rounded-lg px-2 py-1.5 transition-colors motion-reduce:transition-none", highlighted === id && "bg-accent/10")}
           >
-            <KeyRound size={15} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+            <KeyRound size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] text-ink">{t(row.nameKey)}</span>
-              <span className={cn("block text-[12px]", saved || included ? "text-accent-text" : "text-ink-secondary")}>
+              <span className="block truncate text-[13px] leading-[18px] text-ink">{t(row.nameKey)}</span>
+              <span className={cn("block text-[12px] leading-4", saved || included ? "text-accent-text" : "text-ink-secondary")}>
                 {saved ? t("providerKeys.saved") : included ? t("keys.includedWithCloudPro") : t("providerKeys.none")}
               </span>
             </span>
             <button
               type="button"
               onClick={() => openProviderKeyDialog(id)}
-              className="shrink-0 rounded-lg bg-control px-3 py-1.5 text-[12.5px] text-ink hover:bg-raised-hover"
+              aria-label={`${saved ? t("providerKeys.manage") : t("providerKeys.add")} · ${t(row.nameKey)}`}
+              className="ui-button min-h-[44px] shrink-0 md:min-h-0"
             >
               {saved ? t("providerKeys.manage") : t("providerKeys.add")}
             </button>
@@ -217,21 +221,22 @@ export function ProviderKeyRows({ rows }: { rows: readonly KeyRowId[] }) {
 }
 
 /** The one list of keys: the main rows (with any rare key already saved),
- * then "More providers", folded, with the rare ones not saved yet and
- * `moreExtra` (the cloud coding agents' keys). */
-export function KeyList({ moreExtra }: { moreExtra?: ReactNode }) {
+ * then "More providers", folded with its count, with the rare ones not
+ * saved yet and `moreExtra` (the cloud coding agents' keys, `moreExtraCount`
+ * of them). */
+export function KeyList({ moreExtra, moreExtraCount = 0 }: { moreExtra?: ReactNode; moreExtraCount?: number }) {
   const { state } = useStore();
   const { main, more } = splitKeyRows(state.config);
   return (
     <>
       <ProviderKeyRows rows={main} />
       {(more.length > 0 || moreExtra) && (
-        <Card collapsible cardId="engines.moreProviders" defaultOpen={false} title={t("modelsVoice.keys.more")}>
-          <div className="flex flex-col gap-3" data-more-providers="">
+        <FoldRow cardId="engines.moreProviders" label={t("modelsVoice.keys.more")} count={more.length + moreExtraCount}>
+          <div className="-mx-3.5 flex flex-col" data-more-providers="">
             {more.length > 0 && <ProviderKeyRows rows={more} />}
             {moreExtra}
           </div>
-        </Card>
+        </FoldRow>
       )}
     </>
   );

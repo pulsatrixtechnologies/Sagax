@@ -28,7 +28,7 @@ import {
 } from "@/lib/usage-personal";
 import { PlanUsage } from "./PlanUsage";
 import { perspicaxConsoleUrl } from "./PerspicaxOrgSettings";
-import { Card } from "./SettingsPrimitives";
+import { CompactRow, DescribedRow, FoldRow, SettingsGroup } from "./SettingsPrimitives";
 
 export interface PersonalUsage {
   month: PersonalUsageSummary;
@@ -100,10 +100,12 @@ export function planUsageShown(input: { organization: boolean; viewUsage: boolea
 
 /** The page's order (2026-10-15): Cost on top, then Plan, then the rest. */
 export function UsageLayout({ cost, plan, rest }: { cost: ReactNode; plan: ReactNode; rest: ReactNode }) {
-  return <>{cost}{plan}{rest}</>;
+  return <div className="flex min-w-0 flex-col gap-6">{cost}{plan}{rest}</div>;
 }
 
-/** Every member sees this page (2026-10-15): it shows their own usage only. */
+/** Every member sees this page (2026-10-15): it shows their own usage only.
+ * 0.5.6: laid out as Grok Bot's Usage & Billing, grey headings outside
+ * rounded cards, compact rows; the breakdown folds under a count pill. */
 export function UsageSection() {
   const { state } = useStore();
   const org = usePerspicaxOrg();
@@ -117,27 +119,12 @@ export function UsageSection() {
     );
     return () => { alive = false; };
   }, []);
+  const consoleUrl = org && viewerIsOrgAdmin(state.config) ? perspicaxConsoleUrl(org.org.identity.issuer) : null;
   return (
     <UsageLayout
-      cost={<CostCard usage={usage} error={error} />}
+      cost={<CostCard usage={usage} error={error} consoleUrl={consoleUrl} />}
       plan={planUsageShown({ organization: org !== null, viewUsage: canViewUsage(state.config) }) && <PlanUsage />}
-      rest={(
-        <>
-          {usage && <BreakdownCard usage={usage} />}
-          {org && viewerIsOrgAdmin(state.config) && (
-            <a
-              href={perspicaxConsoleUrl(org.org.identity.issuer)}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-usage-org-link
-              className="inline-flex w-fit items-center gap-1 text-[12.5px] text-ink-secondary hover:text-ink hover:underline"
-            >
-              {t("usage.personal.manageOrg")}
-              <ExternalLink size={12} aria-hidden="true" />
-            </a>
-          )}
-        </>
-      )}
+      rest={null}
     />
   );
 }
@@ -157,43 +144,68 @@ export function Sparkline({ values }: { values: number[] }) {
   );
 }
 
-export function CostCard({ usage, error }: { usage: PersonalUsage | null; error: PersonalUsageError | null }) {
+/** Cost (2026-10-15: on top): this month with its trend, the last 30 days,
+ * then the breakdown by bot and by model, folded with its count; for an
+ * organization admin, the organization's own usage in its console. */
+export function CostCard({ usage, error, consoleUrl = null }: { usage: PersonalUsage | null; error: PersonalUsageError | null; consoleUrl?: string | null }) {
   const periods = personalUsagePeriods();
   const current = costOf(usage?.month);
   const trend = usage ? costTrend(current, costOf(usage.previous)) : null;
   const estimated = (usage?.month.total.estimatedUsd ?? 0) > 0;
+  const status = error === "unavailable" ? (
+    <p role="status" className="px-3.5 py-2.5 text-[13px] text-ink-secondary" data-usage-unavailable>{t("usage.personal.unavailable")}</p>
+  ) : error ? (
+    <p role="alert" className="px-3.5 py-2.5 text-[13px] text-danger">{t("usage.personal.error")}</p>
+  ) : !usage ? (
+    <p role="status" className="px-3.5 py-2.5 text-[13px] text-ink-secondary">{t("planUsage.loading")}</p>
+  ) : usage.month.total.turns === 0 && usage.days30.total.turns === 0 ? (
+    <p className="px-3.5 py-2.5 text-[13px] text-ink-secondary" data-usage-empty>{t("usage.personal.empty")}</p>
+  ) : null;
   return (
-    <section data-settings-card="usage.cost" className="rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
-      <h3 className="text-[13px] font-medium text-ink">{t("usage.personal.costTitle")}</h3>
-      {error === "unavailable" ? (
-        <p role="status" className="mt-2 text-[13px] text-ink-secondary" data-usage-unavailable>{t("usage.personal.unavailable")}</p>
-      ) : error ? (
-        <p role="alert" className="mt-2 text-[13px] text-danger">{t("usage.personal.error")}</p>
-      ) : !usage ? (
-        <p role="status" className="mt-2 text-[13px] text-ink-secondary">{t("planUsage.loading")}</p>
-      ) : usage.month.total.turns === 0 && usage.days30.total.turns === 0 ? (
-        <p className="mt-2 text-[13px] text-ink-secondary" data-usage-empty>{t("usage.personal.empty")}</p>
-      ) : (
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[22px] font-semibold tabular-nums text-ink" data-usage-cost>{formatCost(current)}</div>
-            <p className="text-[12.5px] text-ink-secondary">
-              {t("usage.personal.thisMonth", { turns: usage.month.total.turns })}
-              {trend !== null && (
-                <> · <span data-usage-trend={trend} className={cn(trend > 0 ? "text-warning" : "text-success")}>
-                  {t(trend > 0 ? "usage.personal.trendUp" : trend < 0 ? "usage.personal.trendDown" : "usage.personal.trendSame", { percent: Math.abs(trend) })}
-                </span></>
+    <div data-settings-card="usage.cost">
+      <SettingsGroup title={t("usage.personal.costTitle")} groupId="cost">
+        {status}
+        {usage && !status && (
+          <>
+            <DescribedRow
+              label={t("usage.personal.breakdownSummary")}
+              rowId="month"
+              description={(
+                <>
+                  {t("usage.personal.turns", { turns: usage.month.total.turns })}
+                  {trend !== null && (
+                    <> · <span data-usage-trend={trend} className={cn(trend > 0 ? "text-warning" : "text-success")}>
+                      {t(trend > 0 ? "usage.personal.trendUp" : trend < 0 ? "usage.personal.trendDown" : "usage.personal.trendSame", { percent: Math.abs(trend) })}
+                    </span></>
+                  )}
+                  {estimated && <span className="block">{t("usage.personal.estimated")}</span>}
+                </>
               )}
-            </p>
-            {estimated && <p className="mt-0.5 text-[12px] text-ink-secondary">{t("usage.personal.estimated")}</p>}
-          </div>
-          <div className="flex flex-col items-end gap-0.5">
-            <Sparkline values={dailyCosts(usage.days30, periods.days30)} />
-            <span className="text-[11.5px] text-ink-secondary">{t("usage.personal.last30")}</span>
-          </div>
-        </div>
-      )}
-    </section>
+            >
+              <span className="text-[17px] font-semibold tabular-nums leading-6 text-ink" data-usage-cost>{formatCost(current)}</span>
+            </DescribedRow>
+            <CompactRow label={t("usage.personal.last30")} rowId="days30">
+              <Sparkline values={dailyCosts(usage.days30, periods.days30)} />
+            </CompactRow>
+            <BreakdownRow usage={usage} />
+          </>
+        )}
+        {consoleUrl && (
+          <CompactRow label={t("usage.personal.organization")} rowId="organization">
+            <a
+              href={consoleUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-usage-org-link
+              className="ui-button min-h-[44px] md:min-h-0"
+            >
+              {t("usage.personal.openConsole")}
+              <ExternalLink size={12} aria-hidden="true" />
+            </a>
+          </CompactRow>
+        )}
+      </SettingsGroup>
+    </div>
   );
 }
 
@@ -204,22 +216,22 @@ function GroupList({ title, groups, kind }: { title: string; groups: PersonalUsa
   const shown = all ? groups : groups.slice(0, TOP);
   return (
     <div data-usage-list={kind}>
-      <div className="text-[12px] font-medium text-ink-secondary">{title}</div>
+      <div className="text-[12px] text-ink-secondary">{title}</div>
       {groups.length === 0 ? (
         <p className="mt-1 text-[13px] text-ink-secondary">{t("usage.personal.none")}</p>
       ) : (
-        <ul className="mt-1 divide-y divide-hairline/30">
+        <ul className="mt-1 flex flex-col">
           {shown.map((group) => (
-            <li key={group.key} className="flex items-center gap-3 py-1.5 text-[13px]">
+            <li key={group.key} className="flex min-h-[30px] items-center gap-3 text-[13px]">
               <span className="min-w-0 flex-1 truncate text-ink" title={group.label}>{group.label}</span>
-              <span className="shrink-0 tabular-nums text-ink-secondary">{t("usage.personal.turns", { turns: group.turns })}</span>
+              <span className="shrink-0 text-[12px] tabular-nums text-ink-secondary">{t("usage.personal.turns", { turns: group.turns })}</span>
               <span className="w-20 shrink-0 text-right tabular-nums text-ink">{typeof group.costUsd === "number" ? formatCost(group.costUsd) : "·"}</span>
             </li>
           ))}
         </ul>
       )}
       {groups.length > TOP && (
-        <button type="button" onClick={() => setAll((open) => !open)} className="mt-1 text-[12.5px] text-accent hover:underline">
+        <button type="button" onClick={() => setAll((open) => !open)} aria-expanded={all} className="mt-1 min-h-[44px] rounded-md text-[12.5px] text-accent-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 md:min-h-0">
           {all ? t("usage.personal.showLess") : t("usage.personal.showAll", { count: groups.length })}
         </button>
       )}
@@ -227,13 +239,21 @@ function GroupList({ title, groups, kind }: { title: string; groups: PersonalUsa
   );
 }
 
-function BreakdownCard({ usage }: { usage: PersonalUsage }) {
+/** By bot and by model, this month: folded under a count pill (the number
+ * of bots). */
+function BreakdownRow({ usage }: { usage: PersonalUsage }) {
+  const bots = rankedGroups(usage.byBot);
   return (
-    <Card collapsible cardId="usage.breakdown" defaultOpen={false} title={t("usage.personal.breakdown")} summary={t("usage.personal.breakdownSummary")}>
-      <div className="flex flex-col gap-4">
-        <GroupList kind="bot" title={t("usage.personal.byBot")} groups={rankedGroups(usage.byBot)} />
+    <FoldRow
+      cardId="usage.breakdown"
+      label={t("usage.personal.breakdown")}
+      count={bots.length}
+      toggleLabel={t("usage.personal.breakdown")}
+    >
+      <div className="flex flex-col gap-3">
+        <GroupList kind="bot" title={t("usage.personal.byBot")} groups={bots} />
         <GroupList kind="model" title={t("usage.personal.byModel")} groups={rankedGroups(usage.byModel)} />
       </div>
-    </Card>
+    </FoldRow>
   );
 }

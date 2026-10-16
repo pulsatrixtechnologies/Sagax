@@ -1,4 +1,4 @@
-import { useCallback, useId, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { LIVE_VOICE_OPTIONS } from "../../shared/live-call";
 import { t } from "@/lib/i18n";
@@ -6,7 +6,7 @@ import { liveDisclosure } from "@/lib/call-mode";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import type { LiveSettings } from "../../shared/wire";
 import { SettingsText } from "./SettingsLink";
-import { Switch } from "./SettingsPrimitives";
+import { PillSelect, SwitchRow } from "./SettingsPrimitives";
 
 const IDLE_CHOICES = [1, 2, 3, 5, 10, 15, 30, 60];
 
@@ -97,52 +97,44 @@ export function LiveCallSettings({ onClose }: { onClose: () => void }) {
  * Settings rather than on the call bar. */
 export function LiveCallInstallationSettings() {
   const { live, saving, error, save, removeKey } = useLiveSettingsEditor();
-  const typedHintId = useId();
+  const minutes = [...new Set([...IDLE_CHOICES, live.idleMinutes])].sort((a, b) => a - b);
 
+  // 0.5.6: compact rows (Grok Bot's settings): a switch, a pill menu, the
+  // key line; why typed replies matter behind the switch's info button.
   return (
     <div className="flex flex-col gap-3 text-[13px]">
+      <SwitchRow
+        label={t("call.live.readTyped")}
+        help={t("call.live.readTypedHint")}
+        checked={live.readTypedReplies}
+        disabled={saving}
+        onChange={(next) => void save({ readTypedReplies: next })}
+      />
       <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="font-medium text-ink">{t("call.live.readTyped")}</div>
-          <div id={typedHintId} className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("call.live.readTypedHint")}</div>
-        </div>
-        <Switch
-          checked={live.readTypedReplies}
+        <span className="min-w-0 text-ink">{t("call.live.idle")}</span>
+        <PillSelect
+          value={String(live.idleMinutes)}
+          ariaLabel={t("call.live.idle")}
           disabled={saving}
-          aria-label={t("call.live.readTyped")}
-          aria-describedby={typedHintId}
-          onClick={() => void save({ readTypedReplies: !live.readTypedReplies })}
+          onChange={(next) => void save({ idleMinutes: Number(next) })}
+          options={minutes.map((value) => ({ value: String(value), label: t("call.live.idleMinutes", { minutes: value }) }))}
         />
       </div>
-      <label className="flex items-center justify-between gap-2">
-        <span className="text-ink-secondary">{t("call.live.idle")}</span>
-        <select
-          value={live.idleMinutes}
-          disabled={saving}
-          aria-label={t("call.live.idle")}
-          onChange={(event) => void save({ idleMinutes: Number(event.target.value) })}
-          className="rounded-md border border-hairline/60 bg-panel px-2 py-1 text-ink outline-none"
-        >
-          {[...new Set([...IDLE_CHOICES, live.idleMinutes])].sort((a, b) => a - b).map((minutes) => (
-            <option key={minutes} value={minutes}>{minutes}</option>
-          ))}
-        </select>
-      </label>
       {/* One OpenAI key (2026-10-14): Live calls use the OpenAI key of the
-          list above. An older install's separate key still wins until it is
+          Keys group. An older install's separate key still wins until it is
           removed here. */}
-      <div className="flex items-center justify-between gap-2 border-t border-hairline/60 pt-2" data-live-key={live.separateKey ? "separate" : live.configured ? "openai" : "none"}>
-        <span className="text-ink-secondary">
+      <div className="flex items-center justify-between gap-2" data-live-key={live.separateKey ? "separate" : live.configured ? "openai" : "none"}>
+        <span className="text-[12px] leading-4 text-ink-secondary">
           {live.separateKey ? t("call.live.separateKey") : live.configured ? t("call.live.usesOpenAiKey") : t("call.live.needsOpenAiKey")}
         </span>
         {live.separateKey && (
-          <button type="button" className="shrink-0 text-danger hover:underline" disabled={saving} onClick={() => void removeKey()}>
+          <button type="button" className="ui-button min-h-[44px] shrink-0 text-danger md:min-h-0" disabled={saving} onClick={() => void removeKey()}>
             {t("call.live.keyRemove")}
           </button>
         )}
       </div>
-      <div className="text-[11.5px] text-ink-tertiary">{liveDisclosure()} {t("call.live.cost")}</div>
-      {error && <div className="text-[12px] text-danger">{error}</div>}
+      <div className="text-[12px] leading-4 text-ink-secondary">{liveDisclosure()} {t("call.live.cost")}</div>
+      {error && <div role="alert" className="text-[12px] text-danger">{error}</div>}
     </div>
   );
 }

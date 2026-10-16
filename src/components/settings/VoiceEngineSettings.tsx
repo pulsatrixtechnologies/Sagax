@@ -14,6 +14,7 @@ import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { KeyInKeys, keyRowSaved, type KeyRowId } from "./ProviderKeys";
+import { DescribedRow, PillSelect } from "../SettingsPrimitives";
 
 const FISH_MODELS = [
   { value: "s2.1-pro", label: "voice.fish.modelPro" },
@@ -22,7 +23,7 @@ const FISH_MODELS = [
 type FishModel = (typeof FISH_MODELS)[number]["value"];
 
 const INPUT_CLASS = "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none";
-const SAVE_CLASS = "flex w-[88px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50";
+const SAVE_CLASS = "ui-button min-h-[44px] shrink-0 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-0";
 
 /** The key row of the list a cloud voice engine runs on. */
 export function voiceKeyRow(provider: string | undefined): KeyRowId | null {
@@ -97,114 +98,102 @@ export function VoiceEngineSettings({ keysLink = true }: { keysLink?: boolean })
 
   if (!tts) return null;
 
-  return (
-    <div>
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-inset p-1" role="radiogroup" aria-label={t("voice.engine.aria")}>
-        {([
-          { value: "elevenlabs", label: t("voice.engine.elevenlabs"), available: true },
-          { value: "fish", label: t("voice.engine.fish"), available: true },
-          { value: "system", label: t("voice.engine.system"), available: systemVoicesAvailable },
-          { value: "chatterbox", label: t("voice.engine.chatterbox"), available: true },
-          { value: "xai", label: t("voice.grok.label"), available: true },
-        ] as const).map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={provider === option.value}
-            disabled={switching || !option.available}
-            title={!option.available ? t("voice.engine.macOnly") : undefined}
-            onClick={() => setProvider(option.value)}
-            className={cn(
-              "rounded-lg px-3.5 py-1.5 text-[12.5px] transition-colors disabled:opacity-50",
-              provider === option.value ? "bg-raised text-ink shadow" : "text-ink-secondary hover:text-ink",
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+  // 0.5.6: rows of the Voice group (Grok Bot's settings rows). The engine in
+  // a pill menu, its key in the grey line under it.
+  const engines = ([
+    { value: "elevenlabs", label: t("voice.engine.elevenlabs"), available: true },
+    { value: "fish", label: t("voice.engine.fish"), available: true },
+    { value: "system", label: t("voice.engine.system"), available: systemVoicesAvailable },
+    { value: "chatterbox", label: t("voice.engine.chatterbox"), available: true },
+    { value: "xai", label: t("voice.grok.label"), available: true },
+  ] as const).filter((option) => option.available || option.value === provider);
 
-      {keyRow && (
-        <div className="mt-3" data-voice-key={keyRow} data-voice-key-saved={keySaved || (keyRow === "elevenlabs" && included) ? "true" : "false"}>
-          <KeyInKeys row={keyRow} saved={keySaved} included={keyRow === "elevenlabs" && included} link={keysLink} />
-        </div>
-      )}
+  return (
+    <>
+      <DescribedRow
+        label={t("voice.engine.aria")}
+        rowId="voiceEngine"
+        description={keyRow ? (
+          <div data-voice-key={keyRow} data-voice-key-saved={keySaved || (keyRow === "elevenlabs" && included) ? "true" : "false"}>
+            <KeyInKeys row={keyRow} saved={keySaved} included={keyRow === "elevenlabs" && included} link={keysLink} />
+          </div>
+        ) : undefined}
+      >
+        <PillSelect
+          value={provider}
+          ariaLabel={t("voice.engine.aria")}
+          disabled={switching}
+          onChange={(next) => setProvider(next)}
+          options={engines.map(({ value, label }) => ({ value, label }))}
+        />
+      </DescribedRow>
 
       {provider === "fish" && (
-        <div className="mt-4">
-          <div className="mb-1.5 text-[13px] text-ink-secondary">{t("voice.fish.model")}</div>
-          <select
-            value={tts.fishModel ?? "s2.1-pro"}
-            onChange={(e) => saveFishModel(e.target.value as FishModel)}
+        <DescribedRow label={t("voice.fish.model")} help={t("voice.fish.modelHint")} rowId="fishModel">
+          <PillSelect
+            value={(tts.fishModel ?? "s2.1-pro") as FishModel}
+            ariaLabel={t("voice.fish.model")}
             disabled={savingFishModel}
-            aria-label={t("voice.fish.model")}
-            className={`${INPUT_CLASS} disabled:opacity-50`}
-          >
-            {FISH_MODELS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {t(option.label)}
-              </option>
-            ))}
-          </select>
-          <div className="mt-1.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("voice.fish.modelHint")}</div>
-        </div>
+            onChange={(next) => saveFishModel(next)}
+            options={FISH_MODELS.map((option) => ({ value: option.value, label: t(option.label) }))}
+          />
+        </DescribedRow>
       )}
 
       {provider === "chatterbox" && (
-        <div className="mt-4">
-          <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
-            <span className={cn("size-1.5 rounded-full", configured ? "bg-accent" : "bg-raised-hover")} />
-            <span>{t("voice.engine.server")}</span>
-            {configured && <span className="text-[11px] text-success">{t("voice.engine.saved")}</span>}
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="url"
-              value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void saveServer()}
-              placeholder={t("voice.engine.addressPlaceholder")}
-              aria-label={t("voice.engine.address")}
-              autoComplete="off"
-              spellCheck={false}
-              className={INPUT_CLASS}
-            />
-            <button
-              type="button"
-              onClick={() => void saveServer()}
-              disabled={savingServer || !serverUrl.trim()}
-              className={SAVE_CLASS}
-            >
-              {savingServer ? <Loader2 size={13} className="animate-spin" /> : <><Check size={13} />{t("common.save")}</>}
-            </button>
-          </div>
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void saveServer()}
-            placeholder={t("voice.engine.modelPlaceholder")}
-            aria-label={t("voice.engine.model")}
-            autoComplete="off"
-            spellCheck={false}
-            className={`${INPUT_CLASS} mt-2`}
-          />
-          <div className="mt-1.5 text-[11.5px] leading-relaxed text-ink-secondary">
-            {t("voice.engine.serverHint")}{" "}
-            <a
-              href="https://github.com/resemble-ai/chatterbox"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-accent hover:underline"
-            >
-              {t("voice.engine.serverDocs")}
-            </a>
-          </div>
-        </div>
+        <DescribedRow
+          label={t("voice.engine.server")}
+          rowId="chatterbox"
+          description={(
+            <span className="flex items-center gap-1.5">
+              <span className={cn("size-1.5 rounded-full", configured ? "bg-accent" : "bg-raised-hover")} aria-hidden="true" />
+              {configured ? t("voice.engine.saved") : t("voice.engine.serverHint")}
+              {" "}
+              <a href="https://github.com/resemble-ai/chatterbox" target="_blank" rel="noopener noreferrer" className="font-medium text-accent-text hover:underline">
+                {t("voice.engine.serverDocs")}
+              </a>
+            </span>
+          )}
+          below={(
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void saveServer()}
+                  placeholder={t("voice.engine.addressPlaceholder")}
+                  aria-label={t("voice.engine.address")}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className={INPUT_CLASS}
+                />
+                <button
+                  type="button"
+                  onClick={() => void saveServer()}
+                  disabled={savingServer || !serverUrl.trim()}
+                  className={SAVE_CLASS}
+                >
+                  {savingServer ? <Loader2 size={13} className="animate-spin" /> : <><Check size={13} />{t("common.save")}</>}
+                </button>
+              </div>
+              <input
+                type="text"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void saveServer()}
+                placeholder={t("voice.engine.modelPlaceholder")}
+                aria-label={t("voice.engine.model")}
+                autoComplete="off"
+                spellCheck={false}
+                className={INPUT_CLASS}
+              />
+            </div>
+          )}
+        />
       )}
 
-      {error && <div role="alert" className="mt-2 text-[12px] text-danger">{error}</div>}
-    </div>
+      {error && <div role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{error}</div>}
+    </>
   );
 }

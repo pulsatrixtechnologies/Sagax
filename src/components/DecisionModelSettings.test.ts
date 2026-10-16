@@ -29,7 +29,9 @@ function nodes(value: ReactNode): Node[] {
   return Children.toArray(value).flatMap((child) => {
     if (!isValidElement(child)) return [];
     const node = child as Node;
-    return [node, ...nodes(node.props.children)];
+    // 0.5.6: a settings row holds its key field in `below` and its state in
+    // `description`, not in its children.
+    return [node, ...nodes(node.props.children), ...nodes(node.props.below as ReactNode), ...nodes(node.props.description as ReactNode)];
   });
 }
 function render() {

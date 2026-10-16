@@ -132,8 +132,10 @@ describe("LiveCallSettings", () => {
     expect(markup).toContain("Read replies to typed messages");
     expect(markup).toContain(`When this is off, messages you type during a call and the bot&#x27;s answers to them are not sent to OpenAI.`);
     expect(markup).toContain(`A Live call sends your voice to OpenAI, along with the chat&#x27;s recent messages, the bot&#x27;s answers and the details of any approval it asks for. The OpenAI key stays on your computer.`);
-    expect(markup).toContain("Hang up after this many minutes of silence");
-    expect(markup).toMatch(/<option value="5" selected="">5<\/option>/);
+    // 0.5.6: the idle limit is a pill menu showing the current value
+    expect(markup).toContain("Hang up after a silence of");
+    expect(markup).toMatch(/data-pill-select=""[^>]*><span[^>]*>5 min<\/span>/);
+    expect(markup).not.toContain("<select");
     // one OpenAI key (2026-10-14): no second key field for Live calls
     expect(markup).not.toContain("Change key");
     expect(markup).toContain('data-live-key="none"');

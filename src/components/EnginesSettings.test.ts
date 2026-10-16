@@ -222,7 +222,8 @@ describe("Settings → Engines → setup cards", () => {
     }];
     const html = renderToStaticMarkup(createElement(EnginesSettings));
     expect(html).toContain("Sign in with Google");
-    expect(html).toContain("Set up");
+    // 0.5.6: the row says what is missing (Grok-style row, no separate "Set up")
+    expect(html).toContain("Sign-in required");
     expect(html).toContain("CLI path and updates");
     fixture.instances[0].access = "custom";
     expect(renderToStaticMarkup(createElement(EnginesSettings))).not.toContain("Sign in with Google");

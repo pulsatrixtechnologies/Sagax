@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { perspicaxKeysUrl, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { connectedPlanRows, planRows, type PlanRow, type PlanUsageReport, type PlanWindow } from "@/lib/plan-usage";
 import { usageLocale } from "@/lib/usage-personal";
+import { CompactRow, SettingsGroup } from "./SettingsPrimitives";
 
 function formatResetDistance(resetsAt: string | null, now: number): string | null {
   if (!resetsAt) return null;
@@ -187,7 +188,7 @@ function PlanSummary({ provider, now }: { provider: PlanRow; now: number }) {
   return (
     <div className="flex flex-col gap-1.5" data-plan-main={main.kind}>
       <div
-        className="h-2 overflow-hidden rounded-full bg-inset"
+        className="h-1 overflow-hidden rounded-full bg-inset"
         role="meter"
         aria-label={t("usage.plan.meter", { name: provider.name })}
         aria-valuemin={0}
@@ -206,7 +207,7 @@ function PlanSummary({ provider, now }: { provider: PlanRow; now: number }) {
       </p>
       {hasDetail && (
         <details className="text-[12.5px]">
-          <summary className="cursor-pointer text-ink-secondary hover:text-ink">{t("usage.plan.details")}</summary>
+          <summary className="w-fit cursor-pointer rounded-md text-[12px] text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70">{t("usage.plan.details")}</summary>
           <div className="mt-2"><RowWindows provider={provider} now={now} /></div>
         </details>
       )}
@@ -220,51 +221,57 @@ function PlanSummary({ provider, now }: { provider: PlanRow; now: number }) {
 export function PlanUsageView({ report, loading, now, onRefresh, issuer }: PlanUsageViewProps) {
   const rows = connectedPlanRows(report);
   if (rows.length === 0) return null;
+  // 0.5.6: Grok Bot's usage meters, a grey heading outside one rounded card,
+  // one block per plan (name, a 4 px gauge, its two lines).
   return (
-    <section data-settings-card="usage.plan" className="rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
-      <div className="flex items-center gap-2">
-        <h3 className="text-[13px] font-medium text-ink">{t("usage.plan.title")}</h3>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          aria-busy={loading}
-          aria-label={t("planUsage.refresh")}
-          title={t("planUsage.refresh")}
-          data-plan-refresh
-          className="ml-auto rounded-md p-1.5 text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50"
-        >
-          {loading ? <Loader2 size={13} className="animate-spin" data-plan-spinner /> : <RefreshCw size={13} />}
-        </button>
-      </div>
-      <div className="mt-2 flex flex-col gap-4">
+    <div data-settings-card="usage.plan">
+      <SettingsGroup
+        title={t("usage.plan.title")}
+        groupId="plan"
+        accessory={(
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            aria-busy={loading}
+            aria-label={t("planUsage.refresh")}
+            title={t("planUsage.refresh")}
+            data-plan-refresh
+            className="ml-auto flex size-7 items-center justify-center rounded-full text-ink-secondary hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" data-plan-spinner /> : <RefreshCw size={13} />}
+          </button>
+        )}
+      >
         {rows.map((provider) => (
-          <div key={provider.id} data-plan-row={provider.id} className="border-t border-hairline/30 pt-3 first:border-t-0 first:pt-0">
+          <div key={provider.id} data-plan-row={provider.id} className="px-3.5 py-2.5">
             <div className="mb-2 flex min-w-0 items-baseline gap-2">
-              <span className="truncate text-[13px] font-medium text-ink">{provider.name}</span>
+              <span className="truncate text-[13px] leading-[18px] text-ink">{provider.name}</span>
               {provider.plan && <span className="truncate text-[12px] text-ink-secondary">{provider.plan}</span>}
             </div>
             {provider.state === "windows" && <PlanSummary provider={provider} now={now} />}
             {provider.state === "no-windows" && (
-              <p data-plan-state="no-windows" className="text-[13px] text-ink-secondary">
+              <p data-plan-state="no-windows" className="text-[12px] text-ink-secondary">
                 {provider.access === "api-key" ? t("planUsage.apiKeyNoWindows") : t("planUsage.noWindows")}
               </p>
             )}
           </div>
         ))}
-      </div>
-      {issuer && (
-        <a
-          href={perspicaxKeysUrl(issuer)}
-          target="_blank"
-          rel="noreferrer noopener"
-          data-plan-keys-link
-          className="mt-3 flex w-fit items-center gap-1 text-[11.5px] text-ink-secondary hover:text-ink hover:underline"
-        >
-          {t("myEngines.manageKeys")} <ExternalLink size={11} aria-hidden="true" />
-        </a>
-      )}
-    </section>
+        {issuer && (
+          <CompactRow label={t("modelsVoice.keys.title")} rowId="keys">
+            <a
+              href={perspicaxKeysUrl(issuer)}
+              target="_blank"
+              rel="noreferrer noopener"
+              data-plan-keys-link
+              className="ui-button min-h-[44px] md:min-h-0"
+            >
+              {t("myEngines.manageKeys")} <ExternalLink size={12} aria-hidden="true" />
+            </a>
+          </CompactRow>
+        )}
+      </SettingsGroup>
+    </div>
   );
 }
 

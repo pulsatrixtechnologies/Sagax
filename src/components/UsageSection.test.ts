@@ -225,3 +225,46 @@ describe("Plan card", () => {
     expect(renewalDate(null)).toBeNull();
   });
 });
+
+// 0.5.6: Grok Bot's Usage & Billing layout, grey headings outside rounded
+// cards, compact rows, the breakdown folded under a count pill.
+describe("Usage laid out as Grok Bot's", () => {
+  const usage: PersonalUsage = {
+    month: summary(12, 4), previous: summary(10, 3), days30: summary(12, 4),
+    byBot: summary(12, 4, [{ key: "b1", label: "Hibou", turns: 3, costUsd: 9 }, { key: "b2", label: "Dispatch", turns: 1, costUsd: 3 }]),
+    byModel: summary(12, 4),
+  };
+
+  it("draws Cost as a group of rows: this month, the last 30 days, the breakdown folded with its count", () => {
+    setLocale("fr");
+    const html = renderToStaticMarkup(createElement(CostCard, { usage, error: null }));
+    expect(html).toContain('data-settings-group="cost"');
+    expect(html).toContain(">Coût<");
+    expect(html.indexOf('data-settings-row="month"')).toBeLessThan(html.indexOf('data-settings-row="days30"'));
+    expect(html).toMatch(/data-settings-card="usage.breakdown" data-open="false"/);
+    expect(html).toMatch(/data-disclosure-pill=""[^>]*>2</);
+    // still in the page while folded
+    expect(html).toContain("Hibou");
+    expect(html).not.toContain("data-usage-org-link");
+  });
+
+  it("gives an organization admin a row to the organization's usage", () => {
+    setLocale("fr");
+    const html = renderToStaticMarkup(createElement(CostCard, { usage, error: null, consoleUrl: "https://px.example.test/console" }));
+    expect(html).toContain('data-settings-row="organization"');
+    expect(html).toContain("Ouvrir Sagax Business");
+    expect(html).toContain('href="https://px.example.test/console"');
+  });
+
+  it("draws Plan under a grey heading with the refresh by it and the keys link as a row", () => {
+    setLocale("fr");
+    const html = renderToStaticMarkup(createElement(PlanUsageView, {
+      report: { providers: [{ id: "claude", name: "Claude", driver: "claude", plan: "Max", ok: true, error: null, state: "no-windows" }] },
+      loading: false, now: NOW.getTime(), onRefresh: () => {}, issuer: "https://px.example.test",
+    }));
+    expect(html).toContain('data-settings-group="plan"');
+    expect(html.indexOf("data-plan-refresh")).toBeLessThan(html.indexOf('data-plan-row="claude"'));
+    expect(html).toContain('data-settings-row="keys"');
+    expect(html).toContain("Gérer mes clés dans Perspicax");
+  });
+});

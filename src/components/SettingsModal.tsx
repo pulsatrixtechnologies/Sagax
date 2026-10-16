@@ -6,7 +6,7 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
-import { Archive, Bell, Check, Coins, Download, FlaskConical, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, Bell, Check, Coins, Download, ExternalLink, FlaskConical, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -18,7 +18,7 @@ import { launchBridges } from "@/lib/launch";
 import { servedPage } from "@/lib/desktop";
 import { brand } from "@/lib/brand";
 import { useServerMode } from "./ServerModeSettings";
-import { ApiKeyRow } from "./ApiKeys";
+import { ApiKeyRow, credentialCopy } from "./ApiKeys";
 import { DecisionModelSettings } from "./DecisionModelSettings";
 import { useUpdaterState } from "@/lib/updater";
 import { EnginesSettings } from "./EnginesSettings";
@@ -28,7 +28,7 @@ import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { canEditConfig, canManageBackups, canManageComputers, viewerCan } from "@/lib/viewer";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { OrganizationSettings } from "./OrganizationSettings";
-import { Card, CompactRow, PillSelect, SettingRow, SettingsGroup, Switch, requestSettingsCard, cardCount, takeRequestedSettingsCard } from "./SettingsPrimitives";
+import { Card, CompactRow, DescribedRow, PillSelect, SettingRow, SettingsGroup, Switch, requestSettingsCard, cardCount, takeRequestedSettingsCard } from "./SettingsPrimitives";
 import { PrivacySettings } from "./PrivacySettings";
 import { OrgMemorySettings } from "./OrgMemorySettings";
 import { NotificationSettings } from "./NotificationSettings";
@@ -96,9 +96,9 @@ export const SECTIONS: Array<{
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   // Models and voice (2026-10-14): Integrations and Models and accounts in
   // one page; Connected apps and Decision model are cards of it.
-  { id: "engines", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées", "decision", "jev", "typesafe", "routing", "auto", "who answers"] },
+  { id: "engines", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées", "decision", "jev", "typesafe", "routing", "auto", "who answers", "auto model", "modèle auto", "moteurs", "needs setup", "à configurer", "voice engine", "moteur de voix", "fish audio", "live calls", "appels en direct", "image provider", "fournisseur d'images", "génération d'images", "cloud coding agents"] },
   { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur", "your computer", "votre ordinateur", "other computers", "autres ordinateurs", "network", "réseau", "traffic", "trafic", "server environment", "environnement serveur", "reset", "réinitialiser", "repair", "réparer"] },
-  { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing", "plan", "forfait", "coût"] },
+  { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing", "plan", "forfait", "coût", "usage", "spend", "this month", "ce mois-ci", "last 30 days", "30 derniers jours", "by bot", "par bot", "by model", "par modèle", "renews", "renouvelle", "sagax business"] },
   // 0.5.6: this app's updates and the pre-release channel (were in General
   // and General > Advanced). Shown where the desktop app answers.
   { id: "updates", labelKey: "settings.updates.title", icon: Download, keywords: ["updates", "update", "version", "mise à jour", "mises à jour", "prerelease", "pre-release", "beta", "bêta", "restart"] },
@@ -130,6 +130,8 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "companion.domain": ["domain", "dns", "caddy"],
   "connections.apps": ["composio", "connected apps"],
   "engines.decisionModel": ["decision", "jev", "typesafe"],
+  "connections.cloudAgents": ["cursor", "cloud agent", "cloud coding"],
+  "usage.breakdown": ["by bot", "by model", "par bot", "par modèle"],
   "organization.memory": ["obsidian", "vault"],
   "backups.import": ["import", "restore"],
 };
@@ -185,6 +187,35 @@ export function connectedAppsSummary(config: ConfigStatus | null | undefined): s
   if (mode === "managed") return t("connectedApps.state.managed");
   if (mode === "self-hosted" || config?.composio?.configured) return t("connectedApps.state.keySaved");
   return t("connectedApps.state.noKey");
+}
+
+/** Connected apps (Composio), a group of Models and voice: its state in
+ * the row's grey line, where to get a key behind the info button, the key
+ * field under it. */
+function ConnectedAppsGroup({ config }: { config: ConfigStatus | null | undefined }) {
+  return (
+    <div data-settings-card="connections.apps">
+      <SettingsGroup title={t("settings.connections.appsTitle")} groupId="connectedApps">
+        <DescribedRow
+          label={credentialCopy("composio").label}
+          rowId="composio"
+          help={(
+            <>
+              {t("settings.connections.appsSubtitle")}{" "}
+              <a href={COMPOSIO_PLATFORM_URL} target="_blank" rel="noopener noreferrer" className="text-accent-text hover:underline">platform.composio.dev</a>
+            </>
+          )}
+          description={<span data-connected-apps-state={config?.composio.mode ?? "unavailable"}>{connectedAppsSummary(config)}</span>}
+          below={<div className="mt-2"><ApiKeyRow section="composio" bare /></div>}
+        >
+          <a href={COMPOSIO_PLATFORM_URL} target="_blank" rel="noopener noreferrer" className="ui-button min-h-[44px] md:min-h-0">
+            platform.composio.dev
+            <ExternalLink size={12} aria-hidden="true" />
+          </a>
+        </DescribedRow>
+      </SettingsGroup>
+    </div>
+  );
 }
 
 /** Sub-pages pushed inside a section (src/components/SettingsSubPage.tsx):
@@ -1473,40 +1504,13 @@ export function SettingsModal() {
             )}
 
             {section === "engines" && (
-              <>
+              <div className="flex min-w-0 flex-col gap-6">
                 <EnginesSettings />
                 {/* Connected apps (Composio) and Decision model (2026-10-14):
-                    cards of Models and voice, shown while their experiment is on. */}
-                {allowed("connectedApps") && (
-                  <Card
-                    collapsible
-                    cardId="connections.apps"
-                    title={t("settings.connections.appsTitle")}
-                    summary={connectedAppsSummary(state.config)}
-                  >
-                    {state.config?.composio.mode === "managed" ? (
-                      <div className="mb-2 rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[13px] text-accent-text">
-                        {t("settings.connections.ready")}
-                      </div>
-                    ) : null}
-                    <p className="mb-2 text-[13px] leading-[18px] text-ink-secondary">
-                      {t("settings.connections.appsSubtitle")}{" "}
-                      <a href={COMPOSIO_PLATFORM_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
-                        platform.composio.dev
-                      </a>
-                    </p>
-                    <p className="mb-2 text-[12.5px] text-ink-secondary" data-connected-apps-state={state.config?.composio.mode ?? "unavailable"}>
-                      {connectedAppsSummary(state.config)}
-                    </p>
-                    <ApiKeyRow section="composio" />
-                  </Card>
-                )}
-                {allowed("decisionModel") && (
-                  <Card collapsible cardId="engines.decisionModel" title={t("settings.section.decisionModel")}>
-                    <DecisionModelSettings />
-                  </Card>
-                )}
-              </>
+                    groups of Models and voice, shown while their experiment is on. */}
+                {allowed("connectedApps") && <ConnectedAppsGroup config={state.config} />}
+                {allowed("decisionModel") && <DecisionModelSettings />}
+              </div>
             )}
 
             {section === "backups" && <WorkspaceBackupSettings />}

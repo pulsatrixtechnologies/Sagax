@@ -5,9 +5,9 @@
 // asks before registering: the classic miss is a path the terminal sees
 // but this GUI app can't.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown, Loader2, Phone, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
 
-import { api, useStore, type InstanceInfo } from "@/state/store";
+import { api, useStore, type ConfigStatus, type InstanceInfo } from "@/state/store";
 import { EngineCard, RefreshEngines, engineReady } from "./EngineLibrary";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
@@ -21,10 +21,11 @@ import { ManageMyKeysLink } from "./settings/MyEngines";
 import { EngineConnect, paysWithText } from "./EngineConnect";
 import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
-import { canEditConfig, viewerCan, viewerIsOrgMember } from "@/lib/viewer";
+import { canEditConfig, canManageKeys, viewerCan, viewerIsOrgMember } from "@/lib/viewer";
+import { viewerIsOrgAdmin } from "@/lib/group-owner";
 import { boatComputerEnabled, connectedAppsEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
-import { Card, HelpTip } from "./SettingsPrimitives";
+import { DescribedRow, FoldRow, HelpTip, SettingsGroup } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
 import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
@@ -403,13 +404,25 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
   );
 }
 
-/** Settings > Models and voice (2026-10-14): one page instead of
- * Integrations and Models and accounts. Auto in one line; every key (model,
- * voice and image) in one list with the rare ones under More providers, the
- * only place a key is managed (2026-10-15); the engines, the ready ones in
- * view and the others folded under Needs setup; the voice engine, which uses
- * its key from the list, with Live calls under Advanced; then image
- * generation (its key also in the list) and, when their experiments are on,
+/** In an organization, keys are the admins' (2026-10-16): an owner, an
+ * admin or the server's operator. Elsewhere whoever may manage the
+ * installation's keys. Never in a remote window, where the key store is not
+ * this server's. */
+export function keysShown(input: { member: boolean; remote: boolean; organization: boolean; config: ConfigStatus | null | undefined }): boolean {
+  if (input.member || input.remote || !canManageKeys(input.config)) return false;
+  const viewer = input.config?.viewer;
+  // an older server names no viewer: the screen it had
+  if (!input.organization || !viewer) return true;
+  return viewer.operator || viewerIsOrgAdmin(input.config);
+}
+
+/** Settings > Models and voice (2026-10-14), laid out as Grok Bot's settings
+ * pages since 0.5.6: grey headings outside rounded cards, compact rows.
+ * Engines first (Auto, the ready engines in view, the others folded under
+ * "Needs setup" with their count), then every key (model, voice and image)
+ * in one group, the rare ones folded under More providers, the only place a
+ * key is managed (2026-10-15); then the voice engine (its key from the list,
+ * Live calls folded), image generation and, when their experiments are on,
  * the online computers. */
 export function EnginesSettings() {
   const { state } = useStore();
@@ -426,7 +439,7 @@ export function EnginesSettings() {
   const member = viewerIsOrgMember(state.config) && !viewerCan(state.config, "engines.manage");
   const rows = state.instances.filter((i) => member || i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable" || isApiKeyEngine(i));
   // On an organization server each person signs in their own subscription
-  // here, on each engine's card (it was a separate "My subscriptions and
+  // here, on each engine's row (it was a separate "My subscriptions and
   // keys" card until 2026-10-02), never the server's.
   const org = usePerspicaxOrg();
   const myEngines = useMyEngines();
@@ -434,28 +447,13 @@ export function EnginesSettings() {
   const shown = org ? orgEngineRows(rows, myEngines).filter((instance) => !member || mineOf(instance)) : rows;
   const isReady = (instance: InstanceInfo) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); };
 
-  // Keys are an installation write: a member's own keys live in Perspicax.
   const remote = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
-  const keys = !member && !remote;
+  const keys = keysShown({ member, remote, organization: org !== null || viewerIsOrgMember(state.config), config: state.config });
   // The voice engine, image generation and online computers write the
-  // installation too: shown to whoever may change it (Integrations was
-  // hidden the same way).
+  // installation too: shown to whoever may change it.
   const installation = !member && canEditConfig(state.config);
   return (
     <div className="flex min-w-0 flex-col gap-6 pb-2" data-models-voice="">
-      {member && (
-        <div className="-mt-1 flex flex-wrap items-center justify-end gap-1">
-          <p className="mr-auto text-[13px] text-ink-secondary">{t("myEngines.memberIntro")}</p>
-          {org && <ManageMyKeysLink issuer={org.org.identity.issuer} />}
-        </div>
-      )}
-      {/* Auto (docs/plans/2026-10-08-auto-model.md): one line, the detail behind its info button. */}
-      <section data-auto-model-explainer className="flex items-center gap-1.5">
-        <h2 className="text-[13px] font-medium text-ink">{t("model.auto.settings.title")}</h2>
-        <span className="text-[13px] text-ink-secondary">{t("model.auto.settings.short")}</span>
-        <HelpTip label={t("settings.moreAbout", { title: t("model.auto.settings.title") })}>{t("model.auto.settings.body")}</HelpTip>
-      </section>
-      {keys && <KeysSection issuer={org?.org.identity.issuer} />}
       <EnginesSection
         engines={shown}
         isReady={isReady}
@@ -463,53 +461,65 @@ export function EnginesSettings() {
         renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
         connectors={!connectedAppsEnabled(state.config)}
         empty={Boolean(member && org && myEngines !== null && shown.length === 0)}
+        memberIssuer={member && org ? org.org.identity.issuer : undefined}
       />
+      {keys && <KeysSection issuer={org?.org.identity.issuer} />}
       {installation && <VoiceSection keysLink={keys} />}
       {installation && (
-        <Card collapsible cardId="connections.image" defaultOpen={false} title={t("imageGen.title")} subtitle={t("imageGen.subtitle")}>
-          <ImageGenerationSettings keysLink={keys} />
-        </Card>
+        <div data-settings-card="connections.image">
+          <SettingsGroup title={t("imageGen.title")} groupId="image">
+            <ImageGenerationSettings keysLink={keys} />
+          </SettingsGroup>
+        </div>
       )}
       {installation && (boatComputerEnabled(state.config) || vpsComputerEnabled(state.config)) && (
-        <Card collapsible cardId="connections.integrations" defaultOpen={false} title={t("keys.integrations.title")}>
-          <div className="flex flex-col gap-4">
-            {boatComputerEnabled(state.config) && <ApiKeyRow section="box" />}
-            {vpsComputerEnabled(state.config) && <VpsConnection />}
-          </div>
-        </Card>
+        <div data-settings-card="connections.integrations">
+          <SettingsGroup title={t("keys.integrations.title")} groupId="integrations">
+            <div className="flex flex-col gap-4 px-3.5 py-2.5">
+              {boatComputerEnabled(state.config) && <ApiKeyRow section="box" />}
+              {vpsComputerEnabled(state.config) && <VpsConnection />}
+            </div>
+          </SettingsGroup>
+        </div>
       )}
       {(keys || installation) && <ProviderKeyDialog />}
     </div>
   );
 }
 
-/** One list of every key. "Manage my keys in Perspicax" leads it when the
- * server is linked to an organization. The cloud coding agents' keys stay
- * under More providers until one is saved. */
+/** Every key in one group: the main providers, then More providers, folded
+ * with its count, with the rare ones not saved yet and the cloud coding
+ * agents' keys (in the main list once one is saved). "Manage my keys in
+ * Perspicax" sits by the heading when the server is linked to an
+ * organization. */
 function KeysSection({ issuer }: { issuer?: string }) {
   const cloud = useCloudAgentProviders();
   const cloudSaved = cloud.rows?.some((row) => row.configured) ?? false;
-  const cloudCard = <CloudAgentProvidersSettings state={cloud} />;
+  const cloudRow = <CloudAgentProvidersSettings state={cloud} />;
   return (
-    <section className="flex flex-col gap-2" data-settings-card="engines.keys" data-keys-section="">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
-          {t("modelsVoice.keys.title")}
-          <HelpTip label={t("settings.moreAbout", { title: t("modelsVoice.keys.title") })}>{t("providerKeys.help")}</HelpTip>
-        </h2>
-        {issuer && <span className="ml-auto"><ManageMyKeysLink issuer={issuer} /></span>}
-      </div>
-      <KeyList moreExtra={cloudSaved ? undefined : cloudCard} />
-      {cloudSaved && cloudCard}
-    </section>
+    <div data-settings-card="engines.keys" data-keys-section="">
+      <SettingsGroup
+        title={t("modelsVoice.keys.title")}
+        groupId="keys"
+        accessory={(
+          <>
+            <HelpTip label={t("settings.moreAbout", { title: t("modelsVoice.keys.title") })}>{t("providerKeys.help")}</HelpTip>
+            {issuer && <span className="ml-auto"><ManageMyKeysLink issuer={issuer} /></span>}
+          </>
+        )}
+      >
+        <KeyList moreExtra={cloudSaved ? undefined : cloudRow} moreExtraCount={cloudSaved ? 0 : cloud.rows?.length ?? 0} />
+        {cloudSaved && cloudRow}
+      </SettingsGroup>
+    </div>
   );
 }
 
-/** The engines (2026-10-15): the ready ones always in view, with Check
- * again; the ones to set up folded under "Needs setup" with their count,
- * open by default only while none is ready. A card that changes group
- * remounts (its sign-in or CLI draft is done by then: it changed state). */
-function EnginesSection({ engines, isReady, refresh, renderEngine, connectors, empty }: {
+/** The engines (2026-10-15): Auto, then the ready ones always in view, then
+ * the ones to set up folded under "Needs setup" with their count, open by
+ * default only while none is ready. A row that changes group remounts (its
+ * sign-in or CLI draft is done by then: it changed state). */
+function EnginesSection({ engines, isReady, refresh, renderEngine, connectors, empty, memberIssuer }: {
   engines: InstanceInfo[];
   isReady: (instance: InstanceInfo) => boolean;
   /** Check again: whoever manages the server's engines. */
@@ -519,71 +529,81 @@ function EnginesSection({ engines, isReady, refresh, renderEngine, connectors, e
   connectors: boolean;
   /** An organization member with no engine on this server. */
   empty: boolean;
+  /** An organization member: what their sign-ins do, behind the heading's
+   * info button, and the link to their keys in Perspicax. */
+  memberIssuer?: string;
 }) {
   const ready = engines.filter(isReady);
   const setup = engines.filter((instance) => !isReady(instance));
-  const count = (n: number) => t(n === 1 ? "engines.library.countOne" : "engines.library.count", { count: n });
-  const grid = "grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] items-start gap-3";
   return (
-    <section className="flex flex-col gap-3" data-settings-card="engines.list" data-engines-list="">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <h2 className="text-[13px] font-medium text-ink">{t("engines.title")}</h2>
-        {refresh && <span className="ml-auto"><RefreshEngines /></span>}
-      </div>
-      {/* The claude.ai connectors of the person's own Claude account live in
-          Connected apps; while that experiment is off, their read-only
-          status shows here, next to the Claude sign-in that brings them. */}
-      {connectors && <HarnessConnectorsSection placement="settings" />}
-      {ready.length > 0 && (
-        <div className="flex flex-col gap-2" data-engines-ready="">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-[12px] font-semibold text-ink-secondary">{t("onboarding.engines.ready")}</h3>
-            <span className="text-[11px] tabular-nums text-ink-secondary">{count(ready.length)}</span>
-          </div>
-          <div className={grid}>
+    <div data-settings-card="engines.list" data-engines-list="">
+      <SettingsGroup
+        title={t("engines.title")}
+        groupId="engines"
+        accessory={(memberIssuer || refresh) && (
+          <>
+            {memberIssuer && <HelpTip label={t("settings.moreAbout", { title: t("engines.title") })}>{t("myEngines.memberIntro")}</HelpTip>}
+            <span className="ml-auto flex items-center gap-1">
+              {memberIssuer && <ManageMyKeysLink issuer={memberIssuer} />}
+              {refresh && <RefreshEngines />}
+            </span>
+          </>
+        )}
+      >
+        {/* Auto (docs/plans/2026-10-08-auto-model.md): one row, the detail behind its info button. */}
+        <div data-auto-model-explainer="">
+          <DescribedRow
+            label={t("model.auto.settings.title")}
+            description={t("model.auto.settings.shortLine")}
+            help={t("model.auto.settings.body")}
+            icon={<Sparkles size={14} />}
+            rowId="auto"
+          />
+        </div>
+        {/* The claude.ai connectors of the person's own Claude account live in
+            Connected apps; while that experiment is off, their read-only
+            status shows here, next to the Claude sign-in that brings them. */}
+        {connectors && <div className="px-3.5 py-1 empty:hidden"><HarnessConnectorsSection placement="settings" /></div>}
+        {ready.length > 0 && (
+          <div className="flex flex-col" data-engines-ready="">
             {ready.map((instance) => <div key={instance.instanceId} className="contents">{renderEngine(instance)}</div>)}
           </div>
-        </div>
-      )}
-      {setup.length > 0 && (
-        <Card
-          collapsible
-          cardId="engines.setup"
-          defaultOpen={ready.length === 0}
-          title={t("onboarding.engines.needsSetup")}
-          summary={count(setup.length)}
-        >
-          <div className={grid} data-engines-setup="">
-            {setup.map((instance) => <div key={instance.instanceId} className="contents">{renderEngine(instance)}</div>)}
-          </div>
-        </Card>
-      )}
-      {engines.length === 0 && !empty && <p className="py-2 text-[13px] text-ink-secondary">{t("engines.none")}</p>}
-      {empty && <p className="text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>}
-    </section>
+        )}
+        {setup.length > 0 && (
+          <FoldRow
+            cardId="engines.setup"
+            defaultOpen={ready.length === 0}
+            label={t("onboarding.engines.needsSetup")}
+            count={setup.length}
+            toggleLabel={t(setup.length === 1 ? "engines.library.countOne" : "engines.library.count", { count: setup.length })}
+          >
+            <div className="-mx-3.5 -mb-1 flex flex-col" data-engines-setup="">
+              {setup.map((instance) => <div key={instance.instanceId} className="contents">{renderEngine(instance)}</div>)}
+            </div>
+          </FoldRow>
+        )}
+        {engines.length === 0 && !empty && <p className="px-3.5 py-2 text-[13px] text-ink-secondary">{t("engines.none")}</p>}
+        {empty && <p className="px-3.5 py-2 text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>}
+      </SettingsGroup>
+    </div>
   );
 }
 
-/** The voice engine only: which one speaks, and its own settings. Its key is
- * a row of the Keys list (Grok uses the xAI key): this section only says
- * whether it is saved, with "Add in Keys" when it is missing (2026-10-15).
- * Live calls and their limits sit under Advanced, folded; values set there
- * stay applied while it is folded. */
+/** The voice engine: which one speaks, in a menu, with its key from the Keys
+ * list (Grok uses the xAI key) and "Add in Keys" when it is missing
+ * (2026-10-15). Live calls and their limits fold in their own row; values
+ * set there stay applied while it is folded. */
 function VoiceSection({ keysLink }: { keysLink: boolean }) {
   return (
-    <section className="flex flex-col gap-2" data-settings-card="connections.voice" data-voice-section="">
-      <div>
-        <h2 className="text-[13px] font-medium text-ink">{t("modelsVoice.voice.title")}</h2>
-        <p className="mt-0.5 text-[12.5px] text-ink-secondary">{t("voice.engine.subtitle")}</p>
-      </div>
-      <VoiceEngineSettings keysLink={keysLink} />
-      <Card collapsible cardId="voice.advanced" defaultOpen={false} title={t("modelsVoice.voice.advanced")}>
-        <div data-voice-advanced="">
-          <div className="text-[13px] font-medium text-ink">{t("voice.live.title")}</div>
-          <p className="mb-3 mt-0.5 text-[12.5px] text-ink-secondary">{t("voice.live.subtitle")}</p>
-          <LiveCallInstallationSettings />
-        </div>
-      </Card>
-    </section>
+    <div data-settings-card="connections.voice" data-voice-section="">
+      <SettingsGroup title={t("modelsVoice.voice.title")} groupId="voice">
+        <VoiceEngineSettings keysLink={keysLink} />
+        <FoldRow cardId="voice.advanced" label={t("voice.live.title")} icon={<Phone size={14} />}>
+          <div data-voice-advanced="">
+            <LiveCallInstallationSettings />
+          </div>
+        </FoldRow>
+      </SettingsGroup>
+    </div>
   );
 }
