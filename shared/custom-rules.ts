@@ -115,6 +115,9 @@ export interface CallFacts {
   paths: string[] | null;
   /** The same paths where they really point; null like `paths`. */
   realPaths: string[] | null;
+  /** One of the paths resolves somewhere else (a symbolic link): an allow
+   * on a folder never covers it, since the link can change after the check. */
+  linked?: boolean;
   products: string[];
   risks: RiskClass[];
   /** A shell call: its command line, whitespace folded. */
@@ -229,8 +232,8 @@ export function normalizePath(raw: string, home?: string, resolve?: (absolute: s
 /** `foldCase`: for a deny or ask rule, so a differently cased path on a
  * case-insensitive disk is still caught (deny matches more, allow less). */
 function within(path: string, folder: string, foldCase = false): boolean {
-  const own = foldCase ? path.toLowerCase() : path;
-  const dir = foldCase ? folder.toLowerCase() : folder;
+  const own = foldCase ? path.normalize("NFC").toLowerCase() : path.normalize("NFC");
+  const dir = foldCase ? folder.normalize("NFC").toLowerCase() : folder.normalize("NFC");
   if (dir === "/") return own.startsWith("/");
   return own === dir || own.startsWith(`${dir}/`);
 }
@@ -334,8 +337,8 @@ const PURE_READERS = new Set(["ls", "cat", "head", "tail", "wc", "stat", "du", "
  * `wc --files0-from=<list>` and the like read other files or write. head and
  * tail also take `-n N`, `-c N` and `-N`. */
 const READER_FLAGS: Record<string, string> = {
-  ls: "1aAdFhlLrRStu", cat: "bensvtAET", head: "qv", tail: "fFqrv", wc: "clmwL", stat: "L",
-  du: "achkmsHL", pwd: "LP", realpath: "", basename: "", dirname: "", md5: "", md5sum: "", sha1sum: "", sha256sum: "",
+  ls: "1aAdFhlrRStu", cat: "bensvtAET", head: "qv", tail: "fFqrv", wc: "clmwL", stat: "",
+  du: "achkms", pwd: "LP", realpath: "", basename: "", dirname: "", md5: "", md5sum: "", sha1sum: "", sha256sum: "",
 };
 
 /** Whether every flag of a pure reader is one it may carry; numbers after
@@ -366,7 +369,7 @@ const WRAPPERS = new Set(["env", "command", "builtin", "exec", "sudo", "doas", "
 const DELETERS = new Set(["rm", "rmdir", "unlink", "shred", "srm", "trash", "truncate", "wipe"]);
 const NETWORK = new Set(["curl", "wget", "scp", "sftp", "ftp", "rsync", "ssh", "nc", "ncat", "netcat", "telnet", "socat", "mail", "mailx", "sendmail", "http", "https", "aws", "gcloud", "az", "gh", "rclone", "lftp", "tftp"]);
 const INTERPRETERS = new Set(["bash", "sh", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "python", "python2", "python3", "node", "deno", "bun", "perl", "ruby", "php", "osascript", "source", ".", "eval", "awk", "gawk", "lua", "pwsh", "powershell", "make", "npx", "pnpm", "npm", "yarn"]);
-const WRITERS = new Set(["cp", "mv", "mkdir", "touch", "chmod", "chown", "chgrp", "tee", "ln", "dd", "install", "sed", "patch", "tar", "zip", "unzip", "git", "open"]);
+const WRITERS = new Set(["cp", "mv", "mkdir", "touch", "chmod", "chown", "chgrp", "tee", "ln", "dd", "install", "sed", "patch", "tar", "zip", "unzip", "open"]);
 const FIND_SIDE_EFFECTS = /^-(delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/;
 
 /** Spaces and tabs folded; a line break stays a line break (it starts a
@@ -385,6 +388,8 @@ interface ShellReading {
   /** null when one argument is not a path this module can read safely */
   paths: string[] | null;
   realPaths: string[] | null;
+  /** a path that resolves somewhere else (a symbolic link on the way) */
+  linked: boolean;
   actions: Set<ActionKind>;
   risks: Set<RiskClass>;
 }
@@ -393,10 +398,72 @@ interface ShellReading {
  * reading stricter. Deletion, network and running code are recognized
  * wherever they sit (after `/bin/`, `env`, `sudo`, `xargs`, or anywhere in a
  * chained line), so a deny rule still sees them. */
-export function readShell(line: string, home?: string, resolve?: (absolute: string) => string): ShellReading {
+/** Programs that change nothing outside the paths they are given and
+ * reach no network: a family rule ("run commands") may cover them. Any
+ * other program is classed irreversible (fail closed): a broad allow never
+ * covers it unless the person ticked that class. */
+const BENIGN = new Set([
+  ...PURE_READERS,
+  "echo", "printf", "true", "false", "date", "whoami", "id", "uname", "hostname", "which", "type", "test", "[", "seq", "sleep",
+  "grep", "egrep", "fgrep", "rg", "find", "fd", "tree", "less", "more", "sort", "uniq", "cut", "tr", "diff", "cmp", "file", "mkdir", "touch", "cd",
+]);
+/** Programs that read the files they are given. */
+const READING = new Set([...PURE_READERS, "grep", "egrep", "fgrep", "rg", "find", "fd", "tree", "less", "more", "sort", "uniq", "cut", "diff", "cmp", "file", "strings", "xxd", "od", "hexdump", "base64", "openssl", "zip", "tar", "ditto", "cp", "rsync", "scp"]);
+/** git subcommands that only read the repository. */
+const GIT_READS = new Set(["status", "diff", "log", "show", "rev-parse", "ls-files", "ls-tree", "blame", "grep", "describe", "shortlog", "cat-file"]);
+const PRIVILEGED = new Set(["sudo", "doas", "su", "chroot"]);
+
+/** The git subcommand, past the global options (`-C <dir>`, `-c <k=v>`,
+ * `--git-dir=...`, `--no-pager`...). */
+function gitSubcommand(words: readonly string[], at: number): string {
+  let index = at + 1;
+  while (index < words.length) {
+    const word = words[index]!;
+    if (word === "-C" || word === "-c" || word === "--git-dir" || word === "--work-tree" || word === "--namespace") { index += 2; continue; }
+    if (word.startsWith("-")) { index++; continue; }
+    return word.toLowerCase();
+  }
+  return "";
+}
+
+/** The program a segment runs, past env assignments and wrappers. */
+function programOf(words: readonly string[]): { index: number; program: string; wrapped: boolean; privileged: boolean } {
+  let index = 0;
+  let wrapped = false;
+  let privileged = false;
+  while (index < words.length) {
+    const word = words[index]!;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) { index++; wrapped = true; continue; }
+    const bin = binaryOf(word);
+    if (WRAPPERS.has(bin)) {
+      wrapped = true;
+      if (PRIVILEGED.has(bin)) privileged = true;
+      index++;
+      while (index < words.length && (words[index]!.startsWith("-") || /^\d+[smhd]?$/.test(words[index]!))) index++;
+      continue;
+    }
+    break;
+  }
+  return { index, program: index < words.length ? binaryOf(words[index]!) : "", wrapped, privileged };
+}
+
+/** Read one shell line. Every word of it is untrusted: it can only make the
+ * reading stricter. Deletion, network and running code are recognized
+ * wherever they sit (after `/bin/`, `env`, `sudo`, `xargs`, or anywhere in a
+ * chained line), so a deny rule still sees them; a program not known to be
+ * benign is irreversible. An operand that is not a path this module can
+ * place (relative with no known folder, a flag value) leaves the paths
+ * unknown (null), which a deny or ask rule on a folder catches. */
+export function readShell(line: string, home?: string, resolve?: (absolute: string) => string, cwd?: string): ShellReading {
   const actions = new Set<ActionKind>(["command"]);
   const risks = new Set<RiskClass>();
-  const opaque = SHELL_OPAQUE.test(line);
+  // control characters other than space and tab, history expansion (`!`)
+  // and zsh's `=cmd` are opaque too
+  const controls = [...line].some((char) => {
+    const code = char.charCodeAt(0);
+    return (code < 0x20 && code !== 0x09) || code === 0x7f;
+  });
+  const opaque = SHELL_OPAQUE.test(line) || controls || /!|(^|\s)=/.test(line);
   const words = line.split(/[\s;&|()<>`'"{}]+/).filter(Boolean);
   // every word that could be a program, wherever it is
   for (let index = 0; index < words.length; index++) {
@@ -414,48 +481,99 @@ export function readShell(line: string, home?: string, resolve?: (absolute: stri
         }
       }
     }
-    if (bin === "git" && words[index + 1] === "push") { actions.add("send"); risks.add("external-send"); }
   }
   if (SHELL_IRREVERSIBLE.test(line)) risks.add("irreversible");
-  if (actions.has("delete") || actions.has("write")) actions.add("command");
 
-  // the program actually run: past `/bin/`, env assignments and wrappers
-  let index = 0;
-  let wrapped = false;
-  while (index < words.length) {
-    const word = words[index]!;
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) { index++; wrapped = true; continue; }
-    if (WRAPPERS.has(binaryOf(word))) {
-      wrapped = true;
-      index++;
-      while (index < words.length && (words[index]!.startsWith("-") || /^\d+[smhd]?$/.test(words[index]!))) index++;
+  // each command of the line: its program must be known benign
+  for (const segment of line.split(/\n|\r|;|&&?|\|\|?|`|\$\(|\(|\)/)) {
+    const segmentWords = segment.split(/[\s<>'"{}]+/).filter(Boolean);
+    if (!segmentWords.length) continue;
+    const run = programOf(segmentWords);
+    if (run.privileged || (run.wrapped && !run.program)) risks.add("irreversible");
+    if (!run.program) continue;
+    if (run.program === "git") {
+      const sub = gitSubcommand(segmentWords, run.index);
+      if (sub === "push") { actions.add("send"); risks.add("external-send"); risks.add("irreversible"); }
+      else if (!GIT_READS.has(sub)) { actions.add("write"); risks.add("irreversible"); }
       continue;
     }
-    break;
+    // a deleter or a network tool already carries its own class; anything
+    // else not known benign is irreversible
+    if (!BENIGN.has(run.program) && !DELETERS.has(run.program) && !NETWORK.has(run.program)) risks.add("irreversible");
+    if (run.wrapped && !PURE_READERS.has(run.program)) risks.add("irreversible");
   }
-  const program = index < words.length ? binaryOf(words[index]!) : "";
-  if (wrapped && program && !PURE_READERS.has(program)) risks.add("irreversible");
+  if (actions.has("delete") || actions.has("write")) actions.add("command");
 
+  const { index, program, wrapped } = programOf(words);
+  const folder = cwd ? normalizePath(cwd, home) : null;
+  const realFolder = cwd ? (resolve ? normalizePath(cwd, home, resolve) : folder) : null;
   let paths: string[] | null = [];
   let realPaths: string[] | null = [];
   let allPaths = true;
-  const reader = PURE_READERS.has(program) && words[index] === program ? readerFlagsAllowed(program, words.slice(index + 1)) : null;
-  // a pure reader's operands are its paths; any other program's path-like
-  // words are still read so a deny or ask rule sees them
-  const operands = reader ? reader.operands : words.slice(index + 1).filter((word) => !word.startsWith("-") && !/^\d+$/.test(word));
-  for (const word of operands) {
-    if (!/^(~|\.{1,2}\/|\/|\$HOME)/.test(word)) { allPaths = false; continue; }
-    const path = normalizePath(word, home);
-    const real = resolve ? normalizePath(word, home, resolve) : path;
-    if (!path || !real) { paths = null; realPaths = null; break; }
+  let linked = false;
+  const unknown = () => { paths = null; realPaths = null; allPaths = false; };
+  const add = (word: string) => {
+    if (paths === null || realPaths === null) return;
+    let raw = word;
+    if (!/^(~|\/|\$HOME)/.test(raw)) {
+      // relative: only against the folder the command runs in
+      if (!cwd || !folder) return unknown();
+      raw = `${cwd.replace(/\/+$/, "")}/${raw}`;
+    }
+    const path = normalizePath(raw, home);
+    const real = resolve ? normalizePath(raw, home, resolve) : path;
+    if (!path || !real) return unknown();
+    if (path !== real) linked = true;
     if (!paths.includes(path)) paths.push(path);
     if (!realPaths.includes(real)) realPaths.push(real);
+  };
+  const reader = PURE_READERS.has(program) && words[index] === program ? readerFlagsAllowed(program, words.slice(index + 1)) : null;
+  if (reader) {
+    for (const word of reader.operands) add(word);
+  } else {
+    for (const word of words.slice(index + 1)) {
+      if (/^\d+$/.test(word)) continue;
+      if (word.startsWith("-")) {
+        // a flag with a value attached (`--directory=...`, `-C/x`) names a
+        // place this module does not read
+        if (!/^--?[A-Za-z][A-Za-z-]*$/.test(word)) unknown();
+        continue;
+      }
+      add(word);
+    }
+  }
+  const operandCount = reader ? reader.operands.length : words.slice(index + 1).filter((word) => !word.startsWith("-") && !/^\d+$/.test(word)).length;
+  if (!operandCount && program && paths !== null && realPaths !== null) {
+    // no operand: the program works where it runs
+    if (folder && realFolder) {
+      paths.push(folder);
+      realPaths.push(realFolder);
+      if (folder !== realFolder) linked = true;
+    } else if (reader || BENIGN.has(program)) {
+      unknown();
+    }
   }
   if (opaque) { paths = null; realPaths = null; }
-  const pureRead = !opaque && !wrapped && reader !== null && reader.ok && allPaths && paths !== null
+  const pureRead = !opaque && !wrapped && reader !== null && reader.ok && allPaths && paths !== null && (paths as string[]).length > 0
     && !actions.has("delete") && !actions.has("send") && !actions.has("write") && risks.size === 0;
-  if (pureRead) actions.add("read");
-  return { opaque, pureRead, paths, realPaths, actions, risks };
+  // a program that reads files reads them even when this module cannot
+  // place its paths: a deny or ask rule about reading still sees it (an
+  // allow needs pureRead)
+  if (pureRead || READING.has(program)) actions.add("read");
+  return { opaque, pureRead, paths, realPaths, linked, actions, risks };
+}
+
+/** String values anywhere in the arguments that read as a place. */
+function pathLikeStrings(value: unknown, depth = 0, into: string[] = []): string[] {
+  if (depth > 6 || into.length > 64) return into;
+  if (typeof value === "string") {
+    if (/^(file:|~\/|\/|\$HOME\/)/.test(value.trim()) && !/\s/.test(value.trim())) into.push(value.trim());
+  } else if (Array.isArray(value)) {
+    for (const item of value) pathLikeStrings(item, depth + 1, into);
+  } else if (value && typeof value === "object") {
+    for (const item of Object.values(value)) pathLikeStrings(item, depth + 1, into);
+  }
+  return into;
 }
 
 function stringsAt(args: Record<string, unknown> | undefined, keys: readonly string[]): string[] {
@@ -496,6 +614,8 @@ export interface CallInput {
   home?: string;
   /** The server's realpath, so a symbolic link is matched where it points. */
   resolve?: (absolute: string) => string;
+  /** The folder a shell command runs in, when the engine says. */
+  cwd?: string;
 }
 
 /** Read one call. The arguments only ever narrow what a rule can match. */
@@ -510,6 +630,7 @@ export function callFacts(call: CallInput): CallFacts {
   let paths: string[] | null = [];
   let realPaths: string[] | null = [];
   let shell: { command: string; pureRead: boolean; opaque: boolean } | undefined;
+  let linked = false;
   const addPath = (raw: string) => {
     if (paths === null || realPaths === null) return;
     const path = normalizePath(raw, call.home);
@@ -519,6 +640,7 @@ export function callFacts(call: CallInput): CallFacts {
       realPaths = null;
       return;
     }
+    if (path !== real) linked = true;
     if (!paths.includes(path)) paths.push(path);
     if (!realPaths.includes(real)) realPaths.push(real);
   };
@@ -533,10 +655,12 @@ export function callFacts(call: CallInput): CallFacts {
   } else if (commandText !== undefined || (!parsed.server && COMMAND_TOOLS.has(bare))) {
     objects.add("command");
     const line = commandText ?? "";
-    const reading = readShell(line, call.home, call.resolve);
+    const cwd = call.cwd ?? stringsAt(args, ["cwd", "workdir", "working_directory", "dir"])[0];
+    const reading = readShell(line, call.home, call.resolve, cwd);
+    if (reading.linked) linked = true;
     for (const action of reading.actions) actions.add(action);
     for (const risk of reading.risks) risks.add(risk);
-    if (reading.pureRead || actions.has("delete") || actions.has("write")) objects.add("file");
+    if (reading.pureRead || actions.has("read") || actions.has("delete") || actions.has("write")) objects.add("file");
     paths = reading.paths;
     realPaths = reading.realPaths;
     shell = { command: normalizeCommand(line), pureRead: reading.pureRead, opaque: reading.opaque };
@@ -552,6 +676,21 @@ export function callFacts(call: CallInput): CallFacts {
     if (FILE_READ_TOOLS.has(bare) || FILE_WRITE_TOOLS.has(bare) || /file|directory|folder/.test(bare)) objects.add("file");
   }
   for (const raw of [...stringsAt(args, PATH_KEYS), ...listsAt(args, PATH_LIST_KEYS), ...(call.paths ?? [])]) addPath(raw);
+  // any other argument that names a place (`uri`, `input_path`, a file://
+  // URL under any key) is a path too, so a folder rule sees it
+  if (!shell && args) {
+    for (const value of pathLikeStrings(args)) {
+      if (!value.startsWith("file:")) { addPath(value); continue; }
+      try {
+        const url = new URL(value);
+        if (url.host && url.host !== "localhost") { paths = null; realPaths = null; continue; }
+        addPath(decodeURIComponent(url.pathname));
+      } catch {
+        paths = null;
+        realPaths = null;
+      }
+    }
+  }
 
   const qualified = parsed.server ? `mcp__${parsed.server}__${parsed.name}` : toolName;
   if (isOutboundTool(qualified) || isOutboundTool(toolName) || call.classKey === "outbound:send") {
@@ -573,6 +712,7 @@ export function callFacts(call: CallInput): CallFacts {
     objects: [...objects],
     paths,
     realPaths,
+    ...(linked ? { linked: true } : {}),
     products,
     risks: [...risks],
     ...(shell ? { command: shell.command, pureRead: shell.pureRead, opaque: shell.opaque } : {}),
@@ -618,6 +758,7 @@ export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavio
     if (behavior === "allow") {
       // allow: every path inside, both as written and where it really points
       if (!raw || !real || raw.length === 0 || real.length === 0) return false;
+      if (facts.linked) return false;
       if (!raw.every((path) => compiled.paths.some((folder) => within(path, folder)))) return false;
       if (!real.every((path) => compiled.realPaths.some((folder) => within(path, folder)))) return false;
     } else {

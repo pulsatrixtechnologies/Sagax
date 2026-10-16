@@ -96,6 +96,24 @@ describe("the one-shot pass after Allow", () => {
     expect(call(base, "mcp__outlook__reply_mail")).toBe(false);
   });
 
+  it("round 3: another mailbox, a nested tool name or a bare lower-case tool do not use the pass", () => {
+    const exactArgs = { to: ["marie@example.com"], cc: ["luc@example.com"], subject: draft.subject, body: draft.body };
+    expect(emailSendCallMatches(draft, "mcp__outlook__send_mail", JSON.stringify({ ...exactArgs, userId: "ceo@example.com" }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, "mcp__outlook__send_mail", JSON.stringify({ ...exactArgs, user_id: "ceo@example.com" }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, "mcp__outlook__x__send_mail", JSON.stringify(exactArgs), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, "outlook_send_mail", JSON.stringify(exactArgs), outlook)).toBe(false);
+  });
+
+  it("round 3: a draft refuses invisible and direction characters, and shows a look-alike domain as punycode", () => {
+    for (const address of ["client@acme.com\u202e", "\u202emoc.live@tneilc", "cli\u200bent@acme.com", "cl\u00efent@acme.com"]) {
+      expect("problems" in normalizeDraftForSend({ to: [address], subject: "x", body: "y" }), address).toBe(true);
+    }
+    expect("problems" in normalizeDraftForSend({ to: ["a@b.co"], subject: "Facture \u202e", body: "y" })).toBe(true);
+    expect("problems" in normalizeDraftForSend({ to: ["a@b.co"], subject: "x", body: "Bon\u200bjour" })).toBe(true);
+    const lookalike = normalizeDraftForSend({ to: ["client@\u0430cme.com"], subject: "x", body: "y" });
+    expect("draft" in lookalike && lookalike.draft.to[0]).toMatch(/^client@xn--/);
+  });
+
   it("B3: another connector's send is not covered", () => {
     expect(emailSendCallMatches(draft, ...send(exact, "mcp__gmail__send_email"), outlook)).toBe(false);
     expect(emailSendCallMatches(draft, ...send(exact, "mcp__outlook_evil__send_mail"), outlook)).toBe(false);

@@ -64,11 +64,32 @@ export interface EmailSendRequestCard {
   at: number;
 }
 
+/** Zero-width characters and bidirectional controls: they make a text read
+ * differently from what is sent. */
+const INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/;
+
+/** One plain address as it will be sent: an ASCII local part, and a domain
+ * shown as punycode (`xn--...`) when it is not ASCII, so a look-alike
+ * domain is never shown as the real one. */
 function addressOf(value: string): string | null {
   const trimmed = value.trim();
+  if (INVISIBLE.test(trimmed)) return null;
   const angle = /<([^<>]+)>\s*$/.exec(trimmed);
   const address = (angle ? angle[1]! : trimmed).trim();
-  return ADDRESS.test(address) ? address : null;
+  const at = address.lastIndexOf("@");
+  if (at <= 0) return null;
+  const local = address.slice(0, at);
+  let domain = address.slice(at + 1);
+  if (/[^\x21-\x7e]/.test(local)) return null;
+  if (/[^\x21-\x7e]/.test(domain)) {
+    try {
+      domain = new URL(`http://${domain}/`).hostname;
+    } catch {
+      return null;
+    }
+  }
+  const plain = `${local}@${domain.toLowerCase()}`;
+  return ADDRESS.test(plain) ? plain : null;
 }
 
 function addressList(value: unknown, field: string, problems: string[]): string[] {
@@ -100,8 +121,10 @@ export function normalizeDraftForSend(value: unknown): { draft: EmailDraftToSend
   if (!to.length) problems.push("to needs at least one address");
   if (to.length + cc.length + bcc.length > MAX_RECIPIENTS) problems.push(`at most ${MAX_RECIPIENTS} recipients`);
   const subject = typeof input.subject === "string" ? input.subject.replace(/[\r\n]+/g, " ").trim() : "";
+  if (INVISIBLE.test(subject)) problems.push("subject holds invisible or direction characters");
   if (subject.length > MAX_SUBJECT) problems.push(`subject is longer than ${MAX_SUBJECT} characters`);
   const body = typeof input.body === "string" ? input.body.replace(/\r\n/g, "\n") : "";
+  if (INVISIBLE.test(body)) problems.push("body holds invisible or direction characters");
   if (body.length > MAX_BODY) problems.push(`body is longer than ${MAX_BODY} characters`);
   if (!subject && !body.trim()) problems.push("an email needs a subject or a body");
   return problems.length ? { problems } : { draft: { to, cc, bcc, subject, body } };
@@ -166,7 +189,7 @@ const ADDRESS_KEYS = new Set(["emailaddress", "address", "email", "name"]);
 const BODY_KEYS = new Set(["body", "content", "text", "html", "bodytext", "bodyhtml", "message"]);
 /** Every other key a send call may carry. Anything not here (attachments,
  * reply-to, from, sender, headers, an extra field) is not the approved draft. */
-const NEUTRAL_KEYS = new Set(["subject", "contenttype", "content_type", "ishtml", "is_html", "mimetype", "format", "savetosentitems", "save_to_sent_items", "userid", "user_id", "importance"]);
+const NEUTRAL_KEYS = new Set(["subject", "contenttype", "content_type", "ishtml", "is_html", "mimetype", "format", "savetosentitems", "save_to_sent_items", "importance"]);
 
 function keyOf(key: string): string {
   return key.toLowerCase().replace(/[_-]/g, "");
@@ -309,11 +332,13 @@ export function connectorOwnsTool(connector: EmailConnector, tool: string): bool
   const match = /^(?:mcp__)?([A-Za-z0-9][A-Za-z0-9_.-]*?)__([A-Za-z0-9][A-Za-z0-9_.-]*)$/.exec(tool);
   if (match) {
     const server = match[1]!.toLowerCase();
+    if (match[2]!.includes("__")) return false;
     if (server === id) return true;
     // a connected app runs through the composio server: GMAIL_SEND_EMAIL
     return server === "composio" && match[2]!.toLowerCase().startsWith(`${id}_`);
   }
-  return tool.toLowerCase().startsWith(`${id}_`);
+  // a bare connected-app action: GMAIL_SEND_EMAIL
+  return /^[A-Z0-9_]+$/.test(tool) && tool.toLowerCase().startsWith(`${id}_`);
 }
 
 /** A mail connector a bot has, from its MCP servers and connected apps. */

@@ -706,8 +706,14 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   person's home is `~` (`~user`, `~+`, `~-` refused), a wildcard path is
   never a known path; rule folders and call paths are both resolved: an
   allow needs every path inside as written and as resolved, a deny or ask
-  catches either, case-insensitively. A server's readOnlyHint never makes a
-  call a read. Tools are named whole, server included; products match known
+  catches either, case-insensitively and in one Unicode form. A server's
+  readOnlyHint never makes a call a read. An allow on a folder never covers
+  a path through a symbolic link (it could change after the check). For a
+  deny or ask, an operand the matcher cannot place (relative with no known
+  working folder, a flag value, a path under any MCP key or a file:// URL)
+  is caught. A shell program outside a short benign list is irreversible
+  (fail closed); git is read past its global options (`-C`, `-c`,
+  `--git-dir`); `sudo` and a bare wrapper are irreversible. Tools are named whole, server included; products match known
   server ids (or a Perspicax or Composio gateway's tool prefix). No model reviewer is
   wired: `customRulesReviewPrompt`, `tightenCustomDecision` and
   `safetyReviewPrompt(call, policy)` are the tighten-only contract for one.
@@ -715,13 +721,14 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
 Email drafts (`src/components/EmailCard.tsx`, `shared/email-draft-send.ts`,
 `server/email-draft-send.ts`), covered by `server/email-draft-send.test.ts`
 and `server/email-draft-send.e2e.test.ts`: To, Cc, Subject and body are
-editable; Envoyer writes an approval card (`POST
+editable (no invisible or direction character; a non-ASCII domain is shown
+as punycode); Envoyer writes an approval card (`POST
 /api/threads/:id/email-drafts`) and never sends. Allow sends once: through
 the bot's own mail connector (Microsoft 365, Outlook or Gmail MCP server or
 app) with a 10-minute one-shot pass bound to that bot, that connector's
 server and a plain send tool (no forward or reply), the exact To, Cc, Bcc
 (every recipient part parsed, IDN and IP literals included; no display
-name), subject and exact approved body (HTML only if the draft was that
+name; no other mailbox through `userId`), subject and exact approved body (HTML only if the draft was that
 HTML), and no other field (no attachment, reply-to, from or header); or
 through the
 server's mail settings. The pass is consumed before the safety review is
