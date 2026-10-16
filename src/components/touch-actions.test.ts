@@ -31,6 +31,7 @@ const notActions: Array<{ file: string; snippet: string; why: string }> = [
   { file: "components/SeenBy.tsx", snippet: "group-hover/seen:opacity-100", why: "aria-hidden name tooltip; the seen-by avatars are always visible and carry the same words as their aria-label" },
   { file: "components/Reactions.tsx", snippet: "w-max max-w-[16rem] flex-col gap-1", why: "aria-hidden list of who reacted; the reaction chip is always visible and is the tap target" },
   { file: "components/bot-settings/ActivitySection.tsx", snippet: "group-focus-visible:opacity-100", why: "aria-hidden chevron hint; the whole heading button is the tap target" },
+  { file: "components/settings/OwnAvatarField.tsx", snippet: "group-focus-visible:opacity-100", why: "aria-hidden camera hint; the whole avatar button is the tap target" },
 ];
 
 function sourceFiles(dir: string): string[] {
