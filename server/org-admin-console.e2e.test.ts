@@ -219,7 +219,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(caps.status, caps.text).toBe(200);
     expect(caps.headers.get("x-sagax-admin-api")).toBe("1");
     const pkg = JSON.parse(readFileSync(join(SERVER_DIR, "..", "package.json"), "utf8")) as { forkVersion: string };
-    expect(caps.body).toMatchObject({ version: pkg.forkVersion, api: 5, permissionsVersion: 1 });
+    expect(caps.body).toMatchObject({ version: pkg.forkVersion, api: 6, permissionsVersion: 1 });
     expect(caps.body.mascots.map((entry: { id: string }) => entry.id)).toEqual(["owl", "crab", "shape", "trombi", "bunbu", "shiba", "grump", "ogre", "frog"]);
     expect(caps.body.permissions.length).toBeGreaterThan(20);
     // api 4: every engine with its Cloud or Local group and how people get access
@@ -386,6 +386,14 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     // bulk
     const bulk = await admin("POST", "bots/bulk", ALICE, { action: "archive", ids: [cirrus.id, copyId, "nope-bot"] });
     expect(bulk.body.results).toEqual([{ id: cirrus.id, ok: true }, { id: copyId, ok: true }, { id: "nope-bot", ok: false, code: "not_found", message: "No such bot." }]);
+    // 2026-10-16: Approve for me in bulk (never Full), one approval.mode row
+    expect((await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.atlas!.id], mode: "full" })).status).toBe(400);
+    const toAuto = await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.atlas!.id], mode: "auto", threads: true });
+    expect(toAuto.body.results, toAuto.text).toEqual([{ id: bots.atlas!.id, ok: true }]);
+    expect((await admin("GET", `bots/${bots.atlas!.id}`, ALICE)).body.bot.permissions.approvalMode).toBe("auto");
+    const listed = ((await admin("GET", "bots", ALICE)).body.bots as Array<{ id: string; approvalMode: string }>).find((bot) => bot.id === bots.atlas!.id);
+    expect(listed?.approvalMode).toBe("auto");
+    expect((await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.atlas!.id], mode: "ask" })).body.results).toEqual([{ id: bots.atlas!.id, ok: true }]);
 
     // package and import
     const pkg = await fetch(`${BASE}/api/org/admin/bots/${bots.atlas!.id}/package`, { headers: { authorization: `Bearer ${console$(ALICE).bearer}` } });

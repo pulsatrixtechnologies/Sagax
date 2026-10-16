@@ -18,7 +18,7 @@ const bot = (id: string, owner: string): { bot: AdminBot; reach: { ownerPrincipa
   bot: {
     id, name: id, owner: { principalId: owner, sub: null, name: owner }, ownerRole: "member", engine: { instanceId: "claude", driverKind: "claudeAgent", installed: true },
     model: null, access: "org-key", mcpProfiles: [], grants: [], sections: [], routines: 0, createdAt: null, lastActivityAt: null, status: "active", label: null, threads: 1,
-    look: botLook({ name: id, color: "green" }, () => false), persona: botPersona({ name: id }),
+    look: botLook({ name: id, color: "green" }, () => false), persona: botPersona({ name: id }), approvalMode: "ask",
   },
   reach: { ownerPrincipalId: owner, grantTargets: [], sectionMemberTargets: [] },
 });

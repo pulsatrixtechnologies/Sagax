@@ -59,7 +59,7 @@ GET /api/org/admin/capabilities
 ```json
 {
   "version": "0.4.15",
-  "api": 5,
+  "api": 6,
   "routes": ["GET audit", "GET bots", "GET capabilities", "GET overview", "GET usage"],
   "permissionsVersion": 1,
   "permissionGroups": [{ "id": "bots", "label": { "en": "Bots", "fr": "Bots" } }],
@@ -510,6 +510,38 @@ distinct bot ids. Each bot is done on its own:
 ```
 
 One audit row per bot that changed.
+
+#### `action: "approvalMode"` (2026-10-16)
+
+```json
+{ "action": "approvalMode", "ids": ["5e38...", "77ab..."], "mode": "auto", "threads": true }
+```
+
+The console's "Approve for me for the members' bots": sets each bot's
+default level to `auto` (Approve for me) or `ask`, as its owner would in the
+bot's settings. Nothing else: `full`, `custom` and `edits` answer 400, and a
+bot already on Full access or Custom is refused (`elevated_level`, 409),
+because those levels need the owner's own confirmation. Other refusals, per
+bot: `busy` (409, a turn is running or its level is being confirmed),
+`mode_not_supported` (400, its engine has no such mode), `not_found`.
+
+The level belongs to each conversation (docs/approval-levels.md): the bot's
+default reaches its main conversation and every conversation without a
+level of its own, and its future ones. A conversation that saved its own
+level keeps it, unless `threads: true`: then each conversation saved on Ask
+moves to Auto too. A conversation on any other level is never changed, so
+the action never lowers one. Each bot that changed writes one admin
+activity row, category `approval`, action `approval.mode`, actor the console
+person, with the level before and after and how many conversations moved.
+
+On an organization server a member's bot used to run Auto as Ask
+(approvalModeForTurn). That rule is lifted separately; until the server
+carries that change, a member bot's saved Auto takes effect at turn time
+only once it is deployed.
+
+`GET bots` carries each bot's default level as `approvalMode` (`ask`,
+`edits`, `auto`, `full` or `custom`), with `ownerRole`, so the console lists
+the members' bots not on Auto.
 
 ### `GET bots/{id}/package`
 

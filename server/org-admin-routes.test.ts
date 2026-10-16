@@ -50,7 +50,7 @@ function bot(id: string, owner: string, reach: Partial<AdminBotReach> = {}): { b
       engine: { instanceId: "claude", driverKind: "claudeAgent", installed: true }, model: null, access: "none",
       mcpProfiles: [], grants: [], sections: [], routines: 0, createdAt: null, lastActivityAt: null,
       status: "active", label: null, threads: 1,
-      look: botLook({ name: id, color: "green" }, () => false), persona: botPersona({ name: id }),
+      look: botLook({ name: id, color: "green" }, () => false), persona: botPersona({ name: id }), approvalMode: "ask",
     },
     reach: { ownerPrincipalId: owner, grantTargets: [], sectionMemberTargets: [], ...reach },
   };
@@ -300,7 +300,7 @@ describe("org admin API: the console routes (2026-10-08)", () => {
   const T_MANAGER = [{ id: "T", name: "T", manager: true }];
   it("capabilities: any role, the release version and every route", async () => {
     const got = await call("/api/org/admin/capabilities", assertion("bob", "employee"));
-    expect(got).toMatchObject({ status: 200, body: { version: "0.4.14", api: 5, mascotFamilies: ["classics", "shapes", "animals"] } });
+    expect(got).toMatchObject({ status: 200, body: { version: "0.4.14", api: 6, mascotFamilies: ["classics", "shapes", "animals"] } });
     expect(got.body.mascots.map((entry: { id: string; family: string }) => `${entry.id}:${entry.family}`)).toEqual(["owl:classics", "crab:animals", "shape:shapes", "trombi:classics", "bunbu:animals", "shiba:animals", "grump:animals", "ogre:animals", "frog:animals"]);
     // api 4: the engines, grouped Cloud and Local by the server
     expect(got.body.engines).toEqual([

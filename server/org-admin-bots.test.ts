@@ -16,13 +16,15 @@ function setup() {
       id, name: id.toUpperCase(), owner: { principalId: owner, sub: null, name: owner }, ownerRole: "member",
       engine: { instanceId: "claude", driverKind: "claudeAgent", installed: true }, model: "m1", access: "org-key",
       mcpProfiles: [], grants: [], sections: [], routines: 0, createdAt: 1, lastActivityAt: null, status: "active", label: null, threads: 1,
-      look: botLook({ name: id, color: "green" }, () => false), persona: botPersona({ name: id }), ...extra,
+      look: botLook({ name: id, color: "green" }, () => false), persona: botPersona({ name: id }), approvalMode: "ask", ...extra,
     });
     reach.set(id, { ownerPrincipalId: owner, grantTargets: [], sectionMemberTargets: [] });
   };
   add("a", "pr_alice");
   add("b", "pr_bob");
   add("p", "pr_bob", { name: "PRIMARY" });
+  add("busy", "pr_bob");
+  add("plain", "pr_bob", { engine: { instanceId: "plain", driverKind: "plain", installed: true } });
   const calls: string[] = [];
   const deps: BotsDeps = {
     bots: () => [...bots.values()].map((bot) => ({ bot, reach: reach.get(bot.id)! })),
@@ -42,6 +44,14 @@ function setup() {
     setModel: (id, input) => {
       if (input.engineInstanceId === "ghost") throw new ConsoleRefusal(400, "engine_not_installed", "Not installed.");
       bots.set(id, { ...bots.get(id)!, model: input.model });
+    },
+    setApprovalMode: (id, mode, threads) => {
+      const current = bots.get(id)!;
+      if (id === "busy") throw new ConsoleRefusal(409, "busy", "Working.");
+      if (current.engine.instanceId === "plain") throw new ConsoleRefusal(400, "mode_not_supported", "No Auto.");
+      bots.set(id, { ...current, approvalMode: mode });
+      calls.push(`mode:${id}:${mode}:${threads}`);
+      return { before: current.approvalMode, after: mode, threadsMoved: threads && mode === "auto" ? ["t1"] : [] };
     },
     stop: async (id) => { calls.push(`stop:${id}`); },
     remove: async (id) => { bots.delete(id); return { status: 200, body: { ok: true } }; },
@@ -185,4 +195,40 @@ describe("bots", () => {
     const { console } = setup();
     expect((await console.call("GET", "bots/a")).body.bot).toMatchObject({ look: { kind: "default", character: "owl", family: "classics" }, persona: { displayName: "a", title: null } });
   });
+
+  it("bulk approvalMode: Ask or Approve for me only, per-bot results, one approval.mode row per changed bot", async () => {
+    const { console, calls, bots } = setup();
+    for (const body of [
+      { action: "approvalMode", ids: ["a"] },
+      { action: "approvalMode", ids: ["a"], mode: "full" },
+      { action: "approvalMode", ids: ["a"], mode: "custom" },
+      { action: "approvalMode", ids: ["a"], mode: "edits" },
+      { action: "approvalMode", ids: ["a"], mode: "auto", threads: "yes" },
+      { action: "archive", ids: ["a"], mode: "auto" },
+    ]) {
+      expect((await console.call("POST", "bots/bulk", { body })).status).toBe(400);
+    }
+    const before = console.records.length;
+    const res = await console.call("POST", "bots/bulk", { body: { action: "approvalMode", ids: ["a", "busy", "plain", "zz"], mode: "auto", threads: true } });
+    expect(res.status).toBe(200);
+    expect(res.body.results).toEqual([
+      { id: "a", ok: true },
+      { id: "busy", ok: false, code: "busy", message: "Working." },
+      { id: "plain", ok: false, code: "mode_not_supported", message: "No Auto." },
+      { id: "zz", ok: false, code: "not_found", message: "No such bot." },
+    ]);
+    expect(calls).toContain("mode:a:auto:true");
+    expect(bots.get("a")!.approvalMode).toBe("auto");
+    const rows = console.records.slice(before);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ category: "approval", action: "approval.mode", target: { kind: "bot", id: "a" }, before: { approvalMode: "ask" }, after: { approvalMode: "auto", threads: 1 } });
+    // no change, no row
+    const again = console.records.length;
+    bots.set("b", { ...bots.get("b")!, approvalMode: "auto" });
+    expect((await console.call("POST", "bots/bulk", { body: { action: "approvalMode", ids: ["b"], mode: "auto" } })).body.results).toEqual([{ id: "b", ok: true }]);
+    expect(console.records.length).toBe(again);
+  });
+
+
 });
+

@@ -47,6 +47,12 @@ export interface BotsDeps {
   /** The new owner owns it; grants kept, the old owner keeps `manage`. */
   transfer(botId: string, ownerPrincipalId: string): void;
   setModel(botId: string, input: { engineInstanceId?: string; model: string | null }): void;
+  /** 2026-10-16: the bot's default level to Ask or Approve for me (never
+   * Full, Custom or Edits from here); with `threads`, its conversations on
+   * Ask follow to Auto (a conversation on another level keeps it). Throws a
+   * ConsoleRefusal: 409 busy, 400 mode_not_supported. Answers the levels
+   * before and after and the conversations it moved. */
+  setApprovalMode?(botId: string, mode: "ask" | "auto", threads: boolean): { before: string; after: string; threadsMoved: string[] };
   stop(botId: string): Promise<void>;
   remove(botId: string): Promise<{ status: number; body: { ok?: boolean; error?: string } }>;
   notifyOwner(botId: string, action: "stop" | "delete", adminPrincipalId: string): void;
@@ -100,7 +106,7 @@ function targetOwner(ctx: ConsoleContext, deps: BotsDeps, body: Record<string, u
   return person;
 }
 
-type ActionName = "archive" | "restore" | "transfer" | "model";
+type ActionName = "archive" | "restore" | "transfer" | "model" | "approvalMode";
 
 /** One action on one bot, shared by the single routes and `bots/bulk`. */
 function act(ctx: ConsoleContext, deps: BotsDeps, action: ActionName, botId: string, body: Record<string, unknown>): { bot: AdminBot } | ConsoleRefusal {
@@ -120,6 +126,18 @@ function act(ctx: ConsoleContext, deps: BotsDeps, action: ActionName, botId: str
       if (owner.principalId === before.owner.principalId) return { bot: before };
       deps.transfer(botId, owner.principalId);
       ctx.record({ category: "bot", action: "bot.transfer", target, changed: ["owner"], before: { ownerPrincipalId: before.owner.principalId }, after: { ownerPrincipalId: owner.principalId } });
+    } else if (action === "approvalMode") {
+      if (!deps.setApprovalMode) return new ConsoleRefusal(404, "not_found", "This server does not change approval levels from the console.");
+      const mode = body.mode;
+      if (mode !== "auto" && mode !== "ask") return new ConsoleRefusal(400, "bad_request", "mode is auto or ask.");
+      const changed = deps.setApprovalMode(botId, mode, body.threads === true);
+      if (changed.before !== changed.after || changed.threadsMoved.length) {
+        ctx.record({
+          category: "approval", action: "approval.mode", target, changed: ["approvalMode"],
+          before: { approvalMode: changed.before },
+          after: { approvalMode: changed.after, ...(changed.threadsMoved.length ? { threads: changed.threadsMoved.length } : {}) },
+        });
+      }
     } else {
       const engine = body.engineInstanceId;
       const model = body.model;
@@ -260,17 +278,24 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
       min: "admin",
       handle(ctx) {
         const body = objectBody(ctx.body);
-        const extra = body ? onlyKeys(body, ["action", "ids", "ownerPrincipalId", "ownerSub", "engineInstanceId", "model"]) : null;
+        const extra = body ? onlyKeys(body, ["action", "ids", "ownerPrincipalId", "ownerSub", "engineInstanceId", "model", "mode", "threads"]) : null;
         const action = body?.action;
         const ids = body?.ids;
-        if (!body || extra || (action !== "archive" && action !== "restore" && action !== "transfer" && action !== "model")
+        if (!body || extra || (action !== "archive" && action !== "restore" && action !== "transfer" && action !== "model" && action !== "approvalMode")
           || !Array.isArray(ids) || ids.length < 1 || ids.length > BULK_MAX_IDS || ids.some((id) => typeof id !== "string" || !id || id.length > 80) || new Set(ids).size !== ids.length) {
-          return badRequest(extra ?? `Send { "action": "archive", "restore", "transfer" or "model", "ids": 1 to ${BULK_MAX_IDS} distinct bot ids, and the action's fields }.`);
+          return badRequest(extra ?? `Send { "action": "archive", "restore", "transfer", "model" or "approvalMode", "ids": 1 to ${BULK_MAX_IDS} distinct bot ids, and the action's fields }.`);
         }
         if (action === "transfer" && typeof body.ownerPrincipalId !== "string" && typeof body.ownerSub !== "string") return badRequest("transfer needs ownerSub or ownerPrincipalId.");
         if (action === "model" && !("model" in body)) return badRequest("model needs model (a model id or null).");
+        // 2026-10-16: Ask or Approve for me only; Full and Custom need the
+        // owner's own confirmation for that bot, never an admin's bulk.
+        if (action === "approvalMode" && ((body.mode !== "auto" && body.mode !== "ask") || (body.threads !== undefined && typeof body.threads !== "boolean"))) {
+          return badRequest("approvalMode needs mode \"auto\" or \"ask\", and optionally threads true or false.");
+        }
+        if (action !== "approvalMode" && (body.mode !== undefined || body.threads !== undefined)) return badRequest("mode and threads belong to approvalMode.");
         const fields = action === "transfer" ? (body.ownerSub !== undefined ? { ownerSub: body.ownerSub } : { ownerPrincipalId: body.ownerPrincipalId })
-          : action === "model" ? { ...(body.engineInstanceId !== undefined ? { engineInstanceId: body.engineInstanceId } : {}), model: body.model } : {};
+          : action === "model" ? { ...(body.engineInstanceId !== undefined ? { engineInstanceId: body.engineInstanceId } : {}), model: body.model }
+            : action === "approvalMode" ? { mode: body.mode, threads: body.threads === true } : {};
         const results = (ids as string[]).map((id) => {
           const result = act(ctx, deps, action, id, fields);
           return result instanceof ConsoleRefusal ? { id, ok: false, code: result.code, message: result.message } : { id, ok: true };

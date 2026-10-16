@@ -28243,6 +28243,7 @@ function orgAdminBots(): Array<{ bot: AdminBot; reach: AdminBotReach }> {
         threads: botThreadIds(bot).length,
         look: botLook(bot, attachmentExists),
         persona: botPersona(bot),
+        approvalMode: approvalModeFor(bot),
       },
       reach: orgBotReach(bot),
     };
@@ -28466,6 +28467,41 @@ async function importPackageFor(raw: unknown, ownerPrincipalId: string): Promise
 }
 
 /** The console's Bots (server/org-admin-bots.ts). */
+/** 2026-10-16, the console's "Approve for me" bulk action (POST
+ * /api/org/admin/bots/bulk, action approvalMode): the bot's default level
+ * to Ask or Approve for me, as the bot PATCH sets it. Never Full, Custom or
+ * Edits from here. A bot on Full or Custom is left alone (those need the
+ * owner's own confirmation to leave, as everywhere). With `threads`, its
+ * conversations stored on Ask follow to Auto; a conversation on any other
+ * level keeps it (never lowered). The caller audits the change. */
+function setBotApprovalModeFromConsole(botId: string, mode: "ask" | "auto", threads: boolean): { before: string; after: string; threadsMoved: string[] } {
+  const bot = store.bot(botId);
+  if (!bot) throw new ConsoleRefusal(404, "not_found", "No such bot.");
+  const before = approvalModeFor(bot);
+  if (before === "full" || before === "custom") {
+    throw new ConsoleRefusal(409, "elevated_level", `This bot is on ${before === "full" ? "Full access" : "Custom"}: only its owner can change that level.`);
+  }
+  if (!supportsApprovalMode(bot.modelSelection, mode)) {
+    throw new ConsoleRefusal(400, "mode_not_supported", `This bot's engine has no ${mode === "auto" ? "Approve for me" : "Ask"} mode.`);
+  }
+  if (bot.approvalGrant) throw new ConsoleRefusal(409, "busy", "The bot's approval level is still being confirmed.");
+  const tasks = threads && mode === "auto" ? store.tasks(bot.id) : [];
+  if (bot.busy || threadBusy(bot.id, bot.threadId) || tasks.some((task) => threadBusy(bot.id, task.threadId))) {
+    throw new ConsoleRefusal(409, "busy", "The bot is working: try again when its turn ends.");
+  }
+  if (before !== mode) store.patchBot(bot.id, { approvalMode: mode, autoApprove: mode === "auto" });
+  const threadsMoved: string[] = [];
+  for (const task of tasks) {
+    if (task.threadId === bot.threadId || task.approvalMode !== "ask") continue;
+    if (!supportsApprovalMode(task.modelSelection ?? bot.modelSelection, "auto")) continue;
+    store.patchTask(bot.id, task.threadId, { approvalMode: "auto", autoApprove: true });
+    threadsMoved.push(task.threadId);
+  }
+  const updated = store.bot(bot.id);
+  if (updated && (before !== mode || threadsMoved.length)) broadcast({ kind: "bot", bot: wireBot(updated) });
+  return { before, after: updated ? approvalModeFor(updated) : mode, threadsMoved };
+}
+
 const orgBotsDeps: BotsDeps = {
   bots: () => orgAdminBots(),
   avatar: (botId) => {
@@ -28561,6 +28597,7 @@ const orgBotsDeps: BotsDeps = {
     if (!checked.ok) throw new ConsoleRefusal(checked.status, checked.status === 409 ? "busy" : "bad_request", checked.error);
     store.patchBot(bot.id, { modelSelection: checked.selection });
   },
+  setApprovalMode: (botId, mode, threads) => setBotApprovalModeFromConsole(botId, mode, threads),
   stop: forceStopBot,
   remove: (botId) => deleteBotWithLifecycle(botId),
   notifyOwner: (botId, action, adminPrincipalId) => {

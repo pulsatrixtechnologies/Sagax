@@ -49,6 +49,13 @@ team backups still start on Ask. Existing bots and threads never move: the
 one-time switch of older bots from Ask to Approve for me does not run where
 new bots start on Ask.
 
+An organization admin can move existing bots to Approve for me from the
+console, bot by bot with a confirmation (admin API `POST bots/bulk`,
+`action: "approvalMode"`, docs/org-admin-api.md): Ask or Approve for me
+only, never Full or Custom, one admin activity row per bot. A bot's
+conversations that saved their own level keep it unless the admin also
+moves the conversations on Ask (`threads: true`).
+
 **Full access** on an organization server is off until an admin turns it on
 (Settings > Organization > Allow full access, or `allowFullAccess` in the
 admin API's `POST settings`). A saved choice, on or off, is kept. An

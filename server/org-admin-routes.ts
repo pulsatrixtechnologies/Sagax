@@ -57,8 +57,9 @@ const MAX_BODY_BYTES = 16 * 1024;
  * routes, 2 the console routes of 2026-10-08, 3 the permission catalogue
  * of 2026-10-09 (`permissions`, `permissionGroups`, `permissionsVersion`),
  * 4 the engine list of the same day (`engines`), 5 the bots' look and
- * persona with the mascot catalogue of 2026-10-11 (`mascots`). */
-export const ORG_ADMIN_API_VERSION = 5;
+ * persona with the mascot catalogue of 2026-10-11 (`mascots`), 6 the bots'
+ * `approvalMode` and the bulk `approvalMode` action of 2026-10-16. */
+export const ORG_ADMIN_API_VERSION = 6;
 
 /** One engine (model provider) of this server, as `GET capabilities` lists
  * it: grouped Cloud or Local as the model picker's provider column groups it
@@ -138,6 +139,9 @@ export interface AdminBot {
   look: AdminBotLook;
   /** 2026-10-11: the persona window's name, role and short description. */
   persona: AdminBotPersona;
+  /** 2026-10-16: the bot's default approval level (ask, edits, auto, full,
+   * custom), for the console's "Approve for me" bulk action. */
+  approvalMode: string;
 }
 
 /** What a manager's reach is checked against for one bot. */
