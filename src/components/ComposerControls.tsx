@@ -333,8 +333,9 @@ export function VoiceNoteWaveform({ bars }: { bars: number[] }) {
       {bars.map((level, index) => (
         <span
           key={index}
-          className="w-[2px] rounded-full bg-danger/80 transition-[height] duration-75 motion-reduce:transition-none"
-          style={{ height: `${Math.round(3 + level * 13)}px` }}
+          // full height, scaled: the waveform moves on the compositor, never by layout
+          className="h-4 w-[2px] rounded-full bg-danger/80 transition-transform duration-75 motion-reduce:transition-none"
+          style={{ transform: `scaleY(${Math.round(3 + Math.max(0, Math.min(1, level)) * 13) / 16})` }}
         />
       ))}
     </span>
