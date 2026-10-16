@@ -245,6 +245,7 @@ import {
   boatComputerEnabled,
   decisionModelEnabled,
   dataWindowEnabled,
+  meetingNotetakerEnabled,
   routineGroupSettingsEnabled,
   claudeUserMcpEnabled,
   skillAuthoringEnabled,
@@ -3648,6 +3649,9 @@ function agentsIntegration(
       // end_call is offered only while this thread is on a live phone call.
       // The route re-checks; a turn that is not a call never sees the tool.
       SAGAX_VOICE_CALL: voiceCalls.active(threadId) ? "1" : "0",
+      // join_meeting: Settings > Experimental > Meeting notetaker, direct
+      // conversations only. The internal route re-checks both.
+      SAGAX_MEETINGS: meetingNotetakerEnabled(cfg) && !store.groupByThread(threadId) ? "1" : "0",
       // And for a role: team setup, bot creation and deletion, rooms and
       // retries are shown only to a Chief of Staff, whom their routes require.
       SAGAX_CHIEF_OF_STAFF: store.bot(botId)?.chiefOfStaff === true ? "1" : "0",
@@ -22439,6 +22443,7 @@ function configStatus() {
       boatComputer: boatComputerEnabled(cfg),
       decisionModel: decisionModelEnabled(cfg),
       dataWindow: dataWindowEnabled(cfg),
+      meetingNotetaker: meetingNotetakerEnabled(cfg),
       routineGroupSettings: routineGroupSettingsEnabled(cfg),
       browser: builtInBrowserEnabled(cfg),
       // Maintainer-only escape hatch, not a Settings toggle: the desktop
@@ -23530,6 +23535,7 @@ function startMeetingSummary(botId: string, threadId: string, prompt: string, at
 const meetingService: MeetingService = createMeetingService({
   store,
   dataDir: DATA_DIR,
+  enabled: () => meetingNotetakerEnabled(cfg),
   browserRefusal: meetingBrowserRefusal,
   openBrowser: openMeetingBrowser,
   transcriber: async ({ botId, threadId, speaker }) => {
@@ -23568,7 +23574,7 @@ async function resolveAndSendMeeting(res: ServerResponse, auth: RequestAuth, thr
     ...(person?.name ? { personName: person.name } : {}),
   });
   if (!result.claimed) return false;
-  if ("status" in result) { json(res, result.status, { error: result.error }); return true; }
+  if ("status" in result) { json(res, result.status, { error: result.error, ...(result.code ? { code: result.code } : {}) }); return true; }
   if (!result.alreadySettled) {
     const bot = store.botByThread(threadId);
     appendDecision(DATA_DIR, {
@@ -23581,6 +23587,7 @@ async function resolveAndSendMeeting(res: ServerResponse, auth: RequestAuth, thr
 }
 ROUTES.push(createMeetingRoutes({
   meetings: () => meetingService,
+  enabled: () => meetingNotetakerEnabled(cfg),
   refusal: (auth, threadId, requestId) => approvalAnswerRefusal(auth, threadId, requestId) ?? cardAnswerRefusal(auth, threadId, requestId, "allow"),
 }));
 const INTERNAL_ROUTES: InternalRouteHandler[] = [
@@ -23631,6 +23638,7 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     meetings: () => meetingService,
     ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
     isDirect: (botId, threadId) => Boolean(store.taskByThread(botId, threadId)) && !store.groupByThread(threadId),
+    enabled: () => meetingNotetakerEnabled(cfg),
   }),
 ];
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
@@ -40985,6 +40993,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         sharedComputerControl.close();
       }
       if (disablingBuiltInBrowser) { browserLive.closeAll(); browserNetworkDebug.clearAll(); }
+      // The meeting notetaker (or the browser it runs in) was turned off: every
+      // meeting leaves now.
+      if (!meetingNotetakerEnabled(cfg) || disablingBuiltInBrowser) meetingService.leaveAll();
       for (const request of browserCleanupRequests) {
         if (request.kind === "profile") {
           browserLive.closeForSession(browserSessionId("", request.partitionId));

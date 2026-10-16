@@ -190,6 +190,14 @@ notifications), Sentry, PagerDuty, Linear. Rules, covered by
 `docs/superpowers/specs/2026-10-16-meetings-and-maintenance.md`). Rules,
 covered by `server/meetings/*.test.ts` and `server/routes/meetings.test.ts`:
 
+- Experimental, **off by default**: Settings > Experimental > Meeting
+  notetaker (Google Meet), config `features.meetingNotetaker`
+  (`meetingNotetakerEnabled`, server/config.ts). The server enforces it:
+  while off, `join_meeting` is not in the agents catalog (`SAGAX_MEETINGS`,
+  `agents-catalog-meetings.test.ts`), and the internal route, `/api/meetings/*`
+  and the card's answer refuse with 403 `meetings_disabled`. Turning it (or
+  the built-in browser) off makes every running meeting leave.
+
 - Every join is the person's own tap on its consent card. Nothing applies it
   for them: no Full access path, no always-allow rule, no Live call answer
   (`liveCardKind` is `review`), not the composer's approval stepper. Direct
@@ -202,6 +210,11 @@ covered by `server/meetings/*.test.ts` and `server/routes/meetings.test.ts`:
 - Every poll reads the new chat lines: an objection (the bot's name, a bare
   no, stop, arrête, quitte, leave, recording, consent...; when in doubt,
   leave) makes it leave at once, dropping the audio not yet transcribed.
+  Lines written while it announces itself count too. Own lines are left
+  out by exact match (what it posted, its own author label), never by
+  substring. After an objection nothing is kept: no summary turn, the
+  in-memory transcript is dropped and the card shows no lines. After a
+  normal end the card's live lines go once the summary turn is asked for.
   Three unreadable polls in a row end the meeting.
 - The Perspicax console and `sagax_approve` never answer the card
   (`server/approval-type.ts` types it `other`).

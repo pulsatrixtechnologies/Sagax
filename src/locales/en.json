@@ -8540,5 +8540,9 @@
   "browser.network.responseHeaders": "Response headers",
   "browser.network.noHeaders": "No headers.",
   "browser.network.headersHidden": "Headers are hidden. Turn on Show headers to see them, with credentials redacted.",
-  "meeting.card.leftByParticipant": "Left at a participant's request"
+  "meeting.card.leftByParticipant": "Left at a participant's request: nothing was kept",
+  "settings.experimental.meetingNotetaker": "Meeting notetaker (Google Meet)",
+  "settings.experimental.meetingNotetakerAria": "Meeting notetaker (Google Meet)",
+  "settings.experimental.meetingNotetakerHint": "Bots can ask to join a Google Meet and take notes, after your approval on each meeting. Not yet tested on real meetings.",
+  "settings.experimental.meetingNotetakerServerOld": "This server does not offer the meeting notetaker yet."
 }

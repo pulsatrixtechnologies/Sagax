@@ -14,7 +14,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path";
 
 import { MEETING_PROVIDER_LABELS, SUPPORTED_MEETING_PROVIDERS, findMeetingLink, meetingDisplayName } from "../../shared/meeting-links.ts";
-import { MEETING_LIVE_STATUSES, type MeetingRequestCardData } from "../../shared/meeting-request.ts";
+import { MEETINGS_DISABLED, MEETING_LIVE_STATUSES, type MeetingRequestCardData } from "../../shared/meeting-request.ts";
 import { meetingAnnouncement } from "./meet-scripts.ts";
 import { MeetingSession, type MeetingBrowser, type MeetingOutcome, type TranscriptLine } from "./meeting-session.ts";
 import { meetingSummaryPrompt } from "./meeting-summary.ts";
@@ -60,13 +60,16 @@ export interface MeetingServiceDeps {
   summarize(botId: string, threadId: string, prompt: string): void;
   /** One audit line per state change that matters (requested, approved, ended). */
   audit?(event: { kind: string; botId: string; threadId: string; requestId: string; principalId?: string; detail?: string }): void;
+  /** Settings > Experimental > Meeting notetaker (off by default). While
+   * off, nothing is staged, approved or left through this service. */
+  enabled?: () => boolean;
   /** Test hook: the session factory. */
   session?(options: ConstructorParameters<typeof MeetingSession>[0]): Pick<MeetingSession, "run" | "requestLeave">;
 }
 
 export type MeetingResolveResult =
   | { claimed: false }
-  | { claimed: true; status: number; error: string }
+  | { claimed: true; status: number; error: string; code?: string }
   | { claimed: true; outcome: "allowed-once" | "rejected"; alreadySettled?: true };
 
 function cardTitle(data: MeetingRequestCardData, botName: string): string {
@@ -77,6 +80,7 @@ function cardTitle(data: MeetingRequestCardData, botName: string): string {
 
 export function createMeetingService(deps: MeetingServiceDeps) {
   const now = deps.now ?? Date.now;
+  const enabled = () => deps.enabled?.() ?? true;
   const dir = join(deps.dataDir, "meetings");
   const liveIndex = join(dir, "live.json");
   const sessions = new Map<string, Pick<MeetingSession, "run" | "requestLeave">>();
@@ -122,22 +126,33 @@ export function createMeetingService(deps: MeetingServiceDeps) {
     sessions.delete(keyOf(data.threadId, data.requestId));
     busyBots.delete(data.botId);
     try { writeLive(); } catch { /* the index is a recovery aid only */ }
-    const nothing = outcome.status === "ended" && !outcome.lines.length
-      ? `${outcome.detail ?? ""} ${outcome.recorded ? "Nothing was transcribed." : "Nothing was recorded."}`.trim()
-      : outcome.detail;
+    // A participant objected (Loi 25, conservative default): nothing said in
+    // that meeting is kept, shown or summarized.
+    const objected = outcome.endReason === "participant";
+    const lines = objected ? [] : outcome.lines;
+    if (objected) outcome.lines.length = 0;
+    const nothing = objected
+      ? "Left at a participant's request: nothing was kept."
+      : outcome.status === "ended" && !lines.length
+        ? `${outcome.detail ?? ""} ${outcome.recorded ? "Nothing was transcribed." : "Nothing was recorded."}`.trim()
+        : outcome.detail;
+    const summarizing = lines.length > 0;
     patch(data.threadId, data.requestId, {
       status: outcome.status, endedAt,
       ...(nothing ? { detail: nothing } : {}),
       ...(outcome.endReason ? { endReason: outcome.endReason } : {}),
+      // The live tail leaves the card once the meeting is over: the notes
+      // carry what matters, and an objection keeps nothing at all.
+      ...(objected ? { transcriptTail: undefined, segments: undefined } : summarizing ? { transcriptTail: undefined } : {}),
     });
     deps.audit?.({ kind: `meeting.${outcome.status}`, botId: data.botId, threadId: data.threadId, requestId: data.requestId, ...(outcome.detail ? { detail: outcome.detail } : {}) });
-    if (outcome.lines.length) {
+    if (summarizing) {
       deps.summarize(data.botId, data.threadId, meetingSummaryPrompt({
         providerLabel: MEETING_PROVIDER_LABELS[data.provider],
         code: data.code,
         startedAt: started,
         endedAt,
-        lines: outcome.lines,
+        lines,
         ended: outcome.detail,
       }));
     }
@@ -160,7 +175,8 @@ export function createMeetingService(deps: MeetingServiceDeps) {
     },
 
     /** The bot's request: one consent card in the conversation. */
-    submit(args: { botId: string; threadId: string; url: string; reason: string }): { requestId: string; messageId: string; supported: boolean; provider: string } | { error: string } {
+    submit(args: { botId: string; threadId: string; url: string; reason: string }): { requestId: string; messageId: string; supported: boolean; provider: string } | { error: string; code?: string } {
+      if (!enabled()) return { ...MEETINGS_DISABLED };
       const link = findMeetingLink(args.url);
       if (!link) return { error: "That is not a Google Meet, Zoom or Teams meeting link. Ask the person for the meeting's https link." };
       const bot = deps.store.bot(args.botId);
@@ -206,6 +222,7 @@ export function createMeetingService(deps: MeetingServiceDeps) {
     async resolve(args: { threadId: string; requestId: string; behavior: "allow" | "deny" | "answer"; principalId: string; personName?: string; speaker?: unknown }): Promise<MeetingResolveResult> {
       const found = find(args.threadId, args.requestId);
       if (!found) return { claimed: false };
+      if (!enabled()) return { claimed: true, status: 403, ...MEETINGS_DISABLED };
       const { card, data } = found;
       if (card.answered || card.dismissed || data.status !== "pending") {
         return { claimed: true, outcome: card.answered === "allow" ? "allowed-once" : "rejected", alreadySettled: true };
@@ -230,6 +247,9 @@ export function createMeetingService(deps: MeetingServiceDeps) {
       }
       busyBots.add(data.botId);
       const release = () => { busyBots.delete(data.botId); };
+      // From here until the session holds the slot, any exception releases it.
+      let handedOff = false;
+      try {
       let transcriber: MeetingTranscriber | { error: string };
       try {
         transcriber = await deps.transcriber({ botId: data.botId, threadId: args.threadId, principalId: args.principalId, speaker: args.speaker });
@@ -267,15 +287,20 @@ export function createMeetingService(deps: MeetingServiceDeps) {
       };
       const session = deps.session ? deps.session(options) : new MeetingSession(options);
       sessions.set(keyOf(args.threadId, args.requestId), session);
+      handedOff = true;
       try { writeLive(); } catch { /* recovery aid only */ }
       void session.run()
         .then((outcome) => finished(data, outcome, started))
         .catch((error) => finished(data, { status: "failed", detail: error instanceof Error ? error.message : String(error), lines: [], recorded: false }, started));
       return { claimed: true, outcome: "allowed-once" };
+      } finally {
+        if (!handedOff) release();
+      }
     },
 
     /** The person pressed Leave on the live card. */
-    leave(threadId: string, requestId: string): { ok: true } | { ok: false; status: number; error: string } {
+    leave(threadId: string, requestId: string): { ok: true } | { ok: false; status: number; error: string; code?: string } {
+      if (!enabled()) return { ok: false, status: 403, ...MEETINGS_DISABLED };
       const session = sessions.get(keyOf(threadId, requestId));
       if (!session) return { ok: false, status: 409, error: "The bot is not in this meeting any more." };
       session.requestLeave();

@@ -260,15 +260,21 @@ export function newChatLines(previous: readonly string[], current: readonly stri
   });
 }
 
-const OBJECTION = /\b(stop|stopp?e[rz]?|arr[eê]te[rz]?|quitte[rz]?|quit|leave|go away|get out|sors|sortez|kick|remove|retire[rz]?|enl[eè]ve[rz]?|record\w*|enregistr\w*|transcri\w*|bot|robot|consent\w*|privacy|confidentialit\w*)\b|pas d.enregistrement|no recording|don.t record|do not record|n.enregistre pas|pas de transcription/i;
+const OBJECTION = /\b(stop|stopp?e[rz]?|arr[eê]te[rz]?|quitte[rz]?|quit|leave|go away|get out|sors|sortez|kick|remove|retire[rz]?|enl[eè]ve[rz]?|record\w*|enregistr\w*|transcri\w*|bot|robot|consent\w*|privacy|confidentialit\w*|refus\w*|object\w*|opt.?out)\b|je refuse|pas d.enregistrement|no recording|don.t record|do not record|n.enregistre pas|pas de transcription|non merci|no thanks|pas de notes|don.t take notes|do not take notes|pas d.accord|not ok\b|not okay/i;
+
+/** Labels Meet shows above the bot's own messages. */
+const OWN_AUTHOR_LABELS = new Set(["you", "vous", "moi", "me"]);
 
 /** Whether a new chat line objects to the notetaker. Deliberately broad:
- * when in doubt, the bot leaves. A line from the bot itself (its
- * announcement, its goodbye) never counts. */
-export function chatObjects(line: string, botName: string, ownTexts: readonly string[]): boolean {
+ * when in doubt, the bot leaves. Only the bot's own lines are left out, by
+ * exact match: a message it posted, or its own author label (its display
+ * name, "You"). A participant's line that merely quotes part of the
+ * announcement ("stop", "je quitte") still counts. */
+export function chatObjects(line: string, botName: string, ownTexts: readonly string[], displayName = ""): boolean {
   const text = line.trim();
   if (!text) return false;
-  if (text.length >= 8 && ownTexts.some((own) => own.includes(text))) return false;
+  if (ownTexts.some((own) => own.trim() === text)) return false;
+  if (OWN_AUTHOR_LABELS.has(text.toLowerCase()) || (displayName && text === displayName.trim())) return false;
   const name = botName.trim().toLowerCase();
   if (name.length >= 2 && text.toLowerCase().includes(name)) return true;
   if (/^(no|non|nope|nan|niet)[.!]*$/i.test(text)) return true;

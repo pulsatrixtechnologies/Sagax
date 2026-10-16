@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 
 export interface FeatureFlagConfig {
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; dataWindow?: boolean; routineGroupSettings?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; dataWindow?: boolean; meetingNotetaker?: boolean; routineGroupSettings?: boolean; skillsLibrary?: boolean };
   browserEngine?: { kind: "engine" | "unavailable"; reason?: string; installable?: boolean; installing?: boolean; installError?: string };
 }
 
@@ -90,6 +90,13 @@ export function decisionModelEnabled(config: FeatureFlagConfig | null | undefine
  * results in a window of their own. Experimental: off until switched on in
  * Settings > Experimental features; mirrors the server's dataWindowEnabled.
  * While off there is no Data button and the window refuses to open. */
+/** The meeting notetaker (a bot joins a Google Meet and takes notes).
+ * Experimental, off until switched on in Settings > Experimental features;
+ * mirrors the server's meetingNotetakerEnabled, which enforces it. */
+export function meetingNotetakerEnabled(config: FeatureFlagConfig | null | undefined): boolean {
+  return config?.features?.meetingNotetaker === true;
+}
+
 export function dataWindowEnabled(config: FeatureFlagConfig | null | undefined): boolean {
   return config?.features?.dataWindow === true;
 }

@@ -97,13 +97,16 @@ describe("chat objections", () => {
   const own = [meetingAnnouncement("Ada (transcription)", "Sam"), MEETING_LEAVING_TEXT];
   it("leaves on objection words in either language, on the bot's name, and on a bare no", () => {
     for (const line of ["stop", "Please stop the recording", "arrête", "arrete svp", "quitte la réunion", "Can the bot leave?", "no recording please",
-      "pas d'enregistrement", "I don't consent", "Ada please go", "ADA?", "non", "No."]) {
+      "pas d'enregistrement", "I don't consent", "Ada please go", "ADA?", "non", "No.", "je refuse", "Refus", "I object", "objection",
+      "non merci", "no thanks", "pas de notes", "don't take notes", "do not record", "opt out", "pas d'accord", "not ok",
+      // a participant quoting part of the announcement still counts
+      "je quitte", "Écrivez « stop » ici"]) {
       expect(chatObjects(line, "Ada", own), line).toBe(true);
     }
   });
   it("ignores ordinary chat and the bot's own lines", () => {
-    for (const line of ["Next slide please", "J'ai une question sur le budget", "Thanks all", own[0]!, MEETING_LEAVING_TEXT, "Ada (transcription)"]) {
-      expect(chatObjects(line, "Ada", own), line).toBe(false);
+    for (const line of ["Next slide please", "J'ai une question sur le budget", "Thanks all", own[0]!, MEETING_LEAVING_TEXT, "Ada (transcription)", "You", "Vous"]) {
+      expect(chatObjects(line, "Ada", own, "Ada (transcription)"), line).toBe(false);
     }
   });
   it("finds only the lines a poll did not have, counting repeats", () => {

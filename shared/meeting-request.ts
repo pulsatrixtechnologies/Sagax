@@ -51,6 +51,13 @@ export interface MeetingRequestCardData {
   endedAt?: number;
 }
 
+/** What every meeting route answers while Settings > Experimental >
+ * Meeting notetaker is off (HTTP 403). */
+export const MEETINGS_DISABLED = {
+  code: "meetings_disabled",
+  error: "The meeting notetaker is off. Turn it on in Settings > Experimental.",
+} as const;
+
 /** The card's two answers, in both languages. */
 export const MEETING_APPROVE_LABELS = ["Rejoindre et prendre des notes", "Join and take notes"] as const;
 export const MEETING_DECLINE_LABELS = ["Pas cette fois", "Not this time"] as const;

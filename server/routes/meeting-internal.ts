@@ -9,6 +9,7 @@ import { z } from "zod";
 import { PASS } from "./table.ts";
 import type { InternalRouteHandler } from "./internal-route.ts";
 import type { MeetingService } from "../meetings/meeting-requests.ts";
+import { MEETINGS_DISABLED } from "../../shared/meeting-request.ts";
 
 const joinBody = z.object({
   url: z.string().min(1).max(2_048),
@@ -21,10 +22,13 @@ export function createMeetingInternalRoutes(deps: {
   ownsThread(botId: string, threadId: string): boolean;
   /** Meetings join from a direct conversation only: a room has no one owner to consent. */
   isDirect(botId: string, threadId: string): boolean;
+  /** Settings > Experimental > Meeting notetaker. */
+  enabled(): boolean;
 }): InternalRouteHandler {
   return async ({ res, path, method, json, capability, readBody }) => {
     if (path !== "/api/internal/meetings/join") return PASS;
     if (method !== "POST") return json(res, 405, { error: "method not allowed" });
+    if (!deps.enabled()) return json(res, 403, { ...MEETINGS_DISABLED });
     if (!deps.ownsThread(capability.botId, capability.threadId)) {
       return json(res, 403, { error: "source conversation does not belong to sender" });
     }
@@ -39,7 +43,7 @@ export function createMeetingInternalRoutes(deps: {
       url: parsed.data.url,
       reason: parsed.data.reason ?? "",
     });
-    if ("error" in result) return json(res, 409, { error: result.error });
+    if ("error" in result) return json(res, "code" in result && result.code === MEETINGS_DISABLED.code ? 403 : 409, result);
     return json(res, 200, result);
   };
 }

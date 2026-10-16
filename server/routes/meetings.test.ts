@@ -20,9 +20,9 @@ function fakeService(over: Partial<MeetingService> = {}) {
 }
 
 describe("POST /api/internal/meetings/join", () => {
-  const call = async (opts: { owns?: boolean; direct?: boolean; body?: Record<string, unknown> }) => {
+  const call = async (opts: { owns?: boolean; direct?: boolean; body?: Record<string, unknown>; enabled?: boolean }) => {
     const { service, calls } = fakeService();
-    const route = createMeetingInternalRoutes({ meetings: () => service, ownsThread: () => opts.owns ?? true, isDirect: () => opts.direct ?? true });
+    const route = createMeetingInternalRoutes({ meetings: () => service, ownsThread: () => opts.owns ?? true, isDirect: () => opts.direct ?? true, enabled: () => opts.enabled ?? true });
     const sent: Array<{ status: number; body: any }> = [];
     await route({
       res: {} as ServerResponse,
@@ -41,6 +41,12 @@ describe("POST /api/internal/meetings/join", () => {
     expect(calls).toEqual(["submit https://meet.google.com/abc-defg-hij"]);
   });
 
+  it("refuses a stray call while the notetaker is off, before anything else", async () => {
+    const { sent, calls } = await call({ enabled: false, owns: false });
+    expect(sent).toEqual([{ status: 403, body: { code: "meetings_disabled", error: "The meeting notetaker is off. Turn it on in Settings > Experimental." } }]);
+    expect(calls).toEqual([]);
+  });
+
   it("refuses another conversation, a room, and a malformed body", async () => {
     expect((await call({ owns: false })).sent[0]?.status).toBe(403);
     expect((await call({ direct: false })).sent[0]?.status).toBe(409);
@@ -49,9 +55,9 @@ describe("POST /api/internal/meetings/join", () => {
 });
 
 describe("POST /api/meetings/leave", () => {
-  const call = async (opts: { refusal?: string | null; body?: unknown; contentType?: string; path?: string }) => {
+  const call = async (opts: { refusal?: string | null; body?: unknown; contentType?: string; path?: string; enabled?: boolean }) => {
     const { service, calls } = fakeService();
-    const route = createMeetingRoutes({ meetings: () => service, refusal: () => opts.refusal ?? null });
+    const route = createMeetingRoutes({ meetings: () => service, refusal: () => opts.refusal ?? null, enabled: () => opts.enabled ?? true });
     const sent: Array<{ status: number; body: any }> = [];
     const out = await route({
       req: { headers: { "content-type": opts.contentType ?? "application/json" } } as unknown as IncomingMessage,
@@ -76,6 +82,14 @@ describe("POST /api/meetings/leave", () => {
     expect((await call({ refusal: "Only the bot owner can answer this approval." })).sent[0]?.status).toBe(403);
     expect((await call({ body: { threadId: "t1", requestId: "nope" } })).sent[0]?.status).toBe(404);
     expect((await call({ contentType: "text/plain" })).sent[0]?.status).toBe(415);
+  });
+
+  it("refuses every meeting route while the notetaker is off", async () => {
+    for (const path of ["/api/meetings/leave", "/api/meetings/anything"]) {
+      const { sent, calls } = await call({ enabled: false, path });
+      expect(sent).toEqual([{ status: 403, body: expect.objectContaining({ code: "meetings_disabled" }) }]);
+      expect(calls).toEqual([]);
+    }
   });
 
   it("passes other paths", async () => {

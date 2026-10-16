@@ -11,8 +11,18 @@ la mise à jour de l'ordinateur »). Aucun code n'en est repris.
 
 ## 1. Le bot rejoint une réunion et prend des notes
 
-Statut : implanté dans `feat/meeting-notetaker` pour Google Meet. Validation
-sur une vraie réunion à faire par JC avant la fusion.
+Statut : implanté dans `feat/meeting-notetaker` pour Google Meet, derrière un
+réglage **expérimental désactivé par défaut** (Réglages > Fonctions
+expérimentales > Preneur de notes en réunion (Google Meet), config
+`features.meetingNotetaker`). Validation sur une vraie réunion à faire par
+JC avant de l'activer.
+
+Le serveur applique ce réglage : désactivé, l'outil `join_meeting` n'est pas
+offert aux bots (`SAGAX_MEETINGS`), et la route interne, `/api/meetings/*` et
+la réponse à une carte déjà publiée refusent (403, `meetings_disabled`,
+« The meeting notetaker is off. Turn it on in Settings > Experimental. »).
+Le désactiver, ou désactiver le navigateur intégré, fait quitter toute
+réunion en cours.
 
 ### Ce que la personne voit
 
@@ -67,12 +77,20 @@ personne pour consentir.
   au moins toutes les 10 minutes ; si elle ne passe plus, le bot cesse de
   prendre des notes et quitte.
 - **Objection.** À chaque relevé (3 s), le bot lit les nouvelles lignes du
-  clavardage (pas les siennes). Une ligne qui le nomme, qui dit non, ou qui
-  contient stop, arrête, quitte, leave, enregistrement, transcription, bot,
-  consentement, etc. (dans le doute, il part) le fait quitter tout de
-  suite : il arrête l'enregistrement, jette l'audio pas encore transcrit,
-  écrit « Je quitte. / Leaving. » et la carte affiche « Quitté à la demande
-  d'un participant ».
+  clavardage (pas les siennes, reconnues par égalité exacte avec ce qu'il a
+  publié et par son propre nom d'auteur ; une citation partielle de
+  l'annonce par un participant compte). Les lignes écrites pendant une
+  annonce ou une réannonce comptent aussi. Une ligne qui le nomme, qui dit
+  non, ou qui contient stop, arrête, quitte, leave, je refuse, I object,
+  non merci, no thanks, pas de notes, opt out, pas d'accord, not ok,
+  enregistrement, transcription, bot, consentement, etc. (dans le doute, il
+  part) le fait quitter tout de suite : il arrête l'enregistrement, jette
+  l'audio pas encore transcrit, écrit « Je quitte. / Leaving. ». Rien de
+  cette réunion n'est gardé (Loi 25, choix prudent) : pas de résumé, la
+  transcription en mémoire est jetée, la carte n'affiche plus de lignes et
+  dit « Quitté à la demande d'un participant : rien n'a été conservé ».
+  Après une fin normale, les dernières lignes quittent la carte quand le
+  tour de résumé est demandé.
 - **Page muette.** Trois relevés de suite sans état lisible de la page ou du
   clavardage comptent comme la fin de la réunion (jamais d'enregistrement à
   l'aveugle).

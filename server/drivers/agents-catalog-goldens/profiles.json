@@ -1,7 +1,7 @@
 {
   "direct": {
-    "bytes": 67285,
-    "sha256": "f30cfafd37910c2959c33da0674f2bfc8020e2cf63ea224c31b958a788d922cc",
+    "bytes": 66836,
+    "sha256": "0dfa552104746fd6cf5d86236abedc4b470935bc409bff540acf8b49a3c79054",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -31,7 +31,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -66,8 +65,8 @@
     ]
   },
   "direct+voice": {
-    "bytes": 68026,
-    "sha256": "7c2e3b8d4b4d804cec0774b48a089c1950c950a8b39096a79d8c7f245931d476",
+    "bytes": 67577,
+    "sha256": "7737adb0cba5037e9f8425d7004ed6edcd9a7d0eb54574562115c23bdbf708ef",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -98,7 +97,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -133,8 +131,8 @@
     ]
   },
   "direct+shared": {
-    "bytes": 69030,
-    "sha256": "5c000b6e9965468f0309a79523219eba4feda7dd900909fa13e7cce6e2c7fabc",
+    "bytes": 68581,
+    "sha256": "102891ad20029574872c0cf4f7eab1f21d67f81dae3f7d9fd02fb77c44d94ed2",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -166,7 +164,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -201,8 +198,8 @@
     ]
   },
   "direct+shared+voice": {
-    "bytes": 69771,
-    "sha256": "5328c5bd4b06d1163df575e31e8624449c1f514fc2baf1202a91f336df752821",
+    "bytes": 69322,
+    "sha256": "9f471b500d433bf72191dfaccad3e9fda98514e9d65ad23e0fa24d7e08509aa8",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -235,7 +232,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -270,8 +266,8 @@
     ]
   },
   "direct+skills": {
-    "bytes": 69338,
-    "sha256": "1b332d96f72027612006e542aaa95fc9027ac38643c5ac31449c0669b57f7bdf",
+    "bytes": 68889,
+    "sha256": "e2b2cf034fecbe5cc6abb89b1b3d5cf67f1f9368d204bfb1b729508f9857fb9b",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -301,7 +297,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -338,8 +333,8 @@
     ]
   },
   "direct+skills+voice": {
-    "bytes": 70079,
-    "sha256": "393a275e738362d150626720e7bafea9e226582fe2f642de8e31d1d33fdc83de",
+    "bytes": 69630,
+    "sha256": "7e615f84181699692bc82064eb001acc6861510f369a3205eeef748a974745dd",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -370,7 +365,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -407,8 +401,8 @@
     ]
   },
   "direct+skills+shared": {
-    "bytes": 71083,
-    "sha256": "bf1991f00587c7e6815b1b2bbabf9cc7ce18d0525111fd9c500c3c34193f7593",
+    "bytes": 70634,
+    "sha256": "72f189636a25e667be62c802503daddcec65a940831f380385203c68e90a6b1a",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -440,7 +434,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -477,8 +470,8 @@
     ]
   },
   "direct+skills+shared+voice": {
-    "bytes": 71824,
-    "sha256": "759abd1d5688dc683c3edd2106e67d33a1f2a83b89536366477ba1f583368cff",
+    "bytes": 71375,
+    "sha256": "cb94126ca9a7151bd0204e650169eb7a91637c310bd6c518d77f418137f88aad",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -511,7 +504,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -548,8 +540,8 @@
     ]
   },
   "room": {
-    "bytes": 65036,
-    "sha256": "95b78a112b9d04a1d679932d04bff167dc597b006932fce1dd00d8d0b718d44f",
+    "bytes": 64587,
+    "sha256": "e256fe1676a1d93d196271d633fd7621a68f18bab10c492132e1ecfef6ab8973",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -577,7 +569,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -612,8 +603,8 @@
     ]
   },
   "room+voice": {
-    "bytes": 65777,
-    "sha256": "6689baec00a448583a6196039d24754ae1b20ec24432fe2f92b9d800f1903a7d",
+    "bytes": 65328,
+    "sha256": "40dd7b8850a5ef3def9d3f68587b99d9a6b48a09b56826aed5a09e648676d66b",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -642,7 +633,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -677,8 +667,8 @@
     ]
   },
   "room+shared": {
-    "bytes": 66781,
-    "sha256": "a6d865605ce729bdaff5e0879804a015a468e92d663bf5bd3fe9f0b8f7917251",
+    "bytes": 66332,
+    "sha256": "c33eb50b2b8da81b30574486a46a0003c7d0c591a14969db91cc5cd0c21034c6",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -708,7 +698,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -743,8 +732,8 @@
     ]
   },
   "room+shared+voice": {
-    "bytes": 67522,
-    "sha256": "b3f935f5fb3357392d42977cb94d5b299816182d7ab1a0e9705fd82144ea5835",
+    "bytes": 67073,
+    "sha256": "a3f7224f18898d84591c060f86d36e5bbcd0b6936fa6584dc16ead593b27d3e4",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -775,7 +764,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -810,8 +798,8 @@
     ]
   },
   "room+skills": {
-    "bytes": 67089,
-    "sha256": "4e1672a970b6be7b317b1a69d0f8af9f9d203d433d19f9288ad3b352b9e0eee7",
+    "bytes": 66640,
+    "sha256": "f5f5a29fcb775ba3c4d4273399e5c2997154a2c5efd968e32b071d6ec374814d",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -839,7 +827,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -876,8 +863,8 @@
     ]
   },
   "room+skills+voice": {
-    "bytes": 67830,
-    "sha256": "3e591a28955ede8952ad0e7f0a3a9f90ac46a18494fbdb1804c150abfbb5acdb",
+    "bytes": 67381,
+    "sha256": "7e02ed1b793ce6037c8c5defb3887e1e743a1a896bcccd400bf383598faab1bd",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -906,7 +893,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -943,8 +929,8 @@
     ]
   },
   "room+skills+shared": {
-    "bytes": 68834,
-    "sha256": "f4ea018824028a38736e68797776a5e001cea138c73f70fb3d9cce06ff91f6c6",
+    "bytes": 68385,
+    "sha256": "bd6fb319d56e61f3297a6edd6253e315e130e772112119a0a9893e5b62070b39",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -974,7 +960,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1011,8 +996,8 @@
     ]
   },
   "room+skills+shared+voice": {
-    "bytes": 69575,
-    "sha256": "8712d892e752db60d7fb98fb40719975a49b5846e37e68ac1b77ce41dd85a94f",
+    "bytes": 69126,
+    "sha256": "31b5539a6ebd08d9d6a251f5fac213bf88d70da2465f2b38d27022cb7fdd80e2",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1043,7 +1028,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1080,8 +1064,8 @@
     ]
   },
   "room+own-thread": {
-    "bytes": 66989,
-    "sha256": "1e179777ecc9b837198eeb107b80dbd01ffec206ca39d7140e5ba784d6c4d37b",
+    "bytes": 66540,
+    "sha256": "26feb6793abf1e61c30bdd2688dca8b96dd8ccb66e9913d7a4aff1802fb624d5",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1110,7 +1094,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1145,8 +1128,8 @@
     ]
   },
   "room+own-thread+voice": {
-    "bytes": 67730,
-    "sha256": "f1a4bd95210c012fb95b13e6b95f1fdd6ead8e419f5a85cbeaf18cbd35bedd4b",
+    "bytes": 67281,
+    "sha256": "bf5c9c467f53495c6b5cb8f82d149419b0533c44bfb44bcae9faeb9da96e29c5",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1176,7 +1159,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1211,8 +1193,8 @@
     ]
   },
   "room+own-thread+shared": {
-    "bytes": 68734,
-    "sha256": "1708ecb2db17feb2f65a87a852a2b76345f9355250a0820eddf1ce80e040d283",
+    "bytes": 68285,
+    "sha256": "372530bb106df475e719e431f9ffa4af54143831ae53d03addc82d469f9b5f7b",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1243,7 +1225,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1278,8 +1259,8 @@
     ]
   },
   "room+own-thread+shared+voice": {
-    "bytes": 69475,
-    "sha256": "8b248a17175e7e38d17af682d9e4c9e13852688bf2487b476ef46f25104d384a",
+    "bytes": 69026,
+    "sha256": "b0c8f66f079421da781ce0c2dec46ef43c87ed452ac7c032167a453602148ee2",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1311,7 +1292,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1346,8 +1326,8 @@
     ]
   },
   "room+own-thread+skills": {
-    "bytes": 69042,
-    "sha256": "2ed785f83f54484d06fa3529f6143dfb00ef63cdef07bc12d05c59c827ce5f38",
+    "bytes": 68593,
+    "sha256": "cba6d973c6ecfd49073e5857ac9c77520b4cb9920d748c5c88381a0b02d2b179",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1376,7 +1356,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1413,8 +1392,8 @@
     ]
   },
   "room+own-thread+skills+voice": {
-    "bytes": 69783,
-    "sha256": "627c7c93c45d06b0774fa736022c070e29fb3a31cc93dc3a72042d82c908bbd3",
+    "bytes": 69334,
+    "sha256": "35cd67225464057c0a13bfab026aceedc91406a8845bd9e1c903d61de78336e3",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1444,7 +1423,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1481,8 +1459,8 @@
     ]
   },
   "room+own-thread+skills+shared": {
-    "bytes": 70787,
-    "sha256": "eeee09aa0833e16f6c7fe4bf2c16c814cbf74721b89a64539c103108ca5451fe",
+    "bytes": 70338,
+    "sha256": "a45d967c9257c7b7907c76f9733189d59b7e04032b9b331e4e4850e2ebcfc1dd",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1513,7 +1491,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1550,8 +1527,8 @@
     ]
   },
   "room+own-thread+skills+shared+voice": {
-    "bytes": 71528,
-    "sha256": "814d95d9beb7ef5cc9d0bba8e2a206473aeb871d4b2f52f97db6b545c41de8d1",
+    "bytes": 71079,
+    "sha256": "2a101d4fc6fdb371bd8de30080255b742c49e8c76f737a3adcff1542bd90ca48",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1583,7 +1560,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1620,8 +1596,8 @@
     ]
   },
   "direct+non-chief": {
-    "bytes": 57649,
-    "sha256": "08bbe4a8ce4d2c6355e9ab7bb7b64708e36c00e31938684d73e66f6755c58b49",
+    "bytes": 57200,
+    "sha256": "38b47cbb8cf065c7911497d123502d0c6315610912fa61fe3bc10f7771322140",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1645,7 +1621,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1679,8 +1654,8 @@
     ]
   },
   "direct+voice+non-chief": {
-    "bytes": 58390,
-    "sha256": "ecf8ea0a21b9d232c028b6a08b9494f9909403d0ebbc2572bd7b89a4a31c5be5",
+    "bytes": 57941,
+    "sha256": "a9895baa801ba31e0fed69800c6a3abe7452f7b41e4aa1d954ada73dc77db526",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1705,7 +1680,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1739,8 +1713,8 @@
     ]
   },
   "direct+shared+non-chief": {
-    "bytes": 59394,
-    "sha256": "20e17b9ab34c6c53fb4b1aee97e253cb9e8351ad941629962fa3c6230f913b58",
+    "bytes": 58945,
+    "sha256": "d711afed95f26e1e8b3f9e69ffea5d7995cd3788586cf932787901790b36e378",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1766,7 +1740,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1800,8 +1773,8 @@
     ]
   },
   "direct+shared+voice+non-chief": {
-    "bytes": 60135,
-    "sha256": "e62b94ff450478681cfcff9b18010a00941c0e8308c108d479c9322c391a76f1",
+    "bytes": 59686,
+    "sha256": "02c486e33dd9192a995bad99f338db9994e406900c27afd632fc1b172b3a5a17",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1828,7 +1801,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1862,8 +1834,8 @@
     ]
   },
   "direct+skills+non-chief": {
-    "bytes": 59702,
-    "sha256": "42148c9aa417a2ec27448ccad3cc74b86bfec52703883ea1c12bed8f0899c11c",
+    "bytes": 59253,
+    "sha256": "37ff65cc7eb3f5fd657a355221cc538cb97ea59f6196b23f1c145a06f5860b4d",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1887,7 +1859,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1923,8 +1894,8 @@
     ]
   },
   "direct+skills+voice+non-chief": {
-    "bytes": 60443,
-    "sha256": "f8fbdc82837f68994dc95317b8ee3fd255428da3a0e9c4e02c5b7dca8293576a",
+    "bytes": 59994,
+    "sha256": "c1c2d94584b481646aa2fb7aee1ca0047e5d70fac82581dad43ba71563b91d09",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1949,7 +1920,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1985,8 +1955,8 @@
     ]
   },
   "direct+skills+shared+non-chief": {
-    "bytes": 61447,
-    "sha256": "1e4b56bd5923f466a2083d666241820a558a10d51486de3889324b380c990256",
+    "bytes": 60998,
+    "sha256": "d7461d5db25ae480bdaa805c863a5e8a8cca14718a77e92cdf924ec3ea0e5015",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2012,7 +1982,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2048,8 +2017,8 @@
     ]
   },
   "direct+skills+shared+voice+non-chief": {
-    "bytes": 62188,
-    "sha256": "3215b5246ee1877a35cdbcf28b5358b4563243f594e5e652e1d0e0a272f25ef8",
+    "bytes": 61739,
+    "sha256": "05e4bd6dad55eaa68ad0b85f3c8e422d3751f27d18a9320fbeb0bb83e10547a5",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2076,7 +2045,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2112,8 +2080,8 @@
     ]
   },
   "room+non-chief": {
-    "bytes": 55400,
-    "sha256": "e4c8a2e4fca48f609eabb6799da3bfcacb8996d2168e7dbe6464cf763b6e2a56",
+    "bytes": 54951,
+    "sha256": "3595ad3b35026769ac5e82a56576890a62a2a7ab0570b39ae42b10d55a0c162f",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2135,7 +2103,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2169,8 +2136,8 @@
     ]
   },
   "room+voice+non-chief": {
-    "bytes": 56141,
-    "sha256": "b392b76702ffca54f0ab4fef30b8d2cc9472126a8c14d4c59336d4998e796dd1",
+    "bytes": 55692,
+    "sha256": "843d3407bc260868ce8bb15e94334d40731b093e21d08086aff963204d3e40e8",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2193,7 +2160,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2227,8 +2193,8 @@
     ]
   },
   "room+shared+non-chief": {
-    "bytes": 57145,
-    "sha256": "b3462d7994336e5ce066ac609d2e6add9a28486fa828b3a219bb7e601fb38a62",
+    "bytes": 56696,
+    "sha256": "7bdd68909838b6e307597828348656b25df9f7500fdefeb0e0b019741e0a88fd",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2252,7 +2218,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2286,8 +2251,8 @@
     ]
   },
   "room+shared+voice+non-chief": {
-    "bytes": 57886,
-    "sha256": "527e57c305821f2e905ac713d149c4a15e0a2a210c5902219d7e7c902bf4b10c",
+    "bytes": 57437,
+    "sha256": "6bdc547e917ada693b912b34f92add1fa7000f79ab41319b6a38239c397f2812",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2312,7 +2277,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2346,8 +2310,8 @@
     ]
   },
   "room+skills+non-chief": {
-    "bytes": 57453,
-    "sha256": "01a9505b7d4c2f88f75da47cf54f85b8ed3d318b43f60f9d1c0c55a1ddd8898c",
+    "bytes": 57004,
+    "sha256": "1caed8139cd047a8e23b6a31b1389247ab3781cd8ffb079d7ab5b60417e5d262",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2369,7 +2333,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2405,8 +2368,8 @@
     ]
   },
   "room+skills+voice+non-chief": {
-    "bytes": 58194,
-    "sha256": "cf707441a44ec8cd1993ee33d53eaadff7a9be903101b0ffbcfb5c425bfc03db",
+    "bytes": 57745,
+    "sha256": "13b9b12b806d689bbfd28e972c9b31c6713abc891c10be49fd800f17021f63e9",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2429,7 +2392,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2465,8 +2427,8 @@
     ]
   },
   "room+skills+shared+non-chief": {
-    "bytes": 59198,
-    "sha256": "56fe1035f3c4c6d92a84be6ffb7cece28a1c0bea07c1f4a52e22dcded3ff21ec",
+    "bytes": 58749,
+    "sha256": "9014adf975a4902faeb2fd511d25051d52cfa72f6d81de7e66cb45c6f1ddbb19",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2490,7 +2452,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2526,8 +2487,8 @@
     ]
   },
   "room+skills+shared+voice+non-chief": {
-    "bytes": 59939,
-    "sha256": "d8519cad8806a0ea7e1c7d3dea16d6eafdf37781ee40605afced02abe5d89b98",
+    "bytes": 59490,
+    "sha256": "96ec907412ac09ca5984460a3c25bc4cdc4b2d8a05b304e7ee80c88c870df84c",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2552,7 +2513,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2588,8 +2548,8 @@
     ]
   },
   "room+own-thread+non-chief": {
-    "bytes": 57353,
-    "sha256": "d21c79d80717eabc9cadfa7a3033e7c1f421bc247e0c7ac680bca1c38cebf5ba",
+    "bytes": 56904,
+    "sha256": "8b4cf4a6267e80e06bde8e73d623b5d758ff3a7f484478d4de70e2b043818d05",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2612,7 +2572,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2646,8 +2605,8 @@
     ]
   },
   "room+own-thread+voice+non-chief": {
-    "bytes": 58094,
-    "sha256": "5e06d174b2d3db5206fa737673ce24e3afdb3bde7fc912d0f3cdd52ccb6747e0",
+    "bytes": 57645,
+    "sha256": "fa470fc211e0355b51de433d28df504ae7569178088ee43c04637e6d775e937a",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2671,7 +2630,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2705,8 +2663,8 @@
     ]
   },
   "room+own-thread+shared+non-chief": {
-    "bytes": 59098,
-    "sha256": "789e0ef689d6e02d7fb95f16970f974913a3c391ddd3f631cf6169eb8418d01e",
+    "bytes": 58649,
+    "sha256": "91afcb3234c08b4be14359aa6f844b17cec9847ad83e8689ca1e6104b5b95629",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2731,7 +2689,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2765,8 +2722,8 @@
     ]
   },
   "room+own-thread+shared+voice+non-chief": {
-    "bytes": 59839,
-    "sha256": "e6af8698e71d1ab325aaa4bd5baee5a9ca93c6ee2a16a6a78077fc32c96d1eee",
+    "bytes": 59390,
+    "sha256": "613e00d89ea358dd75035321ce78f3219e45fee93d7f3f4ee9f5fc9e236c8a19",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2792,7 +2749,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2826,8 +2782,8 @@
     ]
   },
   "room+own-thread+skills+non-chief": {
-    "bytes": 59406,
-    "sha256": "d855644a44939896457eb6cb2d2484001d224aa1094d759a690be2c059a6ba62",
+    "bytes": 58957,
+    "sha256": "679f4990f380775ef73edd4328ae4bfb61fd83307eac355bd5aa5db5e38222dd",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2850,7 +2806,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2886,8 +2841,8 @@
     ]
   },
   "room+own-thread+skills+voice+non-chief": {
-    "bytes": 60147,
-    "sha256": "ffd0f940f5a05207fa6e0efe3f76e7609d23ca0e33ecb69ff97980cd38d6ba2c",
+    "bytes": 59698,
+    "sha256": "bab50b72cbc5a850c6eafc13bb32c185742f87f4c951cd752b2e61d4b2e7d303",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2911,7 +2866,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2947,8 +2901,8 @@
     ]
   },
   "room+own-thread+skills+shared+non-chief": {
-    "bytes": 61151,
-    "sha256": "feeb4a8c4e0987a244d457fc6d11f2c57c2cc846405a20d5271e9720843c110e",
+    "bytes": 60702,
+    "sha256": "c7100319aa72ed271b2df0b9b526efbad1e613d59f6dc31611f2c4439acec8cd",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2973,7 +2927,6 @@
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3009,8 +2962,8 @@
     ]
   },
   "room+own-thread+skills+shared+voice+non-chief": {
-    "bytes": 61892,
-    "sha256": "375d1ccb23229b6ea9af531d71a682bfcf19a280b04c54f4863270524c8f2236",
+    "bytes": 61443,
+    "sha256": "7402c6bb227a2a6009a9a713d7aacc096f6e14411e74179ef554b1d2ddac1927",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -3036,7 +2989,6 @@
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
-      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",

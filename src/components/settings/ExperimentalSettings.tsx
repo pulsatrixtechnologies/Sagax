@@ -7,7 +7,7 @@
 // (2026-10-15): one way to reach them, no second switch here.
 import { useEffect, useState } from "react";
 import { api, useStore, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, meetingNotetakerEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { LocaleKey } from "@/locales";
@@ -17,7 +17,7 @@ import { DescribedRow, HelpTip, SettingsGroup, Switch } from "../SettingsPrimiti
 import { DisclosurePill } from "./AppearanceSettings";
 import { setDevPodsEnabled, useDevPodPrefs } from "../dev-pods/prefs";
 
-type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel" | "dataWindow";
+type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel" | "dataWindow" | "meetingNotetaker";
 
 /** One feature: its label, and a grey "Not available on this server" line
  * with the reason on demand when the server cannot run it. */
@@ -93,6 +93,9 @@ export function ExperimentalSettings() {
   // organization server not updated yet) sends no dataWindow and refuses to
   // save one: the row stays, greyed.
   const dataWindowServed = typeof state.config?.features?.dataWindow === "boolean";
+  const meetingNotetaker = meetingNotetakerEnabled(state.config);
+  // A server without the notetaker sends no meetingNotetaker: the row stays, greyed.
+  const meetingNotetakerServed = typeof state.config?.features?.meetingNotetaker === "boolean";
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = typeof window !== "undefined" && window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
@@ -127,7 +130,7 @@ export function ExperimentalSettings() {
   const busy = saving !== null;
   // The dev context pods are this computer's own choice: no server round trip.
   const devPods = useDevPodPrefs().enabled;
-  const on = Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel) + Number(dataWindow) + Number(devPods);
+  const on = Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel) + Number(dataWindow) + Number(meetingNotetaker) + Number(devPods);
 
   return (
     <div data-settings-card="experimental.features" className="flex flex-col gap-2">
@@ -184,6 +187,17 @@ export function ExperimentalSettings() {
           reason={t("settings.experimental.dataWindowServerOld")}
           busy={busy}
           onToggle={() => void toggle("dataWindow", !dataWindow)}
+        />
+        <FeatureRow
+          feature="meetingNotetaker"
+          label={t("settings.experimental.meetingNotetaker")}
+          ariaKey="settings.experimental.meetingNotetakerAria"
+          checked={meetingNotetaker}
+          unavailable={!meetingNotetakerServed}
+          reason={t("settings.experimental.meetingNotetakerServerOld")}
+          note={t("settings.experimental.meetingNotetakerHint")}
+          busy={busy}
+          onToggle={() => void toggle("meetingNotetaker", !meetingNotetaker)}
         />
         <div data-experimental-feature="devPods">
           <DescribedRow label={t("settings.experimental.devPods")} rowId="devPods">

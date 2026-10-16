@@ -27,7 +27,10 @@ function fakeMeet(options: {
   say?: Record<number, string>;
   /** The chat cannot be read from this state read on. */
   chatFailsFrom?: number;
+  /** Chat lines a participant adds just before the chat read at this index. */
+  sayOnChatRead?: Record<number, string>;
 }) {
+  let chatReads = 0;
   const calls: string[] = [];
   const chat: string[] = ["In-call messages", "Messages can only be seen by people in the call"];
   let stateIndex = 0;
@@ -52,6 +55,8 @@ function fakeMeet(options: {
         return state === null ? null : { url: "https://meet.google.com/abc-defg-hij", ...state };
       }
       if (script === MEETING_CHAT_READ_SCRIPT) {
+        const read = chatReads++;
+        if (options.sayOnChatRead?.[read]) chat.push(options.sayOnChatRead[read]!);
         if (options.chatFailsFrom !== undefined && stateIndex > options.chatFailsFrom) return { ok: false };
         return { ok: true, lines: [...chat] };
       }
@@ -233,5 +238,21 @@ describe("MeetingSession", () => {
     const outcome = await session(meet.browser).instance.run();
     expect(outcome.status).toBe("failed");
     expect(meet.calls).not.toContain("start");
+  });
+
+  it("hears an objection made while it announces itself, before recording anything", async () => {
+    // Chat read 0 is before the announcement, read 1 right after it.
+    const meet = fakeMeet({ states: [{ leave: true }], sayOnChatRead: { 1: "je refuse" } });
+    const outcome = await session(meet.browser).instance.run();
+    expect(outcome).toMatchObject({ endReason: "participant", recorded: false });
+    expect(meet.calls).not.toContain("start");
+  });
+
+  it("hears an objection made while it announces itself again", async () => {
+    // Reads: 0 before, 1 baseline, 2 first poll, 3 right after the re-announcement.
+    const meet = fakeMeet({ states: [{ leave: true }, { leave: true }, { leave: true }], sayOnChatRead: { 3: "no thanks" } });
+    const outcome = await session(meet.browser, undefined, { announceEveryMs: 1 }).instance.run();
+    expect(outcome.endReason).toBe("participant");
+    expect(meet.calls).toContain("discard");
   });
 });

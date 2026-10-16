@@ -328,6 +328,10 @@ const featureConfigSchema = z.object({
    * opened from the chat header). Off unless explicitly enabled
    * (experimental). */
   dataWindow: z.boolean().optional(),
+  /** The meeting notetaker (join_meeting, server/meetings): a bot joins a
+   * Google Meet and takes notes. Off unless explicitly enabled
+   * (experimental: not yet validated on a real meeting). */
+  meetingNotetaker: z.boolean().optional(),
   /** Settings > General's Routines in the conversation row and Group turns
    * card. Off unless explicitly enabled (experimental): hidden only, their
    * saved values keep applying. */
@@ -778,7 +782,7 @@ export interface AppConfig {
    * seats shared by all conversations, with per-thread affinity (#1654). */
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number };
   /** Opt-in product experiments. Every flag defaults to disabled. */
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; dataWindow?: boolean; routineGroupSettings?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; dataWindow?: boolean; meetingNotetaker?: boolean; routineGroupSettings?: boolean; skillsLibrary?: boolean };
   /** First-run progress; see onboardingConfigSchema. */
   onboarding?: { completedAt?: string; version?: number; reelSeen?: boolean; hintsSeen?: string[]; launchMode?: "solo" | "server"; firstTurnAt?: string };
   /** Named browser sessions any bot can be pointed at. */
@@ -1084,6 +1088,13 @@ export function decisionModelEnabled(cfg: AppConfig): boolean {
 
 /** The Data window and the chat header's Data button. Off unless
  * explicitly enabled in Settings > Experimental features. */
+/** The meeting notetaker. Off by default (experimental); the server
+ * enforces it: no join_meeting tool, and the meeting routes, the internal
+ * route and the card's answer refuse while it is off. */
+export function meetingNotetakerEnabled(cfg: AppConfig): boolean {
+  return cfg.features?.meetingNotetaker === true;
+}
+
 export function dataWindowEnabled(cfg: AppConfig): boolean {
   return cfg.features?.dataWindow === true;
 }

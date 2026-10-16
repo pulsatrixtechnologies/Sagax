@@ -204,11 +204,58 @@ describe("meeting requests", () => {
     expect(t.card(over).meetingRequest.detail).toContain("already running on this server");
   });
 
-  it("marks the card when a participant made the bot leave", async () => {
-    const t = setup({}, { status: "ended", detail: "Left at a participant's request.", endReason: "participant", lines: [], recorded: true }); cleanups.push(t.cleanup);
+  it("keeps nothing when a participant made the bot leave: no tail, no summary, no transcript", async () => {
+    const t = setup(); cleanups.push(t.cleanup);
+    t.service.submit({ botId: "bot-1", threadId: "t1", url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    const requestId = t.card().requestId!;
+    await t.service.resolve({ threadId: "t1", requestId, behavior: "allow", principalId: "p" });
+    // The live card showed some lines before the objection.
+    t.card().meetingRequest.transcriptTail = ["We ship Friday."];
+    t.card().meetingRequest.segments = 1;
+    const lines = [{ at: 1, text: "We ship Friday." }];
+    t.finish({ status: "ended", detail: "Left at a participant's request.", endReason: "participant", lines, recorded: true });
+    await flush();
+    expect(t.card().meetingRequest).toMatchObject({ status: "ended", endReason: "participant", detail: "Left at a participant's request: nothing was kept." });
+    expect(t.card().meetingRequest.transcriptTail).toBeUndefined();
+    expect(t.card().meetingRequest.segments).toBeUndefined();
+    expect(t.summaries).toHaveLength(0);
+    expect(lines).toHaveLength(0);
+  });
+
+  it("clears the live tail from the card once the summary turn is asked for", async () => {
+    const t = setup(); cleanups.push(t.cleanup);
     t.service.submit({ botId: "bot-1", threadId: "t1", url: "https://meet.google.com/abc-defg-hij", reason: "" });
     await t.service.resolve({ threadId: "t1", requestId: t.card().requestId!, behavior: "allow", principalId: "p" });
+    t.card().meetingRequest.transcriptTail = ["We ship Friday."];
+    t.finish({ status: "ended", detail: "The meeting ended.", lines: [{ at: 1, text: "We ship Friday." }], recorded: true });
     await flush();
-    expect(t.card().meetingRequest).toMatchObject({ status: "ended", endReason: "participant" });
+    expect(t.summaries).toHaveLength(1);
+    expect(t.card().meetingRequest.transcriptTail).toBeUndefined();
+  });
+
+  it("releases the reservation when anything between it and the session throws", async () => {
+    let explode = true;
+    const t = setup({ session: (() => { if (explode) throw new Error("boom"); return { run: () => new Promise(() => {}), requestLeave: () => {} }; }) as never }); cleanups.push(t.cleanup);
+    t.service.submit({ botId: "bot-1", threadId: "t1", url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    await expect(t.service.resolve({ threadId: "t1", requestId: t.card().requestId!, behavior: "allow", principalId: "p" })).rejects.toThrow("boom");
+    explode = false;
+    t.service.submit({ botId: "bot-1", threadId: "t2", url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    expect(await t.service.resolve({ threadId: "t2", requestId: t.card("t2").requestId!, behavior: "allow", principalId: "p" })).toEqual({ claimed: true, outcome: "allowed-once" });
+  });
+
+  it("stages, approves and leaves nothing while the notetaker is off", async () => {
+    let on = true;
+    const t = setup({ enabled: () => on }); cleanups.push(t.cleanup);
+    t.service.submit({ botId: "bot-1", threadId: "t1", url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    const requestId = t.card().requestId!;
+    on = false;
+    expect(t.service.submit({ botId: "bot-1", threadId: "t2", url: "https://meet.google.com/abc-defg-hij", reason: "" })).toMatchObject({ code: "meetings_disabled" });
+    // A card staged while it was on cannot be approved once it is off.
+    expect(await t.service.resolve({ threadId: "t1", requestId, behavior: "allow", principalId: "p" })).toMatchObject({ claimed: true, status: 403, code: "meetings_disabled" });
+    expect(t.card().meetingRequest.status).toBe("pending");
+    expect(t.runs).toHaveLength(0);
+    expect(t.service.leave("t1", requestId)).toMatchObject({ ok: false, status: 403, code: "meetings_disabled" });
+    on = true;
+    expect(await t.service.resolve({ threadId: "t1", requestId, behavior: "allow", principalId: "p" })).toEqual({ claimed: true, outcome: "allowed-once" });
   });
 });

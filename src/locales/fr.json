@@ -8540,5 +8540,9 @@
   "browser.network.responseHeaders": "En-têtes de la réponse",
   "browser.network.noHeaders": "Aucun en-tête.",
   "browser.network.headersHidden": "Les en-têtes sont masqués. Cochez Afficher les en-têtes pour les voir, sans les identifiants.",
-  "meeting.card.leftByParticipant": "Quitté à la demande d'un participant"
+  "meeting.card.leftByParticipant": "Quitté à la demande d'un participant : rien n'a été conservé",
+  "settings.experimental.meetingNotetaker": "Preneur de notes en réunion (Google Meet)",
+  "settings.experimental.meetingNotetakerAria": "Preneur de notes en réunion (Google Meet)",
+  "settings.experimental.meetingNotetakerHint": "Les bots peuvent demander à rejoindre un Google Meet pour prendre des notes, après votre approbation à chaque réunion. Pas encore testé sur de vraies réunions.",
+  "settings.experimental.meetingNotetakerServerOld": "Ce serveur n'offre pas encore le preneur de notes en réunion."
 }
