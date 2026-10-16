@@ -57,7 +57,10 @@ async function check(feed) {
         const url = `${options.protocol}//${options.hostname}${options.path}`;
         if (url === `${RELEASES}.atom`) return ATOM;
         if (url === `${RELEASES}/latest`) return JSON.stringify({ tag_name: "pulsa-v0.5.4" });
-        if (url === `${RELEASES}/download/pulsa-v0.5.4/latest-mac.yml`) return feed;
+        // electron-updater names the channel file after the runner's platform
+        // (latest-mac.yml, latest-linux.yml, latest.yml): CI runs this on Linux.
+        const download = `${RELEASES}/download/pulsa-v0.5.4/`;
+        if (url.startsWith(download) && /^latest(-[a-z0-9-]+)?\.yml$/.test(url.slice(download.length))) return feed;
         throw new Error(`unexpected request ${url}`);
       },
     };
