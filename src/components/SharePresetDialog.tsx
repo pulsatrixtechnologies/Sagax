@@ -10,6 +10,7 @@ import { FIELD, FieldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, SwitchRow,
 import { ShareContentsGroups } from "./ShareTeamDialog";
 import type { NewBotDefaults } from "../../shared/new-bot-defaults";
 import type { PackageDocument, PackageSummary } from "../../shared/package-format";
+import { TemplateLinkSection } from "./TemplateLinkSection";
 
 /** POST /api/teams/export with kind "library": a preset file. */
 export interface PresetShareResponse {
@@ -211,6 +212,7 @@ export function SharePresetDialog({ onClose }: { onClose: () => void }) {
                   <textarea value={notes} maxLength={4000} rows={2} disabled={saving} onChange={(event) => setNotes(event.target.value)} className={FIELD} />
                 </FieldRow>
               </SettingsGroup>
+              <TemplateLinkSection name={name} description={description} picture={includePicture ? picture?.dataUrl : undefined} />
             </>
           )}
         </div>

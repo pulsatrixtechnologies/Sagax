@@ -3257,3 +3257,42 @@ build its own bubble. Gallery: `src/gallery/chat-widgets.html`
   card that failed or was set aside. Never while the turn runs, never on an
   empty conversation. It opens Connect apps with those apps first
   (`pluginsFocusApps`, section "needed").
+
+## Team Bot from a conversation, template links, away routines, emoji (2026-10-16)
+
+Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
+
+- Team Bot from a conversation (thread menu, `TeamBotFromThreadDialog.tsx`,
+  `server/routes/team-bot-from-thread.ts`, `server/team-bot-draft.ts`): the
+  draft comes from the conversation's own bot model through its one-shot
+  (`threadTitleGate`, the generated-title path), conversation as data, text
+  lines only, secrets scrubbed; a fallback draft from the title and lines
+  when the model cannot. Plugins and connectors of the source bot are ticked
+  boxes. Memory carry-over is an explicit opt-in, OFF by default:
+  `POST /api/bots/:id/team-bot-carry` answers 400 `memory_opt_in` without a
+  literal `includeMemory: true` and writes nothing; with it, only the ticked
+  notes plus `memory/conversation-carry-over.md` (compaction summary
+  helper), all listed in the dialog first. The bot is created by
+  `POST /api/bots` and published by the existing Team Bot path (Sharing,
+  Perspicax grants); the app adds no multi-person view.
+- Template public links (`server/template-links.ts`,
+  `server/routes/template-links.ts`, Share preset > Share the link): the
+  preset file frozen as a template, `GET /share/template/<id>.<hmac>` (card,
+  no script, strict CSP) and `.json` (import), answered before the auth gate.
+  HMAC-SHA256 under `template-links.key` (0600); revoking deletes the record
+  and the token then answers the same 404 as a made-up one. Starter notes
+  (`seed`) and connections never go into a link (`publicTemplateDocument`).
+  Import from a link: Templates > Import (`/api/template-links/import`;
+  another server's link through its JSON, public addresses only).
+- Only when I'm here (`server/routine-away.ts`, editor switch, off by
+  default): while the routine's person is away a recurring occurrence is
+  skipped and counted (`awaySkips`), a one-time routine waits and runs late
+  on return; on return the count is reported once (notification, the
+  Automations banner) and kept until `POST /api/routines/:id/away-seen`.
+  Away = organization presence (online is here) or, on a solo server, the
+  page's beat (`POST /api/routines/away/beat`, `src/lib/routine-away-beat.ts`).
+  No signal is "unknown" and the routine runs.
+- Emoji: the full catalogue (`src/lib/emoji-catalog.ts`, emojibase-data,
+  English and French words, lazy chunks) in reactions and the composer
+  (`EmojiCatalogGrid`, `ComposerEmojiButton`); stored in the bare form
+  (`canonicalEmoji`) so both pickers make one chip.

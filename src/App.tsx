@@ -54,6 +54,7 @@ import { ModelWindowHost } from "./components/ModelWindowHost";
 import { DataWindowViewSync } from "@/components/DataWindowButton";
 import { useExternalChatLinks } from "@/hooks/use-external-chat-links";
 import { ChatNotice } from "@/components/ChatErrorBanner";
+import { TeamBotFromThreadHost } from "@/components/TeamBotFromThreadDialog";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -477,6 +478,7 @@ function Shell() {
           palette on top when one of them is open underneath */}
       <CommandPalette onOpenChange={setPaletteOpen} onNewConversation={openCompose} />
       <StagedOrgImport />
+      <TeamBotFromThreadHost />
       <RetroAssistantHost />
       <AchievementToaster />
       <CallEngineHost />

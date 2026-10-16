@@ -114,6 +114,7 @@ import {
 import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerNoticeBand, WorkplaceNotice } from "./WorkplaceNotice";
+import { ComposerEmojiButton } from "./ComposerEmojiButton";
 import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, type PlusMenuItem } from "./ComposerControls";
 import { useComposerDictation } from "./useComposerDictation";
 import { dictationEngine } from "@/lib/composer-dictation";
@@ -1485,6 +1486,9 @@ export function Composer({
           >
             <Square size={14} className="fill-current" />
           </button>
+        )}
+        {!locked && !dictating && (
+          <ComposerEmojiButton inputRef={inputRef} text={text} onInsert={(next, at) => { editText(next); setCaret(at); }} />
         )}
         {!locked && (
           <ComposerMicButton

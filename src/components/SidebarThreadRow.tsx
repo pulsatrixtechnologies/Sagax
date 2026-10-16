@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n";
 import { nextRename } from "@/lib/rename";
 import { threadRefUrl } from "@/lib/thread-refs";
 import { copyText } from "@/lib/copy-text";
+import { openTeamBotFromThread, teamBotSourceAllowed } from "@/lib/teambot-from-thread";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ThreadMenu, nextSixPm, tomorrowNineAm } from "./ThreadMenu";
 import { THREAD_DRAG_TYPE } from "@/lib/folder-order";
@@ -350,6 +351,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
       ...(onRegenerateTitle ? { onRegenerateTitle: (onSettled: (ok: boolean) => void) => onRegenerateTitle(task, onSettled) } : {}),
       ...(onLink ? { onRemoveLink: () => onLink(task, null) } : {}),
       ...(onRefreshPermissions ? { onRefreshPermissions: () => onRefreshPermissions(task) } : {}),
+      ...(teamBotSourceAllowed(ownerId) ? { onCreateTeamBot: () => openTeamBotFromThread({ botId: ownerId, threadId: task.threadId, title: task.title }) } : {}),
     }} />
     <ConfirmDialog open={deleting} title={t("task.deleteConfirm")} body={t("task.deleteBody", { title: task.title })} confirmLabel={t("task.deleteAria")}
       onCancel={() => setDeleting(false)} onConfirm={() => { if (!isWorking(task)) onDelete(task); setDeleting(false); }} returnFocusRef={actionRef} />

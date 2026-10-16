@@ -14,6 +14,7 @@ import { rememberOpenThreadHash } from "./lib/open-thread-hash";
 import { syncUserPreferences } from "./lib/user-preferences-sync";
 import { cacheSignInProfileFromSession } from "./lib/sign-in-profile-cache";
 import { startPresence } from "./lib/presence";
+import { startRoutineAwayBeat } from "./lib/routine-away-beat";
 import { installAnimationPause } from "./lib/animation-pause";
 import { syncDesktopAppearance } from "./lib/desktop-appearance-sync";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
@@ -102,6 +103,9 @@ async function chooseRoot(): Promise<React.ReactNode> {
   // phone (Same as my computer) and wears a look the phone chose
   // (src/lib/desktop-appearance-sync.ts). Elsewhere the route answers 404.
   if (session.kind === "loopback" && !dataWindow) void syncDesktopAppearance();
+  // "Only when I'm here" routines on a solo server (src/lib/routine-away-beat.ts;
+  // an organization server answers 404 and its presence is the signal).
+  if ((session.kind === "loopback" || session.kind === "session") && !dataWindow) void startRoutineAwayBeat();
   if (dataWindow) {
     const { DataWindow } = await import("./components/data/DataWindow");
     return <DataWindow />;
