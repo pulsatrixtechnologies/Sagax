@@ -1,7 +1,8 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { ArrowUp, Clock, Square, Target, Users, Wand2, X } from "lucide-react";
-import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
+import { useStoreDispatch, useStoreGetter, useStoreSelector } from "@/state/store-selector";
+import { api, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { MENTION_ALL, roomAllowsMentionAll, roomMentionPeople, type RoomMentionPerson } from "@/lib/person-mentions";
@@ -145,6 +146,9 @@ interface ComposerDraftSnapshot extends ComposerSendSnapshot {
 
 /** Renders the editable message composer and its pending attachments. */
 /** Asked by the desktop mascot's balloon (FloatingBots.tsx): `detail.botId`'s composer opens its file picker. */
+/** One empty queue, so a thread with nothing queued keeps the same array. */
+const NO_QUEUED: readonly never[] = [];
+
 export const COMPOSER_ATTACH_EVENT = "omb:composer-attach";
 
 export function Composer({
@@ -175,7 +179,13 @@ export function Composer({
 }) {
   const bot = profile ? currentTaskBot(profile) : undefined;
   const locked = Boolean(bot?.awaitingThreadSnapshot);
-  const { state, dispatch } = useStore();
+  // Slices of the store, so a dispatch elsewhere (an unread mark, another
+  // bot's frame) does not render the composer while someone types.
+  const dispatch = useStoreDispatch();
+  const getState = useStoreGetter();
+  const storeBots = useStoreSelector((current) => current.bots);
+  const config = useStoreSelector((current) => current.config);
+  const instances = useStoreSelector((current) => current.instances);
   const ownerOrAdmin = useOwnerOrAdmin();
   const { threads, currentBotId } = useThreadRefs();
   const { capabilities } = useDesktopCapabilities();
@@ -200,7 +210,7 @@ export function Composer({
     ? members?.find((member) => member.id === groupBusyBotId)?.modelSelection.instanceId
     : bot?.modelSelection.instanceId;
   const canSteer =
-    state.instances.find((i) => i.instanceId === steerInstanceId)?.capabilities?.queueing === true;
+    instances.find((i) => i.instanceId === steerInstanceId)?.capabilities?.queueing === true;
   // The conversation's own place, when pinned; the chip reads it next to the bot default.
   const composerTask = profile?.tasks?.find((task) => task.threadId === threadId);
   // the VISIBLE branch only — an approval left on a branch you edited away
@@ -357,7 +367,7 @@ export function Composer({
   const botSupportsImages = (candidate?: Bot) =>
     Boolean(
       candidate &&
-        state.instances.find((i) => i.instanceId === candidate.modelSelection.instanceId)?.capabilities?.images,
+        instances.find((i) => i.instanceId === candidate.modelSelection.instanceId)?.capabilities?.images,
     );
   const imageTargetsSupport = (message: string, mode: "chat" | "goal") => {
     if (!group) return botSupportsImages(bot);
@@ -382,7 +392,7 @@ export function Composer({
   // read the first time "/" is typed there (src/lib/harness-commands.ts).
   // On an organization server the list is the signed-in person's own, so the
   // cache is theirs too.
-  const commandViewerId = state.config?.viewer?.principalId ?? null;
+  const commandViewerId = config?.viewer?.principalId ?? null;
   const engineCommands = useHarnessCommands(api, !group ? bot?.id : undefined, threadId || undefined, Boolean(slash) && !group, commandViewerId);
   // In a group: the commands of the bot(s) the command would reach, per bot.
   const groupSlashOpen = Boolean(groupSlash);
@@ -396,12 +406,12 @@ export function Composer({
   const supportsAgents = (candidate?: Bot) =>
     Boolean(
       candidate &&
-        state.instances.find(
+        instances.find(
           (instance) => instance.instanceId === candidate.modelSelection.instanceId,
         )?.capabilities?.agentsMcp,
     );
   // /learn: also the + menu's "Teach a task"
-  const learnAvailable = skillAuthoringEnabled(state.config) &&
+  const learnAvailable = skillAuthoringEnabled(config) &&
     (group ? (members ?? []).some(supportsAgents) : supportsAgents(bot));
   // The room's latest goal run, its card in the transcript: what /goal
   // status, resume and stop act on.
@@ -456,7 +466,7 @@ export function Composer({
         mention: target.mention,
       })), slash.query)
       : composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId, learnAvailable, goalStatus]);
+  }, [slash, dismissedSlashAt, group, members, bot, config, instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId, learnAvailable, goalStatus]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot. In a room, tag a
@@ -465,8 +475,8 @@ export function Composer({
   const mention = mentionQueryAt(text, caret);
   const orgPeople = useOrgPeople();
   const roomPeople = useMemo(
-    () => (group ? roomMentionPeople(group, orgPeople, viewerActorId(state.config)) : []),
-    [group, orgPeople, state.config],
+    () => (group ? roomMentionPeople(group, orgPeople, viewerActorId(config)) : []),
+    [group, orgPeople, config],
   );
   const mentionAll = group ? roomAllowsMentionAll(group) && roomPeople.length > 0 : false;
   const candidates = useMemo(() => {
@@ -478,11 +488,11 @@ export function Composer({
           ...(members ?? []).map((member) => ({ id: member.id, name: member.name, bot: member })),
           ...roomPeople.map((person) => ({ id: `person:${person.id}`, name: person.name, person })),
         ]
-      : state.bots
+      : storeBots
           .filter((member) => member.id !== bot?.id && !member.hidden)
           .map((member) => ({ id: member.id, name: member.name, bot: member }));
     return mentionChoicesForQuery(pool, mention.query);
-  }, [mention, dismissedAt, state.bots, bot?.id, group, members, roomPeople, mentionAll]);
+  }, [mention, dismissedAt, storeBots, bot?.id, group, members, roomPeople, mentionAll]);
   // @everyone reaches the room's visible bots. Hidden members stay out of
   // the count so the line matches who the server will actually answer.
   const mentionEveryoneCount = (members ?? []).filter((member) => !member.hidden).length;
@@ -590,8 +600,8 @@ export function Composer({
   // Busy sends are owned by the harness immediately for both channels and
   // 1:1 chats. Keeping a channel follow-up in this component used to lose its
   // auto-send intent whenever navigation unmounted the composer.
-  const pendingCount = (state.pendingQueued[threadId] ?? []).length;
-  const queuedMessages = state.pendingQueued[threadId] ?? [];
+  const queuedMessages = useStoreSelector((current) => current.pendingQueued[threadId]) ?? NO_QUEUED;
+  const pendingCount = queuedMessages.length;
   const canSteerQueued = composerCanSteerQueuedMessages(
     busy,
     locked,
@@ -700,13 +710,13 @@ export function Composer({
   // Approval mode belongs to one bot; a room has several, each with its own.
   const modeBot = group ? undefined : bot;
   const approvalEngine = modeBot
-    ? state.instances.find((instance) => instance.instanceId === modeBot.modelSelection.instanceId)
+    ? instances.find((instance) => instance.instanceId === modeBot.modelSelection.instanceId)
     : undefined;
   const trustedThreadAccess = Boolean(!remoteClient && window.ogb?.approvals && capabilities.host.packaged);
   // Organization server: the bot's owner grants Full over HTTP while the
   // organization allows it (src/lib/full-access.ts, server/org-full-access.ts).
   const perspicaxOrg = usePerspicaxOrg();
-  const viewerId = state.config?.viewer?.principalId ?? null;
+  const viewerId = config?.viewer?.principalId ?? null;
   const orgFullAccess = orgFullAccessFor(perspicaxOrg, modeBot, viewerId);
   const fullAccessAvailable = trustedThreadAccess || orgFullAccess === "allowed";
   const uploadImage = useCallback(async (file: File): Promise<Attachment | null> => {
@@ -871,7 +881,7 @@ export function Composer({
     // The viewed Data result (in this bot's Data window) travels as its own
     // field of the send, never in the words: only for this bot's own thread,
     // and never ahead of an opening command the server parses first.
-    const dataContext = dataContextFor(body, dataWindowEnabled(state.config) ? state.dataView : null, !group && bot ? { botId: bot.id, threadId } : undefined);
+    const dataContext = dataContextFor(body, dataWindowEnabled(config) ? getState().dataView : null, !group && bot ? { botId: bot.id, threadId } : undefined);
     const sentDraft: ComposerDraftSnapshot = {
       draftId,
       revision: draftRevision(draftId),
@@ -1361,7 +1371,7 @@ export function Composer({
           <MentionTextarea
           wrapperClassName="@max-[30rem]/composer:order-first @max-[30rem]/composer:basis-full"
           inputRef={inputRef}
-          peers={group ? members ?? [] : state.bots.filter((member) => member.id !== bot?.id)}
+          peers={group ? members ?? [] : storeBots.filter((member) => member.id !== bot?.id)}
           everyone={Boolean(group && !group.dm)}
           // the message is composed in the writer's language, not the UI's
           dir="auto"
@@ -1484,7 +1494,7 @@ export function Composer({
             busy,
             groupName: group?.name,
             goalMode: channelMode === "goal",
-            groupHint: () => groupComposerHint(group!, members ?? [], { jevOn: jevRoomRoutingOn(state.config) }),
+            groupHint: () => groupComposerHint(group!, members ?? [], { jevOn: jevRoomRoutingOn(config) }),
             botName: bot?.name ?? "",
           })}
           aria-label={t("composer.placeholder.bot", { name: group ? group.name : (bot?.name ?? "") })}

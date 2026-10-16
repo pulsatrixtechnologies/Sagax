@@ -78,6 +78,7 @@ import { receiveAchievementsFrame } from "@/lib/achievements";
 import { announceServerPreferences } from "@/lib/user-preferences-sync";
 import { applyPersonLabel } from "@/lib/person-labels";
 import { announcePersonAvatar, withViewerAvatar } from "@/lib/person-avatars";
+import { StoreSourceContext, usePublishedStoreSource } from "./store-source";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -5296,10 +5297,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (host.__sagaxDispatch === dispatch) delete host.__sagaxDispatch;
     };
   }, [dispatch]);
+  // Selector reads (store-selector.ts): the same state, for components that
+  // render only when the slice they read changes.
+  const source = usePublishedStoreSource(state, dispatch);
   return (
-    <StoreContext.Provider value={value}>
-      <StreamContext.Provider value={stream}>{children}</StreamContext.Provider>
-    </StoreContext.Provider>
+    <StoreSourceContext.Provider value={source}>
+      <StoreContext.Provider value={value}>
+        <StreamContext.Provider value={stream}>{children}</StreamContext.Provider>
+      </StoreContext.Provider>
+    </StoreSourceContext.Provider>
   );
 }
 
@@ -5311,7 +5317,13 @@ export function useStore() {
 
 /** Scoped state for an unsaved editor. The parent workspace remains intact. */
 export function BotEditorStore({ value, children }: { value: ReturnType<typeof useStore>; children: ReactNode }) {
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+  // Selector reads inside the editor see its scoped state, not the workspace's.
+  const source = usePublishedStoreSource(value.state, value.dispatch);
+  return (
+    <StoreSourceContext.Provider value={source}>
+      <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+    </StoreSourceContext.Provider>
+  );
 }
 
 // Building a formatter costs far more than formatting with one, and every

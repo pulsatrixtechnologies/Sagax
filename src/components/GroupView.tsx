@@ -59,6 +59,7 @@ import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
 import { SpeakButton } from "./SpeakButton";
 import { useSpeech } from "@/lib/tts/useSpeech";
 import { useActiveLocale, useLocalSystemVoice, useRemoteClient } from "@/lib/render-reads";
+import { useStoreDispatch, useStoreSelector } from "@/state/store-selector";
 import { CancelledTurnRow } from "./CancelledTurnRow";
 import { isCancelledTranscriptRow } from "../../shared/client-cancel";
 import { roomRetryRequest } from "@/lib/room-retry";
@@ -145,21 +146,24 @@ type RoomItem =
  * that member ran on. */
 export function RoomToolChip({ message, roomId }: { message: Message; roomId?: string }) {
   "use memo";
-  const { state, dispatch } = useStore();
+  const dispatch = useStoreDispatch();
+  const storeBots = useStoreSelector((current) => current.bots);
+  const instances = useStoreSelector((current) => current.instances);
+  const storeGroups = useStoreSelector((current) => current.groups);
   const tool = message.tool;
   if (!tool) return null;
   if (message.threadRef) return <ThreadChip message={message} />;
   if (failedTurnCause(tool.name) !== null) {
-    return <FailedTurnRow tool={tool} engine={botEngine(state.bots.find((b) => b.id === message.from?.botId), state.instances)} botId={message.from?.botId} />;
+    return <FailedTurnRow tool={tool} engine={botEngine(storeBots.find((b) => b.id === message.from?.botId), instances)} botId={message.from?.botId} />;
   }
   const comm = message.comm;
-  const nameOf = botNames(state.bots);
+  const nameOf = botNames(storeBots);
   if (!comm) return <ToolActivity tool={tool} nameOf={nameOf} />;
-  const withBot = state.bots.find((b) => b.id === comm.withBotId);
+  const withBot = storeBots.find((b) => b.id === comm.withBotId);
   const avatar = <BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={14} animated={false} />;
   // A bot-to-bot DM is read in this column. Selecting it would leave the
   // room, and a chip about this very room has nowhere to go.
-  const goes = comm.groupId !== roomId && !commIsBotDm(comm, state.groups ?? []);
+  const goes = comm.groupId !== roomId && !commIsBotDm(comm, storeGroups ?? []);
   return (
     <div className="flex justify-start">
       <StepRow
@@ -169,7 +173,7 @@ export function RoomToolChip({ message, roomId }: { message: Message; roomId?: s
         title={goes ? t("room.openBot", { name: comm.withName }) : undefined}
         onActivate={goes ? () => {
           dispatch({ type: "select", id: comm.groupId });
-          const destination = state.groups.find(g => g.id === comm.groupId);
+          const destination = storeGroups.find(g => g.id === comm.groupId);
           if (comm.threadId && destination?.tasks?.some(task => task.threadId === comm.threadId)) {
             dispatch({ type: "switchGroupTask", groupId: comm.groupId, threadId: comm.threadId });
           }
@@ -246,7 +250,9 @@ function RoomTextMessage({
   reactionSelf: readonly string[];
 }) {
   "use memo";
-  const { state, dispatch } = useStore();
+  const dispatch = useStoreDispatch();
+  const focus = useStoreSelector((current) => current.focusMessage);
+  const tts = useStoreSelector((current) => current.config?.tts);
   const localVoice = useLocalSystemVoice();
   const user = m.role === "user";
   // Emoji reactions (src/components/Reactions.tsx): the smiley of the hover
@@ -264,7 +270,6 @@ function RoomTextMessage({
   const [viewRaw, setViewRaw] = useState(false);
   const speech = useSpeech();
   const speaking = speech.messageId === m.id && speech.status !== "idle";
-  const focus = state.focusMessage;
   const focusedSearch = focus?.messageId === m.id && Boolean(focus.matchText) && focus.threadId === group.threadId;
   const collapsible = user && !expanded && (display.length > USER_COLLAPSE_CHARS || display.split("\n").length > USER_COLLAPSE_LINES);
   useEffect(() => {
@@ -278,7 +283,7 @@ function RoomTextMessage({
     botId: speakerBot?.id,
     messageId: m.id,
     voiceId: speakerBot?.voice,
-    tts: state.config?.tts,
+    tts: tts,
     localVoice,
     canSpeak: true,
     viewRaw,
@@ -412,7 +417,7 @@ function RoomTextMessage({
               <>
                 {botText && viewRaw && <RawToggleAction active onToggle={() => setViewRaw(false)} className={messageActionClass} />}
                 {botText && speaking && (
-                  <SpeakButton text={botText} botId={speakerBot?.id} messageId={m.id} voiceId={speakerBot?.voice} tts={state.config?.tts} localVoice={localVoice} className={cn(messageActionClass, "text-accent")} />
+                  <SpeakButton text={botText} botId={speakerBot?.id} messageId={m.id} voiceId={speakerBot?.voice} tts={tts} localVoice={localVoice} className={cn(messageActionClass, "text-accent")} />
                 )}
               </>
             }

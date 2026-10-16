@@ -145,6 +145,7 @@ import { webhookMessageView } from "@/lib/webhook-message";
 import { splitTranscriptAttachments } from "@/lib/composer-attachments";
 import { useComposerDockPad } from "@/lib/composer-dock";
 import { useTranscriptViewport } from "@/hooks/use-transcript-viewport";
+import { useStoreDispatch, useStoreGetter, useStoreSelector } from "@/state/store-selector";
 import { useUnreadDivider } from "@/hooks/use-unread-divider";
 import { NewMessagesDivider } from "./NewMessagesDivider";
 import { unreadMessageIds } from "@/lib/unread-divider";
@@ -378,11 +379,12 @@ function PlaceFailedRow({ place, botId, threadId, onRetry }: {
   onRetry?: () => void;
 }) {
   "use memo";
-  const { state, dispatch } = useStore();
+  const dispatch = useStoreDispatch();
+  const config = useStoreSelector((current) => current.config);
+  const computer = useStoreSelector((current) => current.bots.find((candidate) => candidate.id === botId)?.computer);
   const { capabilities } = useDesktopCapabilities();
-  const seat = usePlaceSeat(state.config, capabilities.host.platform);
-  const bot = state.bots.find((candidate) => candidate.id === botId);
-  const view = placeRowViewFor(place, seat, worksOnSimpleLabel(bot?.computer, capabilities.host.platform));
+  const seat = usePlaceSeat(config, capabilities.host.platform);
+  const view = placeRowViewFor(place, seat, worksOnSimpleLabel(computer, capabilities.host.platform));
   const id = view.action?.id;
   const onClick = !id ? undefined
     : id === "try-again" ? onRetry
@@ -883,20 +885,21 @@ const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { m
 });
 
 /** A routine run's receipt. It opens the run's own thread, so it follows
- * the whole store to know whether that thread is still there. */
+ * the bots to know whether that thread is still there. */
 function RoutineRunRow({ message, botId }: { message: Message; botId: string }) {
   "use memo";
-  const { state, dispatch } = useStore();
+  const dispatch = useStoreDispatch();
+  const getState = useStoreGetter();
   const showThreads = useShowThreads();
   const executionThreadId = message.routineRun?.executionThreadId;
-  const canOpen = executionThreadId && state.bots.some((candidate) =>
-    candidate.threadId === executionThreadId || hasRoutineExecutionTask(candidate.tasks, executionThreadId)
-  );
+  const canOpen = useStoreSelector((current) => Boolean(executionThreadId) && current.bots.some((candidate) =>
+    candidate.threadId === executionThreadId || hasRoutineExecutionTask(candidate.tasks, executionThreadId!)
+  ));
   return (
     <RoutineRunCard
       message={message}
       onOpen={canOpen && executionThreadId
-        ? () => openNotificationTarget(dispatch, { botId, threadId: executionThreadId }, state, showThreads)
+        ? () => openNotificationTarget(dispatch, { botId, threadId: executionThreadId }, getState(), showThreads)
         : undefined}
     />
   );
@@ -904,7 +907,7 @@ function RoutineRunRow({ message, botId }: { message: Message; botId: string }) 
 
 /** A conversation with nothing in it yet: its name and a prompt. */
 function EmptyChat({ bot }: { bot: Bot }) {
-  const { dispatch } = useStore();
+  const dispatch = useStoreDispatch();
   const advanced = useAdvancedMode();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
@@ -986,12 +989,18 @@ const MessagesList = memo(function MessagesList({
 }) {
   "use memo";
   // Sagax's extras below (access cards, bot-to-bot exchange chips, who is
-  // viewing) read the store; the rows inside stay memoized on ChatRows.
-  const { state } = useStore();
+  // viewing) read slices of the store, so an unrelated dispatch (an unread
+  // mark, a notice) leaves the list alone; the rows inside stay memoized on
+  // ChatRows.
+  const storeBots = useStoreSelector((current) => current.bots);
+  const storeGroups = useStoreSelector((current) => current.groups);
+  const config = useStoreSelector((current) => current.config);
+  // read when a chip is clicked, so a store event does not render the list
+  const getState = useStoreGetter();
   const { botId, threadId, botName, busy, hasMore, bots, focus, showToolCalls, locale, dispatch } = useChatRows();
   const showThreads = useShowThreads();
   const selfColor = bots.find((candidate) => candidate.id === botId)?.color;
-  const owners = useMemo(() => ({ bots: state.bots, groups: state.groups }), [state.bots, state.groups]);
+  const owners = useMemo(() => ({ bots: storeBots, groups: storeGroups }), [storeBots, storeGroups]);
   // Bot-to-bot lines become one chip per run first, so a tool fold never
   // swallows them. Person lines and replies to the person stay in the groups.
   // The locale refreshes the turn labels when the language changes.
@@ -1080,18 +1089,18 @@ const MessagesList = memo(function MessagesList({
                 <GotoGroupChip
                   group={item}
                   bots={bots}
-                  groups={state.groups}
+                  groups={storeGroups}
                   showToolCalls={showToolCalls}
                   focusedId={focusedId}
                   onSelect={(target: GotoTarget) => {
                     if (target.kind === "thread") {
-                      return openThread(dispatch, target.message.threadRef!, state, showThreads);
+                      return openThread(dispatch, target.message.threadRef!, getState(), showThreads);
                     }
                     // Same rule as the lone line: another bot would leave this 1:1.
                     if (!exchangeJumpStays(target.run.party.id, botId)) return false;
                     const bot = bots.find((candidate) => candidate.id === target.run.party.id);
                     if (!bot) return false;
-                    return openThread(dispatch, { botId: bot.id, threadId: bot.threadId }, state, showThreads);
+                    return openThread(dispatch, { botId: bot.id, threadId: bot.threadId }, getState(), showThreads);
                   }}
                 />
               </div>
@@ -1113,7 +1122,7 @@ const MessagesList = memo(function MessagesList({
                   if (!exchangeJumpStays(item.run.party.id, botId)) return false;
                   const target = bots.find((candidate) => candidate.id === item.run.party.id);
                   if (!target) return false;
-                  return openThread(dispatch, { botId: target.id, threadId: target.threadId }, state, showThreads);
+                  return openThread(dispatch, { botId: target.id, threadId: target.threadId }, getState(), showThreads);
                 }}
               />
             </div>
@@ -1197,7 +1206,7 @@ const MessagesList = memo(function MessagesList({
               return m.access ? (
                 <AccessCard
                   access={m.access}
-                  viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
+                  viewer={{ principalId: config?.viewer?.principalId ?? null, admin: config?.viewer?.role === "admin" || config?.viewer?.role === "owner" }}
                   onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
                 />
               ) : null;
@@ -1252,7 +1261,7 @@ const MessagesList = memo(function MessagesList({
             case "digest":
               // the summary of the turn's tool chips: shown under the same
               // server setting. iPhone/iPad hide the chips, not this receipt.
-              return showToolCallsEnabled(state.config) ? <DigestChip message={m} /> : null;
+              return showToolCallsEnabled(config) ? <DigestChip message={m} /> : null;
             case "compaction":
               // Sagax's own folds are invisible (older threads still hold
               // them as rows); only a fold the person asked for shows.
