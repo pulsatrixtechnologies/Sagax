@@ -3195,6 +3195,10 @@ function createWindow({ deferNavigation = false } = {}) {
     ...windowChromeOptions(process.platform),
     webPreferences: {
       contextIsolation: true,
+      // Cache V8's compiled code from the very first load instead of after
+      // a script has run hot a few times: the renderer bundle starts faster
+      // from the second launch on (Grok Bot does the same).
+      v8CacheOptions: "bypassHeatCheck",
       preload: path.join(__dirname, "preload.cjs"),
       // The preload exposes the full bridge only to this origin (see preload.cjs).
       // Companion client mode still serves the bundled UI from its own
