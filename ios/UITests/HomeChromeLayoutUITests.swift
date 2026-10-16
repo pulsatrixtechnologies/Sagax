@@ -151,6 +151,22 @@ final class HomeChromeLayoutUITests: XCTestCase {
     /// The regression JC saw: "Search and + at top" carried the pill to the
     /// header. Search and + go up; the pill stays down.
     @MainActor
+    func testSearchAndPlusAtTopAddNoSpaceAboveThePinnedBots() {
+        // search and + share the account row: the pinned bots start where
+        // they do with the chrome at the bottom (no empty band, 0.5.9)
+        let pinnedTop: ([String]) -> CGFloat = { extra in
+            let app = self.launch(extra)
+            let pinned = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "pinned.")).firstMatch
+            XCTAssertTrue(pinned.waitForExistence(timeout: 10), "a pinned bot")
+            let y = pinned.frame.minY
+            app.terminate()
+            return y
+        }
+        let atBottom = pinnedTop([])
+        let atTop = pinnedTop(["-companion.prefs.rosterChromeAtTop", "YES"])
+        XCTAssertEqual(atTop, atBottom, accuracy: 2, "same top for the pinned bots")
+    }
+
     func testThePillStaysAtTheBottomWithSearchAndPlusAtTop() {
         let app = launch(["-companion.prefs.rosterChromeAtTop", "YES"])
         let reference = assertPillAtBottom(app, "chrome at top")

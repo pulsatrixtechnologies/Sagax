@@ -1345,12 +1345,6 @@ extension ChatListView {
     // The home's sub-trees are type-erased: since the parity packages, their
     // concrete SwiftUI type nests deep enough that resolving it at launch
     // overflowed the main thread's stack on iPad (TestFlight build 6).
-    /// Extra scroll clearance when search and + sit under the account row.
-    private var standardTopChromeInset: CGFloat {
-        guard rosterChromeAtTop else { return 0 }
-        return Theme.Metric.glassLarge + 8
-    }
-
     /// A home overlay (Settings, Search, New bot, New group, the + menu)
     /// covers the home: the bottom chrome steps aside under it.
     private var homeOverlayOpen: Bool {
@@ -1358,7 +1352,7 @@ extension ChatListView {
     }
 
     private var standardHome: some View {
-        let headerClearance = HomeMetrics.headerTop + HomeMetrics.headerHeight + 8 + standardTopChromeInset
+        let headerClearance = HomeMetrics.headerTop + HomeMetrics.headerHeight + 8
         // One structure whatever the switches say: the bottom bar is always
         // the scroll's bottom safe-area inset, never a row of the header, so
         // the Updates pill cannot migrate to the top or float mid-screen
