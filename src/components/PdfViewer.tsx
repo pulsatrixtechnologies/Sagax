@@ -1,18 +1,19 @@
 // A PDF a bot sends, read in the app: pages drawn by pdf.js (loaded only
 // when a PDF opens, its worker bundled with the app, nothing fetched from
 // the network), page navigation, zoom (steps, fit width), a text search that
-// jumps between pages with matches, and Save a copy to open it in another
-// reader. The bytes come through the exact-message file route like every
+// jumps between pages with matches, Save a copy, and (desktop app) Open in
+// the default app. pdf.js data files (CMaps, standard fonts, wasm decoders)
+// are served by the app too (pdfjsAssetOptions), so every PDF renders offline. The bytes come through the exact-message file route like every
 // other attachment, bounded by FILE_MAX_BYTES and checked for the PDF
 // signature before pdf.js sees them.
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, LoaderCircle, MoveHorizontal, Search, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, ExternalLink, LoaderCircle, MoveHorizontal, Search, ZoomIn, ZoomOut } from "lucide-react";
 
 import { FILE_MAX_BYTES } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { clampPdfZoom, isPdfBytes, pdfFitWidthScale, pdfSearchPages, pdfZoomStep, readBoundedBytes } from "@/lib/pdf-view";
+import { clampPdfZoom, isPdfBytes, pdfFitWidthScale, pdfjsAssetOptions, pdfSearchPages, pdfZoomStep, readBoundedBytes } from "@/lib/pdf-view";
 import { requestMessageFile, saveFailureText, useLocalFileSave, type MessageAttachmentContext } from "./AttachmentPreview";
 import { ViewerDialog } from "./ViewerDialog";
 
@@ -34,6 +35,12 @@ export function loadPdfjs(): Promise<Pdfjs> {
       throw error;
     });
   return pdfjsLoad;
+}
+
+/** The app's root URL (Vite's base), not the current route: a chat page's
+ * own URL is /chat/..., and the data files live under the root's assets/. */
+function appRoot(): string {
+  return new URL(import.meta.env.BASE_URL || "/", document.baseURI).href;
 }
 
 type LoadState =
@@ -61,6 +68,7 @@ export function PdfViewer({ path, name, message, onClose, returnFocus }: PdfView
   const scroller = useRef<HTMLDivElement>(null);
   const pageTexts = useRef<Map<number, string>>(new Map());
   const save = useLocalFileSave(path, name, message);
+  const openExternally = useOpenInDefaultApp(path, name, message);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -76,7 +84,7 @@ export function PdfViewer({ path, name, message, onClose, returnFocus }: PdfView
         const pdfjs = await loadPdfjs();
         controller.signal.throwIfAborted();
         // No XFA forms, no scripting: the page pixels and their text only.
-        const task = pdfjs.getDocument({ data: bytes, enableXfa: false, stopAtErrors: false });
+        const task = pdfjs.getDocument({ data: bytes, enableXfa: false, stopAtErrors: false, ...pdfjsAssetOptions(pdfjs.version, appRoot()) });
         destroyTask = () => void task.destroy();
         const doc = await task.promise;
         loaded = doc;
@@ -216,6 +224,13 @@ export function PdfViewer({ path, name, message, onClose, returnFocus }: PdfView
           <span className="mx-1 h-5 w-px bg-hairline/60" aria-hidden="true" />
         </>
       )}
+      {openExternally.available && (
+        <button type="button" className="table-action gap-1 px-1.5 text-xs" disabled={openExternally.busy} onClick={() => void openExternally.open()}
+          aria-label={t("pdf.openDefaultAria", { name })} title={t("pdf.openDefaultHint")}>
+          {openExternally.busy ? <LoaderCircle size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+          <span className="hidden md:inline">{t("pdf.openDefault")}</span>
+        </button>
+      )}
       <button type="button" className="table-action gap-1 px-1.5 text-xs" disabled={save.state === "saving"} onClick={() => void save.save()}
         aria-label={t("pdf.saveCopy", { name })} title={save.state === "saved" && save.savedTo ? t("attach.savedTo", { path: save.savedTo }) : t("pdf.saveCopyHint")}>
         {save.state === "saving" ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
@@ -226,6 +241,7 @@ export function PdfViewer({ path, name, message, onClose, returnFocus }: PdfView
 
   return (
     <ViewerDialog title={name} onClose={onClose} returnFocus={returnFocus} actions={actions} bodyClassName="flex flex-col bg-inset">
+      {openExternally.error && <p role="alert" className="shrink-0 border-b border-hairline/40 px-4 py-2 text-xs text-danger">{openExternally.error}</p>}
       {save.state === "failed" && <p role="alert" className="shrink-0 border-b border-hairline/40 px-4 py-2 text-xs text-danger">{saveFailureText(save)}</p>}
       {state.kind === "loading" && (
         <div role="status" className="flex flex-1 items-center justify-center gap-2 text-sm text-ink-secondary"><LoaderCircle size={16} className="animate-spin" />{t("pdf.loading")}</div>
@@ -249,6 +265,40 @@ export function PdfViewer({ path, name, message, onClose, returnFocus }: PdfView
       )}
     </ViewerDialog>
   );
+}
+
+/** The desktop app's "Open in default app": fetch the PDF again (pdf.js
+ * keeps the bytes it was given) and hand them to main, which writes a new
+ * private temp .pdf and opens it (electron/open-pdf.mjs). Absent in a
+ * browser and in a window paired to another computer. */
+function openPdfBridge(): NonNullable<Window["ogb"]>["openPdf"] {
+  const ogb = typeof window === "undefined" ? undefined : window.ogb;
+  return ogb?.remoteClient?.active ? undefined : ogb?.openPdf;
+}
+
+function useOpenInDefaultApp(path: string, name: string, message: MessageAttachmentContext) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const bridge = openPdfBridge();
+  const open = useCallback(async () => {
+    if (!bridge) return;
+    setBusy(true);
+    setError("");
+    try {
+      const signal = AbortSignal.timeout(60_000);
+      const response = await requestMessageFile(path, message, signal);
+      const bytes = await readBoundedBytes(response, signal, FILE_MAX_BYTES);
+      if (!isPdfBytes(bytes)) throw new Error("invalid");
+      await bridge(bytes, name);
+    } catch (problem) {
+      // main's own wording is English; the person reads theirs
+      const reason = problem instanceof Error ? problem.message : "";
+      setError(t(reason === "size" ? "pdf.tooLarge" : reason === "invalid" ? "pdf.invalid" : "pdf.openDefaultFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }, [bridge, path, name, message]);
+  return { available: Boolean(bridge), busy, error, open };
 }
 
 /** One page: a placeholder of the page's size until it nears the view,

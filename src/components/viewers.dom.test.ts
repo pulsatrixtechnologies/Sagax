@@ -25,7 +25,7 @@ const pdf = vi.hoisted(() => {
   const getDocument = vi.fn(() => ({ promise: Promise.resolve(doc), destroy }));
   return { getDocument, renderPage, destroy, GlobalWorkerOptions: { workerPort: null as unknown } };
 });
-vi.mock("pdfjs-dist", () => ({ getDocument: pdf.getDocument, GlobalWorkerOptions: pdf.GlobalWorkerOptions }));
+vi.mock("pdfjs-dist", () => ({ getDocument: pdf.getDocument, GlobalWorkerOptions: pdf.GlobalWorkerOptions, version: "9.9.9" }));
 vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "/assets/pdf.worker.js" }));
 
 import { ChatMarkdown } from "./ChatMarkdown";
@@ -172,8 +172,19 @@ describe("file previews", () => {
     await act(async () => button("View PDF: Contrat.pdf")!.click());
     await settle(() => document.querySelectorAll("[data-pdf-page]").length === 3);
     expect(fetchMock).toHaveBeenCalledWith("/api/threads/t/messages/m/file", expect.objectContaining({ method: "POST" }));
-    expect(pdf.getDocument).toHaveBeenCalledWith(expect.objectContaining({ enableXfa: false }));
+    // every pdf.js data file comes from the app, never the network
+    const origin = new URL(document.baseURI).origin;
+    expect(pdf.getDocument).toHaveBeenCalledWith(expect.objectContaining({
+      enableXfa: false,
+      cMapUrl: `${origin}/assets/pdfjs-9.9.9/cmaps/`,
+      cMapPacked: true,
+      standardFontDataUrl: `${origin}/assets/pdfjs-9.9.9/standard_fonts/`,
+      wasmUrl: `${origin}/assets/pdfjs-9.9.9/wasm/`,
+      iccUrl: `${origin}/assets/pdfjs-9.9.9/iccs/`,
+    }));
     expect(document.querySelectorAll("[data-pdf-page]")).toHaveLength(3);
+    // a browser has no desktop bridge: no Open in default app
+    expect(button("Open Contrat.pdf in the default app")).toBeFalsy();
     expect(document.querySelector("dialog h2")!.textContent).toBe("Contrat.pdf");
 
     const zoom = () => document.querySelector("dialog output")!.textContent;
@@ -190,6 +201,31 @@ describe("file previews", () => {
     await act(async () => search.form!.requestSubmit());
     await flush();
     expect(document.querySelector("dialog form[role=search] [role=status]")!.textContent).toBe("2 found, page 2");
+  });
+
+  it("opens the PDF in the default app through the desktop bridge (bytes only)", async () => {
+    vi.stubGlobal("Worker", class { terminate() {} });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new TextEncoder().encode("%PDF-1.7 test"), { headers: { "content-type": "application/pdf" } })));
+    const openPdf = vi.fn(async () => true);
+    (window as { ogb?: unknown }).ogb = { openPdf };
+    try {
+      await act(async () => root.render(createElement(FilePreviewButton, { path: "/w/Contrat.pdf", name: "Contrat.pdf", message })));
+      await act(async () => button("View PDF: Contrat.pdf")!.click());
+      await settle(() => document.querySelectorAll("[data-pdf-page]").length === 3);
+      await act(async () => button("Open Contrat.pdf in the default app")!.click());
+      await settle(() => openPdf.mock.calls.length === 1);
+      const [bytes, name] = openPdf.mock.calls[0] as unknown as [Uint8Array, string];
+      expect(bytes).toBeInstanceOf(Uint8Array);
+      expect(new TextDecoder().decode(bytes)).toBe("%PDF-1.7 test");
+      expect(name).toBe("Contrat.pdf");
+
+      openPdf.mockRejectedValueOnce(new Error("No app on this computer could open the PDF"));
+      await act(async () => button("Open Contrat.pdf in the default app")!.click());
+      await settle(() => document.querySelector("dialog [role=alert]") !== null);
+      expect(document.querySelector("dialog [role=alert]")!.textContent).toContain("Could not open this PDF in another app");
+    } finally {
+      delete (window as { ogb?: unknown }).ogb;
+    }
   });
 
   it("refuses bytes that are not a PDF", async () => {

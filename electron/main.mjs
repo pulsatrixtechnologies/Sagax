@@ -43,6 +43,7 @@ import { createSystemTray } from "./system-tray.mjs";
 let startupScreen = null;
 let desktopTray = null;
 import { collisionFreeDownloadPath, defaultSaveName, revealDownloadWhenDone, revealInFolder, withSavableFile } from "./save-file.mjs";
+import { openPdfInDefaultApp } from "./open-pdf.mjs";
 import { desktopViewerPermissionAllowed } from "./desktop-viewer-permissions.mjs";
 import { appPermissionHandlers, externalOpenUrl, externalWebUrl } from "./app-permissions.mjs";
 import { writeClipboardText } from "./clipboard-write.mjs";
@@ -3680,6 +3681,15 @@ ipcMain.handle("desktop:save-file", localOnly("desktop:save-file", async (event,
     shell.showItemInFolder(choice.filePath);
     return choice.filePath;
   });
+}));
+
+// The PDF viewer's "Open in default app". The page sends the PDF's bytes and
+// a display name, never a path (open-pdf.mjs): main checks the signature and
+// size, writes a new .pdf in a private temp folder and opens that one file.
+// The desktop's own UI only (local page or this app's bundle on the
+// organization server): the person is looking at this PDF on this computer.
+ipcMain.handle("desktop:open-pdf", desktopUiOnly("desktop:open-pdf", async (_event, bytes, name) => {
+  return openPdfInDefaultApp(bytes, name, { openPath: (file) => shell.openPath(file) });
 }));
 
 // Settings > Memory: the local cache of the organization memory for

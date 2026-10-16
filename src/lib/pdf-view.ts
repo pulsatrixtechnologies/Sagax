@@ -34,6 +34,25 @@ export function isPdfBytes(bytes: Uint8Array): boolean {
   return false;
 }
 
+/** Where pdf.js finds its data files, all served by the app itself
+ * (scripts/vite-pdfjs-assets.ts copies them into the build under
+ * assets/pdfjs-<version>/): CMaps for CJK text, the standard fonts a PDF may
+ * not embed, the wasm image decoders (JPEG 2000, JBIG2) and colour profiles.
+ * `base` is the app's root URL. Absolute URLs, because the worker fetches
+ * them; all same origin, never the network. */
+export function pdfjsAssetOptions(version: string, base: string) {
+  const root = new URL(`assets/pdfjs-${encodeURIComponent(version)}/`, base);
+  const dir = (name: string) => new URL(`${name}/`, root).href;
+  return {
+    cMapUrl: dir("cmaps"),
+    cMapPacked: true,
+    standardFontDataUrl: dir("standard_fonts"),
+    wasmUrl: dir("wasm"),
+    iccUrl: dir("iccs"),
+    useSystemFonts: false,
+  };
+}
+
 /** Case, accent and spacing insensitive form for the page search. */
 export function searchable(text: string): string {
   return text.normalize("NFD").replace(/\p{M}+/gu, "").toLocaleLowerCase().replace(/\s+/g, " ");

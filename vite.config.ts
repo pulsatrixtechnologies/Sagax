@@ -6,6 +6,7 @@ import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { DurationSequencer } from "./scripts/testing/duration-sequencer.ts";
 import { hostTimeout } from "./server/testing/host-timeout.ts";
+import { pdfjsAssets } from "./scripts/vite-pdfjs-assets.ts";
 
 // The About dialog shows the shipped version; package.json is the one place
 // it is already maintained, so it is inlined at build time rather than
@@ -21,7 +22,9 @@ export default defineConfig({
   // directive (annotation mode) while it is proven on the hot views: the chat
   // and room transcripts and their rows. Files without the directive are not
   // touched; the preset's filter skips them before Babel parses anything.
-  plugins: [react(), babel({ presets: [reactCompilerPreset({ compilationMode: "annotation" })] }), tailwindcss()],
+  // pdfjsAssets: the PDF viewer's CMaps, standard fonts and wasm decoders,
+  // served by the app (scripts/vite-pdfjs-assets.ts).
+  plugins: [react(), babel({ presets: [reactCompilerPreset({ compilationMode: "annotation" })] }), tailwindcss(), pdfjsAssets()],
   define: {
     __APP_VERSION__: JSON.stringify(forkVersion),
     __BASE_VERSION__: JSON.stringify(baseVersion),

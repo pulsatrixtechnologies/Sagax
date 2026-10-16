@@ -3921,5 +3921,9 @@
   "model.settings.context": "コンテキスト",
   "model.settings.contextTitle": "このモデルは会話を最大 {tokens} トークンまで読み込みます",
   "model.settings.model": "モデル",
-  "model.settings.back": "{title} から戻る"
+  "model.settings.back": "{title} から戻る",
+  "pdf.openDefault": "既定のアプリで開く",
+  "pdf.openDefaultAria": "{name} を既定のアプリで開く",
+  "pdf.openDefaultHint": "この PDF をこのコンピュータの既定の PDF アプリで開きます",
+  "pdf.openDefaultFailed": "この PDF を他のアプリで開けませんでした。代わりにコピーを保存してください。"
 }

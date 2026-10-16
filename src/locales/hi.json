@@ -1901,5 +1901,9 @@
   "model.settings.context": "संदर्भ",
   "model.settings.contextTitle": "यह मॉडल बातचीत के {tokens} टोकन तक पढ़ता है",
   "model.settings.model": "मॉडल",
-  "model.settings.back": "{title} से वापस"
+  "model.settings.back": "{title} से वापस",
+  "pdf.openDefault": "डिफ़ॉल्ट ऐप में खोलें",
+  "pdf.openDefaultAria": "{name} को डिफ़ॉल्ट ऐप में खोलें",
+  "pdf.openDefaultHint": "इस PDF को इस कंप्यूटर के डिफ़ॉल्ट PDF ऐप में खोलें",
+  "pdf.openDefaultFailed": "इस PDF को किसी दूसरे ऐप में नहीं खोला जा सका। इसके बजाय एक कॉपी सेव करें।"
 }

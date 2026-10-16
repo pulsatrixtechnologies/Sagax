@@ -1917,5 +1917,9 @@
   "model.settings.context": "Kontext",
   "model.settings.contextTitle": "Dieses Modell liest bis zu {tokens} Tokens der Unterhaltung",
   "model.settings.model": "Modell",
-  "model.settings.back": "Zurück von {title}"
+  "model.settings.back": "Zurück von {title}",
+  "pdf.openDefault": "In Standard-App öffnen",
+  "pdf.openDefaultAria": "{name} in der Standard-App öffnen",
+  "pdf.openDefaultHint": "Dieses PDF in der Standard-PDF-App dieses Computers öffnen",
+  "pdf.openDefaultFailed": "Dieses PDF konnte nicht in einer anderen App geöffnet werden. Speichere stattdessen eine Kopie."
 }

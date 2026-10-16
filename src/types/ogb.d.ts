@@ -426,6 +426,10 @@ const __BASE_VERSION__: string;
       /** Points this computer's file manager at a file a bot linked outside
        * its workspace, without opening or reading it. Local app only. */
       revealInFolder?(filePath: string): Promise<"shown" | "missing" | "invalid">;
+      /** Opens a PDF the viewer shows in this computer's default PDF app:
+       * main writes the bytes to a new private temp .pdf and opens it.
+       * Resolves true, or rejects with a short message. */
+      openPdf?(bytes: Uint8Array, name: string): Promise<boolean>;
       /** Save a provider credential through Electron's OS-backed store. */
       setCredential?(
         name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "xaiVoiceKey" | "jevApiKey" | "openaiImageApiKey" | "customImageApiKey" | "openaiLiveKey",

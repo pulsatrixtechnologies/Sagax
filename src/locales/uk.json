@@ -2425,5 +2425,9 @@
   "model.settings.context": "Контекст",
   "model.settings.contextTitle": "Ця модель читає до {tokens} токенів розмови",
   "model.settings.model": "Модель",
-  "model.settings.back": "Назад з {title}"
+  "model.settings.back": "Назад з {title}",
+  "pdf.openDefault": "Відкрити в типовій програмі",
+  "pdf.openDefaultAria": "Відкрити {name} у типовій програмі",
+  "pdf.openDefaultHint": "Відкрити цей PDF у типовій програмі для PDF на цьому комп'ютері",
+  "pdf.openDefaultFailed": "Не вдалося відкрити цей PDF в іншій програмі. Збережіть копію."
 }

@@ -56,13 +56,15 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // window's caption buttons, the app menu's Preferences and Release notes,
 // links in the system browser, native confirmations, this app's updater,
 // server mode's state and way out, chat links opened from outside the app
-// (a listener only: main sends them, the page asks nothing), and in server
+// (a listener only: main sends them, the page asks nothing), opening a PDF
+// the viewer shows in the default app (bytes only, written to a new temp
+// .pdf by main), and in server
 // mode the person's own "Share this computer" for that server (each grant
 // confirmed in a native dialog). Main checks
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "onChatLink", "desktopLanguage"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "onChatLink", "desktopLanguage", "openPdf"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -384,6 +386,15 @@ const bridge = {
    * wrapper ipcRenderer adds around a main-process throw. */
   saveFile: (filePath) =>
     ipcRenderer.invoke("desktop:save-file", filePath).catch((error) => {
+      const message = String(error?.message ?? error);
+      throw new Error(message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, ""));
+    }),
+  /** Open a PDF the viewer shows in this computer's default PDF app. Main
+   * writes the bytes to a new private temp file (always .pdf) and opens it;
+   * no path crosses the bridge. Resolves true, or rejects with a short
+   * message the viewer shows. */
+  openPdf: (bytes, name) =>
+    ipcRenderer.invoke("desktop:open-pdf", bytes, typeof name === "string" ? name : "").catch((error) => {
       const message = String(error?.message ?? error);
       throw new Error(message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, ""));
     }),

@@ -2680,5 +2680,9 @@
   "model.settings.context": "Contexto",
   "model.settings.contextTitle": "Este modelo lê até {tokens} tokens da conversa",
   "model.settings.model": "Modelo",
-  "model.settings.back": "Voltar de {title}"
+  "model.settings.back": "Voltar de {title}",
+  "pdf.openDefault": "Abrir no app padrão",
+  "pdf.openDefaultAria": "Abrir {name} no app padrão",
+  "pdf.openDefaultHint": "Abrir este PDF no app de PDF padrão deste computador",
+  "pdf.openDefaultFailed": "Não foi possível abrir este PDF em outro app. Salve uma cópia."
 }

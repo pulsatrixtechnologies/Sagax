@@ -1901,5 +1901,9 @@
   "model.settings.context": "Contexto",
   "model.settings.contextTitle": "Este modelo lee hasta {tokens} tokens de conversación",
   "model.settings.model": "Modelo",
-  "model.settings.back": "Volver de {title}"
+  "model.settings.back": "Volver de {title}",
+  "pdf.openDefault": "Abrir en la app predeterminada",
+  "pdf.openDefaultAria": "Abrir {name} en la app predeterminada",
+  "pdf.openDefaultHint": "Abrir este PDF en la app de PDF predeterminada de este equipo",
+  "pdf.openDefaultFailed": "No se pudo abrir este PDF en otra app. Guarda una copia en su lugar."
 }

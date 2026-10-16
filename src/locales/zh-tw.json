@@ -3775,5 +3775,9 @@
   "model.settings.context": "上下文",
   "model.settings.contextTitle": "此模型最多讀取 {tokens} 個對話 token",
   "model.settings.model": "模型",
-  "model.settings.back": "從{title}返回"
+  "model.settings.back": "從{title}返回",
+  "pdf.openDefault": "以預設 App 開啟",
+  "pdf.openDefaultAria": "以預設 App 開啟 {name}",
+  "pdf.openDefaultHint": "以這台電腦的預設 PDF App 開啟此 PDF",
+  "pdf.openDefaultFailed": "無法在其他 App 中開啟此 PDF。請改為儲存副本。"
 }
