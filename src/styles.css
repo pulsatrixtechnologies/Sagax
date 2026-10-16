@@ -1512,6 +1512,25 @@ body {
   overflow: hidden;
 }
 
+/* A chat transcript row (ChatView MessagesList). Far from the viewport the
+   browser skips its layout and paint and holds a remembered height (an
+   estimate until it is first drawn); src/hooks/use-offscreen-row-anchor.ts
+   keeps the reader still when a row above the viewport gets its real height.
+   The flex column keeps the transcript's gap between a row's date line,
+   New divider and message, as the display: contents wrapper did. A row whose
+   message drew nothing goes back to contents so it adds no gap. */
+.transcript-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+.transcript-row:empty,
+.transcript-row:has(> [data-mid]:only-child:empty) {
+  display: contents;
+}
+
 /* Shared action rhythm. Existing skin tokens supply the colors and radius;
    use utilities for placement and the control scale below for size, rather
    than inventing another button size. */

@@ -323,6 +323,8 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
     topSentinelRef,
     transcriptKey,
     following: follow,
+    /** Read outside render (an observer callback): whether the pane follows the bottom. */
+    followRef,
     windowedMessages,
     hiddenCount,
     laterCount,

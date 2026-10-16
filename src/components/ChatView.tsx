@@ -145,6 +145,7 @@ import { webhookMessageView } from "@/lib/webhook-message";
 import { splitTranscriptAttachments } from "@/lib/composer-attachments";
 import { useComposerDockPad } from "@/lib/composer-dock";
 import { useTranscriptViewport } from "@/hooks/use-transcript-viewport";
+import { useOffscreenRowAnchor } from "@/hooks/use-offscreen-row-anchor";
 import { useStoreDispatch, useStoreGetter, useStoreSelector } from "@/state/store-selector";
 import { useUnreadDivider } from "@/hooks/use-unread-divider";
 import { NewMessagesDivider } from "./NewMessagesDivider";
@@ -938,6 +939,9 @@ function EmptyChat({ bot }: { bot: Bot }) {
  * message on the branch or the chat's ChatRows change. Each row inside is
  * memoized on its own message, so a patched tool chip renders that chip and
  * nothing else. */
+/** The newest transcript rows, always laid out and painted. */
+const DRAWN_TAIL_ROWS = 3;
+
 /** The messages one listed item draws. */
 function listedItemMessages(item: ListedItem): readonly Message[] {
   return item.kind === "message" ? [item.message] : item.kind === "exchange" ? item.run.messages : item.messages;
@@ -1080,9 +1084,13 @@ const MessagesList = memo(function MessagesList({
         const first = edgeOf(item).first;
         const newDay = startsNewStretch(prev?.at, first.at);
         const divider = dividerAbove(i);
+        // Rows far from the viewport skip layout and paint (styles.css
+        // .transcript-row); the newest rows and a search hit stay drawn.
+        const rowClass = i >= items.length - DRAWN_TAIL_ROWS || listedItemMessages(item).some((row) => row.id === focusedId)
+          ? "contents" : "transcript-row";
         if (item.kind === "gotoGroup") {
           return (
-            <div key={item.id} className="contents">
+            <div key={item.id} className={rowClass}>
               {newDay && <TranscriptDate at={first.at} />}
               {divider}
               <div className="contents" data-mid={item.messages.find((message) => message.id === focusedId)?.id ?? item.messages[0]?.id}>
@@ -1109,7 +1117,7 @@ const MessagesList = memo(function MessagesList({
         }
         if (item.kind === "exchange") {
           return (
-            <div key={item.run.id} className="contents">
+            <div key={item.run.id} className={rowClass}>
               {newDay && <TranscriptDate at={first.at} />}
               {divider}
               <BotExchangeChip
@@ -1131,7 +1139,7 @@ const MessagesList = memo(function MessagesList({
         if (item.kind === "voiceCall") {
           const hit = item.messages.find((message) => message.id === focusedId);
           return (
-            <div key={`voice:${item.callId}`} className="contents">
+            <div key={`voice:${item.callId}`} className={rowClass}>
               {newDay && <TranscriptDate at={first.at} />}
               {divider}
               <div className="contents" data-mid={hit?.id ?? item.messages[0]?.id}>
@@ -1153,7 +1161,7 @@ const MessagesList = memo(function MessagesList({
           // Hidden steps still carry the divider: the reply under them is new.
           if (!shown.length && !hasWidget) return divider && <div key={item.id} className="contents">{divider}</div>;
           return (
-            <div key={item.id} className="contents">
+            <div key={item.id} className={rowClass}>
               {newDay && <TranscriptDate at={first.at} />}
               {divider}
               <CwActivityWidgets messages={item.messages} threadId={threadId} botId={botId} />
@@ -1306,7 +1314,7 @@ const MessagesList = memo(function MessagesList({
         })();
         if (!row) return divider && <div key={m.id} className="contents">{divider}</div>;
         return (
-          <div key={m.id} className="contents">
+          <div key={m.id} className={rowClass}>
             {newDay && <TranscriptDate at={m.at} />}
             {divider}
             <div className="contents" data-mid={m.id}>
@@ -1496,6 +1504,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     topSentinelRef,
     transcriptKey,
     following,
+    followRef,
     windowedMessages,
     hiddenCount,
     laterCount,
@@ -1510,6 +1519,9 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     pinOn: [bot.busy, composerDock.pad],
     hasMore: bot.hasMore,
   });
+  // Rows drawn for the first time above the viewport (.transcript-row) keep
+  // the reader still.
+  useOffscreenRowAnchor(scrollRef, transcriptRef, followRef, transcriptKey);
   // Seen (src/lib/read-receipts.ts): this person's own position while the window has focus.
   // Never for a cached page: the switch is what opens (and reads) the thread.
   useReportRead(preview ? undefined : bot.threadId, scrollRef, messages.at(-1)?.id);
