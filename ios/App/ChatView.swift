@@ -57,6 +57,13 @@ struct ChatView: View {
     @State var showingPlus = false
     /// The bot panel, full screen, and the tab it opens on (`BotPanelDoor`).
     @State var showingPanel = false
+    /// Development context pods (DevPodsView): Settings > Experimental's
+    /// switch on this device, the detector's state for this thread, and
+    /// whether the sheet or inspector is open.
+    @AppStorage(DevPodsPrefs.enabled) var devPodsEnabled = false
+    @State var devMode = DevModeState.off
+    @State var devModeThread: String?
+    @State var showingDevPods = false
     /// Edit rule opens the panel on Access; cleared when the panel closes.
     @State var panelSection: DesktopPanelSection?
     @State var panelTab: DesktopPanelTab = .details
@@ -249,6 +256,10 @@ struct ChatView: View {
                 filePreview = nil
             }
         }
+        .modifier(DevPodsPresentation(isPresented: $showingDevPods, inspector: desktopChat != nil) {
+            devPodsContent
+        })
+        .onValueChange(of: devPodsSignature, initial: true) { _ in evaluateDevPods() }
     }
 
     var screen: some View {

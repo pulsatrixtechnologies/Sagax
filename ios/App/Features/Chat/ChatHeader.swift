@@ -30,6 +30,13 @@ extension ChatView {
                         }
                     }
                 Spacer(minLength: 8)
+                // Settings > Experimental's development context pods, while
+                // the conversation looks like development work
+                if devPodsAvailable {
+                    DevPodsHeaderButton(active: showingDevPods) { openDevPods() }
+                        .padding(.trailing, 8)
+                        .transition(.opacity)
+                }
                 if case .bot = current {
                     // outline monitor, ink 18 x 16.7 pt (drawn: the SF
                     // symbols fill the screen)
@@ -54,7 +61,8 @@ extension ChatView {
                 }
             }
             ChatNameCapsule(chat: current, state: mascotState) { openProfile() }
-                .frame(maxWidth: 230)
+                // narrower beside the dev pods button, so the two never meet
+                .frame(maxWidth: devPodsAvailable ? 170 : 230)
                 .contextMenu { nameCapsuleMenu }
                 .accessibilityLabel(Text(PeopleDirectory.shared.name(current, session: session)))
                 // The thread is no longer drawn in the header; VoiceOver

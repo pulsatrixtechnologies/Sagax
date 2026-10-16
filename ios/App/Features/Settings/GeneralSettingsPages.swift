@@ -157,6 +157,8 @@ struct GeneralSettingsView: View {
 struct ExperimentalSettingsView: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
+    /// Development context pods: this device only, off by default.
+    @AppStorage(DevPodsPrefs.enabled) private var devPods = false
     @State private var config: DesktopSettingsConfig?
     @State private var saving = false
     @State private var error: String?
@@ -182,6 +184,13 @@ struct ExperimentalSettingsView: View {
                 feature("connectedApps", title: "Connected apps",
                         detail: "Gmail, Slack, GitHub and more through your Composio project: the entry at the foot of the sidebar and the card in Settings > API keys. While off, your Claude account's connectors show in Settings > Model providers.",
                         on: config?.features?.connectedApps == true)
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(
+                    title: LocalizedStringKey(DevPodsStrings.settingTitle),
+                    subtitle: DevPodsStrings.settingDetail,
+                    accessory: .toggle($devPods),
+                    identifier: "settings-experimental.devPods"
+                )
             }
             if let error {
                 SettingsFooter(text: LocalizedStringKey(stringLiteral: error))

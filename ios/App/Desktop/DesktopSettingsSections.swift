@@ -446,6 +446,8 @@ struct DesktopNumberStepper: View {
 
 struct DesktopExperimentalSettings: View {
     @EnvironmentObject private var model: DesktopSettingsModel
+    /// Development context pods: this device only, off by default.
+    @AppStorage(DevPodsPrefs.enabled) private var devPods = false
 
     var body: some View {
         let config = model.config
@@ -489,6 +491,12 @@ struct DesktopExperimentalSettings: View {
                 isOn: connectedApps, label: Text("Turn on Connected apps"), identifier: "desktop-settings.connected-apps",
                 disabled: saving, divided: true
             ) { Task { _ = await model.apply(.feature("connectedApps", !connectedApps), key: "connectedApps") } }
+            DesktopFeatureRow(
+                title: Text(verbatim: DevPodsStrings.settingTitle),
+                detail: Text(verbatim: DevPodsStrings.settingDetail),
+                isOn: devPods, label: Text(verbatim: DevPodsStrings.settingTitle), identifier: "desktop-settings.dev-pods",
+                divided: true
+            ) { devPods.toggle() }
         }
     }
 }

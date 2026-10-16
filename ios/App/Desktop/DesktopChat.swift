@@ -145,7 +145,7 @@ extension ChatView {
             if let desktop = desktopChat {
                 // the find bar opens under the header (ChatView.tsx), 20 in
                 AnyView(VStack(spacing: 0) {
-                    DesktopChatHeader(chat: current, chrome: desktop, export: exportConversation, copyMarkdown: copyConversationMarkdown) { openProfile() }
+                    DesktopChatHeader(chat: current, chrome: desktop, export: exportConversation, copyMarkdown: copyConversationMarkdown, devPods: devPodsAvailable ? { openDevPods() } : nil, devPodsOpen: showingDevPods) { openProfile() }
                         .frame(height: 52, alignment: .top)
                     if finder.isOpen && session.surfaceGate.allows(.findInConversation) {
                         ChatFindBar(model: finder, threadId: threadId)
@@ -315,6 +315,10 @@ struct DesktopChatHeader: View {
     let chrome: DesktopChatChrome
     let export: () -> Void
     let copyMarkdown: () -> Void
+    /// Development context pods (Settings > Experimental): the button shows
+    /// while the conversation looks like development work.
+    var devPods: (() -> Void)? = nil
+    var devPodsOpen = false
     let openProfile: () -> Void
     @State private var exportOpen = DesktopChatHeader.parityExport
     /// Appearance > Inspector button (off by default, as on the desktop).
@@ -358,6 +362,10 @@ struct DesktopChatHeader: View {
                         .zIndex(1)
                     if case let .bot(bot) = chat, DesktopSidebarState.headerThreads(model: model, prefs: prefs) {
                         DesktopThreadPickerButton(bot: bot, open: $threadsOpen)
+                    }
+                    if let devPods {
+                        DesktopRoundButton(systemImage: "sidebar.squares.right", label: "devPods.toggle.show", active: devPodsOpen, action: devPods)
+                            .accessibilityIdentifier("desktop-dev-pods-toggle")
                     }
                     if chat.isBot {
                         if showInspector && session.surfaceGate.allows(.inspector) {
