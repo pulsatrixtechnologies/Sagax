@@ -131,9 +131,13 @@ final class PeoplePresenceTests: XCTestCase {
     // MARK: Unread dot
 
     func testTheUnreadDotIsNeverTheGreySkinsWhiteAccent() throws {
-        for id in ["midnight", "graphite", "linen"] {
+        // Midnight is Grok Bot's Sand Dark since #491: its dot is Grok Bot's
+        // bright blue (src/lib/midnight-skin.test.ts), still never the white accent.
+        let blues: [String: UInt32] = ["midnight": 0x1884FC, "graphite": 0x3C76F4, "linen": 0x3C76F4]
+        for (id, blue) in blues {
             let tokens = try XCTUnwrap(DesktopSkins.tokens(try XCTUnwrap(SkinID(rawValue: id))))
-            XCTAssertEqual(tokens.unread, SkinColor(0x3C76F4), "\(id): Pulsatrix blue")
+            XCTAssertEqual(tokens.unread, SkinColor(blue), "\(id): a blue dot")
+            XCTAssertNotEqual(tokens.unread, tokens.accent, "\(id): not the grey skin's white accent")
         }
         let lagoon = try XCTUnwrap(DesktopSkins.tokens(.lagoon))
         XCTAssertEqual(lagoon.unread, lagoon.accent, "a chromatic skin: its accent")
