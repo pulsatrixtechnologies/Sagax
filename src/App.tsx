@@ -386,7 +386,7 @@ function Shell() {
           menuButtonRef.current?.focus();
         }}
       />
-      <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col">
+      <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col" data-sidebar-follower="">
       {composeOpen && (group || bot) ? (
         group ? <GroupView key={`${group.id}:${uiLocale}`} group={group} /> : bot ? <ChatView key={uiLocale} bot={bot} /> : null
       ) : calendarFillsMain ? (

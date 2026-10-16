@@ -65,3 +65,13 @@ describe("prefersReducedMotion", () => {
     expect(prefersReducedMotion()).toBe(false);
   });
 });
+
+describe("progressClip", () => {
+  it("clips a full-width fill to its share, round ends kept, bounded", async () => {
+    const { progressClip } = await import("./motion");
+    expect(progressClip(42)).toBe("inset(0 58% 0 0 round 9999px)");
+    expect(progressClip(0)).toBe("inset(0 100% 0 0 round 9999px)");
+    expect(progressClip(140)).toBe("inset(0 0% 0 0 round 9999px)");
+    expect(progressClip(Number.NaN)).toBe("inset(0 100% 0 0 round 9999px)");
+  });
+});

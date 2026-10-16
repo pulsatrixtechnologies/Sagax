@@ -154,12 +154,14 @@ export function DesktopViewer() {
   // After the commit that clears `inert`, so focus is not dropped to <body>.
   const focusSoon = (id: string) => requestAnimationFrame(() => document.getElementById(id)?.focus());
   const togglePanel = (next: "keyboard" | "clipboard") => setPanel(value => value === next ? null : next);
-  const slide = "transition-[width,translate,opacity] duration-[240ms] ease-out-quint motion-reduce:transition-none";
+  // The rail's width snaps (an animated width would lay the remote screen out
+  // again on every frame); the tool panel inside slides and fades on its own.
+  const slide = "transition-[translate,opacity] duration-[240ms] ease-out-quint motion-reduce:transition-none";
   const action = "ui-button min-h-11 rounded-xl focus-visible:outline-2 focus-visible:outline-focus";
 
   return (
     <div className="relative flex h-dvh overflow-hidden bg-app text-sm text-ink" style={{ paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
-      <aside aria-label={t("desktopViewer.controls")} aria-hidden={!expanded} inert={!expanded} className={cn("z-10 flex shrink-0 items-center justify-center py-3", slide, expanded ? "w-[72px]" : "w-0")}>
+      <aside aria-label={t("desktopViewer.controls")} aria-hidden={!expanded} inert={!expanded} className={cn("z-10 flex shrink-0 items-center justify-center py-3", expanded ? "w-[72px]" : "w-0")}>
         <div className={cn("flex max-h-full w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto rounded-2xl border border-hairline bg-panel p-1 shadow-xl", slide, expanded ? "translate-x-0 opacity-100" : "-translate-x-12 opacity-0")}>
           <div className="relative flex h-11 w-11 shrink-0 items-center justify-center text-ink-secondary" title={status}>
             <Monitor size={20} aria-hidden="true" />

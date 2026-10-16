@@ -51,6 +51,7 @@ import { cn } from "@/lib/cn";
 import { SIDEBAR_CIRCLE_BUTTON } from "@/lib/circle-button";
 import { searchMatchesThreads, useSearchDisclosure } from "@/lib/search-disclosure";
 import { useHeldMenuMotion } from "./MenuMotion";
+import { animateSidebarSnap } from "@/lib/sidebar-motion";
 import { lastNonReceipt } from "@/lib/receipts";
 import { activityPreview, botEngine } from "@/lib/failed-turn";
 import { activeLocale, t } from "@/lib/i18n";
@@ -2591,21 +2592,28 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // later, and a second crossing in that beat must not toggle twice.
   const sidebarResize = useRef<{ x: number; width: number; current: number; collapsed: boolean } | null>(null);
   const [sidebarResizing, setSidebarResizing] = useState(false);
-  // True for the length of the snap animation, so crossing the snap width
-  // mid-drag eases the jump between the rail and the expanded width.
-  const [sidebarSnapping, setSidebarSnapping] = useState(false);
-  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (snapTimer.current) clearTimeout(snapTimer.current); }, []);
   // The density as of the last toggle, ahead of the store's re-render.
   const densityNow = useRef(density);
   densityNow.current = density;
   const setSidebarCollapsed = (collapsed: boolean) => {
     if ((densityNow.current === "icons") === collapsed) return;
-    setSidebarSnapping(true);
-    if (snapTimer.current) clearTimeout(snapTimer.current);
-    snapTimer.current = setTimeout(() => setSidebarSnapping(false), 220);
     densityNow.current = toggleSidebarCollapsed();
   };
+  // Rail in or out (the edge, its double-click, ⌘B, Settings): the width
+  // changes at once and the snap is drawn with transforms for 200ms
+  // (src/lib/sidebar-motion.ts), so the chat column is laid out once.
+  const railed = density === "icons";
+  const wasRailed = useRef(railed);
+  useLayoutEffect(() => {
+    const was = wasRailed.current;
+    wasRailed.current = railed;
+    const aside = sidebarRef.current;
+    if (was === railed || !aside || !window.matchMedia?.("(min-width: 768px)").matches) return;
+    const follower = aside.parentElement?.querySelector<HTMLElement>(":scope > [data-sidebar-follower]") ?? null;
+    return animateSidebarSnap(aside, follower, was ? SIDEBAR_RAIL_WIDTH : sidebarWidth, railed ? SIDEBAR_RAIL_WIDTH : sidebarWidth);
+    // the width is read when the rail flips, not followed during a drag
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [railed]);
   const resizeSidebar = (clientX: number) => {
     const from = sidebarResize.current;
     if (!from) return;
@@ -2942,9 +2950,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       style={density === "icons" ? { width: SIDEBAR_RAIL_WIDTH } : { width: sidebarWidth }}
       className={cn(
         "relative flex h-full shrink-0 flex-col border-r-[0.5px] border-hairline-weak bg-sidebar",
-        // Ease the width when it snaps (rail in or out, double-click) and
-        // follow the pointer exactly otherwise.
-        (!sidebarResizing || sidebarSnapping) && "md:transition-[width] md:duration-200 md:ease-out",
+        // The width never transitions: it follows the pointer exactly, and a
+        // snap (rail in or out) is drawn with transforms (animateSidebarSnap).
         // Below md only: the sidebar leaves the flow and slides in over the chat.
         // Scoped with max-md: rather than cancelled with md: on purpose — Tailwind
         // v4 emits the native `translate` property, and any value other than

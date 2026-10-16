@@ -19,6 +19,7 @@ import type { VoiceOption } from "@/lib/voice-mode/api";
 import { languageLabel, speedLabel } from "@/lib/voice-mode/settings";
 import { SwitchRow } from "../SettingsPrimitives";
 import { VOICE_MODE_LANGUAGES, VOICE_MODE_SPEEDS, type VoiceModeSettings } from "../../../shared/voice-mode";
+import { progressClip } from "@/lib/motion";
 
 export type VoiceModeList = "voice" | "speed" | "language";
 
@@ -106,7 +107,8 @@ function CallSection({ call, enrollment, onCallChange, onEnroll, onForget }: Req
           <div className="flex w-full flex-col gap-1">
             <span className="text-[12.5px] text-ink">{t("voiceMode.call.enrolling", { percent: Math.round(enrollment.share * 100) })}</span>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-raised">
-              <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.round(enrollment.share * 100)}%` }} />
+              {/* the fill grows by its clip (paint only), never its width (layout) */}
+              <div className="h-full w-full rounded-full bg-accent transition-[clip-path] duration-base ease-out-quint motion-reduce:transition-none" style={{ clipPath: progressClip(enrollment.share * 100) }} />
             </div>
           </div>
         ) : (

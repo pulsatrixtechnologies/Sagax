@@ -201,12 +201,9 @@ export function ComposerMicButton({ onClick, hidden = false, needsSetup = false,
 }) {
   const label = needsSetup ? t("composer.dictation.needsKey") : t("composer.dictation.start");
   return (
-    <span
-      className={cn(
-        "flex shrink-0 overflow-hidden transition-[width,margin] duration-moderate ease-out-quint motion-reduce:transition-none",
-        hidden ? "me-0 w-0" : "w-7",
-      )}
-    >
+    // The slot's width snaps (an animated width would re-wrap the draft on
+    // every frame); the button itself fades and scales in, compositor only.
+    <span className={cn("flex shrink-0 overflow-hidden", hidden ? "me-0 w-0" : "w-7")}>
       <button
         type="button"
         onClick={onClick}
@@ -215,9 +212,9 @@ export function ComposerMicButton({ onClick, hidden = false, needsSetup = false,
         data-composer-mic={needsSetup ? "setup" : ""}
         tabIndex={hidden ? -1 : undefined}
         aria-hidden={hidden || undefined}
-        className={cn(SECONDARY_CIRCLE, hidden && "invisible opacity-0")}
+        className={cn(SECONDARY_CIRCLE, "transition-[color,background-color,opacity,scale] duration-moderate ease-out-quint motion-reduce:transition-none", hidden && "invisible scale-50 opacity-0")}
       >
-        <Mic size={15} strokeWidth={2.25} aria-hidden="true" className={cn("transition-transform duration-200", hidden && "scale-50")} />
+        <Mic size={15} strokeWidth={2.25} aria-hidden="true" />
       </button>
     </span>
   );
@@ -263,6 +260,11 @@ export function ComposerCtaSeat({ send, voice, typed }: { send: ReactNode; voice
   );
 }
 
+/** A level bar's height (3..13 px) as a share of the meter's 13 px. */
+export function levelBarScale(level: number): number {
+  return Math.round(3 + Math.max(0, Math.min(1, level)) * 10) / 13;
+}
+
 /** The level meter: five 2 px bars, 2 px apart, 3..13 px tall, in the secondary ink. */
 export function LevelMeter({ levels }: { levels: number[] }) {
   return (
@@ -270,8 +272,9 @@ export function LevelMeter({ levels }: { levels: number[] }) {
       {levels.map((level, index) => (
         <span
           key={index}
-          className="w-[2px] rounded-full bg-ink-secondary transition-[height] duration-75 motion-reduce:transition-none"
-          style={{ height: `${Math.round(3 + level * 10)}px` }}
+          // full height, scaled: the meter moves on the compositor, never by layout
+          className="h-[13px] w-[2px] rounded-full bg-ink-secondary transition-transform duration-75 motion-reduce:transition-none"
+          style={{ transform: `scaleY(${levelBarScale(level)})` }}
         />
       ))}
     </span>

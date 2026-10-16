@@ -8,6 +8,7 @@ import { widgetNumber, widgetString, type WidgetNode } from "../../../shared/wid
 import { useWidgetForm } from "./WidgetControls";
 import type { WidgetWhere } from "./WidgetNodes";
 import { BADGE_DOT, BADGE_INK, BADGE_SIZE, BADGE_SOLID, boxStyle } from "./widget-style";
+import { progressClip } from "@/lib/motion";
 
 /** A remote image waits for a click, the way one in a bot's Markdown does
  * (AttachmentPreview): a widget is bot-authored, and mounting the image is a
@@ -103,7 +104,8 @@ export function WidgetProgress({ node }: { node: WidgetNode }) {
         aria-valuetext={label ? `${percent}%, ${label}` : undefined}
         className="h-1.5 overflow-hidden rounded-full bg-ink/[0.1]"
       >
-        <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${percent}%` }} />
+        {/* the fill grows by its clip (paint only), never its width (layout) */}
+        <div className="h-full w-full rounded-full bg-accent transition-[clip-path] duration-slow ease-out-quint motion-reduce:transition-none" style={{ clipPath: progressClip(percent) }} />
       </div>
       <div className="mt-2 flex items-baseline justify-between gap-3 text-[13px] leading-[18px]">
         <span className="tabular-nums text-ink-secondary">{percent}%</span>

@@ -37,3 +37,11 @@ export function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
+
+/** A progress fill drawn at full width and clipped to `percent` (0..100), with
+ * its round ends kept: a clip changes paint only, a width would lay the bar
+ * out again on every step. */
+export function progressClip(percent: number): string {
+  const shown = Math.max(0, Math.min(100, Number.isFinite(percent) ? percent : 0));
+  return `inset(0 ${Math.round((100 - shown) * 100) / 100}% 0 0 round 9999px)`;
+}
