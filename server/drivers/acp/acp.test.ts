@@ -2712,7 +2712,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       await create();
       const agents = (token: string) => ({ agents: { command: process.execPath, args: [FAKE_CLI], env: { SAGAX_COMMS_TOKEN: token, SAGAX_BOT_ID: "bot-call" } } });
       const calls = () => readFileSync(appendFile, "utf8").trim().split("\n").map((line) => JSON.parse(line).method as string)
-        .filter((method) => !method.endsWith(".result"));
+        .filter((method) => !method.endsWith(".result") && method !== "_x.ai/mcp/list"); // the MCP settle poll (grok.ts) is not what these tests check
       const turn = async (text: string, token: string, keepWarm: boolean) => {
         const started = await instance.adapter.sendTurn({
           threadId: "t-call-warm", botId: "bot-call", text, resumeCursor: "fake-acp-session",
@@ -2757,7 +2757,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(instance.adapter.capabilities.warmSession).toBe(true);
       const agents = (token: string) => ({ agents: { command: process.execPath, args: [FAKE_CLI], env: { SAGAX_COMMS_TOKEN: token } } });
       const calls = () => readFileSync(appendFile, "utf8").trim().split("\n").map((line) => JSON.parse(line).method as string)
-        .filter((method) => !method.endsWith(".result"));
+        .filter((method) => !method.endsWith(".result") && method !== "_x.ai/mcp/list"); // the MCP settle poll (grok.ts) is not what these tests check
       const warmed = await instance.adapter.sendTurn({
         threadId: "t-call-warmup", botId: "bot-warm", text: "", resumeCursor: "fake-acp-session",
         keepWarm: true, warmOnly: true, integrations: agents("token-warm"),
@@ -2794,7 +2794,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       process.env.FAKE_ACP_RPC_APPEND_FILE = appendFile;
       await create();
       const calls = () => readFileSync(appendFile, "utf8").trim().split("\n").map((line) => JSON.parse(line).method as string)
-        .filter((method) => !method.endsWith(".result"));
+        .filter((method) => !method.endsWith(".result") && method !== "_x.ai/mcp/list"); // the MCP settle poll (grok.ts) is not what these tests check
       await instance.adapter.sendTurn({ threadId: "t-call-new", text: "", keepWarm: true, warmOnly: true });
       expect(calls()).toEqual(["initialize", "authenticate", "session/new"]);
       const first = await instance.adapter.sendTurn({ threadId: "t-call-new", text: "hello", keepWarm: true });
@@ -2822,7 +2822,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       await create();
       const agents = (token: string) => ({ agents: { command: process.execPath, args: [FAKE_CLI], env: { SAGAX_COMMS_TOKEN: token } } });
       const calls = () => readFileSync(appendFile, "utf8").trim().split("\n").map((line) => JSON.parse(line).method as string)
-        .filter((method) => !method.endsWith(".result"));
+        .filter((method) => !method.endsWith(".result") && method !== "_x.ai/mcp/list"); // the MCP settle poll (grok.ts) is not what these tests check
       await instance.adapter.sendTurn({
         threadId: "t-call-prime", botId: "bot-warm", text: "", resumeCursor: "fake-acp-session",
         keepWarm: true, warmOnly: true, cachePrime: true,

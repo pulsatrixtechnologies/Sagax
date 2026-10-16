@@ -860,6 +860,14 @@ const support: AcpSupport = {
         if (Date.now() >= deadline) throw new Error("Grok did not confirm its selected MCP catalog in time. No prompt was sent.");
         await delay(50);
       }
+    } else {
+      // 2026-10-16 (hotfix 0.5.10): without a tool selection the prompt
+      // left while Grok still handshook its MCP servers; Grok then told the
+      // model "MCP servers currently connecting, do not use them yet" and
+      // the bot answered that ConnectWise was not reachable. Wait, bounded
+      // and best effort, until Grok resolved its servers and none is still
+      // pending; on a timeout or an unreadable list the prompt goes anyway.
+      await waitForGrokMcpSettled(request, sessionId, GROK_MCP_SETTLE_MS);
     }
     if (!turn.model) return;
     if (grokPinsModelInProfile(turn)) {
@@ -965,5 +973,41 @@ const support: AcpSupport = {
   stallRetryMs: grokStallRetryMs,
   roundContextUsage: grokRoundContextUsage,
 };
+
+
+/** How long a turn without a tool selection waits for Grok's MCP servers. */
+export const GROK_MCP_SETTLE_MS = 20_000;
+
+/** Whether Grok's `_x.ai/mcp/list` answer says every MCP server finished
+ * connecting: the session resolved its servers and none is still pending. */
+export function grokMcpSettled(catalog: unknown): boolean {
+  const value = catalog as { sessionMcpResolved?: unknown; servers?: unknown } | null | undefined;
+  if (!value || value.sessionMcpResolved !== true || !Array.isArray(value.servers)) return false;
+  return !value.servers.some((server: { session?: { enabled?: unknown; status?: unknown } } | null) => {
+    const status = typeof server?.session?.status === "string" ? server.session.status.toLowerCase() : "";
+    return server?.session?.enabled !== false && (status === "pending" || status === "connecting" || status === "starting");
+  });
+}
+
+/** Best effort: polls `_x.ai/mcp/list` until grokMcpSettled or `budgetMs`
+ * runs out. Never throws: a Grok that cannot answer still gets its prompt. */
+export async function waitForGrokMcpSettled(
+  request: (method: string, params: unknown, timeoutMs: number) => Promise<{ result?: unknown } | undefined>,
+  sessionId: string,
+  budgetMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    const left = deadline - Date.now();
+    if (left <= 0) return false;
+    try {
+      const reply = await request("_x.ai/mcp/list", { sessionId, cache: true }, Math.min(10_000, left));
+      if (grokMcpSettled(reply?.result)) return true;
+    } catch {
+      return false;
+    }
+    await delay(100);
+  }
+}
 
 export const GrokAgentDriver = createAcpDriver(support);
