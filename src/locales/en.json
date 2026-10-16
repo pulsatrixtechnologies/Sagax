@@ -8614,5 +8614,15 @@
   "artifacts.loading": "Loading artifacts…",
   "artifacts.error": "Couldn't load the artifacts.",
   "artifacts.empty": "No artifacts yet. Ask this bot to save a widget as an artifact; it can refresh itself at an interval you set with the bot.",
-  "palette.group.artifacts": "Artifacts"
+  "palette.group.artifacts": "Artifacts",
+  "artifacts.interval.seconds": "{count} s",
+  "artifacts.interval.minutes": "{count} min",
+  "artifacts.interval.hours": "{count} h",
+  "artifacts.interval.days": "{count} d",
+  "artifacts.status.every": "Updated {when} · every {every}",
+  "artifacts.status.blocked": "Can't refresh on its own: this source needs your approval. Ask the bot to use a read tool.",
+  "artifacts.status.paused": "Refresh paused after {count} failures. Refresh now, or ask the bot.",
+  "artifacts.status.pausedByBot": "Refresh paused by the bot.",
+  "artifacts.status.error": "Refresh failed {when}; it tries again.",
+  "artifacts.refreshNow": "Refresh now"
 }

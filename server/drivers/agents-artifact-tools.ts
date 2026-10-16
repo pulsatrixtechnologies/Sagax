@@ -9,7 +9,7 @@ const FIELDS = {
   html: { type: "string", description: "Self-contained HTML with inline CSS and JS; no network (strict CSP). Read window.sagax.data; window.sagax.onData(fn) gets each refresh's JSON." },
   source: {
     type: "object",
-    description: "Re-run by Sagax on the interval, with no turn of yours: {kind:\"tool\",tool,args} (one of your read tools) or {kind:\"command\",command} (read-only, prints JSON). A call that would need approval is marked blocked. null removes it.",
+    description: "Re-run by Sagax on the interval, with no turn of yours: {kind:\"tool\",tool,args} (a read tool: workspace_read of a JSON file you keep, a connector query) or {kind:\"command\",command} (read-only, prints JSON). A call that would need approval is marked blocked. null removes it.",
     properties: { kind: { type: "string", enum: ["tool", "command"] }, tool: { type: "string" }, args: { type: "object" }, command: { type: "string" } },
     required: ["kind"],
   },

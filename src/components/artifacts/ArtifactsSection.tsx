@@ -5,22 +5,52 @@
 // opens) is the bot's, so the empty state tells them to ask the bot.
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AppWindow, LoaderCircle, MoreHorizontal, RotateCcw, Star, Trash2, X } from "lucide-react";
+import { AppWindow, LoaderCircle, MoreHorizontal, RefreshCw, RotateCcw, Star, Trash2, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { relativeTime } from "@/lib/memory";
-import { deleteArtifact, setArtifactFlags, useArtifact, type ArtifactList } from "@/lib/artifacts";
+import { deleteArtifact, refreshArtifact, setArtifactFlags, useArtifact, useArtifactWatch, type ArtifactList } from "@/lib/artifacts";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ArtifactFrame } from "./ArtifactFrame";
 import type { ArtifactSummary } from "../../../shared/artifacts";
 
 const ICON_BUTTON = "flex size-7 shrink-0 items-center justify-center rounded-md text-ink-secondary transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40";
 
-/** The line under an artifact's title. */
-export function artifactMeta(artifact: ArtifactSummary, now = Date.now()): string {
-  return t("artifacts.updated", { when: relativeTime(artifact.dataAt ?? artifact.updatedAt, now) });
+/** "30 s", "5 min", "2 h", "1 d". */
+export function intervalLabel(seconds: number): string {
+  if (seconds < 60) return t("artifacts.interval.seconds", { count: seconds });
+  if (seconds < 3600) return t("artifacts.interval.minutes", { count: Math.round(seconds / 60) });
+  if (seconds < 86_400) return t("artifacts.interval.hours", { count: Math.round(seconds / 3600) });
+  return t("artifacts.interval.days", { count: Math.round(seconds / 86_400) });
 }
+
+/** The line under an artifact's title: when its data is from, how often it
+ * refreshes, or why it does not. The server's own words ride the title. */
+export function artifactStatus(artifact: ArtifactSummary, now = Date.now()): { tone: "muted" | "warning" | "danger"; text: string; detail?: string } {
+  const when = relativeTime(artifact.dataAt ?? artifact.updatedAt, now);
+  const every = artifact.source && artifact.intervalSeconds ? intervalLabel(artifact.intervalSeconds) : null;
+  const detail = artifact.refresh.error;
+  switch (artifact.source ? artifact.refresh.state : "idle") {
+    case "blocked":
+      return { tone: "warning", text: t("artifacts.status.blocked"), ...(detail ? { detail } : {}) };
+    case "paused":
+      return artifact.refresh.failures > 0
+        ? { tone: "danger", text: t("artifacts.status.paused", { count: artifact.refresh.failures }), ...(detail ? { detail } : {}) }
+        : { tone: "muted", text: t("artifacts.status.pausedByBot") };
+    case "error":
+      return { tone: "warning", text: t("artifacts.status.error", { when: relativeTime(artifact.refresh.lastRunAt ?? now, now) }), ...(detail ? { detail } : {}) };
+    default:
+      return { tone: "muted", text: every ? t("artifacts.status.every", { when, every }) : t("artifacts.updated", { when }) };
+  }
+}
+
+/** Kept for callers that only need the words. */
+export function artifactMeta(artifact: ArtifactSummary, now = Date.now()): string {
+  return artifactStatus(artifact, now).text;
+}
+
+const STATUS_TONE = { muted: "text-ink-secondary", warning: "text-warning", danger: "text-danger" } as const;
 
 /** What the person can do to an artifact from a row, shared with the
  * palette and the floating windows. */
@@ -28,6 +58,19 @@ export interface ArtifactActions {
   open(artifact: ArtifactSummary): void;
   toggleFavorite(artifact: ArtifactSummary): void;
   remove(artifact: ArtifactSummary): void;
+  /** Run its source now (only offered when it has one). */
+  refresh(artifact: ArtifactSummary): void;
+  /** Artifact ids whose refresh is running from this window. */
+  refreshing: ReadonlySet<string>;
+}
+
+export function ArtifactStatusLine({ artifact, now }: { artifact: ArtifactSummary; now?: number }) {
+  const status = artifactStatus(artifact, now);
+  return (
+    <span data-artifact-status={artifact.source ? artifact.refresh.state : "static"} title={status.detail} className={cn("truncate text-[11px]", STATUS_TONE[status.tone])}>
+      {status.text}
+    </span>
+  );
 }
 
 /** The person's three actions, with the list patched at once and the
@@ -43,7 +86,22 @@ export function useArtifactActions(list: ArtifactList, onError: (text: string) =
   const [opened, setOpened] = useState<ArtifactSummary | null>(null);
   const [confirming, setConfirming] = useState<ArtifactSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [refreshing, setRefreshing] = useState<ReadonlySet<string>>(() => new Set());
   return {
+    refreshing,
+    refresh: (artifact) => {
+      if (!artifact.source || refreshing.has(artifact.id)) return;
+      setRefreshing((current) => new Set([...current, artifact.id]));
+      void refreshArtifact(artifact.botId, artifact.id).then((next) => {
+        const { html: _html, data, ...rest } = next;
+        list.patch(artifact.id, data ? { ...rest, dataAt: data.at } : rest);
+      }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : t("artifacts.error")))
+        .finally(() => setRefreshing((current) => {
+          const next = new Set(current);
+          next.delete(artifact.id);
+          return next;
+        }));
+    },
     opened,
     close: () => setOpened(null),
     open: (artifact) => setOpened(artifact),
@@ -107,7 +165,7 @@ export function ArtifactRow({ artifact, actions, now }: { artifact: ArtifactSumm
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-[13px] text-ink">{artifact.title}</span>
-          <span className="truncate text-[11px] text-ink-secondary">{artifactMeta(artifact, now)}</span>
+          <ArtifactStatusLine artifact={artifact} now={now} />
         </span>
       </button>
       <button
@@ -130,6 +188,11 @@ export function ArtifactRow({ artifact, actions, now }: { artifact: ArtifactSumm
             <button type="button" role="menuitem" onClick={() => { setMenu(false); actions.open(artifact); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ink hover:bg-hover">
               <AppWindow size={14} className="shrink-0 text-ink-secondary" aria-hidden="true" /> {t("artifacts.open")}
             </button>
+            {artifact.source && (
+              <button type="button" role="menuitem" disabled={actions.refreshing.has(artifact.id)} onClick={() => { setMenu(false); actions.refresh(artifact); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ink hover:bg-hover disabled:opacity-40">
+                <RefreshCw size={14} className="shrink-0 text-ink-secondary" aria-hidden="true" /> {t("artifacts.refreshNow")}
+              </button>
+            )}
             <button type="button" role="menuitem" onClick={() => { setMenu(false); actions.remove(artifact); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-danger hover:bg-hover">
               <Trash2 size={14} className="shrink-0" aria-hidden="true" /> {t("artifacts.delete")}
             </button>
@@ -143,6 +206,17 @@ export function ArtifactRow({ artifact, actions, now }: { artifact: ArtifactSumm
 /** One artifact, opened over the app. */
 export function ArtifactDialog({ artifact, onClose }: { artifact: Pick<ArtifactSummary, "id" | "botId" | "title">; onClose: () => void }) {
   const { artifact: full, error, gone } = useArtifact(artifact.botId, artifact.id);
+  // open: its source refreshes while this dialog is up
+  useArtifactWatch(artifact.id);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const refreshNow = () => {
+    setRefreshing(true);
+    setRefreshError("");
+    void refreshArtifact(artifact.botId, artifact.id)
+      .catch((reason: unknown) => setRefreshError(reason instanceof Error ? reason.message : t("artifacts.error")))
+      .finally(() => setRefreshing(false));
+  };
   const closeRef = useRef<HTMLButtonElement>(null);
   const closeAction = useRef(onClose);
   closeAction.current = onClose;
@@ -168,7 +242,16 @@ export function ArtifactDialog({ artifact, onClose }: { artifact: Pick<ArtifactS
       <div role="dialog" aria-modal="true" aria-labelledby={labelId} data-artifact-dialog={artifact.id} className="flex h-full max-h-[860px] w-full max-w-[1100px] flex-col overflow-hidden rounded-2xl border border-hairline/40 bg-panel shadow-2xl">
         <header className="flex shrink-0 items-center gap-3 border-b border-hairline/30 px-4 py-2.5">
           <AppWindow size={15} className="shrink-0 text-ink-secondary" aria-hidden="true" />
-          <span id={labelId} className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{artifact.title}</span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span id={labelId} className="truncate text-[13px] font-medium text-ink">{full?.title ?? artifact.title}</span>
+            {full && <ArtifactStatusLine artifact={{ ...full, ...(full.data ? { dataAt: full.data.at } : {}) }} />}
+          </span>
+          {refreshError && <span role="alert" className="max-w-[40%] truncate text-[11.5px] text-danger" title={refreshError}>{refreshError}</span>}
+          {full?.source && (
+            <button type="button" onClick={refreshNow} disabled={refreshing} aria-label={t("artifacts.refreshNow")} title={t("artifacts.refreshNow")} className="flex size-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-40">
+              <RefreshCw size={15} aria-hidden="true" className={cn(refreshing && "animate-spin motion-reduce:animate-none")} />
+            </button>
+          )}
           <button ref={closeRef} type="button" onClick={onClose} aria-label={t("attach.close")} className="flex size-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
             <X size={17} />
           </button>

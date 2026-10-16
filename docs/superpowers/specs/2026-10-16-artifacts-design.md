@@ -51,7 +51,7 @@ mode 0600, like `delegations.json`. A deleted bot's artifacts go with it.
 `agents-call-artifacts.ts` to `POST /api/internal/artifacts`, behind the
 turn's capability). The bot is always the capability's: a bot never sees or
 changes another bot's artifacts. `list_artifacts` is a reviewed read. The
-tools add about 3.2 KB to every non-external catalog profile.
+tools add about 3.3 KB to every non-external catalog profile.
 
 The settings are the bot's. The person's UI only opens, pops out or back,
 stars, refreshes now and deletes (with a confirmation); a PATCH with any other
@@ -89,8 +89,12 @@ while a frame is mounted. A row in the list shows no data and holds no lease.
 Favorites refresh on their interval even when no window is open, so the
 palette and the Favorites section open on fresh data. Nothing else runs.
 
-Runner rules, checked before every run (never cached), with nobody there:
+Runner rules (`server/artifact-sources.ts`), checked before every run
+(never cached), with nobody there:
 
+- `workspace_read`: the bot's reviewed read of a text file in its own
+  workspace (a JSON file it keeps up to date), through `readWorkspaceText`,
+  which refuses a path outside the workspace, a link or a binary file.
 - Perspicax tool: only the reviewed read-only list
   (`PERSPICAX_READ_ONLY_TOOLS`, e.g. `cw_psa__query`), in the name of the
   artifact's owner (else the bot's owner), through the same delegated path a
@@ -99,7 +103,9 @@ Runner rules, checked before every run (never cached), with nobody there:
   allowed for the bot (an "Always allow" rule, `mcp:<server>__<tool>`).
 - Command: only on the bot's own Local VM and only while the bot runs in Full
   Access (where its shell already runs without asking). Stdout is parsed as
-  JSON, or handed as text.
+  JSON, or handed as text. A stopped VM, or a person controlling it, is not a
+  failure: the run waits for the next interval (Sagax never starts a VM for
+  a refresh).
 - Anything else is `blocked`: it never runs alone and the row says why. No
   failure is counted; a later run checks again, so a rule added since lets it
   run.

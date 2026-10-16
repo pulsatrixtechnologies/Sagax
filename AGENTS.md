@@ -3876,3 +3876,31 @@ and `server/browser-teach.test.ts`:
   arrives turned off, with the upload route's rights and audit row. The bot
   replays it with its browser tools and its usual approvals.
 - Not done: recording the desktop screen (only the bot's browser).
+
+## Artifacts: saved widgets that refresh without a turn (2026-10-16)
+
+A bot saves a widget as an artifact (`save_artifact`, `update_artifact`,
+`list_artifacts`, `delete_artifact`; `server/artifacts.ts`,
+`server/routes/artifacts.ts`, spec
+`docs/superpowers/specs/2026-10-16-artifacts-design.md`). Rules:
+
+- The settings (HTML, source, interval, favorite, popped, bounds) are the
+  bot's. The person's routes change `favorite` and `popped` only, and
+  delete; any other field is a 400 that says to ask the bot.
+- A bot reaches only its own artifacts: the bot is the turn capability's,
+  never the body's. On a server with private threads a member sees only the
+  artifacts saved from their own conversations.
+- The widget renders in the chat widgets' sandbox (`allow-scripts` only,
+  opaque origin, the no-network CSP). Data reaches it by `postMessage`
+  (`sagax-artifact-data`); the bridge accepts only its parent.
+- A refresh is never a model turn. `server/artifact-refresh.ts` re-runs a
+  source only while the artifact is open (a watch lease) or a favorite, two
+  at once, 30 seconds each, and pauses it after 3 failures in a row.
+- `server/artifact-sources.ts` decides what may run with nobody there, on
+  every run: `workspace_read` of the bot's own workspace, a Perspicax tool
+  in `PERSPICAX_READ_ONLY_TOOLS` (in the owner's name, through the relay's
+  permission guard), a remote MCP tool the person allowed for good
+  (`mcp:<server>__<tool>` in the conversation's always-allow), or a command
+  on the bot's own Local VM in Full access. Anything else is `blocked`,
+  makes no call and counts no failure. Never widen this list without the
+  same review as `PERSPICAX_READ_ONLY_TOOLS`.

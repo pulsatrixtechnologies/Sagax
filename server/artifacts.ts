@@ -19,7 +19,14 @@ export type ArtifactResult =
 
 export type ArtifactRun =
   | { ok: true; value: unknown }
-  | { ok: false; error: string; /** The source needs a person: never retried alone. */ blocked?: boolean };
+  | {
+    ok: false;
+    error: string;
+    /** The source needs a person: it never runs alone, and no failure is counted. */
+    blocked?: boolean;
+    /** It could not run yet (its computer is stopped): no failure is counted. */
+    waiting?: boolean;
+  };
 
 export interface ArtifactStore {
   list(botId: string): Artifact[];
@@ -89,11 +96,13 @@ export function createArtifactStore(options: {
     // no file yet, or unreadable: start empty
   }
 
-  const save = () => {
-    writeFileAtomic(options.file, JSON.stringify({ version: 1, artifacts: Array.from(artifacts.values()) }), { mode: 0o600 });
+  /** A refresh result is not worth an fsync: losing the last one to a power
+   * cut costs one more run. Anything the bot or the person changed is. */
+  const save = (durable = true) => {
+    writeFileAtomic(options.file, JSON.stringify({ version: 1, artifacts: Array.from(artifacts.values()) }), { mode: 0o600, durable });
   };
-  const changed = (artifact: Artifact | null, botId: string, deleted = false) => {
-    save();
+  const changed = (artifact: Artifact | null, botId: string, deleted = false, durable = true) => {
+    save(durable);
     options.onChange?.({ kind: ARTIFACTS_FRAME, botId, ...(artifact ? { artifactId: artifact.id } : {}), ...(deleted ? { deleted: true } : {}) });
   };
 
@@ -220,8 +229,13 @@ export function createArtifactStore(options: {
         next = value === null
           ? { ...current, refresh: { state: "error", failures: current.refresh.failures + 1, lastRunAt: at, ...(current.refresh.lastOkAt ? { lastOkAt: current.refresh.lastOkAt } : {}), error: `The answer is larger than ${ARTIFACT_LIMITS.data} characters of JSON.` } }
           : { ...current, data: { at, value }, refresh: { state: "ok", failures: 0, lastRunAt: at, lastOkAt: at } };
+      } else if (run.waiting) {
+        next = {
+          ...current,
+          refresh: { ...current.refresh, state: current.refresh.state === "paused" ? "paused" : "error", lastRunAt: at, error: oneLine(run.error) || "Waiting." },
+        };
       } else {
-        const failures = current.refresh.failures + 1;
+        const failures = run.blocked ? current.refresh.failures : current.refresh.failures + 1;
         next = {
           ...current,
           refresh: {
@@ -235,7 +249,7 @@ export function createArtifactStore(options: {
       }
       next.rev = current.rev + 1;
       artifacts.set(id, next);
-      changed(next, next.botId);
+      changed(next, next.botId, false, false);
       return next;
     },
     resume(id) {

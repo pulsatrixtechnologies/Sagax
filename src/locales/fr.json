@@ -8614,5 +8614,15 @@
   "artifacts.loading": "Chargement des artefacts…",
   "artifacts.error": "Impossible de charger les artefacts.",
   "artifacts.empty": "Aucun artefact pour l'instant. Demandez à ce bot d'enregistrer un widget comme artefact ; il peut se rafraîchir à l'intervalle que vous fixez avec le bot.",
-  "palette.group.artifacts": "Artefacts"
+  "palette.group.artifacts": "Artefacts",
+  "artifacts.interval.seconds": "{count} s",
+  "artifacts.interval.minutes": "{count} min",
+  "artifacts.interval.hours": "{count} h",
+  "artifacts.interval.days": "{count} j",
+  "artifacts.status.every": "Mis à jour {when} · aux {every}",
+  "artifacts.status.blocked": "Ne se rafraîchit pas seul : cette source demande votre approbation. Demandez au bot d'utiliser un outil de lecture.",
+  "artifacts.status.paused": "Rafraîchissement en pause après {count} échecs. Rafraîchissez maintenant ou demandez au bot.",
+  "artifacts.status.pausedByBot": "Rafraîchissement mis en pause par le bot.",
+  "artifacts.status.error": "Échec du rafraîchissement {when} ; il réessaie.",
+  "artifacts.refreshNow": "Rafraîchir maintenant"
 }

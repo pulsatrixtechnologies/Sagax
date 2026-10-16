@@ -134,3 +134,43 @@ export function useArtifact(botId: string, id: string): { artifact: Artifact | n
   }, botId);
   return { artifact, error, gone };
 }
+
+// ---------------------------------------------------------------------------
+// Watch leases: an artifact refreshes while it is open somewhere (its dialog
+// or its window) or a favorite (server/artifact-refresh.ts). Every mounted
+// frame registers here; one request every 45 seconds renews them all.
+
+export const WATCH_RENEW_MS = 45_000;
+const watched = new Map<string, number>();
+let watchTimer: ReturnType<typeof setInterval> | null = null;
+
+function sendWatch(): void {
+  const ids = Array.from(watched.keys());
+  if (!ids.length) return;
+  void api("/api/artifacts/watch", { method: "POST", body: JSON.stringify({ ids }) }).catch(() => {});
+}
+
+/** Holds a lease on `id` while the calling component is mounted. */
+export function useArtifactWatch(id: string | null): void {
+  useEffect(() => {
+    if (!id) return;
+    const first = !watched.has(id);
+    watched.set(id, (watched.get(id) ?? 0) + 1);
+    if (first) sendWatch();
+    if (!watchTimer) watchTimer = setInterval(sendWatch, WATCH_RENEW_MS);
+    return () => {
+      const left = (watched.get(id) ?? 1) - 1;
+      if (left > 0) watched.set(id, left);
+      else watched.delete(id);
+      if (!watched.size && watchTimer) {
+        clearInterval(watchTimer);
+        watchTimer = null;
+      }
+    };
+  }, [id]);
+}
+
+/** Ids with a lease from this window (tests). */
+export function watchedArtifactIds(): string[] {
+  return Array.from(watched.keys());
+}

@@ -11,6 +11,7 @@ import type { ArtifactSummary } from "../../../shared/artifacts";
 
 vi.mock("./FilesSection", () => ({ FilesSection: () => createElement("div", { "data-files-marker": "" }) }));
 const { LibraryBody } = await import("./LibraryTab");
+const { artifactStatus, intervalLabel } = await import("../artifacts/ArtifactsSection");
 
 const now = Date.parse("2026-10-16T12:00:00Z");
 const artifact = (id: string, title: string, favorite: boolean, extra: Partial<ArtifactSummary> = {}): ArtifactSummary => ({
@@ -71,5 +72,39 @@ describe("Files tab > Artifacts", () => {
     const html = render(list(null, true));
     expect(html).toContain("Impossible de charger les artefacts.");
     expect(html).toContain("Artefacts");
+  });
+});
+
+describe("an artifact's refresh state on its row", () => {
+  const source = { kind: "tool" as const, tool: "workspace_read", args: { path: "stats.json" } };
+
+  it("says how fresh it is and how often it refreshes", () => {
+    const fresh = artifact("art_ok00001", "Tickets", false, { source, intervalSeconds: 300, dataAt: now - 60_000, refresh: { state: "ok", failures: 0 } });
+    expect(artifactStatus(fresh, now)).toEqual({ tone: "muted", text: "Updated 1 min ago · every 5 min" });
+    expect(intervalLabel(30)).toBe("30 s");
+    expect(intervalLabel(7200)).toBe("2 h");
+    expect(intervalLabel(86_400)).toBe("1 d");
+    const html = render(list([fresh]));
+    expect(html).toContain('data-artifact-status="ok"');
+  });
+
+  it("explains a blocked source, a pause and a failed run, with the server's words in the tooltip", () => {
+    const blocked = artifact("art_bl00001", "CPU", false, { source, intervalSeconds: 60, refresh: { state: "blocked", failures: 0, error: "This tool needs your approval each time." } });
+    expect(artifactStatus(blocked, now)).toMatchObject({ tone: "warning", text: expect.stringContaining("needs your approval"), detail: "This tool needs your approval each time." });
+    const paused = artifact("art_pa00001", "CPU", false, { source, intervalSeconds: 60, refresh: { state: "paused", failures: 3, error: "down" } });
+    expect(artifactStatus(paused, now)).toMatchObject({ tone: "danger", text: "Refresh paused after 3 failures. Refresh now, or ask the bot." });
+    const byBot = artifact("art_pb00001", "CPU", false, { source, intervalSeconds: 60, refresh: { state: "paused", failures: 0 } });
+    expect(artifactStatus(byBot, now).text).toBe("Refresh paused by the bot.");
+    const failed = artifact("art_er00001", "CPU", false, { source, intervalSeconds: 60, refresh: { state: "error", failures: 1, lastRunAt: now - 120_000, error: "no such file" } });
+    expect(artifactStatus(failed, now)).toMatchObject({ tone: "warning", text: "Refresh failed 2 min ago; it tries again.", detail: "no such file" });
+    const html = render(list([blocked]));
+    expect(html).toContain('title="This tool needs your approval each time."');
+  });
+
+  it("an artifact with no source just says when it changed, in French too", () => {
+    setLocale("fr");
+    expect(artifactStatus(artifact("art_st00001", "Note", false), now).text).toContain("Mis à jour");
+    const paused = artifact("art_pa00001", "CPU", false, { source, intervalSeconds: 60, refresh: { state: "paused", failures: 3 } });
+    expect(artifactStatus(paused, now).text).toBe("Rafraîchissement en pause après 3 échecs. Rafraîchissez maintenant ou demandez au bot.");
   });
 });

@@ -2,13 +2,14 @@
 // capability saves one on the internal route (as save_artifact does), the
 // person's routes list it, star it, refuse any other change and delete it
 // (docs/superpowers/specs/2026-10-16-artifacts-design.md).
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
+import { startFakeHttpMcp } from "./testing/fake-http-mcp-server.ts";
 
 it("a bot saves an artifact in its turn; the person sees it, stars it and deletes it", async () => {
   const gates = mkdtempSync(join(tmpdir(), "omb-artifacts-"));
@@ -57,6 +58,79 @@ it("a bot saves an artifact in its turn; the person sees it, stars it and delete
     writeFileSync(gate, "finish");
   } finally {
     await fixture.close();
+    await removeTempDir(gates);
+  }
+}, 120_000);
+
+it("a fake engine's bot saves an artifact with a source; Sagax refreshes it with no turn, and blocks a source that needs approval", async () => {
+  const gates = mkdtempSync(join(tmpdir(), "omb-artifacts-refresh-"));
+  const gate = join(gates, "finish");
+  const fixture = await launchVerificationServer({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_SLOW_FINISH_GATE: gate });
+  const stats = await startFakeHttpMcp({ tools: [{ name: "cpu", inputSchema: { type: "object" } }] });
+  const api = async (method: string, path: string, body?: unknown, expected = 200, token?: string) => {
+    const response = await fetch(fixture.info.url + path, {
+      method, headers: { "content-type": "application/json", origin: fixture.info.url, ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const result = await response.json() as any;
+    expect(response.status, JSON.stringify(result)).toBe(expected);
+    return result;
+  };
+  try {
+    // A remote MCP server the workspace uses, whose tools ask each time.
+    await api("POST", "/api/mcp/servers", { name: "stats", type: "http", url: stats.url }, 201);
+    await api("PATCH", "/api/mcp/servers/stats", { enabled: true });
+    const bot = (await api("POST", "/api/bots", { name: "Gauge" }, 201)).bot;
+    // The file the bot keeps up to date in its own workspace.
+    const workspace = join(fixture.info.dataDir, "workspaces", bot.id);
+    mkdirSync(workspace, { recursive: true });
+    writeFileSync(join(workspace, "stats.json"), JSON.stringify({ open: 3 }));
+
+    await runControlOmb(["send", "--bot", bot.id, "--task", bot.threadId, "--text", "Keep my open tickets on screen, every 30 seconds", "--url", fixture.info.url]);
+    let token = "";
+    await expect.poll(() => {
+      try { token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN; }
+      catch { return false; }
+      return Boolean(token);
+    }, { timeout: 15_000 }).toBe(true);
+    const tool = (name: string, args: Record<string, unknown>, expected = 200) => api("POST", "/api/internal/artifacts", { tool: name, args }, expected, token);
+    const html = "<b id=n></b><script>window.sagax.onData(function(d){n.textContent=d.open})</script>";
+    const gauge = (await tool("save_artifact", { title: "Open tickets", html, source: { kind: "tool", tool: "mcp__agents__workspace_read", args: { path: "stats.json" } }, interval_seconds: 30 }, 201)).artifact;
+    const asking = (await tool("save_artifact", { title: "CPU", html, source: { kind: "tool", tool: "mcp__stats__cpu", args: {} }, interval_seconds: 30 }, 201)).artifact;
+    // The turn ends: from here on no model runs.
+    writeFileSync(gate, "finish");
+    const one = async (id: string) => (await api("GET", `/api/bots/${bot.id}/artifacts/${id}`)).artifact;
+
+    // Nobody looks at them and neither is a favorite: nothing runs.
+    await new Promise((resolve) => setTimeout(resolve, 6_000));
+    expect((await one(gauge.id)).refresh).toMatchObject({ state: "idle" });
+    expect((await one(gauge.id)).data).toBeUndefined();
+
+    // Opened (a watch lease): the refresher reads the file on its own.
+    expect(await api("POST", "/api/artifacts/watch", { ids: [gauge.id, asking.id, "art_madeup0001"] })).toEqual({ ok: true, watching: 2 });
+    await expect.poll(async () => (await one(gauge.id)).data?.value, { timeout: 15_000, interval: 500 }).toEqual({ open: 3 });
+    expect((await one(gauge.id)).refresh).toMatchObject({ state: "ok", failures: 0 });
+    // A tool that asks each time is never called alone: blocked, no failure.
+    await expect.poll(async () => (await one(asking.id)).refresh.state, { timeout: 15_000, interval: 500 }).toBe("blocked");
+    expect((await one(asking.id)).refresh).toMatchObject({ failures: 0, error: expect.stringContaining("approval") });
+    expect(stats.calls).toEqual([]);
+
+    // Refresh now picks up the new value at once, still with no turn.
+    writeFileSync(join(workspace, "stats.json"), JSON.stringify({ open: 7 }));
+    const refreshed = (await api("POST", `/api/bots/${bot.id}/artifacts/${gauge.id}/refresh`)).artifact;
+    expect(refreshed.data.value).toEqual({ open: 7 });
+    // A bad file counts a failure; the list shows the state without the data.
+    rmSync(join(workspace, "stats.json"));
+    expect((await api("POST", `/api/bots/${bot.id}/artifacts/${gauge.id}/refresh`)).artifact.refresh).toMatchObject({ state: "error", failures: 1 });
+    const listed = (await api("GET", `/api/bots/${bot.id}/artifacts`)).artifacts.find((artifact: any) => artifact.id === gauge.id);
+    expect(listed).not.toHaveProperty("data");
+    expect(listed.dataAt).toEqual(expect.any(Number));
+    // No turn ran for any of it: the bot's conversation has the one prompt.
+    const messages = (await api("GET", `/api/threads/${bot.threadId}/messages`)).messages;
+    expect(messages.filter((message: any) => message.role === "user")).toHaveLength(1);
+  } finally {
+    await fixture.close();
+    await stats.close();
     await removeTempDir(gates);
   }
 }, 120_000);

@@ -952,6 +952,8 @@ import { approvalTypeOf } from "./approval-type.ts";
 import { createMeetingInternalRoutes } from "./routes/meeting-internal.ts";
 import { createArtifactStore } from "./artifacts.ts";
 import { createArtifactInternalRoutes, createArtifactRoutes } from "./routes/artifacts.ts";
+import { createArtifactRefresher } from "./artifact-refresh.ts";
+import { createArtifactSourceRunner, toolResultValue } from "./artifact-sources.ts";
 import { createMeetingService, type MeetingService } from "./meetings/meeting-requests.ts";
 import { parseEvalJson } from "./meetings/meet-scripts.ts";
 import type { MeetingBrowser } from "./meetings/meeting-session.ts";
@@ -1003,7 +1005,7 @@ import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./perspicax-link.ts";
 import { duplicateNote, PerspicaxMemory } from "./perspicax-memory.ts";
 import { PERSPICAX_TOOL_NAMES } from "./drivers/agents-catalog.ts";
-import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
+import { PERSPICAX_PROTOCOL_VERSION, PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { withClaimsFlag } from "./perspicax-claims.ts";
 import { createPerspicaxClaimsInternalRoutes } from "./routes/perspicax-claims-internal.ts";
 import { dispatchInternalRoutes, type InternalCapabilityView, type InternalRouteHandler } from "./routes/internal-route.ts";
@@ -23565,8 +23567,78 @@ ROUTES.push(createMeetingRoutes({
   refusal: (auth, threadId, requestId) => approvalAnswerRefusal(auth, threadId, requestId) ?? cardAnswerRefusal(auth, threadId, requestId, "allow"),
 }));
 // Artifacts in the Files tab and the palette (server/routes/artifacts.ts).
+// The artifact refresher (server/artifact-refresh.ts): a source re-runs on
+// its interval while its artifact is open somewhere or a favorite, and only
+// when it needs no approval (server/artifact-sources.ts).
+const artifactRefresher = createArtifactRefresher({
+  store: artifactStore,
+  log: (line) => console.warn(line),
+  run: createArtifactSourceRunner({
+    bot: (botId) => {
+      const bot = store.bot(botId);
+      return bot ? { id: bot.id, computer: bot.computer, ...(bot.perspicax?.profiles.length ? { perspicaxProfiles: bot.perspicax.profiles } : {}) } : null;
+    },
+    threadFor: (artifact) => artifact.threadId && connectorThread(artifact.botId, artifact.threadId) ? artifact.threadId : store.bot(artifact.botId)?.threadId ?? "",
+    fullAccess: (botId, threadId) => fullAccessForSource(botId, threadId),
+    alwaysAllowed: (botId, threadId, key) => Boolean((store.projectBotForTask(botId, threadId) ?? store.bot(botId))?.alwaysAllow?.includes(key)),
+    mcpServer: async (botId, _threadId, name) => {
+      const bot = store.bot(botId);
+      if (!bot) return undefined;
+      await refreshMcpOAuth(bot);
+      return engineMcpServers(bot)[name];
+    },
+    toolDisabled: (server, tool) => Boolean(mcpDisabledTools(cfg)[server]?.includes(tool)),
+    workspaceRead: (botId, path) => readWorkspaceText(botId, path).text,
+    vm: {
+      state: async (botId) => {
+        if (botComputerControlSnapshot(botId).held) return "held";
+        const status = await containerComputerStatus(undefined, undefined, localVmTargetForBot(botId)).catch(() => null);
+        return status?.runtime && status.container === "running" ? "running" : "stopped";
+      },
+      exec: (botId, command) => containerExec(localVmTargetForBot(botId), command, { timeoutSeconds: 25 }),
+    },
+    ...(IDENTITY.kind === "perspicax" ? {
+      perspicax: {
+        // In the name of the person the artifact belongs to (else the bot's
+        // owner), through their routine delegation, like a routine's run.
+        // The relay applies the MCP permission guard; the tokens end with
+        // the run.
+        call: async ({ artifact, tool, args }) => {
+          const mcp = perspicaxMcp;
+          const live = store.bot(artifact.botId);
+          if (!mcp || !live?.perspicax?.profiles.length) return { error: "Perspicax is not available to this bot." };
+          const threadId = `artifact-${artifact.id}`;
+          const generation = randomUUID();
+          try {
+            const plan = await mcp.prepareTurn({
+              threadId, generation, bot: { id: live.id, perspicax: live.perspicax },
+              speakerPrincipalId: artifact.ownerPrincipalId ?? effectiveBotOwner(live), speakerOrigin: "owner-routine",
+            });
+            const profile = plan.mounted.find((candidate) => candidate.slug && tool.startsWith(`${candidate.slug}__`)) ?? plan.mounted[0];
+            if (!profile) {
+              const reason = plan.unavailable[0]?.reason;
+              return { error: reason ? `Perspicax: ${PERSPICAX_UNAVAILABLE_WHY[reason]}` : "No Perspicax profile could be used." };
+            }
+            const relay = (frame: Record<string, unknown>) => mcp.relay({ threadId, generation, botId: live.id, profileId: profile.profileId, frame });
+            await relay({ jsonrpc: "2.0", id: "artifact-init", method: "initialize", params: { protocolVersion: PERSPICAX_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "Sagax artifacts", version: serverVersion() } } });
+            await relay({ jsonrpc: "2.0", method: "notifications/initialized" });
+            const answer = await relay({ jsonrpc: "2.0", id: "artifact-call", method: "tools/call", params: { name: tool, arguments: args } });
+            const body = answer.body as { error?: { message?: unknown }; result?: unknown } | undefined;
+            if (!body || body.error) return { error: typeof body?.error?.message === "string" ? body.error.message : "Perspicax refused the call." };
+            return toolResultValue(body.result);
+          } finally {
+            await mcp.endGeneration(threadId, generation).catch(() => {});
+          }
+        },
+      },
+    } : {}),
+  }),
+});
+artifactRefresher.start();
 ROUTES.push(createArtifactRoutes({
   artifacts: () => artifactStore,
+  refreshNow: (artifact) => artifactRefresher.refreshNow(artifact.id),
+  watch: (ids) => artifactRefresher.watch(ids),
   mayUseBot: (auth, botId) => {
     const bot = store.bot(botId);
     if (!bot) return false;

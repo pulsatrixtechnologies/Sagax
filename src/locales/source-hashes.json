@@ -12451,7 +12451,17 @@
       "artifacts.loading": "11580619f554d270e0ab9ef5956de475ee9c077004cf98e50de92a0d8ce7702f",
       "artifacts.error": "cdbe5f2153e144dd7281eb752a07be57d2fda735ca94358ace7578d4ffc7112d",
       "artifacts.empty": "7c5c733a11acd587527c94e97f4778f7049b96ef11500c0289eb37cc37ee351f",
-      "palette.group.artifacts": "314ae71b8c8dc9c952f0ffc58e35e6d9a41b5cf4756471c7cab0c9476cd5d20b"
+      "palette.group.artifacts": "314ae71b8c8dc9c952f0ffc58e35e6d9a41b5cf4756471c7cab0c9476cd5d20b",
+      "artifacts.interval.seconds": "e4e6c0fbc1a49d45c3bd828a8f1db1b256b17db672e68d19b15d5cf58ca0aa52",
+      "artifacts.interval.minutes": "1829c58ba472520fd39e61f9e337a1b7da27e86299332dde5bfdea355c3895a8",
+      "artifacts.interval.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "artifacts.interval.days": "d7066a9380ea87cf3cc43bb821864872f856320ec7751e885c89caa0b9c748f4",
+      "artifacts.status.every": "7796ecb9a347830028afe45ab535c6cd85577595f234339a81e139b7a7becf67",
+      "artifacts.status.blocked": "043f8c522b45d86addb84f6aff3ca61d69bd4cad89554ce6a98dd6465daa77ca",
+      "artifacts.status.paused": "bc605066b0a4f826cdc7213ae95a2cdaf2e411e8a3ca80924aa234eeab589eff",
+      "artifacts.status.pausedByBot": "3efee9f4678b1ce915f62ad54376bf33ca9f0ab371e99f59687a1a9ac1948a2f",
+      "artifacts.status.error": "05ebdefbd9961c5fa811325ed49fd133fdd6dbb2f333e898fb2b3c81b552f8db",
+      "artifacts.refreshNow": "1486770684670d9522448c4570f0cf4cd20503865e2f579d152f8e6b62c64c92"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
