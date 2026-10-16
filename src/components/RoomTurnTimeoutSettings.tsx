@@ -7,6 +7,7 @@ import {
 } from "@/lib/room-turn-timeout";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { DescribedRow, UnitField } from "./SettingsPrimitives";
 
 export function RoomTurnTimeoutSettings() {
   const { state, dispatch } = useStore();
@@ -50,48 +51,35 @@ export function RoomTurnTimeoutSettings() {
     }
   };
 
+  // 0.5.6 (JC): one Grok-style row, label and a short grey line at the
+  // left, the minutes at the right; the range shows only when refused.
   return (
-    <div className="flex flex-col gap-2">
-      <label htmlFor="room-turn-timeout" className="text-[13px] font-medium text-ink">
-        {t("settings.roomTurns.label")}
-      </label>
-      <div
-        className={`flex max-w-[220px] items-center rounded-lg border bg-inset ${
-          error ? "border-danger/60" : "border-hairline/40 focus-within:border-focus"
-        }`}
+    <div data-settings-card="organization.roomTurns">
+      <DescribedRow
+        label={t("settings.roomTurns.title")}
+        rowId="organization.roomTurns"
+        description={error
+          ? <span id="room-turn-timeout-error" role="alert" className="text-danger">{error}</span>
+          : t("settings.roomTurns.subtitle")}
       >
-        <input
+        <UnitField
           id="room-turn-timeout"
-          type="number"
+          value={value}
+          unit={t("settings.roomTurns.minutes")}
+          label={t("settings.roomTurns.title")}
           min={MIN_ROOM_TURN_TIMEOUT_MINUTES}
           max={MAX_ROOM_TURN_TIMEOUT_MINUTES}
-          step={1}
-          inputMode="numeric"
-          value={value}
           disabled={saving}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? "room-turn-timeout-error room-turn-timeout-help" : "room-turn-timeout-help"}
-          onChange={(event) => {
-            setValue(event.target.value);
+          invalid={Boolean(error)}
+          describedBy={error ? "room-turn-timeout-error" : undefined}
+          onChange={(next) => {
+            setValue(next);
             setDirty(true);
             setError("");
           }}
-          onBlur={() => void save()}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur();
-          }}
-          className="min-w-0 flex-1 bg-transparent px-3 py-2 text-[14px] tabular-nums text-ink focus:outline-none"
+          onCommit={() => void save()}
         />
-        <span className="pr-3 text-[13px] text-ink-secondary">{t("settings.roomTurns.minutes")}</span>
-      </div>
-      <p id="room-turn-timeout-help" className="text-[12px] leading-relaxed text-ink-secondary">
-        {t("settings.roomTurns.help")}
-      </p>
-      {error ? (
-        <p id="room-turn-timeout-error" role="alert" className="text-[12px] text-danger">
-          {error}
-        </p>
-      ) : null}
+      </DescribedRow>
     </div>
   );
 }

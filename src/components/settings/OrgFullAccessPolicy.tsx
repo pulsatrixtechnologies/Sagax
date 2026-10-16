@@ -7,7 +7,7 @@ import { useState } from "react";
 import { t } from "@/lib/i18n";
 import { loadPerspicaxOrg } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
-import { Card, Switch } from "../SettingsPrimitives";
+import { DescribedRow, Switch } from "../SettingsPrimitives";
 
 /** Save the policy; the server answers with the organization's settings. */
 export function saveOrgFullAccess(allowed: boolean): Promise<{ settings: { allowFullAccess: boolean } }> {
@@ -36,16 +36,16 @@ export function OrgFullAccessPolicy({ initial, onChanged }: { initial: boolean; 
     }
   };
 
+  // 0.5.6 (JC): a Grok-style row of the organization's bots group.
   return (
-    <Card cardId="organization.fullAccess" title={t("organization.fullAccess.title")}>
-      <div className="flex flex-col gap-2 text-[13px]" data-org-full-access={allowed ? "on" : "off"}>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-ink">{t("organization.fullAccess.label")}</span>
-          <Switch checked={allowed} disabled={busy} aria-label={t("organization.fullAccess.label")} onClick={() => void toggle()} />
-        </div>
-        <p className="text-[12px] leading-relaxed text-ink-secondary">{t("organization.fullAccess.text")}</p>
-        {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
-      </div>
-    </Card>
+    <div data-settings-card="organization.fullAccess" data-org-full-access={allowed ? "on" : "off"}>
+      <DescribedRow
+        label={t("organization.fullAccess.title")}
+        rowId="fullAccess"
+        description={error ? <span role="alert" className="text-danger">{error}</span> : t("organization.fullAccess.short")}
+      >
+        <Switch checked={allowed} disabled={busy} aria-label={t("organization.fullAccess.label")} onClick={() => void toggle()} />
+      </DescribedRow>
+    </div>
   );
 }

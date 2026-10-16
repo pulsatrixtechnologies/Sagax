@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Cloud, Laptop, Loader2, Trash2 } from "lucide-react";
-import { Card } from "./SettingsPrimitives";
+import { Card, DANGER_PILL, DescribedRow, PILL } from "./SettingsPrimitives";
 import { t } from "@/lib/i18n";
 import { ComputerSharingSettings } from "./ComputerSharingSettings";
 import { useStore } from "@/state/store";
@@ -77,7 +77,6 @@ export function ConnectedWorkspacesSettings() {
   const locals = saved?.environments.filter(entry => entry.kind === "local") ?? [];
   const forgetEntry = locals.find(entry => entry.id === envForget);
   return <>
-    <p className="text-[13px] leading-relaxed text-ink-secondary">{t("settings.servers.intro")}</p>
     {saved?.packaged && !serverModeActive && <Card title="Environments on this computer" subtitle="Separate setups on this computer, each with its own bots, conversations and data folder.">
       {envError && <p role="alert" className="text-[12px] text-danger">{envError}</p>}
       {locals.length > 0 && <ul className="divide-y divide-hairline/40">
@@ -152,34 +151,31 @@ export function ConnectedWorkspacesSettings() {
         </button>
       </form>
     </Card>}
-    <Card
-      collapsible
-      cardId="organization.servers"
-      title={t("settings.servers.title")}
-      subtitle={t("settings.servers.subtitle")}
-      summary={!saved ? t("common.checking") : t("settings.card.current", {
-        name: saved.environments.find((entry) => entry.id === saved.activeId)?.name ?? t("settings.thisComputer.title"),
+    {/* 0.5.6 (JC): one Grok-style row per server (name, address in grey,
+        Switch and Forget at the right) under the page's Servers heading. */}
+    <div data-settings-card="organization.servers" className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5">
+      {!saved ? (
+        <DescribedRow label={t("settings.servers.title")} rowId="servers"
+          description={<span role="status">{error ? t("settings.servers.couldNot") : t("settings.servers.loading")}</span>} />
+      ) : [{ id: "local", name: t("settings.thisComputer.title"), origin: "" }, ...saved.environments.filter((entry) => entry.kind !== "local")].map((entry) => {
+        const active = entry.id === saved.activeId;
+        const Icon = entry.id === "local" ? Laptop : Cloud;
+        return (
+          <DescribedRow key={entry.id} rowId={`server:${entry.id}`} label={entry.name} icon={<Icon size={14} />}
+            description={<span className="break-all">{entry.origin || t("settings.thisComputer.local")}</span>}>
+            {active ? <span className="flex items-center gap-1 px-2.5 text-[13px] text-ink-secondary"><Check size={13} aria-hidden="true" />{t("settings.servers.current")}</span> :
+              <button type="button" disabled={busy} aria-label={t("settings.servers.switchTo", { name: entry.name })} onClick={() => void perform(async () => { await bridge.switch(entry.id); return true; })}
+                className={PILL}>{t("settings.servers.switch")}</button>}
+            {entry.id !== "local" && sharingOffered && <button type="button" disabled={busy} aria-label={t("settings.servers.accessFor", { name: entry.name })} onClick={() => setComputerId(entry.id)} className={PILL}>{t("settings.servers.access")}</button>}
+            {entry.id !== "local" && <button type="button" disabled={busy} aria-label={t("settings.servers.forget", { name: entry.name })}
+              onClick={() => void perform(async () => {
+                if (!await confirmAction(t("settings.servers.forgetConfirm", { name: entry.name }))) return;
+                return bridge.forget(entry.id);
+              })} className={`${DANGER_PILL} min-h-[44px] md:min-h-0`}>{t("settings.servers.forgetShort")}</button>}
+          </DescribedRow>
+        );
       })}
-    >
-      {!saved ? <p role="status" className="text-[13px] text-ink-secondary">{error ? t("settings.servers.couldNot") : t("settings.servers.loading")}</p> :
-        <ul className="divide-y divide-hairline/40">
-          {[{ id: "local", name: t("settings.thisComputer.title"), origin: "" }, ...saved.environments.filter((entry) => entry.kind !== "local")].map((entry) => {
-            const active = entry.id === saved.activeId;
-            const Icon = entry.id === "local" ? Laptop : Cloud;
-            return <li key={entry.id} className="flex items-center gap-3 py-3">
-              <Icon size={18} className="shrink-0 text-ink-secondary" />
-              <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium text-ink">{entry.name}</div>
-                <div className="break-all text-[12px] text-ink-secondary">{entry.origin || t("settings.thisComputer.local")}</div></div>
-              {active ? <span className="flex shrink-0 items-center gap-1 text-[12px] text-ink-secondary"><Check size={13} />{t("settings.servers.current")}</span> :
-                <button type="button" disabled={busy} aria-label={t("settings.servers.switchTo", { name: entry.name })} onClick={() => void perform(async () => { await bridge.switch(entry.id); return true; })}
-                  className="rounded-md px-2 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-50">{t("settings.servers.switch")}</button>}
-              {entry.id !== "local" && sharingOffered && <button type="button" disabled={busy} aria-label={t("settings.servers.accessFor", { name: entry.name })} onClick={() => setComputerId(entry.id)} className="rounded-md px-2 py-1.5 text-[12px] text-ink hover:bg-control">{t("settings.servers.access")}</button>}
-              {entry.id !== "local" && <button type="button" disabled={busy} aria-label={t("settings.servers.forget", { name: entry.name })} title={t("settings.servers.forget", { name: entry.name })}
-                onClick={() => void perform(() => bridge.forget(entry.id))} className="rounded-md p-1.5 text-ink-secondary hover:bg-control hover:text-danger disabled:opacity-50"><Trash2 size={14} /></button>}
-            </li>;
-          })}
-        </ul>}
-    </Card>
+    </div>
     {sharingOffered && computerWorkspace && <ComputerSharingSettings key={computerWorkspace.id} workspace={computerWorkspace} onClose={() => setComputerId(null)} />}
   </>;
 }

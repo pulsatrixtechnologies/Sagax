@@ -335,6 +335,7 @@ export function SettingsGroup({
   title,
   groupId,
   accessory,
+  plain,
   children,
 }: {
   title: string;
@@ -342,6 +343,9 @@ export function SettingsGroup({
   groupId: string;
   /** Shown after the heading, as Grok Bot's "Your computer · <name>". */
   accessory?: React.ReactNode;
+  /** The children are cards of their own (forms with several fields): the
+   * heading only, no card around them. */
+  plain?: boolean;
   children: React.ReactNode;
 }) {
   const headingId = useId();
@@ -351,10 +355,95 @@ export function SettingsGroup({
         <h3 id={headingId} className="shrink-0 text-[13px] font-normal leading-[18px] text-ink-secondary">{title}</h3>
         {accessory}
       </div>
-      <div className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5 empty:hidden">{children}</div>
+      <div className={plain ? "flex flex-col gap-2 empty:hidden" : "flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5 empty:hidden"}>{children}</div>
     </section>
   );
 }
+
+/** Grok Bot's count pill ("2 ⌄"): how many items a row holds, and the
+ * button that unfolds them under the row. */
+export function CountPill({ count, open, onToggle, label }: { count: number; open: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-label={label}
+      onClick={onToggle}
+      data-count-pill=""
+      className="inline-flex h-7 min-h-[44px] items-center gap-1 rounded-full px-2.5 text-[13px] text-ink tabular-nums transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 aria-expanded:bg-hover motion-reduce:transition-none md:min-h-0"
+    >
+      {count}
+      <ChevronDown size={13} aria-hidden="true" className={cn("text-ink-secondary transition-transform motion-reduce:transition-none", open && "rotate-180")} />
+    </button>
+  );
+}
+
+/** A small number field with its unit ("5 min"), for a row's right side.
+ * It saves on blur and on Enter, as the forms it replaces did. */
+export function UnitField({
+  id,
+  value,
+  unit,
+  label,
+  min,
+  max,
+  step = 1,
+  decimal,
+  disabled,
+  invalid,
+  describedBy,
+  onChange,
+  onCommit,
+}: {
+  id?: string;
+  value: string;
+  unit: string;
+  label: string;
+  min: number;
+  max: number;
+  step?: number;
+  decimal?: boolean;
+  disabled?: boolean;
+  invalid?: boolean;
+  describedBy?: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+}) {
+  return (
+    <span
+      data-unit-field=""
+      className={cn(
+        "inline-flex h-7 min-h-[44px] items-center gap-1 rounded-lg border-[0.5px] bg-inset pl-2 pr-2.5 md:min-h-0",
+        invalid ? "border-danger/60" : "border-border focus-within:border-focus",
+        disabled && "opacity-50",
+      )}
+    >
+      <input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        inputMode={decimal ? "decimal" : "numeric"}
+        value={value}
+        disabled={disabled}
+        aria-label={label}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={onCommit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        className="w-14 min-w-0 bg-transparent text-right text-[13px] tabular-nums text-ink focus:outline-none disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      />
+      <span aria-hidden="true" className="text-[13px] text-ink-secondary">{unit}</span>
+    </span>
+  );
+}
+
+/** Grok Bot's grey pill button, 44 px tall on a touch screen. */
+export const PILL = "ui-button min-h-[44px] disabled:opacity-50 md:min-h-0";
 
 export type PillOption<T extends string> = { value: T; label: string };
 

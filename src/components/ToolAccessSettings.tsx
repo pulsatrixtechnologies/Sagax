@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { t } from "@/lib/i18n";
-import { sortGrants, type ToolGrantRow } from "@/lib/tool-grants";
+import { grantTier, sortGrants, type ToolGrantRow } from "@/lib/tool-grants";
+import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
-import { Card } from "./SettingsPrimitives";
+import { CountPill, DANGER_PILL, DescribedRow, SettingsGroup } from "./SettingsPrimitives";
 
 const STATE_KEY = {
   active: "settings.toolAccess.state.active",
@@ -17,10 +18,12 @@ const STATE_KEY = {
  * (they come through POST /api/tool-grants), so this card shows only when
  * some exist, for review and Revoke. Admins only; the server refuses
  * anyone else, and the card then stays away. */
-export function PeopleToolAccessSettings() {
+export function PeopleToolAccessSettings({ confirm = (text: string) => window.confirm(text) }: { confirm?: (text: string) => boolean } = {}) {
   const [rows, setRows] = useState<ToolGrantRow[] | null>(null);
+  const [names, setNames] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -32,12 +35,26 @@ export function PeopleToolAccessSettings() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // A person by name where the organization's directory answers (Perspicax);
+  // elsewhere the grant's own subject stays, shortened.
+  useEffect(() => {
+    if (!rows?.length) return;
+    let alive = true;
+    api<{ people?: OrgDirectoryPerson[] }>("/api/org/directory")
+      .then((body) => { if (alive) setNames(Object.fromEntries((body.people ?? []).map((person) => [person.principalId, person.name]))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [rows?.length]);
 
-  const revoke = async (id: string) => {
+  const who = (id: string) => names[id] ?? (id.length > 12 ? `${id.slice(0, 11)}…` : id);
+  const what = (scope: string) => `${scope.split(":")[0]} · ${t(`settings.toolAccess.tier.${grantTier(scope)}`)}`;
+
+  const revoke = async (row: ToolGrantRow) => {
     if (busy) return;
-    setBusy(id);
+    if (!confirm(t("settings.toolAccess.revokeConfirm", { name: who(row.subject.id), scope: what(row.scope) }))) return;
+    setBusy(row.id);
     try {
-      await api(`/api/tool-grants/${encodeURIComponent(id)}/revoke`, { method: "POST", body: "{}" });
+      await api(`/api/tool-grants/${encodeURIComponent(row.id)}/revoke`, { method: "POST", body: "{}" });
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("settings.toolAccess.error"));
@@ -47,33 +64,39 @@ export function PeopleToolAccessSettings() {
   };
 
   if (!rows?.length) return null;
+  // 0.5.6 (JC): one Grok-style row (its count pill unfolds the grants);
+  // Revoke is a red pill that asks first.
   return (
-    <Card
-      collapsible
-      cardId="general.peopleToolAccess"
-      defaultOpen={false}
-      title={t("settings.toolAccess.people.title")}
-      subtitle={t("settings.toolAccess.people.subtitle")}
-    >
-      {error && <p className="mb-2 text-[13px] text-danger">{error}</p>}
-      <ul className="flex flex-col gap-2" aria-label={t("settings.toolAccess.people.title")}>
-        {rows.map((row) => (
-          <li key={row.id} className="flex items-center justify-between gap-3 rounded-lg border border-hairline/40 px-3 py-2">
-            <div className="min-w-0">
-              <div className="text-[13px] font-medium text-ink">{row.subject.id} · <code>{row.scope}</code></div>
-              <div className="text-[12px] text-ink-secondary">
-                {t(STATE_KEY[row.state])}
-                {row.expiresAt && row.state === "active" ? ` · ${t("settings.toolAccess.expires", { date: new Date(row.expiresAt).toLocaleDateString() })}` : ""}
-              </div>
-            </div>
-            {row.state === "active" && (
-              <button type="button" className="rounded-md border border-hairline/40 px-2 py-1 text-[12px]" disabled={busy !== null} onClick={() => void revoke(row.id)}>
-                {t("settings.toolAccess.revoke")}
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </Card>
+    <SettingsGroup title={t("settings.toolAccess.people.title")} groupId="peopleToolAccess">
+      <div data-settings-card="general.peopleToolAccess">
+        <DescribedRow
+          label={t("settings.toolAccess.people.grants")}
+          rowId="peopleToolAccess"
+          description={error ? <span role="alert" className="text-danger">{error}</span> : t("settings.toolAccess.people.subtitle")}
+          below={open && (
+            <ul className="mt-2 flex flex-col gap-0.5" aria-label={t("settings.toolAccess.people.title")}>
+              {rows.map((row) => (
+                <li key={row.id} className="flex min-w-0 items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-hover">
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] text-ink">{who(row.subject.id)} · {what(row.scope)}</div>
+                    <div className="text-[12px] text-ink-secondary">
+                      {t(STATE_KEY[row.state])}
+                      {row.expiresAt && row.state === "active" ? ` · ${t("settings.toolAccess.expires", { date: new Date(row.expiresAt).toLocaleDateString() })}` : ""}
+                    </div>
+                  </div>
+                  {row.state === "active" && (
+                    <button type="button" className={`${DANGER_PILL} min-h-[44px] md:min-h-0`} disabled={busy !== null} onClick={() => void revoke(row)}>
+                      {t("settings.toolAccess.revoke")}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        >
+          <CountPill count={rows.length} open={open} label={t("settings.toolAccess.people.title")} onToggle={() => setOpen((value) => !value)} />
+        </DescribedRow>
+      </div>
+    </SettingsGroup>
   );
 }

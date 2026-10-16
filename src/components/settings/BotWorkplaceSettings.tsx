@@ -7,13 +7,12 @@
 // and, behind a discreet link, what bots recently did there (#555)
 // (src/lib/desktop-bridge.ts, server/desktop-bridge.ts).
 import { useEffect, useState } from "react";
-import { ChevronDown, Link2 } from "lucide-react";
+import { Link2 } from "lucide-react";
 
-import { cn } from "@/lib/cn";
 import { activeLocale, t } from "@/lib/i18n";
 import { currentDesktop, readWorkplace, useDesktopBridgeStatus, writeWorkplace, type DesktopBridgeActivity, type DesktopBridgeDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import { DEFAULT_BOT_WORKPLACE, type BotWorkplace } from "../../../shared/bot-workplace";
-import { DescribedRow, PillSelect, Switch } from "../SettingsPrimitives";
+import { CountPill, DescribedRow, PillSelect, Switch } from "../SettingsPrimitives";
 
 function when(ms: number): string {
   return new Intl.DateTimeFormat(activeLocale(), { dateStyle: "short", timeStyle: "short" }).format(new Date(ms));
@@ -91,16 +90,12 @@ export function BotWorkplaceSettings({ status: given }: { status?: DesktopBridge
             </ul>
           )}
         >
-          <button
-            type="button"
-            aria-expanded={showOthers}
-            aria-label={t(showOthers ? "computer.others.hide" : "computer.others.show")}
-            onClick={() => setShowOthers((open) => !open)}
-            className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[13px] text-ink tabular-nums transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 aria-expanded:bg-hover motion-reduce:transition-none"
-          >
-            {others.length}
-            <ChevronDown size={13} aria-hidden="true" className={cn("text-ink-secondary transition-transform motion-reduce:transition-none", showOthers && "rotate-180")} />
-          </button>
+          <CountPill
+            count={others.length}
+            open={showOthers}
+            label={t(showOthers ? "computer.others.hide" : "computer.others.show")}
+            onToggle={() => setShowOthers((open) => !open)}
+          />
         </DescribedRow>
       )}
       {status.activity.length > 0 && (
