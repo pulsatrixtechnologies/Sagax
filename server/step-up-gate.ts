@@ -147,3 +147,38 @@ export function cardRiskClasses(card: OptionCardData): RiskClass[] {
     return ["destructive", "irreversible", "money", "external-send"];
   }
 }
+
+/** The classes an Allow on a call would fall in, before its card exists:
+ * the same reading as the card's (stepUpClassesForCard over cardRiskClasses),
+ * so a call Sagax would answer by itself is held for a card exactly when
+ * that card would need the person's key (2026-10-16, own environment and
+ * Sagax's own tools). A call that cannot be read is in every class. */
+export function callStepUpClasses(call: {
+  tool: string;
+  mcpTool?: string;
+  input?: string;
+  summary?: string;
+  command?: string;
+  hints?: OptionCardData["toolHints"];
+}): StepUpClass[] {
+  const card: OptionCardData = {
+    title: "", subtitle: call.summary ?? "", options: [], requestType: "permission", tool: call.tool,
+    ...(call.mcpTool ? { mcpTool: call.mcpTool } : {}),
+    ...(call.input ? { toolInput: call.input } : {}),
+    ...(call.hints ? { toolHints: call.hints } : {}),
+  };
+  let risks: RiskClass[];
+  try {
+    risks = riskClassesFromFacts(factsForCall({
+      tool: call.tool,
+      ...(call.mcpTool ? { mcpTool: call.mcpTool } : {}),
+      ...(call.input ? { input: call.input } : {}),
+      ...(call.hints ? { hints: call.hints } : {}),
+      ...(call.command ? { command: call.command } : {}),
+      summary: call.summary ?? "",
+    }));
+  } catch {
+    return [...STEP_UP_CLASSES];
+  }
+  return stepUpClassesForCard(card, risks);
+}

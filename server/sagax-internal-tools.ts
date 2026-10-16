@@ -18,7 +18,12 @@
 // call behind its use_tool) reach the server's approval path, which answers
 // these with `sagax-internal` (auto-approve.ts) after the grant guard, the
 // safety review and the person's own rules.
+import { existsSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
+
 import { DATA_TOOL_NAMES as DATA_SURFACE_TOOL_NAMES } from "../shared/data-surface.ts";
+import { blockedAddressReason } from "./media-proxy-guard.ts";
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
 
 /** The built-in Data server's name (reserved: mcp-registry.ts). */
@@ -40,4 +45,98 @@ export function dataToolName(name: string | undefined): string | null {
 export function sagaxInternalTool(name: string | undefined): "data" | "agents" | null {
   if (dataToolName(name)) return "data";
   return memberOwnScopeTool(name?.trim()) ? "agents" : null;
+}
+
+// ── what a Data call may do without a card (2026-10-16 security review) ──
+//
+// Data runs DuckDB inside the Sagax process: in solo on the person's own
+// computer, unconfined; on an organization server confined to the bot's
+// folders (data/engine.ts). Either way a call answers itself only while it
+// stays in the bot's own workspace: a load of a file elsewhere, a database
+// connection, plain http, a non-https remote or an address on a private,
+// loopback, link-local or metadata network, and SQL that names a file or a
+// URL, an ATTACH, COPY, INSTALL or LOAD, keep their card (the person may
+// still allow it). Anything this cannot read keeps its card too.
+
+const DATA_SQL_REACHES_OUT = /\b(?:attach|copy|install|load|pragma|getenv|read_text|read_blob)\b/i;
+/** The arguments of the Data tools that carry SQL or a relation. */
+const DATA_SQL_KEYS: ReadonlySet<string> = new Set(["sql", "target", "query", "table", "filter", "where"]);
+const QUOTED_PLACE = /['"`]\s*(?:[/~\\]|[A-Za-z]:[\\/]|[A-Za-z][A-Za-z0-9+.-]*:\/\/)/;
+const LOCAL_NAME = /(?:^localhost$|\.localhost$|\.local$|\.internal$|\.lan$|\.home$|\.corp$|\.svc$|\.cluster\.local$)/i;
+
+function parsedObject(input: string | undefined): Record<string, unknown> | null {
+  if (!input) return null;
+  try {
+    const value = JSON.parse(input) as unknown;
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function sqlTexts(args: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const [key, value] of Object.entries(args)) {
+    if (!DATA_SQL_KEYS.has(key)) continue;
+    if (typeof value === "string") out.push(value);
+    else if (value !== undefined && value !== null) out.push(JSON.stringify(value));
+  }
+  return out;
+}
+
+/** An https URL on a public-looking host. A literal address must be public
+ * (media-proxy-guard.ts ranges); a name must not be a local one. A name
+ * that resolves to a private address is refused when it is fetched on an
+ * organization server (data/remote-fetch.ts there), and is the person's own
+ * network in solo. */
+export function dataPublicHttps(source: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(source);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return false;
+  const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+  if (!host) return false;
+  if (/^[\d.]+$/.test(host) || host.includes(":")) return blockedAddressReason(host) === null;
+  if (!host.includes(".") || LOCAL_NAME.test(host)) return false;
+  return true;
+}
+
+function insideRoots(path: string, roots: readonly string[]): boolean {
+  const local = path === "~" || path.startsWith("~/") ? resolve(homedir(), path.slice(2)) : path;
+  if (!isAbsolute(local)) return false;
+  const real = (value: string) => { try { return realpathSync(value); } catch { return value; } };
+  let probe = resolve(local);
+  while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
+  const target = real(probe);
+  return roots.some((root) => {
+    const base = real(resolve(root));
+    return target === base || target.startsWith(base + sep);
+  });
+}
+
+/** Whether one of Sagax's own tool calls answers itself (no card). The
+ * agents tools in the bot's own scope always do (each route checks who the
+ * bot is); a Data call only while it stays in the bot's own workspace
+ * (`roots`: its workspace and task workspaces). */
+export function sagaxInternalSelfAnswers(name: string | undefined, input: string | undefined, roots: readonly string[]): boolean {
+  const kind = sagaxInternalTool(name);
+  if (kind === null) return false;
+  if (kind === "agents") return true;
+  const tool = dataToolName(name);
+  const args = parsedObject(input);
+  if (!args) return input === undefined || input.trim() === "" || input.trim() === "{}" ? tool !== "data_load" : false;
+  if (tool === "data_load") {
+    const source = typeof args.source === "string" ? args.source.trim() : "";
+    const sourceKind = typeof args.kind === "string" ? args.kind : "auto";
+    if (!source || sourceKind === "postgres" || sourceKind === "mysql") return false;
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(source)) return dataPublicHttps(source);
+    if (sourceKind === "url" || sourceKind === "gsheet") return false;
+    return insideRoots(source, roots);
+  }
+  // data_export writes where the tool itself allows (its export roots). The
+  // SQL a call carries must not name a file or a URL nor reach outside.
+  return !sqlTexts(args).some((text) => QUOTED_PLACE.test(text) || DATA_SQL_REACHES_OUT.test(text));
 }

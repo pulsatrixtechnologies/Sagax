@@ -135,6 +135,13 @@ const RESERVED_MCP_NAMES = new Set([
   "dweb",
   "openmausbot_connectors",
   "openmausbot_phone",
+  // 2026-10-16 security review: the person's own environment servers Sagax
+  // mounts itself (user-sandbox-routing.ts USER_SANDBOX_MCP_NAME,
+  // shared/bot-workplace.ts DESKTOP_BRIDGE_MCP_NAME). Their tools may run
+  // without a card in the bot owner's environment (member-environment.ts),
+  // so no person's server may take these names.
+  "sagax-environment",
+  "sagax-desktop",
 ]);
 
 const stdioEntrySchema = z.object({

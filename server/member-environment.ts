@@ -20,15 +20,41 @@
 // This computer (every other `sagax-desktop` tool: the person's real files,
 // apps and network) is not an isolated environment and keeps today's rule.
 //
+// 2026-10-16 security review: the environment still holds the owner's own
+// credentials (a git credential store, a GitHub CLI login) and has internet
+// access, so "runs without a card" is bounded further
+// (ownEnvironmentAutonomy):
+// - only at a level that already runs work unasked (Auto, Auto-accept
+//   edits), never at Ask: at Ask the person asked to see every call;
+// - never when the call falls in a class the person protects with a
+//   security key (shell that is not a plain read is destructive and
+//   irreversible): the card shows and its Allow needs the key;
+// - only for the owner's own turn: a turn another bot started (ask,
+//   delegate, coordinate, a peer ask), a routine, a webhook, a typed trigger,
+//   an email or any other automation, a room or another person gets the
+//   reads only, every other call keeps its card;
+// - the person's own deny and ask rules, the safety review and the grant
+//   guard run first (server/index.ts request.opened), on every engine: the
+//   Grok gate holds these calls and sends them there (grok-approval-gate.ts).
+// The tools are recognized by the mount Sagax itself made for this turn
+// (`mountedServers`), never by a server's name alone; the names are also
+// reserved for Sagax (mcp-registry.ts).
+//
 // Names are matched exactly, never by prefix: `mcp__<server>__<tool>`
 // (Claude), `<server>__<tool>` (ACP titles, Codex, chat engines' mcpTool).
+import type { ApprovalMode } from "../shared/approval-mode.ts";
 import { DESKTOP_BRIDGE_MCP_NAME } from "../shared/bot-workplace.ts";
+import type { TurnSpeaker } from "./engine-access.ts";
 import { USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 
 /** The server environment's tools (server/user-sandbox-tools.ts). */
 export const SERVER_ENVIRONMENT_TOOLS: ReadonlySet<string> = new Set([
   "run_command", "read_file", "write_file", "list_files", "browse", "computer_list_tools", "computer_use",
 ]);
+
+/** The server environment's tools that only read: the ones a turn that is
+ * not the owner's own may still run unasked. */
+export const SERVER_ENVIRONMENT_READ_TOOLS: ReadonlySet<string> = new Set(["read_file", "list_files", "computer_list_tools"]);
 
 /** The desktop bridge's one tool that acts in the isolated Local VM. */
 export const LOCAL_VM_TOOL = "local_vm";
@@ -44,6 +70,63 @@ export function ownEnvironmentTool(name: string | undefined): OwnEnvironment | n
   if (server === USER_SANDBOX_MCP_NAME && SERVER_ENVIRONMENT_TOOLS.has(tool!)) return "server-environment";
   if (server === DESKTOP_BRIDGE_MCP_NAME && tool === LOCAL_VM_TOOL) return "local-vm";
   return null;
+}
+
+/** The tool part of an own-environment tool name, or null. */
+function ownEnvironmentParts(name: string | undefined): { server: string; tool: string } | null {
+  const match = /^(?:mcp__)?([a-z][a-z-]{0,63})__([a-z][a-z0-9_]{0,63})$/.exec(name?.trim() ?? "");
+  return match && ownEnvironmentTool(name) ? { server: match[1]!, tool: match[2]! } : null;
+}
+
+/** Whether an own-environment tool only reads (SERVER_ENVIRONMENT_READ_TOOLS). */
+export function ownEnvironmentReadTool(name: string | undefined): boolean {
+  const parts = ownEnvironmentParts(name);
+  return Boolean(parts && parts.server !== DESKTOP_BRIDGE_MCP_NAME && SERVER_ENVIRONMENT_READ_TOOLS.has(parts.tool));
+}
+
+/** Whose turn a permission request comes from, for the owner's own
+ * environment: "owner" only when the bot's owner (or the operator at this
+ * computer) wrote the request themselves; "other" for another bot's hop, a
+ * routine, a webhook or typed trigger, an email, any automation, a room
+ * without a known person, another person, or anything unknown. */
+export function ownEnvironmentTurnOrigin(input: {
+  speaker: TurnSpeaker | undefined;
+  ownerPrincipalId: string;
+  /** The turn is a bot's hop (commsDepth > 0, a coordinated node). */
+  internalTurn: boolean;
+  /** A routine or other automation started this turn or one of its hops. */
+  routineLineage: boolean;
+  /** The request was started by a routine run, a webhook or a trigger. */
+  automation: boolean;
+  /** The bot works unattended on this thread (a routine run). */
+  unattended: boolean;
+}): "owner" | "other" {
+  if (input.internalTurn || input.routineLineage || input.automation || input.unattended) return "other";
+  const speaker = input.speaker;
+  if (!speaker) return "other";
+  if (speaker.origin === "operator") return "owner";
+  if (speaker.origin !== "person" || !speaker.principalId) return "other";
+  const owner = input.ownerPrincipalId.trim().toLowerCase();
+  return owner && speaker.principalId.trim().toLowerCase() === owner ? "owner" : "other";
+}
+
+/** Whether Sagax answers one own-environment call itself (no card): the
+ * call is in the owner's own environment (ownEnvironmentCall), the level
+ * runs work unasked (Auto, Auto-accept edits; never Ask, Custom or a guest's
+ * Ask), the person protects none of its classes with a security key, and
+ * the turn is the owner's own unless the call only reads. */
+export function ownEnvironmentAutonomy(input: {
+  call: boolean;
+  mode: ApprovalMode;
+  tool: string | undefined;
+  origin: "owner" | "other";
+  /** The security key classes the person chose that this call falls in. */
+  stepUpRequired: readonly string[];
+}): boolean {
+  if (!input.call) return false;
+  if (input.mode !== "auto" && input.mode !== "edits") return false;
+  if (input.stepUpRequired.length) return false;
+  return input.origin === "owner" || ownEnvironmentReadTool(input.tool);
 }
 
 /** The organization's policy: on unless an admin turned it off. */
@@ -63,14 +146,15 @@ export function ownEnvironmentCall(input: {
   environmentPrincipalId: string | null | undefined;
   ownerPrincipalId: string;
   guestDriven: boolean;
+  /** The servers Sagax itself mounted as this owner's environment for this
+   * turn (mountUserSandbox). A tool of a server not in it (a person's own
+   * server under the same name, a stale mount) is not the environment. */
+  mountedServers: ReadonlySet<string>;
 }): boolean {
   if (input.identity !== "perspicax" || !input.policyAllowed || input.guestDriven) return false;
-  if (!ownEnvironmentTool(input.tool)) return false;
+  const parts = ownEnvironmentParts(input.tool);
+  if (!parts) return false;
+  if (!input.mountedServers.has(parts.server)) return false;
   const environment = input.environmentPrincipalId?.trim().toLowerCase();
   return Boolean(environment) && environment === input.ownerPrincipalId.trim().toLowerCase();
 }
-
-/** The env marker Sagax puts on an own-environment mount, read by the Grok
- * approval gate (grok-approval-gate.ts). A person's own MCP server cannot
- * set it: every SAGAX_ variable is reserved (mcp-registry.ts). */
-export const OWN_ENVIRONMENT_ENV = "SAGAX_OWN_ENVIRONMENT";

@@ -126,32 +126,46 @@ On an organization server each person has their own isolated environment:
 their server environment (`sagax-environment`: one sandbox per person, no
 capability, no host mount, no private-network egress) and, on their own
 computer, their Local VM (the `local_vm` tool of `sagax-desktop`). A bot
-working for its owner in that owner's own environment runs every command
-it needs there without a card, at any level, while the organization allows
-it: **Settings > Organization > Bots work freely in their owner's
-environment**, or `memberEnvironmentAutonomy` in the admin API's `POST
-settings` (on unless an admin turns it off; each change is an `org.settings`
-row). It is Full access bounded to that environment
-(`server/member-environment.ts`):
+working for its owner in that owner's own environment runs the commands it
+needs there without a card, while the organization allows it: **Settings >
+Organization > Bots work freely in their owner's environment**, or
+`memberEnvironmentAutonomy` in the admin API's `POST settings` (on unless an
+admin turns it off; each change is an `org.settings` row). The environment
+still holds the owner's own credentials (a git credential store, a GitHub
+CLI login) and reaches the internet, so this is bounded
+(`server/member-environment.ts`, security review of 2026-10-16):
 
+- only at a level that already runs work unasked: **Approve for me** or
+  **Auto-accept edits**. At **Ask** the person asked to see every call, so
+  each one is a card (the owner's, never an admin's);
+- never when the call falls in a class the person (the bot's owner, or the
+  person the turn speaks for) protects with a security key (Settings >
+  Security). Any shell command that is not a plain read is destructive and
+  irreversible, so with that class chosen every such command is a card and
+  its Allow needs the key;
+- only the owner's own turn: a turn another bot started (`ask_bot`,
+  `delegate_bot`, `coordinate_bots`, a peer ask), a routine, a webhook, a
+  typed trigger, an email or any other automation, a room without a known
+  person, or someone else speaking gets the reads only (`read_file`,
+  `list_files`, `computer_list_tools`). Every other call keeps its card;
+- the person's own deny and ask rules, the safety review and the grant
+  guard decide first, on every engine. On a Grok turn under the approval
+  gate (`docs/grok-approval-gate.md`) the gate holds these calls like any
+  other and sends them to the same decision;
 - only the server environment's tools (`run_command`, `read_file`,
   `write_file`, `list_files`, `browse`, `computer_list_tools`,
-  `computer_use`) and `local_vm`, matched by exact name;
-- only when the environment this turn mounted belongs to the bot's owner
-  (the person speaking is the owner, or a routine that runs as the owner).
-  A bot shared with someone else, working in that person's environment,
-  keeps the owner's card;
-- never an admin card, and never answered for a safety hold, the person's
-  own deny or ask rule, a sandbox widening, a question or a guest's turn;
-- each call leaves a decision-log row (`own-environment`) and a receipt in
-  the conversation;
+  `computer_use`) and `local_vm`, of the servers Sagax mounted for this turn
+  as the owner's environment (never a server's name alone; both names are
+  reserved, no person's server can take them);
+- only when the environment this turn mounted belongs to the bot's owner. A
+  bot shared with someone else, working in that person's environment, keeps
+  the owner's card;
+- never an admin card, and never answered for a sandbox widening, a send, a
+  question or a guest's turn;
+- each call answered this way leaves a decision-log row (`own-environment`)
+  and a receipt in the conversation;
 - This computer (every other `sagax-desktop` tool: the person's real files,
   apps and network) is not an isolated environment and keeps its cards.
-
-On a Grok turn under the approval gate (`docs/grok-approval-gate.md`) the
-same tools pass the gate unasked: Sagax marks the mount when the owner rule
-holds (`SAGAX_OWN_ENVIRONMENT`, a reserved variable no person's server can
-set).
 
 ### A Primary Bot's level covers the work it delegates
 
@@ -198,25 +212,35 @@ routes itself.
 
 ### Sagax's own tools never ask (2026-10-16)
 
-Sagax's own person-scoped tools never ask, on any engine and at any level
-(`server/sagax-internal-tools.ts`, a reviewed list of exact names):
+Sagax's own person-scoped tools are answered by Sagax itself, without a
+card, on any engine and at any level (`server/sagax-internal-tools.ts`, a
+reviewed list of exact names):
 
 - the **Data** tools (`data_load`, `data_describe`, `data_sql`, `data_show`,
-  `data_export`): the bot's own DuckDB database;
+  `data_export`): the bot's own DuckDB database, while the call stays in the
+  bot's own workspace (its workspace and task workspaces). A load of a file
+  elsewhere, a database connection (`postgres://`, `mysql://`), plain
+  `http://`, another remote scheme, an `https://` address on a private,
+  loopback, link-local or metadata network (or a local name), and SQL that
+  names a file or a URL or uses `ATTACH`, `COPY`, `INSTALL`, `LOAD` keep
+  their card, which the person may allow;
 - the **agents** tools a bot runs in its own scope
   (`server/member-tool-scope.ts`: its teammates, threads, rooms, memory,
   skills and own setup). The host-level ones (`act`, `add_mcp_server`,
   `attach_file`, `vm_exec`, `shared_computer`, the cloud agent tools) keep
   their card.
 
-Claude pre-allows them, Codex mounts Data with `approve`, the chat engines
-run them without a card, and the Grok gate lets Data through. An engine
-that asks anyway (Grok Build in default mode asks about every MCP call
-behind its `use_tool`) gets an automatic answer from the server
-(`sagax-internal` in the decision log), after the grant guard, the safety
-review and the person's own rules: a safety hold, a Deny or Ask rule and a
-sandbox widening still reach a person. On an organization server a
-member's Data call is never an admin card.
+Every engine sends these calls to the server's approval path (security
+review of 2026-10-16): Claude mounts Data without pre-allowing it, Codex
+mounts it with `prompt`, the chat engines ask, and the Grok gate holds Data
+like any other server. The server answers (`sagax-internal` in the decision
+log) only after the grant guard, the safety review and the person's own
+rules, and never: a safety hold, a Deny or Ask rule, a sandbox widening, a
+send (`send_to_bot`, `post_to_room`, `send_voice_note` keep the outbound
+guard), a rule change (`rules_update`), or a call in a class the person
+protects with a security key. On an organization server a member's Data
+call is never an admin card. Claude still pre-allows the agents tools
+(`mcp__agents`), whose routes check who the bot is.
 
 On an organization server Data runs inside the Sagax server, so each bot's
 database is **confined** (`server/data/engine.ts` `confineConnection`):

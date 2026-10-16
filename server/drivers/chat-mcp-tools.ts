@@ -39,8 +39,8 @@ export interface ChatToolSession {
    * catalog, so they need no card; call_tool is shown as the tool it runs.
    * Sagax's own agents server needs none either, as on Claude
    * (pre-allowed mcp__agents) and Codex (auto-approved mount): the harness
-   * authorizes each of its routes itself. So does its Data server (the
-   * bot's own database). */
+   * authorizes each of its routes itself. Its Data server asks: Sagax's
+   * approval path answers what stays in the bot's workspace. */
   view(name: string, args: Record<string, unknown>): ChatToolCallView;
   execute(name: string, args: Record<string, unknown>, signal: AbortSignal): Promise<ChatToolResult>;
   close(): Promise<void>;
@@ -434,9 +434,11 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   const viewTool = (name: string, args: Record<string, unknown>): ChatToolCallView => {
     const tool = registered.get(name);
     const runs = tool ? target(tool, args) : name;
-    // Sagax's own Data tools are the bot's own database (confined on an
-    // organization server, data/engine.ts): no card either (2026-10-16).
-    if (runs === undefined || tool?.agents || tool?.data) return { title: name, input: args, ask: false };
+    // Sagax's own Data tools go to Sagax's approval path like any other
+    // server (2026-10-16 security review): the person's rules, the safety
+    // review and the security keys apply there, and a call that stays in the
+    // bot's workspace is answered without a card (sagax-internal-tools.ts).
+    if (runs === undefined || tool?.agents) return { title: name, input: args, ask: false };
     const grant = tool && !tool.hostComputer ? JSON.stringify([tool.server, tool.launch, runs]) : undefined;
     if (!tool?.searched || tool.name !== CALL_TOOL) return { title: name, input: args, ask: true, ...(grant ? { grant } : {}), ...(tool ? { mcpTool: `${tool.server}__${tool.name}` } : {}) };
     return { title: chatToolName(tool.server, runs), input: object(args.arguments) ? args.arguments : {}, ask: true, ...(grant ? { grant } : {}), mcpTool: `${tool.server}__${runs}` };

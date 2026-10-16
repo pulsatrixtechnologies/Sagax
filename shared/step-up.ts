@@ -287,6 +287,15 @@ function parsedInput(text: string | undefined): Record<string, unknown> | undefi
   }
 }
 
+/** Whether a tool's name says it changes rules, permissions, policies or an
+ * approval level (the "rule-change" class), as stepUpClassesForCard reads
+ * it. Such a call never answers itself (server/auto-approve.ts). */
+export function toolChangesRules(tool: string | undefined): boolean {
+  if (!tool) return false;
+  const bare = bareToolName(tool);
+  return RULE_TOOL.test(bare) && !READ_VERB.test(bare);
+}
+
 /** The classes an Allow on this card falls in. `risks` are the call's
  * risk classes as the server read them (custom-rules callFacts); a card
  * that is no tool call passes none. Classes only ever add up: when in

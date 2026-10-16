@@ -1046,9 +1046,12 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           mountSelected("browser", "browser", turn.integrations.browser);
         }
         if (turn.integrations?.data) {
-          // The bot's own database (confined to the bot's folders on an
-          // organization server): never asks, like the agents tools.
-          mountSelected("data", "data", turn.integrations.data, "approve");
+          // The bot's own database. Every call goes to Sagax's approval path
+          // (2026-10-16 security review): the person's rules, the safety
+          // review and the security keys apply, and a call that stays in the
+          // bot's workspace is answered there without a card
+          // (sagax-internal-tools.ts sagaxInternalSelfAnswers).
+          mountSelected("data", "data", turn.integrations.data, "prompt");
         }
         // A custom server named like one in the user's own config.toml would
         // be merged with it by the `-c` override — a stdio command over a

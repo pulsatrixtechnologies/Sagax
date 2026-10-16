@@ -1849,8 +1849,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           : { ...turn.integrations.browser };
       }
       if (turn.integrations?.data) {
+        // Mounted, not pre-allowed (2026-10-16 security review): each Data
+        // call reaches Sagax's approval path, where the person's rules, the
+        // safety review and the security keys apply, and a call that stays
+        // in the bot's workspace is answered without a card.
         mcpServers.data = { ...turn.integrations.data };
-        allowed.push("mcp__data");
       }
       // dweb network daemon (status / repo / opencode model access) via
       // server/drivers/dweb-proxy.ts — points at the configured dweb instance

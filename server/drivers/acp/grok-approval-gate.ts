@@ -26,11 +26,6 @@ import { isFlowToolsServer, isPerspicaxBridge, PERSPICAX_READ_ONLY_TOOLS } from 
 import { FLOW_TOOL_NAMES, FLOW_TOOLS_MCP_NAME } from "../../flow-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../../auto-computer.ts";
 import { cloudOnlyBot } from "../../cloud-only-bots.ts";
-import { DATA_MCP_SERVER, DATA_TOOL_NAMES } from "../../sagax-internal-tools.ts";
-import { LOCAL_VM_TOOL, OWN_ENVIRONMENT_ENV, SERVER_ENVIRONMENT_TOOLS } from "../../member-environment.ts";
-import { SPAWNED_PROXIES } from "../../proxy-paths.ts";
-import { USER_SANDBOX_MCP_NAME } from "../../user-sandbox-routing.ts";
-import { DESKTOP_BRIDGE_MCP_NAME } from "../../../shared/bot-workplace.ts";
 
 export const GROK_APPROVAL_GATE_FILE = "grok-approval-gate.json";
 
@@ -56,8 +51,11 @@ export function grokApprovalGateEnabled(botId: string | undefined, dataDir: stri
  * server and any annotation it sends, gets none: all its calls ask. */
 export function gateReadOnlyTools(server: { name: string; builtin: boolean; spec?: McpServerSpec }, botId?: string, dataDir: string = DATA_DIR): string[] {
   if (server.builtin && server.name === "agents") return [...READ_ONLY_AGENT_TOOL_NAMES];
-  // The bot's own database (sagax-internal-tools.ts): never a card.
-  if (server.builtin && server.name === DATA_MCP_SERVER) return [...DATA_TOOL_NAMES];
+  // The Data tools and the owner's own environment are NOT here
+  // (2026-10-16 security review): the gate holds them like any other call
+  // and Sagax's approval path (request.opened) decides, with the person's
+  // rules, the safety review and the security keys; what may run unasked is
+  // answered there without a card (auto-approve.ts).
   // A cloud-only bot's Works on is forced to fixed cloud (cloud-only-bots.ts,
   // turnWorksOn), so computer_select only reports ("you already work on the
   // cloud") or refuses: it can never switch computers. Every other bot's
@@ -65,20 +63,5 @@ export function gateReadOnlyTools(server: { name: string; builtin: boolean; spec
   if (server.builtin && server.name === AUTO_COMPUTER_MCP_NAME && cloudOnlyBot(botId, dataDir)) return ["computer_select"];
   if (!server.builtin && server.name !== "agents" && isPerspicaxBridge(server.spec)) return [...PERSPICAX_READ_ONLY_TOOLS];
   if (!server.builtin && server.name === FLOW_TOOLS_MCP_NAME && isFlowToolsServer(server.spec)) return [...FLOW_TOOL_NAMES];
-  // 2026-10-16: the bot owner's own environment, which Sagax marked at mount
-  // because the organization allows it (member-environment.ts).
-  if (!server.builtin && isOwnEnvironmentMount(server.spec)) {
-    if (server.name === USER_SANDBOX_MCP_NAME) return [...SERVER_ENVIRONMENT_TOOLS];
-    if (server.name === DESKTOP_BRIDGE_MCP_NAME) return [LOCAL_VM_TOOL];
-  }
   return [];
-}
-
-/** A harness-spawned environment proxy Sagax marked as the bot owner's own
- * environment. A person's MCP server cannot carry the marker (SAGAX_
- * variables are reserved) nor the proxy's exact path. */
-export function isOwnEnvironmentMount(spec: McpServerSpec | undefined, proxyPath: string = SPAWNED_PROXIES.userSandbox): boolean {
-  if (!spec || "url" in spec) return false;
-  const stdio = spec as { args?: unknown; env?: Record<string, unknown> };
-  return Array.isArray(stdio.args) && stdio.args[0] === proxyPath && stdio.env?.[OWN_ENVIRONMENT_ENV] === "1";
 }

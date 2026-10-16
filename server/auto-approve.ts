@@ -207,9 +207,23 @@ export function autoVerdict(
      * approved after a safety hold, the person's rules and the outbound
      * guard had their say, never for a sandbox widening or a gate card. */
     sagaxInternal?: boolean;
-    /** The call acts in the bot owner's own isolated environment and the
-     * organization allows it (server/member-environment.ts). */
+    /** The call acts in the bot owner's own isolated environment, the
+     * organization allows it and the turn is the owner's own
+     * (server/member-environment.ts ownEnvironmentAutonomy). Answered only
+     * at Auto or Auto-accept edits, never at Ask. */
     ownEnvironment?: boolean;
+    /** The engine's own `<server>__<tool>` name when `tool` is a kind (ACP
+     * "other") or a bare name: what the outbound guard reads for Sagax's own
+     * tools and the owner's environment. */
+    toolName?: string;
+    /** The security key classes (shared/step-up.ts) the bot owner (or the
+     * person the turn speaks for) chose that this call falls in. Non-empty:
+     * no automatic answer from Sagax's own tools or the owner's environment,
+     * the card shows and its Allow needs the key (#648). */
+    stepUpRequired?: readonly string[];
+    /** The call is one of Sagax's own tools that must never answer itself:
+     * a rule change (rules_update and the like, "rule-change" class). */
+    ruleChange?: boolean;
   },
 ): AutoVerdict {
   // A question is for a person, whatever channel it arrived on — and
@@ -236,16 +250,22 @@ export function autoVerdict(
     return { approve: `approved ${tool} (your rule)`, source: "custom-rule" };
   }
   // Sagax's own person-scoped tools (sagax-internal-tools.ts, a reviewed
-  // list of exact names) never ask, a gate card included (the agents writes
-  // a Grok gate holds): the grant guard, the safety review and the person's
-  // own rules already had their say above.
-  if (context?.sagaxInternal && !context.requiresExplicitApproval) {
+  // list of exact names) and the owner's own environment answer only after
+  // the grant guard, the safety review and the person's own rules above,
+  // and never: a sandbox widening, a send (send_to_bot, post_to_room,
+  // send_voice_note keep the outbound guard), a call in a class the person
+  // protects with a security key (the card then needs the key), or a rule
+  // change. A Grok gate card is answered too: the gate holds these calls and
+  // routes them here (grok-approval-gate.ts), so the same rules apply.
+  const sendsOut = isOutboundTool(tool) || (context?.toolName !== undefined && isOutboundTool(context.toolName));
+  const selfAnswerable = !context?.requiresExplicitApproval && !sendsOut && !(context?.stepUpRequired?.length);
+  if (context?.sagaxInternal && selfAnswerable && !context.ruleChange) {
     return { approve: `approved ${tool} (Sagax tool)`, source: "sagax-internal" };
   }
-  // The owner's own environment: after the safety hold and the person's
-  // deny and ask rules, never a sandbox widening, never a gate card (the
-  // gate lets these through itself, grok-approval-gate.ts).
-  if (context?.ownEnvironment && !context.requiresExplicitApproval && !context.sagaxGate) {
+  // The owner's own environment: only at a level that already runs work
+  // unasked (Auto, Auto-accept edits). At Ask the person asked to see every
+  // call, so the card shows (and a key protects it when they chose one).
+  if (context?.ownEnvironment && selfAnswerable && (mode === "auto" || mode === "edits")) {
     return { approve: `approved ${tool} (your own environment)`, source: "own-environment" };
   }
   // Full's promise is literal: even a sandbox widening is approved. Entering
@@ -255,7 +275,7 @@ export function autoVerdict(
   if (context?.sagaxGate) return { approve: null, source: mode === "auto" || mode === "custom" ? "native-approval" : "no-grant" };
   if (mode === "full") return { approve: `approved ${tool} (full access)`, source: "full-access" };
   if (context?.requiresExplicitApproval) return { approve: null, source: "explicit-approval-block" };
-  if (isOutboundTool(tool)) return { approve: null, source: "outbound-guard" };
+  if (isOutboundTool(tool) || ((context?.sagaxInternal || context?.ownEnvironment) && sendsOut)) return { approve: null, source: "outbound-guard" };
   if (context?.commandAllowed) return { approve: `approved ${tool} (saved command)`, source: "command-allowlist" };
   // The one action the app itself grants. A fetch of an arbitrary URL is not
   // a search and stays a prompt, in this mode and every other.
