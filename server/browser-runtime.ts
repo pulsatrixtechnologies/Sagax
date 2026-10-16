@@ -1,7 +1,7 @@
 import { killCliTree, spawnCli } from "./procs.ts";
 import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
 import { randomBytes } from "node:crypto";
-import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formStaysOnOrigin, parseEvalArray, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript } from "./credential-fill.ts";
+import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formPostsOnly, formStaysOnOrigin, parseEvalArray, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript } from "./credential-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
 
 export interface BrowserSpawnSpec {
@@ -99,6 +99,17 @@ const REFS_ONLY = "In this browser a saved login is allowed or was filled, so el
 function keyboardTool(name: string | undefined): boolean {
   return typeof name === "string" && /^agent_browser_(press|type|fill|keyboard|key|insert)/.test(name);
 }
+
+/** Text that would press Tab, Enter or another control key mid-call (the
+ * engine types each \t \n \r as a real key), moving the focus after the
+ * one-time check. */
+function controlCharacters(params: unknown): boolean {
+  const args = (params as { arguments?: unknown } | null)?.arguments;
+  if (!args || typeof args !== "object") return false;
+  return Object.values(args as Record<string, unknown>).some((value) => typeof value === "string" &&
+    [...value].some((char) => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f));
+}
+const CONTROL_KEYS_REFUSAL = "In this browser a saved login was filled, so typed text may not contain Tab, Enter or other control characters (each would press a key and could move into the filled field). Type the text alone, then press the key with its own call.";
 
 /** The @eN ref a keyboard tool aims at, if any. */
 function elementRef(params: unknown): string | null {
@@ -526,6 +537,9 @@ export class BrowserRuntime {
         // redaction of its value). The target is focused and checked first,
         // with the session held alone so nothing moves the focus in between.
         let releaseKeys: (() => void) | null = null;
+        if (method === "tools/call" && keyboardTool(toolName) && this.redactor.hasTaint(session) && controlCharacters(params)) {
+          return toolText(CONTROL_KEYS_REFUSAL, true);
+        }
         if (method === "tools/call" && keyboardTool(toolName) && this.redactor.hasTaint(session)) {
           if (!await this.holdExclusive(session)) return toolText(BROWSER_FILLING, true);
           releaseKeys = () => { this.gate(session).exclusive = false; };
@@ -755,12 +769,13 @@ export class BrowserRuntime {
     if (!probe.top) return toolText(problemText("frame", request.field), true);
     if (probe.problem) return toolText(problemText(probe.problem, request.field), true);
     if (!formStaysOnOrigin(probe.targets, origin)) return toolText(problemText("cross_origin_form", request.field), true);
+    if (!formPostsOnly(probe.methods)) return toolText(problemText("get_form", request.field), true);
     const resolved = await credentials.resolve({ handle: request.credential, field: request.field, pageUrl: href });
     stillOurs();
     if (!resolved.ok) return toolText(resolved.message, true);
     // Remembered before the value leaves: anything the engine says from now
     // on, including an error that quotes it, is redacted.
-    this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp", pieces: request.field !== "username" });
+    this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp", pieces: request.field !== "username", caseless: request.field === "username" });
     this.redactor.taint(session, origin);
     // The engine's stream would broadcast the write, value included, to its
     // clients: it is off while the write runs.

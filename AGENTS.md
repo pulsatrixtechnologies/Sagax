@@ -3448,7 +3448,9 @@ refs (`cssSelectorArgument`: no CSS value oracle). The write runs with the
 engine's live stream paused (`pauseBrowserStream`; the Browser panel picks
 the stream up again, never while `filling`). Raw engine answers are redacted
 before shaping and trimming; after a fill, keyboard tools refuse a filled
-target or focus (`data-sagax-filled`), the current contents of filled
+target or focus (`data-sagax-filled`) or typed text with a control
+character, a GET form (`formPostsOnly`) is never filled, URL and form
+encodings of a secret and their pieces are redacted, the current contents of filled
 fields are redacted too (`refreshFilledValues`), and every screenshot is
 refused. On a headless server the vault
 routes need a paired session (or `SAGAX_CREDENTIAL_VAULT_LOOPBACK=1`). The

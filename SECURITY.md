@@ -127,9 +127,18 @@ release.
   encodings, and user:pass pairs in base64; every piece of six characters
   or more of a secret; whatever the filled fields hold now, edited or
   revealed; a value shorter than four characters as a whole word; the length
-  of a masked password). The engine's raw answer is redacted before any
+  of a masked password; every URL and form encoding of a secret,
+  `application/x-www-form-urlencoded` and strict RFC 3986 with upper and
+  lower case hex, and its pieces of six characters or more; a user name
+  whatever its case, though only whole: its pieces would hide ordinary
+  words and domains). A fill is refused into a form that any of its buttons
+  can send with GET (the value would land in the URL); a field outside any
+  form is filled, and a page script that sends it in a URL is then met by
+  the encoded-value redaction above. The engine's raw answer is redacted before any
   trimming or shaping, so a cut through a value never leaves its prefix.
-  After a fill, keys and typing are refused when the target or the focused
+  After a fill, typed text with Tab, Enter or any other control character
+  is refused (the engine presses each as a key, which could move the focus
+  into the filled field mid-call), and keys and typing are refused when the target or the focused
   element is a filled field (the field also loses focus and gets
   `autocomplete="off"`), and every screenshot is refused until a restart. The
   Browser panel does not turn the engine's stream back on while a fill holds

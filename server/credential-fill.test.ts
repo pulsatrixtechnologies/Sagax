@@ -6,13 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { vaultHandle } from "../shared/credential-vault.ts";
 import { BrowserRuntime, type BrowserSpawnSpec, type CredentialFillAccess } from "./browser-runtime.ts";
-import { aimOf, formStaysOnOrigin, parseFillArguments, probeScript, REDACTED_CREDENTIAL, SecretRedactor, variants, writeScript } from "./credential-fill.ts";
+import { aimOf, formPostsOnly, formStaysOnOrigin, urlEncodings, parseFillArguments, probeScript, REDACTED_CREDENTIAL, SecretRedactor, variants, writeScript } from "./credential-fill.ts";
 import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 
 // Every credential below is fake test data.
 const FAKE_USER = "ada.fake@example.test";
 const FAKE_PASSWORD = "fake-Pa55word-not-real";
-const PAGE = '<form action="/session"><input id="user" type="email" autocomplete="username"><input id="pass" type="password"><input id="search" type="text" name="q"><input id="otp" autocomplete="one-time-code"></form><iframe id="frame"></iframe>';
+const PAGE = '<form method="post" action="/session"><input id="user" type="email" autocomplete="username"><input id="pass" type="password"><input id="search" type="text" name="q"><input id="otp" autocomplete="one-time-code"></form><iframe id="frame"></iframe>';
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -66,7 +66,7 @@ describe("the probe in the page", () => {
     const window = page("https://example.test/login");
     const probe = probeScript({ mode: "auto" }, "password", "n0nce", ORIGIN);
     expect(probe).not.toContain(FAKE_PASSWORD);
-    expect(run(window, probe)).toEqual({ top: true, problem: null, targets: ["https://example.test/session"] });
+    expect(run(window, probe)).toEqual({ top: true, problem: null, targets: ["https://example.test/session"], methods: ["post"] });
     expect(window.document.querySelector('[data-sagax-fill="n0nce"]')?.id).toBe("pass");
     expect(run(window, probeScript({ mode: "selector", selector: "#search" }, "password", "a", ORIGIN)).problem).toBe("not_password");
     expect(run(window, probeScript({ mode: "selector", selector: "#pass" }, "username", "b", ORIGIN)).problem).toBe("password_box");
@@ -77,11 +77,21 @@ describe("the probe in the page", () => {
     expect(window.document.querySelectorAll("[data-sagax-fill]")).toHaveLength(1);
   });
 
+  it("FIFTH: reports how the form is sent, so a GET form (value in the URL) is refused", () => {
+    expect(formPostsOnly(["post"])).toBe(true);
+    expect(formPostsOnly(["post", "get"])).toBe(false);
+    expect(formPostsOnly(["dialog"])).toBe(false);
+    const get = page("https://example.test/login", '<form action="/s"><input id="pass" type="password"></form>');
+    expect(run(get, probeScript({ mode: "auto" }, "password", "g", ORIGIN)).methods).toEqual(["get"]);
+    const mixed = page("https://example.test/login", '<form id="f" method="post" action="/s"><input id="pass" type="password"></form><button form="f" formmethod="get">Go</button>');
+    expect(run(mixed, probeScript({ mode: "auto" }, "password", "m", ORIGIN)).methods).toEqual(["post", "get"]);
+  });
+
   it("refuses a form that posts to another origin or to a script", () => {
     expect(formStaysOnOrigin(["https://example.test/session"], "https://example.test")).toBe(true);
     expect(formStaysOnOrigin(["https://evil.test/collect"], "https://example.test")).toBe(false);
     expect(formStaysOnOrigin(["javascript:steal()"], "https://example.test")).toBe(false);
-    const window = page("https://example.test/login", '<form action="https://evil.test/collect"><input id="pass" type="password"></form>');
+    const window = page("https://example.test/login", '<form method="post" action="https://evil.test/collect"><input id="pass" type="password"></form>');
     expect(run(window, probeScript({ mode: "auto" }, "password", "x", ORIGIN)).targets).toEqual(["https://evil.test/collect"]);
   });
 
@@ -114,6 +124,28 @@ describe("redaction", () => {
     expect(redactor.redactText("other", FAKE_PASSWORD)).toBe(FAKE_PASSWORD);
     redactor.forget("s");
     expect(redactor.redactText("s", FAKE_PASSWORD)).toBe(FAKE_PASSWORD);
+  });
+
+  it("FIFTH: hides the value as a GET form or a URL encodes it, whole or in runs between escapes", () => {
+    const secret = "pa!ss~word(x) y'z*99";
+    const redactor = new SecretRedactor();
+    redactor.remember("s", secret, { pieces: true });
+    const form = new URLSearchParams([["password", secret]]).toString();
+    const strict = encodeURIComponent(secret).replace(/[!'()*~]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+    for (const shown of [`https://example.test/login?${form}`, `https://example.test/?p=${strict}`, `https://example.test/?p=${strict.toLowerCase()}`, `Error: bad password ${form.slice(9)}`]) {
+      const text = redactor.redactText("s", shown);
+      // No run of six or more characters of any encoding of the value survives.
+      for (const encoded of [form.slice(9), strict, strict.toLowerCase(), encodeURIComponent(secret), ...urlEncodings(secret)]) {
+        for (let start = 0; start + 6 <= encoded.length; start++) expect(text, shown).not.toContain(encoded.slice(start, start + 6));
+      }
+    }
+  });
+
+  it("FIFTH: a user name is hidden whatever its case", () => {
+    const redactor = new SecretRedactor();
+    redactor.remember("s", "Ada.Fake@Example.test", { caseless: true });
+    expect(redactor.redactText("s", "signed in as ada.fake@example.test")).toBe(`signed in as ${REDACTED_CREDENTIAL}`);
+    expect(redactor.redactText("s", "ADA.FAKE@EXAMPLE.TEST")).toBe(REDACTED_CREDENTIAL);
   });
 
   it("hides a user:pass pair in base64, as HTTP Basic sends it", () => {
@@ -285,7 +317,7 @@ describe("fill_credential through the browser runtime", () => {
   });
 
   it("FOURTH B1: redacts the raw engine answer before trimming, so a cut through the value leaves no prefix", async () => {
-    const html = '<form action="/s"><input id="search" type="text"><input id="pass" type="password"></form>';
+    const html = '<form method="post" action="/s"><input id="search" type="text"><input id="pass" type="password"></form>';
     // The trim keeps 512 characters (mcp-trim MIN_BUDGET) of a 512 budget;
     // the filler puts the password's first `kept` characters before that cut.
     for (const kept of [4, 5, 8, 15]) {
@@ -329,6 +361,23 @@ describe("fill_credential through the browser runtime", () => {
       const snapshot = await call(runtime, "keys", site.spec, "agent_browser_snapshot", {}, access("bot-a", "t1"));
       expect(snapshot.content[0]!.text).toContain(`#pass value="${REDACTED_CREDENTIAL}"`);
     }
+  });
+
+  it("FIFTH: refuses a fill into a GET form, and typed text with control keys after a fill", async () => {
+    const { vault, item, runtime, handle, access } = setup();
+    vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
+    const get = engine("https://example.test/login", { html: '<form action="/s"><input id="pass" type="password"></form>' });
+    const refused = await call(runtime, "get", get.spec, "fill_credential", { credential: handle, field: "password" }, access("bot-a", "t1"));
+    expect(refused.content[0]!.text).toContain("POST");
+    expect(get.inputs().pass).toBe("");
+    const site = engine("https://example.test/login");
+    expect((await call(runtime, "ctl", site.spec, "fill_credential", { credential: handle, field: "password" }, access("bot-a", "t1"))).isError).toBeUndefined();
+    for (const text of ["hello\tx", "a\nb", "c\rd", "\u0001"]) {
+      const typed = await call(runtime, "ctl", site.spec, "agent_browser_type", { selector: "@e4", text }, access("bot-a", "t1"));
+      expect(typed.content[0]!.text).toContain("control characters");
+    }
+    expect(site.inputs().search).toBe("");
+    expect((await call(runtime, "ctl", site.spec, "agent_browser_type", { selector: "@e4", text: "plain" }, access("bot-a", "t1"))).isError).toBeUndefined();
   });
 
   it("FOURTH S1: no screenshot at all once a login was filled, whatever tab is shown", async () => {
@@ -453,7 +502,7 @@ describe("fill_credential through the browser runtime", () => {
   it("refuses a form that posts to another site", async () => {
     const { vault, item, runtime, handle, access } = setup();
     vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
-    const site = engine("https://example.test/login", { html: '<form action="https://evil.test/collect"><input id="pass" type="password"></form>' });
+    const site = engine("https://example.test/login", { html: '<form method="post" action="https://evil.test/collect"><input id="pass" type="password"></form>' });
     const spy = vi.fn(access("bot-a", "t1").resolve);
     const result = await call(runtime, "xform", site.spec, "fill_credential", { credential: handle, field: "password" }, { resolve: spy, armed: () => true });
     expect(result.content[0]!.text).toContain("sends to another site");

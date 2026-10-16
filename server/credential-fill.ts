@@ -128,16 +128,24 @@ export function probeScript(aim: Aim, field: VaultFillField, nonce: string, orig
 const found = pick(${JSON.stringify(aim)}, ${JSON.stringify(field)});
 const problem = judge(found, ${JSON.stringify(field)});
 const targets = [];
+const methods = [];
 if (!problem) {
   const el = found.el;
   el.setAttribute('data-sagax-fill', ${JSON.stringify(nonce)});
   const form = el.form;
   if (form) {
     targets.push(new URL(form.getAttribute('action') || location.href, location.href).href);
+    methods.push((form.getAttribute('method') || 'get').trim().toLowerCase());
     for (const button of Array.from(form.querySelectorAll('[formaction]'))) targets.push(new URL(button.getAttribute('formaction'), location.href).href);
+    for (const button of Array.from(form.querySelectorAll('[formmethod]'))) methods.push((button.getAttribute('formmethod') || '').trim().toLowerCase());
+    for (const button of Array.from(document.querySelectorAll('[form]'))) {
+      if (button.getAttribute('form') !== form.id || !form.id) continue;
+      if (button.hasAttribute('formaction')) targets.push(new URL(button.getAttribute('formaction'), location.href).href);
+      if (button.hasAttribute('formmethod')) methods.push((button.getAttribute('formmethod') || '').trim().toLowerCase());
+    }
   }
 }
-return JSON.stringify({ top: true, problem, targets });
+return JSON.stringify({ top: true, problem, targets, methods });
 })()`;
 }
 
@@ -190,7 +198,7 @@ export function parseWrite(result: unknown): string | null {
   }
 }
 
-export interface ProbeResult { top: boolean; problem: string | null; targets: string[] }
+export interface ProbeResult { top: boolean; problem: string | null; targets: string[]; methods: string[] }
 
 /** The selector of the element a probe marked. */
 export function nonceSelector(nonce: string): string {
@@ -217,7 +225,14 @@ export function parseProbe(result: unknown): ProbeResult | null {
   const value = parseEvalObject(result);
   if (!value || typeof value.top !== "boolean") return null;
   const targets = Array.isArray(value.targets) ? value.targets.filter((target): target is string => typeof target === "string").slice(0, 20) : [];
-  return { top: value.top, problem: typeof value.problem === "string" ? value.problem : null, targets };
+  const methods = Array.isArray(value.methods) ? value.methods.filter((method): method is string => typeof method === "string").slice(0, 20) : [];
+  return { top: value.top, problem: typeof value.problem === "string" ? value.problem : null, targets, methods };
+}
+
+/** Whether every way the form can be sent is a POST: a GET submission puts
+ * the value in the URL (the address bar, the history, the next page). */
+export function formPostsOnly(methods: readonly string[]): boolean {
+  return methods.every((method) => method === "post");
 }
 
 /** Whether every place the form posts to stays on the page's own origin. A
@@ -243,6 +258,7 @@ export function problemText(problem: string, field: VaultFillField): string {
     case "password_box": return "This is a password field; fill it with field password. Nothing was filled.";
     case "moved": return "The page changed before the value was typed; nothing was filled. Check the page and try again.";
     case "cross_origin_form": return "This form sends to another site than the page; Sagax does not fill a login into it. Nothing was filled.";
+    case "get_form": return "This form sends its fields in the page address (method GET); Sagax only fills a form sent with POST. Nothing was filled.";
     case "scripted": return "You ran a script on this site in this browser, so Sagax will not fill a saved login here. Call restart_browser, open the page again, then fill without running scripts.";
     case "fill_failed": return "The browser could not type into the field; nothing was filled. Take a new snapshot and pass the input's current ref.";
     case "focus": return "Another part of the page took the focus from the field; nothing was filled. Try again.";
@@ -275,6 +291,23 @@ function unicodeEscaped(value: string): string {
 /** The value as a page, a log or a request could show it: itself, base64
  * (padded or not, url-safe), hex in both cases, reversed, URL and form
  * encoded, JSON, HTML (named, decimal and hex entities) and unicode escapes. */
+/** The value as a URL or a form submission carries it: encodeURIComponent,
+ * strict RFC 3986 (also ! ' ( ) * and ~), and application/x-www-form-
+ * urlencoded as a browser sends a GET form (URLSearchParams: space as +),
+ * each with upper and lower case hex. */
+export function urlEncodings(value: string): string[] {
+  const component = encodeURIComponent(value);
+  const strict = component.replace(/[!'()*~]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  const form = new URLSearchParams([["v", value]]).toString().slice(2);
+  const out = new Set<string>();
+  for (const encoded of [component, component.replace(/%20/g, "+"), strict, strict.replace(/%20/g, "+"), form]) {
+    out.add(encoded);
+    out.add(encoded.replace(/%[0-9A-Fa-f]{2}/g, (escape) => escape.toLowerCase()));
+    out.add(encoded.replace(/%[0-9A-Fa-f]{2}/g, (escape) => escape.toUpperCase()));
+  }
+  return [...out];
+}
+
 export function variants(value: string): string[] {
   const out = new Set<string>([value]);
   const bytes = Buffer.from(value, "utf8");
@@ -284,9 +317,7 @@ export function variants(value: string): string[] {
   out.add(bytes.toString("hex"));
   out.add(bytes.toString("hex").toUpperCase());
   out.add([...value].reverse().join(""));
-  out.add(encodeURIComponent(value));
-  out.add(encodeURIComponent(value).replace(/%20/g, "+"));
-  out.add(encodeURIComponent(value).replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase()));
+  for (const encoded of urlEncodings(value)) out.add(encoded);
   out.add(JSON.stringify(value).slice(1, -1));
   out.add(htmlEscaped(value));
   out.add(htmlEntities(value, false));
@@ -305,6 +336,8 @@ function escapeRegExp(value: string): string {
 export class SecretRedactor {
   private readonly sessions = new Map<string, Map<string, number>>();
   private readonly tainted = new Map<string, Set<string>>();
+  /** Values matched without regard to case (a user name: sites lower-case it). */
+  private readonly caseless = new Map<string, Set<string>>();
   /** The values themselves, for the pairs (user:pass) a page may encode. */
   private readonly raw = new Map<string, string[]>();
   /** Origins where the bot ran its own script in this browser session. */
@@ -318,7 +351,7 @@ export class SecretRedactor {
   /** pieces: also every part of four characters or more (a secret such as
    * a password, an API key or a code; not a user name, whose parts are
    * ordinary words and domains). */
-  remember(session: string, value: string, options: { shortLived?: boolean; pieces?: boolean } = {}): void {
+  remember(session: string, value: string, options: { shortLived?: boolean; pieces?: boolean; caseless?: boolean } = {}): void {
     if (!value) return;
     let values = this.sessions.get(session);
     if (!values) this.sessions.set(session, values = new Map());
@@ -332,12 +365,22 @@ export class SecretRedactor {
     // part of the value is hidden too (up to 128 characters of it). Shorter
     // pieces would hide ordinary words of every page; what an edited field
     // holds now is also learned from the page itself (refreshFilledValues).
-    const head = options.pieces ? [...value].slice(0, 128) : [];
-    for (let start = 0; start + MIN_PIECE_LENGTH <= head.length; start++) {
-      for (let end = start + MIN_PIECE_LENGTH; end <= head.length; end++) {
-        if (end - start === head.length) continue;
-        values.set(head.slice(start, end).join(""), until);
+    // The same for each URL and form encoding of the value: a run between
+    // two escapes of a GET submission is a piece too.
+    const sources = options.pieces ? [value, ...urlEncodings(value).filter((encoded) => encoded !== value)] : [];
+    for (const source of sources) {
+      const head = [...source].slice(0, 192);
+      for (let start = 0; start + MIN_PIECE_LENGTH <= head.length; start++) {
+        for (let end = start + MIN_PIECE_LENGTH; end <= head.length; end++) {
+          if (end - start === head.length) continue;
+          values.set(head.slice(start, end).join(""), until);
+        }
       }
+    }
+    if (options.caseless) {
+      let caseless = this.caseless.get(session);
+      if (!caseless) this.caseless.set(session, caseless = new Set());
+      for (const variant of value.length >= MIN_REDACT_LENGTH ? variants(value) : [value]) caseless.add(variant);
     }
     // A pair such as user:pass, as HTTP Basic sends it in base64.
     if (value.length >= MIN_REDACT_LENGTH && !options.shortLived) {
@@ -383,6 +426,7 @@ export class SecretRedactor {
     this.tainted.delete(session);
     this.raw.delete(session);
     this.scripted.delete(session);
+    this.caseless.delete(session);
   }
 
   private pattern(session: string): RegExp | null {
@@ -395,9 +439,11 @@ export class SecretRedactor {
     // A short value (a 3-letter user name) is hidden only as a whole word,
     // so it does not eat every word that contains it. Masked characters, the
     // way an accessibility tree shows a password, lose their count.
-    const parts = sorted.map((value) => value.length < MIN_REDACT_LENGTH
-      ? `(?<![\\p{L}\\p{N}_])${escapeRegExp(value)}(?![\\p{L}\\p{N}_])`
-      : escapeRegExp(value));
+    const caseless = this.caseless.get(session);
+    const parts = sorted.map((value) => {
+      const body = caseless?.has(value) ? `(?i:${escapeRegExp(value)})` : escapeRegExp(value);
+      return value.length < MIN_REDACT_LENGTH ? `(?<![\\p{L}\\p{N}_])${body}(?![\\p{L}\\p{N}_])` : body;
+    });
     return new RegExp([...parts, "[\u2022\u25CF]{2,}"].join("|"), "gu");
   }
 
