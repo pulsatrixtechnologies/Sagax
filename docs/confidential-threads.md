@@ -69,7 +69,7 @@ title; a stamp on a Markdown export the person makes of their own thread.
 | Peers, rooms and channels (`ask_bot`, `delegate_bot`, `coordinate_bots`, `post_to_room`, `create_room`, `manage_room`, `act`, `start_thread` on another bot, the agent API) | allowed | refused |
 | Turns that name no thread (peer asks, asides, delegations, automation) | the bot's selected thread | never a confidential thread, even its owner's selected one: the bot owner's newest ordinary conversation, else a new one |
 | Threads it opens (`start_thread` on itself, parallel tasks) | ordinary | confidential, same owner |
-| The follow-up of a card its owner allowed in Sagax | | posted into exactly that thread, once (a one-shot token for that thread), never as an on-behalf request |
+| The follow-up of a card its owner allowed in Sagax | posted as before | posted into exactly that thread, once (a one-shot token minted only for a confidential thread), never as an on-behalf request |
 | AI clients (member API and agent API: `sagax_send`, `sagax_thread`, `sagax_approve`, `read_transcript`, `send_prompt`, ...) and a bot acting as the person (`act`) | the person's threads | never listed, read, streamed or written; a request naming one is 404; one without a thread never lands in one; a card in a confidential thread is answered only by its owner in Sagax, never on their behalf |
 | Recall: auto-recall, recent-work brief, `session_search`, `session_read`, `list_threads` from any other thread | narrowed per person | the thread never feeds another thread, its owner's included |
 | Bot zip (owner route and console package), team backup (`POST /api/teams/export` `backup`), organization copy (`POST /api/org/export`) | included with conversations | left out: messages, files, task record, id; an import that ever carries the flag restores it confidential |
@@ -117,6 +117,10 @@ end-to-end encryption, and it does not hide the thread from:
 - **Perspicax.** A call the person allows (a card) or a read through a
   Perspicax profile is seen by Perspicax and the outside system behind it,
   and Perspicax keeps its own audit and journal of those calls.
+- **Engines with host access.** On a solo server, a bot whose engine has
+  a shell on the host can call this server's own loopback API directly,
+  outside the tools the rules above judge. Confidential mode does not
+  sandbox an engine that has host access.
 - **Tools that read by sending.** A tool named like a read that sends its
   arguments to a third party (a web fetch or search, the built-in browser
   opening a page, a connected app's search) still works from a confidential

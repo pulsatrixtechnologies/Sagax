@@ -786,6 +786,7 @@ import {
   isSameOrigin,
   serializeSessionCookie,
   sessionCookieName,
+  secureTokenMatch,
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, isBotActSession, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from "./principals.ts";
@@ -26086,8 +26087,9 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
 /** How a request this server makes to itself is marked (server/confidential-threads.ts):
  * `onBehalf` for a bot acting as its person (operator acts included), so it
  * never reaches a confidential thread; `continuation` for the follow-up of
- * a card its owner allowed in person, which may post into exactly that
- * thread once even through a delegated session. */
+ * a card its owner allowed in person: when that thread is confidential, a
+ * one-shot token lets it post into exactly that thread once even through a
+ * delegated session (an ordinary thread needs none). */
 type InternalRequestMark = { onBehalf?: true; continuation?: string };
 /** A process secret: only this server's own requests carry it. */
 const ON_BEHALF_SECRET = randomBytes(32).toString("base64url");
@@ -26117,7 +26119,8 @@ async function performBotActRoute(actor: PerformActor, target: RouteTarget, maxC
   const headers = new Headers();
   headers.set("accept", "application/json");
   if (mark.onBehalf) headers.set(ON_BEHALF_HEADER, ON_BEHALF_SECRET);
-  if (mark.continuation) headers.set(CONTINUATION_HEADER, mintOwnerContinuation(mark.continuation));
+  // only a confidential thread needs the token: an ordinary one takes the follow-up as before
+  if (mark.continuation && store.isConfidentialThread(mark.continuation)) headers.set(CONTINUATION_HEADER, mintOwnerContinuation(mark.continuation));
   let body: string | undefined;
   if (target.body !== undefined) {
     headers.set("content-type", "application/json");
@@ -31329,7 +31332,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     const continuationHeader = req.headers[CONTINUATION_HEADER];
     const continuation = takeOwnerContinuation(typeof continuationHeader === "string" ? continuationHeader : undefined, method, path);
     const delegated = !continuation && ((auth.kind === "session" && auth.session.ephemeral === true)
-      || (typeof onBehalfHeader === "string" && onBehalfHeader.length === ON_BEHALF_SECRET.length && timingSafeEqual(Buffer.from(onBehalfHeader), Buffer.from(ON_BEHALF_SECRET))));
+      || secureTokenMatch(typeof onBehalfHeader === "string" ? onBehalfHeader : undefined, ON_BEHALF_SECRET));
     delegatedRequestScope.enterWith(delegated);
     continuationThreadScope.enterWith(continuation);
     if (delegated) {
@@ -31339,7 +31342,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // a stored file only confidential threads point at is not there either
         const file = confidentialFileOf(path);
         if (file) {
-          const using = threadsUsingAttachment(file);
+          // read now, not from the minute-long cache: a message may have just named it
+          const using = threadsReferencing(file);
           if (using.length && using.every((threadId) => confidentialIds.has(threadId))) return json(res, 404, { error: "no such file" });
         }
         onJsonBody(res, (body) => {

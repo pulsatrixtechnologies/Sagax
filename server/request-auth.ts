@@ -922,7 +922,8 @@ function mutatingPublicRoute(method: string, path: string): boolean {
     path !== "/api/pair";
 }
 
-function secureTokenMatch(actual: string | undefined, expected: string): boolean {
+/** Constant-time compare of a header value with a secret; never throws. */
+export function secureTokenMatch(actual: string | undefined, expected: string): boolean {
   if (!actual || !expected) return false;
   const left = Buffer.from(actual);
   const right = Buffer.from(expected);
