@@ -4,6 +4,7 @@ import type { ServerResponse } from "node:http";
 import { promisify } from "node:util";
 import { BROWSER_VIEWPORT_ARGS, browserRuntimeEnv, ownsBrowserViewport, type BrowserRuntime } from "./browser-runtime.ts";
 import { closeBrowserSession } from "./browser-engine.ts";
+import { parseDescribedElement, teachDescribeScript, TeachRecordings, type TeachRecorder } from "./browser-teach.ts";
 
 const execute = promisify(execFile);
 const MAX_FRAME = 3 * 1024 * 1024;
@@ -29,6 +30,8 @@ export const BROWSER_START_URL = "https://www.google.com/";
 const DISCRETE_KEYS = new Set(["Backspace", "Enter", "Tab", "Escape", "Delete", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
 // Interacting (or Take control) takes control, and an
 // interrupted action is recovered from the panel's menu.
+/** A recording asks the page about an element: brief, or the step goes without it. */
+const DESCRIBE_TIMEOUT_MS = 5_000;
 const RESTART_NEEDED = "A browser action was interrupted. Choose Restart browser… in the browser menu before continuing.";
 
 export class BrowserLiveError extends Error {
@@ -157,6 +160,7 @@ export function browserStreamPort(value: unknown): number {
 }
 
 type Action = { type: "take" | "release" | "restart" } | { type: "ack"; seq: number }
+  | { type: "record-start" | "record-stop" | "record-discard" }
   | { type: "command"; args: string[] } | { type: "input"; message: ObjectValue };
 
 /** HTTP bodies can select a fixed action, never a CLI command, flag, port or CDP method. */
@@ -165,6 +169,8 @@ export function parseBrowserLiveAction(value: unknown): Action {
   const invalid = () => new BrowserLiveError("Invalid browser action.");
   if (!body) throw invalid();
   if (body.type === "take" || body.type === "release" || body.type === "restart") return { type: body.type };
+  // Teach by demonstration: the person's own recording (server/browser-teach.ts).
+  if (body.type === "record-start" || body.type === "record-stop" || body.type === "record-discard") return { type: body.type };
   if (body.type === "ack" && integer(body.seq, 1, Number.MAX_SAFE_INTEGER)) return { type: "ack", seq: body.seq };
   if (body.type === "back" || body.type === "forward" || body.type === "reload") return { type: "command", args: [body.type] };
   if (body.type === "navigate" || body.type === "tab-new") {
@@ -241,6 +247,8 @@ export class BrowserLive {
   private readonly runtime: BrowserRuntime;
   private readonly viewers = new Map<string, Viewer>();
   private readonly sessionResets = new Map<string, Promise<boolean>>();
+  /** Teach by demonstration recordings, per person and browser session. */
+  readonly teach = new TeachRecordings();
   constructor({ runtime }: { runtime: BrowserRuntime }) { this.runtime = runtime; }
 
   private current(viewer: Viewer): boolean {
@@ -321,6 +329,11 @@ export class BrowserLive {
     clearTimeout(viewer.heartbeat); clearTimeout(viewer.drainTimer);
     viewer.socket?.close();
     viewer.hiddenFrame = undefined; viewer.pendingFrame = undefined;
+    // the person's last view of this browser: their recording waits a little
+    // for a reconnect, then is dropped (a closed window keeps nothing)
+    if (![...this.viewers.values()].some((other) => other.owner === viewer.owner && other.session === viewer.session)) {
+      this.teach.orphan(viewer.owner, viewer.session, true);
+    }
     if (!viewer.restarting) {
       this.abandonPressedInput(viewer);
       this.runtime.release(viewer.session, viewer.id);
@@ -508,6 +521,7 @@ export class BrowserLive {
     const viewer: Viewer = { ...options, id: randomUUID(), closed: false, blocked: false, pendingActions: 0, restarting: false, pressedKeys: new Set(), pressedButtons: new Set(), waiting: false, abort: new AbortController() };
     if (!this.current(viewer)) throw new BrowserLiveError("This browser view is no longer available.", 409);
     this.viewers.set(viewer.id, viewer);
+    this.teach.orphan(viewer.owner, viewer.session, false);
     options.res.once("close", () => this.close(viewer));
     options.res.once("error", () => this.close(viewer));
     try {
@@ -532,7 +546,10 @@ export class BrowserLive {
         const heldBy = this.runtime.heldBy(viewer.session);
         if (heldBy && heldBy !== viewer.id && ["tabs", "url"].includes(String(message.type))) return;
         if (message.type === "frame") this.frame(viewer, message);
-        else this.send(viewer, message);
+        else {
+          if (message.type === "url" && typeof message.url === "string") this.teach.get(viewer.owner, viewer.session)?.observeUrl(message.url);
+          this.send(viewer, message);
+        }
       });
       socket.addEventListener("error", () => { if (!viewer.restarting) { this.send(viewer, { type: "error", retryable: true, message: "The browser stream disconnected." }); this.close(viewer); } });
       socket.addEventListener("close", () => { if (!viewer.restarting) this.close(viewer); });
@@ -605,6 +622,19 @@ export class BrowserLive {
       }
       return { ok: true };
     }
+    if (action.type === "record-start") {
+      this.teach.start(viewer.owner, viewer.session);
+      return { ok: true, recording: true };
+    }
+    if (action.type === "record-stop") {
+      // The steps go to this person once; the recording is gone afterwards.
+      const steps = this.teach.stop(viewer.owner, viewer.session);
+      return { ok: true, steps: steps ?? [], expired: steps === null };
+    }
+    if (action.type === "record-discard") {
+      this.teach.discard(viewer.owner, viewer.session);
+      return { ok: true };
+    }
     if (action.type === "release") {
       this.abandonPressedInput(viewer);
       this.runtime.release(viewer.session, viewer.id); this.control(viewer.session);
@@ -628,12 +658,49 @@ export class BrowserLive {
     try {
       await this.runtime.withHumanAction(viewer.session, viewer.id, async () => {
         if (!this.current(viewer)) throw new BrowserLiveError("This browser view closed.", 409);
+        const recorder = this.teach.get(viewer.owner, viewer.session);
+        if (recorder && action.type === "input") await this.recordInput(viewer, recorder, action.message);
         if (action.type === "input") await this.input(viewer, action.message);
-        else if (action.type === "command") await this.command(viewer, action.args, COMMAND_TIMEOUT_MS, true);
+        else if (action.type === "command") {
+          await this.command(viewer, action.args, COMMAND_TIMEOUT_MS, true);
+          if (recorder) recordCommand(recorder, action.args);
+        }
       });
       return { ok: true };
     } catch (error) { throw error instanceof BrowserLiveError ? error : this.refusal(viewer, "Browser control changed. Try again."); }
     finally { viewer.pendingActions -= 1; this.control(viewer.session); }
+  }
+
+  /** What the page says about the element under a point, or the focused one,
+   * for the recording. Null when the page could not be asked. */
+  private async describe(viewer: Viewer, point?: { x: number; y: number }) {
+    try {
+      const data = await this.command(viewer, ["eval", teachDescribeScript(point)], DESCRIBE_TIMEOUT_MS);
+      return parseDescribedElement(data.result);
+    } catch { return null; }
+  }
+
+  /** Records the person's input before it reaches the page: a click is
+   * described where it lands, typed text goes to the focused field's step
+   * (never kept in a secret field), and Enter, Tab and Escape are steps. */
+  private async recordInput(viewer: Viewer, recorder: TeachRecorder, message: ObjectValue): Promise<void> {
+    if (message.type === "input_mouse") {
+      if (message.eventType === "mousePressed" && message.button === "left" && Number(message.clickCount) <= 1) {
+        recorder.click(await this.describe(viewer, { x: Number(message.x), y: Number(message.y) }));
+      }
+      return;
+    }
+    if (message.type !== "input_keyboard") return;
+    const text = message.eventType === "char" ? message.text
+      : message.eventType === "keyDown" && !(Number(message.modifiers) & 7) ? message.text : undefined;
+    if (typeof text === "string" && text) {
+      if (!recorder.typingOpen) recorder.beginTyping(await this.describe(viewer));
+      recorder.type(text);
+      return;
+    }
+    if (message.eventType !== "keyDown" || Number(message.modifiers) & 7) return;
+    if (message.key === "Backspace") recorder.backspace();
+    else if (message.key === "Enter" || message.key === "Tab" || message.key === "Escape") recorder.press(String(message.key));
   }
 
   /** Why this viewer cannot act now: an interrupted browser needs a restart. */
@@ -642,7 +709,17 @@ export class BrowserLive {
   }
 
   closeForSession(session: string): void { for (const viewer of this.viewers.values()) if (viewer.session === session) this.close(viewer); }
-  closeForOwner(owner: string): void { for (const viewer of this.viewers.values()) if (viewer.owner === owner) this.close(viewer); }
+  closeForOwner(owner: string): void {
+    this.teach.discardOwner(owner);
+    for (const viewer of this.viewers.values()) if (viewer.owner === owner) this.close(viewer);
+  }
   closeForBot(botId: string): void { for (const viewer of this.viewers.values()) if (viewer.botId === botId) this.close(viewer); }
   closeAll(): void { for (const viewer of this.viewers.values()) this.close(viewer); }
+}
+
+/** A toolbar command as a recorded step. Selecting or closing a tab is not one. */
+function recordCommand(recorder: TeachRecorder, args: readonly string[]): void {
+  if (args[0] === "open") recorder.command("open", args[1]);
+  else if (args[0] === "back" || args[0] === "forward" || args[0] === "reload") recorder.command(args[0]);
+  else if (args[0] === "tab" && args[1] === "new") recorder.command("tab", args[2] === BROWSER_START_URL ? undefined : args[2]);
 }

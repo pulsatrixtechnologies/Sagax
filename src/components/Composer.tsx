@@ -91,7 +91,9 @@ import { useBusySendPreference } from "@/lib/busy-send";
 import { botBusySend } from "@/lib/bot-runtime-settings";
 import { useOnCall } from "@/lib/call";
 import { suggestBusySendMode, type BusySendMode } from "../../shared/parallel-tasks";
-import { dataWindowEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, dataWindowEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { requestBrowserTeach } from "@/lib/teach-request";
+import { TeachChooserDialog } from "./TeachStepsDialog";
 import { useRetroSkin } from "./RetroChromeHost";
 import { mentionChoicesForQuery, mentionRowDescription } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
@@ -413,6 +415,16 @@ export function Composer({
   // /learn: also the + menu's "Teach a task"
   const learnAvailable = skillAuthoringEnabled(config) &&
     (group ? (members ?? []).some(supportsAgents) : supportsAgents(bot));
+  // ...which can also be shown in the bot's browser (a recording) when this
+  // person can open that browser (the Browser panel's own conditions).
+  const browserTeach = Boolean(bot && !group && bot.browser !== false && ownerOrAdmin
+    && (builtInBrowserEnabled(config) || browserAvailable(config)) && config?.browserEngine?.kind === "engine");
+  const [teachChooser, setTeachChooser] = useState(false);
+  const showInBrowser = () => {
+    if (!bot) return;
+    requestBrowserTeach(bot.id);
+    dispatch({ type: "toggleComputer", open: true });
+  };
   // The room's latest goal run, its card in the transcript: what /goal
   // status, resume and stop act on.
   const latestGoalRun = useMemo(() => {
@@ -1104,14 +1116,15 @@ export function Composer({
   // then this conversation's settings (the rows below).
   const plusItems: PlusMenuItem[] = [
     { id: "attach", group: "add", label: t("composer.plus.attach"), icon: ATTACH_ICON, onSelect: () => fileInput.current?.click() },
-    ...(learnAvailable ? [{
+    ...(learnAvailable || browserTeach ? [{
       id: "teach",
       group: "add" as const,
       label: t("composer.plus.teach"),
       icon: <RecordMark />,
-      hint: "/learn",
-      // the same as picking /learn in the "/" menu
-      onSelect: () => startDraftWith("/learn "),
+      ...(learnAvailable ? { hint: "/learn" } : {}),
+      // in words, the same as picking /learn in the "/" menu; with a
+      // browser, a choice between that and showing it there
+      onSelect: () => browserTeach ? learnAvailable ? setTeachChooser(true) : showInBrowser() : startDraftWith("/learn "),
     }] : []),
     // a voice note adds to the message like a file (2026-10-16)
     { id: "voiceNote", group: "add", label: t("composer.plus.voiceNote"), icon: VOICE_NOTE_ICON, disabled: dictating || voiceNoting || locked, onSelect: () => void voiceNote.start() },
@@ -1349,6 +1362,7 @@ export function Composer({
                   (goal, setup), then this conversation's approval level and
                   workspace as rows that open beside it (JC, 2026-10-15/16). */}
               <ComposerPlusMenu items={plusItems} rows={plusRows} />
+              {teachChooser && bot && <TeachChooserDialog botName={bot.name} onShow={showInBrowser} onDescribe={() => startDraftWith("/learn ")} onClose={() => setTeachChooser(false)} />}
               {/* /goal or the + menu's Goal mode starts it; the chip appears
                   only while it is on, says so, and turns it off (JC,
                   2026-10-14: the chip only when it shows the current goal). */}

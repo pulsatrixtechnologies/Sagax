@@ -66,6 +66,7 @@ import { SettingsText } from "./SettingsLink";
 import { BrowserScreen, OrgComputerTab, ScreenPicker } from "./computer/OrgComputerTab";
 import { BrowserPanel } from "./BrowserPanel";
 import { browserAvailable, builtInBrowserEnabled } from "@/lib/feature-flags";
+import { browserTeachPending, onBrowserTeachRequest } from "@/lib/teach-request";
 
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
 
@@ -238,7 +239,9 @@ export function ComputerPanel({
   // screen picker's Browser chip, where this server has the built-in browser.
   const browserOffered = builtInBrowserEnabled(state.config) || browserAvailable(state.config);
   // A bot that works on its browser opens on it.
-  const [soloView, setSoloView] = useState<"screen" | "browser">(() => profileBot.computer === "browser" ? "browser" : "screen");
+  // So does one the person asked to show a task to (Teach a task).
+  const [soloView, setSoloView] = useState<"screen" | "browser">(() => profileBot.computer === "browser" || browserTeachPending(profileBot.id) ? "browser" : "screen");
+  useEffect(() => onBrowserTeachRequest((botId) => { if (botId === profileBot.id) setSoloView("browser"); }), [profileBot.id]);
   const threadBot = currentTaskBot(profileBot);
   const connectionKey = `${profileBot.id}:${profileBot.threadId}:${livePlace}:${profileBot.cloudBackend ?? "box"}:${threadBot.modelSelection.instanceId}`;
   const [autoSurface, setAutoSurface] = useState<{ key: string; surface: Bot["computer"] } | null>(null);

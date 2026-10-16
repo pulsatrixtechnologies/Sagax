@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Bot as BotIcon, EllipsisVertical, Globe, Hand, Loader2, Plus, RotateCw, UserRound, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot as BotIcon, EllipsisVertical, Globe, Hand, Loader2, Plus, RotateCw, Square, UserRound, X } from "lucide-react";
 import { BrowserUnavailableNote } from "./SettingsLink";
 import { t } from "@/lib/i18n";
 import { api, useStore, type Bot } from "@/state/store";
@@ -14,6 +14,9 @@ import { browserDot, reportScreenDot } from "@/lib/screen-status";
 import { ComputerScreen, type ScreenAction } from "./computer/ComputerScreen";
 import { SandboxDesktopModal } from "./computer/SandboxDesktopModal";
 import { NetworkDebuggerDialog } from "./NetworkDebuggerDialog";
+import { TeachStepsDialog } from "./TeachStepsDialog";
+import { onBrowserTeachRequest, takeBrowserTeach } from "@/lib/teach-request";
+import type { TeachStep } from "../../shared/teach-recording";
 
 interface BrowserTab { tabId: string; title: string; url: string; active: boolean }
 type ViewerFrame = BrowserFrame & { viewerId: string; generation: number };
@@ -33,7 +36,7 @@ export const BROWSER_START_URL = "https://www.google.com/";
  * `control`: false hands the browser back at once and leaves the page
  * view-only. `placeholder`: the preview's last picture, shown dimmed while
  * the live view connects, so the window never opens on an empty square. */
-export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot: Bot; control?: boolean; placeholder?: string | undefined }) {
+export function LiveBrowser({ bot, control: allowed = true, placeholder, teach = false }: { bot: Bot; control?: boolean; placeholder?: string | undefined; teach?: boolean }) {
   const { state } = useStore();
   const [attempt, setAttempt] = useState(0);
   const [frame, setFrame] = useState<ViewerFrame | null>(null);
@@ -55,6 +58,12 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot
   const [reconnecting, setReconnecting] = useState(false);
   // The person's network debugger (never the bot's).
   const [showNetwork, setShowNetwork] = useState(false);
+  // Teach by demonstration (server/browser-teach.ts): a recording runs, then
+  // its steps open in the editor. Never null: the test fixture gives every
+  // useState(null) the frame.
+  const [recording, setRecording] = useState(false);
+  const [taught, setTaught] = useState<{ steps: TeachStep[]; recordedAt: string } | undefined>(undefined);
+  const [teachNote, setTeachNote] = useState("");
   const viewer = useRef("");
   const generation = useRef(0);
   const pendingOperation = useRef<number | null>(null);
@@ -72,6 +81,14 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot
   const connectionProfile = useRef("");
   // Once per connection: a blank page is taken to the start page.
   const startChecked = useRef(false);
+  // The recording, for callbacks that outlive a render: its start time, the
+  // view that started it (discarded with the window), and whether this
+  // window was opened to record (the composer's Teach a task).
+  const recordingNow = useRef(false);
+  const recordedAt = useRef("");
+  const recordingViewer = useRef("");
+  const autoTeach = useRef(teach);
+  const startRecordingNow = useRef<() => void>(() => {});
   const profileName = bot.browserProfile === "guest" ? t("browser.profile.temporary")
     : state.config?.browserProfiles?.find((profile) => profile.id === bot.browserProfile)?.name ?? t("browser.profile.own", { name: bot.name });
   useEffect(() => { if (showProfiles) profilesDialog.current?.showModal(); else profilesDialog.current?.close(); }, [showProfiles]);
@@ -155,6 +172,8 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot
       });
       setReconnecting(false);
       setConnected(true);
+      if (recordingNow.current) recordingViewer.current = expected;
+      if (autoTeach.current && allowedNow.current) { autoTeach.current = false; startRecordingNow.current(); }
     });
     // A ready event alone is not recovery: a flapping stream can open and
     // fail immediately. Reset the retry budget only after a live heartbeat.
@@ -231,6 +250,37 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot
     };
   }, [bot.id, bot.browserProfile, attempt, action]);
 
+  // Closing the window ends a recording: nothing of it is kept (the server
+  // also drops one whose person has no view of the browser left).
+  useEffect(() => () => {
+    if (recordingNow.current && recordingViewer.current) void action({ type: "record-discard" }, recordingViewer.current).catch(() => {});
+    recordingNow.current = false;
+  }, [action]);
+  const startRecording = async () => {
+    setTeachNote(""); setError("");
+    try {
+      await action({ type: "record-start" });
+      recordingNow.current = true; recordingViewer.current = viewer.current;
+      recordedAt.current = new Date().toISOString();
+      setRecording(true);
+      // the demonstration is the person's: keep control until they stop
+      browserControl.current?.takeNow();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  };
+  startRecordingNow.current = () => { void startRecording(); };
+  const stopRecording = async () => {
+    try {
+      // the last keys typed belong to the recording
+      await inputQueue.current?.drain();
+      const result = await action({ type: "record-stop" }) as { steps?: TeachStep[]; expired?: boolean };
+      recordingNow.current = false; recordingViewer.current = "";
+      setRecording(false);
+      if (result.expired) setTeachNote(t("teach.expired"));
+      else if (!result.steps?.length) setTeachNote(t("teach.nothing"));
+      else setTaught({ steps: result.steps, recordedAt: recordedAt.current });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  };
+
   // Release control in the window: hand the browser back now, not after the idle wait.
   allowedNow.current = allowed;
   useEffect(() => { if (!allowed) browserControl.current?.handBack(); }, [allowed]);
@@ -300,6 +350,10 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot
         <div className="absolute right-0 top-full z-20 mt-2 flex w-44 flex-col rounded-xl border border-hairline/50 bg-card p-1.5 text-[12px] shadow-xl">
           <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset disabled:opacity-40" disabled={!typingReady} onClick={(e) => { e.currentTarget.closest("details")?.removeAttribute("open"); setShowTyping(true); }}>{t("browser.menu.type")}</button>
           <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset disabled:opacity-40" disabled={!connected} onClick={(e) => { e.currentTarget.closest("details")?.removeAttribute("open"); setShowNetwork(true); }}>{t("browser.menu.network")}</button>
+          <button type="button" data-teach-record="" className="rounded-md px-3 py-2 text-left hover:bg-inset disabled:opacity-40" disabled={!recording && !commandsReady} onClick={(e) => {
+            e.currentTarget.closest("details")?.removeAttribute("open");
+            void (recording ? stopRecording() : startRecording());
+          }}>{recording ? t("teach.stop") : t("teach.start")}</button>
           <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset" onClick={(e) => { e.currentTarget.closest("details")?.removeAttribute("open"); reconnect(); }}>{t("browser.menu.reconnect")}</button>
           <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset disabled:opacity-40" disabled={!connected || pending || taking} onClick={(e) => {
             e.currentTarget.closest("details")?.removeAttribute("open");
@@ -309,6 +363,17 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot
         </div>
       </details>
     </form>
+    {/* While a recording runs this bar stays at the top of the window, above
+        the page, with the one action that ends it. */}
+    {recording && <div role="status" data-teach-recording="" className="flex min-h-10 items-center gap-2 border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-[12px] text-danger">
+      <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger opacity-60" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger" /></span>
+      <span className="min-w-0 flex-1 font-medium">{t("teach.recording")}</span>
+      <button type="button" data-teach-stop="" onClick={() => void stopRecording()}
+        className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full bg-danger px-3 py-1 font-medium text-danger-ink hover:brightness-110 md:min-h-0">
+        <Square size={11} fill="currentColor" aria-hidden="true" />{t("teach.stop")}
+      </button>
+    </div>}
+    {teachNote && !recording && <div role="status" className="border-b border-hairline/30 px-3 py-2 text-[12px] text-ink-secondary">{teachNote}</div>}
     <div data-browser-holder={mine ? "you" : heldElsewhere ? "elsewhere" : "bot"} className="flex min-h-10 items-center gap-2 border-b border-hairline/40 px-3 py-1.5 text-[12px]">
       <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", mine ? "font-medium text-accent-text" : "text-ink-secondary")}>
         {mine ? <Hand size={13} className="shrink-0" aria-hidden="true" /> : <BotIcon size={13} className="shrink-0" aria-hidden="true" />}
@@ -326,7 +391,7 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot
           </button>)}
     </div>
     {error && <div role={reconnecting ? "status" : "alert"} className={`flex items-center justify-between gap-2 border-b border-hairline/30 px-3 py-2 text-[12px] ${reconnecting ? "text-ink-secondary" : "text-danger"}`}><span>{error}</span>{!connected && <button className="shrink-0 underline" onClick={reconnect}>{t("browser.live.reconnect")}</button>}</div>}
-    <div className="relative min-h-0 flex-1 overflow-hidden bg-inset/40">
+    <div className={cn("relative min-h-0 flex-1 overflow-hidden bg-inset/40", recording && "ring-2 ring-inset ring-danger")}>
       {frame ? <BrowserViewport frame={frame} {...viewport} driving={interactive} input={input}
         onReturnToToolbar={() => addressInput.current?.focus()}
         acknowledge={(seq) => { if (generation.current === frame.generation && viewer.current === frame.viewerId) void action({ type: "ack", seq }, frame.viewerId).catch(() => {}); }}
@@ -356,6 +421,7 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder }: { bot
       <BrowserProfilesManager bot={bot} disabled={pending || control.held} onProfileChanged={() => { setShowProfiles(false); reconnect(); }} />
     </dialog>
     {showNetwork && <NetworkDebuggerDialog botId={bot.id} botName={bot.name} onClose={() => setShowNetwork(false)} />}
+    {taught && <TeachStepsDialog botId={bot.id} botName={bot.name} steps={taught.steps} recordedAt={taught.recordedAt} onClose={() => setTaught(undefined)} />}
     <dialog ref={typingDialog} onClose={() => setShowTyping(false)} className="m-auto w-[min(420px,calc(100%-32px))] rounded-2xl border border-hairline/50 bg-card p-5 text-ink shadow-2xl backdrop:bg-black/40">
       <div className="mb-3 flex items-center justify-between"><h2 className="text-[14px] font-medium">{t("browser.typing.title")}</h2><button className={button} aria-label={t("browser.typing.close")} onClick={() => setShowTyping(false)}><X size={16} /></button></div>
       <form className="flex flex-col gap-3" onSubmit={(e) => {
@@ -477,7 +543,13 @@ function PreviewImage({ frame, alt, acknowledge, onTakeControl, waiting }: { fra
  * server environment's (SandboxDesktopModal), where LiveBrowser connects.
  * While that window is open the square shows no second stream. */
 export function BrowserComputerScreen({ bot }: { bot: Bot }) {
-  const [takeover, setTakeover] = useState(false);
+  const [takeover, setTakeover] = useState(() => takeBrowserTeach(bot.id));
+  // Opened from the composer's Teach a task: the window starts recording.
+  const [teach, setTeach] = useState(takeover);
+  useEffect(() => onBrowserTeachRequest((botId) => {
+    if (botId !== bot.id || !takeBrowserTeach(bot.id)) return;
+    setTeach(true); setTakeover(true);
+  }), [bot.id]);
   const preview = useBrowserPreview(bot, !takeover);
   const caption = t("computer.browserOf", { name: bot.name });
   // The last picture, shown in the window while its live view connects.
@@ -514,8 +586,8 @@ export function BrowserComputerScreen({ bot }: { bot: Bot }) {
     : preview.frame ? <PreviewImage frame={preview.frame} alt={caption} acknowledge={preview.acknowledge} onTakeControl={open} waiting={waiting} /> : undefined;
   return <>
     <ComputerScreen source="browser" icon={Globe} state={state} caption={caption} message={message} actions={actions} live={live} />
-    {takeover && <SandboxDesktopModal kind="browser" title={caption} state="running" onClose={() => setTakeover(false)}
-      screen={(control) => <LiveBrowser key={bot.id} bot={bot} control={control} placeholder={lastFrame.current} />} />}
+    {takeover && <SandboxDesktopModal kind="browser" title={caption} state="running" onClose={() => { setTakeover(false); setTeach(false); }}
+      screen={(control) => <LiveBrowser key={bot.id} bot={bot} control={control} placeholder={lastFrame.current} teach={teach} />} />}
   </>;
 }
 

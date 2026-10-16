@@ -3609,3 +3609,38 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
   Tests: `electron/log-bundle.test.mjs`, `src/lib/console-ring.test.ts`,
   `src/lib/feedback.test.ts`, `src/lib/audio-input.test.ts`,
   `src/lib/voice-note.test.ts`, `src/components/Composer.voiceNote.test.ts`.
+
+## Teach by demonstration (2026-10-16)
+
+The composer's + > Teach a task, when the bot has a browser, offers "Show it
+in the browser" beside "Describe it in words" (`/learn`, unchanged). Showing
+opens the bot's browser window (Computer tab) and starts a recording; the
+browser menu has the same Teach by demonstration / Stop recording entry.
+Pieces: `shared/teach-recording.ts` (masking rules, SKILL.md builder),
+`server/browser-teach.ts` (recorder), the `record-start`, `record-stop` and
+`record-discard` actions of `server/browser-live.ts`,
+`src/components/TeachStepsDialog.tsx` (editor and chooser),
+`src/lib/teach-request.ts`. Rules, covered by `shared/teach-recording.test.ts`
+and `server/browser-teach.test.ts`:
+
+- Only the person's own input through the live view is recorded (clicks,
+  typed text, Enter/Tab/Escape, toolbar commands), never the bot's tool
+  calls, and only for the person who started it in that browser session.
+- A click asks the page (engine `eval`) for the element's role and
+  accessible name; typing asks for the focused field's kind. A field's
+  value is never read.
+- Text typed in a password, one-time code, card, PIN or key field, in a
+  field the page could not describe, or text that reads as a credential
+  (JWT, token, key, card number) is never kept: the step says a secret goes
+  there and the skill asks the person at run time. Addresses lose user info,
+  secret query values and token fragments.
+- The recording lives in server memory only: handed over once on stop,
+  dropped on discard, after 30 minutes idle, 2 minutes after the person's
+  last view of that browser closed, and on sign-out. Nothing is logged or
+  written. The editor's list lives in the window; the raw recording is
+  downloaded only when the person ticks "keep the raw recording".
+- Saving builds a SKILL.md from the step fields (page words quoted, bounded,
+  cleaned) and installs it through `POST /api/bots/:id/skill-upload`, so it
+  arrives turned off, with the upload route's rights and audit row. The bot
+  replays it with its browser tools and its usual approvals.
+- Not done: recording the desktop screen (only the bot's browser).
