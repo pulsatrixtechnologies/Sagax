@@ -47,6 +47,12 @@ Copyright the noVNC authors, under MPL-2.0 and its accompanying licenses.
 Attribution, license terms and the corresponding source location are in
 public/novnc-NOTICE.txt (novnc-NOTICE.txt in the built UI).
 
+The iOS companion app bundles the unmodified mermaid library (mermaid.min.js,
+the version pinned by pnpm-lock.yaml), Copyright (c) 2014 - 2022 Knut
+Sveidqvist, under the MIT License (third_party/mermaid/LICENSE), to draw
+diagrams offline. Mermaid includes third-party components under their own
+licenses, listed with the library.
+
 The iOS companion app bundles a prebuilt WebRTC library for Live calls
 (stasel/WebRTC), built from the WebRTC project, Copyright (c) 2011, The WebRTC
 project authors, used under the BSD 3-Clause License. WebRTC includes

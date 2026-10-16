@@ -67696,6 +67696,72 @@
         }
       }
     },
+    "This diagram could not be drawn. Here is its source.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This diagram could not be drawn. Here is its source."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce diagramme n'a pas pu être dessiné. Voici sa source."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível desenhar este diagrama. Aqui está o código."
+          }
+        }
+      }
+    },
+    "Drawing the diagram…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drawing the diagram…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dessin du diagramme…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desenhando o diagrama…"
+          }
+        }
+      }
+    },
+    "Opens the diagram full screen": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens the diagram full screen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre le diagramme en plein écran"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre o diagrama em tela cheia"
+          }
+        }
+      }
+    },
     "Allow the microphone in Settings to record a voice note.": {
       "localizations": {
         "fr": {

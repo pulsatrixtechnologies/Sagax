@@ -276,7 +276,7 @@ struct MarkdownText: View {
         } else if kind == .cw, let widget = CwWidget.parse(code) {
             CwWidgetCard(widget: widget, threadId: cwThreadId, botId: cwBotId, ask: cwAsk)
         } else if lang.trimmingCharacters(in: .whitespaces).lowercased() == "mermaid" {
-            MermaidBlockView(code: code, identifier: identifier)
+            MermaidBlockView(code: code, pending: pending, identifier: identifier)
         } else if let email {
             EmailCardView(draft: email, pending: pending, identifier: identifier)
         } else if kind == .widget {

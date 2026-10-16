@@ -207,11 +207,24 @@ final class RichContentUITests: XCTestCase {
     // MARK: - CA25 mermaid
 
     @MainActor
-    func testMermaidShowsItsSourceAndCopies() throws {
+    func testMermaidDrawsOfflineOpensFullScreenAndCopies() throws {
         let app = try launch()
         let id = "message-rich-mermaid-rich-1"
         reveal(app, id)
         XCTAssertTrue(app.staticTexts["Mermaid diagram"].exists)
+        // drawn by the bundled mermaid, fitted to the column
+        let diagram = element(app, "\(id)-diagram")
+        XCTAssertTrue(diagram.waitForExistence(timeout: 45), "the diagram is drawn")
+        let column = element(app, id).frame
+        XCTAssertGreaterThan(diagram.frame.height, 40)
+        XCTAssertLessThanOrEqual(diagram.frame.width, column.width)
+        XCTAssertLessThanOrEqual(diagram.frame.height, app.windows.firstMatch.frame.height * 0.6 + 1)
+        attach("Mermaid", app)
+        reveal(app, "\(id)-diagram").tap()
+        XCTAssertTrue(app.buttons["mermaid-fullscreen-close"].waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 1.5)
+        attach("Mermaid full screen", app)
+        app.buttons["mermaid-fullscreen-close"].tap()
         reveal(app, "\(id)-copy").tap()
         let value = element(app, "\(id)-copy").value as? String ?? ""
         XCTAssertTrue(value.hasPrefix("graph TD"), value)

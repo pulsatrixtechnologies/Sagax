@@ -152,6 +152,11 @@ brew install xcodegen
 cd ios && xcodegen generate && open Sagax.xcodeproj
 ```
 
+Run `pnpm install` at the repository root first: the build copies
+`node_modules/mermaid/dist/mermaid.min.js` into the app so chat diagrams draw
+offline. A Release build without it fails; a Debug build warns and shows the
+diagram source instead.
+
 **Re-run `xcodegen generate` after pulling any change that adds a file to
 `App/`.** The spec says `sources: App`, but XcodeGen resolves that to explicit
 file references when it generates, so a new file is simply absent from the
