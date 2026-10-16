@@ -67676,6 +67676,198 @@
         }
       }
     },
+    "Allow the microphone in Settings to record a voice note.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisez le micro dans Réglages pour enregistrer une note vocale."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permita o microfone nos Ajustes para gravar uma nota de voz."
+          }
+        }
+      }
+    },
+    "Couldn't record the voice note.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d’enregistrer la note vocale."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível gravar a nota de voz."
+          }
+        }
+      }
+    },
+    "Too short: hold a little longer to record a voice note.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trop court : maintenez un peu plus longtemps pour enregistrer une note vocale."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Curta demais: segure um pouco mais para gravar uma nota de voz."
+          }
+        }
+      }
+    },
+    "Cancel voice note": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler la note vocale"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar nota de voz"
+          }
+        }
+      }
+    },
+    "Release to cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relâchez pour annuler"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solte para cancelar"
+          }
+        }
+      }
+    },
+    "Slide left to cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glissez vers la gauche pour annuler"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deslize para a esquerda para cancelar"
+          }
+        }
+      }
+    },
+    "Send voice note": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer la note vocale"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar nota de voz"
+          }
+        }
+      }
+    },
+    "Recording a voice note": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrement d’une note vocale"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gravando uma nota de voz"
+          }
+        }
+      }
+    },
+    "Touch and hold to record a voice note.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenez le doigt pour enregistrer une note vocale."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toque e segure para gravar uma nota de voz."
+          }
+        }
+      }
+    },
+    "Record a voice note": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer une note vocale"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gravar uma nota de voz"
+          }
+        }
+      }
+    },
+    "Or touch and hold the microphone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ou maintenez le doigt sur le micro"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ou toque e segure o microfone"
+          }
+        }
+      }
+    },
+    "Send up to %lld items at a time.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyez au plus %lld éléments à la fois."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envie até %lld itens por vez."
+          }
+        }
+      }
+    },
     "devPods.rail": {
       "localizations": {
         "en": {

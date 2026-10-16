@@ -82,6 +82,10 @@ public enum AttachmentPolicy {
         "application/vnd.oasis.opendocument.presentation",
     ]
 
+    /// Recorded voice notes (VoiceNoteRecording): WAV only, the one audio
+    /// type the phone makes. The upload route accepts it like the desktop's.
+    public static let audioMIMETypes: Set<String> = ["audio/wav"]
+
     public static func normalizedMIME(_ value: String) -> String {
         value.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true)
             .first.map(String.init)?
@@ -92,7 +96,7 @@ public enum AttachmentPolicy {
     public static func kind(forMIME value: String) -> PendingMessageAttachment.Kind? {
         let mime = normalizedMIME(value)
         if imageMIMETypes.contains(mime) { return .image }
-        if documentMIMETypes.contains(mime) { return .file }
+        if documentMIMETypes.contains(mime) || audioMIMETypes.contains(mime) { return .file }
         return nil
     }
 
@@ -115,7 +119,7 @@ public enum AttachmentPolicy {
                     throw AttachmentPolicyError.itemTooLarge(name: name, limitMB: 10)
                 }
             case .file:
-                guard documentMIMETypes.contains(mime) else {
+                guard documentMIMETypes.contains(mime) || audioMIMETypes.contains(mime) else {
                     throw AttachmentPolicyError.unsupportedType(name)
                 }
                 guard attachment.data.count <= maximumFileBytes else {

@@ -91,6 +91,14 @@ extension EmptyStateView where Actions == EmptyView {
 }
 
 enum MicrophonePermission {
+    /// Never asked yet: the next request shows the system prompt.
+    static var undetermined: Bool {
+        if #available(iOS 17.0, *) {
+            return AVAudioApplication.shared.recordPermission == .undetermined
+        }
+        return AVAudioSession.sharedInstance().recordPermission == .undetermined
+    }
+
     /// `AVAudioApplication.requestRecordPermission()` arrived in iOS 17; the
     /// session-based call it replaced still works below that.
     static func request() async -> Bool {

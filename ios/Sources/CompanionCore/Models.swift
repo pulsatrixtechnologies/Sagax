@@ -2394,6 +2394,12 @@ public struct MessageVoiceNote: Hashable, Sendable, Identifiable {
     public var durationMs: Double?
 
     public var id: String { path }
+
+    public init(path: String, mime: String? = nil, durationMs: Double? = nil) {
+        self.path = path
+        self.mime = mime
+        self.durationMs = durationMs
+    }
 }
 
 extension Message {

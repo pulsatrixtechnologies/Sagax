@@ -96,6 +96,12 @@ extension ChatView {
                 subtitle: "Add a document from Files", disabled: !canAddAttachment
             ) { showingFileImporter = true },
         ]
+        out.append(PlusAction(
+            id: "voiceNote", systemImage: "waveform",
+            title: LocalizedStringKey(String(localized: "Record a voice note")),
+            subtitle: LocalizedStringKey(String(localized: "Or touch and hold the microphone")),
+            disabled: !canAddAttachment || voiceNote.isActive
+        ) { startVoiceNote(mode: .toggle) })
         if session.surfaceGate.allows(.pasteAttachment), UIPasteboard.general.hasImages || UIPasteboard.general.hasStrings {
             out.append(PlusAction(
                 id: "paste", systemImage: "doc.on.clipboard", title: "Paste",

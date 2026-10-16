@@ -2589,6 +2589,40 @@ final class Session: ObservableObject {
         return data
     }
 
+    /// A voice note the person sent (`voice-note-*.wav`, an attached file):
+    /// fetched through the message's authenticated file route, then cached
+    /// beside the bots' clips so replay never refetches.
+    func recordedVoiceNoteData(threadId: String, messageId: String, path: String) async -> Data? {
+        guard let client else { return nil }
+        let key = "file:\(messageId):\(path)" as NSString
+        if let cached = voiceNoteCache.object(forKey: key) { return cached as Data }
+        let generation = voiceNoteCacheGeneration
+        guard let file = try? await client.downloadFile(threadId: threadId, messageId: messageId, path: path),
+              !Task.isCancelled, generation == voiceNoteCacheGeneration
+        else { return nil }
+        voiceNoteCache.setObject(file.data as NSData, forKey: key, cost: file.data.count)
+        return file.data
+    }
+
+    /// The words of a recorded voice note, through the same speech to text
+    /// as the desktop's voice notes (`/voice/transcribe`, in clips under the
+    /// route's limit). Nil when this bot has no speech to text (no xAI
+    /// voice); "" when it has but the words could not be read.
+    func transcribeVoiceNote(pcm: Data, sampleRate: Int, botId: String, threadId: String?) async -> String? {
+        guard let client else { return nil }
+        guard let status = try? await client.voiceModeStatus(botId: botId), status.available else { return nil }
+        var parts: [String] = []
+        for clip in VoiceNoteRecording.transcriptionClips(pcm: pcm, sampleRate: sampleRate) {
+            guard !Task.isCancelled else { return "" }
+            guard let heard = try? await client.voiceModeTranscribe(botId: botId, wav: clip, language: "auto", threadId: threadId) else {
+                return ""
+            }
+            let trimmed = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { parts.append(trimmed) }
+        }
+        return parts.joined(separator: " ")
+    }
+
     /// Switch the workspace's voice engine. The fresh status comes back so
     /// the caller can re-derive every provider-dependent row in place.
     func setVoiceProvider(_ provider: VoiceProvider) async -> ConfigStatus? {

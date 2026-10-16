@@ -112,6 +112,11 @@ struct ChatView: View {
     @State var threadOpenTask: Task<Void, Never>?
     @FocusState var composerFocused: Bool
     @StateObject var dictation = SpeechDictation()
+    /// The composer's voice note (hold the mic, or + > Record a voice note).
+    @StateObject var voiceNote = VoiceNoteRecorder()
+    /// When the mic was pressed, and the wait before a press becomes a hold.
+    @State var micPressStart: Date?
+    @State var micHoldTask: Task<Void, Never>?
     @AppStorage(PrefKey.activityDetail) var activityDetail = ActivityDetail.full.rawValue
     @AppStorage(PrefKey.quickReplies) var quickReplies = ""
     /// The run card above the composer (ST4, WP14 `RunCardView`).
@@ -267,6 +272,7 @@ struct ChatView: View {
         .onDisappear {
             if AttentionCenter.shared.viewingThreadId == current.threadId { AttentionCenter.shared.viewingThreadId = nil }
             dictation.stop()
+            voiceNote.cancel()
             resetFilePreview()
             cancelThreadOpen()
             // Leaving the conversation hangs up, as on the desktop; a profile
@@ -277,7 +283,10 @@ struct ChatView: View {
             }
         }
         .onValueChange(of: scenePhase) { phase in
-            if phase != .active { dictation.stop() }
+            if phase != .active {
+                dictation.stop()
+                voiceNote.cancel()
+            }
         }
         .onValueChange(of: showingComputer) { shown in
             if shown { dictation.stop() }
@@ -298,7 +307,10 @@ struct ChatView: View {
             if shown { dictation.stop() } else { panelSection = nil }
         }
         .onValueChange(of: call.active) { onCall in
-            if onCall { dictation.stop() }
+            if onCall {
+                dictation.stop()
+                voiceNote.cancel()
+            }
         }
         .onValueChange(of: showingPlus) { shown in
             if shown { dictation.stop() }
@@ -308,6 +320,7 @@ struct ChatView: View {
             let value = (raw as? NSNumber)?.uintValue ?? (raw as? UInt)
             if value == AVAudioSession.InterruptionType.began.rawValue {
                 dictation.stop()
+                voiceNote.cancel()
             }
         }
         .onValueChange(of: dictation.transcript) { spoken in
@@ -318,6 +331,8 @@ struct ChatView: View {
         .onValueChange(of: dictation.isListening) { listening in
             if listening { composerFocused = false }
         }
+        .onValueChange(of: threadId) { _ in voiceNote.cancel() }
+        .onAppear { voiceNote.onCapped = { sendVoiceNote() } }
     }
 
     var arrival: some View {

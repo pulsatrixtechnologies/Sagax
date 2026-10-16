@@ -144,8 +144,8 @@ targets:
           Sagax uses the camera to scan a pairing QR code shown on your
           computer and, when you choose it, to take your profile photo.
         NSMicrophoneUsageDescription: >-
-          Sagax listens while you dictate a message to a bot or talk with
-          one on a call.
+          Sagax listens while you dictate a message to a bot, record a
+          voice note for one, or talk with one on a call.
         # A call keeps going with the screen locked or the app in the
         # background, like a phone call (CallKit places it; this keeps its
         # audio running).

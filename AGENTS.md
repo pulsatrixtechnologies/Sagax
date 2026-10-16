@@ -3586,7 +3586,14 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
   the message text, then the ordinary send. Five minutes at most. No new
   server route. The transcript shows a recorded note with `VoiceNoteBubble`
   (speed 1x, 1.5x, 2x; jump to a word only when word timings are given,
-  which no speech to text of ours returns yet). iOS: the speed button only.
+  which no speech to text of ours returns yet). iOS (`App/Composer/VoiceNoteRecorder.swift`,
+  rules in `CompanionCore/VoiceNoteRecording.swift`): touch and hold the
+  composer mic to record (release sends, slide left past 80 pt cancels; a
+  tap stays dictation), or + > Record a voice note (Cancel and Send). The
+  same 16 kHz WAV, name, upload and `/voice/transcribe` clips as the
+  desktop; the first microphone prompt turns a hold into a toggle. A sent
+  `voice-note-*.wav` plays in the person's bubble through the message file
+  route. Tests: `VoiceNoteRecordingTests.swift`.
 - Microphone (Settings > Models and voice > Audio, `src/lib/audio-input.ts`):
   one choice on this computer (`sagax.audioInput.v1`, never in the
   preferences that travel) for dictation, voice notes, Live calls and voice

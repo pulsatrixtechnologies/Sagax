@@ -100,14 +100,25 @@ struct TextBubble: View {
                     // Quotes this message carries (CO8): its own words, then
                     // the citations as chips.
                     let cited = Citations.split(shared.text)
+                    // A voice note recorded in the composer plays here, with
+                    // its speed, instead of showing as a file chip.
+                    let recorded = shared.attachments.filter { $0.kind == .file && VoiceNoteRecording.isVoiceNoteName($0.name) }
+                    let others = shared.attachments.filter { !($0.kind == .file && VoiceNoteRecording.isVoiceNoteName($0.name)) }
+                    ForEach(Array(recorded.enumerated()), id: \.offset) { _, attachment in
+                        VoiceNoteBubble(
+                            note: MessageVoiceNote(path: attachment.path, mime: VoiceNoteRecording.mime, durationMs: nil),
+                            tint: MausPalette.color(chat.color),
+                            recordedIn: (chat.threadId, message.id)
+                        )
+                    }
                     if desktop != nil {
-                        if !shared.attachments.isEmpty {
-                            DesktopAttachmentGallery(images: shared.attachments.filter { $0.kind == .image },
-                                                     files: shared.attachments.filter { $0.kind == .file },
+                        if !others.isEmpty {
+                            DesktopAttachmentGallery(images: others.filter { $0.kind == .image },
+                                                     files: others.filter { $0.kind == .file },
                                                      threadId: chat.threadId, messageId: message.id)
                         }
                     } else {
-                        ForEach(Array(shared.attachments.enumerated()), id: \.offset) { _, attachment in
+                        ForEach(Array(others.enumerated()), id: \.offset) { _, attachment in
                             TranscriptAttachmentView(
                                 attachment: attachment,
                                 threadId: chat.threadId,

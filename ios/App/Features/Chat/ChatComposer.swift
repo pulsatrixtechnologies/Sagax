@@ -172,6 +172,14 @@ extension ChatView {
                 // The field: "Ask {name}", the mic (dictation) and the white
                 // capsule (voice mode, or send once there is something to send).
                 HStack(alignment: .bottom, spacing: 0) {
+                    if voiceNote.isActive {
+                        VoiceNoteRecordingStrip(
+                            recorder: voiceNote,
+                            tint: Theme.danger,
+                            cancel: { voiceNote.cancel() },
+                            send: { sendVoiceNote() }
+                        )
+                    } else {
                     TextField(
                         "",
                         text: draftBinding,
@@ -204,32 +212,45 @@ extension ChatView {
                         // the line. onKeyPress never sees the software
                         // keyboard, so this cannot turn its Return into a send.
                         .onHardwareReturn { submit(busyMode: openBusyChoice) }
+                    }
 
-                    Button {
-                        composerFocused = false
-                        dictation.toggle(capturing: draft)
-                    } label: {
+                    // Tap: dictation, as before. Hold: a voice note that a
+                    // release sends (slide left to cancel). Kept in place
+                    // while recording so the press that started it can end it.
+                    if !(voiceNote.isActive && voiceNote.mode == .toggle) {
+                        let recording = voiceNote.isActive
                         MicGlyph()
-                            .fill(dictation.isListening ? Theme.danger : Theme.composerMic)
+                            .fill(dictation.isListening || recording ? Theme.danger : Theme.composerMic)
                             .frame(width: MicGlyph.size.width, height: MicGlyph.size.height)
+                            .scaleEffect(recording ? 1.25 : 1)
                             .frame(width: 32, height: Theme.Metric.glassLarge)
                             .contentShape(Rectangle())
-                            .pulseCompat(isActive: dictation.isListening)
+                            .pulseCompat(isActive: dictation.isListening || recording)
+                            .gesture(micPress, including: micDisabled ? .subviews : .all)
+                            .opacity(micDisabled ? 0.45 : 1)
+                            .padding(.trailing, 6.3)
+                            .accessibilityElement()
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel(dictation.isListening ? "Stop dictation" : "Start dictation")
+                            .accessibilityHint(Text("Touch and hold to record a voice note."))
+                            .accessibilityAction { if !micDisabled { tapMic() } }
+                            .accessibilityAction(named: Text("Record a voice note")) {
+                                if !micDisabled { startVoiceNote(mode: .toggle) }
+                            }
+                            .accessibilityIdentifier("composer-mic")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(preparingAttachments || sendingMessage)
-                    .padding(.trailing, 6.3)
-                    .accessibilityLabel(dictation.isListening ? "Stop dictation" : "Start dictation")
 
-                    ComposerVoiceSendButton(
-                        canSend: canSend,
-                        busy: preparingAttachments || sendingMessage,
-                        onCall: call.isOnCall(current),
-                        send: { submit() },
-                        voice: startVoiceMode
-                    )
-                    .padding(.trailing, 9.3)
-                    .padding(.bottom, (Theme.Metric.glassLarge - Theme.Chat.voiceCapsule.height) / 2)
+                    if !voiceNote.isActive {
+                        ComposerVoiceSendButton(
+                            canSend: canSend,
+                            busy: preparingAttachments || sendingMessage,
+                            onCall: call.isOnCall(current),
+                            send: { submit() },
+                            voice: startVoiceMode
+                        )
+                        .padding(.trailing, 9.3)
+                        .padding(.bottom, (Theme.Metric.glassLarge - Theme.Chat.voiceCapsule.height) / 2)
+                    }
                 }
                 .frame(minHeight: Theme.Metric.glassLarge)
                 // 22 pt corners: a capsule at one line that keeps its
@@ -249,6 +270,111 @@ extension ChatView {
         // Steer needs to know whether the running engine takes words live
         .task(id: heldSends.isEmpty) {
             if !heldSends.isEmpty { await power.load(botIds: [], threadId: nil, groupId: nil, session: session) }
+        }
+    }
+
+    // MARK: - Voice note
+
+    var micDisabled: Bool {
+        (preparingAttachments || sendingMessage) && !voiceNote.isActive
+    }
+
+    func tapMic() {
+        composerFocused = false
+        dictation.toggle(capturing: draft)
+    }
+
+    func startVoiceNote(mode: VoiceNoteRecorder.Mode) {
+        guard !voiceNote.isActive, !preparingAttachments, !sendingMessage else { return }
+        guard attachments.count < AttachmentPolicy.maximumItems else {
+            attachmentError = String(localized: "Send up to \(AttachmentPolicy.maximumItems) items at a time.")
+            return
+        }
+        dictation.stop()
+        composerFocused = false
+        showingPlus = false
+        voiceNote.start(mode: mode)
+    }
+
+    /// The mic's press, read by VoiceNoteHold: a short tap is dictation, a
+    /// hold records, the release sends and a slide left cancels.
+    var micPress: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if micPressStart == nil {
+                    micPressStart = Date()
+                    guard !voiceNote.isActive, !dictation.isListening, !dictation.isStarting else { return }
+                    micHoldTask = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: UInt64(VoiceNoteHold.holdThreshold * 1_000_000_000))
+                        guard !Task.isCancelled, micPressStart != nil else { return }
+                        startVoiceNote(mode: .hold)
+                    }
+                }
+                if voiceNote.mode == .hold, voiceNote.phase == .recording {
+                    let armed = VoiceNoteHold.cancels(translationX: value.translation.width)
+                    if armed != voiceNote.cancelArmed {
+                        voiceNote.cancelArmed = armed
+                        Haptics.selection()
+                    }
+                }
+            }
+            .onEnded { value in
+                let held = micPressStart.map { Date().timeIntervalSince($0) } ?? 0
+                micPressStart = nil
+                micHoldTask?.cancel()
+                micHoldTask = nil
+                let holding = voiceNote.mode == .hold && (voiceNote.phase == .recording || voiceNote.phase == .starting)
+                switch VoiceNoteHold.outcome(heldFor: held, translationX: value.translation.width, recording: holding) {
+                case .tap:
+                    if !voiceNote.isActive { tapMic() }
+                case .cancel:
+                    voiceNote.cancel()
+                case .send:
+                    if holding { sendVoiceNote() }
+                }
+            }
+    }
+
+    /// Stop the recording and send it: the WAV as an attached file through
+    /// the ordinary upload, its words (when this bot has speech to text) as
+    /// the message's text, then the ordinary send, as on the desktop (#601).
+    func sendVoiceNote() {
+        guard voiceNote.phase == .recording else {
+            voiceNote.cancel()
+            return
+        }
+        guard let clip = voiceNote.finish() else { return }
+        let chatAtSend = current
+        let note = PendingMessageAttachment(
+            id: UUID(), data: clip.wav, name: clip.name, mime: VoiceNoteRecording.mime, kind: .file
+        )
+        do {
+            try AttachmentPolicy.validate(attachments + [note])
+        } catch {
+            attachmentError = error.localizedDescription
+            return
+        }
+        voiceNote.markSending(true)
+        preparingAttachments = true
+        Task {
+            var heard: String?
+            if case let .bot(bot) = chatAtSend {
+                heard = await session.transcribeVoiceNote(
+                    pcm: clip.pcm, sampleRate: clip.sampleRate, botId: bot.id, threadId: chatAtSend.threadId
+                )
+            }
+            preparingAttachments = false
+            voiceNote.markSending(false)
+            // The person moved to another conversation meanwhile: the note
+            // waits in that conversation's draft instead of going anywhere.
+            guard threadId == chatAtSend.threadId else {
+                threadDrafts[chatAtSend.threadId, default: ComposerSnapshot()].attachments.append(note)
+                return
+            }
+            attachments.append(note)
+            if let heard, !heard.isEmpty { draft = Dictation.draft(base: draft, transcript: heard) }
+            await Task.yield()
+            submit()
         }
     }
 

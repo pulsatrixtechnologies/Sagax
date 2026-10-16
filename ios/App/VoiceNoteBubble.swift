@@ -15,7 +15,7 @@ import SwiftUI
 final class VoiceNoteCenter {
     static let shared = VoiceNoteCenter()
 
-    enum InputOwner: String { case dictation, call }
+    enum InputOwner: String { case dictation, call, voiceNote }
 
     private weak var current: VoiceNotePlayer?
     private var inputOwners: Set<InputOwner> = []
@@ -203,6 +203,9 @@ struct VoiceNoteBubble: View {
     @Environment(\.themePalette) var themePalette
     let note: MessageVoiceNote
     var tint: Color = .accentColor
+    /// A note the person recorded (an attached `voice-note-*.wav`): loaded
+    /// through its message's file route instead of the bots' clip route.
+    var recordedIn: (threadId: String, messageId: String)?
 
     @EnvironmentObject private var session: Session
     @StateObject private var player = VoiceNotePlayer()
@@ -291,7 +294,13 @@ struct VoiceNoteBubble: View {
         .accessibilityIdentifier("voice-note")
         .task(id: "\(note.path)#\(attempt)") {
             guard player.loadedDuration == nil, !loadFailed else { return }
-            guard let data = await session.voiceNoteData(for: note), !Task.isCancelled else {
+            let loaded: Data?
+            if let recordedIn {
+                loaded = await session.recordedVoiceNoteData(threadId: recordedIn.threadId, messageId: recordedIn.messageId, path: note.path)
+            } else {
+                loaded = await session.voiceNoteData(for: note)
+            }
+            guard let data = loaded, !Task.isCancelled else {
                 if !Task.isCancelled {
                     loadFailed = true
                     loading = false
