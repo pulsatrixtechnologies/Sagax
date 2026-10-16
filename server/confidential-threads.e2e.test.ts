@@ -30,6 +30,9 @@
 //         and searches nothing of her confidential threads
 //   CT-11 (third review) Ana's AI clients (the member API) cannot read,
 //         stream, write or answer a card in her confidential thread
+//   CT-12 (fourth review) Ana allows a confidential card in Sagax: the bot
+//         continues in that thread and the call runs once; her AI client
+//         still cannot answer one
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -221,6 +224,9 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
               { server: "agents", tool: "start_thread", arguments: { title: "Enfant", message: "child work" }, when: "OPEN-CHILD" },
               { server: "agents", tool: "coordinate_bots", arguments: { bot_ids: ["Messager"], message: "COORD leak", request_key: "leak-1" }, when: "COORD-OUT" },
               { server: "agents", tool: "act", arguments: { method: "GET", path: "/api/bots" }, when: "ACT-LIST" },
+              // an outbound tool of another MCP server: the bot's data tools
+              { server: "data", tool: "data_sql", arguments: { sql: "CREATE TABLE confidential_probe AS SELECT 1 AS x" }, when: "DATA-WRITE" },
+              { server: "data", tool: "data_sql", arguments: { sql: "CREATE TABLE confidential_probe AS SELECT 1 AS x" }, when: "make exactly the call" },
               { server: "agents", tool: "act", arguments: { method: "GET", path: "/api/search", query: { q: `${SECRET}-ALPHA` } }, when: "ACT-SEARCH" },
             ]),
           },
@@ -567,4 +573,39 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     // and Ana, in Sagax, still answers it
     expect((await api("POST", `/api/threads/${threadId}/respond`, ana, { requestId, behavior: "deny" })).status).toBe(200);
   }, 120_000);
+
+  it("CT-12: the owner's Allow continues in the same thread and the call runs once", async () => {
+    const thread = await api("POST", `/api/bots/${botId}/tasks`, ana, { title: "Donnees", confidential: true });
+    const threadId = thread.body.task.threadId as string;
+    const before = (await messagesOf(ana, threadId)).length;
+    expect((await api("POST", `/api/bots/${botId}/messages`, ana, { text: "DATA-WRITE", threadId })).status).toBe(202);
+    await waitFor(async () => replied(await messagesOf(ana, threadId), before), 60_000);
+    const first = readDump().find((entry) => entry.tool === "data_sql");
+    expect(first, JSON.stringify(readDump())).toBeTruthy();
+    expect(first!.ok).toBe(false);
+    expect(first!.text).toMatch(/Allow/);
+    const card = await waitFor(async () => (await messagesOf(ana, threadId)).find((m) => m.card?.requestId && m.card.tool === "data_sql" && !m.card.answered));
+    // her AI client cannot answer it
+    const member = (method: string, sub: string, body?: unknown) => api(method, `/api/org/member/${sub}`, {
+      bearer: idp.consoleAssertion({ sub: ANA.sub, aud: BASE, role: "employee", teams: [], claims: (c) => ({ ...c, act: { sub: "perspicax-mcp" } }) }),
+    }, body);
+    expect((await member("POST", `approvals/${card.card!.requestId}`, { threadId, decision: "allow" })).status).toBe(404);
+    // Ana allows it in Sagax: the bot is asked again in this thread, and the call runs
+    const settle = (await messagesOf(ana, threadId)).length;
+    const allowed = await api("POST", `/api/threads/${threadId}/respond`, ana, { requestId: card.card!.requestId, behavior: "allow" });
+    expect(allowed.status, allowed.text).toBe(200);
+    expect(allowed.body.outcome).toBe("allowed-once");
+    await waitFor(async () => replied(await messagesOf(ana, threadId), settle), 60_000);
+    const second = readDump().find((entry) => entry.tool === "data_sql");
+    expect(second?.ok, JSON.stringify(readDump())).toBe(true);
+    const continued = await messagesOf(ana, threadId);
+    expect(continued.some((m) => m.role === "user" && /make exactly the call/.test(m.text ?? ""))).toBe(true);
+    // once: the same call again takes a new card
+    const again = continued.length;
+    expect((await api("POST", `/api/bots/${botId}/messages`, ana, { text: "make exactly the call again", threadId })).status).toBe(202);
+    await waitFor(async () => replied(await messagesOf(ana, threadId), again), 60_000);
+    const third = readDump().find((entry) => entry.tool === "data_sql");
+    expect(third?.ok).toBe(false);
+    expect(third?.text ?? "").toMatch(/Allow/);
+  }, 180_000);
 });

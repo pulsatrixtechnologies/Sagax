@@ -25765,7 +25765,7 @@ async function resolveAndSendCwAction(
   const group = store.groupByThread(threadId);
   const sent = await performBotActRoute(actor, group
     ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
-    : { kind: "route", method: "POST", path: `/api/bots/${bot.id}/messages`, body: { text, threadId } });
+    : { kind: "route", method: "POST", path: `/api/bots/${bot.id}/messages`, body: { text, threadId } }, 8000, group ? {} : { continuation: threadId });
   if (sent.status >= 300) {
     cwActionPasses.revoke(threadId, action);
     store.patchMessage(threadId, message.id, { card });
@@ -25865,11 +25865,13 @@ async function settleConfidentialMemoryCard(auth: RequestAuth, threadId: string,
   store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow" } });
   confidentialMemoryPasses.grant(threadId, pending.digest);
   const french = cwActionLanguage(cfg.language) === "fr";
+  // the owner allowed it in person: the follow-up posts into exactly this
+  // thread, never as an on-behalf request (which a confidential thread refuses)
   const sent = await performBotActRoute(actor, {
     kind: "route", method: "POST", path: `/api/bots/${pending.botId}/messages`,
     body: { text: french ? "Oui : fais exactement l'appel proposé sur la carte, avec les mêmes arguments." : "Yes: make exactly the call shown on the card, with the same arguments.", threadId },
-  });
-  if (sent.status >= 300) return { status: 502, body: { error: "The bot could not be asked to save the note. Try again." } };
+  }, 8000, { continuation: threadId });
+  if (sent.status >= 300) return { status: 502, body: { error: "The bot could not be asked to make the call. Try again." } };
   return { status: 200, body: { ok: true, outcome: "allowed-once" } };
 }
 
@@ -26067,7 +26069,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
   const group = store.groupByThread(threadId);
   const asked = await performBotActRoute(actor, group
     ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
-    : { kind: "route", method: "POST", path: `/api/bots/${bot.id}/messages`, body: { text, threadId } });
+    : { kind: "route", method: "POST", path: `/api/bots/${bot.id}/messages`, body: { text, threadId } }, 8000, group ? {} : { continuation: threadId });
   if (asked.status >= 300) {
     emailSendPasses.revoke(threadId, requestId);
     patchEmailSend(threadId, requestId, {
@@ -26081,12 +26083,41 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
   return true;
 }
 
-async function performBotActRoute(actor: PerformActor, target: RouteTarget, maxChars = 8000): Promise<{ status: number; text: string }> {
+/** How a request this server makes to itself is marked (server/confidential-threads.ts):
+ * `onBehalf` for a bot acting as its person (operator acts included), so it
+ * never reaches a confidential thread; `continuation` for the follow-up of
+ * a card its owner allowed in person, which may post into exactly that
+ * thread once even through a delegated session. */
+type InternalRequestMark = { onBehalf?: true; continuation?: string };
+/** A process secret: only this server's own requests carry it. */
+const ON_BEHALF_SECRET = randomBytes(32).toString("base64url");
+const ON_BEHALF_HEADER = "x-sagax-on-behalf";
+const CONTINUATION_HEADER = "x-sagax-owner-continuation";
+/** One-shot continuation tokens: token -> the thread it may post into. */
+const ownerContinuations = new Map<string, { threadId: string; expiresAt: number }>();
+function mintOwnerContinuation(threadId: string): string {
+  const token = randomBytes(24).toString("base64url");
+  for (const [key, entry] of ownerContinuations) if (entry.expiresAt < Date.now()) ownerContinuations.delete(key);
+  ownerContinuations.set(token, { threadId, expiresAt: Date.now() + 60_000 });
+  return token;
+}
+/** Use a continuation token for a POST of a message into its thread, once. */
+function takeOwnerContinuation(token: string | undefined, method: string, path: string): string | null {
+  // a bot's messages route (/api/bots/<id>/messages), nothing else
+  const parts = path.split("/");
+  if (!token || method !== "POST" || parts.length !== 5 || parts[1] !== "api" || parts[2] !== "bots" || parts[4] !== "messages") return null;
+  const entry = ownerContinuations.get(token);
+  ownerContinuations.delete(token);
+  return entry && entry.expiresAt >= Date.now() ? entry.threadId : null;
+}
+async function performBotActRoute(actor: PerformActor, target: RouteTarget, maxChars = 8000, mark: InternalRequestMark = {}): Promise<{ status: number; text: string }> {
   if (target.path === "/api/internal" || target.path.startsWith("/api/internal/") || target.path === "/api/testing" || target.path.startsWith("/api/testing/")) {
     return { status: 400, text: "That path is not available." };
   }
   const headers = new Headers();
   headers.set("accept", "application/json");
+  if (mark.onBehalf) headers.set(ON_BEHALF_HEADER, ON_BEHALF_SECRET);
+  if (mark.continuation) headers.set(CONTINUATION_HEADER, mintOwnerContinuation(mark.continuation));
   let body: string | undefined;
   if (target.body !== undefined) {
     headers.set("content-type", "application/json");
@@ -26151,6 +26182,14 @@ const delegatedRequestScope = new AsyncLocalStorage<boolean>();
 function delegatedRequest(): boolean {
   return delegatedRequestScope.getStore() === true;
 }
+/** The stored file a download names (/api/attachments/<name>[/manifest]), or undefined. */
+function confidentialFileOf(requestPath: string): string | undefined {
+  const parts = requestPath.split("/");
+  if (parts[1] !== "api" || parts[2] !== "attachments" || !parts[3] || !/^[\w.-]+$/.test(parts[3])) return undefined;
+  return parts.length === 4 || (parts.length === 5 && parts[4] === "manifest") ? parts[3] : undefined;
+}
+/** The one thread an owner's card follow-up may post into, for its request. */
+const continuationThreadScope = new AsyncLocalStorage<string | null>();
 /** A bot acting as its person (act) never reaches a confidential thread:
  * a request naming one (path, query or body, any method, Full included)
  * is refused, and a confidential thread is cut out of what comes back
@@ -26158,12 +26197,12 @@ function delegatedRequest(): boolean {
  * still names one is refused whole. */
 async function performBotActRouteOutsideConfidential(actor: PerformActor, target: RouteTarget): Promise<{ status: number; text: string }> {
   const ids = confidentialThreadIds();
-  if (!ids.size) return performBotActRoute(actor, target);
+  if (!ids.size) return performBotActRoute(actor, target, 8000, { onBehalf: true });
   if (namesConfidentialThread(JSON.stringify([target.path, target.query ?? {}, target.body ?? null]), ids)) {
     return { status: 404, text: JSON.stringify({ error: "no such conversation" }) };
   }
   // read whole: a cut answer could not be cleaned
-  const answer = await performBotActRoute(actor, target, 4_000_000);
+  const answer = await performBotActRoute(actor, target, 4_000_000, { onBehalf: true });
   if (!namesConfidentialThread(answer.text, ids)) return { status: answer.status, text: answer.text.slice(0, 8000) };
   let parsed: unknown;
   try {
@@ -26783,6 +26822,9 @@ function routeThreadId(bot: BotRecord, rawThreadId: unknown, action: ThreadActio
   // named or implicit (the selected one)
   const threadId = routeThreadIdUnguarded(bot, rawThreadId, action);
   if (delegatedRequest() && store.isConfidentialThread(threadId)) throw Object.assign(new Error("no such task"), { status: 404 });
+  // a card follow-up posts into its own thread and no other
+  const continuation = continuationThreadScope.getStore();
+  if (continuation && threadId !== continuation) throw Object.assign(new Error("no such task"), { status: 404 });
   return threadId;
 }
 function routeThreadIdUnguarded(bot: BotRecord, rawThreadId: unknown, action: ThreadAction): string {
@@ -31279,12 +31321,27 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // On someone's behalf (act, an AI client): a confidential thread is not
     // there. Named in the path or query: 404; in an answer: cut out, and an
     // answer that still names one is withheld.
-    const delegated = auth.kind === "session" && auth.session.ephemeral === true;
+    // An on-behalf request: a delegated session (a bot act copy, an AI
+    // client), or this server's own act request for the operator (its
+    // header carries a process secret). The follow-up of a card its owner
+    // allowed in person carries a one-shot token for exactly that thread.
+    const onBehalfHeader = req.headers[ON_BEHALF_HEADER];
+    const continuationHeader = req.headers[CONTINUATION_HEADER];
+    const continuation = takeOwnerContinuation(typeof continuationHeader === "string" ? continuationHeader : undefined, method, path);
+    const delegated = !continuation && ((auth.kind === "session" && auth.session.ephemeral === true)
+      || (typeof onBehalfHeader === "string" && onBehalfHeader.length === ON_BEHALF_SECRET.length && timingSafeEqual(Buffer.from(onBehalfHeader), Buffer.from(ON_BEHALF_SECRET))));
     delegatedRequestScope.enterWith(delegated);
+    continuationThreadScope.enterWith(continuation);
     if (delegated) {
       const confidentialIds = confidentialThreadIds();
       if (confidentialIds.size) {
         if (namesConfidentialThread(`${path}?${url.search}`, confidentialIds)) return json(res, 404, { error: "no such conversation" });
+        // a stored file only confidential threads point at is not there either
+        const file = confidentialFileOf(path);
+        if (file) {
+          const using = threadsUsingAttachment(file);
+          if (using.length && using.every((threadId) => confidentialIds.has(threadId))) return json(res, 404, { error: "no such file" });
+        }
         onJsonBody(res, (body) => {
           const cleaned = scrubConfidentialThreads(body, confidentialIds);
           return namesConfidentialThread(JSON.stringify(cleaned), confidentialIds) ? { error: "This answer names a confidential thread." } : cleaned;
