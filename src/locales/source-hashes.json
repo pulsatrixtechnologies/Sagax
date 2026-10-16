@@ -12511,7 +12511,9 @@
       "artifacts.status.paused": "bc605066b0a4f826cdc7213ae95a2cdaf2e411e8a3ca80924aa234eeab589eff",
       "artifacts.status.pausedByBot": "3efee9f4678b1ce915f62ad54376bf33ca9f0ab371e99f59687a1a9ac1948a2f",
       "artifacts.status.error": "05ebdefbd9961c5fa811325ed49fd133fdd6dbb2f333e898fb2b3c81b552f8db",
-      "artifacts.refreshNow": "1486770684670d9522448c4570f0cf4cd20503865e2f579d152f8e6b62c64c92"
+      "artifacts.refreshNow": "1486770684670d9522448c4570f0cf4cd20503865e2f579d152f8e6b62c64c92",
+      "artifacts.popOut": "7bdde36a88f0a2696cacacc6e0a64575f3f2619f06a2d2de69d4c5bdbf3c5180",
+      "artifacts.dock": "47b7fe0edfc800fb188ac8d0c2df86d82f3d4efb774e2c9faed2e06a0e3ac09b"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

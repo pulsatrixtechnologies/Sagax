@@ -8674,5 +8674,7 @@
   "artifacts.status.paused": "Rafraîchissement en pause après {count} échecs. Rafraîchissez maintenant ou demandez au bot.",
   "artifacts.status.pausedByBot": "Rafraîchissement mis en pause par le bot.",
   "artifacts.status.error": "Échec du rafraîchissement {when} ; il réessaie.",
-  "artifacts.refreshNow": "Rafraîchir maintenant"
+  "artifacts.refreshNow": "Rafraîchir maintenant",
+  "artifacts.popOut": "Détacher",
+  "artifacts.dock": "Rattacher"
 }

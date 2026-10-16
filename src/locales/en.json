@@ -8674,5 +8674,7 @@
   "artifacts.status.paused": "Refresh paused after {count} failures. Refresh now, or ask the bot.",
   "artifacts.status.pausedByBot": "Refresh paused by the bot.",
   "artifacts.status.error": "Refresh failed {when}; it tries again.",
-  "artifacts.refreshNow": "Refresh now"
+  "artifacts.refreshNow": "Refresh now",
+  "artifacts.popOut": "Pop out",
+  "artifacts.dock": "Dock back"
 }

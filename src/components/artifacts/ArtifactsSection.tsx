@@ -5,7 +5,7 @@
 // opens) is the bot's, so the empty state tells them to ask the bot.
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AppWindow, LoaderCircle, MoreHorizontal, RefreshCw, RotateCcw, Star, Trash2, X } from "lucide-react";
+import { AppWindow, LoaderCircle, MoreHorizontal, PanelBottomClose, PictureInPicture2, RefreshCw, RotateCcw, Star, Trash2, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -13,6 +13,7 @@ import { relativeTime } from "@/lib/memory";
 import { deleteArtifact, refreshArtifact, setArtifactFlags, useArtifact, useArtifactWatch, type ArtifactList } from "@/lib/artifacts";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ArtifactFrame } from "./ArtifactFrame";
+import { dockArtifactWindow, popOutArtifact } from "./artifact-windows";
 import type { ArtifactSummary } from "../../../shared/artifacts";
 
 const ICON_BUTTON = "flex size-7 shrink-0 items-center justify-center rounded-md text-ink-secondary transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40";
@@ -60,6 +61,8 @@ export interface ArtifactActions {
   remove(artifact: ArtifactSummary): void;
   /** Run its source now (only offered when it has one). */
   refresh(artifact: ArtifactSummary): void;
+  /** Into its own floating window, or back from it. */
+  togglePopped(artifact: ArtifactSummary): void;
   /** Artifact ids whose refresh is running from this window. */
   refreshing: ReadonlySet<string>;
 }
@@ -89,6 +92,15 @@ export function useArtifactActions(list: ArtifactList, onError: (text: string) =
   const [refreshing, setRefreshing] = useState<ReadonlySet<string>>(() => new Set());
   return {
     refreshing,
+    togglePopped: (artifact) => {
+      const popped = !artifact.popped;
+      list.patch(artifact.id, { popped });
+      if (popped) setOpened((current) => current?.id === artifact.id ? null : current);
+      void (popped ? popOutArtifact(artifact) : dockArtifactWindow(artifact)).catch((reason: unknown) => {
+        list.patch(artifact.id, { popped: !popped });
+        onError(reason instanceof Error ? reason.message : t("artifacts.error"));
+      });
+    },
     refresh: (artifact) => {
       if (!artifact.source || refreshing.has(artifact.id)) return;
       setRefreshing((current) => new Set([...current, artifact.id]));
@@ -188,6 +200,12 @@ export function ArtifactRow({ artifact, actions, now }: { artifact: ArtifactSumm
             <button type="button" role="menuitem" onClick={() => { setMenu(false); actions.open(artifact); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ink hover:bg-hover">
               <AppWindow size={14} className="shrink-0 text-ink-secondary" aria-hidden="true" /> {t("artifacts.open")}
             </button>
+            <button type="button" role="menuitem" data-artifact-popout={artifact.popped ? "dock" : "pop"} onClick={() => { setMenu(false); actions.togglePopped(artifact); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ink hover:bg-hover">
+              {artifact.popped
+                ? <PanelBottomClose size={14} className="shrink-0 text-ink-secondary" aria-hidden="true" />
+                : <PictureInPicture2 size={14} className="shrink-0 text-ink-secondary" aria-hidden="true" />}
+              {artifact.popped ? t("artifacts.dock") : t("artifacts.popOut")}
+            </button>
             {artifact.source && (
               <button type="button" role="menuitem" disabled={actions.refreshing.has(artifact.id)} onClick={() => { setMenu(false); actions.refresh(artifact); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ink hover:bg-hover disabled:opacity-40">
                 <RefreshCw size={14} className="shrink-0 text-ink-secondary" aria-hidden="true" /> {t("artifacts.refreshNow")}
@@ -204,7 +222,7 @@ export function ArtifactRow({ artifact, actions, now }: { artifact: ArtifactSumm
 }
 
 /** One artifact, opened over the app. */
-export function ArtifactDialog({ artifact, onClose }: { artifact: Pick<ArtifactSummary, "id" | "botId" | "title">; onClose: () => void }) {
+export function ArtifactDialog({ artifact, onClose, onPopOut }: { artifact: Pick<ArtifactSummary, "id" | "botId" | "title">; onClose: () => void; onPopOut?: () => void }) {
   const { artifact: full, error, gone } = useArtifact(artifact.botId, artifact.id);
   // open: its source refreshes while this dialog is up
   useArtifactWatch(artifact.id);
@@ -250,6 +268,11 @@ export function ArtifactDialog({ artifact, onClose }: { artifact: Pick<ArtifactS
           {full?.source && (
             <button type="button" onClick={refreshNow} disabled={refreshing} aria-label={t("artifacts.refreshNow")} title={t("artifacts.refreshNow")} className="flex size-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-40">
               <RefreshCw size={15} aria-hidden="true" className={cn(refreshing && "animate-spin motion-reduce:animate-none")} />
+            </button>
+          )}
+          {onPopOut && (
+            <button type="button" onClick={onPopOut} aria-label={t("artifacts.popOut")} title={t("artifacts.popOut")} className="flex size-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+              <PictureInPicture2 size={15} aria-hidden="true" />
             </button>
           )}
           <button ref={closeRef} type="button" onClick={onClose} aria-label={t("attach.close")} className="flex size-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
@@ -317,7 +340,7 @@ export function ArtifactsList({ list, favoritesOnly = false, actions, now }: {
 export function ArtifactDialogs({ state }: { state: ReturnType<typeof useArtifactActions> }) {
   return (
     <>
-      {state.opened && <ArtifactDialog artifact={state.opened} onClose={state.close} />}
+      {state.opened && <ArtifactDialog artifact={state.opened} onClose={state.close} onPopOut={() => state.opened && state.togglePopped(state.opened)} />}
       <ConfirmDialog
         open={state.confirming !== null}
         title={t("artifacts.deleteTitle")}

@@ -117,12 +117,18 @@ the person presses Refresh now. At most two runs at once, 30 seconds each.
 ## Floating windows
 
 Pop out opens the artifact in a floating window, several at once, built on
-the generic floating window component (`src/components/floating/`, shared
-with the terminal). `popped` is on the server (the bot may set it; the
-person's Pop out and Dock change it). The position and size are per device,
-in `localStorage` under a stable key per artifact id, with the bot's `bounds`
-as the first position. At start Sagax reopens every popped artifact at its
-remembered place; a docked artifact does not reopen.
+the generic floating window manager (`src/lib/floating-windows.ts`,
+`src/components/floating/`, shared with the terminal; no second system).
+`popped` is on the server: the bot may set it, the person's Pop out and Dock
+(or the window's close button) change it. The position and size are per
+device, remembered by the manager in `localStorage` under the stable id
+`artifact:<id>`, with the bot's `bounds` as the first position only. A popped
+window is `persist`, so at start it is back at its place before the server
+answers; then `reconcileArtifactWindows` (artifact-windows.ts) makes the
+windows match the server's list: a docked or deleted artifact's window
+closes, a popped one opens. A docked artifact never reopens. The palette's
+Artifacts group pops the chosen favorite out. An open window holds a watch
+lease, so its source refreshes while it is on screen.
 
 ## Delivery
 
