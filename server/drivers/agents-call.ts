@@ -1045,6 +1045,17 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       text: `A terminal card${where} is in the chat; the person may pick another destination on it before opening. End this turn; nothing opens until they tap Ouvrir un terminal. The terminal is theirs: you cannot type in it unless they turn on bot input. Never ask them to paste passwords into chat.`,
     };
   }
+  if (name === "join_meeting") {
+    const url = typeof args.url === "string" ? args.url.trim() : "";
+    const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
+    if (!url) return { text: "join_meeting needs url: the meeting's https link.", isError: true };
+    const r = await api("/api/internal/meetings/join", { method: "POST", body: JSON.stringify({ url, reason }) });
+    if (r.error) return { text: String(r.error), isError: true };
+    if (r.supported === false) {
+      return { text: "This meeting platform is not supported yet (Google Meet is). A card in the chat says so; tell the person and end this turn." };
+    }
+    return { text: "A consent card is in the chat. End this turn: nothing joins until the person approves it, and they should tell the other participants first. You will get the transcript after the meeting to post a summary and action items." };
+  }
   if (name === "send_voice_note") {
     if (typeof args.text !== "string" || !args.text.trim()) {
       return { text: "send_voice_note needs text: the short speakable note, at most 1000 characters.", isError: true };

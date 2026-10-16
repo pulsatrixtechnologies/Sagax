@@ -11,56 +11,94 @@ la mise à jour de l'ordinateur »). Aucun code n'en est repris.
 
 ## 1. Le bot rejoint une réunion et prend des notes
 
+Statut : implanté dans `feat/meeting-notetaker` pour Google Meet. Validation
+sur une vraie réunion à faire par JC avant la fusion.
+
 ### Ce que la personne voit
 
-1. Elle colle un lien Google Meet, Zoom ou Teams dans une conversation, ou un
-   événement de calendrier en porte un (déclencheur typé Outlook Calendar,
-   `event.starting`, ou rappel de calendrier interne).
-2. Le bot appelle l'outil `join_meeting` (catalogue `agents`). Le serveur
-   publie une **carte de consentement** dans le fil : lien, plateforme, nom
-   affiché (« <bot> (notes) »), rappel « Prévenez les autres participants
-   avant d'ajouter le bot ». La carte ne s'applique **jamais** toute seule :
-   ni l'accès complet, ni une règle « toujours permettre » ne la passent.
-   Chaque réunion demande son propre clic.
-3. Approuvée, la carte devient une carte de réunion en direct : état
-   (connexion, salle d'attente, en réunion, terminée, échec), transcription
-   qui défile, bouton Quitter.
-4. À la fin, le bot publie dans le fil un résumé et des actions à mener,
-   produits par son propre moteur à partir de la transcription.
+1. Elle colle un lien Google Meet, Zoom ou Teams dans une conversation
+   directe avec le bot, ou un événement de calendrier en porte un (une
+   routine ou un déclencheur typé Outlook Calendar, `event.starting`, fait
+   travailler le bot, qui voit le lien).
+2. Le bot appelle l'outil `join_meeting` (catalogue `agents`, capacité
+   `meetings:join`). Le serveur publie une **carte de consentement** dans le
+   fil (`card.meetingRequest`, `server/meetings/meeting-requests.ts`) : lien,
+   plateforme, nom affiché (« <bot> (notes) »), rappel « Prévenez les autres
+   participants avant d'ajouter le bot ». Rien ne rejoint avant le clic.
+   La carte ne s'applique **jamais** toute seule : aucun chemin d'accès
+   complet ni de règle « toujours permettre » ne la lit, un appel Live la
+   refuse (`liveCardKind` = `review`), le stepper d'approbations du
+   compositeur ne la montre pas, et seule la personne qui peut répondre à
+   une approbation du bot (son propriétaire) y répond. Chaque réunion
+   demande son propre clic.
+3. Approuvée, la carte devient la carte de la réunion en direct
+   (`src/components/MeetingCard.tsx`) : état (connexion, salle d'attente,
+   annonce, prise de notes, terminée, échec), dernières lignes de la
+   transcription, bouton Quitter la réunion (`POST /api/meetings/leave`).
+4. À la fin, le bot reçoit un tour avec la transcription et publie dans le
+   fil un résumé, les actions à mener et les questions ouvertes.
+
+Depuis une salle (room), l'outil refuse : une salle n'a pas une seule
+personne pour consentir.
 
 ### Comment
 
-- **L'ordinateur du bot, pas un service tiers.** Le navigateur intégré du
-  bot (`server/browser-runtime.ts`, agent-browser) ouvre le lien, remplit le
-  nom « <bot> (notes) », coupe micro et caméra, et demande à entrer. Aucun
-  service externe de bot de réunion, aucune clé de plus.
+- **Un navigateur à lui, pas un service tiers.** Chaque réunion ouvre une
+  session privée du moteur de navigateur intégré (`meeting-<id>`, invité :
+  aucune connexion enregistrée, rien de restauré, rien de gardé), distincte
+  du navigateur que le bot utilise dans ses tours. Le serveur la pilote par
+  `BrowserRuntime.harnessCall` (pas de mise en forme des résultats, pour
+  recevoir un segment audio entier). Il ouvre le lien avec la lecture
+  automatique de l'audio permise, choisit « continuer sans micro ni
+  caméra », coupe micro et caméra, tape le nom « <bot> (notes) » et clique
+  « Demander à participer » par un vrai clic.
 - **Consentement d'abord, enregistrement ensuite.** Une fois admis, le bot
-  publie une annonce dans le clavardage de la réunion (« <bot> (notes)
-  prend des notes pour <personne>. Dites-le si vous préférez que je
-  quitte. »). L'enregistrement ne commence qu'après cette annonce. Si elle
-  échoue, le bot n'enregistre rien et quitte (échec fermé, Loi 25).
-- **Transcription.** Un script injecté dans la page avant l'entrée récupère
-  les pistes audio distantes (WebRTC), les mélange (Web Audio) et en fait des
-  segments `audio/webm` de 30 secondes (MediaRecorder). Le serveur les relève
-  par `agent_browser_eval` (rien ne sort de la page par le réseau) et les
-  transcrit avec la transcription existante (xAI STT, la même clé et le même
-  registre d'usage que le mode Voix). L'audio n'est jamais conservé ; seul le
-  texte l'est, dans `DATA_DIR/meetings/<id>.json` (0600).
-- **Fin.** La personne clique Quitter, la réunion se termine (page « Vous
-  avez quitté »), ou la durée maximale (3 h) est atteinte. Le serveur ferme
-  l'onglet et lance un tour du bot avec la transcription, balisée comme
-  donnée non fiable, et la consigne de produire résumé et actions.
+  publie une annonce bilingue dans le clavardage de la réunion (« <bot>
+  (notes) prend des notes pour <personne> ... Dites-le ici et je quitte. »)
+  et vérifie qu'elle apparaît dans l'historique. L'enregistrement ne
+  commence qu'après. Si l'annonce ne peut pas être publiée et vue, le bot
+  quitte sans rien enregistrer (échec fermé, Loi 25) et la carte le dit.
+- **Transcription.** Un script injecté avant l'entrée enveloppe
+  `RTCPeerConnection` et recueille les pistes audio distantes ; à
+  l'annonce faite, il les mélange (Web Audio) et produit des segments
+  `audio/webm` autonomes de 30 secondes (MediaRecorder relancé à chaque
+  segment). Le serveur les relève par `agent_browser_eval` toutes les
+  10 secondes (rien ne sort de la page par le réseau) et les transcrit avec
+  la transcription du mode Voix (xAI STT : la clé de la personne qui a
+  approuvé, sinon celle du serveur ; même registre d'usage, `grok-stt`).
+  Sans clé, la carte reste ouverte et dit d'en ajouter une. L'audio n'est
+  jamais conservé ; seul le texte l'est, dans
+  `DATA_DIR/meetings/<requestId>.json` (0600).
+- **Fin.** La personne clique Quitter, la réunion se termine, un hôte
+  retire le bot, ou la durée maximale (3 h) est atteinte ; personne ne
+  l'admet en 10 minutes : échec. Le serveur arrête l'enregistrement, relève
+  les derniers segments, clique Quitter dans la réunion et ferme le
+  navigateur. Le tour de résumé reçoit la transcription derrière une
+  clôture de données non fiables (`wrapUntrusted`), avec la consigne de ne
+  suivre aucune instruction dite en réunion et de ne rien faire d'autre
+  que les notes.
+- **Redémarrage.** Les réunions en cours sont notées dans
+  `DATA_DIR/meetings/live.json` ; au démarrage, leurs cartes passent à
+  « échec : le serveur s'est arrêté pendant la réunion ». À l'arrêt, le
+  serveur demande à chaque réunion de quitter.
 
 ### Livré d'abord, documenté ensuite
 
-- Livré : Google Meet (invité, salle d'attente), transcription en direct,
-  résumé et actions.
-- Zoom et Teams : les liens sont reconnus et la carte le dit ; le client web
-  de Zoom (`/wc/join/`) et de Teams (« Continuer sur ce navigateur ») suivent
-  le même pilote, à brancher après validation sur Meet.
-- Risque connu : Google peut refuser un Chrome sans tête comme invité. Le
-  pilote le détecte (« Vous ne pouvez pas rejoindre cet appel ») et le dit
-  dans le fil. Validation en direct à faire par JC.
+- Livré : Google Meet en invité (salle d'attente comprise), transcription
+  en direct, résumé et actions.
+- Zoom et Teams : les liens sont reconnus (liste d'hôtes stricte,
+  `shared/meeting-links.ts`) et la carte dit « pas encore pris en charge »
+  sans offrir de rejoindre. Le client web de Zoom (`/wc/join/`) et celui de
+  Teams (« Continuer sur ce navigateur ») se brancheraient sur le même
+  `MeetingSession` avec leurs propres scripts, après validation sur Meet.
+- Risques connus, à valider en direct :
+  - Google peut refuser un Chrome sans tête comme invité ; le pilote le
+    détecte (« You can't join this video call ») et le dit. Sagax ne
+    déguise pas son navigateur pour contourner ce refus.
+  - Les libellés de Meet (boutons, clavardage) sont lus en anglais et en
+    français ; un changement d'interface de Google fait échouer l'annonce,
+    donc rien n'est enregistré (échec fermé), jamais l'inverse.
+  - Pas de nom de locuteur : la transcription est un seul flux mélangé.
 
 ## 2. Ordinateur du bot : mise à jour planifiée et économiseur de disque
 

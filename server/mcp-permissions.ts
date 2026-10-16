@@ -99,6 +99,7 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("routines:propose", "own", "propose_routine"),
   p("routines:propose.action", "own", "propose_routine_action"),
   p("terminal:offer", "own", "offer_shell_terminal"),
+  p("meetings:join", "own", "join_meeting"),
   // Dispatch
   p("bots:ask", "dispatch", "ask_bot"),
   p("bots:delegate", "dispatch", "delegate_bot"),

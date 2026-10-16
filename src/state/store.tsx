@@ -54,6 +54,7 @@ import {
   type SkillRequestCardData,
 } from "../../shared/skill-request";
 import { terminalRequestBehavior } from "../../shared/terminal-request";
+import { meetingRequestBehavior } from "../../shared/meeting-request";
 import type { Routine, RoutineInput, RoutineRun, RoutineRunStatusFilter } from "@/lib/routines";
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
 import type { GraphConnectorOption } from "../../shared/trigger-sources";
@@ -196,6 +197,8 @@ export interface OptionCardData {
   botActRequest?: { id: string };
   /** Shell terminal: opened only after the person taps Ouvrir un terminal. */
   terminalRequest?: import("../../shared/terminal-request").TerminalRequestCardData;
+  /** A meeting the bot asks to join as a notetaker (join_meeting). */
+  meetingRequest?: import("../../shared/meeting-request").MeetingRequestCardData;
   /** A change asked from a ConnectWise widget (shared/wire.ts). */
   cwActionRequest?: import("../../shared/wire").OptionCardData["cwActionRequest"];
   /** 2026-10-16: custom rules (shared/custom-rules.ts) and email draft sends. */
@@ -4344,7 +4347,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   ? { behavior: skillRequestBehavior(action.answer) }
                   : card.terminalRequest
                     ? { behavior: terminalRequestBehavior(action.answer) }
-                    : answerResponse(card, action.answer);
+                    : card.meetingRequest
+                      ? { behavior: meetingRequestBehavior(action.answer) }
+                      : answerResponse(card, action.answer);
                 return api(`/api/threads/${action.threadId ?? host.threadId}/respond`, {
                   method: "POST",
                   body: JSON.stringify({

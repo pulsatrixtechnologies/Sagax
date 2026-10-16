@@ -8,6 +8,7 @@
  * server/store.ts; the wire projection is typed so a new server field
  * fails compilation until it is either declared here or explicitly listed
  * as server-private. */
+import type { MeetingRequestCardData } from "./meeting-request.ts";
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { DataBroadcast } from "./data-surface.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
@@ -845,6 +846,9 @@ export interface OptionCardData {
   botActRequest?: { id: string };
   /** Interactive shell on a terminal-capable resource (approval required). */
   terminalRequest?: TerminalRequestCardData;
+  /** A meeting the bot asks to join as a notetaker (join_meeting): the
+   * consent card, then the live meeting's state. Never auto-applied. */
+  meetingRequest?: MeetingRequestCardData;
   /** A change asked from a ConnectWise widget, waiting for an Allow
    * (server/cw-widget-actions.ts). `by` is the principal who asked. */
   cwActionRequest?: { id: string; action: CwAction; by: string };

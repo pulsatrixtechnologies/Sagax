@@ -92,6 +92,8 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   // person's rights again when they open it (terminal-resources/registry.ts).
   list_terminal_resources: "read",
   offer_shell_terminal: "conversation",
+  // join_meeting only stages a consent card; the person approves each join
+  join_meeting: "conversation",
 });
 
 /** The agents tools that keep the admin gate, and why:

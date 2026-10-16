@@ -183,6 +183,25 @@ notifications), Sentry, PagerDuty, Linear. Rules, covered by
   connector account. The imported copy is off and its import warnings say
   what it still needs (a provided secret, a password or link).
 
+## Meetings: the bot takes notes (2026-10-16)
+
+`join_meeting` (`server/meetings/`, card `meetingRequest`, UI
+`src/components/MeetingCard.tsx`, spec
+`docs/superpowers/specs/2026-10-16-meetings-and-maintenance.md`). Rules,
+covered by `server/meetings/*.test.ts` and `server/routes/meetings.test.ts`:
+
+- Every join is the person's own tap on its consent card. Nothing applies it
+  for them: no Full access path, no always-allow rule, no Live call answer
+  (`liveCardKind` is `review`), not the composer's approval stepper. Direct
+  conversations only.
+- Nothing is recorded before the consent announcement is visible in the
+  meeting chat; if it cannot be posted and seen, the bot leaves without
+  recording (fail closed).
+- The meeting runs in a private guest browser session per meeting, never in
+  the bot's own browser profile, and audio leaves the page only through the
+  harness's own eval; no audio is stored, the transcript is (0600).
+- The transcript reaches the bot's summary turn behind `wrapUntrusted`.
+
 ## Conversations with a person have threads like a bot (2026-10-09)
 
 A direct conversation between two people (`peopleDm`, server/people-dms.ts)

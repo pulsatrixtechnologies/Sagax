@@ -694,6 +694,7 @@ describe("agents-proxy MCP surface", () => {
       "request_login",
       "list_terminal_resources",
       "offer_shell_terminal",
+      "join_meeting",
       "memory_update",
       "rules_update",
       "docs_update",

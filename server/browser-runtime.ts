@@ -794,6 +794,20 @@ export class BrowserRuntime {
     return toolText(`Filled the ${FIELD_NAMES[request.field]} of "${resolved.label}" on ${new URL(href).host}. You do not see the value; check the page and submit the form when ready.`);
   }
 
+  /** One call the harness itself makes in a browser it owns (a meeting's
+   * private guest browser, server/meetings): no page observation, no result
+   * shaping, so a bounded eval answer (an audio segment) arrives whole. Never
+   * for a bot's own browser, whose results must keep their shaping and
+   * redaction. The session's gate still applies: a person holding the
+   * browser pauses it. */
+  async harnessCall(session: string, spec: BrowserSpawnSpec, name: string, args: Record<string, unknown>, timeoutMs?: number): Promise<unknown> {
+    return this.withAgentAction(session, async () => {
+      const entry = this.connect(session, spec);
+      await entry.client.ready;
+      return entry.client.rpc("tools/call", { name, arguments: args }, timeoutMs);
+    });
+  }
+
   /** This session's MCP client, started on first use. */
   private connect(session: string, spec: BrowserSpawnSpec): ClientEntry {
     const key = JSON.stringify([spec.command, spec.args, Object.entries(spec.env).sort(([a], [b]) => a.localeCompare(b))]);

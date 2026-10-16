@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Message } from "@/state/store";
 import { ApprovalCard, approvalCardStaysInChat } from "./ApprovalCard";
+import { MeetingCard } from "./MeetingCard";
 import { MessageBoundary } from "./MessageBoundary";
 import { OptionCard, shouldHideOnboardingCard } from "./OptionCard";
 import { QuestionCard } from "./QuestionCard";
@@ -22,7 +23,9 @@ export function optionsCardRow({ message: m, transcript, botId, botName, threadI
   // Cards are bot-authored and persisted, so one that will not
   // draw must fall back to its text on every open, not take the
   // whole page down every time this chat is selected.
-  const card = m.card?.requestId && m.card.questionRequest ? (
+  const card = m.card?.requestId && m.card.meetingRequest ? (
+    <MeetingCard botId={botId} botName={botName} threadId={threadId} message={m} />
+  ) : m.card?.requestId && m.card.questionRequest ? (
     <QuestionCard threadId={threadId} bot={{ name: botName }} message={m} />
   ) : m.card?.requestId && m.card.tool ? (
     approvalCardStaysInChat(m.card) ? <ApprovalCard bot={{ name: botName }} message={m} threadId={threadId} /> : null

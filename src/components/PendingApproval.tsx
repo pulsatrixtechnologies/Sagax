@@ -63,7 +63,9 @@ export function pendingApprovals(messages: Message[]): Pending[] {
   return messages
     // An expired proposal is terminal: it must not take over the composer
     // or offer its decision buttons anywhere.
-    .filter((m) => m.kind === "options" && m.card?.requestId && m.card.tool && !m.card.answered && !m.card.dismissed && !m.card.expired)
+    // A meeting's consent card is answered on the card itself, in the chat
+    // (MeetingCard), never from the composer's approval stepper.
+    .filter((m) => m.kind === "options" && m.card?.requestId && m.card.tool && !m.card.meetingRequest && !m.card.answered && !m.card.dismissed && !m.card.expired)
     .map((m) => ({
       message: m,
       requestId: m.card!.requestId!,
@@ -159,7 +161,7 @@ export function readOnlyApprovals(approvals: Pending[]): Pending[] {
   return approvals.filter((pending) => {
     const card = pending.message.card;
     if (!card || card.adminApproval) return false;
-    if (card.routineRequest || card.skillRequest || card.profileRequest || card.teamSetupRequest || card.questionRequest || card.terminalRequest) return false;
+    if (card.routineRequest || card.skillRequest || card.profileRequest || card.teamSetupRequest || card.questionRequest || card.terminalRequest || card.meetingRequest) return false;
     return describeApproval(pending.tool, card.toolInput ?? card.subtitle, card.toolHints).risk === "read";
   });
 }
