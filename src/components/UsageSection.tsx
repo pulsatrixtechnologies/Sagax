@@ -1,7 +1,8 @@
 // Settings > Usage (2026-10-14, redrawn): the signed-in person's own usage.
 // Two simple cards on top, Cost first (this month, its trend against the
 // same days of last month, a 30-day sparkline; on top since 2026-10-15),
-// then Plan (their connected subscriptions' allowance, absent when none),
+// then Plan (their connected subscriptions' 5-hour and weekly windows; always
+// drawn since 2026-10-16, with one line when there is nothing to show),
 // then one folded breakdown by bot and by model. Every figure
 // comes from GET /api/me/usage (or, on a 0.5.3 server, GET /api/usage?mine=1), which keeps only the requester's turns
 // (server/routes/usage.ts) and is open to every member (2026-10-15). Per-person tables, organization totals, budgets
@@ -93,7 +94,9 @@ export async function loadPersonalUsage(now = new Date(), get: <T>(path: string)
 
 /** Plan windows come from GET /api/plan-usage: a person's own on an
  * organization server, an admin read on a solo server (a paired device
- * without the admin scope would only meet a 403 there). */
+ * without the admin scope would only meet a 403 there). The Plan card is
+ * drawn either way (2026-10-16); false only spares the request and says the
+ * plan is unavailable for this account. */
 export function planUsageShown(input: { organization: boolean; viewUsage: boolean }): boolean {
   return input.organization || input.viewUsage;
 }
@@ -123,7 +126,7 @@ export function UsageSection() {
   return (
     <UsageLayout
       cost={<CostCard usage={usage} error={error} consoleUrl={consoleUrl} />}
-      plan={planUsageShown({ organization: org !== null, viewUsage: canViewUsage(state.config) }) && <PlanUsage />}
+      plan={<PlanUsage enabled={planUsageShown({ organization: org !== null, viewUsage: canViewUsage(state.config) })} />}
       rest={null}
     />
   );

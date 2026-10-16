@@ -189,32 +189,43 @@ describe("Plan card", () => {
     weekly: { available: true, remainingPercent: 60, usedPercent: 40, resetsAt: "2026-10-16T13:00:00Z" }, extra: [], models: [], ...patch,
   });
 
-  it("reads the plan by the week: one gauge, a short line of figures, the window and renewal under it, the rest under Details", () => {
+  // 2026-10-16 (JC): the 5-hour session and the week both show, each with
+  // its gauge, its figures and its grey window line.
+  it("shows the 5-hour session and the week, each with a gauge, its figures and its window line", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(PlanUsageView, {
       report: { providers: [provider({})] }, loading: false, now: NOW.getTime(),
       onRefresh: () => {}, issuer: "",
     }));
-    expect(html).toContain('data-plan-main="weekly"');
+    expect(html.indexOf('data-plan-window-kind="fiveHour"')).toBeLessThan(html.indexOf('data-plan-window-kind="weekly"'));
+    expect(html).toContain('aria-valuenow="10"');
     expect(html).toContain('aria-valuenow="40"');
+    expect(html).toContain("10\u00a0% utilisé");
+    expect(html).toContain("90\u00a0% restant");
     expect(html).toContain("40\u00a0% utilisé");
     expect(html).toContain("60\u00a0% restant");
     expect(html).toMatch(/data-plan-figures[^>]*tabular-nums|tabular-nums[^>]*data-plan-figures/);
+    expect(html).toContain("Session de 5 heures");
     expect(html).toContain("Semaine · se renouvelle ");
-    expect(html).not.toContain("du forfait de la semaine");
-    expect(html).toContain(">Détails<");
+    expect(html).not.toContain(">Détails<");
     expect(html).toContain(">Forfait<");
   });
 
-  it("names the 5-hour session when the provider has no week, in English", () => {
+  it("adds any other window the provider gives, and the 5-hour session alone when there is no week, in English", () => {
     const html = renderToStaticMarkup(createElement(PlanUsageView, {
-      report: { providers: [provider({ weekly: { available: false, remainingPercent: null, usedPercent: null, resetsAt: null } })] },
+      report: { providers: [provider({
+        weekly: { available: false, remainingPercent: null, usedPercent: null, resetsAt: null },
+        extra: [{ label: "Opus week", remainingPercent: 75, usedPercent: 25, resetsAt: null }],
+      })] },
       loading: false, now: NOW.getTime(), onRefresh: () => {}, issuer: "",
     }));
-    expect(html).toContain('data-plan-main="fiveHour"');
+    expect(html).toContain('data-plan-window-kind="fiveHour"');
+    expect(html).not.toContain('data-plan-window-kind="weekly"');
     expect(html).toContain("10% used");
     expect(html).toContain("90% left");
     expect(html).toContain("5-hour session");
+    expect(html).toContain('data-plan-window-kind="extra"');
+    expect(html).toContain("Opus week");
   });
 
   it("never breaks a renewal between the day and its month, or inside 19 h 59", () => {

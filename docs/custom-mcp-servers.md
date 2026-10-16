@@ -160,8 +160,13 @@ Known limits:
   tool runs through the one tool that runs them all, which cannot carry each
   tool's own read-only hint. Each Whop call shows a card, naming the tool.
 - **Command servers are not searched yet.** Only URL servers are. A command
-  server with hundreds of tools is still listed whole, and API-model bots
-  refuse more than 128 tools in one turn.
+  server with hundreds of tools is still listed whole. When a turn on an
+  API model adds up to more tools than its provider takes in one request
+  (128 for xAI Grok and OpenAI), the bot keeps its computer, its browser and
+  Sagax's own tools listed first, then the other servers in their order, and
+  reaches the rest through two tools of its own: `tool_search` finds a tool
+  by what it does and `tool_call` runs it, with the usual approval card
+  naming that tool. The turn never fails for the number of tools.
 
 ### Which engines reach which servers
 

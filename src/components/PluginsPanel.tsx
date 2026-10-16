@@ -21,9 +21,10 @@
 // plugins, servers, apps, skills and marketplaces. Other screens link here
 // or choose among them for one bot; keys stay in Settings > API keys.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Loader2, TriangleAlert } from "lucide-react";
+import { Loader2, TriangleAlert, X } from "lucide-react";
 
-import { api, ApiError, openBotCatalog, useStore } from "@/state/store";
+import { api, ApiError, useStore } from "@/state/store";
+import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
 import { isWhopServer } from "@/lib/whop-integration";
@@ -74,7 +75,11 @@ import {
   useConnectedApps,
   type ConnectedApps,
 } from "./plugins/connected-apps";
-import { ConnectAppsView } from "./plugins/ConnectAppsView";
+import { ConnectAppsView, sectionTitle } from "./plugins/ConnectAppsView";
+import type { Crumb } from "./Breadcrumb";
+import { CATEGORY_MODAL, cardActionClass } from "./category-modal";
+import { BotCatalogPane } from "./lazy-screens";
+import { isBackShortcut, pageKeyAction } from "@/lib/back-shortcut";
 import { ManageView } from "./plugins/ManageView";
 import { MarketplacesSection } from "./plugins/MarketplacesSection";
 import { OrgSourcesAccess, showOrgSourcesAccess } from "./plugins/OrgSourcesAccess";
@@ -105,12 +110,18 @@ interface FeaturedListing {
   id: string; name: string; description: string; url: string; domain: string; auth: string; installed?: boolean; site?: string; category?: string; iconUrl?: string;
 }
 
+/** One page of the panel's window. The window keeps a stack of them (the
+ * breadcrumb): Connect apps at the bottom, then what was opened from it. */
 type Page =
   | { page: "main" }
+  /** View all on a section: that section alone */
+  | { page: "section"; id: string; filter?: PluginFilter; type?: PluginTypeFilter }
   | { page: "manage" }
-  | { page: "detail"; key: string; from: "main" | "manage" }
+  | { page: "detail"; key: string }
   /** a private skill's page; no name: a new skill */
-  | { page: "skill"; name?: string; from: "main" | "manage" };
+  | { page: "skill"; name?: string }
+  /** Browse Bots, in this same window (2026-10-16) */
+  | { page: "bots" };
 
 /** Connectors a Claude account brings to bots (Manage > Providers lists
  * them); "N connected" counts the connected ones. */
@@ -146,7 +157,19 @@ export function PluginsPanel() {
   const dialogRef = useRef<HTMLDivElement>(null);
   const apps = useConnectedApps();
   const mcp = useMcpServers();
-  const [page, setPage] = useState<Page>({ page: "main" });
+  const [stack, setStack] = useState<Page[]>([{ page: "main" }]);
+  const page = stack[stack.length - 1]!;
+  /** Open a page above the current one. */
+  const push = useCallback((next: Page) => setStack((current) => [...current, next]), []);
+  /** Back to the page at this depth (0: Connect apps). */
+  const popTo = useCallback((depth: number) => setStack((current) => current.slice(0, Math.max(1, depth + 1))), []);
+  /** A detail page after an install: in place of the detail it came from
+   * (no second crumb for the same item), else above the current page. */
+  const showDetail = useCallback((key: string) => setStack((current) => {
+    const rest = current[current.length - 1]?.page === "detail" && current.length > 1 ? current.slice(0, -1) : current;
+    return [...rest, { page: "detail", key }];
+  }), []);
+  const botsBack = useRef<(() => boolean) | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<PluginFilter>("all");
   const [type, setType] = useState<PluginTypeFilter>(state.pluginsSurface === "mcp" ? "mcp" : "any");
@@ -247,7 +270,7 @@ export function PluginsPanel() {
   useEffect(() => {
     if (!orgAccessRequested) return;
     setScopeChoice("workspace");
-    setPage({ page: "manage" });
+    setStack([{ page: "main" }, { page: "manage" }]);
   }, [orgAccessRequested]);
   useEffect(() => {
     if (!orgAccessRequested || !orgAdmin || page.page !== "manage") return;
@@ -260,11 +283,15 @@ export function PluginsPanel() {
     requestAnimationFrame(reveal);
   }, [orgAccessRequested, orgAdmin, page.page]);
   const skillsLibraryOn = skillsLibraryEnabled(state.config);
-  const back = useCallback(() => setPage((current) => current.page === "detail" || current.page === "skill" ? { page: current.from } : { page: "main" }), []);
+  const back = useCallback(() => setStack((current) => current.length > 1 ? current.slice(0, -1) : current), []);
+  useEffect(() => { void BotCatalogPane.preload().catch(() => undefined); }, []);
 
-  // Focus and keys: Escape steps back one page, then closes.
+  // Focus and keys: Escape steps back one page (Browse Bots' own steps
+  // first), then closes; Cmd+[ steps back and never closes.
   const pageRef = useRef(page);
   pageRef.current = page;
+  const depthRef = useRef(stack.length - 1);
+  depthRef.current = stack.length - 1;
   useEffect(() => {
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
@@ -273,10 +300,14 @@ export function PluginsPanel() {
     ) ?? []);
     (dialog?.querySelector<HTMLElement>("input") ?? focusable()[0] ?? dialog)?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" || isBackShortcut(event)) {
+        // A dialog opened inside this one (Browse Bots' confirmations) owns its keys.
+        const nested = dialog?.querySelector<HTMLElement>('[role="dialog"], [role="alertdialog"]');
+        if (event.defaultPrevented || (nested && nested.getClientRects().length > 0)) return;
         event.preventDefault();
-        if (pageRef.current.page === "main") close();
-        else back();
+        const action = pageKeyAction(event, { depth: depthRef.current, innerBack: pageRef.current.page === "bots" ? () => botsBack.current?.() ?? false : undefined });
+        if (action === "back") back();
+        else if (action === "close") close();
         return;
       }
       if (event.key !== "Tab" || !dialog) return;
@@ -336,12 +367,12 @@ export function PluginsPanel() {
 
   const openItem = (item: PluginItem) => {
     if (item.kind === "skill") {
-      setPage((current) => ({ page: "skill", name: item.id, from: current.page === "manage" ? "manage" : "main" }));
+      push({ page: "skill", name: item.id });
       return;
     }
     // Whop's page is its MCP server's page.
     const key = item.key === WHOP_KEY && mcp.whopServer ? `mcp:${mcp.whopServer.name}` : item.key;
-    setPage((current) => ({ page: "detail", key, from: current.page === "manage" ? "manage" : "main" }));
+    push({ page: "detail", key });
   };
 
   const installFeatured = async (item: PluginItem) => {
@@ -352,7 +383,7 @@ export function PluginsPanel() {
       await mcp.load();
       await loadFeatured();
       if (typeof result.authorizationUrl === "string") await apps.openConnectUrl(result.authorizationUrl);
-      if (typeof result.name === "string") setPage({ page: "detail", key: `mcp:${result.name}`, from: "main" });
+      if (typeof result.name === "string") showDetail(`mcp:${result.name}`);
     } catch (cause) {
       setPanelError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -499,7 +530,7 @@ export function PluginsPanel() {
       await Promise.all([mcp.load(), loadSkills()]);
       const skipped: string[] = Array.isArray(result.skipped) ? result.skipped : [];
       if (skipped.length) setPanelNotice(t("connectApps.plugin.skipped", { parts: skipped.join("; ") }));
-      setPage((current) => ({ page: "detail", key: marketplacePluginKey(marketplace, plugin), from: current.page === "manage" ? "manage" : "main" }));
+      showDetail(marketplacePluginKey(marketplace, plugin));
     } catch (cause) {
       setPanelError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -550,7 +581,7 @@ export function PluginsPanel() {
         // switch and install date stay, server/bot-plugins.ts)
         if (!botView?.canChange || (item.installed && !item.updateAvailable)) return null;
         return (
-          <button type="button" {...(item.installed ? { "data-bot-plugin-update": item.id } : { "data-bot-plugin-add": item.id })} disabled={botBusy !== null} onClick={() => installForBot(item.id)} className="ui-button min-w-[76px] disabled:opacity-40">
+          <button type="button" {...(item.installed ? { "data-bot-plugin-update": item.id } : { "data-bot-plugin-add": item.id })} disabled={botBusy !== null} onClick={() => installForBot(item.id)} className={cn(cardActionClass(item.installed ? "secondary" : "primary"), "min-w-[76px]")}>
             {botBusy === `install:${item.id}` ? <Loader2 size={13} className="mx-auto animate-spin" /> : t(item.installed ? "connectApps.plugin.update" : "connectApps.action.add")}
           </button>
         );
@@ -558,20 +589,20 @@ export function PluginsPanel() {
       if (item.installed && !item.updateAvailable) return null;
       if (item.installed) {
         return (
-          <button type="button" disabled={installing !== null} onClick={() => void updatePlugin(item)} className="ui-button min-w-[76px] disabled:opacity-40" data-plugin-update>
+          <button type="button" disabled={installing !== null} onClick={() => void updatePlugin(item)} className={cn(cardActionClass("secondary"), "min-w-[76px]")} data-plugin-update>
             {installing === item.id ? <Loader2 size={13} className="mx-auto animate-spin" /> : t("connectApps.plugin.update")}
           </button>
         );
       }
       return (
-        <button type="button" disabled={installing !== null} onClick={() => void installPlugin(item)} className="ui-button min-w-[76px] disabled:opacity-40">
+        <button type="button" disabled={installing !== null} onClick={() => void installPlugin(item)} className={cn(cardActionClass(), "min-w-[76px]")}>
           {installing === item.id ? <Loader2 size={13} className="mx-auto animate-spin" /> : t("connectApps.action.add")}
         </button>
       );
     }
     if (item.kind === "featured") {
       return (
-        <button type="button" disabled={installing !== null} onClick={() => void installFeatured(item)} className="ui-button min-w-[76px] disabled:opacity-40">
+        <button type="button" disabled={installing !== null} onClick={() => void installFeatured(item)} className={cn(cardActionClass(), "min-w-[76px]")}>
           {installing === item.id ? <Loader2 size={13} className="mx-auto animate-spin" /> : t(item.action === "connect" ? "connectApps.action.connect" : "connectApps.action.add")}
         </button>
       );
@@ -663,6 +694,18 @@ export function PluginsPanel() {
   ) : null;
 
   const detailItem = page.page === "detail" ? items.find((item) => item.key === page.key) : undefined;
+  // The breadcrumb: each page under the current one, Connect apps first.
+  const pageLabel = (entry: Page): string => {
+    switch (entry.page) {
+      case "main": return t("connectApps.title");
+      case "section": return sectionTitle({ id: entry.id }, pluginSourceLabel);
+      case "manage": return t("connectApps.manage.title");
+      case "detail": return items.find((item) => item.key === entry.key)?.name ?? t("connectApps.back");
+      case "skill": return entry.name ?? t("connectApps.skill.new");
+      case "bots": return t("botCatalog.title");
+    }
+  };
+  const trail: Crumb[] = stack.slice(0, -1).map((entry, depth) => ({ label: pageLabel(entry), onSelect: () => popTo(depth) }));
   // An item that went away (uninstalled, or removed elsewhere) leaves its page.
   const detailMissing = page.page === "detail" && !detailItem && mcp.servers !== null && apps.cards !== null && skills !== null && shownMarketplaces !== null;
   // A skill deleted or renamed elsewhere leaves its page too.
@@ -689,14 +732,14 @@ export function PluginsPanel() {
         skill={pageSkill}
         readOnlyReason={pageSkill ? skillReadOnly(pageSkill) : undefined}
         onBack={back}
-        onClose={close}
+        trail={trail}
         onSaved={async (name) => {
           await loadSkills();
-          setPage((current) => current.page === "skill" ? { ...current, name } : current);
+          setStack((current) => current.map((entry, index) => index === current.length - 1 && entry.page === "skill" ? { ...entry, name } : entry));
         }}
         onDeleted={async () => {
           await loadSkills();
-          setPage((current) => current.page === "skill" ? { page: current.from } : current);
+          setStack((current) => current[current.length - 1]?.page === "skill" && current.length > 1 ? current.slice(0, -1) : current);
         }}
       />
     );
@@ -709,9 +752,9 @@ export function PluginsPanel() {
         scope={scopeControl}
         pluginsOnly={scope === "bot"}
         onBack={back}
-        onClose={close}
+        trail={trail}
         onOpenItem={openItem}
-        onNewSkill={skillsOn && (ownerOrAdmin !== false || libraryEditor) ? () => setPage({ page: "skill", from: "manage" }) : undefined}
+        onNewSkill={skillsOn && (ownerOrAdmin !== false || libraryEditor) ? () => push({ page: "skill" }) : undefined}
         personal={organization ? (
           <section className="mt-6" data-plugins-personal>
             <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.personal")}</h3>
@@ -768,9 +811,11 @@ export function PluginsPanel() {
             dispatch({ type: "toggleSettings", open: true, botId, section: "access" });
           } })}
         onBack={back}
-        onClose={close}
+        trail={trail}
       />
     );
+  } else if (page.page === "bots") {
+    content = <BotCatalogPane onClose={close} backRef={botsBack} trail={trail} />;
   } else if (page.page === "detail" || page.page === "skill") {
     content = (
       <div className="flex flex-1 items-center justify-center gap-2 text-[13px] text-ink-secondary">
@@ -785,9 +830,9 @@ export function PluginsPanel() {
         loading={apps.cards === null || mcp.servers === null || (scope === "bot" && botView === null)}
         search={search}
         onSearch={setSearch}
-        filter={filter}
+        filter={page.page === "section" ? page.filter ?? "all" : filter}
         onFilter={setFilter}
-        type={type}
+        type={page.page === "section" ? page.type ?? "any" : type}
         onType={(next) => {
           setType(next);
           if (next === "mcp" || next === "apps" || next === "any") {
@@ -797,12 +842,13 @@ export function PluginsPanel() {
         sourceLabel={pluginSourceLabel}
         extraSources={(shownMarketplaces ?? []).map((market) => market.name)}
         extraConnected={scope === "bot" ? 0 : claudeConnectors}
-        onClose={close}
-        onOpenManage={() => setPage({ page: "manage" })}
-        onBrowseBots={remoteClient ? undefined : () => {
-          dispatch({ type: "togglePlugins", open: false });
-          dispatch(openBotCatalog());
+        onOpenManage={() => push({ page: "manage" })}
+        onBrowseBots={remoteClient ? undefined : () => push({ page: "bots" })}
+        onViewAll={(section) => {
+          if (!section.filter) return;
+          push({ page: "section", id: section.id, ...section.filter });
         }}
+        subpage={page.page === "section" ? { title: pageLabel(page), trail, onBack: back } : undefined}
         onOpenItem={openItem}
         renderAction={renderAction}
         renderBelow={renderBelow}
@@ -814,20 +860,34 @@ export function PluginsPanel() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6"
+      className={CATEGORY_MODAL.backdrop}
       onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
+      {/* Browse Bots' window (src/components/category-modal.ts): same size,
+          frame and close button, so the two read as one window. */}
       <div
         ref={dialogRef}
         data-tour="apps-panel"
         data-plugins-page={page.page}
+        data-plugins-depth={stack.length - 1}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="plugins-title"
+        aria-labelledby={page.page === "bots" ? "bot-catalog-title" : "plugins-title"}
         tabIndex={-1}
-        className="animate-pop-in flex h-[min(720px,calc(100dvh-96px))] w-[min(860px,calc(100vw-40px))] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated"
+        className={cn("animate-pop-in", CATEGORY_MODAL.frame)}
       >
-        {content}
+        <div className={CATEGORY_MODAL.content}>
+          <button
+            type="button"
+            data-tour="apps-close"
+            onClick={close}
+            aria-label={t("connectors.closeAria")}
+            className={CATEGORY_MODAL.close}
+          >
+            <X size={18} />
+          </button>
+          {content}
+        </div>
       </div>
     </div>
   );
@@ -853,7 +913,7 @@ function AppActionButton({ apps, slug }: { apps: ConnectedApps; slug: string }) 
       disabled={busy || why !== undefined}
       title={why}
       onClick={() => apps.primaryAction(slug)}
-      className="ui-button min-w-[76px] disabled:opacity-40"
+      className={cn(cardActionClass(), "min-w-[76px]")}
     >
       {unavailable ? t("connectors.selfHostOnly") : busy ? <Loader2 size={13} className="mx-auto animate-spin" /> : connectorActionLabel(apps.inventoryPhase, {
         busy,
