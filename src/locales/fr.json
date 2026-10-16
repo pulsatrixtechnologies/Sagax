@@ -5994,7 +5994,6 @@
   "newBot.saveDefaults": "Enregistrer les réglages par défaut",
   "persona.group.profile": "Profil",
   "persona.group.instructions": "Instructions",
-  "persona.group.memoryFiles": "Mémoire et fichiers",
   "persona.group.modelTools": "Modèle et outils",
   "botSettings.nav.skills": "Compétences",
   "computer.back": "Retour",
@@ -7950,5 +7949,7 @@
   "persona.overview.summaryTitle": "En bref",
   "botPanel.rules.removeTitle": "Supprimer cette règle ?",
   "botPanel.permissions.outboundPolicy": "Avant d'envoyer",
-  "botPanel.permissions.approvals": "Approbations"
+  "botPanel.permissions.approvals": "Approbations",
+  "persona.group.security": "Sécurité",
+  "persona.group.activity": "Suivi"
 }

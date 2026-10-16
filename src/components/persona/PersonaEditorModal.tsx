@@ -1,8 +1,8 @@
 // The bot editor ("Edit bot"): one bot's whole profile in a modal shaped like
 // Achievements (category-modal.ts: a left column of categories, one
 // scrolling pane, the close button top right). The left column lists the
-// groups (lib/persona-sections.ts); each section is its own page (JC
-// 2026-10-15), listed under its group while that group is open, each the
+// groups (lib/persona-sections.ts) as Settings' grey headings, each section
+// an entry of its own (JC 2026-10-15, rail like Settings 2026-10-16), each the
 // same body the bot panel used to show (useBotSectionContent), so both save
 // through the same paths. A
 // section this viewer may not change stays on its page and says why
@@ -10,7 +10,7 @@
 // the bot's "..." menu in the bot panel, and on Appearance from a click on
 // the bot's avatar (store action openPersonaEditor).
 import { useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Coins, FolderTree, Cpu, History, LayoutDashboard, Lock, type LucideIcon, Mic, ScrollText, ShieldCheck, X } from "lucide-react";
+import { LayoutDashboard, Lock, X } from "lucide-react";
 
 import { useStore, type Bot, type BotSettingsSection } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -32,7 +32,6 @@ import {
   isPersonaCategory,
   personaCategoryForSection,
   personaGroupOf,
-  personaGroupSections,
   type PersonaCategory,
   type PersonaGroup,
 } from "@/lib/persona-sections";
@@ -42,16 +41,6 @@ export { PERSONA_CATEGORIES, PERSONA_GROUPS, isPersonaCategory, type PersonaCate
 
 const ENTRY = new Map(BOT_SECTIONS.map((entry) => [entry.id, entry]));
 
-const GROUP_ICON: Record<PersonaGroup, LucideIcon> = {
-  profile: LayoutDashboard,
-  instructions: ScrollText,
-  memoryFiles: FolderTree,
-  modelTools: Cpu,
-  permissions: ShieldCheck,
-  voice: Mic,
-  usage: Coins,
-  changes: History,
-};
 
 export function personaCategoryLabel(id: BotSettingsSection): string {
   const entry = ENTRY.get(id);
@@ -59,12 +48,8 @@ export function personaCategoryLabel(id: BotSettingsSection): string {
   return entry.labelKey ? t(entry.labelKey) : entry.label;
 }
 
-/** A group that is one page, or that opens on a page of its own name, is
- * named after that page (Permissions, Voice, Usage, Changes). */
+/** A group's grey heading in the rail. */
 export function personaGroupLabel(id: PersonaGroup): string {
-  const pages = personaGroupSections(id);
-  if (pages.length === 1) return personaCategoryLabel(pages[0]!);
-  if (isPersonaCategory(id as BotSettingsSection)) return personaCategoryLabel(id as BotSettingsSection);
   return t(`persona.group.${id}` as LocaleKey);
 }
 
@@ -126,10 +111,6 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
       : target === "sharing" && pages.includes("visibility") ? "visibility"
         : groups.find((group) => group.id === personaGroupOf(target))?.sections[0] ?? "overview";
   const currentGroup: PersonaGroup = personaGroupOf(current);
-  const choose = (id: PersonaGroup) => {
-    const first = groups.find((group) => group.id === id)?.sections[0];
-    if (first) dispatch({ type: "personaEditorSection", section: first });
-  };
   const choosePage = (id: PersonaCategory) => dispatch({ type: "personaEditorSection", section: id });
   const goTo = (id: BotSettingsSection) => {
     const category = personaCategoryForSection(id);
@@ -154,19 +135,18 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
   });
 
   // A new page starts at the top; after a key in the list, focus follows
-  // the page (its entry exists only once its group is open).
+  // the page.
   useEffect(() => {
     if (paneRef.current) paneRef.current.scrollTop = 0;
     if (!focusNav.current) return;
     focusNav.current = false;
     const nav = navRef.current;
-    (nav?.querySelector<HTMLElement>(`[data-persona-page="${current}"]`)
-      ?? nav?.querySelector<HTMLElement>(`[data-persona-category="${currentGroup}"]`))?.focus();
+    nav?.querySelector<HTMLElement>(`[data-persona-page="${current}"]`)?.focus();
   }, [current, currentGroup]);
 
   useCategoryModalKeyboard(dialogRef, '[data-persona-nav] [aria-current="page"]', onClose);
 
-  // Up and Down walk every page in order, opening its group on the way.
+  // Up and Down walk every page in order.
   const onNavKey = (event: ReactKeyboardEvent<HTMLElement>) => {
     const id = nextCategory(pages, current, event.key);
     if (id === null) return;
@@ -225,10 +205,8 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
     );
   };
 
-  // The page title: the group's name on its home and on a group of one
-  // page, the page's own name otherwise.
-  const groupPages = groups.find((group) => group.id === currentGroup)?.sections ?? [];
-  const title = current === "overview" || groupPages.length === 1 ? personaGroupLabel(currentGroup) : personaCategoryLabel(current);
+  // The page title: the page's own name, as Settings titles its pages.
+  const title = personaCategoryLabel(current);
 
   return (
     <div
@@ -256,46 +234,35 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
             <div className="truncate">{t("persona.title")}</div>
             <div className="truncate text-[12px] font-normal text-ink-secondary">{bot.name}</div>
           </div>
+          {/* 2026-10-16 (JC): the rail of Settings (#605): each group a
+              grey heading, every page an entry with its icon under it. */}
           {groups.map(({ id, sections }) => {
-            const Icon = GROUP_ICON[id];
-            const locked = groupLocked(sections);
-            const open = currentGroup === id;
-            // A group of several pages lists them under it while it is open.
-            const subPages = open && sections.length > 1 ? sections : [];
+            const headingId = `persona-nav-${id}`;
             return (
-              <div key={id} className="flex flex-col gap-0.5">
-                <button
-                  type="button"
-                  data-persona-category={id}
-                  data-locked={locked ? "" : undefined}
-                  onClick={() => choose(id)}
-                  aria-current={open ? (subPages.length > 0 ? "true" : "page") : undefined}
-                  aria-expanded={sections.length > 1 ? open : undefined}
-                  className={categoryNavItemClass(open && subPages.length === 0)}
-                >
-                  {/* Settings' nav item: 15 px icon with the thinner stroke */}
-                  <Icon size={15} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate">{personaGroupLabel(id)}</span>
-                  {locked && <Lock size={12} aria-label={t("persona.lockedBadge")} className="shrink-0 text-ink-tertiary" />}
-                </button>
-                {subPages.length > 0 && (
-                  <ul data-persona-subnav={id} aria-label={personaGroupLabel(id)} className="mb-1 flex flex-col gap-0.5">
-                    {subPages.map((page) => (
-                      <li key={page}>
-                        <button
-                          type="button"
-                          data-persona-page={page}
-                          data-locked={lockOf(page) !== null || unavailable(page) ? "" : undefined}
-                          onClick={() => choosePage(page)}
-                          aria-current={current === page ? "page" : undefined}
-                          className={cn(categoryNavItemClass(current === page), "w-full pl-[33px]", current === page ? "" : "text-ink-secondary")}
-                        >
-                          <span className="min-w-0 flex-1 truncate">{personaCategoryLabel(page)}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+              <div key={id} role="group" aria-labelledby={headingId} data-persona-category={id} data-locked={groupLocked(sections) ? "" : undefined} className="flex shrink-0 flex-col gap-0.5">
+                <div id={headingId} className="px-[9px] pb-1 pt-3 text-[11.5px] font-medium leading-4 text-ink-tertiary">
+                  {personaGroupLabel(id)}
+                </div>
+                {sections.map((page) => {
+                  const Icon = ENTRY.get(page)?.icon ?? LayoutDashboard;
+                  const pageLocked = lockOf(page) !== null || unavailable(page);
+                  return (
+                    <button
+                      key={page}
+                      type="button"
+                      data-persona-page={page}
+                      data-locked={pageLocked ? "" : undefined}
+                      onClick={() => choosePage(page)}
+                      aria-current={current === page ? "page" : undefined}
+                      className={categoryNavItemClass(current === page)}
+                    >
+                      {/* Settings' nav item: 15 px icon with the thinner stroke */}
+                      <Icon size={15} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate">{personaCategoryLabel(page)}</span>
+                      {pageLocked && <Lock size={12} aria-label={t("persona.lockedBadge")} className="shrink-0 text-ink-tertiary" />}
+                    </button>
+                  );
+                })}
               </div>
             );
           })}

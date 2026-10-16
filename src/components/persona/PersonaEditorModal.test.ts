@@ -100,7 +100,9 @@ const bodiesOf = (html: string) => [...html.matchAll(/data-section-body="(\w+)"/
 const shownBodies = (html: string, page: string) => bodiesOf(pageHtml(html, page).html);
 const visiblePages = (html: string) => [...html.matchAll(/data-persona-section="(\w+)"( hidden="")?/g)].filter((match) => !match[2]).map((match) => match[1]);
 
-const ALL_GROUPS = ["profile", "instructions", "memoryFiles", "modelTools", "permissions", "voice", "usage", "changes"];
+const ALL_PAGES = ["overview", "appearance", "sharing", "summary", "soul", "rules", "skills", "files", "model", "worksOn", "access", "voice", "permissions", "perspicax", "usage", "history"];
+const SIMPLE_PAGES = ["overview", "appearance", "sharing", "summary", "soul", "rules", "files", "model", "voice", "permissions"];
+const ALL_GROUPS = ["profile", "instructions", "modelTools", "security", "activity"];
 
 describe("persona editor shell", () => {
   it("uses the Achievements shell and lists the groups in order", () => {
@@ -112,7 +114,9 @@ describe("persona editor shell", () => {
     expect(html).toContain("w-[198px]");
     expect(groupsOf(html)).toEqual(PERSONA_GROUPS.map((group) => group.id));
     expect(groupsOf(html)).toEqual(ALL_GROUPS);
-    for (const label of ["Profile", "Instructions", "Bot folder", "Model and tools", "Permissions", "Voice", "Usage", "Changes"]) {
+    // Settings' rail (2026-10-16): grey group headings, every page an entry
+    for (const heading of ["Profile", "Instructions", "Model and tools", "Security", "Activity"]) expect(html).toMatch(new RegExp(`id="persona-nav-\\w+"[^>]*>${heading}</div>`));
+    for (const label of ["Identity", "Bot folder", "Model", "Permissions", "Voice", "Usage", "Changes"]) {
       expect(html).toContain(`>${label}</span>`);
     }
     expect(html).not.toContain("data-persona-search");
@@ -124,7 +128,8 @@ describe("persona editor shell", () => {
   it("names the groups and pages in French", () => {
     setLocale("fr");
     const html = render("overview");
-    for (const label of ["Profil", "Instructions", "Dossier du bot", "Modèle et outils", "Permissions", "Voix", "Utilisation", "Changements"]) {
+    for (const heading of ["Profil", "Instructions", "Modèle et outils", "Sécurité", "Suivi"]) expect(html).toContain(`>${heading}</div>`);
+    for (const label of ["Dossier du bot", "Permissions", "Voix", "Utilisation", "Changements"]) {
       expect(html).toContain(`>${label}</span>`);
     }
     for (const label of ["Identité", "Apparence", "Partagé avec", "Ce qu&#x27;il fait"]) expect(html).toContain(`>${label}</span>`);
@@ -141,12 +146,10 @@ describe("persona editor shell", () => {
 
   it("follows Simple mode: the pages it hides are not listed, and an empty group goes", () => {
     fixture.advanced = false;
-    expect(groupsOf(render("overview"))).toEqual(["profile", "instructions", "memoryFiles", "modelTools", "permissions", "voice"]);
-    expect(subPagesOf(render("soul"))).toEqual(["soul", "rules"]);
-    // Model and tools keeps only Model: no list under it
-    expect(subPagesOf(render("model"))).toEqual([]);
-    // Permissions without the Perspicax profiles
-    expect(subPagesOf(render("permissions"))).toEqual([]);
+    expect(groupsOf(render("overview"))).toEqual(["profile", "instructions", "modelTools", "security"]);
+    // Instructions without Skills, Model and tools without Workspace and
+    // Access, Security without the Perspicax profiles, no Activity
+    expect(subPagesOf(render("soul"))).toEqual(SIMPLE_PAGES);
     // a link to a hidden page lands on its group's home
     const skills = render("skills");
     expect(skills).toContain('data-persona-current="soul"');
@@ -166,15 +169,15 @@ describe("persona editor pages", () => {
     ["soul", "instructions", ["soul"]],
     ["rules", "instructions", ["rules"]],
     ["skills", "instructions", ["skills"]],
-    ["files", "memoryFiles", ["files"]],
+    ["files", "instructions", ["files"]],
     ["model", "modelTools", ["model"]],
     ["worksOn", "modelTools", ["worksOn"]],
     ["access", "modelTools", ["access"]],
-    ["permissions", "permissions", ["permissions"]],
-    ["perspicax", "permissions", ["perspicax"]],
-    ["voice", "voice", ["voice"]],
-    ["usage", "usage", ["usage"]],
-    ["history", "changes", ["history"]],
+    ["voice", "modelTools", ["voice"]],
+    ["permissions", "security", ["permissions"]],
+    ["perspicax", "security", ["perspicax"]],
+    ["usage", "activity", ["usage"]],
+    ["history", "activity", ["history"]],
   ];
   for (const [page, group, bodies] of pages) {
     it(`${page} is its own page in ${group}`, () => {
@@ -185,34 +188,23 @@ describe("persona editor pages", () => {
       expect(shownBodies(html, page)).toEqual(bodies);
       expect(html).not.toContain("data-persona-locked");
       expect(html).toMatch(/<h2[^>]*>[^<]+<\/h2>/);
-      // the group is open in the list, and its page is the current entry
-      expect(html).toMatch(new RegExp(`data-persona-category="${group}"[^>]*aria-current="(page|true)"`));
-      if (subPagesOf(html).length > 0) expect(html).toMatch(new RegExp(`data-persona-page="${page}"[^>]*aria-current="page"`));
+      // its entry is the current one in the rail
+      expect(html).toMatch(new RegExp(`data-persona-page="${page}"[^>]*aria-current="page"`));
     });
   }
 
-  it("lists the pages of the open group only, under it", () => {
-    expect(subPagesOf(render("overview"))).toEqual(["overview", "appearance", "sharing", "summary"]);
-    expect(subPagesOf(render("rules"))).toEqual(["soul", "rules", "skills"]);
-    // the memory is managed in the Bot folder: one page, no list
-    expect(subPagesOf(render("files"))).toEqual([]);
+  it("lists every page under its group's heading, as Settings does", () => {
+    expect(subPagesOf(render("overview"))).toEqual(ALL_PAGES);
+    expect(subPagesOf(render("history"))).toEqual(ALL_PAGES);
+    // the memory is managed in the Bot folder
     expect(render("memory")).toContain('data-persona-current="files"');
-    expect(subPagesOf(render("model"))).toEqual(["model", "worksOn", "access"]);
-    expect(subPagesOf(render("perspicax"))).toEqual(["permissions", "perspicax"]);
-    // groups of one page have no list
-    expect(subPagesOf(render("voice"))).toEqual([]);
-    expect(subPagesOf(render("usage"))).toEqual([]);
-    expect(subPagesOf(render("history"))).toEqual([]);
-    expect(render("overview")).toContain('data-persona-subnav="profile"');
-    expect(render("overview")).toContain('aria-expanded="true"');
+    expect(render("overview")).toContain('data-persona-category="profile"');
+    expect(render("overview")).not.toContain("aria-expanded");
   });
 
-  it("clicks: a group opens its home page, a page entry opens that page", () => {
-    const html = render("appearance");
-    expect(html).toContain('data-persona-page="appearance"');
-    // the group home and title
-    expect(render("overview")).toMatch(/<h2[^>]*>Profile<\/h2>/);
-    expect(html).toMatch(/<h2[^>]*>Appearance<\/h2>/);
+  it("titles each page with its own name", () => {
+    expect(render("overview")).toMatch(/<h2[^>]*>Identity<\/h2>/);
+    expect(render("appearance")).toMatch(/<h2[^>]*>Appearance<\/h2>/);
     expect(render("voice")).toMatch(/<h2[^>]*>Voice<\/h2>/);
   });
 
@@ -235,13 +227,13 @@ describe("persona editor pages", () => {
   it("opens a deep link on its own page", () => {
     expect(personaGroupOf("appearance")).toBe("profile");
     expect(personaGroupOf("skills")).toBe("instructions");
-    expect(personaGroupOf("files")).toBe("memoryFiles");
+    expect(personaGroupOf("files")).toBe("instructions");
     expect(personaGroupOf("worksOn")).toBe("modelTools");
     expect(personaGroupOf("slack")).toBe("modelTools");
-    expect(personaGroupOf("perspicax")).toBe("permissions");
-    expect(personaGroupOf("voice")).toBe("voice");
-    expect(personaGroupOf("usage")).toBe("usage");
-    expect(personaGroupOf("history")).toBe("changes");
+    expect(personaGroupOf("perspicax")).toBe("security");
+    expect(personaGroupOf("voice")).toBe("modelTools");
+    expect(personaGroupOf("usage")).toBe("activity");
+    expect(personaGroupOf("history")).toBe("activity");
     expect(personaGroupOf("sharing")).toBe("profile");
     expect(personaCategoryForSection("appearance")).toBe("appearance");
     expect(personaCategoryForSection("worksOn")).toBe("worksOn");
@@ -328,10 +320,10 @@ describe("persona editor for an organization member", () => {
 
     const overview = render("overview", state);
     expect(overview).not.toContain("data-persona-action");
-    // a group where nothing can be changed shows the lock in the list
-    const locked = [...overview.matchAll(/data-persona-category="(\w+)"( data-locked="")?/g)].filter((match) => match[2]).map((match) => match[1]);
-    expect(locked).toContain("memoryFiles");
-    expect(locked).toContain("changes");
-    expect(locked).not.toContain("profile");
+    // a page that cannot be changed shows the lock in the rail
+    const locked = [...overview.matchAll(/data-persona-page="(\w+)"( data-locked="")?/g)].filter((match) => match[2]).map((match) => match[1]);
+    expect(locked).toContain("files");
+    expect(locked).toContain("history");
+    expect(locked).not.toContain("overview");
   });
 });

@@ -36,16 +36,16 @@ export const PERSONA_CATEGORIES = [
 export type PersonaCategory = (typeof PERSONA_CATEGORIES)[number];
 
 /** The groups of the editor's left column, each with its pages (the first is
- * the group's home). */
+ * the group's home). 2026-10-16 (JC: the editor's rail follows Settings'):
+ * each group is a grey heading over its pages, every page an entry of its
+ * own; the Bot folder joins Instructions, Voice joins Model and tools,
+ * Usage and Changes are Activity. */
 export const PERSONA_GROUPS = [
   { id: "profile", sections: ["overview", "appearance", "sharing", "visibility", "summary"] },
-  { id: "instructions", sections: ["soul", "rules", "skills"] },
-  { id: "memoryFiles", sections: ["files"] },
-  { id: "modelTools", sections: ["model", "worksOn", "access", "slack"] },
-  { id: "permissions", sections: ["permissions", "perspicax"] },
-  { id: "voice", sections: ["voice"] },
-  { id: "usage", sections: ["usage"] },
-  { id: "changes", sections: ["history"] },
+  { id: "instructions", sections: ["soul", "rules", "skills", "files"] },
+  { id: "modelTools", sections: ["model", "worksOn", "access", "slack", "voice"] },
+  { id: "security", sections: ["permissions", "perspicax"] },
+  { id: "activity", sections: ["usage", "history"] },
 ] as const satisfies ReadonlyArray<{ id: string; sections: readonly PersonaCategory[] }>;
 export type PersonaGroup = (typeof PERSONA_GROUPS)[number]["id"];
 

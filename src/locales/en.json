@@ -7560,7 +7560,6 @@
   "newBot.routine.remove": "Remove {name}",
   "persona.group.profile": "Profile",
   "persona.group.instructions": "Instructions",
-  "persona.group.memoryFiles": "Memory and files",
   "persona.group.modelTools": "Model and tools",
   "botSettings.nav.skills": "Skills",
   "computer.back": "Back",
@@ -7950,5 +7949,7 @@
   "persona.overview.summaryTitle": "At a glance",
   "botPanel.rules.removeTitle": "Delete this rule?",
   "botPanel.permissions.outboundPolicy": "Before sending",
-  "botPanel.permissions.approvals": "Approvals"
+  "botPanel.permissions.approvals": "Approvals",
+  "persona.group.security": "Security",
+  "persona.group.activity": "Activity"
 }

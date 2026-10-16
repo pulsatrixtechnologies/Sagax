@@ -9823,7 +9823,6 @@
       "newBot.saveDefaults": "a91af2a1efd13b3acf835b14b69569aa57f45f39fe9daf4c246a06b5b2c482b8",
       "persona.group.profile": "d696a35bdd1883da07a8d6c41bb7a3153381b23aa197629ee273479a6eaa5a9c",
       "persona.group.instructions": "934652dce41d62d3c9ff34b2c5e44e3addaedc67d6137328a9fe75a63c51dbac",
-      "persona.group.memoryFiles": "311984bb7d07e2319be1b4f51f0233c666854aba3ae11ca335eef0a76bbaffb0",
       "persona.group.modelTools": "2cd5d201082b8391096fc940d8392ebc8cd07780e411e4f8f6a7ef28b9c8aed1",
       "botSettings.nav.skills": "66d0f523a379b2de6f8d5fba3a817ebc395f7bcaa54cc132ca9dfa665d1e9378",
       "computer.back": "76900f1bfd16c8d4dd3d25e6f46638d7165aee23883ccea6bfe071c514421769",
@@ -11779,7 +11778,9 @@
       "persona.overview.summaryTitle": "46b396c85919af7dd3a4ea3a2792a437365a5fce2a4ae023a4d0526954813676",
       "botPanel.rules.removeTitle": "3a3de58afb862a5d8467e3cbeb49099f8ef86213d136a31f68eec7ff77726f17",
       "botPanel.permissions.outboundPolicy": "7d7177902ee140c59dca78d72b8b6440d4224b3ef947c8857854aec9b55dbc03",
-      "botPanel.permissions.approvals": "2bfc3471571e5c008cb26bd839b0d4cbcb1132fc9d6c8206bb595fa26e83a45b"
+      "botPanel.permissions.approvals": "2bfc3471571e5c008cb26bd839b0d4cbcb1132fc9d6c8206bb595fa26e83a45b",
+      "persona.group.security": "8f6fb4eb7f42c0e245e29e63f5b82cc3ba19852681d1ed9aed291f59cf75ec0e",
+      "persona.group.activity": "38da1505ca8373288489495101b14f24ac95078f520ad64df18272aa6054f750"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
