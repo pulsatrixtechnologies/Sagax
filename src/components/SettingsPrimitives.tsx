@@ -1,4 +1,4 @@
-import { useId, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
+import { Fragment, useId, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { Check, ChevronDown, CircleHelp, Copy, X } from "lucide-react";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
@@ -460,7 +460,9 @@ export function UnitField({
 /** Grok Bot's grey pill button, 44 px tall on a touch screen. */
 export const PILL = "ui-button min-h-[44px] disabled:opacity-50 md:min-h-0";
 
-export type PillOption<T extends string> = { value: T; label: string };
+/** `group` heads a run of options in the open list (a native <optgroup>):
+ * a grey line the arrows skip. */
+export type PillOption<T extends string> = { value: T; label: string; group?: string };
 
 /** Grok Bot's borderless pill menu ("Follow System ⌄"): the current value
  * and a chevron; the choices open in a small list under it. A listbox, so
@@ -554,11 +556,15 @@ export function PillSelect<T extends string>({
           }}
           className="popover-surface absolute right-0 top-full z-40 mt-1 flex max-h-[280px] w-max min-w-[180px] max-w-[min(18rem,calc(100vw-2rem))] flex-col gap-0.5 overflow-y-auto rounded-xl border-[0.5px] border-border bg-elevated p-1.5"
         >
-          {options.map((option) => {
+          {options.map((option, index) => {
             const selected = option.value === value;
+            const heading = option.group && option.group !== options[index - 1]?.group ? option.group : null;
             return (
+              <Fragment key={option.value}>
+              {heading && (
+                <li role="presentation" data-pill-group="" className="px-2 pb-0.5 pt-1.5 text-[11.5px] leading-4 text-ink-secondary first:pt-0.5">{heading}</li>
+              )}
               <li
-                key={option.value}
                 role="option"
                 aria-selected={selected}
                 tabIndex={-1}
@@ -574,6 +580,7 @@ export function PillSelect<T extends string>({
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
                 <Check size={14} aria-hidden="true" className={cn("shrink-0 text-ink-secondary", !selected && "invisible")} />
               </li>
+              </Fragment>
             );
           })}
         </ul>
@@ -672,5 +679,89 @@ export function FoldRow({ cardId, defaultOpen = false, label, description, help,
         <CountPill open={open} onToggle={toggle} label={toggleLabel ?? label} count={count} controls={bodyId} />
       </DescribedRow>
     </div>
+  );
+}
+
+// The window frame (JC 2026-10-16: every window of the app wears Settings'
+// look). Class strings rather than components, so each dialog keeps its own
+// focus, Escape and backdrop logic untouched; the z-index stays the caller's.
+/** The dimmed backdrop, centred, as Settings'. Add the caller's `z-*`. */
+export const WINDOW_BACKDROP = "fixed inset-0 flex items-center justify-center bg-black/50 p-3 sm:p-6";
+/** The window itself: Settings' radius, hairline and background. Add a
+ * `max-w-*`; the height follows the content up to the viewport. */
+export const WINDOW_SURFACE = "flex max-h-[min(760px,calc(100dvh-48px))] w-full min-w-0 flex-col overflow-hidden rounded-[14px] border border-border bg-app text-ink outline-none";
+/** Title line: the title (and an optional one-line subtitle) at the left,
+ * the round close button at the right. */
+export const WINDOW_HEADER = "flex shrink-0 items-start justify-between gap-3 px-5 pb-2 pt-4";
+export const WINDOW_TITLE = "text-[15px] font-semibold leading-6 text-ink";
+export const WINDOW_SUBTITLE = "mt-0.5 text-[12.5px] leading-[18px] text-ink-secondary";
+/** Settings' close button, 44 px on a touch screen. */
+export const WINDOW_CLOSE = "-mr-1.5 flex size-8 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full text-ink-tertiary transition-colors hover:bg-ink/10 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:opacity-40 motion-reduce:transition-none md:min-h-0 md:min-w-0";
+/** The scrolling body: grey headings and cards (SettingsGroup) stacked. */
+export const WINDOW_BODY = "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 pb-4 pt-2";
+/** Actions at the bottom right: secondary pills (PILL), then the primary. */
+export const WINDOW_FOOTER = "flex shrink-0 flex-wrap items-center justify-end gap-2 border-t-[0.5px] border-hairline-weak px-5 py-3";
+/** Grok Bot's filled pill for the one action a window is for. */
+export const PRIMARY_PILL = "ui-button ui-button-primary min-h-[44px] font-medium disabled:cursor-not-allowed disabled:opacity-40 md:min-h-0";
+/** A text field or text area as Settings draws them. */
+export const FIELD = "min-h-[44px] w-full min-w-0 rounded-lg border-[0.5px] border-border bg-inset px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:min-h-0";
+
+/** A field of a settings group's card: its label above, the control filling
+ * the row, and at most one short grey line under it. The whole row is the
+ * <label>, so a click on the words focuses the field. */
+export function FieldRow({ label, hint, hintId, children, rowId }: {
+  label: React.ReactNode;
+  hint?: React.ReactNode;
+  /** For the field's aria-describedby. */
+  hintId?: string;
+  children: React.ReactNode;
+  rowId?: string;
+}) {
+  return (
+    <label data-settings-row={rowId} className="flex min-w-0 flex-col gap-1.5 px-3.5 py-2.5">
+      <span className="text-[13px] leading-[18px] text-ink">{label}</span>
+      {children}
+      {hint && <span id={hintId} className="text-[12px] leading-4 text-ink-secondary">{hint}</span>}
+    </label>
+  );
+}
+
+/** A destructive action asked twice, in place: a grey pill with red words,
+ * then, once clicked, Grok Bot's filled red pill that does it. Leaving the
+ * pill (Tab, a click elsewhere) or Escape disarms it. */
+export function ConfirmPill({ label, confirmLabel, ariaLabel, title, onConfirm, disabled, children }: {
+  label: string;
+  /** The armed pill's words ("Remove for good"). */
+  confirmLabel: string;
+  ariaLabel?: string;
+  title?: string;
+  onConfirm: () => void;
+  disabled?: boolean;
+  /** What the unarmed pill shows instead of `label` (an icon). */
+  children?: React.ReactNode;
+}) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      data-confirm-pill={armed ? "armed" : ""}
+      aria-label={armed ? confirmLabel : ariaLabel ?? label}
+      title={armed ? confirmLabel : title ?? label}
+      onClick={() => {
+        if (!armed) { setArmed(true); return; }
+        setArmed(false);
+        onConfirm();
+      }}
+      onBlur={() => setArmed(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && armed) { event.preventDefault(); event.stopPropagation(); setArmed(false); }
+      }}
+      className={armed
+        ? `${DANGER_PILL} min-h-[44px] shrink-0 md:min-h-0`
+        : `${PILL} shrink-0 bg-transparent text-danger enabled:hover:bg-danger/10`}
+    >
+      {armed ? confirmLabel : children ?? label}
+    </button>
   );
 }
