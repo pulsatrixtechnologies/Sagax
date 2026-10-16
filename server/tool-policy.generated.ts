@@ -234,6 +234,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"PUT","kind":"exact","route":"/api/section-context","tier":"write","readOnly":false,"scope":"section-context:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/security-keys","tier":"admin","readOnly":false,"scope":"security-keys:admin","defaultEnabled":false},
   {"method":"ANY","kind":"prefix","route":"/api/security-keys","tier":"admin","readOnly":false,"scope":"security-keys:admin","defaultEnabled":false},
+  {"method":"ANY","kind":"exact","route":"/api/security-keys/approval-mode","tier":"admin","readOnly":false,"scope":"security-keys:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/security-keys/begin","tier":"admin","readOnly":false,"scope":"security-keys:admin","defaultEnabled":false},
   {"method":"ANY","kind":"prefix","route":"/api/security-keys/ceremony/","tier":"admin","readOnly":false,"scope":"security-keys:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/security-keys/classes","tier":"admin","readOnly":false,"scope":"security-keys:admin","defaultEnabled":false},
