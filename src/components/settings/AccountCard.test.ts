@@ -62,7 +62,7 @@ afterEach(async () => {
 });
 
 describe("Settings > General account card", () => {
-  it("organization: one card, label under the name, Sign out beside the email, managed with the server in its tooltip", async () => {
+  it("organization: one row, label under the name, Sign out at the right, managed with the server in its tooltip", async () => {
     vi.stubGlobal("ogb", undefined);
     await mount(LOCKED);
     const card = host.querySelector('[data-settings-card="general.account"]')!;
@@ -72,9 +72,10 @@ describe("Settings > General account card", () => {
     expect(text.indexOf("Add a label")).toBeLessThan(text.indexOf("jc@example.com"));
     expect(text).toContain("Edit in Perspicax");
     expect(card.querySelector("[data-account-managed]")?.getAttribute("title")).toBe("Connected to bot.example.test · Organization: Pulsatrix");
-    // Sign out shares the email's row
-    expect(button("Sign out")?.closest(".justify-between")?.textContent).toContain("jc@example.com");
-    expect(card.querySelector("[data-account-help]")?.textContent).toContain("Your bots run on this server.");
+    // Sign out at the right of the row, no help paragraph
+    expect(button("Sign out")?.closest("[data-account-action]")).not.toBeNull();
+    expect(card.querySelector("[data-account-help]")).toBeNull();
+    expect(button("Copy email")).toBeDefined();
   });
 
   it("edits the label in place and saves it", async () => {

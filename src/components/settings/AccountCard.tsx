@@ -1,24 +1,23 @@
-// Settings > General: one card for the account (2026-10-15, was a "Server"
-// card plus a collapsible "Profile" card that repeated the name and email).
+// Settings > General > Account: the account row of the Account group
+// (2026-10-15 one card; 0.5.6 Grok Bot's layout, JC).
 //
-//   [avatar]  Name
-//             Add a label  (pencil: edited in place)
-//             email                                  [Sign out]
-//             Managed by your organization
-//             Edit in Perspicax
-//   Your bots run on this server. Sign out returns this app to ...
+//   [avatar]  Name                                         [Sign out]
+//             label (pencil on hover)
+//             email [copy]
+//             Managed by your organization · Edit in Perspicax
 //
 // On an organization server (Pulsatrix Perspicax) the name, email and avatar
 // are Perspicax's and read-only; the server and the organization stay one
 // hover away, on "Managed by your organization". On a personal server the
 // operator edits name, email and photo here; the label stays; the action is
-// the desktop's server switcher instead of Sign out, and the help line speaks
-// of the local installation. Sign out is the desktop's server mode bridge
-// (src/lib/launch.ts): it asks natively, signs out and returns to the launch
-// screen, unchanged.
+// the desktop's server switcher instead of Sign out. Sign out is the
+// desktop's server mode bridge (src/lib/launch.ts): it asks natively, signs
+// out and returns to the launch screen, unchanged. No help paragraph: the
+// native confirmation says what Sign out does.
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Cloud, ExternalLink, Laptop, LogOut } from "lucide-react";
+import { Check, ChevronDown, Cloud, Copy, Laptop, X } from "lucide-react";
 import { openExternalLink } from "@/lib/app-links";
+import { useCopyFeedback } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import { serverModeBridge } from "@/lib/launch";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -38,12 +37,6 @@ function host(origin: string): string {
   } catch {
     return origin;
   }
-}
-
-/** "Connected to <b>host</b>" with the address in bold, in any word order. */
-function ConnectedTo({ server }: { server: string }) {
-  const [before, after = ""] = t("settings.serverMode.connectedTo", { server: "\u0000" }).split("\u0000");
-  return <>{before}<strong className="font-semibold text-ink">{server}</strong>{after}</>;
 }
 
 /** Where this account lives, for the tooltip of "Managed by your
@@ -70,12 +63,6 @@ export function AccountCard({ lockedServer }: { lockedServer: LockedServer | nul
   const action = lockedServer
     ? <SignOutButton onFailed={setSignOutFailed} />
     : switcher ? <ServerSwitchButton workspace={workspace} /> : null;
-
-  const help = lockedServer
-    ? t("settings.serverMode.signOutHelp")
-    : switcher
-      ? (workspace.current?.local === false && workspace.current.origin) || t("settings.launch.solo")
-      : null;
   const details = accountServerDetails({ origin: lockedServer?.origin, organization });
 
   return (
@@ -83,7 +70,7 @@ export function AccountCard({ lockedServer }: { lockedServer: LockedServer | nul
       role="group"
       aria-label={t("settings.profile.title")}
       data-settings-card="general.account"
-      className="rounded-[14px] border-[0.5px] border-border px-3.5 py-3"
+      className="px-3.5 py-2.5"
     >
       {operator
         ? <OperatorIdentity action={action} />
@@ -95,47 +82,59 @@ export function AccountCard({ lockedServer }: { lockedServer: LockedServer | nul
             action={action}
           >
             {managed ? (
-              <>
-                <div className="mt-0.5 text-[12px] text-ink-secondary" title={details || undefined} data-account-managed="">
-                  {t("settings.serverMode.managedShort")}
-                </div>
+              <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] leading-4 text-ink-secondary">
+                <span title={details || undefined} data-account-managed="">{t("settings.serverMode.managedShort")}</span>
                 {managed.url && (
-                  <button
-                    type="button"
-                    onClick={() => void openExternalLink(managed.url!)}
-                    className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium text-accent hover:underline"
-                  >
-                    {t("settings.profile.editInPerspicax")}
-                    <ExternalLink size={12} aria-hidden="true" />
-                  </button>
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <button
+                      type="button"
+                      onClick={() => void openExternalLink(managed.url!)}
+                      className="rounded-sm text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                    >
+                      {t("settings.profile.editInPerspicax")}
+                    </button>
+                  </>
                 )}
-              </>
-            ) : !lockedServer && (
-              <div className="mt-0.5 text-[12px] text-ink-secondary">{t("settings.profile.signedInAs")}</div>
-            )}
+              </div>
+            ) : lockedServer && details ? (
+              <div className="mt-0.5 truncate text-[12px] leading-4 text-ink-secondary" data-server-connected="">{details}</div>
+            ) : null}
           </ReadOnlyIdentity>
         )}
-      {help && (
-        <p className="mt-3 text-[12.5px] leading-[18px] text-ink-secondary" data-account-help="">
-          {help}
-          {lockedServer && !managed && (
-            <span data-server-connected className="mt-0.5 block text-[12px]"><ConnectedTo server={host(lockedServer.origin)} /></span>
-          )}
-        </p>
-      )}
       {signOutFailed && <p role="alert" className="mt-2 text-[12px] text-danger">{t("settings.serverMode.signOutFailed")}</p>}
       {workspace.error && <p role="alert" className="mt-2 text-[12px] text-danger">{workspace.error}</p>}
     </div>
   );
 }
 
-/** The email line with the card's action at its right. */
-function EmailRow({ children, action }: { children: React.ReactNode; action: React.ReactNode }) {
+/** The email with its copy button. */
+function EmailLine({ email }: { email: string }) {
+  const { state, copy } = useCopyFeedback(email);
+  if (!email) return null;
   return (
-    <div className="mt-0.5 flex min-w-0 items-center justify-between gap-3">
-      <div className="min-w-0 flex-1">{children}</div>
-      {action && <div className="shrink-0">{action}</div>}
+    <div className="flex min-w-0 items-center gap-1">
+      <span className="truncate text-[13px] leading-[18px] text-ink-secondary">{email}</span>
+      <CopyEmailButton state={state} copy={copy} />
     </div>
+  );
+}
+
+function OperatorCopyEmail({ email }: { email: string }) {
+  return <CopyEmailButton {...useCopyFeedback(email)} />;
+}
+
+function CopyEmailButton({ state, copy }: ReturnType<typeof useCopyFeedback>) {
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={state === "failed" ? t("common.copyFailed") : state === "copied" ? t("settings.account.emailCopied") : t("settings.account.copyEmail")}
+      title={t("settings.account.copyEmail")}
+      className="flex size-6 shrink-0 items-center justify-center rounded-md text-ink-secondary hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+    >
+      {state === "copied" ? <Check size={13} className="text-success" aria-hidden="true" /> : state === "failed" ? <X size={13} className="text-danger" aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+    </button>
   );
 }
 
@@ -147,20 +146,19 @@ function ReadOnlyIdentity({ name, email, avatarUrl, action, children }: {
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3 text-left" data-testid="account-identity">
+    <div className="flex items-center gap-3 text-left" data-testid="account-identity">
       {avatarUrl ? (
         <img src={avatarUrl} alt="" width={36} height={36} className="size-9 shrink-0 rounded-full object-cover" />
       ) : (
         <InitialsAvatar initials={profileInitials({ name, email })} size={36} />
       )}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px] font-semibold text-ink">{profileLabel({ name, email })}</div>
+        <div className="truncate text-[13px] font-medium leading-[18px] text-ink">{profileLabel({ name, email })}</div>
         <MyLabelField />
-        <EmailRow action={action}>
-          {email && <div className="truncate text-[13px] text-ink-secondary">{email}</div>}
-        </EmailRow>
+        <EmailLine email={email} />
         {children}
       </div>
+      {action && <div className="shrink-0" data-account-action="">{action}</div>}
     </div>
   );
 }
@@ -177,8 +175,7 @@ function SignOutButton({ onFailed }: { onFailed: (failed: boolean) => void }) {
     void bridge.leave().catch(() => onFailed(true)).finally(() => setBusy(false));
   };
   return (
-    <button type="button" onClick={leave} disabled={busy} className="ui-button inline-flex items-center gap-1.5">
-      <LogOut size={13} aria-hidden="true" />
+    <button type="button" onClick={leave} disabled={busy} className="ui-button">
       {t("settings.serverMode.signOut")}
     </button>
   );
@@ -276,8 +273,8 @@ function OperatorIdentity({ action }: { action: React.ReactNode }) {
 
   const initials = (name.trim() || email.trim() || "?").slice(0, 1).toUpperCase();
   return (
-    <div className="flex items-start gap-3" data-testid="account-identity">
-      <div className="relative">
+    <div className="flex items-center gap-3" data-testid="account-identity">
+      <div className="relative shrink-0">
         <button
           type="button"
           aria-label={t("settings.profile.changeAvatar")}
@@ -296,12 +293,14 @@ function OperatorIdentity({ action }: { action: React.ReactNode }) {
         <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label={t("settings.profile.uploadAvatar")} onChange={(event) => { choosePhoto(event.target.files?.[0]); event.target.value = ""; }} />
       </div>
       <div className="min-w-0 flex-1">
-        <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => save()} placeholder={t("settings.profile.name")} className="w-full bg-transparent text-[14px] font-semibold text-ink placeholder:text-ink-secondary focus:outline-none" />
+        <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => save()} placeholder={t("settings.profile.name")} className="w-full bg-transparent text-[13px] font-medium leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none" />
         <MyLabelField />
-        <EmailRow action={action}>
-          <input type="email" aria-label={t("phone.signIn.email")} value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => save()} placeholder="you@example.com" className="w-full bg-transparent text-[13px] text-ink-secondary placeholder:text-ink-secondary focus:outline-none" />
-        </EmailRow>
+        <div className="flex min-w-0 items-center gap-1">
+          <input type="email" aria-label={t("phone.signIn.email")} value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => save()} placeholder="you@example.com" className="min-w-[12ch] max-w-full bg-transparent text-[13px] leading-[18px] text-ink-secondary [field-sizing:content] placeholder:text-ink-secondary focus:outline-none" />
+          {email.trim() && <OperatorCopyEmail email={email.trim()} />}
+        </div>
       </div>
+      {action && <div className="shrink-0" data-account-action="">{action}</div>}
     </div>
   );
 }

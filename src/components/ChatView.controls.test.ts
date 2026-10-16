@@ -40,6 +40,15 @@ vi.mock("./ApprovalModeSelector", () => ({ ApprovalModeSelector: (props: Compone
   return createElement("span", { "data-test-approval-control": true });
 } }));
 
+// The + menu opens on a click; rendered statically here with its items and
+// rows laid out, so the rows it holds (approval level, workspace) are seen.
+vi.mock("./ComposerControls", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./ComposerControls")>();
+  return { ...original, ComposerPlusMenu: (props: ComponentProps<typeof original.ComposerPlusMenu>) => createElement("div", { "data-test-plus-menu": true },
+    ...props.items.map((item) => createElement("button", { key: item.id, "data-composer-plus-item": item.id }, item.label)),
+    props.rows?.(() => {})) };
+});
+
 const { ChatView, ErrorRow, FailedTurnRow, NewConversationInstead, claudeUpdateTarget } = await import("./ChatView");
 const { setAdvancedMode } = await import("@/lib/interface-mode");
 const { activityPreview } = await import("@/lib/failed-turn");
@@ -94,15 +103,16 @@ describe("thread control placement", () => {
       const advanced = composerOf(true);
       expect(simple.row).not.toContain('data-testid="place-chip"');
       expect(advanced.row).toContain('data-testid="place-chip"');
-      const withoutPlace = (row: string) => row.replace(/<div class="relative flex items-center"><button[^>]*data-testid="place-chip"[\s\S]*?<\/button><\/div>/, "");
+      const withoutPlace = (row: string) => row.replace(/<div class="relative flex items-center w-full"><button[^>]*data-testid="place-chip"[\s\S]*?<\/button><\/div>/, "");
       expect(withoutPlace(advanced.row)).toBe(simple.row);
-      expect(simple.props).toMatchObject({ align: "left" });
+      expect(simple.props).toMatchObject({ align: "left", variant: "row" });
       expect(Object.keys(simple.props ?? {})).toEqual(Object.keys(advanced.props ?? {}));
-      // paperclip, approval icon, the message field, then the model chip
+      // one + (attach files, then the approval row), the message field, then the model chip
       const row = simple.row;
       expect(row).not.toContain("data-composer-approval");
-      expect(row.indexOf('aria-label="Attach a file"')).toBeGreaterThan(-1);
-      expect(row.indexOf("data-test-approval-control")).toBeGreaterThan(row.indexOf('aria-label="Attach a file"'));
+      expect(row).not.toContain('aria-label="Attach a file"');
+      expect(row.indexOf('data-composer-plus-item="attach"')).toBeGreaterThan(-1);
+      expect(row.indexOf("data-test-approval-control")).toBeGreaterThan(row.indexOf('data-composer-plus-item="attach"'));
       expect(row.indexOf("data-test-approval-control")).toBeLessThan(row.indexOf("<textarea"));
       expect(row.indexOf("data-test-model-control")).toBeGreaterThan(row.indexOf("data-composer-actions"));
     } finally {

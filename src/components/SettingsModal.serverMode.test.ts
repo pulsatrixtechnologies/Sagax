@@ -68,14 +68,14 @@ function nestedCardBorders(html: string): string[] {
 }
 
 describe("Settings in server mode", () => {
-  it("General is one account card: who, label, email with Sign out, managed by the organization, then the help line", () => {
+  it("General's Account row: who, label, email, managed by the organization, Sign out at the right, no help paragraph", () => {
     fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
     fixture.viewer = { principalId: "pr_jean", name: "Jean Tremblay", email: "jean@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
     const html = render();
     const card = html.slice(html.indexOf('data-settings-card="general.account"'));
     expect(html.match(/data-settings-card="general\.(?:account|profile|serverMode)"/g)).toEqual(['data-settings-card="general.account"']);
-    // in order: name, label, email + Sign out, managed, Edit in Perspicax, help
-    const order = [">Jean Tremblay<", "Add a label", ">jean@example.com<", "Sign out</button>", "Managed by your organization", "Edit in Perspicax", "Your bots run on this server."];
+    // in order: name, label, email, managed · Edit in Perspicax, then Sign out
+    const order = [">Jean Tremblay<", "Add a label", ">jean@example.com<", "Managed by your organization", "Edit in Perspicax", "Sign out</button>"];
     const positions = order.map((text) => card.indexOf(text));
     expect(positions.every((at) => at >= 0)).toBe(true);
     expect([...positions].sort((x, y) => x - y)).toEqual(positions);
@@ -85,6 +85,9 @@ describe("Settings in server mode", () => {
     expect(html.match(/Jean Tremblay/g)).toHaveLength(1);
     expect(html.match(/jean@example\.com/g)).toHaveLength(1);
     expect(html).toMatch(/<button type="button" class="ui-button[^"]*">.*?Sign out<\/button>/);
+    expect(html).not.toContain("Your bots run on this server.");
+    expect(html).not.toContain("data-account-help");
+    expect(card).toContain('aria-label="Copy email"');
     expect(html).not.toMatch(/>Change<\/button>/);
     expect(html).not.toContain("Switch server");
   });
@@ -101,11 +104,11 @@ describe("Settings in server mode", () => {
     expect(html).toContain('title="Connecté à bot.example.test · Organisation : Example"');
   });
 
-  it("a server whose profile is not managed names the server in the help line", () => {
+  it("a server whose profile is not managed names the server on the account's second line", () => {
     fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
     fixture.viewer = { principalId: "pr_jean", name: "Jean Tremblay", email: "jean@example.com" };
     const html = render();
-    expect(html).toContain('Connected to <strong class="font-semibold text-ink">bot.example.test</strong>');
+    expect(html).toContain(">Connected to bot.example.test · Organization: Example</div>");
     expect(html).not.toContain("Managed by your organization");
     expect(html).toContain("Sign out</button>");
   });
@@ -124,7 +127,7 @@ describe("Settings in server mode", () => {
     expect(html).not.toContain("<textarea");
   });
 
-  it("on a personal server: editable name and email, the label, the server switcher and the local help line", () => {
+  it("on a personal server: editable name and email, the label and the server switcher", () => {
     fixture.serverMode = { active: false };
     fixture.viewer = { principalId: "pr_me", operator: true };
     fixture.workspace = { available: true, current: { local: true, name: "This Mac" }, open: false, error: "", openMenu: () => {} };
@@ -133,7 +136,7 @@ describe("Settings in server mode", () => {
     expect(html).toContain('aria-label="Your name"');
     expect(html).toContain("Add a label");
     expect(html).toContain('aria-label="Switch server: This Mac"');
-    expect(html).toContain("No server: your bots, conversations and keys stay on this computer.");
+    expect(html).not.toContain("data-account-help");
     expect(html).not.toContain("Managed by your organization");
     expect(html).not.toContain("Edit in Perspicax");
     expect(html).not.toContain("Sign out</button>");

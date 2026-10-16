@@ -106,3 +106,22 @@ export async function openDataWindow(request: { botId: string; title: string; ca
   opened.focus();
   return "created";
 }
+
+/** The tool that loads a table into the bot's database, under whatever
+ * prefix the engine gives an MCP tool (`mcp__<server>__data_load`, ...). */
+const DATA_LOAD_TOOL = /(?:^|[_.:/-])data_load$/;
+
+/** Whether this conversation has something the Data window can show: a
+ * result the bot put on its sheet (the DataResultChip line `data_show`
+ * leaves) or a table it loaded (`data_load`, shown under Sources). Read
+ * from the messages the page already has, so the chat header's Data entry
+ * follows the conversation live without asking the server. */
+export function conversationHasData(messages: ReadonlyArray<{ dataResult?: unknown; tool?: { name: string; ok?: boolean } }> | undefined): boolean {
+  if (!messages) return false;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]!;
+    if (message.dataResult) return true;
+    if (message.tool && message.tool.ok !== false && DATA_LOAD_TOOL.test(message.tool.name)) return true;
+  }
+  return false;
+}

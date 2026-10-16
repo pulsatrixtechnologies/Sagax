@@ -882,8 +882,8 @@ is exclusive (server mode): the app then shows that server only. There is no
 **This computer** in the server switcher or the Server menu, no other saved
 server and no **Connect to a server**, and the packaged app starts no local
 server, so no bot runs on this computer. Every bot runs on the
-organization's server. The one way out is **Settings > General > Server >
-Change** (or **Server > Change server…** in the menu bar): after a
+organization's server. The one way out is **Settings > General > System >
+Server > Change** (or **Server > Change server…** in the menu bar): after a
 confirmation the app signs out of the server, forgets it and its page data,
 and returns to the launch screen. **No server** there brings back the solo
 app with its local bots, conversations and keys exactly as they were. An

@@ -1,9 +1,10 @@
-import { useId, useSyncExternalStore, type ComponentProps } from "react";
+import { useId, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { Check, ChevronDown, CircleHelp, Copy, X } from "lucide-react";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { SWITCH_OFF, SWITCH_ON, SWITCH_THUMB_OFF, SWITCH_THUMB_ON } from "@/lib/status-tones";
 import { useCopyFeedback } from "@/lib/copy-text";
+import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 
 export function Switch({
   checked,
@@ -323,6 +324,162 @@ export function CommandLine({ command, copyLabel = "Copy command" }: { command: 
       >
         {state === "copied" ? <Check size={13} className="text-success" /> : state === "failed" ? <X size={13} className="text-danger" /> : <Copy size={13} />}
       </button>
+    </div>
+  );
+}
+
+/** A titled group of settings, as Grok Bot's settings pages draw them: a
+ * grey heading outside the card (Account, Appearance, System), then one
+ * rounded card of compact rows. An empty group draws nothing. */
+export function SettingsGroup({
+  title,
+  groupId,
+  children,
+}: {
+  title: string;
+  /** `data-settings-group`, for tests and deep links */
+  groupId: string;
+  children: React.ReactNode;
+}) {
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} data-settings-group={groupId} className="flex flex-col gap-2 has-[>div:empty]:hidden">
+      <h3 id={headingId} className="px-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{title}</h3>
+      <div className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5 empty:hidden">{children}</div>
+    </section>
+  );
+}
+
+export type PillOption<T extends string> = { value: T; label: string };
+
+/** Grok Bot's borderless pill menu ("Follow System ⌄"): the current value
+ * and a chevron; the choices open in a small list under it. A listbox, so
+ * arrows, Home/End, Enter and Escape work as in a native select. */
+export function PillSelect<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  disabled,
+}: {
+  value: T;
+  options: ReadonlyArray<PillOption<T>>;
+  onChange: (next: T) => void;
+  ariaLabel: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const listId = useId();
+  const current = options.find((option) => option.value === value);
+  const close = (focusTrigger = false) => {
+    setOpen(false);
+    if (focusTrigger) triggerRef.current?.focus();
+  };
+  usePopoverDismiss(open, rootRef, () => close(true));
+  const focusOption = (index: number) => {
+    const items = [...(listRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
+    if (items.length === 0) return;
+    items[(index + items.length) % items.length]?.focus();
+  };
+  const show = () => {
+    setOpen(true);
+    const selected = Math.max(0, options.findIndex((option) => option.value === value));
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => focusOption(selected));
+  };
+  const choose = (next: T) => {
+    close(true);
+    if (next !== value) onChange(next);
+  };
+  return (
+    <div ref={rootRef} className="relative inline-flex justify-end">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        disabled={disabled}
+        title={current?.label}
+        onClick={() => (open ? close() : show())}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            show();
+          } else if (event.key === "Escape" && open) {
+            event.preventDefault();
+            close();
+          }
+        }}
+        data-pill-select=""
+        className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full px-2.5 text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-not-allowed disabled:opacity-50 aria-expanded:bg-hover motion-reduce:transition-none"
+      >
+        <span className="min-w-0 truncate">{current?.label ?? value}</span>
+        <ChevronDown size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+      </button>
+      {open && (
+        <ul
+          ref={listRef}
+          id={listId}
+          role="listbox"
+          aria-label={ariaLabel}
+          onKeyDown={(event) => {
+            const items = [...(listRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
+            const index = items.indexOf(document.activeElement as HTMLElement);
+            if (event.key === "ArrowDown") { event.preventDefault(); focusOption(index + 1); }
+            else if (event.key === "ArrowUp") { event.preventDefault(); focusOption(index - 1); }
+            else if (event.key === "Home") { event.preventDefault(); focusOption(0); }
+            else if (event.key === "End") { event.preventDefault(); focusOption(items.length - 1); }
+            else if (event.key === "Tab") close();
+            else if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+              // Handled here, before the Settings modal's own Escape (a
+              // window listener that skips a handled event): close the
+              // menu, not Settings.
+              event.preventDefault();
+              close(true);
+            }
+          }}
+          className="popover-surface absolute right-0 top-full z-40 mt-1 flex max-h-[280px] w-max min-w-[180px] max-w-[min(18rem,calc(100vw-2rem))] flex-col gap-0.5 overflow-y-auto rounded-xl border-[0.5px] border-border bg-elevated p-1.5"
+        >
+          {options.map((option) => {
+            const selected = option.value === value;
+            return (
+              <li
+                key={option.value}
+                role="option"
+                aria-selected={selected}
+                tabIndex={-1}
+                onClick={() => choose(option.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    choose(option.value);
+                  }
+                }}
+                className="flex min-h-[30px] cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1.5 text-[13px] leading-[18px] text-ink hover:bg-ink/[0.06] focus-visible:bg-ink/[0.06] focus-visible:outline-none"
+              >
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                <Check size={14} aria-hidden="true" className={cn("shrink-0 text-ink-secondary", !selected && "invisible")} />
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** A compact Grok-style row: the label at the left, the control at the
+ * right, no help text. */
+export function CompactRow({ label, children, className, rowId }: { label: string; children: React.ReactNode; className?: string; rowId?: string }) {
+  const labelId = useId();
+  return (
+    <div role="group" aria-labelledby={labelId} data-settings-row={rowId} className={cn("flex min-h-[44px] items-center justify-between gap-5 px-3.5 py-2", className)}>
+      <div id={labelId} className="min-w-0 text-[13px] leading-[18px] text-ink">{label}</div>
+      <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">{children}</div>
     </div>
   );
 }

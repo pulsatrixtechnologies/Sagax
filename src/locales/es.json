@@ -30,7 +30,6 @@
   "settings.roomTurns.error": "No se pudo guardar el límite de turno del grupo.",
   "settings.roomTurns.range": "Escribe un número entero del 1 al 1440.",
   "settings.language.title": "Idioma",
-  "settings.language.subtitle": "La app sigue el idioma de tu sistema salvo que elijas uno aquí. Por ahora solo hay parte de la interfaz traducida: el texto sin traducir se queda en inglés.",
   "settings.language.system": "Sistema",
   "settings.language.aria": "Idioma de la app",
   "settings.language.error": "No se pudo guardar el idioma.",

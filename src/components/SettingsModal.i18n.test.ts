@@ -55,7 +55,11 @@ describe("Settings → General", () => {
     setLocale("fr");
     const fr = await renderSettings();
     expect(fr).toContain(">Réglages<");
-    expect(fr).toContain("Accès aux outils, conversations parallèles");
+    expect(fr).toContain("Accès des personnes aux outils, nettoyage des conversations");
+    // General is grouped as Grok Bot's: grey headings over the cards
+    expect(fr).toContain(">Compte</h3>");
+    expect(fr).toContain(">Apparence</h3>");
+    expect(fr).toContain(">Système</h3>");
     expect(fr).not.toMatch(/[\u2013\u2014]/);
   });
 
@@ -65,7 +69,7 @@ describe("Settings → General", () => {
     expect(en).toContain("Settings");
     expect(en).toContain("Models and voice");
     // the technical cards are one row away, on General > Advanced
-    expect(en).toContain("Tool access, parallel conversations");
+    expect(en).toContain("tool access, conversation cleanup, diagnostics");
   });
 
   it("offers a labeled compact section picker without removing desktop navigation", async () => {

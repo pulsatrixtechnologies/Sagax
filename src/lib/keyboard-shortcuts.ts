@@ -74,6 +74,12 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
         winKeys: ["Enter"],
       },
       {
+        id: "dictate",
+        description: "Dictate into the message field (again to stop)",
+        macKeys: ["⌘", "D"],
+        winKeys: ["Ctrl", "D"],
+      },
+      {
         id: "new-line",
         description: "Insert new line without sending",
         macKeys: ["⇧", "Return"],
