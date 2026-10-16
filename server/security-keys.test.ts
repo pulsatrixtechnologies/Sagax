@@ -75,7 +75,8 @@ describe("registration", () => {
     expect(view).toMatchObject({ id: key.credentialId, rpId: RP, name: "Key" });
     expect(view).not.toHaveProperty("publicKey");
     const file = join(dir, "security-keys.json");
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix mode bits (Node reports 0o666)
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it("refuses an answer from another origin and spends the ceremony", async () => {

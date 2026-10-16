@@ -31,7 +31,8 @@ describe("artifact store", () => {
     if (!made.ok) return;
     expect(made.artifact).toMatchObject({ botId: "bot-a", threadId: "t1", title: "Open tickets", favorite: false, popped: false, rev: 1, intervalSeconds: 60, refresh: { state: "idle", failures: 0 } });
     expect(made.artifact.id).toMatch(/^art_/);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix mode bits (Node reports 0o666)
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(frames).toEqual([{ kind: "artifacts", botId: "bot-a", artifactId: made.artifact.id }]);
     // survives a restart
     expect(open().get(made.artifact.id)).toEqual(made.artifact);
