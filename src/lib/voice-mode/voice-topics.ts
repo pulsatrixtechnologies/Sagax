@@ -27,8 +27,41 @@ export function topicLabel(text: string): string {
   return line.length > 48 ? `${line.slice(0, 45).trimEnd()}...` : line;
 }
 
+/** What a stop says, as whole word sequences (folded, no punctuation). */
+const STOP_PHRASES = [
+  "stop", "stop that", "stop it", "stop ca", "arrete", "arrete ca", "arrete toi", "arretez", "arrete tout",
+  "cancel", "cancel that", "cancel it", "tais toi", "taisez vous", "shut up", "enough", "that s enough", "thats enough",
+  "ca suffit", "never mind", "laisse faire", "laisse tomber", "nevermind",
+].map((phrase) => phrase.split(" "));
+/** Words a stop may carry around it: fillers and politeness ("ok stop",
+ * "stop please", "arrête ça s'il te plaît"). "s il te plait" is folded to
+ * one word first. */
+const STOP_COMPANIONS = new Set([
+  "ok", "okay", "please", "stp", "svp", "merci", "thanks", "hey", "euh", "um", "uh", "hum", "bon", "ben", "la", "non", "no", "juste", "just", "wait", "attends",
+  "stop", "arrete",
+]);
+const MAX_STOP_COMPANIONS = 2;
+
+function stopWords(text: string): string[] {
+  const folded = fold(text).replace(/\bs\W*il (te|vous) pla[iî]t\b/g, "stp");
+  return folded.match(/[a-z0-9]+/g) ?? [];
+}
+
+/** The whole utterance is a stop ("stop", "arrête ça", "ok stop", "stop
+ * please", with at most two filler or polite words), never a request that
+ * starts with the word: "Stop le service CrowdStrike sur SRV-01" is work
+ * to do, not a stop. */
 export function isStopUtterance(text: string): boolean {
-  return /^(stop|arrete|cancel|tais[- ]toi|shut up|enough)\b/.test(fold(text));
+  const words = stopWords(text);
+  if (!words.length) return false;
+  for (const phrase of STOP_PHRASES) {
+    for (let at = 0; at + phrase.length <= words.length; at++) {
+      if (!phrase.every((word, i) => words[at + i] === word)) continue;
+      const rest = [...words.slice(0, at), ...words.slice(at + phrase.length)];
+      if (rest.length <= MAX_STOP_COMPANIONS && rest.every((word) => STOP_COMPANIONS.has(word))) return true;
+    }
+  }
+  return false;
 }
 
 export function isCorrectionUtterance(text: string): boolean {

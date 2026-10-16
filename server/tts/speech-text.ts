@@ -130,6 +130,19 @@ export function speakable(input: string): string {
   return /[\p{L}\p{N}]/u.test(text) ? text : "";
 }
 
+/**
+ * Words appended to an open utterance, made speakable like `speakable` but
+ * with their edges kept: " pense" stays apart from the word before it, and a
+ * lone "." or "?" still ends the sentence. Nothing to say: "".
+ */
+export function speakableDelta(input: string): string {
+  if (!/\S/.test(input)) return "";
+  const before = /^\s/.test(input) ? " " : "";
+  const after = /\s$/.test(input) ? " " : "";
+  const core = speakable(input) || input.replace(/[^.,!?;:…]/g, "");
+  return core ? `${before}${core}${after}` : "";
+}
+
 /** Sentence-ish boundary: `.`/`!`/`?` followed by space, but not inside a
  * decimal, an ellipsis, or a common abbreviation. */
 const BOUNDARY = /(?<!\b(?:e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms|No|approx))(?<![.\d])([.!?])(["')\]]*)\s+/g;

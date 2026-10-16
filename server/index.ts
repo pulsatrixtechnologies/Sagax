@@ -701,6 +701,7 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
+import { configuredKeyterms, VOICE_KEYTERM_RECENT_MESSAGES, voiceKeyterms } from "./voice-keyterms.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
@@ -27194,9 +27195,27 @@ ROUTES.push(createVoiceModeRoutes({
   },
   upgrade: (req) => desktopViewer.upgradeOf(req),
   utterances: toUtterances,
+  keyterms: (target, speaker) => {
+    const person = speaker.principalId && isPrincipalId(speaker.principalId) ? principals.byId(speaker.principalId) : null;
+    const viewer = IDENTITY.kind === "perspicax" ? authzViewerFromId(speaker.principalId) : null;
+    const otherBotNames = store.bots
+      .filter((bot) => bot.id !== target.botId && (IDENTITY.kind !== "perspicax" || (viewer && canOnBot(viewer, "bot.use", botFacts(bot)))))
+      .map((bot) => bot.name);
+    // target() already checked this person may read the thread
+    const recentTexts = store.messagesTail(target.threadId, VOICE_KEYTERM_RECENT_MESSAGES).messages
+      .filter((message) => message.kind === "text" && typeof message.text === "string")
+      .map((message) => message.text as string);
+    return voiceKeyterms({
+      botName: target.botName,
+      ...(person?.name ? { personName: person.name } : {}),
+      otherBotNames,
+      configured: configuredKeyterms(process.env.SAGAX_VOICE_KEYTERMS),
+      recentTexts,
+    });
+  },
   callSession: {
-    start: (target, callId, language, auth) => {
-      voiceCalls.start(target.threadId, callId, language);
+    start: (target, callId, language, auth, heartbeat) => {
+      voiceCalls.start(target.threadId, callId, language, heartbeat === true);
       if (!auth) return;
       const bot = store.bot(target.botId);
       if (!bot) return;

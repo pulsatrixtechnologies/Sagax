@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { USER_PREFERENCE_KEYS } from "../../../shared/user-preferences";
-import { DEFAULT_VOICE_MODE_SETTINGS, VOICE_MODE_STORAGE_KEY, cleanVoiceModeSettings, sttLanguage, ttsLanguage } from "../../../shared/voice-mode";
+import { DEFAULT_VOICE_MODE_SETTINGS, VOICE_MODE_STORAGE_KEY, cleanVoiceLocale, cleanVoiceModeSettings, stripFillers, sttLanguage, sttRequest, ttsLanguage } from "../../../shared/voice-mode";
 import { encodeWav, toPcm16 } from "./audio";
+import { voiceModeListenUrl } from "./api";
 import { readVoiceModeSettings, speedLabel, writeVoiceModeSettings } from "./settings";
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -50,6 +51,51 @@ describe("voice mode settings", () => {
     expect(sttLanguage("auto")).toBeUndefined();
     expect(speedLabel(1)).toBe("1x");
     expect(speedLabel(1.25)).toBe("1.25x");
+  });
+
+  it("asks xAI for French and formatting when auto meets a French locale", () => {
+    // auto on a fr-CA computer: the French waits and formatting apply
+    expect(sttRequest("auto", "fr-CA")).toEqual({ language: "fr", format: true });
+    expect(sttRequest("auto", "fr")).toEqual({ language: "fr", format: true });
+    // auto elsewhere stays pure detection
+    expect(sttRequest("auto", "en-US")).toEqual({ format: false });
+    expect(sttRequest("auto")).toEqual({ format: false });
+    // an explicit language: formatting where xAI formats it (en, fr)
+    expect(sttRequest("fr")).toEqual({ language: "fr", format: true });
+    expect(sttRequest("en", "fr-CA")).toEqual({ language: "en", format: true });
+    expect(sttRequest("pt-BR")).toEqual({ language: "pt", format: false });
+    // no STT language for it: detection, no formatting
+    expect(sttRequest("zh", "fr-CA")).toEqual({ format: false });
+  });
+
+  it("sends the computer's locale beside auto only", () => {
+    const auto = new URL(voiceModeListenUrl("b-1", "auto", "t-1", "https://app.test", "fr-CA"));
+    expect(auto.protocol).toBe("wss:");
+    expect(auto.searchParams.get("locale")).toBe("fr-CA");
+    expect(new URL(voiceModeListenUrl("b-1", "en", "t-1", "https://app.test", "fr-CA")).searchParams.get("locale")).toBeNull();
+    expect(new URL(voiceModeListenUrl("b-1", "auto", undefined, "https://app.test", "")).searchParams.get("locale")).toBeNull();
+  });
+
+  it("keeps only a well formed locale", () => {
+    expect(cleanVoiceLocale("fr-CA")).toBe("fr-CA");
+    expect(cleanVoiceLocale("en")).toBe("en");
+    expect(cleanVoiceLocale("zh-Hant-TW")).toBe("zh-Hant-TW");
+    expect(cleanVoiceLocale("fr-CA; drop table")).toBeUndefined();
+    expect(cleanVoiceLocale("")).toBeUndefined();
+    expect(cleanVoiceLocale(42)).toBeUndefined();
+    expect(cleanVoiceLocale("x".repeat(40))).toBeUndefined();
+  });
+
+  it("removes fillers from the words a bot reads, never the words themselves", () => {
+    expect(stripFillers("Euh, peux-tu regarder le billet euh de CONTOSO?")).toBe("Peux-tu regarder le billet de CONTOSO?");
+    expect(stripFillers("um so the uh server is down")).toBe("so the server is down");
+    expect(stripFillers("Hum... ok, regarde")).toBe("Ok, regarde");
+    expect(stripFillers("euh")).toBe("");
+    // words that only look like fillers stay
+    expect(stripFillers("Humain, humble, Uhaul")).toBe("Humain, humble, Uhaul");
+    expect(stripFillers("Ben oui")).toBe("Ben oui");
+    // a backchannel is not a filler: the call decides what to do with it
+    expect(stripFillers("mm-hmm")).toBe("mm-hmm");
   });
 });
 

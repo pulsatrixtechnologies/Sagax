@@ -94,26 +94,78 @@ export async function speakVoiceMode(
   return res.blob();
 }
 
+/** A clause's POST with no first byte, or no next chunk, for this long has
+ * stalled: it errors, so the player moves on and the call is never stuck. */
+export const SPEECH_STALL_MS = 8_000;
+
 /** One sentence of the bot's answer, spoken as xAI makes it
  * (POST /voice/stream): raw 16-bit PCM, its rate in `x-voice-sample-rate`.
- * null when there is nothing to say (204). */
+ * null when there is nothing to say (204). Stalls (SPEECH_STALL_MS before
+ * the answer or between two chunks) abort the request and error the body. */
 export async function streamVoiceModeSpeech(
   botId: string,
   text: string,
   settings: VoiceModeSettings,
   threadId?: string,
   signal?: AbortSignal,
+  stallMs = SPEECH_STALL_MS,
 ): Promise<{ body: ReadableStream<Uint8Array>; sampleRate: number } | null> {
-  const res = await fetch(`${base(botId)}/stream`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text, voice: settings.voice, speed: settings.speed, language: settings.language, ...(threadId ? { threadId } : {}) }),
-    signal,
-  });
+  const controller = new AbortController();
+  const forward = () => controller.abort(signal?.reason);
+  if (signal?.aborted) forward();
+  else signal?.addEventListener("abort", forward, { once: true });
+  const stalled = () => controller.abort(new Error("the voice service stalled"));
+  const done = () => signal?.removeEventListener("abort", forward);
+  const timer = setTimeout(stalled, stallMs);
+  let res: Response;
+  try {
+    res = await fetch(`${base(botId)}/stream`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text, voice: settings.voice, speed: settings.speed, language: settings.language, ...(threadId ? { threadId } : {}) }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    clearTimeout(timer);
+    done();
+    throw controller.signal.aborted && !signal?.aborted ? new Error("the voice service stalled") : error;
+  }
+  clearTimeout(timer);
+  if (res.status === 204 || !res.ok || !res.body) done();
   if (res.status === 204) return null;
   if (!res.ok) throw await failure(res);
   if (!res.body) throw new Error("the voice service returned no audio");
-  return { body: res.body, sampleRate: Number(res.headers.get("x-voice-sample-rate")) || 24_000 };
+  const reader = res.body.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(out) {
+      let wait: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const next = await Promise.race([
+          reader.read(),
+          new Promise<never>((_, reject) => {
+            wait = setTimeout(() => reject(new Error("the voice service stalled")), stallMs);
+          }),
+        ]);
+        if (next.done) {
+          done();
+          out.close();
+        } else out.enqueue(next.value);
+      } catch (error) {
+        stalled();
+        done();
+        void reader.cancel().catch(() => {});
+        out.error(error);
+      } finally {
+        clearTimeout(wait);
+      }
+    },
+    cancel(reason) {
+      done();
+      controller.abort(reason);
+      return reader.cancel(reason).catch(() => {});
+    },
+  });
+  return { body, sampleRate: Number(res.headers.get("x-voice-sample-rate")) || 24_000 };
 }
 
 /** Tell the server the thread is on a call (POST /voice/call): every send
@@ -138,10 +190,28 @@ export async function voiceCallSession(
 }
 
 /** The live call's streaming speech to text socket (GET /voice/listen). */
-export function voiceModeListenUrl(botId: string, language: string, threadId?: string, origin = typeof location === "undefined" ? "http://localhost" : location.origin): string {
-  const query = new URLSearchParams({ language, ...(threadId ? { threadId } : {}) });
-  return `${origin.replace(/^http/, "ws")}${base(botId)}/listen?${query}`;
+/** The person's browser or app locale (fr-CA...), sent beside "auto" so the
+ * server can ask xAI for French on a French computer (shared/voice-mode.ts
+ * sttRequest, which validates it). */
+export function voiceLocale(): string | undefined {
+  try {
+    return typeof navigator !== "undefined" && typeof navigator.language === "string" && navigator.language ? navigator.language : undefined;
+  } catch {
+    return undefined;
+  }
 }
+
+function sttQuery(language: string, threadId: string | undefined, locale: string | undefined): URLSearchParams {
+  return new URLSearchParams({ language, ...(language === "auto" && locale ? { locale } : {}), ...(threadId ? { threadId } : {}) });
+}
+
+export function voiceModeListenUrl(botId: string, language: string, threadId?: string, origin = typeof location === "undefined" ? "http://localhost" : location.origin, locale = voiceLocale()): string {
+  return `${origin.replace(/^http/, "ws")}${base(botId)}/listen?${sttQuery(language, threadId, locale)}`;
+}
+
+/** A whole-turn upload that has not answered in this long is given up (the
+ * transcriber tries once more, then tells the person). */
+export const TRANSCRIBE_TIMEOUT_MS = 20_000;
 
 export async function transcribeVoiceMode(
   botId: string,
@@ -149,17 +219,28 @@ export async function transcribeVoiceMode(
   language: string,
   threadId?: string,
   signal?: AbortSignal,
+  timeoutMs = TRANSCRIBE_TIMEOUT_MS,
 ): Promise<string> {
-  const query = new URLSearchParams({ language, ...(threadId ? { threadId } : {}) });
-  const res = await fetch(`${base(botId)}/transcribe?${query}`, {
-    method: "POST",
-    headers: { "content-type": audio.type || "audio/wav" },
-    body: audio,
-    signal,
-  });
-  if (!res.ok) throw await failure(res);
-  const body = (await res.json()) as { text?: string };
-  return typeof body.text === "string" ? body.text : "";
+  const query = sttQuery(language, threadId, voiceLocale());
+  const controller = new AbortController();
+  const forward = () => controller.abort(signal?.reason);
+  if (signal?.aborted) forward();
+  else signal?.addEventListener("abort", forward, { once: true });
+  const timer = setTimeout(() => controller.abort(new Error("the voice service did not answer")), timeoutMs);
+  try {
+    const res = await fetch(`${base(botId)}/transcribe?${query}`, {
+      method: "POST",
+      headers: { "content-type": audio.type || "audio/wav" },
+      body: audio,
+      signal: controller.signal,
+    });
+    if (!res.ok) throw await failure(res);
+    const body = (await res.json()) as { text?: string };
+    return typeof body.text === "string" ? body.text : "";
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", forward);
+  }
 }
 
 // One answer per bot, shared by the call button and the call itself. A

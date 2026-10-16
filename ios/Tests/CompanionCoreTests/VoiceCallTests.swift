@@ -877,6 +877,32 @@ final class VoiceModeClientTests: XCTestCase {
         XCTAssertFalse(old, "an older server without the route: best effort")
     }
 
+    func testTheCallsStartBringsBackTheKeyterms() async throws {
+        VoiceStub.body = Data(#"{"ok":true,"keyterms":["Cryptic","  ServiceNow ","servicenow","","CrowdStrike"]}"#.utf8)
+        let terms = await client.voiceCallStart(botId: "ara", callId: "call-12345678", threadId: "th-1", language: "fr")
+        XCTAssertEqual(terms, ["Cryptic", "ServiceNow", "CrowdStrike"])
+        let (request, body) = try XCTUnwrap(VoiceStub.requests.last)
+        XCTAssertEqual(request.url?.path, "/api/bots/ara/voice/call")
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(body)) as? [String: Any])
+        XCTAssertEqual(json["state"] as? String, "start")
+        XCTAssertEqual(json["language"] as? String, "fr")
+
+        VoiceStub.body = Data(#"{"ok":true}"#.utf8)
+        let older = await client.voiceCallStart(botId: "ara", callId: "call-12345678", threadId: "th-1", language: nil)
+        XCTAssertEqual(older, [], "a server without the field: no bias, the call goes on")
+        VoiceStub.status = 404
+        let failed = await client.voiceCallStart(botId: "ara", callId: "call-12345678", threadId: nil, language: nil)
+        XCTAssertNil(failed)
+    }
+
+    func testCallKeytermsAreCleanedAndCapped() {
+        XCTAssertEqual(CallKeyterms.contextual(["  Acme   Technologies ", "ACME technologies", "x", String(repeating: "a", count: 51)]), ["Acme Technologies", "x"])
+        let many = (0..<150).map { "Term\($0)" }
+        XCTAssertEqual(CallKeyterms.contextual(many).count, 100)
+        XCTAssertEqual(CallKeyterms.contextual(many).first, "Term0")
+        XCTAssertEqual(CallKeyterms.contextual([]), [])
+    }
+
     func testStatusAndStreamSpeakTheServersContract() async throws {
         VoiceStub.body = Data(#"{"provider":"xai","available":false,"organization":true,"refusal":{"cause":"no_credentials","keysUrl":"https://p/keys"}}"#.utf8)
         let status = try await client.voiceModeStatus(botId: "ara")

@@ -3,10 +3,16 @@ import { describe, expect, it } from "vitest";
 import { discardSpeculation, holdSpeculativePlayback, mayReviseSpeculation, maySpeculate, SPECULATIVE_REVISE_MS } from "./speculative";
 
 describe("maySpeculate", () => {
-  it("starts the LLM on four stable words, even without end-of-turn punctuation", () => {
-    expect(maySpeculate("What is the weather")).toBe(true);
-    expect(maySpeculate("Quelle heure est il")).toBe(true);
-    expect(maySpeculate("Say hello in French.")).toBe(true);
+  it("starts the LLM on four stable words at a pause, even without end-of-turn punctuation", () => {
+    expect(maySpeculate("What is the weather", true)).toBe(true);
+    expect(maySpeculate("Quelle heure est il", true)).toBe(true);
+    expect(maySpeculate("Say hello in French.", true)).toBe(true);
+  });
+
+  it("never guesses while the person is still talking", () => {
+    expect(maySpeculate("What is the weather")).toBe(false);
+    expect(maySpeculate("Say hello in French.")).toBe(false);
+    expect(maySpeculate("What is two plus two", false)).toBe(false);
   });
 
   it("waits on three words even after endpoint silence, including a trailing plus", () => {
@@ -15,7 +21,7 @@ describe("maySpeculate", () => {
     expect(maySpeculate("What is two plus")).toBe(false);
     expect(maySpeculate("What is 2 +")).toBe(false);
     expect(maySpeculate("what time now", true)).toBe(false);
-    expect(maySpeculate("What is two plus two")).toBe(true);
+    expect(maySpeculate("What is two plus two", true)).toBe(true);
   });
 
   it("starts on a closed clause only after endpoint silence, not mid-speech", () => {

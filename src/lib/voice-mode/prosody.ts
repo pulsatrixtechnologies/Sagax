@@ -7,7 +7,7 @@
 // silence (turns.ts `completeMs`) even when the streamed words carry no
 // punctuation yet. A flat pitch held on a filler or a linking word ("euh",
 // "um", "de", "pour") is a person who is not done: the turn keeps its long
-// delay. Anything else (too little voiced audio, a pitch that wobbles, a
+// delay. So is a filler that falls and fades ("euh..." trailing off). Anything else (too little voiced audio, a pitch that wobbles, a
 // sound cut at full energy as in the middle of a word) says nothing, and the
 // endpoint stays what it was without it.
 //
@@ -150,12 +150,17 @@ export function readContour(points: readonly ContourPoint[], frameMs = 32): { sh
 }
 
 /** Does the person's voice say the turn is over? `continuing`: the words so
- * far end on a filler or linking word (turns.ts). */
-export function contourVerdict(points: readonly ContourPoint[], continuing: boolean, frameMs = 32): ContourVerdict {
+ * far end on a filler or linking word (turns.ts); "filler" when it is a
+ * hesitation sound ("euh", "um"), which xAI writes since the socket keeps
+ * them (`filler_words`). */
+export function contourVerdict(points: readonly ContourPoint[], continuing: boolean | "filler", frameMs = 32): ContourVerdict {
   const { shape, fading, abrupt } = readContour(endOfVoice(points, frameMs), frameMs);
   if (shape === "unknown") return "unknown";
   // a flat, held filler: the person is looking for the next word
   if (shape === "flat") return continuing ? "unfinished" : "unknown";
+  // a filler that falls and fades ("euh..." trailing off) is a person
+  // thinking, not a statement ending: never finished
+  if (continuing === "filler" && shape === "falling") return "unfinished";
   // a word cut in its middle stops at full strength: never a finished turn
   if (abrupt) return "unknown";
   // a statement: down, and fading out

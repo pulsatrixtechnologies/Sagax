@@ -6,7 +6,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SpeechStream, SpeechStreamHandlers } from "./tts/grok.ts";
-import { createSpeechSession, SPEECH_BACKOFF_MS, type SpeechFrame } from "./voice-speech-session.ts";
+import { speakableDelta } from "./tts/speech-text.ts";
+import { createSpeechSession, SPEECH_APPEND_MAX, SPEECH_BACKOFF_MS, SPEECH_IDLE_FINISH_MS, SPEECH_MAX_REOPENS_PER_MIN, SPEECH_STABLE_MS, SPEECH_STALL_MS, type SpeechFrame } from "./voice-speech-session.ts";
 
 class FakeUpstream implements SpeechStream {
   spoken: string[] = [];
@@ -38,7 +39,7 @@ class FakeUpstream implements SpeechStream {
   drop() { this.close(); }
 }
 
-function make(maxAgeMs?: number) {
+function make(maxAgeMs?: number, delta?: (text: string, before: string) => string) {
   const upstreams: FakeUpstream[] = [];
   const frames: SpeechFrame[] = [];
   const audio: number[] = [];
@@ -59,6 +60,7 @@ function make(maxAgeMs?: number) {
     log,
     sampleRate: 24_000,
     ...(maxAgeMs !== undefined ? { maxAgeMs } : {}),
+    ...(delta ? { speakableDelta: delta } : {}),
   });
   const say = (id: string, text: string) => session.message(JSON.stringify({ type: "say", id, text }));
   const sayMore = (id: string, text: string) => session.message(JSON.stringify({ type: "say", id, text, more: true }));
@@ -111,6 +113,144 @@ describe("streaming voice session (server side)", () => {
     t.up().handlers.onDone();
     expect(t.frames).toEqual([{ type: "start", id: "c1" }, { type: "done", id: "c1" }]);
     expect(t.audio).toEqual([400, 400]);
+  });
+
+  it("an answer is one utterance: every append goes to xAI at once, text.done only at finish", async () => {
+    const t = make();
+    t.up().accept();
+    await t.session.ready;
+    t.sayMore("c1", "Bonjour,");
+    t.append("c1", " il fait beau.");
+    t.up().handlers.onAudio(new Uint8Array(48_000));
+    t.append("c1", " Autre chose?");
+    await flush();
+    // no wait for audio.done between clauses: one utterance, one intonation
+    expect(t.up().deltas).toEqual(["Bonjour,", " il fait beau.", " Autre chose?"]);
+    expect(t.up().dones).toBe(0);
+    t.finish("c1");
+    expect(t.up().dones).toBe(1);
+    t.up().handlers.onDone();
+    expect(t.frames).toEqual([{ type: "start", id: "c1" }, { type: "done", id: "c1" }]);
+    expect(t.usage).toEqual([8, 14, 13]);
+  });
+
+  it("appended text is made speakable without losing the space before it, and cut at 500 characters", async () => {
+    const t = make(undefined, speakableDelta);
+    t.up().accept();
+    await t.session.ready;
+    t.sayMore("c1", "Je");
+    t.append("c1", " pense **vraiment**");
+    t.append("c1", " 👍");
+    t.append("c1", ".");
+    t.append("c1", ` ${"a".repeat(SPEECH_APPEND_MAX + 100)}`);
+    await flush();
+    expect(t.up().deltas.slice(0, 3)).toEqual(["Je", " pense vraiment", "."]);
+    expect(t.up().deltas[3]!.length).toBeLessThanOrEqual(SPEECH_APPEND_MAX);
+  });
+
+  it("an open utterance with nothing speakable yet stays open for its words; one never given any just ends", async () => {
+    const t = make();
+    t.up().accept();
+    await t.session.ready;
+    t.sayMore("c1", "```js\nx()\n```");
+    await flush();
+    expect(t.frames).toEqual([{ type: "start", id: "c1" }]);
+    expect(t.up().deltas).toEqual([]);
+    t.append("c1", "Oui, c'est réglé.");
+    expect(t.up().deltas).toEqual(["Oui, c'est réglé."]);
+    t.finish("c1");
+    t.up().handlers.onDone();
+    t.sayMore("c2", "```js\nx()\n```");
+    t.finish("c2");
+    await flush();
+    expect(t.up().dones).toBe(1);
+    expect(t.frames.slice(-2)).toEqual([{ type: "start", id: "c2" }, { type: "done", id: "c2" }]);
+  });
+
+  it("the stall watchdog runs only while audio is owed, not while the bot thinks mid-answer", async () => {
+    vi.useFakeTimers();
+    const t = make();
+    t.up().accept();
+    await t.session.ready;
+    t.sayMore("c1", "Un instant,");
+    // 0.5 s of audio covers the 11 characters sent: caught up
+    t.up().handlers.onAudio(new Uint8Array(24_000));
+    await vi.advanceTimersByTimeAsync(SPEECH_STALL_MS * 3);
+    expect(t.upstreams[0]!.closed).toBe(false);
+    // more text, and no audio for it: stuck
+    t.append("c1", " je regarde le billet tout de suite.");
+    await vi.advanceTimersByTimeAsync(SPEECH_STALL_MS);
+    expect(t.upstreams[0]!.closed).toBe(true);
+    expect(t.frames.at(-1)).toEqual({ type: "error", ids: ["c1"] });
+  });
+
+  it("an open utterance idle for 20 s ends at xAI; later words open a new xAI utterance, the page's goes on", async () => {
+    vi.useFakeTimers();
+    const t = make();
+    t.up().accept();
+    await t.session.ready;
+    t.sayMore("c1", "Un instant,");
+    t.up().handlers.onAudio(new Uint8Array(24_000));
+    await vi.advanceTimersByTimeAsync(SPEECH_IDLE_FINISH_MS - 100);
+    expect(t.up().dones).toBe(0);
+    await vi.advanceTimersByTimeAsync(200);
+    // nothing left open at xAI
+    expect(t.up().dones).toBe(1);
+    // words that come while that end is spoken wait for it
+    t.append("c1", " voici.");
+    expect(t.up().deltas).toEqual(["Un instant,"]);
+    t.up().handlers.onDone();
+    // the page was not told done: its utterance goes on
+    expect(t.frames).toEqual([{ type: "start", id: "c1" }]);
+    expect(t.up().deltas).toEqual(["Un instant,", "voici."]);
+    t.append("c1", " Autre chose?");
+    expect(t.up().deltas.at(-1)).toBe(" Autre chose?");
+    t.finish("c1");
+    expect(t.up().dones).toBe(2);
+    t.up().handlers.onDone();
+    expect(t.frames).toEqual([{ type: "start", id: "c1" }, { type: "done", id: "c1" }]);
+    expect(t.upstreams[0]!.closed).toBe(false);
+  });
+
+  it("an utterance ended for idleness gives way to the next one, and its cancel clears nothing at xAI", async () => {
+    vi.useFakeTimers();
+    const t = make();
+    t.up().accept();
+    await t.session.ready;
+    t.sayMore("c1", "Bon.");
+    t.up().handlers.onAudio(new Uint8Array(24_000));
+    await vi.advanceTimersByTimeAsync(SPEECH_IDLE_FINISH_MS + 10);
+    t.up().handlers.onDone();
+    t.say("c2", "Autre réponse.");
+    expect(t.frames).toEqual([{ type: "start", id: "c1" }, { type: "done", id: "c1" }, { type: "start", id: "c2" }]);
+    expect(t.up().deltas.at(-1)).toBe("Autre réponse.");
+    // a cancel of an idle-ended one: no text.clear
+    t.up().handlers.onDone();
+    t.sayMore("c3", "Encore.");
+    t.up().handlers.onAudio(new Uint8Array(24_000));
+    await vi.advanceTimersByTimeAsync(SPEECH_IDLE_FINISH_MS + 10);
+    t.up().handlers.onDone();
+    t.cancel("c3");
+    expect(t.up().clears).toBe(0);
+    expect(t.frames.at(-1)).toEqual({ type: "done", id: "c3" });
+  });
+
+  it("after text.done, audio is owed until audio.done", async () => {
+    vi.useFakeTimers();
+    const t = make();
+    t.up().accept();
+    await t.session.ready;
+    t.sayMore("c1", "Fin.");
+    t.up().handlers.onAudio(new Uint8Array(24_000));
+    t.finish("c1");
+    await vi.advanceTimersByTimeAsync(SPEECH_STALL_MS);
+    expect(t.upstreams[0]!.closed).toBe(true);
+  });
+
+  it("answers the page's ping", async () => {
+    const t = make();
+    t.session.message(JSON.stringify({ type: "ping" }));
+    expect(t.frames).toEqual([{ type: "pong" }]);
   });
 
   it("a clause with nothing speakable is skipped, never sent to xAI; a bad frame is ignored", async () => {
@@ -186,7 +326,7 @@ describe("streaming voice session (server side)", () => {
     expect(t.upstreams).toHaveLength(1 + SPEECH_BACKOFF_MS.length);
   });
 
-  it("a reconnect that works resets the count", async () => {
+  it("a reconnect that works (its audio came) resets the count", async () => {
     vi.useFakeTimers();
     const t = make();
     t.up().accept();
@@ -196,8 +336,48 @@ describe("streaming voice session (server side)", () => {
       await vi.advanceTimersByTimeAsync(SPEECH_BACKOFF_MS[0]);
       t.up().accept();
       await vi.advanceTimersByTimeAsync(0);
+      t.say(`c${i}`, "Oui.");
+      t.up().handlers.onAudio(new Uint8Array(480));
+      t.up().handlers.onDone();
+      // a minute between drops: the reopens a minute allows are not reached
+      await vi.advanceTimersByTimeAsync(SPEECH_STABLE_MS);
     }
     expect(t.frames.some((f) => f.type === "fallback")).toBe(false);
+  });
+
+  it("xAI accepting then closing at once is still failing: fallback after the reconnects, never reopening forever", async () => {
+    vi.useFakeTimers();
+    const t = make();
+    t.up().accept();
+    await t.session.ready;
+    for (const wait of SPEECH_BACKOFF_MS) {
+      t.up().drop();
+      await vi.advanceTimersByTimeAsync(wait);
+      t.up().accept();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    t.up().drop();
+    expect(t.frames.at(-1)).toEqual({ type: "fallback" });
+    expect(t.upstreams).toHaveLength(1 + SPEECH_BACKOFF_MS.length);
+  });
+
+  it("more reopens in a minute than allowed falls back, even when each one worked", async () => {
+    vi.useFakeTimers();
+    const t = make();
+    t.up().accept();
+    await t.session.ready;
+    for (let i = 0; i < SPEECH_MAX_REOPENS_PER_MIN; i++) {
+      t.up().drop();
+      await vi.advanceTimersByTimeAsync(SPEECH_BACKOFF_MS[0]);
+      t.up().accept();
+      await vi.advanceTimersByTimeAsync(0);
+      t.say(`c${i}`, "Oui.");
+      t.up().handlers.onAudio(new Uint8Array(480));
+      t.up().handlers.onDone();
+    }
+    expect(t.frames.some((f) => f.type === "fallback")).toBe(false);
+    t.up().drop();
+    expect(t.frames.at(-1)).toEqual({ type: "fallback" });
   });
 
   it("an xAI error frame closes that socket (a drop), the clause is failed", async () => {

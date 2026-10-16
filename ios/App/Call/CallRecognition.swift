@@ -10,6 +10,13 @@
 //   No recognizer at all, with voice mode available: the turn is uploaded
 //     whole to the server's xAI speech to text (POST /voice/transcribe), the
 //     desktop's own fallback.
+//
+// Vocabulary: the call's start brings back the server's keyterms (the bot's
+// name, the person's, the thread's proper nouns, the organization's terms).
+// Each turn begun after they arrive hands them to the recognizer as
+// contextual strings (SFSpeechAudioBufferRecognitionRequest.contextualStrings,
+// or SpeechAnalyzer's AnalysisContext for the general tag). The call never
+// waits for them; the upload fallback is biased on the server already.
 import AVFoundation
 import CompanionCore
 import Speech
@@ -28,12 +35,22 @@ final class CallRecognizer: CallTranscribing {
 
     private(set) var engine: Engine = .none
     var onPartial: (String) -> Void = { _ in }
+    /// A turn uploaded whole could not be heard (two failed uploads): the
+    /// call tells the person instead of dropping the turn silently.
+    var onUploadFailed: () -> Void = {}
     private var current: UtteranceRecognition?
     private var legacy: SFSpeechRecognizer?
     private var analyzerLocale: Locale?
     private var analyzerFormat: AVAudioFormat?
     private var upload: (([Float]) async throws -> String)?
     private var script: (() -> String)?
+    /// Words the person's speech should be expected to contain (empty: none).
+    private(set) var contextualStrings: [String] = []
+
+    /// The server's keyterms, applied from the next turn on.
+    func useContextualStrings(_ terms: [String]) {
+        contextualStrings = CallKeyterms.contextual(terms)
+    }
 
     /// Pick the best recognizer for these languages. False: nothing can hear.
     func prepare(locales: [Locale], upload: (([Float]) async throws -> String)?) async -> Bool {
@@ -116,13 +133,13 @@ final class CallRecognizer: CallTranscribing {
         switch engine {
         case .analyzer:
             if #available(iOS 26.0, *), let locale = analyzerLocale, let format = analyzerFormat {
-                return AnalyzerUtterance(locale: locale, format: format, onPartial: partial)
+                return AnalyzerUtterance(locale: locale, format: format, contextualStrings: contextualStrings, onPartial: partial)
             }
             return nil
         case .legacy:
-            return legacy.map { LegacyUtterance(recognizer: $0, onPartial: partial) }
+            return legacy.map { LegacyUtterance(recognizer: $0, contextualStrings: contextualStrings, onPartial: partial) }
         case .server:
-            return upload.map { UploadUtterance(upload: $0) }
+            return upload.map { UploadUtterance(upload: $0, failed: { [weak self] in self?.onUploadFailed() }) }
         case .scripted:
             return script.map { ScriptedUtterance(script: $0, onPartial: partial) }
         case .none:
@@ -143,8 +160,9 @@ private final class LegacyUtterance: UtteranceRecognition {
     private var done = false
     private var waiter: CheckedContinuation<Void, Never>?
 
-    init(recognizer: SFSpeechRecognizer, onPartial: @escaping (String) -> Void) {
+    init(recognizer: SFSpeechRecognizer, contextualStrings: [String], onPartial: @escaping (String) -> Void) {
         request.shouldReportPartialResults = true
+        if !contextualStrings.isEmpty { request.contextualStrings = contextualStrings }
         request.addsPunctuation = true
         request.taskHint = .dictation
         if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
@@ -206,7 +224,7 @@ private final class AnalyzerUtterance: UtteranceRecognition {
     private var finalText = ""
     private var volatile = ""
 
-    init(locale: Locale, format: AVAudioFormat, onPartial: @escaping (String) -> Void) {
+    init(locale: Locale, format: AVAudioFormat, contextualStrings: [String], onPartial: @escaping (String) -> Void) {
         self.format = format
         let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults], attributeOptions: [])
         analyzer = SpeechAnalyzer(modules: [transcriber])
@@ -229,7 +247,17 @@ private final class AnalyzerUtterance: UtteranceRecognition {
             } catch {}
         }
         let analyzer = analyzer
-        started = Task { try? await analyzer.start(inputSequence: stream) }
+        let context: AnalysisContext? = contextualStrings.isEmpty ? nil : {
+            let context = AnalysisContext()
+            context.contextualStrings[.general] = contextualStrings
+            return context
+        }()
+        started = Task {
+            // the context before the audio; a refused context leaves the
+            // recognizer as it was
+            if let context { try? await analyzer.setContext(context) }
+            try? await analyzer.start(inputSequence: stream)
+        }
     }
 
     private var words: String {
@@ -294,15 +322,35 @@ private final class AnalyzerUtterance: UtteranceRecognition {
 @MainActor
 private final class UploadUtterance: UtteranceRecognition {
     private var samples: [Float] = []
+    private var cancelled = false
     private let upload: ([Float]) async throws -> String
+    private let failed: () -> Void
 
-    init(upload: @escaping ([Float]) async throws -> String) { self.upload = upload }
+    init(upload: @escaping ([Float]) async throws -> String, failed: @escaping () -> Void) {
+        self.upload = upload
+        self.failed = failed
+    }
 
     func append(_ frame: [Float]) { samples += frame }
 
-    func finish() async -> String { (try? await upload(samples)) ?? "" }
+    /// Tried twice (a network blip), then reported: never a silent empty turn.
+    func finish() async -> String {
+        for attempt in 0..<2 {
+            if cancelled || Task.isCancelled { return "" }
+            do {
+                return try await upload(samples)
+            } catch {
+                if attempt == 0 { try? await Task.sleep(nanoseconds: 300_000_000) }
+            }
+        }
+        if !cancelled && !Task.isCancelled { failed() }
+        return ""
+    }
 
-    func cancel() { samples = [] }
+    func cancel() {
+        cancelled = true
+        samples = []
+    }
 }
 
 // MARK: - Scripted (tests)

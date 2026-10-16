@@ -18,6 +18,7 @@ import { useStore, useStreaming, visibleMessages, type Bot } from "@/state/store
 import { clearVoiceCallId, currentCall, endCall, setVoiceCallId } from "@/lib/call";
 import { NO, YES } from "@/lib/voice-mode/answers";
 import { voiceCallSession } from "@/lib/voice-mode/api";
+import { callTimers, keepCallAlive } from "@/lib/voice-mode/call-alive";
 import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mode/call";
 import { readCallSettings } from "@/lib/voice-mode/call-settings";
 import {
@@ -85,9 +86,11 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
     const language = readVoiceModeSettings().language;
     const call = { callId, threadId: callThread, ...(language && language !== "auto" ? { language } : {}) };
     void voiceCallSession(bot.id, "start", call);
-    const alive = setInterval(() => void voiceCallSession(bot.id, "alive", call), 5 * 60_000);
+    // every 5 minutes, and at once after a sleep or a network change (the
+    // server forgets a call after 20 minutes without one)
+    const stop = keepCallAlive(() => void voiceCallSession(bot.id, "alive", call));
     return () => {
-      clearInterval(alive);
+      stop();
       void voiceCallSession(bot.id, "end", call);
     };
   }, [bot.id, callThread, callId]);
@@ -112,12 +115,19 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   /** The utterance the opener may speak for. Cleared when that turn is dropped. */
   const openerOwner = useRef<VoiceOpenerOwner | null>(null);
   const pendingSpeak = useRef<Array<SpeakItem & { text: string; kind: "say" | "done" }>>([]);
+  /** a send's retry belongs to this call: it never fires after the hang-up */
+  const timers = useRef(callTimers());
+  useEffect(() => {
+    const own = timers.current;
+    return () => own.clear();
+  }, []);
   const drainSpeak = useCallback(() => {
     const live = call;
     if (!live) return;
     const slot = nextSpeakSlot({
       userSpeaking: live.current.phase === "hearing",
-      botSpeaking: live.player.busy || live.current.botAudible,
+      // an answer's open utterance plays until its replyDone: never wait on it
+      botSpeaking: (live.player.busy || live.current.botAudible) && !live.replyOpen,
       waiting: pendingSpeak.current,
     });
     if (slot.action === "hold") return;
@@ -156,6 +166,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       }),
       live.on("error", (reason) => {
         setNote(reason === "mic-denied" ? t("voiceMode.micDenied") : reason === "mic-unavailable" ? t("voiceMode.micUnavailable") : t("voiceMode.transcribeFailed"));
+        // words that could not be heard: said aloud too, never a silent drop
+        if (reason === "transcribe-failed") void live.say(t("voiceMode.sendFailed"));
       }),
       live.on("metrics", (turn: TurnMetrics | null, barge: BargeInMetrics | null) => {
         setMetrics({
@@ -288,7 +300,10 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
           void call.say(t("voiceMode.sendFailed"));
           return;
         }
-        setTimeout(send, 800);
+        timers.current.later(() => {
+          // the call ended meanwhile: its words are not sent under its id
+          if (currentCall() === current.id) send();
+        }, 800);
       };
       const send = () => dispatch({
         type: "send",

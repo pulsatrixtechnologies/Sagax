@@ -4,7 +4,7 @@
 // stops the voice, and the jitter buffer.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BASE_LEAD_S, DUCK_LEVEL, FADE_MS, PcmPlayer, splitAtShare, type Sentence } from "./player";
+import { BASE_LEAD_S, DUCK_LEVEL, DUCK_SOFT, FADE_MS, GAP_FADE_MS, PcmPlayer, PREBUFFER_S, splitAtShare, type Sentence } from "./player";
 
 class FakeParam {
   value: number;
@@ -22,17 +22,26 @@ class FakeParam {
 class FakeGain {
   gain = new FakeParam(1);
   connected = false;
-  connect() { this.connected = true; }
+  target: FakeGain | null = null;
+  connect(node?: FakeGain) {
+    this.connected = true;
+    if (node instanceof FakeGain) this.target = node;
+  }
   disconnect() { this.connected = false; }
 }
 
 class FakeSource {
   buffer: { duration: number } | null = null;
+  /** the chunk's own gain, and the answer's bus behind it */
+  gain: FakeGain | null = null;
   bus: FakeGain | null = null;
   startAt?: number;
   stopAt?: number;
   onended: (() => void) | null = null;
-  connect(node: FakeGain) { this.bus = node; }
+  connect(node: FakeGain) {
+    this.gain = node;
+    this.bus = node.target ?? node;
+  }
   disconnect() { this.bus = null; }
   start(at: number) { this.startAt = at; }
   stop(at = 0) { this.stopAt = at; }
@@ -118,7 +127,7 @@ describe("PcmPlayer playback", () => {
     // nothing played yet
     expect(player.playback()).toEqual({ heard: "", unheard: "It is sunny in Montreal today. Tomorrow it will rain all day long. Bring an umbrella." });
     // the first sentence whole, then about half of the second
-    context.currentTime = BASE_LEAD_S + 2 + 1;
+    context.currentTime = PREBUFFER_S + 2 + 1;
     expect(player.playback()).toEqual({ heard: "It is sunny in Montreal today. Tomorrow it will", unheard: "rain all day long. Bring an umbrella." });
     player.resetLedger();
     expect(player.playback()).toEqual({ heard: "", unheard: "" });
@@ -129,7 +138,7 @@ describe("PcmPlayer playback", () => {
     // 0.2 s arrived of a sentence that takes about 3 s to say
     player.enqueue(sentence("The meeting moved to Thursday at three in the afternoon.", 0.2, true));
     await settle();
-    context.currentTime = BASE_LEAD_S + 1;
+    context.currentTime = PREBUFFER_S + 1;
     const cut = player.playback();
     expect(cut.heard.length).toBeGreaterThan(0);
     expect(cut.heard.length).toBeLessThan(30);
@@ -210,7 +219,7 @@ describe("PcmPlayer barge-in", () => {
     const origin = Date.now();
     context.clock = () => Math.max(0, (Date.now() - origin - 60) / 1000);
     player.enqueue(sentence("Short.", 0.1));
-    await vi.advanceTimersByTimeAsync(140);
+    await vi.advanceTimersByTimeAsync(200);
     expect(idles).toBe(0);
     await vi.advanceTimersByTimeAsync(100);
     expect(idles).toBe(1);
@@ -301,48 +310,190 @@ describe("PcmPlayer barge-in", () => {
 });
 
 describe("PcmPlayer jitter buffer", () => {
-  it("joins a chunk that arrives before the audio runs out, with no gap", async () => {
+  it("starts an answer's first chunk PREBUFFER_S ahead, then joins a chunk that arrives in time with no gap", async () => {
     const { context, player } = setup();
     const speech = live("Steady.");
     player.enqueue(speech.sentence);
     speech.push(0.1);
     await settle();
-    expect(context.sources[0]!.startAt).toBeCloseTo(BASE_LEAD_S, 6);
+    expect(context.sources[0]!.startAt).toBeCloseTo(PREBUFFER_S, 6);
     // 10 ms of audio left when the next chunk comes
-    context.currentTime = BASE_LEAD_S + 0.09;
+    context.currentTime = PREBUFFER_S + 0.09;
     speech.push(0.1);
     await settle(2);
-    expect(context.sources[1]!.startAt).toBeCloseTo(BASE_LEAD_S + 0.1, 6);
+    expect(context.sources[1]!.startAt).toBeCloseTo(PREBUFFER_S + 0.1, 6);
     expect(player.stats).toEqual({ leadMs: 15, underruns: 0 });
+    // the first chunk's fade-out was called off: it joins the next one
+    const gain = context.sources[0]!.gain!.gain;
+    expect(gain.events.at(-1)).toEqual({ type: "cancel", value: Number.NaN, time: PREBUFFER_S + 0.1 - GAP_FADE_MS / 1000 });
   });
 
-  it("grows the lead after an underrun, then gives it back on sentences that play through", async () => {
+  it("grows the lead after an underrun, fades around the gap, and gives the lead back on audio that plays through", async () => {
     const { context, player } = setup();
     const jittery = live("Jittery.");
     player.enqueue(jittery.sentence);
     jittery.push(0.05);
     await settle();
-    // the first chunk ran out at 0.065; the next one comes at 0.1
-    context.currentTime = 0.1;
+    // the first chunk ran out at 0.12; the next one comes at 0.155
+    context.currentTime = 0.155;
     jittery.push(0.1);
     await settle(2);
     expect(player.stats.underruns).toBe(1);
     // 40 ms late (with the 5 ms join margin), plus 10 ms
     expect(player.stats.leadMs).toBe(65);
-    expect(context.sources[1]!.startAt).toBeCloseTo(0.1 + 0.065, 6);
-    jittery.end();
+    expect(context.sources[1]!.startAt).toBeCloseTo(0.155 + 0.065, 6);
+    // the chunk before the gap faded out over its last 3 ms, the one after fades in
+    const before = context.sources[0]!.gain!.gain;
+    expect(before.ramps().at(-1)).toEqual({ type: "ramp", value: 0, time: PREBUFFER_S + 0.05 });
+    expect(before.events.some((event) => event.type === "cancel")).toBe(false);
+    const after = context.sources[1]!.gain!.gain;
+    expect(after.events[0]!.type).toBe("set");
+    expect(after.events[0]!.value).toBe(0);
+    expect(after.events[0]!.time).toBeCloseTo(0.155 + 0.065, 6);
+    expect(after.events[1]!.type).toBe("ramp");
+    expect(after.events[1]!.value).toBe(1);
+    expect(after.events[1]!.time).toBeCloseTo(0.155 + 0.065 + GAP_FADE_MS / 1000, 6);
+    // two seconds of audio without a gap give 5 ms back
+    context.currentTime = 0.3;
+    jittery.push(2);
     await settle(2);
-    // the next sentence starts on the grown lead
-    context.currentTime = 1;
-    const steady = live("Steady.");
-    player.enqueue(steady.sentence);
-    steady.push(0.1);
+    expect(player.stats.leadMs).toBe(60);
+  });
+
+  it("a later clause whose first chunk comes late is an underrun too", async () => {
+    const { context, player } = setup();
+    const first = live("First clause,");
+    const second = live("second clause.");
+    player.enqueue(first.sentence);
+    player.enqueue(second.sentence);
+    first.push(0.1);
+    first.end();
     await settle(2);
-    expect(context.sources[2]!.startAt).toBeCloseTo(1.065, 6);
-    steady.push(0.1);
-    steady.end();
+    // the first clause ran out at 0.17; the second's audio comes at 0.2
+    context.currentTime = 0.2;
+    second.push(0.1);
     await settle(2);
-    expect(player.stats).toEqual({ leadMs: 60, underruns: 1 });
+    expect(player.stats.underruns).toBe(1);
+    expect(context.sources[1]!.startAt).toBeGreaterThan(0.2);
+  });
+
+  it("a long silence in an open answer (the bot writing) is not an underrun", async () => {
+    const { context, player } = setup();
+    const answer = live("Thinking aloud.");
+    player.enqueue(answer.sentence);
+    answer.push(0.1);
+    await settle();
+    context.currentTime = 3;
+    answer.push(0.1);
+    await settle(2);
+    expect(player.stats).toEqual({ leadMs: 15, underruns: 0 });
+    expect(context.sources[1]!.startAt).toBeCloseTo(3 + BASE_LEAD_S, 6);
+  });
+});
+
+describe("PcmPlayer open utterance", () => {
+  it("grows the playing sentence's words, and the cut is placed in the whole text", async () => {
+    const { context, player } = setup();
+    const answer = live("Bonjour,");
+    player.enqueue(answer.sentence);
+    answer.push(0.5);
+    await settle();
+    player.extend(" il fait beau.", { text: "il fait beau." });
+    player.extend(" Autre chose?", { text: "Autre chose?" });
+    answer.push(2);
+    answer.end();
+    await settle(2);
+    context.currentTime = PREBUFFER_S + 2.6;
+    expect(player.playback()).toEqual({ heard: "Bonjour, il fait beau. Autre chose?", unheard: "" });
+    context.currentTime = PREBUFFER_S + 0.5;
+    const cut = player.playback();
+    expect(`${cut.heard} ${cut.unheard}`).toBe("Bonjour, il fait beau. Autre chose?");
+    expect(cut.heard.length).toBeLessThan(15);
+  });
+
+  it("captions each clause when the voice reaches it", async () => {
+    vi.useFakeTimers();
+    const { context, player } = setup();
+    const origin = Date.now();
+    context.clock = () => (Date.now() - origin) / 1000;
+    const captions: string[] = [];
+    player.events.onSentenceStart = (text) => captions.push(`start:${text}`);
+    player.events.onCaption = (text) => captions.push(text);
+    const answer = live("Bien sûr,");
+    player.enqueue(answer.sentence);
+    answer.push(3);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(captions).toEqual(["start:Bien sûr,"]);
+    // starts at 10 characters: about 0.7 s in at 14 characters a second
+    player.extend(" il fait beau aujourd'hui.", { text: "il fait beau aujourd'hui." });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(captions).toEqual(["start:Bien sûr,"]);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(captions).toEqual(["start:Bien sûr,", "il fait beau aujourd'hui."]);
+  });
+
+  it("says when an open utterance runs dry and when it speaks again", async () => {
+    vi.useFakeTimers();
+    const { context, player } = setup();
+    const origin = Date.now();
+    context.clock = () => (Date.now() - origin) / 1000;
+    const events: string[] = [];
+    player.events.onStarved = () => events.push("starved");
+    player.events.onResume = () => events.push("resume");
+    player.events.onIdle = () => events.push("idle");
+    const answer = live("Un instant,");
+    player.enqueue(answer.sentence);
+    answer.push(0.2);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(events).toEqual(["starved"]);
+    expect(player.busy).toBe(true);
+    answer.push(0.2);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(events).toEqual(["starved", "resume"]);
+    answer.end();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(events).toEqual(["starved", "resume", "idle"]);
+  });
+});
+
+describe("PcmPlayer ducking", () => {
+  it("ducks softly on a first voiced frame, deeper on a barge-in, never back up by a soft duck", async () => {
+    const { context, player } = setup();
+    player.enqueue(sentence("Talking.", 1));
+    await settle();
+    const bus = context.sources[0]!.bus!;
+    player.duck(DUCK_SOFT);
+    expect(bus.gain.ramps().at(-1)!.value).toBe(DUCK_SOFT);
+    expect(player.duckLevel).toBe(DUCK_SOFT);
+    player.duck();
+    expect(bus.gain.ramps().at(-1)!.value).toBe(DUCK_LEVEL);
+    const ramps = bus.gain.ramps().length;
+    player.duck(DUCK_SOFT);
+    expect(bus.gain.ramps()).toHaveLength(ramps);
+    player.unduck();
+    expect(bus.gain.ramps().at(-1)!.value).toBe(1);
+    expect(player.duckLevel).toBeNull();
+  });
+});
+
+describe("PcmPlayer playback context", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("runs at xAI's 24 kHz, or the device's rate when the browser refuses it", () => {
+    const made: Array<Record<string, unknown>> = [];
+    let refuse = false;
+    vi.stubGlobal("AudioContext", class extends FakeContext {
+      constructor(options: Record<string, unknown>) {
+        if (refuse && options.sampleRate) throw new DOMException("not supported", "NotSupportedError");
+        super();
+        made.push(options);
+      }
+    });
+    new PcmPlayer().open();
+    expect(made.at(-1)).toEqual({ latencyHint: "interactive", sampleRate: 24_000 });
+    refuse = true;
+    new PcmPlayer().open();
+    expect(made.at(-1)).toEqual({ latencyHint: "interactive" });
   });
 });
 
@@ -352,5 +503,128 @@ describe("splitAtShare", () => {
     expect(splitAtShare("one two", 0)).toEqual(["", "one two"]);
     expect(splitAtShare("one two", 1)).toEqual(["one two", ""]);
     expect(splitAtShare("word", 0.3)).toEqual(["", "word"]);
+  });
+});
+
+describe("PcmPlayer stability", () => {
+  it("a stalled sentence (no bytes for the read timeout) errors, and the next sentence plays", async () => {
+    vi.useFakeTimers();
+    const { context, player } = setup();
+    const origin = Date.now();
+    context.clock = () => (Date.now() - origin) / 1000;
+    player.readTimeoutMs = 8_000;
+    const errors: unknown[] = [];
+    const started: string[] = [];
+    let idles = 0;
+    player.events.onError = (error) => errors.push(error);
+    player.events.onSentenceStart = (text) => started.push(text);
+    player.events.onIdle = () => { idles += 1; };
+    const stalled = live("A clause whose POST stalls.");
+    player.enqueue(stalled.sentence);
+    stalled.push(0.1);
+    player.enqueue(sentence("The next clause.", 0.2));
+    await vi.advanceTimersByTimeAsync(7_000);
+    expect(errors).toEqual([]);
+    expect(player.busy).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(errors).toHaveLength(1);
+    expect(stalled.state.cancelled).toBe(true);
+    expect(started).toEqual(["A clause whose POST stalls.", "The next clause."]);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(idles).toBe(1);
+    expect(player.busy).toBe(false);
+  });
+
+  it("an open utterance (the bot still thinking) is never given up; once closed it is", async () => {
+    vi.useFakeTimers();
+    const { context, player } = setup();
+    const origin = Date.now();
+    context.clock = () => (Date.now() - origin) / 1000;
+    player.readTimeoutMs = 8_000;
+    const errors: unknown[] = [];
+    player.events.onError = (error) => errors.push(error);
+    const answer = live("Un instant, je regarde.");
+    let open = true;
+    answer.sentence.open = () => open;
+    player.enqueue(answer.sentence);
+    answer.push(0.1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(errors).toEqual([]);
+    expect(answer.state.cancelled).toBe(false);
+    answer.push(0.1);
+    open = false;
+    await vi.advanceTimersByTimeAsync(8_100);
+    expect(errors).toHaveLength(1);
+  });
+
+  it("an open utterance closed while its read waits is given up within one more period", async () => {
+    vi.useFakeTimers();
+    const { context, player } = setup();
+    const origin = Date.now();
+    context.clock = () => (Date.now() - origin) / 1000;
+    player.readTimeoutMs = 8_000;
+    const errors: unknown[] = [];
+    player.events.onError = (error) => errors.push(error);
+    const answer = live("Un instant.");
+    let open = true;
+    answer.sentence.open = () => open;
+    player.enqueue(answer.sentence);
+    answer.push(0.1);
+    await vi.advanceTimersByTimeAsync(20_000);
+    // the same read is still pending: closing it bounds it again
+    open = false;
+    await vi.advanceTimersByTimeAsync(8_100);
+    expect(errors).toHaveLength(1);
+  });
+
+  it("an audio promise that never settles is given up too", async () => {
+    vi.useFakeTimers();
+    const { player } = setup();
+    player.readTimeoutMs = 8_000;
+    let aborted = false;
+    const errors: unknown[] = [];
+    player.events.onError = (error) => errors.push(error);
+    player.enqueue({ text: "Never answered.", audio: new Promise(() => {}), abort() { aborted = true; } });
+    await vi.advanceTimersByTimeAsync(8_100);
+    expect(errors).toHaveLength(1);
+    expect(aborted).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.busy).toBe(false);
+  });
+
+  it("resumes an output context the system suspended or interrupted", async () => {
+    const listeners: Array<() => void> = [];
+    const context = Object.assign(new FakeContext(), {
+      addEventListener: (type: string, cb: () => void) => { if (type === "statechange") listeners.push(cb); },
+      resume: vi.fn(async () => {}),
+    });
+    const player = new PcmPlayer(() => context as unknown as AudioContext);
+    player.open();
+    context.resume.mockClear();
+    context.state = "suspended";
+    for (const cb of listeners) cb();
+    expect(context.resume).toHaveBeenCalledTimes(1);
+    context.state = "interrupted";
+    for (const cb of listeners) cb();
+    expect(context.resume).toHaveBeenCalledTimes(2);
+    context.state = "running";
+    for (const cb of listeners) cb();
+    expect(context.resume).toHaveBeenCalledTimes(2);
+  });
+
+  it("a clock that stopped is not busy forever: idle resets the schedule", async () => {
+    vi.useFakeTimers();
+    const { context, player } = setup();
+    let idles = 0;
+    player.events.onIdle = () => { idles += 1; };
+    // the device stopped: currentTime stays at 0 while 1 s is scheduled
+    player.enqueue(sentence("Scheduled on a stopped clock.", 1));
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(idles).toBe(1);
+    expect(player.busy).toBe(false);
+    // the next answer starts from the clock as it is, not a second later
+    player.enqueue(sentence("Next.", 0.1));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(context.sources.at(-1)!.startAt!).toBeLessThan(0.2);
   });
 });

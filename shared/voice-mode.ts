@@ -99,6 +99,47 @@ export function sttLanguage(code: string): string | undefined {
   return STT_LANGUAGES.has(base) ? base : undefined;
 }
 
+/** Languages xAI formats (`format`, inverse text normalization: "deux
+ * cents" as 200). It needs a language. */
+const FORMAT_LANGUAGES: ReadonlySet<string> = new Set(["en", "fr"]);
+
+/** A BCP-47 tag as a browser reports it (`navigator.language`), or undefined.
+ * The page sends it beside the language so the server can read "auto" on a
+ * French computer as French; the server keeps only a well formed one. */
+export function cleanVoiceLocale(input: unknown): string | undefined {
+  if (typeof input !== "string" || input.length > 35) return undefined;
+  return /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8}){0,3}$/.test(input) ? input : undefined;
+}
+
+/** What the server asks xAI speech to text for: a language and
+ * formatting. "auto" on a French locale (fr-CA, fr-FR...) is French with
+ * formatting, so a Québec speaker gets the French turn waits and "deux
+ * cents" written 200; an explicit language gets formatting where xAI
+ * offers it; anything else stays pure detection. */
+export function sttRequest(code: string, locale?: string): { language?: string; format: boolean } {
+  const language = sttLanguage(code);
+  if (language) return { language, format: FORMAT_LANGUAGES.has(language) };
+  if (code === "auto" && cleanVoiceLocale(locale)?.split("-")[0]!.toLowerCase() === "fr") return { language: "fr", format: true };
+  return { format: false };
+}
+
+/** Hesitation sounds xAI writes when asked to keep them (`filler_words`). */
+const FILLER_WORDS = ["euh", "euhm", "heu", "hum", "uh", "uhm", "um", "umm", "erm", "er", "hmm", "hm", "mm", "mmm"];
+const FILLER = new RegExp(`(^|[\\s,;.!?\u2026])(?:${FILLER_WORDS.join("|")})(?:[.\u2026]+|,)?(?=$|[\\s,;.!?\u2026])`, "giu");
+
+/** The words without hesitation sounds: what a bot reads of a turn. The
+ * turn detector still sees them (a trailing "euh" is a person thinking). */
+export function stripFillers(text: string): string {
+  const trimmed = text.trim();
+  let out = trimmed;
+  // twice: "euh euh" overlaps the separator the first match took
+  for (let i = 0; i < 2; i++) out = out.replace(FILLER, "$1");
+  out = out.replace(/\s+([,;.!?\u2026])/g, "$1").replace(/(^|\s)[,;]+(?=\s|$)/g, "$1").replace(/\s{2,}/g, " ").replace(/^[\s,;.\u2026]+/, "").trim();
+  // a line that started with a capital keeps one
+  if (out && /^\p{Lu}/u.test(trimmed) && !/^\p{Lu}/u.test(out)) out = out[0]!.toUpperCase() + out.slice(1);
+  return out;
+}
+
 export interface VoiceModeSettings {
   /** An xAI voice id; "" is Not set (xAI's default voice). */
   voice: string;

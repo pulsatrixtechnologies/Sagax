@@ -20,6 +20,7 @@ import {
   hasQueuedSteeredMessages,
   queueSteeredMessage,
 } from "./steer-queue.ts";
+import { classifyVoiceIntent } from "../src/lib/voice-mode/voice-topics.ts";
 
 describe("admitDuplexSend", () => {
   it("never replaces when the flag is off", () => {
@@ -73,6 +74,14 @@ describe("admitDuplexSend", () => {
     expect(admitDuplexSend({
       duplex: true, botBusy: true, stopping: false, queued: false, backgroundWork: true, intent: "stop",
     })).toEqual({ action: "stop", interrupt: true, discardQueue: true });
+  });
+
+  it("a request that starts with stop is work, never swallowed as a stop (server/index.ts classifies the words)", () => {
+    const admit = (text: string) => admitDuplexSend({
+      duplex: true, botBusy: true, stopping: false, queued: false, intent: classifyVoiceIntent(text), newTopic: classifyVoiceIntent(text) === "new_topic",
+    });
+    expect(admit("Stop le service CrowdStrike sur SRV-01")).toEqual({ action: "replace", interrupt: true, discardQueue: true });
+    expect(admit("ok stop")).toEqual({ action: "stop", interrupt: true, discardQueue: true });
   });
 
   it("a correction still replaces a thinking turn", () => {

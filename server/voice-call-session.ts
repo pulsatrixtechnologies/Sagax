@@ -16,6 +16,12 @@
 // start and each heartbeat also count as use of the person's server
 // environment (UserSandboxManager.markUsed), so its idle stop never takes
 // it away mid-call.
+//
+// A page that slept past the expiry is still on its call: its next
+// heartbeat, or the next turn carrying its call id, registers the call
+// again. A call id that ended (hung up by the person or the bot) never comes
+// back that way, so a late heartbeat cannot reopen it; only an explicit
+// start of that call id does.
 import type { VoiceCallMeta } from "./voice-call-prompt.ts";
 
 /** How a call turn settled for a hang-up the bot already asked for. */
@@ -53,14 +59,23 @@ interface CallRecord {
 
 export class VoiceCallSessions {
   private readonly calls = new Map<string, CallRecord>();
+  /** call ids that ended (bounded): a late heartbeat or turn never reopens them */
+  private readonly ended = new Set<string>();
+  /** call ids that expired without a hang-up (bounded): their next turn
+   * registers them again. A mark alone never starts a call. */
+  private readonly expired = new Set<string>();
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
     this.now = now;
   }
 
-  /** The page started (or keeps alive) a call on this thread. */
-  start(threadId: string, callId: string, language?: string): void {
+  /** The page started (or keeps alive: `heartbeat`) a call on this thread.
+   * A heartbeat never reopens a call id that ended; a start does. */
+  start(threadId: string, callId: string, language?: string, heartbeat = false): void {
+    if (heartbeat && this.ended.has(callId)) return;
+    if (!heartbeat) this.ended.delete(callId);
+    this.expired.delete(callId);
     const at = this.now();
     const existing = this.calls.get(threadId);
     if (existing && existing.callId === callId) {
@@ -83,7 +98,13 @@ export class VoiceCallSessions {
     const existing = this.calls.get(threadId);
     if (!existing || existing.callId !== callId) return false;
     this.calls.delete(threadId);
+    this.noteEnded(callId);
     return true;
+  }
+
+  private noteEnded(callId: string): void {
+    this.ended.add(callId);
+    if (this.ended.size > 1_000) this.ended.delete(this.ended.values().next().value!);
   }
 
   /** The bot asked to end the live call. Idempotent. Nothing is deleted:
@@ -101,6 +122,7 @@ export class VoiceCallSessions {
     const record = this.live(threadId);
     if (!record?.ending) return undefined;
     this.calls.delete(threadId);
+    this.noteEnded(record.callId);
     return { callId: record.callId };
   }
 
@@ -119,6 +141,8 @@ export class VoiceCallSessions {
     const at = this.now();
     if (at - record.lastAt > VOICE_CALL_IDLE_MS || at - record.startedAt > VOICE_CALL_MAX_MS) {
       this.calls.delete(threadId);
+      this.expired.add(record.callId);
+      if (this.expired.size > 1_000) this.expired.delete(this.expired.values().next().value!);
       return undefined;
     }
     return record;
@@ -136,6 +160,8 @@ export class VoiceCallSessions {
     const record = this.live(threadId);
     if (sent) {
       if (record && record.callId === sent.callId) record.lastAt = this.now();
+      // the call expired while the page slept: its own turn registers it again
+      else if (!record && this.expired.has(sent.callId)) this.start(threadId, sent.callId, sent.language, true);
       return sent;
     }
     if (!record) return undefined;

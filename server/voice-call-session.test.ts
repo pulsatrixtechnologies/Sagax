@@ -34,6 +34,52 @@ describe("VoiceCallSessions", () => {
     expect(calls.active("t1")).toBeUndefined();
   });
 
+  it("a call that expired while the page slept comes back with its heartbeat or its next turn", () => {
+    let now = 0;
+    const calls = new VoiceCallSessions(() => now);
+    calls.start("t1", "call-0123456789", "fr");
+    now += VOICE_CALL_IDLE_MS + 60_000;
+    expect(calls.active("t1")).toBeUndefined();
+    // the page woke: its heartbeat registers the call again
+    calls.start("t1", "call-0123456789", "fr", true);
+    expect(calls.active("t1")).toEqual({ callId: "call-0123456789", language: "fr" });
+    now += VOICE_CALL_IDLE_MS + 60_000;
+    // or the first turn said after the sleep, carrying the call's id
+    expect(calls.markFor("t1", { callId: "call-0123456789", language: "fr" })).toEqual({ callId: "call-0123456789", language: "fr" });
+    expect(calls.active("t1")).toEqual({ callId: "call-0123456789", language: "fr" });
+    // a typed send right after is a call turn again
+    expect(calls.markFor("t1", undefined)).toEqual({ callId: "call-0123456789", language: "fr" });
+  });
+
+  it("a mark alone never starts a call that was not started", () => {
+    const calls = new VoiceCallSessions();
+    expect(calls.markFor("t1", { callId: "call-0123456789" })).toEqual({ callId: "call-0123456789" });
+    expect(calls.active("t1")).toBeUndefined();
+    expect(calls.markFor("t1", undefined)).toBeUndefined();
+  });
+
+  it("a call that ended never comes back from a late heartbeat or a stale mark", () => {
+    const calls = new VoiceCallSessions();
+    calls.start("t1", "call-0123456789");
+    expect(calls.end("t1", "call-0123456789")).toBe(true);
+    calls.start("t1", "call-0123456789", undefined, true);
+    expect(calls.active("t1")).toBeUndefined();
+    calls.markFor("t1", { callId: "call-0123456789" });
+    expect(calls.active("t1")).toBeUndefined();
+    // the bot's hang-up too
+    calls.start("t2", "call-abcdefghij");
+    calls.requestEnd("t2");
+    expect(calls.takeEnding("t2")).toEqual({ callId: "call-abcdefghij" });
+    calls.start("t2", "call-abcdefghij", undefined, true);
+    expect(calls.active("t2")).toBeUndefined();
+    // an explicit start of that call id opens it again
+    calls.start("t2", "call-abcdefghij");
+    expect(calls.active("t2")?.callId).toBe("call-abcdefghij");
+    // a new call on the thread is fine
+    calls.start("t1", "call-newer-0001");
+    expect(calls.active("t1")?.callId).toBe("call-newer-0001");
+  });
+
   it("delivers one spoken utterance once, whatever the send id", () => {
     const calls = new VoiceCallSessions();
     calls.start("t1", "call-0123456789");

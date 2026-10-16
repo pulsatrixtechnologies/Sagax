@@ -495,10 +495,11 @@ enum SettingsLinks {
     }
 
     static func helpCenter(french: Bool) -> URL { page("docs", french: false) }
-    static func privacy(french: Bool) -> URL { page("privacy", french: french) }
+    /// The app's own privacy policy, the URL given to App Store Connect.
+    static func privacy(french: Bool) -> URL { URL(string: "https://github.com/pulsatrixtechnologies/sagax/blob/main/docs/ios-privacy.md")! }
     static func terms(french: Bool) -> URL { page("terms", french: french) }
     /// The app's own terms: its license and use terms in the source repository.
-    static let sagaxTerms = URL(string: "https://github.com/pulsatrixtechnologies/pulsa-bot/blob/main/LICENSING.md")!
+    static let sagaxTerms = URL(string: "https://github.com/pulsatrixtechnologies/sagax/blob/main/LICENSING.md")!
 }
 
 /// Scrolls the enclosing UIScrollView to an exact offset once: the parity

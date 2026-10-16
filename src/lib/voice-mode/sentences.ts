@@ -12,7 +12,9 @@
 // many short lines is not many requests. With the streaming voice
 // (`streamingClauses`, speech-stream.ts) there is no character wait: the
 // first clause goes at a one-word punctuated opener ("Well,", "Sure,") or
-// at a space after two words, since the voice socket is already open.
+// at a space after two words (counted by whitespace, so "C'est" is one),
+// since the voice socket is already open. Those early clauses only grow the
+// answer's one open utterance (tts-lead.ts): they never end it.
 
 import { speakableSentence } from "./spoken";
 
@@ -34,8 +36,11 @@ export interface SentenceStreamOptions {
   firstSpaceWords?: number;
 }
 
-/** The streaming voice's splitting: clause boundaries, no character wait. */
-export const STREAMING_CLAUSES: SentenceStreamOptions = { firstClauseChars: 0, firstClauseWords: 1, firstSpaceWords: 2 };
+/** The streaming voice's splitting: clause boundaries, no character wait,
+ * and no short sentence held back to join the next (the answer is one
+ * utterance anyway, and words held back here would let the lead's later
+ * words go first). */
+export const STREAMING_CLAUSES: SentenceStreamOptions = { minChars: 0, firstClauseChars: 0, firstClauseWords: 1, firstSpaceWords: 2 };
 
 export class SentenceStream {
   private consumed = 0;
@@ -145,8 +150,12 @@ export class SentenceStream {
     return fence >= 0 ? fence : -1;
   }
 
+  /** Words by whitespace: "C'est" and "aujourd'hui" are one word each, a
+   * lone dash or emoji none. */
   private words(text: string): number {
-    return text.match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
+    let count = 0;
+    for (const token of text.split(/\s+/)) if (/[\p{L}\p{N}]/u.test(token)) count += 1;
+    return count;
   }
 
   private abbreviation(text: string, dot: number): boolean {

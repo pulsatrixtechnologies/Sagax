@@ -86,12 +86,19 @@ export async function synthesize(text: string, voiceId: string | undefined, key:
 }
 
 /** Speech to text (POST /v1/stt, multipart): one recorded turn. `language`
- * is a hint; without it xAI detects the language. */
-export async function transcribe(audio: Uint8Array, mime: string, key: string, language?: string): Promise<{ text: string; language?: string }> {
+ * is a hint; without it xAI detects the language. `format` (inverse text
+ * normalization: "deux cents" as 200) needs a language, so it is only sent
+ * with one. Fillers ("euh", "um") are kept, as on the live socket: the
+ * caller removes them from what the bot reads (shared/voice-mode.ts). */
+export async function transcribe(audio: Uint8Array, mime: string, key: string, language?: string, keyterms: readonly string[] = [], options: { format?: boolean } = {}): Promise<{ text: string; language?: string }> {
   const form = new FormData();
   const name = mime === "audio/wav" ? "turn.wav" : mime === "audio/webm" ? "turn.webm" : "turn.ogg";
-  form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), name);
   if (language) form.append("language", language);
+  if (language && options.format) form.append("format", "true");
+  form.append("filler_words", "true");
+  for (const term of keyterms) form.append("keyterm", term);
+  // xAI reads the fields before `file` only: it must be the last one
+  form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), name);
   const response = await request("/stt", {
     method: "POST",
     headers: { authorization: `Bearer ${key}`, accept: "application/json" },
@@ -152,6 +159,10 @@ export interface TranscriptEvent {
   /** xAI's confidence in a chunk (0..1), when it reports one: the frame's
    * own, else the lowest of its words' */
   confidence?: number;
+  /** Smart Turn's estimate (0..1) that the speaker has finished, on a
+   * partial that carries one. The page's turn detector reads it; xAI's
+   * own threshold is set so high it never ends a turn by itself. */
+  endOfTurnConfidence?: number;
 }
 
 function transcriptConfidence(frame: Record<string, unknown>): number | undefined {
@@ -196,13 +207,19 @@ function pingSocket(socket: WebSocket) {
   }
 }
 
+/** Smart Turn's threshold on the live socket: high enough that xAI never
+ * ends a turn itself (the page's detector does, reading the confidence). */
+export const SMART_TURN_THRESHOLD = 0.9;
+/** Smart Turn's own timeout, long for the same reason. */
+export const SMART_TURN_TIMEOUT_MS = 5_000;
+
 /** Streaming speech to text for a live call: one connection per call,
  * audio frames in, partial and final transcripts out. The session goes on
  * after a finalize, so every turn of the call reuses it.
  * https://docs.x.ai/developers/model-capabilities/audio/speech-to-text */
 export function openTranscriptionStream(
   key: string,
-  options: { language?: string; endpointingMs?: number },
+  options: { language?: string; endpointingMs?: number; keyterms?: readonly string[]; format?: boolean },
   handlers: TranscriptionHandlers,
   Socket: HeaderWebSocket = WsWebSocket as unknown as HeaderWebSocket,
 ): TranscriptionStream {
@@ -212,8 +229,22 @@ export function openTranscriptionStream(
     sample_rate: "16000",
     interim_results: "true",
     endpointing: String(Math.max(0, Math.min(5000, Math.round(options.endpointingMs ?? 700)))),
+    // "euh", "um" stay in the words: the page's turn detector reads a
+    // trailing filler as a person still thinking, never as an ending. They
+    // are removed only from the text the bot gets.
+    filler_words: "true",
+    // Smart Turn adds end_of_turn_confidence to every partial; the page
+    // decides. A threshold this high and a long timeout keep xAI from
+    // ending a turn on its own.
+    smart_turn: String(SMART_TURN_THRESHOLD),
+    smart_turn_timeout: String(SMART_TURN_TIMEOUT_MS),
   });
   if (options.language) query.set("language", options.language);
+  // inverse text normalization needs a language
+  if (options.language && options.format) query.set("format", "true");
+  // vocabulary biasing: the bot's and the person's names, the thread's
+  // proper nouns (server/voice-keyterms.ts)
+  for (const term of options.keyterms ?? []) query.append("keyterm", term);
   const url = `${API.replace(/^http/, "ws")}/stt?${query}`;
   let socket: WebSocket;
   let closed = false;
@@ -260,11 +291,13 @@ export function openTranscriptionStream(
     if (frame.type === "transcript.created") resolveReady();
     else if (frame.type === "transcript.partial" || frame.type === "transcript.done") {
       const confidence = transcriptConfidence(frame);
+      const endOfTurn = frame.end_of_turn_confidence;
       handlers.onTranscript({
         text: typeof frame.text === "string" ? frame.text : "",
         final: frame.type === "transcript.done" || frame.is_final === true,
         speechFinal: frame.type === "transcript.done" || frame.speech_final === true,
         ...(confidence !== undefined ? { confidence } : {}),
+        ...(typeof endOfTurn === "number" && Number.isFinite(endOfTurn) ? { endOfTurnConfidence: Math.min(1, Math.max(0, endOfTurn)) } : {}),
       });
     } else if (frame.type === "error") {
       // xAI's message may echo request details; never pass it on verbatim

@@ -4,7 +4,7 @@
 // the kitchen at 8am.
 import { describe, expect, it } from "vitest";
 
-import { narrateTool, speakable, toUtterances } from "./speech-text.ts";
+import { narrateTool, speakable, speakableDelta, toUtterances } from "./speech-text.ts";
 
 describe("speakable", () => {
   it("names a code block instead of reading it", () => {
@@ -77,6 +77,22 @@ describe("speakable", () => {
   it("is empty for empty input", () => {
     expect(speakable("")).toBe("");
     expect(speakable("   \n\n  ")).toBe("");
+  });
+});
+
+describe("speakableDelta", () => {
+  it("keeps the space before and after appended words", () => {
+    expect(speakableDelta(" pense")).toBe(" pense");
+    expect(speakableDelta("ment ")).toBe("ment ");
+    expect(speakableDelta(" **vraiment**,")).toBe(" vraiment,");
+  });
+
+  it("drops markdown, emoji and links, keeps a lone punctuation mark", () => {
+    expect(speakableDelta(" 👍")).toBe("");
+    expect(speakableDelta(".")).toBe(".");
+    expect(speakableDelta(" ?")).toBe(" ?");
+    expect(speakableDelta(" voir https://example.com/x")).toBe(" voir a link");
+    expect(speakableDelta("   ")).toBe("");
   });
 });
 

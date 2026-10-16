@@ -7,14 +7,28 @@
 // stops, not after an upload. When the socket cannot open (an old server, a
 // proxy without WebSockets), each turn is uploaded whole instead
 // (POST /voice/transcribe), the call keeps working.
+//
+// Stability: a socket that drops (a Wi-Fi switch, a sleep, xAI ending its
+// session) is reopened at once with a backoff (RECONNECT_BACKOFF_MS) and
+// then every RECONNECT_EVERY_MS for the rest of the call; the next turn
+// streams again. Only the utterances already finalized and still waiting for
+// their words are uploaded whole; the one being spoken is sent again from
+// its first frame on the new socket. The server says `reconnected` when it
+// replaced xAI's side behind the same page socket: the same resync. An
+// upload that fails is tried once more, then the turn reports `failed` so
+// the call tells the person; a turn is never dropped silently.
 import { encodeWav, TARGET_RATE, toPcm16 } from "./audio";
-import { transcribeVoiceMode, voiceModeListenUrl } from "./api";
+import { transcribeVoiceMode, VoiceModeRefused, voiceModeListenUrl } from "./api";
 import { normalizedWords } from "./latency";
 
 /** Confident silence before one `finalize` probe. Four 32 ms frames. */
 export const PROBE_AFTER_MS = 128;
 /** Page keepalive so a proxy does not drop the listen socket between turns. */
 const KEEPALIVE_MS = 15_000;
+/** The waits before each reconnect after the socket dropped. */
+export const RECONNECT_BACKOFF_MS = [250, 750, 2_000] as const;
+/** After the backoff: one more try this often, for the rest of the call. */
+export const RECONNECT_EVERY_MS = 5_000;
 
 export interface LiveTranscriberOptions {
   botId: string;
@@ -25,6 +39,9 @@ export interface LiveTranscriberOptions {
   transcribe?: typeof transcribeVoiceMode;
   /** how long to wait for xAI's final words after finalize */
   finalTimeoutMs?: number;
+  /** override the reconnect waits (tests) */
+  backoffMs?: readonly number[];
+  reconnectEveryMs?: number;
 }
 
 interface Utterance {
@@ -48,6 +65,10 @@ interface Utterance {
   probing?: boolean;
   /** that finalize may have punctuated a sentence the person has not finished */
   forced?: boolean;
+  /** uploaded whole: the socket's words are no longer its */
+  uploading?: boolean;
+  /** its upload failed twice */
+  failed?: boolean;
   resolve?: (words: Heard) => void;
   timer?: ReturnType<typeof setTimeout>;
 }
@@ -56,9 +77,11 @@ interface Utterance {
 export interface Heard {
   text: string;
   confidence?: number;
+  /** the words could not be had (two failed uploads): tell the person */
+  failed?: boolean;
 }
 
-type Frame = { type: "ready" } | { type: "transcript"; text: string; final: boolean; speechFinal: boolean; confidence?: number } | { type: "error"; message: string };
+type Frame = { type: "ready" } | { type: "reconnected" } | { type: "transcript"; text: string; final: boolean; speechFinal: boolean; confidence?: number; endOfTurnConfidence?: number } | { type: "error"; message: string };
 
 /** After a finalize xAI can send again a final chunk it had already closed
  * (then the rest). Appended, that resend doubled the sentence ("Yeah, but I
@@ -88,10 +111,17 @@ export class LiveTranscriber {
    * frames that still arrive for them are theirs, never the next turn's */
   private draining = 0;
   private keepalive: ReturnType<typeof setInterval> | null = null;
-  private reconnects = 0;
+  /** reconnect attempts since the socket was last ready */
+  private attempt = 0;
+  private retry: ReturnType<typeof setTimeout> | null = null;
+  /** the socket opened once this call (else the server may not have it) */
+  private everOpened = false;
   private closing = false;
   /** the partial just notified came from a probe finalize */
   forcedFlush = false;
+  /** xAI Smart Turn's end of turn confidence (0..1) carried by the partial
+   * just notified, when it carried one */
+  endOfTurnConfidence: number | undefined = undefined;
 
   constructor(options: LiveTranscriberOptions) {
     this.options = options;
@@ -102,28 +132,50 @@ export class LiveTranscriber {
     return () => this.partialWatchers.delete(cb);
   }
 
-  /** Open the socket; false means turns will be uploaded whole. */
+  /** Open the socket; false means turns will be uploaded whole (and the
+   * socket is tried again in the background). */
   connect(timeoutMs = 6000): Promise<boolean> {
     return new Promise((resolve) => {
       let settled = false;
       const done = (ok: boolean) => {
         if (settled) return;
         settled = true;
-        this.streaming = ok;
         resolve(ok);
       };
+      if (this.closing) {
+        done(false);
+        return;
+      }
       let socket: WebSocket;
       try {
         this.language = this.options.language();
         const url = voiceModeListenUrl(this.options.botId, this.language, this.options.threadId());
         socket = this.options.socket?.(url) ?? new WebSocket(url);
       } catch {
+        this.streaming = false;
         done(false);
+        this.scheduleReconnect();
         return;
       }
       socket.binaryType = "arraybuffer";
       this.socket = socket;
-      const timer = setTimeout(() => done(false), timeoutMs);
+      const lost = () => {
+        // once per socket: its close and its error both land here
+        if (socket !== this.socket) return;
+        this.socket = null;
+        clearTimeout(timer);
+        this.open = false;
+        this.streaming = false;
+        this.stopKeepalive();
+        done(false);
+        try { socket.close(); } catch { /* closed */ }
+        if (this.closing) return;
+        // what waited on this socket: uploaded whole (the turn being spoken
+        // is sent again on the next socket instead)
+        this.release();
+        this.scheduleReconnect();
+      };
+      const timer = setTimeout(lost, timeoutMs);
       socket.addEventListener("message", (event: MessageEvent) => {
         if (typeof event.data !== "string" || socket !== this.socket) return;
         let frame: Frame;
@@ -131,35 +183,67 @@ export class LiveTranscriber {
         if (frame.type === "ready") {
           clearTimeout(timer);
           this.open = true;
+          this.streaming = true;
+          this.everOpened = true;
+          this.attempt = 0;
           this.armKeepalive();
           done(true);
           // a turn that began while the socket was (re)opening
-          if (this.current) this.flush(this.current);
+          this.resync();
+        } else if (frame.type === "reconnected") {
+          // the server replaced xAI's side: what xAI had is gone
+          this.release();
+          this.resync();
         } else if (frame.type === "transcript") this.heard(frame);
       });
-      const lost = () => {
-        if (socket !== this.socket) return;
-        clearTimeout(timer);
-        const wasOpen = this.open;
-        this.open = false;
-        this.stopKeepalive();
-        done(false);
-        // one reconnect after a drop mid-call; the first failure still uploads
-        if (wasOpen && !this.closing && this.reconnects < 1 && this.current && !this.current.finalized) {
-          this.reconnects += 1;
-          this.streaming = false;
-          void this.connect().then((ok) => {
-            if (ok && this.current) this.flush(this.current);
-          });
-          return;
-        }
-        this.streaming = false;
-        // anything waiting on the socket is uploaded instead
-        for (const utterance of this.utterances) if (utterance.finalized && !utterance.discard) void this.upload(utterance);
-      };
       socket.addEventListener("close", lost);
       socket.addEventListener("error", lost);
     });
+  }
+
+  /** The socket is gone, or xAI's side of it: the finalized utterances that
+   * still wait for words are uploaded, a discarded one is let go, and late
+   * words of settled ones will never come. */
+  private release(): void {
+    this.draining = 0;
+    // a copy: settling an utterance takes it out of the list
+    for (const utterance of this.utterances.slice()) {
+      if (utterance === this.current || utterance.uploading) continue;
+      if (utterance.discard) this.settle(utterance);
+      else if (utterance.finalized) void this.upload(utterance);
+    }
+  }
+
+  /** A fresh xAI session: the utterance being spoken starts over on it,
+   * from its first frame. */
+  private resync(): void {
+    const utterance = this.current;
+    if (!utterance) return;
+    utterance.sent = 0;
+    utterance.text = "";
+    utterance.interim = undefined;
+    utterance.lastChunk = undefined;
+    utterance.confidence = undefined;
+    utterance.closedAt = undefined;
+    utterance.probing = false;
+    utterance.forced = false;
+    utterance.ended = false;
+    this.flush(utterance);
+  }
+
+  private scheduleReconnect(): void {
+    if (this.closing || this.retry) return;
+    const backoff = this.options.backoffMs ?? RECONNECT_BACKOFF_MS;
+    // a socket that never opened (an old server, a proxy without
+    // WebSockets): the backoff only, then uploads for the call
+    if (!this.everOpened && this.attempt >= backoff.length) return;
+    const wait = backoff[this.attempt] ?? this.options.reconnectEveryMs ?? RECONNECT_EVERY_MS;
+    this.attempt += 1;
+    this.retry = setTimeout(() => {
+      this.retry = null;
+      if (!this.closing && !this.socket) void this.connect();
+    }, wait);
+    (this.retry as { unref?: () => void }).unref?.();
   }
 
   /** A turn may be starting: send what was heard just before it too. */
@@ -217,7 +301,7 @@ export class LiveTranscriber {
     this.keepalive = setInterval(() => {
       if (this.open && this.socket?.readyState === 1) this.socket.send(JSON.stringify({ type: "keepalive" }));
     }, KEEPALIVE_MS);
-    this.keepalive.unref?.();
+    (this.keepalive as { unref?: () => void }).unref?.();
   }
 
   private stopKeepalive(): void {
@@ -304,6 +388,11 @@ export class LiveTranscriber {
     if (!utterance) return;
     utterance.discard = true;
     utterance.finalized = true;
+    // no socket: no late words of it will come
+    if (!this.open) {
+      this.settle(utterance);
+      return;
+    }
     if (this.open && this.socket?.readyState === 1 && !utterance.probing) {
       utterance.closedAt = utterance.sent;
       utterance.probing = true;
@@ -318,6 +407,8 @@ export class LiveTranscriber {
   close(): void {
     this.closing = true;
     this.open = false;
+    if (this.retry) clearTimeout(this.retry);
+    this.retry = null;
     this.stopKeepalive();
     const socket = this.socket;
     this.socket = null;
@@ -338,8 +429,10 @@ export class LiveTranscriber {
       return;
     }
     // events belong to the oldest utterance still waiting for its words
-    const utterance = this.utterances[0];
+    // (one being uploaded whole gets its words from the upload)
+    const utterance = this.utterances.find((candidate) => !candidate.uploading);
     if (!utterance) return;
+    this.endOfTurnConfidence = typeof frame.endOfTurnConfidence === "number" ? frame.endOfTurnConfidence : undefined;
     if (!frame.final) {
       utterance.interim = frame.text;
       utterance.forced = false;
@@ -375,20 +468,30 @@ export class LiveTranscriber {
     const index = this.utterances.indexOf(utterance);
     if (index < 0) return;
     this.utterances.splice(index, 1);
-    utterance.resolve?.(utterance.discard ? { text: "" } : { text: utterance.text.trim(), ...(utterance.confidence !== undefined ? { confidence: utterance.confidence } : {}) });
+    utterance.resolve?.(utterance.discard ? { text: "" } : utterance.failed ? { text: "", failed: true } : { text: utterance.text.trim(), ...(utterance.confidence !== undefined ? { confidence: utterance.confidence } : {}) });
     utterance.resolve = undefined;
   }
 
+  /** The utterance's audio, uploaded whole: tried twice (a refusal once),
+   * then `failed`, never an empty turn the person is not told about. */
   private async upload(utterance: Utterance): Promise<void> {
+    if (utterance.uploading) return;
+    utterance.uploading = true;
     if (utterance.timer) clearTimeout(utterance.timer);
     const wav = encodeWav(toPcm16(utterance.frames, TARGET_RATE, TARGET_RATE), TARGET_RATE);
-    try {
-      const transcribe = this.options.transcribe ?? transcribeVoiceMode;
-      const text = await transcribe(this.options.botId, new Blob([new Uint8Array(wav)], { type: "audio/wav" }), this.options.language(), this.options.threadId());
-      utterance.text = text;
-    } catch (error) {
-      utterance.text = "";
-      this.uploadError = error;
+    const transcribe = this.options.transcribe ?? transcribeVoiceMode;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        utterance.text = await transcribe(this.options.botId, new Blob([new Uint8Array(wav)], { type: "audio/wav" }), this.options.language(), this.options.threadId());
+        utterance.failed = false;
+        this.uploadError = null;
+        break;
+      } catch (error) {
+        utterance.text = "";
+        utterance.failed = true;
+        this.uploadError = error;
+        if (error instanceof VoiceModeRefused || this.closing) break;
+      }
     }
     this.settle(utterance);
   }

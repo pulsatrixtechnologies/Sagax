@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteContext } from "./routes/table.ts";
 import type { SessionRecord } from "./sessions.ts";
-import { audioMime, createVoiceModeRoutes, resolveVoiceKey, VOICE_MODE_RATE, type VoiceModeDeps, type VoiceSpeaker, type VoiceUsage } from "./voice-mode.ts";
+import { audioMime, createVoiceModeRoutes, listenTranscriptFrame, resolveVoiceKey, VOICE_MODE_RATE, type VoiceModeDeps, type VoiceSpeaker, type VoiceUsage } from "./voice-mode.ts";
 
 // Fake keys only. Long and distinct so a fragment would be caught too.
 const ORG_KEY = "xai-ORGfake7Lm2Pq9Wz4Rt6Yb";
@@ -190,6 +190,14 @@ describe("voice mode routes", () => {
     expect(xai.synthesize).toHaveBeenCalledWith("Bonjour", undefined, ORG_KEY, { speed: 1, language: "fr" });
   });
 
+  it("an automatic language reads French when the sentence looks French, never an English one", async () => {
+    const { call, xai } = harness();
+    await call({ method: "POST", path: "/api/bots/b-cryptic/voice/stream", body: { text: "Votre rendez-vous est à 14h30, c'est 25 $.", language: "auto" } });
+    expect(xai.synthesizeStream).toHaveBeenCalledWith("Votre rendez-vous est à 14 heures 30, c'est 25 dollars.", undefined, ORG_KEY, { speed: 1, language: "auto" }, expect.any(AbortSignal));
+    await call({ method: "POST", path: "/api/bots/b-cryptic/voice/stream", body: { text: "Dr Smith will see you at 14h30.", language: "auto" } });
+    expect(xai.synthesizeStream).toHaveBeenCalledWith("Dr Smith will see you at 14h30.", undefined, ORG_KEY, { speed: 1, language: "auto" }, expect.any(AbortSignal));
+  });
+
   it("speaks a language xAI TTS lacks as auto, on the organization's key", async () => {
     const { call, xai, usage } = harness();
     await call({ method: "POST", path: "/api/bots/b-cryptic/voice/speak", body: { text: "Hola", language: "ca" } });
@@ -213,8 +221,66 @@ describe("voice mode routes", () => {
     const { call, xai, usage } = harness();
     const out = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/transcribe?language=pt-BR&threadId=t-ada", raw: WAV, contentType: "audio/wav" });
     expect(out.body).toEqual({ text: "hello bot" });
-    expect(xai.transcribe).toHaveBeenCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, "pt");
+    expect(xai.transcribe).toHaveBeenCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, "pt", [], { format: false });
     expect(usage[0]).toMatchObject({ model: "grok-stt", input: WAV.byteLength });
+  });
+
+  it("biases speech to text with the call's keyterms, and survives a failing source", async () => {
+    const keyterms = vi.fn((target: { botName: string }, speaker: { principalId: string }) => [target.botName, speaker.principalId]);
+    const { call, xai } = harness({ keyterms });
+    await call({ method: "POST", path: "/api/bots/b-cryptic/voice/transcribe?threadId=t-ada", raw: WAV, contentType: "audio/wav" });
+    expect(xai.transcribe).toHaveBeenLastCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, undefined, ["Cryptic", "p-ada"], { format: false });
+    const broken = harness({ keyterms: () => { throw new Error("store down"); } });
+    const out = await broken.call({ method: "POST", path: "/api/bots/b-cryptic/voice/transcribe", raw: WAV, contentType: "audio/wav" });
+    expect(out.status).toBe(200);
+    expect(broken.xai.transcribe).toHaveBeenLastCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, undefined, [], { format: false });
+  });
+
+  it("hands the call's keyterms to the phone with the call's start, only to a person allowed on that thread", async () => {
+    const callSession = { start: vi.fn(), end: vi.fn() };
+    const many = Array.from({ length: 150 }, (_, i) => `Term${i}`);
+    const keyterms = vi.fn((target: { botName: string; threadId?: string }) => (target.threadId === "t-big" ? many : [target.botName, "ServiceNow"]));
+    const { call } = harness({ keyterms, callSession });
+    const started = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/call", body: { callId: "call-12345678", state: "start", threadId: "t-ada" } });
+    expect(started).toMatchObject({ status: 200, body: { ok: true, keyterms: ["Cryptic", "ServiceNow"] } });
+    expect(keyterms).toHaveBeenLastCalledWith(expect.objectContaining({ botId: "b-cryptic", threadId: "t-ada" }), expect.objectContaining({ principalId: "p-ada" }));
+    const capped = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/call", body: { callId: "call-12345678", state: "start", threadId: "t-big" } });
+    expect(capped.body.keyterms).toHaveLength(100);
+    // alive and end say nothing more
+    keyterms.mockClear();
+    const alive = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/call", body: { callId: "call-12345678", state: "alive", threadId: "t-ada" } });
+    expect(alive.body).toEqual({ ok: true });
+    const ended = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/call", body: { callId: "call-12345678", state: "end", threadId: "t-ada" } });
+    expect(ended.body).toEqual({ ok: true });
+    expect(keyterms).not.toHaveBeenCalled();
+    // a thread or bot the person may not use: refused before any keyterm
+    const refused = await call({ method: "POST", path: "/api/bots/b-other/voice/call", body: { callId: "call-12345678", state: "start", threadId: "t-ada" } });
+    expect(refused.status).toBe(404);
+    expect(refused.body.keyterms).toBeUndefined();
+    expect(keyterms).not.toHaveBeenCalled();
+    // a failing source still starts the call, with no keyterms
+    const broken = harness({ keyterms: () => { throw new Error("store down"); }, callSession });
+    const out = await broken.call({ method: "POST", path: "/api/bots/b-cryptic/voice/call", body: { callId: "call-12345678", state: "start" } });
+    expect(out).toMatchObject({ status: 200, body: { ok: true, keyterms: [] } });
+  });
+
+  it("reads auto on a French computer as French with formatting, ignores a malformed locale, and hands back the words without fillers", async () => {
+    const { call, xai } = harness();
+    xai.transcribe.mockResolvedValueOnce({ text: "Euh, peux-tu regarder le billet euh de CONTOSO?" });
+    const out = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/transcribe?language=auto&locale=fr-CA", raw: WAV, contentType: "audio/wav" });
+    expect(out.body).toEqual({ text: "Peux-tu regarder le billet de CONTOSO?" });
+    expect(xai.transcribe).toHaveBeenLastCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, "fr", [], { format: true });
+    await call({ method: "POST", path: "/api/bots/b-cryptic/voice/transcribe?language=auto&locale=fr%3Bx", raw: WAV, contentType: "audio/wav" });
+    expect(xai.transcribe).toHaveBeenLastCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, undefined, [], { format: false });
+    await call({ method: "POST", path: "/api/bots/b-cryptic/voice/transcribe?language=en&locale=fr-CA", raw: WAV, contentType: "audio/wav" });
+    expect(xai.transcribe).toHaveBeenLastCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, "en", [], { format: true });
+  });
+
+  it("passes xAI's end of turn confidence to the page", () => {
+    expect(listenTranscriptFrame({ text: "euh", final: false, speechFinal: false, endOfTurnConfidence: 0.1 }))
+      .toEqual({ type: "transcript", text: "euh", final: false, speechFinal: false, endOfTurnConfidence: 0.1 });
+    expect(listenTranscriptFrame({ text: "ok", final: true, speechFinal: true, confidence: 0.9 }))
+      .toEqual({ type: "transcript", text: "ok", final: true, speechFinal: true, confidence: 0.9 });
   });
 
   it("refuses audio it does not recognize", async () => {

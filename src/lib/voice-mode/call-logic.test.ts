@@ -8,7 +8,7 @@ import { INITIAL_CALL, step, type CallEffect, type CallEvent, type CallState } f
 import { EchoGuard } from "./echo";
 import { FADE_MS } from "./player";
 import { SentenceStream } from "./sentences";
-import { BARGE_IN_START_MS, FRAME_MS, LONG_FRENCH_INCOMPLETE_CAP, LONG_FRENCH_QUIET_MS, PAUSE_PRESETS, TurnDetector, completeClause, incompleteClause, semanticComplete, type TurnEvent } from "./turns";
+import { BARGE_IN_CONFIRM_MS, BARGE_IN_START_MS, FRAME_MS, LONG_FRENCH_INCOMPLETE_CAP, LONG_FRENCH_QUIET_MS, PAUSE_PRESETS, SMART_TURN_EARLY, TurnDetector, completeClause, incompleteClause, semanticComplete, type TurnEvent } from "./turns";
 
 function run(events: CallEvent[], from: CallState = INITIAL_CALL) {
   let state = from;
@@ -46,14 +46,18 @@ describe("call state machine", () => {
     expect(done.state.phase).toBe("listening");
   });
 
-  it("barge-in: the bot is ducked at the first voiced frame, then cancelled and its running turn interrupted", () => {
+  it("barge-in: the bot is ducked at the first voiced frame, stays ducked at speech-start, and is cut once the words are confirmed", () => {
     const speaking = run([{ type: "bot-busy", busy: true }, { type: "bot-audio-start" }], connected).state;
     const candidate = run([{ type: "speech-candidate" }], speaking);
     expect(candidate.types).toEqual(["duck"]);
     expect(candidate.state.phase).toBe("speaking");
-    const barged = run([{ type: "speech-start" }], candidate.state);
+    const pending = run([{ type: "speech-start" }], candidate.state);
+    // a cough or a mm-hmm past 128 ms cancels nothing
+    expect(pending.types).toEqual([]);
+    expect(pending.state).toMatchObject({ phase: "hearing", botAudible: true, ducked: true, bargePending: true });
+    const barged = run([{ type: "barge-in-confirm" }], pending.state);
     expect(barged.types).toEqual(["cancel-speech", "earcon", "interrupt-bot"]);
-    expect(barged.state).toMatchObject({ phase: "interrupted", botAudible: false, ducked: false });
+    expect(barged.state).toMatchObject({ phase: "interrupted", botAudible: false, ducked: false, bargePending: false });
     // the new words become the next turn
     const next = run([{ type: "speech-end" }, { type: "utterance", text: "no, the other one" }], barged.state);
     expect(next.effects).toContainEqual({ type: "send", text: "no, the other one" });
@@ -62,9 +66,37 @@ describe("call state machine", () => {
 
   it("barge-in after the bot finished writing only drops its remaining speech", () => {
     const speaking = run([{ type: "bot-busy", busy: false }, { type: "bot-audio-start" }], connected).state;
-    const barged = run([{ type: "speech-candidate" }, { type: "speech-start" }], speaking);
+    const barged = run([{ type: "speech-candidate" }, { type: "speech-start" }, { type: "barge-in-confirm" }], speaking);
     expect(barged.types).toEqual(["duck", "cancel-speech", "earcon"]);
     expect(barged.types).not.toContain("interrupt-bot");
+  });
+
+  it("a mm-hmm or a long cough over the bot: ducked past speech-start, then rejected, unducked, the answer goes on", () => {
+    const speaking = run([{ type: "bot-busy", busy: true }, { type: "bot-audio-start" }], connected).state;
+    const out = run([{ type: "speech-candidate" }, { type: "speech-start" }, { type: "speech-end" }, { type: "utterance-rejected", reason: "empty" }], speaking);
+    expect(out.types).toEqual(["duck", "finalize-stt", "unduck"]);
+    expect(out.types).not.toContain("cancel-speech");
+    expect(out.types).not.toContain("interrupt-bot");
+    expect(out.state).toMatchObject({ phase: "speaking", botAudible: true, ducked: false, bargePending: false });
+    // the detector's own cancel unducks the same way
+    const cancelled = run([{ type: "speech-candidate" }, { type: "speech-start" }, { type: "speech-cancel" }], speaking);
+    expect(cancelled.types).toEqual(["duck", "unduck", "cancel-stt"]);
+    expect(cancelled.state).toMatchObject({ phase: "speaking", bargePending: false });
+  });
+
+  it("short words over the bot that end before the confirmation still cut it before they are sent", () => {
+    const speaking = run([{ type: "bot-busy", busy: true }, { type: "bot-audio-start" }], connected).state;
+    const out = run([{ type: "speech-candidate" }, { type: "speech-start" }, { type: "speech-end" }, { type: "utterance", text: "stop" }], speaking);
+    expect(out.types).toEqual(["duck", "finalize-stt", "cancel-speech", "earcon", "interrupt-bot", "send"]);
+    expect(out.state).toMatchObject({ phase: "thinking", botAudible: false, bargePending: false });
+  });
+
+  it("a confirmation with nothing pending, or after the bot went quiet, cuts nothing", () => {
+    expect(run([{ type: "barge-in-confirm" }], connected).types).toEqual([]);
+    const speaking = run([{ type: "bot-busy", busy: true }, { type: "bot-audio-start" }], connected).state;
+    const quiet = run([{ type: "speech-candidate" }, { type: "speech-start" }, { type: "bot-audio-end" }, { type: "barge-in-confirm" }], speaking);
+    expect(quiet.types).toEqual(["duck"]);
+    expect(quiet.state.bargePending).toBe(false);
   });
 
   it("a cough over the bot: ducked, then restored, nothing cancelled", () => {
@@ -97,14 +129,14 @@ describe("call state machine", () => {
 
   it("duplex: barge-in while speaking still cancels the voice and the turn", () => {
     const speaking = run([{ type: "bot-busy", busy: true }, { type: "bot-audio-start" }], { ...connected, duplex: true }).state;
-    const barged = run([{ type: "speech-candidate" }, { type: "speech-start" }], speaking);
+    const barged = run([{ type: "speech-candidate" }, { type: "speech-start" }, { type: "barge-in-confirm" }], speaking);
     expect(barged.types).toEqual(["duck", "cancel-speech", "earcon", "interrupt-bot"]);
     expect(barged.state.phase).toBe("interrupted");
   });
 
   it("duplex: barge-in during speech does not kill background work", () => {
     const speaking = run([{ type: "bot-busy", busy: true }, { type: "bot-audio-start" }], { ...connected, duplex: true, backgroundWork: true }).state;
-    const barged = run([{ type: "speech-candidate" }, { type: "speech-start" }], speaking);
+    const barged = run([{ type: "speech-candidate" }, { type: "speech-start" }, { type: "barge-in-confirm" }], speaking);
     expect(barged.types).toEqual(["duck", "cancel-speech", "earcon"]);
     expect(barged.types).not.toContain("interrupt-bot");
     expect(barged.state.phase).toBe("interrupted");
@@ -224,9 +256,10 @@ describe("turn detection (endpointing)", () => {
     const barge = feed(detector, [{ p: 0.95, n: 10, bot: true }]);
     expect(barge.map((e) => e.type)).toEqual(["candidate", "start"]);
     expect(barge[0]).toMatchObject({ bargeIn: true, at: FRAME_MS });
-    // four frames: the cut is at 128 ms, and the 12 ms fade is silent by 140 ms
+    // four frames: speech starts at 128 ms (the bot stays ducked); the cut
+    // waits for the words, at worst 400 ms, silent 12 ms later
     expect(barge[1]).toMatchObject({ bargeIn: true, at: BARGE_IN_START_MS });
-    expect(BARGE_IN_START_MS + FADE_MS).toBeLessThanOrEqual(150);
+    expect(BARGE_IN_CONFIRM_MS + FADE_MS).toBe(412);
   });
 
   it("a three-frame cough over the bot ducks and does not cut", () => {
@@ -334,15 +367,89 @@ describe("Québec French end of speech", () => {
     const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
     detector.setProsody(true);
     feed(detector, [{ p: 0.9, n: frames(900) }]);
-    detector.hint("quelle heure est il");
+    detector.hint("what time is it");
     const end = feed(detector, [{ p: 0.05, n: frames(400) }]).find((event) => event.type === "end");
     expect(end).toMatchObject({ type: "end", early: true, semantic: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
     expect(end!.at).toBe(PAUSE_PRESETS.normal.completeMs);
+
+    // French words without punctuation wait the long French quiet
+    const french = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    french.setProsody(true);
+    feed(french, [{ p: 0.9, n: frames(900) }]);
+    french.hint("quelle heure est il");
+    const frenchEnd = feed(french, [{ p: 0.05, n: frames(800) }]).find((event) => event.type === "end");
+    expect(frenchEnd).toMatchObject({ type: "end", early: true, semantic: true, endpointMs: LONG_FRENCH_QUIET_MS });
+    expect(frenchEnd!.at).toBe(LONG_FRENCH_QUIET_MS);
 
     const patient = new TurnDetector({ ...PAUSE_PRESETS.normal });
     feed(patient, [{ p: 0.9, n: frames(900) }]);
     patient.hint("quelle heure est il");
     expect(feed(patient, [{ p: 0.05, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
+  });
+});
+
+describe("a Québec request cut by a pause (peux-tu regarder le billet... de CONTOSO)", () => {
+  it("the meaning of short French words alone does not end the turn on the short window", () => {
+    expect(semanticComplete("peux-tu regarder le billet")).toBe(true);
+    const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    detector.setProsody(true);
+    feed(detector, [{ p: 0.9, n: frames(1200) }]);
+    detector.hint("peux-tu regarder le billet");
+    // a 400 ms pause before "de CONTOSO" is not the end
+    expect(feed(detector, [{ p: 0.05, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
+    feed(detector, [{ p: 0.9, n: frames(500) }]);
+    detector.hint("peux-tu regarder le billet de CONTOSO");
+    expect(feed(detector, [{ p: 0.05, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
+  });
+});
+
+describe("xAI Smart Turn", () => {
+  const spoken = (pause: keyof typeof PAUSE_PRESETS = "normal") => {
+    const detector = new TurnDetector({ ...PAUSE_PRESETS[pause] });
+    detector.setProsody(true);
+    feed(detector, [{ p: 0.9, n: frames(900) }]);
+    return detector;
+  };
+  const endAt = (detector: TurnDetector) => feed(detector, [{ p: 0.05, n: frames(3000) }]).find((event) => event.type === "end")!;
+
+  it("absent: today's rules", () => {
+    const detector = spoken();
+    detector.hint("What time is it in Tokyo?");
+    expect(endAt(detector)).toMatchObject({ early: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
+  });
+
+  it("a confident end allows the early end; a doubtful one waits the endpoint", () => {
+    const sure = spoken();
+    sure.hint("What time is it in Tokyo?", SMART_TURN_EARLY);
+    expect(endAt(sure)).toMatchObject({ early: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
+    const unsure = spoken();
+    unsure.hint("What time is it in Tokyo?", 0.45);
+    const end = endAt(unsure);
+    expect(end.early).toBeUndefined();
+    expect(end.endpointMs).toBe(PAUSE_PRESETS.normal.endpointMs);
+    // the semantic and contour ends too
+    const semantic = spoken();
+    semantic.hint("what time is it", 0.5);
+    expect(endAt(semantic).early).toBeUndefined();
+  });
+
+  it("far from done: the endpoint waits incompleteMs longer", () => {
+    const detector = spoken();
+    detector.hint("I need you to check the", 0.1);
+    expect(endAt(detector).endpointMs).toBe(PAUSE_PRESETS.normal.endpointMs + PAUSE_PRESETS.normal.incompleteMs);
+    const words = spoken();
+    words.hint("I need the report for Montreal", 0.2);
+    expect(endAt(words).endpointMs).toBe(PAUSE_PRESETS.normal.endpointMs + PAUSE_PRESETS.normal.incompleteMs);
+    // the same words again without one (a final chunk): the confidence holds
+    const same = spoken();
+    same.hint("I need the report for Montreal", 0.2);
+    same.hint("I need the report for Montreal.");
+    expect(endAt(same).endpointMs).toBe(PAUSE_PRESETS.normal.endpointMs + PAUSE_PRESETS.normal.incompleteMs);
+    // new words without a confidence: back to the rules alone
+    const later = spoken();
+    later.hint("I need the report", 0.2);
+    later.hint("I need the report for Montreal");
+    expect(endAt(later).endpointMs).toBe(PAUSE_PRESETS.normal.endpointMs);
   });
 });
 
@@ -375,9 +482,7 @@ describe("echo guard", () => {
     expect(guard.update(0.06, 0.1)).toBe(true);
   });
 
-  it("speakerphone delay is echo; the person still cuts at 128 ms and is silent by 140 ms", () => {
-    expect(BARGE_IN_START_MS + FADE_MS).toBe(140);
-    expect(BARGE_IN_START_MS + FADE_MS).toBeLessThanOrEqual(150);
+  it("speakerphone delay is echo; the person still starts a barge-in at 128 ms", () => {
     const guard = new EchoGuard();
     const played = 0.2;
     const residue = played * 0.05;
@@ -486,15 +591,13 @@ describe("a finished sentence ends sooner (docs/voice-mode-xai.md, Latency)", ()
     open.hint("give me a good prompt");
     expect(feed(open, [{ p: 0.05, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
 
-    // a speculative start on four stable words ends on completeMs
+    // four stable words a speculative send guessed on are not a finished
+    // sentence: the guess never shortens the endpoint
     const speculated = new TurnDetector();
     speculated.setPause("normal");
     feed(speculated, [{ p: 0.9, n: frames(900) }]);
     speculated.hint("How is the weather");
-    speculated.markComplete();
-    speculated.hint("How is the weather");
-    const speculatedEnd = feed(speculated, [{ p: 0.05, n: frames(400) }]).find((event) => event.type === "end");
-    expect(speculatedEnd).toMatchObject({ type: "end", early: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
+    expect(feed(speculated, [{ p: 0.05, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
   });
 
   it("a complete punctuated sentence ends after 200-300 ms of silence", () => {

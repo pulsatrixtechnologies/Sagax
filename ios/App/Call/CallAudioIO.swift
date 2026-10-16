@@ -8,16 +8,19 @@
 // to the main actor; the bot's voice is scheduled on a player node through
 // the same engine (the echo canceller's reference), and earcons on a second
 // node so cutting the bot never cuts a tone. A tap on the output measures
-// what is audible for the echo guard and the waveform.
+// what is audible for the echo guard and the waveform. The voice's volume
+// moves in short ramps (`rampVoice`), never in one jump that clicks.
 import AVFoundation
 import CompanionCore
 
 final class CallAudioIO: @unchecked Sendable {
     enum Failure: Error { case noInput, converter }
 
-    let engine = AVAudioEngine()
-    let voice = AVAudioPlayerNode()
-    let tones = AVAudioPlayerNode()
+    /// Replaced whole after a media services reset (`rebuild`): Apple's
+    /// guidance is new engine and nodes, not the old ones restarted.
+    private(set) var engine = AVAudioEngine()
+    private(set) var voice = AVAudioPlayerNode()
+    private(set) var tones = AVAudioPlayerNode()
     /// The format every voice buffer is converted to before it is scheduled.
     let playFormat = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
 
@@ -30,6 +33,10 @@ final class CallAudioIO: @unchecked Sendable {
     private let frameFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: CallAudio.sampleRate, channels: 1, interleaved: false)!
     private(set) var capturing = false
     private var offlineClock: Timer?
+    private let rampQueue = DispatchQueue(label: "call.voice.ramp", qos: .userInteractive)
+    private var rampTimer: DispatchSourceTimer?
+    /// Bumped by every ramp: a step of an older one never writes after it.
+    private var rampGeneration = 0
 
     /// Manual rendering, in real time: 20 ms of output every 20 ms, measured
     /// like the hardware output's tap.
@@ -145,6 +152,19 @@ final class CallAudioIO: @unchecked Sendable {
     }
 
     /// Restart after a route or configuration change (AirPods in or out).
+    /// After the media services were reset: a new engine and new nodes (the
+    /// old ones are invalid), started again like at the call's start.
+    func rebuild(capture: Bool) throws {
+        guard !engine.isInManualRenderingMode else { return }
+        stop()
+        engine = AVAudioEngine()
+        voice = AVAudioPlayerNode()
+        tones = AVAudioPlayerNode()
+        captureConverter = nil
+        lock.withLock { pending = [] }
+        try start(capture: capture)
+    }
+
     func restart() {
         guard running, !engine.isInManualRenderingMode else { return }
         let capture = capturing
@@ -221,6 +241,62 @@ final class CallAudioIO: @unchecked Sendable {
         return error == nil && out.frameLength > 0 ? out : nil
     }
 
+    /// What a sentence's converter still holds once its input has ended: a
+    /// resampler keeps the last few samples until it is told the stream is
+    /// over (`.endOfStream`), so without this every sentence lost its tail.
+    func drain(_ converter: AVAudioConverter?) -> AVAudioPCMBuffer? {
+        guard let converter,
+              let out = AVAudioPCMBuffer(pcmFormat: playFormat, frameCapacity: 4_096) else { return nil }
+        var error: NSError?
+        converter.convert(to: out, error: &error) { _, status in
+            status.pointee = .endOfStream
+            return nil
+        }
+        return error == nil && out.frameLength > 0 ? out : nil
+    }
+
+    /// Move the voice's volume to `target` over `ms`, in 1 ms steps (0: at
+    /// once). A new ramp replaces the one running.
+    func rampVoice(to target: Float, ms: Double) {
+        let steps = Int(ms.rounded())
+        let timer: DispatchSourceTimer? = steps > 0 ? DispatchSource.makeTimerSource(queue: rampQueue) : nil
+        let (previous, generation) = lock.withLock { () -> (DispatchSourceTimer?, Int) in
+            let old = rampTimer
+            rampTimer = timer
+            rampGeneration += 1
+            return (old, rampGeneration)
+        }
+        previous?.cancel()
+        let current: @Sendable () -> Bool = { [weak self] in
+            guard let self else { return false }
+            return self.lock.withLock { self.rampGeneration } == generation
+        }
+        guard let timer else {
+            // on the ramp's queue, after any step of an older ramp already
+            // running there, so none of them writes after this one
+            rampQueue.async { [weak self] in
+                guard let self, current() else { return }
+                self.voice.volume = target
+            }
+            return
+        }
+        let from = voice.volume
+        let progress = RampProgress()
+        timer.schedule(deadline: .now(), repeating: .milliseconds(1), leeway: .microseconds(250))
+        timer.setEventHandler { [weak self, weak timer] in
+            guard let self, let timer else { return }
+            guard current() else {
+                timer.cancel()
+                return
+            }
+            progress.step += 1
+            let share = Float(min(progress.step, steps)) / Float(steps)
+            self.voice.volume = from + (target - from) * share
+            if progress.step >= steps { timer.cancel() }
+        }
+        timer.resume()
+    }
+
     /// A short sine tone or two (earcons), beside the bot's voice.
     func tone(_ earcon: CallEarcon, volume: Float? = nil) {
         guard running else { return }
@@ -243,6 +319,11 @@ final class CallAudioIO: @unchecked Sendable {
         if !tones.isPlaying { tones.play() }
         tones.scheduleBuffer(buffer, completionHandler: nil)
     }
+}
+
+/// A ramp's step count, owned by its timer's queue.
+private final class RampProgress: @unchecked Sendable {
+    var step = 0
 }
 
 extension AVAudioPCMBuffer {

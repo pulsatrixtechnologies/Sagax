@@ -233,17 +233,58 @@ extension CompanionClient {
     /// gets each turn's mark. True when the server took it.
     @discardableResult
     public func voiceCallSession(botId: String, state: VoiceCallSessionState, callId: String, threadId: String?, language: String?) async -> Bool {
+        await postVoiceCall(botId: botId, state: state, callId: callId, threadId: threadId, language: language) != nil
+    }
+
+    /// The call's start, with the words the person's speech should be
+    /// expected to contain (the bot's name, the person's, the thread's
+    /// proper nouns), for the phone's own recognizer. Nil when the server
+    /// could not be told (best effort); empty when it has no keyterms or
+    /// is older than the field.
+    public func voiceCallStart(botId: String, callId: String, threadId: String?, language: String?) async -> [String]? {
+        guard let data = await postVoiceCall(botId: botId, state: .start, callId: callId, threadId: threadId, language: language) else { return nil }
+        struct Body: Decodable { var keyterms: [String]? }
+        return CallKeyterms.contextual((try? JSONDecoder().decode(Body.self, from: data))?.keyterms ?? [])
+    }
+
+    private func postVoiceCall(botId: String, state: VoiceCallSessionState, callId: String, threadId: String?, language: String?) async -> Data? {
         var body: [String: Any] = ["state": state.rawValue, "callId": callId]
         if let threadId, Self.validRouteID(threadId) { body["threadId"] = threadId }
         if let language, language != "auto", VoiceModeSettings.isLanguage(language) { body["language"] = language }
         guard let request = try? makeRequest("POST", "\(Self.voiceBase(botId))/call", body: body),
-              let (data, response) = try? await perform(request) else { return false }
-        return (try? Self.check(response, data)) != nil
+              let (data, response) = try? await perform(request),
+              (try? Self.check(response, data)) != nil else { return nil }
+        return data
     }
 
     public func interrupt(roomId: String) async throws {
         guard Self.validRouteID(roomId) else { throw APIError.badURL }
         try await send(try makeRequest("POST", "/api/groups/\(roomId)/interrupt"))
+    }
+}
+
+/// Words the phone's recognizer should expect on a call (the server's
+/// keyterms, POST /voice/call start): contextualStrings for
+/// SFSpeechRecognizer and SpeechAnalyzer's AnalysisContext.
+public enum CallKeyterms {
+    /// Apple advises about a hundred phrases at most.
+    public static let limit = 100
+    /// Longest phrase kept (the server's own cap).
+    public static let maxCharacters = 50
+
+    /// Trimmed, blank and over-long phrases dropped, duplicates (ignoring
+    /// case) kept once in their first spelling, at most `limit`.
+    public static func contextual(_ terms: [String], limit: Int = CallKeyterms.limit) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for raw in terms {
+            guard out.count < limit else { break }
+            let term = raw.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            guard !term.isEmpty, term.count <= maxCharacters else { continue }
+            guard seen.insert(term.lowercased()).inserted else { continue }
+            out.append(term)
+        }
+        return out
     }
 }
 

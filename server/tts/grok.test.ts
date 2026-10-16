@@ -125,4 +125,97 @@ describe("Grok voice", () => {
     expect(seen[0]?.body).toContain('name="language"');
     expect(seen[0]?.body).toContain('filename="turn.wav"');
   });
+
+  it("voice mode: sends keyterms before the file, which xAI needs last", async () => {
+    const grok = await import("./grok.ts");
+    await grok.transcribe(new Uint8Array([82, 73, 70, 70]), "audio/wav", "fixture-xai-key", "fr", ["Cryptic", "CrowdStrike"]);
+    const body = seen[0]?.body ?? "";
+    expect(body.match(/name="keyterm"/g)).toHaveLength(2);
+    expect(body).toContain("CrowdStrike");
+    const file = body.indexOf('name="file"');
+    expect(file).toBeGreaterThan(body.lastIndexOf('name="keyterm"'));
+    expect(file).toBeGreaterThan(body.indexOf('name="language"'));
+  });
+
+  it("voice mode: the streaming socket asks for each keyterm", async () => {
+    const grok = await import("./grok.ts");
+    const urls: string[] = [];
+    class FakeSocket extends EventTarget {
+      readyState = 0;
+      binaryType = "";
+      constructor(url: string) { super(); urls.push(url); }
+      send() {}
+      close() {}
+    }
+    const stream = grok.openTranscriptionStream("fixture-xai-key", { language: "fr", keyterms: ["Cryptic", "Marie Tremblay"] }, {
+      onTranscript() {}, onError() {}, onClose() {},
+    }, FakeSocket as unknown as import("./grok.ts").HeaderWebSocket);
+    stream.close();
+    const query = new URL(urls[0]!).searchParams;
+    expect(query.getAll("keyterm")).toEqual(["Cryptic", "Marie Tremblay"]);
+    expect(query.get("language")).toBe("fr");
+  });
+
+  it("voice mode: the socket keeps fillers, asks for formatting with a language, and a smart turn that never ends the turn itself", async () => {
+    const grok = await import("./grok.ts");
+    const urls: string[] = [];
+    class FakeSocket extends EventTarget {
+      readyState = 0;
+      binaryType = "";
+      constructor(url: string) { super(); urls.push(url); }
+      send() {}
+      close() {}
+    }
+    const handlers = { onTranscript() {}, onError() {}, onClose() {} };
+    grok.openTranscriptionStream("fixture-xai-key", { language: "fr", format: true }, handlers, FakeSocket as unknown as import("./grok.ts").HeaderWebSocket).close();
+    grok.openTranscriptionStream("fixture-xai-key", { format: true }, handlers, FakeSocket as unknown as import("./grok.ts").HeaderWebSocket).close();
+    const fr = new URL(urls[0]!).searchParams;
+    expect(fr.get("filler_words")).toBe("true");
+    expect(fr.get("format")).toBe("true");
+    expect(Number(fr.get("smart_turn"))).toBeGreaterThanOrEqual(0.9);
+    expect(Number(fr.get("smart_turn_timeout"))).toBeGreaterThanOrEqual(5000);
+    const auto = new URL(urls[1]!).searchParams;
+    expect(auto.get("filler_words")).toBe("true");
+    // format needs a language: pure auto never asks for it
+    expect(auto.get("format")).toBeNull();
+    expect(auto.get("language")).toBeNull();
+  });
+
+  it("voice mode: passes xAI's end of turn confidence through", async () => {
+    const grok = await import("./grok.ts");
+    const sockets: EventTarget[] = [];
+    class FakeSocket extends EventTarget {
+      readyState = 1;
+      binaryType = "";
+      constructor() { super(); sockets.push(this); }
+      send() {}
+      close() {}
+    }
+    const events: import("./grok.ts").TranscriptEvent[] = [];
+    const stream = grok.openTranscriptionStream("fixture-xai-key", {}, {
+      onTranscript(event) { events.push(event); }, onError() {}, onClose() {},
+    }, FakeSocket as unknown as import("./grok.ts").HeaderWebSocket);
+    const message = (data: unknown) => sockets[0]!.dispatchEvent(Object.assign(new Event("message"), { data: JSON.stringify(data) }));
+    message({ type: "transcript.partial", text: "peux-tu regarder le billet", is_final: false, end_of_turn_confidence: 0.12 });
+    message({ type: "transcript.partial", text: "de CONTOSO", is_final: true, speech_final: false });
+    message({ type: "transcript.partial", text: "x", end_of_turn_confidence: 7 });
+    stream.close();
+    expect(events[0]).toMatchObject({ text: "peux-tu regarder le billet", endOfTurnConfidence: 0.12 });
+    expect(events[1]).not.toHaveProperty("endOfTurnConfidence");
+    expect(events[2]!.endOfTurnConfidence).toBe(1);
+  });
+
+  it("voice mode: the recorded turn keeps fillers and asks for formatting when told, file still last", async () => {
+    const grok = await import("./grok.ts");
+    await grok.transcribe(new Uint8Array([82, 73, 70, 70]), "audio/wav", "fixture-xai-key", "fr", ["CONTOSO"], { format: true });
+    await grok.transcribe(new Uint8Array([82, 73, 70, 70]), "audio/wav", "fixture-xai-key", undefined, [], { format: true });
+    const body = seen[0]?.body ?? "";
+    expect(body).toMatch(/name="filler_words"\r\n\r\ntrue/);
+    expect(body).toMatch(/name="format"\r\n\r\ntrue/);
+    expect(body.indexOf('name="file"')).toBeGreaterThan(body.indexOf('name="format"'));
+    expect(body.indexOf('name="file"')).toBeGreaterThan(body.indexOf('name="filler_words"'));
+    const auto = seen[1]?.body ?? "";
+    expect(auto).toContain('name="filler_words"');
+    expect(auto).not.toContain('name="format"');
+  });
 });

@@ -97,6 +97,10 @@ final class CallController: ObservableObject {
     /// the server's hang-up must not live in that list.
     private var serverHangupObserver: NSObjectProtocol?
     private var serverHangup: Task<Void, Never>?
+    /// A system interruption (a phone call, Siri, an alarm) ended without
+    /// `.shouldResume`: the call stays on hold until the app is active again
+    /// or the person taps Resume.
+    private var interruptionPending = false
 
     private init() {
         voiceSettings = VoiceModeSettings.decode(UserDefaults.standard.string(forKey: VoiceModeSettings.storageKey))
@@ -207,7 +211,12 @@ final class CallController: ObservableObject {
                 guard let self, case let .bot(bot)? = self.target else { return "" }
                 return try await client.voiceModeTranscribe(botId: bot.id, wav: CallWav.encode(samples), language: self.voiceSettings.language, threadId: self.threadId)
             } : nil
-            let ready = await recognizer.prepare(locales: voiceSettings.recognitionLocales(), upload: upload)
+            recognizer.onUploadFailed = { [weak self] in
+            guard let self, self.target != nil else { return }
+            self.notice = String(localized: "That did not get through. Could you say it again?")
+            Task { await self.engine?.say(String(localized: "That did not get through. Could you say it again?")) }
+        }
+        let ready = await recognizer.prepare(locales: voiceSettings.recognitionLocales(), upload: upload)
             guard target?.id == chat.id else { return }
             if !ready { note = String(localized: "Speech recognition isn't available for this language. Allow Speech Recognition in Settings, then try again.") }
         }
@@ -274,7 +283,13 @@ final class CallController: ObservableObject {
         // the call lasts is a call turn (typed words, a queued line, a retry)
         if case let .bot(bot) = chat {
             let call = (callId: callId, threadId: threadId, language: voiceSettings.language)
-            Task { await client.voiceCallSession(botId: bot.id, state: .start, callId: call.callId, threadId: call.threadId, language: call.language) }
+            // the reply carries the words to expect (names, the thread's proper
+            // nouns): recognition starts now and uses them from the next turn
+            Task { [weak self, weak recognizer] in
+                guard let terms = await client.voiceCallStart(botId: bot.id, callId: call.callId, threadId: call.threadId, language: call.language),
+                      !terms.isEmpty, self?.recognizer === recognizer else { return }
+                recognizer?.useContextualStrings(terms)
+            }
             callAlive = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { _ in
                 Task { await client.voiceCallSession(botId: bot.id, state: .alive, callId: call.callId, threadId: call.threadId, language: call.language) }
             }
@@ -382,6 +397,7 @@ final class CallController: ObservableObject {
         stateSink = nil
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers = []
+        interruptionPending = false
         #if DEBUG
         CallDebug.shared.stopFeeding()
         #endif
@@ -418,8 +434,48 @@ final class CallController: ObservableObject {
     }
 
     func resume() {
+        if interruptionPending {
+            resumeAfterInterruption()
+            return
+        }
         engine?.resume()
         callKit?.setHeld(false)
+    }
+
+    /// Back from a system interruption: the session active again, the audio
+    /// engine restarted, the call off hold.
+    private func resumeAfterInterruption() {
+        guard target != nil else { return }
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            // still taken by the other audio: the person taps Resume later
+            interruptionPending = true
+            notice = String(localized: "The call was interrupted. Tap Resume the call to continue.")
+            return
+        }
+        interruptionPending = false
+        notice = nil
+        io?.restart()
+        engine?.resume()
+        callKit?.setHeld(false)
+    }
+
+    /// The media services restarted (rare: the audio server crashed). Every
+    /// audio object is stale: the session is configured again and the
+    /// engine rebuilt on it; the call goes on.
+    private func rebuildAfterMediaReset() {
+        guard target != nil, let io, !injecting else { return }
+        try? CallAudioIO.configureSession()
+        try? AVAudioSession.sharedInstance().setActive(true)
+        do {
+            // the old engine and nodes are invalid after a reset: new ones
+            try io.rebuild(capture: true)
+        } catch {
+            notice = String(localized: "No microphone could be opened. Check that one is connected and not in use.")
+            engine?.hold()
+            interruptionPending = true
+        }
     }
 
     /// The avatar while the bot speaks: it stops talking.
@@ -749,11 +805,25 @@ final class CallController: ObservableObject {
                 if raw == AVAudioSession.InterruptionType.began.rawValue {
                     self.engine?.hold()
                 } else if AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
-                    try? AVAudioSession.sharedInstance().setActive(true)
-                    self.io?.restart()
-                    self.engine?.resume()
+                    self.interruptionPending = true
+                    self.resumeAfterInterruption()
+                } else {
+                    // ended without .shouldResume (the other app kept the
+                    // audio): resume once the app is active again, or on a tap
+                    self.interruptionPending = true
+                    self.notice = String(localized: "The call was interrupted. Tap Resume the call to continue.")
+                    if UIApplication.shared.applicationState == .active { self.resumeAfterInterruption() }
                 }
             }
+        })
+        observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, self.interruptionPending, self.callKit == nil else { return }
+                self.resumeAfterInterruption()
+            }
+        })
+        observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async { self?.rebuildAfterMediaReset() }
         })
         observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in
             // AirPods in or out, a Bluetooth headset: the engine starts over on the new route

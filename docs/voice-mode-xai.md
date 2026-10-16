@@ -88,7 +88,12 @@ confirmed speech while the bot is busy or speaking cancels that turn; the
 server never steers or queues those words. The thinking cue is 400 ms
 instead of 1200 ms so
 the line is not dead air. Approvals stay spoken yes or no and are not
-cancelled. Tools still run on the bot. The call speaks no canned filler
+cancelled. Tools still run on the bot. A "stop" is a stop only when it is
+the whole utterance ("stop", "arrête", "arrête ça", "ok stop", "stop
+please", with at most two filler or polite words around it,
+`voice-topics.ts` `isStopUtterance`): "Stop le service CrowdStrike sur
+SRV-01" is work for the bot, sent like any other request, never swallowed.
+The call speaks no canned filler
 and no tool-chip narration; the prompt asks the bot to say so once, in
 its own words, only when something will genuinely take a while. A duplex
 send that races another is latest-wins (the slower one is superseded, never queued).
@@ -131,11 +136,15 @@ the call says it did not get through.
 
 Before synthesis the call strips any markdown, emoji, URL or HTML the bot
 still wrote, and stops at the follow-up rule (`src/lib/voice-mode/spoken.ts`,
-then the server's `server/tts/speech-text.ts`). A French call
-(`language` `fr` or `fr-*`) then reads times, prices, short ordinals and
-titles aloud (`server/tts/french-reading.ts`: "14 h 30" as "14 heures 30",
-"25 $" as "25 dollars"). A spoken note sent with `/voice/speak` stays
-verbatim.
+then the server's `server/tts/speech-text.ts`; words appended to an open
+utterance are cleaned the same way with their edges kept, `speakableDelta`,
+so " pense" never glues to the word before it). A French call (`language`
+`fr` or `fr-*`), or an automatic one whose text looks French (an accented
+letter, or at least two French function words and more of them than English
+ones, `looksFrench`), then reads times, prices, short ordinals and titles
+aloud (`server/tts/french-reading.ts`: "14 h 30" as "14 heures 30", "25 $" as
+"25 dollars"); an appended piece is judged with the utterance before it. A
+spoken note sent with `/voice/speak` stays verbatim.
 
 ## A live call, like a phone
 
@@ -148,13 +157,26 @@ the configured TTS provider, half duplex).
 
 - **Full duplex.** The microphone stays open for the whole call. While the bot
   speaks, the person can talk over it: on the first voiced frame (32 ms) the
-  bot is ducked to 12% within 10 ms; once speech is confirmed (128 ms, four
-  frames over the bot) its voice fades out in 12 ms, so it is silent by
-  140 ms. Every queued sentence is dropped, and the bot's running turn is
-  interrupted (`/interrupt`) if it is still writing. What it had written
-  stays in the transcript, marked interrupted, and the new words become the
-  next turn. A cough or a click (three frames, 96 ms) only ducks it for a
-  moment.
+  bot is ducked within 10 ms to about -6 dB (it may still be a cough,
+  `DUCK_SOFT`), then to 12% once the voice is confirmed (128 ms), and it
+  stays ducked, nothing cancelled,
+  while the call checks that this is the person talking to it
+  (`call-machine.ts` `bargePending`). The bot is cut (its voice fades out in
+  12 ms, every queued sentence is dropped, and its running turn is
+  interrupted with `/interrupt` if it is still writing) as soon as the
+  streamed words are real words (not a sound the recognizer spelled, not a
+  backchannel such as "mm-hmm", "uh-huh", "hum", "euh") and, with Only my
+  voice, match the voiceprint; or, when no words have come yet, after
+  400 ms of voiced speech (`BARGE_IN_CONFIRM_MS`). Worst case for a real
+  barge-in: ducked by 42 ms, silent by 412 ms (400 ms plus the 12 ms
+  fade, `call.test.ts`); usually sooner, when xAI's first words arrive
+  first. With Only my voice the check of the voiceprint adds the
+  embedding's time, and a clip too short to judge waits for more audio. A
+  cough, a chair or a "mm-hmm" never cuts the answer: when the turn ends
+  without real words (or in another voice) the bot is unducked and goes on.
+  Short words that end before the check ("stop") still cut the bot before
+  they are sent. What the bot had written stays in the transcript, marked
+  interrupted, and the new words become the next turn.
 - **Turns.** Silero VAD v5 (on this computer, `models/silero-vad-v5.onnx`)
   gives a voice probability per 32 ms frame; `turns.ts` starts a turn after
   about 190 ms of voice and ends it after an adaptive silence. Settings >
@@ -162,7 +184,13 @@ the configured TTS provider, half duplex).
   1100 ms, 700 to start) or Patient (800 to 1500 ms). The streaming words
   move it: an unfinished clause (no final punctuation and a trailing "and",
   "to", "the", "de", "pour"..., a trailing comma or filler, or one or two
-  words) waits 500 to 1000 ms longer. A turn that starts within 1.5 s of
+  words) waits 500 to 1000 ms longer. The socket asks xAI to keep fillers
+  (`filler_words=true`), so a trailing "euh" or "um" is seen; they are
+  removed only from the text the bot gets (`shared/voice-mode.ts`
+  `stripFillers`), and a turn of fillers alone is no turn. A candidate too
+  short to be a turn ("Ok..." then a pause) keeps its frames in the
+  pre-roll, so the next turn starts with them and "Ok... regarde" keeps
+  "Ok". A turn that starts within 1.5 s of
   the last one, before the bot said anything, is the same utterance: it is
   sent whole (`voiceCall.continues`) and the fragment's turn is stopped. A
   lone short token no one says alone ("dwad"), under two letters, or a word
@@ -172,12 +200,22 @@ the configured TTS provider, half duplex).
 - **Streaming speech to text.** While a turn is spoken its 16 kHz PCM streams
   over one WebSocket per call, `GET /api/bots/<id>/voice/listen`, which the
   server bridges to `wss://api.x.ai/v1/stt` with the key; the moment the turn
-  ends the page sends `{"type":"finalize"}` and the words come back. A final
+  ends the page sends `{"type":"finalize"}` and the words come back. The
+  server asks xAI for French with formatting (`language=fr`, `format=true`,
+  "deux cents" written 200) when the Language is Auto-detect and the
+  person's browser or app locale is French (`fr-CA`, `fr-FR`: the page
+  sends `locale`, the server keeps only a well formed one,
+  `sttRequest`); a picked English or French gets `format=true` too; any
+  other case stays pure detection. Smart Turn is requested with a
+  threshold of 0.9 and a 5 s timeout, so xAI never ends a turn itself; its
+  `end_of_turn_confidence` is passed to the page (see Latency). A final
   chunk is one xAI will not revise, not the end of the utterance: only
   `speech_final` closes it, and late words of an utterance the timeout
   settled are kept out of the next one. Silence
   and room noise are never sent. Without the socket (an old server, a proxy
   without WebSockets) each turn is uploaded whole to `/voice/transcribe`.
+  A socket that drops is opened again by itself (see "A call recovers by
+  itself" below), so one drop never turns the rest of the call into uploads.
 - **The answer while it is written.** The bot's streaming text is cut into
   sentences (`sentences.ts`); each one is synthesized as soon as it is complete
   by `POST /api/bots/<id>/voice/stream` (xAI `POST /v1/tts` with raw PCM out,
@@ -189,6 +227,9 @@ the configured TTS provider, half duplex).
   Control Center > Mic Mode > Voice Isolation filters the room further (apps
   cannot set it). The neural VAD ignores steady noise, keyboards and music;
   a level gate ignores far-field voices once the person's level is known.
+  When the capture cannot run at 16 kHz (the fallback at 44.1 or 48 kHz),
+  the page downsamples through a windowed-sinc low-pass (Blackman, cut at
+  7.2 kHz), so hiss above 8 kHz is not folded back into the voice band.
 - **Echo.** Beside Chromium's echo canceller, `echo.ts` keeps 512 ms of
   playback and lines the microphone up with it (a delay of up to 384 ms, so
   a speakerphone or a Bluetooth speaker is still the bot). It learns the
@@ -208,8 +249,9 @@ the configured TTS provider, half duplex).
   avatar (state and timer in its tooltip), a dotted waveform of both sides
   (the bot's voice in the accent), Settings, Transcript, mute and end; the
   card it opens holds the transcript as bubbles or the settings (with hold);
-  hands-free or push to talk (hold Space or the hand button), set per
-  computer in `omb.voiceCall.v1`. On the desktop the pill is the whole call
+  hands-free or push to talk (hold Space or the hand button; a press over
+  the bot cuts it at once, with no check of the words, so a short "stop" is
+  a turn), set per computer in `omb.voiceCall.v1`. On the desktop the pill is the whole call
   UI: it floats over the top of the thread and never becomes a full-column
   stage (0.4.9 had one; the 0.4.8 pill came back on 2026-10-08). The iPhone
   has its own call screen and shows the call as a card in the conversation.
@@ -282,6 +324,12 @@ What keeps it short:
   heartbeat (about every 5 minutes) count as use of the environment the
   call's turns work in (`UserSandboxManager.markUsed`, sandboxd
   `POST /v1/sandboxes/<key>/used`), which starts nothing.
+- **xAI Smart Turn.** When a partial carries xAI's end of turn confidence,
+  the turn detector reads it: an early end (punctuation, contour or the
+  words' meaning, below) needs at least 0.6, and under 0.3 the turn waits
+  `incompleteMs` longer. The confidence belongs to its words: the same
+  words again (a final chunk, a probe's answer) keep it, new words without
+  one drop it. No confidence: the rules below alone.
 - **A finished sentence ends sooner.** When the streamed words close with
   final punctuation and the silence is confident (Silero under 0.15), the
   turn ends after 288, 352 or 576 ms (Short, Normal, Patient) instead of the
@@ -305,16 +353,29 @@ What keeps it short:
   window as final punctuation (288 or 352 ms, Short or Normal) even before the
   words carry any. A flat pitch held on a filler or a linking word ("euh",
   "um", "de", "pour") keeps the long delay (the endpoint plus
-  `incompleteMs`). A French linking word ending a sentence the contour says
+  `incompleteMs`), and so does a filler that falls and fades out ("euh..."
+  trailing off): a person thinking, never a statement ending. A French linking word ending a sentence the contour says
   is finished ("on se voit demain puis") waits half of `incompleteMs`; an
   English one keeps all of it. Anything else (too few voiced frames, a pitch
   that wobbles, a sound cut at full strength as in the middle of a word)
   changes nothing. Safety: every frame of the short window must be under
   Silero 0.15, so a word is never cut in its middle; and a person who speaks
-  again within 600 ms of a turn ended this way continues it
-  (`CONTOUR_CONTINUATION_MS`, `voiceCall.continues`), even over the bot's
-  first words, which stop: a wrong cut costs only those words. Patient is
-  never affected, nor push to talk. Off: the endpoint is the one above.
+  again within 600 ms of any early end (contour, the words' meaning, or
+  final punctuation on the short window) continues it
+  (`EARLY_CUT_CONTINUATION_MS`, `voiceCall.continues`), even over the bot's
+  first words, which stop: a wrong cut costs only those words. A short
+  question or request without punctuation may end on its meaning alone
+  ("what time is it", "can you check the ticket"); in French that needs
+  the long French quiet (512 ms), so "peux-tu regarder le billet" is not
+  cut before "de CONTOSO". Patient is never affected, nor push to talk. Off:
+  the endpoint is the one above.
+- **Full duplex guesses only at a pause.** With full duplex the bot may
+  start on a stable partial (four words, not an unfinished clause, or a
+  closed sentence) once the person pauses, never while they are still
+  talking; its voice is held until the turn really ends. A guess never
+  ends the turn sooner: the detector keeps its own rules. A revised
+  partial replaces the guess after 320 ms of stability, and the final
+  words replace it when they differ.
 - **Sent on the stable words.** A turn whose streamed words are a stable
   sentence is sent at once; the final words are checked when they come. A
   material difference (any word beyond case, punctuation, accents and
@@ -324,38 +385,78 @@ What keeps it short:
   a comma after about six words (36 characters). With the streaming voice
   there is no character wait: the first clause goes at a one-word
   punctuated opener ("Well,", "Sure,") or at a space after two words
-  (`STREAMING_CLAUSES`), since the socket is already open. An unpunctuated
-  first grok token ("Four") opens the utterance as a lead (`say` with
-  `more: true`, xAI `text.delta` only) so TTS can start while the rest of
-  that clause is still being written; `append` / `finish` then `text.done`.
+  (`STREAMING_CLAUSES`; words are counted by whitespace, so "C'est fait."
+  is never cut after "C'est"), and no short sentence is held back to join
+  the next, since the socket is already open. The first grok token
+  ("Four") already opens the answer's utterance (`say` with `more: true`,
+  xAI `text.delta` only) so TTS starts while the rest is being written.
+  Those words are first cleaned like a clause (`src/lib/voice-mode/tts-lead.ts`
+  `leadText`): nothing opens until they hold a letter ("**Oui**" never
+  opens on a lone "*"), and a lead stops before a link, code, a table, or a
+  last word with a digit or a currency ("14h30", "25 $" go whole).
 - **Streaming voice (Advanced, on by default).** One socket for the call:
   the page opens `GET /voice/speech` (voice, speed and language in the
   query) when the call starts, and the server opens xAI's streaming text to
   speech socket for it (`wss://api.x.ai/v1/tts`, `codec=pcm`,
   `sample_rate=24000`, `optimize_streaming_latency=2`, the key in the
-  `Authorization` header; `server/tts/grok.ts` `openSpeechStream`). Each
-  clause of the answer is sent the moment it is written (`{"type":"say"}`)
-  and becomes one xAI utterance (`text.delta`, `text.done`), spoken one after
-  the other on the same socket; a lead token uses `more: true` then
-  `append` / `finish`. PCM comes back to the page as binary
-  frames between `start` and `done` and plays through the same player as a
-  POST body (`src/lib/voice-mode/speech-stream.ts`). Barge-in, hold, hang-up
-  and a reissued turn cancel a clause (`{"type":"cancel"}`): dropped from the
-  queue, or, when it is the one speaking, cleared at xAI (`text.clear`,
-  confirmed by `audio.clear`); nothing of it reaches the page after. The
-  server session is `server/voice-speech-session.ts`. Safety nets: the page
-  falls back to POST `/voice/stream` for the rest of the call when the socket
-  is not ready within 1.5 s, errors twice in one call, closes, or when the
-  server gives up; the server reopens a dropped xAI socket with a backoff
-  (250, 750, 2000 ms), at most 3 times in a row, then sends `fallback` and
-  logs it once. A clause the socket failed before any of its audio arrived is
-  spoken over POST; one cut mid-way ends where it was cut (never said twice).
-  A clause without audio progress for 8 s, or a clear not confirmed in 2 s,
-  counts as a dropped socket. xAI closes a streaming socket around 600 s;
+  `Authorization` header; `server/tts/grok.ts` `openSpeechStream`). **One
+  answer is one xAI utterance**, like one person talking: its first words
+  open it (`{"type":"say","more":true}`, `text.delta`), every later clause
+  is appended the moment it is written (`{"type":"append"}`, `text.delta`,
+  with no wait for the audio of the one before, so the intonation runs on
+  and no gap opens between clauses), and `{"type":"finish"}` (`text.done`)
+  comes only when the answer is done (`replyDone`), or, past 1,500
+  characters, at the end of a sentence, where the next utterance begins.
+  Each append is cut at 500 characters. A whole text said at once (a
+  prompt, a settled answer) is one `say` per 480 characters or so. PCM comes
+  back to the page as binary frames between `start` and `done` and plays
+  through the same player as a POST body
+  (`src/lib/voice-mode/speech-stream.ts`): one sentence whose words grow
+  (`PcmPlayer.extend`), captioned clause by clause when the voice should
+  reach them (by speaking rate, then by the audio's real length). While the
+  open answer's audio has run dry and the bot is still writing or working,
+  the call counts the bot as silent (`onStarved`, `onResume`), and the call
+  bar never waits for that silence to deliver the answer's end
+  (`VoiceCall.replyOpen`). Barge-in, hold, hang-up and a reissued turn
+  cancel the utterance (`{"type":"cancel"}`): dropped from the queue, or,
+  when it is the one speaking, cleared at xAI (`text.clear`, confirmed by
+  `audio.clear`); nothing of it reaches the page after, and what was heard
+  is measured on the whole utterance's words. The server session is
+  `server/voice-speech-session.ts`. Safety nets: the page falls back to POST
+  `/voice/stream` for the rest of the call when the socket is not ready
+  within 1.5 s, errors twice in one call, closes, or when the server gives
+  up; the server reopens a dropped xAI socket with a backoff (250, 750,
+  2000 ms), at most 3 times in a row (a reopen counts as working once
+  audio came on it or it lived 10 s) and 6 times a minute, then sends
+  `fallback` and logs it once. An utterance the socket failed goes on over POST into the same
+  audio: what the audio received did not cover yet (assuming a slow 10
+  characters a second, and from the start of the clause that point falls
+  in, a sentence end or an appended clause, so words may be said twice but
+  none is skipped), then what the answer appends, a sentence at a
+  time. An utterance with audio still owed (text.done sent, or text its
+  audio does not cover at 30 characters a second) and no progress for 8 s,
+  or a clear not confirmed in 2 s, counts as a dropped socket; an open one
+  whose audio has caught up waits for the bot's next words as long as they
+  take (the player checks it again every 10 s and gives it up only once it
+  is no longer open). The page pings the speech socket every 10 s
+  (`{"type":"ping"}`, the server answers `pong`); a server that answered
+  before and then sends nothing for a whole period is gone (a half-dead
+  socket after a network switch or sleep never closes), and the call
+  speaks over POST from there, its open answer included. Nothing is left open at xAI: a new
+  turn sent ends the last answer's utterance, a bot turn that ends
+  (finished, cancelled, failed, stopped) without its answer's `replyDone`
+  within 3 s ends it too (`REPLY_END_GRACE_MS`), and on the server an open
+  utterance with no new text and no audio owed for 20 s gets its
+  `text.done` (`SPEECH_IDLE_FINISH_MS`); words appended after that open a
+  new xAI utterance under the same id, and anything queued behind it ends
+  it (the page then opens it again with the next words, into the same
+  audio). A whole text said while an answer's utterance is open (an
+  approval prompt, a notice) goes over POST, so it never waits behind that
+  utterance on the server; the player still plays it after the answer. xAI closes a streaming socket around 600 s;
   while nothing is in flight the server rotates it at 540 s and does not
   count that as a failure. Changing the voice, speed or language mid-call
-  reopens the socket at once when nothing is in flight, so the next clause
-  does not pay the reconnect before its first audio; a clause said while
+  reopens the socket at once when nothing is in flight, so the next answer
+  does not pay the reconnect before its first audio; an answer begun while
   another is still in flight goes over POST. Hold, mute,
   hang-up, the transcript card and the thread card are the same either way.
 - **A warm connection to xAI's speech.** Each turn's end (`finalize`) opens
@@ -364,6 +465,21 @@ What keeps it short:
 - **Short context on a call.** A call turn recalls at most two notes in
   1,200 characters and no other conversation, and skips the recent-work
   brief.
+- **The voice's playback.** The page plays the voice on an audio context at
+  24 kHz (xAI's rate, so the browser resamples once, at the output; the
+  device's rate when the browser refuses). An answer's first chunk starts
+  70 ms ahead of the audio clock (a prebuffer); later chunks join the audio
+  before them, each on a gain of its own that fades out over its last 3 ms
+  unless the next chunk joins in time, and the chunk after a gap fades in
+  over 3 ms, so a gap never clicks. A chunk that comes after the audio ran
+  out, including the first chunk of a later sentence, is an underrun: the
+  start lead (15 ms) grows by how late it was, up to 120 ms, and gives back
+  5 ms for every 2 s of audio without a gap; a gap over 500 ms is the bot
+  writing, not the network, and changes nothing. On the iPhone
+  (`ios/App/Call/CallSpeech.swift`, `CallAudioIO.swift`) the first audio
+  after a silence waits for 60 ms of it, each sentence's resampler is
+  drained at its end (its last samples used to be lost), the volume ramps
+  over 10 ms to duck and unduck, and a cut fades over 12 ms before it stops.
 - **A thinking tone.** When nothing is audible 1.2 s after the person
   stopped, a soft two-note tone plays (Settings, "Soft tone while a slow
   answer is coming", on by default).
@@ -389,6 +505,85 @@ Release acceptance is a separate 32-turn run with hard gates (p50 at most
 enforces those gates on the synthetic profile only.
 `pnpm voice:acceptance:real -- --enforce` is the real-provider run, and a
 release waits on it. Recipe: [docs/verification/voice-acceptance.md](verification/voice-acceptance.md).
+
+## A call recovers by itself
+
+A call must never hang, go silent, lose a turn or drop. Each part that can
+fail recovers on its own:
+
+- **The listen socket (page side).** When `/voice/listen` drops (a Wi-Fi
+  switch, a sleep, the server restarting), the page opens it again after
+  250, 750 and 2,000 ms, then every 5 s for the rest of the call; the count
+  starts over once a socket is ready (`src/lib/voice-mode/stt-stream.ts`,
+  `RECONNECT_BACKOFF_MS`, `RECONNECT_EVERY_MS`). Only the utterances already
+  finished and still waiting for their words are uploaded whole; the one
+  being spoken is sent again from its first frame on the new socket, with
+  its words, interim, finalize and probe state reset. Late words of an
+  utterance the timeout settled are no longer awaited, so they never eat the
+  next turn's words. A socket that never opened (an old server) gets the
+  backoff only, then the call uploads.
+- **xAI's speech to text (server side).** The page's socket outlives xAI's
+  (`server/voice-listen-session.ts`). When xAI's socket closes, the server
+  opens a new one behind the same page socket (250, 750, 2,000 ms) and sends
+  the page `{"type":"reconnected"}`; the page sends the open utterance again
+  and uploads the finished ones that were waiting. Only when those three
+  tries fail does the page socket close (1011), and the page reconnects on
+  its own. A reopened socket counts as working only once xAI sent words on
+  it or it lived 10 s (accepting then closing at once still fails), and
+  more than 6 reopens in a minute close the page socket too, so a flapping
+  socket is never reopened forever. Like the streaming voice, xAI's socket is rotated at 540 s, once
+  nothing was heard or sent for 3 s (no utterance open); audio that arrives
+  while the next socket opens is held and sent to it, so the page never
+  notices.
+- **A failed upload.** A whole-turn upload is tried twice (a refusal once),
+  each try given up after 20 s (`TRANSCRIBE_TIMEOUT_MS`). When both fail,
+  the call reports `transcribe-failed`: the bar shows "That didn't come
+  through" and the call says "That did not get through. Could you say it
+  again?". A turn is never dropped silently. The iPhone does the same when
+  it uploads a turn.
+- **A stalled voice.** A clause spoken over POST `/voice/stream` with no
+  first byte, or no next chunk, for 8 s is aborted with an error
+  (`SPEECH_STALL_MS` in `api.ts`); the player has its own 10 s backstop for
+  any sentence whose audio stops coming (`READ_TIMEOUT_MS`). The player then
+  plays the next clause, and the call is never stuck "busy".
+- **Audio contexts.** The output and the capture contexts are resumed when
+  the system suspends or interrupts them (`statechange`). A player whose
+  audio clock stopped resets its schedule when it goes idle, so the next
+  answer does not wait on audio that will never play.
+- **The microphone.** A track that ends (unplugged, taken by the system)
+  or a `devicechange` that removes the call's microphone opens the capture
+  again (`MIC_REOPEN_MS`: at once, then 0.5, 1.5 and 3 s, the later tries on
+  the default device); the call says the microphone is unavailable only
+  when every try failed. Retry opens a microphone whose stream died. Five
+  frames in a row that fail (a model that broke mid-call) switch the call to
+  the level detector instead of leaving it deaf.
+- **The call's record on the server.** Besides the heartbeat every 5
+  minutes, the page says `alive` the moment it is visible again or the
+  network comes back (`src/lib/voice-mode/call-alive.ts`), so a laptop that
+  slept past the 20 minute expiry is on its call again at once. An expired
+  call is also registered again by the next turn that carries its call id;
+  a call id that hung up never comes back that way. A send's 800 ms retry
+  dies with the call, so nothing is sent under an old call id after a
+  hang-up.
+- **iPhone.** An audio interruption that ends without `.shouldResume` (the
+  other app kept the audio) leaves the call on hold with "The call was
+  interrupted. Tap Resume the call to continue."; it resumes by itself when
+  the app is active again, or on the tap. After
+  `mediaServicesWereResetNotification` the audio session is configured
+  again and the audio engine rebuilt with a new engine and new player
+  nodes (the old ones are invalid after a reset). The reply to the call's
+  `POST /voice/call` `start` carries `keyterms`, the same list the server
+  gives xAI (`server/voice-keyterms.ts`: the bot's name, the person's, the
+  organization's terms, the thread's proper nouns; at most 100, only to a
+  person allowed on that thread, and never a token that looks like a
+  secret: a key prefix such as AKIA, sk-, ghp_ or xai-, a long or random
+  mix of letters and digits, a word glued to a year such as "Summer2024";
+  product names such as "Microsoft 365", "SRV-01" or "X360Recover" stay); the phone's recognizer starts at once and
+  uses them from the next turn as contextual strings
+  (`SFSpeechAudioBufferRecognitionRequest.contextualStrings`, or an
+  `AnalysisContext` for the `.general` tag set with
+  `SpeechAnalyzer.setContext` on iOS 26). An empty list or a failed start
+  leaves recognition as it was; an uploaded turn is biased on the server.
 
 ## Stable tools during a call
 
@@ -454,7 +649,8 @@ Advanced "Streaming voice" and "Faster end of turn", both on by default)
 and the voiceprint
 stay on the computer (`omb.voiceCall.v1`, `omb.voiceCall.voiceprint.v1`). A language xAI text to
 speech does not take is spoken as `auto`; speech to text gets the base
-language as a hint when xAI supports it, else it detects.
+language as a hint when xAI supports it, else it detects (Auto-detect on a
+French locale: French, see Streaming speech to text).
 
 ## Desktop permissions
 
@@ -473,10 +669,14 @@ An xAI API key from console.x.ai with access to the voice endpoints:
 
 - Streaming speech to text, `wss://api.x.ai/v1/stt` (query `model`,
   `encoding=pcm`, `sample_rate=16000`, `interim_results`, `endpointing`,
-  `language`; events `transcript.created`, `transcript.partial` with
-  `is_final` and `speech_final`, `transcript.done`; `{"type":"finalize"}` ends
-  an utterance and the session goes on), and `POST https://api.x.ai/v1/stt`
-  (multipart `file`, `language`) for a whole turn:
+  `language`, `format` (only with a language), `filler_words=true`,
+  `keyterm`, `smart_turn=0.9`, `smart_turn_timeout=5000`; events
+  `transcript.created`, `transcript.partial` with `is_final`,
+  `speech_final` and `end_of_turn_confidence`, `transcript.done`;
+  `{"type":"finalize"}` ends an utterance and the session goes on), and
+  `POST https://api.x.ai/v1/stt` (multipart `language`, `format`,
+  `filler_words`, `keyterm`, then `file` last) for a whole turn; the
+  route hands back its words without fillers:
   <https://docs.x.ai/developers/model-capabilities/audio/speech-to-text>
 - `POST https://api.x.ai/v1/tts` (`text`, `voice_id`, `language`, `speed`
   0.7 to 1.5, `output_format` `{codec: "pcm", sample_rate: 24000}` for a live
@@ -509,15 +709,27 @@ the server's own voice routes.
   sockets against a fake xAI, same-origin only, and no xAI path but speech
   to text and text to speech.
 - `server/voice-speech-session.test.ts`: the streaming voice's server
-  session (one clause at a time, clear, drop and backoff, three failed
-  reconnects then fallback, stuck clause or clear).
+  session (one utterance per answer with appends sent at once, appended
+  text cleaned with its edges kept and cut at 500 characters, an open
+  utterance with nothing to say yet, whole texts one at a time, clear, drop
+  and backoff, three failed reconnects then fallback, the stall watchdog
+  only while audio is owed, a clear never confirmed).
 - `src/lib/voice-mode/speech-stream.test.ts`: the page's side (open,
-  stream, cancel, a failed clause over POST, two errors, the 1.5 s open,
-  a server fallback) and the clauses without the 36 character wait.
+  stream, cancel, an answer's utterance begun, grown and finished, a
+  socket failing mid-answer going on over POST from what was not covered,
+  two errors, the 1.5 s open, a server fallback) and the clauses without
+  the 36 character wait (words counted by whitespace).
+- `src/lib/voice-mode/tts-lead.test.ts`: what goes to the voice for an
+  answer (begin, appends with captions, one finish, the 1,500 character
+  roll, markdown never opening it, the POST switch mid-answer).
+- `server/tts/french-reading.test.ts`, `speech-text.test.ts`: French
+  reading (also for an automatic language that looks French) and the
+  appended text's cleaning.
 - `src/lib/voice-mode/prosody.test.ts`: the pitch estimate and the contour
   verdict on synthetic contours (falling, rising, flat filler, mid-word),
   and the turn detector using it.
-- `server/tts/grok.test.ts`: the xAI requests (speed, language, STT form).
+- `server/tts/grok.test.ts`: the xAI requests (speed, language, STT form,
+  fillers kept, format, Smart Turn and its confidence passed through).
 - `src/lib/voice-mode/duplex-policy.test.ts`, `call-logic.test.ts` duplex
   cases, `server/voice-call-duplex.test.ts`, `scripts/voice-duplex-harness.test.ts`:
   full-duplex barge-in while thinking, admit never queues, one active turn.
@@ -530,10 +742,31 @@ the server's own voice routes.
   one Perspicax exchange for a whole call; `server/delta-context.e2e.test.ts`:
   a steer the engine echoed is never offered again.
 - `src/lib/voice-mode/player.test.ts`, `stt-stream.test.ts`: what was heard
-  at a cut, xAI finalize semantics.
+  at a cut (also in an utterance that grows), the 24 kHz context, the
+  prebuffer, the fades around a gap, the jitter buffer, captions, a starved
+  utterance, the two ducks, xAI finalize semantics; a stalled clause given
+  up and the next one played (an open utterance is never timed out), a
+  suspended context resumed, a stopped clock not busy; an idle drop that
+  streams the next turn on a new socket, a mid-utterance drop (each
+  utterance its own words, one upload), the server's `reconnected`, two
+  failed uploads reported.
+- `server/voice-listen-session.test.ts`: xAI's speech to text dropped and
+  reopened behind the page's socket, the page closed only after the
+  backoff, the 540 s rotation while idle.
+- `src/lib/voice-mode/api.test.ts`, `call-alive.test.ts`,
+  `server/voice-call-session.test.ts`: the 8 s stall and 20 s upload
+  timeouts, the heartbeat on visibility and online, a retry that dies with
+  the call, an expired call registered again.
 - `src/lib/voice-mode/call.test.ts`: the call with fake devices (one turn,
-  barge-in silent by 140 ms, a cough, the streamed answer, Only my voice, push to
-  talk, mute, hold, a language change, the upload fallback).
+  barge-in cut on the first real words or by 412 ms, a cough or a "mm-hmm"
+  never cutting the answer, another voice over the bot, the rejoin after
+  any early end, fillers kept from the bot, Smart Turn, the pre-roll of a
+  cancelled candidate, the anti-alias resampler, the streamed answer, Only
+  my voice, push to talk, mute, hold, a language change, the upload
+  fallback, an upload that fails twice, a suspended capture context, an
+  ended track or an unplugged microphone opened again, frames that keep
+  failing).
+- `src/lib/voice-mode/voice-topics.test.ts`: a stop is the whole utterance.
 - `src/lib/voice-mode/models.test.ts`: the real models on recorded fixtures
   (speech, noise, keyboard, music, a TV across the room, echo, barge-in;
   speaker accept and reject; the filter bank against kaldi-native-fbank).

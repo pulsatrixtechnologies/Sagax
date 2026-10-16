@@ -5,9 +5,9 @@
 //   GET  /api/bots/<id>/voice/voices      xAI's voices (labels only)
 //   POST /api/bots/<id>/voice/prepare     {text} -> {utterances}
 //   POST /api/bots/<id>/voice/speak       {text, voice?, speed?, language?, threadId?} -> audio/mpeg
-//   POST /api/bots/<id>/voice/transcribe  raw audio/wav (?language=&threadId=) -> {text}
+//   POST /api/bots/<id>/voice/transcribe  raw audio/wav (?language=&locale=&threadId=) -> {text}
 //   POST /api/bots/<id>/voice/stream      {text, voice?, speed?, language?, threadId?} -> raw PCM as xAI makes it
-//   GET  /api/bots/<id>/voice/listen      WebSocket (?language=&threadId=): PCM frames in, transcripts out
+//   GET  /api/bots/<id>/voice/listen      WebSocket (?language=&locale=&threadId=): PCM frames in, transcripts out
 //   GET  /api/bots/<id>/voice/speech      WebSocket (?voice=&speed=&language=&threadId=): clauses in, PCM out
 //   POST /api/bots/<id>/voice/call        {threadId, callId, state: start|alive|end, language?}: the thread is on a call
 //
@@ -49,7 +49,8 @@ import {
   VOICE_MODE_MAX_TEXT,
   VOICE_MODE_MIN_SPEED,
   isVoiceModeLanguage,
-  sttLanguage,
+  stripFillers,
+  sttRequest,
   ttsLanguage,
   type VoiceModeRefusalCause,
   type VoiceModeStatus,
@@ -59,8 +60,10 @@ import { accessCardVisibleTo } from "./engine-access.ts";
 import { isSameOrigin } from "./request-auth.ts";
 import { websocketAccept } from "./ws-bridge.ts";
 import { webSocketSession } from "./ws-session.ts";
-import { readFrench, readsFrench } from "./tts/french-reading.ts";
-import type { SpeechStream, SpeechStreamHandlers, SynthesizeOptions, TranscriptEvent, TranscriptionHandlers, TranscriptionStream } from "./tts/grok.ts";
+import { readFrench, readsFrenchText } from "./tts/french-reading.ts";
+import { speakableDelta } from "./tts/speech-text.ts";
+import { createListenSession } from "./voice-listen-session.ts";
+import type { SpeechStream, SpeechStreamHandlers, SynthesizeOptions, TranscriptionHandlers, TranscriptionStream } from "./tts/grok.ts";
 import { createSpeechSession } from "./voice-speech-session.ts";
 import type { ProviderKeyResult } from "./perspicax-link.ts";
 import type { RequestAuth } from "./request-auth.ts";
@@ -132,13 +135,13 @@ export interface VoiceModeDeps {
   xai: {
     listVoices(key: string): Promise<Voice[]>;
     synthesize(text: string, voice: string | undefined, key: string, options: { speed?: number; language?: string }): Promise<Audio>;
-    transcribe(audio: Uint8Array, mime: string, key: string, language?: string): Promise<{ text: string }>;
+    transcribe(audio: Uint8Array, mime: string, key: string, language?: string, keyterms?: readonly string[], options?: { format?: boolean }): Promise<{ text: string }>;
     /** POST /v1/tts with raw PCM out, streamed as xAI produces it. */
     synthesizeStream?(text: string, voice: string | undefined, key: string, options: SynthesizeOptions, signal?: AbortSignal): Promise<{ body: ReadableStream<Uint8Array>; sampleRate: number }>;
     /** wss://api.x.ai/v1/tts: streaming text to speech for one call. */
     openSpeech?(key: string, options: { voice?: string; speed?: number; language?: string }, handlers: SpeechStreamHandlers): SpeechStream;
     /** wss://api.x.ai/v1/stt: streaming speech to text for one call. */
-    openTranscription?(key: string, options: { language?: string; endpointingMs?: number }, handlers: TranscriptionHandlers): TranscriptionStream;
+    openTranscription?(key: string, options: { language?: string; endpointingMs?: number; keyterms?: readonly string[]; format?: boolean }, handlers: TranscriptionHandlers): TranscriptionStream;
     /** Open a pooled connection to xAI's speech endpoint at the start of a
      * call, so the first sentence of the first answer skips the TLS handshake. */
     warm?(key: string): void;
@@ -147,13 +150,18 @@ export interface VoiceModeDeps {
    * attach runs upgrades through the same authentication as HTTP). */
   upgrade?(req: IncomingMessage): { socket: Duplex; head: Buffer; release(): void } | undefined;
   utterances(text: string): string[];
+  /** Words speech to text should expect on this call: names of the bot,
+   * the person, the other bots, the thread's proper nouns
+   * (server/voice-keyterms.ts). Never a secret. */
+  keyterms?(target: VoiceTarget, speaker: VoiceSpeaker): string[];
   recordUsage(usage: VoiceUsage): void;
   /** A line for the server log (a call's speech falling back to POST). */
   log?(line: string): void;
   /** The thread is on a live call (server/voice-call-session.ts): every
    * send to it while the call lasts is a call turn. */
   callSession?: {
-    start(target: VoiceTarget, callId: string, language?: string, auth?: RequestAuth): void;
+    /** `heartbeat`: the page's "alive", which never reopens a call that ended */
+    start(target: VoiceTarget, callId: string, language?: string, auth?: RequestAuth, heartbeat?: boolean): void;
     end(target: VoiceTarget, callId: string, auth?: RequestAuth): void;
   };
   now?: () => number;
@@ -231,10 +239,12 @@ type Usage = (model: VoiceUsage["model"], input: number) => void;
 type Json = (res: import("node:http").ServerResponse, status: number, body: unknown) => unknown;
 
 /** What the listen socket says to the page (JSON text frames). */
-export type ListenFrame =
-  | { type: "ready" }
-  | { type: "transcript"; text: string; final: boolean; speechFinal: boolean; confidence?: number }
-  | { type: "error"; message: string };
+export type { ListenFrame } from "./voice-listen-session.ts";
+export { listenTranscriptFrame } from "./voice-listen-session.ts";
+
+/** One xAI transcript as the listen socket hands it to the page: the words,
+ * fillers included, xAI's confidence and Smart Turn's end of turn
+ * confidence when it gives them. */
 
 /** A same-origin, well formed WebSocket handshake: its key, or why not. */
 function handshake(req: IncomingMessage): { key: string } | { status: number; error: string } {
@@ -245,6 +255,10 @@ function handshake(req: IncomingMessage): { key: string } | { status: number; er
     || typeof wsKey !== "string" || !/^[A-Za-z0-9+/]{22}==$/.test(wsKey)) return { status: 400, error: "Invalid WebSocket handshake" };
   return { key: wsKey };
 }
+
+/** At most this many keyterms go back with a call's start (the same cap as
+ * server/voice-keyterms.ts, and what SFSpeechRecognizer takes well). */
+export const VOICE_CALL_KEYTERM_MAX = 100;
 
 export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
   const now = deps.now ?? Date.now;
@@ -274,8 +288,14 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       speakable: (text) => {
         if (text.length > VOICE_MODE_MAX_TEXT * 4) return "";
         const joined = deps.utterances(text).join(" ").trim();
-        const read = readsFrench(language) ? readFrench(joined) : joined;
+        const read = readsFrenchText(language, joined) ? readFrench(joined) : joined;
         return read.slice(0, VOICE_MODE_MAX_TEXT);
+      },
+      // words appended to an open utterance: their edges kept, read as
+      // French when the utterance so far is
+      speakableDelta: (text, before) => {
+        const clean = speakableDelta(text);
+        return clean && readsFrenchText(language, `${before}${clean}`) ? readFrench(clean) : clean;
       },
       usage: (characters) => usage("grok-tts", characters),
       sendText: (frame) => page?.sendText(JSON.stringify(frame)),
@@ -311,7 +331,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
    * sends 16 kHz 16-bit PCM frames while the person speaks (its own voice
    * activity detector decides when) and `{"type":"finalize"}` when they
    * stop; xAI's transcripts come back as they are made. The key stays here. */
-  async function listen(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL, json: Json, key: string, usage: Usage): Promise<void> {
+  async function listen(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL, json: Json, key: string, usage: Usage, keyterms: readonly string[]): Promise<void> {
     const upgrade = deps.upgrade?.(req);
     if (!upgrade || !deps.xai.openTranscription) { json(res, 426, { error: "WebSocket upgrade required" }); return; }
     const shake = handshake(req);
@@ -326,26 +346,31 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       if (heard > 0) usage("grok-stt", heard);
       heard = 0;
     };
-    const send = (frame: ListenFrame) => session?.sendText(JSON.stringify(frame));
     deps.xai.warm?.(key);
     let warmedAt = now();
-    // the page's own detector ends turns (and sends finalize); xAI's
-    // endpointing is only a backstop for a very long pause
-    const upstream = deps.xai.openTranscription(key, { language: sttLanguage(language), endpointingMs: 1500 }, {
-      onTranscript: (event: TranscriptEvent) => send({
-        type: "transcript", text: event.text, final: event.final, speechFinal: event.speechFinal,
-        ...(event.confidence !== undefined ? { confidence: event.confidence } : {}),
-      }),
-      onError: (message) => send({ type: "error", message: scrub(message, key) }),
-      onClose: () => { book(); session?.close(1011); },
+    const openTranscription = deps.xai.openTranscription;
+    // "auto" on a French computer is French with formatting (sttRequest)
+    const stt = sttRequest(language, url.searchParams.get("locale") ?? undefined);
+    // xAI's socket is reopened behind the page's when it drops, and rotated
+    // before its session limit (voice-listen-session.ts)
+    const ears = createListenSession({
+      // the page's own detector ends turns (and sends finalize); xAI's
+      // endpointing is only a backstop for a very long pause
+      open: (handlers) => openTranscription(key, { ...stt, endpointingMs: 1500, keyterms }, handlers),
+      sendText: (frame) => session?.sendText(JSON.stringify(frame)),
+      closePage: (code) => session?.close(code),
+      log: (line) => (deps.log ?? console.warn)(line),
+      onUpstreamClosed: book,
+      scrub: (message) => scrub(message, key),
+      now,
     });
     const opened = await Promise.race([
-      upstream.ready.then(() => true, () => false),
+      ears.ready,
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LISTEN_READY_MS).unref()),
     ]);
     const { socket } = upgrade;
     if (!opened || socket.destroyed) {
-      upstream.close();
+      ears.close();
       if (!socket.destroyed) json(res, 502, { error: "Grok speech to text is not reachable. Try again." });
       return;
     }
@@ -358,7 +383,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
         total += data.byteLength;
         if (total > VOICE_LISTEN_MAX_BYTES) { session?.close(1009); return; }
         heard += data.byteLength;
-        upstream.send(new Uint8Array(data));
+        ears.audio(new Uint8Array(data));
       },
       onText: (text) => {
         let message: { type?: unknown } | null = null;
@@ -367,7 +392,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
         // socket. It is never forwarded to xAI.
         if (message?.type === "keepalive") return;
         if (message?.type === "finalize") {
-          upstream.finalize();
+          ears.finalize();
           book();
           // the answer's first sentence goes to xAI's speech a second or
           // two from now: have a connection open by then (a pooled one
@@ -379,10 +404,10 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
           }
         }
       },
-      onClose: () => { book(); upstream.close(); },
+      onClose: () => { book(); ears.close(); },
     });
     if (head.length) socket.unshift(head);
-    send({ type: "ready" });
+    session.sendText(JSON.stringify({ type: "ready" }));
   }
 
   const hits = new Map<string, number[]>();
@@ -429,8 +454,14 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       if (language !== undefined && !isVoiceModeLanguage(language)) return json(res, 400, { error: "unknown language" });
       if (!deps.callSession) return json(res, 404, { error: "call sessions are not available" });
       if (state === "end") deps.callSession.end(target, callId, auth);
-      else deps.callSession.start(target, callId, language as string | undefined, auth);
-      return json(res, 200, { ok: true });
+      else deps.callSession.start(target, callId, language as string | undefined, auth, state === "alive");
+      if (state !== "start") return json(res, 200, { ok: true });
+      // the phone recognizes speech itself: the same words the server's
+      // speech to text expects, for its own recognizer (target() already
+      // checked this person may use this thread)
+      let keyterms: string[] = [];
+      try { keyterms = (deps.keyterms?.(target, speaker) ?? []).slice(0, VOICE_CALL_KEYTERM_MAX); } catch { keyterms = []; }
+      return json(res, 200, { ok: true, keyterms });
     }
 
     const keysUrl = deps.keysUrl?.();
@@ -465,7 +496,10 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       ...(resolved.payerPrincipalId ? { payerPrincipalId: resolved.payerPrincipalId } : {}),
     });
 
-    if (action === "listen") return listen(req, res, url, json, resolved.key, usage);
+    const keyterms = (): string[] => {
+      try { return deps.keyterms?.(target, speaker) ?? []; } catch { return []; }
+    };
+    if (action === "listen") return listen(req, res, url, json, resolved.key, usage, keyterms());
     if (action === "speech") return speech(req, res, url, json, resolved.key, usage);
 
     if (action === "speak" || action === "stream") {
@@ -484,7 +518,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       }
       const language = record.language === undefined ? "auto" : record.language;
       if (!isVoiceModeLanguage(language)) return json(res, 400, { error: "unknown language" });
-      if (action === "stream" && readsFrench(language)) {
+      if (action === "stream" && readsFrenchText(language, text)) {
         text = readFrench(text);
         if (text.length > VOICE_MODE_MAX_TEXT) return json(res, 413, { error: `voice utterances are limited to ${VOICE_MODE_MAX_TEXT} characters` });
       }
@@ -537,9 +571,11 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     const mime = audioMime(audio, String(req.headers["content-type"] ?? ""));
     if (!mime) return json(res, 415, { error: "send WAV, Ogg or WebM audio" });
     try {
-      const heard = await deps.xai.transcribe(new Uint8Array(audio), mime, resolved.key, sttLanguage(language));
+      const stt = sttRequest(language, url.searchParams.get("locale") ?? undefined);
+      const heard = await deps.xai.transcribe(new Uint8Array(audio), mime, resolved.key, stt.language, keyterms(), { format: stt.format });
       usage("grok-stt", audio.byteLength);
-      return json(res, 200, { text: heard.text.trim() });
+      // xAI keeps fillers (filler_words); whoever reads this text does not need them
+      return json(res, 200, { text: stripFillers(heard.text) });
     } catch (error) {
       return json(res, 502, { error: scrub(error instanceof Error ? error.message : String(error), resolved.key) });
     }

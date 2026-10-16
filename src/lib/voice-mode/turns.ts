@@ -41,7 +41,7 @@ import { CONTOUR_MS, contourVerdict, type ContourPoint, type ContourVerdict } fr
 //   contour says is finished waits half of `incompleteMs`. The confident
 //   silence is the safety: every frame of the short window under
 //   QUIET_PROBABILITY, so a word is never cut in its middle, and a person
-//   who goes on within CONTOUR_CONTINUATION_MS is joined back (call.ts).
+//   who goes on within EARLY_CUT_CONTINUATION_MS is joined back (call.ts).
 
 export const FRAME_MS = 32;
 
@@ -68,9 +68,18 @@ export const LONG_FRENCH_QUIET_MS = 512;
  * The English unfinished extra stays `incompleteMs`. */
 export const LONG_FRENCH_INCOMPLETE_CAP = 400;
 
-/** A turn ended on its contour and the person spoke again this soon after:
- * it was a wrong cut, the new words continue it (call.ts). */
-export const CONTOUR_CONTINUATION_MS = 600;
+/** A turn ended early (its contour, its words' meaning, or its punctuation,
+ * on the short window) and the person spoke again this soon after: it was a
+ * wrong cut, the new words continue it, even over the bot's first words
+ * (call.ts). */
+export const EARLY_CUT_CONTINUATION_MS = 600;
+
+/** xAI Smart Turn's end of turn confidence (on the streamed words, when it
+ * gives one): an early end needs at least this much, and under
+ * SMART_TURN_UNFINISHED the turn waits `incompleteMs` longer. Without a
+ * confidence the detector works as it always did. */
+export const SMART_TURN_EARLY = 0.6;
+export const SMART_TURN_UNFINISHED = 0.3;
 
 export type PausePreset = keyof typeof PAUSE_PRESETS;
 
@@ -79,20 +88,21 @@ export type PausePreset = keyof typeof PAUSE_PRESETS;
 const CONTINUING_EN = [
   "and", "or", "but", "so", "because", "to", "the", "a", "an", "of", "in", "on", "at", "for", "with", "from", "about",
   "my", "your", "our", "their", "his", "her", "its", "if", "that", "what", "when", "which", "who", "is", "are", "was", "be",
-  "into", "like", "than", "then", "as", "by", "me", "uh", "um", "erm", "hmm", "please",
+  "into", "like", "than", "then", "as", "by", "me", "uh", "um", "umm", "uhm", "erm", "er", "hmm", "hm", "mm", "mmm", "please",
   "plus", "minus", "times", "versus", "vs",
 ];
 const CONTINUING_FR = [
   "et", "ou", "mais", "donc", "parce", "que", "qu", "qui", "quel", "quelle", "quels", "quelles", "de", "du", "des", "le", "la", "les", "l", "un", "une",
   "au", "aux", "pour", "avec", "dans", "sur", "en", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
-  "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "ben", "puis",
+  "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "euhm", "heu", "hum", "ben", "puis",
   // Québec: a pause on one of these is not the end of the sentence
   "pis", "faque", "fak", "genre", "tse", "ouin", "mettons", "chez", "vers", "sans", "par", "entre", "sous",
   "ces", "cet", "chaque", "dont",
 ];
 const CONTINUING_WORDS = new Set([...CONTINUING_EN, ...CONTINUING_FR]);
-/** Sounds, not words: a turn held on one is never a French ending to trust. */
-const FILLERS = new Set(["uh", "um", "erm", "hmm", "euh", "ben"]);
+/** Sounds, not words: a turn held on one is never a French ending to trust.
+ * xAI writes them since the socket asks for `filler_words`. */
+const FILLERS = new Set(["uh", "um", "umm", "uhm", "erm", "er", "hmm", "hm", "mm", "mmm", "euh", "euhm", "heu", "hum", "ben"]);
 const ENGLISH = new Set(CONTINUING_EN);
 
 function lastWords(text: string): string[] {
@@ -104,6 +114,12 @@ function lastWords(text: string): string[] {
 export function endsOnContinuingWord(text: string): boolean {
   const last = lastWords(text).at(-1);
   return last !== undefined && CONTINUING_WORDS.has(last);
+}
+
+/** The words so far end on a hesitation sound ("euh", "um"). */
+export function endsOnFiller(text: string): boolean {
+  const last = lastWords(text).at(-1);
+  return last !== undefined && FILLERS.has(last);
 }
 
 /** French function words, accents stripped ("à" is "a"). */
@@ -178,11 +194,17 @@ export function incompleteClause(text: string): boolean {
   return words.length <= 2;
 }
 
-/** Voiced time over the bot before a barge-in cuts. Four 32 ms frames:
- * the cut is at 128 ms from the first voiced frame, and the player's 12 ms
- * fade is silent by 140 ms, inside the 150 ms the person waits. Three
- * frames (96 ms, a cough) stay under it and only duck. */
+/** Voiced time over the bot before speech over it starts a turn. Four
+ * 32 ms frames. The bot is ducked from the first frame; it is cut only once
+ * the barge-in is confirmed (BARGE_IN_CONFIRM_MS, call.ts). Three frames
+ * (96 ms, a click) stay under it and are cancelled. */
 export const BARGE_IN_START_MS = 128;
+
+/** Speech over the bot past BARGE_IN_START_MS only keeps it ducked; it is
+ * cut once the words are the person's (call.ts), or, when no words have
+ * come yet, after this much voiced speech. A "mm-hmm" or a cough never
+ * cuts an answer. */
+export const BARGE_IN_CONFIRM_MS = 400;
 
 /** Punctuation a probe finalize may have added. Endpointing must not treat
  * that period as the person having finished. */
@@ -294,6 +316,8 @@ export class TurnDetector {
   private quietRun = 0;
   /** the words recognized so far in this turn */
   private words = "";
+  /** xAI Smart Turn's end of turn confidence for those words, when given */
+  private endOfTurn: number | undefined = undefined;
   /** the last 2 x CONTOUR_MS of the turn's voiced frames */
   private contour: ContourPoint[] = [];
   /** what the voice's ending says, read when a silence begins */
@@ -329,7 +353,8 @@ export class TurnDetector {
    * the words so far are an unfinished clause. */
   get effectiveEndpointMs(): number {
     if (this.o.prosody && this.verdict === "unfinished") return this.endpoint + this.o.incompleteMs;
-    if (!this.unfinished) return this.endpoint;
+    // xAI's Smart Turn says the person is far from done
+    if (!this.unfinished) return this.endpoint + (this.notDone ? this.o.incompleteMs : 0);
     const extra = longFrenchTurn(this.words, this.speechMs) ? Math.min(this.o.incompleteMs, LONG_FRENCH_INCOMPLETE_CAP) : this.o.incompleteMs;
     // a French linking word on a contour that says the sentence is over
     if (this.o.prosody && this.verdict === "finished" && frenchEnding(this.words)) return this.endpoint + Math.round(extra / 2);
@@ -372,36 +397,46 @@ export class TurnDetector {
     this.endpoint = Math.round(range.minEndpointMs + Math.min(1, Math.max(0, share)) * (range.maxEndpointMs - range.minEndpointMs));
   }
 
-  /** The words recognized so far in this turn (the streaming transcript). */
-  hint(text: string): void {
+  /** Smart Turn's confidence is under SMART_TURN_UNFINISHED. */
+  private get notDone(): boolean {
+    return this.endOfTurn !== undefined && this.endOfTurn < SMART_TURN_UNFINISHED;
+  }
+
+  /** Smart Turn's confidence (when given) allows an early end. */
+  private get mayEndEarly(): boolean {
+    return this.endOfTurn === undefined || this.endOfTurn >= SMART_TURN_EARLY;
+  }
+
+  /** The words recognized so far in this turn (the streaming transcript),
+   * fillers included, and xAI Smart Turn's end of turn confidence when the
+   * partial carried one (none: the rules work without it). */
+  hint(text: string, endOfTurnConfidence?: number): void {
     if (this.state === "idle") {
       this.unfinished = false;
       this.complete = false;
       this.words = "";
+      this.endOfTurn = undefined;
       return;
     }
+    // A confidence belongs to its words: a partial with new words and none
+    // drops it; the same words again (a final chunk, a probe's answer with
+    // its period) keep it.
+    if (typeof endOfTurnConfidence === "number" && Number.isFinite(endOfTurnConfidence)) this.endOfTurn = endOfTurnConfidence;
+    else if (lastWords(text).join(" ") !== lastWords(this.words).join(" ")) this.endOfTurn = undefined;
     const open = incompleteClause(text) || longFrenchOpen(text, this.speechMs);
     this.unfinished = open;
-    // A speculative start already marked the words complete: keep that so
-    // the remaining silence uses completeMs, unless they kept talking or
-    // this is still a long French sentence.
-    this.complete = !open && (this.complete || completeClause(text));
+    // Only the words themselves close a sentence: a speculative send (a
+    // guess on a partial) never shortens the endpoint.
+    this.complete = !open && completeClause(text);
     this.words = text;
     // words that arrive during the silence change what the contour means
     if (this.silenceMs > 0 && this.o.prosody) this.readContour();
   }
 
-  /** The words so far can start the answer: end this turn on completeMs. */
-  markComplete(): void {
-    if (this.state === "idle") return;
-    this.complete = true;
-    this.unfinished = false;
-  }
-
   /** The silence that ends the current turn early, when its words are a
    * finished sentence (else null). */
   get earlyEndpointMs(): number | null {
-    if (!this.o.completeMs) return null;
+    if (!this.o.completeMs || !this.mayEndEarly) return null;
     if (this.complete || this.contourEarly || this.semanticEarly) return Math.min(this.endpoint, this.o.completeMs);
     return null;
   }
@@ -419,7 +454,7 @@ export class TurnDetector {
   }
 
   private readContour(): void {
-    this.verdict = contourVerdict(this.contour, endsOnContinuingWord(this.words));
+    this.verdict = contourVerdict(this.contour, endsOnFiller(this.words) ? "filler" : endsOnContinuingWord(this.words));
   }
 
   get speaking(): boolean {
@@ -459,6 +494,7 @@ export class TurnDetector {
     this.complete = false;
     this.quietRun = 0;
     this.words = "";
+    this.endOfTurn = undefined;
     this.contour = [];
     this.verdict = "unknown";
   }
@@ -534,13 +570,16 @@ export class TurnDetector {
     const need = early === null ? 0 : Math.max(early, floor);
     const punctuatedEarly = this.complete && early !== null && this.silenceMs >= need && (floor === 0 || this.quietRun >= need);
     const contourQuietEarly = contourEnd && early !== null && this.quietRun >= need;
-    const semanticQuietEarly = this.semanticEarly && early !== null && this.quietRun >= need;
+    // French words without punctuation ("peux-tu regarder le billet" before
+    // "de CONTOSO"): their meaning alone waits the long French quiet
+    const semanticNeed = looksFrench(this.words) ? Math.max(need, LONG_FRENCH_QUIET_MS) : need;
+    const semanticQuietEarly = this.semanticEarly && early !== null && this.quietRun >= semanticNeed;
     const endsEarly = (punctuatedEarly || contourQuietEarly || semanticQuietEarly) && this.silenceMs < this.effectiveEndpointMs;
     if (endsEarly || this.silenceMs >= this.effectiveEndpointMs || this.turnMs >= this.o.maxTurnMs) {
       const speechMs = this.speechMs;
-      const endpointMs = endsEarly ? need : this.effectiveEndpointMs;
-      const longest = this.longestPauseMs;
       const semantic = semanticQuietEarly && !punctuatedEarly && !contourQuietEarly;
+      const endpointMs = endsEarly ? (semantic ? semanticNeed : need) : this.effectiveEndpointMs;
+      const longest = this.longestPauseMs;
       this.reset();
       if (speechMs < this.o.minTurnMs) return { type: "cancel" };
       // an early end says nothing about the person's pauses: no adaptation

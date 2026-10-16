@@ -67450,6 +67450,26 @@
         }
       }
     },
+    "The call was interrupted. Tap Resume the call to continue.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'appel a été interrompu. Touchez Reprendre l'appel pour continuer."
+          }
+        }
+      }
+    },
+    "That did not get through. Could you say it again?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ça n'a pas passé. Pouvez-vous le redire?"
+          }
+        }
+      }
+    },
     "Change Photo": {
       "localizations": {
         "fr": {

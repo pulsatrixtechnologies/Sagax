@@ -337,8 +337,13 @@ export class ClockPlayer {
     this.queue.push(sentence);
     if (!this.pumping) void this.pump();
   }
+  speed = 1;
   duck() {}
   unduck() {}
+  /** an open utterance's words grow (the clock only plays its PCM) */
+  extend(text: string, _caption?: unknown, sentence?: Sentence) {
+    if (sentence) sentence.text += text;
+  }
   async cancel() {
     this.generation += 1;
     for (const sentence of this.queue) sentence.abort();

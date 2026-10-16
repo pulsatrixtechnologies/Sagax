@@ -30,6 +30,24 @@ describe("voice topics", () => {
     expect(isNewVoiceTopic("no, the other one")).toBe(false);
   });
 
+  it("stop is the whole utterance, never a request that starts with the word", () => {
+    for (const text of ["stop", "Stop.", "arrête", "Arrête ça!", "ok stop", "stop please", "Stop, stop.", "euh, arrête", "OK arrête ça s'il vous plaît", "cancel that", "ça suffit", "that's enough"]) {
+      expect(classifyVoiceIntent(text), text).toBe("stop");
+    }
+    for (const text of [
+      "Stop le service CrowdStrike sur SRV-01",
+      "stop the print spooler on the server",
+      "arrête le service de backup sur le serveur",
+      "cancel the meeting with Max",
+      "Stop. Ouvre le billet de CONTOSO",
+      "enough disk space on SRV-01?",
+      "ok stop the VM",
+    ]) {
+      expect(classifyVoiceIntent(text), text).toBe("new_topic");
+      expect(isStopUtterance(text), text).toBe(false);
+    }
+  });
+
   it("classifies stop, correction, or new topic; default is new topic", () => {
     expect(classifyVoiceIntent("stop")).toBe("stop");
     expect(classifyVoiceIntent("Arrête s'il te plaît")).toBe("stop");

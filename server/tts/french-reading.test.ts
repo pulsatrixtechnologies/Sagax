@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readFrench, readsFrench } from "./french-reading.ts";
+import { looksFrench, readFrench, readsFrench, readsFrenchText } from "./french-reading.ts";
 
 describe("French reading for the voice", () => {
   it("leaves words that are already speakable", () => {
@@ -29,5 +29,17 @@ describe("French reading for the voice", () => {
     expect(readsFrench("fr-CA")).toBe(true);
     expect(readsFrench("en")).toBe(false);
     expect(readsFrench("auto")).toBe(false);
+  });
+
+  it("an automatic call reads French when the text looks French, never English", () => {
+    expect(looksFrench("Votre rendez-vous est à 14h30.")).toBe(true);
+    expect(looksFrench("C'est 25 $ pour le 1er mois.")).toBe(true);
+    expect(looksFrench("Le billet est fermé demain")).toBe(true);
+    expect(looksFrench("Dr Smith will see you at 2pm, it is 25 $.")).toBe(false);
+    expect(looksFrench("OK")).toBe(false);
+    expect(readsFrenchText("auto", "Votre rendez-vous est à 14h30.")).toBe(true);
+    expect(readsFrenchText("auto", "Dr Smith will see you.")).toBe(false);
+    expect(readsFrenchText("en", "Votre rendez-vous est à 14h30.")).toBe(false);
+    expect(readsFrenchText("fr-CA", "OK")).toBe(true);
   });
 });

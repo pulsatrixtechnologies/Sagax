@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { contourVerdict, endOfVoice, estimatePitch, readContour, type ContourPoint } from "./prosody";
-import { endsOnContinuingWord, frenchEnding, PAUSE_PRESETS, TurnDetector, type TurnEvent } from "./turns";
+import { endsOnContinuingWord, endsOnFiller, frenchEnding, PAUSE_PRESETS, TurnDetector, type TurnEvent } from "./turns";
 
 const RATE = 16_000;
 const FRAME = 512;
@@ -82,6 +82,13 @@ describe("contour classifier (synthetic contours)", () => {
     expect(contourVerdict(flat, false)).toBe("unknown");
   });
 
+  it("a filler that falls and fades out (a trailing euh...) is a person thinking: unfinished", () => {
+    const fading = points(glide(12, 190, 130, 0.25, 0.06));
+    expect(contourVerdict(fading, "filler")).toBe("unfinished");
+    // a linking word on the same fall still reads finished (French endings)
+    expect(contourVerdict(fading, true)).toBe("finished");
+  });
+
   it("mid-word: a falling pitch cut at full strength is never finished", () => {
     const cut = points(glide(12, 190, 130, 0.12, 0.25));
     expect(readContour(cut).abrupt).toBe(true);
@@ -102,6 +109,10 @@ describe("contour classifier (synthetic contours)", () => {
 describe("the words' ending", () => {
   it("knows fillers and linking words, and French endings worth a shorter wait", () => {
     expect(endsOnContinuingWord("je voudrais euh")).toBe(true);
+    expect(endsOnFiller("peux-tu regarder le billet euh")).toBe(true);
+    expect(endsOnFiller("ok, hum...")).toBe(true);
+    expect(endsOnFiller("peux-tu regarder le billet de")).toBe(false);
+    expect(endsOnContinuingWord("so the server is, um")).toBe(true);
     expect(endsOnContinuingWord("give me a prompt to")).toBe(true);
     expect(endsOnContinuingWord("what time is it")).toBe(false);
     expect(frenchEnding("on se voit demain puis")).toBe(true);
@@ -149,6 +160,13 @@ describe("end of turn on intonation (Faster end of turn)", () => {
 
   it("keeps the long delay on a flat filler, even with no words yet", () => {
     const { event, silentMs } = speak(normal(), glide(12, 160, 161, 0.2, 0.18), { words: "je voudrais euh" });
+    expect(event).toMatchObject({ type: "end", contour: "unfinished" });
+    expect(event?.type === "end" && event.early).toBeFalsy();
+    expect(silentMs).toBeGreaterThanOrEqual(700 + PAUSE_PRESETS.normal.incompleteMs);
+  });
+
+  it("a falling, fading euh never ends the turn early: the long delay holds", () => {
+    const { event, silentMs } = speak(normal(), glide(12, 190, 130, 0.25, 0.05), { words: "peux-tu regarder le billet euh" });
     expect(event).toMatchObject({ type: "end", contour: "unfinished" });
     expect(event?.type === "end" && event.early).toBeFalsy();
     expect(silentMs).toBeGreaterThanOrEqual(700 + PAUSE_PRESETS.normal.incompleteMs);

@@ -4,8 +4,12 @@
 // stream, else the computer's own provider with the bot's voice, else
 // ElevenLabs from this phone, else the phone's best voice), and played back
 // to back through the call's engine. One player does the phone things: duck
-// at once when the person starts talking, drop everything on a barge-in,
-// say when each sentence becomes audible and when all of it has been heard.
+// within 10 ms when the person starts talking, fade out and drop everything
+// on a barge-in, say when each sentence becomes audible and when all of it
+// has been heard. The first audio after a silence waits for 60 ms of it
+// (a prebuffer: the next chunks then never leave a gap in its first word),
+// and each sentence's resampler is drained at its end, so no sentence loses
+// its last samples.
 import AVFoundation
 import CompanionCore
 
@@ -176,8 +180,17 @@ final class CallSpeechPlayer: CallSpeaking {
         let audio: CallSpeechAudio
     }
 
+    /// Audio held before the first buffer after a silence is scheduled.
+    static let prebuffer = 0.06
+    /// The voice's ramps: a duck, an unduck, the fade before a cut stops it.
+    static let duckMs = 10.0
+    static let fadeMs = 12.0
+    static let duckLevel: Float = 0.12
+
     private let io: CallAudioIO
     private let source: CallSpeechSourcing
+    /// The cut's stop, after its fade (done at once if new audio comes first).
+    private var pendingStop: DispatchWorkItem?
     private var queue: [Sentence] = []
     private var pumping = false
     private var generation = 0
@@ -216,8 +229,8 @@ final class CallSpeechPlayer: CallSpeaking {
         if !pumping { Task { await pump() } }
     }
 
-    func duck() { io.voice.volume = 0.12 }
-    func unduck() { io.voice.volume = 1 }
+    func duck() { io.rampVoice(to: Self.duckLevel, ms: Self.duckMs) }
+    func unduck() { io.rampVoice(to: 1, ms: Self.duckMs) }
 
     func cancel() {
         let wasBusy = busy
@@ -229,14 +242,31 @@ final class CallSpeechPlayer: CallSpeaking {
         completed = 0
         cursor = 0
         if io.running {
-            io.voice.stop()
-            io.voice.play()
+            // fade, then stop: a cut mid-word never clicks
+            io.rampVoice(to: 0, ms: Self.fadeMs)
+            pendingStop?.cancel()
+            let stop = DispatchWorkItem { [weak self] in self?.stopVoice() }
+            pendingStop = stop
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(Self.fadeMs) + 3), execute: stop)
+        } else {
+            io.rampVoice(to: 1, ms: 0)
         }
-        io.voice.volume = 1
         if wasBusy {
             active = false
             onIdle()
         }
+    }
+
+    /// The cut's fade is over (or new audio comes): stop what was scheduled
+    /// and play on at full level.
+    private func stopVoice() {
+        pendingStop?.cancel()
+        pendingStop = nil
+        if io.running {
+            io.voice.stop()
+            io.voice.play()
+        }
+        io.rampVoice(to: 1, ms: 0)
     }
 
     func tone(_ earcon: CallEarcon) { io.tone(earcon) }
@@ -266,16 +296,36 @@ final class CallSpeechPlayer: CallSpeaking {
             let consumer = Task { @MainActor [weak self] in
                 var first = true
                 var converter: AVAudioConverter?
+                // after a silence, hold the first PREBUFFER of audio
+                var holding = self.map { $0.completed >= $0.scheduled } ?? false
+                var held: [AVAudioPCMBuffer] = []
+                var heldSeconds = 0.0
+                let play = { (buffer: AVAudioPCMBuffer) in
+                    guard let self, mine == self.generation, !Task.isCancelled else { return }
+                    self.schedule(buffer, start: first ? sentence : nil, generation: mine)
+                    first = false
+                }
                 do {
                     for try await buffer in sentence.audio {
                         guard let self, mine == self.generation, !Task.isCancelled else { break }
                         guard let out = self.io.converted(buffer, using: &converter) else { continue }
-                        self.schedule(out, start: first ? sentence : nil, generation: mine)
-                        first = false
+                        if holding {
+                            held.append(out)
+                            heldSeconds += Double(out.frameLength) / out.format.sampleRate
+                            if heldSeconds < Self.prebuffer { continue }
+                            holding = false
+                            for buffer in held { play(buffer) }
+                            held = []
+                            continue
+                        }
+                        play(out)
                     }
                 } catch {
                     if let self, mine == self.generation, !(error is CancellationError) { self.onError(error) }
                 }
+                // what is held, then the resampler's last samples
+                for buffer in held { play(buffer) }
+                if let self, let tail = self.io.drain(converter) { play(tail) }
                 // all its audio arrived (or there was none: it takes no time)
                 if let self, mine == self.generation, let index = self.ledger.firstIndex(where: { $0.id == sentence.id }) {
                     self.ledger[index].complete = true
@@ -292,6 +342,7 @@ final class CallSpeechPlayer: CallSpeaking {
 
     private func schedule(_ buffer: AVAudioPCMBuffer, start: Sentence?, generation mine: Int) {
         guard io.running else { return }
+        if pendingStop != nil { stopVoice() }
         let index = scheduled
         scheduled += 1
         let at = max(cursor, clock)
