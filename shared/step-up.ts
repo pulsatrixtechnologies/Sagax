@@ -238,6 +238,7 @@ const CARD_CONTENT_FIELDS = [
   "teamSetupRequest",
   "skillRequest",
   "botActRequest",
+  "confidentialMemoryRequest",
   "terminalRequest",
   "cwActionRequest",
   "customRuleCandidate",

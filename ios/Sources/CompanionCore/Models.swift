@@ -624,6 +624,12 @@ public struct BotTask: Codable, Hashable, Sendable {
     /// Out of the person's thread list: a routine run's execution or an AI
     /// client's hidden conversation.
     public var isHiddenFromPerson: Bool { routineRunId != nil || hidden == true }
+    /// A confidential thread ("Fil confidentiel"): never remembered,
+    /// exported or shared beyond its owner. Permanent once set; only
+    /// deleting the thread ends it. Absent means an ordinary thread.
+    public var confidential: Bool? = nil
+    /// The one question every view asks: show the classification banner.
+    public var isConfidential: Bool { confidential == true }
     /// The person pinned this thread above the update-ordered list.
     /// The thread runs its bot's model (true) or one of its own (false);
     /// absent on an older server (#261).

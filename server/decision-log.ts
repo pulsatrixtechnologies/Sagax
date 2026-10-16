@@ -29,7 +29,7 @@
 // separate change if it earns its keep.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readdirSync, readFileSync } from "node:fs";
-import { appendFile, mkdir, readdir, stat, unlink } from "node:fs/promises";
+import { appendFile, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import type { AutoVerdictSource } from "./auto-approve.ts";
@@ -81,7 +81,10 @@ export type DecisionSource =
   | "auto-review"
   | "auto-review-shadow"
   /** the ask's own timeout (an `expired` row) */
-  | "timeout";
+  | "timeout"
+  /** refused in a confidential thread: only its owner may answer, and could not
+   * (server/confidential-threads.ts) */
+  | "confidential";
 
 /** Who answered a card, for `source: "user"` rows: a signed-in session (its
  * id, device label, and account email or id when it has one; a portal
@@ -127,6 +130,61 @@ export const MAX_DECISION_RETENTION_DAYS = 3650;
 const writeQueues = new Map<string, Promise<void>>();
 const lastPrune = new Map<string, number>();
 let retentionDays: () => number = () => DEFAULT_DECISION_RETENTION_DAYS;
+
+let confidentialThread: (threadId: string) => boolean = () => false;
+
+/** The server binds which threads are confidential
+ * (server/confidential-threads.ts): their rows are written metadata only. */
+export function bindConfidentialDecisions(isConfidential: (threadId: string) => boolean): void {
+  confidentialThread = isConfidential;
+}
+
+/** A row without anything a person or a bot wrote: the summary of the call,
+ * the rule that matched it, how the ask reached the fold. */
+export function metadataOnly<T extends Partial<DecisionRow>>(row: T): T {
+  const { summary: _summary, rule: _rule, origin: _origin, ...rest } = row;
+  return rest as T;
+}
+
+/** Strip every row of a thread down to its metadata (metadataOnly), in
+ * place, across the month files and the legacy pair: a confidential thread
+ * deleted, or made confidential after rows were written. Serialized with
+ * appends. Resolves to the number of rows changed. */
+export function scrubThreadDecisions(dataDir: string, threadId: string): Promise<number> {
+  const previous = writeQueues.get(dataDir) ?? Promise.resolve();
+  let changed = 0;
+  const queued = previous.then(async () => {
+    for (const file of sources(dataDir)) {
+      let text: string;
+      try {
+        text = readFileSync(file, "utf8");
+      } catch {
+        continue;
+      }
+      let touched = false;
+      const lines = text.split("\n").map((line) => {
+        if (!line) return line;
+        try {
+          const value = JSON.parse(line) as Partial<DecisionRow>;
+          if (value?.threadId !== threadId || (value.summary === undefined && value.rule === undefined && value.origin === undefined)) return line;
+          touched = true;
+          changed += 1;
+          return JSON.stringify(metadataOnly(value));
+        } catch {
+          return line;
+        }
+      });
+      if (touched) await writeFile(file, lines.join("\n"), { mode: 0o600 });
+    }
+  }).catch(() => {
+    /* never takes the delete down */
+  });
+  writeQueues.set(dataDir, queued);
+  void queued.finally(() => {
+    if (writeQueues.get(dataDir) === queued) writeQueues.delete(dataDir);
+  });
+  return queued.then(() => changed);
+}
 
 /** The server binds its configured window once; see decisionRetentionDays. */
 export function bindDecisionRetention(provider: () => number): void {
@@ -176,6 +234,9 @@ async function writeDecision(dataDir: string, record: DecisionRow): Promise<void
  * the fold that calls this is delivering approvals and cards, and a full
  * disk must not turn into denied tools. */
 export function appendDecision(dataDir: string, row: Omit<DecisionRow, "at">): void {
+  // A confidential thread's row keeps what the audit needs (ids, time,
+  // tool name, decision, who) and never what was asked: no summary, no rule.
+  if (confidentialThread(row.threadId)) row = metadataOnly(row);
   const scope = row.source === "user" ? actorScope.getStore() : undefined;
   const actor = row.actor ?? scope?.actor;
   const via = row.via ?? scope?.via;

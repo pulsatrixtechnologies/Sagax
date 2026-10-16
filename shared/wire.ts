@@ -163,6 +163,10 @@ export interface WireTask {
    * in the sidebar, previews, typing dots, unread or notifications; reached
    * from the bot's Activity panel or a thread link. Only `true` is stored. */
   hidden?: true;
+  /** A confidential thread (server/confidential-threads.ts): nothing of it
+   * is remembered, exported, logged or shared beyond its owner. Permanent
+   * once set: only deleting the thread ends it. Only `true` is stored. */
+  confidential?: true;
   /** Set when a bot, not a person, opened this thread. */
   openedBy?: TaskOpenedBy;
   /** A parallel task: the conversation and request it answers. */
@@ -848,6 +852,9 @@ export interface OptionCardData {
   /** A bot action waiting for this person's Allow. The id matches requestId.
    * The card stores no body and no query. */
   botActRequest?: { id: string };
+  /** A confidential thread's write to its owner's own memory, waiting for
+   * their Allow (server/confidential-threads.ts). The id matches requestId. */
+  confidentialMemoryRequest?: { id: string };
   /** Interactive shell on a terminal-capable resource (approval required). */
   terminalRequest?: TerminalRequestCardData;
   /** A meeting the bot asks to join as a notetaker (join_meeting): the

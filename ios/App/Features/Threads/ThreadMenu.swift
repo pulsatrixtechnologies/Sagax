@@ -82,6 +82,9 @@ struct ThreadMenu: View {
         case .delete:
             Button(role: .destructive) { perform(.delete) } label: { Label("Delete", systemImage: "trash") }
                 .disabled(!enabled)
+        case .makeConfidential:
+            Button { perform(.makeConfidential) } label: { Label("Make confidential", systemImage: ConfidentialBanner.symbol) }
+                .accessibilityIdentifier("thread-menu-make-confidential")
         case .more:
             Menu {
                 ForEach(plan.more, id: \.self) { item in

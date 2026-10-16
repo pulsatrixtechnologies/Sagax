@@ -459,7 +459,9 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
 
   // conversations, messages and their files
   if (options.conversations) {
-    const tasks = bot.tasks?.length ? bot.tasks : [];
+    // A confidential thread (server/confidential-threads.ts) never leaves in
+    // an export, whoever asks: not its messages, its files, nor its record.
+    const tasks = (bot.tasks ?? []).filter((task) => task.confidential !== true);
     let messages = 0;
     const attachments = new Set<string>();
     for (const task of tasks) {
@@ -476,7 +478,8 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
         addFile(`conversations/files/${task.threadId}/${file.rel}`, file.path, file.size);
       }
     }
-    add("conversations/tasks.json", `${JSON.stringify({ active: bot.threadId, tasks: tasks.map(portableTask) }, null, 2)}\n`, true);
+    const active = tasks.some((task) => task.threadId === bot.threadId) ? bot.threadId : tasks[0]?.threadId;
+    add("conversations/tasks.json", `${JSON.stringify({ active, tasks: tasks.map(portableTask) }, null, 2)}\n`, true);
     for (const name of attachments) {
       const path = join(ATTACHMENTS_DIR, name);
       addFile(`attachments/${name}`, path, statSync(path).size);
@@ -484,9 +487,10 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
     Object.assign(includes, { conversations: tasks.length, messages, attachments: attachments.size });
   }
 
+  const confidentialSelected = bot.tasks?.some((task) => task.threadId === bot.threadId && task.confidential === true) === true;
   const document = {
     identity, settings, host: host_, ...(avatar ? { avatar } : {}),
-    exportedFrom: { id: bot.id, createdAt: bot.createdAt, threadId: bot.threadId },
+    exportedFrom: { id: bot.id, createdAt: bot.createdAt, ...(confidentialSelected ? {} : { threadId: bot.threadId }) },
   };
   add("bot.json", `${JSON.stringify(document, null, 2)}\n`, true);
 

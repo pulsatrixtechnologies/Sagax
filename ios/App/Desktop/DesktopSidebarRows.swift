@@ -618,6 +618,9 @@ struct DesktopThreadRow: View {
                         .foregroundStyle(current || task.unread == true ? theme.sidebarInk : theme.sidebarInkSecondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
+                    if task.isConfidential {
+                        ConfidentialMark(showsLabel: !compact)
+                    }
                     if task.pinned == true {
                         DesktopIconView(icon: .pin, size: 11).foregroundStyle(theme.sidebarInkSecondary)
                     }

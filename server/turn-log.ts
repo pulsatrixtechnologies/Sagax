@@ -2,7 +2,9 @@
 // app keeps in server.log). It shows the start of the prompt, so a stuck turn
 // can be traced to what was asked. Words spoken on a Live call are never
 // logged — the call's summary line (liveCallSummaryLine) has counters only —
-// so a turn carrying any of them shows `text=(spoken)` instead.
+// so a turn carrying any of them shows `text=(spoken)` instead. A turn of a
+// confidential thread (server/confidential-threads.ts) logs no prompt at
+// all: `text=(confidential)`, whatever it carried.
 
 export interface TurnStartLog {
   botId: string;
@@ -12,11 +14,13 @@ export interface TurnStartLog {
   card: boolean;
   /** some of the turn's words were spoken on a Live call */
   spoken: boolean;
+  /** the turn's thread is confidential */
+  confidential?: boolean;
 }
 
 const LOGGED_CHARS = 70;
 
 export function turnStartLogLine(turn: TurnStartLog): string {
-  const text = turn.spoken ? "(spoken)" : JSON.stringify(turn.text.slice(0, LOGGED_CHARS));
+  const text = turn.confidential ? "(confidential)" : turn.spoken ? "(spoken)" : JSON.stringify(turn.text.slice(0, LOGGED_CHARS));
   return `[omb-turn] bot=${turn.botId} text=${text} images=${turn.images} depth=${turn.depth} card=${turn.card}`;
 }

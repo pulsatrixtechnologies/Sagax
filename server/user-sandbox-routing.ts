@@ -37,9 +37,13 @@ export function resolveExecutionTarget(input: {
  *   ever asked for falls back to the room's creator. A bot's follow-up after
  *   a person's message keeps that person's environment: the work they asked
  *   for, and their files, stay together instead of moving to the creator's.
+ * - A confidential thread (server/confidential-threads.ts) always works in
+ *   its OWNER's environment, whoever or whatever started the turn.
  * - Null when nobody is known: nothing is mounted (fail closed). */
 export function sandboxPrincipalForTurn(input: {
   botOwnerPrincipalId: string;
+  /** A confidential thread's owner: wins over everything else. */
+  confidentialOwnerPrincipalId?: string | null;
   /** The turn belongs to a routine (directly or through hops). */
   routine: boolean;
   /** The person this turn speaks for, "" or absent when unknown. */
@@ -47,6 +51,7 @@ export function sandboxPrincipalForTurn(input: {
   /** Rooms only: who created the room. */
   roomCreatorPrincipalId?: string;
 }): string | null {
+  if (input.confidentialOwnerPrincipalId) return input.confidentialOwnerPrincipalId;
   if (input.routine) return input.botOwnerPrincipalId || null;
   if (input.speakerPrincipalId) return input.speakerPrincipalId;
   return input.roomCreatorPrincipalId || null;

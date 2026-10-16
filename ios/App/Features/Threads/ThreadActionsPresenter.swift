@@ -42,6 +42,20 @@ struct ThreadActionsPresenter: ViewModifier {
                     Text("“\(target.task.displayTitle)” and its conversation will be deleted. This cannot be undone.")
                 }
             }
+            .confirmationDialog(
+                "Make this thread confidential?",
+                isPresented: Binding(
+                    get: { actions.makingConfidential != nil },
+                    set: { if !$0 { actions.makingConfidential = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Make confidential") { actions.confirmMakeConfidential(session) }
+                    .accessibilityIdentifier("thread-confirm-confidential")
+                Button("Cancel", role: .cancel) { actions.makingConfidential = nil }
+            } message: {
+                Text("This is permanent: only deleting the thread ends it. Nothing in it will be remembered, exported or shared beyond you. To work normally, open a new thread.")
+            }
             .sheet(item: $actions.editingFolder) { target in
                 FolderEditorSheet(target: target, actions: actions)
                     .environmentObject(session)

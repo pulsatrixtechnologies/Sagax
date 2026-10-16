@@ -49,6 +49,10 @@ struct ChatNameCapsule: View {
                     .font(Theme.Font.bodyMedium)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
+                // the title's lock: this thread is confidential
+                if ConfidentialBanner.shows(for: chat) {
+                    ConfidentialMark(showsLabel: false)
+                }
             }
             .padding(.leading, 12)
             .padding(.trailing, 14)

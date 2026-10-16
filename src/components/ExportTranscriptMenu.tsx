@@ -39,6 +39,8 @@ export interface ExportTranscriptMenuProps {
   inspectorOpen?: boolean;
   /** The bot's Data window (Experimental; shown only when given). */
   data?: { label: string; onOpen: () => void };
+  /** A confidential thread: the copy and the download carry its mark. */
+  confidential?: boolean;
 }
 
 /**
@@ -58,6 +60,7 @@ export function ExportTranscriptMenu({
   onToggleInspector,
   inspectorOpen = false,
   data,
+  confidential = false,
 }: ExportTranscriptMenuProps) {
   const [open, setOpen] = useState(false);
   const motion = useMenuMotion(open);
@@ -108,6 +111,7 @@ export function ExportTranscriptMenu({
       messages,
       botName,
       isGroup,
+      ...(confidential ? { confidentialMark: t("confidential.mark") } : {}),
     });
     const success = await copyTranscriptToClipboard(markdown);
     setCopyFailed(!success);
@@ -126,6 +130,7 @@ export function ExportTranscriptMenu({
       messages,
       botName,
       isGroup,
+      ...(confidential ? { confidentialMark: t("confidential.mark") } : {}),
     });
     const filename = slugifyTranscriptFilename(title);
     downloadMarkdownTranscript(filename, markdown);

@@ -7,15 +7,16 @@
 // and Move to folder open a page, one level down.
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, ChevronRight, Clock, FolderInput, Link2, Link2Off, Loader2, PanelRight, Pencil, Pin, PinOff, RefreshCw, Trash2, UsersRound } from "lucide-react";
+import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, ChevronRight, Clock, FolderInput, Link2, Link2Off, Loader2, Lock, PanelRight, Pencil, Pin, PinOff, RefreshCw, Trash2, UsersRound } from "lucide-react";
 import type { BotProject, Task } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { FolderIcon, navigateThreadMenu } from "./BotProjects";
+import { ConfirmDialog } from "./ConfirmDialog";
 
-export type ThreadMenuTask = Pick<Task, "threadId" | "title"> & Partial<Pick<Task, "projectId" | "busy" | "activity" | "archivedAt" | "snoozedUntil" | "link">> & { pinned?: boolean };
+export type ThreadMenuTask = Pick<Task, "threadId" | "title"> & Partial<Pick<Task, "projectId" | "busy" | "activity" | "archivedAt" | "snoozedUntil" | "link" | "confidential">> & { pinned?: boolean };
 
 export type ThreadMenuPage = "main" | "snooze" | "move";
 
@@ -40,6 +41,10 @@ export type ThreadMenuActions = {
   onCreateTeamBot?: () => void;
   /** Show the thread beside the main chat (src/lib/side-thread.ts). */
   onOpenAside?: () => void;
+  /** Make this thread confidential (src/lib/confidential-thread.ts). The
+   * menu asks first, because it is permanent; there is no way back, so no
+   * action turns it off. */
+  onMakeConfidential?: () => void;
 };
 
 /** The next local 6 PM, rolling to tomorrow once tonight's is past. */
@@ -166,6 +171,11 @@ export function ThreadMenuItems({ task, actions, folders = [], page, onPage, onC
       actions.onRemoveLink && task.link && <Item key="remove-link" id="remove-link" icon={<Link2Off size={12} />} label={t("task.removeLink")} onClick={run(actions.onRemoveLink)} />,
     ],
     [
+      task.confidential === true
+        ? <Item key="confidential" id="confidential-info" icon={<Lock size={12} />} label={t("confidential.menuIs")} title={t("confidential.menuIsHint")} disabled onClick={() => {}} />
+        : actions.onMakeConfidential && <Item key="confidential" id="make-confidential" icon={<Lock size={12} />} label={t("confidential.make")} disabled={busy} onClick={run(actions.onMakeConfidential)} />,
+    ],
+    [
       refresh && <Item key="refresh-permissions" id="refresh-permissions" icon={<RefreshCw size={12} />} label={t("task.refreshPermissions")} title={t("task.refreshPermissionsHint")} disabled={busy} onClick={run(refresh)} />,
     ],
     [
@@ -202,6 +212,8 @@ export function ThreadMenu({ task, actions, folders, position, onClose, anchorRe
   const advanced = useAdvancedMode();
   const [page, setPage] = useState<ThreadMenuPage>(initialPage);
   const [regenerating, setRegenerating] = useState(false);
+  // Make confidential is permanent: the menu closes and this asks first.
+  const [askConfidential, setAskConfidential] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const latestClose = useRef(onClose);
   latestClose.current = onClose;
@@ -230,7 +242,13 @@ export function ThreadMenu({ task, actions, folders, position, onClose, anchorRe
     element.style.top = `${Math.max(8, Math.min(shown.top, window.innerHeight - height - 8))}px`;
     element.style.left = `${Math.max(8, Math.min(shown.left, window.innerWidth - width - 8))}px`;
   });
-  if (!motion.shown || !motion.value) return null;
+  const makeConfidential = actions.onMakeConfidential;
+  const confirmConfidential = makeConfidential ? <ConfirmDialog open={askConfidential} tone="neutral" icon={<Lock size={14} />}
+    title={t("confidential.confirmTitle")} body={t("confidential.confirmBody")} confirmLabel={t("confidential.confirm")}
+    threadOverlay={tone === "popover"} returnFocusRef={anchorRef}
+    onCancel={() => setAskConfidential(false)} onConfirm={() => { setAskConfidential(false); makeConfidential(); }} /> : null;
+  if (!motion.shown || !motion.value) return confirmConfidential;
+  const menuActions = makeConfidential ? { ...actions, onMakeConfidential: () => setAskConfidential(true) } : actions;
   const close = () => { setRegenerating(false); onClose(); };
   const regenerate = () => {
     if (!actions.onRegenerateTitle || regenerating) return;
@@ -239,7 +257,7 @@ export function ThreadMenu({ task, actions, folders, position, onClose, anchorRe
     // keeps it open so the person can rename by hand.
     actions.onRegenerateTitle((ok) => { setRegenerating(false); if (ok) onClose(); });
   };
-  return createPortal(
+  return <>{confirmConfidential}{createPortal(
     <div ref={menuRef} data-thread-overlay data-thread-menu={page} role="menu" aria-label={t("task.actions", { title: task.title })}
       style={{ left: motion.value.left, top: motion.value.top }}
       className={cn("fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-lg border p-1 shadow-xl popover-surface",
@@ -253,9 +271,9 @@ export function ThreadMenu({ task, actions, folders, position, onClose, anchorRe
           else { close(); anchorRef?.current?.focus(); }
         } else navigateThreadMenu(event);
       }}>
-      <ThreadMenuItems task={task} actions={actions} folders={folders} page={page} onPage={setPage} onClose={close}
+      <ThreadMenuItems task={task} actions={menuActions} folders={folders} page={page} onPage={setPage} onClose={close}
         regenerating={regenerating} onRegenerate={regenerate} advanced={advanced} />
     </div>,
     document.body,
-  );
+  )}</>;
 }

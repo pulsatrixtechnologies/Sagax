@@ -191,6 +191,13 @@
 }
 
 @theme {
+  /* Confidential thread classification band (ConfidentialBanner.tsx): one
+     fixed color in every skin and theme, like a printed classification
+     marking. White on it measures 10.6:1; the gold edge sets it apart from a
+     dark app background. */
+  --color-confidential: #0a3a8c;
+  --color-confidential-ink: #ffffff;
+  --color-confidential-edge: #f2c14e;
   --animate-panel-in: panel-in 240ms var(--ease-out-quint);
   --animate-workspace-in: workspace-in 180ms var(--ease-out-quint);
   /* menus and popovers (MenuMotion.tsx): in at `fast`, out quicker still */

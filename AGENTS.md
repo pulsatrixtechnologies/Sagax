@@ -205,6 +205,64 @@ notifications), Sentry, PagerDuty, Linear. Rules, covered by
   connector account. The imported copy is off and its import warnings say
   what it still needs (a provided secret, a password or link).
 
+## Confidential threads: kept to their owner (2026-10-16)
+
+JC: a « Fil confidentiel » is a 1:1 bot thread nothing of which is
+remembered, exported, logged or shared beyond its owner
+(`server/confidential-threads.ts`, full table in
+`docs/confidential-threads.md`). Rules, none optional:
+
+- `WireTask.confidential: true`, set at creation (`POST .../tasks`
+  `confidential`, else the organization's `confidentialThreadsByDefault`) or
+  later (`PATCH .../tasks/:id` `{ confidential: true, confirmConfidential:
+  true }`). **Permanent**: `confidential: false` is always 409
+  `confidential_permanent`; it is not a `TASK_PATCH_FIELD`
+  (`store.makeTaskConfidential` only). Deleting ends it.
+- Check it with `store.isConfidentialThread(threadId)`. Every new path that
+  writes a thread's words somewhere other people or threads read (memory,
+  logs, exports, admin views, notifications, other threads' prompts) must
+  check it too.
+- Memory: no capture (`memoryUpkeep` hook, `capturable`, `restoreTurn`), no
+  daily log line, internal writes refused (`confidentialInternalRefusal`:
+  memory, memory/log, group and team memory, rules, docs, skills, routine
+  requests, artifacts), Perspicax memory to a team or org refused and to
+  `me` only after the owner's Allow (`confidentialPerspicaxRefusal`,
+  `confidentialMemoryRequest` card, one-shot `ConfidentialMemoryPasses`).
+  `privateRecallFilter` keeps the thread out of every other thread's recall
+  on solo and organization servers alike, its owner's included; `list_threads`
+  lists it only in itself.
+- Exports and admin views: left out of the bot zip, the console file
+  browser (`BotFileRoot.hidden`, attachments), the console's organization
+  approvals queue, the workspace backup (`confidentialRoster`,
+  `stripConfidentialMessages`, `confidentialBackupPath`) and the Perspicax
+  work log. Decision rows are metadata only (`bindConfidentialDecisions`,
+  `scrubThreadDecisions`).
+- Approvals: `approvalOwnerId(bot, threadId)` is the thread owner for a
+  confidential thread; a card they could not answer is refused in the fold
+  (`confidentialCardAnswerable`, decision source `confidential`).
+- Incidents: `CONFIDENTIAL_INCIDENT_TEXT` only, to the owner, no Primary Bot
+  report. `[omb-turn]` logs `text=(confidential)`.
+- Browser: a throwaway guest session per thread
+  (`confidentialBrowserSessions`), discarded at each turn's end and on delete.
+- Place: always the thread owner's environment
+  (`sandboxPrincipalForTurn` `confidentialOwnerPrincipalId`) and its own
+  folder (`pinTaskCwd` `privateOnly`); no other `cwd` at creation.
+- Delete wipes the folder, its own attachments, pending capture, browser and
+  decision summaries (`wipeConfidentialThread`).
+- Clients: a classification banner top and above the composer (not
+  dismissible, height reserved, `role="note"`), lock and « Confidentiel » on
+  the row and window title, no off control anywhere (desktop, remote client,
+  iOS, iPad).
+- Honest limits (docs): the server operator and anyone with disk access,
+  backups outside Sagax (Velero, 30 days) and the model provider still get
+  the content; a local (solo) Sagax is the recommendation for the most
+  sensitive work.
+- Tests: `server/confidential-threads.test.ts`,
+  `server/confidential-threads.e2e.test.ts` (CT-1 to CT-8),
+  `server/bot-zip.test.ts`, `src/components/ConfidentialBanner.test.ts`,
+  `src/components/ChatView.confidential.test.ts`,
+  `ios/Tests/CompanionCoreTests/ConfidentialThreadTests.swift`.
+
 ## Meetings: the bot takes notes (2026-10-16)
 
 `join_meeting` (`server/meetings/`, card `meetingRequest`, UI

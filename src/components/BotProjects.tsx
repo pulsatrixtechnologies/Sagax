@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, ArrowUp, CheckCheck, Folder, MoreHorizontal, Pencil, Plus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCheck, Folder, Lock, MoreHorizontal, Pencil, Plus, X } from "lucide-react";
+import type { NewThreadChoice } from "@/lib/confidential-thread";
 import { useStore, type Bot, type BotProject, type FolderOwnerKind } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { useHeldMenuMotion } from "./MenuMotion";
@@ -189,17 +190,24 @@ export function BotProjectDialog({ bot, owner, project, onClose, onCreated }: {
 
 /** One-click new thread in the current folder. Folder creation lives in the
  * sidebar. `bot` is the threads' owner: a bot, or a group with `owner: "group"`. */
-export function NewThreadButton({ bot, owner, className, compact = false, onCreated }: { bot: FolderOwner; owner?: FolderOwnerKind; className?: string; compact?: boolean; onCreated?: () => void }) {
+export function NewThreadButton({ bot, owner, className, compact = false, onCreated, kind }: { bot: FolderOwner; owner?: FolderOwnerKind; className?: string; compact?: boolean; onCreated?: () => void;
+  /** A bot's New thread kind (src/lib/confidential-thread.ts): its label,
+   * and the `confidential` it sends. Absent: the plain New thread, which
+   * the server makes confidential when the organization's default says so. */
+  kind?: NewThreadChoice }) {
   const { dispatch } = useStore();
   const projects = bot.projects ?? [];
   const currentProject = projects.find((project) => project.id === bot.tasks?.find((task) => task.threadId === bot.threadId)?.projectId);
-  return <button type="button" aria-label={t("task.newShort")} title={currentProject ? t("task.newIn", { name: currentProject.name }) : t("task.newShort")}
+  const label = t(kind?.label ?? "task.newShort");
+  const Icon = kind?.lock ? Lock : Plus;
+  return <button type="button" aria-label={label} title={currentProject && !kind ? t("task.newIn", { name: currentProject.name }) : label}
+    data-new-thread-kind={kind ? (kind.confidential ? "confidential" : "ordinary") : undefined}
     onClick={() => {
       const projectId = currentProject ? { projectId: currentProject.id } : {};
-      dispatch(owner === "group" ? { type: "newGroupTask", groupId: bot.id, ...projectId } : { type: "newTask", botId: bot.id, ...projectId });
+      dispatch(owner === "group" ? { type: "newGroupTask", groupId: bot.id, ...projectId } : { type: "newTask", botId: bot.id, ...projectId, ...(kind ? { confidential: kind.confidential } : {}) });
       onCreated?.();
     }}
     className={cn("flex min-w-0 items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-ink-secondary hover:bg-raised/60 hover:text-ink", compact ? "py-1 @max-4xl/chathead:h-[30px] @max-4xl/chathead:px-2" : "py-2", className)}>
-    <Plus aria-hidden="true" size={12} /><span className={cn("truncate", compact && "@max-4xl/chathead:hidden")}>{t("task.newShort")}</span>
+    <Icon aria-hidden="true" size={12} /><span className={cn("truncate", compact && "@max-4xl/chathead:hidden")}>{label}</span>
   </button>;
 }

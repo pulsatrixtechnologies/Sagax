@@ -437,3 +437,24 @@ describe("older packages", () => {
     expect(fx.store.bot(result.botId)?.name).toBe("Atlas");
   });
 });
+
+describe("bot zip and confidential threads (server/confidential-threads.ts)", () => {
+  it("never exports a confidential thread: not its messages, files, record or id", () => {
+    const fx = fixture({ organization: true });
+    const bot = richBot(fx);
+    const secret = fx.store.createTask(bot.id, "Merger plan", true, undefined, undefined, undefined, "pr_00000000-0000-4000-8000-000000000002", undefined, false, undefined, true)!;
+    fx.store.appendMessage(secret.threadId, { role: "user", kind: "text", text: "the target is CONFIDENTIAL-ACME", at: 300 });
+    mkdirSync(join(DATA_DIR, "task-workspaces", bot.id, secret.threadId), { recursive: true });
+    writeFileSync(join(DATA_DIR, "task-workspaces", bot.id, secret.threadId, "plan.md"), "CONFIDENTIAL-ACME\n");
+    expect(fx.store.bot(bot.id)!.threadId).toBe(secret.threadId);
+    const plan = planBotZip(fx.host, bot.id, { conversations: true, sharing: true });
+    const names = plan.files.map((file) => file.name);
+    expect(names.some((name) => name.includes(secret.threadId))).toBe(false);
+    const text = plan.files.map((file) => ("data" in file && file.data !== undefined ? String(file.data) : "")).join("\n");
+    expect(text).not.toContain("CONFIDENTIAL-ACME");
+    expect(text).not.toContain("Merger plan");
+    expect(text).not.toContain(secret.threadId);
+    expect(names).toContain("conversations/tasks.json");
+    expect(plan.manifest.includes.conversations).toBe(2);
+  });
+});

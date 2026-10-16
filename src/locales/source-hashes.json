@@ -12520,7 +12520,21 @@
       "access.serverEngine.mine": "5932314d23210696f2635d2fc471eaf0c549ec0100933235e19c72292f3c65ff",
       "access.serverEngine.routineMine": "3e1e6d147316742d278b419d2331798b413aac0efd3fbde24ca6d6c88afe6f32",
       "access.serverEngine.admin": "34a00d0f4beba01acb600fce57eee278e7c045d94b1710db1e2c0b515ef1076f",
-      "voiceMode.noAccess.notGiven": "a33c22c768532d5c7c6a15cbaa1f2fe48fbe01567e3d68c56d214777936ad7a1"
+      "voiceMode.noAccess.notGiven": "a33c22c768532d5c7c6a15cbaa1f2fe48fbe01567e3d68c56d214777936ad7a1",
+      "confidential.mark": "a3e83aee8605fad96741fdd3ca73654aeb1cc339b1a46f4db41c18cdd3635720",
+      "confidential.bannerAria": "d5692f55ccab5a279449db20ab947d6188e3db16607375ba480e303b47b59012",
+      "confidential.badgeTitle": "d219a534165f5aa3128b9a63f5e73ba8346edf8c0d9c2fe0876bd5afaf0ee607",
+      "confidential.new": "25763bcc6490378f1e5c247d7625470d0be2ab3fbfa8ce30a3c8aa40cb998bee",
+      "confidential.newOrdinary": "0192c1c7ac0573f30367651f113c1cb4fee5d3d750c6c9de9f74c1d2b468a6a0",
+      "confidential.make": "6b46d936dc5c0074cb2749d67dda3f6100e9bdb75f7eedda2c9199afa7a06a61",
+      "confidential.menuIs": "484e45b5297434aeb27095e9b4533a24dd43bcd8bff34d118d6524eb53785d4a",
+      "confidential.menuIsHint": "74968bce99701db730b71a6425d63a383832955948861402ed4f16144c1a4d34",
+      "confidential.confirmTitle": "3caf9c3752c8c0eaf623f5a42e2535728e4eb62e0c1a9fbd95b9f26f007caa2a",
+      "confidential.confirmBody": "e1ee32e331b6e9dadf17b65edc96ad735b66c7ed3b93931d57b8bda47524382e",
+      "confidential.confirm": "6b46d936dc5c0074cb2749d67dda3f6100e9bdb75f7eedda2c9199afa7a06a61",
+      "organization.confidentialDefault.title": "da14cf8ddd364c34055a30d4d31733b9cc2837f372c4ce2512cb979c94632676",
+      "organization.confidentialDefault.label": "5489cce51fc0440ddc379d92a25268c75ac24e943cd24dd516b898474bea0f66",
+      "organization.confidentialDefault.short": "d676a4e698c1fd9d08ddb8ec3896dca1a48ec40a575dd9f3e36ceeca20a8d884"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

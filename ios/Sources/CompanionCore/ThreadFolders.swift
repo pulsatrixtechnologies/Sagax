@@ -144,6 +144,8 @@ public enum ThreadMenuItem: Hashable, Sendable {
     case snooze
     case stopSnoozing
     case delete
+    /// Make an ordinary bot thread confidential (permanent, confirmed).
+    case makeConfidential
     /// The submenu that holds `ThreadMenuPlan.more`.
     case more
 }
@@ -180,6 +182,8 @@ public struct ThreadMenuPlan: Equatable, Sendable {
         if ownerIsBot, !folders.isEmpty { more.append(.moveToFolder) }
         more.append(.copyLink)
         if ownerIsBot, generatedTitles { more.append(.regenerateTitle) }
+        // One way only: a confidential thread never offers a way back.
+        if ownerIsBot, !task.isConfidential { more.append(.makeConfidential) }
         more.append(.delete)
         self.more = more
         stopsSnoozing = archives && task.isSnoozed(now: now)

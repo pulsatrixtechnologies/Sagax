@@ -51,6 +51,10 @@ struct BotThreadRow: View {
                 }
 
                 HStack(spacing: 5) {
+                    if task.isConfidential {
+                        ConfidentialMark()
+                        if task.listStamp > 0 || task.pinned == true || task.bylineLabel != nil { Text("·") }
+                    }
                     if task.listStamp > 0 {
                         Text(ThreadStamp.updated(task.listStamp))
                     }

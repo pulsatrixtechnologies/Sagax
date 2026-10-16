@@ -5,7 +5,8 @@
 //                             invitations: Perspicax owns both)
 //   GET   /api/org/directory  the people a bot owner may share with (client)
 //   PATCH /api/org/settings   { interimAttachDays?, allowFullAccess?,
-//                             memberEnvironmentAutonomy?, pluginMarketplaces?, githubClientId?,
+//                             memberEnvironmentAutonomy?, confidentialThreadsByDefault?,
+//                             pluginMarketplaces?, githubClientId?,
 //                             githubTokens? }
 //                             (organization admin). githubTokens is one
 //                             explicit change (add, remove, rename, replace).
@@ -42,6 +43,9 @@ export interface OrgSettings {
    * isolated environment without a card (server/member-environment.ts):
    * on by default, an admin turns it off. */
   memberEnvironmentAutonomy: boolean;
+  /** 2026-10-16: new threads start confidential unless the person says
+   * otherwise (server/confidential-threads.ts): off by default. */
+  confidentialThreadsByDefault?: boolean;
   /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts):
    * any marketplace by default, or the admin's list. */
   pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
@@ -120,6 +124,7 @@ export interface PerspicaxOrgRouteDeps {
    * it could not be written. */
   saveAllowFullAccess?(allowed: boolean, auth: RequestAuth): void;
   saveMemberEnvironmentAutonomy?(allowed: boolean, auth: RequestAuth): void;
+  saveConfidentialThreadsByDefault?(on: boolean, auth: RequestAuth): void;
   /** Set the marketplace list (or any); throws a 400-worthy Error on a bad entry. */
   savePluginMarketplaces?(policy: unknown, auth: RequestAuth): void;
   /** Set (or with null clear) the GitHub OAuth App client id. */
@@ -219,18 +224,20 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       const days = keys?.includes("interimAttachDays");
       const fullAccess = keys?.includes("allowFullAccess");
       const memberEnvironment = keys?.includes("memberEnvironmentAutonomy");
+      const confidentialDefault = keys?.includes("confidentialThreadsByDefault");
       const marketplaces = keys?.includes("pluginMarketplaces");
       const githubClient = keys?.includes("githubClientId");
       const githubTokens = keys?.includes("githubTokens");
-      const known = new Set(["interimAttachDays", "allowFullAccess", "memberEnvironmentAutonomy", "pluginMarketplaces", "githubClientId", "githubTokens"]);
+      const known = new Set(["interimAttachDays", "allowFullAccess", "memberEnvironmentAutonomy", "confidentialThreadsByDefault", "pluginMarketplaces", "githubClientId", "githubTokens"]);
       if (!keys || !keys.length || keys.some((key) => !known.has(key)) ||
         (days && (!deps.saveInterimAttachDays || !Number.isInteger(body.interimAttachDays) || body.interimAttachDays < 0 || body.interimAttachDays > 90)) ||
         (fullAccess && (!deps.saveAllowFullAccess || typeof body.allowFullAccess !== "boolean")) ||
         (memberEnvironment && (!deps.saveMemberEnvironmentAutonomy || typeof body.memberEnvironmentAutonomy !== "boolean")) ||
+        (confidentialDefault && (!deps.saveConfidentialThreadsByDefault || typeof body.confidentialThreadsByDefault !== "boolean")) ||
         (marketplaces && !deps.savePluginMarketplaces) ||
         (githubClient && (!deps.saveGithubClientId || (body.githubClientId !== null && (typeof body.githubClientId !== "string" || !/^[\x21-\x7e]{1,128}$/.test(body.githubClientId.trim()))))) ||
         (githubTokens && !deps.githubTokens)) {
-        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 }, { allowFullAccess: true | false }, { memberEnvironmentAutonomy: true | false }, { pluginMarketplaces: { mode: \"any\" } | { mode: \"list\", allow: [...] } }, { githubClientId: string | null } or { githubTokens: { op: \"add\" | \"remove\" | \"rename\" | \"replace\" } }" });
+        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 }, { allowFullAccess: true | false }, { memberEnvironmentAutonomy: true | false }, { confidentialThreadsByDefault: true | false }, { pluginMarketplaces: { mode: \"any\" } | { mode: \"list\", allow: [...] } }, { githubClientId: string | null } or { githubTokens: { op: \"add\" | \"remove\" | \"rename\" | \"replace\" } }" });
       }
       let tokenChange: OrgGithubTokenChange | undefined;
       if (githubTokens) {
@@ -250,6 +257,7 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
         if (days) deps.saveInterimAttachDays!(body.interimAttachDays, auth);
         if (fullAccess) deps.saveAllowFullAccess!(body.allowFullAccess, auth);
         if (memberEnvironment) deps.saveMemberEnvironmentAutonomy!(body.memberEnvironmentAutonomy, auth);
+        if (confidentialDefault) deps.saveConfidentialThreadsByDefault!(body.confidentialThreadsByDefault, auth);
         if (githubClient) deps.saveGithubClientId!(typeof body.githubClientId === "string" ? body.githubClientId.trim() : null, auth);
         if (tokenChange) deps.githubTokens!.change(tokenChange, auth);
       } catch (error) {

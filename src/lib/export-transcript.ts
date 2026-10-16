@@ -15,6 +15,9 @@ export interface ExportTranscriptOptions {
   exportedAt?: Date;
   /** Whether to format tool calls and activity messages. Defaults to true. */
   includeTools?: boolean;
+  /** A confidential thread (src/lib/confidential-thread.ts): the localized
+   * classification line, stamped at the top and the end of the export. */
+  confidentialMark?: string;
 }
 
 /** Format a Date object into a readable export date string. */
@@ -68,10 +71,13 @@ export function formatTranscriptMarkdown(options: ExportTranscriptOptions): stri
     isGroup = false,
     exportedAt = new Date(),
     includeTools = true,
+    confidentialMark,
   } = options;
+  const classification = confidentialMark ? `> **🔒 ${confidentialMark.toUpperCase()}**` : null;
 
   const headerTitle = isGroup ? `# Group: ${markdownLabel(title)}` : `# Thread with ${markdownLabel(title)}`;
   const lines: string[] = [
+    ...(classification ? [classification, ""] : []),
     headerTitle,
     `_Exported on ${formatExportDate(exportedAt)}_`,
     "",
@@ -148,6 +154,7 @@ export function formatTranscriptMarkdown(options: ExportTranscriptOptions): stri
     }
   }
 
+  if (classification) lines.push("", classification);
   return lines.join("\n");
 }
 

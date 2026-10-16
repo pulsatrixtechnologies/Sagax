@@ -1819,9 +1819,10 @@ public struct CompanionClient: Sendable {
         ).activeLeafId
     }
 
-    public func createTask(botId: String, title: String? = nil) async throws -> Bot {
+    public func createTask(botId: String, title: String? = nil, confidential: Bool? = nil) async throws -> Bot {
         var body: [String: Any] = [:]
         if let title, !title.isEmpty { body["title"] = title }
+        if let confidential { body["confidential"] = confidential }
         return try await send(try makeRequest("POST", "/api/bots/\(botId)/tasks", body: body), as: BotResponse.self).bot
     }
 

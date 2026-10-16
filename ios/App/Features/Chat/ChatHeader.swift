@@ -92,13 +92,24 @@ extension ChatView {
             if case let .bot(bot) = current {
                 Button {
                     Task {
-                        if let created = await session.createTask(for: bot, title: nil) {
+                        let choice = NewThreadChoice.ordinary(orgDefaultConfidential: session.confidentialThreadsByDefault)
+                        if let created = await session.createTask(for: bot, title: nil, confidential: choice.confidential) {
                             selectedThreadId = created.threadId
                         }
                     }
                 } label: {
                     Label(String(localized: "New thread"), systemImage: "plus.square.on.square")
                 }
+                Button {
+                    Task {
+                        if let created = await session.createTask(for: bot, title: nil, confidential: true) {
+                            selectedThreadId = created.threadId
+                        }
+                    }
+                } label: {
+                    Label(String(localized: "New confidential thread"), systemImage: ConfidentialBanner.symbol)
+                }
+                .accessibilityIdentifier("new-confidential-thread")
             } else if case let .room(room) = current, room.peopleDm == true {
                 // a person's conversation starts threads like a bot (#262)
                 Button {
@@ -196,7 +207,7 @@ extension ChatView {
         if callPillShown {
             CallBar(subject: callSubject, call: call, panel: $callPanel)
                 .padding(.horizontal, CallBarMetrics.gutter)
-                .padding(.top, Self.topBarHeight + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight) + CallBarMetrics.top)
+                .padding(.top, Self.topBarHeight + confidentialBandInset + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight) + CallBarMetrics.top)
                 .frame(maxWidth: .infinity)
                 .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
         }

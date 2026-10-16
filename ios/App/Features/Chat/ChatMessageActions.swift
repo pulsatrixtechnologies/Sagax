@@ -65,6 +65,12 @@ extension ChatView {
         }
     }
 
+    /// The confidential band's reserved height under the header, 0 for an
+    /// ordinary thread: the pinned banner and the call bar sit below it.
+    var confidentialBandInset: CGFloat {
+        ConfidentialBanner.shows(for: current) ? CGFloat(ConfidentialBanner.height) : 0
+    }
+
     /// The pinned message under the header: tap to jump, X to unpin.
     @ViewBuilder
     var pinnedBanner: some View {
@@ -81,7 +87,7 @@ extension ChatView {
                     : nil
             )
             .padding(.horizontal, Theme.Chat.bubbleLeading)
-            .padding(.top, Self.topBarHeight + 2)
+            .padding(.top, Self.topBarHeight + confidentialBandInset + 2)
             .frame(maxWidth: CompanionLayout.chatWidth)
             .frame(maxWidth: .infinity)
             .transition(.opacity)

@@ -8,13 +8,14 @@ import { threadRefUrl } from "@/lib/thread-refs";
 import { copyText } from "@/lib/copy-text";
 import { openTeamBotFromThread, teamBotSourceAllowed } from "@/lib/teambot-from-thread";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfidentialBadge } from "./ConfidentialBanner";
 import { ThreadMenu, nextSixPm, tomorrowNineAm } from "./ThreadMenu";
 import { THREAD_DRAG_TYPE } from "@/lib/folder-order";
 import { threadLinkLabel } from "../../shared/thread-link";
 import { wantsSideThread } from "@/lib/side-thread";
 import type { ThreadPrefetchIntent } from "@/state/thread-prefetch";
 
-type ThreadRowTask = Pick<Task, "threadId" | "title" | "projectId" | "busy" | "activity" | "unread" | "openedBy" | "closedBy" | "archivedAt" | "snoozedUntil" | "waitingForTeammates" | "link"> & {
+type ThreadRowTask = Pick<Task, "threadId" | "title" | "projectId" | "busy" | "activity" | "unread" | "openedBy" | "closedBy" | "archivedAt" | "snoozedUntil" | "waitingForTeammates" | "link" | "confidential"> & {
   queued?: boolean;
   pinned?: boolean;
   createdAt?: number;
@@ -254,6 +255,9 @@ type ThreadRowProps = {
   /** Show the thread beside the main chat: the menu's Open beside, and
    * Option-click (Alt-click) on the row. Bot threads only. */
   onOpenAside?: (task: ThreadRowTask) => void;
+  /** Make the thread confidential, for good (the menu asks first). Bot
+   * threads only. */
+  onMakeConfidential?: (task: ThreadRowTask) => void;
   /** A read-only prefetch of the thread: the pointer rests on the row
    * ("hover"), leaves it ("leave"), or the keyboard reaches it ("focus"). */
   onPrefetch?: (task: ThreadRowTask, intent: ThreadPrefetchIntent) => void;
@@ -274,7 +278,7 @@ const sameThreadRow = ({ task: previousTask, ...previous }: ThreadRowProps, { ta
 
 /** One quiet row for bot and group histories. Surface denotes selection;
  * working/waiting/unread remain independent signals, never different cards. */
-export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, current, compact, folders, onSelect, onRename, onRegenerateTitle, onDelete, onMove, onArchive, onPin, onSnooze, onLink, onRefreshPermissions, onOpenAside: openAside, onPrefetch, activityLabel, now }: ThreadRowProps) {
+export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, current, compact, folders, onSelect, onRename, onRegenerateTitle, onDelete, onMove, onArchive, onPin, onSnooze, onLink, onRefreshPermissions, onOpenAside: openAside, onMakeConfidential, onPrefetch, activityLabel, now }: ThreadRowProps) {
   // The thread on screen in the main chat has nothing to open beside it.
   const onOpenAside = current ? undefined : openAside;
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null);
@@ -319,7 +323,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
         onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); finishRename(true); } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finishRename(false); } }}
         dir="auto" className="m-1 min-w-0 flex-1 rounded border border-accent/50 bg-inset px-2 py-1 text-[12.5px] text-ink outline-none" /> : <button
         type="button" data-sidebar-thread-row={task.threadId} aria-current={current ? "page" : undefined}
-        title={[task.title, updatedStamp, status, closed ? t("task.closed") : null, archived ? t("task.archived") : null, snoozed ? t("task.snoozed") : null, task.unread ? t("task.unread") : null].filter(Boolean).join(" · ")}
+        title={[task.title, task.confidential === true ? t("confidential.mark") : null, updatedStamp, status, closed ? t("task.closed") : null, archived ? t("task.archived") : null, snoozed ? t("task.snoozed") : null, task.unread ? t("task.unread") : null].filter(Boolean).join(" · ")}
         onClick={(event) => { if (onOpenAside && wantsSideThread(event)) { event.preventDefault(); onOpenAside(task); } else onSelect(task); }} onDoubleClick={startRename}
         onPointerEnter={onPrefetch && !current ? () => onPrefetch(task, "hover") : undefined}
         onPointerLeave={onPrefetch && !current ? () => onPrefetch(task, "leave") : undefined}
@@ -344,6 +348,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
         className="shrink-0 rounded px-1 font-mono text-[11px] text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink outline-none focus-visible:ring-1 focus-visible:ring-accent/60 [unicode-bidi:isolate]">{threadLinkLabel(task.link) ?? t("task.link")}</a>}
       {!renaming && <span className="flex shrink-0 items-center gap-2 px-1" onClick={() => onSelect(task)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openMenu(event.clientX, event.clientY); }}>
         {updatedLabel && <time dateTime={new Date(updatedAt).toISOString()} className="shrink-0 tabular-nums text-[10px] text-sidebar-ink-secondary">{updatedLabel}</time>}
+        {task.confidential === true && <ConfidentialBadge compact={compact} />}
         {task.pinned === true && <Pin size={11} className="shrink-0 text-sidebar-ink-secondary" aria-label={t("sidebar.bot.pin")} />}
         {task.activity === "waiting-on-you" ? <span className="shrink-0 text-[10px] font-medium text-warning">{t("task.waiting")}</span> : isWaitingOnTeammate(task) ? <Clock3 size={11} className="shrink-0 text-sidebar-ink-secondary" aria-label={t("task.waitingOnTeammate")} /> : isWorking(task) ? (task.ultracode ? <span className="size-2 shrink-0 rounded-full ultracode-sidebar-dot animate-status-pulse" aria-label={activityLabel ?? t("chat.activity.working")} /> : <Loader2 size={11} className="shrink-0 animate-spin text-success" aria-label={activityLabel ?? t("chat.activity.working")} />) : task.queued ? <span className="shrink-0 text-[10px] text-sidebar-ink-secondary">{t("task.queued")}</span> : null}
       </span>}
@@ -367,6 +372,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
       ...(onRefreshPermissions ? { onRefreshPermissions: () => onRefreshPermissions(task) } : {}),
       ...(teamBotSourceAllowed(ownerId) ? { onCreateTeamBot: () => openTeamBotFromThread({ botId: ownerId, threadId: task.threadId, title: task.title }) } : {}),
       ...(onOpenAside ? { onOpenAside: () => onOpenAside(task) } : {}),
+      ...(onMakeConfidential && task.confidential !== true ? { onMakeConfidential: () => onMakeConfidential(task) } : {}),
     }} />
     <ConfirmDialog open={deleting} title={t("task.deleteConfirm")} body={t("task.deleteBody", { title: task.title })} confirmLabel={t("task.deleteAria")}
       onCancel={() => setDeleting(false)} onConfirm={() => { if (!isWorking(task)) onDelete(task); setDeleting(false); }} returnFocusRef={actionRef} />

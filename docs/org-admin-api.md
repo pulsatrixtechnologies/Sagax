@@ -916,7 +916,10 @@ never a message; a routine failure carries `routineId`.
 `memberEnvironmentAutonomy` (on unless an admin turns it off, 2026-10-16): a
 bot runs its owner's commands in the owner's own isolated environment (their
 server environment, their Local VM) without a card
-([approval levels](approval-levels.md#the-owners-own-environment)). `null` in a
+([approval levels](approval-levels.md#the-owners-own-environment)).
+`confidentialThreadsByDefault` (off unless an admin turns it on in Sagax,
+Settings > Organisation, 2026-10-16): new threads start confidential
+([confidential threads](confidential-threads.md)); read only here. `null` in a
 policy list means any. `defaults` are the New bot defaults (engine, model,
 approval level).
 

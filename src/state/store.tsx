@@ -88,6 +88,7 @@ import { StoreSourceContext, usePublishedStoreSource } from "./store-source";
 import { ThreadPrefetchContext } from "./thread-prefetch";
 import { createThreadPrefetcher, ThreadPageCache, type ThreadPage } from "@/lib/thread-page-cache";
 import { ARTIFACTS_EVENT } from "@/lib/artifact-events";
+import { makeConfidentialBody } from "@/lib/confidential-thread";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -472,6 +473,9 @@ export interface Task {
   /** An AI client's hidden conversation (#291): the server lists it only
    * while it is the open thread; never a dot, a preview or typing dots. */
   hidden?: true;
+  /** A confidential thread (src/lib/confidential-thread.ts): never
+   * remembered, exported or shared beyond its owner. Permanent once set. */
+  confidential?: true;
   projectId?: string;
   title: string;
   createdAt: number;
@@ -965,6 +969,9 @@ export interface ConfigStatus {
    * admin allows in Perspicax; null or absent means every provider
    * (shared/org-allowed-engines.ts). Refreshed by the config frame. */
   allowedEngines?: string[] | null;
+  /** Organization server: new threads start confidential unless the person
+   * picks an ordinary one (Settings > Organisation). */
+  confidentialThreadsByDefault?: boolean;
   /** An OMB Cloud home in the upstream project. Sagax runs no Cloud, so no
    * server of ours sets it; kept optional so the shared place logic
    * (src/lib/place-view.ts) reads it as absent. */
@@ -1040,7 +1047,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "cerebras" | "groq" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "allowedEngines"
+  "xai" | "mistral" | "cerebras" | "groq" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "allowedEngines" | "confidentialThreadsByDefault"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -1079,6 +1086,7 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     managedPolicy: frame.managedPolicy,
     viewer: frame.viewer,
     allowedEngines: frame.allowedEngines,
+    confidentialThreadsByDefault: frame.confidentialThreadsByDefault,
   };
 }
 
@@ -1645,7 +1653,10 @@ export type Action =
       /** Local UI recovery hook for voice flows. Never sent to the server. */
       onError?: (message: string) => void;
     }
-  | { type: "newTask"; botId: string; projectId?: string; cwd?: string; onCreated?: () => void; onError?: (message: string) => void }
+  | { type: "newTask"; botId: string; projectId?: string; cwd?: string; confidential?: boolean; onCreated?: () => void; onError?: (message: string) => void }
+  /** One way only (src/lib/confidential-thread.ts): the server refuses any
+   * change back, so the client has no action for it. */
+  | { type: "makeTaskConfidential"; botId: string; threadId: string; onDone?: () => void; onError?: (message: string) => void }
   /** `whole`: the whole thread, not its newest page (a search hit can be older). */
   | { type: "switchTask"; botId: string; threadId: string; whole?: true }
   | { type: "switchTaskFailed"; botId: string; threadId: string }
@@ -1659,6 +1670,8 @@ export type Action =
   | { type: "newBot"; role?: BotRole; visibility?: BotVisibility; section?: string; preserveSelection?: boolean; onCreated?: (bot: Bot) => void; onError?: (message: string) => void }
   | { type: "botCreationPending"; on: boolean }
   | { type: "updateTask"; botId: string; threadId: string; patch: TaskUpdatePatch }
+  /** The server confirmed a thread is now confidential. */
+  | { type: "taskMadeConfidential"; botId: string; threadId: string }
   | { type: "refreshTaskPermissions"; botId: string; threadId: string; acknowledgeLocalAuto?: boolean }
   /** "Switch them too": every thread of this bot on a model of its own follows the bot's. */
   | { type: "followBotModel"; botId: string }
@@ -3083,6 +3096,12 @@ export function reducer(state: AppState, action: Action): AppState {
         activeLeafId: message.id,
       }));
     }
+    case "taskMadeConfidential":
+      return updateBot(state, action.botId, (bot) => ({
+        ...bot,
+        tasks: (bot.tasks ?? []).map((task) => task.threadId === action.threadId ? { ...task, confidential: true as const } : task),
+      }));
+    case "makeTaskConfidential":
     case "deleteTask":
     case "newGroupTask":
     case "switchGroupTask":
@@ -4623,6 +4642,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "updateTask":
           persistTaskPatch(action.botId, action.threadId, action.patch);
           break;
+        case "makeTaskConfidential":
+          void api<{ bot?: BotAnnouncement }>(`/api/bots/${action.botId}/tasks/${action.threadId}`, {
+            method: "PATCH",
+            body: JSON.stringify(makeConfidentialBody()),
+          }).then((result) => {
+            if (result?.bot) rawDispatch({ type: "botPatched", bot: withTaskWrites(result.bot) });
+            rawDispatch({ type: "taskMadeConfidential", botId: action.botId, threadId: action.threadId });
+            action.onDone?.();
+          }).catch((error: unknown) => {
+            if (action.onError) action.onError(error instanceof Error ? error.message : String(error));
+            else showError(error);
+          });
+          break;
         case "refreshTaskPermissions": {
           const bot = stateRef.current.bots.find((candidate) => candidate.id === action.botId);
           const task = bot?.tasks?.find((candidate) => candidate.threadId === action.threadId);
@@ -4710,7 +4742,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // A new task's thread is empty, so only the switch needs a page.
           void ready.then(() => api<{ bot: Bot }>(action.type === "newTask"
             ? `/api/bots/${action.botId}/tasks`
-            : `/api/bots/${action.botId}/tasks/${action.threadId}${action.whole ? "" : `?messages=${MESSAGE_PAGE_SIZE}`}`, { method: "POST", body: JSON.stringify(action.type === "newTask" ? { projectId: action.projectId, cwd: action.cwd } : {}) }))
+            : `/api/bots/${action.botId}/tasks/${action.threadId}${action.whole ? "" : `?messages=${MESSAGE_PAGE_SIZE}`}`, { method: "POST", body: JSON.stringify(action.type === "newTask" ? { projectId: action.projectId, cwd: action.cwd, ...(action.confidential !== undefined ? { confidential: action.confidential } : {}) } : {}) }))
             .then((r) => {
               if (action.type === "newTask") action.onCreated?.();
               if (!r?.bot || navigation.get(action.botId) !== revision) return;

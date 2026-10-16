@@ -25,6 +25,9 @@ export interface PerspicaxOrg {
     /** Whether bots run their owner's commands in the owner's own isolated
      * environment without asking (absent: on). */
     memberEnvironmentAutonomy?: boolean;
+    /** New threads start confidential unless the person picks an ordinary
+     * one (absent: off). */
+    confidentialThreadsByDefault?: boolean;
     /** Where bots' Claude Code plugins may come from (any by default). */
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     /** The organization's GitHub OAuth App for "Connecter GitHub". */

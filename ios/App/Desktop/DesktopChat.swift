@@ -337,6 +337,9 @@ struct DesktopChatHeader: View {
                         .font(theme.font(14, .medium))
                         .foregroundStyle(theme.ink)
                         .lineLimit(1)
+                    if ConfidentialBanner.shows(for: chat) {
+                        ConfidentialMark()
+                    }
                 }
                 .padding(.leading, 8)
                 .padding(.trailing, 14)

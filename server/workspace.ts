@@ -125,7 +125,17 @@ function memoryEntryStat(path: string) {
 /** File locations, not file contents or wider tool permissions. Threads keep
  * independent working directories; the same bot can find its earlier output
  * without assuming that a file absent from the current directory was lost. */
-export function workspaceLocationsPrompt(botId: string, cwd: string | undefined, botCwd?: string, opts: { attachFile?: boolean } = {}): string {
+export function workspaceLocationsPrompt(botId: string, cwd: string | undefined, botCwd?: string, opts: { attachFile?: boolean; confidential?: boolean } = {}): string {
+  // A confidential thread (server/confidential-threads.ts) keeps its work in
+  // its own folder: no shared or project folder to write to, no other
+  // thread's files to reach for.
+  if (opts.confidential) {
+    return "\n\nFile locations for this conversation (absolute paths): " + JSON.stringify({
+      currentWorkingFolder: cwd ?? "Provider default; inspect the working directory before using relative paths",
+    }) + ". This is a confidential conversation: save every file it makes in currentWorkingFolder only, never in the bot's shared folder, a project folder or another conversation's folder, and do not copy its content anywhere else." +
+      " Chat links and inline images open only files in currentWorkingFolder." +
+      (opts.attachFile ? " Attach a file you made for the person with attach_file in the same turn so it opens from chat." : "");
+  }
   return "\n\nFile locations for this bot (absolute paths): " + JSON.stringify({
     currentWorkingFolder: cwd ?? "Provider default; inspect the working directory before using relative paths",
     sharedBotFolder: workspaceDir(botId),

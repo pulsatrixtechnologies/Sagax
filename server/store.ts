@@ -1052,6 +1052,9 @@ export class Store {
           task.unread = false;
           botsMigrated = true;
         }
+        if (task.confidential !== undefined && task.confidential !== true) {
+          delete task.confidential;
+        }
         if (task.hidden !== undefined && task.hidden !== true) {
           delete task.hidden;
           botsMigrated = true;
@@ -2074,6 +2077,33 @@ export class Store {
 
   botByThread(threadId: string) {
     return this.bots.find((b) => b.threadId === threadId || b.tasks?.some((t) => t.threadId === threadId)) ?? null;
+  }
+
+  /** A confidential thread (server/confidential-threads.ts): a bot thread
+   * whose record carries `confidential: true`. Rooms never are. */
+  isConfidentialThread(threadId: string): boolean {
+    if (!threadId) return false;
+    for (const bot of this.bots) {
+      const task = bot.tasks?.find((t) => t.threadId === threadId);
+      if (task) return task.confidential === true;
+    }
+    return false;
+  }
+
+  /** Make a thread confidential. One way only: nothing turns it back (the
+   * person opens a new thread to work normally, or deletes this one). Never
+   * reachable from the HTTP task PATCH: confidential is not a
+   * TASK_PATCH_FIELD. */
+  makeTaskConfidential(botId: string, threadId: string): TaskRecord | null {
+    const bot = this.bot(botId);
+    const task = this.taskByThread(botId, threadId);
+    if (!bot || !task) return null;
+    if (task.confidential === true) return task;
+    task.confidential = true;
+    if (bot.threadId === threadId) this.mirrorActiveTask(bot, task);
+    this.saveBots();
+    this.emit({ type: "bot", botId });
+    return task;
   }
 
   /** The one place a new bot's selection is decided: the caller's choice, or
@@ -3322,7 +3352,7 @@ export class Store {
    * model unless the caller hands it another one: a thread opened from
    * another of this bot's threads keeps the model a person picked there. */
   createTask(botId: string, title?: string, activate = true, projectId?: string, openedBy?: TaskOpenedBy, approvalMode?: "ask" | "full",
-    ownerPrincipalId?: string, modelSelection?: ModelSelection, hidden = false, cwd?: string): TaskRecord | null {
+    ownerPrincipalId?: string, modelSelection?: ModelSelection, hidden = false, cwd?: string, confidential = false): TaskRecord | null {
     const bot = this.bot(botId);
     if (!bot) return null;
     if (projectId !== undefined && !this.project(botId, projectId)) return null;
@@ -3350,6 +3380,9 @@ export class Store {
       activity: "idle",
       busy: false,
       ...(hidden ? { hidden: true as const } : {}),
+      // Set with the task, never after the first message: a confidential
+      // thread is never briefly an ordinary one.
+      ...(confidential ? { confidential: true as const } : {}),
     };
     bot.tasks = [task, ...(bot.tasks ?? [])];
     if (activate) {

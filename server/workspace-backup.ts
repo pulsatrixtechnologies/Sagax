@@ -256,6 +256,104 @@ function hashFile(path: string): string {
     }
   } finally { closeSync(fd); }
 }
+// ── confidential threads (server/confidential-threads.ts) ───────────────
+// A workspace backup is an export an admin downloads: a confidential
+// thread's content never rides in it. Its task record stays (id, dates, the
+// flag) so the roster restores whole, with its title replaced and nothing
+// that summarizes it; its messages, read marks and follow-ups leave the
+// message database (vacuumed, so no free page keeps them), and its event
+// and native logs, legacy transcript, work folder and the attachments no
+// other thread points at are left out.
+
+export const CONFIDENTIAL_BACKUP_TITLE = "Confidential thread";
+
+/** The confidential threads named in a bots.json roster (by thread id, with their bot). */
+export function confidentialRoster(value: unknown): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!Array.isArray(value)) return out;
+  for (const bot of value) {
+    if (!record(bot) || typeof bot.id !== "string" || !Array.isArray(bot.tasks)) continue;
+    for (const task of bot.tasks) if (record(task) && task.confidential === true && typeof task.threadId === "string") out.set(task.threadId, bot.id);
+  }
+  return out;
+}
+
+/** The roster as it goes into a backup: each confidential task reduced to
+ * what restores it as an empty confidential thread. */
+export function rosterWithoutConfidentialContent(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((bot) => {
+    if (!record(bot) || !Array.isArray(bot.tasks) || !bot.tasks.some((task) => record(task) && task.confidential === true)) return bot;
+    return {
+      ...bot,
+      tasks: bot.tasks.map((task) => {
+        if (!record(task) || task.confidential !== true) return task;
+        const kept: Record<string, unknown> = { resumeCursors: {}, title: CONFIDENTIAL_BACKUP_TITLE };
+        for (const key of ["threadId", "createdAt", "updatedAt", "confidential", "ownerPrincipalId", "projectId", "archivedAt", "pinned", "hidden", "approvalMode", "autoApprove", "alwaysAllow", "modelSelection", "cwd"]) {
+          if (task[key] !== undefined) kept[key] = task[key];
+        }
+        return kept;
+      }),
+    };
+  });
+}
+
+/** Remove the threads' rows from a snapshot of the message database, then
+ * vacuum it. Returns the attachment names those messages pointed at that no
+ * remaining message points at. */
+export function stripConfidentialMessages(databasePath: string, threads: ReadonlySet<string>): Set<string> {
+  const unreferenced = new Set<string>();
+  if (!threads.size || !existsSync(databasePath)) return unreferenced;
+  const db = new DatabaseSync(databasePath);
+  try {
+    const candidates = new Set<string>();
+    const hasMessages = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'").get();
+    if (hasMessages) {
+      const read = db.prepare("SELECT json FROM messages WHERE thread_id = ?");
+      for (const threadId of threads) {
+        for (const row of read.iterate(threadId) as Iterable<{ json: string }>) {
+          for (const match of row.json.matchAll(/attachments[\\/]+([A-Za-z0-9-]+\.[a-z0-9]{1,8})\b/g)) candidates.add(match[1]!);
+          try {
+            const message = JSON.parse(row.json) as { attachments?: Array<{ path?: unknown }> };
+            for (const attachment of message.attachments ?? []) {
+              const name = typeof attachment?.path === "string" ? attachment.path.replaceAll("\\", "/").split("/").pop() ?? "" : "";
+              if (/^[A-Za-z0-9-]+\.[a-z0-9]{1,8}$/.test(name)) candidates.add(name);
+            }
+          } catch { /* a torn row: its text was matched above */ }
+        }
+      }
+    }
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map((row) => row.name)
+      .filter((name) => /^[A-Za-z0-9_]+$/.test(name) && (db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>).some((column) => column.name === "thread_id"));
+    for (const table of tables) {
+      const remove = db.prepare(`DELETE FROM ${table} WHERE thread_id = ?`);
+      for (const threadId of threads) remove.run(threadId);
+    }
+    if (hasMessages) {
+      const used = db.prepare("SELECT 1 FROM messages WHERE instr(json, ?) > 0 LIMIT 1");
+      for (const name of candidates) if (!used.get(name)) unreferenced.add(name);
+    }
+    db.exec("VACUUM");
+  } finally {
+    db.close();
+  }
+  return unreferenced;
+}
+
+/** Whether a data-relative path belongs to a confidential thread. */
+export function confidentialBackupPath(path: string, threads: ReadonlyMap<string, string>, attachments: ReadonlySet<string>): boolean {
+  if (!threads.size) return false;
+  const parts = path.split("/");
+  if (parts[0] === "task-workspaces" && parts.length >= 3) return threads.get(parts[2]!) === parts[1];
+  if ((parts[0] === "events" || parts[0] === "native") && parts.length === 2) return threads.has(parts[1]!.replace(/\.ndjson$/, ""));
+  if (parts.length === 1) {
+    const legacy = /^messages-([A-Za-z0-9_-]+)\.json(?:\.imported)?$/.exec(parts[0]!);
+    if (legacy) return threads.has(legacy[1]!);
+  }
+  if (parts[0] === "attachments" && parts.length === 2) return attachments.has(parts[1]!);
+  return false;
+}
+
 function countJsonArray(path: string): number {
   if (!existsSync(path)) return 0;
   const value = privateJson(path);
@@ -331,6 +429,8 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
   let skippedWorkLinks = 0;
   try {
     const root = realpathSync(dataDir);
+    const confidential = existsSync(join(root, "bots.json")) ? confidentialRoster(privateJson(join(root, "bots.json"))) : new Map<string, string>();
+    let confidentialAttachments = new Set<string>();
     // The caller closes its message handle after flushing, while maintenance
     // remains held. The native snapshot includes any committed WAL records.
     // The runtime's database is snapshotted the same way.
@@ -352,6 +452,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       finally { clearInterval(completionPulse); db.close(); }
       const snapshotDb = new DatabaseSync(join(snapshot, snapshotName));
       try { snapshotDb.exec("PRAGMA journal_mode = DELETE"); } finally { snapshotDb.close(); }
+      if (name === "messages.db") confidentialAttachments = stripConfidentialMessages(join(snapshot, snapshotName), new Set(confidential.keys()));
     }
     const walk = (directory: string, prefix = "") => {
       for (const name of readdirSync(directory).sort()) {
@@ -361,6 +462,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
         // Do not silently skip noncanonical source spellings: reject them so
         // a case-sensitive host cannot export auth paths active on Windows/Mac.
         if (forbiddenArchivePath(path)) throw new Error("A workspace filename conflicts with a protected authentication or runtime path.");
+        if (confidentialBackupPath(path, confidential, confidentialAttachments)) continue;
         if (!validRelative(path)) throw new Error("A workspace filename cannot be safely restored on supported platforms.");
         const source = join(directory, name);
         const stat = lstatSync(source);
@@ -403,9 +505,10 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
           walk(source, path);
         } else if (stat.isFile()) {
           let copied: { size: number; mode: number; sha256: string };
-          if (path === "config.json" || path === "webhooks.json") {
+          if (path === "config.json" || path === "webhooks.json" || (path === "bots.json" && confidential.size)) {
             const value = privateJson(source);
             if (path === "config.json") writeJson(destination, portableWorkspaceConfig(value));
+            else if (path === "bots.json") writeJson(destination, rosterWithoutConfidentialContent(value));
             else {
               if (!record(value)) throw new Error("Invalid webhook definitions in workspace backup.");
               // No credential leaves in a backup: the bearer hash, a migrated

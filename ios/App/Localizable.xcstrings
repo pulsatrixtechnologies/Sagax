@@ -68287,6 +68287,118 @@
           }
         }
       }
+    },
+    "CONFIDENTIEL": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CONFIDENTIAL"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CONFIDENTIEL"
+          }
+        }
+      }
+    },
+    "Fil confidentiel : ce fil n'est ni mémorisé, ni exporté, ni partagé": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confidential thread: this thread is not remembered, exported or shared"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fil confidentiel : ce fil n'est ni mémorisé, ni exporté, ni partagé"
+          }
+        }
+      }
+    },
+    "Confidential": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confidential"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confidentiel"
+          }
+        }
+      }
+    },
+    "New confidential thread": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New confidential thread"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau fil confidentiel"
+          }
+        }
+      }
+    },
+    "Make confidential": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make confidential"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rendre confidentiel"
+          }
+        }
+      }
+    },
+    "Make this thread confidential?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make this thread confidential?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rendre ce fil confidentiel?"
+          }
+        }
+      }
+    },
+    "This is permanent: only deleting the thread ends it. Nothing in it will be remembered, exported or shared beyond you. To work normally, open a new thread.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is permanent: only deleting the thread ends it. Nothing in it will be remembered, exported or shared beyond you. To work normally, open a new thread."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "C'est permanent : seule la suppression du fil y met fin. Rien de ce fil ne sera mémorisé, exporté ni partagé au-delà de toi. Pour travailler normalement, ouvre un nouveau fil."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

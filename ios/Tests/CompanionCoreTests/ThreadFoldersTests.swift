@@ -168,7 +168,7 @@ final class ThreadFoldersTests: XCTestCase {
         let task = try bot().tasks![0]
         let plan = ThreadMenuPlan(task: task, ownerIsBot: true, folders: try bot().folders, generatedTitles: true, canDelete: true)
         XCTAssertEqual(plan.items, [.rename, .pin, .archive, .snooze, .more])
-        XCTAssertEqual(plan.more, [.moveToFolder, .copyLink, .regenerateTitle, .delete])
+        XCTAssertEqual(plan.more, [.moveToFolder, .copyLink, .regenerateTitle, .makeConfidential, .delete])
         XCTAssertFalse(plan.stopsSnoozing)
         XCTAssertTrue(plan.disabled.isEmpty)
     }

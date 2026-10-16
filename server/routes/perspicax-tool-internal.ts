@@ -14,6 +14,9 @@ export interface PerspicaxToolInternalDeps {
   /** The misuse and safety review of a Perspicax MCP call: the refusal to
    * answer with, or null to go on. */
   review(text: string, capability: InternalCapabilityView): Promise<unknown>;
+  /** A confidential thread's refusal (server/confidential-threads.ts): the
+   * text to answer with, or null to go on. */
+  confidential?(capability: InternalCapabilityView, tool: string, args: Record<string, unknown>): string | null;
 }
 
 /** Answers `{ text, isError }` (200), or `{ error, code }`: 400 for a tool it
@@ -28,6 +31,8 @@ export function createPerspicaxToolInternalRoutes(deps: PerspicaxToolInternalDep
     const mcp = deps.perspicaxMcp();
     if (!mcp) return json(res, 409, { error: "Perspicax is not linked to this server.", code: "profile_not_mounted" });
     const args = body.args && typeof body.args === "object" && !Array.isArray(body.args) ? (body.args as Record<string, unknown>) : {};
+    const confidential = deps.confidential?.(capability, tool, args);
+    if (confidential) return json(res, 200, { text: confidential, isError: true });
     const refusal = await deps.review(JSON.stringify({ tool, args }), capability);
     if (refusal) return json(res, 200, { text: String(refusal), isError: true });
     const answer = await mcp.callTool({ threadId: capability.threadId, generation: capability.generation, botId: capability.botId, name: tool, args });

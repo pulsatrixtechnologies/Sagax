@@ -197,6 +197,11 @@ struct BotRowMenu: View {
                     if let created = await session.createRosterThread(for: bot) { threadActions.created = created }
                 }
             } label: { Label(String(localized: "New thread"), systemImage: "square.and.pencil") }
+            Button {
+                Task {
+                    if let created = await session.createRosterThread(for: bot, confidential: true) { threadActions.created = created }
+                }
+            } label: { Label(String(localized: "New confidential thread"), systemImage: ConfidentialBanner.symbol) }
         case .newFolder:
             Button { threadActions.newFolder(for: bot) } label: {
                 Label(String(localized: "New folder"), systemImage: "folder.badge.plus")

@@ -18,6 +18,8 @@ enum ThreadMenuAction: Equatable {
     case snooze(until: Double)
     case stopSnoozing
     case delete
+    /// Opens the permanent-confidentiality confirmation; never a write.
+    case makeConfidential
 }
 
 /// What one folder menu entry asks for.
@@ -55,6 +57,8 @@ final class ThreadActions: ObservableObject {
     @Published var renameDraft = ""
     /// The delete confirmation.
     @Published var deleting: ThreadTarget?
+    /// The "make confidential" confirmation: permanent, so always asked.
+    @Published var makingConfidential: ThreadTarget?
     @Published var editingFolder: FolderEditTarget?
     @Published var orderingFolders: FolderOrderTarget?
     /// Threads whose title is being generated: their menu says so.
@@ -128,6 +132,9 @@ final class ThreadActions: ObservableObject {
             renaming = target
         case .delete:
             deleting = target
+        case .makeConfidential:
+            guard target.owner.isBot, !target.task.isConfidential else { return }
+            makingConfidential = target
         case .regenerateTitle:
             guard case let .bot(bot) = target.owner, !regenerating.contains(target.id) else { return }
             regenerating.insert(target.id)
@@ -201,6 +208,14 @@ final class ThreadActions: ObservableObject {
             case let .room(room): return await session.deleteTask(target.task, for: room)
             }
         }
+    }
+
+    /// The person confirmed: the thread becomes confidential for good.
+    func confirmMakeConfidential(_ session: Session) {
+        guard let target = makingConfidential else { return }
+        makingConfidential = nil
+        guard case let .bot(bot) = target.owner else { return }
+        run(session) { await session.makeTaskConfidential(target.task, for: bot) }
     }
 
     // MARK: Folder actions

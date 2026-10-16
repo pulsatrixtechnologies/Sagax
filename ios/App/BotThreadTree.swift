@@ -153,8 +153,9 @@ struct BotThreadTree: View {
 extension Session {
     /// A new thread started from the home list, in either density. A
     /// failure always says something, even when the client had no error.
-    func createRosterThread(for bot: Bot) async -> Bot? {
-        if let created = await createTask(for: bot, title: nil) { return created }
+    func createRosterThread(for bot: Bot, confidential: Bool? = nil) async -> Bot? {
+        let flag = confidential ?? NewThreadChoice.ordinary(orgDefaultConfidential: confidentialThreadsByDefault).confidential
+        if let created = await createTask(for: bot, title: nil, confidential: flag) { return created }
         if actionError == nil {
             actionError = "Couldn't create a thread. Check the connection and try again."
         }

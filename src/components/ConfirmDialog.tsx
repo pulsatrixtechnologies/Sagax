@@ -20,6 +20,9 @@ export interface ConfirmDialogProps {
   pending?: boolean;
   /** Stable fallback when a context-menu trigger disappears before opening. */
   returnFocusRef?: RefObject<HTMLElement | null>;
+  /** Opened from the header's thread picker: marks the dialog as one of its
+   * overlays (data-thread-overlay) so working in it keeps the picker open. */
+  threadOverlay?: boolean;
 }
 
 /** In-app replacement for window.confirm, following the FullAccessWarning
@@ -76,6 +79,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   return createPortal(
     <div
       className={DIALOG.backdrop}
+      data-thread-overlay={props.threadOverlay ? "" : undefined}
       onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
     >
       <ConfirmDialogCard ref={dialogRef} cancelRef={cancelRef} {...props} />

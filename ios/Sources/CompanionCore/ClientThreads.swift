@@ -20,8 +20,12 @@ public struct ThreadTitleFeature: Decodable, Equatable, Sendable {
         var llmThreadTitles: Bool?
     }
     var features: Features?
+    /// Organization servers: new threads open confidential unless the
+    /// person picks an ordinary one. Absent elsewhere.
+    var confidentialThreadsByDefault: Bool?
 
     public var enabled: Bool { features?.llmThreadTitles == true }
+    public var confidentialByDefault: Bool { confidentialThreadsByDefault == true }
 }
 
 /// The body of a folder edit. Name and emoji are both optional; an emoji
@@ -92,9 +96,18 @@ public extension CompanionClient {
         try await send(regenerateTaskTitleRequest(botId: botId, threadId: threadId))
     }
 
-    /// A new thread, filed in a folder when one is given.
-    func createTask(botId: String, inFolder folderId: String?) async throws -> Bot {
-        try await send(createTaskRequest(botId: botId, folderId: folderId), as: BotResponse.self).bot
+    /// A new thread, filed in a folder when one is given. `confidential`
+    /// true opens a confidential thread, false an ordinary one even where
+    /// the organization makes new threads confidential by default, nil
+    /// follows that default.
+    func createTask(botId: String, inFolder folderId: String?, confidential: Bool? = nil) async throws -> Bot {
+        try await send(createTaskRequest(botId: botId, folderId: folderId, confidential: confidential), as: BotResponse.self).bot
+    }
+
+    /// Make an ordinary thread confidential. One way only: the server
+    /// refuses any change back (409 confidential_permanent).
+    func makeTaskConfidential(botId: String, threadId: String) async throws {
+        try await send(makeConfidentialRequest(botId: botId, threadId: threadId))
     }
 
     /// The bot menu's "Mark as Unread": `PATCH /api/bots/:id {unread: true}`.
@@ -146,14 +159,22 @@ public extension CompanionClient {
         return try makeRequest("POST", "/api/bots/\(botId)/tasks/\(threadId)/title")
     }
 
-    func createTaskRequest(botId: String, folderId: String?) throws -> URLRequest {
+    func createTaskRequest(botId: String, folderId: String?, confidential: Bool? = nil) throws -> URLRequest {
         guard Self.validRouteID(botId) else { throw APIError.badURL }
         var body: [String: Any] = [:]
         if let folderId {
             guard Self.validRouteID(folderId) else { throw APIError.badURL }
             body["projectId"] = folderId
         }
+        if let confidential { body["confidential"] = confidential }
         return try makeRequest("POST", "/api/bots/\(botId)/tasks", body: body)
+    }
+
+    /// `PATCH tasks/:id {confidential: true, confirmConfidential: true}`:
+    /// the person confirmed that it is permanent. Never a false.
+    func makeConfidentialRequest(botId: String, threadId: String) throws -> URLRequest {
+        guard Self.validRouteID(botId), Self.validRouteID(threadId) else { throw APIError.badURL }
+        return try makeRequest("PATCH", "/api/bots/\(botId)/tasks/\(threadId)", body: ["confidential": true, "confirmConfidential": true])
     }
 
     func markUnreadRequest(botId: String) throws -> URLRequest {

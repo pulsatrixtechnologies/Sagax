@@ -2264,10 +2264,10 @@ final class Session: ObservableObject {
     }
 
     @discardableResult
-    func createTask(for bot: Bot, title: String?) async -> Bot? {
+    func createTask(for bot: Bot, title: String?, confidential: Bool? = nil) async -> Bot? {
         guard let client else { return nil }
         do {
-            let updated = try await client.createTask(botId: bot.id, title: title)
+            let updated = try await client.createTask(botId: bot.id, title: title, confidential: confidential)
             state.apply(.bot(updated))
             return updated
         } catch { actionError = error.localizedDescription; return nil }

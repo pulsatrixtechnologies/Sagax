@@ -456,6 +456,10 @@ const appConfigSchema = z.object({
      * without an approval card (server/member-environment.ts). Absent means
      * on; an admin turns it off in Settings > Organization. */
     memberEnvironmentAutonomy: z.boolean().optional(),
+    /** 2026-10-16 (JC): new threads start confidential unless the person
+     * says otherwise (server/confidential-threads.ts). Absent means off; an
+     * admin turns it on in Settings > Organization. */
+    confidentialThreadsByDefault: z.boolean().optional(),
     /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts).
      * Absent means any marketplace; an admin may keep a list. */
     pluginMarketplaces: z.union([
@@ -712,6 +716,7 @@ export interface AppConfig {
     interimAttach?: { since: number; days: number };
     allowFullAccess?: boolean;
     memberEnvironmentAutonomy?: boolean;
+    confidentialThreadsByDefault?: boolean;
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     githubClientId?: string;
     allowedEngines?: string[];

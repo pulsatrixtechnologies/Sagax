@@ -23,6 +23,10 @@
 //   desktop      the owner's own computer through the desktop bridge: never
 //                reachable from the server
 //
+// A confidential thread (server/confidential-threads.ts) is not here at all:
+// its folder under tasks and its attachments are left out of every listing
+// and read as missing (404), so an admin learns nothing, not even its id.
+//
 // Path rules: a relative path of `/`-separated segments, at most 1,024 bytes,
 // no empty, `.` or `..` segment, no backslash, no NUL; every segment is
 // walked with lstat and a symbolic link anywhere refuses the request; the
@@ -48,7 +52,7 @@ export const FILE_ROOT_IDS: readonly FileRootId[] = ["workspace", "tasks", "proj
 export type RootUnavailable = "not_created" | "outside_server_data" | "person_environment" | "own_computer" | "not_set";
 
 export type BotFileRoot =
-  | { id: "workspace" | "tasks" | "project"; kind: "folder"; dir: string }
+  | { id: "workspace" | "tasks" | "project"; kind: "folder"; dir: string; /** First-level names left out (confidential threads' folders). */ hidden?: ReadonlySet<string> }
   | { id: "attachments"; kind: "attachments"; dir: string }
   | { id: FileRootId; kind: "unavailable"; reason: RootUnavailable };
 
@@ -349,6 +353,7 @@ async function locate(deps: OrgAdminFilesDeps, botId: string, roots: BotFileRoot
   } catch {
     throw new FileRefusal(404, "root_missing", "This folder does not exist yet.");
   }
+  if (segments.length && root.hidden?.has(segments[0]!)) throw notFound();
   const { path, stat } = resolveInRoot(root.dir, segments);
   return { root: root.id, path: segments.join("/"), name: segments.at(-1) ?? "", real: path, stat, rootDir, segments };
 }
@@ -399,8 +404,9 @@ export async function answerBotFiles(input: {
       }
       if (target.root === "attachments") throw new FileRefusal(400, "not_a_folder", "This is a file, not a folder.");
       const root = bot.roots.find((r) => r.id === target.root) as Extract<BotFileRoot, { kind: "folder" }>;
-      const { entries, truncated } = listFolder(root.dir, parseRelativePath(params.get("path")));
-      return send(res, 200, { root: target.root, path: target.path, entries, truncated });
+      const listed = listFolder(root.dir, parseRelativePath(params.get("path")));
+      const entries = target.path === "" && root.hidden?.size ? listed.entries.filter((entry) => !root.hidden!.has(entry.name)) : listed.entries;
+      return send(res, 200, { root: target.root, path: target.path, entries, truncated: listed.truncated });
     }
     const type = entryType(target.stat);
     if (action === "stat") {

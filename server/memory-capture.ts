@@ -214,6 +214,15 @@ export class CaptureBuffer {
     }
   }
 
+  /** Drop one thread's waiting turns without capturing them: it became
+   * confidential, or it was deleted (server/confidential-threads.ts). */
+  dropThread(threadId: string): void {
+    const entry = this.pending.get(threadId);
+    if (!entry) return;
+    if (entry.timer) clearTimeout(entry.timer);
+    this.pending.delete(threadId);
+  }
+
   /** Every waiting batch, without capturing it: shutdown saves them. */
   drain(): CaptureBatch[] {
     const batches: CaptureBatch[] = [];

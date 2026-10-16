@@ -18,6 +18,7 @@ import {
   FolderOpen,
   FolderPlus,
   Loader2,
+  Lock,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -104,6 +105,7 @@ import { TeamDialog } from "./TeamDialog";
 import { RenameTitle } from "./RenameTitle";
 import { BotProjectDialog, FolderActions, FolderIcon, navigateThreadMenu } from "./BotProjects";
 import { NewTaskFolderDialog } from "./NewTaskFolderDialog";
+import { newThreadChoices, type NewThreadChoice } from "@/lib/confidential-thread";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { draggedFolder, draggedThread, FOLDER_DRAG_TYPE, THREAD_DRAG_TYPE, moveFolder, placeFolder } from "@/lib/folder-order";
 import { folderUnreadThreadIds, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
@@ -1502,7 +1504,7 @@ type ThreadTreeActions = Omit<Parameters<typeof SidebarThreadRow>[0], "task" | "
  * One tree for every owner of threads: a bot (BotThreadList) and a
  * conversation with a person (PersonThreadList); the owner decides only
  * where its actions go. */
-function ThreadTree({ ownerId, ownerName, owner, folderOwner, openThreadId, tasks, projects, selected, density, query, hidden, actions, rowState, activeActivityLabel, onNew, onNewInFolder, onReorder, canMarkRead, markRead, children }: {
+function ThreadTree({ ownerId, ownerName, owner, folderOwner, openThreadId, tasks, projects, selected, density, query, hidden, actions, rowState, activeActivityLabel, onNew, onNewKind, onNewInFolder, onReorder, canMarkRead, markRead, children }: {
   ownerId: string;
   ownerName: string;
   owner: FolderOwnerKind;
@@ -1520,6 +1522,10 @@ function ThreadTree({ ownerId, ownerName, owner, folderOwner, openThreadId, task
   rowState?: (task: ThreadTreeTask) => Partial<ThreadTreeTask>;
   activeActivityLabel?: string;
   onNew: (projectId?: string) => void;
+  /** Bot threads: the New thread menu's two kinds, ordinary and confidential
+   * (src/lib/confidential-thread.ts newThreadChoices), in place of the
+   * single New thread item. Absent: the single item. */
+  onNewKind?: { choices: NewThreadChoice[]; create: (confidential: boolean) => void };
   /** A new thread in a working folder the person picks (a bot's owner or an
    * admin, Advanced mode): opens NewTaskFolderDialog. Absent: no such item. */
   onNewInFolder?: () => void;
@@ -1749,7 +1755,8 @@ function ThreadTree({ ownerId, ownerName, owner, folderOwner, openThreadId, task
         style={listMenuPosition} className={cn("fixed z-50 w-[220px] rounded-lg border border-hairline/50 popover-surface bg-card p-1 shadow-xl", listMenuMotion.className)} {...listMenuMotion.exitProps}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setListMenu(null); } else navigateThreadMenu(event); }}>
-        <button type="button" role="menuitem" onClick={() => { setListMenu(null); onNew(); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Plus size={12} />{t("task.newShort")}</button>
+        {onNewKind ? onNewKind.choices.map((choice) => <button key={choice.label} type="button" role="menuitem" data-new-thread-kind={choice.confidential ? "confidential" : "ordinary"} onClick={() => { setListMenu(null); onNewKind.create(choice.confidential); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised">{choice.lock ? <Lock size={12} /> : <Plus size={12} />}{t(choice.label)}</button>)
+          : <button type="button" role="menuitem" onClick={() => { setListMenu(null); onNew(); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Plus size={12} />{t("task.newShort")}</button>}
         {onNewInFolder && <button type="button" role="menuitem" onClick={() => { setListMenu(null); onNewInFolder(); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><FolderOpen size={12} />{t("task.folder.new")}</button>}
         <button type="button" role="menuitem" onClick={() => { setListMenu(null); setCreatingProject(true); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><FolderPlus size={12} />{t("folder.new")}</button>
       </div>, document.body)}
@@ -1781,6 +1788,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
   const canChooseFolder = useOwnerOrAdmin() === true;
   const advanced = useAdvancedMode();
   const [folderDialog, setFolderDialog] = useState(false);
+  const confidentialByDefault = useStoreSelector((current) => current.config?.confidentialThreadsByDefault === true);
   // One set of row actions per bot, so memoized rows skip the list's renders;
   // they read the bot as it is when used.
   const latest = useRef(bot);
@@ -1806,6 +1814,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
       onSnooze: (task: Row, snoozedUntil: number | null) => patch(task, { snoozedUntil }),
       onLink: (task: Row, link: string | null) => patch(task, { link }),
       onOpenAside: (task: Row) => openSideThread({ botId, threadId: task.threadId }),
+      onMakeConfidential: (task: Row) => dispatch({ type: "makeTaskConfidential", botId, threadId: task.threadId }),
       onRefreshPermissions: (task: Row) => {
         const current = latest.current;
         const mode = approvalModeFor(current);
@@ -1829,6 +1838,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
     <ThreadTree ownerId={bot.id} ownerName={bot.name} owner="bot" folderOwner={bot} openThreadId={bot.threadId} tasks={tasks} projects={bot.projects ?? []}
       selected={selected} density={density} query={query} hidden={hidden} actions={actions} rowState={rowState} activeActivityLabel={activeActivityLabel}
       onNew={(projectId) => dispatch({ type: "newTask", botId: bot.id, ...(projectId ? { projectId } : {}) })}
+      onNewKind={{ choices: newThreadChoices(confidentialByDefault), create: (confidential) => dispatch({ type: "newTask", botId: bot.id, confidential }) }}
       onNewInFolder={canChooseFolder && advanced ? () => setFolderDialog(true) : undefined}
       onReorder={(projectIds, onSaved, onError) => dispatch({ type: "reorderProjects", botId: bot.id, projectIds, onSaved, onError })}
       canMarkRead={(projectId) => folderUnreadThreadIds(bot, projectId).length > 0}

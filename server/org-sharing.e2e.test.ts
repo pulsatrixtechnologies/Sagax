@@ -244,7 +244,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // (none), the plugin marketplace policy (any, the default) and the
     // labeled access tokens (none).
     expect((await api("GET", "/api/org", alice)).body.settings).toEqual({
-      orgKeyConfigured: true, allowFullAccess: false, memberEnvironmentAutonomy: true, interimAttach: { until: null, people: 0 },
+      orgKeyConfigured: true, allowFullAccess: false, memberEnvironmentAutonomy: true, confidentialThreadsByDefault: false, interimAttach: { until: null, people: 0 },
       github: { clientId: null, fromEnvironment: false }, pluginMarketplaces: { mode: "any" },
       githubTokens: [],
     });

@@ -564,9 +564,16 @@ struct ChatView: View {
                 .safeAreaInset(edge: .top, spacing: 0) {
                     // voice mode's call bar keeps its own row under the name
                     // capsule (and under the pinned banner when there is one)
-                    Color.clear.frame(height: Self.topBarHeight
-                        + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight)
-                        + (callPillShown ? CallBarMetrics.inset(scale: callBarScale) : 0))
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: Self.topBarHeight)
+                        // A confidential thread's band: in the reserved
+                        // inset, so the transcript never moves under it.
+                        if ConfidentialBanner.shows(for: current) {
+                            ConfidentialBannerView(edge: .top)
+                        }
+                        Color.clear.frame(height: (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight)
+                            + (callPillShown ? CallBarMetrics.inset(scale: callBarScale) : 0))
+                    }
                 }
                 // iPad desktop: an open find bar sits in the column's flow,
                 // so the transcript is cut under it (ChatView.tsx)
@@ -683,6 +690,11 @@ struct ChatView: View {
             .id(threadId)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            // The matching band above the composer: whatever is typed here
+            // stays in a confidential thread.
+            if ConfidentialBanner.shows(for: current) {
+                ConfidentialBannerView(edge: .bottom)
+            }
             composerSlot
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)

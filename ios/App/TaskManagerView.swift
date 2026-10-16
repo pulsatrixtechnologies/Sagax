@@ -429,7 +429,7 @@ struct TaskManagerView: View {
             beginRename(task)
         case .delete:
             taskToDelete = task
-        case .copyLink, .regenerateTitle:
+        case .copyLink, .regenerateTitle, .makeConfidential:
             actions.perform(action, on: ThreadTarget(task: task, owner: current), session: session)
         default:
             perform {

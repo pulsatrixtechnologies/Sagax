@@ -8,6 +8,8 @@ import Foundation
 
 @MainActor
 private var threadTitleFeatureByConnection: [String: Bool] = [:]
+@MainActor
+private var confidentialDefaultByConnection: [String: Bool] = [:]
 
 extension Session {
     private var threadsClient: CompanionClient? { settingsClient }
@@ -21,8 +23,10 @@ extension Session {
     func threadTitlesEnabled() async -> Bool {
         guard let client = threadsClient, let id = connection?.id else { return false }
         if let known = threadTitleFeatureByConnection[id] { return known }
-        let enabled = (try? await client.threadTitleFeature().enabled) ?? false
+        let feature = try? await client.threadTitleFeature()
+        let enabled = feature?.enabled ?? false
         threadTitleFeatureByConnection[id] = enabled
+        confidentialDefaultByConnection[id] = feature?.confidentialByDefault ?? false
         return enabled
     }
 
@@ -63,14 +67,32 @@ extension Session {
     }
 
     /// A new thread, filed in `folder` when given (the folder row's "+").
-    func createTask(for bot: Bot, inFolder folder: BotProject?) async -> Bot? {
+    /// `confidential` nil follows the organization's default.
+    func createTask(for bot: Bot, inFolder folder: BotProject?, confidential: Bool? = nil) async -> Bot? {
         guard let client = threadsClient else { return nil }
         do {
-            let updated = try await client.createTask(botId: bot.id, inFolder: folder?.id)
+            let updated = try await client.createTask(botId: bot.id, inFolder: folder?.id, confidential: confidential)
             applyProfileBot(updated)
             return updated
         } catch { fail(error); return nil }
     }
+
+    /// Make an ordinary thread confidential, after the person confirmed it
+    /// is permanent. The bot event carries the flag to every client.
+    func makeTaskConfidential(_ task: BotTask, for bot: Bot) async -> Bool {
+        guard let client = threadsClient else { return false }
+        do {
+            try await client.makeTaskConfidential(botId: bot.id, threadId: task.threadId)
+            if var marked = state.bot(bot.id), let index = marked.tasks?.firstIndex(where: { $0.threadId == task.threadId }) {
+                marked.tasks?[index].confidential = true
+                applyProfileBot(marked)
+            }
+            return true
+        } catch { fail(error); return false }
+    }
+
+    /// Whether this computer's organization opens new threads confidential.
+    var confidentialThreadsByDefault: Bool { confidentialDefaultByConnection[connection?.id ?? ""] ?? false }
 
     /// SB14: the bot menu's "Mark as Unread".
     func markUnread(_ bot: Bot) async -> Bool {

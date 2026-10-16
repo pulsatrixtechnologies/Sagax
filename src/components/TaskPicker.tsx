@@ -29,6 +29,8 @@ import { threadsOffReturnTarget } from "./thread-home";
 import { threadsWhenTreeHidden } from "./SidebarBotActivity";
 import { formatUpdatedAt, orderedThreadList, threadByline, threadRecency, threadUpdatedLabel, useRelativeNow, useSnoozeExpiry } from "./SidebarThreadRow";
 import { ThreadMenu, type ThreadMenuActions } from "./ThreadMenu";
+import { ConfidentialBadge } from "./ConfidentialBanner";
+import { newThreadChoices } from "@/lib/confidential-thread";
 
 /** Click-to-switch used to close this menu immediately, which unmounted the
  * row before a double-click (or right-click) could start a rename. Linger
@@ -88,7 +90,7 @@ function TaskUsage({ usage }: { usage: Task["usage"] }) {
   );
 }
 
-type PickerTask = Pick<Task, "threadId" | "title" | "createdAt" | "updatedAt" | "pinned" | "busy" | "activity" | "unread" | "projectId" | "openedBy" | "closedBy" | "archivedAt" | "snoozedUntil" | "waitingForTeammates"> & { usage?: Task["usage"] };
+type PickerTask = Pick<Task, "threadId" | "title" | "createdAt" | "updatedAt" | "pinned" | "busy" | "activity" | "unread" | "projectId" | "openedBy" | "closedBy" | "archivedAt" | "snoozedUntil" | "waitingForTeammates" | "confidential"> & { usage?: Task["usage"] };
 
 /** The full picker searches both thread titles and their project names.
  * Legacy/orphaned project IDs remain visible under Ungrouped. */
@@ -108,6 +110,8 @@ export type PickerThreadActions = {
   onSnooze?: (threadId: string, snoozedUntil: number | null) => void;
   onRefreshPermissions?: (threadId: string) => void;
   onCreateTeamBot?: (threadId: string) => void;
+  /** Bot threads: make one confidential (the menu asks first). */
+  onMakeConfidential?: (threadId: string) => void;
 };
 
 export type PickerFolderActions = {
@@ -121,7 +125,7 @@ export type PickerFolderActions = {
 
 /** A picker row's actions, from the owner's callbacks: the same menu as the
  * sidebar's thread rows (ThreadMenu), opened from the row's one "..." button. */
-export function pickerRowActions(task: Pick<PickerTask, "threadId">, given: {
+export function pickerRowActions(task: Pick<PickerTask, "threadId"> & { confidential?: true }, given: {
   onRename: () => void;
   onDelete: (threadId: string) => void;
   onMove?: (threadId: string, projectId: string | null) => void;
@@ -141,6 +145,7 @@ export function pickerRowActions(task: Pick<PickerTask, "threadId">, given: {
     ...(extra?.onRegenerateTitle ? { onRegenerateTitle: (onSettled: (ok: boolean) => void) => extra.onRegenerateTitle!(id, onSettled) } : {}),
     ...(extra?.onRefreshPermissions ? { onRefreshPermissions: () => extra.onRefreshPermissions!(id) } : {}),
     ...(extra?.onCreateTeamBot ? { onCreateTeamBot: () => extra.onCreateTeamBot!(id) } : {}),
+    ...(extra?.onMakeConfidential && task.confidential !== true ? { onMakeConfidential: () => extra.onMakeConfidential!(id) } : {}),
   };
 }
 
@@ -427,7 +432,10 @@ function ConversationTaskPicker({
                       className="min-w-0 flex-1 text-left"
                       title={t("task.renameHint")}
                     >
-                      <div dir="auto" className="truncate text-[13px] text-popover-ink">{task.title}</div>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span dir="auto" className="truncate text-[13px] text-popover-ink">{task.title}</span>
+                        {task.confidential === true && <ConfidentialBadge />}
+                      </div>
                       <div className="text-[11px] text-popover-ink-secondary">
                         {task.activity === "waiting-on-you" ? `${t("task.waiting")} · ` : task.waitingForTeammates ? `${t("task.waitingOnTeammate")} · ` : task.busy ? `${t("chat.activity.working")} · ` : task.unread ? `${t("task.unread")} · ` : ""}
                         <TaskUpdatedTime task={task} now={now} />
@@ -598,6 +606,7 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
       // a refused write leaves the link available to copy again
       void copyText(threadRefUrl({ botId: bot.id, threadId }));
     },
+    onMakeConfidential: (threadId) => dispatch({ type: "makeTaskConfidential", botId: bot.id, threadId }),
     onRegenerateTitle: llmThreadTitlesEnabled(state.config)
       ? (threadId, onSettled) => dispatch({ type: "regenerateTaskTitle", botId: bot.id, threadId, onSettled })
       : undefined,
@@ -648,7 +657,10 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
       tasks={botPickerThreads(bot)}
       busy={false}
       folders={bot.projects ?? []}
-      newButton={(close) => <NewThreadButton bot={bot} onCreated={close} className="mt-1 w-full rounded-none border-t border-popover-hairline" />}
+      newButton={(close) => <div className="mt-1 border-t border-popover-hairline">
+        {newThreadChoices(state.config?.confidentialThreadsByDefault === true).map((kind) =>
+          <NewThreadButton key={kind.label} bot={bot} kind={kind} onCreated={close} className="w-full rounded-none" />)}
+      </div>}
       onNew={() => dispatch({ type: "newTask", botId: bot.id })}
       onSwitch={(threadId) => dispatch({ type: "switchTask", botId: bot.id, threadId })}
       onRename={(threadId, title) => dispatch({ type: "renameTask", botId: bot.id, threadId, title })}

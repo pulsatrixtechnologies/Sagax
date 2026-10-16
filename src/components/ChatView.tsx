@@ -166,6 +166,8 @@ import { useCanWriteIn } from "@/lib/cloud-guest";
 import { latestFailure, latestReply, type TranscriptSnapshot } from "@/lib/transcript-announcer";
 import { pendingApprovals } from "./PendingApproval";
 import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
+import { ConfidentialBanner, useConfidentialDocumentTitle } from "./ConfidentialBanner";
+import { openThreadConfidential } from "@/lib/confidential-thread";
 
 /** Long user messages collapse behind a fade so pasted walls of text don't
  * bury the conversation; bots get full markdown. */
@@ -1421,6 +1423,10 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   // A shared bot on an organization server: each person's conversation is
   // their own; several people talk together in a group.
   const perspicaxOrg = usePerspicaxOrg();
+  // A confidential thread wears its classification band, top and bottom,
+  // for as long as it lives (src/lib/confidential-thread.ts).
+  const confidential = openThreadConfidential(profile);
+  useConfidentialDocumentTitle(confidential && !side);
   const privateHint = showPrivateConversationHint({ org: perspicaxOrg !== null, viewerId: viewerActorId(state.config), bot });
   const { node: exchangeColumnNode, ref: exchangeColumnRef } = useExchangeColumn();
   const composerDockRef = useRef<HTMLDivElement>(null);
@@ -1739,6 +1745,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
             messages={messages}
             botName={bot.name}
             onExportBot={showBotZipExport(state.config, bot) ? () => downloadBotZip(bot.id, { conversations: false, sharing: false }) : undefined}
+            confidential={confidential}
             {...(!remoteClient && showInspector && advanced ? { onToggleInspector: () => dispatch({ type: "toggleInspector" }), inspectorOpen: state.inspectorOpen } : {})}
             {...(dataItem ? { data: dataItem } : {})}
           />}
@@ -1751,6 +1758,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       {/* Banners sit below the floating header; the wrapper vanishes when
           none is showing so the transcript can run to the top. */}
       <div className="chat-banners pt-[52px] empty:hidden">
+      {confidential && <ConfidentialBanner position="top" className="mb-2" />}
       {/* Voice mode's call pill: first in the stack, centered right under
           the name chip; collapsed it keeps its own small row, expanded its
           card hangs over the thread */}
@@ -1933,6 +1941,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           />
         </div>
       )}
+      {confidential && <ConfidentialBanner position="bottom" className="mb-1" />}
       {canWrite === false ? (
         <NewConversationInstead onNew={() => dispatch({ type: "newTask", botId: bot.id })} />
       ) : (
