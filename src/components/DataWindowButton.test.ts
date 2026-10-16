@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The bot's Data window item (the conversation's "..." menu): absent while
-// the experimental switch is off, an item that opens this bot's window
-// while it is on.
+// the experimental switch is off or while the conversation has nothing the
+// window can show, an item that opens this bot's window otherwise.
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
@@ -19,8 +19,13 @@ vi.mock("@/lib/data-window", async (importOriginal) => ({ ...await importOrigina
 
 const { useDataWindowItem, DataWindowViewSync } = await import("./DataWindowButton");
 
+type ProbeBot = { id: string; name: string; messages?: Array<Record<string, unknown>> };
+/** A conversation the Data window can open: one result the bot showed. */
+const withResult = [{ id: "m1", role: "bot", kind: "activity", tool: { name: "data_show", ok: true }, dataResult: { botId: "scout", cardId: "c_1", title: "Sales", kind: "table" } }];
+
 /** Shows the item the hook returns as a button, or nothing. */
-function DataWindowProbe({ bot }: { bot: { id: string; name: string } }) {
+function DataWindowProbe({ bot: input }: { bot: ProbeBot }) {
+  const bot = { messages: withResult, ...input } as Parameters<typeof useDataWindowItem>[0];
   const item = useDataWindowItem(bot);
   return item ? createElement("button", { "data-data-window-button": "", "aria-label": item.label, onClick: item.onOpen }) : null;
 }
@@ -88,6 +93,34 @@ describe("Data item", () => {
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("could not open") }));
     expect(dispatch).not.toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("is off") });
     expect(api).not.toHaveBeenCalled();
+  });
+
+  it("is absent while the conversation has nothing the window can show", () => {
+    fixture.dataWindow = true;
+    const container = render(createElement(DataWindowProbe, { bot: { id: "scout", name: "Scout", messages: [
+      { id: "m1", role: "user", text: "hello" },
+      { id: "m2", role: "bot", kind: "activity", tool: { name: "Bash", ok: true } },
+      // a load that failed left nothing behind
+      { id: "m3", role: "bot", kind: "activity", tool: { name: "mcp__data__data_load", ok: false } },
+    ] } }));
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("appears as soon as a result or a loaded table reaches the conversation, and goes with another conversation", () => {
+    fixture.dataWindow = true;
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    const show = (messages: Array<Record<string, unknown>>) => flushSync(() => root!.render(createElement(DataWindowProbe, { bot: { id: "scout", name: "Scout", messages } })));
+    show([{ id: "m1", role: "user", text: "load the sales" }]);
+    expect(container.querySelector("button")).toBeNull();
+    // A table the bot loaded is enough: the window shows it in Sources.
+    show([{ id: "m1", role: "user", text: "load the sales" }, { id: "m2", role: "bot", kind: "activity", tool: { name: "mcp__sagax-data__data_load", ok: true } }]);
+    expect(container.querySelector("[data-data-window-button]")).not.toBeNull();
+    show([{ id: "m9", role: "user", text: "another thread" }]);
+    expect(container.querySelector("button")).toBeNull();
+    show(withResult);
+    expect(container.querySelector("[data-data-window-button]")).not.toBeNull();
   });
 
   it("is absent on the companion connection, where Data is not served", () => {

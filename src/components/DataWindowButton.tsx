@@ -1,19 +1,23 @@
 // The bot's Data window entry (experimental, src/lib/data-window.ts): an
 // item of the conversation's "..." menu (ExportTranscriptMenu), beside the
-// Inspector. Absent while the experimental switch is off and on the
-// companion connection, where Data is not served.
-import { useEffect, useRef } from "react";
+// Inspector. Absent while the experimental switch is off, on the companion
+// connection, where Data is not served, and while the conversation has
+// nothing the window can show (conversationHasData): it appears with the
+// first result or loaded table, live, and goes with a conversation without.
+import { useEffect, useMemo, useRef } from "react";
 import { api, useStore, type Bot, type ConfigStatus } from "@/state/store";
 import { dataWindowEnabled } from "@/lib/feature-flags";
-import { openDataWindow, subscribeDataWindowMessages } from "@/lib/data-window";
+import { conversationHasData, openDataWindow, subscribeDataWindowMessages } from "@/lib/data-window";
 import { t } from "@/lib/i18n";
 
 /** The "Open the Data window" item for this bot, or null where Data is off.
  * A blocked pop-up or a refused window says so in the chat's error banner
  * (the menu is gone by then). */
-export function useDataWindowItem(bot: Pick<Bot, "id" | "name">): { label: string; onOpen: () => void } | null {
+export function useDataWindowItem(bot: Pick<Bot, "id" | "name" | "messages">): { label: string; onOpen: () => void } | null {
   const { state, dispatch } = useStore();
-  if (!dataWindowEnabled(state.config) || window.ogb?.remoteClient?.active === true) return null;
+  // One pass over the transcript the page already holds, again only when it changes.
+  const hasData = useMemo(() => conversationHasData(bot.messages), [bot.messages]);
+  if (!dataWindowEnabled(state.config) || window.ogb?.remoteClient?.active === true || !hasData) return null;
   return {
     label: t("dataWindow.open"),
     onOpen: () => {

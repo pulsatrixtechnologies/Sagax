@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { dataWindowHref, dataWindowName, openDataWindow, readDataWindowTarget, subscribeDataWindowMessages } from "./data-window";
+import { conversationHasData, dataWindowHref, dataWindowName, openDataWindow, readDataWindowTarget, subscribeDataWindowMessages } from "./data-window";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -45,5 +45,18 @@ describe("openDataWindow", () => {
     expect(focus).toHaveBeenCalled();
     open.mockReturnValueOnce(null as unknown as Window);
     expect(await openDataWindow({ botId: "scout", title: "Data" })).toBe("blocked");
+  });
+});
+
+describe("conversationHasData", () => {
+  it("finds a shown result or a loaded table, under any MCP prefix, and nothing else", () => {
+    expect(conversationHasData(undefined)).toBe(false);
+    expect(conversationHasData([])).toBe(false);
+    expect(conversationHasData([{ tool: { name: "Bash", ok: true } }, { tool: { name: "mydata_load_x", ok: true } }])).toBe(false);
+    expect(conversationHasData([{ tool: { name: "data_load", ok: false } }])).toBe(false);
+    expect(conversationHasData([{ dataResult: { botId: "scout", cardId: "c_1" } }])).toBe(true);
+    expect(conversationHasData([{ tool: { name: "data_load" } }])).toBe(true);
+    expect(conversationHasData([{ tool: { name: "mcp__sagax-data__data_load", ok: true } }])).toBe(true);
+    expect(conversationHasData([{ tool: { name: "data.data_load", ok: true } }])).toBe(true);
   });
 });
