@@ -1,6 +1,6 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, Clock, Sparkles, Square, Target, Users, X } from "lucide-react";
+import { ArrowUp, Clock, Square, Target, Users, Wand2, X } from "lucide-react";
 import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -1106,7 +1106,7 @@ export function Composer({
       id: "setup",
       group: "modes" as const,
       label: t("composer.plus.setup"),
-      icon: <Sparkles size={15} aria-hidden="true" />,
+      icon: <Wand2 size={15} aria-hidden="true" />,
       hint: "/setup",
       // the same as picking /setup in the "/" menu
       onSelect: () => startDraftWith("/setup "),
