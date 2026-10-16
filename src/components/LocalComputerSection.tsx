@@ -27,6 +27,7 @@ import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
 import { canManageComputers } from "@/lib/viewer";
 import { OrgComputerSettings } from "./settings/OrgComputerSettings";
+import { ComputerCareSettings } from "./settings/ComputerCareSettings";
 
 type Action = "pull" | "run" | "start" | "stop" | "remove" | "recreate";
 
@@ -1625,6 +1626,10 @@ export function LocalComputerSection() {
       />}
 
       <MacLocalControl />
+
+      {/* Scheduled update and disk saver: hidden by itself where this
+          person has no computer to care for (403/409). */}
+      <ComputerCareSettings />
 
       {!orgBridge && manageComputers && <>
       {/* 0.5.6 (JC): Grok Bot's "Bot's computer" group. One row: the

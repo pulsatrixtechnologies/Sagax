@@ -862,6 +862,8 @@ import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
 import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
 import { createOwnerApprovalRoutes } from "./routes/owner-approvals.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
+import { createComputerCareRoutes } from "./routes/computer-care.ts";
+import { MaintenanceScheduler, MaintenanceStore, oldCheckpointRepos, type DiskSaverTarget, type MaintainedComputer } from "./computer-care.ts";
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
 import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
 import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedServerEntry } from "./plugin-marketplaces.ts";
@@ -23961,6 +23963,83 @@ ROUTES.push(createComputerStatusRoutes({
   sandbox: () => userSandbox,
   local: { status: localComputerSummary, update: () => localComputerLifecycle("update"), reset: () => localComputerLifecycle("reset") },
   mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+}));
+// Settings > Computer: scheduled update in a maintenance window and the disk
+// saver (server/computer-care.ts, server/routes/computer-care.ts), for the
+// same computers as the routes above.
+const computerCare = new MaintenanceStore(join(DATA_DIR, "computer-maintenance.json"));
+/** The shared Local VM is in use: a turn holds it, or a setup action runs. */
+function sharedLocalVmInUse(): boolean {
+  const target = SHARED_LOCAL_VM_TARGET;
+  return localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(target.key) ||
+    localVmLeaseFor(target).current(localVmOwnerBusy) !== null || localVmActiveThreads.has(target.key);
+}
+/** Bring the shared Local VM to the current image: prepare the image, then
+ * recreate the container (the workspace folder stays) when it runs an older
+ * one. Per-bot desktops pick the new image up when they are next created. */
+async function scheduledLocalVmUpdate(): Promise<void> {
+  await localComputerLifecycle("update");
+  if (localVmMode(cfg) !== "shared") return;
+  const status = await containerComputerStatus(undefined, undefined, SHARED_LOCAL_VM_TARGET);
+  if (status.container !== "missing" && !status.imageMatches) await localComputerLifecycle("reset");
+}
+const SANDBOX_RECENT_USE_MS = 10 * 60_000;
+function maintainedComputer(key: string): MaintainedComputer | null {
+  if (key === "local") {
+    if (IDENTITY.kind === "perspicax") return null;
+    return { busy: async () => sharedLocalVmInUse(), update: scheduledLocalVmUpdate };
+  }
+  const principalId = key.startsWith("person:") ? key.slice("person:".length) : "";
+  const sandbox = userSandbox;
+  if (!principalId || !sandbox || IDENTITY.kind !== "perspicax") return null;
+  return {
+    busy: async () => {
+      if (await sandbox.busy(principalId) > 0) return true;
+      const view = await sandbox.status(principalId);
+      return view.lastUsedAt !== null && Date.now() - view.lastUsedAt < SANDBOX_RECENT_USE_MS;
+    },
+    update: async () => { await sandbox.update(principalId); },
+  };
+}
+const computerCareScheduler = new MaintenanceScheduler({ store: computerCare, computer: maintainedComputer, log: (line) => console.warn(line) });
+computerCareScheduler.start();
+function diskSaverTarget(key: string): DiskSaverTarget | null {
+  if (key === "local") {
+    if (IDENTITY.kind === "perspicax") return null;
+    return {
+      exec: async (script) => {
+        if (localVmMode(cfg) !== "shared") return null;
+        const status = await containerComputerStatus(undefined, undefined, SHARED_LOCAL_VM_TARGET);
+        if (status.container !== "running" || !status.runtime) return null;
+        const result = await containerExec(SHARED_LOCAL_VM_TARGET, script, { runtime: status.runtime, timeoutSeconds: 120 });
+        return { exitCode: result.exitCode, stdout: result.stdout };
+      },
+      host: { oldCheckpoints: () => oldCheckpointRepos(checkpoints.CHECKPOINTS_DIR) },
+    };
+  }
+  const principalId = key.startsWith("person:") ? key.slice("person:".length) : "";
+  const sandbox = userSandbox;
+  if (!principalId || !sandbox) return null;
+  return {
+    exec: async (script) => {
+      // Never wake a sleeping environment just to measure it.
+      if ((await sandbox.status(principalId)).state !== "running") return null;
+      const result = await sandbox.exec(principalId, { argv: ["sh", "-c", script], timeoutSec: 120, maxOutputBytes: 64 * 1024 });
+      return { exitCode: result.exitCode, stdout: result.stdout };
+    },
+  };
+}
+ROUTES.push(createComputerCareRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  sandboxConfigured: () => userSandbox !== null,
+  mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+  store: computerCare,
+  scheduler: computerCareScheduler,
+  diskTarget: diskSaverTarget,
+  audit: (auth, action, detail) => {
+    if (!adminActivityRecording()) return;
+    appendAdminAction(DATA_DIR, { category: "computer", action, after: detail, actor: orgAuditActor(auth) });
+  },
 }));
 // Plugins (server/routes/plugins.ts): the curated catalog and the MCP
 // Registry, what is installed, and adding one with its sign-in.
