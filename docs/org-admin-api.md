@@ -897,7 +897,7 @@ never a message; a routine failure carries `routineId`.
 
 ```json
 {
-  "org": { "orgKeyConfigured": true, "allowFullAccess": true, "pluginMarketplaces": { "mode": "any" }, "github": { "clientId": null, "fromEnvironment": false }, "interimAttach": { "until": null, "people": 0 } },
+  "org": { "orgKeyConfigured": true, "allowFullAccess": true, "memberEnvironmentAutonomy": true, "pluginMarketplaces": { "mode": "any" }, "github": { "clientId": null, "fromEnvironment": false }, "interimAttach": { "until": null, "people": 0 } },
   "policies": {
     "allowedMarketplaces": null,
     "allowedEngines": ["claude", "codex"],
@@ -907,14 +907,18 @@ never a message; a routine failure carries `routineId`.
 }
 ```
 
-`org` is what `GET /api/org` answers as `settings` (no token). `null` in a
+`org` is what `GET /api/org` answers as `settings` (no token).
+`memberEnvironmentAutonomy` (on unless an admin turns it off, 2026-10-16): a
+bot runs its owner's commands in the owner's own isolated environment (their
+server environment, their Local VM) without a card
+([approval levels](approval-levels.md#the-owners-own-environment)). `null` in a
 policy list means any. `defaults` are the New bot defaults (engine, model,
 approval level).
 
 ### `POST settings`
 
 ```json
-{ "allowFullAccess": false, "pluginMarketplaces": { "mode": "list", "allow": ["acme/plugins", "acme/*"] }, "allowedEngines": ["claude"], "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }, "interimAttachDays": 0 }
+{ "allowFullAccess": false, "memberEnvironmentAutonomy": true, "pluginMarketplaces": { "mode": "list", "allow": ["acme/plugins", "acme/*"] }, "allowedEngines": ["claude"], "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }, "interimAttachDays": 0 }
 ```
 
 Any subset. Answers `{settings}` (the GET shape). Refusals: 400

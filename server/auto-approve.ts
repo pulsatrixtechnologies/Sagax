@@ -162,6 +162,9 @@ export type AutoVerdictSource =
    * (server/sagax-internal-tools.ts: Data, the agents tools in the bot's own
    * scope), which never ask. */
   | "sagax-internal"
+  /** 2026-10-16: a tool of the bot owner's own isolated environment (their
+   * server environment, their Local VM), server/member-environment.ts. */
+  | "own-environment"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -204,6 +207,9 @@ export function autoVerdict(
      * approved after a safety hold, the person's rules and the outbound
      * guard had their say, never for a sandbox widening or a gate card. */
     sagaxInternal?: boolean;
+    /** The call acts in the bot owner's own isolated environment and the
+     * organization allows it (server/member-environment.ts). */
+    ownEnvironment?: boolean;
   },
 ): AutoVerdict {
   // A question is for a person, whatever channel it arrived on — and
@@ -235,6 +241,12 @@ export function autoVerdict(
   // own rules already had their say above.
   if (context?.sagaxInternal && !context.requiresExplicitApproval) {
     return { approve: `approved ${tool} (Sagax tool)`, source: "sagax-internal" };
+  }
+  // The owner's own environment: after the safety hold and the person's
+  // deny and ask rules, never a sandbox widening, never a gate card (the
+  // gate lets these through itself, grok-approval-gate.ts).
+  if (context?.ownEnvironment && !context.requiresExplicitApproval && !context.sagaxGate) {
+    return { approve: `approved ${tool} (your own environment)`, source: "own-environment" };
   }
   // Full's promise is literal: even a sandbox widening is approved. Entering
   // Full is separately consent-gated by the bot PATCH endpoint, and the

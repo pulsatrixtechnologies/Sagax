@@ -244,7 +244,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // (none), the plugin marketplace policy (any, the default) and the
     // labeled access tokens (none).
     expect((await api("GET", "/api/org", alice)).body.settings).toEqual({
-      orgKeyConfigured: true, allowFullAccess: false, interimAttach: { until: null, people: 0 },
+      orgKeyConfigured: true, allowFullAccess: false, memberEnvironmentAutonomy: true, interimAttach: { until: null, people: 0 },
       github: { clientId: null, fromEnvironment: false }, pluginMarketplaces: { mode: "any" },
       githubTokens: [],
     });
@@ -650,7 +650,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     await waitFor(async () => existsSync(holdDump), 20_000);
     const socketPath = (JSON.parse(readFileSync(holdDump, "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers.ogb.args.at(-1) as string;
     const sockets: Socket[] = [];
-    const ask = async (tool: string, input: Record<string, unknown>) => {
+    const send = async (tool: string, input: Record<string, unknown>) => {
       const socket = connect(socketPath);
       sockets.push(socket);
       await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
@@ -659,20 +659,22 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       let buffer = "";
       socket.on("data", (chunk) => { buffer += chunk; if (buffer.includes("\n")) answer = JSON.parse(buffer.split("\n")[0]!); });
       socket.write(JSON.stringify({ t: "ask", id, kind: "permission", tool, input }) + "\n");
+      return { id, answer: () => answer };
+    };
+    const ask = async (tool: string, input: Record<string, unknown>) => {
+      const { id, answer } = await send(tool, input);
       const card = await waitFor(async () => {
         const got = await api("GET", `/api/threads/${bram.threadId}/messages?limit=100`, erin);
         return (got.body.messages as Array<{ card?: any }> | undefined)?.find((m) => m.card?.requestId === id)?.card ?? null;
       });
-      return { id, card, answer: () => answer };
+      return { id, card, answer };
     };
     const respond = (auth: Auth, requestId: string) =>
       api("POST", `/api/threads/${bram.threadId}/respond`, auth, { requestId, behavior: "allow" });
     try {
-      // a built-in read in the member's own scope: the owner's card, no admin
-      const list = await ask("mcp__agents__list_bots", {});
-      expect(list.card.adminApproval).toBeUndefined();
-      const owned = await respond(erin, list.id);
-      expect(owned.status, owned.text).toBe(200);
+      // a built-in read in the member's own scope: no admin, and since
+      // 2026-10-16 no card either (server/sagax-internal-tools.ts)
+      const list = await send("mcp__agents__list_bots", {});
       await waitFor(async () => list.answer()?.behavior === "allow");
 
       // a command on the server waits for an admin and says who

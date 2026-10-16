@@ -25,7 +25,10 @@ export interface ChatToolResult { text: string; ok: boolean; images?: ChatImageP
  * command, URL or credential is another server, as it is a new process to a
  * warm Claude). No grant for the person's own computer, which no engine lets
  * a session-wide allow cover. */
-export interface ChatToolCallView { title: string; input: Record<string, unknown>; ask: boolean; grant?: string }
+/** `mcpTool`: `<server>__<tool>` by the mount's own name and the tool's
+ * upstream name (never the model's words), for the server's approval
+ * routing (member-environment.ts, member-tool-scope.ts). */
+export interface ChatToolCallView { title: string; input: Record<string, unknown>; ask: boolean; grant?: string; mcpTool?: string }
 /** The transport cannot safely continue this turn. A dispatched operation may
  * already have taken effect, so callers must not retry it through a new round. */
 export class ChatToolSessionError extends Error {}
@@ -435,8 +438,8 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
     // organization server, data/engine.ts): no card either (2026-10-16).
     if (runs === undefined || tool?.agents || tool?.data) return { title: name, input: args, ask: false };
     const grant = tool && !tool.hostComputer ? JSON.stringify([tool.server, tool.launch, runs]) : undefined;
-    if (!tool?.searched || tool.name !== CALL_TOOL) return { title: name, input: args, ask: true, ...(grant ? { grant } : {}) };
-    return { title: chatToolName(tool.server, runs), input: object(args.arguments) ? args.arguments : {}, ask: true, ...(grant ? { grant } : {}) };
+    if (!tool?.searched || tool.name !== CALL_TOOL) return { title: name, input: args, ask: true, ...(grant ? { grant } : {}), ...(tool ? { mcpTool: `${tool.server}__${tool.name}` } : {}) };
+    return { title: chatToolName(tool.server, runs), input: object(args.arguments) ? args.arguments : {}, ask: true, ...(grant ? { grant } : {}), mcpTool: `${tool.server}__${runs}` };
   };
   /** tool_call names a deferred tool: the call it stands for. */
   const deferredCall = (args: unknown): { name: string; args: Record<string, unknown> } => {

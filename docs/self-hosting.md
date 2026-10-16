@@ -776,12 +776,18 @@ id).
   the thread shows a card saying why to the person who spoke, with what
   they can do; the owner gets a notification. The authenticated
   `GET /api/health` lists the engines and whether each is installed.
-- Until each owner gets a container of their own, a bot whose owner is not
-  an organization admin never runs with full access (`409
-  member_bot_full_access`), and a command it wants to run on the server
-  waits for an organization admin (Settings > Organization, **Commands
-  waiting for an admin**); its owner's answer is refused with `403
-  admin_approval_required`.
+- A bot whose owner is not an organization admin (2026-10-16): its owner
+  turns Full access on for it over HTTP only while the organization allows
+  Full access and their profile holds `bots.fullAccess` (Custom, and Full
+  through the desktop channel, answer `409 member_bot_full_access`); its
+  Ask, Auto-accept edits and Approve for me run as such. In the owner's own
+  isolated environment (their server environment, their Local VM) it runs
+  commands without a card while **Bots work freely in their owner's
+  environment** is on (the default; [approval levels](approval-levels.md#the-owners-own-environment)).
+  A card that would act on the server itself, or beyond the owner's own
+  rights, waits for an organization admin (Settings > Organization,
+  **Commands waiting for an admin**, or the console's inbox); its owner's
+  answer is refused with `403 admin_approval_required`.
 
 ### Rights, teams, owner keys and sections (slice 4)
 

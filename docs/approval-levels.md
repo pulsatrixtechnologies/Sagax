@@ -77,6 +77,51 @@ A turn a webhook, a routine, or another bot started runs in the bot's level
 like any other turn. The decision log records that nobody was at the keyboard
 when such a turn asked.
 
+### A member's bot on an organization server
+
+A bot whose owner is a member (not an organization admin) runs at its own
+level like any bot since 2026-10-16: Ask, Auto-accept edits and Approve for
+me pass through to the provider. Custom stays Ask (a `config.toml` on the
+shared server is not the member's), and Full keeps the organization rules
+above. Every organization turn withholds the engines' own tools that act on
+the server (shell, files, fetch: `docs/user-sandbox.md`), so what reaches
+Sagax is a Sagax tool, routed per tool: a card that would act on the shared
+server or beyond the owner's own rights still goes to an organization admin
+(an admin card, answered once and never remembered, whatever the level).
+
+### The owner's own environment
+
+On an organization server each person has their own isolated environment:
+their server environment (`sagax-environment`: one sandbox per person, no
+capability, no host mount, no private-network egress) and, on their own
+computer, their Local VM (the `local_vm` tool of `sagax-desktop`). A bot
+working for its owner in that owner's own environment runs every command
+it needs there without a card, at any level, while the organization allows
+it: **Settings > Organization > Bots work freely in their owner's
+environment**, or `memberEnvironmentAutonomy` in the admin API's `POST
+settings` (on unless an admin turns it off; each change is an `org.settings`
+row). It is Full access bounded to that environment
+(`server/member-environment.ts`):
+
+- only the server environment's tools (`run_command`, `read_file`,
+  `write_file`, `list_files`, `browse`, `computer_list_tools`,
+  `computer_use`) and `local_vm`, matched by exact name;
+- only when the environment this turn mounted belongs to the bot's owner
+  (the person speaking is the owner, or a routine that runs as the owner).
+  A bot shared with someone else, working in that person's environment,
+  keeps the owner's card;
+- never an admin card, and never answered for a safety hold, the person's
+  own deny or ask rule, a sandbox widening, a question or a guest's turn;
+- each call leaves a decision-log row (`own-environment`) and a receipt in
+  the conversation;
+- This computer (every other `sagax-desktop` tool: the person's real files,
+  apps and network) is not an isolated environment and keeps its cards.
+
+On a Grok turn under the approval gate (`docs/grok-approval-gate.md`) the
+same tools pass the gate unasked: Sagax marks the mount when the owner rule
+holds (`SAGAX_OWN_ENVIRONMENT`, a reserved variable no person's server can
+set).
+
 ### A Primary Bot's level covers the work it delegates
 
 Approvals were where a team's owner spent their day: every teammate a Primary
@@ -95,8 +140,9 @@ on Custom keeps its own configuration, and a Primary Bot delegating from an
 Ask conversation passes nothing on. A teammate's engine caps the level: one
 without Full access gets Approve for me, and one without Auto-accept edits
 (Codex, whose Ask already writes the workspace) stays on its own level. On an
-organization server, a bot a member owns never runs with Full access: a Full
-Primary Bot's work reaches it as Approve for me. The teammate's own default
+organization server, a teammate inherits a Primary Bot's Full only when its
+own owner allowed Full for it and the organization allows Full; otherwise a
+Full Primary Bot's work reaches it as Approve for me. The teammate's own default
 and its other conversations do not change, and an ordinary bot's delegation
 still uses the recipient's setting. Questions and missing credentials still
 reach you.

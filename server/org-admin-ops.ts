@@ -56,6 +56,7 @@ export interface OpsDeps {
 
 export interface SettingsChanges {
   allowFullAccess?: boolean;
+  memberEnvironmentAutonomy?: boolean;
   pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
   allowedEngines?: string[] | null;
   defaults?: { engine?: string | null; model?: string | null; approvalMode?: string | null };
@@ -82,13 +83,17 @@ export async function timed(check: () => Promise<TestResult | null>): Promise<{ 
 }
 
 function settingsChanges(body: Record<string, unknown>): SettingsChanges | string {
-  const extra = onlyKeys(body, ["allowFullAccess", "pluginMarketplaces", "allowedEngines", "defaults", "interimAttachDays"]);
+  const extra = onlyKeys(body, ["allowFullAccess", "memberEnvironmentAutonomy", "pluginMarketplaces", "allowedEngines", "defaults", "interimAttachDays"]);
   if (extra) return extra;
   if (!Object.keys(body).length) return "Send at least one setting.";
   const out: SettingsChanges = {};
   if (body.allowFullAccess !== undefined) {
     if (typeof body.allowFullAccess !== "boolean") return "allowFullAccess is true or false.";
     out.allowFullAccess = body.allowFullAccess;
+  }
+  if (body.memberEnvironmentAutonomy !== undefined) {
+    if (typeof body.memberEnvironmentAutonomy !== "boolean") return "memberEnvironmentAutonomy is true or false.";
+    out.memberEnvironmentAutonomy = body.memberEnvironmentAutonomy;
   }
   if (body.pluginMarketplaces !== undefined) {
     const value = objectBody(body.pluginMarketplaces);

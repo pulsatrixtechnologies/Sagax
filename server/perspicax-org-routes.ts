@@ -5,7 +5,7 @@
 //                             invitations: Perspicax owns both)
 //   GET   /api/org/directory  the people a bot owner may share with (client)
 //   PATCH /api/org/settings   { interimAttachDays?, allowFullAccess?,
-//                             pluginMarketplaces?, githubClientId?,
+//                             memberEnvironmentAutonomy?, pluginMarketplaces?, githubClientId?,
 //                             githubTokens? }
 //                             (organization admin). githubTokens is one
 //                             explicit change (add, remove, rename, replace).
@@ -38,6 +38,10 @@ export interface OrgSettings {
   /** Whether bots may run with Full access (server/org-full-access.ts):
    * on by default, an admin turns it off. */
   allowFullAccess: boolean;
+  /** 2026-10-16: a bot a member owns runs commands in its owner's own
+   * isolated environment without a card (server/member-environment.ts):
+   * on by default, an admin turns it off. */
+  memberEnvironmentAutonomy: boolean;
   /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts):
    * any marketplace by default, or the admin's list. */
   pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
@@ -115,6 +119,7 @@ export interface PerspicaxOrgRouteDeps {
   /** Allow or refuse Full access for the organization's bots; throws when
    * it could not be written. */
   saveAllowFullAccess?(allowed: boolean, auth: RequestAuth): void;
+  saveMemberEnvironmentAutonomy?(allowed: boolean, auth: RequestAuth): void;
   /** Set the marketplace list (or any); throws a 400-worthy Error on a bad entry. */
   savePluginMarketplaces?(policy: unknown, auth: RequestAuth): void;
   /** Set (or with null clear) the GitHub OAuth App client id. */
@@ -213,17 +218,19 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       // serves whenever an admin set one, so it is refused like any other.
       const days = keys?.includes("interimAttachDays");
       const fullAccess = keys?.includes("allowFullAccess");
+      const memberEnvironment = keys?.includes("memberEnvironmentAutonomy");
       const marketplaces = keys?.includes("pluginMarketplaces");
       const githubClient = keys?.includes("githubClientId");
       const githubTokens = keys?.includes("githubTokens");
-      const known = new Set(["interimAttachDays", "allowFullAccess", "pluginMarketplaces", "githubClientId", "githubTokens"]);
+      const known = new Set(["interimAttachDays", "allowFullAccess", "memberEnvironmentAutonomy", "pluginMarketplaces", "githubClientId", "githubTokens"]);
       if (!keys || !keys.length || keys.some((key) => !known.has(key)) ||
         (days && (!deps.saveInterimAttachDays || !Number.isInteger(body.interimAttachDays) || body.interimAttachDays < 0 || body.interimAttachDays > 90)) ||
         (fullAccess && (!deps.saveAllowFullAccess || typeof body.allowFullAccess !== "boolean")) ||
+        (memberEnvironment && (!deps.saveMemberEnvironmentAutonomy || typeof body.memberEnvironmentAutonomy !== "boolean")) ||
         (marketplaces && !deps.savePluginMarketplaces) ||
         (githubClient && (!deps.saveGithubClientId || (body.githubClientId !== null && (typeof body.githubClientId !== "string" || !/^[\x21-\x7e]{1,128}$/.test(body.githubClientId.trim()))))) ||
         (githubTokens && !deps.githubTokens)) {
-        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 }, { allowFullAccess: true | false }, { pluginMarketplaces: { mode: \"any\" } | { mode: \"list\", allow: [...] } }, { githubClientId: string | null } or { githubTokens: { op: \"add\" | \"remove\" | \"rename\" | \"replace\" } }" });
+        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 }, { allowFullAccess: true | false }, { memberEnvironmentAutonomy: true | false }, { pluginMarketplaces: { mode: \"any\" } | { mode: \"list\", allow: [...] } }, { githubClientId: string | null } or { githubTokens: { op: \"add\" | \"remove\" | \"rename\" | \"replace\" } }" });
       }
       let tokenChange: OrgGithubTokenChange | undefined;
       if (githubTokens) {
@@ -242,6 +249,7 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       try {
         if (days) deps.saveInterimAttachDays!(body.interimAttachDays, auth);
         if (fullAccess) deps.saveAllowFullAccess!(body.allowFullAccess, auth);
+        if (memberEnvironment) deps.saveMemberEnvironmentAutonomy!(body.memberEnvironmentAutonomy, auth);
         if (githubClient) deps.saveGithubClientId!(typeof body.githubClientId === "string" ? body.githubClientId.trim() : null, auth);
         if (tokenChange) deps.githubTokens!.change(tokenChange, auth);
       } catch (error) {

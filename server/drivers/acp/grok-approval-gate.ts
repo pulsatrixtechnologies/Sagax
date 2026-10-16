@@ -27,6 +27,10 @@ import { FLOW_TOOL_NAMES, FLOW_TOOLS_MCP_NAME } from "../../flow-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../../auto-computer.ts";
 import { cloudOnlyBot } from "../../cloud-only-bots.ts";
 import { DATA_MCP_SERVER, DATA_TOOL_NAMES } from "../../sagax-internal-tools.ts";
+import { LOCAL_VM_TOOL, OWN_ENVIRONMENT_ENV, SERVER_ENVIRONMENT_TOOLS } from "../../member-environment.ts";
+import { SPAWNED_PROXIES } from "../../proxy-paths.ts";
+import { USER_SANDBOX_MCP_NAME } from "../../user-sandbox-routing.ts";
+import { DESKTOP_BRIDGE_MCP_NAME } from "../../../shared/bot-workplace.ts";
 
 export const GROK_APPROVAL_GATE_FILE = "grok-approval-gate.json";
 
@@ -61,5 +65,20 @@ export function gateReadOnlyTools(server: { name: string; builtin: boolean; spec
   if (server.builtin && server.name === AUTO_COMPUTER_MCP_NAME && cloudOnlyBot(botId, dataDir)) return ["computer_select"];
   if (!server.builtin && server.name !== "agents" && isPerspicaxBridge(server.spec)) return [...PERSPICAX_READ_ONLY_TOOLS];
   if (!server.builtin && server.name === FLOW_TOOLS_MCP_NAME && isFlowToolsServer(server.spec)) return [...FLOW_TOOL_NAMES];
+  // 2026-10-16: the bot owner's own environment, which Sagax marked at mount
+  // because the organization allows it (member-environment.ts).
+  if (!server.builtin && isOwnEnvironmentMount(server.spec)) {
+    if (server.name === USER_SANDBOX_MCP_NAME) return [...SERVER_ENVIRONMENT_TOOLS];
+    if (server.name === DESKTOP_BRIDGE_MCP_NAME) return [LOCAL_VM_TOOL];
+  }
   return [];
+}
+
+/** A harness-spawned environment proxy Sagax marked as the bot owner's own
+ * environment. A person's MCP server cannot carry the marker (SAGAX_
+ * variables are reserved) nor the proxy's exact path. */
+export function isOwnEnvironmentMount(spec: McpServerSpec | undefined, proxyPath: string = SPAWNED_PROXIES.userSandbox): boolean {
+  if (!spec || "url" in spec) return false;
+  const stdio = spec as { args?: unknown; env?: Record<string, unknown> };
+  return Array.isArray(stdio.args) && stdio.args[0] === proxyPath && stdio.env?.[OWN_ENVIRONMENT_ENV] === "1";
 }

@@ -1017,6 +1017,7 @@ import { createMcpAuditInternalRoutes } from "./routes/mcp-audit-internal.ts";
 import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/routine-run-internal.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
+import { memberEnvironmentAutonomyAllowed, OWN_ENVIRONMENT_ENV, ownEnvironmentCall } from "./member-environment.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
@@ -4686,21 +4687,30 @@ function mountUserSandbox(
   const auto = input.auto ?? undefined;
   turnWorkplaces.set(input.threadId, { generation: input.generation, botId: input.botId, decision, staging: input.staging, ...(auto ? { auto } : {}) });
   if (!input.customMcp || !decision.principal) return;
+  // 2026-10-16: the owner's own environment is marked for the Grok gate,
+  // which then lets its tools through unasked (member-environment.ts).
+  const bot = store.bot(input.botId);
+  const own = Boolean(bot) && ownEnvironmentCall({
+    identity: IDENTITY.kind, policyAllowed: memberEnvironmentAutonomyAllowed(cfg.organization),
+    tool: `${USER_SANDBOX_MCP_NAME}__run_command`, environmentPrincipalId: decision.principal,
+    ownerPrincipalId: effectiveBotOwner(bot!), guestDriven: false,
+  });
+  const mark = <T extends { env: Record<string, string> }>(spec: T): T => (own ? { ...spec, env: { ...spec.env, [OWN_ENVIRONMENT_ENV]: "1" } } : spec);
   if (decision.target === "user-sandbox") {
-    integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+    integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: mark(userSandboxIntegration(input.botId, input.threadId, input.generation, decision.principal)) };
   } else if (decision.target === "user-desktop" && desktopBridges.connected(decision.principal)) {
-    integrations.custom = { ...integrations.custom, [DESKTOP_BRIDGE_MCP_NAME]: userDesktopIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+    integrations.custom = { ...integrations.custom, [DESKTOP_BRIDGE_MCP_NAME]: mark(userDesktopIntegration(input.botId, input.threadId, input.generation, decision.principal)) };
   }
   // Auto: the bot picks the computer per step (computer_select); a fixed
   // Works on gets the tool too, and it says the setting is fixed.
   if (auto) {
     integrations.custom = { ...integrations.custom, [AUTO_COMPUTER_MCP_NAME]: workplaceIntegration(input.botId, input.threadId, input.generation) };
     if (auto.auto && auto.desktopMounted && !integrations.custom[DESKTOP_BRIDGE_MCP_NAME]) {
-      integrations.custom = { ...integrations.custom, [DESKTOP_BRIDGE_MCP_NAME]: userDesktopIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+      integrations.custom = { ...integrations.custom, [DESKTOP_BRIDGE_MCP_NAME]: mark(userDesktopIntegration(input.botId, input.threadId, input.generation, decision.principal)) };
     }
     // Started on their computer: the cloud stays one switch away.
     if (auto.auto && auto.sandboxConfigured && decision.target === "user-desktop" && !integrations.custom[USER_SANDBOX_MCP_NAME]) {
-      integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+      integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: mark(userSandboxIntegration(input.botId, input.threadId, input.generation, decision.principal)) };
     }
   }
 }
@@ -6669,9 +6679,14 @@ const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = b
   // otherwise Ask. Host tools stay withheld either way (withholdHostTools).
   const stored = approvalModeFor(bot);
   if (stored === "full" && orgDeniesFull(bot)) return "ask";
-  // A member's bot on an organization server never runs unasked otherwise
-  // (JC rule until per-owner containers): its Custom or Auto are Ask here.
-  if (memberOwnedInOrg(bot) && stored !== "full") return "ask";
+  // A member's bot on an organization server: Custom (a config.toml on the
+  // shared server) stays Ask. Its Auto and Auto-accept edits run as such
+  // since 2026-10-16 (JC): every organization turn withholds the engines'
+  // own host tools (withholdHostToolsFor) and a person's shell and files go
+  // to their own environment, so what the provider leaves to Sagax is
+  // routed per tool (memberBotAdminApproval keeps host-level cards for an
+  // admin, always asked).
+  if (memberOwnedInOrg(bot) && stored === "custom") return "ask";
   // On a Cloud home a turn a guest drives runs in Ask, whatever the bot's
   // own level. Judged by the conversation the turn runs in (a room's, for a
   // room turn), never by whichever of the bot's conversations is active.
@@ -12219,10 +12234,15 @@ bus.subscribe((event: RuntimeEvent) => {
       // in the member's own scope (member-tool-scope.ts) is recognized.
       // 2026-10-14: a tool within the owner's own rights (a remote or
       // personal MCP server, a web search) is the owner's card, not an admin's.
+      // 2026-10-16: a tool of the owner's own isolated environment (their
+      // server environment, their Local VM), mounted for this turn, runs
+      // unasked while the organization allows it (member-environment.ts).
+      const ownEnvironment = Boolean(permission && asker && event.requestId && ownEnvironmentRequest(asker, event.threadId, event.mcpTool ?? event.tool, guestDriven));
       const adminApproval = Boolean(memberAsker && asker && memberBotAdminApproval({
         tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
         ownerScopedMcpServer: ownerScopedMcpServerFor(asker, event.threadId),
+        ownEnvironment,
       }));
       const command = permission && asker && event.requestId && !event.requiresExplicitApproval && event.command && !adminApproval && !guestDriven
         ? commandAllowlistCandidate({ ...event.command, providerInstanceId: event.providerInstanceId ?? asker.modelSelection.instanceId })
@@ -12286,6 +12306,7 @@ bus.subscribe((event: RuntimeEvent) => {
           // 2026-10-16: Sagax's own person-scoped tools never ask
           // (sagax-internal-tools.ts), on any engine and at any level.
           sagaxInternal: !adminApproval && !guestDriven && !event.requiresExplicitApproval && sagaxInternalTool(event.mcpTool ?? event.tool) !== null,
+          ownEnvironment,
         })
         : null;
       // 2026-10-14 (bot owner permissions): what the owner decided ahead of
@@ -12390,7 +12411,7 @@ bus.subscribe((event: RuntimeEvent) => {
             if (outcome !== "unavailable") pushMessage({
               role: "bot", kind: "activity",
               tool: outcome === "rejected"
-                ? { name: `The provider rejected this action despite ${verdict.source === "command-allowlist" ? "the saved command permission" : verdict.source === "widget-approval" ? "your approval in the ConnectWise widget" : verdict.source === "owner-rule" || verdict.source === "custom-rule" ? "your rule" : verdict.source === "email-draft-approval" ? "your approval of the email draft" : verdict.source === "owner-auto" ? "automatic approval" : verdict.source === "owner-bypass" ? "bypass" : "Full access"}.`, ok: false }
+                ? { name: `The provider rejected this action despite ${verdict.source === "command-allowlist" ? "the saved command permission" : verdict.source === "widget-approval" ? "your approval in the ConnectWise widget" : verdict.source === "owner-rule" || verdict.source === "custom-rule" ? "your rule" : verdict.source === "email-draft-approval" ? "your approval of the email draft" : verdict.source === "owner-auto" ? "automatic approval" : verdict.source === "owner-bypass" ? "bypass" : verdict.source === "own-environment" ? "your own environment" : "Full access"}.`, ok: false }
                 : failedTurnTool("could not deliver approval to the provider; retry the task after reconnecting."),
             });
             return;
@@ -25818,6 +25839,20 @@ function botOwnerOrgRole(bot: { ownerUserId?: unknown }): "admin" | "member" | u
 function memberOwnedInOrg(bot: { ownerUserId?: unknown }): boolean {
   return memberOwnedBot({ identity: IDENTITY.kind, ownerOrgRole: botOwnerOrgRole(bot) });
 }
+/** 2026-10-16: whether a permission request of this bot acts in its
+ * owner's own isolated environment, the one this turn mounted for this bot
+ * (member-environment.ts). */
+function ownEnvironmentRequest(bot: BotRecord, threadId: string, tool: string | undefined, guestDriven: boolean): boolean {
+  const workplace = turnWorkplaces.get(threadId);
+  return ownEnvironmentCall({
+    identity: IDENTITY.kind,
+    policyAllowed: memberEnvironmentAutonomyAllowed(cfg.organization),
+    tool,
+    environmentPrincipalId: workplace?.botId === bot.id ? workplace.decision.principal : null,
+    ownerPrincipalId: effectiveBotOwner(bot),
+    guestDriven,
+  });
+}
 /** Organization server (org-full-access.ts): the admin policy, on unless
  * an admin turned it off in Settings > Organization. */
 function orgFullAccessPolicy(): boolean {
@@ -26117,6 +26152,7 @@ function orgSettings(): OrgSettings {
   return {
     orgKeyConfigured: orgKeyConfigured(),
     allowFullAccess: orgFullAccessPolicy(),
+    memberEnvironmentAutonomy: memberEnvironmentAutonomyAllowed(cfg.organization),
     pluginMarketplaces: pluginMarketplacePolicy() ?? { mode: "any" },
     github: { clientId: githubClientId() ?? null, fromEnvironment: !cfg.organization?.githubClientId && Boolean(process.env.SAGAX_GITHUB_CLIENT_ID?.trim()) },
     ...(IDENTITY.kind === "perspicax"
@@ -27625,6 +27661,9 @@ if (IDENTITY.kind === "perspicax") {
     // (org-full-access.ts). Turning it off makes stored Full run as Ask and
     // refuses new turns asking Full; nothing is rewritten.
     saveAllowFullAccess: (allowed, auth) => saveOrgAllowFullAccess(allowed, orgAuditActor(auth)),
+    // 2026-10-16: bots run their owner's commands in the owner's own
+    // isolated environment without a card (member-environment.ts).
+    saveMemberEnvironmentAutonomy: (allowed, auth) => saveOrgMemberEnvironmentAutonomy(allowed, orgAuditActor(auth)),
     // Where bots' plugins may come from (server/bot-plugins.ts): any
     // marketplace, or the admin's list of owner/repo, owner/* or URLs.
     savePluginMarketplaces: (raw, auth) => saveOrgPluginMarketplaces(raw, orgAuditActor(auth)),
@@ -29241,6 +29280,7 @@ const orgOpsDeps: OpsDeps = {
       throw new ConsoleRefusal(400, "invalid_policy", error instanceof Error ? error.message : "That marketplace list is not valid.");
     }
     if (changes.allowFullAccess !== undefined) saveOrgAllowFullAccess(changes.allowFullAccess, actor);
+    if (changes.memberEnvironmentAutonomy !== undefined) saveOrgMemberEnvironmentAutonomy(changes.memberEnvironmentAutonomy, actor);
     if (changes.interimAttachDays !== undefined) saveOrgInterimAttachDays(changes.interimAttachDays, actor);
     if (changes.allowedEngines !== undefined) {
       const before = cfg.organization?.allowedEngines ?? null;
@@ -29297,6 +29337,15 @@ function saveOrgAllowFullAccess(allowed: boolean, actor: AdminActor): void {
   orgAudit({
     category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowFullAccess"],
     before: { allowFullAccess: before }, after: { allowFullAccess: allowed }, actor,
+  });
+}
+function saveOrgMemberEnvironmentAutonomy(allowed: boolean, actor: AdminActor): void {
+  const before = memberEnvironmentAutonomyAllowed(cfg.organization);
+  saveConfig({ organization: { ...cfg.organization, memberEnvironmentAutonomy: allowed } });
+  cfg.organization = { ...cfg.organization, memberEnvironmentAutonomy: allowed };
+  orgAudit({
+    category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["memberEnvironmentAutonomy"],
+    before: { memberEnvironmentAutonomy: before }, after: { memberEnvironmentAutonomy: allowed }, actor,
   });
 }
 function saveOrgPluginMarketplaces(raw: unknown, actor: AdminActor): void {

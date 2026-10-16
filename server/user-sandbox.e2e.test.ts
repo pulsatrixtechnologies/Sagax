@@ -15,7 +15,7 @@
 //             The bot computer routes do not open a shared machine.
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { connect, type AddressInfo, type Socket } from "node:net";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -173,6 +173,8 @@ posixOnly("organization server environments (user-sandbox)", () => {
           },
           config: { cli: FAKE_CLAUDE, fullAuto: true },
         },
+        // A turn that waits, so a test speaks to its permission broker.
+        hold: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: join(home, "hold-dump.json") }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
       },
     }));
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
@@ -214,6 +216,63 @@ posixOnly("organization server environments (user-sandbox)", () => {
     await new Promise<void>((resolve) => provisioner?.close(() => resolve()));
     if (home) removeTempDir(home);
   });
+
+  it("2026-10-16: a member's bot runs commands in its owner's own environment unasked, while the organization allows it", async () => {
+    const created = await api("POST", "/api/bots", bob, { name: "Moss" });
+    expect(created.status, created.text).toBe(201);
+    const moss = { id: created.body.bot.id as string, threadId: created.body.bot.threadId as string };
+    expect((await api("PATCH", `/api/bots/${moss.id}`, bob, { modelSelection: { instanceId: "hold", model: "fake-model" } })).status).toBe(200);
+    const holdDump = join(home, "hold-dump.json");
+    rmSync(holdDump, { force: true });
+    expect((await api("POST", `/api/bots/${moss.id}/messages`, bob, { text: "work in your environment" })).status).toBe(202);
+    await waitFor(async () => existsSync(holdDump), 20_000);
+    const mcp = (JSON.parse(readFileSync(holdDump, "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers;
+    // the mount carries the owner marker the Grok gate reads
+    expect(Object.keys(mcp)).toContain("sagax-environment");
+    // (inside the result-budget gate's wrapper, which carries the original env)
+    expect(JSON.stringify(mcp["sagax-environment"])).toContain("SAGAX_OWN_ENVIRONMENT");
+    const socketPath = mcp.ogb.args.at(-1) as string;
+    const sockets: Socket[] = [];
+    const ask = async (tool: string, input: Record<string, unknown>) => {
+      const socket = connect(socketPath);
+      sockets.push(socket);
+      await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+      const id = `own-env-${sockets.length}`;
+      let answer: any;
+      let buffer = "";
+      socket.on("data", (chunk) => { buffer += chunk; if (buffer.includes("\n")) answer = JSON.parse(buffer.split("\n")[0]!); });
+      socket.write(JSON.stringify({ t: "ask", id, kind: "permission", tool, input }) + "\n");
+      return { id, answer: () => answer };
+    };
+    const cardOf = async (id: string) => waitFor(async () => {
+      const got = await api("GET", `/api/threads/${moss.threadId}/messages?limit=200`, bob);
+      return (got.body.messages as Array<{ card?: any }> | undefined)?.find((m) => m.card?.requestId === id)?.card ?? null;
+    });
+    try {
+      // in Bob's own server environment: approved at once, no card, no admin
+      const own = await ask("mcp__sagax-environment__run_command", { command: "npm install" });
+      await waitFor(async () => own.answer()?.behavior === "allow");
+      const rows = (await api("GET", `/api/threads/${moss.threadId}/messages?limit=200`, bob)).body.messages as Array<{ card?: any; tool?: { name?: string } }>;
+      expect(rows.some((m) => m.card?.requestId === own.id)).toBe(false);
+      await waitFor(async () => ((await api("GET", `/api/threads/${moss.threadId}/messages?limit=200`, bob)).body.messages as Array<{ tool?: { name?: string } }>)
+        .some((m) => m.tool?.name?.includes("your own environment")));
+      // a command on the server itself still waits for an admin
+      const shell = await ask("Bash", { command: "cat /etc/hostname" });
+      expect((await cardOf(shell.id)).adminApproval).toBe(true);
+      // the admin turns it off: the same call becomes a card again
+      const off = await api("PATCH", "/api/org/settings", alice, { memberEnvironmentAutonomy: false });
+      expect(off.status, off.text).toBe(200);
+      expect(off.body.settings.memberEnvironmentAutonomy).toBe(false);
+      expect((await api("PATCH", "/api/org/settings", bob, { memberEnvironmentAutonomy: true })).status).toBe(403);
+      const held = await ask("mcp__sagax-environment__run_command", { command: "ls" });
+      expect(await cardOf(held.id)).toBeTruthy();
+      expect(held.answer()).toBeUndefined();
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await api("PATCH", "/api/org/settings", alice, { memberEnvironmentAutonomy: true });
+      await api("POST", `/api/bots/${moss.id}/interrupt`, bob, {});
+    }
+  }, 90_000);
 
   it("creates nothing before the first tool call", async () => {
     expect((await api("GET", "/api/me/server-environment", alice)).body).toMatchObject({ configured: true, state: "missing" });

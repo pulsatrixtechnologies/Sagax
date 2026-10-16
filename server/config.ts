@@ -451,6 +451,11 @@ const appConfigSchema = z.object({
      * (server/org-full-access.ts). Absent means allowed; an admin turns it
      * off in Settings > Organization. */
     allowFullAccess: z.boolean().optional(),
+    /** 2026-10-16 (JC): a bot a member owns runs its commands in its owner's
+     * own isolated environment (their server environment, their Local VM)
+     * without an approval card (server/member-environment.ts). Absent means
+     * on; an admin turns it off in Settings > Organization. */
+    memberEnvironmentAutonomy: z.boolean().optional(),
     /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts).
      * Absent means any marketplace; an admin may keep a list. */
     pluginMarketplaces: z.union([
@@ -706,6 +711,7 @@ export interface AppConfig {
   organization?: {
     interimAttach?: { since: number; days: number };
     allowFullAccess?: boolean;
+    memberEnvironmentAutonomy?: boolean;
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     githubClientId?: string;
     allowedEngines?: string[];

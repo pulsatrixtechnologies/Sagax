@@ -168,7 +168,12 @@ export function memberBotAdminApproval(input: {
    * bot, or a personal connection of the owner, which runs in their own
    * environment). Absent: no MCP server is. */
   ownerScopedMcpServer?: (server: string) => boolean;
+  /** 2026-10-16: the call acts in the owner's own isolated environment
+   * (member-environment.ts ownEnvironmentCall): the owner's work, never an
+   * admin's. */
+  ownEnvironment?: boolean;
 }): boolean {
+  if (input.ownEnvironment) return false;
   if (serverCommandApproval(input)) return true;
   if (memberOwnScopeTool(input.tool?.trim())) return false;
   // 2026-10-16: the Data tools are the bot's own database, confined to its

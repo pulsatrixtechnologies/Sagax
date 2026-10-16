@@ -22,7 +22,7 @@ function answer(auth: RequestAuth, method = "GET") {
     directory: () => null,
     bySubject: () => null,
     viewerRole: () => "member",
-    settings: () => ({ orgKeyConfigured: false, allowFullAccess: true }),
+    settings: () => ({ orgKeyConfigured: false, allowFullAccess: true, memberEnvironmentAutonomy: true }),
     pendingAdminApprovals: () => [],
     routineDelegation: {
       status: () => ({ state: "none" }),
@@ -76,7 +76,7 @@ describe("/api/org/directory manageUrl (person panel)", () => {
       }) as never,
       bySubject: () => ({ id: "pr_ada" }) as never,
       viewerRole: () => role,
-      settings: () => ({ orgKeyConfigured: false, allowFullAccess: true }),
+      settings: () => ({ orgKeyConfigured: false, allowFullAccess: true, memberEnvironmentAutonomy: true }),
       pendingAdminApprovals: () => [],
     });
     const ctx = {
@@ -115,7 +115,7 @@ describe("/api/org/settings githubClientId", () => {
       viewerRole: () => opts.role,
       settings: () => ({
         orgKeyConfigured: false,
-        allowFullAccess: true,
+        allowFullAccess: true, memberEnvironmentAutonomy: true,
         github: { clientId: saved.at(-1) ?? null, fromEnvironment: false },
       }),
       pendingAdminApprovals: () => [],
@@ -191,7 +191,7 @@ describe("/api/org/settings github access tokens", () => {
         viewerRole: () => input.role,
         settings: () => ({
           orgKeyConfigured: false,
-          allowFullAccess: true,
+          allowFullAccess: true, memberEnvironmentAutonomy: true,
           github: { clientId: null, fromEnvironment: false },
           pluginMarketplaces: { mode: "any" as const },
         }),

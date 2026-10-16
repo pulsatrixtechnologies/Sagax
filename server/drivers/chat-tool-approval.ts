@@ -5,7 +5,7 @@ import type { AskQuestion } from "../../shared/ask-question.ts";
 
 /** `grant`: what "Always allow this session" on this card would keep allowed
  * (ChatToolCallView.grant). Absent when the card can only allow once. */
-interface Ask { id: string; tool: string; summary: string; grant?: string }
+interface Ask { id: string; tool: string; summary: string; grant?: string; mcpTool?: string }
 type Source = "user" | "timeout" | "system";
 
 interface Card {
@@ -30,10 +30,10 @@ export function createChatToolApproval(options: {
   const pending = new Map<string, Card>();
   let closed = false;
   return {
-    ask(tool: string, summary: string, grant?: string): Promise<boolean> {
+    ask(tool: string, summary: string, grant?: string, mcpTool?: string): Promise<boolean> {
       if (closed || options.signal.aborted) return Promise.resolve(false);
       if (grant !== undefined && options.granted?.has(grant)) return Promise.resolve(true);
-      const ask: Ask = { id: newId(), tool, summary, ...(grant !== undefined && options.granted ? { grant } : {}) };
+      const ask: Ask = { id: newId(), tool, summary, ...(grant !== undefined && options.granted ? { grant } : {}), ...(mcpTool ? { mcpTool } : {}) };
       return new Promise((resolve) => {
         let timer: ReturnType<typeof setTimeout>;
         const card: Card = {
