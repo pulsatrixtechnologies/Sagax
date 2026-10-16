@@ -1,5 +1,5 @@
 import { useId, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
-import { Check, ChevronDown, CircleHelp, Copy, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, CircleHelp, Copy, ExternalLink, X } from "lucide-react";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { SWITCH_OFF, SWITCH_ON, SWITCH_THUMB_OFF, SWITCH_THUMB_ON } from "@/lib/status-tones";
@@ -672,5 +672,145 @@ export function FoldRow({ cardId, defaultOpen = false, label, description, help,
         <CountPill open={open} onToggle={toggle} label={toggleLabel ?? label} count={count} controls={bodyId} />
       </DescribedRow>
     </div>
+  );
+}
+
+/** Grok Bot's filled pill for the one action a window is for ("Update",
+ * "Call"), beside grey PILLs. */
+export const PRIMARY_PILL = `${PILL} ui-button-primary`;
+
+/** The rounded card a SettingsGroup draws around its rows, for a list of
+ * rows that needs no grey heading (About's links). */
+export const GROUP_CARD = "flex flex-col overflow-clip rounded-xl border-[0.5px] border-border bg-elevated py-1.5";
+
+/** A window drawn like Settings (2026-10-16, JC: every window of the app
+ * follows Settings): its frame (14 px corners, hairline border, the app
+ * background), the title at the top left in the Settings heading type, the
+ * round close button at the top right, a body of grey-headed groups and
+ * the pills at the bottom right. The widths are Grok Bot's dialog steps
+ * (400, 480) plus Settings' own column (`xl`, the release notes). */
+export const DIALOG = {
+  backdrop: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6",
+  frame: "relative flex max-h-[calc(100dvh-48px)] w-full flex-col overflow-hidden rounded-[14px] border border-border bg-app text-ink outline-none",
+  width: {
+    sm: "max-w-[400px]",
+    md: "max-w-[440px]",
+    lg: "max-w-[560px]",
+    xl: "max-w-[700px]",
+  },
+  header: "shrink-0 px-5 pb-1 pr-12 pt-5",
+  headerWide: "shrink-0 px-5 pb-1 pr-12 pt-6 sm:px-8",
+  title: "text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink",
+  subtitle: "mt-0.5 text-[13px] leading-[18px] text-ink-secondary",
+  close: "absolute right-2.5 top-2.5 z-10 flex size-8 items-center justify-center rounded-full text-ink-tertiary transition-colors hover:bg-ink/10 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none touch:size-11",
+  body: "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5 pt-3",
+  bodyWide: "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-6 pt-3 sm:px-8",
+  footer: "flex shrink-0 flex-wrap items-center justify-end gap-2 px-5 pb-5",
+} as const;
+
+export type DialogWidth = keyof typeof DIALOG.width;
+
+/** The round close button of a window drawn like Settings. */
+export function DialogCloseButton({ label, onClick, buttonRef, disabled }: {
+  label: string;
+  onClick: () => void;
+  buttonRef?: React.Ref<HTMLButtonElement>;
+  disabled?: boolean;
+}) {
+  return (
+    <button ref={buttonRef} type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} data-dialog-close="" className={cn(DIALOG.close, "disabled:opacity-40")}>
+      <X size={18} aria-hidden="true" />
+    </button>
+  );
+}
+
+/** A window's frame drawn like Settings, without its backdrop (each caller
+ * keeps its own layer, portal and keyboard): the title (with an optional
+ * `leading` avatar or mark and a short grey `subtitle`), the close button,
+ * `toolbar` under the title (a version menu), the scrolling body, and
+ * `footer` pills. */
+export function DialogFrame({
+  titleId,
+  title,
+  subtitle,
+  subtitleId,
+  leading,
+  width = "sm",
+  wide,
+  role = "dialog",
+  closeLabel,
+  onClose,
+  closeRef,
+  closeDisabled,
+  frameRef,
+  frameProps,
+  toolbar,
+  footer,
+  children,
+}: {
+  titleId: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  subtitleId?: string;
+  leading?: React.ReactNode;
+  width?: DialogWidth;
+  /** Settings' wider side margins (the release notes' reading column). */
+  wide?: boolean;
+  role?: "dialog" | "alertdialog";
+  /** Without it the window has no close button (a confirmation, whose
+   * Cancel pill closes it). */
+  closeLabel?: string;
+  onClose?: () => void;
+  closeRef?: React.Ref<HTMLButtonElement>;
+  closeDisabled?: boolean;
+  frameRef?: React.Ref<HTMLDivElement>;
+  /** data-* hooks and aria-describedby / aria-busy for the frame */
+  frameProps?: Record<string, string | boolean | undefined>;
+  toolbar?: React.ReactNode;
+  footer?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      ref={frameRef}
+      role={role}
+      aria-modal="true"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+      {...frameProps}
+      className={cn(DIALOG.frame, DIALOG.width[width])}
+    >
+      {closeLabel && onClose && <DialogCloseButton label={closeLabel} onClick={onClose} buttonRef={closeRef} disabled={closeDisabled} />}
+      <div className={cn(wide ? DIALOG.headerWide : DIALOG.header, !closeLabel && "pr-5")}>
+        <div className="flex min-w-0 items-center gap-3">
+          {leading && <span className="shrink-0">{leading}</span>}
+          <div className="min-w-0">
+            <h2 id={titleId} className={DIALOG.title}>{title}</h2>
+            {subtitle && <p id={subtitleId} className={DIALOG.subtitle}>{subtitle}</p>}
+          </div>
+        </div>
+        {toolbar && <div className="mt-3 flex flex-wrap items-center gap-2">{toolbar}</div>}
+      </div>
+      {children && <div className={wide ? DIALOG.bodyWide : DIALOG.body}>{children}</div>}
+      {footer && <div className={DIALOG.footer}>{footer}</div>}
+    </div>
+  );
+}
+
+/** A row of a card that opens something: the label at the left, an arrow
+ * (or the leave-the-app mark for a web page) at the right, the whole row
+ * one button. */
+export function LinkRow({ label, onClick, external, rowId }: { label: string; onClick: () => void; external?: boolean; rowId?: string }) {
+  const Icon = external ? ExternalLink : ChevronRight;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-link-row={rowId ?? ""}
+      className="flex min-h-[44px] w-full min-w-0 items-center gap-3 px-3.5 py-2 text-left text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70 motion-reduce:transition-none md:min-h-[36px]"
+    >
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <Icon size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+    </button>
   );
 }

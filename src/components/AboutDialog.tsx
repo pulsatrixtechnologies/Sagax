@@ -1,10 +1,14 @@
-// "About Pulsatrix Sagax": the version you are running and where to go next.
-// Small on purpose: the interesting settings live in the settings panel, and
-// this exists so a bug report can quote a version number.
-import { useEffect, useRef } from "react";
+// "About Sagax": the version you are running and where to go next. Small on
+// purpose: the settings live in the settings panel, and this exists so a bug
+// report can quote a version number.
+//
+// 2026-10-16 (JC): drawn like Settings, as the iOS About of #563: the
+// Pulsatrix mark, "Sagax", the version, then the links as rows of one card
+// (release notes first), the copyright in grey at the bottom.
+import { useRef } from "react";
 
 import {
-  APP_FULL_NAME,
+  APP_NAME,
   APP_REPOSITORY,
   DOCS_URL,
   LICENSE_URL,
@@ -15,88 +19,69 @@ import {
 } from "@/lib/app-links";
 import { t } from "@/lib/i18n";
 import { requestReleaseNotes } from "@/lib/release-notes-ui";
+import { useCategoryModalKeyboard } from "./category-modal";
+import { PulsatrixOwlMark } from "./PulsatrixOwlMark";
+import { DIALOG, DialogCloseButton, GROUP_CARD, LinkRow } from "./SettingsPrimitives";
 
 export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    closeRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   if (!open) return null;
+  return <AboutWindow onClose={onClose} />;
+}
 
+function AboutWindow({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Focus starts on the close button; Escape closes; Tab stays inside.
+  useCategoryModalKeyboard(dialogRef, "[data-dialog-close]", onClose);
   const platform = platformLabel(window.ogb?.platform);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
+    <div className={DIALOG.backdrop} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="about-dialog-title"
-        className="w-full max-w-[360px] rounded-[14px] border border-border bg-elevated p-6 text-center"
+        tabIndex={-1}
+        data-about-dialog=""
+        className={`${DIALOG.frame} ${DIALOG.width.sm}`}
       >
-        <img src="/app-icon.svg" alt="" width={56} height={56} className="mx-auto size-14" />
-        <h2 id="about-dialog-title" className="mt-3 text-[17px] font-semibold text-ink">
-          {APP_FULL_NAME}
-        </h2>
-        <p className="mt-1 text-[13px] text-ink-secondary">
-          Version {appVersion()}
-          {platform ? ` · ${platform}` : ""}
-        </p>
-        <p className="mt-1 text-[12px] text-ink-secondary">
-          Based on OpenMausBot {baseVersion()}
-        </p>
-        <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
-          A desktop home for your agents. © 2026 Pulsatrix Technologies inc. Free for noncommercial use (PolyForm Noncommercial 1.0.0).
-        </p>
-        <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[13px]">
-          <AboutLink href={APP_REPOSITORY} label="GitHub" />
-          <AboutLink href={DOCS_URL} label="Docs" />
-          <AboutLink href={LICENSE_URL} label="License" />
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              requestReleaseNotes("browse");
-            }}
-            className="text-accent hover:underline"
-          >
-            {t("releaseNotes.menu")}
-          </button>
+        <DialogCloseButton label={t("common.close")} onClick={onClose} />
+        <div className={`${DIALOG.body} pt-7`}>
+          <div className="flex flex-col items-center text-center">
+            <span className="text-ink" data-about-mark="">
+              <PulsatrixOwlMark width={56} height={50} />
+            </span>
+            <h2 id="about-dialog-title" className={`${DIALOG.title} mt-3`}>
+              {APP_NAME}
+            </h2>
+            <p className="mt-0.5 text-[13px] leading-[18px] text-ink-secondary">
+              {t("about.version", { version: appVersion() })}
+              {platform ? ` · ${platform}` : ""}
+            </p>
+          </div>
+          <div className={GROUP_CARD}>
+            <LinkRow
+              label={t("releaseNotes.menu")}
+              onClick={() => {
+                onClose();
+                requestReleaseNotes("browse");
+              }}
+            />
+            <AboutLink href={APP_REPOSITORY} label="GitHub" />
+            <AboutLink href={DOCS_URL} label={t("about.docs")} />
+            <AboutLink href={LICENSE_URL} label={t("about.license")} />
+          </div>
+          <p className="px-1 text-center text-[12px] leading-4 text-ink-secondary">
+            {t("about.copyright")}
+            <br />
+            {t("about.basedOn", { version: baseVersion() })}
+          </p>
         </div>
-        <button
-          ref={closeRef}
-          type="button"
-          onClick={onClose}
-          className="mt-5 w-full rounded-xl bg-raised px-4 py-2 text-[13px] font-medium text-ink hover:brightness-110"
-        >
-          Close
-        </button>
       </div>
     </div>
   );
 }
 
 function AboutLink({ href, label }: { href: string; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={() => void openExternalLink(href)}
-      className="text-accent hover:underline"
-    >
-      {label}
-    </button>
-  );
+  return <LinkRow external label={label} onClick={() => void openExternalLink(href)} />;
 }

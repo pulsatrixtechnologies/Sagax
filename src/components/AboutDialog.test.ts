@@ -8,7 +8,9 @@ describe("AboutDialog links", () => {
     expect(source.match(/releaseNotes\.menu/g)).toHaveLength(1);
     expect(source).toContain('requestReleaseNotes("browse")');
     expect(source).not.toMatch(/RELEASES_URL|label="Releases"/);
-    const labels = [...source.matchAll(/<AboutLink [^>]*label="([^"]+)"/g)].map((m) => m[1]);
-    expect(labels).toEqual(["GitHub", "Docs", "License"]);
+    const links = [...source.matchAll(/<AboutLink href=\{(\w+)\}/g)].map((m) => m[1]);
+    expect(links).toEqual(["APP_REPOSITORY", "DOCS_URL", "LICENSE_URL"]);
+    // release notes first, then the links, all rows of one card
+    expect(source.indexOf("releaseNotes.menu")).toBeLessThan(source.indexOf("<AboutLink"));
   });
 });

@@ -1,8 +1,8 @@
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle } from "lucide-react";
-
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
+import { DANGER_PILL, DIALOG, PILL, PRIMARY_PILL } from "./SettingsPrimitives";
 
 export type ConfirmTone = "danger" | "neutral";
 
@@ -75,7 +75,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
+      className={DIALOG.backdrop}
       onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
     >
       <ConfirmDialogCard ref={dialogRef} cancelRef={cancelRef} {...props} />
@@ -85,7 +85,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 }
 
 /** The card alone, without the portal or key handling — exported so it can be
- * rendered to static markup in tests. */
+ * rendered to static markup in tests. Drawn like Settings (2026-10-16): the
+ * title and one grey line, then the pills at the right, the action red when
+ * it erases. */
 export function ConfirmDialogCard({
   ref,
   cancelRef,
@@ -111,41 +113,36 @@ export function ConfirmDialogCard({
       aria-busy={pending}
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-body"
-      className="w-full max-w-[420px] rounded-[14px] border border-border bg-elevated outline-none"
+      data-confirm-tone={tone}
+      className={cn(DIALOG.frame, DIALOG.width.md)}
     >
-      <div className="flex items-start gap-2.5 px-4 py-3">
-        <span className={cn("mt-[2px] shrink-0", danger ? "text-danger" : "text-warning")}>
-          {icon ?? <AlertTriangle size={18} />}
-        </span>
+      <div className="flex items-start gap-2.5 px-5 pb-4 pt-5">
+        {icon && <span aria-hidden="true" className={cn("mt-[3px] shrink-0", danger ? "text-danger" : "text-ink-secondary")}>{icon}</span>}
         <div className="min-w-0">
-          <h2 id="confirm-dialog-title" className="text-[14px] font-semibold leading-[22px] text-ink">
+          <h2 id="confirm-dialog-title" className={DIALOG.title}>
             {title}
           </h2>
-          <p id="confirm-dialog-body" className="text-[14px] leading-[22px] text-ink-tertiary">
+          <p id="confirm-dialog-body" className="mt-1 text-[13px] leading-[19px] text-ink-secondary">
             {body}
           </p>
         </div>
       </div>
-      <div className="flex justify-end gap-2 px-4 py-3">
+      <div className={DIALOG.footer}>
         <button
           ref={cancelRef}
           type="button"
           onClick={onCancel}
           disabled={pending}
-          className="ui-button disabled:opacity-50"
+          className={PILL}
         >
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           type="button"
           onClick={onConfirm}
           disabled={pending}
-          className={cn(
-            danger
-              ? "h-[30px] rounded-full bg-danger px-[13px] text-[13px] text-white hover:brightness-110"
-              : "ui-button ui-button-primary",
-            "disabled:opacity-50",
-          )}
+          data-confirm-action=""
+          className={cn(danger ? DANGER_PILL : PRIMARY_PILL, "min-h-[44px] md:min-h-0")}
         >
           {confirmLabel}
         </button>

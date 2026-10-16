@@ -116,6 +116,26 @@ export function orderedReleaseNotes(
   return entries.sort((a, b) => compareVersions(b.version, a.version) || a.version.localeCompare(b.version));
 }
 
+/** A release file may carry its date as a hidden first line,
+ * `<!-- date: 2026-10-16 -->` (invisible on GitHub, stripped from the text
+ * shown). The date as written, or null. */
+export function releaseNotesDate(markdown: string | null | undefined): string | null {
+  const match = /<!--\s*date:\s*(\d{4}-\d{2}-\d{2})\s*-->/.exec(String(markdown ?? ""));
+  return match ? match[1]! : null;
+}
+
+/** "16 octobre 2026" / "October 16, 2026" for a release date, or null. */
+export function formatReleaseDate(date: string | null | undefined, locale: string): string | null {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const when = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(when.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat(locale, { dateStyle: "long", timeZone: "UTC" }).format(when);
+  } catch {
+    return date;
+  }
+}
+
 /**
  * French copy is the file up to the `## English` line. Every other language
  * gets the English section. A file with no English section is shown whole.

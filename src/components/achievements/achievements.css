@@ -284,6 +284,11 @@
   background: var(--color-inset);
 }
 .achievement-card-tier { color: var(--tier); }
+/* The tile's framed ground (2026-10-16, the skin tiles of #582): unlocked,
+   its frame takes the rarity colour. */
+.achievement-card[data-unlocked] .achievement-tile-art {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tier) 60%, transparent);
+}
 .achievement-progress {
   height: 4px;
   overflow: hidden;
