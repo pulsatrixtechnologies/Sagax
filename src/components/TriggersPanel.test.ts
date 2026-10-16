@@ -109,7 +109,8 @@ describe("Triggers pop-up", () => {
     expect(html).toContain(">should</span>");
     // The source and the bot are pill menus (PillSelect): their choices.
     const menu = (label: string) => tree.find((node) => node.props.ariaLabel === label)!.props.options as Array<{ value: string; label: string }>;
-    expect(menu(t("triggers.sourceAria")).map((option) => option.label)).toEqual(["Another app sends a link request", "Typeform", "Zapier", "GitHub", "Stripe", "Something else…"]);
+    expect(menu(t("triggers.sourceAria")).map((option) => option.label)).toEqual(["Another app sends a link request", "Typeform", "Zapier", "Stripe", "Something else…",
+      "GitHub", "GitLab", "Slack", "Microsoft Teams", "Outlook", "Outlook Calendar", "Sentry", "PagerDuty", "Linear"]);
     expect(menu(t("triggers.botAria"))).toContainEqual({ value: "atlas", label: "Atlas" });
     expect(html).toContain("Create trigger");
     expect(html).toContain("No triggers yet");
@@ -308,10 +309,10 @@ describe("Triggers pop-up", () => {
   });
 
   it("offers typed sources in their own group, next to the link-request presets", () => {
-    const { html } = render();
-    expect(html).toContain('<optgroup label="Any app, with a bearer token">');
-    expect(html).toContain('<optgroup label="Apps that sign their events">');
-    for (const label of ["GitHub", "GitLab", "Slack", "Microsoft Teams", "Outlook", "Outlook Calendar", "Sentry", "PagerDuty", "Linear"]) expect(html).toContain(`>${label}</option>`);
+    const { html, nodes: tree } = render();
+    const options = tree.find((node) => node.props.ariaLabel === t("triggers.sourceAria"))!.props.options as Array<{ value: string; group: string }>;
+    expect(options.filter((option) => option.group === "Any app, with a bearer token").map((option) => option.value)).toEqual(["link", "typeform", "zapier", "stripe", "custom"]);
+    expect(options.filter((option) => option.group === "Apps that sign their events").map((option) => option.value)).toEqual(["github", "gitlab", "slack", "teams", "email", "calendar", "sentry", "pagerduty", "linear"]);
     expect(html).not.toContain("data-typed-fields");
   });
 
@@ -388,8 +389,9 @@ describe("Triggers pop-up", () => {
     setLocale("fr");
     fixture.overrides.set(SOURCE, "github");
     fixture.webhooks = [webhook("w1", { source: { type: "github", events: [], filters: {} }, signingSecretSet: true })];
-    const { html } = render();
-    expect(html).toContain("Applications qui signent leurs événements");
+    const { html, nodes: tree } = render();
+    const options = tree.find((node) => node.props.ariaLabel === t("triggers.sourceAria"))!.props.options as Array<{ group: string }>;
+    expect(options.at(-1)!.group).toBe("Applications qui signent leurs événements");
     expect(html).toContain("Pull request ouverte");
     expect(html).toContain("Envoyer un événement test");
     expect(html).toContain("Secret de signature enregistré.");
