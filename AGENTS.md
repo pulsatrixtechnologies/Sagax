@@ -3865,12 +3865,21 @@ publiées). Keep these rules, covered by `server/published-pages.test.ts`,
   origin: no Sagax cookie, storage or API), `default-src 'none'`,
   `connect-src 'none'`, `frame-src 'none'`, data:/blob: images only, and
   `frame-ancestors` the wrapper's origin. No allow-modals or allow-forms
-  anywhere. Not everything is a CSP request: every HTML page starts with
-  `FRAME_PRELUDE`, a best-effort script that makes the WebRTC constructors
-  (RTCPeerConnection and kin) undefined and non-configurable and removes
-  `<link rel>` resource hints (dns-prefetch, preconnect, prefetch,
-  prerender, preload, modulepreload), including ones added or changed
-  later. Markdown is rendered by our own escaper: no raw HTML, links
+  anywhere. Not everything is a CSP request (Chromium fetches a
+  `<link rel=prerender>` whatever the CSP says): the server neuters every
+  HTML version as it serves it (`neuterPageHtml`: every `<link`, `<iframe`,
+  `<frame`, `<frameset`, `<object`, `<embed`, `<portal`, `<fencedframe`
+  becomes an inert `<sagax-removed-...>` element wherever the text appears,
+  and `speculationrules` loses its meaning), and the page starts with
+  `x-dns-prefetch-control: off` and `FRAME_PRELUDE`, a synchronous script
+  that makes the WebRTC constructors undefined and patches every way a
+  script inserts or changes an element (appendChild and kin, append and
+  kin, insertAdjacent*, innerHTML and outerHTML, document.write,
+  createContextualFragment, DOMParser, setAttribute and kin, Attr values,
+  link rel, relList, script type, iframe srcdoc and src, createElement of a
+  frame) so a resource hint or a speculation-rules script is neutered
+  before it is in the document and no nested frame (a fresh realm) can be
+  made. Every patched descriptor is non-configurable and non-writable. Markdown is rendered by our own escaper: no raw HTML, links
   written as text with their address. Title and content lose secret-shaped
   text before storage.
 - Separate origin: `SAGAX_PAGES_ORIGIN=https://pages.example.com` (an
@@ -3899,15 +3908,21 @@ publiées). Keep these rules, covered by `server/published-pages.test.ts`,
   versions per page (the published one is never dropped), 512 KB per
   version, 50 MB per person (checked for new versions too) and 100 MB for
   all content. The banner shows at most 60 characters of each name.
-- Residual risks (documented, not closed): the page can still draw a fake
-  login form inside its own frame under the banner (nothing it types can
-  leave: no network, no navigation out, no form submission); the frame-src
-  path match relies on the browser's Host (a reverse proxy must pass it
-  through, as Caddy does); `dns-prefetch` hints are not covered by CSP in
-  every browser and the preload scanner may read a hint before the prelude
-  removes it; WebRTC in a browser that exposes it under a name the prelude
-  does not know. `frame-src` path pinning against a frame's own navigation
-  needs a manual check in Chrome, Firefox and Safari before release. Not done: multi-file apps, an admin audit row per publish
+- `frame-src` names the app's known public origin (with its scheme) when
+  the request came in on that host, else the Host header (a reverse proxy
+  must pass it through, as Caddy does). The admin list never carries a
+  page's link or path (they hold the token); admins are `orgAdminCaller`
+  (admin scope and organization role admin). The desktop guard fails
+  closed when a subframe navigation names no frame.
+- Cross-browser escape run (Chromium, Firefox, WebKit through Playwright,
+  23 vectors, reader and preview; PR #646): no attacker HTTP request, top
+  never moved, frame stays on its own path. Residual risks (documented, not
+  closed): Chromium opens a TCP connection (and resolves the name, about
+  250 characters, once per load) for a navigation it then blocks with
+  `frame-src`; WebKit opens a TCP connection on a target=_blank click; the
+  page can still draw a fake login form inside its own frame under the
+  banner (nothing it types can leave by HTTP); WebRTC under a name the
+  prelude does not know. Not done: multi-file apps, an admin audit row per publish
   (the page keeps its own history), the phone apps' card (they show the
   row's text).
 

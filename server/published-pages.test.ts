@@ -630,8 +630,13 @@ describe("a disabled or deleted person's pages, and admin revoke (review of #646
     expect((await call(handler, session("pr_bob"), "POST", `/api/admin/pages/${id}/revoke`)).status).toBe(403);
     const listed = await call(handler, session("pr_admin"), "GET", "/api/admin/pages");
     expect(listed.body!.pages.map((page: { id: string; ownerId: string }) => [page.id, page.ownerId])).toEqual([[id, "pr_alice"]]);
+    // never the link or its path: they carry the token
+    expect(listed.body!.pages[0].url).toBeUndefined();
+    expect(listed.body!.pages[0].path).toBeUndefined();
+    expect(JSON.stringify(listed.body)).not.toContain(path.slice("/pages/view/".length));
     const revoked = await call(handler, session("pr_admin"), "POST", `/api/admin/pages/${id}/revoke`);
     expect(revoked.body!.page.status).toBe("revoked");
+    expect(revoked.body!.page.path).toBeUndefined();
     expect(rows).toEqual([{ action: "page.revoke", target: { kind: "page", id, name: "Rapport" } }]);
     expect((await read(pages, path, null)).wrapper.status).toBe(404);
   });
@@ -664,5 +669,30 @@ describe("per-person bytes and the pages host (review of #646, round 2)", () => 
     }
     const app = request("/api/pages", "GET", { host: "sagax.example.com" });
     expect(handlePagesOriginRequest(fenced, app.req, app.res, "/api/pages", "GET")).toBe(false);
+  });
+});
+
+describe("frame-src names the known public origin (review of #646, round 3)", () => {
+  it("with its scheme when the request came in on that host, the Host header otherwise", async () => {
+    const { pages } = store();
+    const { path } = published(pages);
+    const token = path.slice("/pages/view/".length);
+    const known = { ...options(pages, null), appOrigin: new URL("https://sagax.example.com") };
+    const onPublic = await hit(known, path);
+    expect(String(onPublic.headers["content-security-policy"])).toContain(`frame-src https://sagax.example.com/pages/frame/${token};`);
+    const onLoopback = await hit(known, path, { host: "127.0.0.1:4321" });
+    expect(String(onLoopback.headers["content-security-policy"])).toContain(`frame-src 127.0.0.1:4321/pages/frame/${token};`);
+  });
+
+  it("the served HTML has no link hint, nested frame or speculation rules left, and DNS prefetch off", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, undefined, { content: '<!doctype html><link rel=prerender href="http://evil.example/x"><iframe src="http://evil.example"></iframe><script type=speculationrules>{}</script><p>ok</p>' });
+    pages.publish(page.id, { version: 1, access: "link", expiresAt: null });
+    const { frame } = await read(pages, pages.path(pages.get(page.id)!.linkId!), null);
+    expect(frame!.body).toContain('<meta http-equiv="x-dns-prefetch-control" content="off">');
+    expect(frame!.body).not.toMatch(/<link[\s>]/i);
+    expect(frame!.body).not.toMatch(/<iframe[\s>]/i);
+    expect(frame!.body).not.toMatch(/type=speculationrules>/i);
+    expect(frame!.body).toContain("<p>ok</p>");
   });
 });

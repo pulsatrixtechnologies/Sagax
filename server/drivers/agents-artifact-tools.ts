@@ -23,7 +23,7 @@ export const ARTIFACT_TOOL_DEFINITIONS = [
   {
     name: "save_artifact",
     description:
-      "Save a widget the person wants to keep, pin or watch as an artifact: it shows in your Files tab under Artifacts. With source and interval_seconds it refreshes itself. They cannot edit its settings; they ask you. Returns its id.",
+      "Save a widget the person wants to keep, pin or watch as an artifact: it shows in your Files tab under Artifacts. With source and interval_seconds it refreshes itself. They cannot edit its settings; they ask you. It stays inside Sagax, for this person; to share a page with others through a link, use propose_page instead. Returns its id.",
     inputSchema: { type: "object", additionalProperties: false, properties: FIELDS, required: ["title", "html"] },
   },
   {

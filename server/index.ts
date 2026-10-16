@@ -6134,9 +6134,7 @@ ROUTES.push(createPublishedPageRoutes({
     }
   },
   // Revoke for organization admins (audited); on a one-person server its owner.
-  isAdmin: (auth) => IDENTITY.kind === "perspicax"
-    ? auth.kind === "session" && auth.scopes.includes("admin")
-    : computerOwner(auth),
+  isAdmin: (auth) => IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : computerOwner(auth),
   audit: (auth, req, row) => appendAdminAction(DATA_DIR, { category: "security", ...row, actor: adminActorFor(auth, req) }),
 }));
 
@@ -6208,6 +6206,14 @@ function publishedPageOptions(): PublicPageOptions {
       return Boolean(person && person.kind === "human" && person.disabledAt === undefined && !person.consoleDisabled);
     },
     pagesHost: PAGES_ORIGIN?.host ?? null,
+    appOrigin: (() => {
+      try {
+        const known = (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin : null) ?? publicUrl();
+        return known ? new URL(known) : null;
+      } catch {
+        return null;
+      }
+    })(),
     separate: pagesSeparation(),
   };
 }

@@ -9,9 +9,14 @@
 // `allow-same-origin` (an opaque origin: no Sagax cookie, storage or API) and
 // under a CSP that blocks fetch, XHR, beacons, remote images, scripts and
 // fonts. Not everything is a CSP request: WebRTC (RTCPeerConnection to a
-// STUN or TURN server) and dns-prefetch or preconnect hints are not covered
-// by CSP everywhere; a best-effort prelude script removes them (see
-// FRAME_PRELUDE in server/published-pages-render.ts).
+// STUN or TURN server), resource hints (Chromium fetches a
+// `<link rel=prerender>` whatever the CSP says), speculation rules and
+// nested frames are not covered by CSP everywhere. The server neuters them
+// in every stored HTML version (neuterPageHtml) and a synchronous prelude
+// neuters them before a script can insert them (FRAME_PRELUDE), both in
+// server/published-pages-render.ts. Residual, by browser: a blocked
+// navigation still makes Chromium resolve the name (and open a TCP
+// connection) once; WebKit pre-connects TCP on a target=_blank click.
 
 export type PageKind = "html" | "markdown";
 export type PageAccess = "private" | "org" | "link";
@@ -66,8 +71,9 @@ export function pageFrameSandbox(kind: PageKind): string {
  * directives a meta tag ignores). `sandbox` without `allow-same-origin` gives
  * it an opaque origin: no Sagax cookie, storage or API. `default-src 'none'`
  * and `connect-src 'none'` stop every request (no fetch, no beacon, no remote
- * image, script or font; WebRTC and resource hints are only removed best
- * effort by the prelude). A Markdown page runs no script. `frameAncestors`
+ * image, script or font). WebRTC, resource hints, speculation rules and
+ * nested frames are outside CSP: neutered by the server and the prelude
+ * (server/published-pages-render.ts). A Markdown page runs no script. `frameAncestors`
  * names who may frame it: the wrapper's origin. */
 export function pageCsp(kind: PageKind, options: { meta?: boolean; frameAncestors?: string } = {}): string {
   const directives = [

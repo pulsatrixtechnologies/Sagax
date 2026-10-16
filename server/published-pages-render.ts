@@ -13,19 +13,77 @@
 // `frame-src` limits to the page's own frame path.
 import { PAGE_BANNER_NAME_MAX, pageCsp, type PageKind } from "../shared/published-pages.ts";
 
-/** Run first in every HTML page (frame and preview), best effort: what CSP
- * does not stop everywhere. WebRTC constructors are removed for good
- * (non-configurable), and resource hints (dns-prefetch, preconnect,
- * prefetch, prerender, preload, modulepreload) are removed, including ones
- * added later. A hint the browser's preload scanner reads before this runs
- * can still resolve a name: documented as residual. */
-export const FRAME_PRELUDE = "<script>(function(){try{var w=window;"
-  + "[\"RTCPeerConnection\",\"webkitRTCPeerConnection\",\"mozRTCPeerConnection\",\"RTCDataChannel\",\"RTCRtpSender\",\"RTCRtpReceiver\",\"RTCRtpTransceiver\",\"RTCIceCandidate\",\"RTCSessionDescription\",\"RTCDtlsTransport\",\"RTCIceTransport\",\"RTCSctpTransport\",\"RTCCertificate\"].forEach(function(n){try{Object.defineProperty(w,n,{value:undefined,writable:false,configurable:false})}catch(e){}});"
-  + "var bad=/^(dns-prefetch|preconnect|prefetch|prerender|preload|modulepreload)$/i;"
-  + "function hint(el){return el&&el.tagName===\"LINK\"&&String(el.getAttribute(\"rel\")||\"\").split(/\\s+/).some(function(r){return bad.test(r)})}"
-  + "function strip(root){if(!root||root.nodeType!==1)return;if(hint(root)){root.remove();return}var l=root.querySelectorAll(\"link[rel]\");for(var i=0;i<l.length;i++)if(hint(l[i]))l[i].remove()}"
-  + "new MutationObserver(function(ms){ms.forEach(function(m){if(m.type===\"attributes\"){strip(m.target);return}m.addedNodes.forEach(strip)})}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:[\"rel\"]});"
-  + "strip(document.documentElement)}catch(e){}})();</script>";
+/** Server side, before every HTML version is served: no element that can
+ * reach the network outside CSP. `<link>` (hints such as prerender, which
+ * Chromium fetches whatever the CSP says) and nested browsing contexts
+ * (iframe, frame, object, embed, portal, fencedframe) become inert unknown
+ * elements wherever the text appears, quoted in a script included, and
+ * speculation rules lose their type. Remote stylesheets, fonts and frames
+ * are blocked by CSP anyway, so nothing a page may do is lost. Pure. */
+export function neuterPageHtml(html: string): string {
+  return html
+    .replace(/<(\/?)(link|iframe|frame|frameset|object|embed|portal|fencedframe)(?=[\s/>]|$)/gi, "<$1sagax-removed-$2")
+    .replace(/speculationrules/gi, "speculationrules-removed");
+}
+
+/** Run first in every HTML page, synchronously, best effort: what CSP does
+ * not stop everywhere. WebRTC constructors are made undefined; every way a
+ * script inserts or changes an element is patched so that a `<link>` with a
+ * resource-hint rel (dns-prefetch, preconnect, prefetch, prerender, preload,
+ * modulepreload, next) or a speculation-rules script is neutered BEFORE it
+ * is in the document, and nested frames cannot be created (no fresh realm
+ * with unpatched prototypes). The patched descriptors are non-configurable
+ * and non-writable. Same string rules as neuterPageHtml for HTML strings. */
+const PRELUDE_SOURCE = String.raw`(function(){"use strict";
+var W=window,D=document,O=Object;
+function lock(o,n,d){try{d.configurable=false;O.defineProperty(o,n,d)}catch(e){}}
+["RTCPeerConnection","webkitRTCPeerConnection","mozRTCPeerConnection","RTCDataChannel","RTCRtpSender","RTCRtpReceiver","RTCRtpTransceiver","RTCIceCandidate","RTCSessionDescription","RTCDtlsTransport","RTCIceTransport","RTCSctpTransport","RTCCertificate","RTCEncodedAudioFrame","RTCEncodedVideoFrame"].forEach(function(n){lock(W,n,{value:undefined,writable:false,enumerable:false})});
+var BAD=/(^|\s)(dns-prefetch|preconnect|prefetch|prerender|preload|modulepreload|next)(?=\s|$)/i,SR=/speculationrules/i,FR=/^(iframe|frame|frameset|object|embed|portal|fencedframe)$/i;
+var EP=Element.prototype,NP=Node.prototype,FP=DocumentFragment.prototype,DP=Document.prototype;
+var getA=EP.getAttribute,setA=EP.setAttribute,remA=EP.removeAttribute,qsa=EP.querySelectorAll,fqsa=FP.querySelectorAll;
+function san(s){return String(s).replace(/<(\/?)(link|iframe|frame|frameset|object|embed|portal|fencedframe)(?=[\s/>]|$)/gi,"<$1sagax-removed-$2").replace(/speculationrules/gi,"speculationrules-removed")}
+function neuter(el){if(!el||el.nodeType!==1)return;var t=el.localName;if(t==="link"){var r=getA.call(el,"rel");if(r&&BAD.test(r)){remA.call(el,"rel");remA.call(el,"href")}}else if(t==="script"){var y=getA.call(el,"type");if(y&&SR.test(y))setA.call(el,"type","text/plain")}}
+function clean(n){if(!n||typeof n!=="object")return n;var l,i;if(n.nodeType===1){neuter(n);l=qsa.call(n,"link,script");for(i=0;i<l.length;i++)neuter(l[i])}else if(n.nodeType===11){l=fqsa.call(n,"link,script");for(i=0;i<l.length;i++)neuter(l[i])}return n}
+function wrap(p,name,before,after){var f=p&&p[name];if(typeof f!=="function")return;lock(p,name,{value:function(){var a=Array.prototype.slice.call(arguments);if(before)before(a,this);var out=f.apply(this,a);if(after)after(a,this,out);return out},writable:false,enumerable:false})}
+function setter(p,prop,fix,after){var d=p&&O.getOwnPropertyDescriptor(p,prop);if(!d||!d.set)return;var set=d.set;lock(p,prop,{get:d.get,set:function(v){set.call(this,fix?fix(this,v):v);if(after)after(this)},enumerable:d.enumerable})}
+var each=function(a){for(var i=0;i<a.length;i++)clean(a[i])};
+wrap(NP,"appendChild",each);wrap(NP,"insertBefore",function(a){clean(a[0])});wrap(NP,"replaceChild",function(a){clean(a[0])});
+["append","prepend","after","before","replaceWith","replaceChildren"].forEach(function(n){wrap(EP,n,each);wrap(FP,n,each);wrap(DP,n,each);wrap(W.CharacterData&&CharacterData.prototype,n,each);wrap(W.DocumentType&&DocumentType.prototype,n,each)});
+wrap(EP,"insertAdjacentElement",function(a){clean(a[1])});
+wrap(EP,"insertAdjacentHTML",function(a){a[1]=san(a[1])});
+wrap(EP,"setHTMLUnsafe",function(a){a[0]=san(a[0])});wrap(EP,"setHTML",function(a){a[0]=san(a[0])});
+wrap(W.ShadowRoot&&ShadowRoot.prototype,"setHTMLUnsafe",function(a){a[0]=san(a[0])});
+wrap(W.Range&&Range.prototype,"createContextualFragment",function(a){a[0]=san(a[0])});
+wrap(W.Range&&Range.prototype,"insertNode",function(a){clean(a[0])});
+wrap(DP,"write",function(a){for(var i=0;i<a.length;i++)a[i]=san(a[i])});
+wrap(DP,"writeln",function(a){for(var i=0;i<a.length;i++)a[i]=san(a[i])});
+wrap(W.DOMParser&&DOMParser.prototype,"parseFromString",function(a){a[0]=san(a[0])});
+if(W.Document&&Document.parseHTMLUnsafe){var ph=Document.parseHTMLUnsafe;lock(Document,"parseHTMLUnsafe",{value:function(s){return ph.call(this,san(s))},writable:false})}
+[DP,O.getPrototypeOf(D)].forEach(function(p,i,all){if(i&&p===all[0])return;
+wrap(p,"createElement",function(a){if(FR.test(String(a[0])))a[0]="sagax-removed-"+String(a[0])});
+wrap(p,"createElementNS",function(a){var q=String(a[1]);if(FR.test(q.split(":").pop()))a[1]="sagax-removed-"+q.replace(":","-")})});
+wrap(EP,"setAttribute",function(a,el){var n=String(a[0]).toLowerCase();if(n==="rel"&&el.localName==="link"&&BAD.test(String(a[1])))a[1]="";if(n==="type"&&el.localName==="script"&&SR.test(String(a[1])))a[1]="text/plain";if(n==="srcdoc")a[0]="data-removed-srcdoc"});
+wrap(EP,"setAttributeNS",function(a,el){var n=String(a[1]).toLowerCase().split(":").pop();if(n==="rel"&&el.localName==="link"&&BAD.test(String(a[2])))a[2]="";if(n==="type"&&el.localName==="script"&&SR.test(String(a[2])))a[2]="text/plain";if(n==="srcdoc")a[1]="data-removed-srcdoc"});
+wrap(EP,"setAttributeNode",null,function(a,el){neuter(el)});wrap(EP,"setAttributeNodeNS",null,function(a,el){neuter(el)});
+wrap(EP,"toggleAttribute",null,function(a,el){neuter(el)});
+wrap(W.NamedNodeMap&&NamedNodeMap.prototype,"setNamedItem",null,function(a){neuter(a[0]&&a[0].ownerElement)});
+wrap(W.NamedNodeMap&&NamedNodeMap.prototype,"setNamedItemNS",null,function(a){neuter(a[0]&&a[0].ownerElement)});
+setter(W.Attr&&Attr.prototype,"value",null,function(at){neuter(at.ownerElement)});
+setter(NP,"nodeValue",null,function(at){if(at.nodeType===2)neuter(at.ownerElement)});
+setter(NP,"textContent",null,function(at){if(at.nodeType===2)neuter(at.ownerElement)});
+setter(W.HTMLLinkElement&&HTMLLinkElement.prototype,"rel",function(el,v){return BAD.test(String(v))?"":v});
+setter(W.HTMLScriptElement&&HTMLScriptElement.prototype,"type",function(el,v){return SR.test(String(v))?"text/plain":v});
+setter(W.HTMLIFrameElement&&HTMLIFrameElement.prototype,"srcdoc",function(){return ""});
+var tl=W.DOMTokenList&&DOMTokenList.prototype,tremove=tl&&tl.remove;
+function scrub(a,list){var v=String(list.value);if(BAD.test(v)){var bad=v.split(/\s+/).filter(function(t){return BAD.test(t)});tremove.apply(list,bad)}}
+["add","toggle","replace"].forEach(function(n){wrap(tl,n,null,scrub)});
+setter(tl,"value",null,function(list){scrub(null,list)});
+setter(EP,"innerHTML",function(el,v){return san(v)});setter(EP,"outerHTML",function(el,v){return san(v)});
+setter(W.ShadowRoot&&ShadowRoot.prototype,"innerHTML",function(el,v){return san(v)});
+setter(W.HTMLIFrameElement&&HTMLIFrameElement.prototype,"src",function(){return "about:blank"});
+})();`;
+
+export const FRAME_PRELUDE = `<meta http-equiv="x-dns-prefetch-control" content="off"><script>${PRELUDE_SOURCE}</script>`;
 
 /** A name for the banner: one line, at most PAGE_BANNER_NAME_MAX characters. Pure. */
 export function bannerName(name: string): string {
@@ -147,10 +205,11 @@ export function pageDocument(input: { kind: PageKind; title: string; content: st
       + `<style>${MARKDOWN_STYLE}</style></head><body>${markdownToHtml(input.content)}</body></html>`;
   }
   const head = `${meta}${FRAME_PRELUDE}`;
-  const doctype = /^\s*<!doctype[^>]*>/i.exec(input.content);
+  const content = neuterPageHtml(input.content);
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(content);
   return doctype
-    ? `${doctype[0]}${head}${input.content.slice(doctype[0].length)}`
-    : `${head}${input.content}`;
+    ? `${doctype[0]}${head}${content.slice(doctype[0].length)}`
+    : `${head}${content}`;
 }
 
 export interface WrapperInput {

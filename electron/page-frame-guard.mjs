@@ -41,6 +41,8 @@ export function pageFrameNavigationAllowed({ currentUrl, parentUrl, targetUrl })
 export function blockPageFrameNavigation(details) {
   if (details?.isMainFrame) return false;
   const frame = details?.frame ?? null;
+  // A subframe whose frame is unknown (already gone): fail closed.
+  if (!frame) return true;
   let currentUrl = "";
   let parentUrl = "";
   try {

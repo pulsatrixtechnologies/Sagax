@@ -98,6 +98,10 @@ export interface PublicPageOptions {
   /** The host of SAGAX_PAGES_ORIGIN when it is set, used or not: that host
    * never serves the app. */
   pagesHost?: string | null;
+  /** This app's public origin when it is known (organization public origin
+   * or custom domain): the wrapper's frame-src names it, with its scheme,
+   * whenever the request came in on that host. */
+  appOrigin?: URL | null;
   /** SAGAX_PAGES_ORIGIN and this app's own origin (the frames' only
    * ancestor), when both are known: frames are then served there only. */
   separate?: { pagesOrigin: URL; appOrigin: URL } | null;
@@ -165,7 +169,10 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
   const host = hostOf(req);
   // A host-source with a path: the frame may load this page's frame path and
   // nothing else, so the page cannot navigate its frame to another site.
-  const frameSource = separate ? `${separate.pagesOrigin.origin}${input.framePath}` : host ? `${host}${input.framePath}` : "'self'";
+  const known = options.appOrigin && host === options.appOrigin.host.toLowerCase() ? options.appOrigin.origin : null;
+  const frameSource = separate
+    ? `${separate.pagesOrigin.origin}${input.framePath}`
+    : known ? `${known}${input.framePath}` : host ? `${host}${input.framePath}` : "'self'";
   const csp = [
     "default-src 'none'",
     "script-src 'none'",
@@ -312,6 +319,11 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     const origin = deps.origin(req);
     return deps.pages.summary(page, origin, deps.reachable(origin));
   };
+  // An admin's view of a page: never its link or path (they carry the token).
+  const adminWire = (page: PageRecord, req: IncomingMessage) => {
+    const { url: _url, path: _path, reachable: _reachable, ...rest } = wire(page, req);
+    return { ...rest, ownerId: page.ownerId ?? null };
+  };
   return async ({ req, res, path, method, auth, json, readBody }) => {
     // Organization admins: every page, and Revoke (audited). Never publish,
     // change access or read another person's content from here.
@@ -319,7 +331,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       res.setHeader("cache-control", "no-store");
       if (!deps.isAdmin?.(auth)) return json(res, 403, { error: "Only an organization admin manages every page.", code: "admin_only" });
       if (path === "/api/admin/pages" && method === "GET") {
-        return json(res, 200, { pages: deps.pages.list(undefined).map((page) => ({ ...wire(page, req), ownerId: page.ownerId ?? null })) });
+        return json(res, 200, { pages: deps.pages.list(undefined).map((page) => adminWire(page, req)) });
       }
       const revoke = /^\/api\/admin\/pages\/([\w-]+)\/revoke$/.exec(path);
       if (revoke && method === "POST") {
@@ -329,7 +341,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
         if (failed(result)) return json(res, result.status, { error: result.error, code: result.code });
         const title = result.versions.at(-1)?.title;
         deps.audit?.(auth, req, { action: "page.revoke", target: { kind: "page", id: page.id, ...(title ? { name: title } : {}) } });
-        return json(res, 200, { page: { ...wire(result, req), ownerId: result.ownerId ?? null } });
+        return json(res, 200, { page: adminWire(result, req) });
       }
       return PASS;
     }

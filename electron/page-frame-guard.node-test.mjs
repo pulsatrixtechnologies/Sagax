@@ -31,5 +31,7 @@ test("will-frame-navigate details: blocks only a page frame leaving", () => {
   assert.equal(blockPageFrameNavigation({ isMainFrame: false, url: "https://evil.example/", frame: { url: FRAME, parent: { url: WRAPPER } } }), true);
   assert.equal(blockPageFrameNavigation({ isMainFrame: false, url: FRAME, frame: { url: "about:blank", parent: { url: WRAPPER } } }), false);
   assert.equal(blockPageFrameNavigation({ isMainFrame: false, url: "https://www.youtube.com/embed/x", frame: { url: "", parent: { url: `${APP}/` } } }), false);
-  assert.equal(blockPageFrameNavigation({ isMainFrame: false, url: "https://evil.example/", frame: null }), false);
+  // fail closed: a subframe navigation with no frame to check is refused
+  assert.equal(blockPageFrameNavigation({ isMainFrame: false, url: "https://evil.example/", frame: null }), true);
+  assert.equal(blockPageFrameNavigation({ isMainFrame: false, url: "https://evil.example/" }), true);
 });
