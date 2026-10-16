@@ -139,6 +139,10 @@ export type PerspicaxMemoryVerdict = "pass" | "refuse" | "confirm";
  * a team or the organization (write, propose, promote) is refused; a write
  * to the person's own tier ("me", the default) needs their confirmation;
  * everything else passes. `name` may carry an MCP prefix. */
+/** A path in the person's own memory tier: plain characters only (no
+ * percent-encoding, no backslash), no dot segments. */
+const PERSONAL_MEMORY_PATH = /^\/memories\/me\/[A-Za-z0-9._/-]+$/;
+
 export function perspicaxMemoryVerdict(name: string, args: Record<string, unknown> | undefined): PerspicaxMemoryVerdict {
   const tool = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
   if (tool === "memory_propose" || tool === "memory_promote") return "refuse";
@@ -148,7 +152,7 @@ export function perspicaxMemoryVerdict(name: string, args: Record<string, unknow
     const command = typeof args?.command === "string" ? args.command : "";
     if (command === "view") return "pass";
     const paths = [args?.path, args?.old_path, args?.new_path].filter((value) => value !== undefined);
-    const own = paths.length > 0 && paths.every((value) => typeof value === "string" && /^\/memories\/me\/[^]*$/.test(value) && !value.split("/").includes(".."));
+    const own = paths.length > 0 && paths.every((value) => typeof value === "string" && PERSONAL_MEMORY_PATH.test(value) && !value.split("/").some((part) => part === ".." || part === "."));
     return own ? "confirm" : "refuse";
   }
   if (tool !== "memory_write" && tool !== "memory_save") return "pass";
@@ -162,7 +166,7 @@ export function perspicaxMemoryVerdict(name: string, args: Record<string, unknow
  * trusted). Everything else from a confidential thread waits for the
  * owner's card: fail closed. */
 const READ_ONLY_PERSPICAX_TOOLS = new Set([
-  "api_list", "api_search", "api_describe", "api_lookup", "api_result_query", "api_plan", "identity", "flow",
+  "api_list", "api_search", "api_describe", "api_lookup", "api_result_query", "identity", "flow",
   "memory_recall", "memory_search", "memory_feedback", "work_search", "work_check", "claim_list",
   "query", "await_turn", "sagax_bots", "sagax_thread",
 ]);
@@ -175,8 +179,18 @@ const READ_ONLY_PREFIX = /^(?:find|get|read|list)_[A-Za-z0-9_]*$/;
 export function perspicaxConfidentialVerdict(name: string, args: Record<string, unknown> | undefined): PerspicaxMemoryVerdict {
   const memory = perspicaxMemoryVerdict(name, args);
   if (memory !== "pass") return memory;
-  const tool = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
+  const prefixed = name.includes("__");
+  const tool = prefixed ? name.slice(name.lastIndexOf("__") + 2) : name;
   if (tool === "memory") return "pass";
+  // a plan runs its reads for real: every step is judged, one non-read cards it all
+  if (tool === "api_plan") {
+    const steps = Array.isArray(args?.steps) ? args.steps : [];
+    if (!steps.length) return "confirm";
+    return steps.every((step) => step && typeof step === "object" && typeof (step as { tool?: unknown }).tool === "string"
+      && perspicaxConfidentialVerdict((step as { tool: string }).tool, (step as { args?: Record<string, unknown> }).args) === "pass") ? "pass" : "confirm";
+  }
+  // A profile's tools (`<profile>__...`): only its query and read_action read.
+  if (prefixed) return tool === "query" || tool === "read_action" ? "pass" : "confirm";
   if (READ_ONLY_PERSPICAX_TOOLS.has(tool) || READ_ONLY_PREFIX.test(tool)) return "pass";
   return "confirm";
 }
@@ -189,37 +203,50 @@ export function perspicaxConfidentialVerdict(name: string, args: Record<string, 
  * `APP_VERB_...` connected-app name, the second), and the bot's own
  * `data_describe` and `data_show`; everything else waits for the owner's
  * card, whatever the approval mode. */
+const WRITE_VERBS = new Set(["create", "update", "delete", "write", "send", "post", "put", "patch", "upload", "replace", "set", "add", "remove", "insert", "execute", "run", "publish"]);
+
 export function mcpConfidentialVerdict(name: string): PerspicaxMemoryVerdict {
   const tool = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
   // the bot's own data views, and choosing where this turn works
   if (tool === "data_describe" || tool === "data_show" || tool === "computer_select" || tool === "select_computer") return "pass";
   const words = tool.toLowerCase().split(/[_.-]+/).filter(Boolean);
   const read = /^(?:get|list|read|search|find|query|describe|fetch|view|lookup|retrieve)$/;
-  if (words[0] && read.test(words[0])) return "pass";
-  if (/^[A-Z0-9]+_/.test(tool) && words[1] && read.test(words[1])) return "pass";
-  return "confirm";
+  const verbAt = words[0] && read.test(words[0]) ? 0 : /^[A-Z0-9]+_/.test(tool) && words[1] && read.test(words[1]) ? 1 : -1;
+  if (verbAt < 0) return "confirm";
+  // a read verb followed by a write verb ("get_and_update") is not a read: refused
+  if (words.slice(verbAt + 1).some((word) => WRITE_VERBS.has(word))) return "refuse";
+  // a bare verb ("fetch", "query") says nothing of what it reaches
+  if (words.length === verbAt + 1) return "confirm";
+  return "pass";
 }
 
 /** What a confirmed outbound call must match when it is retried: its tool
  * and its arguments, keys sorted. */
-export function outboundCallDigest(name: string, args: Record<string, unknown> | undefined): string {
+export function outboundCallDigest(name: string, args: Record<string, unknown> | undefined, gate = "perspicax"): string {
   const sorted = (value: unknown): unknown => Array.isArray(value)
     ? value.map(sorted)
     : value && typeof value === "object"
       ? Object.fromEntries(Object.keys(value as Record<string, unknown>).sort().map((key) => [key, sorted((value as Record<string, unknown>)[key])]))
       : value;
   const tool = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
-  return JSON.stringify([tool, sorted(args ?? {})]);
+  return JSON.stringify([gate, tool, sorted(args ?? {})]);
 }
 
 export const PERSPICAX_MEMORY_REFUSED = "This is a confidential thread: nothing from it goes to a team or organization memory. Keep it in this thread; do not retry.";
 
 /** What a confirmable memory write must match when it is retried: every
  * field that decides what is written and who reads it. */
-export function memoryWriteDigest(args: Record<string, unknown> | undefined): string {
+export function memoryWriteDigest(args: Record<string, unknown> | undefined, gate = "perspicax"): string {
   const value = (key: string) => (args?.[key] === undefined ? null : args[key]);
-  return JSON.stringify(["scope", "topic", "title", "body", "tags", "directory_title", "searchable"].map((key) => [key, value(key)]));
+  return JSON.stringify([gate, ...MEMORY_BOUND_FIELDS.map((key) => [key, value(key)])]);
 }
+
+/** The fields of a personal memory write the card shows and the pass binds. */
+export const MEMORY_BOUND_FIELDS = ["scope", "topic", "title", "body", "tags", "directory_title", "searchable"] as const;
+
+/** The largest call an owner card shows whole; a bigger one is refused
+ * rather than shown cut. */
+export const CONFIDENTIAL_CARD_MAX_CHARS = 16_000;
 
 /** A personal write goes to "me" and nowhere else: Perspicax's own default
  * audience for an omitted scope may be wider, so the scope is written in

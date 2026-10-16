@@ -130,6 +130,10 @@ export interface OrgMemberRouteDeps {
   approvalAnswerer?(threadId: string, requestId: string): ApprovalAnswerer | null;
   /** The bot whose thread this is, or null (a room, or gone). */
   botOfThread?(threadId: string): string | null;
+  /** A confidential thread (server/confidential-threads.ts): an AI client
+   * never reads, streams, writes or answers a card in one; it reads as
+   * missing. */
+  confidential?(threadId: string): boolean;
   /** The person's open hidden conversation with this bot (#291), the one an
    * AI client continues when it names no thread; null when they have none. */
   hiddenThreadOf?(botId: string, principalId: string): string | null;
@@ -652,6 +656,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         if (input.stream !== undefined && typeof input.stream !== "boolean") return fail(400, "bad_request", "stream is true or false.");
         const botId = params.id!;
         let threadId = input.threadId as string | undefined;
+        if (threadId && deps.confidential?.(threadId)) return fail(404, "not_found", "No such conversation.");
         // An AI client works in a hidden conversation (#291), the way Grok
         // Bot keeps its subagents out of the chat: never the person's open
         // chat, never their sidebar, unread or notifications. A named
@@ -660,7 +665,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const hidden = person.actor !== "console";
         if (!threadId && hidden && input.newThread !== true) threadId = deps.hiddenThreadOf?.(botId, person.principalId) ?? undefined;
         if (input.newThread === true || (hidden && !threadId)) {
-          const created = await deps.perform(person, { method: "POST", path: `/api/bots/${encodeURIComponent(botId)}/tasks`, body: hidden ? { hidden: true } : {} });
+          const created = await deps.perform(person, { method: "POST", path: `/api/bots/${encodeURIComponent(botId)}/tasks`, body: hidden ? { hidden: true, confidential: false } : { confidential: false } });
           if (!okStatus(created)) return passThrough(created, "A new conversation could not be started.");
           threadId = str(objectOf(objectOf(created.body)?.task)?.threadId) ?? undefined;
           if (!threadId) return fail(502, "server_error", "The new conversation has no id.");
@@ -696,6 +701,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const wait = rawWait === null || rawWait === "" ? 30 : /^\d{1,3}$/.test(rawWait) ? Number(rawWait) : Number.NaN;
         if (!Number.isInteger(wait) || wait < 1 || wait > MEMBER_WAIT_MAX_SECONDS) return fail(400, "bad_request", `wait is 1 to ${MEMBER_WAIT_MAX_SECONDS} seconds.`);
         const threadId = params.id!;
+        if (deps.confidential?.(threadId)) return fail(404, "not_found", "No such conversation.");
         // Read once before streaming: a thread the person cannot read is
         // refused with Sagax's own answer, as JSON.
         const first = await readThread(person, threadId, anchor, MEMBER_THREAD_LIMIT_MAX);
@@ -717,6 +723,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const limit = rawLimit === null || rawLimit === "" ? MEMBER_THREAD_LIMIT_DEFAULT : /^\d{1,4}$/.test(rawLimit) ? Number(rawLimit) : Number.NaN;
         if (!Number.isInteger(limit) || limit < 1 || limit > MEMBER_THREAD_LIMIT_MAX) return fail(400, "bad_request", `limit is 1 to ${MEMBER_THREAD_LIMIT_MAX}.`);
         const threadId = params.id!;
+        if (deps.confidential?.(threadId)) return fail(404, "not_found", "No such conversation.");
         // Read a full page so the cursor is found, then cut to the limit.
         const read = await readThread(person, threadId, since, MEMBER_THREAD_LIMIT_MAX);
         if (!isRead(read)) return read;
@@ -759,6 +766,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const threadId = url.searchParams.get("threadId") ?? "";
         if (!THREAD_ID.test(threadId)) return fail(400, "bad_request", "threadId is a thread id.");
         // The person must reach the thread: Sagax's own read decides.
+        if (deps.confidential?.(threadId)) return fail(404, "not_found", "No such approval in this conversation.");
         const read = await readThread(person, threadId, null, 1);
         if (!isRead(read)) return read;
         const info = deps.approvalAnswerer?.(threadId, params.id!) ?? null;
@@ -787,6 +795,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         if (!input || Object.keys(input).some((key) => key !== "decision" && key !== "threadId") || (decision !== "allow" && decision !== "deny") || typeof threadId !== "string" || !THREAD_ID.test(threadId)) {
           return fail(400, "bad_request", "Send { \"threadId\": \"...\", \"decision\": \"allow\" } or \"deny\".");
         }
+        if (deps.confidential?.(threadId)) return fail(404, "not_found", "No such approval in this conversation.");
         const info = deps.approvalAnswerer?.(threadId, params.id!) ?? null;
         if (!holdsAnswerPermission(person, info)) {
           return fail(403, "forbidden_permission", `Your profile does not include ${permissionLabel("clients.approvalsAnswer", "en")}, and this bot is not yours. Ask an admin to add it in Perspicax.`, { permission: "clients.approvalsAnswer" });

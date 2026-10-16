@@ -486,7 +486,7 @@ import { narrateTool, toUtterances } from "./tts/speech-text.ts";
 import { turnStartLogLine } from "./turn-log.ts";
 import {
   CONFIDENTIAL_CARD_REFUSED, CONFIDENTIAL_INCIDENT_TEXT, CONFIDENTIAL_NOTICE_BODY, CONFIDENTIAL_PEER_REFUSED, ConfidentialMemoryPasses, PERSPICAX_MEMORY_REFUSED, confidentialBrowserSession,
-  confidentialCardAnswerable, confidentialInternalRefusal, confidentialPatch, memoryWriteDigest, mcpConfidentialVerdict, newThreadConfidential, outboundCallDigest, perspicaxConfidentialVerdict, perspicaxMemoryVerdict, pinPersonalScope,
+  confidentialCardAnswerable, confidentialInternalRefusal, confidentialPatch, memoryWriteDigest, CONFIDENTIAL_CARD_MAX_CHARS, MEMORY_BOUND_FIELDS, mcpConfidentialVerdict, newThreadConfidential, outboundCallDigest, perspicaxConfidentialVerdict, perspicaxMemoryVerdict, pinPersonalScope,
 } from "./confidential-threads.ts";
 import { makeCapContinuationSubscriber } from "./turn-continuation.ts";
 import { TurnStops, stoppedTurnOutcome } from "./turn-outcome.ts";
@@ -25787,7 +25787,8 @@ const pendingConfidentialMemory = new Map<string, { threadId: string; botId: str
 /** The answer to a Perspicax tool call from a confidential thread, or null
  * to let it through. */
 function confidentialPerspicaxRefusal(capability: { threadId: string; botId: string }, tool: string, args: Record<string, unknown> | undefined,
-  judge: (tool: string, args: Record<string, unknown> | undefined) => ReturnType<typeof perspicaxConfidentialVerdict> = perspicaxConfidentialVerdict): string | null {
+  judge: (tool: string, args: Record<string, unknown> | undefined) => ReturnType<typeof perspicaxConfidentialVerdict> = perspicaxConfidentialVerdict,
+  gate = "perspicax"): string | null {
   if (!store.isConfidentialThread(capability.threadId)) return null;
   const verdict = judge(tool, args);
   if (verdict === "pass") return null;
@@ -25802,7 +25803,8 @@ function confidentialPerspicaxRefusal(capability: { threadId: string; botId: str
     pinPersonalScope(args);
     if (args.scope !== "me") return PERSPICAX_MEMORY_REFUSED;
   }
-  const digest = memory ? memoryWriteDigest(args) : outboundCallDigest(tool, args);
+  // the pass is for this server, this tool and these arguments only
+  const digest = memory ? memoryWriteDigest(args, gate) : outboundCallDigest(tool, args, gate);
   if (confidentialMemoryPasses.take(capability.threadId, digest)) return null;
   const bot = store.bot(capability.botId);
   if (!bot) return PERSPICAX_MEMORY_REFUSED;
@@ -25810,10 +25812,15 @@ function confidentialPerspicaxRefusal(capability: { threadId: string; botId: str
   if (pendingConfidentialMemory.size >= 256) pendingConfidentialMemory.delete(pendingConfidentialMemory.keys().next().value!);
   pendingConfidentialMemory.set(requestId, { threadId: capability.threadId, botId: bot.id, digest });
   const french = cwActionLanguage(cfg.language) === "fr";
-  const field = (key: string) => (typeof args?.[key] === "string" ? (args[key] as string).trim() : "");
+  // The card shows exactly what would leave, whole: every bound field of a
+  // memory write, every argument of a call. Too long to show whole: refused.
   const shown = memory
-    ? `${french ? "Mémoire personnelle (me)" : "Personal memory (me)"} · ${field("title") || field("topic") ? `${field("title") || field("topic")}: ` : ""}${field("body")}`
-    : `${tool} ${JSON.stringify(args ?? {}, null, 2)}`;
+    ? `${french ? "Mémoire personnelle" : "Personal memory"}\n${JSON.stringify(Object.fromEntries(MEMORY_BOUND_FIELDS.filter((key) => args?.[key] !== undefined).map((key) => [key, args![key]])), null, 2)}`
+    : `${gate === "perspicax" ? "" : `${gate} · `}${tool}\n${JSON.stringify(args ?? {}, null, 2)}`;
+  if (shown.length > CONFIDENTIAL_CARD_MAX_CHARS) {
+    pendingConfidentialMemory.delete(requestId);
+    return "This is a confidential thread: this call is too long to show the person whole on a card, so it was not sent. Make it smaller, or keep the content in this conversation.";
+  }
   store.appendMessage(capability.threadId, {
     role: "bot",
     kind: "options",
@@ -25822,7 +25829,7 @@ function confidentialPerspicaxRefusal(capability: { threadId: string; botId: str
       title: memory
         ? (french ? "Enregistrer dans ta mémoire personnelle?" : "Save to your personal memory?")
         : (french ? "Laisser sortir ceci d'un fil confidentiel?" : "Let this leave a confidential thread?"),
-      subtitle: shown.length > 2_000 ? `${shown.slice(0, 2_000)}…` : shown,
+      subtitle: shown,
       options: ["Allow", "Deny"],
       requestId,
       tool,
@@ -25844,6 +25851,7 @@ async function settleConfidentialMemoryCard(auth: RequestAuth, threadId: string,
   const card = message?.card;
   if (!message || !card) return { status: 404, body: { error: "No such request." } };
   if (card.answered || card.dismissed || card.expired) return { status: 409, body: { error: "The request is no longer open." } };
+  if (auth.kind === "session" && auth.session.ephemeral === true) return { status: 403, body: { error: CONFIDENTIAL_CARD_DELEGATED } };
   const owner = confidentialThreadOwner(threadId);
   const caller = approvalCallerUserId(auth).trim().toLowerCase();
   if (!owner || !caller || caller !== owner) return { status: 403, body: { error: "Only this thread's owner can answer this request." } };
@@ -26114,6 +26122,35 @@ function namesConfidentialThread(text: string, ids = confidentialThreadIds()): b
   for (const id of ids) if (text.includes(id)) return true;
   return false;
 }
+/** A response with every confidential thread cut out: a thread, a hit or a
+ * task of one goes; a bot whose selected thread is confidential stays,
+ * without that thread's id or transcript. */
+function scrubConfidentialThreads(value: unknown, ids: ReadonlySet<string>): unknown {
+  const transcript = ["messages", "activeLeafId", "hasMore"];
+  const scrub = (item: unknown): unknown => {
+    if (Array.isArray(item)) {
+      return item.filter((entry) => !(entry && typeof entry === "object" && !Array.isArray((entry as { tasks?: unknown }).tasks)
+        && ids.has(String((entry as { threadId?: unknown }).threadId ?? "")))).map(scrub);
+    }
+    if (!item || typeof item !== "object") return item;
+    const out: Record<string, unknown> = {};
+    const record = item as Record<string, unknown>;
+    const selectedConfidential = typeof record.threadId === "string" && ids.has(record.threadId) && Array.isArray(record.tasks);
+    for (const [key, child] of Object.entries(record)) {
+      if (selectedConfidential && (transcript.includes(key) || key === "threadId" || key === "mainThreadId")) continue;
+      out[key] = scrub(child);
+    }
+    return out;
+  };
+  return scrub(value);
+}
+const CONFIDENTIAL_CARD_DELEGATED = "A card in a confidential thread is answered by its owner in Sagax only, never on their behalf.";
+/** A request on someone's behalf: a bot acting as its person (act) or an
+ * AI client through the member API (both ephemeral sessions). */
+const delegatedRequestScope = new AsyncLocalStorage<boolean>();
+function delegatedRequest(): boolean {
+  return delegatedRequestScope.getStore() === true;
+}
 /** A bot acting as its person (act) never reaches a confidential thread:
  * a request naming one (path, query or body, any method, Full included)
  * is refused, and a confidential thread is cut out of what comes back
@@ -26134,25 +26171,7 @@ async function performBotActRouteOutsideConfidential(actor: PerformActor, target
   } catch {
     return { status: 403, text: JSON.stringify({ error: "That answer names a confidential thread." }) };
   }
-  const transcript = ["messages", "activeLeafId", "hasMore"];
-  const scrub = (value: unknown): unknown => {
-    if (Array.isArray(value)) {
-      // a thread, a hit, a task of a confidential thread goes; a bot whose
-      // selected thread is confidential stays, without that transcript
-      return value.filter((item) => !(item && typeof item === "object" && !Array.isArray((item as { tasks?: unknown }).tasks)
-        && ids.has(String((item as { threadId?: unknown }).threadId ?? "")))).map(scrub);
-    }
-    if (!value || typeof value !== "object") return value;
-    const out: Record<string, unknown> = {};
-    const record = value as Record<string, unknown>;
-    const selectedConfidential = typeof record.threadId === "string" && ids.has(record.threadId) && Array.isArray(record.tasks);
-    for (const [key, child] of Object.entries(record)) {
-      if (selectedConfidential && (transcript.includes(key) || key === "threadId" || key === "mainThreadId")) continue;
-      out[key] = scrub(child);
-    }
-    return out;
-  };
-  const text = JSON.stringify(scrub(parsed));
+  const text = JSON.stringify(scrubConfidentialThreads(parsed, ids));
   if (namesConfidentialThread(text, ids)) return { status: 403, text: JSON.stringify({ error: "That answer names a confidential thread." }) };
   return { status: answer.status, text: text.slice(0, 8000) };
 }
@@ -26760,6 +26779,13 @@ function selectViewerThread(botId: string, viewerId: string, threadId: string): 
  * it names, else the viewer's own (started if needed), else the bot's
  * selected one. A thread the viewer may not open reads as missing. */
 function routeThreadId(bot: BotRecord, rawThreadId: unknown, action: ThreadAction = "thread.post"): string {
+  // a request on someone's behalf never lands in a confidential thread,
+  // named or implicit (the selected one)
+  const threadId = routeThreadIdUnguarded(bot, rawThreadId, action);
+  if (delegatedRequest() && store.isConfidentialThread(threadId)) throw Object.assign(new Error("no such task"), { status: 404 });
+  return threadId;
+}
+function routeThreadIdUnguarded(bot: BotRecord, rawThreadId: unknown, action: ThreadAction): string {
   if (rawThreadId !== undefined && rawThreadId !== null && (typeof rawThreadId !== "string" || !/^[\w-]+$/.test(rawThreadId))) {
     throw Object.assign(new Error("threadId must be a task id"), { status: 400 });
   }
@@ -30640,11 +30666,12 @@ const orgMember = createOrgMemberRoutes({
     return `${origin}/#thread=${encodeURIComponent(threadId)}${bot ? `&bot=${encodeURIComponent(bot)}` : ""}`;
   },
   botOfThread: (threadId) => store.botByThread(threadId)?.id ?? null,
+  confidential: (threadId) => store.isConfidentialThread(threadId),
   hiddenThreadOf: (botId, principalId) => {
     const person = principalId.trim().toLowerCase();
     const at = (task: TaskRecord) => task.updatedAt ?? task.createdAt;
     const open = store.tasks(botId)
-      .filter((task) => task.hidden === true && task.archivedAt === undefined && !task.closedBy && task.ownerPrincipalId === person)
+      .filter((task) => task.hidden === true && task.confidential !== true && task.archivedAt === undefined && !task.closedBy && task.ownerPrincipalId === person)
       .sort((a, b) => at(b) - at(a));
     return open[0]?.threadId ?? null;
   },
@@ -31249,6 +31276,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // request, so a kept-alive connection never inherits one.
     const scopedViewerId = serviceThreadViewer(serviceViewerClosed(auth, path, privateThreads()), viewerId);
     threadViewerScope.enterWith(scopedViewerId ?? null);
+    // On someone's behalf (act, an AI client): a confidential thread is not
+    // there. Named in the path or query: 404; in an answer: cut out, and an
+    // answer that still names one is withheld.
+    const delegated = auth.kind === "session" && auth.session.ephemeral === true;
+    delegatedRequestScope.enterWith(delegated);
+    if (delegated) {
+      const confidentialIds = confidentialThreadIds();
+      if (confidentialIds.size) {
+        if (namesConfidentialThread(`${path}?${url.search}`, confidentialIds)) return json(res, 404, { error: "no such conversation" });
+        onJsonBody(res, (body) => {
+          const cleaned = scrubConfidentialThreads(body, confidentialIds);
+          return namesConfidentialThread(JSON.stringify(cleaned), confidentialIds) ? { error: "This answer names a confidential thread." } : cleaned;
+        });
+      }
+    }
     if (scopedViewerId && privateThreads()) {
       // A bot thread named in the path or the query is its owner's only;
       // every bot a response carries shows this viewer their threads only.
@@ -31717,7 +31759,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ? (frame as { params?: { name?: unknown; arguments?: unknown } }).params : undefined;
         if (call && typeof call.name === "string") {
           const callArgs = call.arguments && typeof call.arguments === "object" && !Array.isArray(call.arguments) ? call.arguments as Record<string, unknown> : undefined;
-          const refused = confidentialPerspicaxRefusal(internalCapability, call.name, callArgs, (tool) => mcpConfidentialVerdict(tool));
+          const refused = confidentialPerspicaxRefusal(internalCapability, call.name, callArgs, (tool) => mcpConfidentialVerdict(tool), path);
           if (refused) {
             const answer = { jsonrpc: "2.0", id: (frame as { id?: unknown }).id, result: { content: [{ type: "text", text: refused }], isError: true } };
             return json(res, 200, envelope === "message" ? { message: answer } : envelope === "result" ? { result: answer.result } : answer);
@@ -39032,6 +39074,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
       requirePinnedClientThread(bot.id, body.threadId);
+      // on someone's behalf: the thread it would stop is resolved first, and
+      // a confidential one is not there (routeThreadId)
+      if (delegatedRequest()) routeThreadId(bot, body.threadId);
       if (body.threadId !== undefined && (typeof body.threadId !== "string" || !/^[\w-]+$/.test(body.threadId))) {
         return json(res, 400, { error: "threadId must be a task id" });
       }
@@ -39571,6 +39616,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // (a bot act included): server/step-up-gate.ts.
       const stepUpRefusal = stepUpGate(ruleManager(auth), bot.threadId, String(body.requestId), behavior, stepUpAnswerOf(body), body.stepUp);
       if (stepUpRefusal) return json(res, stepUpRefusal.status, stepUpRefusal.body);
+      if (delegatedRequest() && store.isConfidentialThread(bot.threadId)) return json(res, 403, { error: CONFIDENTIAL_CARD_DELEGATED, code: "confidential_thread" });
       if (isConfidentialMemoryCard(bot.threadId, String(body.requestId))) {
         const settled = await settleConfidentialMemoryCard(auth, bot.threadId, String(body.requestId), behavior);
         return json(res, settled.status, settled.body);
@@ -39690,6 +39736,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const requestId = String(body.requestId);
       const stepUpRefusal = stepUpGate(ruleManager(auth), threadId, requestId, behavior, stepUpAnswerOf(body), body.stepUp);
       if (stepUpRefusal) return json(res, stepUpRefusal.status, stepUpRefusal.body);
+      // only the person, in Sagax, answers a card in a confidential thread:
+      // never a bot acting for them, never an AI client
+      if (delegatedRequest() && store.isConfidentialThread(threadId)) return json(res, 403, { error: CONFIDENTIAL_CARD_DELEGATED, code: "confidential_thread" });
       if (isConfidentialMemoryCard(threadId, requestId)) {
         const settled = await settleConfidentialMemoryCard(auth, threadId, requestId, behavior);
         return json(res, settled.status, settled.body);

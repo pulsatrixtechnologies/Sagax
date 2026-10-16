@@ -313,7 +313,7 @@ describe("security review: Perspicax outbound calls and the personal scope", () 
       expect(perspicaxConfidentialVerdict(name, {}), name).toBe("confirm");
     }
     for (const name of ["api_search", "api_describe", "api_lookup", "api_list", "identity", "tickets__query", "memory_recall", "memory_search", "flow", "work_search", "claim_list",
-      "vendor_x__find_tickets", "vendor_x__get_ticket", "read_transcript", "list_agents"]) {
+      "vendor_x__query", "vendor_x__read_action", "read_transcript", "list_agents"]) {
       expect(perspicaxConfidentialVerdict(name, {}), name).toBe("pass");
     }
     expect(perspicaxConfidentialVerdict("memory_write", { scope: "org" })).toBe("refuse");
@@ -385,3 +385,39 @@ describe("re-review: fail closed, the memory file tool, other MCP servers, tool 
     expect(confidentialBackupPath("tool-results/open/r1.txt", threads, new Set())).toBe(false);
   });
 });
+
+describe("third review: profile tools, plans, other servers, memory paths, the card", () => {
+  it("a profile's tools pass only as query or read_action; a plan is judged step by step", async () => {
+    const { perspicaxConfidentialVerdict } = await import("./confidential-threads.ts");
+    for (const name of ["vendor_x__find_tickets", "vendor_x__get_ticket", "vendor_x__list_things", "vendor_x__read_notes"]) {
+      expect(perspicaxConfidentialVerdict(name, {}), name).toBe("confirm");
+    }
+    expect(perspicaxConfidentialVerdict("api_plan", { steps: [{ tool: "api_search", args: {} }, { tool: "vendor_x__query", args: {} }] })).toBe("pass");
+    expect(perspicaxConfidentialVerdict("api_plan", { steps: [{ tool: "api_search" }, { tool: "vendor_x__log_time", args: { notes: "x" } }] })).toBe("confirm");
+    expect(perspicaxConfidentialVerdict("api_plan", { steps: [] })).toBe("confirm");
+    expect(perspicaxConfidentialVerdict("api_plan", {})).toBe("confirm");
+  });
+
+  it("other servers: a read verb then a write verb is refused, a bare verb takes the card", async () => {
+    const { mcpConfidentialVerdict } = await import("./confidential-threads.ts");
+    for (const name of ["get_and_update_record", "APP_FETCH_THEN_SEND", "list_and_delete", "read_and_post"]) expect(mcpConfidentialVerdict(name), name).toBe("refuse");
+    for (const name of ["fetch", "query", "APP_GET"]) expect(mcpConfidentialVerdict(name), name).toBe("confirm");
+    expect(mcpConfidentialVerdict("get_record")).toBe("pass");
+  });
+
+  it("a memory path is plain: no percent-encoding, no backslash, no dot segment", async () => {
+    const { perspicaxConfidentialVerdict } = await import("./confidential-threads.ts");
+    for (const path of ["/memories/me/%2e%2e/org/x.md", "/memories/me/a\\..\\b", "/memories/me/./x", "/memories/me/", "/memories/me/a b.md"]) {
+      expect(perspicaxConfidentialVerdict("memory", { command: "create", path, file_text: "x" }), path).toBe("refuse");
+    }
+    expect(perspicaxConfidentialVerdict("memory", { command: "create", path: "/memories/me/notes/a-1.md", file_text: "x" })).toBe("confirm");
+  });
+
+  it("a pass is bound to its server too, and to every bound memory field", async () => {
+    const { outboundCallDigest, MEMORY_BOUND_FIELDS } = await import("./confidential-threads.ts");
+    expect(outboundCallDigest("send", { a: 1 }, "/api/internal/connectors/mcp")).not.toBe(outboundCallDigest("send", { a: 1 }, "perspicax"));
+    expect(memoryWriteDigest({ body: "b" }, "perspicax")).not.toBe(memoryWriteDigest({ body: "b" }, "/api/internal/personal-mcp"));
+    expect([...MEMORY_BOUND_FIELDS]).toEqual(["scope", "topic", "title", "body", "tags", "directory_title", "searchable"]);
+  });
+});
+

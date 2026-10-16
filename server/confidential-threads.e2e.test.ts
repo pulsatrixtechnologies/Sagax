@@ -28,6 +28,8 @@
 //         « Fil confidentiel »
 //   CT-10 (re-review) a bot acting as Ana from her ordinary thread lists
 //         and searches nothing of her confidential threads
+//   CT-11 (third review) Ana's AI clients (the member API) cannot read,
+//         stream, write or answer a card in her confidential thread
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -532,5 +534,37 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
       expect(act.text ?? "").not.toContain("Encore");
       expect(act.text ?? "").not.toMatch(/ULTRASECRET-(?:ALPHA|BETA|GAMMA) /);
     }
+  }, 120_000);
+
+  it("CT-11: an AI client of Ana (the member API) neither reads, writes, streams nor answers a card in her confidential thread", async () => {
+    const member = (method: string, sub: string, body?: unknown) => api(method, `/api/org/member/${sub}`, {
+      bearer: idp.consoleAssertion({ sub: ANA.sub, aud: BASE, role: "employee", teams: [], claims: (c) => ({ ...c, act: { sub: "perspicax-mcp" } }) }),
+    }, body);
+    const asker = await api("POST", "/api/bots", bob, { name: "Demandeur2" });
+    const askerId = asker.body.bot.id as string;
+    expect((await api("PATCH", `/api/bots/${askerId}`, bob, { modelSelection: { instanceId: "asker", model: "fake" } })).status).toBe(200);
+    expect((await api("PUT", `/api/bots/${askerId}/grants`, bob, { target: `user:${ids.ana}`, level: "use" })).status).toBe(200);
+    const thread = await api("POST", `/api/bots/${askerId}/tasks`, ana, { title: `Client ${SECRET}`, confidential: true, approvalMode: "ask" });
+    const threadId = thread.body.task.threadId as string;
+    expect((await api("POST", `/api/bots/${askerId}/messages`, ana, { text: `${SECRET}-DELTA please`, threadId })).status).toBe(202);
+    const card = await waitFor(async () => (await messagesOf(ana, threadId)).find((m) => m.card?.requestId && m.card.tool && !m.card.answered), 45_000);
+    const requestId = card.card!.requestId!;
+
+    const listed = await member("GET", "bots");
+    expect(listed.status, listed.text).toBe(200);
+    expect(listed.text).not.toContain(threadId);
+    expect(listed.text).not.toContain(SECRET);
+    expect((await member("GET", `threads/${threadId}`)).status).toBe(404);
+    expect((await member("GET", `threads/${threadId}/stream`)).status).toBe(404);
+    expect((await member("POST", `bots/${askerId}/messages`, { text: "AI client writes in", threadId })).status).toBe(404);
+    expect((await member("GET", `approvals/${requestId}?threadId=${threadId}`)).status).toBe(404);
+    expect((await member("POST", `approvals/${requestId}`, { threadId, decision: "allow" })).status).toBe(404);
+    // without a thread: never the confidential one, even selected
+    await member("POST", `bots/${askerId}/messages`, { text: "AI client implicit" });
+    const after = await messagesOf(ana, threadId);
+    expect(JSON.stringify(after)).not.toContain("AI client");
+    expect(after.find((m) => m.card?.requestId === requestId)?.card?.answered).toBeUndefined();
+    // and Ana, in Sagax, still answers it
+    expect((await api("POST", `/api/threads/${threadId}/respond`, ana, { requestId, behavior: "deny" })).status).toBe(200);
   }, 120_000);
 });

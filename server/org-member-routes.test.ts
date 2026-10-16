@@ -222,7 +222,7 @@ describe("sending", () => {
     const got = await call("POST", "bots/b1/messages", token("bob"), { text: "hello", newThread: true });
     expect(performed.map((p) => p.request.path)).toEqual(["/api/bots/b1/tasks", "/api/bots/b1/messages"]);
     // a new thread is a hidden one too (#291)
-    expect(performed[0]!.request.body).toEqual({ hidden: true });
+    expect(performed[0]!.request.body).toEqual({ hidden: true, confidential: false });
     expect(performed[1]!.request.body).toEqual({ text: "hello", threadId: "t9" });
     expect(got.status).toBe(403);
     expect(got.body).toMatchObject({ code: "forbidden", message: "This bot is not yours to use." });
@@ -242,7 +242,7 @@ describe("sending", () => {
       const got = await call("POST", "bots/b1/messages", token("bob"), { text: "count the tickets" });
       expect(got.status).toBe(200);
       expect(performed.filter((p) => p.request.method === "POST").map((p) => [p.request.path, p.request.body])).toEqual([
-        ["/api/bots/b1/tasks", { hidden: true }],
+        ["/api/bots/b1/tasks", { hidden: true, confidential: false }],
         ["/api/bots/b1/messages", { text: "count the tickets", threadId: "t9" }],
       ]);
       expect(recorded[0]!.after).toEqual({ threadId: "t9", waited: false, hidden: true });
