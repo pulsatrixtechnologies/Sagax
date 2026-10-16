@@ -115,8 +115,9 @@ describe("evaluateCustomRules precedence", () => {
     const rmrf = callFacts({ tool: "Bash", command: "rm -rf /tmp/x", home: HOME });
     expect(evaluateCustomRules([commands], rmrf).kind).toBe("none");
     const forcePush = callFacts({ tool: "Bash", command: "git push --force origin main", classKey: "git:force-push", home: HOME });
-    const decision = evaluateCustomRules([commands], forcePush);
-    expect(decision.kind).toBe("none");
+    expect(evaluateCustomRules([commands], forcePush).kind).toBe("none");
+    const scopedSend = rule("l'exécution de commandes, l'écriture et l'envoi", "allow", { riskScope: ["external-send"] });
+    const decision = evaluateCustomRules([scopedSend], forcePush);
     expect(decision.kind === "none" && decision.riskBlocked?.missing).toEqual(["irreversible"]);
   });
 

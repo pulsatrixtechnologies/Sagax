@@ -14,7 +14,7 @@ type Answer = { status: number; body: Record<string, unknown> };
 
 export interface EmailDraftRouteDeps {
   ask: (auth: RequestAuth, threadId: string, body: Record<string, unknown>) => Promise<Answer>;
-  status: (threadId: string, draftKey: string) => Answer;
+  status: (auth: RequestAuth, threadId: string, draftKey: string) => Answer;
 }
 
 
@@ -30,7 +30,7 @@ export function createEmailDraftRoutes(deps: EmailDraftRouteDeps): RouteHandler 
     const status = method === "GET" ? /^\/api\/threads\/([\w-]+)\/email-drafts\/([\w-]{1,64})$/.exec(path) : null;
     if (status) {
       res.setHeader("cache-control", "no-store");
-      const answer = deps.status(status[1]!, status[2]!);
+      const answer = deps.status(auth, status[1]!, status[2]!);
       return json(res, answer.status, answer.body);
     }
     return PASS;

@@ -58,6 +58,9 @@ export interface EmailSendRequestCard {
   status: EmailSendStatus;
   /** A readable reason, on `failed`. Never a secret. */
   error?: string;
+  /** Addresses that already received this draft (a partial send), so a
+   * retry of the same draft skips them. */
+  sentTo?: string[];
   at: number;
 }
 
@@ -151,60 +154,149 @@ export function emailSendInstruction(draft: EmailDraftToSend, connector: EmailCo
   return lines.join("\n");
 }
 
-const RECIPIENT_KEY = /^(to|cc|bcc|recipients?|to_?recipients|cc_?recipients|bcc_?recipients|to_?email|email_?to|recipient_?email|to_?address(es)?)$/i;
-const ADDRESS_IN_TEXT = /[^\s@<>(),;:"'[\]\\{}]+@[^\s@<>(),;:"'[\]\\{}]+\.[a-z]{2,}/gi;
+type RecipientField = "to" | "cc" | "bcc";
+const RECIPIENT_FIELD: Record<string, RecipientField> = {
+  to: "to", torecipients: "to", recipients: "to", recipient: "to", toemail: "to", emailto: "to", recipientemail: "to", toaddress: "to", toaddresses: "to",
+  cc: "cc", ccrecipients: "cc", ccemail: "cc", ccaddresses: "cc",
+  bcc: "bcc", bccrecipients: "bcc", bccemail: "bcc", bccaddresses: "bcc",
+};
+/** Keys an address may sit under inside a recipient (Microsoft Graph's
+ * `{ emailAddress: { address, name } }`). */
+const ADDRESS_KEYS = new Set(["emailaddress", "address", "email", "name"]);
+const BODY_KEYS = new Set(["body", "content", "text", "html", "bodytext", "bodyhtml", "message"]);
+/** Every other key a send call may carry. Anything not here (attachments,
+ * reply-to, from, sender, headers, an extra field) is not the approved draft. */
+const NEUTRAL_KEYS = new Set(["subject", "contenttype", "content_type", "ishtml", "is_html", "mimetype", "format", "savetosentitems", "save_to_sent_items", "userid", "user_id", "importance"]);
+const ADDRESS_IN_TEXT = /^[^\s@<>(),;:"'[\]\\{}]+@[^\s@<>(),;:"'[\]\\{}]+\.[a-z]{2,}$/i;
 
-function addressesUnder(value: unknown, into: string[]): void {
-  if (typeof value === "string") {
-    for (const match of value.match(ADDRESS_IN_TEXT) ?? []) into.push(match.toLowerCase());
-  } else if (Array.isArray(value)) {
-    for (const item of value) addressesUnder(item, into);
-  } else if (value && typeof value === "object") {
-    for (const item of Object.values(value)) addressesUnder(item, into);
-  }
+function keyOf(key: string): string {
+  return key.toLowerCase().replace(/[_-]/g, "");
 }
 
-function recipientsIn(value: unknown, into: string[]): boolean {
-  let found = false;
-  if (Array.isArray(value)) {
-    for (const item of value) found = recipientsIn(item, into) || found;
+/** The body as text: tags and the common entities of an HTML body removed,
+ * line endings and runs of white space folded. */
+export function normalizeEmailBody(body: string): string {
+  let text = body.replace(/\r\n?/g, "\n");
+  if (/<[a-z][\s\S]*>/i.test(text)) {
+    text = text
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&");
+  }
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** FNV-1a of the normalized body: the approved body, bound to the pass. */
+export function emailBodyHash(body: string): string {
+  const text = normalizeEmailBody(body);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${hash.toString(16).padStart(8, "0")}:${text.length}`;
+}
+
+interface CallReading {
+  recipients: Record<RecipientField, Set<string>>;
+  subjects: string[];
+  bodies: string[];
+  /** a key or a value outside the approved shape */
+  extra: boolean;
+}
+
+function readAddresses(value: unknown, into: Set<string>, reading: CallReading): void {
+  if (typeof value === "string") {
+    for (const part of value.split(/[,;]/)) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const angle = /<([^<>]+)>\s*$/.exec(trimmed);
+      const address = (angle ? angle[1]! : trimmed).trim().toLowerCase();
+      if (ADDRESS_IN_TEXT.test(address)) into.add(address);
+      else if (!angle) reading.extra = true;
+    }
+  } else if (Array.isArray(value)) {
+    for (const item of value) readAddresses(item, into, reading);
   } else if (value && typeof value === "object") {
     for (const [key, item] of Object.entries(value)) {
-      if (RECIPIENT_KEY.test(key)) {
-        addressesUnder(item, into);
-        found = true;
-      } else {
-        found = recipientsIn(item, into) || found;
-      }
+      if (!ADDRESS_KEYS.has(keyOf(key))) reading.extra = true;
+      else if (keyOf(key) !== "name") readAddresses(item, into, reading);
     }
+  } else if (value !== null && value !== undefined) {
+    reading.extra = true;
   }
-  return found;
 }
 
-/** Whether one outbound call is the approved draft: an outbound tool whose
- * recipients are exactly the draft's (To, Cc, Bcc, nobody else) and whose
- * arguments carry the exact subject. Anything else keeps its card. */
-export function emailSendCallMatches(draft: EmailDraftToSend, tool: string, input: string | undefined): boolean {
+function readCall(value: unknown, reading: CallReading): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    reading.extra = true;
+    return;
+  }
+  for (const [rawKey, item] of Object.entries(value)) {
+    const key = keyOf(rawKey);
+    const field = RECIPIENT_FIELD[key];
+    if (field) {
+      readAddresses(item, reading.recipients[field], reading);
+    } else if (key === "subject") {
+      if (typeof item === "string") reading.subjects.push(item.trim());
+      else reading.extra = true;
+    } else if (BODY_KEYS.has(key)) {
+      if (typeof item === "string") reading.bodies.push(item);
+      else readCall(item, reading);
+    } else if (NEUTRAL_KEYS.has(key) || NEUTRAL_KEYS.has(rawKey.toLowerCase())) {
+      if (item !== null && typeof item === "object") reading.extra = true;
+    } else {
+      reading.extra = true;
+    }
+  }
+}
+
+function sameSet(have: Set<string>, want: readonly string[]): boolean {
+  const expected = new Set(want.map((address) => address.toLowerCase()));
+  return have.size === expected.size && [...expected].every((address) => have.has(address));
+}
+
+/** Whether one outbound call is the approved draft, through the approved
+ * connector: an outbound tool of that connector whose To, Cc and Bcc are
+ * exactly the draft's, whose subject is the draft's, whose body is the
+ * approved body (same normalized hash), and which carries no other field
+ * (no attachment, reply-to, from, sender or header). Anything else keeps
+ * its card. */
+export function emailSendCallMatches(draft: EmailDraftToSend, tool: string, input: string | undefined, connector?: EmailConnector): boolean {
   const qualified = tool.startsWith("mcp__") || !tool.includes("__") ? tool : `mcp__${tool}`;
   if (!isOutboundTool(tool) && !isOutboundTool(qualified)) return false;
+  if (connector && !connectorOwnsTool(connector, tool)) return false;
   const args = parseArgs(input);
   if (!args) return false;
-  const expected = new Set([...draft.to, ...draft.cc, ...draft.bcc].map((address) => address.toLowerCase()));
-  const named: string[] = [];
-  if (!recipientsIn(args, named)) return false;
-  const unique = new Set(named);
-  if (unique.size !== expected.size || [...expected].some((address) => !unique.has(address))) return false;
-  if (draft.subject) {
-    const strings: string[] = [];
-    const collect = (value: unknown) => {
-      if (typeof value === "string") strings.push(value.trim());
-      else if (Array.isArray(value)) value.forEach(collect);
-      else if (value && typeof value === "object") Object.values(value).forEach(collect);
-    };
-    collect(args);
-    if (!strings.includes(draft.subject.trim())) return false;
+  const reading: CallReading = { recipients: { to: new Set(), cc: new Set(), bcc: new Set() }, subjects: [], bodies: [], extra: false };
+  readCall(args, reading);
+  if (reading.extra) return false;
+  if (!sameSet(reading.recipients.to, draft.to) || !sameSet(reading.recipients.cc, draft.cc) || !sameSet(reading.recipients.bcc, draft.bcc)) return false;
+  if (reading.subjects.length > 1 || (reading.subjects[0] ?? "") !== draft.subject.trim()) return false;
+  const approved = emailBodyHash(draft.body);
+  if (draft.body.trim() && !reading.bodies.length) return false;
+  return reading.bodies.every((body) => emailBodyHash(body) === approved);
+}
+
+/** Whether a tool belongs to the connector the person approved: the MCP
+ * server of that name, or the connected app's own actions. */
+export function connectorOwnsTool(connector: EmailConnector, tool: string): boolean {
+  if (connector.kind !== "bot" || !connector.id) return false;
+  const id = connector.id.toLowerCase();
+  const match = /^(?:mcp__)?([A-Za-z0-9][A-Za-z0-9_.-]*?)__([A-Za-z0-9][A-Za-z0-9_.-]*)$/.exec(tool);
+  if (match) {
+    const server = match[1]!.toLowerCase();
+    if (server === id) return true;
+    // a connected app runs through the composio server: GMAIL_SEND_EMAIL
+    return server === "composio" && match[2]!.toLowerCase().startsWith(`${id}_`);
   }
-  return true;
+  return tool.toLowerCase().startsWith(`${id}_`);
 }
 
 /** A mail connector a bot has, from its MCP servers and connected apps. */

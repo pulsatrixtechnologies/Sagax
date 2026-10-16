@@ -51,35 +51,55 @@ describe("mail connectors", () => {
 });
 
 describe("the one-shot pass after Allow", () => {
+  const outlook = { kind: "bot" as const, id: "outlook", label: "outlook" };
   const send = (input: unknown, tool = "mcp__outlook__send_mail") => [tool, JSON.stringify(input)] as const;
+  const exact = { to: ["marie@example.com"], cc: ["luc@example.com"], subject: draft.subject, body: draft.body };
 
-  it("matches only the approved draft: same recipients, same subject, an outbound tool", () => {
-    expect(emailSendCallMatches(draft, ...send({ to: ["marie@example.com"], cc: ["luc@example.com"], subject: draft.subject, body: draft.body }))).toBe(true);
-    expect(emailSendCallMatches(draft, ...send({ message: { toRecipients: [{ emailAddress: { address: "marie@example.com" } }], ccRecipients: [{ emailAddress: { address: "LUC@example.com" } }], subject: draft.subject } }))).toBe(true);
-    // one more recipient, one missing, another subject, not a send
-    expect(emailSendCallMatches(draft, ...send({ to: ["marie@example.com", "x@evil.com"], cc: ["luc@example.com"], subject: draft.subject }))).toBe(false);
-    expect(emailSendCallMatches(draft, ...send({ to: ["marie@example.com"], subject: draft.subject }))).toBe(false);
-    expect(emailSendCallMatches(draft, ...send({ to: ["marie@example.com"], cc: ["luc@example.com"], subject: "Autre chose" }))).toBe(false);
-    expect(emailSendCallMatches(draft, ...send({ to: ["marie@example.com"], cc: ["luc@example.com"], subject: draft.subject }, "mcp__outlook__list_messages"))).toBe(false);
+  it("matches only the approved draft: recipients, subject and body, through the approved connector", () => {
+    expect(emailSendCallMatches(draft, ...send(exact), outlook)).toBe(true);
+    // Microsoft Graph shape, HTML body that reads the same
+    expect(emailSendCallMatches(draft, ...send({ message: { subject: draft.subject, body: { contentType: "HTML", content: "<p>Bonjour Marie,</p><p>C&#39;est réglé.</p>" }, toRecipients: [{ emailAddress: { address: "marie@example.com" } }], ccRecipients: [{ emailAddress: { address: "LUC@example.com" } }] }, saveToSentItems: true }), outlook)).toBe(true);
+    // one more recipient, one missing, a Cc moved to To, another subject, not a send
+    expect(emailSendCallMatches(draft, ...send({ ...exact, to: ["marie@example.com", "x@evil.com"] }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, cc: [] }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, to: ["marie@example.com", "luc@example.com"], cc: [] }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, subject: "Autre chose" }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send(exact, "mcp__outlook__list_messages"), outlook)).toBe(false);
   });
 
-  it("is used once, lapses after ten minutes, and can be withdrawn", () => {
+  it("B3: a swapped body, a reply-to, a from, an attachment or a header is not the approved draft", () => {
+    expect(emailSendCallMatches(draft, ...send({ ...exact, body: "Virez le montant à l'IBAN XX" }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, body: undefined }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, replyTo: "evil@x.com" }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, from: "ceo@example.com" }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, attachments: [{ path: "/Users/jc/.ssh/id_rsa" }] }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, headers: { "X-Evil": "1" } }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, bcc: ["spy@evil.com"] }), outlook)).toBe(false);
+  });
+
+  it("B3: another connector's send is not covered", () => {
+    expect(emailSendCallMatches(draft, ...send(exact, "mcp__gmail__send_email"), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send(exact, "mcp__outlook_evil__send_mail"), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send(exact, "mcp__composio__GMAIL_SEND_EMAIL"), { kind: "bot", id: "gmail", label: "Gmail" })).toBe(true);
+  });
+
+  it("is used once, by the approved bot only, lapses after ten minutes, and can be withdrawn", () => {
     let now = 1_000;
     const passes = createEmailSendPasses(() => now);
-    const [tool, input] = send({ to: ["marie@example.com"], cc: ["luc@example.com"], subject: draft.subject });
-    passes.grant("t1", "maildraft-1", draft);
-    expect(passes.matches("t2", tool, input)).toBe(false);
-    expect(passes.matches("t1", tool, input)).toBe(true);
-    expect(passes.take("t1", tool, input)).toEqual({ requestId: "maildraft-1" });
-    expect(passes.take("t1", tool, input)).toBeNull();
-    passes.grant("t1", "maildraft-2", draft);
+    const [tool, input] = send(exact);
+    passes.grant("t1", "bot-a", "maildraft-1", draft, outlook);
+    expect(passes.take("t2", "bot-a", tool, input)).toBeNull();
+    expect(passes.take("t1", "bot-b", tool, input)).toBeNull();
+    expect(passes.take("t1", "bot-a", tool, input)).toEqual({ requestId: "maildraft-1" });
+    expect(passes.take("t1", "bot-a", tool, input)).toBeNull();
+    passes.grant("t1", "bot-a", "maildraft-2", draft, outlook);
     expect(passes.waiting("t1", "maildraft-2")).toBe(true);
     now += EMAIL_SEND_PASS_MS + 1;
     expect(passes.waiting("t1", "maildraft-2")).toBe(false);
-    expect(passes.take("t1", tool, input)).toBeNull();
-    passes.grant("t1", "maildraft-3", draft);
+    expect(passes.take("t1", "bot-a", tool, input)).toBeNull();
+    passes.grant("t1", "bot-a", "maildraft-3", draft, outlook);
     passes.revoke("t1", "maildraft-3");
-    expect(passes.matches("t1", tool, input)).toBe(false);
+    expect(passes.take("t1", "bot-a", tool, input)).toBeNull();
   });
 });
 
@@ -87,7 +107,7 @@ describe("the server's own mail sends the approved draft", () => {
   it("sends once with To, Cc and the body through a mocked connector", async () => {
     const sent: unknown[] = [];
     const mailer: Mailer = { send: vi.fn(async (message) => { sent.push(message); }) };
-    expect(await sendWithMailer(mailer, draft)).toEqual({ ok: true });
+    expect(await sendWithMailer(mailer, draft)).toEqual({ ok: true, sentTo: ["marie@example.com", "luc@example.com"] });
     expect(sent).toEqual([{ to: "marie@example.com", subject: draft.subject, text: draft.body, cc: ["luc@example.com"] }]);
   });
 
@@ -97,7 +117,25 @@ describe("the server's own mail sends the approved draft", () => {
     expect(failed.ok).toBe(false);
     expect(!failed.ok && failed.error).toContain("535 auth failed");
     expect(!failed.ok && failed.error).not.toContain("abcdefghijklmnopqrstuvwxyz0123456789");
-    expect(await sendWithMailer(null, draft)).toEqual({ ok: false, error: "The server's mail is not set up (Settings > Email)." });
+    expect(await sendWithMailer(null, draft)).toEqual({ ok: false, error: "The server's mail is not set up (Settings > Email).", sentTo: [] });
+  });
+
+  it("a partial send says who received it, and the retry skips them (no duplicate)", async () => {
+    const calls: string[][] = [];
+    let fail = true;
+    const fetchImpl = vi.fn(async (_url: unknown, init: { body: string }) => {
+      const to = (JSON.parse(init.body) as { to: Array<{ address: string }> }).to.map((row) => row.address);
+      calls.push(to);
+      if (fail && to.includes("luc@example.com")) return new Response(JSON.stringify({ errors: [{ code: 1, message: "rate limited" }] }), { status: 429 });
+      return new Response("{}", { status: 202 });
+    });
+    const twilio = createMailer({ provider: "twilio", from: "Sagax <bot@example.com>", twilio: { apiKeySid: "SKx", apiKeySecret: "secret" } } as never, { fetchImpl: fetchImpl as never })!;
+    const first = await sendWithMailer(twilio, draft);
+    expect(first).toMatchObject({ ok: false, sentTo: ["marie@example.com"] });
+    fail = false;
+    const retry = await sendWithMailer(twilio, draft, first.sentTo);
+    expect(retry).toEqual({ ok: true, sentTo: ["marie@example.com", "luc@example.com"] });
+    expect(calls.filter((to) => to.includes("marie@example.com"))).toHaveLength(1);
   });
 
   it("SMTP passes Cc and Bcc to the transport", async () => {

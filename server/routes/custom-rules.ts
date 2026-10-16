@@ -105,7 +105,7 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
           });
         }
       }
-      deps.audit({ action: "custom_rule.add", personId: me, botId: rule.botId, after: { rule: rule.id, behavior: rule.behavior, riskScope: rule.riskScope, ...(card ? { fromCard: true } : {}) } }, auth);
+      deps.audit({ action: "custom_rule.add", personId: me, botId: rule.botId, after: { rule: rule.id, when: rule.when, botId: rule.botId, behavior: rule.behavior, riskScope: rule.riskScope, ...(card ? { fromCard: true } : {}) } }, auth);
       return json(res, 201, { rule: view(rule) });
     }
 
@@ -119,7 +119,7 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       if (!before) return json(res, 404, { error: "no such rule" });
       if (method === "DELETE") {
         deps.store.remove(me, id);
-        deps.audit({ action: "custom_rule.remove", personId: me, botId: before.botId, before: { rule: id, behavior: before.behavior } }, auth);
+        deps.audit({ action: "custom_rule.remove", personId: me, botId: before.botId, before: { rule: id, when: before.when, botId: before.botId, behavior: before.behavior, riskScope: before.riskScope } }, auth);
         return json(res, 200, { ok: true });
       }
       const body = await readBody(req);
@@ -145,8 +145,8 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       if (!updated) return json(res, 404, { error: "no such rule" });
       deps.audit({
         action: "custom_rule.update", personId: me, botId: updated.botId,
-        before: { behavior: before.behavior, riskScope: before.riskScope, enabled: before.enabled },
-        after: { rule: updated.id, behavior: updated.behavior, riskScope: updated.riskScope, enabled: updated.enabled },
+        before: { when: before.when, botId: before.botId, behavior: before.behavior, riskScope: before.riskScope, enabled: before.enabled },
+        after: { rule: updated.id, when: updated.when, botId: updated.botId, behavior: updated.behavior, riskScope: updated.riskScope, enabled: updated.enabled },
       }, auth);
       return json(res, 200, { rule: view(updated) });
     }

@@ -14,6 +14,17 @@ export interface Mailer {
   send(message: { to: string; subject: string; text: string; cc?: string[]; bcc?: string[] }): Promise<void>;
 }
 
+/** A send that reached some recipients before it failed: `sent` names
+ * them, so a retry does not send them the same message again. */
+export class MailPartialSendError extends Error {
+  readonly sent: string[];
+  constructor(message: string, sent: string[]) {
+    super(message);
+    this.name = "MailPartialSendError";
+    this.sent = sent;
+  }
+}
+
 /** "a@x.ca, b@y.ca" as a list. */
 function recipients(to: string): string[] {
   return to.split(",").map((address) => address.trim()).filter(Boolean);
@@ -118,8 +129,15 @@ function createTwilioMailer(settings: MailSettings, fetchImpl: typeof fetch): Ma
     async send(message) {
       // The Email API is used here with a To list only: each Cc and Bcc
       // address gets its own copy, so a Bcc address is never shown to anyone.
+      const sent: string[] = [];
       for (const to of [recipients(message.to), ...[...(message.cc ?? []), ...(message.bcc ?? [])].map((address) => [address])]) {
-        await sendOne(to, message);
+        try {
+          await sendOne(to, message);
+        } catch (error) {
+          if (!sent.length) throw error;
+          throw new MailPartialSendError(error instanceof Error ? error.message : String(error), sent);
+        }
+        sent.push(...to);
       }
     },
   };

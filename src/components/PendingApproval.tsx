@@ -417,7 +417,8 @@ export function PendingApprovalActions({
             {t("approval.action.alwaysAllowSession")}
           </button>
         )}
-        {candidate && (
+        {/* never without the bot: the rule would silently become one for all bots */}
+        {candidate && bot && (
           <AlwaysAllowThis
             candidate={candidate}
             bot={bot}
@@ -468,7 +469,7 @@ export function PendingApprovalActions({
  * (a risky kind left unticked), so a saved rule always means what it says. */
 export function AlwaysAllowThis({ candidate, bot, threadId, requestId, className, onSaved }: {
   candidate: NonNullable<NonNullable<Message["card"]>["customRuleCandidate"]>;
-  bot?: Bot;
+  bot: Bot;
   threadId: string;
   requestId: string;
   className: string;
@@ -482,7 +483,7 @@ export function AlwaysAllowThis({ candidate, bot, threadId, requestId, className
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title={t("customRules.alwaysAllowThisHint", { name: bot?.name ?? t("approval.someone") })}
+        title={t("customRules.alwaysAllowThisHint", { name: bot.name })}
         className={className}
         data-always-allow-this-button
       >
@@ -493,7 +494,7 @@ export function AlwaysAllowThis({ candidate, bot, threadId, requestId, className
   return (
     <div className="order-first w-full basis-full" data-always-allow-this>
       <CustomRuleForm
-        botName={bot?.name ?? t("approval.someone")}
+        botName={bot.name}
         initial={{ when: candidate.when, behavior: "allow", allBots: false, riskScope: [] }}
         risks={candidate.risks}
         saveLabel={t("customRules.form.saveAndAllow")}
@@ -510,7 +511,7 @@ export function AlwaysAllowThis({ candidate, bot, threadId, requestId, className
             body: JSON.stringify({
               when: draft.when,
               behavior: draft.behavior,
-              botId: draft.allBots || !bot ? null : bot.id,
+              botId: draft.allBots ? null : bot.id,
               riskScope: draft.riskScope,
               ...(draft.behavior === "allow" ? { fromCard: { threadId, requestId } } : {}),
             }),

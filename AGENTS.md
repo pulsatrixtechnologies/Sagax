@@ -696,8 +696,17 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
 - Every automatic decision writes a decision row with the rule id; the
   transcript step and the card carry a rule notice with Edit rule. "Toujours
   permettre ceci" saves a rule from a card only when it covers that card
-  (409 `rule_not_covering` otherwise). The isolated reviewer reads the rules
-  as policy text (`safetyReviewPrompt(call, policy)`) and may only tighten.
+  (409 `rule_not_covering` otherwise); on a shell card it proposes the
+  exact command line only. Shell lines are read word by word (`readShell`):
+  find, rg, tree, less, awk, sed and xargs are never reads; chaining,
+  redirection, substitution or quotes make a line opaque (only an exact
+  command rule allows it); `/bin/rm`, `env rm`, `sudo rm`, `xargs rm`,
+  network tools and interpreters are recognized anywhere. Paths: only this
+  person's home is `~` (`~user`, `~+`, `~-` refused), real paths are
+  matched, deny and ask compare case-insensitively. Tools are named whole,
+  server included; products match whole name tokens. No model reviewer is
+  wired: `customRulesReviewPrompt`, `tightenCustomDecision` and
+  `safetyReviewPrompt(call, policy)` are the tighten-only contract for one.
 
 Email drafts (`src/components/EmailCard.tsx`, `shared/email-draft-send.ts`,
 `server/email-draft-send.ts`), covered by `server/email-draft-send.test.ts`
@@ -705,8 +714,13 @@ and `server/email-draft-send.e2e.test.ts`: To, Cc, Subject and body are
 editable; Envoyer writes an approval card (`POST
 /api/threads/:id/email-drafts`) and never sends. Allow sends once: through
 the bot's own mail connector (Microsoft 365, Outlook or Gmail MCP server or
-app) with a 10-minute one-shot pass for exactly those recipients and that
-subject, or through the server's mail settings. Deny sends nothing. The
+app) with a 10-minute one-shot pass bound to that bot, that connector's
+server, the exact To, Cc, Bcc, subject and a hash of the approved body, and
+no other field (no attachment, reply-to, from or header); or through the
+server's mail settings. The pass is consumed before the safety review is
+relaxed for it, and the person's deny rules still apply. Bcc is refused in
+a room and never shown in a card's arguments. A partial send records who
+already received it, and Retry of the same draft skips them. Deny sends nothing. The
 draft shows the status and a send error inline; Retry asks again.
 
 ## Server log on disk and expired approvals (2026-10-11)

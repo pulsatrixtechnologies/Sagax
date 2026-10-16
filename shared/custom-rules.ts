@@ -21,10 +21,15 @@
 //     path outside the rule's folder, a shell command chaining another one,
 //     a `..` that climbs out): they never widen it, and their words are never
 //     read as policy.
-//   - The isolated model reviewer reads the rules as policy text and the
-//     call inside an untrusted delimiter, and may only tighten
-//     (tightenCustomDecision): it can turn an allow into a card or a refusal,
-//     never a card into an allow.
+//   - A shell card is read word by word (readShell): only a known pure
+//     reader with plain path arguments is a "read"; deletion, network and
+//     running code are recognized behind `/bin/`, `env`, `sudo`, `xargs` or
+//     anywhere in a chained line. "Toujours permettre ceci" on a shell card
+//     proposes that exact command line, never a family of commands.
+//   - The decision at request.opened is this deterministic matcher only.
+//     customRulesReviewPrompt / tightenCustomDecision are the tighten-only
+//     contract for an isolated model reviewer; no reviewer is wired to them
+//     yet.
 //
 // Pure: no clock, no disk, no node built-ins (the app reads it for the
 // editor's preview). The server gives the safety class key and the home
@@ -90,6 +95,8 @@ export interface CompiledRule {
   tools: string[];
   /** Product keys (connectwise, github...). */
   products: string[];
+  /** Exact command lines ("la commande exacte `...`"), whitespace folded. */
+  commands: string[];
   /** Whether the text named anything the matcher can test. */
   recognized: boolean;
 }
@@ -105,6 +112,14 @@ export interface CallFacts {
   paths: string[] | null;
   products: string[];
   risks: RiskClass[];
+  /** A shell call: its command line, whitespace folded. */
+  command?: string;
+  /** A shell call that only reads (a known pure reader, every argument a
+   * readable path, no chaining, redirection, substitution or wrapper). */
+  pureRead?: boolean;
+  /** A shell call a folder or family rule cannot read safely (chaining,
+   * redirection, substitution, quotes): only an exact command rule allows it. */
+  opaque?: boolean;
 }
 
 // ── text helpers ─────────────────────────────────────────────────────────
@@ -134,31 +149,47 @@ const OBJECT_WORDS: Record<ObjectKind, readonly string[]> = {
   command: ["commande", "commandes", "command", "commands", "terminal", "shell"],
 };
 
-/** Products a rule may name, and how a tool's server or name reads them. */
-const PRODUCTS: Record<string, { words: readonly string[]; pattern: RegExp }> = {
-  connectwise: { words: ["connectwise", "cw", "psa"], pattern: /(^|[_\-.])(cw|connectwise|psa)([_\-.]|$)|cw_psa|connectwise/ },
-  sentinelone: { words: ["sentinelone", "sentinel", "s1"], pattern: /sentinel|(^|[_\-.])s1([_\-.]|$)/ },
-  github: { words: ["github", "git"], pattern: /github|(^|[_\-.])gh([_\-.]|$)/ },
-  slack: { words: ["slack"], pattern: /slack/ },
-  outlook: { words: ["outlook", "microsoft", "m365", "office", "office365"], pattern: /outlook|microsoft|m365|office/ },
-  gmail: { words: ["gmail", "google"], pattern: /gmail|google/ },
-  teams: { words: ["teams"], pattern: /teams/ },
-  calendar: { words: ["calendrier", "agenda", "calendar"], pattern: /calendar|calendrier|agenda|event/ },
-  twilio: { words: ["twilio"], pattern: /twilio/ },
-  bookstack: { words: ["bookstack"], pattern: /bookstack/ },
-  tailscale: { words: ["tailscale"], pattern: /tailscale/ },
-  perspicax: { words: ["perspicax"], pattern: /perspicax/ },
+/** Products a rule may name (its words) and the whole tokens of a tool's
+ * server or name that are that product: `cw_psa__query` is ConnectWise,
+ * `newcw_tools` or `my_outlookish` is not. */
+const PRODUCTS: Record<string, { words: readonly string[]; tokens: readonly string[] }> = {
+  connectwise: { words: ["connectwise", "cw", "psa"], tokens: ["cw", "connectwise", "psa"] },
+  sentinelone: { words: ["sentinelone", "sentinel", "s1"], tokens: ["sentinelone", "sentinel", "s1"] },
+  github: { words: ["github"], tokens: ["github", "gh"] },
+  slack: { words: ["slack"], tokens: ["slack"] },
+  outlook: { words: ["outlook", "microsoft", "m365", "office", "office365"], tokens: ["outlook", "microsoft", "m365", "office365"] },
+  gmail: { words: ["gmail"], tokens: ["gmail"] },
+  teams: { words: ["teams"], tokens: ["teams"] },
+  calendar: { words: ["calendrier", "agenda", "calendar"], tokens: ["calendar", "calendrier", "agenda"] },
+  twilio: { words: ["twilio"], tokens: ["twilio"] },
+  bookstack: { words: ["bookstack"], tokens: ["bookstack"] },
+  tailscale: { words: ["tailscale"], tokens: ["tailscale"] },
+  perspicax: { words: ["perspicax"], tokens: ["perspicax"] },
 };
 
 const PATH_IN_TEXT = /(?:^|[\s«"'(])((?:~|\.{1,2})?\/[^\s,;«»"'()]*)/g;
 
-/** `~/Documents/`, `/Users/jc/Documents`, `$HOME/Documents` are one folder. */
-export function normalizePath(raw: string, home?: string): string | null {
+/** `~/Documents/`, `<this person's home>/Documents` and `$HOME/Documents`
+ * are one folder. Only this person's home reads as `~`: `~root`, `~+`,
+ * `~-` and another person's home folder are refused or stay absolute. A
+ * relative path is unknown (null). `resolve` (the server's realpath) turns
+ * a symbolic link into where it really points before anything matches. */
+export function normalizePath(raw: string, home?: string, resolve?: (absolute: string) => string): string | null {
   let path = raw.trim().replace(/^["']|["']$/g, "");
   if (!path) return null;
   path = path.replace(/^\$HOME(?=\/|$)/, "~").replace(/^\$\{HOME\}(?=\/|$)/, "~");
-  if (home && home !== "/" && (path === home || path.startsWith(`${home.replace(/\/+$/, "")}/`))) path = `~${path.slice(home.replace(/\/+$/, "").length)}`;
-  path = path.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, "~");
+  if (path.startsWith("~") && path.length > 1 && path[1] !== "/") return null;
+  const homeRoot = home && home !== "/" ? home.replace(/\/+$/, "") : undefined;
+  if (resolve) {
+    const absolute = path.startsWith("~") ? (homeRoot ? `${homeRoot}${path.slice(1)}` : null) : path.startsWith("/") ? path : null;
+    if (absolute === null) return null;
+    try {
+      path = resolve(absolute);
+    } catch {
+      return null;
+    }
+  }
+  if (homeRoot && (path === homeRoot || path.startsWith(`${homeRoot}/`))) path = `~${path.slice(homeRoot.length)}`;
   if (!path.startsWith("/") && !path.startsWith("~")) return null;
   const root = path.startsWith("~") ? "~" : "";
   const parts: string[] = [];
@@ -175,9 +206,13 @@ export function normalizePath(raw: string, home?: string): string | null {
   return joined === "~/" ? "~" : joined.replace(/\/$/, "") || "/";
 }
 
-function within(path: string, folder: string): boolean {
-  if (folder === "/" ) return path.startsWith("/");
-  return path === folder || path.startsWith(`${folder}/`);
+/** `foldCase`: for a deny or ask rule, so a differently cased path on a
+ * case-insensitive disk is still caught (deny matches more, allow less). */
+function within(path: string, folder: string, foldCase = false): boolean {
+  const own = foldCase ? path.toLowerCase() : path;
+  const dir = foldCase ? folder.toLowerCase() : folder;
+  if (dir === "/") return own.startsWith("/");
+  return own === dir || own.startsWith(`${dir}/`);
 }
 
 // ── rules ────────────────────────────────────────────────────────────────
@@ -211,7 +246,13 @@ export function parseRuleSentence(text: string, fallback: CustomRuleBehavior = "
 
 /** What a rule's words name. Pure and cheap: the editor shows it live. */
 export function compileRule(when: string, home?: string): CompiledRule {
-  const text = when.slice(0, MAX_RULE_TEXT);
+  // "la commande exacte `git status`": one command line, nothing else; its
+  // words are not read as actions, folders or tools
+  const commands: string[] = [];
+  const text = when.slice(0, MAX_RULE_TEXT).replace(/(?:commande exacte|exact command)\s*`([^`]{1,400})`/gi, (_, command: string) => {
+    commands.push(normalizeCommand(command));
+    return " ";
+  });
   const list = words(text);
   const has = (vocabulary: readonly string[]) => vocabulary.some((word) => list.includes(word));
   const actions = (Object.keys(ACTION_WORDS) as ActionKind[]).filter((kind) => has(ACTION_WORDS[kind]));
@@ -228,15 +269,17 @@ export function compileRule(when: string, home?: string): CompiledRule {
     if (path && path !== "/" && !paths.includes(path)) paths.push(path);
   }
   if (paths.length && !objects.includes("file")) objects.push("file");
+  const rest = text;
+  if (commands.length && !actions.includes("command")) actions.push("command");
   const tools: string[] = [];
-  for (const match of text.matchAll(/`([^`\s]{2,120})`/g)) tools.push(match[1]!.toLowerCase().replace(/^mcp__/, ""));
-  for (const match of fold(text).matchAll(/\b(?:outil|tool)\s+([a-z0-9][a-z0-9_.-]{2,120})/g)) {
+  for (const match of rest.matchAll(/`([^`\s]{2,120})`/g)) tools.push(match[1]!.toLowerCase().replace(/^mcp__/, ""));
+  for (const match of fold(rest).matchAll(/\b(?:outil|tool)\s+([a-z0-9][a-z0-9_.-]{2,120})/g)) {
     const name = match[1]!.replace(/^mcp__/, "");
     if (!tools.includes(name)) tools.push(name);
   }
   const products = Object.entries(PRODUCTS).filter(([, product]) => has(product.words)).map(([key]) => key);
-  const recognized = actions.length > 0 || tools.length > 0 || products.length > 0;
-  return { actions, objects, paths, tools, products, recognized };
+  const recognized = actions.length > 0 || tools.length > 0 || products.length > 0 || commands.length > 0;
+  return { actions, objects, paths, tools, products, commands, recognized };
 }
 
 // ── calls ────────────────────────────────────────────────────────────────
@@ -250,10 +293,105 @@ const PATH_KEYS = ["path", "file_path", "filePath", "filename", "file", "noteboo
 const PATH_LIST_KEYS = ["paths", "files"];
 const MONEY = /(^|[_\-.])(pay|payment|payout|charge|refund|transfer|purchase|buy|checkout|invoice_send|wire)([_\-.]|$)/i;
 const MAIL_TOOL = /(^|[_\-.])(mail|email|emails|gmail|outlook|smtp|message|messages)([_\-.]|$)/i;
-const SHELL_CHAIN = /[;&|`$<>()]|\n/;
-const SHELL_READ = /^\s*(ls|cat|head|tail|wc|stat|file|rg|grep|find|pwd|less|more|du|tree)\b/;
-const SHELL_DELETE = /^\s*(rm|rmdir|unlink|shred|trash)\b/;
 const SHELL_IRREVERSIBLE = /\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r|\bmkfs\b|\bdd\s+if=|\bshred\b|\btruncate\b|\bdrop\s+(table|database)\b|--force\b|\bgit\s+push\b[^\n]*\s-f\b/i;
+
+// ── shell ────────────────────────────────────────────────────────────────
+
+/** Chaining, pipes, redirection, substitution, process substitution, line
+ * continuation, quotes and brace expansion: what a folder or family rule
+ * cannot read. `$HOME` alone is fine. */
+const SHELL_OPAQUE = /[;&|`<>(){}\n\\'"]|\$(?!HOME\b|\{HOME\})/;
+/** Programs that only read the paths they are given, with no flag that
+ * writes, runs or reaches the network. find, rg, tree, less, awk, sed and
+ * xargs are not here: each has a flag that deletes, runs or writes. */
+const PURE_READERS = new Set(["ls", "cat", "head", "tail", "wc", "stat", "file", "du", "pwd", "realpath", "basename", "dirname", "md5", "shasum", "sha256sum", "sha1sum", "md5sum"]);
+/** Prefixes that run the next word as the program. */
+const WRAPPERS = new Set(["env", "command", "builtin", "exec", "sudo", "doas", "nice", "nohup", "time", "timeout", "stdbuf", "ionice", "xargs", "busybox", "caffeinate", "unbuffer", "chroot", "su", "watch", "parallel"]);
+const DELETERS = new Set(["rm", "rmdir", "unlink", "shred", "srm", "trash", "truncate", "wipe"]);
+const NETWORK = new Set(["curl", "wget", "scp", "sftp", "ftp", "rsync", "ssh", "nc", "ncat", "netcat", "telnet", "socat", "mail", "mailx", "sendmail", "http", "https", "aws", "gcloud", "az", "gh", "rclone", "lftp", "tftp"]);
+const INTERPRETERS = new Set(["bash", "sh", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "python", "python2", "python3", "node", "deno", "bun", "perl", "ruby", "php", "osascript", "source", ".", "eval", "awk", "gawk", "lua", "pwsh", "powershell", "make", "npx", "pnpm", "npm", "yarn"]);
+const WRITERS = new Set(["cp", "mv", "mkdir", "touch", "chmod", "chown", "chgrp", "tee", "ln", "dd", "install", "sed", "patch", "tar", "zip", "unzip", "git", "open"]);
+const FIND_SIDE_EFFECTS = /^-(delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/;
+
+export function normalizeCommand(line: string): string {
+  return line.trim().replace(/\s+/g, " ");
+}
+
+function binaryOf(word: string): string {
+  return word.replace(/^.*\//, "").toLowerCase();
+}
+
+interface ShellReading {
+  opaque: boolean;
+  pureRead: boolean;
+  /** null when one argument is not a path this module can read safely */
+  paths: string[] | null;
+  actions: Set<ActionKind>;
+  risks: Set<RiskClass>;
+}
+
+/** Read one shell line. Every word of it is untrusted: it can only make the
+ * reading stricter. Deletion, network and running code are recognized
+ * wherever they sit (after `/bin/`, `env`, `sudo`, `xargs`, or anywhere in a
+ * chained line), so a deny rule still sees them. */
+export function readShell(line: string, home?: string, resolve?: (absolute: string) => string): ShellReading {
+  const actions = new Set<ActionKind>(["command"]);
+  const risks = new Set<RiskClass>();
+  const opaque = SHELL_OPAQUE.test(line);
+  const words = line.split(/[\s;&|()<>`'"{}]+/).filter(Boolean);
+  // every word that could be a program, wherever it is
+  for (let index = 0; index < words.length; index++) {
+    const word = words[index]!;
+    const bin = binaryOf(word);
+    if (DELETERS.has(bin)) { actions.add("delete"); risks.add("destructive"); }
+    if (NETWORK.has(bin)) { actions.add("send"); risks.add("external-send"); }
+    if (INTERPRETERS.has(bin) || bin === "xargs") risks.add("irreversible");
+    if (WRITERS.has(bin)) actions.add("write");
+    if (bin === "find" || bin === "fd") {
+      for (const flag of words.slice(index + 1)) {
+        if (FIND_SIDE_EFFECTS.test(flag)) {
+          if (flag === "-delete") { actions.add("delete"); risks.add("destructive"); }
+          else risks.add("irreversible");
+        }
+      }
+    }
+    if (bin === "git" && words[index + 1] === "push") { actions.add("send"); risks.add("external-send"); }
+  }
+  if (SHELL_IRREVERSIBLE.test(line)) risks.add("irreversible");
+  if (actions.has("delete") || actions.has("write")) actions.add("command");
+
+  // the program actually run: past `/bin/`, env assignments and wrappers
+  let index = 0;
+  let wrapped = false;
+  while (index < words.length) {
+    const word = words[index]!;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) { index++; wrapped = true; continue; }
+    if (WRAPPERS.has(binaryOf(word))) {
+      wrapped = true;
+      index++;
+      while (index < words.length && (words[index]!.startsWith("-") || /^\d+[smhd]?$/.test(words[index]!))) index++;
+      continue;
+    }
+    break;
+  }
+  const program = index < words.length ? binaryOf(words[index]!) : "";
+  if (wrapped && program && !PURE_READERS.has(program)) risks.add("irreversible");
+
+  let paths: string[] | null = [];
+  let allPaths = true;
+  for (const word of words.slice(index + 1)) {
+    if (word.startsWith("-") || /^\d+$/.test(word)) continue;
+    if (!/^(~|\.{1,2}\/|\/|\$HOME)/.test(word)) { allPaths = false; continue; }
+    const path = normalizePath(word, home, resolve);
+    if (!path) { paths = null; break; }
+    if (!paths.includes(path)) paths.push(path);
+  }
+  if (opaque) paths = null;
+  const pureRead = !opaque && !wrapped && PURE_READERS.has(program) && words[index] === program && allPaths && paths !== null
+    && !actions.has("delete") && !actions.has("send") && !actions.has("write") && risks.size === 0;
+  if (pureRead) actions.add("read");
+  return { opaque, pureRead, paths, actions, risks };
+}
 
 function stringsAt(args: Record<string, unknown> | undefined, keys: readonly string[]): string[] {
   if (!args) return [];
@@ -291,6 +429,8 @@ export interface CallInput {
   /** shared/safety-review.ts safetyClassKey for the call, from the server. */
   classKey?: string;
   home?: string;
+  /** The server's realpath, so a symbolic link is matched where it points. */
+  resolve?: (absolute: string) => string;
 }
 
 /** Read one call. The arguments only ever narrow what a rule can match. */
@@ -303,9 +443,10 @@ export function callFacts(call: CallInput): CallFacts {
   const objects = new Set<ObjectKind>();
   const risks = new Set<RiskClass>();
   let paths: string[] | null = [];
+  let shell: { command: string; pureRead: boolean; opaque: boolean } | undefined;
   const addPath = (raw: string) => {
     if (paths === null) return;
-    const path = normalizePath(raw, call.home);
+    const path = normalizePath(raw, call.home, call.resolve);
     if (!path) paths = null;
     else if (!paths.includes(path)) paths.push(path);
   };
@@ -318,28 +459,14 @@ export function callFacts(call: CallInput): CallFacts {
     objects.add("web");
     actions.add("read");
   } else if (commandText !== undefined || (!parsed.server && COMMAND_TOOLS.has(bare))) {
-    actions.add("command");
     objects.add("command");
     const line = commandText ?? "";
-    if (SHELL_CHAIN.test(line)) {
-      // a chained or substituted command can do anything: no path or read
-      // reading of it, so a folder rule never covers it
-      paths = null;
-    } else {
-      if (SHELL_READ.test(line)) {
-        actions.add("read");
-        objects.add("file");
-      }
-      if (SHELL_DELETE.test(line)) {
-        actions.add("delete");
-        objects.add("file");
-      }
-      for (const token of line.split(/\s+/).slice(1)) {
-        if (token.startsWith("-")) continue;
-        if (/^(~|\.{1,2}\/|\/|\$HOME)/.test(token)) addPath(token);
-      }
-    }
-    if (SHELL_IRREVERSIBLE.test(line)) risks.add("irreversible");
+    const reading = readShell(line, call.home, call.resolve);
+    for (const action of reading.actions) actions.add(action);
+    for (const risk of reading.risks) risks.add(risk);
+    if (reading.pureRead || actions.has("delete") || actions.has("write")) objects.add("file");
+    paths = reading.paths;
+    shell = { command: normalizeCommand(line), pureRead: reading.pureRead, opaque: reading.opaque };
   } else {
     const described = describeApproval(toolName, call.input, call.hints);
     if (described.risk === "read") actions.add("read");
@@ -363,8 +490,8 @@ export function callFacts(call: CallInput): CallFacts {
   }
   if (actions.has("delete")) risks.add("destructive");
   if (call.classKey?.startsWith("git:")) risks.add("irreversible");
-  const haystack = `${parsed.server ?? ""} ${bare}`.toLowerCase();
-  const products = Object.entries(PRODUCTS).filter(([, product]) => product.pattern.test(haystack)).map(([key]) => key);
+  const tokens = `${parsed.server ?? ""}_${bare}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const products = Object.entries(PRODUCTS).filter(([, product]) => product.tokens.some((token) => tokens.includes(token))).map(([key]) => key);
   return {
     tool: (parsed.server ? `${parsed.server}__${parsed.name}` : parsed.name).toLowerCase(),
     ...(parsed.server ? { server: parsed.server.toLowerCase() } : {}),
@@ -373,6 +500,7 @@ export function callFacts(call: CallInput): CallFacts {
     paths,
     products,
     risks: [...risks],
+    ...(shell ? { command: shell.command, pureRead: shell.pureRead, opaque: shell.opaque } : {}),
   };
 }
 
@@ -383,6 +511,14 @@ export function callFacts(call: CallInput): CallFacts {
  * needs one kind in common: when in doubt, the card stays. */
 export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavior: CustomRuleBehavior = "allow"): boolean {
   if (!compiled.recognized) return false;
+  // an exact command rule covers that one command line and nothing else
+  if (compiled.commands.length) {
+    if (facts.command === undefined || !compiled.commands.includes(facts.command)) return false;
+    return compiled.tools.length === 0 && compiled.products.length === 0 && compiled.paths.length === 0;
+  }
+  // a shell line a folder or family rule cannot read is allowed only by an
+  // exact command rule; a deny or ask still applies to it
+  if (behavior === "allow" && facts.command !== undefined && facts.opaque) return false;
   if (compiled.actions.length && !compiled.actions.some((action) => facts.actions.includes(action))) return false;
   if (behavior === "allow" && compiled.actions.length) {
     // an app's send or payment tool also reads as a generic write or run
@@ -391,8 +527,8 @@ export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavio
       if (!facts.actions.includes(consequential) || compiled.actions.includes(consequential)) continue;
       if (generic && (consequential === "write" || consequential === "command")) continue;
       // a shell read (`cat`) is a command too: a read rule covers it only
-      // when it is a plain read whose paths were all readable
-      if (consequential === "command" && compiled.actions.includes("read") && facts.actions.includes("read") && facts.paths && facts.paths.length) continue;
+      // when it is a known pure reader whose arguments are all readable paths
+      if (consequential === "command" && compiled.actions.includes("read") && facts.pureRead === true && facts.paths && facts.paths.length) continue;
       return false;
     }
   }
@@ -403,10 +539,11 @@ export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavio
   }
   if (compiled.paths.length) {
     if (!facts.paths || facts.paths.length === 0) return behavior !== "allow" && facts.paths === null;
-    const inside = (path: string) => compiled.paths.some((folder) => within(path, folder));
+    const inside = (path: string) => compiled.paths.some((folder) => within(path, folder, behavior !== "allow"));
     if (behavior === "allow" ? !facts.paths.every(inside) : !facts.paths.some(inside)) return false;
   }
-  if (compiled.tools.length && !compiled.tools.some((tool) => facts.tool === tool || facts.tool.endsWith(`__${tool}`) || facts.tool.split("__").pop() === tool)) return false;
+  // a tool is named whole, its server included (`perspicax_gox__cw_psa__query`)
+  if (compiled.tools.length && !compiled.tools.includes(facts.tool)) return false;
   if (compiled.products.length && !compiled.products.some((product) => facts.products.includes(product))) return false;
   return true;
 }
@@ -505,6 +642,12 @@ export function tightenCustomDecision(local: CustomRuleDecision, rules: readonly
  * tool; a file call names its folder. */
 export function candidateWhen(facts: CallFacts, language = "fr"): string {
   const fr = language.toLowerCase().startsWith("fr");
+  // a shell card proposes its exact command line, never a family of
+  // commands (like a saved command of the command allowlist)
+  if (facts.command !== undefined) {
+    if (!facts.command || facts.command.includes("`") || facts.command.length > 400) return "";
+    return fr ? `la commande exacte \`${facts.command}\`` : `the exact command \`${facts.command}\``;
+  }
   const folder = facts.paths && facts.paths.length
     ? (() => {
       const first = facts.paths[0]!;
@@ -520,7 +663,6 @@ export function candidateWhen(facts: CallFacts, language = "fr"): string {
   if (has("send")) return fr ? `l'envoi de messages${product}` : `sending messages${product}`;
   if (has("payment")) return fr ? `les paiements${product}` : `payments${product}`;
   if (has("delete")) return fr ? `la suppression de fichiers${where}${product}` : `deleting files${where}${product}`;
-  if (has("command") && !facts.server) return fr ? `l'exécution de commandes${where}` : `running commands${where}`;
   if (has("write")) return facts.objects.includes("file") || folder
     ? (fr ? `l'écriture de fichiers${where}${product}` : `writing files${where}${product}`)
     : (fr ? `la modification${product}` : `changes${product}`);

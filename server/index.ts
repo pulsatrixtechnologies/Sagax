@@ -11931,11 +11931,16 @@ bus.subscribe((event: RuntimeEvent) => {
       const safetyName = event.mcpTool ?? event.tool;
       const safetyText = [event.mcpTool, event.tool, event.command?.command, event.summary, event.input].filter((part): part is string => typeof part === "string" && part.length > 0).join("\n");
       // The person already allowed this exact email draft on its own card
-      // (server/email-draft-send.ts): the send is their answer, not a call
-      // to steer to a draft again.
-      const emailDraftCall = Boolean(permission && event.requestId && emailSendPasses.matches(event.threadId, event.mcpTool ?? event.tool, event.input));
-      const safetyWho = permission && event.requestId && !emailDraftCall ? safetyPrincipal(event.threadId) : undefined;
-      const safetyEffect = safetyWho
+      // (server/email-draft-send.ts): the pass is bound to this bot, the
+      // approved connector, recipients, subject and body, and is used here,
+      // once. Only then is the outbound step of the safety review (a draft,
+      // then a confirmation) taken as answered; every other check stays.
+      const emailDraftRequest = permission && event.requestId && asker
+        ? takeEmailSendPass(event.threadId, asker.id, event.mcpTool ?? event.tool, event.input)
+        : null;
+      const emailDraftCall = emailDraftRequest !== null;
+      const safetyWho = permission && event.requestId ? safetyPrincipal(event.threadId) : undefined;
+      const reviewedSafety = safetyWho
         ? safetyPermissionEffect({
           text: safetyText,
           surface: /computer/i.test(safetyName) ? "computer" : /propose_routine/.test(safetyName) ? "routine" : event.mcpTool ? "mcp" : "shell",
@@ -11947,7 +11952,12 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(asker ? { botId: asker.id } : {}),
         })
         : null;
+      const safetyEffect = emailDraftCall && reviewedSafety && reviewedSafety.kind !== "allow"
+        && reviewedSafety.classKey === "outbound:send" && (reviewedSafety.verdict.code === "safer" || reviewedSafety.verdict.code === "confirm")
+        ? null
+        : reviewedSafety;
       if (safetyEffect?.kind === "stop" && event.requestId) {
+        if (emailDraftRequest) patchEmailSend(event.threadId, emailDraftRequest, { status: "failed", error: safetyEffect.message });
         stashSafetyNote(event.requestId, safetyEffect.message);
         const instance = event.providerInstanceId ? registry.get(event.providerInstanceId) : asker ? registry.get(asker.modelSelection.instanceId) : undefined;
         void instance?.adapter.respondToRequest(event.threadId, event.requestId, { behavior: "deny", message: safetyEffect.message }).catch(() => {});
@@ -12003,7 +12013,7 @@ bus.subscribe((event: RuntimeEvent) => {
           summary: event.summary,
         }
         : null;
-      const customReview = customCall && asker && !emailDraftCall
+      const customReview = customCall && asker
         ? reviewCustomRules(customRules.rulesOf(approvalOwnerId(asker), asker.id), customCall, asker.id)
         : null;
       const customDecision = customReview?.decision.kind === "allow"
@@ -12014,6 +12024,7 @@ bus.subscribe((event: RuntimeEvent) => {
         const instance = event.providerInstanceId ? registry.get(event.providerInstanceId) : registry.get(asker.modelSelection.instanceId);
         void instance?.adapter.respondToRequest(event.threadId, event.requestId, { behavior: "deny", message: "Refused by the person's rule." }).catch(() => {});
         const notice = customRuleNotice(customDecision);
+        if (emailDraftRequest) patchEmailSend(event.threadId, emailDraftRequest, { status: "failed", error: `Refused by your rule "${customDecision.rule.when.slice(0, 120)}".` });
         pushMessage({
           role: "bot", kind: "activity",
           tool: { name: `Refused ${event.summary.slice(0, 120)}: your rule "${customDecision.rule.when.slice(0, 120)}".`, ok: false, ...(notice ? { ruleNotice: notice } : {}) },
@@ -12037,8 +12048,7 @@ bus.subscribe((event: RuntimeEvent) => {
           widgetApproved: !adminApproval && !guestDriven && !event.requiresExplicitApproval &&
             cwActionPasses.take(event.threadId, event.mcpTool ?? event.tool, event.input) !== null,
           ...(customDecision?.kind === "ask" ? { customRule: { behavior: "ask" as const, id: customDecision.rule.id } } : {}),
-          emailDraftApproved: emailDraftCall && !adminApproval && !guestDriven && !event.requiresExplicitApproval &&
-            takeEmailSendPass(event.threadId, event.mcpTool ?? event.tool, event.input),
+          emailDraftApproved: emailDraftCall && !adminApproval && !guestDriven && !event.requiresExplicitApproval,
         })
         : null;
       // 2026-10-14 (bot owner permissions): what the owner decided ahead of
@@ -24869,6 +24879,10 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
   const { bot } = target;
   const normalized = normalizeDraftForSend(body.draft);
   if ("problems" in normalized) return { status: 400, body: { error: normalized.problems.join("; "), code: "invalid_draft" } };
+  // a room's people read its cards and messages: a Bcc there is not blind
+  if (normalized.draft.bcc.length && store.groupByThread(threadId)) {
+    return { status: 400, body: { error: "Bcc is not available in a room: everyone in it would see the hidden recipients.", code: "bcc_in_room" } };
+  }
   const connectors = emailConnectorsFor(bot);
   const wanted = body.connector && typeof body.connector === "object" ? body.connector as { kind?: unknown; id?: unknown } : undefined;
   const connector = wanted
@@ -24878,9 +24892,20 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
     return { status: 409, body: { error: "No mail connector can send this: connect Microsoft 365, Outlook or Gmail to this bot, or set up the server's mail.", code: "no_mail_connector" } };
   }
   const draftKey = typeof body.draftKey === "string" && /^[\w-]{1,64}$/.test(body.draftKey) ? body.draftKey : emailDraftKey(normalized.draft);
-  const request = emailSendCard({ draft: normalized.draft, draftKey, connector, by: actorPrincipalId(auth) });
+  // a retry of the very same draft skips who already received it
+  const sameDraft = JSON.stringify(normalized.draft);
+  const earlier = [...store.messagesFor(threadId)].reverse()
+    .find((row) => row.card?.emailSendRequest?.draftKey === draftKey && JSON.stringify(row.card.emailSendRequest.draft) === sameDraft)?.card?.emailSendRequest;
+  const sentTo = earlier?.status === "failed" && earlier.sentTo?.length && earlier.connector.kind === connector.kind ? earlier.sentTo : undefined;
+  const request = { ...emailSendCard({ draft: normalized.draft, draftKey, connector, by: actorPrincipalId(auth) }), ...(sentTo ? { sentTo } : {}) };
   const summary = emailSendSummary(normalized.draft, connector, cfg.language);
-  const toolInput = JSON.stringify({ to: normalized.draft.to, cc: normalized.draft.cc, bcc: normalized.draft.bcc, subject: normalized.draft.subject, connector: connector.label }, null, 2);
+  // the card's arguments never list Bcc addresses, only how many
+  const toolInput = JSON.stringify({
+    to: normalized.draft.to, cc: normalized.draft.cc,
+    ...(normalized.draft.bcc.length ? { bccCount: normalized.draft.bcc.length } : {}),
+    subject: normalized.draft.subject, connector: connector.label,
+    ...(sentTo ? { alreadySentTo: sentTo } : {}),
+  }, null, 2);
   const message = store.appendMessage(threadId, {
     role: "bot",
     kind: "options",
@@ -24917,27 +24942,23 @@ function patchEmailSend(threadId: string, requestId: string, patch: Partial<Emai
 
 /** The bot's outbound call is the draft the person allowed: use its pass
  * once and say the send started. */
-function takeEmailSendPass(threadId: string, tool: string, input: string | undefined): boolean {
-  const taken = emailSendPasses.take(threadId, tool, input);
-  if (!taken) return false;
+function takeEmailSendPass(threadId: string, botId: string, tool: string, input: string | undefined): string | null {
+  const taken = emailSendPasses.take(threadId, botId, tool, input);
+  if (!taken) return null;
   patchEmailSend(threadId, taken.requestId, { status: "sending" });
-  return true;
+  return taken.requestId;
 }
 
 /** The latest send of one draft in a thread, as the draft card shows it. A
  * hand-off whose pass lapsed unused reads as failed. */
-function emailDraftStatus(threadId: string, draftKey: string): { status: number; body: Record<string, unknown> } {
+function emailDraftStatus(auth: RequestAuth, threadId: string, draftKey: string): { status: number; body: Record<string, unknown> } {
   const owner = store.botByThread(threadId);
   const group = store.groupByThread(threadId);
   if (!owner && !group) return { status: 404, body: { error: "no such conversation" } };
-  if (owner && !group) {
-    try {
-      routeThreadId(owner, threadId, "thread.read");
-    } catch {
-      return { status: 404, body: { error: "no such conversation" } };
-    }
-  }
   const message = [...store.messagesFor(threadId)].reverse().find((row) => row.card?.emailSendRequest?.draftKey === draftKey);
+  // the same check as asking to send: the conversation, then the bot's owner
+  const target = emailDraftBot(auth, threadId, message?.from?.botId ?? owner?.id);
+  if (!("bot" in target)) return target.status === 400 ? { status: 404, body: { error: "no such conversation" } } : target;
   const request = message?.card?.emailSendRequest;
   if (!message || !request) return { status: 200, body: { send: null } };
   let status = request.status;
@@ -24984,8 +25005,10 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
   decided("user-approved");
   if (request.connector.kind === "smtp") {
     store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", emailSendRequest: { ...request, status: "sending" } } });
-    const sent = await sendWithMailer(mailer(), request.draft);
-    patchEmailSend(threadId, requestId, sent.ok ? { status: "sent" } : { status: "failed", error: sent.error });
+    const sent = await sendWithMailer(mailer(), request.draft, request.sentTo ?? []);
+    patchEmailSend(threadId, requestId, sent.ok
+      ? { status: "sent", sentTo: sent.sentTo }
+      : { status: "failed", error: sent.error, ...(sent.sentTo.length ? { sentTo: sent.sentTo } : {}) });
     appendDecision(DATA_DIR, {
       threadId, requestId, botId: bot.id, botName: bot.name, tool: "send_email_draft", summary: card.subtitle,
       decision: sent.ok ? "auto-approved" : "auto-denied", source: "email-draft-approval",
@@ -24994,7 +25017,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
     return true;
   }
   store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", emailSendRequest: { ...request, status: "handed-off" } } });
-  emailSendPasses.grant(threadId, requestId, request.draft);
+  emailSendPasses.grant(threadId, bot.id, requestId, request.draft, request.connector);
   const text = emailSendInstruction(request.draft, request.connector, cfg.language);
   const group = store.groupByThread(threadId);
   const asked = await performBotActRoute(actor, group

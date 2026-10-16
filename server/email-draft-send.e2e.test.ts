@@ -39,6 +39,14 @@ it("sends an email draft only after its approval card is allowed, once", async (
     expect((await api(`/api/threads/${threadId}/email-drafts`, { method: "POST", body: { draft: { ...draft, to: ["pas une adresse"] } } })).body.code).toBe("invalid_draft");
     expect((await api(`/api/threads/${threadId}/email-drafts/${draftKey}`)).body.send).toBeNull();
 
+    // a Bcc address never shows in the card's arguments
+    const hidden = await api(`/api/threads/${threadId}/email-drafts`, { method: "POST", body: { draft: { ...draft, bcc: ["archive@example.com"] }, draftKey: "bcc-draft" } });
+    expect(hidden.status).toBe(201);
+    const hiddenCard = (await messages(threadId)).find((row) => row.card?.requestId === hidden.body.requestId)?.card;
+    expect(hiddenCard?.toolInput).not.toContain("archive@example.com");
+    expect(JSON.parse(hiddenCard!.toolInput!)).toMatchObject({ bccCount: 1 });
+    expect((await api(`/api/threads/${threadId}/respond`, { method: "POST", body: { requestId: hidden.body.requestId, behavior: "deny" } })).status).toBe(200);
+
     // Envoyer: a card, nothing sent
     const asked = await api(`/api/threads/${threadId}/email-drafts`, { method: "POST", body: { draft, draftKey } });
     expect(asked.status).toBe(201);

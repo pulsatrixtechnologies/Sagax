@@ -8,7 +8,9 @@
 // and a safety hold first, then the person's deny or ask, then grants, then
 // the person's allow.
 
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 
 import { safetyClassKey } from "../shared/safety-review.ts";
 import {
@@ -44,6 +46,25 @@ export function serverHome(): string | undefined {
   }
 }
 
+/** Where a path really points: a symbolic link is followed, and a path that
+ * does not exist yet resolves through its nearest existing folder. */
+export function realPath(absolute: string): string {
+  let head = absolute;
+  const tail: string[] = [];
+  for (let depth = 0; depth < 64; depth++) {
+    try {
+      const real = realpathSync.native(head);
+      return tail.length ? join(real, ...tail.reverse()) : real;
+    } catch {
+      const parent = dirname(head);
+      if (parent === head) break;
+      tail.push(basename(head));
+      head = parent;
+    }
+  }
+  return absolute;
+}
+
 export function factsForCall(call: CustomRuleCall, home: string | undefined = serverHome()): CallFacts {
   const text = [call.mcpTool, call.tool, call.command, call.summary, call.input].filter((part): part is string => typeof part === "string" && part.length > 0).join("\n");
   // a command line is read on its own first: its patterns anchor at its start
@@ -57,6 +78,7 @@ export function factsForCall(call: CustomRuleCall, home: string | undefined = se
     ...(call.hints ? { hints: call.hints } : {}),
     ...(classKey ? { classKey } : {}),
     ...(home ? { home } : {}),
+    resolve: realPath,
   });
 }
 
