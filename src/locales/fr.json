@@ -5935,7 +5935,6 @@
   "chat.export.botHeading": "Bot",
   "chat.export.botZip": "Exporter le bot (.zip)",
   "mascot.skinPreview": "Aperçu : verrouillé, rien n'est enregistré",
-  "menu.more": "Plus",
   "chat.moreMenu.aria": "Plus d'options",
   "chat.openPanel": "Ouvrir le panneau du bot",
   "chat.openPanelAria": "Ouvrir le panneau de {name}",

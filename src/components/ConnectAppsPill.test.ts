@@ -9,7 +9,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { setLocale } from "@/lib/i18n";
 import { initialState, reducer } from "@/state/store";
-import { ConnectAppsPill, type PillApp } from "./ConnectAppsPill";
+import { ConnectAppsPill, SidebarConnectApps, sidebarPillApps, type PillApp } from "./ConnectAppsPill";
+
+const inventory = vi.hoisted(() => ({ services: {} as Record<string, { connected: boolean }> }));
+vi.mock("./plugins/connected-apps", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./plugins/connected-apps")>()),
+  preloadConnectedApps: async () => ({ services: inventory.services, authoritative: true }),
+}));
+vi.mock("@/state/store", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/state/store")>()),
+  api: async () => ({ cards: [{ slug: "notion", label: "Notion", blurb: "", logo: null, domain: "notion.so" }] }),
+}));
 
 let root: Root | null = null;
 const app = (slug: string, label: string): PillApp => ({ slug, label, logo: null, domain: `${slug}.com` });
@@ -55,6 +65,52 @@ describe("the Connect apps pill", () => {
     expect(onOpen).toHaveBeenCalledOnce();
     root?.unmount();
     expect(render([]).querySelector("[data-connect-apps-pill]")).toBeNull();
+  });
+});
+
+describe("the sidebar's Connect apps pill", () => {
+  function renderSidebar(onOpen = vi.fn(), iconOnly = false) {
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(createElement(SidebarConnectApps, { onOpen, iconOnly })));
+    return container;
+  }
+
+  it("is the conversation's pill, full width, and opens Connect apps", () => {
+    inventory.services = {};
+    const onOpen = vi.fn();
+    const container = renderSidebar(onOpen);
+    const button = container.querySelector<HTMLButtonElement>("[data-sidebar-connect-apps]")!;
+    expect(button.textContent).toBe("Connect apps");
+    expect(button.className).toContain("rounded-full");
+    expect(button.className).toContain("w-full");
+    expect(button.getAttribute("data-tour")).toBe("nav-apps");
+    expect(button.querySelectorAll("img").length).toBeLessThanOrEqual(3);
+    flushSync(() => button.click());
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("says Connecter des applications in French", () => {
+    setLocale("fr");
+    const button = renderSidebar().querySelector("[data-sidebar-connect-apps]")!;
+    expect(button.textContent).toBe("Connecter des applications");
+    expect(button.getAttribute("aria-label")).toBe("Connecter des applications");
+  });
+
+  it("keeps an icon button in the collapsed rail", () => {
+    setLocale("fr");
+    const button = renderSidebar(vi.fn(), true).querySelector("[data-sidebar-connect-apps]")!;
+    expect(button.textContent).toBe("");
+    expect(button.getAttribute("title")).toBe("Connecter des applications");
+  });
+
+  it("shows the connected apps, three at most, else the usual suggestions", () => {
+    expect(sidebarPillApps([], null).map((item) => item.slug)).toEqual(["gmail", "slack", "github"]);
+    const cards = new Map([["notion", { slug: "notion", label: "Notion", blurb: "", logo: "https://logo/notion.png", domain: "notion.so" }]]);
+    const shown = sidebarPillApps(["slack", "notion", "gmail", "asana"], cards);
+    expect(shown.map((item) => item.slug)).toEqual(["asana", "gmail", "notion"]);
+    expect(shown[2]).toMatchObject({ label: "Notion", logo: "https://logo/notion.png" });
   });
 });
 

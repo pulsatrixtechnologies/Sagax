@@ -1,11 +1,11 @@
 // The one menu of a thread (JC, 2026-10-14): the sidebar's thread rows and
 // the header's "All threads" picker open this same component, so a thread
-// offers the same actions wherever it is listed. The first level keeps the
-// everyday actions (Rename, Pin, Archive, Snooze ›, More ›); the rare ones
-// wait one step down under More.
+// offers the same actions wherever it is listed. One flat menu, no More
+// (JC, 2026-10-15): Rename, Pin, Archive, Snooze › | Copy link, Refresh
+// permissions | Delete. Only Snooze and Move to folder open a page.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, ChevronRight, Clock, FolderInput, Link2, Link2Off, Loader2, MoreHorizontal, Pencil, Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, ChevronRight, Clock, FolderInput, Link2, Link2Off, Loader2, Pencil, Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
 import type { BotProject, Task } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -15,7 +15,7 @@ import { FolderIcon, navigateThreadMenu } from "./BotProjects";
 
 export type ThreadMenuTask = Pick<Task, "threadId" | "title"> & Partial<Pick<Task, "projectId" | "busy" | "activity" | "archivedAt" | "snoozedUntil" | "link">> & { pinned?: boolean };
 
-export type ThreadMenuPage = "main" | "snooze" | "more" | "move";
+export type ThreadMenuPage = "main" | "snooze" | "move";
 
 /** What a thread menu can do. Each action is offered only when its owner
  * gives it; Rename and Delete are always there. */
@@ -123,7 +123,7 @@ export function ThreadMenuItems({ task, actions, folders = [], page, onPage, onC
     const move = actions.onMove!;
     const current = folders.some((folder) => folder.id === task.projectId) ? task.projectId : undefined;
     return <>
-      {back("more", t("folder.move"))}
+      {back("main", t("folder.move"))}
       {folders.map((folder) => <Item key={folder.id} id={`folder-${folder.id}`} icon={<FolderIcon emoji={folder.emoji} size={12} />} label={folder.name}
         trailing={folder.id === current ? <Check size={12} className="shrink-0 text-accent" /> : null}
         onClick={run(() => { if (folder.id !== current) move(folder.id); })} />)}
@@ -133,20 +133,8 @@ export function ThreadMenuItems({ task, actions, folders = [], page, onPage, onC
     </>;
   }
 
-  if (page === "more") {
-    return <>
-      {back("main", t("menu.more"))}
-      {canMove && <Item id="move" icon={<FolderInput size={12} />} label={t("folder.move")} trailing={sub} onClick={() => onPage("move")} />}
-      {actions.onCopyLink && <Item id="copy-link" icon={<Link2 size={12} />} label={t("task.copyLink")} onClick={run(actions.onCopyLink)} />}
-      {actions.onRegenerateTitle && <Item id="regenerate" icon={regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-        label={regenerating ? t("task.regeneratingTitle") : t("task.regenerateTitle")} disabled={regenerating} busy={regenerating} onClick={onRegenerate} />}
-      {actions.onRemoveLink && task.link && <Item id="remove-link" icon={<Link2Off size={12} />} label={t("task.removeLink")} onClick={run(actions.onRemoveLink)} />}
-      {refresh && <Item id="refresh-permissions" icon={<RefreshCw size={12} />} label={t("task.refreshPermissions")} title={t("task.refreshPermissionsHint")} disabled={busy} onClick={run(refresh)} />}
-      <div className="mx-2 my-1 h-px bg-hairline/50" />
-      <Item id="delete" icon={<Trash2 size={12} />} label={t("task.deleteAria")} danger disabled={busy} onClick={run(actions.onDelete)} />
-    </>;
-  }
-
+  const divider = <div className="mx-2 my-1 h-px bg-hairline/50" />;
+  const hasLinks = Boolean(actions.onCopyLink || actions.onRegenerateTitle || (actions.onRemoveLink && task.link) || refresh);
   return <>
     <Item id="rename" icon={<Pencil size={12} />} label={t("task.renameAria")} onClick={run(actions.onRename)} />
     {actions.onPin && <Item id="pin" icon={task.pinned === true ? <PinOff size={12} /> : <Pin size={12} />} label={task.pinned === true ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}
@@ -154,7 +142,15 @@ export function ThreadMenuItems({ task, actions, folders = [], page, onPage, onC
     {actions.onArchive && <Item id="archive" icon={archived ? <ArchiveRestore size={12} /> : <Archive size={12} />} label={archived ? t("task.unarchive") : t("task.archive")} disabled={busy}
       onClick={run(() => actions.onArchive!(archived ? null : Date.now()))} />}
     {actions.onSnooze && <Item id="snooze" icon={<Clock size={12} />} label={snoozed ? t("task.snoozed") : t("task.snooze")} trailing={sub} onClick={() => onPage("snooze")} />}
-    <Item id="more" icon={<MoreHorizontal size={12} />} label={t("menu.more")} trailing={sub} onClick={() => onPage("more")} />
+    {canMove && <Item id="move" icon={<FolderInput size={12} />} label={t("folder.move")} trailing={sub} onClick={() => onPage("move")} />}
+    {hasLinks && divider}
+    {actions.onCopyLink && <Item id="copy-link" icon={<Link2 size={12} />} label={t("task.copyLink")} onClick={run(actions.onCopyLink)} />}
+    {actions.onRegenerateTitle && <Item id="regenerate" icon={regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+      label={regenerating ? t("task.regeneratingTitle") : t("task.regenerateTitle")} disabled={regenerating} busy={regenerating} onClick={onRegenerate} />}
+    {actions.onRemoveLink && task.link && <Item id="remove-link" icon={<Link2Off size={12} />} label={t("task.removeLink")} onClick={run(actions.onRemoveLink)} />}
+    {refresh && <Item id="refresh-permissions" icon={<RefreshCw size={12} />} label={t("task.refreshPermissions")} title={t("task.refreshPermissionsHint")} disabled={busy} onClick={run(refresh)} />}
+    {divider}
+    <Item id="delete" icon={<Trash2 size={12} />} label={t("task.deleteAria")} danger disabled={busy} onClick={run(actions.onDelete)} />
   </>;
 }
 
@@ -225,7 +221,7 @@ export function ThreadMenu({ task, actions, folders, position, onClose, anchorRe
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
-          if (page !== "main") setPage(page === "move" ? "more" : "main");
+          if (page !== "main") setPage("main");
           else { close(); anchorRef?.current?.focus(); }
         } else navigateThreadMenu(event);
       }}>

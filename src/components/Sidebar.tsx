@@ -62,7 +62,7 @@ import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { LabelTag, PersonLabelTag } from "./LabelTag";
 import { nudgeLineText } from "@/lib/nudge-line";
-import { ChevronLeft, Cpu, Eye, UserRound } from "lucide-react";
+import { Cpu, Eye, UserRound } from "lucide-react";
 import { openModelWindow } from "@/lib/model-window";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
@@ -155,6 +155,7 @@ import { PulsatrixMark } from "./PulsatrixMark";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 
 import { profileInitials, SidebarProfileMenu } from "./SidebarProfileMenu";
+import { SidebarConnectApps } from "./ConnectAppsPill";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
@@ -1144,7 +1145,6 @@ export function BotContextMenu({
   onReplacePrimary,
   variant = "sidebar",
   onEditPersona,
-  initialPage = "main",
 }: {
   menu: MenuState | null;
   onClose: () => void;
@@ -1161,15 +1161,8 @@ export function BotContextMenu({
   onMakePrimary?: (bot: Bot) => void;
   /** Open "Choose a primary Bot" to hand the role to another of their bots. */
   onReplacePrimary?: (bot: Bot) => void;
-  /** Opens on that page: the everyday actions, or More (tests). */
-  initialPage?: "main" | "more";
 }) {
   const motion = useHeldMenuMotion(menu);
-  // The rare actions wait one step down, under More (JC, 2026-10-14).
-  const [page, setPage] = useState<"main" | "more">(initialPage);
-  useEffect(() => { if (menu) setPage(initialPage); }, [menu, initialPage]);
-  const pageRef = useRef(page);
-  pageRef.current = page;
   const shown = motion.value;
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
@@ -1225,18 +1218,12 @@ export function BotContextMenu({
     return () => { if (opener?.isConnected) opener.focus(); };
   }, [menu]);
   useEffect(() => {
-    if (menu) menuRef.current?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
-  }, [page]); // the first item of the page just shown
-  useEffect(() => {
     if (!menu) return;
     const onDown = (e: MouseEvent) => {
       if (!(e.target instanceof Element) || !e.target.closest("[data-bot-menu]")) onClose();
     };
-    // Escape steps back from More first, then closes.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (pageRef.current !== "main") setPage("main");
-      else onClose();
+      if (e.key === "Escape") onClose();
     };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
@@ -1347,35 +1334,6 @@ export function BotContextMenu({
     ]);
   }
 
-  const chevron = <ChevronRight size={14} className="ml-auto shrink-0 text-ink-tertiary" />;
-  const moreItem = (
-    <button
-      key="more"
-      type="button"
-      role="menuitem"
-      data-menu-item="more"
-      aria-haspopup="menu"
-      onClick={() => setPage("more")}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
-    >
-      <MoreHorizontal size={16} className="text-ink" />
-      <span className="min-w-0 flex-1">{t("menu.more")}</span>
-      {chevron}
-    </button>
-  );
-  const backItem = (
-    <button
-      key="back"
-      type="button"
-      role="menuitem"
-      data-menu-item="back"
-      onClick={() => setPage("main")}
-      className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] font-medium leading-4 text-ink-secondary hover:bg-hover"
-    >
-      <ChevronLeft size={14} aria-hidden="true" />
-      {t("menu.more")}
-    </button>
-  );
   const archiveItem = canArchive ? item(
     <Archive size={16} className="text-ink" />,
     t("sidebar.bot.archive"),
@@ -1408,9 +1366,6 @@ export function BotContextMenu({
       onClose();
     }}
   /> : null;
-  const copyIdItem = item(<ClipboardCopy size={16} className="text-ink" />, t("sidebar.copyConversationId"), () => {
-    void copyText(bot.threadId);
-  }, { id: "copy-id" });
 
   // New thread comes first (JC, 2026-10-15): #518 had left the sidebar with
   // no way to start a conversation with a bot. newTask selects the bot too.
@@ -1419,10 +1374,17 @@ export function BotContextMenu({
     dispatch({ type: "newTask", botId: bot.id });
   }, { id: "new-thread" }) : null;
 
-  // Grok Bot's order (JC, 2026-10-15): New thread | Pin, Move to ›, Mark as Unread |
-  // Rename, Edit bot | Copy conversation ID | Hide from sidebar, Archive,
-  // Delete | More › for the rare ones.
-  const mainPage = remoteClient ? [
+  // One flat menu, no More (JC, 2026-10-15): New thread | Pin, Move to ›,
+  // Mark as Unread, Mark all as read | Rename, Edit bot, Model…, Make
+  // primary bot, Put on the desktop | Hide from sidebar, Archive, Delete.
+  const markAllReadItem = item(
+    readingBotId === bot.id ? <Loader2 size={16} className="animate-spin text-ink-secondary" /> : <CheckCheck size={16} className="text-ink-secondary" />,
+    readingBotId === bot.id ? t("sidebar.bot.markingAllRead") : t("sidebar.bot.markAllRead"),
+    () => { void readAll(bot); },
+    { id: "mark-all-read", disabled: readingBotId !== null || botUnreadThreadIds(bot).length === 0, keepOpen: true },
+  );
+  const modelItem = item(<Cpu size={16} className="text-ink" />, t("sidebar.bot.model"), () => openModelWindow(bot.id), { id: "model" });
+  const entries = remoteClient ? [
     ...(newThreadItem ? [newThreadItem] : []),
     floatItem,
     ...(canMoveSection ? [item(<FolderInput size={16} className="text-ink" />, t("sidebar.bot.moveTo"), () => {
@@ -1430,7 +1392,6 @@ export function BotContextMenu({
       onMoveToSection?.(bot.id);
     }, { id: "move" })] : []),
     editItem,
-    copyIdItem,
   ] : [
     ...(newThreadItem ? [newThreadItem, divider("d-new")] : []),
     item(
@@ -1443,11 +1404,13 @@ export function BotContextMenu({
     item(<BellDot size={16} className="text-ink" />, t("sidebar.bot.markUnread"), () =>
       dispatch({ type: "markUnread", botId: bot.id }), { id: "mark-unread" },
     ),
+    markAllReadItem,
     divider("d-name"),
     ...(canRename ? [item(<Pencil size={16} className="text-ink" />, t("persona.menu.rename"), () => onRename(bot.id), { id: "rename" })] : []),
     editItem,
-    divider("d-id"),
-    copyIdItem,
+    modelItem,
+    ...(primaryItem ? [primaryItem] : []),
+    floatItem,
     divider("d-place"),
     // Only this person's sidebar: the bot, its owner and everyone else
     // keep it; Archive is the bot-wide action.
@@ -1461,21 +1424,6 @@ export function BotContextMenu({
         onDelete?.(bot);
       }}
     />] : []),
-    divider("d-more"),
-    moreItem,
-  ];
-  const morePage = [
-    backItem,
-    floatItem,
-    ...(primaryItem ? [primaryItem] : []),
-    item(<Cpu size={16} className="text-ink" />, t("sidebar.bot.model"), () => openModelWindow(bot.id), { id: "model" }),
-    divider("d-read"),
-    item(
-      readingBotId === bot.id ? <Loader2 size={16} className="animate-spin text-ink-secondary" /> : <CheckCheck size={16} className="text-ink-secondary" />,
-      readingBotId === bot.id ? t("sidebar.bot.markingAllRead") : t("sidebar.bot.markAllRead"),
-      () => { void readAll(bot); },
-      { id: "mark-all-read", disabled: readingBotId !== null || botUnreadThreadIds(bot).length === 0, keepOpen: true },
-    ),
   ];
 
   return createPortal(
@@ -1483,14 +1431,13 @@ export function BotContextMenu({
       ref={menuRef}
       data-bot-menu
       data-sidebar
-      data-bot-menu-page={page}
       role="menu"
       aria-label={t("sidebar.bot.actions", { name: bot.name })}
       onKeyDown={navigateThreadMenu}
       style={{ top: shown.y, left: shown.x }}
       className={cn("fixed z-40 max-h-[calc(100dvh-16px)] w-[228px] min-w-[200px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
-      {page === "more" && !remoteClient ? morePage : mainPage}
+      {entries}
       {readError?.botId === bot.id && <p role="alert" className="px-3.5 py-2 text-[12px] text-danger">{readError.message}</p>}
     </div>,
     document.body,
@@ -3007,28 +2954,20 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
-  // Connected apps and Browse Bots stay in view above the account row while
-  // Settings > Appearance > Sidebar shortcuts is on (a per-person choice;
-  // src/lib/sidebar-shortcuts-preferences.ts). Their icons animate on hover.
-  // Team map and Automations are in the account menu.
-  const places: SidebarPlace[] = advanced && sidebarShortcuts ? [
-    {
-      key: "plugins",
-      tourId: "nav-apps",
-      label: t("sidebar.nav.connectedApps"),
-      icon: Puzzle,
-      animation: "puzzle",
-      onSelect: () => dispatch({ type: "togglePlugins", open: true }),
-    },
-    // Browse Bots: the bot catalogue, on its home view.
-    ...(!remoteClient ? [{
-      key: "browse-bots",
-      label: t("sidebar.browseBots"),
-      icon: LayoutGrid,
-      animation: "grid" as const,
-      onSelect: () => dispatch(openBotCatalog()),
-    }] : []),
-  ] : [];
+  // The Connect apps pill and Browse Bots stay in view above the account row
+  // while Settings > Appearance > Sidebar shortcuts is on (a per-person
+  // choice; src/lib/sidebar-shortcuts-preferences.ts). The pill took the
+  // Connected apps row's place (JC, 2026-10-15). Team map and Automations
+  // are in the account menu.
+  const shortcutsShown = advanced && sidebarShortcuts;
+  // Browse Bots: the bot catalogue, on its home view.
+  const places: SidebarPlace[] = shortcutsShown && !remoteClient ? [{
+    key: "browse-bots",
+    label: t("sidebar.browseBots"),
+    icon: LayoutGrid,
+    animation: "grid",
+    onSelect: () => dispatch(openBotCatalog()),
+  }] : [];
   // Archived bots is housekeeping, not a place: it stays in the account menu.
   const accountPlaces: SidebarMenuItem[] = !remoteClient && archivedBots.length > 0 ? [{
     key: "archived",
@@ -3353,6 +3292,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             onOpen={() => dispatch(phoneSettingsAction())}
           />
         )}
+        {shortcutsShown && (
+          <SidebarConnectApps
+            iconOnly={density === "icons"}
+            icon={<Puzzle size={20} />}
+            onOpen={() => dispatch({ type: "togglePlugins", open: true })}
+          />
+        )}
         <SidebarPlaces places={places} iconOnly={density === "icons"} />
         {density === "icons" ? (
           <div className="flex items-center justify-center">
@@ -3369,7 +3315,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         ) : (
           // One row, the way Perspicax lays out its account footer: your
           // avatar and your full name, opening the profile menu.
-          <SidebarProfileMenu places={accountPlaces} memberLine={places.length === 0} />
+          <SidebarProfileMenu places={accountPlaces} memberLine={!shortcutsShown} />
         )}
       </div>
 

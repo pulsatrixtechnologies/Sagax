@@ -114,9 +114,8 @@ describe("the header picker on a person", () => {
     expect(text).toContain("Budget");
     expect(text).toContain("Finance");
     expect(host.querySelector('[data-picker-folder="f1"]')).not.toBeNull();
-    // the folder of a row: the same Move menu as a bot's (More › Move)
+    // the folder of a row: the same Move menu as a bot's (Move ›, in the one flat menu)
     await click(button("Actions for Budget"));
-    await click(menuItem("more"));
     await click(menuItem("move"));
     const movePage = menuPage("move")!;
     expect([...movePage.querySelectorAll("[data-thread-menu-item]")].map((item) => item.textContent)).toEqual(["Move to folder", "💼Finance", "No folder"]);
@@ -130,15 +129,13 @@ describe("the header picker on a person", () => {
     await click(button("Actions for Budget"));
     await click(menuItem("pin"));
     expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "updateGroupTask", groupId: "dm", patch: { pinned: true } }));
-    // out of the folder: More › Move › No folder
+    // out of the folder: Move › No folder
     await click(button("Actions for Budget"));
-    await click(menuItem("more"));
     await click(menuItem("move"));
     await click(menuItem("folder-none"));
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "updateGroupTask", groupId: "dm", threadId: "budget", patch: { projectId: null } });
-    // delete: More › Delete
+    // delete: last in the menu
     await click(button("Actions for Budget"));
-    await click(menuItem("more"));
     await click(menuItem("delete"));
     expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "deleteGroupTask", groupId: "dm" }));
     await click(button("New thread"));
@@ -151,11 +148,10 @@ describe("the header picker on a person", () => {
     const main = menuPage("main")!;
     expect(main.textContent).toContain("Archive");
     expect(main.textContent).toContain("Snooze");
-    await click(menuItem("more"));
-    const more = menuPage("more")!;
-    expect(more.textContent).toContain("Copy link");
-    expect(more.textContent).not.toContain("Regenerate");
-    expect(more.textContent).not.toContain("permissions");
+    expect(main.textContent).toContain("Copy link");
+    expect(main.textContent).not.toContain("Regenerate");
+    expect(main.textContent).not.toContain("permissions");
+    expect(main.querySelector('[data-thread-menu-item="more"]')).toBeNull();
     // the row's button toggles: close the open menu before opening it again
     await act(async () => { host.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); });
     await click(button("Actions for Budget"));

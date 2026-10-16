@@ -1,6 +1,7 @@
 // The one thread menu (JC, 2026-10-14): the sidebar's thread rows and the
-// header's All threads picker share it. Five items at the first level
-// (Rename, Pin, Archive, Snooze ›, More ›); the rare actions under More.
+// header's All threads picker share it. One flat menu, no More (JC,
+// 2026-10-15): Rename, Pin, Archive, Snooze › | Copy link, Refresh
+// permissions | Delete.
 import { createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -43,10 +44,12 @@ function items(given: Props): Map<string, { onClick: () => void; disabled?: bool
 }
 
 describe("the thread menu", () => {
-  it("keeps five items at the first level: Rename, Pin, Archive, Snooze and More", () => {
-    expect(ids(markup())).toEqual(["rename", "pin", "archive", "snooze", "more"]);
+  it("lists every action in one menu, Delete last, and no More", () => {
+    expect(ids(markup({ task: { ...task, link: "https://example.com/pr/1" } }))).toEqual(["rename", "pin", "archive", "snooze", "move", "copy-link", "regenerate", "remove-link", "refresh-permissions", "delete"]);
     const html = markup();
-    for (const label of ["Rename thread", "Pin", "Archive", "Snooze", "More"]) expect(html).toContain(label);
+    for (const label of ["Rename thread", "Pin", "Archive", "Snooze", "Copy link", "Refresh permissions", "Delete thread"]) expect(html).toContain(label);
+    expect(html).not.toContain(">More<");
+    expect(ids(html)).not.toContain("more");
     // nothing about another thread or a new one
     expect(html).not.toContain("New thread");
     expect(html).not.toContain("New folder");
@@ -54,20 +57,24 @@ describe("the thread menu", () => {
 
   it("drops what the owner does not offer", () => {
     const given = props({ actions: { onRename: vi.fn(), onDelete: vi.fn() } });
-    expect(ids(renderToStaticMarkup(createElement(ThreadMenuItems, given)))).toEqual(["rename", "more"]);
+    expect(ids(renderToStaticMarkup(createElement(ThreadMenuItems, given)))).toEqual(["rename", "delete"]);
   });
 
-  it("puts the rare actions under More, Delete last", () => {
-    const html = markup({ page: "more", task: { ...task, link: "https://example.com/pr/1" } });
-    expect(ids(html)).toEqual(["back", "move", "copy-link", "regenerate", "remove-link", "refresh-permissions", "delete"]);
+  it("keeps JC's order for the usual sidebar thread: Rename, Pin, Archive, Snooze | Copy link, Refresh permissions | Delete in red", () => {
+    const { onMove: _move, onRegenerateTitle: _regenerate, onRemoveLink: _remove, ...actions } = allActions();
+    const html = markup({ actions, folders: [] });
+    expect(ids(html)).toEqual(["rename", "pin", "archive", "snooze", "copy-link", "refresh-permissions", "delete"]);
+    expect(html).toMatch(/data-thread-menu-item="delete"[^>]*class="[^"]*text-danger/);
+    // two separators: before Copy link and before Delete
+    expect(html.match(/h-px bg-hairline/g)).toHaveLength(2);
   });
 
   it("keeps Refresh permissions for Advanced mode", () => {
-    expect(ids(markup({ page: "more", advanced: false }))).not.toContain("refresh-permissions");
+    expect(ids(markup({ advanced: false }))).not.toContain("refresh-permissions");
   });
 
   it("offers Remove link only on a linked thread", () => {
-    expect(ids(markup({ page: "more" }))).not.toContain("remove-link");
+    expect(ids(markup())).not.toContain("remove-link");
   });
 
   it("snoozes in one step down, and offers the way back for a snoozed thread", () => {
@@ -93,8 +100,8 @@ describe("the thread menu", () => {
   it("opens a page without closing, and runs an action then closes", () => {
     const given = props();
     const found = items(given);
-    found.get("more")!.onClick();
-    expect(given.onPage).toHaveBeenCalledWith("more" satisfies ThreadMenuPage);
+    found.get("snooze")!.onClick();
+    expect(given.onPage).toHaveBeenCalledWith("snooze" satisfies ThreadMenuPage);
     expect(given.onClose).not.toHaveBeenCalled();
     found.get("archive")!.onClick();
     expect(given.actions.onArchive).toHaveBeenCalledWith(expect.any(Number));
@@ -103,13 +110,13 @@ describe("the thread menu", () => {
 
   it("offers Unarchive for an archived thread and greys the busy actions while it works", () => {
     expect(markup({ task: { ...task, archivedAt: 0 } })).toContain("Unarchive");
-    const busy = props({ page: "more", task: { ...task, activity: "working" } });
+    const busy = props({ task: { ...task, activity: "working" } });
     expect(items(busy).get("delete")!.disabled).toBe(true);
     expect(items(busy).get("refresh-permissions")!.disabled).toBe(true);
   });
 
   it("shows Regenerating… while the title request runs", () => {
-    const html = markup({ page: "more", regenerating: true });
+    const html = markup({ regenerating: true });
     expect(html).toContain("Regenerating…");
     expect(html).toContain('aria-busy="true"');
   });
@@ -118,8 +125,10 @@ describe("the thread menu", () => {
     setLocale("fr");
     const html = markup();
     expect(html).toContain("Renommer le fil");
-    expect(html).toContain("Plus");
-    expect(markup({ page: "more", task: { ...task, link: "https://example.com" } })).toContain("Retirer le lien");
+    expect(html).toContain("Actualiser les autorisations");
+    expect(html).toContain("Supprimer le fil");
+    expect(html).not.toContain(">Plus<");
+    expect(markup({ task: { ...task, link: "https://example.com" } })).toContain("Retirer le lien");
   });
 });
 
@@ -143,6 +152,6 @@ describe("the All threads picker's row menu", () => {
     expect(threadActions.onSnooze).toHaveBeenCalledWith("t1", 0);
     expect(threadActions.onCopyLink).toHaveBeenCalledWith("t1");
     expect(actions.onRegenerateTitle).toBeUndefined();
-    expect(ids(renderToStaticMarkup(createElement(ThreadMenuItems, props({ actions }))))).toEqual(["rename", "pin", "archive", "snooze", "more"]);
+    expect(ids(renderToStaticMarkup(createElement(ThreadMenuItems, props({ actions }))))).toEqual(["rename", "pin", "archive", "snooze", "move", "copy-link", "refresh-permissions", "delete"]);
   });
 });

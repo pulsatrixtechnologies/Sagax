@@ -1,7 +1,7 @@
-// The sidebar's bot menu follows Grok Bot's (JC, 2026-10-15): New thread |
-// Pin, Move to ›,
-// Mark as Unread | Rename, Edit bot | Copy conversation ID | Hide from
-// sidebar, Archive, Delete | More › with the rare ones one step down.
+// The sidebar's bot menu, one flat menu (JC, 2026-10-15): New thread |
+// Pin, Move to ›, Mark as Unread, Mark all as read | Rename, Edit bot,
+// Model…, Make primary bot, Put on the desktop | Hide from sidebar,
+// Archive, Delete. No More, no Copy conversation ID.
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -50,9 +50,9 @@ const handlers = () => ({
   onDelete: vi.fn(),
 });
 
-function render(page: "main" | "more" = "main", target: Bot = bot, props = handlers()) {
+function render(target: Bot = bot, props = handlers()) {
   fixture.state = { bots: [target, { ...bot, id: "other", name: "Other" } as Bot], ...fixture.state };
-  const html = renderToStaticMarkup(createElement(BotContextMenu, { variant: "sidebar", initialPage: page, menu: { botId: target.id, x: 10, y: 10 }, ...props }));
+  const html = renderToStaticMarkup(createElement(BotContextMenu, { variant: "sidebar", menu: { botId: target.id, x: 10, y: 10 }, ...props }));
   return { html, props };
 }
 
@@ -87,12 +87,27 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the sidebar's bot menu", () => {
-  it("lists the everyday items at the first level in Grok Bot's order", () => {
+  it("lists every action in one menu, in JC's order", () => {
     const { html } = render();
-    expect(items(html)).toEqual(["new-thread", "pin", "move", "mark-unread", "rename", "edit", "copy-id", "hide", "archive", "delete", "more"]);
-    for (const label of [">New thread<", ">Pin<", ">Move to<", ">Mark as Unread<", ">Rename the bot<", ">Edit bot<", ">Copy conversation ID<", ">Hide from sidebar<", ">More<", ">Archive<"]) expect(html).toContain(label);
+    expect(items(html)).toEqual(["new-thread", "pin", "move", "mark-unread", "mark-all-read", "rename", "edit", "model", "put-on-desktop", "hide", "archive", "delete"]);
+    for (const label of [">New thread<", ">Pin<", ">Move to<", ">Mark as Unread<", ">Mark all conversations as read<", ">Rename the bot<", ">Edit bot<", ">Model…<", ">Hide from sidebar<", ">Archive<"]) expect(html).toContain(label);
     expect(html).not.toContain("Rename Bot");
-    expect(html).not.toContain("Model…");
+  });
+
+  it("has no More page and no Copy conversation ID", () => {
+    const { html } = render();
+    expect(items(html)).not.toContain("more");
+    expect(items(html)).not.toContain("back");
+    expect(items(html)).not.toContain("copy-id");
+    expect(html).not.toContain(">More<");
+    expect(html).not.toContain("Copy conversation ID");
+    expect(html).not.toContain("data-bot-menu-page");
+  });
+
+  it("sets the groups apart: three separators, Delete last", () => {
+    const { html } = render();
+    expect(html.match(/h-\[0\.5px\] bg-border/g)).toHaveLength(3);
+    expect(items(html).at(-1)).toBe("delete");
   });
 
   it("offers Move to in Simple and Advanced mode alike", () => {
@@ -115,30 +130,17 @@ describe("the sidebar's bot menu", () => {
     expect(props.onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: bot.id }));
   });
 
-  it("opens More without closing, and Edit bot opens the bot editor", () => {
+  it("Edit bot opens the bot editor, Rename renames", () => {
     const { props } = render();
     const found = buttons();
-    found.get("more")!.props.onClick();
-    expect(props.onClose).not.toHaveBeenCalled();
     found.get("edit")!.props.onClick();
     expect(props.onEditPersona).toHaveBeenCalledWith(expect.objectContaining({ id: bot.id }));
     found.get("rename")!.props.onClick();
     expect(props.onRename).toHaveBeenCalledWith(bot.id);
   });
 
-  it("puts the rare actions under More", () => {
-    const { html } = render("more");
-    expect(items(html)).toEqual(["back", "put-on-desktop", "model", "mark-all-read"]);
-    // No second Move to, Mark as Unread or Hide under More.
-    expect(html).not.toContain('data-menu-item="move"');
-    expect(html).toContain('data-bot-menu-page="more"');
-    expect(html).toContain(">Mark all conversations as read<");
-  });
-
-  it("offers Model… under More and opens the model window on that bot", () => {
-    const { html, props } = render("more");
-    expect(items(html)).toContain("model");
-    expect(html).toContain(">Model…<");
+  it("opens the model window on that bot from Model…", () => {
+    const { props } = render();
     buttons().get("model")!.props.onClick();
     expect(fixture.models).toEqual([bot.id]);
     expect(props.onClose).toHaveBeenCalledOnce();
@@ -147,14 +149,9 @@ describe("the sidebar's bot menu", () => {
   it("says it in French, bot and not robot", () => {
     setLocale("fr");
     const main = render().html;
-    expect(main).toContain(">Modifier le bot<");
-    expect(main).toContain(">Épingler<");
-    expect(main).toContain(">Plus<");
-    expect(main).toContain(">Déplacer vers<");
-    expect(main).toContain(">Marquer comme non lu<");
-    const more = render("more").html;
-    expect(more).toContain(">Modèle…<");
-    expect(more).toContain(">Tout marquer comme lu<");
-    expect(more).not.toContain("robot");
+    for (const label of [">Nouveau fil<", ">Épingler<", ">Déplacer vers<", ">Marquer comme non lu<", ">Tout marquer comme lu<", ">Renommer le bot<", ">Modifier le bot<", ">Modèle…<", ">Mettre sur le bureau<", ">Masquer de la barre latérale<", ">Archiver<", ">Supprimer<"]) expect(main).toContain(label);
+    expect(main).not.toContain(">Plus<");
+    expect(main).not.toContain("Copier l'ID");
+    expect(main).not.toContain("robot");
   });
 });

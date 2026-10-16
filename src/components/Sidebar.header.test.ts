@@ -126,22 +126,27 @@ describe("sidebar header", () => {
     },
   );
 
-  // Settings > Appearance > Sidebar shortcuts (2026-10-14): on, the two menu
-  // rows with their animated icons and no title or points under the name;
-  // off, neither rows nor a "Connect apps" pill, and the line is back.
-  it("shows Connected apps and Browse Bots as menu rows, and no title or points, while Sidebar shortcuts is on", () => {
+  // Settings > Appearance > Sidebar shortcuts (2026-10-14): on, the Connect
+  // apps pill (in place of the Connected apps row, JC 2026-10-15) and the
+  // Browse Bots row, and no title or points under the name; off, neither,
+  // and the line is back.
+  it("shows the Connect apps pill and the Browse Bots row, and no title or points, while Sidebar shortcuts is on", () => {
     fixture.density = "comfortable";
     fixture.shortcuts = true;
     resetAchievementsForTests({ status: "ready", snapshot: achievementSnapshot() });
     const html = render();
     const rows = [...html.matchAll(/data-sidebar-place="([^"]+)"/g)].map((match) => match[1]);
-    expect(rows).toEqual(["plugins", "browse-bots"]);
-    expect(html).toContain(">Connected apps</span>");
+    expect(rows).toEqual(["browse-bots"]);
+    expect(html).not.toContain(">Connected apps</span>");
     expect(html).toContain(">Browse Bots</span>");
-    expect(html).toContain('data-tour="nav-apps"');
-    expect(html).toContain('data-place-anim="puzzle"');
+    const pill = (html.match(/<button[^>]*data-sidebar-connect-apps[^>]*>/g) ?? [])[0] ?? "";
+    expect(pill).toContain('data-tour="nav-apps"');
+    expect(pill).toContain("rounded-full");
+    expect(html).toContain(">Connect apps</span>");
+    // the pill sits above Browse Bots, both above the account row
+    expect(html.indexOf("data-sidebar-connect-apps")).toBeLessThan(html.indexOf('data-sidebar-place="browse-bots"'));
+    expect(html).not.toContain('data-place-anim="puzzle"');
     expect(html).toContain('data-place-anim="grid"');
-    expect(html).not.toContain(">Connect apps<");
     expect(html).not.toContain("data-member-line");
     expect(html).not.toContain(">Commander<");
     expect(html).not.toContain("data-gamertag");
@@ -155,7 +160,8 @@ describe("sidebar header", () => {
     expect(html).not.toContain("data-sidebar-place=");
     expect(html).not.toContain(">Connected apps</span>");
     expect(html).not.toContain(">Browse Bots</span>");
-    expect(html).not.toContain(">Connect apps<");
+    expect(html).not.toContain("data-sidebar-connect-apps");
+    expect(html).not.toContain(">Connect apps</span>");
     expect(html).toContain("data-member-line");
     expect(html).toContain(">Commander<");
     expect(html).toContain("data-gamertag");
@@ -165,7 +171,8 @@ describe("sidebar header", () => {
     fixture.density = "icons";
     fixture.shortcuts = true;
     const html = render();
-    expect(html).toContain('aria-label="Connected apps"');
+    expect(html).not.toContain('aria-label="Connected apps"');
+    expect((html.match(/<button[^>]*data-sidebar-connect-apps[^>]*>/g) ?? [])[0]).toContain('aria-label="Connect apps"');
     expect(html).toContain('aria-label="Browse Bots"');
     expect(html).toContain('data-place-anim="grid"');
   });

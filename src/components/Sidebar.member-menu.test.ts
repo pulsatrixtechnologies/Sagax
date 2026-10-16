@@ -274,19 +274,9 @@ describe("person row menu", () => {
     expect(html).toContain(`>${t("sidebar.bot.moveTo")}<`);
     expect(html).toContain('aria-haspopup="menu"');
     expect(labels).toContain(t("sidebar.bot.markUnread"));
-    // the rare ones one step down, under More, without a second Move to
-    fixture.portal = null;
-    const more = renderToStaticMarkup(createElement(BotContextMenu, {
-      menu: { botId: "ara", x: 10, y: 10 },
-      initialPage: "more",
-      onClose: vi.fn(),
-      onArchive: vi.fn(),
-      onDelete: vi.fn(),
-      onMoveToSection: vi.fn(),
-      onRename: vi.fn(),
-    }));
-    expect(more).not.toContain(`>${t("sidebar.bot.moveTo")}<`);
-    expect(labelsOf(fixture.portal)).not.toContain(t("sidebar.bot.markUnread"));
+    // one flat menu: a single Move to, no More
+    expect(html.split(`>${t("sidebar.bot.moveTo")}<`)).toHaveLength(2);
+    expect(html).not.toContain('data-menu-item="more"');
   });
 
   it("hides rename, archive, delete and a server section move from a member who does not own the bot", () => {
@@ -321,17 +311,5 @@ describe("person row menu", () => {
     expect(html).not.toContain(`>${t("sidebar.bot.moveTo")}<`);
     expect(labels).toContain(t("sidebar.hidden.hide"));
     expect(html).not.toContain('data-menu-item="delete"');
-    fixture.portal = null;
-    const more = renderToStaticMarkup(createElement(BotContextMenu, {
-      menu: { botId: "ara", x: 10, y: 10 },
-      initialPage: "more",
-      onClose: vi.fn(),
-      onArchive: vi.fn(),
-      onDelete: vi.fn(),
-      onMoveToSection: vi.fn(),
-      onRename: vi.fn(),
-    }));
-    expect(more).not.toContain(t("common.delete"));
-    expect(more).not.toContain(`>${t("sidebar.bot.moveTo")}<`);
   });
 });

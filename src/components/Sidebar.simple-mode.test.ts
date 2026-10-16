@@ -193,11 +193,11 @@ describe("bot-first sidebar", () => {
 
   it("offers New thread first in the bot context menu with threads on, and no folder creation", () => {
     const onClose = vi.fn();
-    const render = (initialPage: "main" | "more" = "main") => {
+    const render = () => {
       let tree: ReactNode;
       function Capture() {
         tree = BotContextMenu({
-          menu: { botId: bot.id, x: 0, y: 0 }, initialPage, onClose, onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onRename: vi.fn(),
+          menu: { botId: bot.id, x: 0, y: 0 }, onClose, onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onRename: vi.fn(),
         });
         return tree;
       }
@@ -206,7 +206,6 @@ describe("bot-first sidebar", () => {
     for (const shown of [true, false]) {
       fixture.showThreads = shown;
       const main = render();
-      const more = render("more");
       expect(main.html).toContain("Rename the bot");
       expect(main.html).toContain(">Move to<");
       expect(main.html).toContain("Hide from sidebar");
@@ -222,8 +221,8 @@ describe("bot-first sidebar", () => {
       } else {
         expect(main.html).not.toContain("New thread");
       }
-      expect(more.html).not.toContain("New thread");
-      for (const html of [main.html, more.html]) expect(html).not.toContain("New folder");
+      expect(main.html.split("New thread").length).toBeLessThanOrEqual(2);
+      expect(main.html).not.toContain("New folder");
     }
   });
 

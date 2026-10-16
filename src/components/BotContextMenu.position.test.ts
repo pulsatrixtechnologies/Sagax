@@ -44,9 +44,9 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function render(x = 990, y = 795, initialPage: "main" | "more" = "main") {
+function render(x = 990, y = 795) {
   return renderToStaticMarkup(createElement(BotContextMenu, {
-    menu: { botId: bot.id, x, y }, initialPage, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(),
+    menu: { botId: bot.id, x, y }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(),
     onMoveToSection: vi.fn(), onRename: vi.fn(),
   }));
 }
@@ -111,6 +111,6 @@ describe("bot actions menu: hide versus archive", () => {
     expect(html).toContain(">Archive</button>");
     expect(html).toContain(">Hide from sidebar</button>");
     expect(html.indexOf(">Hide from sidebar</button>")).toBeLessThan(html.indexOf(">Archive</button>"));
-    expect(render(990, 795, "more")).not.toContain("Hide from sidebar");
+    expect(html.match(/>Hide from sidebar</g)).toHaveLength(1);
   });
 });
