@@ -130,18 +130,36 @@ describe("Settings → Appearance", () => {
     expect(html).not.toContain("Follows your account");
     expect(html).not.toContain("This device only");
     expect(html).not.toContain("Everyone on this server");
-    expect(html).toContain("all conversation history and running work");
-    expect(html).toContain("channels are unchanged");
-    expect(html).toContain("Turn this back on");
     expect(html).not.toContain("Maximum turn length");
+  });
+
+  it("is laid out as Grok Bot's pages: grey headings, compact rows, pill menus, no help text", () => {
+    const html = render();
+    const groups = [...html.matchAll(/data-settings-group="([^"]+)"/g)].map((match) => match[1]);
+    expect(groups).toEqual(["interface", "skin", "conversation", "sidebar", "desktop"]);
+    for (const heading of ["Interface", "Skin", "Conversations", "Sidebar", "Desktop"]) expect(html).toContain(`>${heading}</h3>`);
+    // no native select on the page itself, only the narrow-window section menu
+    const page = html.slice(html.indexOf('data-settings-group="interface"'));
+    expect(page).not.toContain("<select");
+    for (const label of ["Interface font", "Conversation threads", "Send messages with", "Choose sidebar density"]) {
+      expect(page).toContain(`aria-label="${label}" aria-haspopup="listbox"`);
+    }
+    // the help paragraphs are gone; the short lines that avoid a mistake stay
+    expect(html).not.toContain("all conversation history and running work");
+    expect(html).not.toContain("Overrides the skin's font");
+    expect(html).not.toContain("Applies instantly.");
+    expect(html).toContain("Saved choices stay either way.");
+    // the Theme menu is General's (#573): the miniatures only here
+    expect(html).not.toContain('aria-label="Theme"');
+    expect(html).toContain('data-skin-grid=""');
+    expect(html).not.toMatch(/[–—]/);
   });
 
   it.each([true, false])("shows the saved thread choice (shown: %s) as one selector", (enabled) => {
     fixture.showThreads = enabled;
     const html = render();
-    const select = /<select aria-label="Conversation threads"[\s\S]*?<\/select>/.exec(html)?.[0] ?? "";
-    expect(select).toContain(enabled ? '<option value="header" selected="">In the chat header</option>' : '<option value="hidden" selected="">Hidden</option>');
-    expect(select).toContain(">In the sidebar<");
+    const pill = /aria-label="Conversation threads"[^>]*>[\s\S]*?<\/button>/.exec(html)?.[0] ?? "";
+    expect(pill).toContain(enabled ? ">In the chat header<" : ">Hidden<");
   });
 
   it("only updates the local preferences when a thread choice is made", () => {
@@ -157,9 +175,12 @@ describe("Settings → Appearance", () => {
 
   it("folds the desktop mascot rows into one card", () => {
     const html = render();
-    const card = /data-settings-card="appearance.mascots"[\s\S]*?<\/h3>/.exec(html)?.[0] ?? "";
-    expect(card).toContain('data-open="false"');
-    expect(card).toContain("Desktop mascots");
+    expect(html).toContain('data-settings-card="appearance.mascots" data-open="false"');
+    expect(html).toContain("Desktop mascots");
+    expect(html).toContain('aria-label="Desktop mascots"');
+    // folded: the five rows are not drawn, their values still apply
+    expect(html).not.toContain("data-mascot-rows");
+    expect(html).not.toContain("Fly away during tasks");
   });
 
   it("no longer holds the notification switches: they have their own section", () => {
@@ -177,9 +198,9 @@ describe("Settings → Appearance", () => {
     const html = render();
     expect(html).toContain('aria-label="Choose sidebar density"');
     expect(html).toContain("Sidebar density");
-    expect(html).toContain("collapsing the sidebar from its header");
-    expect(html).toContain(`<option value="${density}" selected="">${label}</option>`);
-    for (const option of ["Comfortable", "Compact", "Avatars only"]) expect(html).toContain(`>${option}</option>`);
+    expect(html).not.toContain("collapsing the sidebar from its header");
+    const pill = /aria-label="Choose sidebar density"[^>]*>[\s\S]*?<\/button>/.exec(html)?.[0] ?? "";
+    expect(pill).toContain(`>${label}<`);
     expect(fixture.setSidebarDensity).not.toHaveBeenCalled();
     expect(fixture.api).not.toHaveBeenCalled();
     expect(fixture.dispatch).not.toHaveBeenCalled();
@@ -189,7 +210,7 @@ describe("Settings → Appearance", () => {
     const html = render();
     expect(html).toContain('aria-label="Show unconfigured providers"');
     expect(html).toContain("Unconfigured providers");
-    expect(html).toContain("they stay hidden until you turn this on");
+    expect(html).not.toContain("they stay hidden until you turn this on");
     expect(html).not.toContain("folded");
     const toggle = fixture.switches.find((props) => props["aria-label"] === "Show unconfigured providers")!;
     expect(toggle.checked).toBe(false);
@@ -214,12 +235,11 @@ describe("Settings → Appearance", () => {
     const html = render();
     expect(html).toContain("Send messages with");
     expect(html).toContain('aria-label="Send messages with"');
-    expect(html).toContain("Choose Shift+Enter or Ctrl+Enter so Enter starts a new line");
-    expect(html).toContain("as Japanese input does. Ctrl+Enter sends whichever you choose.");
-    expect(html).toContain(`<option value="${sendKey}" selected="">${label}</option>`);
-    const options = [...html.matchAll(/<option value="(enter|shift-enter|mod-enter)"[^>]*>([^<]*)</g)].map((match) => [match[1], match[2]]);
-    // only the key, so the closed menu fits its 240px column in every language
-    expect(options).toEqual([["enter", "Enter"], ["shift-enter", "Shift+Enter"], ["mod-enter", "Ctrl+Enter"]]);
+    // one short line: the other key still sends (Japanese input)
+    expect(html).toContain("Ctrl+Enter always sends.");
+    const pill = /aria-label="Send messages with"[^>]*>[\s\S]*?<\/button>/.exec(html)?.[0] ?? "";
+    // only the key, so the closed menu fits its column in every language
+    expect(pill).toContain(`title="${label}"`);
     expect(fixture.setSendKey).not.toHaveBeenCalled();
     expect(fixture.api).not.toHaveBeenCalled();
     expect(fixture.dispatch).not.toHaveBeenCalled();
@@ -230,10 +250,8 @@ describe("Settings → Appearance", () => {
     fixture.sendKey = "shift-enter";
     const html = render();
     expect(html).toContain("メッセージの送信キー");
-    expect(html).toContain("日本語入力のように Enter で変換を確定する場合は、Shift+Enter か Ctrl+Enter を選ぶと Enter で改行できます。");
-    expect(html).toContain('<option value="enter">Enter</option>');
-    expect(html).toContain('<option value="shift-enter" selected="">Shift+Enter</option>');
-    expect(html).toContain('<option value="mod-enter">Ctrl+Enter</option>');
+    const pill = /aria-label="メッセージの送信キー"[^>]*>[\s\S]*?<\/button>/.exec(html)?.[0] ?? "";
+    expect(pill).toContain('title="Shift+Enter"');
   });
 
   it("finds the send key by the keys' names on every platform", () => {
@@ -248,7 +266,7 @@ describe("Settings → Appearance", () => {
     const html = render();
     expect(html).toContain('aria-label="Show the run card"');
     expect(html).toContain("This run");
-    expect(html).toContain("saving the run as a skill");
+    expect(html).not.toContain("saving the run as a skill");
     const toggle = fixture.switches.find((props) => props["aria-label"] === "Show the run card")!;
     expect(toggle.checked).toBe(true);
     toggle.onClick!({} as never);
@@ -324,8 +342,8 @@ describe("Settings → Appearance", () => {
       const html = render();
       expect(html).toContain("Appearance");
       expect(html).toContain('aria-label="Conversation threads"');
-      expect(html).toContain("all conversation history and running work");
-      expect(html).not.toContain("settings.threadDisplay");
+      expect(html).toContain("Sidebar");
+      expect(html).not.toContain("settings.group");
       expect(html).not.toContain("settings.threadsView");
     } finally {
       delete locales.zz;
@@ -366,7 +384,7 @@ describe("Settings → Notifications", () => {
     fixture.section = "notifications";
     const html = render();
     expect(html).toContain('aria-label="Notification sounds"');
-    expect(html).toContain("keep the banners but lose the chime");
+    expect(html).not.toContain("keep the banners but lose the chime");
     const toggle = fixture.switches.find((props) => props["aria-label"] === "Notification sounds")!;
     expect(toggle.checked).toBe(enabled);
     toggle.onClick!({} as never);
@@ -413,6 +431,20 @@ describe("Settings → Notifications", () => {
   it("says how to keep a notification on screen on macOS", () => {
     fixture.section = "notifications";
     const html = render();
-    expect(html).toContain("Alerts");
+    expect(html).toContain("On macOS, also choose Alerts in System Settings &gt; Notifications.");
+  });
+
+  it("is laid out as Grok Bot's Notifications: grey headings, a switch per row, no intro paragraph", () => {
+    fixture.section = "notifications";
+    const html = render();
+    const groups = [...html.matchAll(/data-settings-group="([^"]+)"/g)].map((match) => match[1]);
+    // Privacy is an organization server's only
+    expect(groups).toEqual(["alerts", "nudges"]);
+    expect(html).toContain(">Alerts</h3>");
+    expect(html).toContain(">Nudges</h3>");
+    expect(html).toContain("· On this computer");
+    expect(html).not.toContain("How a new message or a nudge gets your attention");
+    expect(html).not.toContain("Play a sound when a person writes to you");
+    expect(html).not.toMatch(/[–—]/);
   });
 });

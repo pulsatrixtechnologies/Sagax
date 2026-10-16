@@ -205,12 +205,13 @@ describe("card counts", () => {
 });
 
 describe("skin picker", () => {
-  it("keeps roomy cards with full taglines", async () => {
+  it("draws Grok Bot's tiles: picture, name and check, the tagline as a tooltip", async () => {
     const { SkinPicker } = await import("./SkinPicker");
     const html = renderToStaticMarkup(createElement(SkinPicker));
-    expect(html).toContain("grid-cols-[repeat(auto-fill,minmax(190px,1fr))]");
-    expect(html).not.toContain("line-clamp");
-    expect(html).toContain("Pulsatrix blue. Deep navy with a soft glow from the top.");
+    expect(html).toContain("grid-cols-[repeat(auto-fill,minmax(132px,1fr))]");
+    expect(html).toContain('title="Pulsatrix blue. Deep navy with a soft glow from the top."');
+    expect(html).toContain('aria-description="Pulsatrix blue. Deep navy with a soft glow from the top."');
+    expect(html).toContain('aria-pressed="true"');
   });
 });
 

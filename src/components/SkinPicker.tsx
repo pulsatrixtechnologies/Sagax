@@ -17,12 +17,12 @@ import { cn } from "@/lib/cn";
  * accent on purpose — a skin is mostly judged by where its colour lands, and a
  * single dot was too small to judge.
  */
-function Miniature({ skin }: { skin: SkinId }) {
+function Miniature({ skin, selected }: { skin: SkinId; selected: boolean }) {
   return (
     <div
       data-skin={skin}
       aria-hidden="true"
-      className="flex h-[104px] w-full overflow-hidden rounded-lg bg-app ring-1 ring-hairline/60"
+      className={cn("flex h-[78px] w-full overflow-hidden rounded-lg bg-app", selected ? "ring-2 ring-accent-border" : "ring-1 ring-hairline/60")}
     >
       {/* rail */}
       <div className="flex w-[11px] shrink-0 flex-col items-center gap-[3px] bg-panel pt-[5px]">
@@ -78,45 +78,38 @@ export function SkinPicker() {
   const [skins] = useState(() => visibleSkins(readRetroUnlocked(), active));
 
   return (
-    // Cards at least 190px wide: three across at the modal's normal width,
-    // so each miniature is large enough to judge and every tagline reads in
-    // full. Settings scrolls on short windows.
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3">
+    // 0.5.6 (JC): Grok Bot's tiles inside the Appearance card: the picture,
+    // the name and a check. The tagline is the tile's tooltip and its
+    // accessible description, so the grid fits four across.
+    <div role="group" aria-label={t("settings.skin.title")} data-skin-grid="" className="grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] gap-2 px-2 py-1">
       {skins.map((skin) => {
         const selected = skin.id === active;
         return (
           <button
             key={skin.id}
             type="button"
+            aria-pressed={selected}
+            aria-description={skin.tagline}
+            title={skin.tagline}
             onClick={() => {
               applySkin(skin.id);
               setActive(skin.id);
             }}
-            aria-pressed={selected}
             className={cn(
-              "flex cursor-pointer flex-col gap-2.5 rounded-xl border p-2.5 text-left transition-colors",
-              selected
-                ? "border-accent-border bg-control"
-                : "border-hairline/60 hover:border-hairline hover:bg-control/50",
+              "flex min-w-0 cursor-pointer flex-col gap-1.5 rounded-[10px] p-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none",
+              selected ? "bg-selected" : "hover:bg-hover",
             )}
           >
-            <Miniature skin={skin.id} />
-            <div className="flex items-start gap-1.5 px-0.5 pb-0.5">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
-                  {skin.name}
-                  {skin.secret && (
-                    <span className="rounded-sm bg-accent px-1 py-px text-[10px] font-semibold uppercase tracking-wide text-accent-ink">
-                      {t("retro.skin.unlocked")}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-0.5 text-[12px] leading-snug text-ink-secondary">
-                  {skin.tagline}
-                </div>
-              </div>
-              {selected && <Check size={13} className="mt-0.5 shrink-0 text-accent-text" />}
-            </div>
+            <Miniature skin={skin.id} selected={selected} />
+            <span className="flex min-w-0 items-center gap-1.5 px-0.5 text-[13px] leading-[18px] text-ink">
+              <span className="min-w-0 truncate">{skin.name}</span>
+              {skin.secret && (
+                <span className="shrink-0 rounded-sm bg-accent px-1 py-px text-[10px] font-semibold uppercase tracking-wide text-accent-ink">
+                  {t("retro.skin.unlocked")}
+                </span>
+              )}
+              {selected && <Check size={13} aria-hidden="true" className="ml-auto shrink-0 text-accent-text" />}
+            </span>
           </button>
         );
       })}
