@@ -72,6 +72,15 @@
   color: transparent;
   caret-color: var(--color-ink);
 }
+/* The field grows with its text up to six lines, then scrolls: sized by the
+   browser, so typing never forces a layout from script (MentionTextarea.tsx
+   FIELD_SIZING; without support the script measures it as before). */
+@supports (field-sizing: content) {
+  .mention-editor textarea {
+    field-sizing: content;
+    max-height: 6lh;
+  }
+}
 /* On a phone the composer's buttons leave the field narrow, and a wrapped
    hint broke mid-word ("Messag / e Pepper"). While the field is empty the
    mirror paints the hint on one line ending in an ellipsis (Chrome does not

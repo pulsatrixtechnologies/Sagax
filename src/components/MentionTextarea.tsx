@@ -3,6 +3,12 @@ import { useCallback, useLayoutEffect, useRef, type RefObject, type TextareaHTML
 import { type MentionPeer } from "@/lib/mentions";
 import { MentionText } from "./MentionText";
 
+/** Whether the browser sizes a textarea to its text (`field-sizing: content`,
+ * styles.css `.mention-editor textarea`). Then a keystroke costs no forced
+ * layout: nothing is measured or written from script. Otherwise the field is
+ * measured (height auto, then scrollHeight) as before. */
+export const FIELD_SIZING = typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("field-sizing", "content");
+
 /** A native textarea retains selection, undo, IME and accessibility. Its
  * aria-hidden mirror paints mentions without changing wrapping or caret offsets. */
 export function MentionTextarea({ inputRef, peers, everyone = false, wrapperClassName, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & {
@@ -23,6 +29,10 @@ export function MentionTextarea({ inputRef, peers, everyone = false, wrapperClas
     mirror.scrollLeft = input.scrollLeft;
   }, [inputRef]);
   const resize = useCallback(() => {
+    // the browser grows the field (up to six lines) and scrolls it; the
+    // mirror follows the scroll through onScroll and the width through the
+    // observer below
+    if (FIELD_SIZING) return;
     const input = inputRef.current;
     if (!input) return;
     const scrollTop = input.scrollTop;
@@ -39,8 +49,8 @@ export function MentionTextarea({ inputRef, peers, everyone = false, wrapperClas
       // Width changes can wrap an unchanged draft onto more lines. Observe
       // width only so setting the measured height cannot create a resize loop.
       const nextWidth = inputRef.current?.clientWidth;
-      if (nextWidth !== width) { width = nextWidth; resize(); }
-      else sync();
+      if (nextWidth !== width && !FIELD_SIZING) { width = nextWidth; resize(); }
+      else { width = nextWidth; sync(); }
     });
     if (inputRef.current) observer.observe(inputRef.current);
     return () => observer.disconnect();

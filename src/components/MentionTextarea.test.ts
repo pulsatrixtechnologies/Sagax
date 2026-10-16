@@ -27,3 +27,14 @@ it("sizes the composer and its mirror from one rule, 16 px on phones", async () 
   expect(composer).toMatch(/className="[^"]*\bchat-input-text\b[^"]*"/);
   expect(composer).not.toMatch(/text-\[14px\] leading-5 placeholder/);
 });
+
+// Typing used to set height to auto and read scrollHeight on every keystroke
+// (a forced layout). Where the browser can size the field itself it does.
+it("lets the browser size the field when it can, and keeps the measured fallback", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  const source = readFileSync(new URL("./MentionTextarea.tsx", import.meta.url), "utf8");
+  expect(css).toMatch(/@supports \(field-sizing: content\) \{\s*\.mention-editor textarea \{\s*field-sizing: content;\s*max-height: 6lh;/);
+  expect(source).toContain('CSS.supports("field-sizing", "content")');
+  expect(source).toMatch(/const resize = useCallback\(\(\) => \{[\s\S]*?if \(FIELD_SIZING\) return;[\s\S]*?input\.style\.height = "auto";/);
+});
