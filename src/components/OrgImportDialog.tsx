@@ -7,9 +7,10 @@ import { createPortal } from "react-dom";
 
 import { MAX_ORG_IMPORT_BYTES, parseOrgImportDocument, type OrgImportDocument } from "../../shared/org-import.ts";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
 import { api, ApiError, useStore } from "@/state/store";
 import { X } from "lucide-react";
-import { FieldRow, FoldRow, PILL, PRIMARY_PILL, SettingsGroup, WINDOW_BODY, WINDOW_CLOSE, WINDOW_FOOTER, WINDOW_HEADER, WINDOW_SUBTITLE, WINDOW_SURFACE, WINDOW_TITLE } from "./SettingsPrimitives";
+import { FieldRow, FoldRow, PILL, PRIMARY_PILL, SettingsGroup, DIALOG, GROUP_CARD } from "./SettingsPrimitives";
 
 export interface OrgImportReport {
   bots: { sourceKey: string; id: string; name: string; section: string; tasks: number; messages: number; memoryFiles: number }[];
@@ -102,18 +103,18 @@ export function OrgImportDialog({ staged, onClose }: { staged?: OrgImportDocumen
   const removedRefs = report?.removedPeople.reduce((sum, entry) => sum + entry.refs, 0) ?? 0;
   return createPortal(
     <dialog ref={dialogRef} aria-labelledby="org-import-title" data-org-import
-      className={`m-auto ${WINDOW_SURFACE} w-[calc(100vw-2rem)] max-w-[560px] p-0 backdrop:bg-black/50`}
+      className={`m-auto ${DIALOG.frame} w-[calc(100vw-2rem)] max-w-[560px] p-0 backdrop:bg-black/50`}
       onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
-      <div className={WINDOW_HEADER}>
+      <div className={DIALOG.header}>
         <div className="min-w-0">
-          <h2 id="org-import-title" className={WINDOW_TITLE}>{t("orgImport.dialogTitle")}</h2>
-          {staged && <p className={WINDOW_SUBTITLE}>{t("orgImport.staged")}</p>}
+          <h2 id="org-import-title" className={DIALOG.title}>{t("orgImport.dialogTitle")}</h2>
+          {staged && <p className={DIALOG.subtitle}>{t("orgImport.staged")}</p>}
         </div>
-        <button type="button" disabled={busy} onClick={onClose} aria-label={t("orgImport.close")} className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
+        <button type="button" disabled={busy} onClick={onClose} aria-label={t("orgImport.close")} className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
       </div>
-      <div className={WINDOW_BODY}>
+      <div className={DIALOG.body}>
         {!staged && !report && (
-          <div className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5">
+          <div className={GROUP_CARD}>
             <FieldRow label={t("orgImport.choose")} hint={t("orgImport.intro")}>
               <input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => void choose(event.target.files?.[0])}
                 className="min-h-[44px] text-[13px] text-ink-secondary file:mr-3 file:h-[30px] file:cursor-pointer file:rounded-full file:border-0 file:bg-hover file:px-3 file:text-[13px] file:text-ink md:min-h-0" />
@@ -166,7 +167,7 @@ export function OrgImportDialog({ staged, onClose }: { staged?: OrgImportDocumen
         )}
         {error && <p role="alert" className="px-1 text-[12.5px] text-danger">{error}</p>}
       </div>
-      <div className={WINDOW_FOOTER}>
+      <div className={DIALOG.footer}>
         <button type="button" className={PILL} disabled={busy} onClick={onClose}>{t("orgImport.close")}</button>
         {!report && (
           <button type="button" disabled={busy || !doc} onClick={() => void copyIn()} className={PRIMARY_PILL}>

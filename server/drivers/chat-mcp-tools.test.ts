@@ -223,7 +223,7 @@ describe("Chat MCP session", () => {
 
   it.each([
     ["repeated cursor", `reply(message, {tools:[],nextCursor:"same"});`],
-    ["too many tools", `reply(message, {tools:Array.from({length:129},(_,i)=>({name:"tool"+i,inputSchema:schema}))});`],
+    ["too many tools on one server", `reply(message, {tools:Array.from({length:1001},(_,i)=>({name:"tool"+i,inputSchema:schema}))});`],
     ["duplicate tool", `reply(message, {tools:[{name:"same",inputSchema:schema},{name:"same",inputSchema:schema}]});`],
     ["invalid RPC", `process.stdout.write('{"result":1}\\n');`],
     ["oversized incomplete frame", `process.stdout.write("x".repeat(2*1024*1024+1));`],
@@ -404,6 +404,24 @@ describe("Chat MCP tool directory", () => {
       expect(unknown).toMatchObject({ ok: true, text: expect.stringContaining("search_tools") });
       expect(remote.calls).toHaveLength(1);
     } finally { await remote.close(); }
+  });
+
+  it("defers tools past the provider's limit instead of failing the turn, keeping the harness's own first", async () => {
+    const big = fixture(`if (message.method === "tools/list") { reply(message, {tools:Array.from({length:200},(_,i)=>({name:"op_"+i,description:i===150?"Rotate the walrus keys":"Bulk "+i,inputSchema:schema}))}); continue; }
+      if (message.method === "tools/call") { reply(message, {content:[{type:"text",text:"ran:" + message.params.name}]}); continue; }`);
+    const agents = fixture();
+    const session = await mountChatTools({ agents: agents.server, custom: { big: big.server } }, big.controller.signal, false, undefined, undefined, 10);
+    sessions.push(session);
+    const names = session.definitions.map((tool) => tool.function.name);
+    expect(names).toHaveLength(10);
+    expect(names[0]).toBe("agents_write");
+    expect(names.slice(-2)).toEqual(["tool_search", "tool_call"]);
+    const found = await session.execute("tool_search", { query: "walrus keys" }, big.controller.signal);
+    expect(found.text).toContain("big_op_150");
+    expect(session.view("tool_call", { name: "big_op_150", arguments: { value: "x" } })).toMatchObject({ title: "big_op_150", input: { value: "x" }, ask: true });
+    expect(() => session.validate("tool_call", { name: "big_nope", arguments: {} })).toThrow(/tool_search/);
+    expect(() => session.validate("tool_call", { name: "big_op_150", arguments: {} })).toThrow(/input schema/);
+    await expect(session.execute("tool_call", { name: "big_op_150", arguments: { value: "x" } }, big.controller.signal)).resolves.toMatchObject({ ok: true, text: "ran:op_150" });
   });
 
   it("neither finds nor runs a tool outside the bot's selection", async () => {

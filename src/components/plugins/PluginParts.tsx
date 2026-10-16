@@ -1,12 +1,14 @@
 // Small pieces the three Plugins views share: the icon, the status word and
 // the page header with its back arrow.
 import type { ReactNode } from "react";
-import { ArrowLeft, BookOpen, Puzzle, ServerCog, X } from "lucide-react";
+import { BookOpen, Puzzle, ServerCog } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { WHOP_KEY, type PluginItem, type PluginStatus } from "@/lib/plugins-model";
+import { Breadcrumb, type Crumb } from "../Breadcrumb";
+import { CATEGORY_MODAL } from "../category-modal";
 import { WhopIcon } from "../WhopIcon";
 import { ServiceIcon } from "./connected-apps";
 
@@ -62,27 +64,20 @@ export function PluginStatusLabel({ status, className }: { status: PluginStatus;
 }
 
 /** A sub-page's header: back arrow, title, close. */
-export function PluginPageHeader({ title, backLabel, onBack, onClose, titleId }: {
+/** A page's header in the panel's window: the breadcrumb (back, the pages
+ * above, this one), then its title. The close button is the window's. */
+export function PluginPageHeader({ title, trail, onBack, titleId }: {
   title: string;
-  backLabel: string;
+  /** the pages above this one, Connect apps first (absent: Connect apps) */
+  trail?: readonly Crumb[];
   onBack: () => void;
-  onClose: () => void;
   titleId: string;
 }) {
+  const crumbs = trail ?? [{ label: t("connectApps.title"), onSelect: onBack }];
   return (
-    <header className="flex items-center gap-2 px-6 pb-3 pt-6 sm:px-8">
-      <button type="button" onClick={onBack} aria-label={backLabel} title={backLabel} className="ui-icon-button -ml-1.5">
-        <ArrowLeft size={18} />
-      </button>
-      <h2 id={titleId} className="min-w-0 flex-1 truncate text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">{title}</h2>
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={t("connectors.closeAria")}
-        className="flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary"
-      >
-        <X size={18} />
-      </button>
+    <header className={CATEGORY_MODAL.titleBar}>
+      <Breadcrumb trail={crumbs} current={title} onBack={onBack} backData={{ "data-plugins-back": "" }} />
+      <h2 id={titleId} className={cn(CATEGORY_MODAL.title, "truncate")}>{title}</h2>
     </header>
   );
 }

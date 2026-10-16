@@ -5,7 +5,8 @@ import { BookOpen, X } from "lucide-react";
 import { BotAvatar } from "./Avatar";
 import { normalizeState } from "@/lib/mascot";
 import { t } from "@/lib/i18n";
-import { PRIMARY_PILL, SettingsGroup, WINDOW_BACKDROP, WINDOW_BODY, WINDOW_CLOSE, WINDOW_FOOTER, WINDOW_HEADER, WINDOW_SUBTITLE, WINDOW_SURFACE, WINDOW_TITLE } from "./SettingsPrimitives";
+import { cn } from "@/lib/cn";
+import { PRIMARY_PILL, SettingsGroup, DIALOG } from "./SettingsPrimitives";
 import type { Bot } from "@/state/store";
 
 export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: Bot; onClose: () => void; inline?: boolean }) {
@@ -54,7 +55,7 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
 
   const content = (
     <div
-      className={`${WINDOW_BACKDROP} z-50`}
+      className={cn(DIALOG.backdrop, "z-50")}
       onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
       <div
@@ -63,9 +64,9 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
         aria-modal="true"
         aria-labelledby="bot-instructions-title"
         tabIndex={-1}
-        className={`animate-pop-in ${WINDOW_SURFACE} max-w-[680px]`}
+        className={`animate-pop-in ${DIALOG.frame} max-w-[680px]`}
       >
-        <header className={WINDOW_HEADER}>
+        <header className={DIALOG.header}>
           <div className="flex min-w-0 items-center gap-3">
             <BotAvatar
               bot={bot}
@@ -76,23 +77,23 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
               animated={false}
             />
             <div className="min-w-0">
-              <h2 id="bot-instructions-title" className={`${WINDOW_TITLE} truncate`}>
+              <h2 id="bot-instructions-title" className={`${DIALOG.title} truncate`}>
                 {bot.name}
               </h2>
-              <p className={`${WINDOW_SUBTITLE} truncate`}>{bot.title || t("botInstructions.title")}</p>
+              <p className={`${DIALOG.subtitle} truncate`}>{bot.title || t("botInstructions.title")}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={close}
             aria-label={t("botInstructions.close")}
-            className={WINDOW_CLOSE}
+            className={cn(DIALOG.close, "disabled:opacity-40")}
           >
             <X size={18} className="pointer-events-none" />
           </button>
         </header>
 
-        <div className={WINDOW_BODY}>
+        <div className={DIALOG.body}>
           <SettingsGroup groupId="bot-instructions" title={t("botInstructions.title")} plain>
             {bot.description.trim() ? (
               <div className="whitespace-pre-wrap break-words rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3 text-[13px] leading-6 text-ink">
@@ -109,7 +110,7 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
           <p className="-mt-3 px-1 text-[12px] text-ink-secondary">{t("botInstructions.everyTurn")}</p>
         </div>
 
-        <footer className={WINDOW_FOOTER}>
+        <footer className={DIALOG.footer}>
           <button type="button" onClick={close} className={PRIMARY_PILL}>
             {t("botInstructions.done")}
           </button>

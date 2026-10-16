@@ -70,7 +70,7 @@ describe("UpdateBanner", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("What&#x27;s new in 0.2.0");
     expect(html).not.toContain(">Fixes<");
-    expect(html).toContain("max-w-[360px]");
+    expect(html).toContain("max-w-[400px]");
   });
 
   it("keeps restart busy and displays the recovery instruction", () => {

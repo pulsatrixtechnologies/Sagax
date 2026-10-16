@@ -17,8 +17,8 @@
 // organization package through POST /api/org-library/add), Open, and
 // publish, withdraw or feature through PUT /api/bot-catalog/:id/listing.
 // Templates' tools (Import, From a folder, Share a team) are TemplateTools.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronLeft, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { Check, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -53,10 +53,12 @@ import {
   catalogCategoryLabel,
 } from "@/lib/bot-catalog";
 import { DEFAULT_BOT_CATALOG_CATEGORIES, type BotCatalogListing } from "../../../shared/bot-catalog";
+import { isBackShortcut } from "@/lib/back-shortcut";
+import { Breadcrumb, type Crumb } from "../Breadcrumb";
 import { useRetroSkin } from "../RetroChromeHost";
 import { shortcutLabel } from "../ShortcutHint";
 import { openBotConversationActions } from "../thread-home";
-import { CATEGORY_MODAL, useCategoryModalKeyboard } from "../category-modal";
+import { CATEGORY_MODAL, cardActionClass, useCategoryModalKeyboard } from "../category-modal";
 import { BotCatalogView } from "./BotCatalogView";
 import { BotCatalogDetailView, templateDetail, type CatalogDetailContent, type CatalogTab } from "./BotCatalogDetailView";
 import { TeamImportDetails, type TeamImportResult } from "./TeamImportDetails";
@@ -126,12 +128,77 @@ function categoryFromInput(value: string): string {
 }
 
 export function BotCatalogModal() {
-  const { state, dispatch } = useStore();
+  const { dispatch } = useStore();
   const retroSkin = useRetroSkin();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const backRef = useRef<(() => boolean) | null>(null);
+  const close = useCallback(() => dispatch(closeBotCatalog()), [dispatch]);
+
+  // The shared keyboard (Settings, Achievements, the persona editor): focus
+  // moves in, Tab stays in the dialog, focus returns on close; Escape steps
+  // back here first, then closes. Cmd+[ steps back and never closes.
+  useCategoryModalKeyboard(dialogRef, "[data-catalog-search]", () => { if (!backRef.current?.()) close(); });
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isBackShortcut(event)) return;
+      event.preventDefault();
+      backRef.current?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  return (
+    <div className={CATEGORY_MODAL.backdrop} onMouseDown={(event) => event.target === event.currentTarget && close()}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bot-catalog-title"
+        tabIndex={-1}
+        data-bot-catalog-modal=""
+        className={CATEGORY_MODAL.frame}
+      >
+        <div className={CATEGORY_MODAL.content}>
+          <button
+            type="button"
+            onClick={close}
+            aria-label={t("common.close")}
+            title={`${t("common.close")} (${shortcutLabel("close-panel")})`}
+            className={CATEGORY_MODAL.close}
+          >
+            <X size={18} />
+          </button>
+          <BotCatalogPane onClose={close} backRef={backRef} />
+          {retroSkin && (
+            <div className="r98-dialog-footer">
+              <button type="button" className="r98-dialog-ok" onClick={close}>{t("retro.button.ok")}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export interface BotCatalogPaneProps {
+  /** Closes the window the pane is in (Open goes to the bot). */
+  onClose: () => void;
+  /** Set to the pane's own back step (a detail, a tool, View all); false when
+   * it is on its home view. The window calls it on Escape and Cmd+[. */
+  backRef: MutableRefObject<(() => boolean) | null>;
+  /** Shown inside another window (Connect apps): the pages above it, for the
+   * breadcrumb. Absent: its own window, the title alone. */
+  trail?: readonly Crumb[];
+}
+
+/** Browse Bots' content, in its own window (BotCatalogModal) or in Connect
+ * apps' (src/components/PluginsPanel.tsx, under a breadcrumb). */
+export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps) {
+  const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
   const people = useOrgPeople();
   const hiddenPrefs = useSidebarHidden();
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   const [data, setData] = useState<BotCatalogResponse | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -160,7 +227,7 @@ export function BotCatalogModal() {
   // sources stay off on a remote client (it keeps My Bots and the roles).
   const remoteClient = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
 
-  const close = useCallback(() => dispatch(closeBotCatalog()), [dispatch]);
+  const close = onClose;
 
   // Opened on Templates (the old library's entry points, an install link):
   // the Templates section alone, and Import with the link when there is one.
@@ -279,10 +346,7 @@ export function BotCatalogModal() {
     return false;
   }, [selected, tool, expanded]);
 
-  // The shared keyboard (Settings, Achievements, the persona editor): focus
-  // moves in, Tab stays in the dialog, focus returns on close; Escape steps
-  // back here first, then closes.
-  useCategoryModalKeyboard(dialogRef, "[data-catalog-search]", () => { if (!back()) close(); });
+  backRef.current = back;
 
   const fail = (error: unknown) => {
     const body = (error as { body?: { message?: unknown } })?.body;
@@ -425,10 +489,7 @@ export function BotCatalogModal() {
         disabled={pending}
         data-catalog-card-action={primary}
         onClick={() => run(item, primary)}
-        className={cn(
-          "shrink-0 rounded-full px-3.5 py-1.5 text-[12.5px] font-medium disabled:opacity-50",
-          primary === "removeFromSidebar" || primary === "open" ? "border border-border text-ink hover:bg-hover" : "bg-ink text-app hover:opacity-90",
-        )}
+        className={cardActionClass(primary === "removeFromSidebar" || primary === "open" ? "secondary" : "primary")}
       >
         {cardActionLabel(primary)}
       </button>
@@ -484,96 +545,73 @@ export function BotCatalogModal() {
   const templateToolsOn = !remoteClient && canCreate;
 
   return (
-    <div className={CATEGORY_MODAL.backdrop} onMouseDown={(event) => event.target === event.currentTarget && close()}>
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="bot-catalog-title"
-        tabIndex={-1}
-        data-bot-catalog-modal=""
-        className={CATEGORY_MODAL.frame}
-      >
-        <div className={CATEGORY_MODAL.content}>
-          <button
-            type="button"
-            onClick={close}
-            aria-label={t("common.close")}
-            title={`${t("common.close")} (${shortcutLabel("close-panel")})`}
-            className={CATEGORY_MODAL.close}
-          >
-            <X size={18} />
-          </button>
-          {selected ? (
-            <BotCatalogDetailView
-              item={selected}
-              content={detail}
-              loading={detailLoading}
-              tab={tab}
-              onTab={setTab}
-              onBack={() => { setSelected(null); setFeedback(null); }}
-              creatorAvatar={creatorAvatar(selected)}
-              actions={renderDetailActions(selected)}
-              preview={templatePreview(selected)}
-              below={
-                <>
-                  {publishing && selected.kind === "bot" && (
-                    <PublishForm
-                      initial={selected.entry.catalog?.category ? catalogCategoryLabel(selected.entry.catalog.category) : ""}
-                      pending={pending}
-                      onCancel={() => setPublishing(false)}
-                      onPublish={(value) => void setListing(selected, { published: true, ...(value.trim() ? { category: categoryFromInput(value) } : {}) }, t("botCatalog.feedback.published"))}
-                    />
-                  )}
-                  <FeedbackLine feedback={feedback} />
-                </>
-              }
+    <>
+      {selected ? (
+        <BotCatalogDetailView
+          item={selected}
+          content={detail}
+          loading={detailLoading}
+          tab={tab}
+          onTab={setTab}
+          onBack={() => { setSelected(null); setFeedback(null); }}
+          creatorAvatar={creatorAvatar(selected)}
+          actions={renderDetailActions(selected)}
+          preview={templatePreview(selected)}
+          below={
+            <>
+              {publishing && selected.kind === "bot" && (
+                <PublishForm
+                  initial={selected.entry.catalog?.category ? catalogCategoryLabel(selected.entry.catalog.category) : ""}
+                  pending={pending}
+                  onCancel={() => setPublishing(false)}
+                  onPublish={(value) => void setListing(selected, { published: true, ...(value.trim() ? { category: categoryFromInput(value) } : {}) }, t("botCatalog.feedback.published"))}
+                />
+              )}
+              <FeedbackLine feedback={feedback} />
+            </>
+          }
+        />
+      ) : tool && templateToolsOn ? (
+        <div className="flex min-h-0 flex-1 flex-col" data-catalog-tools="">
+          <header className={CATEGORY_MODAL.titleBar}>
+            <Breadcrumb
+              trail={[...(trail ?? []), { label: t("botCatalog.title"), onSelect: () => { setTool(null); setInstallUrl(undefined); } }]}
+              current={t("botCatalog.section.templates")}
+              onBack={() => { if (!toolsBack.current?.()) { setTool(null); setInstallUrl(undefined); } }}
+              backData={{ "data-catalog-back": "" }}
             />
-          ) : tool && templateToolsOn ? (
-            <div className="flex min-h-0 flex-1 flex-col" data-catalog-tools="">
-              <header className={CATEGORY_MODAL.titleBar}>
-                <button type="button" onClick={() => { if (!toolsBack.current?.()) { setTool(null); setInstallUrl(undefined); } }} className="-ml-1.5 mb-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] text-ink-secondary hover:bg-hover hover:text-ink" data-catalog-back="">
-                  <ChevronLeft size={14} aria-hidden="true" />{t("botCatalog.back")}
-                </button>
-                <h2 id="bot-catalog-title" className={CATEGORY_MODAL.title}>{t("botCatalog.section.templates")}</h2>
-              </header>
-              <TemplateTools tool={tool} onTool={setTool} installUrl={installUrl} onImported={teamImported} backRef={toolsBack} />
-            </div>
-          ) : (
-            <BotCatalogView
-              organization={organization}
-              categories={categories}
-              category={category}
-              onCategory={(value) => { setCategory(value); setExpanded((current) => current === "templates" ? current : null); }}
-              query={query}
-              onQuery={setQuery}
-              sections={sections}
-              expanded={expanded}
-              onExpand={(value) => { setExpanded(value); if (value !== "templates") setTemplateApp(null); }}
-              showArchived={showArchived}
-              onShowArchived={setShowArchived}
-              hasArchived={Boolean(data?.entries.some((entry) => entry.source === "mine" && entry.archived))}
-              creatorAvatar={creatorAvatar}
-              onOpen={(item) => { setFeedback(null); setSelected(item); }}
-              renderAction={renderCardAction}
-              notice={notice}
-              loading={!data && !loadFailed}
-              onTemplateTool={templateToolsOn ? (next) => { setFeedback(null); setInstallUrl(undefined); setTool(next); } : undefined}
-              templateApps={apps}
-              templateApp={templateApp}
-              onTemplateApp={setTemplateApp}
-              repositoryUrl={community?.repositoryUrl}
-              onOpenRepository={(url) => void openExternal(url)}
-            />
-          )}
-          {retroSkin && (
-            <div className="r98-dialog-footer">
-              <button type="button" className="r98-dialog-ok" onClick={close}>{t("retro.button.ok")}</button>
-            </div>
-          )}
+            <h2 id="bot-catalog-title" className={CATEGORY_MODAL.title}>{t("botCatalog.section.templates")}</h2>
+          </header>
+          <TemplateTools tool={tool} onTool={setTool} installUrl={installUrl} onImported={teamImported} backRef={toolsBack} />
         </div>
-      </div>
-    </div>
+      ) : (
+        <BotCatalogView
+          organization={organization}
+          categories={categories}
+          category={category}
+          onCategory={(value) => { setCategory(value); setExpanded((current) => current === "templates" ? current : null); }}
+          query={query}
+          onQuery={setQuery}
+          sections={sections}
+          expanded={expanded}
+          onExpand={(value) => { setExpanded(value); if (value !== "templates") setTemplateApp(null); }}
+          showArchived={showArchived}
+          onShowArchived={setShowArchived}
+          hasArchived={Boolean(data?.entries.some((entry) => entry.source === "mine" && entry.archived))}
+          creatorAvatar={creatorAvatar}
+          onOpen={(item) => { setFeedback(null); setSelected(item); }}
+          renderAction={renderCardAction}
+          notice={notice}
+          loading={!data && !loadFailed}
+          onTemplateTool={templateToolsOn ? (next) => { setFeedback(null); setInstallUrl(undefined); setTool(next); } : undefined}
+          templateApps={apps}
+          templateApp={templateApp}
+          onTemplateApp={setTemplateApp}
+          repositoryUrl={community?.repositoryUrl}
+          onOpenRepository={(url) => void openExternal(url)}
+        />
+      )}
+    </>
   );
 }
 

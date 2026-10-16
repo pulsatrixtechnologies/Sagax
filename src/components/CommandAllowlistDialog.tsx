@@ -4,7 +4,8 @@ import { Loader2, Trash2, X } from "lucide-react";
 import type { CommandAllowRule, CommandAllowlistResponse } from "../../shared/command-allowlist";
 import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
-import { WINDOW_BACKDROP, ConfirmPill, FIELD, FieldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, WINDOW_BODY, WINDOW_CLOSE, WINDOW_HEADER, WINDOW_SUBTITLE, WINDOW_SURFACE, WINDOW_TITLE } from "./SettingsPrimitives";
+import { cn } from "@/lib/cn";
+import { ConfirmPill, FIELD, FieldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, DIALOG } from "./SettingsPrimitives";
 
 // Electron collects -webkit-app-region from layout boxes and ignores z-index,
 // so the chat header's drag strip swallows clicks that land on top of it.
@@ -111,7 +112,7 @@ export function CommandAllowlistDialog({ botId, botName, threadId, onClose }: {
     <div
       data-thread-overlay
       style={overlayStyle}
-      className={`${WINDOW_BACKDROP} z-50`}
+      className={cn(DIALOG.backdrop, "z-50")}
       onMouseDown={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
@@ -136,17 +137,17 @@ export function CommandAllowlistDialog({ botId, botName, threadId, onClose }: {
         aria-describedby={scopeId}
         aria-busy={loading || Boolean(saving) || undefined}
         tabIndex={-1}
-        className={`${WINDOW_SURFACE} max-w-[540px]`}
+        className={`${DIALOG.frame} max-w-[540px]`}
       >
-        <div className={WINDOW_HEADER}>
+        <div className={DIALOG.header}>
           <div className="min-w-0">
-            <h2 id={titleId} className={WINDOW_TITLE}>{t("commandAllowlist.title")}</h2>
-            <p className={WINDOW_SUBTITLE}>{t("commandAllowlist.forBot", { name: botName })}</p>
+            <h2 id={titleId} className={DIALOG.title}>{t("commandAllowlist.title")}</h2>
+            <p className={DIALOG.subtitle}>{t("commandAllowlist.forBot", { name: botName })}</p>
           </div>
           <button ref={closeRef} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={onClose} aria-label={t("commandAllowlist.close")}
-            className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
+            className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
         </div>
-        <div className={WINDOW_BODY}>
+        <div className={DIALOG.body}>
           {loading && <p role="status" className="flex items-center gap-2 px-1 text-[13px] text-ink-secondary">
             <Loader2 size={15} className="animate-spin" aria-hidden="true" />{t("commandAllowlist.loading")}
           </p>}

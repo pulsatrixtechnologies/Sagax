@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { PluginItem } from "@/lib/plugins-model";
 import { Switch } from "../SettingsPrimitives";
+import type { Crumb } from "../Breadcrumb";
 import { PluginCard, PluginIcon, PluginPageHeader, PluginStatusLabel } from "./PluginParts";
 
 export interface DetailTool {
@@ -33,7 +34,8 @@ export interface PluginDetailProps {
   /** host or command line under the name */
   subtitle: string;
   onBack: () => void;
-  onClose: () => void;
+  /** the pages above this one in the panel (the breadcrumb) */
+  trail?: readonly Crumb[];
   busy: boolean;
   onUninstall?: () => void;
   /** a marketplace plugin the marketplace has a newer version of */
@@ -64,7 +66,7 @@ export interface PluginDetailProps {
 }
 
 export function PluginDetailView(props: PluginDetailProps) {
-  const { item, subtitle, onBack, onClose, busy, onUninstall, onUpdate, updating, onEdit, onTest, testing, enabled, accounts, accountAction, accountExtra, tools, details, children } = props;
+  const { item, subtitle, onBack, trail, busy, onUninstall, onUpdate, updating, onEdit, onTest, testing, enabled, accounts, accountAction, accountExtra, tools, details, children } = props;
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolList = tools?.list ?? null;
   const enabledCount = toolList?.filter((tool) => tool.enabled).length ?? 0;
@@ -76,7 +78,7 @@ export function PluginDetailView(props: PluginDetailProps) {
 
   return (
     <>
-      <PluginPageHeader titleId="plugins-title" title={item.name} backLabel={t("connectApps.back")} onBack={onBack} onClose={onClose} />
+      <PluginPageHeader titleId="plugins-title" title={item.name} trail={trail} onBack={onBack} />
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-7 pt-1 sm:px-8" data-plugins-detail={item.key}>
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-4 sm:px-5">
           <PluginIcon item={item} className="size-12" />

@@ -10,7 +10,8 @@ import { BotPickerList } from "./BotPickerList";
 import { nextMemberIds } from "@/lib/room-members";
 import { X } from "lucide-react";
 import { t } from "@/lib/i18n";
-import { PILL, PRIMARY_PILL, SettingsGroup, WINDOW_BACKDROP, WINDOW_BODY, WINDOW_CLOSE, WINDOW_FOOTER, WINDOW_HEADER, WINDOW_SUBTITLE, WINDOW_SURFACE, WINDOW_TITLE } from "./SettingsPrimitives";
+import { cn } from "@/lib/cn";
+import { PILL, PRIMARY_PILL, SettingsGroup, DIALOG } from "./SettingsPrimitives";
 
 export function ManageMembersPanel({
   group,
@@ -105,7 +106,7 @@ export function ManageMembersPanel({
 
   return (
     <div
-      className={`${WINDOW_BACKDROP} z-40`}
+      className={cn(DIALOG.backdrop, "z-40")}
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -113,16 +114,16 @@ export function ManageMembersPanel({
         role="dialog"
         aria-modal="true"
         aria-label={t("manageMembers.aria", { name: group.name })}
-        className={`${WINDOW_SURFACE} max-w-[400px]`}
+        className={`${DIALOG.frame} max-w-[400px]`}
       >
-        <div className={WINDOW_HEADER}>
+        <div className={DIALOG.header}>
           <div className="min-w-0">
-            <h2 className={WINDOW_TITLE}>{t("room.members.manage")}</h2>
-            <p className={`${WINDOW_SUBTITLE} truncate`}>{group.name}</p>
+            <h2 className={DIALOG.title}>{t("room.members.manage")}</h2>
+            <p className={`${DIALOG.subtitle} truncate`}>{group.name}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label={t("common.close")} className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
+          <button type="button" onClick={onClose} aria-label={t("common.close")} className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
         </div>
-        <div className={WINDOW_BODY}>
+        <div className={DIALOG.body}>
           <SettingsGroup
             groupId="group-members"
             title={t("manageMembers.bots")}
@@ -139,7 +140,7 @@ export function ManageMembersPanel({
             </p>
           )}
         </div>
-        <div className={WINDOW_FOOTER}>
+        <div className={DIALOG.footer}>
           <button type="button" onClick={onClose} className={PILL}>
             {t("common.cancel")}
           </button>

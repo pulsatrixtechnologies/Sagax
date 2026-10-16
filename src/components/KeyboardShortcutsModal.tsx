@@ -1,14 +1,22 @@
+// The keyboard shortcuts cheat sheet. 2026-10-16 (JC): drawn like Settings
+// and like Grok Bot's own sheet: the title and the round close button, a
+// search field, then each category as a grey heading over one card of
+// compact rows (what the shortcut does at the left, its keys at the right).
 import { useLayoutEffect, useRef, useState } from "react";
-import { Keyboard, Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 
 import {
   filterShortcutGroups,
   isMacPlatform,
   shortcutGroupsFor,
   shortcutKeysForPlatform,
+  type ShortcutGroup,
   type ShortcutItem,
 } from "@/lib/keyboard-shortcuts";
+import { t } from "@/lib/i18n";
 import { useSendKey } from "@/lib/send-key";
+import type { LocaleKey } from "@/locales";
+import { DIALOG, DialogCloseButton, PILL, SettingsGroup } from "./SettingsPrimitives";
 
 /** Props for the KeyboardShortcutsModal component. */
 export interface KeyboardShortcutsModalProps {
@@ -18,20 +26,52 @@ export interface KeyboardShortcutsModalProps {
   onClose: () => void;
 }
 
-/**
- * Single shortcut row displaying its description and styled keycaps.
- */
+/** The catalog is written in English (lib/keyboard-shortcuts.ts); the sheet
+ * shows it in the app language, and searches what it shows. */
+const GROUP_KEY: Record<string, LocaleKey> = {
+  Navigation: "shortcuts.group.navigation",
+  "Chat & Composer": "shortcuts.group.chat",
+  Calls: "shortcuts.group.calls",
+  "Management & Groups": "shortcuts.group.management",
+};
+
+const ITEM_KEY: Record<string, LocaleKey> = {
+  "command-palette": "shortcuts.item.commandPalette",
+  "new-bot": "shortcuts.item.newBot",
+  "jump-bot": "shortcuts.item.jumpBot",
+  "switch-bot": "shortcuts.item.switchBot",
+  "find-conversation": "shortcuts.item.findConversation",
+  "send-message": "shortcuts.item.sendMessage",
+  dictate: "shortcuts.item.dictate",
+  "new-line": "shortcuts.item.newLine",
+  "edit-last-message": "shortcuts.item.editLastMessage",
+  "close-panel": "shortcuts.item.closePanel",
+  "shortcuts-cheat-sheet": "shortcuts.item.cheatSheet",
+  "live-call-mute": "shortcuts.item.liveCallMute",
+  "live-call-hang-up": "shortcuts.item.liveCallHangUp",
+  "save-bulletin": "shortcuts.item.saveBulletin",
+  "reorder-section": "shortcuts.item.reorderSection",
+};
+
+export function localizedShortcutGroups(groups: readonly ShortcutGroup[]): ShortcutGroup[] {
+  return groups.map((group) => ({
+    category: GROUP_KEY[group.category] ? t(GROUP_KEY[group.category]!) : group.category,
+    items: group.items.map((item) => (ITEM_KEY[item.id] ? { ...item, description: t(ITEM_KEY[item.id]!) } : item)),
+  }));
+}
+
+/** One shortcut: what it does at the left, its keycaps at the right. */
 function ShortcutRow({ item, isMac }: { item: ShortcutItem; isMac: boolean }) {
   const keys = shortcutKeysForPlatform(item, isMac);
 
   return (
-    <div className="flex items-center justify-between gap-4 py-1.5">
-      <span className="text-[13px] text-ink">{item.description}</span>
+    <div className="flex min-h-[36px] items-center justify-between gap-4 px-3.5 py-1.5" data-shortcut={item.id}>
+      <span className="min-w-0 text-[13px] leading-[18px] text-ink">{item.description}</span>
       <div className="flex shrink-0 items-center gap-1">
         {keys.map((key, index) => (
           <kbd
             key={index}
-            className="inline-flex min-w-[22px] items-center justify-center rounded-md border border-hairline/60 bg-control px-1.5 py-0.5 font-mono text-[11.5px] font-semibold text-ink shadow-xs"
+            className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-md border-[0.5px] border-border bg-inset px-1.5 font-sans text-[12px] leading-none text-ink-secondary"
           >
             {key}
           </kbd>
@@ -43,7 +83,7 @@ function ShortcutRow({ item, isMac }: { item: ShortcutItem; isMac: boolean }) {
 
 /**
  * A modal cheat sheet displaying all available keyboard shortcuts categorized
- * into Navigation, Chat & Composer, and Workspace Management.
+ * into Navigation, Chat & Composer, Calls and Management.
  */
 export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModalProps) {
   const [query, setQuery] = useState("");
@@ -64,93 +104,61 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
 
   if (!open) return null;
 
-  const groups = filterShortcutGroups(shortcutGroupsFor(sendKey), query, isMac);
+  const groups = filterShortcutGroups(localizedShortcutGroups(shortcutGroupsFor(sendKey)), query, isMac);
 
   return (
     <dialog
       ref={dialogRef}
       aria-labelledby="shortcuts-dialog-title"
-      className="m-auto w-[min(500px,calc(100%-32px))] max-h-[85vh] overflow-hidden rounded-2xl border border-hairline/50 bg-panel p-0 text-ink shadow-2xl backdrop:bg-black/60 backdrop:backdrop-blur-xs"
+      className={`m-auto h-auto max-h-[min(700px,calc(100dvh-48px))] w-[min(560px,calc(100%-24px))] max-w-none overflow-hidden rounded-[14px] border border-border bg-app p-0 text-ink backdrop:bg-black/50`}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onKeyDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
-      <div
-        className="flex max-h-[85vh] flex-col"
-      >
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-hairline/40 px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
-              <Keyboard size={18} />
-            </span>
-            <div>
-              <h2 id="shortcuts-dialog-title" className="text-[16px] font-semibold text-ink">
-                Keyboard Shortcuts
-              </h2>
-              <p className="text-[12px] text-ink-secondary">
-                Quick commands and navigation
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close keyboard shortcuts"
-            className="rounded-lg p-1.5 text-ink-secondary hover:bg-raised hover:text-ink"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Search Input */}
-        <div className="border-b border-hairline/30 px-5 py-2.5">
-          <div className="flex items-center gap-2 rounded-xl border border-hairline/40 bg-inset px-3 py-1.5 focus-within:border-focus">
-            <Search size={14} className="shrink-0 text-ink-secondary" />
+      <div className="relative flex max-h-[min(700px,calc(100dvh-48px))] flex-col">
+        <DialogCloseButton label={t("shortcuts.close")} onClick={onClose} />
+        <div className={DIALOG.header}>
+          <h2 id="shortcuts-dialog-title" className={DIALOG.title}>
+            {t("shortcuts.title")}
+          </h2>
+          <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 focus-within:border-border-strong">
+            <Search size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
             <input
               ref={inputRef}
+              type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search shortcuts…"
-              aria-label="Search shortcuts"
-              className="w-full bg-transparent text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
+              placeholder={t("shortcuts.search")}
+              aria-label={t("shortcuts.searchLabel")}
+              className="w-full min-w-0 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
             />
           </div>
         </div>
 
-        {/* Shortcuts List */}
-        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-4">
+        <div className={DIALOG.body}>
           {groups.length === 0 ? (
-            <div className="py-8 text-center text-[13px] text-ink-secondary">
-              No shortcuts found for “{query}”
-            </div>
+            <p role="status" className="py-8 text-center text-[13px] text-ink-secondary">
+              {t("shortcuts.none", { query })}
+            </p>
           ) : (
             groups.map((group) => (
-              <div key={group.category} className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-tertiary">
-                  {group.category}
-                </div>
-                <div className="divide-y divide-hairline/20 rounded-xl bg-card/40 px-3 py-1 border border-hairline/30">
-                  {group.items.map((item) => (
-                    <ShortcutRow key={item.id} item={item} isMac={isMac} />
-                  ))}
-                </div>
-              </div>
+              <SettingsGroup key={group.category} title={group.category} groupId={`shortcuts.${group.category}`}>
+                {group.items.map((item) => (
+                  <ShortcutRow key={item.id} item={item} isMac={isMac} />
+                ))}
+              </SettingsGroup>
             ))
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div className="flex items-center justify-between border-t border-hairline/40 bg-card/30 px-5 py-2.5 text-[11.5px] text-ink-secondary">
-          <span>
-            Press <kbd className="rounded bg-control px-1 py-0.5 font-mono text-[10.5px]">?</kbd> when not typing to open
+        <div className="flex shrink-0 items-center justify-between gap-3 px-5 pb-5">
+          <span className="min-w-0 text-[12px] leading-4 text-ink-secondary">
+            {t("shortcuts.hintBefore")}{" "}
+            <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border-[0.5px] border-border bg-inset px-1 font-sans text-[11px] text-ink-secondary">?</kbd>{" "}
+            {t("shortcuts.hintAfter")}
           </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ui-button ui-button-md"
-          >
-            Done
+          <button type="button" onClick={onClose} className={PILL}>
+            {t("shortcuts.done")}
           </button>
         </div>
       </div>

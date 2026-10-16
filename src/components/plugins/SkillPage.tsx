@@ -12,6 +12,7 @@ import { t } from "@/lib/i18n";
 import { composeSkillMd, isSkillName, parseSkillMd } from "../../../shared/skill-md";
 import type { SkillsLibrarySkillWire } from "../../../shared/wire";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
+import type { Crumb } from "../Breadcrumb";
 import { PluginCard, PluginPageHeader } from "./PluginParts";
 
 export interface SkillPageProps {
@@ -21,7 +22,8 @@ export interface SkillPageProps {
    * it, or the viewer is not the owner); absent: it can */
   readOnlyReason?: string;
   onBack: () => void;
-  onClose: () => void;
+  /** the pages above this one in the panel (the breadcrumb) */
+  trail?: readonly Crumb[];
   /** after Save: the skill's name (it may have changed) */
   onSaved: (name: string) => Promise<unknown> | void;
   onDeleted: () => Promise<unknown> | void;
@@ -29,7 +31,7 @@ export interface SkillPageProps {
 
 const fieldClass = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none disabled:opacity-60";
 
-export function SkillPage({ skill, readOnlyReason, onBack, onClose, onSaved, onDeleted }: SkillPageProps) {
+export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDeleted }: SkillPageProps) {
   const creating = !skill;
   const [loaded, setLoaded] = useState(creating);
   const [name, setName] = useState(skill?.name ?? "");
@@ -120,7 +122,7 @@ export function SkillPage({ skill, readOnlyReason, onBack, onClose, onSaved, onD
 
   return (
     <>
-      <PluginPageHeader titleId="plugins-title" title={creating ? t("connectApps.skill.new") : skill.name} backLabel={t("connectApps.back")} onBack={onBack} onClose={onClose} />
+      <PluginPageHeader titleId="plugins-title" title={creating ? t("connectApps.skill.new") : skill.name} trail={trail} onBack={onBack} />
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-7 pt-1 sm:px-8" data-plugins-skill={skill?.name ?? "new"}>
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-4 sm:px-5">
           <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-raised text-ink-secondary"><BookOpen size={20} aria-hidden="true" /></div>

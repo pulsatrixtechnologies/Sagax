@@ -10,6 +10,7 @@ import { BookOpen, ChevronDown, ClipboardPaste, Plus, RefreshCw } from "lucide-r
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { installedPlugins, type PluginItem } from "@/lib/plugins-model";
+import type { Crumb } from "../Breadcrumb";
 import { PluginIcon, PluginPageHeader } from "./PluginParts";
 
 const INSTALLED_PREVIEW = 8;
@@ -20,7 +21,8 @@ export interface ManageViewProps {
   countLabel: (item: PluginItem) => string;
   sourceLabel: (source: string) => string;
   onBack: () => void;
-  onClose: () => void;
+  /** the pages above this one in the panel (the breadcrumb) */
+  trail?: readonly Crumb[];
   onOpenItem: (item: PluginItem) => void;
   onAddManually: () => void;
   onPasteConfig: () => void;
@@ -59,7 +61,7 @@ function CardStatus({ item }: { item: PluginItem }) {
 }
 
 export function ManageView(props: ManageViewProps) {
-  const { items, countLabel, sourceLabel, onBack, onClose, onOpenItem, onAddManually, onPasteConfig, onNewSkill, addDisabled, addTitle, refreshing, onRefresh,
+  const { items, countLabel, sourceLabel, onBack, trail, onOpenItem, onAddManually, onPasteConfig, onNewSkill, addDisabled, addTitle, refreshing, onRefresh,
     forms, children, personal, advancedOpen, providers, scope, pluginsOnly } = props;
   const [showAll, setShowAll] = useState(false);
   const installed = installedPlugins(items);
@@ -67,7 +69,7 @@ export function ManageView(props: ManageViewProps) {
   const skills = items.filter((item) => item.kind === "skill").sort((a, b) => a.name.localeCompare(b.name));
   return (
     <>
-      <PluginPageHeader titleId="plugins-title" title={t("connectApps.manage.title")} backLabel={t("connectApps.backToMain")} onBack={onBack} onClose={onClose} />
+      <PluginPageHeader titleId="plugins-title" title={t("connectApps.manage.title")} trail={trail} onBack={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-4 sm:px-8" data-plugins-manage>
         {scope && <div className="mb-4">{scope}</div>}
         <section data-plugins-installed>

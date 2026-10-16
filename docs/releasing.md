@@ -63,7 +63,10 @@ Sagax releases are built on a Mac, not by the workflows above:
 
 1. Set `forkVersion` in `package.json` (`version` stays the Sagax base)
    and write `docs/releases/X.Y.Z.md`. French comes first. A line that is
-   exactly `## English` starts the English section. That file is the GitHub
+   exactly `## English` starts the English section. Its first line is the
+   release date as a hidden comment, `<!-- date: YYYY-MM-DD -->` (the
+   release notes window shows it under the version; GitHub hides it).
+   That file is the GitHub
    release body (`pulsa-vX.Y.Z`) and the notes the app shows before and
    after the update. `node scripts/check-release-notes.mjs` fails with a
    clear message when the file is missing, has no French section, or has

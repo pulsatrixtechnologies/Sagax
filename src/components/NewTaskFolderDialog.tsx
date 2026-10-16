@@ -3,8 +3,9 @@ import { createPortal } from "react-dom";
 import { FolderOpen, X } from "lucide-react";
 import { useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
-import { FIELD, FieldRow, PILL, PRIMARY_PILL, WINDOW_BACKDROP, WINDOW_BODY, WINDOW_CLOSE, WINDOW_FOOTER, WINDOW_HEADER, WINDOW_SURFACE, WINDOW_TITLE } from "./SettingsPrimitives";
+import { FIELD, FieldRow, PILL, PRIMARY_PILL, DIALOG, GROUP_CARD } from "./SettingsPrimitives";
 
 /** An explicit pin is chosen while creating a thread, never by moving the
  * working directory of a provider session that already exists. */
@@ -29,10 +30,10 @@ export function NewTaskFolderDialog({ bot, onClose, onReturnFocus }: { bot: Bot;
     else if (error) input.current?.focus();
   }, [saving, error]);
 
-  return createPortal(<div data-thread-overlay className={`${WINDOW_BACKDROP} z-50`}
+  return createPortal(<div data-thread-overlay className={cn(DIALOG.backdrop, "z-50")}
     onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} role="dialog" tabIndex={-1} aria-modal="true" aria-labelledby="new-task-folder-title" aria-busy={saving || undefined}
-      className={`${WINDOW_SURFACE} max-w-[440px]`}>
+      className={`${DIALOG.frame} max-w-[440px]`}>
       <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => {
         event.preventDefault();
         if (!cwd.trim() || pending.current) return;
@@ -44,12 +45,12 @@ export function NewTaskFolderDialog({ bot, onClose, onReturnFocus }: { bot: Bot;
         dispatch({ type: "newTask", botId: bot.id, projectId, cwd: cwd.trim(), onCreated: onClose,
           onError: (message) => { pending.current = false; setSaving(false); setError(message); } });
       }}>
-        <div className={WINDOW_HEADER}>
-          <h2 id="new-task-folder-title" className={`${WINDOW_TITLE} flex items-center gap-2`}><FolderOpen size={16} aria-hidden="true" className="text-ink-secondary" />{t("task.folder.new")}</h2>
-          <button type="button" disabled={saving} onClick={close} aria-label={t("common.close")} className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
+        <div className={DIALOG.header}>
+          <h2 id="new-task-folder-title" className={`${DIALOG.title} flex items-center gap-2`}><FolderOpen size={16} aria-hidden="true" className="text-ink-secondary" />{t("task.folder.new")}</h2>
+          <button type="button" disabled={saving} onClick={close} aria-label={t("common.close")} className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
         </div>
-        <div className={WINDOW_BODY}>
-          <div className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5">
+        <div className={DIALOG.body}>
+          <div className={GROUP_CARD}>
             <FieldRow label={t("task.folder.path")} hint={t("task.folder.detail")} hintId="new-task-folder-description">
               <input ref={input} value={cwd} disabled={saving} aria-describedby="new-task-folder-description" autoComplete="off" spellCheck={false}
                 onChange={(event) => { setCwd(event.target.value); setError(null); }} placeholder={t("task.folder.placeholder")}
@@ -58,7 +59,7 @@ export function NewTaskFolderDialog({ bot, onClose, onReturnFocus }: { bot: Bot;
           </div>
           {error && <p role="alert" className="px-1 text-[12.5px] text-danger">{error}</p>}
         </div>
-        <div className={WINDOW_FOOTER}>
+        <div className={DIALOG.footer}>
           <button type="button" disabled={saving} onClick={close} className={PILL}>{t("common.cancel")}</button>
           <button type="submit" disabled={saving || !cwd.trim()} className={PRIMARY_PILL}>{t(saving ? "task.folder.creating" : "task.newShort")}</button>
         </div>

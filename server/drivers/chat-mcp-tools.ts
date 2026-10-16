@@ -7,7 +7,7 @@ import type { SendTurnInput } from "../contracts.ts";
 import { augmentedPath } from "../env-path.ts";
 import { killCliTree, spawnCli } from "../procs.ts";
 import { chatImage, type ChatImagePart } from "./chat-images.ts";
-import { CALL_TOOL, directoryCallTarget, isDirectoryTool } from "../mcp-directory.ts";
+import { CALL_TOOL, bm25Ranker, directoryCallTarget, inputSignature, isDirectoryTool, oneLine, type CatalogTool } from "../mcp-directory.ts";
 import { mcpStdioServer } from "../mcp-gate-config.ts";
 import { REMOTE_MCP_STARTUP_MS, remoteMcpSpec } from "../mcp-http.ts";
 import { compileToolSchema } from "../mcp-schema-validator.ts";
@@ -53,10 +53,29 @@ const STARTUP_MS = 8_000;
 const DEFAULT_CALL_MS = 10 * 60_000;
 const FRAME_BYTES = 2 * 1024 * 1024;
 const OUTPUT_BYTES = 50 * 1024;
-const TOOL_COUNT = 128;
+/** Tools one server may list before it is refused: a sanity bound on a
+ * catalog, not the provider's limit, which the session meets by deferring. */
+const SERVER_TOOL_COUNT = 1_000;
+/** Most tools a chat-completions provider takes in one request. xAI (Grok)
+ * and OpenAI document 128 functions per request; the others served through
+ * this runtime are held to the same bound until a different one is known. */
+export const DEFAULT_TOOL_LIMIT = 128;
+export const PROVIDER_TOOL_LIMITS: Readonly<Record<string, number>> = {
+  grok: 128, "openai-compat": 128, groq: 128, mistral: 128, cerebras: 128, minimax: 128,
+};
+export function providerToolLimit(driverKind: string): number {
+  return PROVIDER_TOOL_LIMITS[driverKind] ?? DEFAULT_TOOL_LIMIT;
+}
+/** The two tools that stand in for every deferred one. */
+export const DEFERRED_SEARCH_TOOL = "tool_search";
+export const DEFERRED_CALL_TOOL = "tool_call";
+const DEFERRED_SEARCH_DEFAULT = 8;
+const DEFERRED_SEARCH_MAX = 20;
+const DEFERRED_SCHEMA_CHARS = 4_000;
 const MAX_PAGES = 100;
 const SCHEMA_BYTES = 64 * 1024;
 const CATALOG_BYTES = 1024 * 1024;
+const DEFERRED_CATALOG_BYTES = 8 * 1024 * 1024;
 const MAX_FRAMES = 10_000;
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -213,7 +232,7 @@ class ChatMcpClient {
       const result = await this.call("tools/list", cursor ? { cursor } : {}, signal, remaining());
       if (!object(result) || !Array.isArray(result.tools)) throw new Error("MCP tools/list returned an invalid result");
       tools.push(...result.tools.filter(include));
-      if (tools.length > TOOL_COUNT) throw new Error("MCP tool count exceeds the 128-tool limit");
+      if (tools.length > SERVER_TOOL_COUNT) throw new Error("MCP server lists more than 1000 tools");
       if (result.nextCursor === undefined) return tools;
       if (typeof result.nextCursor !== "string" || !result.nextCursor || cursors.has(result.nextCursor)) throw new Error("MCP tools/list returned an invalid pagination cursor");
       cursors.add(result.nextCursor);
@@ -247,13 +266,24 @@ function omitBlankDefaults(builtInBrowser: boolean, tool: string, args: unknown)
   }
 }
 
-export async function mountChatTools(integrations: SendTurnInput["integrations"], signal: AbortSignal, computerUse = false, toolScope?: ToolScope, callTimeoutMs: number = DEFAULT_CALL_MS): Promise<ChatToolSession> {
+/** Which tools ride every request when a turn has more than the provider
+ * takes: the person's computer and browser first, then Sagax's own agents
+ * server and each searched server's three directory tools, then every other
+ * server in its configured order. Ties keep mount order, so the cut is the
+ * same on every turn. */
+function toolTier(entry: { hostTool: boolean; agents: boolean; directory: boolean }): number {
+  if (entry.hostTool) return 0;
+  if (entry.agents || entry.directory) return 1;
+  return 2;
+}
+
+export async function mountChatTools(integrations: SendTurnInput["integrations"], signal: AbortSignal, computerUse = false, toolScope?: ToolScope, callTimeoutMs: number = DEFAULT_CALL_MS, toolLimit: number = DEFAULT_TOOL_LIMIT): Promise<ChatToolSession> {
   const parsed = parseToolScope(toolScope);
   if (!parsed.ok) throw new Error(parsed.error);
   const scope = parsed.scope;
   const servers: Array<[string, Server]> = [];
   /** URL servers this runtime searches rather than lists (mcp-directory.ts):
-   * every tool here rides every request, under a 128-tool cap. */
+   * past the provider's tool limit, the session defers the rest. */
   const searchable = new Set<string>();
   const eligible = (server: string) => scope === undefined || canUseMcpServer(scope, server);
   if (computerUse && integrations?.localComputer && eligible("computer")) servers.push(["computer", integrations.localComputer]);
@@ -285,6 +315,11 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   const cancel = () => { void close().catch(() => {}); };
   signal.addEventListener("abort", cancel, { once: true });
   const definitions: ChatToolDefinition[] = [];
+  const candidates: Array<{ definition: ChatToolDefinition; tier: number }> = [];
+  /** Tools past the provider's limit: reached through tool_search and tool_call. */
+  const deferred = new Map<string, ChatToolDefinition>();
+  let searchName: string | undefined;
+  let callName: string | undefined;
   const registered = new Map<string, { client: ChatMcpClient; server: string; launch: string; builtInBrowser: boolean; agents: boolean; hostComputer: boolean; name: string; schema: ValidateFunction; searched: boolean }>();
   try {
     if (signal.aborted) throw aborted();
@@ -310,16 +345,17 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
       // grants last a turn, as a warm engine restarts for it (perTurn).
       const launch = createHash("sha256").update(JSON.stringify(descriptor)).digest("hex");
       return { name, client, launch, builtInBrowser: descriptor === integrations?.browser, agents: descriptor === integrations?.agents,
+        computer: descriptor === integrations?.localComputer,
         hostComputer: descriptor === integrations?.localComputer && integrations?.localComputer?.scope === "local-computer", tools };
     }));
     for (const mount of mounts) {
       if (mount.status === "rejected") throw mount.reason;
       const { name: server, client, launch, builtInBrowser, agents, hostComputer, tools } = mount.value;
+      const hostTool = builtInBrowser || mount.value.computer;
       const originalNames = new Set<string>();
       for (const tool of tools) {
         if (!object(tool) || typeof tool.name !== "string" || !tool.name.trim() || originalNames.has(tool.name)) throw new Error("MCP server advertised an invalid or duplicate tool name");
         originalNames.add(tool.name);
-        if (definitions.length >= TOOL_COUNT) throw new Error("MCP tool count exceeds the 128-tool limit");
         if (!object(tool.inputSchema) || tool.inputSchema.type !== "object") throw new Error("MCP tools require an object input schema");
         if (Buffer.byteLength(JSON.stringify(tool.inputSchema)) > SCHEMA_BYTES) throw new Error("MCP tool schema exceeds the 64KB limit");
         const schema = compileToolSchema(tool.inputSchema);
@@ -336,15 +372,47 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
         let name = base;
         for (let index = 2; registered.has(name); index += 1) { const suffix = `_${index}`; name = base.slice(0, 64 - suffix.length) + suffix; }
         registered.set(name, { client, server, launch, builtInBrowser, agents, hostComputer, name: tool.name, schema, searched: searchable.has(server) });
-        definitions.push({ type: "function", function: { name, description, parameters } });
-        if (Buffer.byteLength(JSON.stringify(definitions)) > CATALOG_BYTES) throw new Error("MCP tool catalog exceeds the 1MB limit");
+        candidates.push({ definition: { type: "function", function: { name, description, parameters } },
+          tier: toolTier({ hostTool, agents, directory: searchable.has(server) && isDirectoryTool(tool.name) }) });
       }
     }
     if (signal.aborted || closed) throw aborted();
+    const limit = Math.max(0, Math.floor(toolLimit));
+    // Within the provider's limit every tool is listed, as before. Past it,
+    // the highest tiers ride every request and the rest are deferred behind
+    // two tools of their own, so the request never names more than `limit`.
+    const ranked = candidates.length > limit ? candidates.map((entry, index) => ({ ...entry, index })).sort((a, b) => a.tier - b.tier || a.index - b.index) : candidates;
+    const listed = candidates.length > limit ? Math.max(0, limit - 2) : candidates.length;
+    for (const [index, { definition }] of ranked.entries()) {
+      if (index < listed) definitions.push(definition);
+      else deferred.set(definition.function.name, definition);
+    }
+    if (Buffer.byteLength(JSON.stringify(definitions)) > CATALOG_BYTES) throw new Error("MCP tool catalog exceeds the 1MB limit");
+    if (Buffer.byteLength(JSON.stringify([...deferred.values()])) > DEFERRED_CATALOG_BYTES) throw new Error("MCP deferred tool catalog exceeds the 8MB limit");
+    if (deferred.size) {
+      const free = (base: string) => { let name = base; for (let index = 2; registered.has(name); index += 1) name = `${base}_${index}`; return name; };
+      searchName = free(DEFERRED_SEARCH_TOOL);
+      callName = free(DEFERRED_CALL_TOOL);
+      if (limit >= 2) {
+        definitions.push({ type: "function", function: { name: searchName, description:
+          `Find more tools. ${deferred.size} tools of this turn are not listed here, to stay within the model provider's limit of ${limit} tools. Search them by what you want to do; each match gives its name, what it does and its input. Then run it with ${callName}.`,
+        parameters: { type: "object", additionalProperties: false, required: ["query"], properties: {
+          query: { type: "string", description: "What the tool should do, in a few words (for example: create a ticket, recall memory, send an SMS)." },
+          limit: { type: "integer", minimum: 1, maximum: DEFERRED_SEARCH_MAX, description: `How many matches (default ${DEFERRED_SEARCH_DEFAULT}).` },
+        } } } });
+        definitions.push({ type: "function", function: { name: callName, description:
+          `Run a tool found with ${searchName}, by its exact name, with arguments that match its input. Approval works as for any listed tool.`,
+        parameters: { type: "object", additionalProperties: false, required: ["name", "arguments"], properties: {
+          name: { type: "string", description: `The exact tool name ${searchName} returned.` },
+          arguments: { type: "object", description: "The tool's arguments." },
+        } } } });
+      }
+      console.warn(`chat-mcp-tools: ${candidates.length} tools exceed the provider limit of ${limit}; listing ${definitions.length}, deferring ${deferred.size} behind ${searchName}/${callName}`);
+    }
   } catch (error) { await close(); throw error; }
   /** The upstream tool a call runs (see directoryCallTarget). */
   const target = (tool: { name: string; searched: boolean }, args: unknown) => tool.searched ? directoryCallTarget(tool.name, args) : tool.name;
-  const validate = (name: string, args: unknown) => {
+  const validateTool = (name: string, args: unknown) => {
     if (closed || signal.aborted) throw new ChatToolSessionError("MCP session closed");
     const tool = registered.get(name);
     if (!tool) throw new Error("The requested tool was not advertised for this turn");
@@ -359,7 +427,7 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
     if (!object(args) || (!directory && !tool.schema(args))) throw new Error("Tool arguments do not match the advertised input schema; use its required fields and types");
     if (tool.searched && excluded(target(tool, args))) throw new Error("Tool selection excludes this tool");
   };
-  const view = (name: string, args: Record<string, unknown>): ChatToolCallView => {
+  const viewTool = (name: string, args: Record<string, unknown>): ChatToolCallView => {
     const tool = registered.get(name);
     const runs = tool ? target(tool, args) : name;
     if (runs === undefined || tool?.agents) return { title: name, input: args, ask: false };
@@ -367,10 +435,57 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
     if (!tool?.searched || tool.name !== CALL_TOOL) return { title: name, input: args, ask: true, ...(grant ? { grant } : {}) };
     return { title: chatToolName(tool.server, runs), input: object(args.arguments) ? args.arguments : {}, ask: true, ...(grant ? { grant } : {}) };
   };
+  /** tool_call names a deferred tool: the call it stands for. */
+  const deferredCall = (args: unknown): { name: string; args: Record<string, unknown> } => {
+    if (!object(args) || typeof args.name !== "string" || !registered.has(args.name)) {
+      throw new Error(`Unknown tool name; search with ${searchName} and pass a name it returned`);
+    }
+    if (args.arguments !== undefined && !object(args.arguments)) throw new Error("arguments must be a JSON object");
+    return { name: args.name, args: object(args.arguments) ? args.arguments : {} };
+  };
+  const search = (args: Record<string, unknown>): ChatToolResult => {
+    const query = typeof args.query === "string" ? args.query.trim() : "";
+    const count = typeof args.limit === "number" && Number.isInteger(args.limit) ? Math.min(DEFERRED_SEARCH_MAX, Math.max(1, args.limit)) : DEFERRED_SEARCH_DEFAULT;
+    const catalog: CatalogTool[] = [...deferred.values()].map(({ function: tool }) => ({ name: tool.name, description: tool.description, inputSchema: tool.parameters }));
+    const matches = query ? bm25Ranker(query, catalog, count) as readonly CatalogTool[] : catalog.slice(0, count);
+    if (!matches.length) return { ok: true, text: `No tool matches "${oneLine(query, 200)}". Try other words.` };
+    const lines = matches.map((tool) => {
+      const schema = JSON.stringify(tool.inputSchema);
+      const input = schema.length <= DEFERRED_SCHEMA_CHARS ? `input schema: ${schema}` : `input: ${inputSignature(tool.inputSchema)}`;
+      return `- ${tool.name}: ${oneLine(tool.description, 300)}\n  ${input}`;
+    });
+    return { ok: true, text: `Run one with ${callName} { "name": "<tool>", "arguments": { ... } }.\n${lines.join("\n")}` };
+  };
+  const validate = (name: string, args: unknown) => {
+    if (closed || signal.aborted) throw new ChatToolSessionError("MCP session closed");
+    if (name === searchName) {
+      if (!object(args) || typeof args.query !== "string") throw new Error("Pass a query string");
+      return;
+    }
+    if (name === callName) {
+      const call = deferredCall(args);
+      return validateTool(call.name, call.args);
+    }
+    validateTool(name, args);
+  };
+  const view = (name: string, args: Record<string, unknown>): ChatToolCallView => {
+    if (name === searchName) return { title: name, input: args, ask: false };
+    if (name === callName && object(args) && typeof args.name === "string" && registered.has(args.name)) {
+      return viewTool(args.name, object(args.arguments) ? args.arguments : {});
+    }
+    return viewTool(name, args);
+  };
   return {
     definitions, validate, view, close,
     async execute(name, args, callSignal) {
-      validate(name, args);
+      if (name === searchName) { validate(name, args); return search(args); }
+      if (name === callName) {
+        validate(name, args);
+        const call = deferredCall(args);
+        name = call.name;
+        args = call.args;
+      }
+      validateTool(name, args);
       if (callSignal.aborted) { await close(); throw aborted(); }
       const tool = registered.get(name)!;
       try {

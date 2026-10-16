@@ -1598,7 +1598,7 @@ export function LocalComputerSection() {
   return (
     <>
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement}</p>
-      {orgBridge && <OrgComputerSettings bridge={orgBridge} />}
+      {orgBridge && <OrgComputerSettings bridge={orgBridge} localVmAllowed={storeState.config?.managedPolicy?.computers?.localVm !== false} />}
 
       {boatOn && <CloudComputersCard
         instances={cloudInventory}

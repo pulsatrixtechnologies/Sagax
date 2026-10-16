@@ -11,7 +11,7 @@ import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { CompactRow, ConfirmPill, FIELD, FieldRow, FoldRow, HelpTip, PillSelect, PILL, PRIMARY_PILL, SettingsGroup, WINDOW_BACKDROP, WINDOW_BODY, WINDOW_CLOSE, WINDOW_FOOTER, WINDOW_HEADER, WINDOW_SURFACE, WINDOW_TITLE } from "./SettingsPrimitives";
+import { CompactRow, ConfirmPill, FIELD, FieldRow, FoldRow, HelpTip, PillSelect, PILL, PRIMARY_PILL, SettingsGroup, DIALOG } from "./SettingsPrimitives";
 
 type Kind = "person" | "place" | "decision" | "term";
 
@@ -126,7 +126,7 @@ export function TeamMemoryDialog({ section, label, onClose }: { section: string;
 
   return createPortal(
     <div
-      className={`${WINDOW_BACKDROP} z-50`}
+      className={cn(DIALOG.backdrop, "z-50")}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
@@ -135,22 +135,22 @@ export function TeamMemoryDialog({ section, label, onClose }: { section: string;
         aria-modal="true"
         aria-labelledby="team-memory-title"
         tabIndex={-1}
-        className={`animate-pop-in ${WINDOW_SURFACE} max-w-[640px]`}
+        className={`animate-pop-in ${DIALOG.frame} max-w-[640px]`}
       >
-        <header className={WINDOW_HEADER}>
+        <header className={DIALOG.header}>
           <div className="flex min-w-0 items-center gap-1.5">
             <Brain size={16} aria-hidden="true" className="shrink-0 text-ink-secondary" />
-            <h2 id="team-memory-title" className={`${WINDOW_TITLE} min-w-0`}>
+            <h2 id="team-memory-title" className={`${DIALOG.title} min-w-0`}>
               {t("teamMemory.title", { label })}
             </h2>
             <HelpTip label={t("settings.moreAbout", { title: t("teamMemory.title", { label }) })}>{t("teamMemory.intro")}</HelpTip>
           </div>
-          <button type="button" onClick={onClose} aria-label={t("teamMemory.close")} className={WINDOW_CLOSE}>
+          <button type="button" onClick={onClose} aria-label={t("teamMemory.close")} className={cn(DIALOG.close, "disabled:opacity-40")}>
             <X size={18} className="pointer-events-none" />
           </button>
         </header>
 
-        <div className={WINDOW_BODY}>
+        <div className={DIALOG.body}>
           {entries === null && !error && (
             <div role="status" className="flex min-h-[160px] items-center justify-center text-ink-secondary">
               <Loader2 size={20} className="animate-spin" aria-label={t("teamMemory.loading")} />
@@ -281,7 +281,7 @@ export function TeamMemoryDialog({ section, label, onClose }: { section: string;
           )}
         </div>
 
-        <footer className={WINDOW_FOOTER}>
+        <footer className={DIALOG.footer}>
           {!adding && (
             <button type="button" onClick={() => setAdding(true)} className={cn(PILL, "mr-auto", entries === null && "hidden")}>
               <Plus size={13} aria-hidden="true" /> {t("teamMemory.add")}

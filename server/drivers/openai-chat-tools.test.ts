@@ -185,6 +185,54 @@ describe("a searched MCP catalog", () => {
   });
 });
 
+// A server with more tools than the provider takes in one request.
+const BIG_MCP_SCRIPT = `
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
+import { createInterface } from "node:readline";
+const [directory] = process.argv.slice(2);
+const reply = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\\n");
+const schema = { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false };
+const tools = Array.from({ length: 200 }, (_, index) => ({ name: "op_" + index,
+  description: index === 199 ? "Archive the quarterly zebra ledger" : "Synthetic bulk operation number " + index, inputSchema: schema }));
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const request = JSON.parse(line);
+  if (request.method === "initialize") reply(request.id, { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "big", version: "1" } });
+  else if (request.method === "tools/list") reply(request.id, { tools });
+  else if (request.method === "tools/call") {
+    appendFileSync(join(directory, "big.ndjson"), JSON.stringify(request.params) + "\\n");
+    reply(request.id, { content: [{ type: "text", text: "ran " + request.params.name }] });
+  }
+});
+`;
+
+describe("a turn with more tools than the provider takes", () => {
+  it("sends Grok at most 128 tools, keeps the essential ones, and still finds and runs a deferred one", async () => {
+    const f = await fixture((_body, response, round) => {
+      if (round === 1) sse(response, [chunk({ content: null, tool_calls: [toolCall("tool_search", '{"query":"zebra ledger"}', "call_search")] }, "tool_calls")]);
+      else if (round === 2) sse(response, [chunk({ content: null, tool_calls: [toolCall("tool_call", '{"name":"big_op_199","arguments":{"value":"q3"}}', "call_run")] }, "tool_calls")]);
+      else answer(response);
+    }, "grok");
+    const big = join(f.directory, "big.mjs");
+    writeFileSync(big, BIG_MCP_SCRIPT);
+    const agents = f.integrations!.custom!.audit as NonNullable<SendTurnInput["integrations"]>["agents"];
+    await f.start({ integrations: { agents, custom: { big: { command: process.execPath, args: [big, f.directory], env: {} } } } });
+    const opened = await f.recorder.until((event) => event.type === "request.opened");
+    // the card names the deferred tool, never the stand-in that runs it
+    expect(opened).toMatchObject({ requestType: "permission", tool: "big_op_199", summary: expect.stringContaining("q3") });
+    await f.instance.adapter.respondToRequest(f.threadId, opened.requestId!, { behavior: "allow" });
+    expect(await f.completed()).toMatchObject({ ok: true });
+    expect(f.recorder.events.some((event) => event.type === "runtime.error")).toBe(false);
+    const names = f.requests[0].tools!.map((tool) => tool.function.name);
+    expect(names.length).toBeLessThanOrEqual(128);
+    expect(names).toEqual(expect.arrayContaining(["agents_write", "agents_wait", "agents_fail", "ask_user", "tool_search", "tool_call"]));
+    expect(names).not.toContain("big_op_199");
+    expect(f.requests[1].messages.at(-1)).toMatchObject({ role: "tool", tool_call_id: "call_search", content: expect.stringContaining("big_op_199") });
+    expect(readFileSync(join(f.directory, "big.ndjson"), "utf8").trim().split("\n").map((line) => JSON.parse(line)))
+      .toEqual([{ name: "op_199", arguments: { value: "q3" } }]);
+  });
+});
+
 describe("approvals that follow the other engines", () => {
   it("runs Sagax's own agents tools without a card, while a configured server's tool still asks", async () => {
     const f = await fixture((_body, response, round) => {

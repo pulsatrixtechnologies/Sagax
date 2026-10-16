@@ -105,11 +105,10 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("voice set-up pop-up", () => {
-  it("is a glass pop-up holding the bot's own voice settings", () => {
+  it("is a window drawn like Settings holding the bot's own voice settings", () => {
     const { html } = render();
-    expect(html).toContain("glass-popup-frame");
-    expect(html).toContain("glass-scrim");
-    expect(html).toContain("glass-surface");
+    expect(html).toContain("rounded-[14px]");
+    expect(html).not.toContain("glass-surface");
     expect(html).toMatch(/role="dialog" aria-modal="true"/);
     expect(html).toContain("Give Pepper a voice");
     expect(html).toContain("Choose an engine, add its key if it needs one, then pick a voice.");
@@ -136,14 +135,14 @@ describe("voice set-up pop-up", () => {
 
   it("opens the bot's full settings at Voice from All voice settings, closing itself", () => {
     const view = render();
-    click(byAttribute(view, "data-voice-setup-all-settings"));
+    click(byAttribute(view, "label", "All voice settings"));
     expect(view.props.onClose).toHaveBeenCalledOnce();
     expect(fixture.dispatch.mock.calls).toEqual([[{ type: "toggleSettings", open: true, section: "voice" }]]);
   });
 
   it("opens a room member's chat first, as the call help always did", () => {
     fixture.selectedId = "room-1";
-    click(byAttribute(render(), "data-voice-setup-all-settings"));
+    click(byAttribute(render(), "label", "All voice settings"));
     expect(fixture.dispatch.mock.calls).toEqual([
       [{ type: "select", id: "pepper" }],
       [{ type: "toggleSettings", open: true, section: "voice" }],
@@ -154,18 +153,18 @@ describe("voice set-up pop-up", () => {
     fixture.selectedId = "room-1";
     fixture.showThreads = false;
     const left = { ...pepper, mainThreadId: "main", tasks: [{ threadId: "t", title: "Report", createdAt: 1 }, { threadId: "main", title: "Chat", createdAt: 2 }] };
-    click(byAttribute(render({ bot: left }), "data-voice-setup-all-settings"));
+    click(byAttribute(render({ bot: left }), "label", "All voice settings"));
     expect(fixture.dispatch.mock.calls).toEqual([
       [{ type: "switchTask", botId: "pepper", threadId: "main" }],
       [{ type: "toggleSettings", open: true, section: "voice" }],
     ]);
   });
 
-  it("closes from the close button and from a click on the scrim, not from inside", () => {
+  it("closes from the close button and from a click on the backdrop, not from inside", () => {
     const view = render();
-    click(byAttribute(view, "aria-label", "Close voice set-up"));
+    click(byAttribute(view, "label", "Close voice set-up"));
     expect(view.props.onClose).toHaveBeenCalledTimes(1);
-    const frame = view.nodes.find((node) => String(node.props.className).split(" ").includes("glass-popup-frame"))!;
+    const frame = view.nodes.find((node) => typeof node.props.onMouseDown === "function")!;
     const onMouseDown = frame.props.onMouseDown as (event: { target: unknown; currentTarget: unknown }) => void;
     onMouseDown({ target: {}, currentTarget: frame });
     expect(view.props.onClose).toHaveBeenCalledTimes(1);

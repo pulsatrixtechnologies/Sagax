@@ -8,7 +8,7 @@
 // search narrow the list together. The settings that hide the points or the
 // toasts sit at the bottom.
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { Flame, Lock, Trophy } from "lucide-react";
+import { Flame, Lock, Search, Trophy } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
 import { rarityForPoints, type AchievementCategory, type AchievementDefinition, type AchievementItemState, type AchievementReward, type Unlocks } from "../../../shared/achievements";
 import { characterUnlocked, displayReward, loadAchievements, localized, reportAchievement, saveAchievementSettings, unlocksFromSnapshot, useAchievements } from "@/lib/achievements";
@@ -17,7 +17,7 @@ import { requestNotificationPermission } from "@/lib/notify";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { LocaleKey } from "@/locales";
-import { SettingRow, Switch } from "../SettingsPrimitives";
+import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { achievementIcon } from "./icons";
 import { achievementMatches, achievementRewardFilterLabel, achievementRewardFilters, type AchievementRewardFilter, type AchievementStatusFilter } from "./achievement-filters";
 import "./achievements.css";
@@ -97,26 +97,30 @@ function AchievementCard({ item, state, unlocks }: { item: AchievementDefinition
   const progress = state && !unlocked && (mastery ? !secret && state.target > 0 : state.target > 1 && state.current > 0) ? state.current / state.target : null;
   const reward = item.rewards[0];
   const line = reward && !secret && !mastery ? displayReward(reward, unlocks) : null;
+  // 2026-10-16 (JC): a tile, as the skin tiles of Settings > Appearance
+  // (#582): the badge on a small framed ground, the name and the rest under it.
   return (
     <li
-      className="achievement-card flex gap-3 rounded-xl border-[0.5px] border-border bg-card p-3"
+      className="achievement-card flex min-w-0 flex-col gap-1.5 rounded-[10px] p-1.5"
       data-tier={tier}
       data-unlocked={unlocked ? "" : undefined}
       data-achievement={item.id}
       data-secret={secret ? "" : undefined}
       data-mastery={mastery ? "" : undefined}
     >
-      <span className="achievement-card-badge" aria-hidden="true">
-        <Icon size={17} strokeWidth={2.2} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <span className={cn("text-[13px] font-medium leading-[18px]", unlocked ? "text-ink" : "text-ink-secondary")}>
-            {secret ? t("achievements.secretName") : localized(item.name)}
-          </span>
-          <span className="shrink-0 text-[12px] font-semibold tabular-nums text-ink-secondary">{item.points}</span>
-        </div>
-        <p className="mt-0.5 text-[12px] leading-[16px] text-ink-tertiary">
+      <div className={cn("achievement-tile-art relative grid h-[78px] place-items-center rounded-lg bg-elevated", !unlocked && "ring-1 ring-hairline/60")}>
+        <span className="achievement-card-badge" aria-hidden="true">
+          <Icon size={17} strokeWidth={2.2} />
+        </span>
+        <span className="absolute right-2 top-1.5 text-[11.5px] font-semibold tabular-nums text-ink-secondary">
+          {item.points}
+        </span>
+      </div>
+      <div className="min-w-0 px-0.5">
+        <span className={cn("block text-[13px] leading-[18px]", unlocked ? "text-ink" : "text-ink-secondary")}>
+          {secret ? t("achievements.secretName") : localized(item.name)}
+        </span>
+        <p className="mt-0.5 line-clamp-3 text-[12px] leading-4 text-ink-secondary">
           {secret ? (item.hint ? localized(item.hint) : t("achievements.secretDescription")) : localized(item.description)}
         </p>
         {progress !== null && state && (
@@ -124,13 +128,13 @@ function AchievementCard({ item, state, unlocks }: { item: AchievementDefinition
             <div className="achievement-progress flex-1" role="progressbar" aria-valuemin={0} aria-valuemax={state.target} aria-valuenow={state.current} aria-label={localized(item.name)}>
               <span style={{ width: `${Math.round(progress * 100)}%` }} />
             </div>
-            <span className="text-[11px] tabular-nums text-ink-tertiary">{state.current}/{state.target}</span>
+            <span className="text-[11px] tabular-nums text-ink-secondary">{state.current}/{state.target}</span>
           </div>
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-[14px]">
           <span className="achievement-card-tier font-semibold uppercase tracking-[0.06em]">{t(TIER_LABEL[tier])}</span>
-          {state?.percent !== undefined && <span className="text-ink-tertiary">{t("achievements.percent", { percent: state.percent })}</span>}
-          {line && <span className="truncate text-ink-tertiary">{line}</span>}
+          {state?.percent !== undefined && <span className="text-ink-secondary">{t("achievements.percent", { percent: state.percent })}</span>}
+          {line && <span className="min-w-0 truncate text-ink-secondary" title={line}>{line}</span>}
         </div>
         {mastery && !secret && <MasteryUnlockPreview item={item} unlocked={unlocked} unlocks={unlocks} />}
       </div>
@@ -174,9 +178,11 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
   const titles = ACHIEVEMENTS.flatMap((item) => (states.get(item.id)?.unlockedAt ? item.rewards : [])).filter((reward) => reward.kind === "title");
   const recent = snapshot.recent.map((id) => ACHIEVEMENTS.find((item) => item.id === id)).filter((item): item is AchievementDefinition => Boolean(item));
 
+  // 2026-10-16 (JC): drawn like Settings: the progress card, then grey
+  // headings over the recent unlocks, the tiles and the card of settings.
   return (
-    <div className="flex flex-col gap-4" data-achievements-page="">
-      <section className="flex flex-wrap items-center gap-4 rounded-[14px] border-[0.5px] border-border bg-card p-4">
+    <div className="flex flex-col gap-5" data-achievements-page="">
+      <section className="flex flex-wrap items-center gap-4 rounded-xl border-[0.5px] border-border bg-elevated p-4">
         <span className="grid size-14 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#fff,#e0a82e_72%)] text-[#1b1406] shadow-[0_0_18px_-4px_#e0a82e]" aria-hidden="true">
           <Trophy size={26} strokeWidth={2.2} />
         </span>
@@ -184,14 +190,14 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
           <div className="text-[24px] font-semibold leading-7 tabular-nums text-ink" data-achievement-points="">
             {formatPoints(snapshot.points)} <span className="text-[13px] font-normal text-ink-secondary">{t("achievements.pointsUnit")}</span>
           </div>
-          <div className="mt-1 flex items-center gap-2 text-[12px] text-ink-secondary">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-ink-secondary">
             <span className="font-medium text-ink">{t("achievements.level", { level: level.level })}</span>
             <div className="achievement-progress w-32" style={{ ["--tier" as string]: "#e0a82e" }} role="progressbar" aria-valuemin={0} aria-valuemax={toNext} aria-valuenow={snapshot.points - level.from} aria-label={t("achievements.nextLevel")}>
               <span style={{ width: `${Math.round(((snapshot.points - level.from) / toNext) * 100)}%` }} />
             </div>
             <span className="tabular-nums">{t("achievements.toNext", { points: formatPoints(level.to - snapshot.points) })}</span>
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-ink-tertiary">
+          <div className="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-ink-secondary">
             <span>{t("achievements.unlockedCount", { count: snapshot.unlockedCount, total: snapshot.count })}</span>
             {snapshot.streak > 0 && (
               <span className="inline-flex items-center gap-1" data-achievement-streak="">
@@ -201,31 +207,17 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
             )}
           </div>
         </div>
-        {titles.length > 0 && (
-          <label className="flex flex-col gap-1 text-[11px] text-ink-tertiary">
-            {t("achievements.titleLabel")}
-            <select
-              value={snapshot.settings.title ?? ""}
-              onChange={(event) => saveCardSetting({ title: event.target.value || null })}
-              className="rounded-lg border border-border bg-ink/[0.03] px-2 py-1 text-[12px] text-ink"
-            >
-              <option value="">{t("achievements.titleNone")}</option>
-              {titles.map((reward) => reward.kind === "title" && <option key={reward.id} value={reward.id}>{localized(reward.name)}</option>)}
-            </select>
-          </label>
-        )}
       </section>
 
       {category === "all" && recent.length > 0 && (
-        <section aria-label={t("achievements.recent")}>
-          <h3 className="mb-1.5 px-1 text-[12px] font-medium text-ink-secondary">{t("achievements.recent")}</h3>
+        <SettingsGroup title={t("achievements.recent")} groupId="achievements.recent" plain>
           <ul className="flex gap-2 overflow-x-auto pb-1">
             {recent.map((item) => {
               const reward = item.rewards[0];
               const showArt = Boolean(reward && (reward.kind === "skin" || reward.kind === "character") && characterUnlocked(unlocks, reward.character));
               const Icon = achievementIcon(item.icon);
               return (
-                <li key={item.id} className="flex min-w-[180px] items-center gap-2 rounded-xl border-[0.5px] border-border bg-card px-2.5 py-2" data-recent-achievement={item.id}>
+                <li key={item.id} className="flex min-w-[180px] items-center gap-2 rounded-xl border-[0.5px] border-border bg-elevated px-2.5 py-2" data-recent-achievement={item.id}>
                   <span className="grid size-9 shrink-0 place-items-center">
                     {showArt && reward ? (
                       <Suspense fallback={null}><RewardPreview reward={reward} size={30} animated={false} /></Suspense>
@@ -234,63 +226,76 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
                     )}
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-[12.5px] font-medium text-ink">{localized(item.name)}</span>
-                    <span className="block text-[11px] tabular-nums text-ink-tertiary">+{item.points}</span>
+                    <span className="block truncate text-[13px] text-ink">{localized(item.name)}</span>
+                    <span className="block text-[11.5px] tabular-nums text-ink-secondary">+{item.points}</span>
                   </span>
                 </li>
               );
             })}
           </ul>
-        </section>
+        </SettingsGroup>
       )}
 
-      <section>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={t("achievements.search")}
-            aria-label={t("achievements.searchLabel")}
-            data-achievement-search=""
-            className="w-48 rounded-lg border border-border bg-ink/[0.03] px-2 py-1 text-[12px] text-ink placeholder:text-ink-tertiary"
-          />
-          <select
+      <section className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1">
+          <div className="mr-auto flex min-w-0 items-center gap-2 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1 focus-within:border-border-strong">
+            <Search size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t("achievements.search")}
+              aria-label={t("achievements.searchLabel")}
+              data-achievement-search=""
+              className="w-40 min-w-0 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
+            />
+          </div>
+          <PillSelect
             value={reward}
-            aria-label={t("achievements.rewardFilter")}
-            data-achievement-reward=""
-            onChange={(event) => setReward(event.target.value as AchievementRewardFilter)}
-            className="rounded-lg border border-border bg-ink/[0.03] px-2 py-1 text-[12px] text-ink"
-          >
-            {achievementRewardFilters(unlocksFromSnapshot(snapshot)).map((id) => <option key={id} value={id}>{achievementRewardFilterLabel(id)}</option>)}
-          </select>
-          <select
+            ariaLabel={t("achievements.rewardFilter")}
+            options={achievementRewardFilters(unlocksFromSnapshot(snapshot)).map((id) => ({ value: id, label: achievementRewardFilterLabel(id) }))}
+            onChange={setReward}
+          />
+          <PillSelect
             value={filter}
-            aria-label={t("achievements.filter")}
-            onChange={(event) => setFilter(event.target.value as AchievementStatusFilter)}
-            className="ml-auto rounded-lg border border-border bg-ink/[0.03] px-2 py-1 text-[12px] text-ink"
-          >
-            <option value="all">{t("achievements.filter.all")}</option>
-            <option value="unlocked">{t("achievements.filter.unlocked")}</option>
-            <option value="locked">{t("achievements.filter.locked")}</option>
-          </select>
+            ariaLabel={t("achievements.filter")}
+            options={[
+              { value: "all", label: t("achievements.filter.all") },
+              { value: "unlocked", label: t("achievements.filter.unlocked") },
+              { value: "locked", label: t("achievements.filter.locked") },
+            ]}
+            onChange={setFilter}
+          />
         </div>
-        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2" data-achievement-grid="">
           {shown.map((item) => <AchievementCard key={item.id} item={item} state={states.get(item.id)} unlocks={unlocks} />)}
         </ul>
       </section>
 
-      <section className="rounded-[14px] border-[0.5px] border-border py-1">
-        <SettingRow title={t("achievements.settings.showPoints")} subtitle={t("achievements.settings.showPointsHint")}>
+      <SettingsGroup title={t("achievements.settings.title")} groupId="achievements.settings">
+        {titles.length > 0 && (
+          <CompactRow label={t("achievements.titleLabel")} rowId="achievements.title">
+            <PillSelect
+              value={snapshot.settings.title ?? ""}
+              ariaLabel={t("achievements.titleLabel")}
+              options={[
+                { value: "", label: t("achievements.titleNone") },
+                ...titles.flatMap((reward) => (reward.kind === "title" ? [{ value: reward.id, label: localized(reward.name) }] : [])),
+              ]}
+              onChange={(next) => saveCardSetting({ title: next || null })}
+            />
+          </CompactRow>
+        )}
+        <DescribedRow label={t("achievements.settings.showPoints")} help={t("achievements.settings.showPointsHint")}>
           <Switch checked={snapshot.settings.showPoints} aria-label={t("achievements.settings.showPoints")} onClick={() => saveCardSetting({ showPoints: !snapshot.settings.showPoints })} />
-        </SettingRow>
-        <SettingRow title={t("achievements.settings.showTitle")} subtitle={t("achievements.settings.showTitleHint")}>
+        </DescribedRow>
+        <DescribedRow label={t("achievements.settings.showTitle")} help={t("achievements.settings.showTitleHint")}>
           <Switch checked={snapshot.settings.showTitle !== false} aria-label={t("achievements.settings.showTitle")} onClick={() => saveCardSetting({ showTitle: snapshot.settings.showTitle === false })} />
-        </SettingRow>
-        <SettingRow title={t("achievements.settings.toasts")} subtitle={t("achievements.settings.toastsHint")}>
+        </DescribedRow>
+        <DescribedRow label={t("achievements.settings.toasts")} help={t("achievements.settings.toastsHint")}>
           <Switch checked={snapshot.settings.toasts} aria-label={t("achievements.settings.toasts")} onClick={() => void saveAchievementSettings({ toasts: !snapshot.settings.toasts })} />
-        </SettingRow>
-        <SettingRow title={t("achievements.settings.native")} subtitle={t("achievements.settings.nativeHint")}>
+        </DescribedRow>
+        <DescribedRow label={t("achievements.settings.native")} help={t("achievements.settings.nativeHint")}>
           <Switch
             checked={snapshot.settings.native}
             aria-label={t("achievements.settings.native")}
@@ -300,11 +305,11 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
               void saveAchievementSettings({ native: next });
             }}
           />
-        </SettingRow>
-        <SettingRow title={t("achievements.settings.public")} subtitle={t("achievements.settings.publicHint")}>
+        </DescribedRow>
+        <DescribedRow label={t("achievements.settings.public")} help={t("achievements.settings.publicHint")}>
           <Switch checked={snapshot.settings.public} aria-label={t("achievements.settings.public")} onClick={() => saveCardSetting({ public: !snapshot.settings.public })} />
-        </SettingRow>
-      </section>
+        </DescribedRow>
+      </SettingsGroup>
     </div>
   );
 }

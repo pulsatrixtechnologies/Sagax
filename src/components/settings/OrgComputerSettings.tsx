@@ -8,12 +8,12 @@
 // confirmation) and the Local VM on their own computer (found through their
 // desktop app: which runtime, its state, "Set up in one click" with visible
 // steps, install offers). One short grey line under each label.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Circle, Loader2, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { currentDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
-import { installChoices, localVmProblemKey, localVmView, runtimeSummaryKey, type DesktopLocalVmStatus, type SetupStep } from "@/lib/desktop-local-vm";
+import { installChoices, localVmAutoSetup, localVmProblemKey, localVmReady, localVmView, runtimeSummaryKey, type DesktopLocalVmStatus, type SetupStep } from "@/lib/desktop-local-vm";
 import { t } from "@/lib/i18n";
 import { loadServerEnvironment, resetServerEnvironment, type ServerEnvironmentStatus } from "@/lib/server-environment";
 import { ServerComputerScreen, useDesktopLocalVm } from "../computer/OrgComputerTab";
@@ -23,8 +23,11 @@ import { BotWorkplaceSettings } from "./BotWorkplaceSettings";
 import { LocalModelsSettings } from "./LocalModelsSettings";
 import { serverEnvironmentStateText } from "./MyServerEnvironment";
 
-export function OrgComputerSettings({ bridge, initialLocal = null, initialServer = null, confirm = (text: string) => window.confirm(text) }: {
+export function OrgComputerSettings({ bridge, initialLocal = null, initialServer = null, confirm = (text: string) => window.confirm(text), localVmAllowed = true }: {
   bridge: DesktopBridgeStatus;
+  /** False when the organization's policy turned the Local VM off: no
+   * automatic setup then. */
+  localVmAllowed?: boolean;
   initialLocal?: DesktopLocalVmStatus | null;
   initialServer?: ServerEnvironmentStatus | null;
   confirm?: (text: string) => boolean;
@@ -47,7 +50,7 @@ export function OrgComputerSettings({ bridge, initialLocal = null, initialServer
       <LocalModelsSettings />
       <SettingsGroup title={t("computer.group.bots")} groupId="botsComputer">
         <ServerEnvironmentCard initial={initialServer} confirm={confirm} />
-        <LocalVmCard bridge={bridge} initial={initialLocal} confirm={confirm} />
+        <LocalVmCard bridge={bridge} initial={initialLocal} confirm={confirm} allowed={localVmAllowed} />
       </SettingsGroup>
     </>
   );
@@ -58,14 +61,26 @@ function pillClass(primary = false): string {
 }
 
 /** The Local VM on the person's own computer: one row (state and runtime,
- * the setup or repair pill, Recheck), with what it needs below it. */
-function LocalVmCard({ bridge, initial, confirm }: { bridge: DesktopBridgeStatus; initial: DesktopLocalVmStatus | null; confirm: (text: string) => boolean }) {
+ * the setup or repair pill, Recheck), with what it needs below it. Opening
+ * it checks, then runs the one-click setup by itself once when a check is
+ * not ready and needs nothing from the person (localVmAutoSetup); the pill
+ * goes away once every check is ready and comes back with the real error. */
+export function LocalVmCard({ bridge, initial, confirm, allowed = true }: { bridge: DesktopBridgeStatus; initial: DesktopLocalVmStatus | null; confirm: (text: string) => boolean; allowed?: boolean }) {
   const desktop = currentDesktop(bridge);
   const connected = Boolean(desktop?.capabilities?.localVm);
   const vm = useDesktopLocalVm(connected, initial);
   const view = localVmView(vm.status, connected, vm.pending);
   const runtime = runtimeSummaryKey(vm.status?.runtime);
   const setup = vm.status?.setup;
+  // One automatic attempt per opening of this row, never a loop.
+  const autoTried = useRef(false);
+  const auto = localVmAutoSetup(vm.status, connected, vm.pending, allowed);
+  useEffect(() => {
+    if (!auto || autoTried.current) return;
+    autoTried.current = true;
+    void vm.act("setup");
+  }, [auto, vm.act]);
+  const ready = localVmReady(vm.status, connected, vm.pending);
   const oneClick = () => {
     if (!confirm(t("localVm.consent.oneClick", { folder: vm.status?.workspace ?? "" }))) return;
     void vm.act("setup");
@@ -115,11 +130,13 @@ function LocalVmCard({ bridge, initial, confirm }: { bridge: DesktopBridgeStatus
             <button type="button" onClick={() => void vm.refresh()} disabled={vm.pending !== null} className={cn(pillClass(), "min-h-[44px] md:min-h-0")}>
               {t("vm.main.recheck")}
             </button>
-            <button type="button" onClick={oneClick} disabled={vm.pending !== null || setup?.state === "running" || view.problem === "foreign"}
-              className={cn(pillClass(true), "min-h-[44px] gap-1.5 md:min-h-0")}>
-              {setup?.state === "running" && <Loader2 size={13} aria-hidden="true" className="animate-spin" />}
-              {setup?.state === "error" ? t("localVm.retry") : view.repair ? t("localVm.repair") : t("localVm.setupOneClick")}
-            </button>
+            {!ready && (
+              <button type="button" onClick={oneClick} disabled={vm.pending !== null || setup?.state === "running" || view.problem === "foreign"}
+                data-local-vm-setup="" className={cn(pillClass(true), "min-h-[44px] gap-1.5 md:min-h-0")}>
+                {setup?.state === "running" && <Loader2 size={13} aria-hidden="true" className="animate-spin" />}
+                {setup?.state === "error" ? t("localVm.retry") : view.repair ? t("localVm.repair") : t("localVm.setupOneClick")}
+              </button>
+            )}
           </>
         )}
       </DescribedRow>

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { t, tFromServer } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
 import {
   describePart,
   describeSkip,
@@ -21,7 +22,7 @@ import {
   type ShareView,
 } from "@/lib/team-share";
 import { api, useStore } from "@/state/store";
-import { FIELD, FieldRow, FoldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, SwitchRow, WINDOW_BACKDROP, WINDOW_BODY, WINDOW_CLOSE, WINDOW_FOOTER, WINDOW_HEADER, WINDOW_SURFACE, WINDOW_TITLE } from "./SettingsPrimitives";
+import { FIELD, FieldRow, FoldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, SwitchRow, DIALOG } from "./SettingsPrimitives";
 import type { NewBotDefaults } from "../../shared/new-bot-defaults";
 
 /** What the file will hold, counted from the server's own dry run, so the
@@ -258,11 +259,11 @@ export function ShareTeamDialog({ team, onClose }: { team: string; onClose: () =
   const localSkips = includePictures ? pictures?.skipped ?? [] : [];
 
   return createPortal(
-    <div className={`${WINDOW_BACKDROP} z-[60]`} onMouseDown={(event) => {
+    <div className={cn(DIALOG.backdrop, "z-[60]")} onMouseDown={(event) => {
       if (event.target === event.currentTarget && !saving) onClose();
     }}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="share-team-title" tabIndex={-1}
-        className={`${WINDOW_SURFACE} max-w-[600px]`}
+        className={`${DIALOG.frame} max-w-[600px]`}
         onKeyDown={(event) => {
           if (event.key === "Escape" && !saving) { event.stopPropagation(); onClose(); }
           if (event.key === "Tab") {
@@ -273,12 +274,12 @@ export function ShareTeamDialog({ team, onClose }: { team: string; onClose: () =
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
           }
         }}>
-        <header className={WINDOW_HEADER}>
+        <header className={DIALOG.header}>
           <div className="flex min-w-0 items-center gap-1.5">
-            <h2 id="share-team-title" className={`${WINDOW_TITLE} min-w-0`}>{t("teamShare.title", { name: team || t("teamLibrary.general") })}</h2>
+            <h2 id="share-team-title" className={`${DIALOG.title} min-w-0`}>{t("teamShare.title", { name: team || t("teamLibrary.general") })}</h2>
             <HelpTip label={t("settings.moreAbout", { title: t("teamShare.title", { name: team || t("teamLibrary.general") }) })}>{t("teamShare.intro")}</HelpTip>
           </div>
-          <button aria-label={t("teamShare.close")} disabled={saving} onClick={onClose} className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
+          <button aria-label={t("teamShare.close")} disabled={saving} onClick={onClose} className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
         </header>
 
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => {
@@ -287,7 +288,7 @@ export function ShareTeamDialog({ team, onClose }: { team: string; onClose: () =
           else if (!saving && preview && name.trim()) void save();
         }}>
         {saved ? (
-          <div className={WINDOW_BODY}>
+          <div className={DIALOG.body}>
             <div className="px-1">
               <p className="flex items-center gap-2 text-[13px] font-medium text-ink"><Check size={15} aria-hidden="true" className="text-success" />{t("teamShare.saved", { filename: saved.filename })}</p>
               <p className="mt-1 text-[12px] leading-4 text-ink-secondary">{t("teamShare.savedHint")}</p>
@@ -295,7 +296,7 @@ export function ShareTeamDialog({ team, onClose }: { team: string; onClose: () =
             <ShareTeamContents preview={saved} includeMemory={includeMemory} localSkips={localSkips} />
           </div>
         ) : (
-          <div className={WINDOW_BODY}>
+          <div className={DIALOG.body}>
             <fieldset disabled={saving} className="min-w-0">
               <SettingsGroup groupId="share-team-choices" title={t("teamShare.choices")}>
                 <SwitchRow className="px-3.5 py-2.5" label={t("teamShare.includePictures")} checked={includePictures} onChange={setIncludePictures} />
@@ -334,7 +335,7 @@ export function ShareTeamDialog({ team, onClose }: { team: string; onClose: () =
         )}
 
         {error && <p role="alert" className="mx-5 mb-2 rounded-xl bg-danger/10 px-3.5 py-2 text-[12.5px] text-danger">{error}</p>}
-        <footer className={WINDOW_FOOTER}>
+        <footer className={DIALOG.footer}>
           {saved ? (
             <button type="submit" className={PRIMARY_PILL}>{t("teamShare.done")}</button>
           ) : (

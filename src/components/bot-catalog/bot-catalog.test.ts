@@ -176,6 +176,18 @@ describe("the home pane", () => {
     expect(all).toContain("data-catalog-back");
   });
 
+  it("opened alone keeps its title without a breadcrumb; inside Connect apps it shows Connect apps > Browse Bots (2026-10-16)", () => {
+    const alone = view();
+    expect(alone).not.toContain("data-breadcrumb");
+    expect(alone).toMatch(/id="bot-catalog-title"[^>]*>Browse Bots</);
+    const inside = view({ trail: [{ label: "Connect apps", onSelect: () => {} }] });
+    expect(inside).toMatch(/data-breadcrumb[\s\S]*?aria-label="Back"[\s\S]*?>Connect apps<[\s\S]*?aria-current="page"[^>]*>Browse Bots</);
+    expect(inside).toMatch(/id="bot-catalog-title"[^>]*>Browse Bots</);
+    // View all inside: Connect apps > Browse Bots > the section
+    const all = view({ trail: [{ label: "Connect apps", onSelect: () => {} }], expanded: "templates" });
+    expect(all).toMatch(/>Connect apps<[\s\S]*?>Browse Bots<[\s\S]*?aria-current="page"[^>]*>Templates</);
+  });
+
   it("says so when a search finds nothing", () => {
     const sections = catalogSections({ organization: true, entries }, templates, { ...filter, query: "zzz" });
     expect(view({ sections, query: "zzz" })).toContain("No bot matches this search.");

@@ -169,7 +169,7 @@ describe("unlock toast", () => {
 });
 
 describe("achievements page", () => {
-  it("shows the header card, recent unlocks, the filters and a two-column grid of cards on All", () => {
+  it("shows the header card, recent unlocks, the filters and a grid of tiles on All", () => {
     resetAchievementsForTests({ status: "ready", snapshot: snapshot({ settings: { showPoints: true, showTitle: true, toasts: true, native: false, public: false } }) });
     const html = renderToStaticMarkup(createElement(AchievementsPage, { category: "all" }));
     expect(html).toContain("data-achievements-page");
@@ -181,9 +181,9 @@ describe("achievements page", () => {
     expect(html).toContain("160 to the next level");
     expect(html).toContain("2 of");
     expect(html).toContain("4-day streak");
-    // the title picker at the right, with the titles unlocked so far
-    expect(html).toContain(">Title<select");
-    expect(html).toContain('<option value="rookie">Rookie</option>');
+    // the title picker, a pill menu in the settings card at the bottom
+    expect(html).toMatch(/data-settings-row="achievements.title"/);
+    expect(html).toMatch(/aria-label="Title" aria-haspopup="listbox"/);
     // recent unlocks, a horizontal row of cards
     expect(html).toContain(">Recent unlocks</h3>");
     expect(html).toContain('data-recent-achievement="hello-bot"');
@@ -193,8 +193,8 @@ describe("achievements page", () => {
     expect(html).toContain('aria-label="Show"');
     expect(html).not.toContain('role="tablist"');
     expect(html).not.toContain("data-achievement-category=");
-    // the cards: two columns, icon, name, points, rarity and reward
-    expect(html).toContain("grid grid-cols-1 gap-2 sm:grid-cols-2");
+    // the tiles, as the skin tiles of Settings > Appearance: icon, name, points, rarity and reward
+    expect(html).toContain("grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2");
     expect(html).toMatch(/class="achievement-card[^"]*" data-tier="[a-z]+" data-unlocked="" data-achievement="hello-bot"/);
     expect(html).toContain("achievement-card-badge");
     expect(html).toContain("achievement-card-tier");

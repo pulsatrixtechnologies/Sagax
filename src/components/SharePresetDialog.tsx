@@ -3,9 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { t, tFromServer } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
 import { describePart, describeSkip, preparePictures, saveShareFile, type ShareSkip } from "@/lib/team-share";
 import { api } from "@/state/store";
-import { FIELD, FieldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, SwitchRow, WINDOW_BACKDROP, WINDOW_BODY, WINDOW_CLOSE, WINDOW_FOOTER, WINDOW_HEADER, WINDOW_SURFACE, WINDOW_TITLE } from "./SettingsPrimitives";
+import { FIELD, FieldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, SwitchRow, DIALOG } from "./SettingsPrimitives";
 import { ShareContentsGroups } from "./ShareTeamDialog";
 import type { NewBotDefaults } from "../../shared/new-bot-defaults";
 import type { PackageDocument, PackageSummary } from "../../shared/package-format";
@@ -146,11 +147,11 @@ export function SharePresetDialog({ onClose }: { onClose: () => void }) {
 
   const localSkips = includePicture ? picture?.skipped ?? [] : [];
   return createPortal(
-    <div className={`${WINDOW_BACKDROP} z-[80]`} onMouseDown={(event) => {
+    <div className={cn(DIALOG.backdrop, "z-[80]")} onMouseDown={(event) => {
       if (event.target === event.currentTarget && !saving) onClose();
     }}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="share-preset-title" tabIndex={-1}
-        className={`${WINDOW_SURFACE} max-w-[560px]`}
+        className={`${DIALOG.frame} max-w-[560px]`}
         onKeyDown={(event) => {
           if (event.key === "Escape" && !saving) { event.stopPropagation(); onClose(); }
           if (event.key === "Tab") {
@@ -161,12 +162,12 @@ export function SharePresetDialog({ onClose }: { onClose: () => void }) {
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
           }
         }}>
-        <header className={WINDOW_HEADER}>
+        <header className={DIALOG.header}>
           <div className="flex min-w-0 items-center gap-1.5">
-            <h2 id="share-preset-title" className={`${WINDOW_TITLE} min-w-0`}>{t("presetShare.title")}</h2>
+            <h2 id="share-preset-title" className={`${DIALOG.title} min-w-0`}>{t("presetShare.title")}</h2>
             <HelpTip label={t("settings.moreAbout", { title: t("presetShare.title") })}>{t("presetShare.intro")}</HelpTip>
           </div>
-          <button aria-label={t("presetShare.close")} disabled={saving} onClick={onClose} className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
+          <button aria-label={t("presetShare.close")} disabled={saving} onClick={onClose} className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
         </header>
 
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => {
@@ -174,7 +175,7 @@ export function SharePresetDialog({ onClose }: { onClose: () => void }) {
           if (saved) onClose();
           else if (!saving && preview) void save();
         }}>
-        <div className={WINDOW_BODY}>
+        <div className={DIALOG.body}>
           {saved ? (
             <>
               <div className="px-1">
@@ -215,7 +216,7 @@ export function SharePresetDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         {error && <p role="alert" className="mx-5 mb-2 rounded-xl bg-danger/10 px-3.5 py-2 text-[12.5px] text-danger">{error}</p>}
-        <footer className={WINDOW_FOOTER}>
+        <footer className={DIALOG.footer}>
           {saved ? (
             <button type="submit" className={PRIMARY_PILL}>{t("teamShare.done")}</button>
           ) : (

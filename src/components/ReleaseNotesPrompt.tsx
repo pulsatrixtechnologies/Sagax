@@ -9,13 +9,16 @@ import {
   RELEASE_NOTES_SEEN_KEY,
   readPreviousRelease,
   readSeenRelease,
+  releaseNotesDate,
   releaseNotesPriorInstall,
   seenReleaseRecord,
   whatsNewDecision,
 } from "@/lib/release-notes";
 import { subscribeReleaseNotes, type ReleaseNotesMode } from "@/lib/release-notes-ui";
 import { useStore } from "@/state/store";
-import { ReleaseNotesBody, ReleaseNotesMarkdown } from "./ReleaseNotesMarkdown";
+import { ReleaseNotesBody, ReleaseNotesMarkdown, ReleaseVersionHeading } from "./ReleaseNotesMarkdown";
+import { DIALOG, DialogFrame, PILL, PillSelect } from "./SettingsPrimitives";
+import { cn } from "@/lib/cn";
 
 function readSeen(): string | null {
   try {
@@ -84,6 +87,9 @@ export function ReleaseNotesPrompt() {
     closeRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
+      // The version menu's open list closes first (it handles its Escape
+      // after this capture listener).
+      if (event.target instanceof Element && event.target.closest('[role="listbox"]')) return;
       event.preventDefault();
       setOpen(false);
     };
@@ -105,73 +111,72 @@ export function ReleaseNotesPrompt() {
   if (browse && !versions.includes(version)) versions.unshift(version);
   const previous = readPrevious();
   const sinceEntries = browse && previous ? bundledNotesSince(previous, version, catalog) : [];
+  const close = () => setOpen(false);
 
+  // 2026-10-16 (JC): drawn like Settings, in Settings' reading column: the
+  // title and the close button, the version menu and "since my last
+  // version" as pills, then the version's title and date and its sections
+  // under grey headings.
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-6"
-      onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}
+      className={cn(DIALOG.backdrop, "z-[70]")}
+      onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="release-notes-title"
-        className="flex max-h-[calc(100vh-3rem)] w-full max-w-[520px] flex-col rounded-[14px] border border-border bg-elevated p-5"
-      >
-        <h2 id="release-notes-title" className="text-[16px] font-semibold text-ink">
-          {browse ? t("releaseNotes.browseTitle") : t("releaseNotes.whatsNew", { version })}
-        </h2>
-        {browse ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <label htmlFor="release-notes-version" className="sr-only">
-              {t("releaseNotes.versionPicker")}
-            </label>
-            <select
-              id="release-notes-version"
-              value={picked}
-              onChange={(event) => {
-                setPicked(event.target.value);
-                setSince(false);
-              }}
-              className="rounded-lg border border-border bg-raised px-2 py-1 text-[13px] text-ink"
-            >
-              {versions.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry === version ? t("releaseNotes.currentTag", { version: entry }) : entry}
-                </option>
-              ))}
-            </select>
+      <DialogFrame
+        titleId="release-notes-title"
+        title={browse ? t("releaseNotes.browseTitle") : t("releaseNotes.whatsNewTitle")}
+        width="xl"
+        wide
+        closeLabel={t("releaseNotes.close")}
+        onClose={close}
+        closeRef={closeRef}
+        frameProps={{ "data-release-notes": mode }}
+        toolbar={browse ? (
+          // The menu sits at the right, as in Settings' rows, so its list
+          // opens inside the window.
+          <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2">
             {sinceEntries.length > 0 ? (
               <button
                 type="button"
                 aria-pressed={since}
                 onClick={() => setSince((on) => !on)}
-                className={`rounded-lg px-2 py-1 text-[12px] ${since ? "bg-accent text-white" : "bg-raised text-ink hover:brightness-110"}`}
+                className={cn(PILL, since && "bg-selected")}
               >
                 {t("releaseNotes.sinceLast", { version: previous ?? "" })}
               </button>
-            ) : null}
+            ) : <span />}
+            <PillSelect
+              ariaLabel={t("releaseNotes.versionPicker")}
+              value={picked}
+              options={versions.map((entry) => ({
+                value: entry,
+                label: entry === version ? t("releaseNotes.currentTag", { version: entry }) : entry,
+              }))}
+              onChange={(next) => {
+                setPicked(next);
+                setSince(false);
+              }}
+            />
           </div>
-        ) : null}
-        <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
-          {browse && since ? (
-            <ReleaseNotesBody notes={sinceEntries} language={language} />
-          ) : safe ? (
-            <ReleaseNotesMarkdown source={safe} />
-          ) : (
-            <p className="text-[13px] leading-relaxed text-ink-secondary">
-              {t("releaseNotes.whatsNewEmpty", { version: shown })}
-            </p>
-          )}
-        </div>
-        <button
-          ref={closeRef}
-          type="button"
-          onClick={() => setOpen(false)}
-          className="mt-4 w-full rounded-xl bg-raised px-4 py-2 text-[13px] font-medium text-ink hover:brightness-110"
-        >
-          {t("releaseNotes.close")}
-        </button>
-      </div>
+        ) : undefined}
+      >
+        {browse && since ? (
+          <ReleaseNotesBody notes={sinceEntries} language={language} headings />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <ReleaseVersionHeading version={shown} date={releaseNotesDate(catalog[shown])} language={language} />
+            {safe ? (
+              <div>
+                <ReleaseNotesMarkdown source={safe} />
+              </div>
+            ) : (
+              <p className="px-1 text-[13px] leading-relaxed text-ink-secondary">
+                {t("releaseNotes.whatsNewEmpty", { version: shown })}
+              </p>
+            )}
+          </div>
+        )}
+      </DialogFrame>
     </div>
   );
 }

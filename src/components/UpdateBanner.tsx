@@ -5,28 +5,23 @@
 // it again (openUpdatePrompt). Errors and the Linux package hand-off stay on
 // the small bottom-left card.
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Loader2, Sparkles, X } from "lucide-react";
+import { Loader2, Sparkles, X } from "lucide-react";
 import { brand } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useUpdaterState, type UpdaterState } from "@/lib/updater";
 import { useUpdatePromptRequests } from "@/lib/update-prompt";
 import { ReleaseNotesBody } from "./ReleaseNotesMarkdown";
-
-/** The dialog's two pills: the same size side by side, "Update" inverted. */
-const pill =
-  "flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full text-[15px] font-medium transition-[filter,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-elevated disabled:cursor-default";
-const primaryPill = `${pill} bg-ink text-app hover:brightness-90 disabled:bg-control disabled:text-ink-secondary disabled:hover:brightness-100`;
-const secondaryPill = `${pill} bg-control text-ink hover:bg-raised-hover`;
+import { CountPill, DIALOG, DialogFrame, GROUP_CARD, PILL, PRIMARY_PILL } from "./SettingsPrimitives";
 
 const NOTES_STATUS = new Set<UpdaterState["status"]>(["preparing", "downloaded", "installing"]);
 
 function friendlyError(message?: string): string {
-  if (!message) return "Something went wrong.";
+  if (!message) return t("updates.problem.generic");
   if (/cannot find .*\.yml|404/i.test(message))
-    return "No update has been published for this platform yet.";
+    return t("updates.problem.noRelease");
   if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|net::/i.test(message))
-    return "Couldn't reach the update server.";
+    return t("updates.problem.offline");
   return message.split("\n")[0].slice(0, 140);
 }
 
@@ -135,27 +130,38 @@ function UpdateNotesDialog({
 
   const primaryLabel = handoff ? t("settings.updates.install") : t("releaseNotes.update");
 
+  const notesId = "update-notes-list";
+  // 2026-10-16 (JC): drawn like Settings: the title, one grey line, the
+  // notes folded in a row of one card behind a pill, the pills at the right.
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6"
+      className={cn(DIALOG.backdrop, "z-[60]")}
       onMouseDown={(event) => event.target === event.currentTarget && !busy && onDismiss()}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="update-notes-title"
-        aria-describedby="update-notes-body"
-        data-update-dialog=""
-        className={cn(
-          "flex max-h-[calc(100vh-3rem)] w-full flex-col rounded-[22px] border border-border bg-elevated p-5 shadow-2xl transition-[max-width]",
-          notesOpen ? "max-w-[520px]" : "max-w-[360px]",
-        )}
+      <DialogFrame
+        titleId="update-notes-title"
+        title={notesTitle(s)}
+        width={notesOpen ? "lg" : "sm"}
+        frameProps={{ "aria-describedby": "update-notes-body", "data-update-dialog": "" }}
+        footer={
+          <>
+            <button type="button" onClick={onDismiss} disabled={busy} className={PILL}>
+              {t("releaseNotes.notNow")}
+            </button>
+            {busy ? (
+              <button type="button" disabled className={PRIMARY_PILL}>
+                <Loader2 size={14} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                {busyLabel(s, pending)}
+              </button>
+            ) : (
+              <button ref={primaryRef} type="button" onClick={onUpdate} className={PRIMARY_PILL}>
+                {primaryLabel}
+              </button>
+            )}
+          </>
+        }
       >
-        <h2 id="update-notes-title" className="text-[17px] font-semibold leading-6 text-ink">
-          {notesTitle(s)}
-        </h2>
-
-        <p id="update-notes-body" className="mt-2 text-[15px] leading-[22px] text-ink-secondary">
+        <p id="update-notes-body" className="-mt-2 px-0 text-[13px] leading-[19px] text-ink-secondary empty:hidden">
           {s.status === "downloaded"
             ? readyBody(s)
             : preparing
@@ -166,7 +172,7 @@ function UpdateNotesDialog({
         </p>
 
         {s.status === "downloading" && (
-          <div className="mt-3">
+          <div>
             <div className="text-[12.5px] text-ink-secondary">
               {s.percent == null
                 ? t("releaseNotes.starting")
@@ -182,38 +188,27 @@ function UpdateNotesDialog({
         )}
 
         {/* The feed's notes stay one tap away rather than filling the dialog. */}
-        <button
-          type="button"
-          onClick={() => setNotesOpen((open) => !open)}
-          aria-expanded={notesOpen}
-          data-update-notes-toggle=""
-          className="mt-3 inline-flex items-center gap-1 self-start rounded-md text-[13px] text-ink-secondary hover:text-ink"
-        >
-          {t("releaseNotes.whatsNew", { version: s.version ?? "" }).replace(/\s+$/, "")}
-          <ChevronDown size={13} className={cn("transition-transform", notesOpen && "rotate-180")} />
-        </button>
-        {notesOpen && (
-          <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
-            <ReleaseNotesBody notes={s.notes} fallbackVersion={s.version ?? ""} />
+        <div className={GROUP_CARD}>
+          <div className="flex min-h-[44px] items-center justify-between gap-3 px-3.5 py-1 md:min-h-[36px]">
+            <span className="min-w-0 truncate text-[13px] leading-[18px] text-ink">
+              {t("releaseNotes.whatsNew", { version: s.version ?? "" }).replace(/\s+$/, "")}
+            </span>
+            <span data-update-notes-toggle="">
+              <CountPill
+                open={notesOpen}
+                onToggle={() => setNotesOpen((open) => !open)}
+                label={t("releaseNotes.whatsNew", { version: s.version ?? "" }).replace(/\s+$/, "")}
+                controls={notesId}
+              />
+            </span>
           </div>
-        )}
-
-        <div className="mt-5 flex gap-3">
-          <button type="button" onClick={onDismiss} disabled={busy} className={cn(secondaryPill, busy && "opacity-50")}>
-            {t("releaseNotes.notNow")}
-          </button>
-          {busy ? (
-            <button type="button" disabled className={primaryPill}>
-              <Loader2 size={15} className="animate-spin" />
-              {busyLabel(s, pending)}
-            </button>
-          ) : (
-            <button ref={primaryRef} type="button" onClick={onUpdate} className={primaryPill}>
-              {primaryLabel}
-            </button>
+          {notesOpen && (
+            <div id={notesId} className="max-h-[50dvh] overflow-y-auto border-t-[0.5px] border-border px-2.5 pb-2 pt-3">
+              <ReleaseNotesBody notes={s.notes} fallbackVersion={s.version ?? ""} />
+            </div>
           )}
         </div>
-      </div>
+      </DialogFrame>
     </div>
   );
 }
@@ -229,69 +224,70 @@ function UpdateProblemCard({
   onDismiss: () => void;
   onRetry: () => void;
 }) {
-  const title = s.status === "handed-off" ? "Finish in a terminal" : "Update failed";
+  const title = s.status === "handed-off" ? t("updates.problem.terminalTitle") : t("updates.problem.failedTitle");
   const subtitle =
     s.status === "handed-off"
       ? s.terminalOpened
-        ? "Command copied. Paste it in the terminal that opened."
-        : "Command copied. Paste it in a terminal to finish."
+        ? t("updates.problem.terminalOpened")
+        : t("updates.problem.terminalPaste")
       : s.retryable === false
-        ? `${friendlyError(s.message?.split(" Quit and reopen ")[0])} Quit and reopen ${brand().name} before trying the update again.`
+        ? `${friendlyError(s.message?.split(" Quit and reopen ")[0])} ${t("updates.problem.reopen", { app: brand().name })}`
         : friendlyError(s.message);
 
   return (
-    <div className="animate-panel-in fixed bottom-4 left-4 z-50 w-[300px] rounded-[10px] border-[0.5px] border-border bg-elevated p-3.5">
+    <div role="status" className="animate-panel-in fixed bottom-4 left-4 z-50 w-[300px] rounded-[14px] border-[0.5px] border-border bg-elevated p-3.5">
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
-          <Sparkles size={14} />
+          <Sparkles size={14} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[13.5px] font-semibold text-ink">{title}</div>
-          <div className="mt-0.5 text-[12.5px] text-ink-secondary" title={subtitle}>
+          <div className="text-[13px] font-semibold leading-[18px] text-ink">{title}</div>
+          <div className="mt-0.5 text-[12px] leading-4 text-ink-secondary" title={subtitle}>
             {subtitle}
           </div>
         </div>
         <button
           type="button"
           onClick={onDismiss}
-          className="shrink-0 rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
-          title="Dismiss"
+          aria-label={t("updates.problem.dismiss")}
+          title={t("updates.problem.dismiss")}
+          className="flex size-7 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 touch:size-11"
         >
-          <X size={14} />
+          <X size={14} aria-hidden="true" />
         </button>
       </div>
 
       {s.status === "handed-off" && s.command && (
-        <code className="mt-2.5 block overflow-x-auto rounded-lg bg-control px-2 py-1.5 font-mono text-[11.5px] whitespace-pre text-ink-secondary">
+        <code className="mt-2.5 block overflow-x-auto rounded-lg bg-inset px-2 py-1.5 font-mono text-[11.5px] whitespace-pre text-ink-secondary">
           {s.command}
         </code>
       )}
 
-      <div className="mt-2.5 flex gap-2">
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onDismiss}
+          disabled={pending !== null}
+          className={PILL}
+        >
+          {s.status === "handed-off" || s.retryable === false ? t("updates.problem.dismiss") : t("releaseNotes.later")}
+        </button>
         {s.status === "error" && s.retryable !== false && (
           <button
             type="button"
             onClick={onRetry}
             disabled={pending !== null}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-control py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:text-ink-secondary disabled:hover:bg-control"
+            className={PRIMARY_PILL}
           >
             {pending === "check" ? (
               <>
-                <Loader2 size={13} className="animate-spin" /> Checking…
+                <Loader2 size={13} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> {t("common.checking")}
               </>
             ) : (
-              "Try again"
+              t("updates.problem.retry")
             )}
           </button>
         )}
-        <button
-          type="button"
-          onClick={onDismiss}
-          disabled={pending !== null}
-          className="rounded-lg px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50 disabled:hover:bg-transparent"
-        >
-          {s.status === "handed-off" || s.retryable === false ? "Dismiss" : "Later"}
-        </button>
       </div>
     </div>
   );

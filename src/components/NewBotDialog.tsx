@@ -25,7 +25,7 @@ import { PermissionsSection } from "./bot-settings/PermissionsSection";
 import { VoiceSection } from "./bot-settings/VoiceSection";
 import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
 import { BotEditorContext } from "./bot-settings/BotEditorContext";
-import { CompactRow, ConfirmPill, FIELD, FieldRow, PILL, PillSelect, PRIMARY_PILL, Switch, WINDOW_BACKDROP, WINDOW_CLOSE, WINDOW_FOOTER, WINDOW_HEADER, WINDOW_SURFACE, WINDOW_TITLE, type PillOption } from "./SettingsPrimitives";
+import { CompactRow, ConfirmPill, FIELD, FieldRow, PILL, PillSelect, PRIMARY_PILL, Switch, type PillOption, DIALOG, GROUP_CARD } from "./SettingsPrimitives";
 import { RoutineEditor } from "./RoutinesPage";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
@@ -78,10 +78,10 @@ export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSel
     window.addEventListener("keydown", onKey, true);
     return () => { window.removeEventListener("keydown", onKey, true); if (opener?.isConnected) opener.focus(); };
   }, []);
-  return <div data-dialog-backdrop className={`${WINDOW_BACKDROP} z-[70]`}
+  return <div data-dialog-backdrop className={cn(DIALOG.backdrop, "z-[70]")}
     onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t("newBot.create")} tabIndex={-1}
-      className={`${WINDOW_SURFACE} max-w-sm`}
+      className={`${DIALOG.frame} max-w-sm`}
       onKeyDown={event => {
         if (event.key === "Escape") { event.stopPropagation(); close(); }
         if (event.key === "Tab") {
@@ -91,9 +91,9 @@ export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSel
           else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0]?.focus(); }
         }
       }}>
-      <div className={WINDOW_HEADER}><h2 className={WINDOW_TITLE}>{t("newBot.create")}</h2></div>
+      <div className={DIALOG.header}><h2 className={DIALOG.title}>{t("newBot.create")}</h2></div>
       <p data-new-bot-quick className="px-5 pb-4 text-[13px] leading-[18px] text-ink-secondary">{t("newBot.quickCreate")}</p>
-      <div className={WINDOW_FOOTER}>
+      <div className={DIALOG.footer}>
         <button type="button" onClick={close} className={PILL}>{t("common.cancel")}</button>
         <button type="button" disabled={state.botCreationPending} onClick={() => dispatch({ type: "newBot", ...(section !== undefined ? { section } : {}), ...(preserveSelection ? { preserveSelection } : {}), onCreated: bot => {
           close();
@@ -119,13 +119,13 @@ export function BotsReadOnlyDialog({ onClose }: { onClose: () => void }) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
-  return <div data-dialog-backdrop className={`${WINDOW_BACKDROP} z-[70]`}
+  return <div data-dialog-backdrop className={cn(DIALOG.backdrop, "z-[70]")}
     onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div role="dialog" aria-modal="true" aria-label={t("sidebar.newBot")} tabIndex={-1}
-      className={`${WINDOW_SURFACE} max-w-sm`}>
-      <div className={WINDOW_HEADER}><h2 className={WINDOW_TITLE}>{t("sidebar.newBot")}</h2></div>
+      className={`${DIALOG.frame} max-w-sm`}>
+      <div className={DIALOG.header}><h2 className={DIALOG.title}>{t("sidebar.newBot")}</h2></div>
       <p role="note" data-bots-read-only className="px-5 pb-4 text-[13px] leading-[18px] text-ink-secondary">{botsReadOnlyText(state.config)}</p>
-      <div className={WINDOW_FOOTER}>
+      <div className={DIALOG.footer}>
         <button type="button" autoFocus onClick={onClose} className={PRIMARY_PILL}>{t("common.close")}</button>
       </div>
     </div>
@@ -326,17 +326,17 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
       )}
     </div>
   ) : null;
-  return <div className={`${WINDOW_BACKDROP} z-[70]`}>
+  return <div className={cn(DIALOG.backdrop, "z-[70]")}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={title} aria-busy={saving} tabIndex={-1}
-      className={`${WINDOW_SURFACE} h-[min(760px,94dvh)] max-w-[720px]`}>
-      <div className={WINDOW_HEADER}>
-        <h2 className={WINDOW_TITLE}>{title}</h2>
+      className={`${DIALOG.frame} h-[min(760px,94dvh)] max-w-[720px]`}>
+      <div className={DIALOG.header}>
+        <h2 className={DIALOG.title}>{title}</h2>
         <button type="button" onClick={() => closeRef.current()} aria-label={t("common.close")}
-          className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
+          className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
       </div>
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 pb-4 pt-2">
         {!ready && !error && <div role="status" className="flex items-center gap-2 px-1 text-[13px] text-ink-secondary"><Loader2 size={16} className="animate-spin" />{t("newBot.loading")}</div>}
-        {visibilityRow && <div className="mx-auto mb-5 flex max-w-[640px] flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5">{visibilityRow}</div>}
+        {visibilityRow && <div className={cn(GROUP_CARD, "mx-auto mb-5 max-w-[640px]")}>{visibilityRow}</div>}
         {ready && <fieldset disabled={saving} className="mx-auto min-w-0 max-w-[640px]">
           <BotEditorStore value={scopedStore}><BotEditorContext.Provider value={{ request: draft.request, draft: true, uploadAvatar: draft.uploadAvatar }}>
             <DraftPage draft={draft} defaultsMode={defaultsMode} moreOpen={moreOpen} onToggleMore={() => setMoreOpen(open => !open)} onImported={() => closeRef.current()} />
@@ -358,7 +358,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
           {t(startKind === "auto" ? "newBot.model.switchedAuto" : "newBot.model.switchedFirst")}
         </p>
       )}
-      <div className={WINDOW_FOOTER}>
+      <div className={DIALOG.footer}>
         <button type="button" onClick={() => closeRef.current()} className={PILL}>{t("common.cancel")}</button>
         <button type="button" disabled={!ready || saving || (!defaultsMode && !bot.name.trim())} onClick={() => void save()}
           className={PRIMARY_PILL}>
@@ -392,7 +392,7 @@ export function DraftPage({ draft, defaultsMode, moreOpen, onToggleMore, onImpor
   // them; the avatar, name and description follow; More options is the
   // last row, folded.
   return <div className="flex flex-col gap-5">
-    <div className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5">
+    <div className={GROUP_CARD}>
       <StartingRole draft={draft} defaultsMode={defaultsMode} onImported={onImported} />
       {!member && teams.length > 0 && <div data-new-bot-team>
         <CompactRow label={t("newBot.team")}>

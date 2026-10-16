@@ -6,7 +6,8 @@ import { api, useStore, type Bot } from "@/state/store";
 import { BotPickerList } from "./BotPickerList";
 import { NewBotDialog } from "./lazy-screens";
 import { t } from "@/lib/i18n";
-import { FIELD, FieldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, WINDOW_BACKDROP, WINDOW_BODY, WINDOW_CLOSE, WINDOW_FOOTER, WINDOW_HEADER, WINDOW_SURFACE, WINDOW_TITLE } from "./SettingsPrimitives";
+import { cn } from "@/lib/cn";
+import { FIELD, FieldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, DIALOG, GROUP_CARD } from "./SettingsPrimitives";
 
 /** A team may start empty; choosing bots moves their membership, never copies them. */
 export function TeamDialog({ section, rename = false, onClose, onRenamed }: {
@@ -67,11 +68,11 @@ export function TeamDialog({ section, rename = false, onClose, onRenamed }: {
     setPicked(previous => new Set([...previous, bot.id]));
   }} />, document.body);
   return createPortal(
-    <div className={`${WINDOW_BACKDROP} z-50`} onMouseDown={(event) => {
+    <div className={cn(DIALOG.backdrop, "z-50")} onMouseDown={(event) => {
       if (event.target === event.currentTarget && !saving) onClose();
     }}>
       <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="team-dialog-title"
-        className={`${WINDOW_SURFACE} max-w-[460px]`}
+        className={`${DIALOG.frame} max-w-[460px]`}
         onKeyDown={(event) => {
           if (event.key === "Escape" && !saving) { event.stopPropagation(); onClose(); }
           if (event.key === "Tab") {
@@ -82,12 +83,12 @@ export function TeamDialog({ section, rename = false, onClose, onRenamed }: {
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
           }
         }}>
-        <div className={WINDOW_HEADER}>
-          <h2 id="team-dialog-title" className={WINDOW_TITLE}>{title}</h2>
-          <button aria-label={t("team.closeDialog")} disabled={saving} onClick={onClose} className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
+        <div className={DIALOG.header}>
+          <h2 id="team-dialog-title" className={DIALOG.title}>{title}</h2>
+          <button aria-label={t("team.closeDialog")} disabled={saving} onClick={onClose} className={cn(DIALOG.close, "disabled:opacity-40")}><X size={18} className="pointer-events-none" /></button>
         </div>
-        <div className={WINDOW_BODY}>
-          {(!moving || rename) && <div className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5">
+        <div className={DIALOG.body}>
+          {(!moving || rename) && <div className={GROUP_CARD}>
             <FieldRow label={t("team.name")}>
               <input value={name} maxLength={60} disabled={saving} onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => { if (event.key === "Enter") void save(); }}
@@ -116,7 +117,7 @@ export function TeamDialog({ section, rename = false, onClose, onRenamed }: {
           </fieldset>}
           {error && <p role="alert" className="px-1 text-[12.5px] text-danger">{error}</p>}
         </div>
-        <div className={WINDOW_FOOTER}>
+        <div className={DIALOG.footer}>
           {managing && <button disabled={saving || state.botCreationPending} onClick={() => setCreating(true)} className={`${PILL} mr-auto`}>
             <Plus size={14} aria-hidden="true" />{t("sidebar.newBot")}
           </button>}

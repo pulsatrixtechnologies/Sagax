@@ -26,30 +26,28 @@ beforeEach(() => vi.stubGlobal("window", { addEventListener: noop, removeEventLi
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Plugins panel views", () => {
-  it("main view: title, connected count, search, All plus one Category menu, sections of two-column rows", () => {
+  it("main view: Browse Bots' layout: title and subtitle, category pills, the search with N connected, sections of two-column rows", () => {
     const html = renderToStaticMarkup(createElement(ConnectAppsView, {
-      items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop, onClose: noop,
+      items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop,
       onOpenManage: noop, onOpenItem: noop, type: "any", onType: noop, extraConnected: 1,
       renderAction: (item) => item.action ? createElement("button", { type: "button" }, item.action === "connect" ? "Connect" : "Add") : null,
     }));
     expect(html).toContain("Connect apps");
+    expect(html).toMatch(/id="plugins-title"[^>]*>Connect apps<\/h2><p class="[^"]*text-ink-secondary[^"]*">Apps, MCP servers and skills your bots can use\.</);
+    // the home page has no breadcrumb
+    expect(html).not.toContain("data-breadcrumb");
     // Slack, the glitcho server and one Claude connector
     expect(html).toContain("3 connected");
     expect(html).toContain('placeholder="Search across apps and skills"');
-    expect(html).not.toContain("data-plugins-bot-templates");
     expect(html).not.toContain("Browse Bots");
-    // the connected count sits next to the search field, not in the header
-    expect(html).toMatch(/placeholder="Search across apps and skills"[\s\S]*?data-plugins-connected/);
-    // one chip (All) and one Category menu; types are not chips
+    // pills first, then the search with the connected count at its right
+    expect(html).toMatch(/data-plugins-chips[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-connected/);
+    // All, then a pill per category that has a row; no Category menu any more
     const chips = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((match) => match[1]);
-    expect(chips).toEqual(["All"]);
-    expect(html).toMatch(/aria-haspopup="menu"[^>]*aria-label="Category"[^>]*>Category</);
-    expect(html).not.toMatch(/>More</);
-    // no Refresh in the header: the panel refreshes when it opens
+    expect(chips[0]).toBe("All");
+    expect(chips.length).toBeGreaterThan(1);
+    expect(html).not.toContain('aria-haspopup="menu"');
     expect(html).not.toContain('aria-label="Refresh');
-    expect(html).not.toMatch(/aria-pressed="false"[^>]*>(Connected apps|MCP servers|Skills)</);
-    expect(html).not.toContain("data-plugins-type");
-    // no top-level Connected apps / MCP servers tabs any more
     expect(html).not.toContain('role="tab"');
     expect(html).toContain('data-plugins-section="recommended"');
     expect(html).toContain("Recommended for you");
@@ -60,24 +58,40 @@ describe("Plugins panel views", () => {
     expect(html).toMatch(/data-plugin-row="app:slack"[\s\S]*?data-plugin-status="connected"/);
   });
 
-  it("main view: Browse bots sits beside the search when the panel offers it (2026-10-16)", () => {
+  it("main view: Browse Bots sits top right by the title, above N connected (2026-10-16)", () => {
     const props = {
-      items, loading: false, search: "", onSearch: noop, filter: "all" as const, onFilter: noop, onClose: noop,
+      items, loading: false, search: "", onSearch: noop, filter: "all" as const, onFilter: noop,
       onOpenManage: noop, onOpenItem: noop, type: "any" as const, onType: noop,
       renderAction: () => null,
     };
     expect(renderToStaticMarkup(createElement(ConnectAppsView, props))).not.toContain("data-plugins-browse-bots");
     const html = renderToStaticMarkup(createElement(ConnectAppsView, { ...props, onBrowseBots: noop }));
-    expect(html).toMatch(/placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse Bots[\s\S]*?data-plugins-connected/);
+    expect(html).toMatch(/<header[\s\S]*?id="plugins-title"[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse Bots[\s\S]*?<\/header>/);
+    expect(html).toMatch(/data-plugins-browse-bots[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-connected/);
+  });
+
+  it("a section opened alone: breadcrumb Connect apps > the section, its title, no pills, no Browse Bots", () => {
+    const html = renderToStaticMarkup(createElement(ConnectAppsView, {
+      items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop,
+      onOpenManage: noop, onOpenItem: noop, type: "mcp", onBrowseBots: noop,
+      renderAction: () => null,
+      subpage: { title: "MCP servers", trail: [{ label: "Connect apps", onSelect: noop }], onBack: noop },
+    }));
+    expect(html).toMatch(/data-breadcrumb[\s\S]*?aria-label="Back"[\s\S]*?>Connect apps<[\s\S]*?aria-current="page"[^>]*>MCP servers</);
+    expect(html).toMatch(/id="plugins-title"[^>]*>MCP servers</);
+    expect(html).not.toContain("data-plugins-chips");
+    expect(html).not.toContain("data-plugins-browse-bots");
+    expect(html).toContain("data-plugins-connected");
   });
 
   it("manage page: back arrow, Add manually, installed cards with status, private skills", () => {
     const html = renderToStaticMarkup(createElement(ManageView, {
-      items, countLabel: () => "1 connector", sourceLabel: (source) => source, onBack: noop, onClose: noop, onOpenItem: noop,
+      items, countLabel: () => "1 connector", sourceLabel: (source) => source, onBack: noop, onOpenItem: noop,
       onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop,
     }));
     expect(html).toContain("Manage plugins and skills");
-    expect(html).toContain('aria-label="Back to Connect apps"');
+    // breadcrumb: back, Connect apps, then this page
+    expect(html).toMatch(/data-breadcrumb[\s\S]*?aria-label="Back"[\s\S]*?>Connect apps<[\s\S]*?aria-current="page"[^>]*>Manage plugins and skills</);
     expect(html).toMatch(/data-plugin-card="app:slack"[\s\S]*?1 connector[\s\S]*?Connected/);
     expect(html).toContain('data-plugin-card="mcp:glitcho"');
     // Add manually, Paste config and the rest wait in a collapsed Advanced zone, after the skills
@@ -91,7 +105,7 @@ describe("Plugins panel views", () => {
   it("manage page: a card that is not connected says so, muted", () => {
     const offline = buildPluginItems({ servers: [{ name: "vault", enabled: true, url: "https://vault.example.net/mcp", auth: "required" }] });
     const html = renderToStaticMarkup(createElement(ManageView, {
-      items: offline, countLabel: () => "1 connector", sourceLabel: (source) => source, onBack: noop, onClose: noop, onOpenItem: noop,
+      items: offline, countLabel: () => "1 connector", sourceLabel: (source) => source, onBack: noop, onOpenItem: noop,
       onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop, onNewSkill: noop,
     }));
     expect(html).toMatch(/data-plugin-card="mcp:vault"[\s\S]*?data-plugin-status="needs_auth" class="[^"]*text-ink-secondary[^"]*">Not connected</);
@@ -100,14 +114,14 @@ describe("Plugins panel views", () => {
 
   it("skill page: header, Delete Skill in red, the description, then Name, Description, Instructions and Save", () => {
     const skill = { name: "release-notes", description: "Writes notes", source: "local-import", enabled: true, tags: [], version: null, importedAt: "2026-10-08T00:00:00Z", warnings: [], assignedBots: [] };
-    const html = renderToStaticMarkup(createElement(SkillPage, { skill, onBack: noop, onClose: noop, onSaved: noop, onDeleted: noop }));
+    const html = renderToStaticMarkup(createElement(SkillPage, { skill, onBack: noop, onSaved: noop, onDeleted: noop }));
     expect(html).toContain("Private skill");
     expect(html).toMatch(/data-skill-delete[^>]*class="[^"]*text-danger[^"]*"[\s\S]*?Delete Skill/);
     expect(html).not.toContain("Publish");
     expect(html).toContain("Writes notes");
     for (const field of ["name", "description", "instructions"]) expect(html).toContain(`data-skill-field="${field}"`);
     expect(html).toMatch(/type="submit"[^>]*>Save</);
-    const readOnly = renderToStaticMarkup(createElement(SkillPage, { skill, readOnlyReason: "The plugin kit brought this skill: uninstall the plugin to remove it.", onBack: noop, onClose: noop, onSaved: noop, onDeleted: noop }));
+    const readOnly = renderToStaticMarkup(createElement(SkillPage, { skill, readOnlyReason: "The plugin kit brought this skill: uninstall the plugin to remove it.", onBack: noop, onSaved: noop, onDeleted: noop }));
     expect(readOnly).not.toContain("Delete Skill");
     expect(readOnly).not.toContain('type="submit"');
   });
@@ -115,7 +129,7 @@ describe("Plugins panel views", () => {
   it("detail page: the switch and one \"...\" menu by the name, accounts, collapsible tools, details", () => {
     const item = items.find((entry) => entry.key === "mcp:glitcho")!;
     const html = renderToStaticMarkup(createElement(PluginDetailView, {
-      item, subtitle: "https://qc1.example.net/mcp", busy: false, onBack: noop, onClose: noop, onUninstall: noop,
+      item, subtitle: "https://qc1.example.net/mcp", busy: false, onBack: noop, onUninstall: noop,
       enabled: { value: true, onToggle: noop, label: "Turn glitcho off" },
       accounts: [{ id: "oauth", label: "qc1.example.net", status: "connected" }],
       tools: { list: [{ name: "search", enabled: true }, { name: "delete", enabled: false }], loading: false, onToggle: noop },
@@ -136,7 +150,7 @@ describe("Plugins panel views", () => {
 
   it("manage page lists the providers under Advanced, with their honest line", () => {
     const html = renderToStaticMarkup(createElement(ManageView, {
-      items, countLabel: () => "", sourceLabel: (source) => source, onBack: noop, onClose: noop, onOpenItem: noop,
+      items, countLabel: () => "", sourceLabel: (source) => source, onBack: noop, onOpenItem: noop,
       onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop, providers: createElement("div", null, "PROVIDERS"),
     }));
     expect(html).not.toContain('role="tab"');
