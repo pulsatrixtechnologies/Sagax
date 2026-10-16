@@ -108,7 +108,7 @@ export interface DevPodsProps {
 export function DevPods(props: DevPodsProps) {
   const prefs = useDevPodPrefs();
   useEffect(() => {
-    if (!prefs.enabled) updateDevPodsLive({ active: false, filled: false, overlayOpen: false });
+    if (!prefs.enabled) updateDevPodsLive({ active: false, filled: false, overlayOpen: false, overlaySticky: false });
   }, [prefs.enabled]);
   if (!prefs.enabled) return null;
   return <DevPodsRail {...props} />;
@@ -174,8 +174,8 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
     updateDevPodsLive({ threadKey, active, filled, fits: geometry.fits });
   }, [threadKey, active, filled, geometry.fits]);
   // a floated stack never follows the person to another conversation
-  useEffect(() => { updateDevPodsLive({ overlayOpen: false }); }, [threadKey]);
-  useEffect(() => () => updateDevPodsLive({ active: false, filled: false, overlayOpen: false }), []);
+  useEffect(() => { updateDevPodsLive({ overlayOpen: false, overlaySticky: false }); }, [threadKey]);
+  useEffect(() => () => updateDevPodsLive({ active: false, filled: false, overlayOpen: false, overlaySticky: false }), []);
 
   // The person just asked for the coding view: show it even where it was
   // dismissed, hidden from the header, or would wait behind the header
@@ -191,7 +191,7 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
     if (geometry.fits) setRailHidden(false);
     else {
       markAutoFloated(threadKey);
-      updateDevPodsLive({ overlayOpen: true });
+      updateDevPodsLive({ overlayOpen: true, overlaySticky: true });
     }
   }, [request, active, filled, threadKey, geometry.fits]);
 
@@ -205,7 +205,7 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
   useEffect(() => {
     if (!active || !filled || !measured || geometry.fits || autoFloated || dismissedHere) return;
     markAutoFloated(threadKey);
-    updateDevPodsLive({ overlayOpen: true });
+    updateDevPodsLive({ overlayOpen: true, overlaySticky: true });
   }, [active, filled, measured, geometry.fits, autoFloated, dismissedHere, threadKey]);
 
   const dismissed = prefs.dismissed.includes(threadKey);
@@ -214,11 +214,15 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
   const mode = geometry.fits ? "rail" : "overlay";
 
   const railRef = useRef<HTMLDivElement>(null);
+  const sticky = overlayOpen && live.overlaySticky;
   useEffect(() => {
     if (!overlayOpen) return;
-    const close = () => updateDevPodsLive({ overlayOpen: false });
+    const close = () => updateDevPodsLive({ overlayOpen: false, overlaySticky: false });
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     const onPointer = (event: PointerEvent) => {
+      // opened by itself: the person keeps working (the composer, the
+      // transcript) with the pods beside them
+      if (sticky) return;
       const target = event.target as Element | null;
       if (railRef.current?.contains(target) || target?.closest?.("[data-dev-pods-toggle],[role=menu]")) return;
       close();
@@ -229,7 +233,7 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onPointer, true);
     };
-  }, [overlayOpen]);
+  }, [overlayOpen, sticky]);
 
   const ctx: DevPodContext = useMemo(
     () => ({ bot, task, messages, threadKey, computerStart, dispatch }),
@@ -291,11 +295,11 @@ export function DevPodsToggle({ bot }: { bot: Pick<Bot, "id" | "threadId"> }) {
     if (dismissed) {
       setThreadDismissed(threadKey, false);
       if (live.fits) setRailHidden(false);
-      else updateDevPodsLive({ overlayOpen: true });
+      else updateDevPodsLive({ overlayOpen: true, overlaySticky: false });
       return;
     }
     if (live.fits) setRailHidden(!prefs.railHidden);
-    else updateDevPodsLive({ overlayOpen: !live.overlayOpen });
+    else updateDevPodsLive({ overlayOpen: !live.overlayOpen, overlaySticky: false });
   };
   const label = shown ? t("devPods.toggle.hide") : t("devPods.toggle.show");
   return (

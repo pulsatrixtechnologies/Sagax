@@ -110,15 +110,30 @@ describe("dev pods: Experimental switch", () => {
     const rail = () => container.querySelector<HTMLElement>("[data-dev-pods]")!;
     expect(rail().dataset.mode).toBe("overlay");
     expect(rail().dataset.open).toBe("true");
+    // a click in the composer or the transcript leaves it open
+    act(() => { container.querySelector("[data-transcript]")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); });
+    expect(rail().dataset.open).toBe("true");
     act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
     expect(rail().dataset.open).toBe("false");
 
     // more coding in the same conversation: it does not pop open again
     renderPane({ bot: bot("narrow-thread", [...messages, tool("Bash", "git push")]) });
     expect(rail().dataset.open).toBe("false");
-    // the header button still floats it
+    // the header button still floats it; opened by hand, a click elsewhere closes it
     act(() => container.querySelector<HTMLButtonElement>("[data-dev-pods-toggle]")!.click());
     expect(rail().dataset.open).toBe("true");
+    act(() => { container.querySelector("[data-transcript]")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); });
+    expect(rail().dataset.open).toBe("false");
+  });
+
+  it("closes a floated-by-itself overlay from the header button", () => {
+    resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: true });
+    paneWidth = 1100;
+    renderPane({ bot: bot("narrow-button-thread", devMessages()) });
+    const rail = () => container.querySelector<HTMLElement>("[data-dev-pods]")!;
+    expect(rail().dataset.open).toBe("true");
+    act(() => container.querySelector<HTMLButtonElement>("[data-dev-pods-toggle]")!.click());
+    expect(rail().dataset.open).toBe("false");
   });
 
   it("does not float by itself where it already did, or where it was dismissed", () => {

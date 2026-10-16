@@ -148,9 +148,14 @@ export interface DevPodsLive {
   fits: boolean;
   /** Opened from the header on a narrow window: floats over the transcript. */
   overlayOpen: boolean;
+  /** The overlay opened by itself (first activation, or the person asked
+   * in words): a click elsewhere leaves it open; Escape or the header
+   * button closes it. Opened from the header button, a click elsewhere
+   * closes it as before. */
+  overlaySticky: boolean;
 }
 
-const LIVE_OFF: DevPodsLive = { threadKey: "", active: false, filled: false, fits: false, overlayOpen: false };
+const LIVE_OFF: DevPodsLive = { threadKey: "", active: false, filled: false, fits: false, overlayOpen: false, overlaySticky: false };
 let live: DevPodsLive = LIVE_OFF;
 const liveListeners = new Set<() => void>();
 const liveSubscribe = (listener: () => void) => {
