@@ -114,6 +114,47 @@ describe("typed triggers in the manager", () => {
     expect(queued).toHaveLength(1);
   });
 
+  it("dedupes a captured body replayed under a new, unsigned delivery id", () => {
+    const { manager, queued } = harness();
+    const created = manager.create({ name: "PRs", prompt: "", botId: "b1", source: { type: "github" } });
+    manager.receiveSource(created.webhook.endpointId, github(created.signingSecret!, prBody(), "d-1"));
+    expect(manager.receiveSource(created.webhook.endpointId, github(created.signingSecret!, prBody(), "forged-id"))).toMatchObject({ results: [{ duplicate: true }] });
+    expect(queued).toHaveLength(1);
+  });
+
+  it("never puts a credential in the run's prompt", () => {
+    const { manager, queued } = harness();
+    // Graph: clientState is the secret and sits in every notification body.
+    const teams = manager.create({ name: "Teams", prompt: "", botId: "b1", source: { type: "teams" } });
+    const graphBody = JSON.stringify({ value: [{ subscriptionId: "s", clientState: teams.signingSecret, changeType: "created", resource: "teams('t')/channels('c')/messages('m')", resourceData: { id: "m" } }] });
+    manager.receiveSource(teams.webhook.endpointId, { headers: {}, rawBody: graphBody, query: new URLSearchParams(), now: Date.now() });
+    // Slack: the legacy verification token rides in the body.
+    const slack = manager.create({ name: "Slack", prompt: "", botId: "b1", source: { type: "slack" }, signingSecret: "slack-signing-secret-9" });
+    const slackBody = JSON.stringify({ token: "legacy-verification-token-123", type: "event_callback", event_id: "E9", event: { type: "app_mention", channel: "C1", user: "U1", text: "hi slack-signing-secret-9" } });
+    const ts = String(Math.floor(Date.now() / 1000));
+    manager.receiveSource(slack.webhook.endpointId, { headers: { "x-slack-request-timestamp": ts, "x-slack-signature": `v0=${hmac(`v0:${ts}:${slackBody}`, "slack-signing-secret-9")}` }, rawBody: slackBody, query: new URLSearchParams(), now: Date.now() });
+    // GitHub: a body quoting the trigger's own secret.
+    const gh = manager.create({ name: "PRs", prompt: "", botId: "b1", source: { type: "github" } });
+    const ghBody = JSON.stringify({ ...JSON.parse(prBody(`leak ${gh.signingSecret}`)), hook: { config: { secret: "hook-config-secret" } } });
+    manager.receiveSource(gh.webhook.endpointId, github(gh.signingSecret!, ghBody, "g-1"));
+
+    expect(queued).toHaveLength(3);
+    const prompts = queued.map((entry) => entry.prompt).join("\n");
+    for (const value of [teams.signingSecret!, "clientState", "legacy-verification-token-123", "slack-signing-secret-9", gh.signingSecret!, "hook-config-secret"]) {
+      expect(prompts).not.toContain(value);
+    }
+    expect(queued[0]!.prompt).not.toContain("Raw payload");
+    expect(queued[2]!.prompt).toContain("Raw payload (excerpt):");
+    expect(queued[2]!.prompt).toContain("[redacted]");
+    // nor in the delivery log
+    expect(JSON.stringify(manager.listAttempts())).not.toContain(teams.signingSecret!);
+  });
+
+  it("refuses chat-post delivery for a typed source", () => {
+    const { manager } = harness();
+    expect(() => manager.create({ name: "x", prompt: "", botId: "b1", delivery: "post", source: { type: "github" } })).toThrow(/cannot post/);
+  });
+
   it("records a filtered-out event as ignored with the reason, without a run", () => {
     const { manager, queued } = harness();
     const created = manager.create({ name: "PRs", prompt: "", botId: "b1", source: { type: "github", filters: { repo: ["acme/web"] } } });
@@ -126,7 +167,7 @@ describe("typed triggers in the manager", () => {
   it("applies the trigger's own rate limit", () => {
     const { manager } = harness();
     const created = manager.create({ name: "PRs", prompt: "", botId: "b1", maxPendingRuns: 50, source: { type: "github", rateLimitPerMinute: 2 } });
-    const send = (id: string) => manager.receiveSource(created.webhook.endpointId, github(created.signingSecret!, prBody(), id));
+    const send = (id: string) => manager.receiveSource(created.webhook.endpointId, github(created.signingSecret!, prBody(`PR ${id}`), id));
     send("r-1");
     send("r-2");
     expect(() => send("r-3")).toThrow(/rate limit/);
@@ -218,6 +259,24 @@ describe("typed triggers on the webhook-only listener", () => {
     expect(unknown.status).toBe(401);
     const get = await fetch(endpointUrl);
     expect(get.status).toBe(405);
+  });
+
+  it("counts failures per endpoint, so one flooded or made-up id never locks out another", async () => {
+    const strict = await listenWebhookIngress(manager, { port: 0, limiter: new AuthFailureLimiter(3) });
+    try {
+      const a = manager.create({ name: "A", prompt: "", botId: "b1", source: { type: "github" } });
+      const b = manager.create({ name: "B", prompt: "", botId: "b1", source: { type: "github" } });
+      const post = (path: string, headers: Record<string, string> = {}, body = "{}") => fetch(`${strict.baseUrl}${path}`, { method: "POST", headers, body });
+      for (let i = 0; i < 3; i += 1) expect((await post(`/sources/wh_madeup${i}`)).status).toBe(401);
+      expect((await post("/sources/wh_madeup9")).status).toBe(429);
+      for (let i = 0; i < 3; i += 1) expect((await post(`/sources/${a.webhook.endpointId}`)).status).toBe(401);
+      expect((await post(`/sources/${a.webhook.endpointId}`)).status).toBe(429);
+      const body = prBody("still works");
+      const good = await post(`/sources/${b.webhook.endpointId}`, github(b.signingSecret!, body, "b-1").headers, body);
+      expect(good.status).toBe(202);
+    } finally {
+      await new Promise<void>((resolve) => strict.server.close(() => resolve()));
+    }
   });
 
   it("answers the Microsoft Graph validation token as plain text", async () => {

@@ -405,7 +405,13 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
             if (path === "config.json") writeJson(destination, portableWorkspaceConfig(value));
             else {
               if (!record(value)) throw new Error("Invalid webhook definitions in workspace backup.");
-              if (Array.isArray(value.webhooks)) for (const webhook of value.webhooks) if (record(webhook)) delete webhook.secretHash;
+              // No credential leaves in a backup: the bearer hash, a migrated
+              // token waiting to be copied, a typed trigger's signing secret.
+              if (Array.isArray(value.webhooks)) for (const webhook of value.webhooks) if (record(webhook)) {
+                delete webhook.secretHash;
+                delete webhook.pendingToken;
+                delete webhook.signingSecret;
+              }
               writeJson(destination, value);
             }
             copied = { size: lstatSync(destination).size, mode: 0o600, sha256: hashFile(destination) };
@@ -597,7 +603,7 @@ function validateStaged(directory: string, expected?: Map<string, { type: string
   }
   if (existsSync(join(data, "webhooks.json"))) {
     const value = privateJson(join(data, "webhooks.json"));
-    if (!record(value) || Array.isArray(value.webhooks) && value.webhooks.some((webhook) => record(webhook) && Object.hasOwn(webhook, "secretHash"))) throw new Error("Workspace backup contains webhook credentials.");
+    if (!record(value) || Array.isArray(value.webhooks) && value.webhooks.some((webhook) => record(webhook) && ["secretHash", "pendingToken", "signingSecret"].some((key) => Object.hasOwn(webhook, key)))) throw new Error("Workspace backup contains webhook credentials.");
   }
   const counts = databaseCounts(join(data, "messages.db"));
   if (counts.messages !== manifest.summary.messages || counts.threads !== manifest.summary.threads) throw new Error("The message database does not match the backup summary.");
@@ -849,6 +855,10 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
       // Unknown random hashes cannot authenticate a caller. A migrated hook
       // needs an explicit secret rotation before it can receive anything.
       webhook.secretHash = record(previous) && typeof previous.secretHash === "string" && /^[a-f0-9]{64}$/.test(previous.secretHash) ? previous.secretHash : randomBytes(32).toString("hex");
+      // A typed trigger keeps the signing secret this server already has for
+      // it; otherwise it has none, every delivery is refused, and the
+      // Triggers pop-up asks for a new one.
+      if (record(previous) && typeof previous.signingSecret === "string" && previous.signingSecret) webhook.signingSecret = previous.signingSecret;
     }
   });
   changeJson("calendar-calls.json", (value) => {

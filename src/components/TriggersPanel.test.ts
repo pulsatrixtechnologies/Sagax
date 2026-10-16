@@ -332,7 +332,7 @@ describe("Triggers pop-up", () => {
     expect(slack).toMatch(/type="password"[^>]*data-typed-secret/);
     fixture.overrides.set(SOURCE, "email");
     const mail = render().html;
-    expect(mail).toContain("Checked by the bot: Outlook sends no details with the notification.");
+    expect(mail).toContain("Checked by the bot, not a security boundary: Outlook sends no details with the notification.");
     expect(mail).toContain("Microsoft tenant ID (optional)");
   });
 

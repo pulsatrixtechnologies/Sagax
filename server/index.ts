@@ -2790,6 +2790,10 @@ function adminAuditRows(
       if (changed.length) {
         rows.push({ category: "webhook", action: "webhook.update", target: hookTarget(after), changed: [...changed], before: hookFields(before.hook, changed), after: hookFields(after, changed) });
       }
+      // The value never goes in the row; that it changed always does.
+      if (named.includes("signingSecret") && after.signingSecretSet) {
+        rows.push({ category: "webhook", action: "webhook.set-signing-secret", target: hookTarget(after) });
+      }
     }
   }
   if (before.session && !sessions.list().some((session) => session.id === before.session!.id)) {

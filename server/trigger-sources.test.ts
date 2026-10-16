@@ -73,7 +73,7 @@ describe("GitHub", () => {
   });
   it("normalizes PR opened, merged, review requested and CI", () => {
     const opened = only(normalizeSource("github", signed()));
-    expect(opened.dedupeKey).toBe("github:d-1");
+    expect(opened.dedupeKey).toMatch(/^github:[a-f0-9]{40}$/);
     expect(opened.event).toMatchObject({ source: "github", kind: "pr.opened", title: "Fix login", fields: { repo: "acme/api", branch: "main", label: ["bug"], sender: "octocat" } });
 
     const merged = { ...githubPr, action: "closed", pull_request: { ...githubPr.pull_request, merged: true } };
@@ -89,10 +89,12 @@ describe("GitHub", () => {
     expect(normalizeSource("github", request({ zen: "hi" }, { "x-github-event": "ping" }))).toEqual({ ignored: expect.stringContaining("Ping") });
     expect(normalizeSource("github", request({}, { "x-github-event": "star" }))).toEqual({ ignored: expect.stringContaining("star") });
   });
-  it("uses a body digest as the dedupe key when no delivery id is sent", () => {
-    const one = only(normalizeSource("github", request(body, { "x-github-event": "pull_request" })));
-    const two = only(normalizeSource("github", request(body, { "x-github-event": "pull_request" })));
-    expect(one.dedupeKey).toBe(two.dedupeKey);
+  it("keys dedupe on the signed body, never the unsigned delivery header", () => {
+    const one = only(normalizeSource("github", request(body, { "x-github-event": "pull_request", "x-github-delivery": "d-1" })));
+    const replayed = only(normalizeSource("github", request(body, { "x-github-event": "pull_request", "x-github-delivery": "forged-new-id" })));
+    expect(replayed.dedupeKey).toBe(one.dedupeKey);
+    const other = only(normalizeSource("github", request(body.replace("Fix login", "Fix signup"), { "x-github-event": "pull_request", "x-github-delivery": "d-1" })));
+    expect(other.dedupeKey).not.toBe(one.dedupeKey);
   });
 });
 
@@ -189,7 +191,11 @@ describe("Sentry", () => {
     expect(verifySource("sentry", signed(String(NOW / 1000 - 3_600)), SECRET)).toMatchObject({ ok: false, replay: true });
   });
   it("normalizes an issue", () => {
-    expect(only(normalizeSource("sentry", signed()))).toMatchObject({ dedupeKey: "sentry:r-1", event: { kind: "issue.created", fields: { project: "web", level: "error" } } });
+    const first = only(normalizeSource("sentry", signed()));
+    const reId = signed();
+    reId.headers["request-id"] = "r-2";
+    expect(only(normalizeSource("sentry", reId)).dedupeKey).toBe(first.dedupeKey);
+    expect(first).toMatchObject({ dedupeKey: expect.stringMatching(/^sentry:[a-f0-9]{40}$/), event: { kind: "issue.created", fields: { project: "web", level: "error" } } });
   });
 });
 
@@ -216,7 +222,9 @@ describe("Linear", () => {
     expect(verifySource("linear", request(old, { "linear-signature": hmac(old) }), SECRET)).toMatchObject({ ok: false, replay: true });
   });
   it("normalizes an issue", () => {
-    expect(only(normalizeSource("linear", request(payload(), { "linear-delivery": "ld-1" })))).toMatchObject({ dedupeKey: "linear:ld-1", event: { kind: "issue.created", fields: { team: "ENG", label: ["Bug"], sender: "Ana" } } });
+    const body = payload();
+    expect(only(normalizeSource("linear", request(body, { "linear-delivery": "ld-1" }))).dedupeKey).toBe(only(normalizeSource("linear", request(body, { "linear-delivery": "ld-2" }))).dedupeKey);
+    expect(only(normalizeSource("linear", request(body, { "linear-delivery": "ld-1" })))).toMatchObject({ dedupeKey: expect.stringMatching(/^linear:[a-f0-9]{40}$/), event: { kind: "issue.created", fields: { team: "ENG", label: ["Bug"], sender: "Ana" } } });
   });
 });
 

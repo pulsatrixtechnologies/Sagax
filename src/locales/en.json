@@ -6221,7 +6221,7 @@
   "triggers.typed.eventsHelp": "None checked means every event below.",
   "triggers.typed.filters": "Filters",
   "triggers.typed.filtersHelp": "Comma-separated values; * matches anything. Every filled filter must match.",
-  "triggers.typed.deferred": "Checked by the bot: {provider} sends no details with the notification.",
+  "triggers.typed.deferred": "Checked by the bot, not a security boundary: {provider} sends no details with the notification.",
   "triggers.typed.secretProvided": "Signing secret from {provider}",
   "triggers.typed.secretProvidedHelp": "Optional now: paste it once {provider} shows it. It is never shown again.",
   "triggers.typed.secretGenerated": "Sagax makes the signing secret; it is shown once after you create the trigger.",

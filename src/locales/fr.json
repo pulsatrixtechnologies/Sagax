@@ -6820,7 +6820,7 @@
   "triggers.typed.eventsHelp": "Aucun coché : tous les événements ci-dessous.",
   "triggers.typed.filters": "Filtres",
   "triggers.typed.filtersHelp": "Valeurs séparées par des virgules ; * remplace n'importe quoi. Chaque filtre rempli doit correspondre.",
-  "triggers.typed.deferred": "Vérifié par le bot : {provider} n'envoie aucun détail avec la notification.",
+  "triggers.typed.deferred": "Vérifié par le bot, ce n'est pas une barrière de sécurité : {provider} n'envoie aucun détail avec la notification.",
   "triggers.typed.secretProvided": "Secret de signature de {provider}",
   "triggers.typed.secretProvidedHelp": "Facultatif pour l'instant : collez-le quand {provider} l'affiche. Il n'est plus jamais affiché.",
   "triggers.typed.secretGenerated": "Sagax crée le secret de signature ; il est affiché une seule fois après la création du déclencheur.",

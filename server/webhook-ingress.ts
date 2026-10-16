@@ -152,14 +152,19 @@ export function createWebhookIngressHandler(
     let release: (() => void) | undefined;
     try {
       release = claimRequest?.();
-      const source = req.socket.remoteAddress ?? "unknown";
-      if (limiter.blocked(source)) {
+      // Behind the deployment's reverse proxy every caller has the same
+      // socket address, so failures are counted per endpoint: a flood on one
+      // trigger (or on made-up ids, one shared bucket) never locks out the
+      // others. Endpoint ids are random, so only someone who knows one can
+      // slow that one down.
+      const trigger = manager.sourceTrigger(endpointId);
+      const bucket = trigger?.source ? `source:${endpointId}` : "source:unknown";
+      if (limiter.blocked(bucket)) {
         res.setHeader("retry-after", String(Math.ceil(WEBHOOK_AUTH_FAILURE_WINDOW_MS / 1000)));
         return json(res, 429, { error: "Too many failed attempts" });
       }
-      const trigger = manager.sourceTrigger(endpointId);
       if (!trigger?.source) {
-        limiter.fail(source);
+        limiter.fail(bucket);
         return json(res, 401, { error: "Unauthorized" });
       }
       const headers = lowerHeaders(req);
@@ -171,7 +176,7 @@ export function createWebhookIngressHandler(
       const rawBody = await readRawBody(req);
       const outcome = manager.receiveSource(endpointId, { headers, rawBody, query: url.searchParams, now: Date.now() });
       if (outcome.kind === "unauthorized") {
-        limiter.fail(source);
+        limiter.fail(bucket);
         manager.recordUnauthorized(endpointId, { eventName: headers["x-github-event"] ?? headers["x-gitlab-event"] ?? headers["sentry-hook-resource"] },
           `Signature check failed: ${outcome.reason}`);
         return json(res, 401, { error: "Unauthorized" });

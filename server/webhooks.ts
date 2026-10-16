@@ -309,6 +309,9 @@ function cleanInput(input: WebhookTriggerInput): CleanWebhookInput {
   if (input.delivery) clean.delivery = input.delivery;
   if (typeof input.maxPendingRuns === "number") clean.maxPendingRuns = input.maxPendingRuns;
   if (input.source) clean.source = cleanSource(input.source);
+  // A typed source's text is third-party content: it never becomes the
+  // bot's own chat message.
+  if (clean.source && clean.delivery === "post") fail(400, "A trigger with a source starts a task; it cannot post to chat");
   return clean;
 }
 
@@ -355,9 +358,42 @@ function publicTrigger(trigger: StoredWebhookTrigger): WebhookTrigger {
   };
 }
 
+/** Keys that carry a credential in some provider's body: Graph's
+ * `clientState` (the only credential of the Microsoft sources) and Slack's
+ * legacy verification `token`, plus anything named like a secret. */
+const CREDENTIAL_KEY = /^(client_?state|token|verification_?token|secret|signing_?secret|password|api_?key|access_?token|refresh_?token)$/i;
+
+function stripCredentials(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripCredentials);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => !CREDENTIAL_KEY.test(key))
+    .map(([key, entry]) => [key, stripCredentials(entry)]));
+}
+
+/** The provider's body as the run may see it: never for Graph (the
+ * normalized event says all it has, and its body holds clientState), never
+ * a credential field, never the trigger's own secret, at most 12 KB. A body
+ * that is not JSON is left out rather than guessed at. */
+export function rawExcerpt(type: TriggerSourceConfig["type"], rawBody: string, secret?: string): string | undefined {
+  if (type === "teams" || type === "email" || type === "calendar" || !rawBody) return undefined;
+  let text: string;
+  try {
+    text = JSON.stringify(stripCredentials(JSON.parse(rawBody)), null, 2);
+  } catch {
+    return undefined;
+  }
+  if (secret) text = text.split(secret).join("[redacted]");
+  return text.length > MAX_RAW_EXCERPT ? `${text.slice(0, MAX_RAW_EXCERPT)}\n[Payload truncated by Sagax]` : text;
+}
+
 /** Text from a provider must never be able to close the fence it sits in. */
 function defang(text: string): string {
   return text.replace(/\[(\/?)(UNTRUSTED|USER-CONFIGURED|OWNER)/gi, "[$1(quoted) $2");
+}
+
+function redact(text: string, secret?: string): string {
+  return secret ? text.split(secret).join("[redacted]") : text;
 }
 
 function sourcePrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receivedAt: number, deliveryId: string): string {
@@ -389,7 +425,7 @@ function sourcePrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receiv
     `Delivery ID: ${deliveryId}`,
     `Event: ${normalized.kind}`,
     "",
-    defang(JSON.stringify(normalized, null, 2)),
+    defang(redact(JSON.stringify(normalized, null, 2), trigger.signingSecret)),
     ...(raw ? ["", "Raw payload (excerpt):", raw] : []),
     `[/UNTRUSTED ${label.toUpperCase()} EVENT DATA ${boundary}]`,
   ].join("\n");
@@ -771,7 +807,7 @@ export class WebhookManager {
       this.save();
       return { kind: "delivered", results: [{ deliveryId, duplicate: false, ignored: true }] };
     }
-    const raw = request.rawBody.length > MAX_RAW_EXCERPT ? `${request.rawBody.slice(0, MAX_RAW_EXCERPT)}\n[Payload truncated by Sagax]` : request.rawBody;
+    const raw = rawExcerpt(trigger.source.type, request.rawBody, trigger.signingSecret);
     const results: WebhookReceiveResult[] = [];
     let firstError: unknown;
     for (const item of normalized.events) {

@@ -5,9 +5,11 @@
 //
 // Every verifier works on the raw body exactly as received (never a
 // re-serialized parse), compares in constant time, and rejects a signed
-// timestamp outside the source's replay window. Providers that sign no
-// timestamp (GitHub, GitLab, PagerDuty, Microsoft Graph) are protected from
-// replay by the delivery id the manager keeps (`dedupeKey`).
+// timestamp outside the source's replay window. Every dedupe key comes from
+// the signed body (a digest, or an id inside it), never an unsigned header,
+// so a captured delivery replayed under a new header is still a duplicate.
+// Sentry's timestamp header is not signed: its window is a sanity check, the
+// body digest is what stops a replay.
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import {
@@ -240,7 +242,9 @@ function githubEvents(request: SourceRequest, payload: JsonValue | undefined): N
   const action = str(get(payload, "action"));
   const repo = str(get(payload, "repository", "full_name"));
   const sender = str(get(payload, "sender", "login"));
-  const deliveryKey = request.headers["x-github-delivery"]?.trim() || digest(request.rawBody);
+  // X-GitHub-Delivery is not signed: a replayed body with a new id must
+  // still be a duplicate, so the key is the signed body itself.
+  const deliveryKey = digest(request.rawBody);
   const one = (normalized: NormalizedTriggerEvent): NormalizeResult => ({ events: [{ event: normalized, dedupeKey: `github:${deliveryKey}` }] });
   if (name === "ping") return { ignored: "Ping from GitHub: the signature is valid" };
   if (name === "pull_request" || name === "pull_request_review") {
@@ -311,7 +315,7 @@ function gitlabEvents(request: SourceRequest, payload: JsonValue | undefined): N
   const repo = str(get(payload, "project", "path_with_namespace"));
   const sender = str(get(payload, "user", "username")) ?? str(get(payload, "user_username"));
   const label = names(get(payload, "labels"), "title");
-  const key = request.headers["x-gitlab-event-uuid"]?.trim() || request.headers["idempotency-key"]?.trim() || digest(request.rawBody);
+  const key = digest(request.rawBody);
   const one = (normalized: NormalizedTriggerEvent): NormalizeResult => ({ events: [{ event: normalized, dedupeKey: `gitlab:${key}` }] });
   const extra = { url: str(get(attrs, "url"), 500), text: str(get(attrs, "description"), MAX_TEXT) };
   if (name === "Merge Request Hook") {
@@ -401,7 +405,8 @@ function sentryEvents(request: SourceRequest, payload: JsonValue | undefined): N
   const resource = request.headers["sentry-hook-resource"] ?? "";
   const action = str(get(payload, "action"));
   const data = get(payload, "data");
-  const key = request.headers["request-id"]?.trim() || digest(request.rawBody);
+  // Request-ID and Sentry-Hook-Timestamp are not signed: the body is.
+  const key = digest(request.rawBody);
   const one = (normalized: NormalizedTriggerEvent): NormalizeResult => ({ events: [{ event: normalized, dedupeKey: `sentry:${key}` }] });
   if (resource === "issue") {
     const kind = action === "created" ? "issue.created" : action === "resolved" ? "issue.resolved" : action === "assigned" ? "issue.assigned" : undefined;
@@ -451,7 +456,7 @@ function linearEvents(request: SourceRequest, payload: JsonValue | undefined): N
   const type = str(get(payload, "type"));
   const action = str(get(payload, "action"));
   const data = get(payload, "data");
-  const key = request.headers["linear-delivery"]?.trim() || digest(request.rawBody);
+  const key = digest(request.rawBody);
   const kind = type === "Issue"
     ? action === "create" ? "issue.created" : action === "update" ? "issue.updated" : action === "remove" ? "issue.removed" : undefined
     : type === "Comment" && action === "create" ? "comment.created" : undefined;

@@ -288,9 +288,16 @@ describe("encrypted full workspace backups", () => {
     writeFileSync(join(source, "attachments", "user-note.txt"), "A user-pasted secret is not silently redacted.");
     writeFileSync(join(source, "vm-home", "project.txt"), "ordinary managed VM file");
     json(join(source, "config.json"), { xai: { key: "SOURCE_SAVED_SECRET", url: "https://source.example" }, language: "ja" });
-    json(join(source, "webhooks.json"), { webhooks: [{ id: "same", endpointId: "same-endpoint", secretHash: "a".repeat(64), enabled: true, verificationPending: true }] });
+    json(join(source, "webhooks.json"), { webhooks: [
+      { id: "same", endpointId: "same-endpoint", secretHash: "a".repeat(64), enabled: true, verificationPending: true },
+      { id: "typed", endpointId: "typed-endpoint", secretHash: "c".repeat(64), pendingToken: "whsec_SOURCE_PENDING", signingSecret: "whsec_SOURCE_SIGNING", source: { type: "github", events: [], filters: {} }, enabled: true },
+      { id: "kept", endpointId: "kept-endpoint", secretHash: "d".repeat(64), signingSecret: "whsec_SOURCE_SIGNING_KEPT", source: { type: "slack", events: [], filters: {} }, enabled: true },
+    ] });
     json(join(target, "config.json"), { xai: { key: "DESTINATION_SAVED_SECRET", url: "https://destination.example" }, language: "en" });
-    json(join(target, "webhooks.json"), { webhooks: [{ id: "same", endpointId: "same-endpoint", secretHash: "b".repeat(64) }] });
+    json(join(target, "webhooks.json"), { webhooks: [
+      { id: "same", endpointId: "same-endpoint", secretHash: "b".repeat(64) },
+      { id: "kept", endpointId: "kept-endpoint", secretHash: "e".repeat(64), signingSecret: "whsec_DESTINATION_SIGNING" },
+    ] });
     const exported = await createWorkspaceBackup(source, { password: PASSWORD });
     const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
     const staging = join(target, ".backups", staged.id, "staged");
@@ -298,14 +305,24 @@ describe("encrypted full workspace backups", () => {
     expect(manifest).not.toHaveProperty("credentials");
     expect(manifest.summary).not.toHaveProperty("includesCredentials");
     for (const path of authPaths) expect(existsSync(join(staging, "data", path))).toBe(false);
-    for (const entry of manifest.entries) if (entry.type === "file") expect(readFileSync(join(staging, "data", entry.path), "utf8")).not.toContain("SOURCE_SAVED_SECRET");
+    for (const entry of manifest.entries) if (entry.type === "file") {
+      const text = readFileSync(join(staging, "data", entry.path), "utf8");
+      for (const secret of ["SOURCE_SAVED_SECRET", "SOURCE_PENDING", "SOURCE_SIGNING"]) expect(text).not.toContain(secret);
+    }
     commitPendingWorkspaceRestore(target, staged.id);
     applyPendingWorkspaceRestore(target);
     for (const path of authPaths) expect(readFileSync(join(target, path), "utf8")).toBe("DESTINATION_SAVED_SECRET");
     expect(readFileSync(join(target, "vm-home", "project.txt"), "utf8")).toBe("ordinary managed VM file");
     expect(readFileSync(join(target, "attachments", "user-note.txt"), "utf8")).toBe("A user-pasted secret is not silently redacted.");
     expect(readJson(join(target, "config.json"))).toEqual({ xai: { key: "DESTINATION_SAVED_SECRET", url: "https://destination.example" }, language: "ja" });
-    expect(readJson(join(target, "webhooks.json")).webhooks[0]).toMatchObject({ secretHash: "b".repeat(64), enabled: false, verificationPending: false });
+    const restoredHooks = readJson(join(target, "webhooks.json")).webhooks;
+    expect(restoredHooks[0]).toMatchObject({ secretHash: "b".repeat(64), enabled: false, verificationPending: false });
+    // A typed trigger new to this server has no signing secret (the pop-up
+    // asks for a new one); one this server already knew keeps its own.
+    expect(restoredHooks[1]).toMatchObject({ id: "typed", enabled: false });
+    expect(restoredHooks[1]).not.toHaveProperty("signingSecret");
+    expect(restoredHooks[1]).not.toHaveProperty("pendingToken");
+    expect(restoredHooks[2]).toMatchObject({ id: "kept", signingSecret: "whsec_DESTINATION_SIGNING" });
     // Export is read-only: the original login stores and webhook hash remain.
     for (const path of authPaths) expect(readFileSync(join(source, path), "utf8")).toBe("SOURCE_SAVED_SECRET");
     expect(readJson(join(source, "webhooks.json")).webhooks[0].secretHash).toBe("a".repeat(64));
@@ -462,6 +479,8 @@ describe("encrypted full workspace backups", () => {
       ["config.json", '{"xai":{"key":"secret","url":"https://source.example"}}'],
       ["config.json", '{"futureAuth":{"field":"secret"}}'],
       ["webhooks.json", '{"webhooks":[{"secretHash":"secret"}]}'],
+      ["webhooks.json", '{"webhooks":[{"signingSecret":"secret"}]}'],
+      ["webhooks.json", '{"webhooks":[{"pendingToken":"secret"}]}'],
     ]) {
       const entry = { path: name, type: "file", size: Buffer.byteLength(content), mode: 0o600, sha256: createHash("sha256").update(content).digest("hex") };
       const parents = name.split("/").slice(0, -1).map((_part, index) => name.split("/").slice(0, index + 1).join("/"));
@@ -469,7 +488,7 @@ describe("encrypted full workspace backups", () => {
       const path = encryptedPayload(source, Buffer.concat([tarEntry("manifest.json", "File", JSON.stringify(manifest)), tarEntry("data", "Directory"), ...parents.map((parent) => tarEntry(`data/${parent}`, "Directory")), tarEntry(`data/${name}`, "File", content), Buffer.alloc(1024)]));
       await expect(stageWorkspaceBackup(directory(), path, { password: PASSWORD })).rejects.toThrow(/Unsafe|connection settings|webhook credentials/);
     }
-   }, 120_000); // 18 restores, each one real scrypt by design
+   }, 120_000); // 20 restores, each one real scrypt by design
 
   it("retains differently cased destination auth roots and refuses them in recovery journals", async () => {
     const source = directory();
