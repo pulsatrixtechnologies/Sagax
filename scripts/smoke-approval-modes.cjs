@@ -265,26 +265,24 @@ app.whenReady().then(async () => {
       if (mode === "ask") assert.equal((await api(`/api/bots/${bot.id}/tasks/${bot.threadId}`, "PATCH", { approvalMode: "ask" })).status, 200);
       const before = (await api("/api/bots")).body.bots.find((candidate) => candidate.id === bot.id).messages.length;
       assert.equal((await api(`/api/bots/${bot.id}/messages`, "POST", { text: `Approval fixture ${model} ${mode}` })).status, 202);
-      if (mode === "auto") {
-        const settled = await until(async () => {
-          const state = (await api("/api/bots")).body.bots.find((candidate) => candidate.id === bot.id);
-          assert.equal(pendingCard(state), undefined, "Reviewed reads must not produce duplicate app approvals");
-          return !state.busy && state;
-        });
-        const text = settled.messages.slice(before).map((message) => message.text ?? "").join("\n");
-        // The fixture emits one `<tool>: <result>` chunk per read, each at the
-        // start of a line. Anchor on that: session_search now recalls the
-        // previous turn's memory log, so its own result text quotes an earlier
-        // "list_bots: Reachable teammates: …" mid-line and an unanchored count
-        // sees three reads where the agent only performed two.
-        assert.match(text, /^list_bots:/m);
-        assert.match(text, /^session_search:/m);
-        assert.equal((text.match(/^list_bots:/gm) ?? []).length, 2, "Repeated reads complete without another prompt");
-      } else {
-        const card = await until(async () => pendingCard((await api("/api/bots")).body.bots.find((candidate) => candidate.id === bot.id)));
-        assert.equal((await api(`/api/bots/${bot.id}/respond`, "POST", { requestId: card.requestId, behavior: "deny" })).status, 200);
-        await until(async () => !(await api("/api/bots?messages=0")).body.bots.find((candidate) => candidate.id === bot.id)?.busy);
-      }
+      // Native Auto approves the two reads in the engine. Under Ask, Grok
+      // Build asks about each MCP call, and the server answers these with
+      // `sagax-internal` (#671): Sagax's own agents tools of the bot's scope
+      // never produce a card, whatever the level.
+      const settled = await until(async () => {
+        const state = (await api("/api/bots")).body.bots.find((candidate) => candidate.id === bot.id);
+        assert.equal(pendingCard(state), undefined, "Sagax's own reads must not produce an app approval");
+        return !state.busy && state;
+      });
+      const text = settled.messages.slice(before).map((message) => message.text ?? "").join("\n");
+      // The fixture emits one `<tool>: <result>` chunk per read, each at the
+      // start of a line. Anchor on that: session_search now recalls the
+      // previous turn's memory log, so its own result text quotes an earlier
+      // "list_bots: Reachable teammates: …" mid-line and an unanchored count
+      // sees three reads where the agent only performed two.
+      assert.match(text, /^list_bots:/m);
+      assert.match(text, /^session_search:/m);
+      assert.equal((text.match(/^list_bots:/gm) ?? []).length, 2, "Repeated reads complete without another prompt");
       const argv = JSON.parse(readFileSync(grokDump, "utf8")).argv;
       assert.equal(argv[argv.indexOf("--permission-mode") + 1], mode === "auto" ? "auto" : "default");
       assert.equal(argv[argv.indexOf("-m") + 1], model);
@@ -293,10 +291,10 @@ app.whenReady().then(async () => {
       const methods = JSON.parse(readFileSync(grokRpc, "utf8"));
       assert.ok(methods.includes(turn < 2 ? "session/new" : "session/load"));
       if (turn < 2) assert.ok(!methods.includes("session/load"));
-      console.log(JSON.stringify({ provider: "grok", model, mode, resumed: turn === 2, reviewedReads: mode === "auto", realAgentsMcp: true }));
+      console.log(JSON.stringify({ provider: "grok", model, mode, resumed: turn === 2, reviewedReads: mode === "auto", sagaxInternalNoCard: true, realAgentsMcp: true }));
     }
   }
-  for (const instanceId of ["grok-delete", "grok-credential", "grok-spoof", "grok-question"]) {
+  for (const instanceId of ["grok-delete", "grok-spoof", "grok-question"]) {
     const bot = (await api("/api/bots", "POST", { modelSelection: { instanceId, model: "grok-4.6" } })).body.bot;
     await coordinator.request(child, bot.id, "auto");
     assert.equal((await api(`/api/bots/${bot.id}/messages`, "POST", { text: "Verify this action still needs a person" })).status, 202);
@@ -306,6 +304,23 @@ app.whenReady().then(async () => {
     assert.equal((await api(`/api/bots/${bot.id}/respond`, "POST", { requestId: card.requestId, behavior: "deny" })).status, 200);
     await until(async () => !(await api("/api/bots?messages=0")).body.bots.find((candidate) => candidate.id === bot.id)?.busy);
     console.log(JSON.stringify({ provider: "grok", case: instanceId, mode: "auto", remainedInteractive: true }));
+  }
+  // request_credential is one of Sagax's own agents tools (#671): the engine's
+  // permission prompt is answered `sagax-internal`, with no card. The person
+  // still decides through the tool's own secure entry card, and the secret
+  // never reaches the bot.
+  {
+    const bot = (await api("/api/bots", "POST", { modelSelection: { instanceId: "grok-credential", model: "grok-4.6" } })).body.bot;
+    await coordinator.request(child, bot.id, "auto");
+    const before = (await api("/api/bots")).body.bots.find((candidate) => candidate.id === bot.id).messages.length;
+    assert.equal((await api(`/api/bots/${bot.id}/messages`, "POST", { text: "Ask for the credential through the secure flow" })).status, 202);
+    const settled = await until(async () => {
+      const state = (await api("/api/bots")).body.bots.find((candidate) => candidate.id === bot.id);
+      assert.equal(pendingCard(state), undefined, "Sagax's own request_credential must not produce a provider approval card");
+      return !state.busy && state;
+    });
+    assert.match(settled.messages.slice(before).map((message) => message.text ?? "").join("\n"), /handled the permission decision/);
+    console.log(JSON.stringify({ provider: "grok", case: "grok-credential", mode: "auto", sagaxInternalNoCard: true }));
   }
   for (const model of ["gemini-3.8-flash-high", "gemini-3.8-flash-low"]) {
     const agyBot = (await api("/api/bots", "POST", { modelSelection: { instanceId: "agy", model } })).body.bot;
