@@ -382,6 +382,7 @@ import {
 } from "./aside-queue.ts";
 import { promptWithReply, transcriptText, type ReplyTarget } from "./replies.ts";
 import { parseDataContext, type DataContext } from "./data-context.ts";
+import { DevPodsThreads, devPodsPrompt, parseDevPods } from "./dev-pods-prompt.ts";
 import { promptWithDataContext } from "../shared/data-context.ts";
 import { admit, DRAIN_COALESCE_MAX_ITEMS } from "./admission.ts";
 import { _loadPending, buildDelegationFailurePrompt, buildDelegationRevivalPrompt, DELEGATION_TTL_MS, DelegationWakeBudget, discardDelegations, drainDelegations, expireStaleDelegations, findDelegationReceipt, pendingDelegationInfo, pendingDelegationSnapshot, pendingThreads, queueDelegation, recordDelegationReceipt, releaseDelegationsWaitingOn, summarizeDelegatedActivity, type DelegationReceipt, type DelegationRunner, type QueueResult } from "./delegations.ts";
@@ -4151,6 +4152,8 @@ async function interruptAllDirectThreads(botId: string): Promise<void> {
   }
   await Promise.all(threads.map((task) => interruptDirectThread(botId, task.threadId)));
 }
+/** Conversations whose newest send came from a device with the coding view on. */
+const devPodsThreads = new DevPodsThreads();
 const retiredProviderTurns = new RetiredTurnRegistry();
 const pendingCancelledProviderHandshakes = new PendingTurnCancellations();
 // One parking lot for provider output staged mid-turn and attached when the
@@ -16911,6 +16914,7 @@ async function startTurn(
         { id: "profile", label: "Profile changes", text: profilePrompt },
         { id: "learn", label: "Skill authoring", text: learnPrompt },
         { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
+        { id: "dev-pods", label: "Coding view", text: devPodsPrompt(devPodsThreads.isOn(threadId)) },
         { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
         { id: "team-memory", label: "Team memory", text: teamMemory.systemPrompt(bot.section) + (integrations.agents ? TEAM_MEMORY_PROMPT : "") },
         // who on the team roster is busy right now; volatile, so a teammate
@@ -38072,6 +38076,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A Data context is put in front of the words the model gets, and a
       // press is read by its first line (server/replies.ts): it carries none.
       const dataContext = press ? undefined : parseDataContext(body.dataContext);
+      // the coding view is on for the device that sent this (server/dev-pods-prompt.ts)
+      devPodsThreads.note(threadId, parseDevPods(body.devPods));
       // What a send to a busy conversation does (shared/parallel-tasks.ts):
       // join the running turn (steer, the default), run as its own task in
       // parallel, or wait for the running turn (after).
@@ -38506,6 +38512,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the message was sent with, so the model sees what it saw. Changed
       // words take the context the client sends now, if any.
       const dataContext = parseDataContext(body.dataContext) ?? (text === source.text ? source.dataContext : undefined);
+      devPodsThreads.note(bot.threadId, parseDevPods(body.devPods));
       // On a Cloud home an edit is its author's line, so the owner's own edit
       // keeps their conversation theirs for lending (server/cloud-lending.ts).
       const message = await startTurn(bot.id, text, { threadId: bot.threadId, editedMessageId: messageId, replyTo, sendId, trigger: usageTriggerFor(auth), speaker: speakerFor(auth), dataContext,

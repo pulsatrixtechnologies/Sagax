@@ -98,6 +98,12 @@ export function useDevPodPrefs(): DevPodPrefs {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
+/** The field a send carries while the coding view is on on this device, so
+ * the bot is told it exists (server/dev-pods-prompt.ts). Nothing otherwise. */
+export function devPodsTurnField(): { devPods?: "on" } {
+  return snapshot().enabled ? { devPods: "on" } : {};
+}
+
 export const setDevPodsEnabled = (enabled: boolean) => updateDevPodPrefs((current) => ({ ...current, enabled }));
 
 export const setPodCollapsed = (id: string, collapsed: boolean) =>

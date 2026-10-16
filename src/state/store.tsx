@@ -2,6 +2,7 @@
 // it dispatches typed commands over HTTP and folds the one SSE event
 // stream from the harness server into local state. The reducer stays
 // pure; everything async lives in the wrapped dispatch + SSE fold.
+import { devPodsTurnField } from "@/components/dev-pods/prefs";
 import { receiveThreadReadFrame } from "@/lib/read-receipts-feed";
 import { personaCategoryForSection } from "@/lib/persona-sections";
 import { withPrimaryBot } from "@/lib/primary-bot";
@@ -4222,7 +4223,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           void waitForExecutionSettings(botBeforeSend ? [botBeforeSend] : [], threadId)
             .then(() => api(`/api/bots/${action.botId}/messages`, {
                 method: "POST",
-                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(busyMode ? { busyMode } : {}), ...(action.dataContext ? { dataContext: action.dataContext } : {}) }),
+                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(busyMode ? { busyMode } : {}), ...(action.dataContext ? { dataContext: action.dataContext } : {}), ...devPodsTurnField() }),
               }))
             .then((body) => {
               action.onSent?.();
@@ -4267,7 +4268,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           void waitForExecutionSettings(executionBotsBeforeAction, threadId)
             .then(() => api(`/api/bots/${action.botId}/messages/${action.messageId}/edit`, {
               method: "POST",
-              body: JSON.stringify({ text: action.text.trim(), threadId, sendId }),
+              body: JSON.stringify({ text: action.text.trim(), threadId, sendId, ...devPodsTurnField() }),
             }))
             .then((body) => {
               // the POST may beat its SSE frames; fold the fork either way
