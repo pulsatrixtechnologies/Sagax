@@ -1453,6 +1453,14 @@
 .pulsatrix-mark-on-light {
   display: var(--sidebar-mark-on-light);
 }
+/* The mark on the app's own panels (PulsatrixMark ground="app"): white on a
+   dark skin, the Pulsatrix navy on a light one. */
+.pulsatrix-mark-app {
+  color: #ffffff;
+}
+:is([data-skin="pulsatrix-light"], [data-skin="atelier"], [data-skin="lagoon"], [data-skin="linen"], [data-skin="daylight"], [data-skin="retro98"], [data-skin="meadow"]) .pulsatrix-mark-app {
+  color: #03153c;
+}
 
 html,
 body,

@@ -9,7 +9,10 @@
 // markup and the skin tokens --sidebar-mark-on-dark / --sidebar-mark-on-light
 // show exactly one of them, so the mark follows a skin change without any
 // script. `ground` pins one colour for a surface whose ground never changes
-// (the Hibou 98 title bar is always navy).
+// (the Hibou 98 title bar is always navy). `ground="app"` is for the app's
+// own panels (launch screen, welcome, tour): white on a dark skin, navy on a
+// light one, from the skin (.pulsatrix-mark-app in styles.css), whatever
+// colour the rail is.
 import { cn } from "@/lib/cn";
 import { PulsatrixOwlMark } from "./PulsatrixOwlMark";
 
@@ -25,9 +28,17 @@ export function PulsatrixMark({
 }: {
   size?: number;
   className?: string;
-  /** pin the dark-ground or light-ground colour instead of following the skin */
-  ground?: "dark" | "light";
+  /** pin the dark-ground or light-ground colour instead of following the
+   * sidebar, or "app" to follow the app's panel ground */
+  ground?: "dark" | "light" | "app";
 }) {
+  if (ground === "app") {
+    return (
+      <span aria-hidden="true" data-pulsatrix-mark="app" className={cn("pulsatrix-mark-app inline-flex shrink-0", className)} style={{ lineHeight: 0 }}>
+        <PulsatrixOwlMark width={size} height={Math.round(size * ASPECT)} />
+      </span>
+    );
+  }
   const mark = (which: "dark" | "light", followSkin: boolean) => (
     <span
       aria-hidden="true"

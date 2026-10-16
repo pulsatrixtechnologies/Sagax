@@ -24,7 +24,6 @@ vi.mock("react", async (original) => ({
 }));
 const store = vi.hoisted(() => ({ dispatch: vi.fn(), api: vi.fn() }));
 vi.mock("@/state/store", () => ({ api: store.api, useStore: () => ({ state: {}, dispatch: store.dispatch }) }));
-vi.mock("@/components/Avatar", () => ({ MausAvatar: () => null }));
 import { LaunchScreen } from "./LaunchScreen";
 
 type Props = { children?: ReactNode; onClick?: () => void; onSubmit?: (event: { preventDefault: () => void }) => void; onChange?: (event: { target: { value: string } }) => void; value?: string; disabled?: boolean; "data-mode"?: string };
@@ -86,6 +85,21 @@ describe("launch screen", () => {
     expect(html).toContain("role=\"dialog\"");
     // no address field until server mode is chosen
     expect(render().nodes.some((node) => node.type === "input")).toBe(false);
+  });
+
+  it("shows the Pulsatrix mark, never a bot mascot, and speaks French", () => {
+    setLocale("fr");
+    const { html, nodes: tree } = render();
+    expect(html).toContain('data-pulsatrix-mark="app"');
+    expect(html).toContain("pulsatrix-mark-app");
+    expect(html).toContain('viewBox="0 0 28 25"');
+    expect(tree.some((node) => typeof node.type === "function" && /Maus|Mascot/.test(node.type.name))).toBe(false);
+    expect(html).toContain("Bienvenue dans Sagax");
+    expect(html).toContain("Comment utiliserez-vous Sagax sur cet ordinateur?");
+    expect(html).toContain("Sans serveur");
+    expect(html).toContain("Continuer");
+    expect(html).toContain("Vous pourrez changer ce choix plus tard dans Réglages &gt; Général.");
+    expect(html).not.toMatch(/Welcome to|No server|You can change/);
   });
 
   it("no server is remembered, and the tour goes on", async () => {

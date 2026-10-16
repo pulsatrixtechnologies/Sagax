@@ -7,10 +7,11 @@
 // Pulsatrix" (electron/org-join.mjs join). No new sign-in path: the server
 // is the OIDC client and the desktop only opens it.
 //
-// The card is the welcome flow's card, so the two read as one surface.
+// The card is the welcome flow's card, so the two read as one surface, and
+// it carries the Pulsatrix mark (the brand), never a bot's mascot.
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Laptop, Server } from "lucide-react";
-import { MausAvatar } from "@/components/Avatar";
+import { PulsatrixMark } from "@/components/PulsatrixMark";
 import { brand } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -151,7 +152,7 @@ export function LaunchScreen({
             {logo ? (
               <img src={logo} alt="" width={72} height={72} className="h-[72px] w-[72px] object-contain" />
             ) : (
-              <MausAvatar color="green" state="happy" size={72} label={app} />
+              <PulsatrixMark size={72} ground="app" />
             )}
           </div>
           <h1 className="welcome-title mt-4 text-[20px] font-semibold text-ink">{t("launch.title", { app })}</h1>
