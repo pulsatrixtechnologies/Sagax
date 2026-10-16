@@ -32,6 +32,9 @@ export interface SafetyHoldInput extends SafetyInput {
   botId?: string;
   /** Isolated reviewer. It may only tighten the local verdict. */
   review?(prompt: string, signal?: AbortSignal): Promise<string>;
+  /** The person's custom rules as policy text for the reviewer
+   * (shared/custom-rules.ts customRulesPolicyText). Tighten only. */
+  policy?: string;
 }
 
 export interface SafetyEffect {
@@ -186,7 +189,7 @@ function audit(action: string, input: SafetyHoldInput, verdict: SafetyVerdict): 
 async function reviewed(input: SafetyHoldInput, verdict: SafetyVerdict): Promise<SafetyVerdict> {
   if (!input.review || verdict.action === "block" || verdict.code === "read_only") return verdict;
   try {
-    const text = await input.review(safetyReviewPrompt(input.text), AbortSignal.timeout(8000));
+    const text = await input.review(safetyReviewPrompt(input.text, input.policy), AbortSignal.timeout(8000));
     return tightenSafety(verdict, text);
   } catch {
     return verdict;

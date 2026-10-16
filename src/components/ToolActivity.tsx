@@ -10,6 +10,7 @@ import { parseArgs } from "@/lib/approval-describe";
 import { computerSelectTarget, toolExecutionTarget } from "../../shared/execution-target";
 import { PlaceIcon } from "./PlaceIcon";
 import { StepRow } from "./StepRow";
+import { CustomRuleNoticeLine } from "./CustomRuleNotice";
 
 type Tool = NonNullable<Message["tool"]>;
 
@@ -46,7 +47,7 @@ export function ToolActivity({ tool, place = null, nameOf, defaultOpen = false }
   // Where the tool ran: the person's server environment or their own computer.
   const target = toolExecutionTarget(tool.name, place);
   const status = phase === "running" ? t("toolDetail.running") : phase === "failed" ? t("toolDetail.failed") : t("toolDetail.completed");
-  return (
+  const row = (
     <StepRow
       testId="tool-activity"
       label={reading.label}
@@ -64,6 +65,14 @@ export function ToolActivity({ tool, place = null, nameOf, defaultOpen = false }
     >
       {() => <ToolStepDetail tool={tool} status={status} />}
     </StepRow>
+  );
+  // 2026-10-16: the person's custom rule that answered this with no card
+  if (!tool.ruleNotice) return row;
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      {row}
+      <CustomRuleNoticeLine notice={tool.ruleNotice} compact />
+    </div>
   );
 }
 

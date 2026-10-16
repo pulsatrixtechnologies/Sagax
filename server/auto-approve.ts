@@ -150,6 +150,14 @@ export type AutoVerdictSource =
   | "owner-auto"
   | "owner-bypass"
   | "owner-rule-deny"
+  /** 2026-10-16 (custom auto-review rules, shared/custom-rules.ts): the
+   * person's own words allowed it, held it for a card, or refused it. */
+  | "custom-rule"
+  | "custom-rule-ask"
+  | "custom-rule-deny"
+  /** The person allowed this exact email draft on its approval card
+   * (server/email-draft-send.ts): one send, these recipients and subject. */
+  | "email-draft-approval"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -182,6 +190,12 @@ export function autoVerdict(
     /** The person allowed this exact ConnectWise change on a widget's
      * approval card (server/cw-widget-actions.ts): one write, one record. */
     widgetApproved?: boolean;
+    /** The person's custom rule that decided this call
+     * (shared/custom-rules.ts evaluateCustomRules, risk scope already
+     * checked). A deny is refused by the caller before any card. */
+    customRule?: { behavior: "allow" | "ask" | "deny"; id: string };
+    /** The person allowed this exact email draft on its own card. */
+    emailDraftApproved?: boolean;
   },
 ): AutoVerdict {
   // A question is for a person, whatever channel it arrived on — and
@@ -193,8 +207,20 @@ export function autoVerdict(
   // A safety hold is an explicit accept. It is checked before Full, before a
   // saved Allow rule, and before a gate, so none of those answer it.
   if (context?.safetyHold) return { approve: null, source: "safety-hold" };
+  // A send the person approved on the draft's own card is that person's
+  // answer, not a rule: it is not held again by an "ask me" rule.
+  if (context?.emailDraftApproved) return { approve: `approved ${tool} (your approved email draft)`, source: "email-draft-approval" };
+  // The person's own words win over every grant: a deny refuses, an ask
+  // keeps the card even under Full access or a saved command.
+  if (context?.customRule?.behavior === "deny") return { approve: null, source: "custom-rule-deny" };
+  if (context?.customRule?.behavior === "ask") return { approve: null, source: "custom-rule-ask" };
   if (context?.safetyAllow) return { approve: `approved ${tool} (read-only)`, source: "safety-read" };
   if (context?.widgetApproved) return { approve: `approved ${tool} (approved in the ConnectWise widget)`, source: "widget-approval" };
+  // An allow rule never answers a sandbox widening (only Full may), and its
+  // risk scope was checked against the call before it got here.
+  if (context?.customRule?.behavior === "allow" && !context.requiresExplicitApproval) {
+    return { approve: `approved ${tool} (your rule)`, source: "custom-rule" };
+  }
   // Full's promise is literal: even a sandbox widening is approved. Entering
   // Full is separately consent-gated by the bot PATCH endpoint, and the
   // request.opened caller invokes this for permissions only, never questions.
@@ -227,6 +253,7 @@ export const HELD_NOTE = {
     "This changes the provider sandbox, so only Full access can approve it automatically.",
   "approval.held.undeliveredFull": "Full access couldn't deliver this approval.",
   "approval.held.undelivered": "Approve for me couldn't answer this one.",
+  "approval.held.customRule": "Your rule asks you first for this.",
 } as const;
 
 export type HeldNoteKey = keyof typeof HELD_NOTE;
@@ -241,6 +268,7 @@ export function approvalHeldNote(context: {
   if (!context.permission) return undefined;
   if (context.source === "outbound-guard") return "approval.held.outbound";
   if (context.source === "safety-hold") return "approval.held.native";
+  if (context.source === "custom-rule-ask") return "approval.held.customRule";
   if (context.source === "explicit-approval-block") return "approval.held.sandbox";
   if (context.source === "native-approval") return "approval.held.native";
   return undefined;

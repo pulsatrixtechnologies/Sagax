@@ -197,6 +197,11 @@ export interface OptionCardData {
   terminalRequest?: import("../../shared/terminal-request").TerminalRequestCardData;
   /** A change asked from a ConnectWise widget (shared/wire.ts). */
   cwActionRequest?: import("../../shared/wire").OptionCardData["cwActionRequest"];
+  /** 2026-10-16: custom rules (shared/custom-rules.ts) and email draft sends. */
+  customRule?: import("../../shared/wire").OptionCardData["customRule"];
+  customRuleCandidate?: import("../../shared/wire").OptionCardData["customRuleCandidate"];
+  customRuleSaved?: import("../../shared/wire").OptionCardData["customRuleSaved"];
+  emailSendRequest?: import("../../shared/wire").OptionCardData["emailSendRequest"];
 }
 
 export interface ConnectorCardData {
@@ -261,7 +266,7 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
    * narration of the same chip ("reading a file"), used by call mode. */
   /** `setup` marks an error fixed by installing something, not by retrying.
    * `summary` is the call's input on one redacted line (the shell command). */
-  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; durationMs?: number; itemId?: string; outputPath?: string; fullResult?: boolean; widget?: import("../../shared/cw-widgets/types").CwWidget };
+  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; durationMs?: number; itemId?: string; outputPath?: string; fullResult?: boolean; widget?: import("../../shared/cw-widgets/types").CwWidget; ruleNotice?: import("../../shared/custom-rules").CustomRuleNotice };
   /** user messages sent into a running turn — the model saw it mid-turn */
   steered?: boolean;
   /** a user message that did not come from typing here: through the

@@ -500,6 +500,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/undo$/ }, // whoever may answer the card: see the handler
   // a ConnectWise widget's change: an approval card for whoever may answer it (server/cw-widget-actions.ts)
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/cw-actions$/ },
+  // an email draft's Send: an approval card for the bot's owner, then the send
+  // once they allow it (server/email-draft-send.ts)
+  { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/email-drafts$/ },
+  { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/email-drafts\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/cards\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/secret-cards\/[\w-]+\/(?:resume|dismiss)$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/ },
@@ -515,6 +519,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/approval-rules$/ },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/approval-rules\/[\w-]+$/ },
   { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/permission-mode$/ },
+  // 2026-10-16: a person's own custom auto-review rules; the handler keeps
+  // them to the person and never to a bot's act copy of a session.
+  { methods: ["GET", "POST"], path: /^\/api\/custom-rules$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/custom-rules\/[\w-]+$/ },
   // rooms
   { methods: ["GET", "POST"], path: /^\/api\/groups$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/messages$/ },

@@ -13,6 +13,8 @@ import type { DataBroadcast } from "./data-surface.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
 import type { ToolScope } from "./tool-scope.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
+import type { CustomRuleCandidate, CustomRuleNotice } from "./custom-rules.ts";
+import type { EmailSendRequestCard } from "./email-draft-send.ts";
 import type { TurnDigest } from "./digest.ts";
 import type { BotAvatarCrop } from "./bot-avatar.ts";
 import type { MascotBodyId } from "./mascot-bodies.ts";
@@ -632,6 +634,9 @@ export interface WireMessage {
     parentItemId?: string;
     /** A ConnectWise call's result as an in-chat widget (shared/cw-widgets). */
     widget?: CwWidget;
+    /** 2026-10-16: the person's custom rule that approved or refused this
+     * call with no card (the rule notice, with a link to edit it). */
+    ruleNotice?: CustomRuleNotice;
   };
   /** A bot line a "post" webhook wrote: whoever called the webhook chose
    * its words. On a Cloud home a conversation holding one is someone else's
@@ -842,6 +847,17 @@ export interface OptionCardData {
   /** A change asked from a ConnectWise widget, waiting for an Allow
    * (server/cw-widget-actions.ts). `by` is the principal who asked. */
   cwActionRequest?: { id: string; action: CwAction; by: string };
+  /** 2026-10-16: the person's custom rule behind this card (an ask rule
+   * held it, or an allow rule matched without covering its risk class),
+   * shown as the rule notice with a link to edit it. */
+  customRule?: CustomRuleNotice;
+  /** "Toujours permettre ceci": the rule text this card offers to save. */
+  customRuleCandidate?: CustomRuleCandidate;
+  /** The custom rule the person saved from this card. */
+  customRuleSaved?: { id: string; when: string };
+  /** An email draft waiting for its Send approval
+   * (server/email-draft-send.ts). Status follows the send. */
+  emailSendRequest?: EmailSendRequestCard;
 }
 
 /** Which app holds the microphone of a Live call: the desktop app (its own

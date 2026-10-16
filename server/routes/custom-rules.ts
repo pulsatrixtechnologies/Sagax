@@ -1,0 +1,155 @@
+// A person's custom auto-review rules (shared/custom-rules.ts): natural
+// language rules the approval reviewer applies before a card.
+//
+//   GET    /api/custom-rules?botId=   -> { rules: [rule + compiled] }: the caller's
+//                                        rules that can apply to that bot (its own
+//                                        and those for all bots), or all of them
+//   POST   /api/custom-rules          { when | text, behavior?, botId, riskScope?, fromCard? }
+//                                     -> { rule }   (201)
+//   PATCH  /api/custom-rules/:id      { when?, behavior?, botId?, riskScope?, enabled? }
+//   DELETE /api/custom-rules/:id
+//
+// Every route is the caller's own: their rules, their bots. A local service,
+// a turn's token or a bot's act copy of a session is never a person here
+// (`manager` is null), so a bot cannot write a rule that widens its own
+// leash. `fromCard` ("Toujours permettre ceci") names an open permission
+// card the rule was made from; the server checks the rule really covers
+// that card's call and marks the card.
+import type { RequestAuth } from "../request-auth.ts";
+import type { CustomRuleStore } from "../custom-rules-store.ts";
+import {
+  compileRule,
+  isCustomRuleBehavior,
+  isRiskClass,
+  parseRuleSentence,
+  type CompiledRule,
+  type CustomRule,
+  type RiskClass,
+} from "../../shared/custom-rules.ts";
+import { PASS, type RouteHandler } from "./table.ts";
+
+export interface CustomRuleRouteDeps {
+  store: CustomRuleStore;
+  /** The person on this request, or null (a local service, a bot, nobody). */
+  manager: (auth: RequestAuth) => string | null;
+  /** The bots this person owns now. */
+  ownedBots: (personId: string) => ReadonlyArray<{ id: string; name: string }>;
+  /** The open card a rule is made from: whether this rule covers its call,
+   * and mark it. Null when there is no such open card of this person. */
+  fromCard?: (personId: string, card: { threadId: string; requestId: string }, rule: CustomRule) => "covered" | "not-covered" | null;
+  audit: (row: { action: string; personId: string; botId?: string | null; before?: Record<string, unknown>; after?: Record<string, unknown> }, auth: RequestAuth) => void;
+  home?: string;
+}
+
+export type CustomRuleView = CustomRule & { compiled: CompiledRule };
+
+function riskScopeOf(value: unknown): RiskClass[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || !value.every(isRiskClass)) return null;
+  return value;
+}
+
+export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler {
+  const view = (rule: CustomRule): CustomRuleView => ({ ...rule, compiled: compileRule(rule.when, deps.home) });
+  const ownsBot = (me: string, botId: unknown) => typeof botId === "string" && deps.ownedBots(me).some((bot) => bot.id === botId);
+
+  return async ({ req, res, url, path, method, auth, json, readBody }) => {
+    if (path !== "/api/custom-rules" && !path.startsWith("/api/custom-rules/")) return PASS;
+    res.setHeader("cache-control", "no-store");
+
+    // each route sits beside its method guard (scripts/tool-policy/route-inventory.ts)
+    if (path === "/api/custom-rules" && method !== "GET" && method !== "POST") return json(res, 405, { error: "GET or POST only" });
+    if (path === "/api/custom-rules" && method === "GET") {
+      const me = deps.manager(auth);
+      if (!me) return json(res, 403, { error: "Sign in to see your rules." });
+      const botId = url.searchParams.get("botId") ?? undefined;
+      if (botId && !ownsBot(me, botId)) return json(res, 404, { error: "no such bot" });
+      const rules = deps.store.rulesOf(me, botId)
+        .sort((a, b) => Number(a.botId === null) - Number(b.botId === null) || a.createdAt - b.createdAt);
+      return json(res, 200, { rules: rules.map(view) });
+    }
+    if (path === "/api/custom-rules" && method === "POST") {
+      const me = deps.manager(auth);
+      if (!me) return json(res, 403, { error: "Sign in to save a rule." });
+      const body = await readBody(req);
+      const raw = typeof body.when === "string" ? body.when : typeof body.text === "string" ? body.text : "";
+      if (!raw.trim()) return json(res, 400, { error: "A rule needs words." });
+      if (body.behavior !== undefined && !isCustomRuleBehavior(body.behavior)) return json(res, 400, { error: "behavior must be allow, ask or deny" });
+      // a whole sentence ("toujours permettre ...") says its behavior itself
+      const sentence = typeof body.text === "string" ? parseRuleSentence(raw, isCustomRuleBehavior(body.behavior) ? body.behavior : "ask") : null;
+      const behavior = isCustomRuleBehavior(body.behavior) ? body.behavior : sentence?.behavior ?? "ask";
+      const when = typeof body.when === "string" ? raw : sentence?.when ?? raw;
+      if (body.botId !== null && !ownsBot(me, body.botId)) return json(res, 400, { error: "a rule applies to one of your bots, or to all of them" });
+      const riskScope = riskScopeOf(body.riskScope);
+      if (!riskScope) return json(res, 400, { error: "riskScope lists destructive, irreversible, money or external-send" });
+      const card = body.fromCard && typeof body.fromCard === "object"
+        ? body.fromCard as { threadId?: unknown; requestId?: unknown }
+        : undefined;
+      if (card && (typeof card.threadId !== "string" || typeof card.requestId !== "string")) return json(res, 400, { error: "fromCard names a threadId and a requestId" });
+      let rule: CustomRule;
+      try {
+        rule = deps.store.add({ ownerId: me, botId: body.botId as string | null, when, behavior, riskScope });
+      } catch (error) {
+        const status = (error as { status?: number }).status ?? 500;
+        return json(res, status, { error: error instanceof Error ? error.message : String(error) });
+      }
+      if (card && deps.fromCard) {
+        const covered = deps.fromCard(me, { threadId: card.threadId as string, requestId: card.requestId as string }, rule);
+        if (covered !== "covered") {
+          // never keep a rule saved from a card it does not cover: the
+          // person would believe this action is now allowed
+          deps.store.remove(me, rule.id);
+          return json(res, covered === null ? 404 : 409, {
+            error: covered === null ? "No such open approval." : "This rule would not cover this approval. Make it narrower or ticked for this kind of action.",
+            code: covered === null ? "no_card" : "rule_not_covering",
+          });
+        }
+      }
+      deps.audit({ action: "custom_rule.add", personId: me, botId: rule.botId, after: { rule: rule.id, behavior: rule.behavior, riskScope: rule.riskScope, ...(card ? { fromCard: true } : {}) } }, auth);
+      return json(res, 201, { rule: view(rule) });
+    }
+
+    const item = /^\/api\/custom-rules\/([\w-]+)$/.exec(path);
+    if (item && method !== "PATCH" && method !== "DELETE") return json(res, 405, { error: "PATCH or DELETE only" });
+    if (item && (method === "PATCH" || method === "DELETE")) {
+      const me = deps.manager(auth);
+      if (!me) return json(res, 403, { error: "Sign in to change your rules." });
+      const id = item[1]!;
+      const before = deps.store.get(me, id);
+      if (!before) return json(res, 404, { error: "no such rule" });
+      if (method === "DELETE") {
+        deps.store.remove(me, id);
+        deps.audit({ action: "custom_rule.remove", personId: me, botId: before.botId, before: { rule: id, behavior: before.behavior } }, auth);
+        return json(res, 200, { ok: true });
+      }
+      const body = await readBody(req);
+      if (body.behavior !== undefined && !isCustomRuleBehavior(body.behavior)) return json(res, 400, { error: "behavior must be allow, ask or deny" });
+      if (body.when !== undefined && (typeof body.when !== "string" || !body.when.trim())) return json(res, 400, { error: "A rule needs words." });
+      if (body.enabled !== undefined && typeof body.enabled !== "boolean") return json(res, 400, { error: "enabled must be true or false" });
+      if (body.botId !== undefined && body.botId !== null && !ownsBot(me, body.botId)) return json(res, 400, { error: "a rule applies to one of your bots, or to all of them" });
+      const riskScope = body.riskScope === undefined ? undefined : riskScopeOf(body.riskScope);
+      if (riskScope === null) return json(res, 400, { error: "riskScope lists destructive, irreversible, money or external-send" });
+      let updated: CustomRule | null;
+      try {
+        updated = deps.store.update(me, id, {
+          ...(typeof body.when === "string" ? { when: body.when } : {}),
+          ...(isCustomRuleBehavior(body.behavior) ? { behavior: body.behavior } : {}),
+          ...(body.botId !== undefined ? { botId: body.botId as string | null } : {}),
+          ...(riskScope !== undefined ? { riskScope } : {}),
+          ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
+        });
+      } catch (error) {
+        const status = (error as { status?: number }).status ?? 500;
+        return json(res, status, { error: error instanceof Error ? error.message : String(error) });
+      }
+      if (!updated) return json(res, 404, { error: "no such rule" });
+      deps.audit({
+        action: "custom_rule.update", personId: me, botId: updated.botId,
+        before: { behavior: before.behavior, riskScope: before.riskScope, enabled: before.enabled },
+        after: { rule: updated.id, behavior: updated.behavior, riskScope: updated.riskScope, enabled: updated.enabled },
+      }, auth);
+      return json(res, 200, { rule: view(updated) });
+    }
+    return PASS;
+  };
+}

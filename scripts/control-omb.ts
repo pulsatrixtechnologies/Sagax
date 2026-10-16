@@ -401,6 +401,12 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   // No-phone-home e2e: where the fixture logs every outbound connection
   // (server/testing/network-audit.mjs).
   if (parentEnv.SAGAX_TEST_NETWORK_AUDIT) childEnv.SAGAX_TEST_NETWORK_AUDIT = parentEnv.SAGAX_TEST_NETWORK_AUDIT;
+  // A test's mail capture file (server/index.ts SAGAX_MAIL_CAPTURE_FILE): the
+  // fixture appends the mail it would send there instead of sending it.
+  if (parentEnv.SAGAX_MAIL_CAPTURE_FILE) {
+    childEnv.SAGAX_MAIL_CAPTURE_FILE = parentEnv.SAGAX_MAIL_CAPTURE_FILE;
+    childEnv.SAGAX_TEST_SEAMS = "1";
+  }
   // upstream Live calls are off in Sagax unless a check opts in
   if (parentEnv.SAGAX_LIVE_CALLS) childEnv.SAGAX_LIVE_CALLS = parentEnv.SAGAX_LIVE_CALLS;
   // Unanswered-approval e2e: the Claude broker's deadline fires on a marker

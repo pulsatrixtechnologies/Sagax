@@ -9,7 +9,14 @@ import nodemailer from "nodemailer";
 import { DEFAULT_MAIL_FROM_NAME, mailReady, type MailSettings } from "./mail-config.ts";
 
 export interface Mailer {
-  send(message: { to: string; subject: string; text: string }): Promise<void>;
+  /** `to` is one address or several separated by commas. `cc` and `bcc`
+   * are optional (an email draft the person sends from its card). */
+  send(message: { to: string; subject: string; text: string; cc?: string[]; bcc?: string[] }): Promise<void>;
+}
+
+/** "a@x.ca, b@y.ca" as a list. */
+function recipients(to: string): string[] {
+  return to.split(",").map((address) => address.trim()).filter(Boolean);
 }
 
 interface SmtpTransport {
@@ -35,7 +42,11 @@ function createSendGridMailer(settings: MailSettings, fetchImpl: typeof fetch): 
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          personalizations: [{ to: [{ email: message.to }] }],
+          personalizations: [{
+            to: recipients(message.to).map((email) => ({ email })),
+            ...(message.cc?.length ? { cc: message.cc.map((email) => ({ email })) } : {}),
+            ...(message.bcc?.length ? { bcc: message.bcc.map((email) => ({ email })) } : {}),
+          }],
           from: { email: sender.address, name: sender.name },
           subject: message.subject,
           content: [{ type: "text/plain", value: message.text }],
@@ -105,33 +116,41 @@ function createTwilioMailer(settings: MailSettings, fetchImpl: typeof fetch): Ma
   const from = senderOf(settings);
   return {
     async send(message) {
-      const response = await fetchImpl(TWILIO_EMAIL_URL, {
-        method: "POST",
-        headers: {
-          authorization,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          from,
-          to: [{ address: message.to }],
-          content: {
-            subject: message.subject,
-            html: escapeHtml(message.text).replace(/\r?\n/g, "<br>\n"),
-            text: message.text,
-          },
-        }),
-      });
-      // The Email API accepts a message with 202 and delivers it later.
-      // A refusal reads `{"errors":[{"code","message"}],"status"}`; its
-      // messages ("The from.address domain ... is not valid or authorized.")
-      // are what an operator needs, so they go into the error, scrubbed of
-      // anything that echoes the credential back.
-      if (!response.ok) {
-        const detail = await twilioErrorDetail(response, [apiKeySecret!, authorization.slice("Basic ".length)]);
-        throw new Error(`Twilio refused the message (${response.status})${detail ? `: ${detail}` : ""}`);
+      // The Email API is used here with a To list only: each Cc and Bcc
+      // address gets its own copy, so a Bcc address is never shown to anyone.
+      for (const to of [recipients(message.to), ...[...(message.cc ?? []), ...(message.bcc ?? [])].map((address) => [address])]) {
+        await sendOne(to, message);
       }
     },
   };
+
+  async function sendOne(to: string[], message: { subject: string; text: string }): Promise<void> {
+    const response = await fetchImpl(TWILIO_EMAIL_URL, {
+      method: "POST",
+      headers: {
+        authorization,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: to.map((address) => ({ address })),
+        content: {
+          subject: message.subject,
+          html: escapeHtml(message.text).replace(/\r?\n/g, "<br>\n"),
+          text: message.text,
+        },
+      }),
+    });
+    // The Email API accepts a message with 202 and delivers it later.
+    // A refusal reads `{"errors":[{"code","message"}],"status"}`; its
+    // messages ("The from.address domain ... is not valid or authorized.")
+    // are what an operator needs, so they go into the error, scrubbed of
+    // anything that echoes the credential back.
+    if (!response.ok) {
+      const detail = await twilioErrorDetail(response, [apiKeySecret!, authorization.slice("Basic ".length)]);
+      throw new Error(`Twilio refused the message (${response.status})${detail ? `: ${detail}` : ""}`);
+    }
+  }
 }
 
 function createSmtpMailer(settings: MailSettings, smtpTransport: (options: object) => SmtpTransport): Mailer {
@@ -155,7 +174,11 @@ function createSmtpMailer(settings: MailSettings, smtpTransport: (options: objec
   return {
     async send(message) {
       try {
-        await transport.sendMail({ from, to: message.to, subject: message.subject, text: message.text });
+        await transport.sendMail({
+          from, to: message.to, subject: message.subject, text: message.text,
+          ...(message.cc?.length ? { cc: message.cc } : {}),
+          ...(message.bcc?.length ? { bcc: message.bcc } : {}),
+        });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         throw new Error(`the mail server refused the message: ${detail}`);

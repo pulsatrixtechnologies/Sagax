@@ -1404,7 +1404,7 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
           }
         }
         const email = kind === "email" || !kind ? parseEmailBlock(code, lang) : null;
-        if (email) return <EmailCard draft={email} pending={pending} />;
+        if (email) return <EmailCard draft={email} pending={pending} threadId={threadId} botId={botId} />;
         if (kind === "widget") {
           const page = parseArtifactPage(code);
           // a YouTube page is the video itself: the player, not a page card

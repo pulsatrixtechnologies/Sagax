@@ -30,6 +30,7 @@ import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
 import { DescribedRow, HelpTip, PILL, PillSelect, SettingsGroup, Switch, SwitchRow, UnitField } from "../SettingsPrimitives";
 import { ManagedTeamsSettings } from "./ManagedTeamsSettings";
 import { OwnerPermissionsCard } from "./OwnerPermissionsCard";
+import { CustomRulesCard } from "./CustomRulesCard";
 import { BotToolAccess } from "./BotToolAccess";
 import { BotParallelSettings } from "./BotParallelSettings";
 import { ProposalStatus } from "./ProposalStatus";
@@ -195,6 +196,9 @@ export function PermissionsSection({
       {showOwnerPermissions
         ? <OwnerPermissionsCard key={bot.id} bot={bot} leading={approvalRows} />
         : approvalRows && <SettingsGroup title={t("botPanel.permissions.approvals")} groupId="approvals">{approvalRows}</SettingsGroup>}
+
+      {/* 2026-10-16: the person's custom rules, in their own words */}
+      {showOwnerPermissions && <CustomRulesCard key={`custom-rules:${bot.id}`} bot={bot} />}
 
       {showToolAccess && <BotToolAccess key={`tools:${bot.id}`} bot={bot} />}
       {showParallel && <BotParallelSettings key={`parallel:${bot.id}`} bot={bot} />}

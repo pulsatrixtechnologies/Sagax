@@ -669,6 +669,46 @@ rules, covered by `server/owner-approval.test.ts`,
   permission registry's per-resource key (PR #508, `resourceKeyForCall`):
   #508 is the role guard before the call, this is the approval after it.
 
+## Custom auto-review rules and sendable email drafts (2026-10-16)
+
+Custom rules are a person's approval rules in their own words
+(`shared/custom-rules.ts`, store `custom-approval-rules.json` 0600 in
+`server/custom-rules-store.ts`, routes `server/routes/custom-rules.ts`,
+editor `src/components/bot-settings/CustomRulesCard.tsx`). Keep these rules,
+covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test.ts`,
+`server/routes/custom-rules.test.ts` and `src/components/CustomRuleNotice.test.ts`:
+
+- A rule is "Quand <bot> veut :" a phrase plus Autoriser automatiquement,
+  Demander d'abord or Refuser, for one bot or all of the person's bots. The
+  phrase is compiled into a narrow matcher (actions, objects, folders, tools
+  in backticks, products); a phrase it cannot read allows nothing.
+- Precedence: deny > ask > allow, a bot's own rule before one for all bots.
+  A deny refuses at `request.opened` before any grant; an ask keeps the card
+  even under Full access, a saved command or an owner allow; an allow
+  answers only what nothing else answered and never an admin card, a
+  guest's turn, a safety hold, a sandbox widening or a question
+  (`autoVerdict` sources `custom-rule`, `custom-rule-ask`, `custom-rule-deny`;
+  owner deny and ask rules still win over a custom allow).
+- An allow never covers a destructive, irreversible, money or external-send
+  call unless the person ticked that class on the rule (`riskScope`).
+  Tool arguments are untrusted: they only narrow a match (chained shell,
+  `..`, relative paths never match a folder rule).
+- Every automatic decision writes a decision row with the rule id; the
+  transcript step and the card carry a rule notice with Edit rule. "Toujours
+  permettre ceci" saves a rule from a card only when it covers that card
+  (409 `rule_not_covering` otherwise). The isolated reviewer reads the rules
+  as policy text (`safetyReviewPrompt(call, policy)`) and may only tighten.
+
+Email drafts (`src/components/EmailCard.tsx`, `shared/email-draft-send.ts`,
+`server/email-draft-send.ts`), covered by `server/email-draft-send.test.ts`
+and `server/email-draft-send.e2e.test.ts`: To, Cc, Subject and body are
+editable; Envoyer writes an approval card (`POST
+/api/threads/:id/email-drafts`) and never sends. Allow sends once: through
+the bot's own mail connector (Microsoft 365, Outlook or Gmail MCP server or
+app) with a 10-minute one-shot pass for exactly those recipients and that
+subject, or through the server's mail settings. Deny sends nothing. The
+draft shows the status and a send error inline; Retry asks again.
+
 ## Server log on disk and expired approvals (2026-10-11)
 
 - The server log tail behind `GET /api/org/admin/logs`

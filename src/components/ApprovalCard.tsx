@@ -13,6 +13,7 @@ import type { LocaleKey } from "@/locales";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
 import { ApprovalHeading, TechnicalDetails } from "@/components/ApprovalParts";
 import { StepRow } from "@/components/StepRow";
+import { CustomRuleNoticeLine, CustomRuleSavedInset } from "@/components/CustomRuleNotice";
 import { approvalPlain, describeAllowRule, describeApproval, isTechnicalText, parseToolId, type ApprovalRisk, type ToolHints } from "@/lib/approval-describe";
 import { composioActionPhrase, outboundSummary } from "@/lib/approval-summary";
 import { niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
@@ -487,6 +488,8 @@ export function ApprovalCard({
             {heldNote && <div className="text-warning">{heldNote}</div>}
             {card.answered === "allow" && card.alwaysAllowed && <AllowRuleInset rule={card.alwaysAllowed} />}
             {card.answered && card.ruleSaved && <OwnerRuleInset rule={card.ruleSaved} />}
+            {card.customRule && <CustomRuleNoticeLine notice={card.customRule} />}
+            {card.answered === "allow" && card.customRuleSaved && <CustomRuleSavedInset rule={card.customRuleSaved} botId={message.from?.botId} />}
             {(view.args || card.tool) && <TechnicalDetails tool={card.tool} server={view.server} args={view.args} />}
           </div>
         )}

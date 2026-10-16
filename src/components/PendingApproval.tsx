@@ -9,7 +9,7 @@
 // the primary action sits under your thumb.
 import { memo, useState } from "react";
 import { ChevronLeft, ChevronRight, GitFork } from "lucide-react";
-import { useStore, type Bot, type Message } from "@/state/store";
+import { api, useStore, type Bot, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t, tFromServer } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
@@ -19,6 +19,8 @@ import { ApprovalHeading, TechnicalDetails } from "./ApprovalParts";
 import { describeApproval, isTechnicalText } from "@/lib/approval-describe";
 import { reviewedSkillSha256 } from "../../shared/skill-request";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
+import { CustomRuleNoticeLine } from "./CustomRuleNotice";
+import { CustomRuleForm, customRuleError } from "./bot-settings/CustomRulesCard";
 
 interface ApprovalLabels {
   [tool: string]: LocaleKey;
@@ -275,6 +277,7 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
       )}
       {card?.skillRequest && <SkillRequestPreview request={card.skillRequest} />}
       {heldNote && <div className="mt-2 text-[12px] text-warning">{heldNote}</div>}
+      {card?.customRule && <CustomRuleNoticeLine notice={card.customRule} botId={bot?.id} />}
       {view && (view.args || pending.tool) && (
         // keyed by request: stepping to another request starts collapsed
         <TechnicalDetails key={pending.requestId} tool={pending.tool} server={view.server} args={view.args} argsLabel={t("approval.aria.reviewDetails")} />
@@ -310,6 +313,9 @@ export function PendingApprovalActions({
   const reviewedSha256 = pending.message.card?.skillRequest
     ? reviewedSkillSha256(pending.message.card.skillRequest)
     : undefined;
+  // "Toujours permettre ceci": a custom rule in the person's words, saved
+  // from this card, then this request allowed (2026-10-16)
+  const candidate = !durableRequest && !pending.message.card?.adminApproval ? pending.message.card?.customRuleCandidate : undefined;
   const decide = (behavior: "allow" | "deny", always = false, rememberCommand = false, rule?: "allow" | "deny") =>
     dispatch({
       type: "decideRequest",
@@ -411,6 +417,19 @@ export function PendingApprovalActions({
             {t("approval.action.alwaysAllowSession")}
           </button>
         )}
+        {candidate && (
+          <AlwaysAllowThis
+            candidate={candidate}
+            bot={bot}
+            threadId={pending.threadId ?? threadId}
+            requestId={pending.requestId}
+            className={secondary}
+            onSaved={(behavior) => {
+              if (behavior === "allow") decide("allow");
+              else if (behavior === "deny") decide("deny");
+            }}
+          />
+        )}
         {canRememberCommand && pending.commandAllowlist && (
           <button
             type="button"
@@ -439,6 +458,72 @@ export function PendingApprovalActions({
               : t("approval.action.allowOnce")}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** "Toujours permettre ceci" (2026-10-16): a custom rule in the person's
+ * own words, prefilled from the call and saved from this card, then this
+ * request answered. The server refuses a rule that would not cover the card
+ * (a risky kind left unticked), so a saved rule always means what it says. */
+export function AlwaysAllowThis({ candidate, bot, threadId, requestId, className, onSaved }: {
+  candidate: NonNullable<NonNullable<Message["card"]>["customRuleCandidate"]>;
+  bot?: Bot;
+  threadId: string;
+  requestId: string;
+  className: string;
+  onSaved: (behavior: "allow" | "ask" | "deny") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title={t("customRules.alwaysAllowThisHint", { name: bot?.name ?? t("approval.someone") })}
+        className={className}
+        data-always-allow-this-button
+      >
+        {t("customRules.alwaysAllowThis")}
+      </button>
+    );
+  }
+  return (
+    <div className="order-first w-full basis-full" data-always-allow-this>
+      <CustomRuleForm
+        botName={bot?.name ?? t("approval.someone")}
+        initial={{ when: candidate.when, behavior: "allow", allBots: false, riskScope: [] }}
+        risks={candidate.risks}
+        saveLabel={t("customRules.form.saveAndAllow")}
+        busy={busy}
+        onCancel={() => {
+          setOpen(false);
+          setError(null);
+        }}
+        onSave={(draft) => {
+          setBusy(true);
+          setError(null);
+          void api("/api/custom-rules", {
+            method: "POST",
+            body: JSON.stringify({
+              when: draft.when,
+              behavior: draft.behavior,
+              botId: draft.allBots || !bot ? null : bot.id,
+              riskScope: draft.riskScope,
+              ...(draft.behavior === "allow" ? { fromCard: { threadId, requestId } } : {}),
+            }),
+          })
+            .then(() => {
+              setOpen(false);
+              onSaved(draft.behavior);
+            })
+            .catch((failure: unknown) => setError(customRuleError(failure)))
+            .finally(() => setBusy(false));
+        }}
+      />
+      {error && <div role="alert" className="mt-2 text-[12px] text-danger">{error}</div>}
     </div>
   );
 }
@@ -489,6 +574,7 @@ export function PendingApprovalBox({
           : undefined}
       />
       <PendingApprovalActions
+        key={pending.requestId}
         pending={pending}
         threadId={threadId}
         bot={botFor(pending)}
