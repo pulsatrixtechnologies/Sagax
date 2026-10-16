@@ -1,6 +1,6 @@
 // Settings nav in headed groups (2026-10-16, JC): as Cursor Settings and
 // Grok Bot keep their rail short, Sagax groups its pages under Personal, AI,
-// Workspace and App. Every page stays reachable, the search keeps working,
+// Installation and App. Every page stays reachable, the search keeps working,
 // and a heading with nothing under it is not drawn.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -58,7 +58,7 @@ describe("Settings nav groups", () => {
     const rail = nav(render());
     const headings = [...rail.matchAll(/data-settings-nav-group="([^"]+)"/g)].map((match) => match[1]);
     expect(headings).toEqual(["you", "ai", "workspace", "app"]);
-    for (const label of ["Personal", "AI", "Workspace", "App"]) expect(rail, label).toContain(`>${label}</div>`);
+    for (const label of ["Personal", "AI", "Installation", "App"]) expect(rail, label).toContain(`>${label}</div>`);
     const ai = rail.slice(rail.indexOf('data-settings-nav-group="ai"'), rail.indexOf('data-settings-nav-group="workspace"'));
     expect(ai).toContain(">Models and voice</button>");
     expect(ai).toContain("data-settings-automations");
