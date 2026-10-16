@@ -146,7 +146,7 @@ export function Automations({ playing, onCue, onEnded, label }: SceneProps) {
                   <div
                     className={cn(
                       "absolute inset-x-1 flex items-center gap-1.5 overflow-hidden rounded-md border-l-2 border-accent bg-accent/15 px-1.5 py-1",
-                      "transition-[transform,opacity,box-shadow] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                      "transition-[transform,opacity,box-shadow] duration-500 ease-out-quint",
                       dropped ? "translate-y-0 scale-100 opacity-100 shadow-[0_2px_6px_-2px_rgba(0,0,0,0.4)]" : "-translate-y-3 scale-[0.98] opacity-0 shadow-[0_18px_28px_-10px_rgba(0,0,0,0.6)]",
                       busy && firing && !done && "animate-ripple",
                       hook && !hookDone && "animate-ripple",
@@ -165,7 +165,7 @@ export function Automations({ playing, onCue, onEnded, label }: SceneProps) {
           ))}
           {/* the clock line: eases to 9:00, glowing where it meets the gutter */}
           <div
-            className="pointer-events-none absolute left-[34px] right-0 z-10 h-px bg-gradient-to-r from-danger via-danger/70 to-danger/20 transition-transform duration-[1100ms] ease-[cubic-bezier(0.77,0,0.175,1)]"
+            className="pointer-events-none absolute left-[34px] right-0 z-10 h-px bg-gradient-to-r from-danger via-danger/70 to-danger/20 transition-transform duration-[1100ms] ease-in-out-strong"
             style={{ top: 6, transform: `translateY(${firing ? ROW - 6 : 0}px)` }}
           >
             <span className="absolute -left-1 -top-[3px] size-1.5 rounded-full bg-danger shadow-[0_0_8px_2px_rgba(255,86,103,0.45)]" />
@@ -178,7 +178,7 @@ export function Automations({ playing, onCue, onEnded, label }: SceneProps) {
         <MousePointer2
           size={16}
           className={cn(
-            "absolute z-30 text-ink drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)] transition-[transform,opacity] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "absolute z-30 text-ink drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)] transition-[transform,opacity] duration-700 ease-out-quint",
             pointer ? "translate-x-0 translate-y-0 opacity-100" : "translate-x-6 -translate-y-8 opacity-0",
           )}
           style={{ left: 92, top: 96, fill: "var(--color-ink)" }}

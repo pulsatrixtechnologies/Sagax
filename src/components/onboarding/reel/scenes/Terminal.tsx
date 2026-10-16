@@ -71,7 +71,7 @@ export function Terminal({ playing, onCue, onEnded, label }: SceneProps) {
       <div
         className={cn(
           "animate-rise absolute inset-x-6 top-4 overflow-hidden rounded-xl border border-hairline/40 bg-[#0b0d10] font-mono text-[11px] leading-[1.6] text-[#d5dbe1] shadow-[0_18px_44px_-20px_rgba(0,0,0,0.7)]",
-          "transition-[transform,opacity] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "transition-[transform,opacity] duration-700 ease-out-quint",
           rising && "-translate-y-14 scale-[0.97] opacity-50",
         )}
         style={{ height: 232 }}
@@ -129,7 +129,7 @@ export function Terminal({ playing, onCue, onEnded, label }: SceneProps) {
         className={cn(
           "absolute inset-x-10 top-[62px] flex flex-col overflow-hidden rounded-[10px] border border-white/10 bg-[#202124]",
           "shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_30px_70px_-20px_rgba(0,0,0,0.8),0_10px_24px_-12px_rgba(0,0,0,0.6)]",
-          "transition-[transform,opacity] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "transition-[transform,opacity] duration-700 ease-out-quint",
           rising ? "translate-y-0 scale-100 opacity-100" : "translate-y-[240px] scale-[0.96] opacity-0",
         )}
         style={{ height: 224 }}

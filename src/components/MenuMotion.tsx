@@ -1,15 +1,12 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { MOTION_MS, prefersReducedMotion } from "@/lib/motion";
 
 /** Same length as `--animate-pop-in` in styles.css. */
-export const MENU_MOTION_MS = 200;
+export const MENU_MOTION_MS = MOTION_MS.moderate;
 
-/** The reduced-motion rule: the system setting, or the onboarding preview's
- * `data-reduced-motion` switch on the root. */
-export function reducedMotion(): boolean {
-  if (typeof document === "undefined" || typeof window === "undefined" || !window.matchMedia) return false;
-  if (document.documentElement.dataset.reducedMotion === "true") return true;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
+/** The reduced-motion rule: the system setting, or the in-app
+ * `data-reduced-motion` switch on the root (src/lib/motion.ts). */
+export const reducedMotion = prefersReducedMotion;
 
 export interface MenuMotion {
   /** Render the menu: it is open, or still playing its close. */
@@ -66,7 +63,7 @@ export function useHeldMenuMotion<T>(value: T | null): MenuMotion & { value: T |
 
 /** The transition a revealed panel's shell carries: height and opacity, the
  * menus' length and easing, none under the reduced-motion rule. */
-export const HEIGHT_MOTION_CLASS = "transition-[height,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none";
+export const HEIGHT_MOTION_CLASS = "transition-[height,opacity] duration-moderate ease-out-quint motion-reduce:transition-none";
 
 /** A panel that grows out of the edge above it and folds back into it.
  *

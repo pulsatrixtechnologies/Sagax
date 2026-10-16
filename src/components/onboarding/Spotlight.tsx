@@ -184,7 +184,7 @@ export function Spotlight({
       aria-live="polite"
     >
       <div
-        className="absolute inset-0 bg-black/55 transition-[clip-path] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+        className="absolute inset-0 bg-black/55 transition-[clip-path] duration-[320ms] ease-out-quint motion-reduce:transition-none"
         style={{ clipPath: cutout(settled ? rect : null) }}
         aria-hidden="true"
       />
@@ -210,7 +210,7 @@ export function Spotlight({
           the two never fight over the same property */}
       <div
         data-tour-card
-        className="pointer-events-auto absolute left-0 top-0 w-[320px] transition-transform duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+        className="pointer-events-auto absolute left-0 top-0 w-[320px] transition-transform duration-[320ms] ease-out-quint motion-reduce:transition-none"
         style={{ transform, width: cardWidth }}
       >
         <div

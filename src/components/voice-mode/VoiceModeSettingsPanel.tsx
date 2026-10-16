@@ -163,12 +163,12 @@ function Advanced({ open, onToggle, children }: { open: boolean; onToggle(): voi
         className="flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left text-[13px] text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <span>{t("voiceMode.call.advanced")}</span>
-        <ChevronRight size={14} className={cn("shrink-0 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", open && "rotate-90")} />
+        <ChevronRight size={14} className={cn("shrink-0 transition-transform duration-moderate ease-out-quint motion-reduce:transition-none", open && "rotate-90")} />
       </button>
       <div
         id={id}
         className={cn(
-          "grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          "grid transition-[grid-template-rows,opacity] duration-moderate ease-out-quint motion-reduce:transition-none",
           open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
         )}
         data-voice-advanced-body

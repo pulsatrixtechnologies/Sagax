@@ -389,7 +389,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
       className={cn(
         // The radius only moves between finite values (half the row, then
         // the card's corners at the bottom), with the card's own motion.
-        "@container/callpill pointer-events-auto mx-auto w-full max-w-[420px] overflow-hidden rounded-t-[32px] border border-hairline-weak bg-elevated text-ink shadow-[0_8px_28px_rgba(0,0,0,0.28)] transition-[border-radius] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        "@container/callpill pointer-events-auto mx-auto w-full max-w-[420px] overflow-hidden rounded-t-[32px] border border-hairline-weak bg-elevated text-ink shadow-[0_8px_28px_rgba(0,0,0,0.28)] transition-[border-radius] duration-moderate ease-out-quint motion-reduce:transition-none",
         expanded ? "rounded-b-[22px]" : "rounded-b-[32px]",
       )}
       aria-label={t("voiceMode.callWith", { name: bot.name })}

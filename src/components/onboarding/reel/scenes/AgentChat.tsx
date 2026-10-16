@@ -73,7 +73,7 @@ export function AgentChat({ playing, onCue, onEnded, label }: SceneProps) {
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-12 bg-gradient-to-t from-inset to-transparent" />
       <div
         className={cn(
-          "flex w-full max-w-[420px] flex-col gap-3 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "flex w-full max-w-[420px] flex-col gap-3 transition-transform duration-500 ease-out-quint",
           replied ? "-translate-y-6" : "translate-y-4",
         )}
       >

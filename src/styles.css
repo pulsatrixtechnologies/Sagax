@@ -146,30 +146,50 @@
 /* inside a 28px file pill under a reply, the table preview is a 24px circle */
 .file-chip .table-action { width: 24px; height: 24px; min-width: 24px; min-height: 24px; border-radius: 9999px; }
 
+/* Reduced motion, either way in: every token duration collapses, so a
+   transition or animation built on them lands on its end state at once
+   (0.01ms rather than 0, so transitionend and animationend still fire). */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-duration-instant: 0.01ms;
+    --transition-duration-fast: 0.01ms;
+    --transition-duration-base: 0.01ms;
+    --transition-duration-moderate: 0.01ms;
+    --transition-duration-slow: 0.01ms;
+  }
+}
+:root[data-reduced-motion="true"] {
+  --transition-duration-instant: 0.01ms;
+  --transition-duration-fast: 0.01ms;
+  --transition-duration-base: 0.01ms;
+  --transition-duration-moderate: 0.01ms;
+  --transition-duration-slow: 0.01ms;
+}
+
 @theme {
-  --animate-panel-in: panel-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-workspace-in: workspace-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-pop-in: pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-pop-out: pop-out 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  --animate-panel-in: panel-in 240ms var(--ease-out-quint);
+  --animate-workspace-in: workspace-in 180ms var(--ease-out-quint);
+  --animate-pop-in: pop-in var(--transition-duration-moderate) var(--ease-out-quint);
+  --animate-pop-out: pop-out var(--transition-duration-moderate) var(--ease-out-quint) forwards;
   --animate-caret: caret-blink 1s step-end infinite;
-  --animate-msg-in: msg-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-call-dock-in: call-dock-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-call-dock-out: call-dock-out 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  --animate-card-fade-in: card-fade-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
-  --animate-card-fade-out: card-fade-out 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  --animate-msg-in: msg-in 180ms var(--ease-out-quint);
+  --animate-call-dock-in: call-dock-in 220ms var(--ease-out-quint);
+  --animate-call-dock-out: call-dock-out 180ms var(--ease-out-quint) forwards;
+  --animate-card-fade-in: card-fade-in var(--transition-duration-moderate) var(--ease-out-quint) both;
+  --animate-card-fade-out: card-fade-out var(--transition-duration-moderate) var(--ease-out-quint) forwards;
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-status-pulse: status-pulse 1.6s steps(2, jump-none) infinite;
   /* onboarding: a block of copy or a row arriving in a beat; `.stagger`
      spaces siblings out. Rare, first-time motion, so it may run past the
      300ms UI ceiling. */
-  --animate-rise: rise 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-rise: rise 320ms var(--ease-out-quint) both;
   /* onboarding: a spotlight card or a first-sight hint scaling in from its
      anchor. Never from zero; nothing appears from nothing. */
-  --animate-spot-in: spot-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-spot-in: spot-in 240ms var(--ease-out-quint) both;
   /* onboarding: a surface reacting once to an event (a routine firing) */
-  --animate-ripple: ripple 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-ripple: ripple 0.9s var(--ease-out-quint) both;
   /* onboarding: a bolt travelling from a webhook address to the bot */
-  --animate-bolt: bolt 0.9s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+  --animate-bolt: bolt 0.9s var(--ease-in-out-strong) infinite;
 
   /* Defaults = Midnight. Kept here so the app is never unstyled. */
   --color-app: #070707;
@@ -255,6 +275,31 @@
      For situations where multiple transition-properties need to be set simultaneously,
      please use transition-[...], for example, transition-[color,background,border-radius] */
   --transition-property-rounded: border-radius;
+}
+
+/* Motion tokens (shared by CSS, Tailwind and the few JS timers that wait on
+   them, src/lib/motion.ts). Durations: `duration-instant|fast|base|moderate|slow`
+   in Tailwind, `var(--transition-duration-*)` in CSS. Easings: `ease-out-quint`
+   (the app's curve: menus, panels, the sidebar), `ease-standard` (two-way
+   changes of state), `ease-emphasized` (an arrival worth a beat more),
+   `ease-exit` (leaving, always shorter than the way in), `ease-out-soft` (the
+   mascots' settle), `ease-in-out-strong` (a travel from one place to another).
+   Under reduced motion (the system setting or :root[data-reduced-motion])
+   every duration collapses to 0.01ms (the two rules above), so anything built on the tokens
+   jumps to its end state. `static`: emitted whether or not a utility uses
+   them yet, so CSS and JS can always read them. */
+@theme static {
+  --transition-duration-instant: 50ms;
+  --transition-duration-fast: 100ms;
+  --transition-duration-base: 150ms;
+  --transition-duration-moderate: 200ms;
+  --transition-duration-slow: 300ms;
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 /* Grok-style layering. These derive from each skin's own ink and panel, so
@@ -1958,15 +2003,15 @@ body {
 }
 .turn-mascot-in {
   transform-origin: 18px 18px;
-  animation: turn-mascot-in 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: turn-mascot-in 0.38s var(--ease-emphasized) both;
 }
 .turn-mascot-out {
   transform-origin: 18px 18px;
-  animation: turn-mascot-out 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: turn-mascot-out 0.28s var(--ease-emphasized) both;
 }
 .turn-answer {
   transform-origin: 18px 100%;
-  animation: turn-answer-in 0.48s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: turn-answer-in 0.48s var(--ease-emphasized) both;
 }
 @keyframes rise {
   from { transform: translateY(10px); opacity: 0; }
@@ -2006,12 +2051,12 @@ body {
 ::view-transition-group(welcome-maus),
 ::view-transition-group(welcome-title) {
   animation-duration: 0.42s;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-timing-function: var(--ease-out-quint);
 }
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: 0.28s;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-timing-function: var(--ease-out-quint);
 }
 /* "Thinking…" label sheen while the model reasons */
 @keyframes shimmer {
@@ -2213,7 +2258,7 @@ html[data-animations-paused] *::after {
 
 .maus-eyes {
   transform: translate(var(--maus-eye-x), var(--maus-eye-y));
-  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 150ms var(--ease-out-soft);
 }
 
 .maus-fx {
@@ -2263,20 +2308,20 @@ html[data-animations-paused] *::after {
 }
 
 .maus-motion--arrive .maus-character {
-  animation: maus-arrive 940ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
+  animation: maus-arrive 940ms var(--ease-out-soft) both;
 }
 
 .maus-motion--switch .maus-character {
-  animation: maus-switch 760ms cubic-bezier(0.2, 0.74, 0.16, 1) both;
+  animation: maus-switch 760ms var(--ease-out-soft) both;
 }
 
 .maus-motion--customize .maus-character {
-  animation: maus-customize 720ms cubic-bezier(0.18, 0.78, 0.2, 1) both;
+  animation: maus-customize 720ms var(--ease-out-soft) both;
 }
 
 .maus-motion--switch .maus-face,
 .maus-motion--customize .maus-face {
-  animation: maus-face-parallax 760ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: maus-face-parallax 760ms var(--ease-out-soft) both;
 }
 
 .maus-motion--arrive .maus-face {
@@ -2297,7 +2342,7 @@ html[data-animations-paused] *::after {
 .maus-motion--arrive .maus-orbit,
 .maus-motion--switch .maus-orbit,
 .maus-motion--customize .maus-orbit {
-  animation: maus-orbit-turn 760ms cubic-bezier(0.24, 0.76, 0.3, 1) both;
+  animation: maus-orbit-turn 760ms var(--ease-out-soft) both;
 }
 
 .maus-motion--arrive .maus-orbit {
@@ -2330,15 +2375,15 @@ html[data-animations-paused] *::after {
 .maus-orbit-dot--three { animation-delay: 85ms !important; }
 
 .maus-motion--alert .maus-character {
-  animation: maus-alert-body 1050ms cubic-bezier(0.18, 0.78, 0.18, 1) both;
+  animation: maus-alert-body 1050ms var(--ease-out-soft) both;
 }
 
 .maus-motion--alert .maus-fx--alert {
-  animation: maus-alert-symbol 1050ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: maus-alert-symbol 1050ms var(--ease-out-soft) both;
 }
 
 .maus-motion--thinking .maus-character {
-  animation: maus-thinking-body 1300ms cubic-bezier(0.2, 0.76, 0.18, 1) both;
+  animation: maus-thinking-body 1300ms var(--ease-out-soft) both;
 }
 
 .maus-motion--thinking .maus-fx--ellipsis {
@@ -2365,7 +2410,7 @@ html[data-animations-paused] *::after {
 }
 
 .maus-motion--launch .maus-character {
-  animation: maus-launch-body 1180ms cubic-bezier(0.2, 0.8, 0.18, 1) both;
+  animation: maus-launch-body 1180ms var(--ease-out-soft) both;
 }
 
 .maus-motion--launch .maus-fx--ribbons {
@@ -2377,11 +2422,11 @@ html[data-animations-paused] *::after {
 }
 
 .maus-motion--success .maus-character {
-  animation: maus-success-body 900ms cubic-bezier(0.18, 0.8, 0.2, 1) both;
+  animation: maus-success-body 900ms var(--ease-out-soft) both;
 }
 
 .maus-motion--celebrate .maus-character {
-  animation: maus-celebrate-body 1250ms cubic-bezier(0.2, 0.82, 0.18, 1) both;
+  animation: maus-celebrate-body 1250ms var(--ease-out-soft) both;
 }
 
 .maus-motion--celebrate .maus-fx--burst {
@@ -2399,19 +2444,19 @@ html[data-animations-paused] *::after {
 .maus-motion--celebrate .maus-burst-dot--four { --maus-burst-x: -39px; --maus-burst-y: 22px; }
 
 .maus-motion--blink .maus-eyes {
-  animation: maus-blink-eyes 720ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: maus-blink-eyes 720ms var(--ease-out-soft) both;
 }
 
 .maus-motion--surprise .maus-character {
-  animation: maus-surprise-body 820ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
+  animation: maus-surprise-body 820ms var(--ease-out-soft) both;
 }
 
 .maus-motion--surprise .maus-eyes {
-  animation: maus-surprise-eyes 820ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: maus-surprise-eyes 820ms var(--ease-out-soft) both;
 }
 
 .maus-motion--failure .maus-character {
-  animation: maus-failure-body 980ms cubic-bezier(0.22, 0.76, 0.2, 1) both;
+  animation: maus-failure-body 980ms var(--ease-out-soft) both;
 }
 
 .maus-motion--failure .maus-fx--alert {
@@ -2990,7 +3035,7 @@ button:disabled.bg-danger {
    sit in a 1px ring the pill's own colour, so each one stands out from the
    tile it overlaps; the ring follows the pill's hover colour. */
 .connect-apps-pill {
-  transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1), padding 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color var(--transition-duration-moderate) var(--ease-out-quint), padding var(--transition-duration-moderate) var(--ease-out-quint);
 }
 .connect-apps-pill [data-pill-tiles] {
   background-color: inherit;
@@ -2999,7 +3044,7 @@ button:disabled.bg-danger {
   opacity: 1;
   overflow: clip;
   overflow-clip-margin: 5px;
-  transition: max-width 0.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1), margin-inline-start 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: max-width var(--transition-duration-moderate) var(--ease-out-quint), opacity var(--transition-duration-moderate) var(--ease-out-quint), margin-inline-start var(--transition-duration-moderate) var(--ease-out-quint);
 }
 .connect-apps-pill [data-pill-tiles][data-hidden] {
   margin-inline-start: 0;

@@ -80,7 +80,7 @@ function Reveal({ shown, children, bar = "w-20" }: { shown: boolean; children: R
       />
       <span
         className={cn(
-          "inline-flex items-center gap-1.5 transition-[opacity,filter,transform] duration-300 ease-[cubic-bezier(0.23,1,0.32,1)]",
+          "inline-flex items-center gap-1.5 transition-[opacity,filter,transform] duration-300 ease-out-quint",
           shown ? "opacity-100 blur-0" : "translate-y-0.5 opacity-0 blur-[3px]",
         )}
       >
@@ -102,7 +102,7 @@ function Row({ icon: Icon, label, done, children, bar }: { icon: typeof Folder; 
       </span>
       <span
         className={cn(
-          "flex size-4 shrink-0 items-center justify-center rounded-full bg-success text-white transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
+          "flex size-4 shrink-0 items-center justify-center rounded-full bg-success text-white transition-[opacity,transform] duration-200 ease-out-quint",
           done ? "scale-100 opacity-100" : "scale-75 opacity-0",
         )}
       >

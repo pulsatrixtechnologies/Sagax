@@ -1,7 +1,7 @@
 // The composer's round controls, measured on Grok Bot's prompt bar (0.71):
 // 28 px circles 8 px apart, a quiet "secondary" circle (+, mic) and a filled
 // call to action (Voice, or Send once something is typed) whose glyphs
-// cross-fade (opacity and scale .5 -> 1, 200 ms, cubic-bezier(.22,1,.36,1)).
+// cross-fade (opacity and scale .5 -> 1, 200 ms, ease-out-quint).
 // While dictating, the mic and the CTA give way to a pill: a 10 px stop
 // square, the timer (14/22, tabular) and an 18 x 13 px level meter, then a
 // Send arrow. The + opens a menu above it, aligned on its start edge.
@@ -23,7 +23,7 @@ export const SECONDARY_CIRCLE = cn(
 );
 
 /** Grok Bot's glyph cross-fade. */
-const GLYPH = "absolute inset-0 m-auto transition-[opacity,transform] duration-200 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none";
+const GLYPH = "absolute inset-0 m-auto transition-[opacity,transform] duration-moderate ease-out-quint motion-reduce:transition-none";
 const glyphShown = (shown: boolean) => (shown ? "opacity-100 scale-100" : "opacity-0 scale-50");
 /** The seat's fade: no transform once shown, so the Voice button's popover is not trapped in a stacking context. */
 const seatShown = (shown: boolean) => (shown ? "opacity-100" : "opacity-0 scale-50");
@@ -203,7 +203,7 @@ export function ComposerMicButton({ onClick, hidden = false, needsSetup = false,
   return (
     <span
       className={cn(
-        "flex shrink-0 overflow-hidden transition-[width,margin] duration-200 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none",
+        "flex shrink-0 overflow-hidden transition-[width,margin] duration-moderate ease-out-quint motion-reduce:transition-none",
         hidden ? "me-0 w-0" : "w-7",
       )}
     >

@@ -192,7 +192,7 @@ describe("the live call's settings in the panel", () => {
     expect(body).toContain('inert=""');
     expect(body).toContain('aria-hidden="true"');
     expect(body).toContain("transition-[grid-template-rows,opacity]");
-    expect(body).toContain("duration-200");
+    expect(body).toContain("duration-moderate");
     expect(body).toContain("motion-reduce:transition-none");
     const [voice, speed, language, advanced] = ['data-voice-list="voice"', 'data-voice-list="speed"', 'data-voice-list="language"', "data-voice-advanced-toggle"].map((a) => markup.indexOf(a));
     expect(voice).toBeLessThan(speed);

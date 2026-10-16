@@ -5,6 +5,7 @@
 // second profile must not replay the tour, and a phone paired later should
 // see the same hints as already dismissed.
 import { managedProfile, type ManagedProfile } from "./profile-management";
+import { prefersReducedMotion } from "./motion";
 
 export interface OnboardingStatus {
   /** ISO timestamp; "" until the welcome flow has been finished or skipped. */
@@ -254,6 +255,5 @@ export function cloudSignInDue<Instance>(
 /** The OS preference, plus a dev hook the preview page uses to show the
  * reduced variant without changing system settings. */
 export function reducedMotion(): boolean {
-  if (typeof document !== "undefined" && document.documentElement.dataset.reducedMotion === "true") return true;
-  return globalThis.window?.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  return prefersReducedMotion();
 }

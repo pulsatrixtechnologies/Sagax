@@ -179,10 +179,10 @@ describe("the card's motion", () => {
     const shell = classOf(html, "data-voice-card-motion");
     expect(shell).toContain("overflow-hidden");
     expect(shell).toContain("transition-[height,opacity]");
-    expect(shell).toContain("duration-200");
-    expect(shell).toContain("ease-[cubic-bezier(0.22,1,0.36,1)]");
+    expect(shell).toContain("duration-moderate");
+    expect(shell).toContain("ease-out-quint");
     expect(shell).toContain("motion-reduce:transition-none");
-    expect(motion).toMatch(/export const MENU_MOTION_MS = 200;/);
+    expect(motion).toMatch(/export const MENU_MOTION_MS = MOTION_MS\.moderate;/);
     // shell, then the card, then its scroller: the row is outside it and never moves
     const order = ["data-voice-pill-row", "data-voice-card-motion", "data-voice-card=", "data-voice-callbar-panels", 'data-voice-card-body="transcript"'].map((a) => html.indexOf(a));
     expect(order.every((index) => index > 0), String(order)).toBe(true);
@@ -190,8 +190,8 @@ describe("the card's motion", () => {
     // the pill's corners move only between finite radii, with the card
     const pill = classOf(html, "data-voice-pill");
     expect(pill).toContain("transition-[border-radius]");
-    expect(pill).toContain("duration-200");
-    expect(pill).toContain("ease-[cubic-bezier(0.22,1,0.36,1)]");
+    expect(pill).toContain("duration-moderate");
+    expect(pill).toContain("ease-out-quint");
     expect(pill).not.toContain("rounded-full");
   });
 
@@ -210,7 +210,7 @@ describe("the card's motion", () => {
     expect(source).toMatch(/<div aria-hidden inert className="animate-card-fade-out pointer-events-none absolute inset-x-0 top-0[^"]*" data-voice-card-leaving=\{leaving\}>/);
     expect(source).toContain('className={leaving ? "animate-card-fade-in" : undefined}');
     const css = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
-    expect(css).toContain("--animate-card-fade-in: card-fade-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;");
+    expect(css).toContain("--animate-card-fade-in: card-fade-in var(--transition-duration-moderate) var(--ease-out-quint) both;");
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.animate-caret[^}]*\.animate-card-fade-in, \.animate-card-fade-out \{ animation: none; \}/);
     expect(css).toContain(':root[data-reduced-motion="true"] .animate-card-fade-out,');
   });

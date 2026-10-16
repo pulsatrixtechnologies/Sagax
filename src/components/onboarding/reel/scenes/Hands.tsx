@@ -114,7 +114,7 @@ export function Hands({ playing, onCue, onEnded, label }: SceneProps) {
         {/* the Computer panel, as ComputerPanel draws it */}
         <aside
           className={cn(
-            "flex w-[58%] shrink-0 flex-col border-l border-hairline/40 bg-panel transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "flex w-[58%] shrink-0 flex-col border-l border-hairline/40 bg-panel transition-[transform,opacity] duration-500 ease-out-quint",
             panel ? "translate-x-0 opacity-100" : "translate-x-7 opacity-0",
           )}
         >
@@ -177,7 +177,7 @@ export function Hands({ playing, onCue, onEnded, label }: SceneProps) {
                   the screen's, gliding from the corner to the Book button */}
               <div
                 className={cn(
-                  "pointer-events-none absolute inset-0 z-20 transition-transform duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  "pointer-events-none absolute inset-0 z-20 transition-transform duration-[900ms] ease-out-quint",
                   moving ? "translate-x-[15.5%] translate-y-[44%]" : "translate-x-[80%] translate-y-[74%]",
                 )}
               >
