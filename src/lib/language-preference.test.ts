@@ -103,4 +103,71 @@ describe("app language preference", () => {
     preference.setLanguageChoice("uk");
     expect(preference.languageChoice()).toBe("uk");
   });
+
+  describe("in the desktop app", () => {
+    // Main's file (electron/desktop-language.mjs), shared by every page of
+    // the app; each origin keeps its own localStorage.
+    function desktop(initial: string | null = null) {
+      let stored = initial;
+      return {
+        get: vi.fn(() => stored),
+        set: vi.fn(async (language: string) => { stored = language; return language; }),
+      };
+    }
+
+    it("a language chosen on the organization server's page opens the next launch screen in French", async () => {
+      // JC 2026-10-16: Français picked in Settings on the organization's
+      // page (another origin, another storage); the launch screen on the
+      // local page followed macOS (en-US) instead.
+      const bridge = desktop();
+      vi.stubGlobal("ogb", { desktopLanguage: bridge });
+      const orgPage = await import("./language-preference");
+      orgPage.setLanguageChoice("fr");
+      expect(bridge.set).toHaveBeenCalledWith("fr");
+
+      // Next launch: the local page, its own empty storage, same desktop.
+      vi.resetModules();
+      local = memoryStorage();
+      vi.stubGlobal("localStorage", local);
+      const localPage = await import("./language-preference");
+      expect(localPage.effectiveLanguage(localPage.languageChoice(), "en")).toBe("fr");
+      const { setLocale, t } = await import("./i18n");
+      setLocale(localPage.effectiveLanguage(localPage.languageChoice(), undefined) || "en-US");
+      expect(t("launch.continue")).toBe("Continuer");
+    });
+
+    it("the desktop's choice wins over this page's storage, which wins over the server", async () => {
+      local.setItem("omb-language", "de");
+      vi.stubGlobal("ogb", { desktopLanguage: desktop("es") });
+      let preference = await import("./language-preference");
+      expect(preference.effectiveLanguage(preference.languageChoice(), "fr")).toBe("es");
+
+      vi.resetModules();
+      vi.stubGlobal("ogb", { desktopLanguage: desktop(null) });
+      preference = await import("./language-preference");
+      expect(preference.effectiveLanguage(preference.languageChoice(), "fr")).toBe("de");
+
+      vi.resetModules();
+      local.clear();
+      preference = await import("./language-preference");
+      expect(preference.effectiveLanguage(preference.languageChoice(), "fr")).toBe("fr");
+    });
+
+    it("keeps the system choice across pages", async () => {
+      const bridge = desktop("fr");
+      vi.stubGlobal("ogb", { desktopLanguage: bridge });
+      const preference = await import("./language-preference");
+      preference.setLanguageChoice("");
+      expect(bridge.set).toHaveBeenCalledWith("");
+      expect(preference.languageChoice()).toBe("");
+    });
+
+    it("leaves a browser without the bridge as before", async () => {
+      vi.stubGlobal("ogb", {});
+      const preference = await import("./language-preference");
+      expect(preference.languageChoice()).toBeNull();
+      preference.setLanguageChoice("it");
+      expect(local.getItem(preference.LANGUAGE_KEY)).toBe("it");
+    });
+  });
 });

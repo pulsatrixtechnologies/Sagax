@@ -307,6 +307,13 @@ const __BASE_VERSION__: string;
       /** Settings > Memory: the organization memory cached for Obsidian
        * (electron/org-memory-cache.mjs). */
       orgMemory?: import("../lib/org-memory").OrgMemoryBridge;
+      /** The language last chosen in this app on any of its pages (local
+       * page or an organization server's page from this bundle), kept by
+       * main: a locale code, "" for the system language, null if never. */
+      desktopLanguage?: {
+        get(): string | null;
+        set(language: string): Promise<string | null>;
+      };
       appIcon?: {
         get(): Promise<{ platform: string; id: string | null; updatedAt: number | null }>;
         set(request: { id: string; images: Array<{ size: number; png: string }> }): Promise<{ platform: string; id: string | null; updatedAt: number | null }>;

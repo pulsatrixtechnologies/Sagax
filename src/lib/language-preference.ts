@@ -23,9 +23,34 @@ function storage(): Storage | undefined {
   }
 }
 
-/** The language picked on this device: a locale code, "" for the system
- * language, or null when this device never picked one. */
+// In the desktop app the local page and an organization server's page are
+// two origins with two storages: a choice made on one was invisible to the
+// other (French picked on the organization's page, English launch screen).
+// Main keeps the last choice made on any of them (desktop-language.mjs) and
+// it comes first. A browser has no bridge and keeps the behavior below.
+function desktopLanguage(): NonNullable<Window["ogb"]>["desktopLanguage"] | undefined {
+  try {
+    return (globalThis as { ogb?: Window["ogb"] }).ogb?.desktopLanguage;
+  } catch {
+    return undefined;
+  }
+}
+
+function desktopChoice(): string | null {
+  try {
+    const value = desktopLanguage()?.get();
+    return typeof value === "string" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The language picked on this device: the desktop's last choice (any
+ * origin), else this page's, as a locale code, "" for the system language,
+ * or null when never picked. */
 export function languageChoice(): string | null {
+  const desktop = desktopChoice();
+  if (desktop !== null) return desktop;
   if (sessionChoice !== undefined) return sessionChoice;
   try {
     return storage()?.getItem(LANGUAGE_KEY) ?? null;
@@ -65,6 +90,11 @@ function subscribe(listener: () => void): () => void {
 
 export function setLanguageChoice(language: string): void {
   sessionChoice = language;
+  try {
+    void desktopLanguage()?.set(language);
+  } catch {
+    // The page's own storage below still keeps it.
+  }
   try {
     const local = storage();
     local?.setItem(LANGUAGE_KEY, language);

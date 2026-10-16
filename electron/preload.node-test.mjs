@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const listeners = new Map(); // channel -> Set<handler>
 const exposed = { name: null, api: null };
 const invocations = [];
+const syncCalls = [];
 const fakeIpcRenderer = {
   on: (channel, handler) => {
     if (!listeners.has(channel)) listeners.set(channel, new Set());
@@ -21,6 +22,10 @@ const fakeIpcRenderer = {
   },
   invoke: async (...args) => { invocations.push(args); },
   send: () => undefined,
+  sendSync: (channel) => {
+    syncCalls.push(channel);
+    return channel === "desktop-language:get" ? "fr" : undefined;
+  },
 };
 const fakeElectron = {
   ipcRenderer: fakeIpcRenderer,
@@ -146,4 +151,17 @@ test("an organisation settings request arriving before React subscriptions is de
   await Promise.resolve();
   assert.deepEqual(calls, ["organization"], "later subscriptions must not reopen Settings");
   late();
+});
+
+test("desktopLanguage reads main's choice once, synchronously, and caches what the page sets", async () => {
+  const api = exposed.api.desktopLanguage;
+  assert.equal(api.get(), "fr");
+  assert.equal(api.get(), "fr");
+  assert.equal(syncCalls.filter((channel) => channel === "desktop-language:get").length, 1);
+  const before = invocations.length;
+  await api.set("");
+  assert.deepEqual(invocations.slice(before), [["desktop-language:set", ""]]);
+  assert.equal(api.get(), "");
+  assert.equal(await api.set(3), null);
+  assert.equal(invocations.length, before + 1);
 });

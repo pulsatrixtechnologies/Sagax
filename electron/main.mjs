@@ -930,6 +930,7 @@ import {
   stopCompanion,
 } from "./companion.mjs";
 import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from "./routine-wake.mjs";
+import { readDesktopLanguage, writeDesktopLanguage } from "./desktop-language.mjs";
 import { systemIdleSnapshot } from "./system-idle.mjs";
 import { installFetchGuard, installSessionBlock } from "./upstream-hosts.mjs";
 
@@ -3681,6 +3682,21 @@ ipcMain.handle("org-memory:show-folder", desktopUiOnly("org-memory:show-folder",
 
 // Settings > Appearance > App icon. The page draws every icon through the
 // system template and sends PNGs; nothing here reads a file the page names.
+// The language the person last chose, on the local page or on the
+// organization server's page drawn from this bundle (desktop-language.mjs).
+// Read once per page with sendSync, so the first render already speaks it;
+// any other page gets null and keeps its own storage.
+ipcMain.on("desktop-language:get", (event) => {
+  let language = null;
+  try {
+    if (isDesktopUiSender(event)) language = readDesktopLanguage(app.getPath("userData"));
+  } catch {
+    language = null;
+  }
+  event.returnValue = language;
+});
+ipcMain.handle("desktop-language:set", desktopUiOnly("desktop-language:set", (_event, language) =>
+  writeDesktopLanguage(app.getPath("userData"), language)));
 ipcMain.handle("app-icon:get", desktopUiOnly("app-icon:get", () => {
   const saved = savedAppIcon();
   return { platform: process.platform, id: saved?.id ?? null, updatedAt: saved?.updatedAt ?? null };
