@@ -1,5 +1,7 @@
 import { killCliTree, spawnCli } from "./procs.ts";
 import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
+import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, fillScript, parseEvalObject, parseFillArguments, parseProbe, probeScript, problemText, SecretRedactor } from "./credential-fill.ts";
+import type { VaultFillField } from "../shared/credential-vault.ts";
 
 export interface BrowserSpawnSpec {
   command: string;
@@ -60,6 +62,20 @@ export function ownsBrowserViewport(env: NodeJS.ProcessEnv): boolean {
 }
 
 export class TransportError extends Error {}
+
+/** Resolves a fill_credential call to the value to type, for one turn: the
+ * vault checks the bot's grant and the page's top-level URL against the
+ * item's sites (server/credential-vault.ts). Built per call by the caller,
+ * which knows the bot, the conversation and whose vault it is. */
+export type CredentialFillResolver = (request: { handle: string; field: VaultFillField; pageUrl: string }) =>
+  Promise<{ ok: true; value: string; label: string } | { ok: false; message: string }>;
+
+const FIELD_NAMES: Record<VaultFillField, string> = { username: "user name", password: "password", totp: "one-time code", apiKey: "API key" };
+const EVAL_AFTER_FILL_REFUSAL = "agent_browser_eval is turned off on a site where Sagax filled a saved credential, so a script cannot read it back. Use snapshots, clicks and get_text here, or move to another site.";
+
+function toolText(text: string, isError = false): { content: Array<{ type: "text"; text: string }>; isError?: true } {
+  return { content: [{ type: "text", text }], ...(isError ? { isError: true as const } : {}) };
+}
 
 /** An error the engine answered: the action ran and failed (a page that
  * would not load). Nothing is left running in the browser, so unlike a
@@ -277,6 +293,8 @@ export class BrowserRuntime {
   private options: { requestTimeoutMs: number; takeoverTimeoutMs: number; idleMs: number; maxPending: number; resultBudget: number; recoveryCheckMs: number };
   private closeBrowser: CloseBrowser;
   private applyViewport?: ApplyViewport;
+  /** Values filled into each session, hidden from every later result. */
+  readonly redactor = new SecretRedactor();
 
   constructor({ closeBrowser, applyViewport, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser; applyViewport?: ApplyViewport } = {}) {
     this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: DEFAULT_BROWSER_RESULT_BUDGET, recoveryCheckMs: 30_000, ...options };
@@ -330,7 +348,20 @@ export class BrowserRuntime {
     return this.withAgentAction(session, capture);
   }
 
-  async agentRpc(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void): Promise<unknown> {
+  async agentRpc(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, credentials?: CredentialFillResolver): Promise<unknown> {
+    try {
+      // A value Sagax filled never comes back to a bot, whatever tool reads the page.
+      return this.redactor.redact(session, await this.agentRpcUnredacted(session, spec, method, params, beforeDispatch, credentials));
+    } catch (error) {
+      if (error instanceof Error) {
+        const message = this.redactor.redactText(session, error.message);
+        if (message !== error.message) error.message = message;
+      }
+      throw error;
+    }
+  }
+
+  private async agentRpcUnredacted(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, credentials?: CredentialFillResolver): Promise<unknown> {
     if (method !== "tools/list" && method !== "tools/call") throw new Error("Unsupported browser method.");
     // tools/list bypasses withAgentAction (a human may hold control), so it
     // must refuse the closing window itself or its client outlives restart().
@@ -375,6 +406,16 @@ export class BrowserRuntime {
         if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
       }
       try {
+        if (method === "tools/call" && toolName === FILL_CREDENTIAL_TOOL) {
+          return await this.fillCredential(session, entry.client, params, beforeDispatch, credentials);
+        }
+        if (method === "tools/call" && toolName === "agent_browser_eval" && this.redactor.hasTaint(session)) {
+          const here = firstText(await entry.client.rpc("tools/call", { name: "agent_browser_get_url", arguments: {} })).trim();
+          beforeDispatch?.();
+          let origin = "";
+          try { origin = new URL(here).origin; } catch { /* unknown page: refuse below */ }
+          if (!origin || this.redactor.isTainted(session, origin)) return toolText(EVAL_AFTER_FILL_REFUSAL, true);
+        }
         // The model sees slimmed schemas and text-only, bounded results; the
         // launch/session parameters OMB owns never reach the engine from a call.
         const request = method === "tools/call" ? stripHarnessOwnedArguments(params) : params;
@@ -474,6 +515,47 @@ export class BrowserRuntime {
       if (error instanceof TransportError && gate.uncertain && gate.lostCall !== null) return lostCallToolError(toolName ?? gate.lostCall);
       throw error;
     }
+  }
+
+  /** fill_credential (server/credential-fill.ts): focus, probe without the
+   * secret, resolve through the vault, then type with an in-page re-check.
+   * The result names the item and field only; the value goes to the engine. */
+  private async fillCredential(session: string, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillResolver | undefined): Promise<unknown> {
+    const request = parseFillArguments(params);
+    if (typeof request === "string") return toolText(request, true);
+    if (!credentials) return toolText("Saved credentials are not available to you here; nothing was filled.", true);
+    const stillOurs = () => {
+      beforeDispatch?.();
+      if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
+    };
+    const aim = aimOf(request);
+    if (request.ref) {
+      const clicked = await client.rpc("tools/call", { name: "agent_browser_click", arguments: { selector: request.ref } });
+      stillOurs();
+      if ((clicked as { isError?: unknown } | null)?.isError === true) {
+        return toolText(`${request.ref} could not be focused; nothing was filled. Take a new snapshot and pass a current ref.`, true);
+      }
+    }
+    const probe = parseProbe(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: probeScript(aim, request.field), timeoutMs: 5_000 } }));
+    stillOurs();
+    if (!probe) return toolText("The page could not be read; nothing was filled.", true);
+    if (!probe.top) return toolText(problemText("frame", request.field), true);
+    if (probe.problem) return toolText(problemText(probe.problem, request.field), true);
+    const resolved = await credentials({ handle: request.credential, field: request.field, pageUrl: probe.href });
+    stillOurs();
+    if (!resolved.ok) return toolText(resolved.message, true);
+    // Remembered before the value leaves: anything the engine says from now
+    // on, including an error that quotes the script, is redacted.
+    this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp" });
+    this.redactor.taint(session, probe.origin);
+    const filled = parseEvalObject(await client.rpc("tools/call", {
+      name: "agent_browser_eval", arguments: { script: fillScript(aim, request.field, probe.origin, resolved.value), timeoutMs: 5_000 },
+    }));
+    beforeDispatch?.();
+    if (filled?.ok !== true) return toolText(problemText(typeof filled?.problem === "string" ? filled.problem : "unknown", request.field), true);
+    let host = probe.origin;
+    try { host = new URL(probe.href).host; } catch { /* keep the origin */ }
+    return toolText(`Filled the ${FIELD_NAMES[request.field]} of "${resolved.label}" on ${host}. You do not see the value; check the page and submit the form when ready.`);
   }
 
   /** This session's MCP client, started on first use. */
@@ -626,6 +708,7 @@ export class BrowserRuntime {
     this.changed(gate);
     try {
       await closeBrowser();
+      this.redactor.forget(session);
       await this.clients.get(session)?.client.stop();
       // A tools/list admitted before closing set in can register a client
       // while that stop awaits; registration is synchronous, so one re-check
@@ -659,6 +742,7 @@ export class BrowserRuntime {
     this.changed(gate);
     try {
       if (!await closeBrowser()) throw new Error("The browser could not be closed. Ask the person to press Restart in the Browser panel of Sagax on their computer, or to restart Sagax.");
+      this.redactor.forget(session);
       await this.clients.get(session)?.client.stop();
       await this.clients.get(session)?.client.stop(); // see restart()
       gate.uncertain = false;
@@ -686,7 +770,7 @@ export class BrowserRuntime {
     await this.clients.get(session)?.client.stop();
     gate.closing = false;
     this.changed(gate);
-    if (!gate.owner && !gate.agents && !gate.humans) { this.gates.delete(session); this.toolLists.delete(session); }
+    if (!gate.owner && !gate.agents && !gate.humans) { this.gates.delete(session); this.toolLists.delete(session); this.redactor.forget(session); }
   }
 
   async closeAll(): Promise<void> {
@@ -721,8 +805,11 @@ function firstText(result: unknown): string {
   return part ? (part as { text: string }).text : "";
 }
 
+/** The harness's own tools beside the engine's: restart_browser and
+ * fill_credential. An engine tool with either name is replaced. */
 function withRestartTool(result: unknown): unknown {
   if (!result || typeof result !== "object" || !Array.isArray((result as { tools?: unknown }).tools)) return result;
-  const tools = ((result as { tools: unknown[] }).tools).filter((tool) => (tool as { name?: unknown } | null)?.name !== BROWSER_RESTART_TOOL);
-  return { ...result, tools: [...tools, BROWSER_RESTART_TOOL_SPEC] };
+  const own = new Set<unknown>([BROWSER_RESTART_TOOL, FILL_CREDENTIAL_TOOL]);
+  const tools = ((result as { tools: unknown[] }).tools).filter((tool) => !own.has((tool as { name?: unknown } | null)?.name));
+  return { ...result, tools: [...tools, BROWSER_RESTART_TOOL_SPEC, FILL_CREDENTIAL_TOOL_SPEC] };
 }

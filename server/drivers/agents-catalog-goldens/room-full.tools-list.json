@@ -777,6 +777,30 @@
       }
     },
     {
+      "name": "request_login",
+      "description": "Ask to use a login saved in the person's Sagax vault for a site you must sign in to. Returns its handle at once if already allowed; otherwise the person gets a card to allow it, and you end the turn (Sagax resumes you with the handle). Fill it with the browser's fill_credential; you never see the value. Never ask for a password or code in chat.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "maxLength": 253,
+            "description": "Site, such as example.com."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Optional account or item name."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 240,
+            "description": "Optional short, non-sensitive reason."
+          }
+        }
+      }
+    },
+    {
       "name": "send_voice_note",
       "description": "Send the user a voice note: a short spoken message synthesized with your configured voice, stored as audio, and attached to your reply when the turn ends. Write the note as speakable words, exactly as it should be said — no lists, links or markdown meant for screens. The same text becomes the note's visible caption and transcript, so the person can read or listen. Use it for warmth, tone or emphasis a written line cannot carry; use ordinary text otherwise.",
       "inputSchema": {

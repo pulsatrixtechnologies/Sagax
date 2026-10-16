@@ -462,7 +462,7 @@ describe("server-owned browser MCP runtime", () => {
     expect(other.pid).not.toBe(list.pid);
     await value.take("one", "owner");
     await expect(value.agentRpc("one", spec(), "tools/call", { name: "echo" })).rejects.toThrow(/paused/);
-    await expect(value.agentRpc("one", spec(), "tools/list", {})).resolves.toMatchObject({ tools: [{ name: "echo" }, { name: "restart_browser" }] });
+    await expect(value.agentRpc("one", spec(), "tools/list", {})).resolves.toMatchObject({ tools: [{ name: "echo" }, { name: "restart_browser" }, { name: "fill_credential" }] });
   });
 
   it("lets the agent restart an interrupted browser itself, then resume", async () => {
@@ -481,7 +481,7 @@ describe("server-owned browser MCP runtime", () => {
       // A new turn lists tools without reaching the engine: the engine's tools
       // from the last list, plus the one way out.
       const listed = await value.agentRpc("s", spec(), "tools/list", {}) as { tools: Array<{ name: string }> };
-      expect(listed.tools.map((tool) => tool.name)).toEqual(["echo", "restart_browser"]);
+      expect(listed.tools.map((tool) => tool.name)).toEqual(["echo", "restart_browser", "fill_credential"]);
       const check = vi.fn();
       await expect(value.agentRpc("s", spec(), "tools/call", { name: "restart_browser", arguments: {} }, check))
         .resolves.toMatchObject({ content: [{ text: expect.stringContaining("Browser restarted") }] });

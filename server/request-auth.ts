@@ -614,6 +614,15 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // A person's own connections (server/routes/person-connections.ts): their
   // GitHub account and their own MCP servers, the session's person only.
   { methods: ["GET"], path: /^\/api\/me\/connections$/, feature: "orgDirectory" },
+  // The person's own credential vault (server/routes/credential-vault.ts):
+  // the session's own vault only. Reads are POSTs (a loopback GET needs no
+  // desktop capability); no answer carries a value.
+  { methods: ["POST"], path: /^\/api\/me\/credentials(?:\/(?:list|onepassword\/(?:items|import)))?$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}$/ },
+  { methods: ["POST"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/(?:notes|grants)$/ },
+  { methods: ["DELETE"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/grants\/[\w-]{1,128}$/ },
+  // A bot's login request card: the handler checks the card is the caller's.
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/vault-cards\/[\w-]+\/(?:grant|dismiss)$/ },
   // The person's own memory sync token for the desktop's Settings > Memory
   // (server/perspicax-memory-sync-token.ts): the session's own sub only.
   { methods: ["GET", "POST"], path: /^\/api\/me\/memory-sync-token$/, feature: "orgDirectory" },

@@ -26,6 +26,7 @@ const SECTION_LABEL = {
   companion: "settings.section.general",
   computer: "settings.section.computer",
   usage: "settings.section.usage",
+  credentials: "settings.section.credentials",
   people: "settings.section.general",
   mail: "settings.section.general",
   activity: "settings.section.general",

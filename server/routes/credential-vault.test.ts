@@ -1,0 +1,183 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { vaultHandle } from "../../shared/credential-vault.ts";
+import type { SecretRequestCardData } from "../../shared/wire.ts";
+import { CredentialVault, LOCAL_VAULT_PRINCIPAL } from "../credential-vault.ts";
+import { json, readBody } from "../harness/http.ts";
+import { OnePassword } from "../onepassword.ts";
+import { requiredScope, type RequestAuth } from "../request-auth.ts";
+import { TOOL_POLICY_ROWS } from "../tool-policy.generated.ts";
+import { createCredentialVaultRoutes, vaultRequestCard } from "./credential-vault.ts";
+import { createCredentialVaultInternalRoutes } from "./credential-vault-internal.ts";
+import { dispatchInternalRoutes } from "./internal-route.ts";
+import { dispatchRoutes } from "./table.ts";
+
+// Fake values only.
+const FAKE_PASSWORD = "fake-route-Pa55word";
+const FAKE_SEED = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+
+const cleanups: Array<() => unknown> = [];
+afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
+
+async function serve(options: { principal?: string | null } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "sagax-vault-routes-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const vault = new CredentialVault(dir, () => ({ kind: "key", key: Buffer.alloc(32, 5) }));
+  const cards = new Map<string, SecretRequestCardData>();
+  const resumed: Array<{ messageId: string; outcome: string; prompt: string }> = [];
+  const routes = [createCredentialVaultRoutes({
+    vault,
+    onePassword: new OnePassword({ env: {}, exec: async () => { throw new Error("absent"); }, organization: () => false }),
+    principal: () => options.principal === undefined ? LOCAL_VAULT_PRINCIPAL : options.principal,
+    botExists: (id) => id === "bot-a",
+    cards: {
+      find: (_botId, threadId, messageId) => cards.get(`${threadId}:${messageId}`) ?? null,
+      patch: (_botId, threadId, messageId, secret) => { cards.set(`${threadId}:${messageId}`, secret); },
+      resume: (_botId, threadId, messageId, outcome, prompt) => {
+        const card = cards.get(`${threadId}:${messageId}`)!;
+        cards.set(`${threadId}:${messageId}`, { ...card, ...(outcome === "provided" ? { provided: true } : { dismissed: true }), resumed: true });
+        resumed.push({ messageId, outcome, prompt });
+        return true;
+      },
+    },
+  })];
+  const auth: RequestAuth = { kind: "loopback", scopes: ["admin", "client"] };
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const handled = await dispatchRoutes(routes, { req, res, url, path: url.pathname, method: req.method ?? "GET", auth, json, readBody });
+    if (!handled) json(res, 404, { from: "inline" });
+  });
+  cleanups.push(() => new Promise((done) => server.close(done)));
+  await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const call = async (method: string, path: string, body?: unknown) => {
+    const response = await fetch(base + path, { method, headers: { "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const text = await response.text();
+    return { status: response.status, text, body: text ? JSON.parse(text) : null };
+  };
+  return { vault, cards, resumed, call };
+}
+
+const login = { kind: "login", name: "Example", username: "ada.fake@example.test", password: FAKE_PASSWORD, totpSeed: FAKE_SEED, domains: ["example.test"], notes: "fake private note" };
+
+describe("credential vault routes", () => {
+  it("creates, lists, edits and deletes without ever answering a value", async () => {
+    const { call } = await serve();
+    const created = await call("POST", "/api/me/credentials", login);
+    expect(created.status).toBe(201);
+    const id = created.body.item.id as string;
+    const listed = await call("POST", "/api/me/credentials/list", {});
+    expect(listed.body.items).toHaveLength(1);
+    expect(listed.body.onePassword).toEqual({ available: false, reason: "absent" });
+    const patched = await call("PATCH", `/api/me/credentials/${id}`, { name: "Renamed" });
+    expect(patched.body.item).toMatchObject({ name: "Renamed", hasPassword: true, hasTotp: true });
+    for (const answer of [created, listed, patched]) {
+      expect(answer.text).not.toContain(FAKE_PASSWORD);
+      expect(answer.text).not.toContain(FAKE_SEED);
+      expect(answer.text).not.toContain("fake private note");
+    }
+    // Reads are POSTs: a loopback GET (any local process) gets nothing.
+    expect((await call("GET", "/api/me/credentials/list")).status).toBe(405);
+    expect((await call("GET", `/api/me/credentials/${id}/notes`)).status).toBe(405);
+    expect((await call("POST", `/api/me/credentials/${id}/notes`, {})).body).toEqual({ notes: "fake private note" });
+    expect((await call("DELETE", `/api/me/credentials/${id}`)).status).toBe(200);
+    expect((await call("POST", "/api/me/credentials/list", {})).body.items).toEqual([]);
+  });
+
+  it("allows a bot always from Settings, refuses a once grant there, and revokes", async () => {
+    const { call } = await serve();
+    const id = (await call("POST", "/api/me/credentials", login)).body.item.id as string;
+    expect((await call("POST", `/api/me/credentials/${id}/grants`, { botId: "bot-x", mode: "always" })).status).toBe(404);
+    expect((await call("POST", `/api/me/credentials/${id}/grants`, { botId: "bot-a", mode: "once" })).status).toBe(400);
+    const allowed = await call("POST", `/api/me/credentials/${id}/grants`, { botId: "bot-a", mode: "always" });
+    expect(allowed.body.item.grants).toMatchObject([{ botId: "bot-a", mode: "always" }]);
+    const revoked = await call("DELETE", `/api/me/credentials/${id}/grants/bot-a`);
+    expect(revoked.body.item.grants).toEqual([]);
+  });
+
+  it("answers a request card once or always, only for the person it was made for", async () => {
+    const { call, cards, resumed, vault } = await serve();
+    const id = (await call("POST", "/api/me/credentials", login)).body.item.id as string;
+    cards.set("t1:m1", vaultRequestCard({ principalId: LOCAL_VAULT_PRINCIPAL, botName: "Ada", domain: "example.test" }));
+    cards.set("t1:m2", vaultRequestCard({ principalId: "pr_someone_else", botName: "Ada", domain: "example.test" }));
+    expect((await call("POST", "/api/bots/bot-a/vault-cards/m2/grant", { threadId: "t1", itemId: id, mode: "always" })).status).toBe(403);
+    const once = await call("POST", "/api/bots/bot-a/vault-cards/m1/grant", { threadId: "t1", itemId: id, mode: "once" });
+    expect(once.status).toBe(200);
+    expect(vault.granted(LOCAL_VAULT_PRINCIPAL, id, "bot-a", "t1")).toBe(true);
+    expect(vault.granted(LOCAL_VAULT_PRINCIPAL, id, "bot-a", "t2")).toBe(false);
+    expect(resumed).toHaveLength(1);
+    // The bot is told the handle and the fields, never a value.
+    expect(resumed[0]!.prompt).toContain(vaultHandle(id));
+    expect(resumed[0]!.prompt).toContain("password");
+    expect(resumed[0]!.prompt).not.toContain(FAKE_PASSWORD);
+    expect(cards.get("t1:m1")).toMatchObject({ provided: true, vault: { itemId: id, mode: "once" } });
+    // An answered card cannot be answered again.
+    expect((await call("POST", "/api/bots/bot-a/vault-cards/m1/grant", { threadId: "t1", itemId: id, mode: "always" })).status).toBe(409);
+
+    // A new login saved from a card, allowed always.
+    cards.set("t1:m3", vaultRequestCard({ principalId: LOCAL_VAULT_PRINCIPAL, botName: "Ada", domain: "other.test" }));
+    const saved = await call("POST", "/api/bots/bot-a/vault-cards/m3/grant", { threadId: "t1", mode: "always", item: { kind: "login", name: "Other", password: FAKE_PASSWORD, domains: ["other.test"] } });
+    expect(saved.status).toBe(200);
+    expect(saved.text).not.toContain(FAKE_PASSWORD);
+    expect(vault.granted(LOCAL_VAULT_PRINCIPAL, saved.body.item.id, "bot-a", "t9")).toBe(true);
+
+    cards.set("t1:m4", vaultRequestCard({ principalId: LOCAL_VAULT_PRINCIPAL, botName: "Ada", domain: "x.test" }));
+    expect((await call("POST", "/api/bots/bot-a/vault-cards/m4/dismiss", { threadId: "t1" })).body).toEqual({ dismissed: true });
+    expect(resumed.at(-1)).toMatchObject({ outcome: "dismissed" });
+  });
+
+  it("refuses a caller with no person, and keeps the routes member scope and off for agents", async () => {
+    const { call } = await serve({ principal: null });
+    expect((await call("POST", "/api/me/credentials/list", {})).status).toBe(403);
+    for (const [method, path] of [["POST", "/api/me/credentials/list"], ["POST", "/api/me/credentials"], ["PATCH", "/api/me/credentials/abcdef012345"], ["POST", "/api/bots/b1/vault-cards/m1/grant"]] as const) {
+      expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
+    }
+    expect(requiredScope("GET", "/api/me/credentials/list")).toBe("admin");
+    // No agent tool may grant itself a login or read the vault.
+    const rows = TOOL_POLICY_ROWS.filter((row) => row.route.includes("credentials") && row.route.includes("/api/me") || row.route.includes("vault-cards"));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row).toMatchObject({ tier: "admin", defaultEnabled: false });
+  });
+});
+
+describe("request_login internal route", () => {
+  it("returns a granted handle at once, or posts a card", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-vault-internal-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const vault = new CredentialVault(dir, () => ({ kind: "key", key: Buffer.alloc(32, 6) }));
+    const item = vault.create(LOCAL_VAULT_PRINCIPAL, login);
+    const posted: SecretRequestCardData[] = [];
+    const routes = [createCredentialVaultInternalRoutes({
+      vault,
+      principalForThread: () => LOCAL_VAULT_PRINCIPAL,
+      botName: () => "Ada",
+      postCard: (_botId, _threadId, secret) => { posted.push(secret); return `m${posted.length}`; },
+    })];
+    const ask = async (body: Record<string, unknown>) => {
+      let answer: { status: number; body: unknown } | null = null;
+      const res = { headersSent: false, writableEnded: false } as unknown as Parameters<typeof dispatchInternalRoutes>[1]["res"];
+      await dispatchInternalRoutes(routes, {
+        res, path: "/api/internal/credentials/request", method: "POST",
+        json: ((_res: unknown, status: number, value: unknown) => { answer = { status, body: value }; }) as never,
+        capability: { botId: "bot-a", threadId: "t1", generation: "g" },
+        readBody: async () => body,
+      });
+      return answer!;
+    };
+    expect((await ask({})).status).toBe(400);
+    expect((await ask({ domain: "not a site!" })).status).toBe(400);
+    const first = await ask({ domain: "login.example.test", reason: "to read the invoice" });
+    expect(first.status).toBe(201);
+    expect(posted[0]).toMatchObject({ target: "vaultLogin", vault: { domain: "login.example.test", principalId: LOCAL_VAULT_PRINCIPAL } });
+    vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
+    const second = await ask({ domain: "login.example.test" });
+    expect(second).toMatchObject({ status: 200, body: { granted: [{ handle: vaultHandle(item.id), name: "Example", domains: ["example.test"], fields: ["username", "password", "totp"] }] } });
+    expect(JSON.stringify(second)).not.toContain(FAKE_PASSWORD);
+    expect(posted).toHaveLength(1);
+  });
+});

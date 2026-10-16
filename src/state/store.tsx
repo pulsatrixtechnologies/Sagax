@@ -217,7 +217,9 @@ export interface ConnectorCardData {
 }
 
 export interface SecretRequestCardData {
-  target: import("../../shared/credential-request").CredentialTargetId;
+  /** vaultLogin: a login request from the credential vault (carries `vault`). */
+  target: import("../../shared/credential-request").CredentialTargetId | import("../../shared/credential-vault").VaultLoginTarget;
+  vault?: import("../../shared/credential-vault").VaultRequestCardData;
   label: string;
   description: string;
   placeholder: string;
@@ -1185,6 +1187,8 @@ export type AppSettingsSection =
   | "companion"
   | "computer"
   | "usage"
+  /** The person's credential vault (2026-10-16): logins bots fill by reference. */
+  | "credentials"
   | "people"
   | "mail"
   | "activity"

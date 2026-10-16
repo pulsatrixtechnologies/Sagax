@@ -3408,6 +3408,45 @@ telemetry. Keep these rules, each covered by a test:
   host outside its reviewed allowlist; `server/no-phone-home.e2e.test.ts`
   audits a server start and a chat turn.
 
+## Credential vault and secure form fill (2026-10-16)
+
+Settings > Credentials (`src/components/settings/CredentialsSettings.tsx`)
+keeps a person's logins (user name, password, one-time code seed), API keys
+and notes, each bound to sites, with the bots allowed to use it and when one
+last did. Storage is `server/credential-vault.ts`: one AES-256-GCM file per
+person (`credential-vault.enc`, under `principals/<pid>/` on an
+organization server), key derived by HKDF from the vault key of
+`mcp-oauth.enc` (desktop: OS keychain via safeStorage, `SAGAX_MCP_OAUTH_KEY`;
+server: 0600 key file). A file that does not open is never overwritten.
+
+A bot never gets a value. `request_login` (agents tool) returns a handle
+(`cred_<id>`) when the bot is already allowed, else posts a `kind: "secret"`
+card with `target: "vaultLogin"` (`src/components/VaultRequestCard.tsx`)
+where the person picks or saves a login and allows it this time (the
+conversation, 15 minutes) or always for that bot; the bot resumes with the
+handle (`server/routes/credential-vault.ts`, `grantedNote`). The browser's
+harness tool `fill_credential` (`server/credential-fill.ts`, run by
+`server/browser-runtime.ts`) focuses the ref, probes the page with a script
+that has no secret (top-level URL, top frame, the target is a fillable input
+of the top document, a password only into `type=password`), asks the vault
+(grant and site check), then types with a script that re-checks the origin in
+the same synchronous step. Every later browser result of that session is
+redacted (value and common encodings), and the bot's own
+`agent_browser_eval` is refused on a site where a credential was filled.
+One-time codes are computed at fill time (`server/totp.ts`).
+
+Reads of the vault are POSTs (`/api/me/credentials/list`, `/notes`, the
+1Password picker): a packaged desktop answers loopback GETs from any local
+process. The agent tool policy keeps `/api/me/credentials*` and
+`vault-cards` admin and off. 1Password (`server/onepassword.ts`) is optional
+and read-only: Connect (`OP_CONNECT_HOST`, `OP_CONNECT_TOKEN`) or the `op`
+CLI with the desktop app integration or a service account, never on an
+organization server; a picked item is a reference read at fill time. Tests:
+`server/credential-vault.test.ts`, `server/credential-fill.test.ts` (a
+happy-dom page behind a fake engine), `server/routes/credential-vault.test.ts`,
+`server/onepassword.test.ts`, `server/totp.test.ts`,
+`src/components/VaultRequestCard.test.ts`.
+
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 
 A bot shows a card, list, form, table or chart with the agents tool

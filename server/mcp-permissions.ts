@@ -124,6 +124,7 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("docs:update", "admin", "docs_update"),
   p("mcp:add", "admin", "add_mcp_server"),
   p("credentials:request", "admin", "request_credential"),
+  p("credentials:login", "admin", "request_login"),
   p("computers:select", "admin", "select_computer"),
   p("computers:use", "admin", "shared_computer"),
   p("vm:exec", "admin", "vm_exec"),

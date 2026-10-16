@@ -89,6 +89,11 @@ import {
   isCredentialTargetId,
   type CredentialTargetId,
 } from "../shared/credential-request.ts";
+import { VAULT_LOGIN_TARGET } from "../shared/credential-vault.ts";
+import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
+import { OnePassword } from "./onepassword.ts";
+import { createCredentialVaultRoutes } from "./routes/credential-vault.ts";
+import { createCredentialVaultInternalRoutes } from "./routes/credential-vault-internal.ts";
 
 import { createRoomTurnLevels } from "./room-turn-level.ts";
 import { HELD_NOTE, approvalHeldNote, approvalHeldReason, approvalModeForOrigin, autoVerdict, deliverFullAccessApproval, delegatedApprovalMode } from "./auto-approve.ts";
@@ -5793,6 +5798,34 @@ function vaultKeySource(): VaultKeySource {
   return mcpOAuthKey;
 }
 const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
+// The credential vault (server/credential-vault.ts): each person's logins,
+// API keys and notes, encrypted with a key derived from the same vault key
+// (the OS keychain on a desktop, a 0600 key file on a server). Bots fill a
+// login by reference through the browser (fill_credential); they never get
+// a value. 1Password is an optional read-only source (server/onepassword.ts),
+// off on an organization server.
+const credentialVault = new CredentialVault(DATA_DIR, vaultKeySource);
+const onePassword = new OnePassword({ organization: () => IDENTITY.kind === "perspicax", path: augmentedPath });
+const readOnePasswordField = (ref: Parameters<OnePassword["readField"]>[0], field: Parameters<OnePassword["readField"]>[1]) => onePassword.readField(ref, field);
+/** Whose vault a turn on this conversation reads: the one local vault on a
+ * desktop or a solo server; on an organization server the person the turn
+ * speaks for, or a routine's owner. Null when there is nobody to ask. */
+function vaultPrincipalForThread(threadId: string): string | null {
+  if (IDENTITY.kind !== "perspicax") return LOCAL_VAULT_PRINCIPAL;
+  if (turnRoutineLineage.has(threadId)) return turnRoutinePayers.get(threadId)?.trim().toLowerCase() || null;
+  return turnSpeakerPrincipals.get(threadId)?.trim().toLowerCase() || null;
+}
+ROUTES.push(createCredentialVaultRoutes({
+  vault: credentialVault,
+  onePassword,
+  principal: (auth) => IDENTITY.kind !== "perspicax" ? LOCAL_VAULT_PRINCIPAL : sessionPrincipal(auth),
+  botExists: (id) => Boolean(store.bot(id)),
+  cards: {
+    find: (botId, threadId, messageId) => secretMessage(botId, threadId, messageId)?.secret ?? null,
+    patch: (_botId, threadId, messageId, secret) => { store.patchMessage(threadId, messageId, { secret }); },
+    resume: (botId, threadId, messageId, outcome, prompt) => resumeSecretCard(botId, threadId, messageId, outcome, prompt),
+  },
+}));
 const cloudAgentStore = new CloudAgentStore(DATA_DIR);
 const cloudAgentCredentials = new CloudAgentCredentialStore(DATA_DIR, vaultKeySource);
 let cloudAgentManager!: CloudAgentManager;
@@ -21757,6 +21790,8 @@ type SecretResumeEntry = {
   messageId: string;
   label: string;
   outcome: "provided" | "dismissed";
+  /** A vault login card's own note to the bot (server/routes/credential-vault.ts). */
+  prompt?: string;
 };
 const pendingSecretResumes = new Map<string, SecretResumeEntry>();
 const phoneSecretSubmissions = new PhoneSecretSubmissionRegistry();
@@ -21822,10 +21857,10 @@ function markSecretResumeFailed(threadId: string, messageId: string, error: stri
 function dispatchSecretResume(entry: SecretResumeEntry) {
   const owner = connectorThread(entry.botId, entry.threadId);
   if (!owner) return;
-  const prompt =
+  const prompt = entry.prompt ?? (
     entry.outcome === "provided"
       ? `Sagax credential update: the user securely provided ${entry.label}. Continue the task that paused for it. You do not receive the secret and must not ask them to paste it into chat.`
-      : `Sagax credential update: the user declined to provide ${entry.label}. Continue without it if possible, or briefly explain the limitation. Do not ask them to paste it into chat.`;
+      : `Sagax credential update: the user declined to provide ${entry.label}. Continue without it if possible, or briefly explain the limitation. Do not ask them to paste it into chat.`);
   if (!canAdmitDirectTurn(entry.botId, entry.threadId)) {
     pendingSecretResumes.set(`${entry.threadId}:${entry.messageId}`, entry);
     return;
@@ -21887,7 +21922,7 @@ function dispatchSecretResume(entry: SecretResumeEntry) {
   });
 }
 
-function resumeSecretCard(botId: string, threadId: string, messageId: string, outcome: SecretResumeEntry["outcome"]) {
+function resumeSecretCard(botId: string, threadId: string, messageId: string, outcome: SecretResumeEntry["outcome"], prompt?: string) {
   const message = secretMessage(botId, threadId, messageId);
   if (!message?.secret) return false;
   if (message.secret.resumed) return true;
@@ -21900,7 +21935,7 @@ function resumeSecretCard(botId: string, threadId: string, messageId: string, ou
       error: undefined,
     },
   });
-  dispatchSecretResume({ botId, threadId, messageId, label: message.secret.label, outcome });
+  dispatchSecretResume({ botId, threadId, messageId, label: message.secret.label, outcome, ...(prompt ? { prompt } : {}) });
   return true;
 }
 
@@ -23322,6 +23357,34 @@ const perspicaxNativeReview = async (text: string, capability: InternalCapabilit
   })) ?? null;
 };
 const INTERNAL_ROUTES: InternalRouteHandler[] = [
+  // request_login (server/routes/credential-vault-internal.ts)
+  createCredentialVaultInternalRoutes({
+    vault: credentialVault,
+    principalForThread: vaultPrincipalForThread,
+    botName: (botId, threadId) => {
+      const owner = connectorThread(botId, threadId);
+      return owner ? owner.bot.name : null;
+    },
+    postCard: (botId, threadId, secret) => {
+      const owner = connectorThread(botId, threadId);
+      const bot = owner?.bot;
+      const message = store.appendMessage(threadId, {
+        role: "bot",
+        kind: "secret",
+        text: `${secret.label}: allow a saved login from Sagax on your phone or computer. It is never added to chat.`,
+        ...(owner?.group && bot ? { from: { botId: bot.id, name: bot.name, color: bot.color } } : {}),
+        secret,
+      });
+      // A newer request from this bot replaces its still-pending login cards here.
+      for (const prior of store.activePath(threadId)) {
+        if (prior.id === message.id || prior.secret?.target !== VAULT_LOGIN_TARGET) continue;
+        if (prior.secret.provided || prior.secret.dismissed || prior.secret.superseded) continue;
+        if (owner?.group && prior.from?.botId !== botId) continue;
+        store.patchMessage(threadId, prior.id, { secret: { ...prior.secret, superseded: true } });
+      }
+      return message.id;
+    },
+  }),
   createPerspicaxClaimsInternalRoutes({ perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview }),
   createPerspicaxToolInternalRoutes({ tools: PERSPICAX_TOOL_NAMES, perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview }),
   createMcpAuditInternalRoutes({ append: (row) => appendAdminAction(DATA_DIR, { ...row, actor: { kind: "loopback" } }) }),
@@ -30643,6 +30706,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const refusal = browserNavigationRefusal(body.params);
           if (refusal) return json(res, 400, { error: refusal });
         }
+        // fill_credential resolves through this turn's person's vault, for
+        // this bot and this conversation (server/credential-fill.ts).
+        const vaultPrincipal = vaultPrincipalForThread(internalCapability.threadId);
+        const credentials = vaultPrincipal
+          ? fillResolverFor(credentialVault, { principalId: vaultPrincipal, botId: bot.id, threadId: internalCapability.threadId }, readOnePasswordField)
+          : undefined;
         const result = await browserRuntime.agentRpc(browser.session, browser.spec, body.method, body.params, () => {
           requireActiveInternalCapability();
           const current = store.bot(bot.id);
@@ -30653,7 +30722,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (body.method === "tools/call" && !claimTurnResource(internalCapability, `browser:${browser.session}`)) {
             throw Object.assign(new Error("another thread is using this browser — pause browser work until that thread finishes"), { status: 409 });
           }
-        });
+        }, credentials);
         requireActiveInternalCapability();
         return json(res, 200, { result });
       }
@@ -40812,6 +40881,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const threadId = String(body.threadId ?? "");
       const message = secretMessage(m[1], threadId, m[2]);
       if (!message?.secret) return json(res, 404, { error: "no such credential request" });
+      // A vault login card is answered on its own routes (server/routes/credential-vault.ts).
+      if (message.secret.target === VAULT_LOGIN_TARGET) return json(res, 409, { error: "answer this login request on its card" });
       if (phoneSecretSubmissions.has(
         phoneSecretSubmissionKey(threadId, message.id, message.secret.requestKey),
       )) {

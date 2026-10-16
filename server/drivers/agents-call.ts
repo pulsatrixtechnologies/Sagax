@@ -985,6 +985,31 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       text: `A secure ${r.label ?? CREDENTIAL_TARGETS[credentialId].label} request is ready. The desktop app and a freshly QR-paired mobile app show its secure entry card; older mobile pairings explain how to pair again or finish on the computer. End this turn; Sagax will resume the task after the user saves or declines. Never ask them to paste the key into chat.`,
     };
   }
+  if (name === "request_login") {
+    const domain = typeof args.domain === "string" ? args.domain.trim().slice(0, 253) : "";
+    const itemName = typeof args.name === "string" ? args.name.trim().slice(0, 120) : "";
+    const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 240) : "";
+    if (!domain && !itemName) return { text: "request_login needs the site (domain) or the login's name.", isError: true };
+    const r = await api("/api/internal/credentials/request", {
+      method: "POST",
+      body: JSON.stringify({
+        fromBotId: BOT_ID,
+        fromThreadId: THREAD_ID,
+        ...(domain ? { domain } : {}),
+        ...(itemName ? { name: itemName } : {}),
+        ...(reason ? { reason } : {}),
+      }),
+    });
+    if (r.error) return { text: `Couldn't request a login: ${r.error}`, isError: true };
+    if (Array.isArray(r.granted) && r.granted.length) {
+      const rows = (r.granted as Array<{ handle: string; name: string; domains: string[]; fields: string[] }>)
+        .map((item) => `${item.handle} "${item.name}" (sites: ${item.domains.join(", ")}; fields: ${item.fields.join(", ")})`);
+      return { text: `Already allowed for you: ${rows.join("; ")}. Call fill_credential in the browser with the handle and the field. You never see the value.` };
+    }
+    return {
+      text: "A secure login request card is ready for the person. End this turn; Sagax resumes the task with the login's handle after they allow it or decline. Never ask them for a password or a code in chat.",
+    };
+  }
   if (name === "list_terminal_resources") {
     const query = new URLSearchParams({ fromBotId: BOT_ID, fromThreadId: THREAD_ID });
     const r = await api(`/api/internal/terminal/resources?${query.toString()}`);

@@ -90,6 +90,21 @@ release.
   through the API (`configured` booleans out, never values). Any path that
   echoes a stored secret back (API response, SSE event, log line, argv visible
   in `ps`) is a vulnerability.
+- **Credential vault.** A person's logins, API keys and notes
+  (`server/credential-vault.ts`) are encrypted at rest with a key derived
+  from the server's vault key (the OS keychain through Electron safeStorage
+  on the desktop, a 0600 key file on a server), one file per person, bound to
+  that person. A bot only ever holds an opaque handle: `fill_credential`
+  (`server/credential-fill.ts`) types the value into the bot's browser only
+  for a granted bot (once: that conversation for 15 minutes; always: until
+  revoked), only on a page whose top-level origin is one of the item's sites
+  over https, never into a frame, and redacts the value from every later
+  browser result. Any way for a bot, an AI client or another person to read a
+  value back (a tool result, an SSE event, a transcript, a log, a loopback
+  GET), to fill it on another origin or in a frame, or to grant itself an
+  item, is a vulnerability. Known limits, not vulnerabilities: a page script
+  of the bound site itself can read what was typed into its own form; a user
+  name and a one-time code can appear on screen in a screenshot.
 - **Process spawning.** Spawning must never route user-influenced strings
   through a shell. Report any `shell: true` or `cmd.exe` string-building you
   find.

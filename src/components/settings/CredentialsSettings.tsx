@@ -1,0 +1,284 @@
+// Settings > Credentials (Identifiants): the person's credential vault. Each
+// item shows its sites, what is saved (booleans only: the server never sends
+// a value), the bots allowed to use it and when one last did. Items are
+// added here or from a bot's request card, edited, deleted; a bot is
+// allowed always or revoked. Optional 1Password: a read-only picker when the
+// op CLI or 1Password Connect is present (server/onepassword.ts).
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+
+import { allowBotAlways, createCredential, deleteCredential, importOnePasswordItem, loadCredentials, loadOnePasswordItems, parseDomains, revealCredentialNotes, revokeBot, updateCredential, type CredentialVaultState, type OnePasswordItem, type VaultItemDraft, type VaultItemListing } from "@/lib/credential-vault";
+import { t } from "@/lib/i18n";
+import { useStore } from "@/state/store";
+import type { VaultItemKind } from "../../../shared/credential-vault";
+import { Card } from "../SettingsPrimitives";
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const inputClass = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none";
+
+type Draft = { kind: VaultItemKind; name: string; domains: string; username: string; password: string; totpSeed: string; apiKey: string; notes: string };
+const EMPTY: Draft = { kind: "login", name: "", domains: "", username: "", password: "", totpSeed: "", apiKey: "", notes: "" };
+
+/** Only the fields typed: on an edit, a secret left blank keeps its value. */
+function draftBody(draft: Draft, editing: boolean): Partial<VaultItemDraft> {
+  const body: Partial<VaultItemDraft> = { name: draft.name, domains: parseDomains(draft.domains) };
+  if (!editing) body.kind = draft.kind;
+  if (draft.kind === "login") {
+    body.username = draft.username;
+    if (draft.password || !editing) body.password = draft.password;
+    if (draft.totpSeed || !editing) body.totpSeed = draft.totpSeed;
+  }
+  if (draft.kind === "apiKey" && (draft.apiKey || !editing)) body.apiKey = draft.apiKey;
+  if (draft.notes || !editing) body.notes = draft.notes;
+  return body;
+}
+
+function when(at: number | undefined): string {
+  if (!at) return t("vault.settings.never");
+  return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+export function CredentialsSettings() {
+  const { state } = useStore();
+  const [data, setData] = useState<CredentialVaultState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const refresh = useCallback(async () => {
+    try {
+      setData(await loadCredentials());
+      setError(null);
+    } catch (failure) {
+      setError(message(failure));
+    }
+  }, []);
+  useEffect(() => { void refresh(); }, [refresh]);
+  const botName = useCallback((id: string) => state.bots.find((bot) => bot.id === id)?.name ?? id, [state.bots]);
+
+  if (!data) {
+    return error
+      ? <p role="alert" className="text-[12.5px] text-danger">{error}</p>
+      : <p className="text-[12.5px] text-ink-secondary">{t("vault.settings.loading")}</p>;
+  }
+  return (
+    <div className="flex flex-col gap-4" data-credentials-settings>
+      <p className="text-[13px] leading-relaxed text-ink-secondary">{t("vault.settings.intro")}</p>
+      {data.unavailable && <p role="alert" className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-danger">{t("vault.settings.unavailable")}</p>}
+      {error && <p role="alert" className="text-[12.5px] text-danger">{error}</p>}
+      <Card cardId="credentials.items" title={t("vault.settings.itemsTitle")} subtitle={t("vault.settings.itemsSubtitle")}>
+        <div className="flex flex-col gap-3">
+          {data.items.length === 0 && <p className="text-[12.5px] text-ink-secondary">{t("vault.settings.empty")}</p>}
+          {data.items.map((item) => editing === item.id
+            ? <ItemForm key={item.id} item={item} onDone={async () => { setEditing(null); await refresh(); }} />
+            : <ItemRow key={item.id} item={item} botName={botName} bots={state.bots} onEdit={() => setEditing(item.id)} onChanged={refresh} onError={setError} />)}
+          {adding
+            ? <ItemForm onDone={async () => { setAdding(false); await refresh(); }} />
+            : <div><button type="button" className="ui-button ui-button-primary" onClick={() => setAdding(true)}>{t("vault.settings.add")}</button></div>}
+        </div>
+      </Card>
+      <OnePasswordCard data={data} onImported={refresh} />
+    </div>
+  );
+}
+
+function ItemRow({ item, botName, bots, onEdit, onChanged, onError }: {
+  item: VaultItemListing;
+  botName: (id: string) => string;
+  bots: ReadonlyArray<{ id: string; name: string }>;
+  onEdit: () => void;
+  onChanged: () => Promise<void>;
+  onError: (error: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [notes, setNotes] = useState<string | null>(null);
+  const [allow, setAllow] = useState("");
+  const allowed = new Set(item.grants.map((grant) => grant.botId));
+  const run = async (work: () => Promise<unknown>) => {
+    setBusy(true);
+    onError(null);
+    try {
+      await work();
+      await onChanged();
+    } catch (failure) {
+      onError(message(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saved = [
+    item.username ? t("vault.settings.savedUsername", { username: item.username }) : "",
+    item.hasPassword ? t("vault.field.password") : "",
+    item.hasTotp ? t("vault.settings.savedTotp") : "",
+    item.hasApiKey ? t("vault.field.apiKey") : "",
+    item.hasNotes ? t("vault.field.notes") : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <div className="flex flex-col gap-1.5 border-b border-border pb-3 last:border-b-0 last:pb-0" data-credential-item={item.id}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-[13px] text-ink">
+            {item.name}
+            <span className="ms-2 text-[11.5px] text-ink-tertiary">{t(`vault.kind.${item.kind}`)}{item.source === "1password" ? ` · 1Password` : ""}</span>
+          </div>
+          {item.domains.length > 0 && <div className="truncate text-[12px] text-ink-secondary" dir="ltr">{item.domains.join(", ")}</div>}
+          {saved && <div className="text-[12px] text-ink-secondary">{saved}</div>}
+        </div>
+        <div className="flex shrink-0 gap-1.5">
+          {item.hasNotes && (
+            <button type="button" className="ui-button" disabled={busy} onClick={() => void (notes === null ? revealCredentialNotes(item.id).then((answer) => setNotes(answer.notes)).catch((failure) => onError(message(failure))) : Promise.resolve(setNotes(null)))}>
+              {notes === null ? t("vault.settings.showNote") : t("vault.settings.hideNote")}
+            </button>
+          )}
+          <button type="button" className="ui-button" disabled={busy} onClick={onEdit}>{t("vault.settings.edit")}</button>
+          {confirming
+            ? <button type="button" className="ui-button text-danger" disabled={busy} onClick={() => void run(() => deleteCredential(item.id))}>{t("vault.settings.confirmDelete")}</button>
+            : <button type="button" className="ui-button" disabled={busy} onClick={() => setConfirming(true)}>{t("vault.settings.delete")}</button>}
+        </div>
+      </div>
+      {notes !== null && <pre className="whitespace-pre-wrap rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink">{notes}</pre>}
+      {(item.kind === "login" || item.kind === "apiKey") && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+          <span className="text-ink-secondary">{t("vault.settings.allowedBots")}</span>
+          {item.grants.length === 0 && <span className="text-ink-tertiary">{t("vault.settings.noBots")}</span>}
+          {item.grants.map((grant) => (
+            <span key={`${grant.botId}:${grant.threadId ?? ""}`} className="inline-flex items-center gap-1 rounded-full bg-ink/[0.07] px-2 py-0.5 text-ink">
+              {botName(grant.botId)}{grant.mode === "once" ? ` (${t("vault.settings.onceShort")})` : ""}
+              <button type="button" aria-label={t("vault.settings.revoke", { bot: botName(grant.botId) })} title={t("vault.settings.revoke", { bot: botName(grant.botId) })} disabled={busy} className="text-ink-tertiary hover:text-ink" onClick={() => void run(() => revokeBot(item.id, grant.botId))}>×</button>
+            </span>
+          ))}
+          <select aria-label={t("vault.settings.allowBot")} value={allow} disabled={busy} onChange={(event) => setAllow(event.target.value)} className="rounded-lg border border-border bg-transparent px-1.5 py-0.5 text-[12px] text-ink">
+            <option value="">{t("vault.settings.allowBot")}</option>
+            {bots.filter((bot) => !allowed.has(bot.id)).map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}
+          </select>
+          {allow && <button type="button" className="ui-button" disabled={busy} onClick={() => void run(async () => { await allowBotAlways(item.id, allow); setAllow(""); })}>{t("vault.settings.allow")}</button>}
+        </div>
+      )}
+      <div className="text-[11.5px] text-ink-tertiary">
+        {item.lastUsedAt
+          ? t("vault.settings.lastUsed", { when: when(item.lastUsedAt), bot: botName(item.lastUsedBy ?? "") })
+          : t("vault.settings.neverUsed")}
+      </div>
+    </div>
+  );
+}
+
+function ItemForm({ item, onDone }: { item?: VaultItemListing; onDone: () => Promise<void> }) {
+  const [draft, setDraft] = useState<Draft>(() => item
+    ? { ...EMPTY, kind: item.kind, name: item.name, domains: item.domains.join(", "), username: item.username ?? "" }
+    : EMPTY);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const readOnly = item?.source === "1password";
+  const set = (key: keyof Draft) => (event: { target: { value: string } }) => setDraft((current) => ({ ...current, [key]: event.target.value }));
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const body = draftBody(draft, Boolean(item));
+      if (item) await updateCredential(item.id, readOnly ? { name: body.name, domains: body.domains, ...(body.notes !== undefined ? { notes: body.notes } : {}) } : body);
+      else await createCredential(body as VaultItemDraft);
+      setDraft(EMPTY);
+      await onDone();
+    } catch (failure) {
+      setError(message(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const keep = item ? t("vault.settings.keepBlank") : undefined;
+  return (
+    <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-2 rounded-lg bg-inset p-3" data-credential-form>
+      {!item && (
+        <select aria-label={t("vault.field.kind")} value={draft.kind} onChange={set("kind")} className={inputClass}>
+          <option value="login">{t("vault.kind.login")}</option>
+          <option value="apiKey">{t("vault.kind.apiKey")}</option>
+          <option value="note">{t("vault.kind.note")}</option>
+        </select>
+      )}
+      <input className={inputClass} value={draft.name} onChange={set("name")} placeholder={t("vault.field.name")} aria-label={t("vault.field.name")} required />
+      {draft.kind !== "note" && <input className={inputClass} dir="ltr" value={draft.domains} onChange={set("domains")} placeholder={t("vault.field.sitesHint")} aria-label={t("vault.field.sites")} />}
+      {draft.kind === "login" && !readOnly && (
+        <>
+          <input className={inputClass} dir="ltr" autoComplete="off" value={draft.username} onChange={set("username")} placeholder={t("vault.field.username")} aria-label={t("vault.field.username")} />
+          <input className={inputClass} dir="ltr" type="password" autoComplete="new-password" value={draft.password} onChange={set("password")} placeholder={keep ?? t("vault.field.password")} aria-label={t("vault.field.password")} />
+          <input className={inputClass} dir="ltr" type="password" autoComplete="off" value={draft.totpSeed} onChange={set("totpSeed")} placeholder={keep ?? t("vault.field.totpOptional")} aria-label={t("vault.field.totp")} />
+        </>
+      )}
+      {draft.kind === "apiKey" && !readOnly && (
+        <input className={inputClass} dir="ltr" type="password" autoComplete="off" value={draft.apiKey} onChange={set("apiKey")} placeholder={keep ?? t("vault.field.apiKey")} aria-label={t("vault.field.apiKey")} />
+      )}
+      <textarea className={inputClass} rows={draft.kind === "note" ? 4 : 2} value={draft.notes} onChange={set("notes")} placeholder={keep ?? t("vault.field.notesOptional")} aria-label={t("vault.field.notes")} />
+      {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+      <div className="flex gap-2">
+        <button type="submit" className="ui-button ui-button-primary" disabled={busy}>{t("vault.settings.save")}</button>
+        <button type="button" className="ui-button" disabled={busy} onClick={() => void onDone()}>{t("vault.settings.cancel")}</button>
+      </div>
+    </form>
+  );
+}
+
+function OnePasswordCard({ data, onImported }: { data: CredentialVaultState; onImported: () => Promise<void> }) {
+  const status = data.onePassword;
+  const [items, setItems] = useState<OnePasswordItem[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (items ?? []).filter((item) => !q || item.title.toLowerCase().includes(q) || item.domains.some((domain) => domain.includes(q))).slice(0, 50);
+  }, [items, query]);
+  if (status.reason === "organization") return null;
+  const subtitle = status.available
+    ? t(status.via === "connect" ? "vault.onePassword.connect" : "vault.onePassword.cli")
+    : t(status.reason === "signed_out" ? "vault.onePassword.signedOut" : "vault.onePassword.absent");
+  const open = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setItems((await loadOnePasswordItems()).items);
+    } catch (failure) {
+      setError(message(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pick = async (item: OnePasswordItem) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await importOnePasswordItem(item);
+      await onImported();
+    } catch (failure) {
+      setError(message(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card cardId="credentials.onePassword" title="1Password" subtitle={subtitle}>
+      {status.available && (
+        <div className="flex flex-col gap-2 text-[13px]">
+          {items === null
+            ? <div><button type="button" className="ui-button" disabled={busy} onClick={() => void open()}>{t("vault.onePassword.pick")}</button></div>
+            : (
+              <>
+                <input className={inputClass} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("vault.onePassword.search")} aria-label={t("vault.onePassword.search")} />
+                <ul className="flex max-h-64 flex-col gap-1 overflow-auto">
+                  {shown.map((item) => (
+                    <li key={`${item.vaultId}:${item.id}`} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate">{item.title} <span className="text-[12px] text-ink-tertiary">{item.vaultName}{item.domains.length ? ` · ${item.domains.join(", ")}` : ""}</span></span>
+                      <button type="button" className="ui-button" disabled={busy || item.domains.length === 0} title={item.domains.length === 0 ? t("vault.onePassword.noSite") : undefined} onClick={() => void pick(item)}>{t("vault.onePassword.add")}</button>
+                    </li>
+                  ))}
+                  {shown.length === 0 && <li className="text-[12.5px] text-ink-secondary">{t("vault.onePassword.none")}</li>}
+                </ul>
+              </>
+            )}
+          <p className="text-[12px] text-ink-tertiary">{t("vault.onePassword.readOnly")}</p>
+        </div>
+      )}
+      {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
+    </Card>
+  );
+}

@@ -1,16 +1,24 @@
 import { useState, type FormEvent } from "react";
 import { ExternalLink, KeyRound, Loader2, LockKeyhole, RefreshCw, X } from "lucide-react";
 
-import { credentialConfigPatch, credentialResumeOutcome } from "../../shared/credential-request";
+import { credentialConfigPatch, credentialResumeOutcome, type CredentialTargetId } from "../../shared/credential-request";
+import { VAULT_LOGIN_TARGET } from "../../shared/credential-vault";
 import { cn } from "@/lib/cn";
 import { api, useStore, type ConfigStatus, type Message } from "@/state/store";
 import { ASK_FIELD, ASK_PRIMARY_BUTTON, ASK_QUIET_BUTTON, AskCard, AskSettledLine, returnFocusToComposer } from "./AskCard";
+import { VaultRequestCard } from "./VaultRequestCard";
 
 // The key a bot asked for. It waits in the shared ask card with a masked
 // field, and once saved folds into one line that names the key and never
 // its value: the value goes straight to the host's settings, not the chat.
+// A login request from the credential vault (target vaultLogin) is its own
+// card: the person allows a saved login instead of typing a key.
 
-export function SecretRequestCard({
+export function SecretRequestCard(props: { botId: string; threadId: string; message: Message }) {
+  return props.message.secret?.target === VAULT_LOGIN_TARGET ? <VaultRequestCard {...props} /> : <ApiKeyRequestCard {...props} />;
+}
+
+function ApiKeyRequestCard({
   botId,
   threadId,
   message,
@@ -21,6 +29,7 @@ export function SecretRequestCard({
 }) {
   const { dispatch } = useStore();
   const secret = message.secret!;
+  const target = secret.target as CredentialTargetId;
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -85,10 +94,10 @@ export function SecretRequestCard({
       if (!savedLocally) {
         const next = value.trim();
         const status: ConfigStatus = window.ogb?.setCredential
-          ? await window.ogb.setCredential(secret.target, next)
+          ? await window.ogb.setCredential(target, next)
           : await api("/api/config", {
               method: "PUT",
-              body: JSON.stringify(credentialConfigPatch(secret.target, next)),
+              body: JSON.stringify(credentialConfigPatch(target, next)),
             });
         dispatch({ type: "configStatus", config: status });
         setValue("");

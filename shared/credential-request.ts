@@ -83,8 +83,12 @@ export function credentialConfigPatch(id: CredentialTargetId, value: string): Cr
   }
 }
 
-export function credentialIsConfigured(config: CredentialConfig, id: CredentialTargetId): boolean {
+/** A vault login card (shared/credential-vault.ts) is never "configured":
+ * it is answered on its own card, not by saving a key. */
+export function credentialIsConfigured(config: CredentialConfig, id: CredentialTargetId | "vaultLogin"): boolean {
   switch (id) {
+    case "vaultLogin":
+      return false;
     case "xaiApiKey":
       return Boolean(config.xai?.key);
     case "boxToken":

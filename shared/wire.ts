@@ -27,6 +27,7 @@ import type { MessageReaction } from "./reactions.ts";
 import type { BotCatalogListing } from "./bot-catalog.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
+import type { VaultLoginTarget, VaultRequestCardData } from "./credential-vault.ts";
 import type { TeamSetupRequest } from "./team-setup.ts";
 import type { RoutineRequestCardData } from "./routine-request.ts";
 import type { ProfileRequestCardData } from "./profile-request.ts";
@@ -936,8 +937,10 @@ export interface ConnectorCardData {
 }
 
 export interface SecretRequestCardData {
-  /** Fixed allowlisted credential id; never an arbitrary config path. */
-  target: CredentialTargetId;
+  /** Fixed allowlisted credential id; never an arbitrary config path.
+   * vaultLogin: a bot asks to use a login from the credential vault
+   * (shared/credential-vault.ts); the card carries `vault` and no field. */
+  target: CredentialTargetId | VaultLoginTarget;
   label: string;
   description: string;
   placeholder: string;
@@ -951,6 +954,8 @@ export interface SecretRequestCardData {
   superseded?: boolean;
   resumed?: boolean;
   error?: string;
+  /** target vaultLogin only: what the bot asked for and what the person chose. */
+  vault?: VaultRequestCardData;
 }
 
 /** Who answers a room message nobody was @mentioned in. `auto` asks the
