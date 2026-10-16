@@ -138,6 +138,7 @@ import { GotoGroupChip } from "./GotoGroupChip";
 import { collapseGotoLines, silentChatItem, type GotoGroup, type GotoTarget } from "@/lib/goto-lines";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { CancelledTurnRow } from "./CancelledTurnRow";
+import { DevPods, DevPodsToggle } from "./dev-pods/DevPods";
 import { ActivityRun } from "./ActivityRun";
 import { CwActivityWidgets, CwWidgetView } from "./cw/CwWidgetView";
 import { webhookMessageView } from "@/lib/webhook-message";
@@ -1672,6 +1673,7 @@ export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) 
             {...(!remoteClient && showInspector && advanced ? { onToggleInspector: () => dispatch({ type: "toggleInspector" }), inspectorOpen: state.inspectorOpen } : {})}
             {...(dataItem ? { data: dataItem } : {})}
           />}
+          <DevPodsToggle bot={bot} />
           <TaskPicker bot={bot} />
         </div>
       </div>}
@@ -1813,6 +1815,10 @@ export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) 
       </div>
 
       <TranscriptAnnouncer threadKey={transcriptKey} snapshot={announcement} />
+
+      {/* Dev context pods (Settings > Experimental): an overlay in the
+          pane's top-right corner; the transcript above never moves. */}
+      <DevPods bot={bot} messages={messages} composerHeight={composerDock.height} computerStart={state.computerStarts[bot.id]} dispatch={dispatch} />
 
       {/* Reading scrollback — one tap back to the end, streaming or not */}
       {!following && (

@@ -15,6 +15,7 @@ import { BrowserProfilesManager } from "../BrowserProfilesManager";
 import { BrowserUnavailableNote } from "../SettingsLink";
 import { DescribedRow, HelpTip, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { DisclosurePill } from "./AppearanceSettings";
+import { setDevPodsEnabled, useDevPodPrefs } from "../dev-pods/prefs";
 
 type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel" | "dataWindow";
 
@@ -124,14 +125,16 @@ export function ExperimentalSettings() {
     }
   };
   const busy = saving !== null;
-  const on = Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel) + Number(dataWindow);
+  // The dev context pods are this computer's own choice: no server round trip.
+  const devPods = useDevPodPrefs().enabled;
+  const on = Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel) + Number(dataWindow) + Number(devPods);
 
   return (
     <div data-settings-card="experimental.features" className="flex flex-col gap-2">
       <SettingsGroup
         title={t("settings.experimental.title")}
         groupId="experimental"
-        accessory={<span className="min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary" data-experimental-count="">· {t("settings.card.countOn", { count: on, total: 5 })}</span>}
+        accessory={<span className="min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary" data-experimental-count="">· {t("settings.card.countOn", { count: on, total: 6 })}</span>}
       >
         <FeatureRow
           feature="skillAuthoring"
@@ -182,6 +185,11 @@ export function ExperimentalSettings() {
           busy={busy}
           onToggle={() => void toggle("dataWindow", !dataWindow)}
         />
+        <div data-experimental-feature="devPods">
+          <DescribedRow label={t("settings.experimental.devPods")} rowId="devPods">
+            <Switch checked={devPods} aria-label={t("settings.experimental.devPodsAria")} onClick={() => setDevPodsEnabled(!devPods)} />
+          </DescribedRow>
+        </div>
       </SettingsGroup>
       {error ? <p role="alert" className="px-1 text-[12px] text-danger">{error}</p> : null}
     </div>

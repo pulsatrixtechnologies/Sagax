@@ -72,10 +72,10 @@ describe("Settings → Decision model", () => {
     expect(panel).toContain("A fast decision model that picks");
   });
 
-  it("hides the VPS and Boat switches and counts the five that remain; Browse Bots moved to Appearance", async () => {
+  it("hides the VPS and Boat switches and counts the six that remain; Browse Bots moved to Appearance", async () => {
     fixture.section = "experimental";
     const off = await render();
-    expect(off).toContain("1 of 5 on");
+    expect(off).toContain("1 of 6 on");
     expect(off).toContain('data-experimental-feature="decisionModel"');
     expect(off).toContain("Decision model");
     expect(off).not.toContain("data-experimental-browse-bots");
@@ -86,7 +86,7 @@ describe("Settings → Decision model", () => {
     expect(off).toContain('aria-checked="false"');
 
     fixture.decisionModel = true;
-    expect(await render()).toContain("2 of 5 on");
+    expect(await render()).toContain("2 of 6 on");
   });
 
   // #575 retired the Sidebar shortcuts setting: the Grok-style footer (avatar

@@ -1,0 +1,46 @@
+/* Dev context pods. Local motion values until the shared motion tokens land
+   (feat/desktop-motion-120hz); same ease as the app's menus. */
+.dev-pods-rail {
+  --dev-pods-duration: 180ms;
+  --dev-pods-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  opacity: 0;
+  transform: translateX(10px);
+  visibility: hidden;
+  transition:
+    opacity var(--dev-pods-duration) var(--dev-pods-ease),
+    transform var(--dev-pods-duration) var(--dev-pods-ease),
+    visibility 0s linear var(--dev-pods-duration);
+  scrollbar-width: thin;
+}
+
+.dev-pods-rail[data-open="true"] {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+/* Over the transcript on a narrow window: a clearer lift so it reads as a
+   floating stack, not part of the conversation. */
+.dev-pods-rail[data-mode="overlay"] .dev-pod {
+  box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.12);
+}
+
+.dev-pod-chevron {
+  transition:
+    rotate var(--dev-pods-duration, 180ms) var(--dev-pods-ease, ease),
+    transform var(--dev-pods-duration, 180ms) var(--dev-pods-ease, ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dev-pods-rail,
+  .dev-pod-chevron {
+    transition: none;
+  }
+}
+
+:root[data-reduced-motion="true"] .dev-pods-rail,
+:root[data-reduced-motion="true"] .dev-pod-chevron {
+  transform: none;
+  transition: none;
+}
