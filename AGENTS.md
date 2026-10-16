@@ -50,9 +50,15 @@ A webhook triggers a MAUS task from outside (`server/webhooks.ts`,
   `Authorization: Bearer <token>` only. A token in the path, the query string,
   the body or `X-OpenMaus-Secret` is never read; the call is a 401 with the
   bare body `{"error":"Unauthorized"}`, whichever part was wrong.
-- Failed authentications are counted per socket address (never a forwarded
-  header): 10 in 60 seconds and that source gets 429 + `Retry-After` until the
-  window passes, even with a good token. Successful calls are not counted.
+- Failed authentications are counted per endpoint id (`hook:<id>`), like the
+  typed path, never per socket address or forwarded header: behind the
+  reverse proxy every sender has the same address, so a per-address bucket
+  let one noisy caller lock out every webhook. 10 failures in 60 seconds and
+  that webhook answers 429 + `Retry-After` until the window passes, even with
+  a good token (a guess is never confirmed). Ids that name no bearer webhook
+  share one bucket (`hook:unknown`), so made-up ids neither grow the counter
+  nor block a real webhook. Successful calls are not counted. Covered by
+  `server/webhook-ingress.test.ts`.
 - The editor shows the full token and the `curl -X POST <url> -H
   "Authorization: Bearer <token>"` command once (after create, regenerate or
   reveal), in memory only: never in local storage (an older build's

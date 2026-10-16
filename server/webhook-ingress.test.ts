@@ -220,6 +220,32 @@ describe("failed authentication rate limit", () => {
     }
   });
 
+  it("counts failures per endpoint, so one flooded or made-up id never locks out another webhook", async () => {
+    // Behind the reverse proxy every sender has the same socket address; the
+    // bucket must be the endpoint, or one noisy caller blocks every webhook.
+    const limiter = new AuthFailureLimiter(3, 60_000, () => 0);
+    const limited = await listenWebhookIngress(manager, { port: 0, limiter });
+    try {
+      // own webhooks: the shared one's per-trigger run rate limit is used by other tests
+      const flooded = manager.create({ name: "Flooded", prompt: "", botId: "maus-1" });
+      const other = manager.create({ name: "Other", prompt: "", botId: "maus-1" });
+      const post = (id: string, token: string) => fetch(`${limited.baseUrl}/hooks/${id}`, { method: "POST", headers: bearer(token), body: "{}" });
+      for (let i = 0; i < 3; i += 1) expect((await post(`wh_madeup${i}`, "whsec_wrong")).status).toBe(401);
+      expect((await post("wh_madeup9", "whsec_wrong")).status).toBe(429);
+      expect((await post(flooded.webhook.endpointId, flooded.secret)).status).toBe(202);
+      for (let i = 0; i < 3; i += 1) expect((await post(flooded.webhook.endpointId, "whsec_wrong")).status).toBe(401);
+      // a good token on the flooded webhook is held back, so a guess cannot be confirmed
+      expect((await post(flooded.webhook.endpointId, flooded.secret)).status).toBe(429);
+      expect((await post(other.webhook.endpointId, other.secret)).status).toBe(202);
+      // a typed trigger's bucket is its own: the bearer flood above never reaches it
+      expect(limiter.blocked(`source:${flooded.webhook.endpointId}`)).toBe(false);
+      manager.remove(flooded.webhook.id);
+      manager.remove(other.webhook.id);
+    } finally {
+      await new Promise<void>((resolve) => limited.server.close(() => resolve()));
+    }
+  });
+
   it("does not count successful calls", async () => {
     const limiter = new AuthFailureLimiter(3, 60_000, () => 0);
     const limited = await listenWebhookIngress(manager, { port: 0, limiter });

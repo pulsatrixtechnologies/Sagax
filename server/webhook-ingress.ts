@@ -73,13 +73,16 @@ function bearerToken(req: IncomingMessage): string {
   return match?.[1] ?? "";
 }
 
-/** Failed authentications a single source may make in the window before it is
+/** Failed authentications one bucket may take in the window before it is
  * answered 429 (even with a good token) until the window passes. */
 export const WEBHOOK_AUTH_FAILURE_LIMIT = 10;
 export const WEBHOOK_AUTH_FAILURE_WINDOW_MS = 60_000;
 
-/** Per-source failure counter. The key is the socket address: a forwarded
- * header is attacker-controlled, so it is never trusted here. */
+/** Failure counter per bucket. Both webhook paths key it by endpoint id
+ * (`hook:<id>`, `source:<id>`), never by the caller's address: behind the
+ * reverse proxy every sender has the same socket address, and a forwarded
+ * header is attacker-controlled. Ids that name nothing share one bucket per
+ * path, so made-up ids never grow the map and never block a real endpoint. */
 export class AuthFailureLimiter {
   private failures = new Map<string, number[]>();
   private readonly limit: number;
@@ -212,8 +215,12 @@ export function createWebhookIngressHandler(
     let release: (() => void) | undefined;
     try {
       release = claimRequest?.();
-      const source = req.socket.remoteAddress ?? "unknown";
-      if (limiter.blocked(source)) {
+      // Counted per endpoint like the typed path: behind the reverse proxy
+      // every sender has the same socket address, so a per-address bucket let
+      // one noisy caller lock out every webhook. A flood on one id (or on
+      // made-up ids, one shared bucket) never blocks another webhook.
+      const bucket = manager.hasBearerEndpoint(match[1]) ? `hook:${match[1]}` : "hook:unknown";
+      if (limiter.blocked(bucket)) {
         res.setHeader("retry-after", String(Math.ceil(WEBHOOK_AUTH_FAILURE_WINDOW_MS / 1000)));
         return json(res, 429, { error: "Too many failed attempts" });
       }
@@ -223,7 +230,7 @@ export function createWebhookIngressHandler(
       // Reject before buffering or parsing attacker input. The response never
       // says whether the endpoint, the header or the token was wrong.
       if (!manager.authorize(match[1], token)) {
-        limiter.fail(source);
+        limiter.fail(bucket);
         // one rolling record per webhook, so a flood never pushes real deliveries out
         manager.recordUnauthorized(match[1], {
           contentType: header(req, "content-type"),

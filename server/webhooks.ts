@@ -704,6 +704,12 @@ export class WebhookManager {
     return Boolean(trigger && !trigger.source && secretMatches(secret, trigger.secretHash));
   }
 
+  /** Whether `/hooks/<endpointId>` names a bearer webhook. Only used to pick
+   * the failure bucket: it never says anything to the caller. */
+  hasBearerEndpoint(endpointId: string): boolean {
+    return this.webhooks.some((candidate) => candidate.endpointId === endpointId && !candidate.source);
+  }
+
   receive(endpointId: string, secret: string, event: WebhookEvent): WebhookReceiveResult {
     const trigger = this.webhooks.find((candidate) => candidate.endpointId === endpointId);
     if (!trigger || trigger.source || !secretMatches(secret, trigger.secretHash)) fail(401, "Unauthorized");
