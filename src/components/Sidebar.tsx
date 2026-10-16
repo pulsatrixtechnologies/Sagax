@@ -3344,6 +3344,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             setSectionPicker({ botId, x: menu.x, y: menu.y });
           }}
           onRename={(botId) => setRenameBotId(botId)}
+          // Edit bot opens the bot editor (JC, 2026-10-16: it did nothing
+          // visible since the panel fallback lost its settings view)
+          onEditPersona={(target) => dispatch({ type: "openPersonaEditor", botId: target.id })}
           onMakePrimary={(bot) => void makePrimaryBot(bot.id)}
           onReplacePrimary={(bot) => setPrimaryPicker({ currentId: bot.id, pending: false, error: null })}
         />
