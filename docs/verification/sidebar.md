@@ -26,6 +26,11 @@ Those paths are covered by the computer-section and server Boat inventory tests.
 
 ## Mark all of a bot's conversations as read
 
+Since 0.5.7 (#586) a bot's menu no longer offers **Mark all conversations as
+read** (Grok Bot's lighter menu). The steps below stay for the read helper
+(`src/lib/bot-read.test.ts`), which folders still use; the menu steps apply to
+0.5.6 and earlier.
+
 Run `node --experimental-strip-types scripts/verify-sidebar.ts --unread`.
 This opt-in fixture seeds Sidebar Atlas with twelve unread webhook-like
 conversations across a folder and unfiled history, plus a running fake-provider
@@ -45,9 +50,8 @@ Open only the printed `previewUrl`:
 
 `src/lib/bot-read.test.ts` covers legacy state, all folders/unfiled/archived
 threads, work and approval preservation, ordered requests for 250 threads,
-partial failure/retry and new-thread arrivals. `src/components/SidebarBotRead.test.ts` mounts
-the actual menu to check progress, duplicate-click protection, error recovery,
-Portuguese copy, hidden thread trees and a menu reopened during a read.
+partial failure/retry and new-thread arrivals. The menu's own test was
+removed with the menu action in #586.
 Folder reads use the same request helper and retain their existing tests.
 
 Verified on 2026-10-09 in the isolated renderer: 14 unread threads became
