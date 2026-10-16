@@ -32,7 +32,7 @@ extension ChatView {
                 // above the composer row (30 pt bottom inset, 44 pt tall)
                 .padding(.bottom, Theme.Chat.composerBottom + Theme.Metric.glassLarge + 12)
                 .frame(maxWidth: .infinity)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(.slideUp(reduce: reduceMotion))
             }
             .transition(.opacity)
         }

@@ -100,7 +100,7 @@ extension ChatView {
             // A container, so the X keeps its own identifier.
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("reply-strip")
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.slideUp(reduce: reduceMotion))
         }
     }
 }

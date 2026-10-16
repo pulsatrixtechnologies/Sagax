@@ -105,7 +105,7 @@ extension ChatView {
     }
 
     func closeCommandMenu() {
-        withAnimation(.easeInOut(duration: 0.15)) {
+        withAnimation(.snappy(duration: 0.2)) {
             power.commandMenuForced = false
             power.commandMenuDismissed = true
             if draft == "/" { draft = "" }

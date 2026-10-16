@@ -16,9 +16,9 @@ extension ChatView {
                 failure: failure,
                 retrying: power.retrying.contains(failure.id),
                 retry: { retry(failure) },
-                dismiss: { withAnimation(.easeInOut(duration: 0.15)) { power.forget(failure) } }
+                dismiss: { withAnimation(.snappy(duration: 0.2)) { power.forget(failure) } }
             )
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.slideUp(reduce: reduceMotion))
         }
 
         if !heldSends.isEmpty {
@@ -32,7 +32,7 @@ extension ChatView {
             ) { send in
                 Task { await session.cancelQueued(send, threadId: threadId, in: current) }
             }
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.slideUp(reduce: reduceMotion))
         }
 
         if preparingAttachments || sendingMessage {
@@ -105,7 +105,7 @@ extension ChatView {
                 close: closeCommandMenu,
                 pick: pickCommand
             )
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.slideUp(reduce: reduceMotion))
         } else if !suggestions.isEmpty {
             SuggestionStrip(items: suggestions, pick: pickSuggestion)
                 .transition(.opacity)
@@ -140,7 +140,7 @@ extension ChatView {
             }
             .scrollClipDisabledCompat()
             .accessibilityIdentifier("composer-citations")
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.slideUp(reduce: reduceMotion))
         }
 
         let pastes = power.pastes(threadId)
@@ -157,7 +157,7 @@ extension ChatView {
                 .padding(.horizontal, 2)
             }
             .scrollClipDisabledCompat()
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.slideUp(reduce: reduceMotion))
         }
 
         if !attachments.isEmpty {
@@ -174,7 +174,7 @@ extension ChatView {
                 .padding(.horizontal, 2)
             }
             .scrollClipDisabledCompat()
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.slideUp(reduce: reduceMotion))
         }
 
         approvalDock
@@ -186,9 +186,9 @@ extension ChatView {
                 name: busyName,
                 highlighted: choice,
                 pick: { submit(busyMode: $0) },
-                close: { withAnimation(.easeInOut(duration: 0.15)) { power.busyChoice = nil } }
+                close: { withAnimation(.snappy(duration: 0.2)) { power.busyChoice = nil } }
             )
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.slideUp(reduce: reduceMotion))
         }
     }
 }

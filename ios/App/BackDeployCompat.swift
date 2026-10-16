@@ -103,6 +103,22 @@ enum MicrophonePermission {
     }
 }
 
+/// Motion that honours Reduce Motion (Settings > Accessibility > Motion).
+enum Motion {
+    /// `animation`, or none under Reduce Motion: the change still happens,
+    /// it just does not travel.
+    static func animation(_ animation: Animation, reduce: Bool) -> Animation? {
+        reduce ? nil : animation
+    }
+}
+
+extension AnyTransition {
+    /// A strip rising from the composer; a fade under Reduce Motion.
+    static func slideUp(reduce: Bool) -> AnyTransition {
+        reduce ? .opacity : .move(edge: .bottom).combined(with: .opacity)
+    }
+}
+
 /// The three `sensoryFeedback` kinds the app uses, so call sites stay
 /// declarative on iOS 16 too.
 enum FeedbackKind {

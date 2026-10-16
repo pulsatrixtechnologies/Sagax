@@ -559,7 +559,7 @@ struct ChatView: View {
                     if !follow.following, !transcript.isEmpty {
                         JumpToLatestButton {
                             follow.resume()
-                            withAnimation { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                            withAnimation(Motion.animation(.snappy, reduce: reduceMotion)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
                         }
                         .padding(.bottom, 12)
                     }
@@ -599,7 +599,7 @@ struct ChatView: View {
                     // send takes you back to the end.
                     if last.role == .user { follow.resume() }
                     guard follow.following else { return }
-                    withAnimation { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                    withAnimation(Motion.animation(.snappy, reduce: reduceMotion)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
                 }
                 // Long markdown replies finish laying out after the first
                 // pass; settle on the newest message once they have, unless a

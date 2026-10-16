@@ -9,6 +9,7 @@ public struct AgentThoughtChamberView: View {
     public let isStreaming: Bool
     
     @State private var isExpanded: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     public init(
         reasoning: String,
@@ -46,7 +47,7 @@ public struct AgentThoughtChamberView: View {
     @ViewBuilder
     private func headerButton(isDark: Bool, total: Int) -> some View {
         Button {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+            withAnimation(Motion.animation(.spring(response: 0.35, dampingFraction: 0.72), reduce: reduceMotion)) {
                 isExpanded.toggle()
             }
             Haptics.selection()
@@ -117,7 +118,7 @@ public struct AgentThoughtChamberView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Theme.hairline, lineWidth: 0.5)
         )
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
     }
     
     @ViewBuilder

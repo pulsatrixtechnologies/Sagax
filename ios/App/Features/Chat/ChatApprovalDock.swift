@@ -14,7 +14,7 @@ extension ChatView {
         let approvals = dockApprovals
         if !approvals.isEmpty {
             ApprovalDock(chat: current, approvals: approvals)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(.slideUp(reduce: reduceMotion))
         }
     }
 }

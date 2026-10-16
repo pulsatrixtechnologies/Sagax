@@ -50,7 +50,7 @@ extension ChatView {
         var busyMode: BusySendMode?
         if BusySendChoice.offered(for: chatAtSend), session.surfaceGate.allows(.busySendChoice) {
             guard let chosen else {
-                withAnimation(.easeInOut(duration: 0.15)) {
+                withAnimation(.snappy(duration: 0.2)) {
                     power.busyChoice = (chatAtSend.threadId, BusySendChoice.suggest(requestText))
                 }
                 return
