@@ -33,6 +33,8 @@ import {
   sanitizeSource,
   serializeSessionCookie,
   sessionCookieName,
+  serviceAllowed,
+  workerRelayAllowed,
 } from "./request-auth.ts";
 import { SESSION_TTL_MS, SessionRegistry } from "./sessions.ts";
 import type { SessionRecord } from "./sessions.ts";
@@ -764,6 +766,23 @@ describe("loopback trust: owner on one person's machine, service on a shared wor
         expect(check(method, path, { trust }).auth, `${method} ${path}`).toEqual({ kind: "loopback", scopes: ["admin", "client"] });
       }
     }
+  });
+
+  it("keeps the browser network debugger for the person: never a bot shell, a worker or a client", () => {
+    const path = "/api/bots/bot-1/browser/network";
+    // a bot's shell on a shared server, with or without the worker relay token
+    expect(check("POST", path, { trust: "service" }).auth).toBeNull();
+    const token = "r".repeat(43);
+    expect(resolveRequestAuth(request({ ...local, "x-sagax-worker-relay": token }, "POST"), {
+      sessions, cookieName, streamPath: "/api/events", url: new URL(path, "http://x"), loopbackTrust: "service", workerRelayToken: token,
+    }).auth).toBeNull();
+    // a local process on the desktop without the app's own capability
+    expect(check("POST", path, { desktopToken: "owner-token" }).auth).toBeNull();
+    expect(check("POST", path, { desktopToken: "owner-token", headers: { "x-openmausbot-desktop-owner": "owner-token" } }).auth?.kind).toBe("loopback");
+    // a client session (not an admin) may not use it either
+    expect(requiredScope("POST", path)).toBe("admin");
+    expect(serviceAllowed("POST", path)).toBe(false);
+    expect(workerRelayAllowed("POST", path)).toBe(false);
   });
 
   it("lets a service reach only its routes, as a client without admin", () => {

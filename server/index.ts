@@ -594,6 +594,7 @@ import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserRuntimeEnv } from "./browser-runtime.ts";
 import { BrowserLive } from "./browser-live.ts";
+import { BrowserNetworkDebug, NetworkDebugError, parseNetworkDebugBody } from "./browser-network-debug.ts";
 import {
   agentBrowserFrame,
   agentBrowserIntegration,
@@ -4249,7 +4250,7 @@ const browserRuntime = new BrowserRuntime({
   // browser; drop its stream the way the panel's own Restart button does.
   closeBrowser: async (session, spec) => {
     const closed = await closeBrowserSession(spec.command, browserRuntimeEnv({ ...spec.env, AGENT_BROWSER_SESSION: session }));
-    if (closed) browserLive.closeForSession(session);
+    if (closed) { browserLive.closeForSession(session); browserNetworkDebug.clearSession(session); }
     return closed;
   },
   applyViewport: (spec) => setBrowserViewport(spec.command, spec.env),
@@ -4258,6 +4259,9 @@ const browserRuntime = new BrowserRuntime({
   pauseStream: (session, spec) => pauseBrowserStream(spec.command, { ...spec.env, AGENT_BROWSER_SESSION: session }),
 });
 const browserLive = new BrowserLive({ runtime: browserRuntime });
+// The person's network debugger of a bot's browser (never the bot's: no tool
+// reaches it, see server/browser-network-debug.ts).
+const browserNetworkDebug = new BrowserNetworkDebug();
 // Every browser session this server has used, with its launch settings. The
 // agent-browser daemon outlives its MCP transport, so stopping the transports
 // at shutdown left the daemon and its Chrome running until the engine's
@@ -8838,6 +8842,7 @@ const terminalFeature = installTerminalFeature({
 });
 function closeSessionStreams(sessionId: string): void {
   browserLive.closeForOwner(sessionId);
+  browserNetworkDebug.clearOwner(sessionId);
   desktopViewer.closeForOwner(sessionId);
   for (const client of sseClients) {
     if (client.sessionId !== sessionId) continue;
@@ -18220,6 +18225,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           webhooks.disableForBot(bot.id);
           calendarCalls!.removeBot(bot.id);
           browserLive.closeForBot(bot.id);
+          browserNetworkDebug.clearBot(bot.id);
           await forgetTemporaryBrowser(bot.id);
           // The bot's database and sheet go with the bot; a failure here
           // must not undo a deletion the store already made durable.
@@ -34066,6 +34072,44 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return json(res, 405, { error: "method not allowed" });
     }
+    // The person's network debugger of the bot's browser. POST only: on the
+    // desktop a loopback change needs the app's own capability, so a bot's
+    // shell on the same machine cannot read it (a GET would be open to any
+    // local process). Not an internal route, not a tool: no bot reaches it.
+    const networkBrowserMatch = /^\/api\/bots\/([\w-]+)\/browser\/network$/.exec(path);
+    if (networkBrowserMatch) {
+      res.setHeader("cache-control", "no-store");
+      if (method !== "POST") return json(res, 405, { error: "method not allowed" });
+      const bot = store.bot(networkBrowserMatch[1]);
+      if (!bot) return json(res, 404, { error: "no such bot" });
+      if (!builtInBrowserEnabled(cfg) || bot.browser === false) {
+        return json(res, 409, { error: "Enable this bot's browser in its profile first." });
+      }
+      let request: ReturnType<typeof parseNetworkDebugBody>;
+      try { request = parseNetworkDebugBody(await readBody(req, 4_096)); }
+      catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : "Invalid network debugger action." }); }
+      const browser = await browserIntegration(bot.id, bot.browserProfile);
+      if (!browser) return json(res, 503, { error: "Install the browser engine first." });
+      if (HOSTED_WORKSPACE && auth.kind === "session") {
+        const failure = workspaceAccess
+          ? await workspaceAccess.authorize(req, auth)
+          : { status: 503, error: "Workspace sign-in is unavailable." };
+        if (failure) return json(res, failure.status, { error: failure.error });
+      }
+      const owner = auth.kind === "session" ? auth.session.id : "local-owner";
+      const target = { session: browser.session, botId: bot.id, owner };
+      try {
+        if (request.action === "start") return json(res, 200, await browserNetworkDebug.start({ ...target, spec: browser.spec }));
+        if (request.action === "refresh") return json(res, 200, await browserNetworkDebug.refresh({ ...target, includeHeaders: request.includeHeaders }));
+        if (request.action === "export") return json(res, 200, { har: browserNetworkDebug.exportHar({ ...target, includeHeaders: request.includeHeaders, version: "1" }) });
+        await browserNetworkDebug.stop(target);
+        return json(res, 200, { ok: true });
+      } catch (error) {
+        // A fixed message, never the engine's text or a captured value.
+        if (error instanceof NetworkDebugError) return json(res, error.status, { error: error.message });
+        return json(res, 500, { error: "The network debugger failed." });
+      }
+    }
     if (method === "GET" && path === "/api/events") {
       const viewer = viewerFor(auth, path);
       const visibleNow = visibleTo(viewer);
@@ -37052,6 +37096,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ...hostedModels?.resetTask(selectedTask.modelSelection, normalizedSelection) });
       if (existingBot && (bot.browserProfile !== beforeBrowserProfile || bot.browser !== beforeBrowserEnabled)) {
         browserLive.closeForBot(bot.id);
+        browserNetworkDebug.clearBot(bot.id);
         if (beforeBrowserProfile === "guest" && (bot.browserProfile !== "guest" || bot.browser === false)) {
           void forgetTemporaryBrowser(bot.id).catch((error) => console.warn("temporary browser cleanup failed", error));
         }
@@ -40636,9 +40681,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         sharedComputers.close();
         sharedComputerControl.close();
       }
-      if (disablingBuiltInBrowser) browserLive.closeAll();
+      if (disablingBuiltInBrowser) { browserLive.closeAll(); browserNetworkDebug.clearAll(); }
       for (const request of browserCleanupRequests) {
-        if (request.kind === "profile") browserLive.closeForSession(browserSessionId("", request.partitionId));
+        if (request.kind === "profile") {
+          browserLive.closeForSession(browserSessionId("", request.partitionId));
+          browserNetworkDebug.clearSession(browserSessionId("", request.partitionId));
+        }
       }
       if (patch.browserProfiles !== undefined) {
         const retained = new Set(patch.browserProfiles.map((profile) => profile.id));
@@ -41539,6 +41587,7 @@ const gracefulShutdown = createGracefulShutdown({
       void egressProxy?.close();
       sharedComputerControl.close();
       browserLive.closeAll();
+      browserNetworkDebug.clearAll();
       desktopViewer.closeAll();
       for (const idle of localVmIdles.values()) idle.cancel();
       vps.closeAllVpsDesktopTunnels();
