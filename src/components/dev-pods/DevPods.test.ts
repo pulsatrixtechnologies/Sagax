@@ -116,6 +116,30 @@ describe("dev pods: Experimental switch", () => {
     expect(rail().dataset.open).toBe("false");
   });
 
+  it("opens at once when the person asks for the coding view, even on a narrow pane or dismissed", () => {
+    resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: true, dismissed: ["dev:ask-thread"] });
+    paneWidth = 1100;
+    const ask: Message = { id: "ask1", role: "user", kind: "text", text: "Turn on coding mode", at: Date.now() };
+    renderPane({ bot: bot("ask-thread", [ask]) });
+    const rail = () => container.querySelector<HTMLElement>("[data-dev-pods]")!;
+    expect(rail().dataset.open).toBe("true");
+    expect(rail().dataset.mode).toBe("overlay");
+
+    // and off again when asked, without waiting for the quiet streak
+    const off: Message = { id: "ask2", role: "user", kind: "text", text: "désactive le mode code", at: Date.now() };
+    renderPane({ bot: bot("ask-thread", [ask, ...devMessages(), off]) });
+    expect(container.querySelector("[data-dev-pods-toggle]")).toBeNull();
+  });
+
+  it("an old request in scrollback does not pop the pods open", () => {
+    resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: true });
+    paneWidth = 1100;
+    const ask: Message = { id: "old1", role: "user", kind: "text", text: "Turn on coding mode", at: Date.now() - 60 * 60_000 };
+    renderPane({ bot: bot("old-ask-thread", [ask]) });
+    expect(container.querySelector<HTMLElement>("[data-dev-pods]")!.dataset.open).toBe("false");
+    expect(container.querySelector("[data-dev-pods-toggle]")).not.toBeNull();
+  });
+
   it("stays dismissed for that conversation only", () => {
     resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: true, dismissed: ["dev:gone-thread"] });
     renderPane({ bot: bot("gone-thread", devMessages()) });

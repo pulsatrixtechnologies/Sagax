@@ -56,13 +56,19 @@ export function railGeometry(paneWidth: number): { fits: boolean; width: number 
 }
 
 const devModes = new Map<string, { state: DevModeState; evaluated: string }>();
+/** Per conversation, the person's last request for the coding view already
+ * acted on. */
+const revealed = new Map<string, string>();
+/** A request older than this (scrollback, a reload) only counts as a signal. */
+const REVEAL_FRESH_MS = 5 * 60_000;
 
 /** The hysteresis for one conversation, stepped once per new transcript
  * state (not per render), kept across thread switches. */
-function useDevMode(threadKey: string, score: number, evaluation: string): boolean {
+function useDevMode(threadKey: string, score: number, evaluation: string, off = false): boolean {
   const entry = devModes.get(threadKey) ?? { state: DEV_MODE_OFF, evaluated: "" };
   if (entry.evaluated !== evaluation) {
-    const next = { state: devModeStep(entry.state, score), evaluated: evaluation };
+    // the person asked for it off: at once, not after the quiet streak
+    const next = { state: off ? DEV_MODE_OFF : devModeStep(entry.state, score), evaluated: evaluation };
     devModes.set(threadKey, next);
     return next.state.active;
   }
@@ -120,7 +126,7 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
   }, [computerStart, bot, task, messages]);
   const signals = useMemo(() => devSignals({ messages, computerActive }), [messages, computerActive]);
   const last = messages.at(-1);
-  const active = useDevMode(threadKey, signals.score, `${messages.length}:${last?.id ?? ""}:${last?.tool?.ok ?? ""}:${computerActive}`);
+  const active = useDevMode(threadKey, signals.score, `${messages.length}:${last?.id ?? ""}:${last?.tool?.ok ?? ""}:${computerActive}`, signals.request?.mode === "off");
   const mounted = useHeld(active, EXIT_MS);
 
   const version = useSyncExternalStore(subscribeDevPods, devPodsVersion, devPodsVersion);
@@ -169,6 +175,21 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
   // a floated stack never follows the person to another conversation
   useEffect(() => { updateDevPodsLive({ overlayOpen: false }); }, [threadKey]);
   useEffect(() => () => updateDevPodsLive({ active: false, filled: false, overlayOpen: false }), []);
+
+  // The person just asked for the coding view: show it even where it was
+  // dismissed, hidden from the header, or would wait behind the header
+  // button on a narrow window. Once per request, and never for an old one
+  // found in scrollback.
+  const request = signals.request;
+  useEffect(() => {
+    if (!request || request.mode !== "on" || !active || !filled) return;
+    if (revealed.get(threadKey) === request.id) return;
+    revealed.set(threadKey, request.id);
+    if (Date.now() - request.at > REVEAL_FRESH_MS) return;
+    setThreadDismissed(threadKey, false);
+    if (geometry.fits) setRailHidden(false);
+    else updateDevPodsLive({ overlayOpen: true });
+  }, [request, active, filled, threadKey, geometry.fits]);
 
   const dismissed = prefs.dismissed.includes(threadKey);
   const overlayOpen = live.threadKey === threadKey && live.overlayOpen && !geometry.fits;

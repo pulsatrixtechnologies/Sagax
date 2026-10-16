@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "@/state/store";
-import { DEV_MODE_OFF, ENTER_SCORE, EXIT_STREAK, devModeStep, devSignals, toolKind, type DevModeState } from "./detector";
+import { DEV_MODE_OFF, ENTER_SCORE, EXIT_STREAK, devModeRequest, devModeStep, devSignals, toolKind, type DevModeState } from "./detector";
 import { currentBranch, devChanges, devOutputs } from "./sources";
 
 let seq = 0;
@@ -46,6 +46,54 @@ describe("dev detector signals", () => {
   it("an explicit mark or the computer adds to the score", () => {
     expect(devSignals({ messages: [], explicit: true }).score).toBeGreaterThanOrEqual(ENTER_SCORE);
     expect(devSignals({ messages: [], computerActive: true }).score).toBe(1);
+  });
+});
+
+describe("dev detector: every engine's tool rows", () => {
+  it("reads Codex and ACP rows, whose name is the command or a title", () => {
+    // Codex and ACP engines (Grok, Cursor, OpenCode) name a shell call by
+    // its command and a file edit by its title, with the written files.
+    expect(toolKind({ name: "pnpm vitest run src/auth.test.ts", summary: "pnpm vitest run src/auth.test.ts" })).toBe("shell");
+    expect(toolKind({ name: "git commit -am fix" })).toBe("git");
+    expect(toolKind({ name: "git -C /repo push origin fix/login" })).toBe("git");
+    expect(toolKind({ name: "Edit src/lib/auth.ts", files: ["src/lib/auth.ts"] })).toBe("edit");
+    expect(toolKind({ name: "write_text", files: ["/home/me/app/main.py"] })).toBe("edit");
+    // writing the bot's own notes is not development
+    expect(toolKind({ name: "Write", files: ["/home/me/.sagax/bots/b1/MEMORY.md"] })).not.toBe("edit");
+    expect(toolKind({ name: "List the bots" })).toBeNull();
+  });
+
+  it("an ACP coding run turns the pods on", () => {
+    const run = [
+      text("user", "fix the login bug"),
+      tool("rg -n login src", { summary: "rg -n login src" }),
+      tool("Edit src/lib/auth.ts", { files: ["src/lib/auth.ts"] }),
+      tool("pnpm vitest run", { summary: "pnpm vitest run" }),
+    ];
+    expect(devSignals({ messages: run }).score).toBeGreaterThanOrEqual(ENTER_SCORE);
+  });
+});
+
+describe("dev detector: the person asks for the coding view", () => {
+  it("hears a request to turn it on, in English and in French", () => {
+    for (const ask of ["Turn on coding mode", "switch to the coding experience please", "active le mode code", "Passe en mode développement", "affiche les pods de contexte"]) {
+      const message = text("user", ask);
+      expect(devModeRequest([message]), ask).toEqual({ mode: "on", id: message.id, at: message.at });
+      expect(devSignals({ messages: [message] }).score, ask).toBeGreaterThanOrEqual(ENTER_SCORE);
+    }
+  });
+
+  it("hears a request to turn it off, and the newest request wins", () => {
+    const on = text("user", "turn on code mode");
+    const off = text("user", "désactive le mode code");
+    expect(devModeRequest([on, off])).toMatchObject({ mode: "off", id: off.id });
+    expect(devModeRequest([off, on])).toMatchObject({ mode: "on", id: on.id });
+  });
+
+  it("ignores the bot's words and talk that only mentions code", () => {
+    expect(devModeRequest([text("bot", "Turn on coding mode in Settings")])).toBeNull();
+    expect(devModeRequest([text("user", "read our code of conduct")])).toBeNull();
+    expect(devModeRequest([text("user", "what does the coding mode do?")])).toBeNull();
   });
 });
 
