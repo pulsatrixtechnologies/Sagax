@@ -146,6 +146,7 @@ import { splitTranscriptAttachments } from "@/lib/composer-attachments";
 import { useComposerDockPad } from "@/lib/composer-dock";
 import { useTranscriptViewport } from "@/hooks/use-transcript-viewport";
 import { useOffscreenRowAnchor } from "@/hooks/use-offscreen-row-anchor";
+import { claimMessageEntrance } from "@/lib/message-entrance";
 import { useStoreDispatch, useStoreGetter, useStoreSelector } from "@/state/store-selector";
 import { useUnreadDivider } from "@/hooks/use-unread-divider";
 import { NewMessagesDivider } from "./NewMessagesDivider";
@@ -545,6 +546,9 @@ const Bubble = memo(function Bubble({
   // request is stored bot-role and gets the same label.
   const peer = peerLine(message) ?? peerRequest(message, botId);
   const user = message.role === "user" && !peer;
+  // The entrance plays only for a genuinely new line, decided once at mount:
+  // never for rows drawn by opening or switching threads (message-entrance.ts).
+  const [entering] = useState(() => user && claimMessageEntrance(message));
   const [expanded, setExpanded] = useState(false);
   const focusedSearch = focus?.messageId === message.id && Boolean(focus.matchText);
   const [viewRaw, setViewRaw] = useState(false);
@@ -605,7 +609,7 @@ const Bubble = memo(function Bubble({
 
   return (
     <div
-      className={cn("group flex w-full flex-col", user ? "animate-msg-in items-end" : "items-start")}
+      className={cn("group flex w-full flex-col", user ? "items-end" : "items-start", entering && "animate-msg-in")}
       // Read only by the Hibou 98 skin, which lays the chat out as a log with
       // the author and time above each line; invisible everywhere else.
       data-retro-author={user ? viewerName || t("retro.chat.you") : peer?.name ?? botName}
