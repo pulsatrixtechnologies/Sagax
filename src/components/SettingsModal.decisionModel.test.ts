@@ -89,12 +89,13 @@ describe("Settings → Decision model", () => {
     expect(await render()).toContain("2 of 5 on");
   });
 
-  it("offers Sidebar shortcuts in Appearance, seeded from the old experimental switches", async () => {
+  // #575 retired the Sidebar shortcuts setting: the Grok-style footer (avatar
+  // menu + Connect apps pill) replaced the two menu rows, so it had no effect.
+  it("no longer offers Sidebar shortcuts in Appearance", async () => {
     fixture.section = "appearance";
     const html = await render();
-    const row = /<button[^>]*aria-label="Show the sidebar shortcuts"[^>]*>/.exec(html)?.[0] ?? "";
-    expect(html).toContain("Sidebar shortcuts");
-    expect(row).toContain('aria-checked="false"');
+    expect(html).not.toContain("Sidebar shortcuts");
+    expect(html).not.toContain('aria-label="Show the sidebar shortcuts"');
   });
 
   it("matches searches for decision, jev, typesafe, routing and auto", async () => {

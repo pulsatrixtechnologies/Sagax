@@ -19,6 +19,7 @@ const ALLOWED = new Set([
   "botPanel.access.browserOff",
   "botPanel.access.browserOffShort",
   "botWorkplace.help",
+  "composer.plus.workspace",
   "computer.worksOn",
   "computer.worksOnPointer",
   "orgComputer.whereHelp",
