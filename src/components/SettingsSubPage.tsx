@@ -30,19 +30,23 @@ export function SettingsSubPageRow({
   summary,
   actionLabel,
   onOpen,
+  bare = false,
 }: {
   cardId: string;
   title: string;
   summary: React.ReactNode;
   actionLabel: string;
   onOpen: () => void;
+  /** A row of a settings group's card (General's Account and System), not
+   * a card of its own. */
+  bare?: boolean;
 }) {
   return (
-    <div data-settings-card={cardId} data-settings-subpage-row className="rounded-[14px] border-[0.5px] border-border">
+    <div data-settings-card={cardId} data-settings-subpage-row className={bare ? undefined : "rounded-[14px] border-[0.5px] border-border"}>
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full min-w-0 items-center gap-3 rounded-[14px] px-3.5 py-3 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none"
+        className={`flex w-full min-w-0 items-center gap-3 px-3.5 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none ${bare ? "py-2.5" : "rounded-[14px] py-3"}`}
       >
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] leading-[18px] text-ink">{title}</span>

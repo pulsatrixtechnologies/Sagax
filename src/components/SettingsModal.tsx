@@ -6,7 +6,7 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
-import { Archive, Bell, Coins, FlaskConical, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, Bell, Check, Coins, Download, FlaskConical, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -28,7 +28,7 @@ import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { canEditConfig, canManageBackups, canManageComputers, viewerCan } from "@/lib/viewer";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { OrganizationSettings } from "./OrganizationSettings";
-import { Card, SettingRow, Switch, requestSettingsCard, cardCount, takeRequestedSettingsCard } from "./SettingsPrimitives";
+import { Card, CompactRow, PillSelect, SettingRow, SettingsGroup, Switch, requestSettingsCard, cardCount, takeRequestedSettingsCard } from "./SettingsPrimitives";
 import { PrivacySettings } from "./PrivacySettings";
 import { OrgMemorySettings } from "./OrgMemorySettings";
 import { NotificationSettings } from "./NotificationSettings";
@@ -41,7 +41,8 @@ import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { workspacesAvailable } from "./WorkspacesSection";
 import { SkinPicker } from "./SkinPicker";
 import { SidebarHiddenSettings } from "./SidebarHiddenSettings";
-import { SKINS, readSkin } from "@/lib/skins";
+import { SKINS, applySkin, readSkin, visibleSkins, type SkinId } from "@/lib/skins";
+import { readRetroUnlocked } from "@/lib/retro98";
 import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { AboutMeEditor, aboutMeFirstLine } from "./AboutMeSettings";
@@ -85,7 +86,9 @@ export const SECTIONS: Array<{
   icon: typeof User;
   keywords: string[];
 }> = [
-  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "prerelease", "pre-release", "diagnostics", "diagnostic"] },
+  // 0.5.6 (JC): General is laid out as Grok Bot's (Account, Appearance,
+  // System); Updates is a page of its own, as there.
+  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "theme", "thème", "language", "langue", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
   // 2026-10-14: Memory is a card of this page (it was its own section).
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy", ...ORGANIZATION_ADVANCED_KEYWORDS] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese"] },
@@ -97,6 +100,9 @@ export const SECTIONS: Array<{
   { id: "engines", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées", "decision", "jev", "typesafe", "routing", "auto", "who answers"] },
   { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur"] },
   { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing", "plan", "forfait", "coût"] },
+  // 0.5.6: this app's updates and the pre-release channel (were in General
+  // and General > Advanced). Shown where the desktop app answers.
+  { id: "updates", labelKey: "settings.updates.title", icon: Download, keywords: ["updates", "update", "version", "mise à jour", "mises à jour", "prerelease", "pre-release", "beta", "bêta", "restart"] },
   // 2026-10-15: People and Installations are hidden in the app, like Email,
   // Activity and Pair devices (settings-sections.ts HIDDEN).
   { id: "backups", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery"] },
@@ -272,73 +278,64 @@ function PrereleaseRow() {
   );
 }
 
-/** Clears the tour's steps and opens it again on the live interface. */
-function ReplayAppTourButton() {
+/** General > System > Guided tours: the app tour (cleared and opened
+ * again on the live interface) and the welcome flow, one row with two
+ * buttons (0.5.6, they were two rows with a paragraph each). */
+function GuidedToursRow() {
   const { state, dispatch } = useStore();
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
+  const replayAppTour = () => {
+    setSaving(true);
+    setFailed(false);
+    void api("/api/config", {
+      method: "PUT",
+      body: JSON.stringify({ onboarding: {
+        // Upgraded users may have completed only the legacy browser gate.
+        ...(!state.config?.onboarding?.completedAt ? completionPatch().onboarding : {}),
+        hintsSeen: withTourReset(state.config?.onboarding),
+      } }),
+      signal: AbortSignal.timeout(10_000),
+    })
+      .then((config) => {
+        dispatch({ type: "configStatus", config });
+        dispatch({ type: "toggleTour", open: true });
+      })
+      .catch(() => setFailed(true))
+      .finally(() => setSaving(false));
+  };
   return (
-    <div>
-      <button
-        disabled={saving}
-        onClick={() => {
-          setSaving(true);
-          setFailed(false);
-          void api("/api/config", {
-            method: "PUT",
-            body: JSON.stringify({ onboarding: {
-              // Upgraded users may have completed only the legacy browser gate.
-              ...(!state.config?.onboarding?.completedAt ? completionPatch().onboarding : {}),
-              hintsSeen: withTourReset(state.config?.onboarding),
-            } }),
-            signal: AbortSignal.timeout(10_000),
-          })
-            .then((config) => {
-              dispatch({ type: "configStatus", config });
-              dispatch({ type: "toggleTour", open: true });
-            })
-            .catch(() => setFailed(true))
-            .finally(() => setSaving(false));
-        }}
-        className="ui-button"
-      >
-        {t("settings.welcome.appTour")}
-      </button>
-      {failed && <p role="alert" className="mt-2 text-[13px] text-danger">{t("onboarding.tour.error")}</p>}
-    </div>
+    <>
+      <CompactRow label={t("settings.tours.title")} rowId="tours">
+        <button type="button" disabled={saving} onClick={replayAppTour} className="ui-button">
+          {t("settings.appTour.title")}
+        </button>
+        <button type="button" onClick={() => dispatch({ type: "toggleWelcome", open: true })} className="ui-button">
+          {t("settings.welcome.title")}
+        </button>
+      </CompactRow>
+      {failed && <p role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{t("onboarding.tour.error")}</p>}
+    </>
   );
 }
 
-// Three rows, one action each, so every button sits in the row's action
-// column like Updates and Diagnostics.
-function ReplayTourRow() {
+/** General > System > Server: the launch screen (no server, or an
+ * organization server). What the current choice means is one hover away. */
+function ServerRow() {
   const { state, dispatch } = useStore();
   const launchMode = state.config?.onboarding?.launchMode ?? "solo";
+  if (!launchBridges(window.ogb)) return null;
   return (
-    <>
-      <SettingRow title={t("settings.appTour.title")} subtitle={t("settings.appTour.subtitle")}>
-        <ReplayAppTourButton />
-      </SettingRow>
-      <SettingRow title={t("settings.welcome.title")} subtitle={t("settings.welcome.subtitle")}>
-        <button onClick={() => dispatch({ type: "toggleWelcome", open: true })} className="ui-button">
-          {t("settings.welcome.replay")}
-        </button>
-      </SettingRow>
-      {/* the launch screen: no server or an organization server */}
-      {launchBridges(window.ogb) && (
-        <SettingRow
-          title={t("settings.launch.title")}
-          subtitle={t(launchMode === "server" ? "settings.launch.server" : "settings.launch.solo")}
-        >
-          <button
-            onClick={() => dispatch({ type: "toggleLaunch", open: true, mode: launchMode })}
-            className="ui-button"
-          >
-            {t("settings.launch.change")}
-          </button>
-        </SettingRow>
-      )}
-    </>
+    <CompactRow label={t("settings.launch.title")} rowId="server">
+      <button
+        type="button"
+        title={t(launchMode === "server" ? "settings.launch.server" : "settings.launch.solo")}
+        onClick={() => dispatch({ type: "toggleLaunch", open: true, mode: launchMode })}
+        className="ui-button"
+      >
+        {t("settings.launch.change")}
+      </button>
+    </CompactRow>
   );
 }
 
@@ -348,27 +345,79 @@ function LanguageRow() {
   // and nobody changes another person's screen. The server's language is
   // the default until this person picks one.
   const current = effectiveLanguage(useLanguageChoice(), state.config?.language);
-
   return (
-    <SettingRow
-      title={t("settings.language.title")}
-      subtitle={t("settings.language.short")}
-      help={t("settings.language.subtitle")}
-    >
-      <select
+    <CompactRow label={t("settings.language.title")} rowId="language">
+      <PillSelect
         value={current}
-        aria-label={t("settings.language.aria")}
-        onChange={(event) => setLanguageChoice(event.target.value)}
-        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:cursor-wait disabled:opacity-50"
-      >
-        <option value="">{t("settings.language.system")}</option>
-        {localeChoices.map(({ code, label }) => (
-          <option key={code} value={code}>
-            {label}
-          </option>
-        ))}
-      </select>
-    </SettingRow>
+        ariaLabel={t("settings.language.aria")}
+        onChange={(next) => setLanguageChoice(next)}
+        options={[{ value: "", label: t("settings.language.system") }, ...localeChoices.map(({ code, label }) => ({ value: code, label }))]}
+      />
+    </CompactRow>
+  );
+}
+
+/** General > Appearance > Theme: the skin, by name. The miniatures stay in
+ * Appearance (2026-10-14 picker); this is the one-line choice Grok Bot has. */
+function ThemeRow() {
+  const [active, setActive] = useState<SkinId>(() => (document.documentElement.dataset.skin as SkinId) || readSkin());
+  const [skins] = useState(() => visibleSkins(readRetroUnlocked(), active));
+  return (
+    <CompactRow label={t("settings.theme.title")} rowId="theme">
+      <PillSelect
+        value={active}
+        ariaLabel={t("settings.theme.title")}
+        onChange={(next) => {
+          applySkin(next);
+          setActive(next);
+        }}
+        options={skins.map((skin) => ({ value: skin.id, label: skin.name }))}
+      />
+    </CompactRow>
+  );
+}
+
+type MicStatus = "granted" | "denied" | "restricted" | "not-determined" | string;
+
+/** General > System > Microphone: the desktop app's own permission, as the
+ * welcome flow asks it (PermissionsBeat). Desktop only. */
+function MicrophoneRow() {
+  const status = window.ogb?.permStatus;
+  const [mic, setMic] = useState<MicStatus | null>(null);
+  useEffect(() => {
+    if (!status) return;
+    let live = true;
+    const read = () => status().then((perms) => { if (live) setMic(perms?.mic ?? null); }).catch(() => {});
+    read();
+    // Back from System Settings: read it again.
+    window.addEventListener("focus", read);
+    return () => { live = false; window.removeEventListener("focus", read); };
+  }, [status]);
+  if (!status) return null;
+  const granted = mic === "granted";
+  const denied = mic === "denied" || mic === "restricted";
+  return (
+    <CompactRow label={t("settings.microphone.title")} rowId="microphone">
+      {mic === null ? null : granted ? (
+        <span className="inline-flex items-center gap-1.5 text-[13px] text-ink-secondary" data-mic-status="granted">
+          <Check size={14} aria-hidden="true" className="text-success" />
+          {t("settings.microphone.allowed")}
+        </span>
+      ) : denied ? (
+        <button type="button" onClick={() => void window.ogb?.permOpenSettings?.("mic")} className="ui-button" data-mic-status="denied">
+          {t("onboarding.perms.openSettings")}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => void window.ogb?.permRequestMic?.().then(() => status().then((perms) => setMic(perms?.mic ?? null))).catch(() => {})}
+          className="ui-button"
+          data-mic-status="ask"
+        >
+          {t("onboarding.perms.enable")}
+        </button>
+      )}
+    </CompactRow>
   );
 }
 
@@ -1002,6 +1051,12 @@ export function OrganizationAdvancedCards() {
   );
 }
 
+/** Whether General > Advanced holds anything for this viewer: its cards are
+ * an installation editor's, but for Diagnostics, which is the desktop app's. */
+export function generalAdvancedShown(config: ConfigStatus | null | undefined): boolean {
+  return canEditConfig(config) || Boolean(typeof window !== "undefined" && window.ogb?.exportDiagnostics);
+}
+
 /** General > Advanced (2026-10-14): the technical cards of General on a page
  * of their own, shown in Advanced mode. 2026-10-15: routines in the
  * conversation, group turns and MCP calls moved to Organization; they stay
@@ -1023,7 +1078,6 @@ export function GeneralAdvancedSettings() {
         </>
       )}
       <div className="rounded-[14px] border-[0.5px] border-border py-1 empty:hidden">
-        <PrereleaseRow />
         <DiagnosticsRow />
       </div>
     </div>
@@ -1054,7 +1108,7 @@ export function SettingsModal() {
   // 2026-10-14, so it lands on Appearance.
   const current = currentSettingsSection(state.appSettingsSection);
   const requested: AppSettingsSection =
-    remoteActive && current !== "appearance" && current !== "organization" && current !== "notifications"
+    remoteActive && current !== "appearance" && current !== "organization" && current !== "notifications" && current !== "updates"
       ? "appearance"
       : current;
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -1078,7 +1132,9 @@ export function SettingsModal() {
   // show for this viewer. A card keeps the rules its section had.
   const allowed = (id: AppSettingsSection): boolean => {
     // a remote client shows the pages that are about this desktop
-    if (remoteActive && !["appearance", "organization", "privacy", "notifications", "memory"].includes(id)) return false;
+    if (remoteActive && !["appearance", "organization", "privacy", "notifications", "memory", "updates"].includes(id)) return false;
+    // this app's own updates: where the desktop app answers
+    if (id === "updates" && !window.ogb?.updater) return false;
     // the organization memory's local cache is the desktop app's (main
     // process), set up by itself on an organization server signed in with
     // Perspicax: nothing to show anywhere else
@@ -1262,7 +1318,9 @@ export function SettingsModal() {
                 section === id ? "bg-selected" : "hover:bg-hover",
               )}
             >
-              <Icon size={15} className="shrink-0" />
+              {/* Grok Bot's nav item (198px rail, 7/9px padding, 9px gap,
+                  8px corners, 15px icon) with its thinner glyph stroke */}
+              <Icon size={15} strokeWidth={1.5} className="shrink-0" />
               {t(labelKey)}
             </button>
           ))}
@@ -1325,42 +1383,59 @@ export function SettingsModal() {
             )}
             {section === "general" && (
               <>
-                {/* 2026-10-15: one account card (who, label, server, Sign out) */}
-                <AccountCard lockedServer={lockedServer} />
-                {(!state.config?.viewer || state.config.viewer.operator) && (
-                  <SettingsSubPageRow
-                    cardId="general.aboutMe"
-                    title={t("settings.profile.aboutMe")}
-                    summary={aboutMeFirstLine(state.config?.profile?.aboutMe)}
-                    actionLabel={t("settings.aboutMe.edit")}
-                    onOpen={() => openSubPage("general.aboutMe")}
-                  />
-                )}
-                <div className="rounded-[14px] border-[0.5px] border-border py-1">
-                  <LanguageRow />
-                  {advanced && editConfig && <DefaultBotSettings />}
-                </div>
-                <div className="rounded-[14px] border-[0.5px] border-border py-1">
-                  {!remoteActive && <ReplayTourRow />}
-                  <UpdatesRow />
-                </div>
-                {/* General > Advanced (2026-10-14): tool access, parallel
-                    conversations, recovery, cleanup, pre-releases and
-                    diagnostics on one sub-page (routines, group turns and
-                    MCP calls went to Organization on 2026-10-15).
-                    A search that names one of them shows them here. */}
-                {advanced && (q
-                  ? <GeneralAdvancedSettings />
-                  : (
+                {/* 0.5.6 (JC): Grok Bot's General. Grey headings outside
+                    the cards, compact rows: label at the left, control at
+                    the right, no help text. */}
+                <SettingsGroup title={t("settings.group.account")} groupId="account">
+                  {/* 2026-10-15: one account row (who, label, Sign out) */}
+                  <AccountCard lockedServer={lockedServer} />
+                  {(!state.config?.viewer || state.config.viewer.operator) && (
                     <SettingsSubPageRow
+                      bare
+                      cardId="general.aboutMe"
+                      title={t("settings.profile.aboutMe")}
+                      summary={aboutMeFirstLine(state.config?.profile?.aboutMe)}
+                      actionLabel={t("settings.aboutMe.edit")}
+                      onOpen={() => openSubPage("general.aboutMe")}
+                    />
+                  )}
+                </SettingsGroup>
+                <SettingsGroup title={t("settings.group.appearance")} groupId="appearance">
+                  <ThemeRow />
+                  <LanguageRow />
+                </SettingsGroup>
+                <SettingsGroup title={t("settings.group.system")} groupId="system">
+                  <MicrophoneRow />
+                  {!remoteActive && <GuidedToursRow />}
+                  {!remoteActive && <ServerRow />}
+                  {advanced && editConfig && <DefaultBotSettings />}
+                  {/* General > Advanced: people's tool access, conversation
+                      cleanup and diagnostics on one sub-page (tool access,
+                      parallel conversations and recovery are each bot's own
+                      since #546; routines, group turns and MCP calls went to
+                      Organization; pre-releases to Updates). Shown when it
+                      holds something for this viewer. A search that names
+                      one of them shows them here. */}
+                  {advanced && !q && generalAdvancedShown(state.config) && (
+                    <SettingsSubPageRow
+                      bare
                       cardId="general.advanced"
                       title={t("settings.advancedPage.title")}
-                      summary={t("settings.advancedPage.summary")}
+                      summary={editConfig ? t("settings.advancedPage.summary") : t("settings.diagnostics.title")}
                       actionLabel={t("settings.advancedPage.open")}
                       onOpen={() => openSubPage("general.advanced")}
                     />
-                  ))}
+                  )}
+                </SettingsGroup>
+                {advanced && q && generalAdvancedShown(state.config) && <GeneralAdvancedSettings />}
               </>
+            )}
+
+            {section === "updates" && (
+              <div className="flex flex-col overflow-clip rounded-xl border-[0.5px] border-border bg-elevated py-1.5" data-settings-card="updates">
+                <UpdatesRow />
+                <PrereleaseRow />
+              </div>
             )}
 
             {section === "appearance" && (

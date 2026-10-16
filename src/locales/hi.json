@@ -30,7 +30,6 @@
   "settings.roomTurns.error": "समूह बारी की सीमा सहेजी नहीं जा सकी।",
   "settings.roomTurns.range": "1 से 1,440 के बीच पूर्ण संख्या दर्ज करें।",
   "settings.language.title": "भाषा",
-  "settings.language.subtitle": "जब तक आप यहाँ कोई भाषा नहीं चुनते, ऐप आपके सिस्टम की भाषा पर चलता है। अभी इंटरफ़ेस का कुछ हिस्सा ही अनूदित है — बिना अनुवाद वाला टेक्स्ट अंग्रेज़ी में ही रहता है।",
   "settings.language.system": "सिस्टम",
   "settings.language.aria": "ऐप की भाषा",
   "settings.language.error": "भाषा सहेजी नहीं जा सकी।",

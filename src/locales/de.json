@@ -109,7 +109,6 @@
   "settings.roomTurns.error": "Das Gruppen-Zeitlimit konnte nicht gespeichert werden.",
   "settings.roomTurns.range": "Gib eine ganze Zahl von 1 bis 1.440 ein.",
   "settings.language.title": "Sprache",
-  "settings.language.subtitle": "Die App folgt deiner Systemsprache, solange du hier keine wählst. Bisher ist nur ein Teil der Oberfläche übersetzt — nicht übersetzter Text bleibt auf Englisch.",
   "settings.language.system": "System",
   "settings.language.aria": "App-Sprache",
   "settings.language.error": "Die Sprache konnte nicht gespeichert werden.",

@@ -1175,7 +1175,9 @@ export type AppSettingsSection =
   | "mail"
   | "activity"
   | "backups"
-  | "workspaces";
+  | "workspaces"
+  /** This app's updates and the pre-release channel (0.5.6; were in General). */
+  | "updates";
 
 export type BotSettingsSection =
   | "overview"

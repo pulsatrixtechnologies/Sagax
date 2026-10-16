@@ -4,7 +4,7 @@
 > `pulsatrixtechnologies/sagax` releases tagged `pulsa-vX.Y.Z`
 > (`electron/update-feed.mjs`). By default they look at the latest **full**
 > release (`/releases/latest`); a GitHub pre-release is offered only to people
-> who switched on Settings > General > Pre-release versions. Publish a
+> who switched on Settings > Updates > Pre-release versions. Publish a
 > version everyone should get (starting with 0.4.0) as a full release, not a
 > pre-release (`gh release create` without `--prerelease`, step 5 below).
 

@@ -1,6 +1,8 @@
 // Settings > General, in the account card right under the person's name: their
 // own label (src/lib/person-labels.ts), edited in place as a bot's label is in
-// its panel. The pencil always shows so the line reads as editable. Sagax's
+// its panel. Discreet since 0.5.6 (Grok Bot's account row has no such line):
+// the placeholder reads as editable, the pencil shows on hover, focus and
+// touch. Sagax's
 // own field, on a solo server and on an organization server alike.
 import { useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -22,7 +24,7 @@ export function MyLabelField() {
         ariaLabel={t("personLabel.edit")}
         onSave={(next) => { void savePersonLabel(principalId, next).catch(() => dispatch({ type: "error", message: t("personLabel.saveError") })); }}
         muted
-        className="justify-start text-[12.5px] leading-4 [&_svg]:opacity-100"
+        className="justify-start text-[12px] leading-4"
         inputClassName="text-left"
       />
     </div>
