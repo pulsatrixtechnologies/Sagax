@@ -53,6 +53,8 @@ const CREDENTIALS = 0;
 const SOURCE = 5;
 const BOT = 7;
 const PROMPT = 8;
+const TYPED_DRAFT = 11;
+const SETUPS = 12;
 
 const bot = (id: string, name: string) => ({ id, name, hidden: false, modelSelection: { instanceId: "claude", model: "m" } }) as unknown as Bot;
 const webhook = (id: string, extra: Partial<WebhookTrigger> = {}): WebhookTrigger => ({
@@ -114,10 +116,10 @@ describe("Triggers pop-up", () => {
   });
 
   it("creates through the existing webhook API with the name, bot and instructions", async () => {
-    fixture.overrides.set(SOURCE, "github");
+    fixture.overrides.set(SOURCE, "stripe");
     fixture.overrides.set(BOT, "atlas");
     fixture.overrides.set(PROMPT, "  Summarize the failed build.  ");
-    const created = webhook("w1", { name: "GitHub", botId: "atlas" });
+    const created = webhook("w1", { name: "Stripe", botId: "atlas" });
     fixture.api.mockResolvedValue({ webhook: created, credential: { endpointUrl: "https://hooks.example/w1", token: "whsec_w1", command: `curl -X POST https://hooks.example/w1 -H "Authorization: Bearer whsec_w1"` } });
     const { nodes: tree } = render();
     const form = tree.find((node) => node.props["data-trigger-builder"] !== undefined)!;
@@ -128,7 +130,7 @@ describe("Triggers pop-up", () => {
     expect(url).toBe("/api/webhooks");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({
-      name: "GitHub", prompt: "Summarize the failed build.", botId: "atlas", runOn: "maus",
+      name: "Stripe", prompt: "Summarize the failed build.", botId: "atlas", runOn: "maus",
       enabled: true, verificationPending: false, eventTypes: [], maxPendingRuns: null,
     });
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "webhookPatched", webhook: created });
@@ -139,7 +141,7 @@ describe("Triggers pop-up", () => {
     expect(triggerInput({ source: "custom", customName: " New ticket ", botId: "scout", prompt: "" }, bots).name).toBe("New ticket");
     expect(triggerInput({ source: "custom", customName: "", botId: "scout", prompt: "Reply kindly. Then file it." }, bots).name).toBe("Reply kindly");
     expect(triggerInput({ source: "link", customName: "", botId: "scout", prompt: "" }, bots).name).toBe("Another app sends a link request");
-    expect(TRIGGER_SOURCES.map((source) => source.id)).toEqual(["link", "typeform", "zapier", "github", "stripe", "custom"]);
+    expect(TRIGGER_SOURCES.map((source) => source.id)).toEqual(["link", "typeform", "zapier", "stripe", "custom"]);
   });
 
   it("lists triggers as name → bot with deliveries, Copy command and an on/off switch", async () => {
@@ -303,5 +305,93 @@ describe("Triggers pop-up", () => {
     expect(html).toContain("k3Yz");
     expect(html).not.toContain(">Delete</button>");
     expect(html).not.toContain(">Copy command</button>");
+  });
+
+  it("offers typed sources in their own group, next to the link-request presets", () => {
+    const { html } = render();
+    expect(html).toContain('<optgroup label="Any app, with a bearer token">');
+    expect(html).toContain('<optgroup label="Apps that sign their events">');
+    for (const label of ["GitHub", "GitLab", "Slack", "Microsoft Teams", "Outlook", "Outlook Calendar", "Sentry", "PagerDuty", "Linear"]) expect(html).toContain(`>${label}</option>`);
+    expect(html).not.toContain("data-typed-fields");
+  });
+
+  it("shows events, filters and the generated-secret note for GitHub", () => {
+    fixture.overrides.set(SOURCE, "github");
+    const { html } = render();
+    expect(html).toContain('data-typed-fields="github"');
+    for (const label of ["Pull request opened", "Review requested", "CI failed", "Repository", "Branch", "Keywords"]) expect(html).toContain(label);
+    expect(html).toContain("Sagax makes the signing secret; it is shown once after you create the trigger.");
+    expect(html).not.toContain("data-typed-secret");
+    expect(html).toContain("fenced as untrusted data, never as instructions");
+  });
+
+  it("asks Slack for its signing secret as a password field and notes deferred Graph filters", () => {
+    fixture.overrides.set(SOURCE, "slack");
+    const slack = render().html;
+    expect(slack).toContain("Signing secret from Slack");
+    expect(slack).toMatch(/type="password"[^>]*data-typed-secret/);
+    fixture.overrides.set(SOURCE, "email");
+    const mail = render().html;
+    expect(mail).toContain("Checked by the bot: Outlook sends no details with the notification.");
+    expect(mail).toContain("Microsoft tenant ID (optional)");
+  });
+
+  it("creates a typed trigger with its source, filters and pasted secret, then keeps the setup in memory", async () => {
+    fixture.overrides.set(SOURCE, "slack");
+    fixture.overrides.set(TYPED_DRAFT, { events: ["mention", "nope"], filters: { channel: " C1, C2 ,C1", sender: "" }, signingSecret: " slack-secret-123 ", tenantId: "t", rateLimit: "30" });
+    const created = webhook("w9", { name: "Slack", source: { type: "slack", events: ["mention"], filters: { channel: ["C1", "C2"] } }, signingSecretSet: true });
+    fixture.api.mockResolvedValue({ webhook: created, sourceSetup: { endpointUrl: "https://hooks.example/sources/ep-w9" } });
+    const { nodes: tree } = render();
+    const form = tree.find((node) => node.props["data-trigger-builder"] !== undefined)!;
+    (form.props.onSubmit as (event: { preventDefault: () => void }) => void)({ preventDefault: () => {} });
+    await flush();
+    const body = JSON.parse(fixture.api.mock.calls[0]![1].body);
+    expect(body).toMatchObject({ name: "Slack", botId: "scout" });
+    expect(body.source).toEqual({ type: "slack", events: ["mention"], filters: { channel: ["C1", "C2"] }, rateLimitPerMinute: 30 });
+    expect(body.signingSecret).toBe("slack-secret-123");
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "webhookPatched", webhook: created });
+  });
+
+  it("never sends a pasted secret for a source whose secret Sagax makes", () => {
+    const input = triggerInput({ source: "github", customName: "", botId: "scout", prompt: "" }, fixture.bots as Bot[],
+      { events: [], filters: {}, signingSecret: "should-not-go", tenantId: "tenant", rateLimit: "999" });
+    expect(input.signingSecret).toBeUndefined();
+    expect(input.source).toEqual({ type: "github", events: [], filters: {} });
+    expect(input.name).toBe("GitHub");
+  });
+
+  it("lists a typed trigger with its setup URL, test-fire and no bearer command", () => {
+    fixture.webhooks = [webhook("w1", { source: { type: "github", events: ["ci.failed"], filters: { repo: ["acme/*"] } }, signingSecretSet: true })];
+    fixture.overrides.set(SETUPS, { w1: { endpointUrl: "https://hooks.example/sources/ep-w1", secret: "whsec_once" } });
+    const { html } = render();
+    expect(html).toContain('data-trigger-source="github"');
+    expect(html).toContain("Send a test event");
+    expect(html).toContain("https://hooks.example/sources/ep-w1");
+    expect(html).toContain("whsec_once");
+    expect(html).toContain("Signing secret, shown only this once:");
+    expect(html).toContain("CI failed");
+    expect(html).toContain("Repository: acme/*");
+    expect(html).not.toContain("Copy command");
+    expect(html).not.toContain("Bearer token ending in");
+  });
+
+  it("builds the source URL from the receiver without any secret once the setup is gone", () => {
+    fixture.webhooks = [webhook("w1", { source: { type: "linear", events: [], filters: {} }, signingSecretSet: false })];
+    const { html } = render();
+    expect(html).toContain("/sources/ep-w1");
+    expect(html).not.toContain("whsec_");
+    expect(html).toContain("No signing secret yet: every event is refused until you paste it.");
+    expect(html).toContain("Signing secret from Linear");
+  });
+
+  it("is translated in French", () => {
+    setLocale("fr");
+    fixture.overrides.set(SOURCE, "github");
+    fixture.webhooks = [webhook("w1", { source: { type: "github", events: [], filters: {} }, signingSecretSet: true })];
+    const { html } = render();
+    expect(html).toContain("Applications qui signent leurs événements");
+    expect(html).toContain("Pull request ouverte");
+    expect(html).toContain("Envoyer un événement test");
+    expect(html).toContain("Secret de signature enregistré.");
   });
 });

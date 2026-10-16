@@ -623,7 +623,7 @@ import { OutboundRequestService } from "./outbound-requests.ts";
 import { DEFAULT_OUTBOUND_POLICY, connectorCallsIn, normalizeOutboundPolicy, outboundCallsIn } from "../shared/outbound.ts";
 import { connectorAccessDecision, describeConnectorScopes, normalizeConnectorScopes } from "../shared/connector-scopes.ts";
 import { bindThreadLogCapProvider } from "./thread-log-rotation.ts";
-import { listenWebhookIngress, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
+import { listenWebhookIngress, triggerSourceSetup, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
 import { assertModelVariantSupported, memberTurnSelection } from "./member-turn.ts";
 import { WebhookManager } from "./webhooks.ts";
 import type { WebhookTrigger } from "../shared/webhooks.ts";
@@ -2700,7 +2700,7 @@ function adminAuditPlan(method: string, path: string): AuditPlan | null {
   return plan.config || plan.botId || plan.createsBots || plan.deletesBot || plan.createsWebhook || plan.webhookId || plan.sessionId || plan.pairing || plan.engineAction || plan.roomId ? plan : null;
 }
 
-const WEBHOOK_AUDIT_FIELDS = ["name", "prompt", "botId", "runOn", "enabled", "eventTypes"] as const;
+const WEBHOOK_AUDIT_FIELDS = ["name", "prompt", "botId", "runOn", "enabled", "eventTypes", "source"] as const;
 const auditBot = (id: string | undefined) => (id ? botAuditSnapshot(store.bot(id) as unknown as Record<string, unknown> | null) : null);
 const auditHook = (id: string | undefined) => (id ? webhooks.list().find((hook) => hook.id === id) : undefined);
 const hookFields = (hook: WebhookTrigger, fields: readonly string[] = WEBHOOK_AUDIT_FIELDS) =>
@@ -33538,6 +33538,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (path === "/api/webhooks" && method === "POST") {
       const created = webhooks.create(await readBody(req));
       const ingress = webhookIngressStatus();
+      // A typed trigger is reached by its provider's signature on its source
+      // path: no bearer command to hand out, only the setup (shown once).
+      if (created.webhook.source) {
+        return json(res, 201, { webhook: created.webhook, ingress, sourceSetup: triggerSourceSetup(ingress.baseUrl, created.webhook.endpointId, created.signingSecret) });
+      }
       return json(res, 201, {
         webhook: created.webhook,
         ingress,
@@ -33565,6 +33570,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const rotated = webhooks.rotateSecret(webhookMatch[1]);
       if (!rotated) return json(res, 404, { error: "no such webhook" });
       const ingress = webhookIngressStatus();
+      if (rotated.webhook.source) {
+        return json(res, 200, { webhook: rotated.webhook, ingress, sourceSetup: triggerSourceSetup(ingress.baseUrl, rotated.webhook.endpointId, rotated.secret) });
+      }
       return json(res, 200, {
         webhook: rotated.webhook,
         ingress,

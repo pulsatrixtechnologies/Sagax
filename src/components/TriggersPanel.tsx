@@ -1,9 +1,12 @@
 // Triggers: webhooks as a sentence. "When <something happens>, <this bot>
 // should <do this>." The builder on top is the same create call the
-// Automations page's Webhooks tab makes (POST /api/webhooks); the source
-// presets only fill in the name. Everything the full editor offers — event
-// types, where it runs, how many at once, rotating the private URL, the
-// delivery log — stays one "Advanced options" away on each trigger.
+// Automations page's Webhooks tab makes (POST /api/webhooks). A link-request
+// preset only fills in the name; a typed source (GitHub, Slack, Teams,
+// Outlook, Sentry, PagerDuty, Linear...) adds its events, filters and signing
+// secret, and is verified by the provider's own signature (TypedTriggers.tsx).
+// Everything the full editor offers (event types, where it runs, how many
+// at once, rotating the private URL, the delivery log) stays one
+// "Advanced options" away on each trigger.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronDown, Copy, ExternalLink, Laptop, Cloud, Link2, Loader2, Pencil, RotateCw, Trash2, Webhook, Zap } from "lucide-react";
 
@@ -14,9 +17,11 @@ import type { LocaleKey } from "@/locales";
 import { WEBHOOK_DEFAULT_MAX_PENDING_RUNS, webhookActivationDefaults, type WebhookTrigger, type WebhookTriggerInput } from "@/lib/webhooks";
 import { api, openBotThread, useStore, type Bot } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
+import { TRIGGER_SOURCES as TYPED_SOURCES, TRIGGER_SOURCE_TYPES, isTriggerSourceType, type TriggerSourceSetup } from "../../shared/trigger-sources";
 
 import { DANGER_PILL, DIALOG, DialogCloseButton, GROUP_CARD, PILL, PillSelect, PRIMARY_PILL, Switch } from "./SettingsPrimitives";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
+import { EMPTY_TYPED_DRAFT, TypedSourceFields, TypedTriggerRow, typedTriggerInput, type TypedDraft } from "./TypedTriggers";
 import {
   WebhookEditor,
   outcomeLabel,
@@ -29,18 +34,19 @@ import {
   webhookActivity,
 } from "./WebhooksPanel";
 
-/** What can start a trigger. Picking one only names the trigger: every
- * source is the same private URL underneath. Brand names stay as written. */
+/** Link-request presets: picking one only names the trigger, every one is
+ * the same private URL with a bearer token underneath. Typed sources (with
+ * their own signature) are TRIGGER_SOURCE_TYPES. Brand names stay as written. */
 export const TRIGGER_SOURCES: Array<{ id: string; labelKey?: LocaleKey; label?: string }> = [
   { id: "link", labelKey: "triggers.source.linkRequest" },
   { id: "typeform", label: "Typeform" },
   { id: "zapier", label: "Zapier" },
-  { id: "github", label: "GitHub" },
   { id: "stripe", label: "Stripe" },
   { id: "custom", labelKey: "triggers.source.custom" },
 ];
 
 export function triggerSourceLabel(id: string): string {
+  if (isTriggerSourceType(id)) return TYPED_SOURCES[id].label;
   const source = TRIGGER_SOURCES.find((entry) => entry.id === id);
   if (!source) return "";
   return source.labelKey ? t(source.labelKey) : source.label ?? "";
@@ -48,10 +54,14 @@ export function triggerSourceLabel(id: string): string {
 
 /** The request the builder sends: exactly what the full editor sends for a
  * new webhook with its advanced options left alone. */
-export function triggerInput(draft: { source: string; customName: string; botId: string; prompt: string }, bots: Bot[]): WebhookTriggerInput {
+export function triggerInput(
+  draft: { source: string; customName: string; botId: string; prompt: string },
+  bots: Bot[],
+  typed: TypedDraft = EMPTY_TYPED_DRAFT,
+): WebhookTriggerInput {
   const prompt = draft.prompt.trim();
   const named = draft.source === "custom" ? draft.customName.trim() : triggerSourceLabel(draft.source);
-  return {
+  const base: WebhookTriggerInput = {
     name: named || suggestedName(prompt, bots.find((bot) => bot.id === draft.botId)),
     prompt,
     botId: draft.botId,
@@ -60,6 +70,7 @@ export function triggerInput(draft: { source: string; customName: string; botId:
     eventTypes: [],
     maxPendingRuns: null,
   };
+  return isTriggerSourceType(draft.source) ? typedTriggerInput(draft.source, typed, base) : base;
 }
 
 
@@ -76,6 +87,9 @@ export function TriggersPanel() {
   const [prompt, setPrompt] = useState("");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<WebhookTrigger | null>(null);
+  const [typedDraft, setTypedDraft] = useState<TypedDraft>(EMPTY_TYPED_DRAFT);
+  // Setup of a typed trigger (URL and, once, a generated secret): memory only.
+  const [setups, setSetups] = useState<Record<string, TriggerSourceSetup>>({});
   const editingRef = useRef(false);
   editingRef.current = editing !== null;
   const close = () => dispatch({ type: "toggleTriggers", open: false });
@@ -131,12 +145,14 @@ export function TriggersPanel() {
     try {
       const response = await api("/api/webhooks", {
         method: "POST",
-        body: JSON.stringify(triggerInput({ source, customName, botId: chosenBot, prompt }, bots)),
+        body: JSON.stringify(triggerInput({ source, customName, botId: chosenBot, prompt }, bots, typedDraft)),
       });
       dispatch({ type: "webhookPatched", webhook: response.webhook });
       if (response.credential) rememberCredential(response.webhook.id, response.credential);
+      if (response.sourceSetup) setSetups((current) => ({ ...current, [response.webhook.id]: response.sourceSetup }));
       setPrompt("");
       setCustomName("");
+      setTypedDraft(EMPTY_TYPED_DRAFT);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -182,8 +198,14 @@ export function TriggersPanel() {
               <PillSelect
                 ariaLabel={t("triggers.sourceAria")}
                 value={source}
-                onChange={setSource}
-                options={TRIGGER_SOURCES.map((entry) => ({ value: entry.id, label: triggerSourceLabel(entry.id) }))}
+                onChange={(next) => {
+                  setSource(next);
+                  setTypedDraft(EMPTY_TYPED_DRAFT);
+                }}
+                options={[
+                  ...TRIGGER_SOURCES.map((entry) => ({ value: entry.id, label: triggerSourceLabel(entry.id), group: t("triggers.group.link") })),
+                  ...TRIGGER_SOURCE_TYPES.map((type) => ({ value: type as string, label: TYPED_SOURCES[type].label, group: t("triggers.group.signed") })),
+                ]}
               />
               {source === "custom" && (
                 <input
@@ -205,6 +227,7 @@ export function TriggersPanel() {
               />
               <span>{t("triggers.should")}</span>
             </div>
+            {isTriggerSourceType(source) && <TypedSourceFields type={source} draft={typedDraft} onChange={setTypedDraft} creating />}
             <MarkdownEditor
               value={prompt}
               onChange={setPrompt}
@@ -244,7 +267,25 @@ export function TriggersPanel() {
               <div className={cn(GROUP_CARD, "px-3.5 py-6 text-center text-[13px] text-ink-secondary")}>{t("triggers.empty")}</div>
             ) : (
               <ul className={cn(GROUP_CARD, "divide-y divide-hairline/40 py-0")}>
-                {state.webhooks.map((webhook) => (
+                {state.webhooks.map((webhook) => webhook.source ? (
+                  <TypedTriggerRow
+                    key={webhook.id}
+                    webhook={webhook}
+                    bot={state.bots.find((candidate) => candidate.id === webhook.botId)}
+                    setup={setups[webhook.id]}
+                    baseUrl={ingress?.baseUrl}
+                    busy={working !== null}
+                    onToggle={() => void invoke(webhook, "toggle")}
+                    onDelete={() => void invoke(webhook, "delete")}
+                    onEdit={() => setEditing(webhook)}
+                    onSetup={(setup) => setSetups((current) => ({ ...current, [webhook.id]: setup }))}
+                    onOpenChat={(threadId) => {
+                      close();
+                      const bot = state.bots.find((candidate) => candidate.id === webhook.botId);
+                      if (bot) openBotThread(dispatch, bot, threadId, showThreads);
+                    }}
+                  />
+                ) : (
                   <TriggerRow
                     key={webhook.id}
                     webhook={webhook}

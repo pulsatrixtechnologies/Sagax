@@ -259,6 +259,12 @@ export function useWebhookActions() {
   };
 
   const createAndCopyCommand = async (webhook: WebhookTrigger, replace = false, copy: "command" | "token" = "command") => {
+    // A typed trigger has no bearer token: rotating here would replace the
+    // provider's signing secret behind the owner's back.
+    if (webhook.source) {
+      setError(t("triggers.typed.managedInTriggers"));
+      return;
+    }
     if (workingRef.current) return;
     workingRef.current = true;
     setWorking(`${webhook.id}:command`);

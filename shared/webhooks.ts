@@ -3,6 +3,7 @@
  * verbatim from the client's mirrors (src/lib/webhooks.ts); the client file
  * re-exports these under the same names. */
 import type { RoutineRunOn } from "./routines.ts";
+import type { TriggerSourceConfig } from "./trigger-sources.ts";
 
 export interface WebhookTrigger {
   id: string;
@@ -35,6 +36,12 @@ export interface WebhookTrigger {
   /** A token was generated for this older webhook at server start and has not
    *  been copied yet (POST /api/webhooks/:id/reveal hands it over once). */
   tokenPending?: boolean;
+  /** Typed trigger: the provider, its events and filters (see
+   *  shared/trigger-sources.ts). Absent on a plain bearer webhook. */
+  source?: TriggerSourceConfig;
+  /** Typed trigger: whether the provider's signing secret is set. The
+   *  secret is write only. */
+  signingSecretSet?: boolean;
 }
 
 export interface WebhookTriggerInput {
@@ -47,6 +54,9 @@ export interface WebhookTriggerInput {
   eventTypes?: string[];
   /** 1–50; `null` goes back to the default. */
   maxPendingRuns?: number | null;
+  source?: TriggerSourceConfig;
+  /** Write only: the provider's signing secret, pasted by the owner. */
+  signingSecret?: string;
 }
 
 export interface WebhookVerificationSample {

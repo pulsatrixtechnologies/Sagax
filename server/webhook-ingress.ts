@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z } from "zod";
 
 import { parseJson, type JsonValue } from "./schema.ts";
+import type { TriggerSourceSetup } from "../shared/trigger-sources.ts";
+import { handshakeBeforeAuth } from "./trigger-sources.ts";
 import type { WebhookManager } from "./webhooks.ts";
 
 export const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
@@ -129,16 +131,75 @@ function eventName(req: IncomingMessage): string | undefined {
   )?.trim() || undefined;
 }
 
+function lowerHeaders(req: IncomingMessage): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(req.headers)) out[name.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+  return out;
+}
+
 export function createWebhookIngressHandler(
   manager: WebhookManager,
   claimRequest?: () => () => void,
   limiter: AuthFailureLimiter = new AuthFailureLimiter(),
 ) {
+  /** A typed trigger (`/sources/<endpointId>`): the provider proves itself
+   * with its own signature scheme (GitHub, Slack, Sentry, PagerDuty and
+   * Linear HMAC; GitLab token; Microsoft Graph clientState), because none of
+   * them can send a bearer token. Same failure counter, same body cap, same
+   * answer for every kind of refusal. */
+  const handleSource = async (endpointId: string, url: URL, req: IncomingMessage, res: ServerResponse) => {
+    if (req.method !== "POST") return json(res, 405, { error: "Webhooks accept POST requests" });
+    let release: (() => void) | undefined;
+    try {
+      release = claimRequest?.();
+      const source = req.socket.remoteAddress ?? "unknown";
+      if (limiter.blocked(source)) {
+        res.setHeader("retry-after", String(Math.ceil(WEBHOOK_AUTH_FAILURE_WINDOW_MS / 1000)));
+        return json(res, 429, { error: "Too many failed attempts" });
+      }
+      const trigger = manager.sourceTrigger(endpointId);
+      if (!trigger?.source) {
+        limiter.fail(source);
+        return json(res, 401, { error: "Unauthorized" });
+      }
+      const headers = lowerHeaders(req);
+      const early = handshakeBeforeAuth(trigger.source.type, { headers, rawBody: "", query: url.searchParams, now: Date.now() });
+      if (early) {
+        res.writeHead(early.status, { "content-type": early.contentType, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+        return res.end(early.body);
+      }
+      const rawBody = await readRawBody(req);
+      const outcome = manager.receiveSource(endpointId, { headers, rawBody, query: url.searchParams, now: Date.now() });
+      if (outcome.kind === "unauthorized") {
+        limiter.fail(source);
+        manager.recordUnauthorized(endpointId, { eventName: headers["x-github-event"] ?? headers["x-gitlab-event"] ?? headers["sentry-hook-resource"] },
+          `Signature check failed: ${outcome.reason}`);
+        return json(res, 401, { error: "Unauthorized" });
+      }
+      if (outcome.kind === "handshake") {
+        res.writeHead(outcome.handshake.status, { "content-type": outcome.handshake.contentType, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+        return res.end(outcome.handshake.body);
+      }
+      return json(res, 202, { accepted: true, results: outcome.results as unknown as JsonValue });
+    } catch (error) {
+      const parsedError = statusErrorSchema.safeParse(error);
+      const status = parsedError.success ? parsedError.data.status ?? 500 : 500;
+      const message = error instanceof Error ? error.message : String(error);
+      if (status === 400 || status === 413) manager.recordRejected(endpointId, status, message);
+      const deliberate = parsedError.success && parsedError.data.status !== undefined;
+      return json(res, status, { error: deliberate ? message : "The webhook could not be accepted. Try again later." });
+    } finally {
+      release?.();
+    }
+  };
+
   return async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (req.method === "GET" && url.pathname === "/health") {
       return json(res, 200, { app: "openmausbot-webhooks", ready: true });
     }
+    const sourceMatch = url.pathname.match(/^\/sources\/(wh_[A-Za-z0-9_-]+)$/);
+    if (sourceMatch) return handleSource(sourceMatch[1]!, url, req, res);
     const match = url.pathname.match(/^\/hooks\/(wh_[A-Za-z0-9_-]+)(?:\/([^/]+))?$/);
     if (!match) return json(res, 404, { error: "Unknown webhook endpoint" });
     if (req.method !== "POST") return json(res, 405, { error: "Webhooks accept POST requests" });
@@ -261,4 +322,10 @@ export function webhookCredential(baseUrl: string, endpointId: string, token: st
 
 export function webhookCurlCommand(endpointUrl: string, token: string): string {
   return `curl -X POST ${endpointUrl} -H "Authorization: Bearer ${token}"`;
+}
+
+/** What the owner pastes into the provider once: the source URL, and the
+ * signing secret when Sagax made it. */
+export function triggerSourceSetup(baseUrl: string, endpointId: string, secret?: string): TriggerSourceSetup {
+  return { endpointUrl: `${baseUrl.replace(/\/$/, "")}/sources/${endpointId}`, ...(secret ? { secret } : {}) };
 }
