@@ -8598,5 +8598,21 @@
   "security.stepUp.noKey": "Cette action demande une clé de sécurité, et vous n'en avez aucune pour cette adresse. Ajoutez-en une dans Réglages > Sécurité.",
   "security.stepUp.noAddress": "Les clés de sécurité demandent cette page en https, ou l'app de bureau sur cet ordinateur.",
   "security.stepUp.unsupported": "Cette app ne peut pas utiliser de clé de sécurité ici. Approuvez depuis l'app de bureau ou un navigateur en https.",
-  "security.stepUp.busy": "Une fenêtre de clé de sécurité est déjà ouverte."
+  "security.stepUp.busy": "Une fenêtre de clé de sécurité est déjà ouverte.",
+  "artifacts.favorites": "Favoris",
+  "artifacts.view.files": "Fichiers",
+  "artifacts.view.artifacts": "Artefacts",
+  "artifacts.updated": "Mis à jour {when}",
+  "artifacts.favorite": "Ajouter aux favoris",
+  "artifacts.unfavorite": "Retirer des favoris",
+  "artifacts.openAria": "Ouvrir {title}",
+  "artifacts.moreAria": "Plus d'options pour {title}",
+  "artifacts.open": "Ouvrir",
+  "artifacts.delete": "Supprimer",
+  "artifacts.deleteTitle": "Supprimer cet artefact ?",
+  "artifacts.deleteBody": "« {title} » disparaît pour de bon, avec son rafraîchissement. Demandez au bot si vous le voulez de nouveau.",
+  "artifacts.loading": "Chargement des artefacts…",
+  "artifacts.error": "Impossible de charger les artefacts.",
+  "artifacts.empty": "Aucun artefact pour l'instant. Demandez à ce bot d'enregistrer un widget comme artefact ; il peut se rafraîchir à l'intervalle que vous fixez avec le bot.",
+  "palette.group.artifacts": "Artefacts"
 }

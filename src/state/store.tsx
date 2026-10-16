@@ -87,6 +87,7 @@ import { announcePersonAvatar, withViewerAvatar } from "@/lib/person-avatars";
 import { StoreSourceContext, usePublishedStoreSource } from "./store-source";
 import { ThreadPrefetchContext } from "./thread-prefetch";
 import { createThreadPrefetcher, ThreadPageCache, type ThreadPage } from "@/lib/thread-page-cache";
+import { ARTIFACTS_EVENT } from "@/lib/artifact-events";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -5207,6 +5208,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "cloud.agent":
           window.dispatchEvent(new CustomEvent("sagax-cloud-agent", { detail: { botId: frame.botId, item: frame.item } }));
+          break;
+        case "artifacts":
+          // Ids only (server/artifacts.ts): the Files tab and the palette fetch again.
+          window.dispatchEvent(new CustomEvent(ARTIFACTS_EVENT, { detail: { botId: frame.botId, artifactId: frame.artifactId, deleted: frame.deleted === true } }));
           break;
         case "live.call": {
           const framed = liveCallFromFrame(frame);

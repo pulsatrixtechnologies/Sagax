@@ -408,6 +408,194 @@
       }
     },
     {
+      "name": "save_artifact",
+      "description": "Save a widget the person wants to keep, pin or watch as an artifact: it shows in your Files tab under Artifacts. With source and interval_seconds it refreshes itself. They cannot edit its settings; they ask you. Returns its id.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "html": {
+            "type": "string",
+            "description": "Self-contained HTML with inline CSS and JS; no network (strict CSP). Read window.sagax.data; window.sagax.onData(fn) gets each refresh's JSON."
+          },
+          "source": {
+            "type": "object",
+            "description": "Re-run by Sagax on the interval, with no turn of yours: {kind:\"tool\",tool,args} (one of your read tools) or {kind:\"command\",command} (read-only, prints JSON). A call that would need approval is marked blocked. null removes it.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool",
+                  "command"
+                ]
+              },
+              "tool": {
+                "type": "string"
+              },
+              "args": {
+                "type": "object"
+              },
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "interval_seconds": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 86400
+          },
+          "favorite": {
+            "type": "boolean"
+          },
+          "popped": {
+            "type": "boolean",
+            "description": "In its own floating window, reopened when Sagax starts."
+          },
+          "bounds": {
+            "type": "object",
+            "description": "First window position, pixels.",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "required": [
+          "title",
+          "html"
+        ]
+      }
+    },
+    {
+      "name": "update_artifact",
+      "description": "Change one of your artifacts: any save_artifact field, or paused to stop or resume its refresh. Omitted fields stay.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "html": {
+            "type": "string",
+            "description": "Self-contained HTML with inline CSS and JS; no network (strict CSP). Read window.sagax.data; window.sagax.onData(fn) gets each refresh's JSON."
+          },
+          "source": {
+            "type": "object",
+            "description": "Re-run by Sagax on the interval, with no turn of yours: {kind:\"tool\",tool,args} (one of your read tools) or {kind:\"command\",command} (read-only, prints JSON). A call that would need approval is marked blocked. null removes it.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool",
+                  "command"
+                ]
+              },
+              "tool": {
+                "type": "string"
+              },
+              "args": {
+                "type": "object"
+              },
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "interval_seconds": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 86400
+          },
+          "favorite": {
+            "type": "boolean"
+          },
+          "popped": {
+            "type": "boolean",
+            "description": "In its own floating window, reopened when Sagax starts."
+          },
+          "bounds": {
+            "type": "object",
+            "description": "First window position, pixels.",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              }
+            }
+          },
+          "paused": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "artifact_id"
+        ]
+      }
+    },
+    {
+      "name": "list_artifacts",
+      "description": "Your artifacts with their settings and refresh state.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "delete_artifact",
+      "description": "Delete one of your artifacts.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id"
+        ]
+      }
+    },
+    {
       "name": "post_to_room",
       "description": "Put one message into a shared room you belong to, for example when the user asks you to tell the team something. Get group_id from list_rooms. This posts and returns: no room member's turn starts, nobody replies, and nothing comes back except confirmation — so never use it to ask a question or hand out work (use ask_bot or delegate_bot for those). Post once, say it in full, and tell the user what you posted. Set attach_voice_note true to attach this turn's voice note. If a post is refused, do not retry it: say what you wanted to post in your reply instead.",
       "inputSchema": {

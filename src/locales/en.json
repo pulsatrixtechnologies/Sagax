@@ -8598,5 +8598,21 @@
   "security.stepUp.noKey": "This needs a security key, and you have none for this address. Add one in Settings > Security.",
   "security.stepUp.noAddress": "Security keys need this page on https, or the desktop app on this computer.",
   "security.stepUp.unsupported": "This app cannot use a security key here. Approve it from the desktop app or a browser on https.",
-  "security.stepUp.busy": "A security key window is already open."
+  "security.stepUp.busy": "A security key window is already open.",
+  "artifacts.favorites": "Favorites",
+  "artifacts.view.files": "Files",
+  "artifacts.view.artifacts": "Artifacts",
+  "artifacts.updated": "Updated {when}",
+  "artifacts.favorite": "Add to favorites",
+  "artifacts.unfavorite": "Remove from favorites",
+  "artifacts.openAria": "Open {title}",
+  "artifacts.moreAria": "More for {title}",
+  "artifacts.open": "Open",
+  "artifacts.delete": "Delete",
+  "artifacts.deleteTitle": "Delete this artifact?",
+  "artifacts.deleteBody": "“{title}” goes away for good, and so does its refresh. Ask the bot if you want it back.",
+  "artifacts.loading": "Loading artifacts…",
+  "artifacts.error": "Couldn't load the artifacts.",
+  "artifacts.empty": "No artifacts yet. Ask this bot to save a widget as an artifact; it can refresh itself at an interval you set with the bot.",
+  "palette.group.artifacts": "Artifacts"
 }

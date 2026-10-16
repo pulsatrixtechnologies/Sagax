@@ -15,6 +15,7 @@ import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
 import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
 import { callCardTool, CARD_TOOL_NAMES } from "./agents-call-cards.ts";
+import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.ts";
 import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, PERSPICAX_TOOL_NAMES, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
 import { harnessClientFromEnv } from "./agents-client.ts";
 import type { HarnessClient, Json } from "./agents-client.ts";
@@ -470,6 +471,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   }
   // create_options_card, show_widget, update_widget (agents-call-cards.ts).
   if (CARD_TOOL_NAMES.has(name)) return callCardTool(name, args, context);
+  if (ARTIFACT_TOOL_NAMES.has(name)) return callArtifactTool(name, args, context);
   if (name === "answer_approval" || name === "nudge_person" || name === "manage_pairing" || name === "manage_settings" || PERSPICAX_TOOL_NAMES.has(name)) {
     if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
     if (PERSPICAX_TOOL_NAMES.has(name)) {

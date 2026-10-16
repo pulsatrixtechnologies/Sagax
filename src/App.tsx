@@ -31,6 +31,7 @@ import { WindowCaptionButtons } from "@/components/WindowCaptionButtons";
 import { NoEngines } from "@/components/NoEngines";
 
 import { CommandPalette, openCommandPalette } from "@/components/CommandPalette";
+import { ArtifactsHost } from "@/components/artifacts/ArtifactsHost";
 import { StagedOrgImport } from "@/components/OrgImportDialog";
 import { RetroAssistantHost } from "@/components/RetroAssistantHost";
 import { AchievementToaster } from "@/components/achievements/AchievementToaster";
@@ -518,6 +519,7 @@ function Shell() {
       {/* mounted after the modals: same z-50 tier, so DOM order keeps the
           palette on top when one of them is open underneath */}
       <CommandPalette onOpenChange={setPaletteOpen} onNewConversation={openCompose} />
+      <ArtifactsHost />
       <StagedOrgImport />
       <TeamBotFromThreadHost />
       <RetroAssistantHost />

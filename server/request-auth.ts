@@ -457,6 +457,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // handlers check the owner and narrow the threads to the viewer's own.
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/avatar\/generate$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/(?:links|files)$/ },
+  // artifacts (server/routes/artifacts.ts): the route checks the bot and,
+  // on a shared server, that the artifact is this person's
+  { methods: ["GET"], path: /^\/api\/artifacts$/ },
+  { methods: ["POST"], path: /^\/api\/artifacts\/watch$/ },
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/artifacts$/ },
+  { methods: ["GET", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/artifacts\/art_[\w-]+$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/artifacts\/art_[\w-]+\/refresh$/ },
   // Share as Template: a single-bot package without secrets (owner or admin).
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/export$/ },
   // The bot's standing instructions for the profile's Instructions row

@@ -48,6 +48,7 @@ import type { CloudAgentWireItem } from "./cloud-agents.ts";
 import type { TerminalEmbed } from "./terminal-resources.ts";
 import type { TerminalRequestCardData } from "./terminal-request.ts";
 import type { WireVideoWidget } from "./video-widget.ts";
+import type { ArtifactsFrame } from "./artifacts.ts";
 
 /** Reasoning-effort levels, ascending. A union of everything any engine
  * accepts; each driver declares the subset its CLI will take. Lives here
@@ -1173,6 +1174,8 @@ export type ServerFrame =
   | { kind: "routine.run"; run: RoutineRun }
   /** A cloud coding agent record changed (server/cloud-agents/manager.ts). */
   | { kind: "cloud.agent"; botId: string; item: CloudAgentWireItem }
+  /** A bot's artifacts changed (server/artifacts.ts): ids only, fetch again. */
+  | ArtifactsFrame
   | { kind: "webhook"; webhook: WebhookTrigger }
   | { kind: "webhook.attempt"; attempt: WebhookAttempt }
   | { kind: "webhook.deleted"; webhookId: string }

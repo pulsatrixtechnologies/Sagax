@@ -948,6 +948,8 @@ import { createRoutineAwayRoutes } from "./routes/routine-away.ts";
 import { createMeetingRoutes } from "./routes/meetings.ts";
 import { approvalTypeOf } from "./approval-type.ts";
 import { createMeetingInternalRoutes } from "./routes/meeting-internal.ts";
+import { createArtifactStore } from "./artifacts.ts";
+import { createArtifactInternalRoutes, createArtifactRoutes } from "./routes/artifacts.ts";
 import { createMeetingService, type MeetingService } from "./meetings/meeting-requests.ts";
 import { parseEvalJson } from "./meetings/meet-scripts.ts";
 import type { MeetingBrowser } from "./meetings/meeting-session.ts";
@@ -1537,6 +1539,9 @@ if (securityKeys.store.removedOutside) {
   orgAudit({ category: "approval", action: "security_keys.file_removed", target: { kind: "file", id: "security-keys.json" }, actor: { kind: "cli" } });
 }
 const securityKeyCeremonies = securityKeyCeremonyRoutes({ keys: securityKeys });
+// Artifacts: the widgets bots saved (server/artifacts.ts). Clients get ids
+// only and fetch the change with their own rights.
+const artifactStore = createArtifactStore({ file: join(DATA_DIR, "artifacts.json"), onChange: (frame) => broadcast({ ...frame }) });
 // 2026-10-16: people's custom auto-review rules, in their own words
 // (shared/custom-rules.ts, server/custom-rules-review.ts).
 const customRules = new CustomRuleStore(join(DATA_DIR, "custom-approval-rules.json"));
@@ -8508,6 +8513,8 @@ store.onChange((change) => {
       catch { console.error("[bot-plugins] Could not remove deleted bot's plugins."); }
       // its own approval rules and its permission mode (all-bots rules stay)
       ownerApprovals.forgetBot(change.botId);
+      try { artifactStore.removeBot(change.botId); }
+      catch { console.error("[artifacts] Could not remove deleted bot's artifacts."); }
       broadcast({ kind: "bot.deleted", botId: change.botId });
       break;
     case "group": {
@@ -23644,6 +23651,23 @@ ROUTES.push(createMeetingRoutes({
   enabled: () => meetingNotetakerEnabled(cfg),
   refusal: (auth, threadId, requestId) => approvalAnswerRefusal(auth, threadId, requestId) ?? cardAnswerRefusal(auth, threadId, requestId, "allow"),
 }));
+// Artifacts in the Files tab and the palette (server/routes/artifacts.ts).
+ROUTES.push(createArtifactRoutes({
+  artifacts: () => artifactStore,
+  mayUseBot: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    const viewerId = channelFilterViewerId(auth);
+    if (!viewerId) return true;
+    const viewer = authzViewerFromId(viewerId);
+    return Boolean(viewer && canOnBot(viewer, "bot.use", botFacts(bot)));
+  },
+  mayView: (auth, artifact) => {
+    const viewerId = channelFilterViewerId(auth);
+    if (!viewerId || !privateThreads() || auth.scopes.includes("admin")) return true;
+    return !artifact.ownerPrincipalId || artifact.ownerPrincipalId === viewerId;
+  },
+}));
 const INTERNAL_ROUTES: InternalRouteHandler[] = [
   // request_login (server/routes/credential-vault-internal.ts)
   createCredentialVaultInternalRoutes({
@@ -23687,6 +23711,12 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   }),
   // list_terminal_resources and offer_shell_terminal (server/routes/terminal-internal.ts)
   terminalFeature.internalRoute,
+  // save_artifact, update_artifact, list_artifacts, delete_artifact (server/routes/artifacts.ts)
+  createArtifactInternalRoutes({
+    artifacts: () => artifactStore,
+    ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    speaker: (threadId) => safetyPrincipal(threadId).principalId,
+  }),
   // join_meeting (server/routes/meeting-internal.ts)
   createMeetingInternalRoutes({
     meetings: () => meetingService,

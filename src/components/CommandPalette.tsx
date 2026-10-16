@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  AppWindow,
   Bot as BotIcon,
   CalendarClock,
   CircleStop,
@@ -37,6 +38,8 @@ import { navigate } from "@/lib/view-transitions";
 import { isMacPlatform } from "@/lib/keyboard-shortcuts";
 import { requestReleaseNotes } from "@/lib/release-notes-ui";
 import { setComposerChannelMode } from "@/lib/drafts";
+import { useAllArtifacts } from "@/lib/artifacts";
+import { openArtifact } from "@/lib/artifact-events";
 import { viewerCanCreateBots } from "@/lib/viewer";
 import {
   buildPaletteSections,
@@ -60,6 +63,7 @@ const ICONS: Record<PaletteAction["kind"], LucideIcon> = {
   bot: BotIcon,
   room: Users,
   message: MessageSquare,
+  artifact: AppWindow,
   newConversation: SquarePen,
   newBot: UserPlus,
   routines: CalendarClock,
@@ -187,6 +191,8 @@ export function CommandPalette({
     state.activeView === "chat" ? state.bots.find((bot) => bot.id === state.selectedId) : undefined;
   const goalGroup = selectedGroup && !selectedGroup.dm && !selectedGroup.peopleDm ? selectedGroup : undefined;
   const isMac = useMemo(() => isMacPlatform(), []);
+  // Favorites of every bot, fetched while the palette is open.
+  const { artifacts } = useAllArtifacts(open);
 
   const sections = useMemo(
     () =>
@@ -194,6 +200,7 @@ export function CommandPalette({
         ? buildPaletteSections({
           bots: state.bots.filter((bot) => !bot.hidden),
           groups: state.groups,
+          artifacts: artifacts ?? [],
           query,
           messageHits: q ? messageHits : [],
           recents,
@@ -207,7 +214,7 @@ export function CommandPalette({
             : {}),
         })
         : [],
-    [open, state.bots, state.groups, state.config, query, q, messageHits, recents, isMac, advanced, selectedBot, goalGroup],
+    [open, state.bots, state.groups, artifacts, state.config, query, q, messageHits, recents, isMac, advanced, selectedBot, goalGroup],
   );
 
   if (!open) return null;
@@ -228,6 +235,9 @@ export function CommandPalette({
         return;
       case "bot":
         navigate(() => openBot(dispatch, action.bot, showThreads));
+        return;
+      case "artifact":
+        openArtifact({ botId: action.botId, artifactId: action.artifactId, title: action.title });
         return;
       case "room":
         navigate(() => dispatch({ type: "select", id: action.group.id }));

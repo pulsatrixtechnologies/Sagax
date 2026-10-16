@@ -46,6 +46,20 @@ beforeEach(() => {
 });
 
 describe("buildPaletteSections", () => {
+  it("lists every bot's favorite artifacts under Artifacts, the bot's name beside each", () => {
+    const sections = buildPaletteSections(context({ artifacts: [
+      { id: "art_cpu0001", botId: "b2", title: "CPU load", favorite: true },
+      { id: "art_tix0001", botId: "b1", title: "Open tickets", favorite: false },
+      { id: "art_gone001", botId: "hidden", title: "Gone bot", favorite: true },
+    ] }));
+    expect(sections.map((section) => section.group)).toEqual(["conversations", "bots", "artifacts", "navigation", "settings", "help"]);
+    const artifacts = sections.find((section) => section.group === "artifacts")!;
+    expect(artifacts.label).toBe("Artifacts");
+    expect(artifacts.items).toEqual([expect.objectContaining({ id: "artifact:art_cpu0001", label: "CPU load", detail: "Moss", action: { kind: "artifact", botId: "b2", artifactId: "art_cpu0001", title: "CPU load" } })]);
+    const searched = buildPaletteSections(context({ query: "cpu", artifacts: [{ id: "art_cpu0001", botId: "b2", title: "CPU load", favorite: true }] }));
+    expect(searched.find((section) => section.group === "artifacts")?.items.map((item) => item.id)).toEqual(["artifact:art_cpu0001"]);
+  });
+
   it("lists the groups in the fixed order with no query", () => {
     const sections = buildPaletteSections(context());
     expect(sections.map((section) => section.group)).toEqual(["conversations", "bots", "navigation", "settings", "help"]);

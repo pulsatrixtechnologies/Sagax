@@ -14,6 +14,7 @@ export type PaletteGroupId =
   | "recent"
   | "conversations"
   | "bots"
+  | "artifacts"
   | "messages"
   | "navigation"
   | "settings"
@@ -25,6 +26,7 @@ export const PALETTE_GROUP_ORDER: readonly PaletteGroupId[] = [
   "recent",
   "conversations",
   "bots",
+  "artifacts",
   "messages",
   "navigation",
   "settings",
@@ -36,6 +38,7 @@ const GROUP_LABEL: Record<PaletteGroupId, LocaleKey> = {
   recent: "palette.group.recent",
   conversations: "palette.group.conversations",
   bots: "palette.group.bots",
+  artifacts: "palette.group.artifacts",
   messages: "palette.group.messages",
   navigation: "palette.group.navigation",
   settings: "palette.group.settings",
@@ -52,6 +55,7 @@ export type PaletteAction =
   | { kind: "bot"; bot: Bot }
   | { kind: "room"; group: Group }
   | { kind: "message"; hit: SearchHit }
+  | { kind: "artifact"; botId: string; artifactId: string; title: string }
   | { kind: "newConversation" }
   | { kind: "newBot" }
   | { kind: "routines" }
@@ -98,6 +102,8 @@ export interface PaletteContext {
   /** Visible bots in roster order: the first nine get ⌘1 to ⌘9 (App.tsx). */
   bots: readonly Bot[];
   groups: readonly Group[];
+  /** Favorite artifacts of every bot this viewer sees (GET /api/artifacts). */
+  artifacts?: readonly PaletteArtifact[];
   query: string;
   messageHits: readonly SearchHit[];
   /** Item ids, most recent first (loadPaletteRecents). */
@@ -112,6 +118,14 @@ export interface PaletteContext {
   currentBotId?: string;
   /** Set only when a channel (not a direct conversation) is open. */
   goal?: PaletteGoal;
+}
+
+/** A favorite artifact as the palette lists it. */
+export interface PaletteArtifact {
+  id: string;
+  botId: string;
+  title: string;
+  favorite: boolean;
 }
 
 export const PALETTE_RECENT_LIMIT = 5;
@@ -303,6 +317,23 @@ function botItems(context: PaletteContext): PaletteItem[] {
   }));
 }
 
+/** Favorite artifacts of every bot, the bot's name beside each. */
+function artifactItems(context: PaletteContext): PaletteItem[] {
+  const heading = t("palette.group.artifacts");
+  const names = new Map(context.bots.map((bot) => [bot.id, bot.name]));
+  return (context.artifacts ?? []).filter((artifact) => artifact.favorite && names.has(artifact.botId)).map((artifact) => {
+    const botName = names.get(artifact.botId)!;
+    return {
+      id: `artifact:${artifact.id}`,
+      group: "artifacts",
+      label: artifact.title,
+      detail: botName,
+      words: [heading, botName],
+      action: { kind: "artifact", botId: artifact.botId, artifactId: artifact.id, title: artifact.title },
+    };
+  });
+}
+
 function messageItems(context: PaletteContext): PaletteItem[] {
   return context.messageHits.map((hit) => ({
     id: `msg:${hit.threadId}:${hit.messageId}`,
@@ -322,7 +353,7 @@ function messageItems(context: PaletteContext): PaletteItem[] {
  * matched by the server) under Messages. */
 export function buildPaletteSections(context: PaletteContext): PaletteSection[] {
   const query = context.query.trim();
-  const all = [...conversationItems(context), ...botItems(context), ...paletteCommands(context)];
+  const all = [...conversationItems(context), ...botItems(context), ...artifactItems(context), ...paletteCommands(context)];
   const byGroup = new Map<PaletteGroupId, PaletteItem[]>();
   if (!query) {
     const byId = new Map(all.map((item) => [item.id, item]));
