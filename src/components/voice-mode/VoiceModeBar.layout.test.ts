@@ -174,15 +174,14 @@ describe("the card's motion", () => {
   const source = readFileSync(new URL("./VoiceModeBar.tsx", import.meta.url), "utf8");
   const motion = readFileSync(new URL("../MenuMotion.tsx", import.meta.url), "utf8");
 
-  it("the card sits in a clipping shell under the row that animates height and opacity like the menus (200 ms, same easing, none when motion is reduced)", () => {
+  it("the card sits in a clipping reveal shell under the row (a 0fr to 1fr grid row and opacity, none when motion is reduced)", () => {
     const html = render("listening", { defaultPanel: "transcript", transcript: [{ id: "1", who: "you", text: "Hi" }] });
     const shell = classOf(html, "data-voice-card-motion");
     expect(shell).toContain("overflow-hidden");
-    expect(shell).toContain("transition-[height,opacity]");
-    expect(shell).toContain("duration-moderate");
-    expect(shell).toContain("ease-out-quint");
-    expect(shell).toContain("motion-reduce:transition-none");
-    expect(motion).toMatch(/export const MENU_MOTION_MS = MOTION_MS\.moderate;/);
+    expect(shell).toContain("reveal-shell");
+    expect(shell).not.toContain("transition-[height");
+    expect(html).toContain('data-reveal="open"');
+    expect(motion).toMatch(/export const REVEAL_MOTION_MS = MOTION_MS\.moderate;/);
     // shell, then the card, then its scroller: the row is outside it and never moves
     const order = ["data-voice-pill-row", "data-voice-card-motion", "data-voice-card=", "data-voice-callbar-panels", 'data-voice-card-body="transcript"'].map((a) => html.indexOf(a));
     expect(order.every((index) => index > 0), String(order)).toBe(true);
@@ -195,12 +194,10 @@ describe("the card's motion", () => {
     expect(pill).not.toContain("rounded-full");
   });
 
-  it("measures the final height once, reveals it, then releases it; the transcript is on its last line before it shows", () => {
-    expect(source).toContain('useHeightReveal(expanded, shell, card, cardKey, panel === "transcript" ? toLastLine : toTop)');
-    // the reveal measures the content (never the clipping shell), and releases the height afterwards
-    expect(motion).toMatch(/const to = closing \? 0 : \(content\.current\?\.offsetHeight \?\? 0\)/);
-    expect(motion).toMatch(/if \(opening \|\| switching\) before\.current\?\.\(\);[\s\S]*box\.style\.height = `\$\{to\}px`/);
-    expect(motion).toMatch(/release\.current = window\.setTimeout\(\(\) => \{[\s\S]*box\.style\.height = "";/);
+  it("reveals the card with no height written from script; the transcript is on its last line before it shows", () => {
+    expect(source).toContain('useReveal(expanded, cardKey, panel === "transcript" ? toLastLine : toTop)');
+    expect(motion).not.toMatch(/style\.height|offsetHeight/);
+    expect(motion).toMatch(/if \(open && \(!previous\.open \|\| previous\.key !== contentKey\)\) before\.current\?\.\(\);/);
     // following the conversation happens before paint too
     expect(source).toMatch(/useLayoutEffect\(\(\) => \{\s*if \(transcriptOpen\) toLastLine\(\);/);
   });

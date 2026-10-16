@@ -64,7 +64,7 @@ vi.mock("react", async (importOriginal) => ({
   useLayoutEffect: react.useLayoutEffect,
 }));
 
-const { MENU_MOTION_MS, useHeldMenuMotion, useMenuMotion } = await import("./MenuMotion");
+const { MENU_EXIT_MS, REVEAL_EXIT_MS, useHeldMenuMotion, useMenuMotion, useReveal } = await import("./MenuMotion");
 
 let reduced = false;
 beforeEach(() => {
@@ -97,7 +97,7 @@ describe("menu motion", () => {
     expect(closing.closing).toBe(true);
     expect(closing.className).toBe("animate-pop-out pointer-events-none");
     expect(closing.exitProps).toEqual({ inert: true, "aria-hidden": true });
-    vi.advanceTimersByTime(MENU_MOTION_MS - 1);
+    vi.advanceTimersByTime(MENU_EXIT_MS - 1);
     expect(react.render(() => useMenuMotion(false)).shown).toBe(true);
     vi.advanceTimersByTime(1);
     expect(react.changed).toBe(true);
@@ -115,7 +115,7 @@ describe("menu motion", () => {
     react.render(() => useMenuMotion(false));
     const reopened = react.render(() => useMenuMotion(true));
     expect(reopened).toMatchObject({ shown: true, closing: false, className: "animate-pop-in", exitProps: {} });
-    vi.advanceTimersByTime(MENU_MOTION_MS * 2);
+    vi.advanceTimersByTime(MENU_EXIT_MS * 2);
     expect(react.render(() => useMenuMotion(true)).shown).toBe(true);
   });
 
@@ -128,74 +128,58 @@ describe("menu motion", () => {
   });
 });
 
-describe("a panel revealed by its height", () => {
-  /** A stand-in element: its inline style writes are recorded in order. */
-  function box(height: number) {
-    const writes: string[] = [];
-    const style: Record<string, string> = {};
-    const proxy = new Proxy(style, {
-      set(target, key: string, value: string) {
-        target[key] = value;
-        if (key === "height" || key === "opacity") writes.push(`${key}=${value}`);
-        return true;
-      },
-    });
-    const element = { style: proxy, offsetHeight: height, getBoundingClientRect: () => ({ height: element.offsetHeight }) };
-    return { element, writes };
-  }
+describe("menu timing", () => {
+  it("pops in over 100ms and out quicker, opacity and a tiny scale only", async () => {
+    const { readFileSync } = await import("node:fs");
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    expect(css).toContain("--animate-pop-in: pop-in var(--transition-duration-fast) var(--ease-out-quint);");
+    expect(css).toContain(`--animate-pop-out: pop-out ${MENU_EXIT_MS}ms var(--ease-exit) forwards;`);
+    expect(MENU_EXIT_MS).toBeLessThan(100);
+    const frames = css.match(/@keyframes pop-in \{[^@]*?\n\}/)?.[0] ?? "";
+    expect(frames).toContain("scale(0.98)");
+    expect(frames).not.toMatch(/height|width|translate/);
+  });
+});
 
-  it("opens from 0 to the content's measured height with its opacity, readies the content first, then releases the height", async () => {
-    const { useHeightReveal } = await import("./MenuMotion");
-    const shell = box(0);
-    const content = box(120);
-    const shellRef = { current: shell.element as unknown as HTMLElement };
-    const contentRef = { current: content.element as unknown as HTMLElement };
-    const ready = vi.fn(() => expect(shell.writes).toEqual([]));
-    react.render(() => useHeightReveal(false, shellRef, contentRef, null, ready));
-    react.render(() => useHeightReveal(true, shellRef, contentRef, "transcript", ready));
+describe("a revealed panel", () => {
+  it("animates no height from script: the shell is a grid row the browser interpolates", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("./MenuMotion.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    expect(source).not.toMatch(/style\.height|offsetHeight|getBoundingClientRect|transition-\[height/);
+    const shell = css.match(/\.reveal-shell \{[^}]*\}/)?.[0] ?? "";
+    expect(shell).toContain("grid-template-rows: 1fr;");
+    expect(shell).toContain("grid-template-rows var(--transition-duration-moderate) var(--ease-out-quint)");
+    expect(shell).not.toMatch(/transition:[^;]*\bheight\b/);
+    expect(css).toMatch(/@starting-style \{\s*\.reveal-shell \{\s*grid-template-rows: 0fr;\s*opacity: 0;/);
+    expect(css).toMatch(/\.reveal-shell\[data-reveal="closing"\] \{\s*grid-template-rows: 0fr;\s*opacity: 0;\s*transition-duration: var\(--transition-duration-base\);/);
+    expect(css).toContain(':root[data-reduced-motion="true"] .reveal-shell { transition: none; }');
+  });
+
+  it("readies the content before it shows: on open and when another panel takes its place", () => {
+    const ready = vi.fn();
+    react.render(() => useReveal(false, null, ready));
+    expect(ready).not.toHaveBeenCalled();
+    expect(react.render(() => useReveal(true, "transcript", ready))).toMatchObject({ shown: true, closing: false, shellProps: { "data-reveal": "open" } });
     expect(ready).toHaveBeenCalledTimes(1);
-    expect(shell.writes).toEqual(["height=0px", "opacity=0", "height=120px", "opacity=1"]);
-    vi.advanceTimersByTime(MENU_MOTION_MS + 20);
-    expect(shell.writes.slice(-2)).toEqual(["height=", "opacity="]);
+    react.render(() => useReveal(true, "transcript", ready));
+    expect(ready).toHaveBeenCalledTimes(1);
+    react.render(() => useReveal(true, "settings", ready));
+    expect(ready).toHaveBeenCalledTimes(2);
   });
 
-  it("switches panels from one height to the other without folding to zero", async () => {
-    const { useHeightReveal } = await import("./MenuMotion");
-    const shell = box(120);
-    const content = box(120);
-    const shellRef = { current: shell.element as unknown as HTMLElement };
-    const contentRef = { current: content.element as unknown as HTMLElement };
-    react.render(() => useHeightReveal(true, shellRef, contentRef, "transcript"));
-    vi.advanceTimersByTime(MENU_MOTION_MS + 20);
-    shell.writes.length = 0;
-    content.element.offsetHeight = 260;
-    react.render(() => useHeightReveal(true, shellRef, contentRef, "settings"));
-    expect(shell.writes).toEqual(["height=120px", "height=260px", "opacity=1"]);
+  it("folds away over its exit time, out of reach, then unmounts", () => {
+    react.render(() => useReveal(true, "settings"));
+    const closing = react.render(() => useReveal(false, null));
+    expect(closing).toMatchObject({ shown: true, closing: true, shellProps: { "data-reveal": "closing" } });
+    expect(closing.exitProps).toEqual({ inert: true, "aria-hidden": true });
+    vi.advanceTimersByTime(REVEAL_EXIT_MS);
+    expect(react.render(() => useReveal(false, null)).shown).toBe(false);
   });
 
-  it("closes from the height on screen back to 0, fading", async () => {
-    const { useHeightReveal } = await import("./MenuMotion");
-    const shell = box(140);
-    const content = box(140);
-    const shellRef = { current: shell.element as unknown as HTMLElement };
-    const contentRef = { current: content.element as unknown as HTMLElement };
-    react.render(() => useHeightReveal(true, shellRef, contentRef, "settings"));
-    vi.advanceTimersByTime(MENU_MOTION_MS + 20);
-    shell.writes.length = 0;
-    const closing = react.render(() => useHeightReveal(false, shellRef, contentRef, null));
-    expect(closing).toMatchObject({ shown: true, closing: true });
-    expect(shell.writes).toEqual(["height=140px", "height=0px", "opacity=0"]);
-  });
-
-  it("under reduced motion the panel simply appears and goes: no height is ever set", async () => {
+  it("under reduced motion the panel simply appears and goes", () => {
     reduced = true;
-    const { useHeightReveal } = await import("./MenuMotion");
-    const shell = box(0);
-    const content = box(120);
-    const shellRef = { current: shell.element as unknown as HTMLElement };
-    const contentRef = { current: content.element as unknown as HTMLElement };
-    react.render(() => useHeightReveal(true, shellRef, contentRef, "transcript"));
-    expect(shell.writes).toEqual(["height=", "opacity="]);
-    expect(react.render(() => useHeightReveal(false, shellRef, contentRef, null)).shown).toBe(false);
+    react.render(() => useReveal(true, "transcript"));
+    expect(react.render(() => useReveal(false, null)).shown).toBe(false);
   });
 });

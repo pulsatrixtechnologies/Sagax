@@ -169,8 +169,9 @@
 @theme {
   --animate-panel-in: panel-in 240ms var(--ease-out-quint);
   --animate-workspace-in: workspace-in 180ms var(--ease-out-quint);
-  --animate-pop-in: pop-in var(--transition-duration-moderate) var(--ease-out-quint);
-  --animate-pop-out: pop-out var(--transition-duration-moderate) var(--ease-out-quint) forwards;
+  /* menus and popovers (MenuMotion.tsx): in at `fast`, out quicker still */
+  --animate-pop-in: pop-in var(--transition-duration-fast) var(--ease-out-quint);
+  --animate-pop-out: pop-out 75ms var(--ease-exit) forwards;
   --animate-caret: caret-blink 1s step-end infinite;
   --animate-msg-in: msg-in 180ms var(--ease-out-quint);
   --animate-call-dock-in: call-dock-in 220ms var(--ease-out-quint);
@@ -1943,14 +1944,46 @@ body {
   from { opacity: 0.92; }
   to { opacity: 1; }
 }
+/* opacity and a tiny scale only: compositor work, no layout */
 @keyframes pop-in {
-  from { transform: scale(0.96) translateY(6px); opacity: 0; }
-  to { transform: scale(1) translateY(0); opacity: 1; }
+  from { transform: scale(0.98); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }
 @keyframes pop-out {
-  from { transform: scale(1) translateY(0); opacity: 1; }
-  to { transform: scale(0.96) translateY(6px); opacity: 0; }
+  from { transform: none; opacity: 1; }
+  to { transform: scale(0.98); opacity: 0; }
 }
+/* A panel revealed under the edge above it (MenuMotion.tsx useReveal): a
+   one-row grid whose row grows from 0fr to 1fr while it fades in, and folds
+   back quicker. The browser interpolates the track; no height is measured or
+   written from script. The first paint starts from @starting-style. */
+.reveal-shell {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--transition-duration-moderate) var(--ease-out-quint),
+    opacity var(--transition-duration-moderate) var(--ease-out-quint);
+}
+.reveal-shell > * {
+  min-height: 0;
+}
+@starting-style {
+  .reveal-shell {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+.reveal-shell[data-reveal="closing"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition-duration: var(--transition-duration-base);
+  transition-timing-function: var(--ease-exit);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal-shell { transition: none; }
+}
+:root[data-reduced-motion="true"] .reveal-shell { transition: none; }
 /* voice mode's call pill (CallView.tsx VoiceCallDock): it drops in under
    the name chip, and its row folds away when the call ends */
 @keyframes call-dock-in {

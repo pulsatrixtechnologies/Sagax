@@ -66,7 +66,7 @@ describe("the bar's transcript and its card motion", () => {
     expect(bar).toContain("!reducedMotion() ? lastPanel : null");
   });
 
-  it("the card's content keeps its width while its clip animates: the scroller is inside the measured card, the measured card inside the shell", () => {
-    expect(bar).toMatch(/<div ref=\{shell\}[^>]*data-voice-card-motion[^>]*>\s*<div ref=\{card\}[^>]*data-voice-card>\s*<div ref=\{scroller\}/);
+  it("the card's content keeps its width while its row animates: the scroller is inside the card, the card the reveal shell's one row", () => {
+    expect(bar).toMatch(/<div className=\{cn\("relative overflow-hidden", REVEAL_SHELL_CLASS\)\} data-voice-card-motion[^>]*>\s*<div id=\{cardId\} className="overflow-hidden[^"]*" data-voice-card>\s*<div ref=\{scroller\}/);
   });
 });
