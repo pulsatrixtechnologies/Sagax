@@ -71,6 +71,7 @@ import type { Routine, RoutineManager } from "./routines.ts";
 import { restoreSkillManifest, setSkillEnabled, skillManifestForExport } from "./skills.ts";
 import { cleanBotGrants, cleanBotPerspicax, parseConnectorTools, type BotRecord, type Message, type Store, type TaskRecord } from "./store.ts";
 import type { WebhookTrigger } from "./webhooks.ts";
+import { TRIGGER_SOURCES, type TriggerSourceConfig } from "../shared/trigger-sources.ts";
 import { syncMemoryIndex, workspaceDir } from "./workspace.ts";
 import { ZipError, ZipReader, ZipWriter } from "./zip.ts";
 
@@ -439,6 +440,7 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
   const webhooks = (host.webhooks()?.list() ?? []).filter((hook) => hook.botId === bot.id).map((hook) => ({
     name: hook.name, prompt: hook.prompt, runOn: hook.runOn, enabled: hook.enabled, ...(hook.delivery ? { delivery: hook.delivery } : {}),
     ...(hook.eventTypes?.length ? { eventTypes: hook.eventTypes } : {}), ...(hook.maxPendingRuns !== undefined ? { maxPendingRuns: hook.maxPendingRuns } : {}),
+    ...(hook.source ? { source: exportedSource(hook.source) } : {}),
   }));
   includes.webhooks = webhooks.length;
   if (webhooks.length) add("webhooks.json", `${JSON.stringify(webhooks, null, 2)}\n`, true);
@@ -764,7 +766,28 @@ const routineSchema = z.object({
 const webhookSchema = z.object({
   name: z.string(), prompt: z.string(), runOn: z.enum(["maus", "cloud"]).optional(), delivery: z.enum(["run", "post"]).optional(),
   eventTypes: z.array(z.string()).max(20).optional(), maxPendingRuns: z.number().int().optional(),
+  // A typed trigger's provider, events, filters and automation settings;
+  // the webhook manager validates it on create like any other.
+  source: z.record(z.string(), z.unknown()).optional(),
 });
+
+/** A typed trigger's settings as exported: the provider, events, filters,
+ * rate limit, tenant, Graph connector name and resource, poller server. No
+ * secret ever: not the signing secret, the Graph clientState or
+ * subscription, the poller's password or ICS link (those never sit on the
+ * source), and not the user name or connector account either, which belong
+ * to this server's people. */
+function exportedSource(source: TriggerSourceConfig): Record<string, unknown> {
+  const out: Record<string, unknown> = { type: source.type, events: source.events, filters: source.filters };
+  if (source.rateLimitPerMinute !== undefined) out.rateLimitPerMinute = source.rateLimitPerMinute;
+  if (source.tenantId) out.tenantId = source.tenantId;
+  if (source.graph) out.graph = { connector: source.graph.connector, ...(source.graph.resource ? { resource: source.graph.resource } : {}) };
+  if (source.poller) {
+    const { username: _username, ...poller } = source.poller;
+    out.poller = poller;
+  }
+  return out;
+}
 const sharingSchema = z.object({
   visibility: z.union([z.literal("everyone"), z.literal("admins"), z.object({ people: z.array(z.string().max(320)).max(1_000) })]).optional(),
   grants: z.array(z.union([
@@ -1053,6 +1076,16 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
         try {
           const created = webhookManager.create({ ...hook, botId: id, enabled: false });
           createdWebhooks.push(created.webhook.id);
+          const source = created.webhook.source;
+          if (source) {
+            // The secrets stayed behind: say what this copy still needs.
+            const needs = [
+              TRIGGER_SOURCES[source.type].secretMode === "provided" ? `the signing secret from ${TRIGGER_SOURCES[source.type].label}` : "",
+              source.poller ? (source.poller.kind === "ics" ? "the calendar's private ICS link" : "the user name and password") : "",
+              !source.poller && !source.graph && TRIGGER_SOURCES[source.type].secretMode === "generated" ? `the new secret and URL in ${TRIGGER_SOURCES[source.type].label}` : "",
+            ].filter(Boolean);
+            if (needs.length) warnings.push(`Trigger ${hook.name} needs ${needs.join(" and ")} before it is turned on.`);
+          }
         } catch (error) {
           warnings.push(`Webhook ${hook.name} was not imported: ${error instanceof Error ? error.message : String(error)}.`);
         }

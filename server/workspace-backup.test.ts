@@ -291,12 +291,14 @@ describe("encrypted full workspace backups", () => {
     json(join(source, "webhooks.json"), { webhooks: [
       { id: "same", endpointId: "same-endpoint", secretHash: "a".repeat(64), enabled: true, verificationPending: true },
       { id: "typed", endpointId: "typed-endpoint", secretHash: "c".repeat(64), pendingToken: "whsec_SOURCE_PENDING", signingSecret: "whsec_SOURCE_SIGNING", source: { type: "github", events: [], filters: {} }, enabled: true },
-      { id: "kept", endpointId: "kept-endpoint", secretHash: "d".repeat(64), signingSecret: "whsec_SOURCE_SIGNING_KEPT", source: { type: "slack", events: [], filters: {} }, enabled: true },
+      { id: "kept", endpointId: "kept-endpoint", secretHash: "d".repeat(64), signingSecret: "whsec_SOURCE_SIGNING_KEPT", source: { type: "email", events: [], filters: {}, graph: { connector: "ms365" } }, graphSubscription: { id: "SOURCE_SUBSCRIPTION", resource: "me/events", connector: "ms365", expiresAt: 1, clientStateHash: "x" }, enabled: true },
     ] });
+    // A poller's sealed password store never travels in a backup.
+    writeFileSync(join(source, "trigger-poller-credentials.enc"), "SOURCE_SAVED_SECRET_POLLER");
     json(join(target, "config.json"), { xai: { key: "DESTINATION_SAVED_SECRET", url: "https://destination.example" }, language: "en" });
     json(join(target, "webhooks.json"), { webhooks: [
       { id: "same", endpointId: "same-endpoint", secretHash: "b".repeat(64) },
-      { id: "kept", endpointId: "kept-endpoint", secretHash: "e".repeat(64), signingSecret: "whsec_DESTINATION_SIGNING" },
+      { id: "kept", endpointId: "kept-endpoint", secretHash: "e".repeat(64), signingSecret: "whsec_DESTINATION_SIGNING", graphSubscription: { id: "DESTINATION_SUBSCRIPTION", resource: "me/events", connector: "ms365", expiresAt: 1, clientStateHash: "y" } },
     ] });
     const exported = await createWorkspaceBackup(source, { password: PASSWORD });
     const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
@@ -307,8 +309,9 @@ describe("encrypted full workspace backups", () => {
     for (const path of authPaths) expect(existsSync(join(staging, "data", path))).toBe(false);
     for (const entry of manifest.entries) if (entry.type === "file") {
       const text = readFileSync(join(staging, "data", entry.path), "utf8");
-      for (const secret of ["SOURCE_SAVED_SECRET", "SOURCE_PENDING", "SOURCE_SIGNING"]) expect(text).not.toContain(secret);
+      for (const secret of ["SOURCE_SAVED_SECRET", "SOURCE_PENDING", "SOURCE_SIGNING", "SOURCE_SUBSCRIPTION"]) expect(text).not.toContain(secret);
     }
+    expect(existsSync(join(staging, "data", "trigger-poller-credentials.enc"))).toBe(false);
     commitPendingWorkspaceRestore(target, staged.id);
     applyPendingWorkspaceRestore(target);
     for (const path of authPaths) expect(readFileSync(join(target, path), "utf8")).toBe("DESTINATION_SAVED_SECRET");
@@ -322,7 +325,7 @@ describe("encrypted full workspace backups", () => {
     expect(restoredHooks[1]).toMatchObject({ id: "typed", enabled: false });
     expect(restoredHooks[1]).not.toHaveProperty("signingSecret");
     expect(restoredHooks[1]).not.toHaveProperty("pendingToken");
-    expect(restoredHooks[2]).toMatchObject({ id: "kept", signingSecret: "whsec_DESTINATION_SIGNING" });
+    expect(restoredHooks[2]).toMatchObject({ id: "kept", signingSecret: "whsec_DESTINATION_SIGNING", graphSubscription: { id: "DESTINATION_SUBSCRIPTION" } });
     // Export is read-only: the original login stores and webhook hash remain.
     for (const path of authPaths) expect(readFileSync(join(source, path), "utf8")).toBe("SOURCE_SAVED_SECRET");
     expect(readJson(join(source, "webhooks.json")).webhooks[0].secretHash).toBe("a".repeat(64));

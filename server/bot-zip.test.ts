@@ -229,6 +229,41 @@ describe("bot zip round trip", () => {
     expect(readFileSync(join(DATA_DIR, "task-workspaces", copy.id, secondThread.threadId, "draft.md"), "utf8")).toBe("draft\n");
   });
 
+  it("keeps a typed trigger's provider, events, filters and automation, never a secret", async () => {
+    const fx = fixture();
+    const source = richBot(fx);
+    // Even fields a list never shows are seeded here, to prove the export picks fields.
+    fx.webhooks.create({
+      name: "Mail", prompt: "Triage", botId: source.id, enabled: true, signingSecret: "whsec_SIGNING_SECRET", secretHash: "f".repeat(64), pendingToken: "whsec_PENDING",
+      graphSubscription: { id: "sub-SECRET", clientStateHash: "abc" }, pollerCursor: { scope: "s", lastUid: 9 },
+      source: { type: "email", events: ["email.received"], filters: { sender: ["*@partner.example"] }, rateLimitPerMinute: 5,
+        poller: { kind: "imap", host: "imap.example.com", mailbox: "INBOX", username: "me@example.com", intervalMinutes: 10 } },
+    });
+    fx.webhooks.create({ name: "Alerts", prompt: "Look", botId: source.id, enabled: true, source: { type: "pagerduty", events: [], filters: { urgency: ["high"] } } });
+    fx.webhooks.create({ name: "Teams", prompt: "Answer", botId: source.id, enabled: true, source: { type: "teams", events: [], filters: {}, tenantId: "t-1", graph: { connector: "ms365", account: "acct-abcdef", resource: "teams/1/channels/2/messages" } } });
+    const file = await exportToFile(fx.host, source.id);
+    const inspected = inspectBotZip(file);
+    if (inspected.kind !== "zip") throw new Error("zip expected");
+    const exported = inspected.reader.json("webhooks.json") as Array<Record<string, unknown>>;
+    expect(exported.find((hook) => hook.name === "Mail")!.source).toEqual({
+      type: "email", events: ["email.received"], filters: { sender: ["*@partner.example"] }, rateLimitPerMinute: 5,
+      poller: { kind: "imap", host: "imap.example.com", mailbox: "INBOX", intervalMinutes: 10 },
+    });
+    expect(exported.find((hook) => hook.name === "Teams")!.source).toEqual({ type: "teams", events: [], filters: {}, tenantId: "t-1", graph: { connector: "ms365", resource: "teams/1/channels/2/messages" } });
+    const text = JSON.stringify(exported);
+    for (const secret of ["whsec_SIGNING_SECRET", "whsec_PENDING", "f".repeat(64), "sub-SECRET", "pollerCursor", "me@example.com", "acct-abcdef"]) expect(text).not.toContain(secret);
+    const result = await importBotZip(fx.host, inspected, { ownerPrincipalId: "pr_00000000-0000-4000-8000-000000000001", asMember: false, conversations: false, sharing: false });
+    inspected.reader.close();
+    const copies = fx.webhooks.hooks.filter((hook) => hook.botId === result.botId);
+    expect(copies.find((hook) => hook.name === "Mail")).toMatchObject({ enabled: false, source: { type: "email", poller: { kind: "imap", host: "imap.example.com" } } });
+    expect(copies.find((hook) => hook.name === "Alerts")).toMatchObject({ enabled: false, source: { type: "pagerduty", filters: { urgency: ["high"] } } });
+    expect(JSON.stringify(copies)).not.toContain("whsec_SIGNING_SECRET");
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      "Trigger Mail needs the user name and password before it is turned on.",
+      "Trigger Alerts needs the signing secret from PagerDuty before it is turned on.",
+    ]));
+  });
+
   it("classifies every field of the bot record", () => {
     // A new BotRecord field fails to compile in BOT_FIELD_POLICY; this keeps
     // the drop reasons readable.

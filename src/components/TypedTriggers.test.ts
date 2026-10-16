@@ -10,7 +10,7 @@ vi.mock("@/state/store", () => ({
   useStore: () => ({ state: { webhookAttempts: [], routineRuns: [] }, dispatch: fixture.dispatch }),
 }));
 vi.mock("@/components/Avatar", () => ({ BotAvatar: () => createElement("span") }));
-import { TypedTriggerRow, draftFromConfig, sourceEndpointUrl, typedSourceConfig } from "./TypedTriggers";
+import { TypedTriggerRow, automationText, draftFromConfig, pollerCredentialsInput, sourceEndpointUrl, typedSourceConfig, typedTriggerInput } from "./TypedTriggers";
 
 type Props = { children?: ReactNode; [key: string]: unknown };
 function nodes(value: ReactNode): ReactElement<Props>[] {
@@ -60,6 +60,28 @@ describe("typed trigger helpers", () => {
       events: ["pr.opened"], filters: { repo: "a/b, c/*" }, signingSecret: "", tenantId: "", rateLimit: "5",
     });
   });
+  it("builds a Graph connector or a poller from the draft, never both, and keeps the ICS link out of the source", () => {
+    const base = { events: [], filters: {}, signingSecret: "", tenantId: "", rateLimit: "" };
+    expect(typedSourceConfig("email", { ...base, connection: "graph", graphConnector: "ms365|default", graphResource: "" })).toEqual({ type: "email", events: [], filters: {}, graph: { connector: "ms365" } });
+    expect(typedSourceConfig("teams", { ...base, connection: "graph", graphConnector: "ms365|acct-abcdef12", graphResource: " teams/1/channels/2/messages " }).graph)
+      .toEqual({ connector: "ms365", account: "acct-abcdef12", resource: "teams/1/channels/2/messages" });
+    expect(typedSourceConfig("email", { ...base, connection: "poller", pollerHost: " imap.example.com ", pollerPort: "993", pollerUsername: "me", pollerSecret: "pw", pollerInterval: "99" }).poller)
+      .toEqual({ kind: "imap", host: "imap.example.com", port: 993, username: "me" });
+    const ics = { ...base, connection: "poller" as const, pollerKind: "ics" as const, pollerSecret: " https://cal.example.com/private.ics ", pollerLead: "0" };
+    expect(typedSourceConfig("calendar", ics).poller).toEqual({ kind: "ics", leadMinutes: 0 });
+    expect(pollerCredentialsInput("calendar", ics)).toEqual({ url: "https://cal.example.com/private.ics" });
+    expect(typedTriggerInput("calendar", ics, { name: "Cal", prompt: "", botId: "b1" })).toMatchObject({ pollerCredentials: { url: "https://cal.example.com/private.ics" } });
+    expect(JSON.stringify(typedSourceConfig("calendar", ics))).not.toContain("private.ics");
+    expect(typedSourceConfig("github", { ...base, connection: "poller" }).poller).toBeUndefined();
+    expect(pollerCredentialsInput("email", { ...base, connection: "manual", pollerSecret: "pw" })).toBeUndefined();
+  });
+
+  it("names the automation state by code, with a generic line for an unknown one", () => {
+    expect(automationText({ kind: "poller", state: "error", code: "sign-in-refused", at: 1 })).toEqual({ text: "The server refused the sign-in", tone: "error" });
+    expect(automationText({ kind: "graph", state: "error", code: "made-up", at: 1 })).toEqual({ text: "Connection problem", tone: "error" });
+    expect(automationText(undefined)).toBeNull();
+  });
+
   it("builds the source URL from the advertised base", () => {
     expect(sourceEndpointUrl("https://hooks.example/", { endpointId: "wh_x" })).toBe("https://hooks.example/sources/wh_x");
   });
@@ -97,6 +119,19 @@ describe("TypedTriggerRow", () => {
     await flush();
     expect(fixture.api).toHaveBeenCalledWith("/api/webhooks/w1/rotate", { method: "POST" });
     expect(onSetup).toHaveBeenCalledWith({ endpointUrl: "https://hooks.example/sources/wh_abc", secret: "whsec_new" });
+  });
+
+  it("shows a poller's state and an empty write-only password field, never a stored value", () => {
+    const webhook = trigger({ source: { type: "email", events: [], filters: {}, poller: { kind: "imap", host: "imap.example.com", username: "me" } }, pollerCredentialsSet: false,
+      automation: { kind: "poller", state: "error", code: "no-credentials", at: 1 } });
+    const { html } = renderRow(webhook);
+    expect(html).toContain("No password or link yet");
+    expect(html).toContain("Add the user name and password (or the link)");
+    expect(html).not.toContain("No signing secret yet");
+    const tag = html.match(/<input[^>]*data-typed-poller-secret[^>]*>/)?.[0] ?? "";
+    expect(tag).toContain('type="password"');
+    expect(tag).toContain('value=""');
+    expect(html).toContain("Sagax reads this source itself");
   });
 
   it("offers a write-only secret field for a provided secret, never a rotation", () => {

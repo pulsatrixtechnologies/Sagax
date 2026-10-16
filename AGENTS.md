@@ -145,6 +145,43 @@ notifications), Sentry, PagerDuty, Linear. Rules, covered by
   `WebhookManager.ingest(id, event, key)` is the hook for connector pollers
   (inbound mail without Graph, calendar `event.starting`): same filters,
   dedupe and fence, no signature.
+- Graph subscriptions (`server/graph-subscriptions.ts`, covered by
+  `graph-subscriptions.test.ts`): a Teams, Outlook or Outlook Calendar
+  trigger may name a signed-in Microsoft connector (`source.graph`: a remote
+  MCP server whose sign-in issuer is Microsoft and whose granted scopes hold
+  one of `GRAPH_SUBSCRIPTION_SCOPES`). Sagax then creates the subscription
+  on the trigger's `/sources/<endpointId>` URL with its secret as
+  `clientState`, renews it when less than a day is left (hourly check),
+  remakes it when the secret, resource or connector changes, and deletes it
+  on pause and delete. Teams needs an explicit resource. Without a usable
+  connector, scope, sign-in or public https address the trigger shows a
+  fixed code and the manual steps stay. The token and clientState go to
+  Graph only; Graph's error text is never kept. The subscription record
+  (`graphSubscription`) never leaves the server: not listed, not exported,
+  stripped from a backup (a restore keeps the one this server already had).
+- Pollers (`server/trigger-pollers.ts`, `server/ics.ts`, covered by
+  `trigger-pollers.test.ts`, `ics.test.ts`, `trigger-pollers.e2e.test.ts`):
+  an Outlook trigger may read a mailbox over IMAP (implicit TLS, read only:
+  EXAMINE and BODY.PEEK, headers only), an Outlook Calendar trigger a
+  private ICS link or a CalDAV collection (expanded instances), every 1 to
+  60 minutes, and feed `ingest()`. Mail already there at the first read
+  never starts a run; a calendar instance fires `event.starting` once, the
+  lead time before it. The password or the ICS link (a link that opens a
+  calendar is a password) is write only (`pollerCredentials` on create or
+  PATCH, audited as `webhook.set-poller-credential` without the value),
+  sealed in `trigger-poller-credentials.enc` with the vault key (0600), kept
+  out of `webhooks.json`, workspace backups and bot exports, and sent only
+  to that server. A failure is a fixed code, never the server's text, and
+  no poller writes to the log. Every destination is resolved and checked
+  first: metadata, link-local and reserved addresses always refused,
+  loopback and private ranges only on a personal server, https only for
+  calendars, connections pinned to the checked address.
+- Bot export (`server/bot-zip.ts`): a typed trigger keeps its provider,
+  events, filters, rate limit, tenant, Graph connector name and resource,
+  and poller server settings. Never a signing secret, bearer hash, pending
+  token, subscription, cursor, poller credential, poller user name or
+  connector account. The imported copy is off and its import warnings say
+  what it still needs (a provided secret, a password or link).
 
 ## Conversations with a person have threads like a bot (2026-10-09)
 

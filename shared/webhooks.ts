@@ -3,7 +3,7 @@
  * verbatim from the client's mirrors (src/lib/webhooks.ts); the client file
  * re-exports these under the same names. */
 import type { RoutineRunOn } from "./routines.ts";
-import type { TriggerSourceConfig } from "./trigger-sources.ts";
+import type { TriggerAutomationStatus, TriggerSourceConfig } from "./trigger-sources.ts";
 
 export interface WebhookTrigger {
   id: string;
@@ -42,6 +42,11 @@ export interface WebhookTrigger {
   /** Typed trigger: whether the provider's signing secret is set. The
    *  secret is write only. */
   signingSecretSet?: boolean;
+  /** Typed trigger with a poller: whether its password (or ICS link) is
+   *  stored. Write only. */
+  pollerCredentialsSet?: boolean;
+  /** Typed trigger: last outcome of its Graph subscription or poller. */
+  automation?: TriggerAutomationStatus;
 }
 
 export interface WebhookTriggerInput {
@@ -57,6 +62,9 @@ export interface WebhookTriggerInput {
   source?: TriggerSourceConfig;
   /** Write only: the provider's signing secret, pasted by the owner. */
   signingSecret?: string;
+  /** Write only: the poller's password, or an ICS calendar's private link
+   *  (stored sealed apart, never returned). */
+  pollerCredentials?: { password?: string; url?: string };
 }
 
 export interface WebhookVerificationSample {

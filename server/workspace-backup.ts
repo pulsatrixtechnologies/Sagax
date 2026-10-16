@@ -36,6 +36,9 @@ const EXCLUDED = new Set([
   // Identity provider grants (server/idp-session.ts): bound to this server's
   // sessions, which are never carried over either.
   "idp-grants.enc", "idp-grants.key",
+  // Typed-trigger poller passwords and ICS links (server/trigger-poller-
+  // credentials.ts): like a trigger's signing secret, never carried over.
+  "trigger-poller-credentials.enc",
   "openmausbot-server.lease", "box-create-requests.lock", "messages.db-wal", "messages.db-shm",
   // The job runtime's record (server/runtime/store.ts) is a SQLite database
   // like messages.db: snapshotted through the backup API, never its WAL.
@@ -411,6 +414,8 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
                 delete webhook.secretHash;
                 delete webhook.pendingToken;
                 delete webhook.signingSecret;
+                // Bound to this server's Microsoft sign-in and secret.
+                delete webhook.graphSubscription;
               }
               writeJson(destination, value);
             }
@@ -859,6 +864,10 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
       // it; otherwise it has none, every delivery is refused, and the
       // Triggers pop-up asks for a new one.
       if (record(previous) && typeof previous.signingSecret === "string" && previous.signingSecret) webhook.signingSecret = previous.signingSecret;
+      // The Graph subscription this server made for it stays this server's
+      // (it is deleted or remade from here, never duplicated).
+      if (record(previous) && record(previous.graphSubscription)) webhook.graphSubscription = previous.graphSubscription;
+      else delete webhook.graphSubscription;
     }
   });
   changeJson("calendar-calls.json", (value) => {

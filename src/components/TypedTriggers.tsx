@@ -14,10 +14,19 @@ import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import {
+  GRAPH_SUBSCRIPTION_SCOPES,
+  POLLER_INTERVAL_DEFAULT,
+  POLLER_INTERVAL_MAX,
+  POLLER_KINDS_FOR,
+  POLLER_LEAD_DEFAULT,
+  POLLER_LEAD_MAX,
   TRIGGER_RATE_LIMIT_DEFAULT,
   TRIGGER_RATE_LIMIT_MAX,
   TRIGGER_SOURCES,
+  type GraphConnectorOption,
+  type TriggerAutomationStatus,
   type TriggerFilterKey,
+  type TriggerPollerKind,
   type TriggerSourceConfig,
   type TriggerSourceSetup,
   type TriggerSourceType,
@@ -38,6 +47,22 @@ export interface TypedDraft {
   signingSecret: string;
   tenantId: string;
   rateLimit: string;
+  /** How events reach Sagax: the provider pushes (manual setup), Sagax
+   *  subscribes through a Microsoft connector, or Sagax polls. */
+  connection?: "manual" | "graph" | "poller";
+  /** `<connector>|<account>` of the chosen Microsoft sign-in. */
+  graphConnector?: string;
+  graphResource?: string;
+  pollerKind?: TriggerPollerKind;
+  pollerHost?: string;
+  pollerPort?: string;
+  pollerMailbox?: string;
+  pollerUsername?: string;
+  pollerUrl?: string;
+  pollerInterval?: string;
+  pollerLead?: string;
+  /** Write only: the poller's password or the ICS link. Memory only. */
+  pollerSecret?: string;
 }
 
 export const EMPTY_TYPED_DRAFT: TypedDraft = { events: [], filters: {}, signingSecret: "", tenantId: "", rateLimit: "" };
@@ -66,7 +91,41 @@ export function typedSourceConfig(type: TriggerSourceType, draft: TypedDraft): T
   const rate = Number(draft.rateLimit);
   if (draft.rateLimit.trim() && Number.isInteger(rate) && rate >= 1 && rate <= TRIGGER_RATE_LIMIT_MAX) config.rateLimitPerMinute = rate;
   if (GRAPH_TYPES.has(type) && draft.tenantId.trim()) config.tenantId = draft.tenantId.trim();
+  if (draft.connection === "graph" && GRAPH_TYPES.has(type) && draft.graphConnector) {
+    const [connector, account] = draft.graphConnector.split("|");
+    config.graph = { connector: connector!, ...(account && account !== "default" ? { account } : {}), ...(draft.graphResource?.trim() ? { resource: draft.graphResource.trim() } : {}) };
+  }
+  const kinds = POLLER_KINDS_FOR[type] ?? [];
+  if (draft.connection === "poller" && kinds.length) {
+    const kind = draft.pollerKind && kinds.includes(draft.pollerKind) ? draft.pollerKind : kinds[0]!;
+    const poller: NonNullable<TriggerSourceConfig["poller"]> = { kind };
+    const int = (text: string | undefined, min: number, max: number) => {
+      const value = Number(text);
+      return text?.trim() && Number.isInteger(value) && value >= min && value <= max ? value : undefined;
+    };
+    if (kind === "imap") {
+      if (draft.pollerHost?.trim()) poller.host = draft.pollerHost.trim();
+      const port = int(draft.pollerPort, 1, 65_535);
+      if (port) poller.port = port;
+      if (draft.pollerMailbox?.trim()) poller.mailbox = draft.pollerMailbox.trim();
+    }
+    if (kind === "caldav" && draft.pollerUrl?.trim()) poller.url = draft.pollerUrl.trim();
+    if (kind !== "ics" && draft.pollerUsername?.trim()) poller.username = draft.pollerUsername.trim();
+    const interval = int(draft.pollerInterval, 1, POLLER_INTERVAL_MAX);
+    if (interval) poller.intervalMinutes = interval;
+    const lead = int(draft.pollerLead, 0, POLLER_LEAD_MAX);
+    if (kind !== "imap" && lead !== undefined) poller.leadMinutes = lead;
+    config.poller = poller;
+  }
   return config;
+}
+
+/** The write-only credential typed in the draft, as the API takes it. */
+export function pollerCredentialsInput(type: TriggerSourceType, draft: TypedDraft): { password?: string; url?: string } | undefined {
+  const secret = draft.pollerSecret?.trim();
+  if (draft.connection !== "poller" || !secret || !(POLLER_KINDS_FOR[type] ?? []).length) return undefined;
+  const kind = draft.pollerKind ?? POLLER_KINDS_FOR[type]![0];
+  return kind === "ics" ? { url: secret } : { password: draft.pollerSecret };
 }
 
 /** The create request for a typed trigger: the plain webhook fields plus
@@ -77,6 +136,7 @@ export function typedTriggerInput(type: TriggerSourceType, draft: TypedDraft, ba
     ...base,
     source: typedSourceConfig(type, draft),
     ...(TRIGGER_SOURCES[type].secretMode === "provided" && secret ? { signingSecret: secret } : {}),
+    ...(pollerCredentialsInput(type, draft) ? { pollerCredentials: pollerCredentialsInput(type, draft) } : {}),
   };
 }
 
@@ -87,7 +147,162 @@ export function draftFromConfig(config: TriggerSourceConfig): TypedDraft {
     signingSecret: "",
     tenantId: config.tenantId ?? "",
     rateLimit: config.rateLimitPerMinute ? String(config.rateLimitPerMinute) : "",
+    ...(config.graph ? {
+      connection: "graph" as const,
+      graphConnector: `${config.graph.connector}|${config.graph.account ?? "default"}`,
+      graphResource: config.graph.resource ?? "",
+    } : {}),
+    ...(config.poller ? {
+      connection: "poller" as const,
+      pollerKind: config.poller.kind,
+      pollerHost: config.poller.host ?? "",
+      pollerPort: config.poller.port ? String(config.poller.port) : "",
+      pollerMailbox: config.poller.mailbox ?? "",
+      pollerUsername: config.poller.username ?? "",
+      pollerUrl: config.poller.url ?? "",
+      pollerInterval: config.poller.intervalMinutes ? String(config.poller.intervalMinutes) : "",
+      pollerLead: config.poller.leadMinutes !== undefined ? String(config.poller.leadMinutes) : "",
+      pollerSecret: "",
+    } : {}),
   };
+}
+
+/** The editor's line for the subscription or poller state. */
+export function automationText(status: TriggerAutomationStatus | undefined): { text: string; tone: "ok" | "error" | "pending" } | null {
+  if (!status) return null;
+  const code = status.code ?? status.state;
+  const when = status.expiresAt ? new Date(status.expiresAt).toLocaleString() : "";
+  const known = AUTOMATION_CODES[status.kind].includes(code.replace(/-/g, "_"));
+  const key = (known ? `triggers.automation.${status.kind}.${code.replace(/-/g, "_")}` : `triggers.automation.${status.state}`) as LocaleKey;
+  return { text: t(key, { when }), tone: status.state };
+}
+
+const AUTOMATION_CODES: Record<TriggerAutomationStatus["kind"], readonly string[]> = {
+  graph: ["active", "created", "renewed", "paused", "needs_resource", "needs_https", "no_connector", "no_scope", "signed_out", "gone", "forbidden", "refused", "graph_error", "network"],
+  poller: ["ok", "no_credentials", "blocked_address", "unreachable", "tls", "sign_in_refused", "mailbox", "protocol", "http_status", "too_large", "timeout", "redirect"],
+};
+
+function connectorChoices(type: TriggerSourceType, options: GraphConnectorOption[]): Array<GraphConnectorOption & { covers: boolean }> {
+  return options.map((option) => ({ ...option, covers: option.sources.includes(type) }));
+}
+
+/** How events reach Sagax: manual Graph steps, a Microsoft connector, or a poller. */
+function ConnectionFields({ type, draft, onChange, secretSet }: { type: TriggerSourceType; draft: TypedDraft; onChange: (draft: TypedDraft) => void; secretSet?: boolean }) {
+  const { state } = useStore();
+  const kinds = POLLER_KINDS_FOR[type] ?? [];
+  const graph = GRAPH_TYPES.has(type);
+  if (!graph && !kinds.length) return null;
+  const connection = draft.connection ?? "manual";
+  const choices = connectorChoices(type, state.webhookGraphConnectors ?? []);
+  const usable = choices.filter((choice) => choice.covers);
+  const pollerKind = draft.pollerKind && kinds.includes(draft.pollerKind) ? draft.pollerKind : kinds[0];
+  const set = (patch: Partial<TypedDraft>) => onChange({ ...draft, ...patch });
+  const option = (value: "manual" | "graph" | "poller", label: string) => (
+    <label key={value} className="flex items-center gap-1.5 text-[11.5px] text-ink">
+      <input type="radio" name={`typed-connection-${type}`} value={value} checked={connection === value} data-typed-connection={value} onChange={() => set({ connection: value })} />
+      {label}
+    </label>
+  );
+  return (
+    <fieldset data-typed-connection-fields className="space-y-2">
+      <legend className="mb-1 text-[11.5px] font-medium text-ink-secondary">{t("triggers.connection.title")}</legend>
+      <div className="flex flex-wrap gap-3">
+        {option("manual", graph ? t("triggers.connection.manual") : t("triggers.connection.push"))}
+        {graph && option("graph", t("triggers.connection.graph"))}
+        {kinds.length > 0 && option("poller", t("triggers.connection.poller"))}
+      </div>
+      {connection === "graph" && graph && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.connection.connector")}</span>
+            <select value={draft.graphConnector ?? ""} data-typed-graph-connector onChange={(event) => set({ graphConnector: event.target.value })} className={inputClass}>
+              <option value="">{t("triggers.connection.chooseConnector")}</option>
+              {choices.map((choice) => (
+                <option key={`${choice.connector}|${choice.account}`} value={`${choice.connector}|${choice.account}`} disabled={!choice.covers}>
+                  {choice.label ? `${choice.connector} (${choice.label})` : choice.connector}{choice.covers ? "" : ` · ${t("triggers.connection.missingScope")}`}
+                </option>
+              ))}
+            </select>
+            {usable.length === 0 && (
+              <span data-typed-graph-none className="mt-0.5 block text-[10.5px] text-warning">
+                {t("triggers.connection.noConnector", { scopes: (GRAPH_SUBSCRIPTION_SCOPES[type] ?? []).slice(0, 2).join(", ") })}
+              </span>
+            )}
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.connection.resource")}</span>
+            <input value={draft.graphResource ?? ""} data-typed-graph-resource onChange={(event) => set({ graphResource: event.target.value })} className={inputClass} maxLength={300}
+              placeholder={type === "email" ? "me/mailFolders('Inbox')/messages" : type === "calendar" ? "me/events" : "teams/<id>/channels/<id>/messages"} />
+          </label>
+          <p className="text-[10.5px] text-ink-tertiary sm:col-span-2">{t("triggers.connection.graphHelp")}</p>
+        </div>
+      )}
+      {connection === "poller" && pollerKind && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {kinds.length > 1 && (
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.poller.kind")}</span>
+              <select value={pollerKind} data-typed-poller-kind onChange={(event) => set({ pollerKind: event.target.value as TriggerPollerKind, pollerSecret: "" })} className={inputClass}>
+                {kinds.map((kind) => <option key={kind} value={kind}>{t(`triggers.poller.kind.${kind}` as LocaleKey)}</option>)}
+              </select>
+            </label>
+          )}
+          {pollerKind === "imap" && (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.poller.host")}</span>
+                <input value={draft.pollerHost ?? ""} data-typed-poller-host onChange={(event) => set({ pollerHost: event.target.value })} className={inputClass} maxLength={253} placeholder="imap.example.com" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.poller.port")}</span>
+                <input type="number" inputMode="numeric" min={1} max={65_535} value={draft.pollerPort ?? ""} onChange={(event) => set({ pollerPort: event.target.value })} className={inputClass} placeholder="993" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.poller.mailbox")}</span>
+                <input value={draft.pollerMailbox ?? ""} onChange={(event) => set({ pollerMailbox: event.target.value })} className={inputClass} maxLength={200} placeholder="INBOX" />
+              </label>
+            </>
+          )}
+          {pollerKind === "caldav" && (
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.poller.caldavUrl")}</span>
+              <input value={draft.pollerUrl ?? ""} data-typed-poller-url onChange={(event) => set({ pollerUrl: event.target.value })} className={inputClass} maxLength={2_000} placeholder="https://" />
+            </label>
+          )}
+          {pollerKind !== "ics" && (
+            <label className="block">
+              <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.poller.username")}</span>
+              <input value={draft.pollerUsername ?? ""} autoComplete="off" onChange={(event) => set({ pollerUsername: event.target.value })} className={inputClass} maxLength={320} />
+            </label>
+          )}
+          <label className={cn("block", pollerKind === "ics" && "sm:col-span-2")}>
+            <span className="mb-1 block text-[11px] text-ink-secondary">{t(pollerKind === "ics" ? "triggers.poller.icsUrl" : "triggers.poller.password")}</span>
+            <input
+              type="password"
+              autoComplete="off"
+              value={draft.pollerSecret ?? ""}
+              data-typed-poller-secret
+              onChange={(event) => set({ pollerSecret: event.target.value })}
+              className={inputClass}
+              maxLength={pollerKind === "ics" ? 2_000 : 1_024}
+              placeholder={secretSet ? t("triggers.poller.secretKept") : ""}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.poller.interval")}</span>
+            <input type="number" inputMode="numeric" min={1} max={POLLER_INTERVAL_MAX} value={draft.pollerInterval ?? ""} onChange={(event) => set({ pollerInterval: event.target.value })} className={inputClass} placeholder={String(POLLER_INTERVAL_DEFAULT)} />
+          </label>
+          {pollerKind !== "imap" && (
+            <label className="block">
+              <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.poller.lead")}</span>
+              <input type="number" inputMode="numeric" min={0} max={POLLER_LEAD_MAX} value={draft.pollerLead ?? ""} onChange={(event) => set({ pollerLead: event.target.value })} className={inputClass} placeholder={String(POLLER_LEAD_DEFAULT)} />
+            </label>
+          )}
+          <p className="text-[10.5px] text-ink-tertiary sm:col-span-2">{t(pollerKind === "imap" ? "triggers.poller.imapHelp" : "triggers.poller.calendarHelp")}</p>
+        </div>
+      )}
+    </fieldset>
+  );
 }
 
 const inputClass =
@@ -99,11 +314,14 @@ export function TypedSourceFields({
   draft,
   onChange,
   creating,
+  pollerSecretSet,
 }: {
   type: TriggerSourceType;
   draft: TypedDraft;
   onChange: (draft: TypedDraft) => void;
   creating: boolean;
+  /** Editing a trigger whose poller credential is already stored. */
+  pollerSecretSet?: boolean;
 }) {
   const definition = TRIGGER_SOURCES[type];
   const deferred = new Set(definition.deferredFilters ?? []);
@@ -177,6 +395,7 @@ export function TypedSourceFields({
           </label>
         )}
       </div>
+      <ConnectionFields type={type} draft={draft} onChange={onChange} secretSet={pollerSecretSet} />
       {creating && (definition.secretMode === "provided" ? (
         <label className="block">
           <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.typed.secretProvided", { provider: definition.label })}</span>
@@ -290,10 +509,17 @@ export function TypedTriggerRow({
   });
 
   const saveFilters = () => run("filters", async () => {
-    const response = await api(`/api/webhooks/${webhook.id}`, { method: "PATCH", body: JSON.stringify({ source: typedSourceConfig(source.type, draft) }) });
+    const credentials = pollerCredentialsInput(source.type, draft);
+    const response = await api(`/api/webhooks/${webhook.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ source: typedSourceConfig(source.type, draft), ...(credentials ? { pollerCredentials: credentials } : {}) }),
+    });
     dispatch({ type: "webhookPatched", webhook: response.webhook });
+    // The password or link never stays in the page once sent.
+    if (credentials) setDraft((current) => ({ ...current, pollerSecret: "" }));
     setNotice(t("triggers.typed.saved"));
   });
+  const automation = automationText(webhook.automation);
 
   return (
     <li data-trigger-row={webhook.id} data-trigger-source={source.type}>
@@ -319,7 +545,13 @@ export function TypedTriggerRow({
                 ? t("triggers.received", { count: webhook.deliveryCount, when: relativeTime(webhook.lastReceivedAt) })
                 : t("triggers.neverReceived")}
             </span>
-            {!webhook.signingSecretSet && <span className="text-warning">· {t("triggers.typed.secretMissing")}</span>}
+            {!webhook.signingSecretSet && !source.poller && <span className="text-warning">· {t("triggers.typed.secretMissing")}</span>}
+            {source.poller && webhook.pollerCredentialsSet === false && <span className="text-warning">· {t("triggers.poller.secretMissing")}</span>}
+            {automation && (
+              <span data-typed-automation={webhook.automation?.state} className={automation.tone === "error" ? "text-danger" : automation.tone === "ok" ? "text-success" : "text-ink-secondary"}>
+                · {automation.text}
+              </span>
+            )}
           </div>
         </div>
         <button
@@ -349,7 +581,7 @@ export function TypedTriggerRow({
         <div className="mt-3 space-y-3 pb-2 text-[11.5px] leading-relaxed text-ink-secondary">
           <section data-typed-setup className="rounded-xl border border-accent-border/30 bg-inset/60 px-3 py-2.5">
             <div className="mb-1.5 font-medium text-ink">{t("triggers.typed.setupTitle", { provider: definition.label })}</div>
-            <p>{t(`triggers.setup.${source.type}` as LocaleKey)}</p>
+            <p>{source.graph ? t("triggers.setup.graphAuto", { connector: source.graph.connector }) : source.poller ? t("triggers.setup.pollerAuto") : t(`triggers.setup.${source.type}` as LocaleKey)}</p>
             <div className="mt-2 text-[11px]">{t("triggers.typed.endpoint", { provider: definition.label })}</div>
             <div className="mt-1 flex items-center gap-2">
               <code className="min-w-0 flex-1 truncate rounded-lg bg-inset px-2 py-1 font-mono text-[10.5px] text-ink">{url}</code>
@@ -402,7 +634,7 @@ export function TypedTriggerRow({
             {" · "}
             <span className="font-medium text-ink">{t("triggers.typed.filters")}:</span> {filterSummary || t("triggers.typed.noFilters")}
           </p>
-          <TypedSourceFields type={source.type} draft={draft} onChange={setDraft} creating={false} />
+          <TypedSourceFields type={source.type} draft={draft} onChange={setDraft} creating={false} pollerSecretSet={webhook.pollerCredentialsSet} />
           <div className="flex flex-wrap gap-2">
             <button type="button" disabled={disabled} onClick={saveFilters} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11.5px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40">
               {working === "filters" && <Loader2 size={12} className="animate-spin" />}{t("triggers.typed.saveFilters")}

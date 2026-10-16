@@ -160,6 +160,86 @@ export interface TriggerSourceConfig {
   rateLimitPerMinute?: number;
   /** Microsoft Graph: only notifications from this tenant are accepted. */
   tenantId?: string;
+  /** Microsoft Graph: Sagax creates and renews the change notification
+   * subscription itself through this signed-in connector (an MCP server
+   * whose Microsoft sign-in holds the scope the source needs). Absent: the
+   * owner creates the subscription by hand (setup steps). */
+  graph?: TriggerGraphConfig;
+  /** Outlook mail or calendar without Graph: a poller reads the mailbox
+   * (IMAP) or the calendar (ICS link, CalDAV) and feeds the trigger. The
+   * password or the private ICS link is write only and stored apart. */
+  poller?: TriggerPollerConfig;
+}
+
+export interface TriggerGraphConfig {
+  /** Name of the MCP server whose Microsoft sign-in is used. */
+  connector: string;
+  /** Account of that server; absent is its first account. */
+  account?: string;
+  /** Graph resource to watch. Mail and calendar have a default; Teams needs
+   * `teams/<team id>/channels/<channel id>/messages` (or a chat). */
+  resource?: string;
+}
+
+export const TRIGGER_POLLER_KINDS = ["imap", "ics", "caldav"] as const;
+export type TriggerPollerKind = (typeof TRIGGER_POLLER_KINDS)[number];
+
+export interface TriggerPollerConfig {
+  kind: TriggerPollerKind;
+  /** IMAP server host name (TLS on `port`, 993 by default). */
+  host?: string;
+  port?: number;
+  /** IMAP mailbox, INBOX by default. */
+  mailbox?: string;
+  /** IMAP or CalDAV user name. Not exported with a bot. */
+  username?: string;
+  /** CalDAV calendar collection URL (https). An ICS link is a credential:
+   * it is never here, only in the poller's credential store. */
+  url?: string;
+  /** Minutes between two reads (1 to 60, default 5). */
+  intervalMinutes?: number;
+  /** Calendar: minutes before the start `event.starting` fires (0 to 1440,
+   * default 10). */
+  leadMinutes?: number;
+}
+
+export const POLLER_INTERVAL_DEFAULT = 5;
+export const POLLER_INTERVAL_MAX = 60;
+export const POLLER_LEAD_DEFAULT = 10;
+export const POLLER_LEAD_MAX = 1_440;
+
+/** Which poller kinds a source takes. */
+export const POLLER_KINDS_FOR: Partial<Record<TriggerSourceType, readonly TriggerPollerKind[]>> = {
+  email: ["imap"],
+  calendar: ["ics", "caldav"],
+};
+
+/** Graph scopes (any one is enough) Sagax needs to create the
+ * subscription for a source; Graph sources only. */
+export const GRAPH_SUBSCRIPTION_SCOPES: Partial<Record<TriggerSourceType, readonly string[]>> = {
+  email: ["Mail.Read", "Mail.ReadBasic", "Mail.ReadWrite", "Mail.ReadBasic.All", "Mail.Read.All"],
+  calendar: ["Calendars.Read", "Calendars.ReadWrite", "Calendars.ReadBasic"],
+  teams: ["ChannelMessage.Read.All", "Chat.Read", "Chat.ReadWrite", "ChannelMessage.Read.Group"],
+};
+
+/** A signed-in Microsoft connector the trigger editor can offer. */
+export interface GraphConnectorOption {
+  connector: string;
+  account: string;
+  label?: string;
+  /** Graph sources this sign-in has a scope for. */
+  sources: TriggerSourceType[];
+}
+
+/** Server-kept automation state of a typed trigger (no secret). */
+export interface TriggerAutomationStatus {
+  kind: "graph" | "poller";
+  state: "ok" | "error" | "pending";
+  /** Fixed, translated-by-code reason; never a provider's own text. */
+  code?: string;
+  at: number;
+  /** Graph: when the current subscription ends. */
+  expiresAt?: number;
 }
 
 export const TRIGGER_RATE_LIMIT_DEFAULT = 10;

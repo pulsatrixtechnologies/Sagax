@@ -8,12 +8,17 @@ import { DATA_DIR } from "./config.ts";
 import type { RoutineRunOn } from "./routines.ts";
 import { parseJson, schemaIssue, type JsonValue } from "./schema.ts";
 import {
+  POLLER_INTERVAL_MAX,
+  POLLER_KINDS_FOR,
+  POLLER_LEAD_MAX,
   TRIGGER_FILTER_KEYS,
+  TRIGGER_POLLER_KINDS,
   TRIGGER_RATE_LIMIT_DEFAULT,
   TRIGGER_RATE_LIMIT_MAX,
   TRIGGER_SOURCES,
   TRIGGER_SOURCE_TYPES,
   type NormalizedTriggerEvent,
+  type TriggerAutomationStatus,
   type TriggerFilterKey,
   type TriggerSourceConfig,
 } from "../shared/trigger-sources.ts";
@@ -32,7 +37,10 @@ export type WebhookVerificationSample = z.output<typeof verificationSampleSchema
 export type WebhookAttempt = z.output<typeof webhookAttemptSchema>;
 export type WebhookAttemptOutcome = WebhookAttempt["outcome"];
 type StoredWebhookTrigger = z.output<typeof storedWebhookSchema>;
-export type WebhookTrigger = Omit<StoredWebhookTrigger, "secretHash" | "pendingToken" | "tokenLast4" | "signingSecret"> & {
+export type WebhookTrigger = Omit<StoredWebhookTrigger, "secretHash" | "pendingToken" | "tokenLast4" | "signingSecret" | "graphSubscription" | "pollerCursor"> & {
+  /** Typed source with a poller: whether its password (or ICS link) is
+   *  stored. The value itself is write only. */
+  pollerCredentialsSet?: boolean;
   /** Typed source only: whether the provider's signing secret is set. The
    *  secret itself never leaves the server after creation. */
   signingSecretSet?: boolean;
@@ -133,8 +141,44 @@ export interface WebhookManagerOptions {
    *  of silently falling back to a shared/ambient thread -- see
    *  upstream issue #2071. */
   resolvePostThread?: (trigger: WebhookTrigger, forceNew: boolean) => string | undefined;
+  /** Typed trigger with a poller: whether its credential is stored
+   *  (server/trigger-poller-credentials.ts). Only the boolean is shown. */
+  pollerCredentialsSet?: (webhookId: string) => boolean;
+  /** Called after a trigger is deleted, with what it was: the Graph
+   *  subscription it held is deleted at Microsoft, its poller credential
+   *  forgotten. */
+  onRemoved?: (trigger: AutomationTarget) => void;
+  /** Called after a typed trigger is created or changed (source, enabled
+   *  or secret), so its subscription or poller is brought up to date. */
+  onChanged?: (webhookId: string) => void;
   /** The execution store commits this identity together with the queued run. */
   findRun?: (webhookId: string, deliveryId: string) => { id: string } | null;
+}
+
+/** Server-internal view of a typed trigger for the Graph subscription
+ * manager and the pollers. Holds the Graph clientState: never send it to a
+ * client, a log or a prompt. */
+export interface AutomationTarget {
+  id: string;
+  endpointId: string;
+  name: string;
+  enabled: boolean;
+  /** Paused but capturing a first delivery to check the setup. */
+  verificationPending: boolean;
+  source: TriggerSourceConfig;
+  /** The Graph clientState (the trigger's signing secret). */
+  clientState?: string;
+  graphSubscription?: z.output<typeof graphSubscriptionStateSchema>;
+  pollerCursor?: z.output<typeof pollerCursorSchema>;
+  /** Scope the current poller config gives a cursor (see pollerScope). */
+  pollerScope: string;
+}
+
+export interface AutomationPatch {
+  /** null removes it. */
+  graphSubscription?: z.output<typeof graphSubscriptionStateSchema> | null;
+  automation?: TriggerAutomationStatus | null;
+  pollerCursor?: z.output<typeof pollerCursorSchema> | null;
 }
 
 export type WebhookManagerEvent =
@@ -161,12 +205,56 @@ const runOnSchema = z.enum(["maus", "cloud"]);
 const deliverySchema = z.enum(["run", "post"]);
 const eventTypesSchema = z.array(z.string()).max(20).optional();
 const filterValuesSchema = z.array(z.string().max(200)).max(20);
+const GRAPH_RESOURCE = /^(?:me|users|teams|chats|groups)[A-Za-z0-9/()'%:@._,-]*$/;
+const graphConfigSchema = z.object({
+  connector: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_.-]+$/, "Choose a connector"),
+  account: z.string().trim().max(32).regex(/^[a-z0-9-]*$/).optional(),
+  resource: z.string().trim().max(300).regex(GRAPH_RESOURCE, "The Graph resource looks like me/events or teams/<id>/channels/<id>/messages").optional(),
+});
+const HOST_NAME = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*$/;
+const pollerConfigSchema = z.object({
+  kind: z.enum(TRIGGER_POLLER_KINDS),
+  host: z.string().trim().max(253).regex(HOST_NAME, "Enter the mail server's host name").optional(),
+  port: z.number().int().min(1).max(65_535).optional(),
+  // A mailbox name goes inside an IMAP quoted string: no quote, backslash or line break.
+  mailbox: z.string().trim().max(200).regex(/^[^"\\\r\n\0]*$/, "That mailbox name has characters that are not allowed").optional(),
+  username: z.string().trim().max(320).regex(/^[^\r\n\0]*$/).optional(),
+  url: z.string().trim().max(2_000).optional(),
+  intervalMinutes: z.number().int().min(1).max(POLLER_INTERVAL_MAX).optional(),
+  leadMinutes: z.number().int().min(0).max(POLLER_LEAD_MAX).optional(),
+});
+const graphSubscriptionStateSchema = z.object({
+  id: z.string().min(1).max(200),
+  resource: z.string().max(300),
+  connector: z.string().max(64),
+  account: z.string().max(32).optional(),
+  expiresAt: z.number().finite().nonnegative(),
+  /** First 16 hex of SHA-256 of the clientState the subscription was made
+   *  with: a rotated secret means a new subscription. */
+  clientStateHash: z.string().max(64),
+});
+const automationStatusSchema = z.object({
+  kind: z.enum(["graph", "poller"]),
+  state: z.enum(["ok", "error", "pending"]),
+  code: z.string().max(40).optional(),
+  at: z.number().finite().nonnegative(),
+  expiresAt: z.number().finite().nonnegative().optional(),
+});
+const pollerCursorSchema = z.object({
+  /** Which poller config the cursor belongs to (host, mailbox, user). */
+  scope: z.string().max(200),
+  uidValidity: z.string().max(20).optional(),
+  lastUid: z.number().int().nonnegative().optional(),
+  lastPolledAt: z.number().finite().nonnegative().optional(),
+});
 const sourceConfigSchema = z.object({
   type: z.enum(TRIGGER_SOURCE_TYPES),
   events: z.array(z.string().max(100)).max(30).default([]),
   filters: z.partialRecord(z.enum(TRIGGER_FILTER_KEYS), filterValuesSchema).default({}),
   rateLimitPerMinute: z.number().int().min(1).max(TRIGGER_RATE_LIMIT_MAX).optional(),
   tenantId: z.string().trim().max(100).optional(),
+  graph: graphConfigSchema.optional(),
+  poller: pollerConfigSchema.optional(),
 });
 const signingSecretSchema = z.string().trim().min(8, "The signing secret is too short").max(512);
 const triggerInputSchema = z.object({
@@ -229,6 +317,12 @@ const storedWebhookSchema = z.object({
   /** Plaintext (file mode 0600): an HMAC can only be checked with it. Never
    *  in a list, a live frame, an export or a log. */
   signingSecret: z.string().min(1).optional(),
+  /** Graph subscription Sagax made through a connector (server/graph-subscriptions.ts). */
+  graphSubscription: graphSubscriptionStateSchema.optional().catch(undefined),
+  /** Last outcome of the Graph subscription or the poller, shown in the editor. */
+  automation: automationStatusSchema.optional().catch(undefined),
+  /** Poller position (IMAP UID), no credential. */
+  pollerCursor: pollerCursorSchema.optional().catch(undefined),
 });
 const deliveryReceiptSchema = z.object({
   key: z.string().min(1),
@@ -333,7 +427,47 @@ function cleanSource(input: z.input<typeof sourceConfigSchema>): TriggerSourceCo
   const config: TriggerSourceConfig = { type: parsed.data.type, events: Array.from(new Set(parsed.data.events)), filters };
   if (parsed.data.rateLimitPerMinute !== undefined) config.rateLimitPerMinute = parsed.data.rateLimitPerMinute;
   if (parsed.data.tenantId) config.tenantId = parsed.data.tenantId;
+  const { graph, poller } = parsed.data;
+  if (graph && poller) fail(400, "Choose either a Microsoft connector or a poller, not both");
+  if (graph) {
+    if (!GRAPH_SOURCE_TYPES.has(config.type)) fail(400, `${definition.label} has no Microsoft Graph subscription`);
+    if (config.type === "teams" && !graph.resource) fail(400, "Enter the Teams resource (teams/<team id>/channels/<channel id>/messages)");
+    config.graph = { connector: graph.connector, ...(graph.account && graph.account !== "default" ? { account: graph.account } : {}), ...(graph.resource ? { resource: graph.resource } : {}) };
+  }
+  if (poller) {
+    if (!(POLLER_KINDS_FOR[config.type] ?? []).includes(poller.kind)) fail(400, `${definition.label} cannot use that poller`);
+    const clean: NonNullable<TriggerSourceConfig["poller"]> = { kind: poller.kind };
+    if (poller.kind === "imap") {
+      if (!poller.host) fail(400, "Enter the mail server's host name");
+      clean.host = poller.host.toLowerCase();
+      if (poller.port) clean.port = poller.port;
+      if (poller.mailbox) clean.mailbox = poller.mailbox;
+      // The user name may come later (an imported bot): the poller waits for it.
+      if (poller.username) clean.username = poller.username;
+    }
+    if (poller.kind === "caldav") {
+      if (!poller.url) fail(400, "Enter the CalDAV calendar address");
+      let url: URL;
+      try { url = new URL(poller.url); } catch { fail(400, "Enter the CalDAV calendar address"); }
+      if (url.protocol !== "https:") fail(400, "The CalDAV address must start with https://");
+      if (url.username || url.password) fail(400, "Put the user name and password in their own fields, not in the address");
+      clean.url = url.toString();
+      if (poller.username) clean.username = poller.username;
+    }
+    if (poller.kind !== "caldav" && poller.url) fail(400, "An ICS link is a password: paste it in the private link field");
+    if (poller.intervalMinutes) clean.intervalMinutes = poller.intervalMinutes;
+    if (poller.kind !== "imap" && poller.leadMinutes !== undefined) clean.leadMinutes = poller.leadMinutes;
+    config.poller = clean;
+  }
   return config;
+}
+
+const GRAPH_SOURCE_TYPES = new Set<TriggerSourceConfig["type"]>(["teams", "email", "calendar"]);
+
+/** What changes the poller's position: another server, mailbox or user. */
+function pollerScope(poller: TriggerSourceConfig["poller"]): string {
+  if (!poller) return "";
+  return createHash("sha256").update(JSON.stringify([poller.kind, poller.host ?? "", poller.port ?? 0, poller.mailbox ?? "", poller.username ?? "", poller.url ?? ""])).digest("hex").slice(0, 32);
 }
 
 function parseTriggerInput(value: JsonValue): WebhookTriggerInput {
@@ -348,10 +482,11 @@ function parseTriggerPatch(value: JsonValue): Partial<WebhookTriggerInput> {
   return parsed.data;
 }
 
-function publicTrigger(trigger: StoredWebhookTrigger): WebhookTrigger {
-  const { secretHash: _secretHash, pendingToken, tokenLast4, signingSecret, ...safe } = trigger;
+function publicTrigger(trigger: StoredWebhookTrigger, credentialsSet?: (id: string) => boolean): WebhookTrigger {
+  const { secretHash: _secretHash, pendingToken, tokenLast4, signingSecret, graphSubscription: _graph, pollerCursor: _cursor, ...safe } = trigger;
   return {
     ...safe,
+    ...(trigger.source?.poller && credentialsSet ? { pollerCredentialsSet: credentialsSet(trigger.id) } : {}),
     tokenLast4: tokenLast4 ?? "",
     ...(pendingToken ? { tokenPending: true } : {}),
     ...(trigger.source ? { signingSecretSet: Boolean(signingSecret) } : {}),
@@ -552,8 +687,62 @@ export class WebhookManager {
     if (migrated) this.save();
   }
 
+  private toPublic(trigger: StoredWebhookTrigger): WebhookTrigger {
+    return publicTrigger(trigger, this.options.pollerCredentialsSet);
+  }
+
+  private automationTarget(trigger: StoredWebhookTrigger): AutomationTarget {
+    return {
+      id: trigger.id,
+      endpointId: trigger.endpointId,
+      name: trigger.name,
+      enabled: trigger.enabled,
+      verificationPending: trigger.verificationPending === true,
+      source: structuredClone(trigger.source!),
+      ...(trigger.signingSecret ? { clientState: trigger.signingSecret } : {}),
+      ...(trigger.graphSubscription ? { graphSubscription: { ...trigger.graphSubscription } } : {}),
+      ...(trigger.pollerCursor ? { pollerCursor: { ...trigger.pollerCursor } } : {}),
+      pollerScope: pollerScope(trigger.source!.poller),
+    };
+  }
+
+  /** Typed triggers with a Graph connector, a poller, or a Graph
+   *  subscription still to clean up. Server-internal (holds clientState). */
+  automationTargets(): AutomationTarget[] {
+    return this.webhooks
+      .filter((trigger) => trigger.source && (trigger.source.graph || trigger.source.poller || trigger.graphSubscription))
+      .map((trigger) => this.automationTarget(trigger));
+  }
+
+  automationTargetFor(id: string): AutomationTarget | null {
+    const trigger = this.webhooks.find((candidate) => candidate.id === id);
+    return trigger?.source ? this.automationTarget(trigger) : null;
+  }
+
+  /** Records the subscription, status or poller position. A trigger gone
+   *  meanwhile is ignored (false). */
+  setAutomation(id: string, patch: AutomationPatch): boolean {
+    const trigger = this.webhooks.find((candidate) => candidate.id === id);
+    if (!trigger?.source || this.unreadable) return false;
+    if (patch.graphSubscription === null) delete trigger.graphSubscription;
+    else if (patch.graphSubscription) trigger.graphSubscription = graphSubscriptionStateSchema.parse(patch.graphSubscription);
+    if (patch.automation === null) delete trigger.automation;
+    else if (patch.automation) trigger.automation = automationStatusSchema.parse(patch.automation);
+    if (patch.pollerCursor === null) delete trigger.pollerCursor;
+    else if (patch.pollerCursor) trigger.pollerCursor = pollerCursorSchema.parse(patch.pollerCursor);
+    this.save();
+    if (patch.automation !== undefined || patch.graphSubscription !== undefined) this.emit(trigger);
+    return true;
+  }
+
+  /** Re-sends the public view (the poller credential changed). */
+  touch(id: string): void {
+    const trigger = this.webhooks.find((candidate) => candidate.id === id);
+    if (trigger) this.emit(trigger);
+  }
+
   list(): WebhookTrigger[] {
-    return this.webhooks.map(publicTrigger);
+    return this.webhooks.map((trigger) => this.toPublic(trigger));
   }
 
   listAttempts(): WebhookAttempt[] {
@@ -593,7 +782,8 @@ export class WebhookManager {
     this.webhooks.unshift(trigger);
     this.save();
     this.emit(trigger);
-    return { webhook: publicTrigger(trigger), secret, ...(generated ? { signingSecret: generated } : {}) };
+    if (trigger.source) this.changed(trigger.id);
+    return { webhook: this.toPublic(trigger), secret, ...(generated ? { signingSecret: generated } : {}) };
   }
 
   update(id: string, value: JsonValue): WebhookTrigger | null {
@@ -619,7 +809,13 @@ export class WebhookManager {
     // The provider is what the endpoint and its secret are for: changing it
     // means a new trigger, never a silent switch of the signature scheme.
     if ((trigger.source?.type ?? null) !== (clean.source?.type ?? null)) fail(400, "The source of a trigger cannot change; create a new trigger");
+    const scopeBefore = pollerScope(trigger.source?.poller);
     Object.assign(trigger, clean, { updatedAt: this.now() });
+    if (trigger.source) {
+      // Another server, mailbox or user: the old position means nothing there.
+      if (pollerScope(trigger.source.poller) !== scopeBefore) delete trigger.pollerCursor;
+      if (!trigger.source.graph && !trigger.source.poller && !trigger.graphSubscription) delete trigger.automation;
+    }
     if (patch.signingSecret !== undefined) trigger.signingSecret = patch.signingSecret;
     if (!clean.eventTypes?.length) delete trigger.eventTypes;
     if (clean.maxPendingRuns === undefined) delete trigger.maxPendingRuns;
@@ -628,7 +824,8 @@ export class WebhookManager {
     }
     this.save();
     this.emit(trigger);
-    return publicTrigger(trigger);
+    if (trigger.source) this.changed(trigger.id);
+    return this.toPublic(trigger);
   }
 
   remove(id: string): boolean {
@@ -643,6 +840,9 @@ export class WebhookManager {
     this.options.cancelQueued?.(trigger.id, "The webhook was deleted before this delivery started");
     this.save();
     this.options.emit?.({ kind: "webhook.deleted", webhookId: id });
+    if (trigger.source) {
+      try { this.options.onRemoved?.(this.automationTarget(trigger)); } catch { /* cleanup is best effort */ }
+    }
     return true;
   }
 
@@ -660,7 +860,9 @@ export class WebhookManager {
       trigger.updatedAt = this.now();
       this.save();
       this.emit(trigger);
-      return { webhook: publicTrigger(trigger), secret: signing };
+      // A Graph subscription carries the old clientState: it is remade.
+      this.changed(trigger.id);
+      return { webhook: this.toPublic(trigger), secret: signing };
     }
     const secret = newSecret();
     trigger.secretHash = hashSecret(secret);
@@ -669,7 +871,7 @@ export class WebhookManager {
     trigger.updatedAt = this.now();
     this.save();
     this.emit(trigger);
-    return { webhook: publicTrigger(trigger), secret };
+    return { webhook: this.toPublic(trigger), secret };
   }
 
   /** Hands over, once, the token the start-up migration generated for a
@@ -682,7 +884,7 @@ export class WebhookManager {
     delete trigger.pendingToken;
     this.save();
     this.emit(trigger);
-    return { webhook: publicTrigger(trigger), secret };
+    return { webhook: this.toPublic(trigger), secret };
   }
 
   disableForBot(botId: string): void {
@@ -780,7 +982,7 @@ export class WebhookManager {
   /** The typed trigger behind a source endpoint, or null. */
   sourceTrigger(endpointId: string): WebhookTrigger | null {
     const trigger = this.webhooks.find((candidate) => candidate.endpointId === endpointId);
-    return trigger?.source ? publicTrigger(trigger) : null;
+    return trigger?.source ? this.toPublic(trigger) : null;
   }
 
   /** One request on `/sources/<endpointId>`: signature, provider handshake,
@@ -943,7 +1145,7 @@ export class WebhookManager {
       // without resolvePostThread wired can only fail closed here, never
       // silently fall back to whatever thread the bot happens to have
       // selected right now (the bug this replaces -- issue #2071).
-      const threadId = this.options.resolvePostThread?.(publicTrigger(trigger), false);
+      const threadId = this.options.resolvePostThread?.(this.toPublic(trigger), false);
       if (!threadId) fail(503, "This server could not resolve a destination thread for this delivery");
       if (threadId !== trigger.resultsThreadId) {
         trigger.resultsThreadId = threadId;
@@ -1060,8 +1262,12 @@ export class WebhookManager {
     return attempt;
   }
 
+  private changed(id: string): void {
+    try { this.options.onChanged?.(id); } catch { /* a reconcile failure never fails the edit */ }
+  }
+
   private emit(trigger: StoredWebhookTrigger): void {
-    this.options.emit?.({ kind: "webhook", webhook: publicTrigger(trigger) });
+    this.options.emit?.({ kind: "webhook", webhook: this.toPublic(trigger) });
   }
 
   private assertWritable(): void {

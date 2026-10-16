@@ -56,6 +56,7 @@ import {
 import { terminalRequestBehavior } from "../../shared/terminal-request";
 import type { Routine, RoutineInput, RoutineRun, RoutineRunStatusFilter } from "@/lib/routines";
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
+import type { GraphConnectorOption } from "../../shared/trigger-sources";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { firstUnreadMessageId, threadOpensUnread, threadReadCursor } from "@/lib/unread-divider";
 import type { ComputerStart } from "@/lib/computer-start";
@@ -1268,6 +1269,8 @@ export interface AppState {
   webhooks: WebhookTrigger[];
   webhookAttempts: WebhookAttempt[];
   webhookIngress: WebhookIngressStatus | null;
+  /** Signed-in Microsoft connectors a typed trigger can subscribe through. */
+  webhookGraphConnectors: GraphConnectorOption[];
   settingsOpen: boolean;
   /** The person whose details fill the right panel (principal id), or null.
    * Shares the right slot with bot settings, the computer and app settings. */
@@ -1512,7 +1515,7 @@ export type Action =
   | { type: "routinePatched"; routine: Routine }
   | { type: "routineDeleted"; routineId: string }
   | { type: "routineRunPatched"; run: RoutineRun }
-  | { type: "webhooksHydrated"; webhooks: WebhookTrigger[]; attempts: WebhookAttempt[]; ingress: WebhookIngressStatus }
+  | { type: "webhooksHydrated"; webhooks: WebhookTrigger[]; attempts: WebhookAttempt[]; ingress: WebhookIngressStatus; graphConnectors?: GraphConnectorOption[] }
   | { type: "webhookPatched"; webhook: WebhookTrigger }
   | { type: "webhookAttempted"; attempt: WebhookAttempt }
   | { type: "webhookDeleted"; webhookId: string }
@@ -2226,7 +2229,7 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
     case "webhooksHydrated":
-      return { ...state, webhooks: action.webhooks, webhookAttempts: action.attempts, webhookIngress: action.ingress };
+      return { ...state, webhooks: action.webhooks, webhookAttempts: action.attempts, webhookIngress: action.ingress, webhookGraphConnectors: action.graphConnectors ?? [] };
     case "webhookPatched": {
       const exists = state.webhooks.some((webhook) => webhook.id === action.webhook.id);
       return {
@@ -3300,6 +3303,7 @@ export const initialState: AppState = {
   webhooks: [],
   webhookAttempts: [],
   webhookIngress: null,
+  webhookGraphConnectors: [],
   settingsOpen: false,
   personPanelId: null,
   pluginsOpen: false,
@@ -4850,9 +4854,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...(window.ogb?.remoteClient?.active ? [] : [{
         key: "webhooks",
         request: async () => {
-          const { webhooks, attempts, ingress } = await api("/api/webhooks");
+          const { webhooks, attempts, ingress, graphConnectors } = await api("/api/webhooks");
           return () =>
-            rawDispatch({ type: "webhooksHydrated", webhooks, attempts: attempts ?? [], ingress });
+            rawDispatch({ type: "webhooksHydrated", webhooks, attempts: attempts ?? [], ingress, graphConnectors: graphConnectors ?? [] });
         },
       } satisfies PeripheralPart]),
     ];

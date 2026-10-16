@@ -638,6 +638,9 @@ import { bindThreadLogCapProvider } from "./thread-log-rotation.ts";
 import { listenWebhookIngress, triggerSourceSetup, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
 import { assertModelVariantSupported, memberTurnSelection } from "./member-turn.ts";
 import { WebhookManager } from "./webhooks.ts";
+import { GraphSubscriptions, graphConnectorOptions, type GraphTokenSource } from "./graph-subscriptions.ts";
+import { TriggerPollers } from "./trigger-pollers.ts";
+import { pollerCredentialInputSchema, TriggerPollerCredentials } from "./trigger-poller-credentials.ts";
 import type { WebhookTrigger } from "../shared/webhooks.ts";
 import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 import {
@@ -2811,6 +2814,9 @@ function adminAuditRows(
       // The value never goes in the row; that it changed always does.
       if (named.includes("signingSecret") && after.signingSecretSet) {
         rows.push({ category: "webhook", action: "webhook.set-signing-secret", target: hookTarget(after) });
+      }
+      if (named.includes("pollerCredentials")) {
+        rows.push({ category: "webhook", action: "webhook.set-poller-credential", target: hookTarget(after) });
       }
     }
   }
@@ -18790,8 +18796,51 @@ function undoAppliedChange(res: ServerResponse, threadId: string, requestId: str
 // Webhook definitions are independent from calendar schedules, but every
 // delivery joins the same RoutineManager queue. That keeps unattended work
 // ordered behind a busy MAUS and gives webhook runs the same durable receipts.
+// Typed-trigger automation: Graph subscriptions made through a signed-in
+// Microsoft connector, and IMAP / ICS / CalDAV pollers whose password or
+// private link is sealed in its own store (never in webhooks.json).
+const triggerPollerCredentials = new TriggerPollerCredentials(DATA_DIR, vaultKeySource);
+let graphSubscriptions: GraphSubscriptions | null = null;
+let triggerPollers: TriggerPollers | null = null;
+/** Microsoft sign-ins of the server's remote MCP servers (an organisation's
+ * unapproved server is never used). */
+const graphTokens: GraphTokenSource = {
+  signIns: () => {
+    const out: ReturnType<GraphTokenSource["signIns"]> = [];
+    if (mcpOAuth.vault.unavailableReason()) return out;
+    for (const [name, server] of Object.entries(remoteMcpServers())) {
+      if (!managedPolicy.mcpAllowed(name, server.url)) continue;
+      for (const account of mcpOAuth.vault.accounts(name)) {
+        const record = mcpOAuth.vault.get(name, account);
+        if (!record || record.serverUrl !== server.url || record.expired || !(record.tokens?.access || record.tokens?.refresh)) continue;
+        out.push({ connector: name, account, ...(record.label ? { label: record.label } : {}), issuer: record.issuer, scopes: (record.tokens?.scope ?? record.scope ?? "").split(/\s+/).filter(Boolean) });
+      }
+    }
+    return out;
+  },
+  accessToken: async (name, account) => {
+    const server = remoteMcpServers([name])[name];
+    if (!server || !managedPolicy.mcpAllowed(name, server.url)) return null;
+    if (!await mcpOAuth.refresh(name, server, false, undefined, account).catch(() => false)) return null;
+    return mcpOAuth.vault.get(name, account)?.tokens?.access ?? null;
+  },
+};
 const webhooks = new WebhookManager({
   emit: broadcast,
+  pollerCredentialsSet: (id) => {
+    const poller = webhooks.automationTargetFor(id)?.source.poller;
+    return poller ? triggerPollerCredentials.has(id, poller.kind === "ics" ? "url" : "password") : false;
+  },
+  onChanged: (id) => {
+    void graphSubscriptions?.reconcile(id);
+    const target = webhooks.automationTargetFor(id);
+    if (target?.source.poller && target.enabled) void triggerPollers?.poll(id);
+  },
+  onRemoved: (target) => {
+    void graphSubscriptions?.removed(target);
+    triggerPollerCredentials.remove(target.id);
+    triggerPollers?.forget(target.id);
+  },
   botState: unattendedDispatchState,
   enqueue: (input) => routines!.enqueueWebhook(input),
   findRun: (webhookId, deliveryId) => routines!.webhookRunReceipt(webhookId, deliveryId),
@@ -18838,6 +18887,40 @@ const webhookIngressStatus = () => ({
   baseUrl: webhookIngress?.baseUrl ?? `http://127.0.0.1:${WEBHOOK_PORT}`,
   ...(webhookIngressError ? { error: webhookIngressError } : {}),
 });
+
+graphSubscriptions = new GraphSubscriptions({ webhooks, tokens: graphTokens, baseUrl: () => webhookIngress?.baseUrl });
+triggerPollers = new TriggerPollers({
+  webhooks,
+  credentials: triggerPollerCredentials,
+  // An organisation server never reads a private or loopback address for a member.
+  allowPrivate: IDENTITY.kind !== "perspicax",
+});
+triggerPollers.start();
+{
+  const renew = () => void graphSubscriptions?.reconcileAll().catch(() => undefined);
+  setTimeout(renew, 30_000).unref();
+  setInterval(renew, 60 * 60_000).unref();
+}
+
+/** Pulls the write-only poller credential out of a webhook body. */
+function takePollerCredentials(body: unknown): { rest: unknown; credentials?: { password?: string; url?: string } } {
+  if (!body || typeof body !== "object" || Array.isArray(body) || !Object.hasOwn(body, "pollerCredentials")) return { rest: body };
+  const { pollerCredentials, ...rest } = body as Record<string, unknown>;
+  const parsed = pollerCredentialInputSchema.safeParse(pollerCredentials);
+  if (!parsed.success) throw Object.assign(new Error("The poller password or link is not valid"), { status: 400 });
+  return { rest, credentials: parsed.data };
+}
+
+function savePollerCredentials(id: string, credentials: { password?: string; url?: string }): void {
+  const poller = webhooks.automationTargetFor(id)?.source.poller;
+  if (!poller) throw Object.assign(new Error("Only a trigger with a poller takes a password or link"), { status: 400 });
+  if (credentials.url && poller.kind !== "ics") throw Object.assign(new Error("Only an ICS calendar takes a private link"), { status: 400 });
+  if (credentials.password && poller.kind === "ics") throw Object.assign(new Error("An ICS calendar takes its private link, not a password"), { status: 400 });
+  triggerPollerCredentials.set(id, credentials);
+  webhooks.touch(id);
+  const target = webhooks.automationTargetFor(id);
+  if (target?.enabled) void triggerPollers?.poll(id);
+}
 
 // ── config hot-reload ─────────────────────────────────────────────────
 // ── group turn engine ──────────────────────────────────────────────────
@@ -34067,10 +34150,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (path === "/api/webhooks" && method === "GET") {
       const shownHooks = webhooks.list().filter((webhook) => visible.bot(webhook.botId));
       const shownIds = new Set(shownHooks.map((webhook) => webhook.id));
-      return json(res, 200, { webhooks: shownHooks, attempts: webhooks.listAttempts().filter((attempt) => visible.everything || shownIds.has(attempt.webhookId)), ingress: webhookIngressStatus() });
+      return json(res, 200, {
+        webhooks: shownHooks,
+        attempts: webhooks.listAttempts().filter((attempt) => visible.everything || shownIds.has(attempt.webhookId)),
+        ingress: webhookIngressStatus(),
+        // Names and covered sources of the server's Microsoft sign-ins; never a token.
+        ...(visible.everything ? { graphConnectors: graphConnectorOptions(graphTokens) } : {}),
+      });
     }
     if (path === "/api/webhooks" && method === "POST") {
-      const created = webhooks.create(await readBody(req));
+      const taken = takePollerCredentials(await readBody(req));
+      const created = webhooks.create(taken.rest as Parameters<typeof webhooks.create>[0]);
+      if (taken.credentials) {
+        try {
+          savePollerCredentials(created.webhook.id, taken.credentials);
+        } catch (error) {
+          webhooks.remove(created.webhook.id);
+          throw error;
+        }
+      }
       const ingress = webhookIngressStatus();
       // A typed trigger is reached by its provider's signature on its source
       // path: no bearer command to hand out, only the setup (shown once).
@@ -34115,8 +34213,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     webhookMatch = path.match(/^\/api\/webhooks\/([\w-]+)$/);
     if (webhookMatch && method === "PATCH") {
-      const webhook = webhooks.update(webhookMatch[1], await readBody(req));
-      return webhook ? json(res, 200, { webhook }) : json(res, 404, { error: "no such webhook" });
+      const taken = takePollerCredentials(await readBody(req));
+      const webhook = webhooks.update(webhookMatch[1], taken.rest as Parameters<typeof webhooks.update>[1]);
+      if (!webhook) return json(res, 404, { error: "no such webhook" });
+      if (taken.credentials) savePollerCredentials(webhookMatch[1], taken.credentials);
+      return json(res, 200, { webhook: webhooks.list().find((hook) => hook.id === webhookMatch![1]) ?? webhook });
     }
     if (webhookMatch && method === "DELETE") {
       return webhooks.remove(webhookMatch[1])
