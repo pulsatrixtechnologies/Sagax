@@ -1129,7 +1129,7 @@ export function GroupView({ group: stored }: { group: Group }) {
   useEffect(() => setFindOpen(false), [group.threadId]);
   useEffect(() => {
     const onFind = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         setFindOpen(true);
       }

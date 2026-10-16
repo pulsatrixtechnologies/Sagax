@@ -10,6 +10,7 @@ import {
 } from "@/lib/citations";
 import { captureCitationSelection, citationTabShortcut } from "@/lib/citations-dom";
 import { sendsMessage, useSendKey } from "@/lib/send-key";
+import { appShortcutFor } from "@/lib/keyboard-shortcuts";
 
 type Point = { left: number; top: number };
 
@@ -115,6 +116,8 @@ export function CitationSelectionToolbar({
     point: Point;
   } | null>(null);
   const [editing, setEditing] = useState(false);
+  const addRef = useRef(onAdd);
+  addRef.current = onAdd;
 
   useEffect(() => {
     if (!captured) tabShortcut.reset();
@@ -145,7 +148,20 @@ export function CitationSelectionToolbar({
     viewportRef.current?.addEventListener("pointerup", update);
     viewportRef.current?.addEventListener("keyup", update);
     const focusAction = (event: KeyboardEvent) => {
-      if (captured && !editing) tabShortcut.handle(event, buttonRef.current);
+      if (!captured || editing) return;
+      // ⌘L / Ctrl+L quotes the selection into the message at once (Grok
+      // Bot's "add selection to prompt"); Cite then Save does the same with a comment.
+      if (appShortcutFor(event) === "quote-selection") {
+        if (captured.citation.quote.length > CITATION_MAX_QUOTE_LENGTH) return;
+        event.preventDefault();
+        event.stopPropagation();
+        addRef.current(captured.citation);
+        window.getSelection()?.removeAllRanges();
+        setCaptured(null);
+        focusComposer();
+        return;
+      }
+      tabShortcut.handle(event, buttonRef.current);
     };
     document.addEventListener("keydown", focusAction, true);
     return () => {

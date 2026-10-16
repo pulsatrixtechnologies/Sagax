@@ -1435,7 +1435,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   useEffect(() => {
     if (side) return;
     const onFind = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         setFindOpen(true);
       }

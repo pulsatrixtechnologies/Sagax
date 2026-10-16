@@ -127,3 +127,111 @@ describe("keyboard shortcut opening guard", () => {
     expect(shouldOpenKeyboardShortcuts(event("/", { metaKey: true, shiftKey: true }))).toBe(false);
   });
 });
+
+describe("Grok Bot's app-wide chords", () => {
+  const press = (key: string, overrides: Partial<KeyboardEvent> = {}) => ({
+    key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, isComposing: false, defaultPrevented: false, ...overrides,
+  });
+
+  it("maps ⌘B, ⌘I, ⌘⇧F, ⌘L and ⌘⇧N on macOS, Ctrl on Windows and Linux", async () => {
+    const { appShortcutFor } = await import("./keyboard-shortcuts");
+    const cases = [
+      ["b", false, "toggle-sidebar"],
+      ["i", false, "focus-composer"],
+      ["F", true, "search-everything"],
+      ["l", false, "quote-selection"],
+      ["N", true, "new-group"],
+    ] as const;
+    for (const [key, shiftKey, expected] of cases) {
+      expect(appShortcutFor(press(key, { metaKey: true, shiftKey }), true)).toBe(expected);
+      expect(appShortcutFor(press(key, { ctrlKey: true, shiftKey }), false)).toBe(expected);
+      // the other platform's modifier is not the chord
+      expect(appShortcutFor(press(key, { ctrlKey: true, shiftKey }), true)).toBeNull();
+      expect(appShortcutFor(press(key, { metaKey: true, shiftKey }), false)).toBeNull();
+    }
+  });
+
+  it("leaves the existing chords and everything else alone", async () => {
+    const { appShortcutFor } = await import("./keyboard-shortcuts");
+    // ⌘F finds in the conversation, ⌘N opens the compose picker, ⌘K the palette
+    for (const key of ["f", "n", "k", "d", "1", "/"]) expect(appShortcutFor(press(key, { metaKey: true }), true)).toBeNull();
+    // the shifted twins of the new unshifted chords are free
+    for (const key of ["B", "I", "L"]) expect(appShortcutFor(press(key, { metaKey: true, shiftKey: true }), true)).toBeNull();
+    expect(appShortcutFor(press("b"), true)).toBeNull();
+    expect(appShortcutFor(press("b", { metaKey: true, altKey: true }), true)).toBeNull();
+    expect(appShortcutFor(press("b", { metaKey: true, ctrlKey: true }), true)).toBeNull();
+    expect(appShortcutFor(press("b", { metaKey: true, isComposing: true }), true)).toBeNull();
+    expect(appShortcutFor(press("b", { metaKey: true, defaultPrevented: true }), true)).toBeNull();
+  });
+
+  it("lists every new chord on the cheat sheet, with no two rows on the same keys", () => {
+    const items = SHORTCUT_GROUPS.flatMap((group) => group.items);
+    const keysOf = (id: string) => items.find((item) => item.id === id)?.macKeys;
+    expect(keysOf("toggle-sidebar")).toEqual(["⌘", "B"]);
+    expect(keysOf("focus-composer")).toEqual(["⌘", "I"]);
+    expect(keysOf("search-everything")).toEqual(["⌘", "⇧", "F"]);
+    expect(keysOf("quote-selection")).toEqual(["⌘", "L"]);
+    expect(keysOf("new-group")).toEqual(["⌘", "⇧", "N"]);
+    for (const platform of ["macKeys", "winKeys"] as const) {
+      const chords = items.map((item) => item[platform].join("+"));
+      expect(new Set(chords).size).toBe(chords.length);
+    }
+  });
+
+  it("has a string for every row and group, in the keys the shortcuts window reads", async () => {
+    const { en } = await import("@/locales");
+    for (const group of SHORTCUT_GROUPS) {
+      expect(Object.values(en)).toContain(group.category);
+      for (const item of group.items) expect(item.description.startsWith("shortcuts.")).toBe(false);
+    }
+  });
+
+  it("speaks the interface language", async () => {
+    const { setLocale } = await import("./i18n");
+    try {
+      setLocale("fr");
+      const items = SHORTCUT_GROUPS.flatMap((group) => group.items);
+      expect(items.find((item) => item.id === "toggle-sidebar")?.description).toBe("Replier ou déplier la barre latérale");
+      expect(SHORTCUT_GROUPS[0].category).toBe("Navigation");
+      expect(SHORTCUT_GROUPS[1].category).toBe("Conversation et saisie");
+      setLocale("en");
+      expect(items.find((item) => item.id === "toggle-sidebar")?.description).toBe("Collapse or expand the sidebar");
+      expect(SHORTCUT_GROUPS[1].category).toBe("Chat & Composer");
+    } finally {
+      setLocale("en");
+    }
+  });
+
+  it("is wired where the action lives: the shell, the selection toolbar, and ⌘F leaves ⌘⇧F to search", async () => {
+    const { readFileSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+    const app = read("../App.tsx");
+    expect(app).toMatch(/chord === "toggle-sidebar"\) \{\s*e\.preventDefault\(\);\s*toggleSidebarCollapsed\(\);/);
+    expect(app).toMatch(/chord === "focus-composer"\) \{\s*if \(focusComposer\(\)\) e\.preventDefault\(\);/);
+    expect(app).toMatch(/chord === "search-everything"\) \{\s*e\.preventDefault\(\);\s*openCommandPalette\(\);/);
+    expect(app).toMatch(/chord === "new-group"\) \{\s*e\.preventDefault\(\);\s*setComposeGroup\(true\);\s*setComposeOpen\(true\);/);
+    expect(app).toContain('<ComposeToPicker key={composeGroup ? "group" : "browse"} startInGroup={composeGroup}');
+    expect(read("../components/ComposeToPicker.tsx")).toContain('useState<ComposeMode>(startInGroup ? "group" : "browse")');
+    expect(read("../components/CitationUI.tsx")).toMatch(/appShortcutFor\(event\) === "quote-selection"\) \{[\s\S]*?addRef\.current\(captured\.citation\);/);
+    for (const view of ["../components/ChatView.tsx", "../components/GroupView.tsx"]) {
+      expect(read(view)).toContain('(event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "f")');
+    }
+  });
+});
+
+describe("focusComposer", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("puts the caret at the end of the composer's text, and says when there is none", async () => {
+    const { focusComposer, COMPOSER_INPUT_SELECTOR } = await import("./composer-focus");
+    const input = { value: "hello", disabled: false, focus: vi.fn(), setSelectionRange: vi.fn() };
+    const querySelector = vi.fn(() => input);
+    vi.stubGlobal("document", { querySelector });
+    expect(focusComposer()).toBe(true);
+    expect(querySelector).toHaveBeenCalledWith(COMPOSER_INPUT_SELECTOR);
+    expect(input.focus).toHaveBeenCalled();
+    expect(input.setSelectionRange).toHaveBeenCalledWith(5, 5);
+    vi.stubGlobal("document", { querySelector: () => null });
+    expect(focusComposer()).toBe(false);
+  });
+});

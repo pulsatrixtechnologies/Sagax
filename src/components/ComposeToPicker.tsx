@@ -98,12 +98,12 @@ function KeyHint({ n }: { n: number }) {
  * and never creates a thread. Group mode collects members in the same list,
  * then creates the channel.
  */
-export function ComposeToPicker({ onClose }: { onClose: () => void }) {
+export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: () => void; startInGroup?: boolean }) {
   const { state, dispatch } = useStore();
   const { dragStyle, noDragStyle, controlsShiftStyle } = useCaptionChrome();
   const showThreads = useShowThreads();
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<ComposeMode>("browse");
+  const [mode, setMode] = useState<ComposeMode>(startInGroup ? "group" : "browse");
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [cursor, setCursor] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);

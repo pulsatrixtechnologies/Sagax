@@ -30,7 +30,7 @@ import { DesktopCapabilitiesProvider, useCaptionChrome, useDesktopCapabilities, 
 import { WindowCaptionButtons } from "@/components/WindowCaptionButtons";
 import { NoEngines } from "@/components/NoEngines";
 
-import { CommandPalette } from "@/components/CommandPalette";
+import { CommandPalette, openCommandPalette } from "@/components/CommandPalette";
 import { StagedOrgImport } from "@/components/OrgImportDialog";
 import { RetroAssistantHost } from "@/components/RetroAssistantHost";
 import { AchievementToaster } from "@/components/achievements/AchievementToaster";
@@ -39,11 +39,12 @@ import { FloatingBotsHost } from "@/components/FloatingBotsHost";
 import { CallEngineHost } from "@/components/CallView";
 import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
 import { activeLocale, setLocale, t } from "@/lib/i18n";
-import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
+import { appShortcutFor, shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
+import { focusComposer } from "@/lib/composer-focus";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { normalizeInboxDeepLink } from "@/lib/inbox-deep-link";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
-import { saveSidebarAttentionPinned } from "@/lib/sidebar-preferences";
+import { saveSidebarAttentionPinned, toggleSidebarCollapsed } from "@/lib/sidebar-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { badgeCount } from "@/lib/attention";
 import { dockBadge, useLocalSwitch } from "@/lib/notification-preferences";
@@ -148,6 +149,11 @@ function Shell() {
   }, [state.shortcutsOpen]);
   const [composeOpen, setComposeOpen] = useState(false);
   const openCompose = useCallback(() => setComposeOpen(true), []);
+  // ⌘⇧N opens the compose picker straight on "Create group chat".
+  const [composeGroup, setComposeGroup] = useState(false);
+  useEffect(() => {
+    if (!composeOpen) setComposeGroup(false);
+  }, [composeOpen]);
   const [localVmWorkspaceBotId, setLocalVmWorkspaceBotId] = useState<string | null>(null);
   // the Browser tab, expanded into the main column (the small preview in
   // the panel hands off to this and back)
@@ -190,7 +196,9 @@ function Shell() {
   // An OMB Cloud home with none of the person's own engines signed in yet:
   // its first run, and every bot until then, is the engine sign-in.
 
-  // App-wide shortcuts: ⌘N new bot · ⌘1–9 jump to bot · ⌘⇧[ / ⌘⇧] prev/next · ⌘/ or ? shortcuts cheat sheet.
+  // App-wide shortcuts: ⌘N new bot · ⌘1–9 jump to bot · ⌘⇧[ / ⌘⇧] prev/next · ⌘/ or ? shortcuts cheat sheet,
+  // and Grok Bot's ⌘B sidebar · ⌘I composer · ⌘⇧F search · ⌘⇧N group chat (appShortcutFor;
+  // ⌘L, quote the selection, lives with the selection in CitationUI).
   // Kept deliberately small; every panel already closes on Esc.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -198,6 +206,28 @@ function Shell() {
       if (shouldOpenKeyboardShortcuts(e)) {
         e.preventDefault();
         dispatch({ type: "toggleShortcuts", open: true });
+        return;
+      }
+
+      const chord = appShortcutFor(e);
+      if (chord === "toggle-sidebar") {
+        e.preventDefault();
+        toggleSidebarCollapsed();
+        return;
+      }
+      if (chord === "focus-composer") {
+        if (focusComposer()) e.preventDefault();
+        return;
+      }
+      if (chord === "search-everything") {
+        e.preventDefault();
+        openCommandPalette();
+        return;
+      }
+      if (chord === "new-group") {
+        e.preventDefault();
+        setComposeGroup(true);
+        setComposeOpen(true);
         return;
       }
 
@@ -444,7 +474,7 @@ function Shell() {
         </main>
         )
       )}
-      {composeOpen && <ComposeToPicker onClose={() => setComposeOpen(false)} />}
+      {composeOpen && <ComposeToPicker key={composeGroup ? "group" : "browse"} startInGroup={composeGroup} onClose={() => setComposeOpen(false)} />}
       </div>
       {/* A bot thread opened beside the main chat (Open beside, or
           Option-click on a thread row); one at a time. */}
