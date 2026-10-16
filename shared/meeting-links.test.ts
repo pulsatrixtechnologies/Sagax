@@ -30,8 +30,8 @@ describe("meeting links", () => {
   });
 
   it("names the bot as a notetaker, without markup or control characters", () => {
-    expect(meetingDisplayName("Ada")).toBe("Ada (notes)");
-    expect(meetingDisplayName("<b>Ada</b>\u0007")).toBe("bAda/b (notes)");
-    expect(meetingDisplayName("   ")).toBe("Bot (notes)");
+    expect(meetingDisplayName("Ada")).toBe("Ada (transcription)");
+    expect(meetingDisplayName("<b>Ada</b>\u0007")).toBe("bAda/b (transcription)");
+    expect(meetingDisplayName("   ")).toBe("Bot (transcription)");
   });
 });

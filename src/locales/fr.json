@@ -8407,7 +8407,7 @@
   "meeting.card.title": "{bot} veut rejoindre une réunion {platform} pour prendre des notes",
   "meeting.card.unsupported": "Les réunions {platform} ne sont pas encore prises en charge. Google Meet l'est.",
   "meeting.card.name": "Nom affiché dans la réunion : {name}",
-  "meeting.card.consent": "Prévenez les autres participants avant d'ajouter le bot. Il s'annonce dans le clavardage de la réunion et n'enregistre rien avant.",
+  "meeting.card.consent": "Vous êtes responsable d'obtenir le consentement de chaque participant avant d'ajouter le bot. L'audio de la réunion est transcrit par un fournisseur externe, xAI, hors du Québec ; l'audio n'est pas gardé. Le bot s'annonce dans le clavardage de la réunion, n'enregistre rien avant et quitte si quelqu'un s'y oppose.",
   "meeting.card.approve": "Rejoindre et prendre des notes",
   "meeting.card.decline": "Pas cette fois",
   "meeting.card.leave": "Quitter la réunion",
@@ -8539,5 +8539,6 @@
   "browser.network.requestHeaders": "En-têtes de la requête",
   "browser.network.responseHeaders": "En-têtes de la réponse",
   "browser.network.noHeaders": "Aucun en-tête.",
-  "browser.network.headersHidden": "Les en-têtes sont masqués. Cochez Afficher les en-têtes pour les voir, sans les identifiants."
+  "browser.network.headersHidden": "Les en-têtes sont masqués. Cochez Afficher les en-têtes pour les voir, sans les identifiants.",
+  "meeting.card.leftByParticipant": "Quitté à la demande d'un participant"
 }

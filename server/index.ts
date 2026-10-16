@@ -940,6 +940,7 @@ import { createGroupFolderRoutes } from "./routes/group-folders.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
 import { createRoutineAwayRoutes } from "./routes/routine-away.ts";
 import { createMeetingRoutes } from "./routes/meetings.ts";
+import { approvalTypeOf } from "./approval-type.ts";
 import { createMeetingInternalRoutes } from "./routes/meeting-internal.ts";
 import { createMeetingService, type MeetingService } from "./meetings/meeting-requests.ts";
 import { parseEvalJson } from "./meetings/meet-scripts.ts";
@@ -984,7 +985,7 @@ import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEN
 import { parseHideList, planHiddenAgentThreads, planHiddenBotThreads } from "./agent-threads.ts";
 import { MemberLiveText } from "./member-live-text.ts";
 import { computersRoutes, type ComputersDeps } from "./org-admin-computers.ts";
-import { createOrgAdminRoutes, wireAuditRow, type AccessKind, type AdminApproval, type AdminEngine, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
+import { createOrgAdminRoutes, wireAuditRow, type AccessKind, type AdminApproval, type AdminEngine, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createPublicInviteRoutes, createSoloOrgRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
@@ -9185,17 +9186,6 @@ function orgAdminStream(client: SseClient): boolean {
 }
 
 /** Slice 7: what kind of decision a card asks for. */
-function approvalTypeOf(card: NonNullable<Message["card"]>): ApprovalType {
-  if (card.skillRequest) return "skill";
-  if (card.routineRequest) return "routine";
-  if (card.profileRequest) return "profile";
-  if (card.modelRequest) return "model";
-  if (card.teamSetupRequest) return "team_setup";
-  if (card.allowKey && !card.allowKey.startsWith("mcp:")) return "peer";
-  if (card.tool || card.commandAllowlist || card.approvalScope) return "tool";
-  return "other";
-}
-
 /** Slice 7: a person as the console reads one (never an email). */
 function adminPerson(principalId: string): AdminPerson {
   const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;

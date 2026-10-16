@@ -8407,7 +8407,7 @@
   "meeting.card.title": "{bot} wants to join a {platform} meeting to take notes",
   "meeting.card.unsupported": "{platform} meetings are not supported yet. Google Meet is.",
   "meeting.card.name": "Shown in the meeting as {name}",
-  "meeting.card.consent": "Tell the other participants before adding the bot. It announces itself in the meeting chat and records nothing before that.",
+  "meeting.card.consent": "You are responsible for getting every participant's consent before adding the bot. The meeting audio is transcribed by an external provider, xAI, outside Québec; the audio is not kept. The bot announces itself in the meeting chat, records nothing before that, and leaves if anyone objects there.",
   "meeting.card.approve": "Join and take notes",
   "meeting.card.decline": "Not this time",
   "meeting.card.leave": "Leave the meeting",
@@ -8539,5 +8539,6 @@
   "browser.network.requestHeaders": "Request headers",
   "browser.network.responseHeaders": "Response headers",
   "browser.network.noHeaders": "No headers.",
-  "browser.network.headersHidden": "Headers are hidden. Turn on Show headers to see them, with credentials redacted."
+  "browser.network.headersHidden": "Headers are hidden. Turn on Show headers to see them, with credentials redacted.",
+  "meeting.card.leftByParticipant": "Left at a participant's request"
 }

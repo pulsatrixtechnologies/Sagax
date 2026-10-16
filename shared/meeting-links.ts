@@ -74,8 +74,8 @@ export function findMeetingLink(text: string): MeetingLink | null {
   return null;
 }
 
-/** The name the bot shows in the meeting: "<bot> (notes)". */
+/** The name the bot shows in the meeting: "<bot> (transcription)". */
 export function meetingDisplayName(botName: string): string {
   const clean = Array.from(botName).filter((ch) => ch.charCodeAt(0) >= 32 && ch !== "\u007f" && ch !== "<" && ch !== ">").join("").trim().slice(0, 50) || "Bot";
-  return `${clean} (notes)`;
+  return `${clean} (transcription)`;
 }

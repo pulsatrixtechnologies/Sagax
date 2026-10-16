@@ -23,12 +23,14 @@ sur une vraie réunion à faire par JC avant la fusion.
 2. Le bot appelle l'outil `join_meeting` (catalogue `agents`, capacité
    `meetings:join`). Le serveur publie une **carte de consentement** dans le
    fil (`card.meetingRequest`, `server/meetings/meeting-requests.ts`) : lien,
-   plateforme, nom affiché (« <bot> (notes) »), rappel « Prévenez les autres
-   participants avant d'ajouter le bot ». Rien ne rejoint avant le clic.
+   plateforme, nom affiché (« <bot> (transcription) »), et le rappel que la
+   personne est responsable d'obtenir le consentement de chaque participant
+   et que l'audio est transcrit par xAI, hors du Québec. Rien ne rejoint avant le clic.
    La carte ne s'applique **jamais** toute seule : aucun chemin d'accès
    complet ni de règle « toujours permettre » ne la lit, un appel Live la
    refuse (`liveCardKind` = `review`), le stepper d'approbations du
-   compositeur ne la montre pas, et seule la personne qui peut répondre à
+   compositeur ne la montre pas, la console Perspicax et `sagax_approve` ne
+   peuvent pas y répondre (`approvalTypeOf` = `other`), et seule la personne qui peut répondre à
    une approbation du bot (son propriétaire) y répond. Chaque réunion
    demande son propre clic.
 3. Approuvée, la carte devient la carte de la réunion en direct
@@ -50,14 +52,33 @@ personne pour consentir.
   `BrowserRuntime.harnessCall` (pas de mise en forme des résultats, pour
   recevoir un segment audio entier). Il ouvre le lien avec la lecture
   automatique de l'audio permise, choisit « continuer sans micro ni
-  caméra », coupe micro et caméra, tape le nom « <bot> (notes) » et clique
+  caméra », coupe micro et caméra, tape le nom « <bot> (transcription) » et clique
   « Demander à participer » par un vrai clic.
 - **Consentement d'abord, enregistrement ensuite.** Une fois admis, le bot
   publie une annonce bilingue dans le clavardage de la réunion (« <bot>
-  (notes) prend des notes pour <personne> ... Dites-le ici et je quitte. »)
-  et vérifie qu'elle apparaît dans l'historique. L'enregistrement ne
-  commence qu'après. Si l'annonce ne peut pas être publiée et vue, le bot
-  quitte sans rien enregistrer (échec fermé, Loi 25) et la carte le dit.
+  (transcription) prend des notes pour <personne>. L'audio est transcrit
+  par un fournisseur externe (xAI), hors du Québec ; l'audio n'est pas
+  gardé, le texte reste dans la conversation de <personne> pour les notes.
+  Écrivez « stop » ici et je quitte. ») et vérifie qu'elle apparaît dans
+  l'historique. L'enregistrement ne commence qu'après. Si l'annonce ne peut
+  pas être publiée et vue, ou si le clavardage ne peut pas être lu, le bot
+  quitte sans rien enregistrer (échec fermé, Loi 25). L'annonce est publiée
+  de nouveau quand quelqu'un arrive (nombre de participants en hausse) et
+  au moins toutes les 10 minutes ; si elle ne passe plus, le bot cesse de
+  prendre des notes et quitte.
+- **Objection.** À chaque relevé (3 s), le bot lit les nouvelles lignes du
+  clavardage (pas les siennes). Une ligne qui le nomme, qui dit non, ou qui
+  contient stop, arrête, quitte, leave, enregistrement, transcription, bot,
+  consentement, etc. (dans le doute, il part) le fait quitter tout de
+  suite : il arrête l'enregistrement, jette l'audio pas encore transcrit,
+  écrit « Je quitte. / Leaving. » et la carte affiche « Quitté à la demande
+  d'un participant ».
+- **Page muette.** Trois relevés de suite sans état lisible de la page ou du
+  clavardage comptent comme la fin de la réunion (jamais d'enregistrement à
+  l'aveugle).
+- **Limites.** Une réunion à la fois par bot, réservée avant toute attente
+  (deux clics ne lancent pas deux réunions) ; au plus 2 navigateurs de
+  réunion à la fois sur le serveur. Un refus reste affiché sur la carte.
 - **Transcription.** Un script injecté avant l'entrée enveloppe
   `RTCPeerConnection` et recueille les pistes audio distantes ; à
   l'annonce faite, il les mélange (Web Audio) et produit des segments
@@ -66,9 +87,13 @@ personne pour consentir.
   10 secondes (rien ne sort de la page par le réseau) et les transcrit avec
   la transcription du mode Voix (xAI STT : la clé de la personne qui a
   approuvé, sinon celle du serveur ; même registre d'usage, `grok-stt`).
-  Sans clé, la carte reste ouverte et dit d'en ajouter une. L'audio n'est
-  jamais conservé ; seul le texte l'est, dans
-  `DATA_DIR/meetings/<requestId>.json` (0600).
+  Sans clé, la carte reste ouverte et dit d'en ajouter une.
+- **Rétention.** Aucun fichier d'audio ni de transcription : l'audio ne
+  quitte la page que pour la transcription, le texte reste en mémoire le
+  temps de la réunion, puis entre dans le tour de résumé du bot et y reste
+  comme tout tour de la conversation (supprimé avec elle). Seul
+  `DATA_DIR/meetings/live.json` (0600) garde les identifiants des réunions
+  en cours, pour fermer leurs cartes après un redémarrage.
 - **Fin.** La personne clique Quitter, la réunion se termine, un hôte
   retire le bot, ou la durée maximale (3 h) est atteinte ; personne ne
   l'admet en 10 minutes : échec. Le serveur arrête l'enregistrement, relève

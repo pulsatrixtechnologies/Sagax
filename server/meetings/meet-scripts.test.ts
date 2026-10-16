@@ -8,10 +8,15 @@ import {
   MEETING_START_SCRIPT,
   MEETING_STATE_SCRIPT,
   MEETING_STOP_SCRIPT,
+  MEETING_CHAT_READ_SCRIPT,
+  MEETING_DISCARD_SCRIPT,
+  MEETING_LEAVING_TEXT,
+  chatObjects,
   chatPostedScript,
   chatTypeScript,
   classifyMeetPage,
   meetingAnnouncement,
+  newChatLines,
   parseEvalJson,
   prepareJoinScript,
 } from "./meet-scripts.ts";
@@ -21,7 +26,7 @@ const compiles = (script: string) => () => new Function(`return ${script};`);
 describe("meet page scripts", () => {
   it("are valid expressions", () => {
     for (const script of [CAPTURE_HOOK_SCRIPT, MEETING_START_SCRIPT, MEETING_STOP_SCRIPT, MEETING_DRAIN_SCRIPT, MEETING_STATE_SCRIPT,
-      MEETING_CHAT_OPEN_SCRIPT, MEETING_LEAVE_MARK_SCRIPT, prepareJoinScript("Ada (notes)"), chatTypeScript("hello"), chatPostedScript("hello")]) {
+      MEETING_CHAT_OPEN_SCRIPT, MEETING_LEAVE_MARK_SCRIPT, prepareJoinScript("Ada (transcription)"), chatTypeScript("hello"), chatPostedScript("hello")]) {
       expect(compiles(script)).not.toThrow();
     }
   });
@@ -76,10 +81,40 @@ describe("parseEvalJson", () => {
 });
 
 describe("meetingAnnouncement", () => {
-  it("names the bot, the person and how to object, in both languages", () => {
-    const text = meetingAnnouncement("Ada (notes)", "Sam");
-    expect(text).toContain("Ada (notes) is taking notes for Sam");
-    expect(text).toContain("Dites-le ici et je quitte");
+  it("names the bot and the person, the external provider outside Québec, retention, and how to object", () => {
+    const text = meetingAnnouncement("Ada (transcription)", "Sam");
+    expect(text).toContain("Ada (transcription) prend des notes pour Sam");
+    expect(text).toContain("Ada (transcription) is taking notes for Sam");
+    expect(text).toContain("fournisseur externe (xAI), hors du Québec");
+    expect(text).toContain("external provider (xAI), outside Québec");
+    expect(text).toContain("l'audio n'est pas gardé");
+    expect(text).toContain("Écrivez « stop » ici et je quitte");
     expect(text).not.toMatch(/[\u2013\u2014]/);
+  });
+});
+
+describe("chat objections", () => {
+  const own = [meetingAnnouncement("Ada (transcription)", "Sam"), MEETING_LEAVING_TEXT];
+  it("leaves on objection words in either language, on the bot's name, and on a bare no", () => {
+    for (const line of ["stop", "Please stop the recording", "arrête", "arrete svp", "quitte la réunion", "Can the bot leave?", "no recording please",
+      "pas d'enregistrement", "I don't consent", "Ada please go", "ADA?", "non", "No."]) {
+      expect(chatObjects(line, "Ada", own), line).toBe(true);
+    }
+  });
+  it("ignores ordinary chat and the bot's own lines", () => {
+    for (const line of ["Next slide please", "J'ai une question sur le budget", "Thanks all", own[0]!, MEETING_LEAVING_TEXT, "Ada (transcription)"]) {
+      expect(chatObjects(line, "Ada", own), line).toBe(false);
+    }
+  });
+  it("finds only the lines a poll did not have, counting repeats", () => {
+    expect(newChatLines(["a", "b"], ["a", "b", "c"])).toEqual(["c"]);
+    expect(newChatLines(["ok"], ["ok", "ok"])).toEqual(["ok"]);
+    expect(newChatLines(["a"], ["a"])).toEqual([]);
+  });
+  it("can drop untranscribed audio", () => {
+    expect(MEETING_DISCARD_SCRIPT).toContain("stop(true)");
+    expect(CAPTURE_HOOK_SCRIPT).toContain("if (discard) { state.discard = true; state.chunks.length = 0; }");
+    expect(compiles(MEETING_DISCARD_SCRIPT)).not.toThrow();
+    expect(compiles(MEETING_CHAT_READ_SCRIPT)).not.toThrow();
   });
 });

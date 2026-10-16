@@ -194,12 +194,23 @@ covered by `server/meetings/*.test.ts` and `server/routes/meetings.test.ts`:
   for them: no Full access path, no always-allow rule, no Live call answer
   (`liveCardKind` is `review`), not the composer's approval stepper. Direct
   conversations only.
-- Nothing is recorded before the consent announcement is visible in the
-  meeting chat; if it cannot be posted and seen, the bot leaves without
-  recording (fail closed).
+- Nothing is recorded before the consent announcement ("<bot> (transcription)",
+  for whom, xAI outside Québec, audio not kept, type "stop") is visible in
+  the meeting chat and the chat can be read; otherwise the bot leaves without
+  recording (fail closed). It is posted again when someone joins and at least
+  every 10 minutes.
+- Every poll reads the new chat lines: an objection (the bot's name, a bare
+  no, stop, arrête, quitte, leave, recording, consent...; when in doubt,
+  leave) makes it leave at once, dropping the audio not yet transcribed.
+  Three unreadable polls in a row end the meeting.
+- The Perspicax console and `sagax_approve` never answer the card
+  (`server/approval-type.ts` types it `other`).
+- One meeting per bot, reserved before any await; at most
+  `MEETING_MAX_CONCURRENT` (2) meeting browsers on a server.
 - The meeting runs in a private guest browser session per meeting, never in
-  the bot's own browser profile, and audio leaves the page only through the
-  harness's own eval; no audio is stored, the transcript is (0600).
+  the bot's own browser profile. No audio and no transcript file is written:
+  the text lives in memory, then in the bot's summary turn. Only
+  `DATA_DIR/meetings/live.json` (ids of running meetings, 0600) is kept.
 - The transcript reaches the bot's summary turn behind `wrapUntrusted`.
 
 ## Conversations with a person have threads like a bot (2026-10-09)

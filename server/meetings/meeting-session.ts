@@ -10,14 +10,19 @@ import type { MeetingRequestCardData, MeetingStatus } from "../../shared/meeting
 import {
   CAPTURE_HOOK_SCRIPT,
   MEETING_CHAT_OPEN_SCRIPT,
+  MEETING_CHAT_READ_SCRIPT,
+  MEETING_DISCARD_SCRIPT,
   MEETING_DRAIN_SCRIPT,
+  MEETING_LEAVING_TEXT,
   MEETING_LEAVE_MARK_SCRIPT,
   MEETING_START_SCRIPT,
   MEETING_STATE_SCRIPT,
   MEETING_STOP_SCRIPT,
   chatPostedScript,
   chatTypeScript,
+  chatObjects,
   classifyMeetPage,
+  newChatLines,
   prepareJoinScript,
 } from "./meet-scripts.ts";
 
@@ -39,6 +44,8 @@ export interface TranscriptLine {
 export interface MeetingSessionOptions {
   url: string;
   displayName: string;
+  /** The bot's own name: a chat line naming it counts as an objection. */
+  botName?: string;
   announcement: string;
   browser: MeetingBrowser;
   transcribe(audio: Uint8Array, mime: string): Promise<string>;
@@ -53,6 +60,9 @@ export interface MeetingSessionOptions {
   pollMs?: number;
   /** Drain the page's audio queue every this many ms while recording. */
   drainMs?: number;
+  /** Post the announcement again this often (10 minutes), and whenever
+   * more people are in the meeting than before. */
+  announceEveryMs?: number;
 }
 
 export interface MeetingOutcome {
@@ -60,11 +70,17 @@ export interface MeetingOutcome {
   detail?: string;
   lines: TranscriptLine[];
   recorded: boolean;
+  /** Why it ended when that matters to the card: a participant objected. */
+  endReason?: "participant";
 }
 
 export const MEETING_MAX_MS = 3 * 60 * 60_000;
 const ADMISSION_MS = 10 * 60_000;
 const TAIL_LINES = 6;
+/** Polls in a row that cannot read the page (or its chat) before the
+ * meeting counts as over: the bot never records blind. */
+export const MEETING_UNKNOWN_POLLS = 3;
+const ANNOUNCE_EVERY_MS = 10 * 60_000;
 
 function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -86,14 +102,16 @@ function decodeChunk(value: unknown): { at: number; mime: string; audio: Uint8Ar
 }
 
 export class MeetingSession {
-  private readonly opts: Required<Pick<MeetingSessionOptions, "maxMs" | "admissionMs" | "pollMs" | "drainMs">> & MeetingSessionOptions;
+  private readonly opts: Required<Pick<MeetingSessionOptions, "maxMs" | "admissionMs" | "pollMs" | "drainMs" | "announceEveryMs">> & MeetingSessionOptions;
   private readonly leaving = new AbortController();
   private readonly lines: TranscriptLine[] = [];
   private recorded = false;
+  /** What the bot itself wrote in the meeting chat: never an objection. */
+  private readonly posted = new Set<string>();
   private transcriptionErrors = 0;
 
   constructor(options: MeetingSessionOptions) {
-    this.opts = { maxMs: MEETING_MAX_MS, admissionMs: ADMISSION_MS, pollMs: 3_000, drainMs: 10_000, ...options };
+    this.opts = { maxMs: MEETING_MAX_MS, admissionMs: ADMISSION_MS, pollMs: 3_000, drainMs: 10_000, announceEveryMs: ANNOUNCE_EVERY_MS, ...options };
   }
 
   private now(): number { return this.opts.now?.() ?? Date.now(); }
@@ -138,9 +156,17 @@ export class MeetingSession {
     // Admission: wait in the lobby until a host lets the bot in.
     const admissionDeadline = this.now() + this.opts.admissionMs;
     let waitingShown = false;
+    let unknown = 0;
     for (;;) {
       if (this.leaveRequested) return this.leave({ status: "ended", detail: "Left before being let in." });
-      const page = classifyMeetPage((await browser.eval(MEETING_STATE_SCRIPT)) ?? {});
+      const signals = await browser.eval(MEETING_STATE_SCRIPT);
+      if (!signals) {
+        if (++unknown >= MEETING_UNKNOWN_POLLS) return this.leave({ status: "failed", detail: "The meeting page stopped answering." });
+        await this.sleep(this.opts.pollMs);
+        continue;
+      }
+      unknown = 0;
+      const page = classifyMeetPage(signals);
       if (page === "in-meeting") break;
       if (page === "refused") return this.finish({ status: "declined", detail: "The meeting host did not let the bot in." });
       if (page === "ended") return this.finish({ status: "ended", detail: "The meeting ended before the bot was let in." });
@@ -154,18 +180,55 @@ export class MeetingSession {
     if (!await this.announce()) {
       return this.leave({ status: "failed", detail: "The consent announcement could not be posted in the meeting chat, so nothing was recorded." });
     }
+    // What the chat holds once the bot announced itself: only lines after
+    // this can object.
+    const baseline = await browser.eval(MEETING_CHAT_READ_SCRIPT);
+    if (baseline?.ok !== true || !Array.isArray(baseline.lines)) {
+      return this.leave({ status: "failed", detail: "The meeting chat could not be read, so nothing was recorded." });
+    }
+    let chatSeen = baseline.lines.filter((line): line is string => typeof line === "string");
     const start = await browser.eval(MEETING_START_SCRIPT);
     if (start?.started !== true) return this.leave({ status: "failed", detail: "The audio of the meeting could not be captured." });
     this.recorded = true;
     this.opts.update({ status: "recording", recordingAt: this.now() });
 
+    const ownTexts = () => [...this.posted];
     let lastDrain = this.now();
+    let lastAnnounce = this.now();
+    let people = 0;
+    unknown = 0;
     let reason: string | undefined;
     for (;;) {
       if (this.leaveRequested) { reason = "Left at the person's request."; break; }
       if (this.now() - started >= this.opts.maxMs) { reason = "Left after the 3 hour limit."; break; }
-      const page = classifyMeetPage((await browser.eval(MEETING_STATE_SCRIPT)) ?? {});
+      const signals = await browser.eval(MEETING_STATE_SCRIPT);
+      const chat = await browser.eval(MEETING_CHAT_READ_SCRIPT);
+      const chatLines = chat?.ok === true && Array.isArray(chat.lines) ? chat.lines.filter((line): line is string => typeof line === "string") : null;
+      if (!signals || !chatLines) {
+        // Unknown: neither the page nor its chat can be trusted this poll.
+        if (++unknown >= MEETING_UNKNOWN_POLLS) { reason = "The meeting page stopped answering."; break; }
+        await this.sleep(this.opts.pollMs);
+        continue;
+      }
+      unknown = 0;
+      const fresh = newChatLines(chatSeen, chatLines);
+      chatSeen = chatLines;
+      if (fresh.some((line) => chatObjects(line, this.opts.botName ?? "", ownTexts()))) return this.leaveOnObjection();
+      const page = classifyMeetPage(signals);
       if (page === "ended" || page === "refused") { reason = page === "refused" ? "The bot was removed from the meeting." : "The meeting ended."; break; }
+      const count = typeof signals.people === "number" ? signals.people : 0;
+      const joined = count > people && people > 0;
+      people = Math.max(people, count);
+      if (joined || this.now() - lastAnnounce >= this.opts.announceEveryMs) {
+        lastAnnounce = this.now();
+        if (!await this.announce()) {
+          // Consent can no longer be shown: stop, keep what was said under it.
+          reason = "The announcement could not be posted again, so the bot stopped taking notes.";
+          break;
+        }
+        const after = await browser.eval(MEETING_CHAT_READ_SCRIPT);
+        if (after?.ok === true && Array.isArray(after.lines)) chatSeen = after.lines.filter((line): line is string => typeof line === "string");
+      }
       if (this.now() - lastDrain >= this.opts.drainMs) { lastDrain = this.now(); await this.drain(); }
       await this.sleep(this.opts.pollMs);
     }
@@ -174,6 +237,17 @@ export class MeetingSession {
     await (this.opts.sleep ?? defaultSleep)(1_500, new AbortController().signal);
     for (let pass = 0; pass < 3; pass++) if (!await this.drain()) break;
     return this.leave({ status: "ended", detail: reason });
+  }
+
+  /** A participant objected in the chat: stop at once, drop every segment
+   * not yet transcribed, say so in the chat, and leave. */
+  private async leaveOnObjection(): Promise<MeetingOutcome> {
+    const { browser } = this.opts;
+    await browser.eval(MEETING_DISCARD_SCRIPT).catch(() => null);
+    this.posted.add(MEETING_LEAVING_TEXT);
+    const typed = await browser.eval(chatTypeScript(MEETING_LEAVING_TEXT)).catch(() => null);
+    if (typed?.typed === true && typed.send === true) await browser.click("[data-sagax-send]").catch(() => false);
+    return this.leave({ status: "ended", detail: "Left at a participant's request.", endReason: "participant" });
   }
 
   /** Open the chat, type the announcement, send it, and see it posted. */
@@ -185,13 +259,16 @@ export class MeetingSession {
       opened = await browser.eval(MEETING_CHAT_OPEN_SCRIPT);
     }
     if (opened?.box !== true || this.leaveRequested) return false;
+    const before = await browser.eval(chatPostedScript(this.opts.announcement));
+    const already = typeof before?.count === "number" ? before.count : 0;
+    this.posted.add(this.opts.announcement);
     const typed = await browser.eval(chatTypeScript(this.opts.announcement));
     if (typed?.typed !== true || typed.send !== true) return false;
     if (!await browser.click("[data-sagax-send]")) return false;
     for (let check = 0; check < 3; check++) {
       await this.sleep(1_000);
       const posted = await browser.eval(chatPostedScript(this.opts.announcement));
-      if (posted?.posted === true) return true;
+      if (posted?.posted === true && typeof posted.count === "number" && posted.count > already) return true;
     }
     return false;
   }
@@ -225,16 +302,16 @@ export class MeetingSession {
   }
 
   /** Press Leave in the meeting, then finish. */
-  private async leave(outcome: { status: MeetingOutcome["status"]; detail?: string }): Promise<MeetingOutcome> {
+  private async leave(outcome: { status: MeetingOutcome["status"]; detail?: string; endReason?: "participant" }): Promise<MeetingOutcome> {
     const marked = await this.opts.browser.eval(MEETING_LEAVE_MARK_SCRIPT).catch(() => null);
     if (marked?.leave === true) await this.opts.browser.click("[data-sagax-leave]").catch(() => false);
     return this.finish(outcome);
   }
 
-  private finish(outcome: { status: MeetingOutcome["status"]; detail?: string }): MeetingOutcome {
+  private finish(outcome: { status: MeetingOutcome["status"]; detail?: string; endReason?: "participant" }): MeetingOutcome {
     const detail = this.transcriptionErrors && outcome.status === "ended"
       ? `${outcome.detail ?? ""} ${this.transcriptionErrors} audio segment(s) could not be transcribed.`.trim()
       : outcome.detail;
-    return { status: outcome.status, ...(detail ? { detail } : {}), lines: [...this.lines], recorded: this.recorded };
+    return { status: outcome.status, ...(detail ? { detail } : {}), lines: [...this.lines], recorded: this.recorded, ...(outcome.endReason ? { endReason: outcome.endReason } : {}) };
   }
 }

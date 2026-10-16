@@ -28,7 +28,7 @@ export interface MeetingRequestCardData {
   provider: MeetingProvider;
   url: string;
   code: string;
-  /** The name shown in the meeting: "<bot> (notes)". */
+  /** The name shown in the meeting: "<bot> (transcription)". */
   displayName: string;
   /** Why the bot asks (a calendar event, the person's request). */
   reason: string;
@@ -43,6 +43,9 @@ export interface MeetingRequestCardData {
   transcriptTail?: string[];
   /** Transcribed segments so far. */
   segments?: number;
+  /** "participant": a participant objected in the meeting chat and the
+   * bot left at once, dropping the audio not yet transcribed. */
+  endReason?: "participant";
   startedAt?: number;
   recordingAt?: number;
   endedAt?: number;

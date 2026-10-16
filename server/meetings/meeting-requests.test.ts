@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { liveCardKind, liveDecisionRefusal } from "../../shared/live-approval.ts";
 import type { OptionCardData } from "../../shared/wire.ts";
-import { createMeetingService, type MeetingServiceDeps } from "./meeting-requests.ts";
+import { MEETING_MAX_CONCURRENT, createMeetingService, type MeetingServiceDeps } from "./meeting-requests.ts";
 import type { MeetingOutcome } from "./meeting-session.ts";
 
 type Row = { id: string; card?: Record<string, unknown> & { requestId?: string } };
@@ -17,7 +17,7 @@ function setup(overrides: Partial<MeetingServiceDeps> = {}, outcome?: MeetingOut
   let finish: (value: MeetingOutcome) => void = () => {};
   const runs: Array<{ leave: boolean }> = [];
   const store = {
-    bot: (id: string) => id === "bot-1" ? { id, name: "Ada", color: "blue" } : null,
+    bot: (id: string) => id.startsWith("bot-") ? { id, name: id === "bot-1" ? "Ada" : id, color: "blue" } : null,
     messagesFor: (threadId: string) => threads.get(threadId) ?? [],
     appendMessage: (threadId: string, message: { card: Record<string, unknown> }) => {
       const row = { id: `m${(threads.get(threadId)?.length ?? 0) + 1}`, card: message.card as Row["card"] };
@@ -63,7 +63,7 @@ describe("meeting requests", () => {
     expect(result).toMatchObject({ supported: true, provider: "google-meet" });
     const card = t.card();
     expect(card.tool).toBe("join_meeting");
-    expect(card.meetingRequest).toMatchObject({ status: "pending", displayName: "Ada (notes)", supported: true, reason: "Weekly sync" });
+    expect(card.meetingRequest).toMatchObject({ status: "pending", displayName: "Ada (transcription)", supported: true, reason: "Weekly sync" });
     expect(card.options).toEqual(["Rejoindre et prendre des notes", "Pas cette fois"]);
     expect(liveCardKind(card)).toBe("review");
     expect(liveDecisionRefusal(card)).toBe("This request is reviewed on screen.");
@@ -104,7 +104,7 @@ describe("meeting requests", () => {
     const requestId = t.card().requestId!;
     expect(await t.service.resolve({ threadId: "t1", requestId, behavior: "allow", principalId: "p" })).toEqual({ claimed: true, status: 409, error: "add an xAI key" });
     expect(t.card().answered).toBeUndefined();
-    expect(t.card().meetingRequest.status).toBe("pending");
+    expect(t.card().meetingRequest).toMatchObject({ status: "pending", detail: "add an xAI key" });
   });
 
   it("joins once on allow, refuses a second meeting, saves the transcript privately and asks for the summary", async () => {
@@ -121,9 +121,10 @@ describe("meeting requests", () => {
     t.finish({ status: "ended", detail: "Left at the person's request.", lines: [{ at: 1_000, text: "We ship Friday." }], recorded: true });
     await flush();
     expect(t.card().meetingRequest.status).toBe("ended");
-    const file = join(t.dataDir, "meetings", `${requestId}.json`);
-    expect(JSON.parse(readFileSync(file, "utf8")).lines).toHaveLength(1);
-    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
+    // No transcript or audio file: only the live index, now empty.
+    expect(readdirSync(join(t.dataDir, "meetings"))).toEqual(["live.json"]);
+    expect(JSON.parse(readFileSync(join(t.dataDir, "meetings", "live.json"), "utf8"))).toEqual([]);
+    if (process.platform !== "win32") expect(statSync(join(t.dataDir, "meetings", "live.json")).mode & 0o777).toBe(0o600);
     expect(t.summaries).toHaveLength(1);
     expect(t.summaries[0]!.prompt).toContain("We ship Friday.");
     expect(t.service.leave("t1", requestId)).toMatchObject({ ok: false, status: 409 });
@@ -156,5 +157,58 @@ describe("meeting requests", () => {
     });
     expect(again.recoverInterrupted()).toBe(1);
     expect(t.card().meetingRequest).toMatchObject({ status: "failed", detail: "The server stopped during the meeting." });
+  });
+
+  it("reserves the bot before any await: two taps on two cards start one meeting", async () => {
+    let unblock: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { unblock = resolve; });
+    const t = setup({ transcriber: async () => { await gate; return { transcribe: async () => "x" }; } }); cleanups.push(t.cleanup);
+    t.service.submit({ botId: "bot-1", threadId: "t1", url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    t.service.submit({ botId: "bot-1", threadId: "t2", url: "https://meet.google.com/zzz-zzzz-zzz", reason: "" });
+    const first = t.service.resolve({ threadId: "t1", requestId: t.card("t1").requestId!, behavior: "allow", principalId: "p" });
+    const second = await t.service.resolve({ threadId: "t2", requestId: t.card("t2").requestId!, behavior: "allow", principalId: "p" });
+    expect(second).toMatchObject({ claimed: true, status: 409 });
+    expect(t.card("t2").meetingRequest).toMatchObject({ status: "pending", detail: expect.stringContaining("already in another meeting") });
+    unblock();
+    expect(await first).toEqual({ claimed: true, outcome: "allowed-once" });
+    expect(t.runs).toHaveLength(1);
+  });
+
+  it("releases the reservation on every failure path", async () => {
+    let fail = true;
+    const t = setup({ transcriber: async () => fail ? { error: "no key" } : { transcribe: async () => "x" } }); cleanups.push(t.cleanup);
+    t.service.submit({ botId: "bot-1", threadId: "t1", url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    const requestId = t.card().requestId!;
+    expect(await t.service.resolve({ threadId: "t1", requestId, behavior: "allow", principalId: "p" })).toMatchObject({ status: 409 });
+    fail = false;
+    expect(await t.service.resolve({ threadId: "t1", requestId, behavior: "allow", principalId: "p" })).toEqual({ claimed: true, outcome: "allowed-once" });
+    const broken = setup({ openBrowser: async () => { throw new Error("no chrome"); } }); cleanups.push(broken.cleanup);
+    broken.service.submit({ botId: "bot-1", threadId: "t1", url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    await broken.service.resolve({ threadId: "t1", requestId: broken.card().requestId!, behavior: "allow", principalId: "p" });
+    expect(broken.card().meetingRequest.status).toBe("failed");
+    // The bot is free again: a new card can be approved.
+    broken.service.submit({ botId: "bot-1", threadId: "t3", url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    expect(broken.card("t3").meetingRequest.status).toBe("pending");
+  });
+
+  it("caps the meeting browsers running at once on the server", async () => {
+    const t = setup(); cleanups.push(t.cleanup);
+    for (let index = 0; index <= MEETING_MAX_CONCURRENT; index++) {
+      t.service.submit({ botId: `bot-${index + 1}`, threadId: `t${index}`, url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    }
+    for (let index = 0; index < MEETING_MAX_CONCURRENT; index++) {
+      expect(await t.service.resolve({ threadId: `t${index}`, requestId: t.card(`t${index}`).requestId!, behavior: "allow", principalId: "p" })).toMatchObject({ outcome: "allowed-once" });
+    }
+    const over = `t${MEETING_MAX_CONCURRENT}`;
+    expect(await t.service.resolve({ threadId: over, requestId: t.card(over).requestId!, behavior: "allow", principalId: "p" })).toMatchObject({ status: 409 });
+    expect(t.card(over).meetingRequest.detail).toContain("already running on this server");
+  });
+
+  it("marks the card when a participant made the bot leave", async () => {
+    const t = setup({}, { status: "ended", detail: "Left at a participant's request.", endReason: "participant", lines: [], recorded: true }); cleanups.push(t.cleanup);
+    t.service.submit({ botId: "bot-1", threadId: "t1", url: "https://meet.google.com/abc-defg-hij", reason: "" });
+    await t.service.resolve({ threadId: "t1", requestId: t.card().requestId!, behavior: "allow", principalId: "p" });
+    await flush();
+    expect(t.card().meetingRequest).toMatchObject({ status: "ended", endReason: "participant" });
   });
 });

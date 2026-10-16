@@ -24,7 +24,7 @@ export const CAPTURE_HOOK_SCRIPT = `(() => {
   if (window.__sagaxMeet) return JSON.stringify({ installed: true, again: true });
   const Original = window.RTCPeerConnection;
   if (typeof Original !== "function") return JSON.stringify({ installed: false });
-  const state = { tracks: new Map(), sources: new Set(), chunks: [], dropped: 0, recording: false, ctx: null, dest: null, recorder: null, timer: null, errors: [], seq: 0, mime: "" };
+  const state = { tracks: new Map(), sources: new Set(), chunks: [], dropped: 0, recording: false, discard: false, ctx: null, dest: null, recorder: null, timer: null, errors: [], seq: 0, mime: "" };
   const note = (error) => { if (state.errors.length < 10) state.errors.push(String(error && error.message || error).slice(0, 200)); };
   const connect = (track) => {
     if (!state.recording || state.sources.has(track.id) || track.readyState === "ended") return;
@@ -53,9 +53,10 @@ export const CAPTURE_HOOK_SCRIPT = `(() => {
   window.RTCPeerConnection = SagaxPeerConnection;
   if (window.webkitRTCPeerConnection) window.webkitRTCPeerConnection = SagaxPeerConnection;
   const keep = (blob, seq) => {
-    if (!blob || !blob.size) return;
+    if (!blob || !blob.size || state.discard) return;
     const reader = new FileReader();
     reader.onload = () => {
+      if (state.discard) return;
       const data = String(reader.result || "").split(",")[1] || "";
       if (!data) return;
       state.chunks.push({ seq, at: Date.now(), mime: state.mime || "audio/webm", data });
@@ -97,7 +98,8 @@ export const CAPTURE_HOOK_SCRIPT = `(() => {
       state.timer = setInterval(rotate, Math.max(5000, Number(segmentMs) || 30000));
       return true;
     },
-    stop() {
+    stop(discard) {
+      if (discard) { state.discard = true; state.chunks.length = 0; }
       if (!state.recording) return false;
       state.recording = false;
       clearInterval(state.timer);
@@ -114,6 +116,9 @@ export const CAPTURE_HOOK_SCRIPT = `(() => {
 
 export const MEETING_START_SCRIPT = `JSON.stringify({ started: Boolean(window.__sagaxMeet && window.__sagaxMeet.start(${MEETING_SEGMENT_MS})) })`;
 export const MEETING_STOP_SCRIPT = `JSON.stringify({ stopped: Boolean(window.__sagaxMeet && window.__sagaxMeet.stop()) })`;
+/** A participant objected: stop now and drop every segment not yet
+ * transcribed, including the one the recorder is still writing. */
+export const MEETING_DISCARD_SCRIPT = `JSON.stringify({ discarded: Boolean(window.__sagaxMeet) && (window.__sagaxMeet.stop(true), true) })`;
 export const MEETING_DRAIN_SCRIPT = `JSON.stringify(window.__sagaxMeet ? window.__sagaxMeet.drain(4) : { chunks: [], missing: true })`;
 
 /** Pre-join screen: continue without devices, keep the microphone and the
@@ -164,7 +169,8 @@ export const MEETING_STATE_SCRIPT = `(() => {
   const label = (element) => [element.getAttribute("aria-label"), element.getAttribute("data-tooltip")].filter(Boolean).join(" ");
   const buttons = Array.from(document.querySelectorAll("button, [role=button]"));
   const leave = buttons.some((button) => /leave call|quitter l.appel/i.test(label(button)));
-  return JSON.stringify({ url: location.href, text: (document.body ? document.body.innerText : "").slice(0, 6000), leave });
+  const people = new Set(Array.from(document.querySelectorAll("[data-participant-id]")).map((element) => element.getAttribute("data-participant-id"))).size;
+  return JSON.stringify({ url: location.href, text: (document.body ? document.body.innerText : "").slice(0, 6000), leave, people });
 })()`;
 
 /** Open the meeting chat and mark its text box and send button. */
@@ -206,16 +212,71 @@ export function chatTypeScript(text: string): string {
 })()`;
 }
 
-/** Whether the announcement shows in the chat history, outside the box. */
+/** How many times the text shows in the chat history, outside the box. */
 export function chatPostedScript(text: string): string {
   return `(() => {
   const text = ${JSON.stringify(text)};
   const box = document.querySelector("[data-sagax-chat]");
-  const pending = box ? ("value" in box ? box.value : box.textContent) : "";
+  const pending = String((box ? ("value" in box ? box.value : box.textContent) : "") || "");
   const body = document.body ? document.body.innerText : "";
-  return JSON.stringify({ posted: body.includes(text) && !String(pending || "").includes(text) });
+  const count = body.split(text).length - 1 - (pending.includes(text) ? 1 : 0);
+  return JSON.stringify({ posted: count > 0, count });
 })()`;
 }
+
+/** The meeting chat's lines as the page shows them, read from the panel
+ * around the marked text box (opened again when it was closed). ok false:
+ * the chat could not be read on this poll. */
+export const MEETING_CHAT_READ_SCRIPT = `(() => {
+  const label = (element) => [element.getAttribute("aria-label"), element.getAttribute("data-tooltip"), element.getAttribute("placeholder")].filter(Boolean).join(" ");
+  const findBox = () => document.querySelector("[data-sagax-chat]") || Array.from(document.querySelectorAll("textarea, [contenteditable=true]"))
+    .find((element) => /send a message|envoyer un message|message/i.test(label(element)));
+  let box = findBox();
+  if (!box) {
+    const button = Array.from(document.querySelectorAll("button, [role=button]"))
+      .find((element) => /chat with everyone|discuter avec tous|^chat$|messages in the call|messages de l.appel/i.test(label(element)));
+    if (button) button.click();
+    box = findBox();
+  }
+  if (!box) return JSON.stringify({ ok: false });
+  box.setAttribute("data-sagax-chat", "1");
+  let panel = box.closest("aside, [role=complementary], [role=dialog]");
+  if (!panel) {
+    panel = box;
+    for (let depth = 0; depth < 6 && panel.parentElement && panel.parentElement !== document.body; depth++) panel = panel.parentElement;
+  }
+  const lines = String(panel.innerText || "").split("\\n").map((line) => line.trim()).filter(Boolean).slice(-400);
+  return JSON.stringify({ ok: true, lines });
+})()`;
+
+/** Lines of `current` that `previous` did not have, counting repeats. */
+export function newChatLines(previous: readonly string[], current: readonly string[]): string[] {
+  const left = new Map<string, number>();
+  for (const line of previous) left.set(line, (left.get(line) ?? 0) + 1);
+  return current.filter((line) => {
+    const count = left.get(line) ?? 0;
+    if (count) left.set(line, count - 1);
+    return !count;
+  });
+}
+
+const OBJECTION = /\b(stop|stopp?e[rz]?|arr[eê]te[rz]?|quitte[rz]?|quit|leave|go away|get out|sors|sortez|kick|remove|retire[rz]?|enl[eè]ve[rz]?|record\w*|enregistr\w*|transcri\w*|bot|robot|consent\w*|privacy|confidentialit\w*)\b|pas d.enregistrement|no recording|don.t record|do not record|n.enregistre pas|pas de transcription/i;
+
+/** Whether a new chat line objects to the notetaker. Deliberately broad:
+ * when in doubt, the bot leaves. A line from the bot itself (its
+ * announcement, its goodbye) never counts. */
+export function chatObjects(line: string, botName: string, ownTexts: readonly string[]): boolean {
+  const text = line.trim();
+  if (!text) return false;
+  if (text.length >= 8 && ownTexts.some((own) => own.includes(text))) return false;
+  const name = botName.trim().toLowerCase();
+  if (name.length >= 2 && text.toLowerCase().includes(name)) return true;
+  if (/^(no|non|nope|nan|niet)[.!]*$/i.test(text)) return true;
+  return OBJECTION.test(text);
+}
+
+/** Posted in the meeting chat when the bot leaves at a participant's request. */
+export const MEETING_LEAVING_TEXT = "Je quitte. / Leaving.";
 
 /** Mark the leave button for a trusted click. */
 export const MEETING_LEAVE_MARK_SCRIPT = `(() => {
@@ -263,8 +324,13 @@ export function parseEvalJson(result: unknown): Record<string, unknown> | null {
   }
 }
 
-/** The announcement posted in the meeting chat before any recording. */
+/** The announcement posted in the meeting chat before any recording, and
+ * again every 10 minutes or when someone joins. It names the bot and the
+ * person, says the audio goes to an external provider outside Québec, how
+ * long the text is kept, and how to make the bot leave. */
 export function meetingAnnouncement(displayName: string, personName: string | undefined): string {
-  const who = personName?.trim() ? personName.trim().slice(0, 60) : "the person who invited me";
-  return `${displayName} is taking notes for ${who}. The audio is transcribed for a summary. Prends des notes pour ${personName?.trim() ? who : "la personne qui m'a invité"} : l'audio est transcrit pour un résumé. Say so here and I will leave. / Dites-le ici et je quitte.`;
+  const person = personName?.trim() ? personName.trim().slice(0, 60) : "";
+  const fr = `${displayName} prend des notes pour ${person || "la personne qui l'a invité"}. L'audio est transcrit par un fournisseur externe (xAI), hors du Québec ; l'audio n'est pas gardé, le texte reste dans la conversation de ${person || "cette personne"} pour les notes. Écrivez « stop » ici et je quitte.`;
+  const en = `${displayName} is taking notes for ${person || "the person who invited it"}. Audio is transcribed by an external provider (xAI), outside Québec; audio is not kept, the text stays in ${person ? `${person}'s` : "that person's"} conversation for the notes. Type "stop" here and I will leave.`;
+  return `${fr} / ${en}`;
 }

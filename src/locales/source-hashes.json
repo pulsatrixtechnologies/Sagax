@@ -12184,7 +12184,7 @@
       "meeting.card.title": "1b6b575f105250edfaa5e9d142a1a44afb2593a005a20474865b894047f2a42b",
       "meeting.card.unsupported": "daa98268f84175d4ce6252d27167124e18d42e0de707bdf5e80576109d5181df",
       "meeting.card.name": "5c7e6bf935ac38e954f11c56575538d60ceffa59465ef4bfe6045839f09bb24d",
-      "meeting.card.consent": "3c49216bf395eb3a0242b2675617a0552d5beab3bf87bd713841e20baee255b6",
+      "meeting.card.consent": "818102ed3670d28fac36356746d2db7c489b7093e6d1dbf73c53de2c25f5b851",
       "meeting.card.approve": "5a03eda9f87d624eb2e0713f296276c67190115d0d1571e08209e5cf9c6d0ef5",
       "meeting.card.decline": "6f3efa36d8ec387159dca1ab7fc92806f9d40eb26f1828aef0ddb73856d53c25",
       "meeting.card.leave": "977585a92642fd9fd1465ab5d59bcc10762aaad2b523ee6df3562365dc1c0fb2",
@@ -12376,7 +12376,8 @@
       "browser.network.requestHeaders": "cbffc1adb519780a0577de3401db075ece005d4b7ad9347d70cae7631a51dbb6",
       "browser.network.responseHeaders": "4857ffa158305455e61a9920986a784b4c351ca0518dd5836cbefb3a92e21700",
       "browser.network.noHeaders": "334ea3319d1dc1b9fd8bb480a2853c45b99222fb1a2814e91d064cc993c9a773",
-      "browser.network.headersHidden": "1553dedc847578e4357746416e78994e434de436075367b8c6cd7324f3539fa7"
+      "browser.network.headersHidden": "1553dedc847578e4357746416e78994e434de436075367b8c6cd7324f3539fa7",
+      "meeting.card.leftByParticipant": "82fcfcff43ede9e58f546c4a63865feba42b0ccffb6c19977d4c1c505eaed81c"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

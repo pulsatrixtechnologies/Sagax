@@ -86,7 +86,10 @@ export function MeetingCard({ botId, botName, threadId, message }: {
         {pending && data.supported && (
           <div role="note" className="rounded-xl bg-ink/[0.05] px-3 py-2 text-ink">{t("meeting.card.consent")}</div>
         )}
-        {data.detail && !pending && <div dir="auto">{data.detail}</div>}
+        {data.endReason === "participant" && <div>{t("meeting.card.leftByParticipant")}</div>}
+        {data.detail && data.endReason !== "participant" && (
+          <div dir="auto" {...(pending ? { role: "alert", className: "text-danger" } : {})}>{data.detail}</div>
+        )}
         {data.transcriptTail && data.transcriptTail.length > 0 && (
           <div aria-live="polite" className="rounded-xl bg-ink/[0.05] px-3 py-2">
             <div className="mb-1 text-[12px] font-medium text-ink-tertiary">

@@ -3,10 +3,12 @@
 // standing permission (Full access, an always-allow rule, a Live call's yes)
 // ever answers it: each meeting is its own outward action.
 //
-// Once approved, a MeetingSession runs in the bot's own browser. The card
-// shows its live state; the transcript is kept as text only, in
-// DATA_DIR/meetings/<requestId>.json (0600), and handed to the bot's next
-// turn for the summary and action items.
+// Once approved, a MeetingSession runs in a private browser of the bot's.
+// The card shows its live state. The transcript lives in memory only, for
+// the length of the meeting, and is handed to the bot's next turn for the
+// summary and action items: no audio and no transcript file is ever
+// written. The only file is DATA_DIR/meetings/live.json (0600), the ids of
+// the meetings running now, so a restart can close their cards.
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -18,6 +20,8 @@ import { MeetingSession, type MeetingBrowser, type MeetingOutcome, type Transcri
 import { meetingSummaryPrompt } from "./meeting-summary.ts";
 
 const MAX_REASON = 500;
+/** Meeting browsers running at once on one server: each is a full Chrome. */
+export const MEETING_MAX_CONCURRENT = 2;
 
 interface CardLike {
   title: string;
@@ -76,6 +80,9 @@ export function createMeetingService(deps: MeetingServiceDeps) {
   const dir = join(deps.dataDir, "meetings");
   const liveIndex = join(dir, "live.json");
   const sessions = new Map<string, Pick<MeetingSession, "run" | "requestLeave">>();
+  /** Bots with a meeting being approved, joining or running: reserved
+   * synchronously, before any await, so two taps cannot start two. */
+  const busyBots = new Set<string>();
 
   const ensureDir = () => mkdirSync(dir, { recursive: true, mode: 0o700 });
   const writePrivate = (path: string, value: unknown) => {
@@ -107,30 +114,22 @@ export function createMeetingService(deps: MeetingServiceDeps) {
   }
 
   function liveFor(botId: string): boolean {
-    return [...sessions.keys()].some((key) => {
-      const { threadId, requestId } = JSON.parse(key) as { threadId: string; requestId: string };
-      return find(threadId, requestId)?.data.botId === botId;
-    });
+    return busyBots.has(botId);
   }
 
   async function finished(data: MeetingRequestCardData, outcome: MeetingOutcome, started: number): Promise<void> {
     const endedAt = now();
     sessions.delete(keyOf(data.threadId, data.requestId));
+    busyBots.delete(data.botId);
     try { writeLive(); } catch { /* the index is a recovery aid only */ }
-    if (outcome.lines.length) {
-      try {
-        writePrivate(join(dir, `${data.requestId}.json`), {
-          requestId: data.requestId, botId: data.botId, threadId: data.threadId, provider: data.provider, code: data.code,
-          startedAt: started, endedAt, lines: outcome.lines,
-        });
-      } catch (error) {
-        console.warn(`meeting ${data.requestId}: transcript not saved: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
     const nothing = outcome.status === "ended" && !outcome.lines.length
       ? `${outcome.detail ?? ""} ${outcome.recorded ? "Nothing was transcribed." : "Nothing was recorded."}`.trim()
       : outcome.detail;
-    patch(data.threadId, data.requestId, { status: outcome.status, endedAt, ...(nothing ? { detail: nothing } : {}) });
+    patch(data.threadId, data.requestId, {
+      status: outcome.status, endedAt,
+      ...(nothing ? { detail: nothing } : {}),
+      ...(outcome.endReason ? { endReason: outcome.endReason } : {}),
+    });
     deps.audit?.({ kind: `meeting.${outcome.status}`, botId: data.botId, threadId: data.threadId, requestId: data.requestId, ...(outcome.detail ? { detail: outcome.detail } : {}) });
     if (outcome.lines.length) {
       deps.summarize(data.botId, data.threadId, meetingSummaryPrompt({
@@ -211,23 +210,47 @@ export function createMeetingService(deps: MeetingServiceDeps) {
       if (card.answered || card.dismissed || data.status !== "pending") {
         return { claimed: true, outcome: card.answered === "allow" ? "allowed-once" : "rejected", alreadySettled: true };
       }
+      /** A refusal the card keeps showing while it stays open. */
+      const refuse = (error: string): MeetingResolveResult => {
+        patch(args.threadId, args.requestId, { detail: error });
+        return { claimed: true, status: 409, error };
+      };
       if (args.behavior !== "allow" || !data.supported) {
         patch(args.threadId, args.requestId, { status: "declined" }, { answered: "deny", held: undefined });
         deps.audit?.({ kind: "meeting.declined", botId: data.botId, threadId: args.threadId, requestId: args.requestId, principalId: args.principalId });
         return { claimed: true, outcome: "rejected" };
       }
       const browserRefusal = deps.browserRefusal(data.botId);
-      if (browserRefusal) return { claimed: true, status: 409, error: browserRefusal };
-      if (liveFor(data.botId)) return { claimed: true, status: 409, error: "This bot is already in another meeting." };
-      const transcriber = await deps.transcriber({ botId: data.botId, threadId: args.threadId, principalId: args.principalId, speaker: args.speaker });
-      if ("error" in transcriber) return { claimed: true, status: 409, error: transcriber.error };
+      if (browserRefusal) return refuse(browserRefusal);
+      // Reserve before the first await: a second tap, or another card of the
+      // same bot, sees the slot taken.
+      if (busyBots.has(data.botId)) return refuse("This bot is already in another meeting. Wait for it to end, or press Leave on its card.");
+      if (busyBots.size >= MEETING_MAX_CONCURRENT) {
+        return refuse(`${MEETING_MAX_CONCURRENT} meetings are already running on this server. Try again when one ends.`);
+      }
+      busyBots.add(data.botId);
+      const release = () => { busyBots.delete(data.botId); };
+      let transcriber: MeetingTranscriber | { error: string };
+      try {
+        transcriber = await deps.transcriber({ botId: data.botId, threadId: args.threadId, principalId: args.principalId, speaker: args.speaker });
+      } catch (error) {
+        release();
+        return refuse(`Speech to text could not be checked: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      if ("error" in transcriber) { release(); return refuse(transcriber.error); }
+      const live = find(args.threadId, args.requestId);
+      if (!live || live.card.answered || live.data.status !== "pending") {
+        release();
+        return { claimed: true, outcome: live?.card.answered === "allow" ? "allowed-once" : "rejected", alreadySettled: true };
+      }
       // Settled now, before anything opens: a second tap cannot start a second join.
-      patch(args.threadId, args.requestId, { status: "joining", startedAt: now() }, { answered: "allow", held: undefined });
+      patch(args.threadId, args.requestId, { status: "joining", startedAt: now(), detail: undefined }, { answered: "allow", held: undefined });
       deps.audit?.({ kind: "meeting.approved", botId: data.botId, threadId: args.threadId, requestId: args.requestId, principalId: args.principalId });
       let browser: MeetingBrowser;
       try {
         browser = await deps.openBrowser(data.botId, args.requestId);
       } catch (error) {
+        release();
         patch(args.threadId, args.requestId, { status: "failed", detail: `The bot's browser could not start: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300), endedAt: now() });
         return { claimed: true, outcome: "allowed-once" };
       }
@@ -235,6 +258,7 @@ export function createMeetingService(deps: MeetingServiceDeps) {
       const options = {
         url: data.url,
         displayName: data.displayName,
+        botName: deps.store.bot(data.botId)?.name ?? "",
         announcement: meetingAnnouncement(data.displayName, args.personName),
         browser,
         transcribe: (audio: Uint8Array, mime: string) => transcriber.transcribe(audio, mime),
