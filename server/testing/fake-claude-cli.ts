@@ -164,7 +164,8 @@
 //   FAKE_CLAUDE_MCP_PAUSE_MS a pause between two calls (a test can change
 //                      the world in between).
 //   FAKE_CLAUDE_MCP_DUMP path to write {servers, calls:[{server, tool, listed,
-//                      ok, text}]} as JSON after the calls.
+//                      ok, text}]} as JSON after the calls (text cut at
+//                      FAKE_CLAUDE_MCP_TEXT_LIMIT characters, default 500).
 //   FAKE_CLAUDE_EXIT_DELAY_MS ms this process keeps running after SIGTERM
 //                      before it exits: a CLI that is slow to stop, as one
 //                      can be on Windows, where taskkill is asynchronous.
@@ -1003,7 +1004,7 @@ async function runFakeMcpCalls(calls: FakeMcpCall[], configPath: string | null):
         const answer = await session.request("tools/call", { name: call.tool, arguments: call.arguments });
         const result = answer.result as { isError?: boolean; content?: Array<{ text?: string }> } | undefined;
         const ok = Boolean(result) && result?.isError !== true && !answer.error;
-        const text = answer.error ? String((answer.error as { message?: unknown }).message ?? "error") : (result?.content ?? []).map((part) => part.text ?? "").join(" ").slice(0, 500);
+        const text = answer.error ? String((answer.error as { message?: unknown }).message ?? "error") : (result?.content ?? []).map((part) => part.text ?? "").join(" ").slice(0, Number(process.env.FAKE_CLAUDE_MCP_TEXT_LIMIT) || 500);
         results.push({ server: name, tool: call.tool, listed: tools.includes(call.tool), ok, text });
         notes.push(`mcp:${call.tool}:${ok ? "ok" : "error"}`);
       } finally {

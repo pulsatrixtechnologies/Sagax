@@ -11,13 +11,16 @@ interface MainThreadCandidate {
   askedAt?: number;
   archivedAt?: number;
   routineRunId?: string;
+  /** A confidential thread (server/confidential-threads.ts) is never a main
+   * thread: nothing reports into it. */
+  confidential?: true;
 }
 
 /** The oldest open thread, else the oldest archived one. A routine run is
  * never a conversation. Before askedAt this was every bot's main thread, and
  * v0.1.98 to v0.1.107 saved it on routines as if a person had chosen it. */
 export function oldestThread(tasks: readonly MainThreadCandidate[]): string | undefined {
-  const visible = tasks.filter((task) => !task.routineRunId);
+  const visible = tasks.filter((task) => !task.routineRunId && task.confidential !== true);
   const open = visible.filter((task) => task.archivedAt === undefined);
   return (open.length ? open : visible).reduce<MainThreadCandidate | undefined>(
     (oldest, task) => (!oldest || task.createdAt < oldest.createdAt ? task : oldest), undefined,
@@ -36,7 +39,7 @@ export function wasOldestThread(tasks: readonly MainThreadCandidate[], threadId:
 /** The open thread a person last wrote in; else `selectedId` while it is an
  * open conversation; else the oldest thread. */
 export function mainThread(tasks: readonly MainThreadCandidate[], selectedId?: string): string | undefined {
-  const open = tasks.filter((task) => !task.routineRunId && task.archivedAt === undefined);
+  const open = tasks.filter((task) => !task.routineRunId && task.confidential !== true && task.archivedAt === undefined);
   const asked = open.reduce<MainThreadCandidate | undefined>(
     (latest, task) => ((task.askedAt ?? -1) > (latest?.askedAt ?? -1) ? task : latest), undefined,
   );

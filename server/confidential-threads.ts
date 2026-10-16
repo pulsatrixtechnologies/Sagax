@@ -142,30 +142,62 @@ export type PerspicaxMemoryVerdict = "pass" | "refuse" | "confirm";
 export function perspicaxMemoryVerdict(name: string, args: Record<string, unknown> | undefined): PerspicaxMemoryVerdict {
   const tool = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
   if (tool === "memory_propose" || tool === "memory_promote") return "refuse";
+  // The file-style memory tool (view, create, str_replace, insert, delete,
+  // rename): reading passes, a change only under the person's own tier.
+  if (tool === "memory") {
+    const command = typeof args?.command === "string" ? args.command : "";
+    if (command === "view") return "pass";
+    const paths = [args?.path, args?.old_path, args?.new_path].filter((value) => value !== undefined);
+    const own = paths.length > 0 && paths.every((value) => typeof value === "string" && /^\/memories\/me\/[^]*$/.test(value) && !value.split("/").includes(".."));
+    return own ? "confirm" : "refuse";
+  }
   if (tool !== "memory_write" && tool !== "memory_save") return "pass";
   const scope = typeof args?.scope === "string" ? args.scope.trim().toLowerCase() : "";
   if (scope === "" || scope === "me") return "confirm";
   return "refuse";
 }
 
-/** Perspicax tools that send a confidential thread's words to someone or
- * somewhere else (a person, another agent, an outside system): each call
- * waits for the owner's Allow on a card showing exactly what leaves. */
-const OUTBOUND_PERSPICAX_TOOLS = new Set([
-  "ask_person", "send_prompt", "sagax_send", "sagax_nudge", "sagax_approve", "sagax_routine_run", "create_agent",
-  "flow_action", "review_write", "api_upload", "claim", "work_open",
+/** Perspicax tools known to only read (by name, as Sagax's own catalog and
+ * the Perspicax connector define them; a tool's own readOnlyHint is never
+ * trusted). Everything else from a confidential thread waits for the
+ * owner's card: fail closed. */
+const READ_ONLY_PERSPICAX_TOOLS = new Set([
+  "api_list", "api_search", "api_describe", "api_lookup", "api_result_query", "api_plan", "identity", "flow",
+  "memory_recall", "memory_search", "memory_feedback", "work_search", "work_check", "claim_list",
+  "query", "await_turn", "sagax_bots", "sagax_thread",
 ]);
+const READ_ONLY_PREFIX = /^(?:find|get|read|list)_[A-Za-z0-9_]*$/;
 
 /** The verdict for any Perspicax call from a confidential thread: memory
- * as perspicaxMemoryVerdict, outbound tools and every external write or
- * action (`<profile>__write`, `__action`, `Thing_write`) confirmed, reads pass. */
+ * as perspicaxMemoryVerdict; a known read (READ_ONLY_PERSPICAX_TOOLS,
+ * `<profile>__query`, `find_*`, `get_*`, `read_*`, `list_*`) passes; every
+ * other call, known or not, waits for the owner's card. */
 export function perspicaxConfidentialVerdict(name: string, args: Record<string, unknown> | undefined): PerspicaxMemoryVerdict {
   const memory = perspicaxMemoryVerdict(name, args);
   if (memory !== "pass") return memory;
   const tool = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
-  if (OUTBOUND_PERSPICAX_TOOLS.has(tool)) return "confirm";
-  if (/(?:^|_)(?:write|action)$/i.test(tool)) return "confirm";
-  return "pass";
+  if (tool === "memory") return "pass";
+  if (READ_ONLY_PERSPICAX_TOOLS.has(tool) || READ_ONLY_PREFIX.test(tool)) return "pass";
+  return "confirm";
+}
+
+/** The verdict for a call to any other MCP server from a confidential
+ * thread (connected apps, personal servers, the person's workplace, the
+ * bot's data tools): a tool whose name says it only reads passes
+ * (`get_`, `list_`, `read_`, `search_`, `find_`, `query_`, `describe_`,
+ * `fetch_`, `view_`, `lookup_`, `retrieve_`, as the first word or, for an
+ * `APP_VERB_...` connected-app name, the second), and the bot's own
+ * `data_describe` and `data_show`; everything else waits for the owner's
+ * card, whatever the approval mode. */
+export function mcpConfidentialVerdict(name: string): PerspicaxMemoryVerdict {
+  const tool = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
+  // the bot's own data views, and choosing where this turn works
+  if (tool === "data_describe" || tool === "data_show" || tool === "computer_select" || tool === "select_computer") return "pass";
+  const words = tool.toLowerCase().split(/[_.-]+/).filter(Boolean);
+  const read = /^(?:get|list|read|search|find|query|describe|fetch|view|lookup|retrieve)$/;
+  if (words[0] && read.test(words[0])) return "pass";
+  if (/^[A-Z0-9]+_/.test(tool) && words[1] && read.test(words[1])) return "pass";
+  return "confirm";
 }
 
 /** What a confirmed outbound call must match when it is retried: its tool

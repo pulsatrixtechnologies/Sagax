@@ -242,7 +242,12 @@ remembered, exported, logged or shared beyond its owner
   `start_thread` on another bot and the agent API refuse
   (`CONFIDENTIAL_PEER_REFUSED`); Perspicax outbound calls and every
   `<profile>__write`/`__action` wait for the owner's card with the exact
-  arguments (`perspicaxConfidentialVerdict`, `outboundCallDigest`); a
+  arguments (`perspicaxConfidentialVerdict`, fail closed: only known reads
+  pass; `outboundCallDigest`); other MCP servers take the same card for
+  any non-read tool, whatever the mode (`mcpConfidentialVerdict`,
+  `CONFIDENTIAL_GATED_MCP_PATHS`); `act` never names or returns a
+  confidential thread (`performBotActRouteOutsideConfidential`); routine
+  results, the main thread, Retry thread and `propose_page` skip it; a
   personal memory write has `scope: "me"` written in (`pinPersonalScope`).
   Threads it opens inherit the flag and owner. A turn that names no thread
   never lands in a confidential one (`peerThreadFor`, also `startTurn`'s

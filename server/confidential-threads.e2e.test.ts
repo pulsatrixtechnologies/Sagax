@@ -26,6 +26,8 @@
 //         child; the team backup leaves it out; a thread already working in
 //         a shared folder is not converted; notifications carry only
 //         « Fil confidentiel »
+//   CT-10 (re-review) a bot acting as Ana from her ordinary thread lists
+//         and searches nothing of her confidential threads
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -206,6 +208,7 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
           driver: "claudeAgent",
           environment: {
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
+            FAKE_CLAUDE_MCP_TEXT_LIMIT: "200000",
             FAKE_CLAUDE_MCP_CALLS: JSON.stringify([
               { server: "agents", tool: "memory_update", arguments: { action: "append", text: `${SECRET} fact` }, when: "MEM-WRITE" },
               { server: "agents", tool: "memory_log", arguments: { text: `${SECRET} event` }, when: "MEM-LOG" },
@@ -215,6 +218,8 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
               { server: "agents", tool: "ask_bot", arguments: { bot_id: "Equipe", message: "PEER-HELLO from a teammate" }, when: "ASK-EQUIPE" },
               { server: "agents", tool: "start_thread", arguments: { title: "Enfant", message: "child work" }, when: "OPEN-CHILD" },
               { server: "agents", tool: "coordinate_bots", arguments: { bot_ids: ["Messager"], message: "COORD leak", request_key: "leak-1" }, when: "COORD-OUT" },
+              { server: "agents", tool: "act", arguments: { method: "GET", path: "/api/bots" }, when: "ACT-LIST" },
+              { server: "agents", tool: "act", arguments: { method: "GET", path: "/api/search", query: { q: `${SECRET}-ALPHA` } }, when: "ACT-SEARCH" },
             ]),
           },
           config: { cli: FAKE_CLAUDE, fullAuto: true },
@@ -511,4 +516,21 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     }
     anaStream.close();
   }, 240_000);
+
+  it("CT-10: act from an ordinary thread never reaches a confidential one", async () => {
+    const before = (await messagesOf(ana, anaOrdinary)).length;
+    expect((await api("POST", `/api/bots/${botId}/messages`, ana, { text: "ACT-LIST ACT-SEARCH", threadId: anaOrdinary })).status).toBe(202);
+    await waitFor(async () => replied(await messagesOf(ana, anaOrdinary), before), 60_000);
+    const acts = readDump().filter((entry) => entry.tool === "act");
+    expect(acts.length, JSON.stringify(readDump())).toBe(2);
+    // the listing came back without the confidential threads, the search without their hits
+    expect(acts[0]!.ok, acts[0]!.text).toBe(true);
+    expect(acts[0]!.text).toContain("Ordinaire");
+    expect(acts[1]!.ok, acts[1]!.text).toBe(true);
+    for (const act of acts) {
+      expect(act.text ?? "").not.toContain("Projet ULTRASECRET");
+      expect(act.text ?? "").not.toContain("Encore");
+      expect(act.text ?? "").not.toMatch(/ULTRASECRET-(?:ALPHA|BETA|GAMMA) /);
+    }
+  }, 120_000);
 });

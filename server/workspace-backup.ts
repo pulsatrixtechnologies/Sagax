@@ -346,6 +346,7 @@ export function confidentialBackupPath(path: string, threads: ReadonlyMap<string
   const parts = path.split("/");
   if (parts[0] === "task-workspaces" && parts.length >= 3) return threads.get(parts[2]!) === parts[1];
   if ((parts[0] === "events" || parts[0] === "native") && parts.length === 2) return threads.has(parts[1]!.replace(/\.ndjson$/, ""));
+  if (parts[0] === "tool-results" && parts.length >= 2) return threads.has(parts[1]!);
   if (parts.length === 1) {
     const legacy = /^messages-([A-Za-z0-9_-]+)\.json(?:\.imported)?$/.exec(parts[0]!);
     if (legacy) return threads.has(legacy[1]!);

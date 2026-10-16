@@ -62,7 +62,10 @@ title; a stamp on a Markdown export the person makes of their own thread.
 | `memory_update`, `memory_log`, group and team memory, rules, docs, skill staging | allowed | refused (403 `confidential_thread`) |
 | Perspicax `memory_write` to a team or `org`, `memory_propose`, `memory_promote` | allowed | refused |
 | Perspicax `memory_write` to the person's own tier (`me`) | allowed | `scope: "me"` is written in (an omitted scope never falls to Perspicax's own default); then it waits for the owner's Allow on a card; on Allow the bot is asked to repeat that exact write (scope, topic, title, body, tags, directory title, searchable), which a one-shot pass lets through |
-| Perspicax calls that send content out (`ask_person`, `send_prompt`, `sagax_send`, `sagax_nudge`, `flow_action`, `review_write`, every `<profile>__write` / `__action`, ...) | allowed | the same card, showing the tool and its exact arguments; a JSON-RPC batch is refused |
+| Any other Perspicax call | allowed | fail closed: only known reads pass (`api_list`, `api_search`, `api_describe`, `api_lookup`, `identity`, `memory_recall`, `memory_search`, `work_search`, `claim_list`, `<profile>__query`, `find_*`, `get_*`, `read_*`, `list_*`, ...); every other call, a write named like a read included, waits for the owner's card showing the tool and its exact arguments; a JSON-RPC batch is refused. The file-style `memory` tool reads freely and changes only `/memories/me/...`, with the card |
+| Other MCP servers (connected apps, personal servers, the workplace, the bot's data tools) | by approval mode | reads by name pass; anything else waits for the owner's card, whatever the approval mode (Full and always-allow included) |
+| A bot acting as its person (`act`) from an ordinary thread | the person's routes | a request naming a confidential thread is refused (any method, Full included); lists and search hits come back without confidential threads; screen commands never open one |
+| Routine results, the bot's main thread, Retry thread, pages (`propose_page`) | allowed | never into or from a confidential thread |
 | Peers, rooms and channels (`ask_bot`, `delegate_bot`, `coordinate_bots`, `post_to_room`, `create_room`, `manage_room`, `act`, `start_thread` on another bot, the agent API) | allowed | refused |
 | Turns that name no thread (peer asks, asides, delegations, automation) | the bot's selected thread | never a confidential thread, even its owner's selected one: the bot owner's newest ordinary conversation, else a new one |
 | Threads it opens (`start_thread` on itself, parallel tasks) | ordinary | confidential, same owner |
@@ -88,7 +91,8 @@ title; a stamp on a Markdown export the person makes of their own thread.
 `DELETE /api/bots/:id/tasks/:threadId` removes, beyond what any deleted
 thread loses (messages, event and native logs):
 
-- its work folder `task-workspaces/<bot>/<thread>`;
+- its work folder `task-workspaces/<bot>/<thread>` and its kept tool
+  results `tool-results/<thread>`;
 - the stored attachments its messages point at that no other thread points
   at;
 - its waiting memory capture, its browser session, its pending memory

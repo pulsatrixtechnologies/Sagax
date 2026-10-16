@@ -307,10 +307,13 @@ describe("the workspace backup (an admin export)", () => {
 describe("security review: Perspicax outbound calls and the personal scope", () => {
   it("confirms every call that sends the thread's words out, reads pass", async () => {
     const { perspicaxConfidentialVerdict } = await import("./confidential-threads.ts");
-    for (const name of ["ask_person", "send_prompt", "sagax_send", "sagax_nudge", "flow_action", "review_write", "tickets__write", "backups__agent_write", "endpoints__action", "phones__Bucket_write", "mcp__perspicax_acme__send_prompt"]) {
+    for (const name of ["ask_person", "send_prompt", "sagax_send", "sagax_nudge", "flow_action", "review_write", "tickets__write", "backups__agent_write", "endpoints__action", "phones__Bucket_write", "mcp__perspicax_acme__send_prompt",
+      // fail closed: tools that write without saying so in their name
+      "vendor_x__log_time", "vendor_x__update_ticket", "vendor_x__book_schedule_entry", "vendor_y__PhoneNumbers_Overrides", "something_new"]) {
       expect(perspicaxConfidentialVerdict(name, {}), name).toBe("confirm");
     }
-    for (const name of ["api_search", "identity", "tickets__query", "memory_recall", "flow"]) {
+    for (const name of ["api_search", "api_describe", "api_lookup", "api_list", "identity", "tickets__query", "memory_recall", "memory_search", "flow", "work_search", "claim_list",
+      "vendor_x__find_tickets", "vendor_x__get_ticket", "read_transcript", "list_agents"]) {
       expect(perspicaxConfidentialVerdict(name, {}), name).toBe("pass");
     }
     expect(perspicaxConfidentialVerdict("memory_write", { scope: "org" })).toBe("refuse");
@@ -350,5 +353,35 @@ describe("security review: Perspicax outbound calls and the personal scope", () 
     }
     expect(JSON.stringify(rows[0])).not.toContain("payroll");
     expect(JSON.stringify(rows[1])).toContain("payroll");
+  });
+});
+
+describe("re-review: fail closed, the memory file tool, other MCP servers, tool results", () => {
+  it("the file-style memory tool reads freely and changes only /memories/me/ with a card", async () => {
+    const { perspicaxConfidentialVerdict } = await import("./confidential-threads.ts");
+    expect(perspicaxConfidentialVerdict("memory", { command: "view", path: "/memories/org/x.md" })).toBe("pass");
+    expect(perspicaxConfidentialVerdict("memory", { command: "create", path: "/memories/me/notes.md", file_text: "x" })).toBe("confirm");
+    expect(perspicaxConfidentialVerdict("memory", { command: "str_replace", path: "/memories/me/notes.md", old_str: "a", new_str: "b" })).toBe("confirm");
+    expect(perspicaxConfidentialVerdict("memory", { command: "create", path: "/memories/org/notes.md", file_text: "x" })).toBe("refuse");
+    expect(perspicaxConfidentialVerdict("memory", { command: "create", path: "/memories/me/../org/x.md", file_text: "x" })).toBe("refuse");
+    expect(perspicaxConfidentialVerdict("memory", { command: "rename", old_path: "/memories/me/a.md", new_path: "/memories/team/a.md" })).toBe("refuse");
+    expect(perspicaxConfidentialVerdict("memory", { command: "delete" })).toBe("refuse");
+  });
+
+  it("other MCP servers: reads pass, anything else takes the owner's card", async () => {
+    const { mcpConfidentialVerdict } = await import("./confidential-threads.ts");
+    for (const name of ["GMAIL_FETCH_EMAILS", "SLACK_LIST_CHANNELS", "mcp__notes__search_notes", "get_file", "data_describe", "data_show", "computer_select", "COMPOSIO_SEARCH_TOOLS"]) {
+      expect(mcpConfidentialVerdict(name), name).toBe("pass");
+    }
+    for (const name of ["GMAIL_SEND_EMAIL", "COMPOSIO_MULTI_EXECUTE_TOOL", "mcp__notes__save_note", "data_load", "data_sql", "run_command", "write_file", "vendor_x__log_time"]) {
+      expect(mcpConfidentialVerdict(name), name).toBe("confirm");
+    }
+  });
+
+  it("the workspace backup leaves out its tool results", () => {
+    const threads = new Map([["secret", "bot-1"]]);
+    expect(confidentialBackupPath("tool-results/secret", threads, new Set())).toBe(true);
+    expect(confidentialBackupPath("tool-results/secret/r1.txt", threads, new Set())).toBe(true);
+    expect(confidentialBackupPath("tool-results/open/r1.txt", threads, new Set())).toBe(false);
   });
 });
