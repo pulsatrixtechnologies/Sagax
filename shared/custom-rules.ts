@@ -197,7 +197,6 @@ const OBJECT_WORDS: Record<ObjectKind, readonly string[]> = {
  * `GMAIL_SEND_EMAIL`). */
 const PRODUCTS: Record<string, { words: readonly string[]; servers: readonly string[]; prefixes: readonly string[] }> = {
   connectwise: { words: ["connectwise", "cw", "psa"], servers: ["cw", "cw_psa", "cw-psa", "connectwise", "connectwise_psa"], prefixes: ["cw"] },
-  sentinelone: { words: ["sentinelone", "sentinel", "s1"], servers: ["sentinelone", "s1"], prefixes: ["sentinelone"] },
   github: { words: ["github"], servers: ["github"], prefixes: ["github"] },
   slack: { words: ["slack"], servers: ["slack"], prefixes: ["slack"] },
   outlook: { words: ["outlook", "microsoft", "m365", "office", "office365"], servers: ["outlook", "microsoft", "m365", "ms365", "office365", "microsoft_365", "microsoft-365"], prefixes: ["outlook"] },
