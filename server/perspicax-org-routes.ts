@@ -48,8 +48,8 @@ export interface OrgSettings {
    * otherwise (server/confidential-threads.ts): off by default. */
   confidentialThreadsByDefault?: boolean;
   /** 2026-10-16: a bot a member owns runs its Auto and Auto-accept edits
-   * levels as such (server/member-auto-approval.ts): off by default, an
-   * admin turns it on. */
+   * levels as such (server/member-auto-approval.ts): on by default, an
+   * admin turns it off. */
   memberAutoApproval: boolean;
   /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts):
    * any marketplace by default, or the admin's list. */

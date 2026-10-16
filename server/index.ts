@@ -6832,9 +6832,9 @@ const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = b
   if (stored === "full" && orgDeniesFull(bot)) return "ask";
   // A member's bot on an organization server: Custom (a config.toml on the
   // shared server) stays Ask. Its Auto and Auto-accept edits run as such
-  // only while an organization admin allows them
-  // (organization.memberAutoApproval, off by default, member-auto-approval.ts);
-  // otherwise Ask. When they run, every organization turn withholds the
+  // unless an organization admin turned them off
+  // (organization.memberAutoApproval, allowed by default,
+  // member-auto-approval.ts); then Ask. When they run, every organization turn withholds the
   // engines' own host tools (withholdHostToolsFor) and a person's shell and
   // files go to their own environment, so what the provider leaves to Sagax
   // is routed per tool (memberBotAdminApproval keeps host-level cards for an
@@ -28309,8 +28309,8 @@ if (IDENTITY.kind === "perspicax") {
     saveMemberEnvironmentAutonomy: (allowed, auth) => saveOrgMemberEnvironmentAutonomy(allowed, orgAuditActor(auth)),
     saveConfidentialThreadsByDefault: (on, auth) => saveOrgConfidentialThreadsByDefault(on, orgAuditActor(auth)),
     // 2026-10-16: members' bots run Auto and Auto-accept edits as such
-    // (member-auto-approval.ts). Off by default; turning it on brings no
-    // old level back (the one-time reset set them to Ask).
+    // (member-auto-approval.ts). Allowed by default; the first time it is
+    // turned off, saved member Auto levels go back to Ask once.
     saveMemberAutoApproval: (allowed, auth) => saveOrgMemberAutoApproval(allowed, orgAuditActor(auth)),
     // Where bots' plugins may come from (server/bot-plugins.ts): any
     // marketplace, or the admin's list of owner/repo, owner/* or URLs.
@@ -30011,22 +30011,21 @@ function saveOrgConfidentialThreadsByDefault(on: boolean, actor: AdminActor): vo
   // Every open New thread menu follows at once (config frame).
   broadcast({ kind: "config", ...configStatus() });
 }
-/** Organization server, once (organization.memberAutoResetAt): a member's
- * saved Auto ran as Ask before #678 and then as Auto. Unless an admin
- * already allows automatic levels for members' bots, every saved Auto or
- * Auto-accept edits level of a member's bot (its own and each thread's)
- * goes back to Ask, so turning the setting on later brings none back by
- * itself (member-auto-approval.ts). The log line has a count, no names. */
+/** Organization server, once (organization.memberAutoResetAt): the first
+ * time an admin turns automatic levels for members' bots off (that save, or
+ * a start that finds the setting off), every saved Auto or Auto-accept
+ * edits level of a member's bot (its own and each thread's) goes back to
+ * Ask, so turning the setting on again brings none back by itself
+ * (member-auto-approval.ts). Never by default. The log line has a count,
+ * no names. */
 function resetMemberAutoLevelsOnce(): void {
   if (!memberAutoResetPending(IDENTITY.kind, cfg.organization)) return;
-  if (!memberAutoApprovalAllowed(cfg.organization)) {
-    const reset = memberAutoLevelResets(store.bots, (bot) => memberOwnedInOrg(bot as BotRecord));
-    const ask = { approvalMode: "ask" as const, autoApprove: false };
-    for (const thread of reset.threads) store.patchTask(thread.botId, thread.threadId, ask);
-    for (const botId of reset.bots) store.patchBot(botId, ask);
-    const total = reset.bots.length + reset.threads.length;
-    if (total) console.log(`organization: ${total} saved Auto or Auto-accept edits level(s) of members' bots set back to Ask (${reset.bots.length} bot default(s), ${reset.threads.length} thread(s)); an admin allows them in Settings > Organization`);
-  }
+  const reset = memberAutoLevelResets(store.bots, (bot) => memberOwnedInOrg(bot as BotRecord));
+  const ask = { approvalMode: "ask" as const, autoApprove: false };
+  for (const thread of reset.threads) store.patchTask(thread.botId, thread.threadId, ask);
+  for (const botId of reset.bots) store.patchBot(botId, ask);
+  const total = reset.bots.length + reset.threads.length;
+  console.log(`organization: ${total} saved Auto or Auto-accept edits level(s) of members' bots set back to Ask (${reset.bots.length} bot default(s), ${reset.threads.length} thread(s)); automatic levels are off for members' bots`);
   const at = Date.now();
   try {
     saveConfig({ organization: { ...cfg.organization, memberAutoResetAt: at } });
@@ -30043,6 +30042,8 @@ function saveOrgMemberAutoApproval(allowed: boolean, actor: AdminActor): void {
     category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["memberAutoApproval"],
     before: { memberAutoApproval: before }, after: { memberAutoApproval: allowed }, actor,
   });
+  // the first time it is turned off: saved member Auto levels go to Ask once
+  resetMemberAutoLevelsOnce();
 }
 function saveOrgPluginMarketplaces(raw: unknown, actor: AdminActor): void {
   const parsed = marketplacePolicySchema.safeParse(raw);

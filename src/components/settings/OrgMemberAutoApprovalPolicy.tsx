@@ -1,9 +1,10 @@
 // Settings > Organization > Automatic approval levels for members' bots
 // (organization admin only, 2026-10-16): whether a bot a member owns runs
 // its Auto ("Approve for me") and Auto-accept edits levels as such
-// (server/member-auto-approval.ts). Off by default: those levels run as Ask
-// and members cannot choose them. Turning it on brings back no level saved
-// before; members choose again.
+// (server/member-auto-approval.ts). On by default. Off: those levels run as
+// Ask and members cannot choose them; the first time it is turned off, the
+// levels members saved go back to Ask once, and turning it on again brings
+// none back.
 import { useState } from "react";
 
 import { t } from "@/lib/i18n";

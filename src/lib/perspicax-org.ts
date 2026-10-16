@@ -29,7 +29,7 @@ export interface PerspicaxOrg {
      * one (absent: off). */
     confidentialThreadsByDefault?: boolean;
     /** Whether members' bots run Auto and Auto-accept edits as such
-     * (absent: off, they run as Ask). */
+     * (absent: on; false: they run as Ask). */
     memberAutoApproval?: boolean;
     /** Where bots' Claude Code plugins may come from (any by default). */
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };

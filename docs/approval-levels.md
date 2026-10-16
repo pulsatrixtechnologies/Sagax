@@ -86,19 +86,19 @@ when such a turn asked.
 ### A member's bot on an organization server
 
 A bot whose owner is a member (not an organization admin) runs Ask as Ask.
-Its Auto-accept edits and Approve for me pass through to the provider only
-while an organization admin allows them: **Settings > Organization >
+Its Auto-accept edits and Approve for me pass through to the provider
+unless an organization admin turned them off: **Settings > Organization >
 Automatic approval levels for members' bots**, or `memberAutoApproval` in
-the admin API's `POST settings` (off unless an admin turns it on; each
+the admin API's `POST settings` (on unless an admin turns it off; each
 change is an `org.settings` row; `server/member-auto-approval.ts`). While it
-is off those levels run as Ask, and a change of a member's bot (or one of
-its threads) to one of them is refused with 403 `member_auto_not_allowed`;
-when it is on, a looser level still needs the person's security key when
-they chose the rule-change class. Once per organization server, unless the
-setting was already on, every saved Auto-accept edits or Approve for me
-level of a member's bot (the bot's own and each thread's) was set back to
-Ask (`organization.memberAutoResetAt` records the pass), so turning the
-setting on brings no earlier level back. Custom stays Ask (a `config.toml`
+is on, a looser level still needs the person's security key when they
+chose the rule-change class. While it is off those levels run as Ask, and a
+change of a member's bot (or one of its threads) to one of them is refused
+with 403 `member_auto_not_allowed`. The first time it is turned off, every
+saved Auto-accept edits or Approve for me level of a member's bot (the
+bot's own and each thread's) is set back to Ask, once
+(`organization.memberAutoResetAt` records the pass), so turning the setting
+on again brings no earlier level back. Custom stays Ask (a `config.toml`
 on the shared server is not the member's), and Full keeps the organization
 rules above. Every organization turn withholds the engines' own tools that act on
 the server (shell, files, fetch: `docs/user-sandbox.md`), so what reaches

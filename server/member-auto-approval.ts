@@ -2,19 +2,20 @@
 // (2026-10-16, security review of #678).
 //
 // A bot whose owner is not an organization admin (memberOwnedBot) runs its
-// Auto ("Approve for me") and Auto-accept edits levels as such only while
-// an organization admin turned `organization.memberAutoApproval` on
-// (Settings > Organization, the admin API's `POST settings`). Absent or
-// false: those levels run as Ask, and a change of a member's bot to one of
-// them is refused (`member_auto_not_allowed`). Custom stays Ask and Full
-// keeps its own rules (org-full-access.ts) either way.
+// Auto ("Approve for me") and Auto-accept edits levels as such unless an
+// organization admin turned `organization.memberAutoApproval` off
+// (Settings > Organization, the admin API's `POST settings`). Absent means
+// allowed: members stay autonomous by default. Explicitly false: those
+// levels run as Ask, and a change of a member's bot to one of them is
+// refused (`member_auto_not_allowed`). Custom stays Ask and Full keeps its
+// own rules (org-full-access.ts) either way. While allowed, a member's
+// looser level still goes through the security key step-up.
 //
-// Before this setting existed a member's saved Auto was inert (it ran as
-// Ask), then #678 made it run for real. So once per organization server,
-// unless the setting is already on, every saved Auto or Auto-accept edits
-// level of a member's bot (the bot's own and each thread's) goes back to
-// Ask, and `organization.memberAutoResetAt` records the pass. When an admin
-// later turns the setting on, old levels do not come back by themselves:
+// The first time an admin turns it off (at that save, or at a start that
+// finds it off), every saved Auto or Auto-accept edits level of a member's
+// bot (the bot's own and each thread's) goes back to Ask, once, and
+// `organization.memberAutoResetAt` records the pass. When an admin later
+// turns the setting on again, old levels do not come back by themselves:
 // members choose again.
 
 import type { ApprovalMode } from "../shared/approval-mode.ts";
@@ -24,9 +25,9 @@ export const MEMBER_AUTO_NOT_ALLOWED = {
   code: "member_auto_not_allowed",
 } as const;
 
-/** The organization's policy: off unless an admin turned it on. */
+/** The organization's policy: allowed unless an admin turned it off. */
 export function memberAutoApprovalAllowed(organization: { memberAutoApproval?: unknown } | undefined): boolean {
-  return organization?.memberAutoApproval === true;
+  return organization?.memberAutoApproval !== false;
 }
 
 /** The levels this setting governs. */
@@ -88,9 +89,8 @@ export function memberAutoLevelResets(bots: readonly MemberAutoResetBot[], membe
   return out;
 }
 
-/** Whether the pass still has to run: an organization server with no
- * marker yet. The caller resets nothing when the setting is already on,
- * and records the marker either way. */
-export function memberAutoResetPending(identity: "solo" | "perspicax", organization: { memberAutoResetAt?: unknown } | undefined): boolean {
-  return identity === "perspicax" && typeof organization?.memberAutoResetAt !== "number";
+/** Whether the pass has to run now: an organization server whose admin
+ * turned the setting off explicitly, and no marker yet. Never by default. */
+export function memberAutoResetPending(identity: "solo" | "perspicax", organization: { memberAutoApproval?: unknown; memberAutoResetAt?: unknown } | undefined): boolean {
+  return identity === "perspicax" && organization?.memberAutoApproval === false && typeof organization?.memberAutoResetAt !== "number";
 }

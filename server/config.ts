@@ -460,13 +460,14 @@ const appConfigSchema = z.object({
      * says otherwise (server/confidential-threads.ts). Absent means off; an
      * admin turns it on in Settings > Organization. */
     confidentialThreadsByDefault: z.boolean().optional(),
-    /** 2026-10-16 (security review of #678): a bot a member owns runs its
-     * Auto and Auto-accept edits levels as such only while this is true
-     * (server/member-auto-approval.ts). Absent means off; an admin turns
-     * it on in Settings > Organization. */
+    /** 2026-10-16: a bot a member owns runs its Auto and Auto-accept edits
+     * levels as such unless this is false (server/member-auto-approval.ts).
+     * Absent means allowed; an admin turns it off in Settings >
+     * Organization. */
     memberAutoApproval: z.boolean().optional(),
-    /** When the one-time pass set members' saved Auto and Auto-accept
-     * edits levels back to Ask (server/member-auto-approval.ts). */
+    /** When the one-time pass, the first time the setting above was off,
+     * set members' saved Auto and Auto-accept edits levels back to Ask
+     * (server/member-auto-approval.ts). */
     memberAutoResetAt: z.number().finite().nonnegative().optional(),
     /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts).
      * Absent means any marketplace; an admin may keep a list. */

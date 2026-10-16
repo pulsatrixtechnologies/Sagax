@@ -79,9 +79,9 @@ describe("ops", () => {
   it("settings: the shape, strict changes, refusals", async () => {
     const { console, saved } = setup();
     expect((await console.call("GET", "settings")).body).toMatchObject({ policies: { allowedEngines: null, defaults: { engine: "claude" } }, backup: { enabled: false } });
-    const posted = await console.call("POST", "settings", { body: { allowFullAccess: false, memberEnvironmentAutonomy: false, memberAutoApproval: true, allowedEngines: ["claude"], defaults: { approvalMode: "ask" }, pluginMarketplaces: { mode: "list", allow: ["acme/plugins"] }, interimAttachDays: 0 } });
+    const posted = await console.call("POST", "settings", { body: { allowFullAccess: false, memberEnvironmentAutonomy: false, memberAutoApproval: false, allowedEngines: ["claude"], defaults: { approvalMode: "ask" }, pluginMarketplaces: { mode: "list", allow: ["acme/plugins"] }, interimAttachDays: 0 } });
     expect(posted.status).toBe(200);
-    expect(saved.at(-1)).toEqual({ allowFullAccess: false, memberEnvironmentAutonomy: false, memberAutoApproval: true, allowedEngines: ["claude"], defaults: { approvalMode: "ask" }, pluginMarketplaces: { mode: "list", allow: ["acme/plugins"] }, interimAttachDays: 0 });
+    expect(saved.at(-1)).toEqual({ allowFullAccess: false, memberEnvironmentAutonomy: false, memberAutoApproval: false, allowedEngines: ["claude"], defaults: { approvalMode: "ask" }, pluginMarketplaces: { mode: "list", allow: ["acme/plugins"] }, interimAttachDays: 0 });
     for (const body of [{}, { other: 1 }, { allowFullAccess: "no" }, { memberEnvironmentAutonomy: "yes" }, { memberAutoApproval: "yes" }, { memberAutoApproval: null }, { allowedEngines: ["bad id!"] }, { defaults: { approvalMode: "maybe" } }, { interimAttachDays: 91 }, { pluginMarketplaces: { mode: "some" } }]) {
       expect((await console.call("POST", "settings", { body })).status).toBe(400);
     }

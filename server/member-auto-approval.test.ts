@@ -4,12 +4,11 @@ import { describe, expect, it } from "vitest";
 import { memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberTurnLevel, type MemberAutoResetBot } from "./member-auto-approval.ts";
 
 describe("memberAutoApprovalAllowed", () => {
-  it("is off unless an admin saved true", () => {
-    expect(memberAutoApprovalAllowed(undefined)).toBe(false);
-    expect(memberAutoApprovalAllowed({})).toBe(false);
-    expect(memberAutoApprovalAllowed({ memberAutoApproval: false })).toBe(false);
-    expect(memberAutoApprovalAllowed({ memberAutoApproval: "true" })).toBe(false);
+  it("is on unless an admin saved false", () => {
+    expect(memberAutoApprovalAllowed(undefined)).toBe(true);
+    expect(memberAutoApprovalAllowed({})).toBe(true);
     expect(memberAutoApprovalAllowed({ memberAutoApproval: true })).toBe(true);
+    expect(memberAutoApprovalAllowed({ memberAutoApproval: false })).toBe(false);
   });
 });
 
@@ -93,10 +92,15 @@ describe("memberAutoLevelResets", () => {
 });
 
 describe("memberAutoResetPending", () => {
-  it("runs once, on an organization server only", () => {
-    expect(memberAutoResetPending("perspicax", undefined)).toBe(true);
-    expect(memberAutoResetPending("perspicax", {})).toBe(true);
-    expect(memberAutoResetPending("perspicax", { memberAutoResetAt: 1 })).toBe(false);
-    expect(memberAutoResetPending("solo", {})).toBe(false);
+  it("never runs by default, nor while the setting is on", () => {
+    expect(memberAutoResetPending("perspicax", undefined)).toBe(false);
+    expect(memberAutoResetPending("perspicax", {})).toBe(false);
+    expect(memberAutoResetPending("perspicax", { memberAutoApproval: true })).toBe(false);
+  });
+
+  it("runs once an admin turned it off, on an organization server only", () => {
+    expect(memberAutoResetPending("perspicax", { memberAutoApproval: false })).toBe(true);
+    expect(memberAutoResetPending("perspicax", { memberAutoApproval: false, memberAutoResetAt: 1 })).toBe(false);
+    expect(memberAutoResetPending("solo", { memberAutoApproval: false })).toBe(false);
   });
 });

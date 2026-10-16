@@ -22,7 +22,7 @@ function answer(auth: RequestAuth, method = "GET") {
     directory: () => null,
     bySubject: () => null,
     viewerRole: () => "member",
-    settings: () => ({ orgKeyConfigured: false, allowFullAccess: true, memberEnvironmentAutonomy: true, memberAutoApproval: false }),
+    settings: () => ({ orgKeyConfigured: false, allowFullAccess: true, memberEnvironmentAutonomy: true, memberAutoApproval: true }),
     pendingAdminApprovals: () => [],
     routineDelegation: {
       status: () => ({ state: "none" }),
@@ -76,7 +76,7 @@ describe("/api/org/directory manageUrl (person panel)", () => {
       }) as never,
       bySubject: () => ({ id: "pr_ada" }) as never,
       viewerRole: () => role,
-      settings: () => ({ orgKeyConfigured: false, allowFullAccess: true, memberEnvironmentAutonomy: true, memberAutoApproval: false }),
+      settings: () => ({ orgKeyConfigured: false, allowFullAccess: true, memberEnvironmentAutonomy: true, memberAutoApproval: true }),
       pendingAdminApprovals: () => [],
     });
     const ctx = {
@@ -115,7 +115,7 @@ describe("/api/org/settings githubClientId", () => {
       viewerRole: () => opts.role,
       settings: () => ({
         orgKeyConfigured: false,
-        allowFullAccess: true, memberEnvironmentAutonomy: true, memberAutoApproval: false,
+        allowFullAccess: true, memberEnvironmentAutonomy: true, memberAutoApproval: true,
         github: { clientId: saved.at(-1) ?? null, fromEnvironment: false },
       }),
       pendingAdminApprovals: () => [],
@@ -191,7 +191,7 @@ describe("/api/org/settings github access tokens", () => {
         viewerRole: () => input.role,
         settings: () => ({
           orgKeyConfigured: false,
-          allowFullAccess: true, memberEnvironmentAutonomy: true, memberAutoApproval: false,
+          allowFullAccess: true, memberEnvironmentAutonomy: true, memberAutoApproval: true,
           github: { clientId: null, fromEnvironment: false },
           pluginMarketplaces: { mode: "any" as const },
         }),
@@ -331,7 +331,7 @@ describe("/api/org/settings github access tokens", () => {
 describe("/api/org/settings memberAutoApproval", () => {
   async function patch(role: "admin" | "member", body: unknown, withSaver = true) {
     const out: { status?: number; body?: unknown } = {};
-    let current = false;
+    let current = true;
     const saved: boolean[] = [];
     const routes = createPerspicaxOrgRoutes({
       issuer: "https://px.example.test",
@@ -355,14 +355,14 @@ describe("/api/org/settings memberAutoApproval", () => {
   }
 
   it("lets an admin turn it on and off, and answers the saved settings", async () => {
-    const on = await patch("admin", { memberAutoApproval: true });
-    expect(on).toMatchObject({ status: 200, body: { settings: { memberAutoApproval: true } }, saved: [true] });
     const off = await patch("admin", { memberAutoApproval: false });
     expect(off).toMatchObject({ status: 200, body: { settings: { memberAutoApproval: false } }, saved: [false] });
+    const on = await patch("admin", { memberAutoApproval: true });
+    expect(on).toMatchObject({ status: 200, body: { settings: { memberAutoApproval: true } }, saved: [true] });
   });
 
   it("refuses a member, a value that is not a boolean, and a server without the setter", async () => {
-    expect(await patch("member", { memberAutoApproval: true })).toMatchObject({ status: 403, saved: [] });
+    expect(await patch("member", { memberAutoApproval: false })).toMatchObject({ status: 403, saved: [] });
     for (const value of ["yes", 1, null]) expect(await patch("admin", { memberAutoApproval: value })).toMatchObject({ status: 400, saved: [] });
     expect(await patch("admin", { memberAutoApproval: true }, false)).toMatchObject({ status: 400 });
   });
