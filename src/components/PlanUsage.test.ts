@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 
 describe("Plan usage rows", () => {
-  it("windows: remaining allowance, per-model usage and unavailable windows, plan name as subtitle", () => {
+  it("windows: each reported window, per-model usage under Details, plan name as subtitle; an unreported window is left out", () => {
     const html = render({
       providers: [row({
         state: "windows", ok: true, plan: "Pro",
@@ -47,7 +47,8 @@ describe("Plan usage rows", () => {
     });
     expect(html).toContain("68% left");
     expect(html).toContain("70% used");
-    expect(html).toContain("Not reported by this plan");
+    expect(html).toContain('data-plan-window-kind="fiveHour"');
+    expect(html).not.toContain('data-plan-window-kind="weekly"');
     expect(html).toContain(">Pro<");
     expect(html).toContain('aria-valuenow="32"');
     expect(html).not.toContain("Sign in again");
@@ -86,15 +87,25 @@ describe("Plan usage rows", () => {
     expect(html).toContain("data-plan-refresh");
   });
 
-  it("no connected provider: no card at all, also while loading and after a failed read", () => {
-    expect(render({
+  // 2026-10-16: the card vanished in these cases and JC lost his 5-hour and
+  // weekly limits; it now stays with one line saying why.
+  it("no connected provider: the card stays with one line, also while loading and after a failed read", () => {
+    const failing = render({
       providers: [
         row({ state: "error", failure: { kind: "http", status: 429 } }),
         row({ id: "codex", name: "Codex", driver: "codex", instanceId: "codex", state: "signed-out" }),
       ],
-    })).toBe("");
-    expect(render({ providers: [] })).toBe("");
-    expect(render(null, { loading: true })).toBe("");
+    });
+    expect(failing).toContain('data-plan-status="unavailable"');
+    expect(failing).toContain("Plan unavailable for this account.");
+    expect(failing).toContain("429");
+    expect(failing).not.toContain('data-plan-row=');
+    expect(render({ providers: [] })).toContain("Connect a subscription");
+    expect(render(null, { loading: true })).toContain('data-plan-status="loading"');
+    expect(render(null, { failed: true })).toContain("Plan unavailable for this account.");
+    const noAccess = render(null, { unavailable: true });
+    expect(noAccess).toContain("Plan unavailable for this account.");
+    expect(noAccess).not.toContain("data-plan-refresh");
   });
 
   it("organization: the card ends with Manage my keys in Perspicax; solo has no such link", () => {

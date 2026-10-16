@@ -5772,6 +5772,8 @@
   "usage.plan.windowWeek": "Semaine",
   "usage.plan.windowFiveHour": "Session de 5 heures",
   "usage.plan.renewsShort": "se renouvelle {date}",
+  "usage.plan.unavailable": "Forfait indisponible pour ce compte.",
+  "usage.plan.none": "Connectez un abonnement (Claude, ChatGPT, Grok) pour voir ses limites de 5 heures et de la semaine.",
   "usage.personal.costTitle": "Coût",
   "usage.personal.trendUp": "{percent} % de plus que le mois dernier",
   "usage.personal.trendDown": "{percent} % de moins que le mois dernier",
