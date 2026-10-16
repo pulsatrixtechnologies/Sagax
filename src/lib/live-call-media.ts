@@ -6,6 +6,7 @@
 // (server/live-call-controller.ts). This module never sends appends:
 // its data channel may only send session.close.
 import { useSyncExternalStore } from "react";
+import { getUserMediaWithFallback, withPreferredInput } from "./audio-input";
 import type { LiveCallState, LiveEndReason } from "../../shared/wire";
 import { api, ApiError } from "@/state/store";
 import { openExternalLink } from "./app-links";
@@ -226,7 +227,8 @@ export async function startLiveCall(target: { botId: string; threadId: string })
   set({ ...IDLE, phase: "starting", botId: target.botId, threadId: target.threadId });
   startCall(target.botId);
   try {
-    const stream = await deps.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    // the microphone chosen in Settings, or the default when it is gone
+    const stream = await getUserMediaWithFallback({ audio: withPreferredInput({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }) }, deps.getUserMedia);
     if (mine !== generation) return void stream.getTracks().forEach((track) => track.stop());
     microphone = stream;
     // Mute can be pressed while the call connects.

@@ -115,9 +115,10 @@ import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-comma
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerNoticeBand, WorkplaceNotice } from "./WorkplaceNotice";
 import { ComposerEmojiButton } from "./ComposerEmojiButton";
-import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, type PlusMenuItem } from "./ComposerControls";
+import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, VOICE_NOTE_ICON, VoiceNoteChip, type PlusMenuItem } from "./ComposerControls";
 import { useComposerDictation } from "./useComposerDictation";
-import { dictationEngine } from "@/lib/composer-dictation";
+import { useVoiceNoteRecorder } from "./useVoiceNoteRecorder";
+import { dictationEngine, joinDictated } from "@/lib/composer-dictation";
 import { botCtaColors } from "@/lib/voice-cta";
 import { useVoiceModeCheck } from "@/lib/voice-mode/api";
 import { requestSettingsCard } from "./SettingsPrimitives";
@@ -1015,6 +1016,20 @@ export function Composer({
   const dictation = useComposerDictation({ engine, botId: bot?.id, threadId, text, editText });
   const recording = dictation.phase === "recording";
   const dictating = dictation.phase !== "idle";
+  // A voice note (+ > Record a voice note): the clip goes as an audio
+  // attachment, its words (this bot's speech to text) as the text, then it
+  // sends like the dictation pill's Send (sendAfterDictation below).
+  const voiceNote = useVoiceNoteRecorder({
+    botId: !group ? bot?.id : undefined,
+    threadId,
+    transcribe: Boolean(!group && bot && voiceCheck.state === "ready" && voiceCheck.status.available),
+    onReady: ({ attachment, transcript }) => {
+      editAttachments((prev) => [...prev, attachment]);
+      if (transcript) editText(joinDictated(text.trim(), transcript));
+      sendAfterDictation.current = true;
+    },
+  });
+  const voiceNoting = voiceNote.phase !== "idle";
   const openDictationSetup = () => {
     requestSettingsCard("engines.keys");
     dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
@@ -1022,6 +1037,8 @@ export function Composer({
     openProviderKeyDialog("xai");
   };
   const toggleMic = () => {
+    // one microphone at a time: a voice note keeps it until sent or cancelled
+    if (voiceNoting) return;
     if (dictating) {
       dictation.stop();
       return;
@@ -1036,7 +1053,7 @@ export function Composer({
   // once the field holds it (a transcript lands as the recording settles).
   const sendAfterDictation = useRef(false);
   useEffect(() => {
-    if (dictation.phase !== "idle" || !sendAfterDictation.current) return;
+    if (dictation.phase !== "idle" || voiceNoting || !sendAfterDictation.current) return;
     sendAfterDictation.current = false;
     send();
   });
@@ -1086,6 +1103,8 @@ export function Composer({
       // the same as picking /learn in the "/" menu
       onSelect: () => startDraftWith("/learn "),
     }] : []),
+    // a voice note adds to the message like a file (2026-10-16)
+    { id: "voiceNote", group: "add", label: t("composer.plus.voiceNote"), icon: VOICE_NOTE_ICON, disabled: dictating || voiceNoting || locked, onSelect: () => void voiceNote.start() },
     ...(group && !group.dm ? [{
       id: "goal",
       group: "modes" as const,
@@ -1135,10 +1154,10 @@ export function Composer({
     <div className="pointer-events-none relative overflow-x-clip px-[max(16px,calc((100%-960px)/2))] pb-4">
       {/* No fill or hairline on this wrapper — those were the black frame
           in the pill's top corners. The dock overlays the transcript. */}
-      {dictation.error && (
+      {(dictation.error || voiceNote.error) && (
         <ComposerNoticeBand className="pointer-events-auto">
           <div className="w-full rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] text-warning">
-            {dictation.error}
+            {dictation.error || voiceNote.error}
           </div>
         </ComposerNoticeBand>
       )}
@@ -1493,7 +1512,7 @@ export function Composer({
         {!locked && (
           <ComposerMicButton
             onClick={toggleMic}
-            hidden={dictating}
+            hidden={dictating || voiceNoting}
             needsSetup={!engine}
             shortcut={dictationShortcut}
           />
@@ -1509,6 +1528,16 @@ export function Composer({
               sendAfterDictation.current = true;
               if (recording) dictation.stop();
             }}
+            sendTone={ctaTone}
+          />
+        )}
+        {!locked && voiceNoting && (
+          <VoiceNoteChip
+            seconds={voiceNote.seconds}
+            bars={voiceNote.bars}
+            sending={voiceNote.phase === "sending"}
+            onCancel={voiceNote.cancel}
+            onSend={() => void voiceNote.finish()}
             sendTone={ctaTone}
           />
         )}
@@ -1528,7 +1557,7 @@ export function Composer({
         )}
         {/* No Send button: Enter sends. Grok Bot's round CTA turns into the
             send arrow while something is typed, Voice otherwise. */}
-        {!dictating && (() => {
+        {!dictating && !voiceNoting && (() => {
           const sendButton = !retroSkin && !locked ? (
             <ComposerSendButton
               onClick={() => send()}

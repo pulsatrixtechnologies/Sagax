@@ -76,6 +76,10 @@ final class VoiceNotePlayer: NSObject, ObservableObject {
     /// Real duration once the clip loads; until then the bubble shows the
     /// server's durationMs estimate.
     @Published private(set) var loadedDuration: Double?
+    /// Playback speed, 1x -> 1.5x -> 2x (the web bubble's speed button).
+    @Published private(set) var rate: Float = 1
+
+    static let rates: [Float] = [1, 1.5, 2]
 
     private var player: AVAudioPlayer?
     private var ticker: Timer?
@@ -93,6 +97,8 @@ final class VoiceNotePlayer: NSObject, ObservableObject {
     func load(_ data: Data) throws {
         let player = try AVAudioPlayer(data: data)
         player.delegate = self
+        player.enableRate = true
+        player.rate = rate
         player.prepareToPlay()
         self.player = player
         loadedDuration = player.duration > 0 ? player.duration : nil
@@ -126,6 +132,12 @@ final class VoiceNotePlayer: NSObject, ObservableObject {
         player?.pause()
         isPlaying = false
         stopTicker()
+    }
+
+    func cycleRate() {
+        let index = Self.rates.firstIndex(of: rate) ?? -1
+        rate = Self.rates[(index + 1) % Self.rates.count]
+        player?.rate = rate
     }
 
     func seek(to time: Double) {
@@ -253,6 +265,20 @@ struct VoiceNoteBubble: View {
                     .monospacedDigit()
                     .foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("voice-note-time")
+                Button {
+                    player.cycleRate()
+                } label: {
+                    Text(verbatim: Self.rateLabel(player.rate))
+                        .font(.system(size: 11, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(minWidth: 30, minHeight: 22)
+                        .background(Capsule().fill(Theme.textSecondary.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("voice-note-speed")
+                .accessibilityLabel(Text("Playback speed"))
+                .accessibilityValue(Text(verbatim: Self.rateLabel(player.rate)))
             }
         }
         .padding(.horizontal, 10)
@@ -306,6 +332,10 @@ struct VoiceNoteBubble: View {
             .foregroundStyle(tint)
         }
         .foregroundStyle(Theme.textSecondary)
+    }
+
+    private static func rateLabel(_ rate: Float) -> String {
+        rate == rate.rounded() ? "\(Int(rate))x" : "\(rate)x"
     }
 
     private static func clock(_ seconds: Double) -> String {

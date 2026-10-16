@@ -8,6 +8,7 @@ import { dictationLevels, frameLevel, joinDictated, type DictationEngine } from 
 import { encodeWav, toPcm16 } from "@/lib/voice-mode/audio";
 import { attachVoiceCapture, type CaptureContext, type CaptureSource, type VoiceCapture } from "@/lib/voice-mode/capture-worklet";
 import { transcribeVoiceMode } from "@/lib/voice-mode/api";
+import { openPreferredMicrophone } from "@/lib/audio-input";
 
 export type DictationPhase = "idle" | "recording" | "processing";
 
@@ -19,7 +20,8 @@ interface Microphone {
 
 /** Opens the microphone: frames for the xAI clip, loudness for the bars. */
 async function openMicrophone(onLevel: (level: number) => void, keep: boolean): Promise<Microphone> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+  // the microphone chosen in Settings (lib/audio-input), else the default
+  const stream = await openPreferredMicrophone({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
   const context = new AudioContext({ latencyHint: "interactive" });
   const source = context.createMediaStreamSource(stream);
   const frames: Float32Array[] = [];

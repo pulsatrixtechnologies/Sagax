@@ -4,6 +4,11 @@
 // takes over by pausing this element rather than talking over it. While
 // this window is on a Live call a note cannot be played at all: the call's
 // microphone would pick it up (starting the call already paused it).
+//
+// 2026-10-16 (Grok Bot parity): a speed button (1x, 1.5x, 2x) and, when the
+// transcript carries word timings, the words as buttons that jump there.
+// A voice note the person recorded (lib/voice-note.ts) reuses this player
+// with its loaded clip (`src`), from AttachmentGallery.
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
 
@@ -12,6 +17,7 @@ import { t } from "@/lib/i18n";
 import { isLiveCallRunning, useLiveMedia } from "@/lib/live-call-media";
 import { speaker } from "@/lib/tts";
 import { cn } from "@/lib/cn";
+import { nextVoiceNoteSpeed, speedLabel, wordIndexAt, type VoiceNoteWord } from "@/lib/voice-note";
 
 /** The wire's audio attachment shape (shared/wire.ts): a parked clip plus
  * the server's duration estimate, used until the element loads metadata. */
@@ -30,15 +36,25 @@ function clock(seconds: number): string {
 
 export function VoiceNoteBubble({
   attachment,
+  src,
+  words,
+  autoPlay = false,
   className,
 }: {
   attachment: VoiceNoteAttachment;
+  /** A clip already loaded by the caller (a blob URL); the parked mp3 route otherwise. */
+  src?: string;
+  /** The transcript's words with their times, when the speech to text gave them. */
+  words?: readonly VoiceNoteWord[];
+  /** Start once mounted (the person just pressed play on a lazy clip). */
+  autoPlay?: boolean;
   className?: string;
 }) {
-  const url = attachmentAudioUrl(attachment.path);
+  const url = src ?? attachmentAudioUrl(attachment.path);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const releaseRef = useRef<(() => void) | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
   // metadata estimate first, real duration once the element loads it
   const [duration, setDuration] = useState<number | null>(
     typeof attachment.durationMs === "number" && attachment.durationMs > 0
@@ -51,6 +67,19 @@ export function VoiceNoteBubble({
   // Release the claim on unmount: a gone bubble cannot be paused again, and
   // the singleton must not keep a callback into a dead element.
   useEffect(() => () => releaseRef.current?.(), []);
+
+  // the element keeps its rate across a new src; set it again on each load
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = speed;
+  }, [speed]);
+
+  const autoPlayed = useRef(false);
+  useEffect(() => {
+    if (!autoPlay || autoPlayed.current || !url) return;
+    autoPlayed.current = true;
+    toggle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
+  }, [autoPlay]);
 
   if (!url) return null;
 
@@ -87,16 +116,22 @@ export function VoiceNoteBubble({
     setTime(next);
   };
 
+  /** A word of the transcript: jump there and play. */
+  const jumpTo = (start: number) => {
+    seek(start);
+    if (audioRef.current?.paused) toggle();
+  };
+  const currentWord = words?.length ? wordIndexAt(words, time) : -1;
+
   return (
-    <div
-      className={cn("flex w-full items-center gap-3 rounded-xl bg-inset/60 px-3 py-2", className)}
-      data-test-voice-note=""
-    >
+    <div className={cn("flex w-full flex-col gap-1.5 rounded-xl bg-inset/60 px-3 py-2", className)} data-test-voice-note="">
+    <div className="flex w-full items-center gap-3">
       <audio
         ref={audioRef}
         src={url}
         preload="metadata"
         onLoadedMetadata={(event) => {
+          event.currentTarget.playbackRate = speed;
           const loaded = event.currentTarget.duration;
           if (Number.isFinite(loaded) && loaded > 0) setDuration(loaded);
         }}
@@ -138,6 +173,36 @@ export function VoiceNoteBubble({
       <span className="shrink-0 text-[11px] tabular-nums text-ink-secondary">
         {clock(time)} / {duration === null ? "--:--" : clock(duration)}
       </span>
+      <button
+        type="button"
+        onClick={() => setSpeed((current) => nextVoiceNoteSpeed(current))}
+        aria-label={t("chat.voiceNote.speed", { speed: speedLabel(speed) })}
+        title={t("chat.voiceNote.speed", { speed: speedLabel(speed) })}
+        data-voice-note-speed={speed}
+        className="h-6 min-w-9 shrink-0 rounded-full bg-ink/[0.06] px-1.5 text-[11px] font-medium tabular-nums text-ink-secondary transition-colors hover:bg-ink/[0.1] hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+      >
+        {speedLabel(speed)}
+      </button>
+    </div>
+    {words && words.length > 0 && (
+      <p className="text-[12.5px] leading-5 text-ink-secondary" data-voice-note-words="">
+        {words.map((word, index) => (
+          <button
+            key={`${index}:${word.start}`}
+            type="button"
+            onClick={() => jumpTo(word.start)}
+            aria-label={t("chat.voiceNote.jumpToWord", { word: word.text })}
+            aria-current={index === currentWord ? "true" : undefined}
+            className={cn(
+              "me-1 rounded px-0.5 hover:bg-ink/[0.08] hover:text-ink focus-visible:outline-2 focus-visible:outline-focus",
+              index === currentWord && "bg-accent/15 text-ink",
+            )}
+          >
+            {word.text}
+          </button>
+        ))}
+      </p>
+    )}
     </div>
   );
 }

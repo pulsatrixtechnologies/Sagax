@@ -415,6 +415,10 @@ const __BASE_VERSION__: string;
       /** Writes the redacted diagnostics report to a user-chosen file;
        * resolves the path, or null when cancelled. */
       exportDiagnostics?(): Promise<string | null>;
+      /** Download logs: one redacted text file of the recent logs (server
+       * log window, server.log, this window's console, updater, crashes) at
+       * a path the person picks; resolves it, or null when cancelled. */
+      exportLogs?(rendererLines: string[]): Promise<string | null>;
       /** Asks where to save a bot-created file (inside ~/.sagax), copies
        * it there and reveals it. Resolves the chosen path, or null if the
        * user cancelled the dialog. */

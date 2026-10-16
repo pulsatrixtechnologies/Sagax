@@ -205,7 +205,7 @@ test("the preload gives the bundled organization page the desktop-UI parts, and 
     assert.equal(remote.bridge[key], undefined, `a plain remote page has no ${key}`);
     assert.ok(bundled.bridge[key], `the bundled page has ${key}`);
   }
-  for (const key of ["remoteClient", "environments", "setCredential", "saveFile", "pickFolder", "screenFrame", "companion", "desktopViewer", "approvals", "exportDiagnostics"]) {
+  for (const key of ["remoteClient", "environments", "setCredential", "saveFile", "pickFolder", "screenFrame", "companion", "desktopViewer", "approvals", "exportDiagnostics", "exportLogs"]) {
     assert.equal(bundled.bridge[key], undefined, `the bundled page never gets ${key}`);
   }
   // the local page asks nothing: it has the whole bridge

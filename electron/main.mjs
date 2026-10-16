@@ -21,6 +21,7 @@ import {
   installDesktopCrashListeners,
   readSafeLogTail,
 } from "./diagnostics.mjs";
+import { buildLogBundle, logBundleFileName, sanitizeRendererLines } from "./log-bundle.mjs";
 import { foldGrokVoiceCredential, grokVoiceFoldLog, migrateWorkspaceCredentials, workspaceCredentialEnv } from "./workspace-credentials.mjs";
 import { evictStartupCacheOnce } from "./startup-cache-eviction.mjs";
 import { activateExistingWindow, releaseSingleInstanceLock } from "./single-instance.mjs";
@@ -3583,6 +3584,59 @@ ipcMain.handle("desktop:export-diagnostics", localOnly("desktop:export-diagnosti
       fs.closeSync(handle);
     }
   }
+  return result.filePath;
+}));
+
+// "Download logs" (Settings > General > Advanced): the recent logs in one
+// text file where the person picks, never sent anywhere. The renderer hands
+// its own console lines (already redacted); main reads the server's log
+// window and tails here, and log-bundle.mjs redacts every line again.
+// null means the person cancelled the save dialog.
+function writePrivateFile(filePath, text) {
+  if (process.platform === "win32") {
+    fs.writeFileSync(filePath, text, { mode: 0o600 });
+    return;
+  }
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW;
+  const handle = fs.openSync(filePath, flags, 0o600);
+  try {
+    fs.fchmodSync(handle, 0o600);
+    fs.writeFileSync(handle, text, "utf8");
+  } finally {
+    fs.closeSync(handle);
+  }
+}
+ipcMain.handle("desktop:export-logs", localOnly("desktop:export-logs", async (event, rendererLines) => {
+  const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const ringDir = path.join(desktopDataDir(), "server-log");
+  const ring = ["previous.jsonl", "current.jsonl"]
+    .map((name) => readSafeLogTail(path.join(ringDir, name), 2 * 1024 * 1024)?.tail ?? "")
+    .join("\n");
+  const bundle = buildLogBundle({
+    appInfo: {
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      osRelease: os.release(),
+      electron: process.versions.electron,
+      node: process.versions.node,
+      packaged: app.isPackaged,
+      uptimeSeconds: Math.round(process.uptime()),
+    },
+    serverRing: ring,
+    serverLogTail: readSafeLogTail(path.join(LOG_DIR, "server.log"))?.tail ?? "",
+    rendererLines: sanitizeRendererLines(rendererLines),
+    updaterLogTail: readSafeLogTail(path.join(LOG_DIR, "updater.log"))?.tail ?? "",
+    desktopLogTail: readSafeLogTail(DESKTOP_CRASH_LOG)?.tail ?? "",
+  });
+  const result = await dialog.showSaveDialog(owner, {
+    title: "Download logs",
+    defaultPath: path.join(app.getPath("downloads"), logBundleFileName()),
+    filters: [{ name: "Text", extensions: ["txt"] }],
+    properties: ["createDirectory", "showOverwriteConfirmation"],
+  });
+  if (result.canceled || !result.filePath) return null;
+  writePrivateFile(result.filePath, bundle);
   return result.filePath;
 }));
 

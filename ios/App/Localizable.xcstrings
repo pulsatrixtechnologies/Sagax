@@ -67449,6 +67449,22 @@
           }
         }
       }
+    },
+    "Playback speed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vitesse de lecture"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Velocidade de reprodução"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

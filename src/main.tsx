@@ -16,6 +16,7 @@ import { cacheSignInProfileFromSession } from "./lib/sign-in-profile-cache";
 import { startPresence } from "./lib/presence";
 import { startRoutineAwayBeat } from "./lib/routine-away-beat";
 import { installAnimationPause } from "./lib/animation-pause";
+import { installConsoleRing } from "./lib/console-ring";
 import { syncDesktopAppearance } from "./lib/desktop-appearance-sync";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
 import "./styles.css";
@@ -35,6 +36,8 @@ if (floatingBot) document.documentElement.dataset.floatingBot = "";
 // After the window flags, so a floating mascot or Hibou 98 is not paused
 // just because its window is never the focused one.
 installAnimationPause();
+// The window's console lines, redacted, for Settings > Download logs.
+installConsoleRing();
 
 // Slice 7: an "Open in Sagax" link survives the sign-in (/pair, Perspicax).
 rememberOpenThreadHash();

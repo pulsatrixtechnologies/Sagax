@@ -5,8 +5,10 @@
 // While dictating, the mic and the CTA give way to a pill: a 10 px stop
 // square, the timer (14/22, tabular) and an 18 x 13 px level meter, then a
 // Send arrow. The + opens a menu above it, aligned on its start edge.
+// A voice note (+ > Record a voice note) takes the same seat: cancel, a red
+// dot, the timer and a 24 bar waveform, then Send.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, Check, Clock, Loader2, Mic, Paperclip, Plus } from "lucide-react";
+import { ArrowUp, AudioLines, Check, Clock, Loader2, Mic, Paperclip, Plus, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { formatDictationTime } from "@/lib/composer-dictation";
@@ -314,6 +316,93 @@ export function DictationChip({ seconds, levels, processing, onStop, onCancel, o
         <LevelMeter levels={levels} />
       </button>
       <ComposerSendButton onClick={onSend} disabled={false} tone={sendTone} queued={false} label={t("composer.send.message")} title={t("composer.send.message")} />
+    </span>
+  );
+}
+
+/** Record a voice note: a row of the + menu. */
+export const VOICE_NOTE_ICON = <AudioLines size={16} aria-hidden="true" />;
+
+/** The voice note's waveform: 2 px bars, 2 px apart, 3..16 px tall, in the danger red. */
+export function VoiceNoteWaveform({ bars }: { bars: number[] }) {
+  return (
+    <span aria-hidden="true" className="flex h-4 shrink-0 items-center gap-[2px]" data-voice-note-waveform="">
+      {bars.map((level, index) => (
+        <span
+          key={index}
+          className="w-[2px] rounded-full bg-danger/80 transition-[height] duration-75 motion-reduce:transition-none"
+          style={{ height: `${Math.round(3 + level * 13)}px` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** The voice note pill: cancel, a recording dot, the timer and the waveform,
+ * then Send (Escape cancels). While the clip uploads, a spinner. */
+export function VoiceNoteChip({ seconds, bars, sending, onCancel, onSend, sendTone }: {
+  seconds: number;
+  bars: number[];
+  sending: boolean;
+  onCancel: () => void;
+  onSend: () => void;
+  sendTone?: BotCtaColors | null;
+}) {
+  const time = formatDictationTime(seconds);
+  const sendRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!sending) sendRef.current?.focus();
+  }, [sending]);
+  if (sending) {
+    return (
+      <span role="status" aria-label={t("composer.voiceNote.sending")} title={t("composer.voiceNote.sending")} className={cn(CTA_CIRCLE, "text-ink-secondary")} data-voice-note-chip="sending">
+        <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+      </span>
+    );
+  }
+  return (
+    <span
+      className="flex shrink-0 items-center gap-2"
+      data-voice-note-chip="recording"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
+    >
+      <button
+        type="button"
+        onClick={onCancel}
+        aria-label={t("composer.voiceNote.cancel")}
+        title={t("composer.voiceNote.cancelHint")}
+        className={SECONDARY_CIRCLE}
+        data-voice-note-cancel=""
+      >
+        <X size={15} strokeWidth={2.25} aria-hidden="true" />
+      </button>
+      <span
+        role="timer"
+        aria-label={t("composer.voiceNote.recordingAria", { time })}
+        className="box-border inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-ink/[0.06] py-1 pe-2.5 ps-2.5 text-ink"
+      >
+        <span aria-hidden="true" className="size-2 shrink-0 animate-pulse rounded-full bg-danger motion-reduce:animate-none" />
+        <span aria-hidden="true" className="shrink-0 text-[14px] leading-[22px] tracking-[-0.15px] tabular-nums">{time}</span>
+        <VoiceNoteWaveform bars={bars} />
+      </span>
+      <button
+        ref={sendRef}
+        type="button"
+        onClick={onSend}
+        aria-label={t("composer.voiceNote.send")}
+        title={t("composer.voiceNote.send")}
+        data-voice-note-send=""
+        style={ctaStyle(sendTone)}
+        className={cn(CTA_CIRCLE, sendTone ? CTA_TONED : CTA_DEFAULT)}
+      >
+        <ArrowUp size={16} strokeWidth={2.5} aria-hidden="true" />
+      </button>
     </span>
   );
 }

@@ -7,8 +7,10 @@ import { Check, ChevronDown, ChevronUp, Download, FileText, Film, LoaderCircle, 
 import { attachmentBasename, FILE_MAX_BYTES, type TranscriptFileAttachment, type TranscriptImageAttachment } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { isVoiceNoteName } from "@/lib/voice-note";
 import { windowsPathDestinations } from "../../shared/markdown-windows-paths";
 import { localFilePath } from "./ChatMarkdown";
+import { VoiceNoteBubble } from "./VoiceNoteBubble";
 import {
   AttachedFileChip,
   AttachmentPreviewDialog,
@@ -361,6 +363,30 @@ function AudioAttachment({ file, message }: { file: GalleryFile; message: Messag
       if (request.current === controller) request.current = null;
     }
   };
+
+  // A voice note the person recorded (lib/voice-note.ts): the voice note
+  // player, with its speed, once the clip is loaded.
+  if (isVoiceNoteName(file.name)) {
+    if (src && !error) {
+      return (
+        <div className="w-72 max-w-full text-left" data-voice-note-attachment="">
+          <VoiceNoteBubble attachment={{ kind: "audio", path: file.path, mime: "audio/wav" }} src={src} autoPlay />
+        </div>
+      );
+    }
+    return (
+      <div className="flex w-72 max-w-full flex-col gap-1.5 rounded-xl bg-inset/60 px-3 py-2 text-left" data-voice-note-attachment="">
+        <div className="flex items-center gap-3">
+          <button type="button" disabled={loading} onClick={() => void load()} aria-label={t("chat.voiceNote.play")} title={t("chat.voiceNote.play")}
+            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60">
+            {loading ? <LoaderCircle size={13} className="animate-spin" /> : <Play size={13} className="translate-x-px fill-current" />}
+          </button>
+          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">{t("chat.voiceNote.label")}</span>
+        </div>
+        {error && <p role="alert" className="text-[11px] text-danger">{error}</p>}
+      </div>
+    );
+  }
 
   return (
     <div className="inline-flex w-72 max-w-full flex-col gap-1.5 rounded-2xl border border-hairline/30 bg-inset/60 px-3 py-2.5 text-left">

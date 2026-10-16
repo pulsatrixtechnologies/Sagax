@@ -3296,3 +3296,30 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
   English and French words, lazy chunks) in reactions and the composer
   (`EmojiCatalogGrid`, `ComposerEmojiButton`); stored in the bare form
   (`canonicalEmoji`) so both pickers make one chip.
+
+## Voice notes, microphone choice, logs and feedback (2026-10-16)
+
+- Voice notes (+ > Record a voice note, `src/components/useVoiceNoteRecorder.ts`,
+  `src/lib/voice-note.ts`): a 16 kHz WAV from the window's own microphone,
+  uploaded through `/api/files` like any audio file (`<attached-file>`, name
+  `voice-note-<date>.wav`), its words through the dictation route
+  (`/voice/transcribe`, cut in clips under `VOICE_MODE_MAX_AUDIO_BYTES`) as
+  the message text, then the ordinary send. Five minutes at most. No new
+  server route. The transcript shows a recorded note with `VoiceNoteBubble`
+  (speed 1x, 1.5x, 2x; jump to a word only when word timings are given,
+  which no speech to text of ours returns yet). iOS: the speed button only.
+- Microphone (Settings > Models and voice > Audio, `src/lib/audio-input.ts`):
+  one choice on this computer (`sagax.audioInput.v1`, never in the
+  preferences that travel) for dictation, voice notes, Live calls and voice
+  mode calls; a missing device falls back to the default, a refusal never
+  retries. The macOS dictation helper keeps the system input.
+- Download logs (General > Advanced > Diagnostics, desktop): one text file
+  saved where the person picks (`desktop:export-logs`, local page only):
+  the server log window on disk, server.log, this window's console
+  (`src/lib/console-ring.ts`, redacted when kept with `shared/redact.ts`),
+  the updater log and crash events, every line redacted again by
+  `electron/log-bundle.mjs`. Nothing is sent. Send feedback is a mail draft
+  to hello@pulsatrix.ca with the version and the system, nothing attached.
+  Tests: `electron/log-bundle.test.mjs`, `src/lib/console-ring.test.ts`,
+  `src/lib/feedback.test.ts`, `src/lib/audio-input.test.ts`,
+  `src/lib/voice-note.test.ts`, `src/components/Composer.voiceNote.test.ts`.

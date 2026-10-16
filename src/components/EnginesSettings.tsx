@@ -29,6 +29,7 @@ import { DescribedRow, FoldRow, HelpTip, SettingsGroup } from "./SettingsPrimiti
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
 import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
+import { MicrophoneSettings } from "./settings/MicrophoneSettings";
 import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
 import { LiveCallInstallationSettings } from "./LiveCallSettings";
 import { ApiKeyRow, VpsConnection } from "./ApiKeys";
@@ -465,6 +466,12 @@ export function EnginesSettings() {
         memberIssuer={member && org ? org.org.identity.issuer : undefined}
       />
       {keys && <KeysSection issuer={org?.org.identity.issuer} />}
+      {/* this computer's microphone: everyone's, whoever edits the installation */}
+      <div data-settings-card="connections.audio">
+        <SettingsGroup title={t("settings.audio.title")} groupId="audio">
+          <MicrophoneSettings />
+        </SettingsGroup>
+      </div>
       {installation && <VoiceSection keysLink={keys} />}
       {installation && (
         <div data-settings-card="connections.image">
