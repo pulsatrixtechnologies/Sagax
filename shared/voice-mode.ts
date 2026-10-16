@@ -165,7 +165,11 @@ export function cleanVoiceModeSettings(input: unknown): VoiceModeSettings {
 
 /** Why voice mode cannot run for this person: no xAI key serves them, or
  * their own access is turned off. */
-export type VoiceModeRefusalCause = "no_credentials" | "payer_disabled" | "perspicax_unreachable";
+export type VoiceModeRefusalCause = "no_credentials" | "payer_disabled" | "perspicax_unreachable" | "server_engine_not_allowed";
+
+/** The id a person sheet's `sagax_server_engines` uses for voice mode on the
+ * organization's xAI key (2026-10-16). */
+export const VOICE_SERVER_ENGINE = "xaiVoice";
 
 /** Who pays for the voice: the person's own xAI key (in Perspicax), the
  * organization's key (Settings > Connections), or, on a solo server, the

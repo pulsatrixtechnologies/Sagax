@@ -218,8 +218,12 @@ export interface MyEngine {
   subscription: { supported: boolean; signedIn: boolean };
   /** The person's own key for this engine's provider is in Perspicax. */
   myKey: boolean;
-  /** The server has a key for this engine (the organization's key). */
+  /** The server has a key for this engine (the organization's key) and it
+   * serves this person. */
   orgKey: boolean;
+  /** 2026-10-16: the organization has a key for this engine, but Perspicax
+   * does not give this engine to this person (`sagax_server_engines`). */
+  orgKeyNotGiven?: boolean;
   /** What the person's own turns on this engine run with, on their bots
    * and on the bots shared with them (server/engine-credentials.ts). */
   myTurns: "subscription" | "key" | "org-key" | "none";

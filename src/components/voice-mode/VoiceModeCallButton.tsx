@@ -42,6 +42,8 @@ export function voiceUnavailableView(check: VoiceModeCheck, options: { group?: b
   if (refusal.cause === "no_credentials") {
     if (admin) actions.push("open-connections");
     if (refusal.keysUrl) actions.push("add-key");
+  } else if (refusal.cause === "server_engine_not_allowed") {
+    if (refusal.keysUrl) actions.push("add-key");
   } else if (refusal.cause === "perspicax_unreachable") {
     actions.push("retry");
   }

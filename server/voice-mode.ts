@@ -127,6 +127,9 @@ export interface VoiceModeDeps {
   serverKey(): string | undefined;
   /** The speaker's own keys listed in Perspicax (names only). */
   hasOwnKey(sub: string): boolean;
+  /** Organization server, 2026-10-16: whether the organization's xAI key
+   * may serve this speaker's voice (`sagax_server_engines`). Absent: yes. */
+  serverKeyAllowed?(speaker: VoiceSpeaker): boolean;
   resolveOwnKey(sub: string): Promise<ProviderKeyResult>;
   /** An organization admin: their access card also names the organization's key. */
   isAdmin?(auth: RequestAuth): boolean;
@@ -168,7 +171,7 @@ export interface VoiceModeDeps {
 }
 
 /** The order above, for one person. Never returns a key to anyone but the caller of xAI. */
-export async function resolveVoiceKey(deps: Pick<VoiceModeDeps, "organization" | "serverKey" | "hasOwnKey" | "resolveOwnKey">, speaker: VoiceSpeaker): Promise<VoiceKey> {
+export async function resolveVoiceKey(deps: Pick<VoiceModeDeps, "organization" | "serverKey" | "hasOwnKey" | "resolveOwnKey" | "serverKeyAllowed">, speaker: VoiceSpeaker): Promise<VoiceKey> {
   const serverKey = deps.serverKey()?.trim();
   if (!deps.organization) return serverKey ? { ok: true, key: serverKey, via: "server" } : { ok: false, cause: "no_credentials" };
   if (speaker.disabled) return { ok: false, cause: "payer_disabled" };
@@ -178,11 +181,16 @@ export async function resolveVoiceKey(deps: Pick<VoiceModeDeps, "organization" |
     if (own.error === "user_inactive") return { ok: false, cause: "payer_disabled" };
     if (own.error !== "no_key") return { ok: false, cause: "perspicax_unreachable" };
   }
-  return serverKey ? { ok: true, key: serverKey, via: "org-key" } : { ok: false, cause: "no_credentials" };
+  if (!serverKey) return { ok: false, cause: "no_credentials" };
+  // 2026-10-16 (JC): the organization's xAI key serves voice only for the
+  // people it was given to (`sagax_server_engines` lists VOICE_SERVER_ENGINE).
+  if (deps.serverKeyAllowed && !deps.serverKeyAllowed(speaker)) return { ok: false, cause: "server_engine_not_allowed" };
+  return { ok: true, key: serverKey, via: "org-key" };
 }
 
 const REFUSAL_TEXT: Record<VoiceModeRefusalCause, string> = {
   no_credentials: "Voice mode needs an xAI key. Add one in Settings > Models and voice.",
+  server_engine_not_allowed: "Your organization has not given you its xAI voice. Add your own xAI key, or ask an admin.",
   payer_disabled: "Your access is turned off in your organization.",
   perspicax_unreachable: "Perspicax could not be reached to read your xAI key. Try again in a moment.",
 };

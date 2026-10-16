@@ -126,7 +126,12 @@ local model server, `cloud` for a subscription or API key engine),
 `installed` whether it runs on this server, and `auth` how a person gets
 access (`oauth`: a sign-in with the provider's account, `apiKey`: a key,
 `none`: nothing to sign in to). A server before api 4 answers without
-`engines`.
+`engines`. Since 2026-10-16 each engine also says `orgKey`: the
+organization's key serves it (never the key), and when the organization
+has an xAI key a row `{ "id": "xaiVoice", "voice": true, "orgKey": true }`
+stands for voice mode. These are the ids a person sheet's
+`sagax_server_engines` (Perspicax) gives a member; see "The organization's
+key, per person" in self-hosting.md.
 
 `mascots` (api 5) lists every character a bot's `look` can name, in the
 app's registry order (`shared/mascot-catalog.ts`, checked against

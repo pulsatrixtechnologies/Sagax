@@ -508,7 +508,7 @@ export interface WireAccessCard {
    * who spoke, or the bot's owner for its routines), and why none served. */
   payer?: "speaker" | "owner";
   payerPrincipalId?: string;
-  cause?: "payer_disabled" | "no_credentials";
+  cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed";
   /** The bot's routine: it runs on its owner's credentials only. */
   routine?: true;
   /** The engine takes a personal subscription sign-in (Claude, Codex):

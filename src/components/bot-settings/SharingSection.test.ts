@@ -97,6 +97,18 @@ describe("SharingSection", () => {
 describe("the access card", () => {
   const card = { reason: "no_access" as const, engine: "Claude", botId: "bot-1", ownerPrincipalId: OWNER };
   const KEYS = "https://px.example.test/console/pulsabot/keys";
+  it("2026-10-16: an engine the organization has not given: own ways to fix it, the console hint for an admin", () => {
+    const bobs = { ...card, payer: "speaker" as const, payerPrincipalId: BOB, cause: "server_engine_not_allowed" as const, keysUrl: KEYS, subscriptionSignIn: true as const };
+    expect(accessCardLines(bobs, { principalId: BOB, admin: false })).toEqual({
+      text: "Your organization has not given you Claude on its account: connect your own Claude subscription or add your key in Perspicax, or ask an admin.",
+      link: { href: KEYS, label: "Add my key in Perspicax" },
+      signIn: true,
+    });
+    expect(accessCardLines(bobs, { principalId: OWNER, admin: true })).toMatchObject({
+      hint: "An admin gives it on the person's sheet in the Perspicax console: Sagax engines provided by the organization.",
+    });
+  });
+
   it("2026-10-01: the card speaks to the person who spoke, with what to do; the org key hint for an admin only", () => {
     const bobs = { ...card, payer: "speaker" as const, payerPrincipalId: BOB, cause: "no_credentials" as const, keysUrl: KEYS, subscriptionSignIn: true as const };
     expect(accessCardLines(bobs, { principalId: BOB, admin: false })).toEqual({

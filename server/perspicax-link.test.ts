@@ -378,6 +378,23 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
     expect(h.sync.integrationRights("NOBODY")).toBe("manage");
   });
 
+  it("reads sagax_server_engines per person: the list, [] for none, null when not sent (Perspicax 0063)", async () => {
+    const h = harness(withTeams([
+      person("ALICE", { sagax_server_engines: ["grok", "xaiVoice"] }),
+      person("BOB", { sagax_server_engines: [] }),
+      person("CAROL"),
+      person("DAN", { sagax_server_engines: ["not an id!"] as never }),
+    ], []));
+    expect(h.sync.serverEngines("ALICE")).toBeNull();
+    await h.sync.refresh();
+    expect(h.sync.serverEngines("ALICE")).toEqual(["grok", "xaiVoice"]);
+    expect(h.sync.serverEngines("BOB")).toEqual([]);
+    expect(h.sync.serverEngines("CAROL")).toBeNull();
+    // a malformed list is dropped (null: none for a member), never fatal
+    expect(h.sync.serverEngines("DAN")).toBeNull();
+    expect(h.sync.serverEngines("NOBODY")).toBeNull();
+  });
+
   it("reports sagax_integrations only when the effective right changes, never for an admin", async () => {
     const h = harness(directoryOf([
       person("RITA", { sagax_integrations: "off" }),

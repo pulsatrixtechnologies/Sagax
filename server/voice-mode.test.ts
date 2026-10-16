@@ -101,6 +101,15 @@ describe("voice mode key order", () => {
     expect(await resolveVoiceKey(base, { principalId: "p-ada", sub: "sub-ada" })).toEqual({ ok: true, key: ORG_KEY, via: "org-key" });
   });
 
+  it("gives the organization's key only to a person it was given to (2026-10-16)", async () => {
+    const allowed = (speaker: VoiceSpeaker) => speaker.principalId === "p-ada";
+    expect(await resolveVoiceKey({ ...base, serverKeyAllowed: allowed }, { principalId: "p-ada", sub: "sub-ada" })).toEqual({ ok: true, key: ORG_KEY, via: "org-key" });
+    expect(await resolveVoiceKey({ ...base, serverKeyAllowed: allowed }, { principalId: "p-bob", sub: "sub-bob" })).toEqual({ ok: false, cause: "server_engine_not_allowed" });
+    // their own key still serves them
+    const own = await resolveVoiceKey({ ...base, serverKeyAllowed: allowed, hasOwnKey: () => true, resolveOwnKey: async () => ({ ok: true, key: OWN_KEY, fingerprint: "fp" }) }, { principalId: "p-bob", sub: "sub-bob" });
+    expect(own).toMatchObject({ ok: true, via: "speaker-key" });
+  });
+
   it("falls through to the organization when Perspicax no longer has the key", async () => {
     const out = await resolveVoiceKey({ ...base, hasOwnKey: () => true }, { principalId: "p-ada", sub: "sub-ada" });
     expect(out).toMatchObject({ ok: true, via: "org-key" });

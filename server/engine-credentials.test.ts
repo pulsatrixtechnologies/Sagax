@@ -264,3 +264,48 @@ describe("materializeEngineAccess", () => {
     expect(d.resolved).toEqual([]);
   });
 });
+
+// 2026-10-16 (JC): the organization's key serves only the people Perspicax
+// gives the engine to (`sagax_server_engines`; an admin always).
+describe("resolveEngineAccess: the organization's key per person", () => {
+  const given = (list: Record<string, string[]>) => (principalId: string, instanceId: string) =>
+    principalId === OWNER ? true : (list[principalId] ?? []).includes(instanceId);
+
+  it("an admin (here the owner) runs every engine on the organization's key", () => {
+    expect(resolveEngineAccess(input({ instance: GROK, keyBacked: true, serverEngineAllowed: given({}) }))).toEqual({ ok: true, via: "org-key", payer: "organization" });
+  });
+
+  it("a member the engine was not given to is refused at the organization's key", () => {
+    expect(resolveEngineAccess(input({ speaker: bob, instance: GROK, keyBacked: true, serverEngineAllowed: given({ [BOB]: ["claude"] }) })))
+      .toEqual({ ok: false, reason: "no_access", cause: "server_engine_not_allowed", payer: "speaker", payerPrincipalId: BOB });
+  });
+
+  it("a member the engine was given to runs on the organization's key", () => {
+    expect(resolveEngineAccess(input({ speaker: bob, instance: GROK, keyBacked: true, serverEngineAllowed: given({ [BOB]: ["grok"] }) })))
+      .toEqual({ ok: true, via: "org-key", payer: "organization" });
+  });
+
+  it("their own subscription or key still serves them, whatever the list", () => {
+    const none = given({});
+    expect(resolveEngineAccess(input({ speaker: bob, instance: GROK, keyBacked: true, signedIn: [`${BOB}/grokAgent`], serverEngineAllowed: none })))
+      .toEqual({ ok: true, via: "subscription", payer: "speaker", payerPrincipalId: BOB });
+    expect(resolveEngineAccess(input({ speaker: bob, instance: GROK, keyBacked: true, keys: ["SUB-BOB/xai"], serverEngineAllowed: none })))
+      .toEqual({ ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "xai" });
+    expect(resolveEngineAccess(input({ speaker: bob, instance: GROK, keyBacked: true, hasLocalKey: (pid) => pid === BOB, serverEngineAllowed: none })))
+      .toEqual({ ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, localKey: true });
+  });
+
+  it("a routine is judged on its owner's list", () => {
+    const member = "pr_00000000-0000-4000-8000-000000000009";
+    const owner = { principalId: member, sub: "SUB-M" };
+    expect(resolveEngineAccess(input({ speaker: routine, owner, instance: GROK, keyBacked: true, serverEngineAllowed: given({}) })))
+      .toEqual({ ok: false, reason: "no_access", cause: "server_engine_not_allowed", payer: "owner", payerPrincipalId: member, routine: true });
+    expect(resolveEngineAccess(input({ speaker: routine, owner, instance: GROK, keyBacked: true, serverEngineAllowed: given({ [member]: ["grok"] }) })))
+      .toEqual({ ok: true, via: "org-key", payer: "organization", routine: true });
+  });
+
+  it("no organization key: the list changes nothing", () => {
+    expect(resolveEngineAccess(input({ speaker: bob, instance: GROK, serverEngineAllowed: given({}) })))
+      .toEqual({ ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB });
+  });
+});

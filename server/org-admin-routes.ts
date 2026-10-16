@@ -73,6 +73,12 @@ export interface AdminEngine {
   /** `oauth`: a sign-in with the provider's account; `apiKey`: a key;
    * `none`: nothing to sign in to (a local server). */
   auth: "oauth" | "apiKey" | "none";
+  /** 2026-10-16: the organization's key serves this engine (Settings >
+   * Connections), never the key: a person sheet's `sagax_server_engines`
+   * gives it to members. */
+  orgKey?: boolean;
+  /** The voice mode row (`xaiVoice`): not a bot engine. */
+  voice?: true;
 }
 /** The built-in routes, as `GET capabilities` names them. */
 const BUILT_IN_ROUTES: Array<Pick<ConsoleRoute, "method" | "path">> = [

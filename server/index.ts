@@ -709,6 +709,7 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes, resolveVoiceKey, type VoiceModeDeps, type VoiceSpeaker } from "./voice-mode.ts";
+import { VOICE_SERVER_ENGINE } from "../shared/voice-mode.ts";
 import { configuredKeyterms, VOICE_KEYTERM_RECENT_MESSAGES, voiceKeyterms } from "./voice-keyterms.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
@@ -5442,7 +5443,7 @@ function healOrgRefusedThreadModel(botId: string, threadId: string, speaker: Tur
   const theirs = registry.get(bot.modelSelection.instanceId);
   if (!mine || !theirs || !theirs.enabled) return;
   const refusal = orgEngineRefusal(bot, mine, speaker);
-  if (refusal?.reason !== "no_access" || refusal.cause !== "no_credentials") return;
+  if (refusal?.reason !== "no_access" || (refusal.cause !== "no_credentials" && refusal.cause !== "server_engine_not_allowed")) return;
   if (orgEngineRefusal(bot, theirs, speaker)) return;
   if (!store.followBotModel(botId, [threadId], (from, to) => hostedModels?.resetTask(from, to) ?? {}).length) return;
   const person = (refusal.payerPrincipalId && principals.byId(refusal.payerPrincipalId)?.name) || "the person this turn runs for";
@@ -9519,7 +9520,7 @@ function notifyAccess(notification: Notification | null, access: WireAccessCard,
     kind: "refused", botId: access.botId, botName: refusedBot?.name ?? access.botId, ownerPrincipalId: access.ownerPrincipalId || null,
     threadId: notification.threadId, title: refusedBot ? store.taskByThread(refusedBot.id, notification.threadId)?.title ?? null : null,
     engine: refusedBot?.modelSelection?.instanceId ?? null,
-    reason: access.cause === "payer_disabled" ? "payer_disabled" : access.reason,
+    reason: access.cause === "payer_disabled" || access.cause === "server_engine_not_allowed" ? access.cause : access.reason,
     detail: redactSecretsInText(notification.body ?? ""),
   });
   if (IDENTITY.kind !== "perspicax") return notify(notification);
@@ -22969,7 +22970,32 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
     hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
     keyBacked: driverKeyBacked(cfg, instance.driverKind, instance.instanceId),
     hasLocalKey: (principalId, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId }, driver),
+    serverEngineAllowed: serverEngineAllowedFor,
   };
+}
+/** 2026-10-16 (JC): the people an organization's provided account serves.
+ * An admin (and this server's own operator) runs every engine on it; a
+ * member only the engine instances Perspicax lists on their person sheet
+ * (`sagax_server_engines`). A Perspicax that does not send the list yet
+ * gives none (JC's default for members), said once per person in the log.
+ * Their own subscription and keys never ask this. */
+const serverEnginesUnknownLogged = new Set<string>();
+function serverEngineAllowedFor(principalId: string, instanceId: string): boolean {
+  if (IDENTITY.kind !== "perspicax") return true;
+  if (!principalId || !isPrincipalId(principalId)) return false;
+  const person = principals.byId(principalId);
+  if (!person) return false;
+  if (person.local === true || person.orgRole === "admin") return true;
+  const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+  const list = sub ? perspicaxDirectory?.serverEngines(sub) ?? null : null;
+  if (list === null) {
+    if (!serverEnginesUnknownLogged.has(principalId)) {
+      serverEnginesUnknownLogged.add(principalId);
+      console.warn(`[perspicax] no sagax_server_engines for ${principalId}: no engine on the organization's accounts until Perspicax sends the list`);
+    }
+    return false;
+  }
+  return list.includes(instanceId);
 }
 /** A person's Perspicax subject (only from this server's issuer) and
  * whether they are disabled. */
@@ -27156,7 +27182,10 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         const signedIn = supported && logins.signedIn(principalId, driver);
         const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
         const myKey = providersOfDriver(driver).some((provider) => held.includes(provider));
-        const orgKey = driverKeyBacked(cfg, driver, entry.instanceId);
+        const orgKeySet = driverKeyBacked(cfg, driver, entry.instanceId);
+        // 2026-10-16: the organization's key serves this person only when
+        // Perspicax gives them this engine (an admin always).
+        const orgKey = orgKeySet && serverEngineAllowedFor(principalId, entry.instanceId);
         // the order of engine-credentials.ts for this person speaking
         const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn ? "subscription" : myKey ? "key" : orgKey ? "org-key" : "none";
         const live = registry.get(entry.instanceId);
@@ -27172,6 +27201,7 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
           subscription: { supported, signedIn },
           myKey,
           orgKey,
+          ...(orgKeySet && !orgKey ? { orgKeyNotGiven: true } : {}),
           myTurns,
         };
       });
@@ -27885,6 +27915,9 @@ const voiceModeDeps: VoiceModeDeps = {
   },
   serverKey: () => cfg.xai?.key,
   hasOwnKey: (sub) => perspicaxDirectory?.providerKeys(sub).includes("xai") ?? false,
+  // 2026-10-16 (JC): the organization's xAI key gives voice only to the
+  // people Perspicax lists it for (an admin always).
+  serverKeyAllowed: (speaker) => serverEngineAllowedFor(speaker.principalId, VOICE_SERVER_ENGINE),
   resolveOwnKey: (sub) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, "xai") : Promise.resolve({ ok: false as const, error: "link" as const }),
   keysUrl: () => perspicaxKeysUrl(),
   isAdmin: (auth) => orgAdminCaller(auth),
@@ -29382,20 +29415,27 @@ function orgEngineAllowRefusal(instanceId: string): string | undefined {
  * is Local, an API key or a subscription engine is Cloud). */
 function orgAdminEngines(): AdminEngine[] {
   const configs = providerConfigs();
-  return registry.entries().map((entry) => {
+  const engines: AdminEngine[] = registry.entries().map((entry) => {
     const live = registry.get(entry.instanceId);
     const access = configs[entry.instanceId]?.access ?? registry.access(entry.instanceId);
     const auth: AdminEngine["auth"] = access === "api" ? "apiKey"
       : access === "custom" ? "none"
       : live?.startAuthentication ? "oauth" : "none";
+    const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
     return {
       id: entry.instanceId,
       name: live ? engineDisplayName(live) : entry.instanceId,
       kind: access === "custom" ? "local" : "cloud",
       installed: engineInstalled(entry.instanceId),
       auth,
+      // 2026-10-16: the organization's key serves this engine (never the
+      // key): the engines a person sheet's sagax_server_engines can give.
+      orgKey: driverKeyBacked(cfg, driver, entry.instanceId),
     };
   });
+  // Voice mode on the organization's xAI key is given the same way.
+  if (cfg.xai?.key) engines.push({ id: VOICE_SERVER_ENGINE, name: "Grok voice (xAI)", kind: "cloud", installed: true, auth: "apiKey", orgKey: true, voice: true });
+  return engines;
 }
 /** A bot whose engine left the organization's list falls back to Auto on an
  * allowed engine (the New bot default when allowed, else the first allowed

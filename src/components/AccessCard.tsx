@@ -75,6 +75,14 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
     if (access.routine || access.payer === "owner") return { text: t(mine ? "access.payerDisabled.routineMine" : "access.payerDisabled.owner") };
     return mine ? { text: t("access.payerDisabled.speaker") } : { text: t("access.noAccess.other", { engine }) };
   }
+  if (access.cause === "server_engine_not_allowed") {
+    const ownWays = {
+      ...(access.keysUrl ? { link: { href: access.keysUrl, label: t("access.addKey") } } : {}),
+      ...(access.subscriptionSignIn ? { signIn: true } : {}),
+    };
+    if (!mine) return { text: t("access.noAccess.other", { engine }), ...(viewer.admin ? { hint: t("access.serverEngine.admin") } : {}) };
+    return { text: t(access.routine ? "access.serverEngine.routineMine" : "access.serverEngine.mine", { engine }), ...ownWays };
+  }
   const own = {
     ...(access.keysUrl ? { link: { href: access.keysUrl, label: t("access.addKey") } } : {}),
     ...(access.subscriptionSignIn ? { signIn: true } : {}),

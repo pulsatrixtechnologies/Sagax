@@ -28,7 +28,10 @@
 //                                                          (localKey, no provider)
 //   5. the server has a key for this engine (Settings >
 //      Connections, set by an admin: the organization's
-//      key), used automatically                         -> org-key
+//      key), used automatically, only when the payer is
+//      an admin or Perspicax lists this engine on their
+//      person sheet (`sagax_server_engines`, 2026-10-16)  -> org-key
+//      otherwise                                        -> no_access (server_engine_not_allowed)
 //   6. otherwise                                        -> no_access (no_credentials)
 //
 // JC, 2026-10-01, superseding the 2026-09-28 decision 7 ("the owner key
@@ -62,7 +65,7 @@ export const ACCESS_VIAS: readonly AccessVia[] = ["subscription", "owner-key", "
 export type AccessPayer = "speaker" | "owner" | "organization";
 
 /** Why no credentials serve a turn. */
-export type NoAccessCause = "payer_disabled" | "no_credentials";
+export type NoAccessCause = "payer_disabled" | "no_credentials" | "server_engine_not_allowed";
 
 /** A key of the payer's in Perspicax. */
 export function keyVia(via: AccessVia | undefined): via is "owner-key" | "speaker-key" {
@@ -165,6 +168,11 @@ export interface EngineCredentialInput {
   /** The payer has a file-backed key on this server (engine-api-keys.ts).
    * Absent means none. It never names another person. */
   hasLocalKey?: (principalId: string, driver: string) => boolean;
+  /** 2026-10-16 (JC): whether this person may run this engine instance on
+   * the organization's key (an admin: always; a member: when Perspicax lists
+   * it in their `sagax_server_engines`). Absent means allowed (solo, tests
+   * written before). Their own subscription and keys never ask it. */
+  serverEngineAllowed?: (principalId: string, instanceId: string) => boolean;
 }
 
 export type EngineCredentialPlan =
@@ -210,7 +218,15 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: 
   if (payer.principalId && input.hasLocalKey?.(payer.principalId, driver)) {
     return { ok: true, via: isOwner ? "owner-key" : "speaker-key", ...who, localKey: true };
   }
-  if (input.keyBacked) return { ok: true, via: "org-key", payer: "organization", ...routine };
+  if (input.keyBacked) {
+    // The organization's key serves only the people it was given to. A turn
+    // nobody is known to speak for is judged as the bot's owner's.
+    const judged = payer.principalId || input.owner.principalId;
+    if (input.serverEngineAllowed && !input.serverEngineAllowed(judged, input.instance.instanceId)) {
+      return { ok: false, reason: "no_access", cause: "server_engine_not_allowed", ...who };
+    }
+    return { ok: true, via: "org-key", payer: "organization", ...routine };
+  }
   return { ok: false, reason: "no_access", cause: "no_credentials", ...who };
 }
 

@@ -54,6 +54,7 @@ function callDebug(): boolean {
 export function voiceAccessCardText(card: VoiceAccessCard): string[] {
   if (card.cause === "payer_disabled") return [t("voiceMode.noAccess.disabled")];
   if (card.cause === "perspicax_unreachable") return [t("voiceMode.noAccess.unreachable")];
+  if (card.cause === "server_engine_not_allowed") return [t("voiceMode.noAccess.notGiven")];
   return [t("voiceMode.noAccess.xaiKey"), ...(card.admin ? [t("access.noAccess.mine.admin")] : [])];
 }
 

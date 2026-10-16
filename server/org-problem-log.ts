@@ -52,6 +52,7 @@ const writeQueues = new Map<string, Promise<void>>();
 const LABELS: Record<string, { en: string; fr: string }> = {
   no_access: { en: "No engine access for this person (no subscription, no key, no organization key)", fr: "Aucun accès au moteur pour cette personne (ni abonnement, ni clé, ni clé de l'organisation)" },
   payer_disabled: { en: "The account that pays for this engine is disabled", fr: "Le compte qui paie ce moteur est désactivé" },
+  server_engine_not_allowed: { en: "The organization has not given this person this engine on its account", fr: "L'organisation n'a pas donné ce moteur à cette personne sur son compte" },
   routine_delegation: { en: "The routine is paused: its person is out or lacks the run right", fr: "La routine est en pause : sa personne est partie ou n'a pas le droit d'exécution" },
   key_refused: { en: "The provider refused the key", fr: "Le fournisseur a refusé la clé" },
   engine_missing: { en: "The engine is not installed on this server", fr: "Le moteur n'est pas installé sur ce serveur" },

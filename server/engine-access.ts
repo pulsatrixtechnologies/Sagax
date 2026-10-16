@@ -72,13 +72,18 @@ export function speakerPrincipal(speaker: TurnSpeaker, ownerPrincipalId: string,
 /** The notification body for a refused turn (never provider text). A
  * no_access turn is the payer's to fix: the person who speaks, or the
  * owner for the bot's routines (engine-credentials.ts). */
-export function engineAccessNotice(reason: EngineAccessRefusal | "key_refused", engine: string, refusal: { payer?: "speaker" | "owner"; cause?: "payer_disabled" | "no_credentials"; routine?: boolean } = {}): string {
+export function engineAccessNotice(reason: EngineAccessRefusal | "key_refused", engine: string, refusal: { payer?: "speaker" | "owner"; cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed"; routine?: boolean } = {}): string {
   if (reason === "engine_missing") return `This bot uses ${engine}, which is not installed on this server.`;
   if (reason === "key_refused") return "The provider refused this bot's key.";
   if (refusal.cause === "payer_disabled") {
     return refusal.routine || refusal.payer === "owner"
       ? `This bot can't run: its owner's account is disabled, so their ${engine} access is off.`
       : `This bot can't answer: your account is disabled.`;
+  }
+  if (refusal.cause === "server_engine_not_allowed") {
+    return refusal.routine
+      ? `This routine can't run: the organization has not given its owner ${engine} on its account. Their own subscription or key would serve it, or an admin can give it in Perspicax.`
+      : `Your organization has not given you ${engine} on its account: sign in with your own ${engine} subscription or add your key in Perspicax, or ask an admin.`;
   }
   if (refusal.routine) return `This routine can't run: its owner has no ${engine} subscription or key here, and the server has no organization key for it.`;
   return `No ${engine} access for this turn: sign in with your own ${engine} subscription or add your key in Perspicax, or ask an admin to set the organization's key.`;

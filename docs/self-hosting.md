@@ -817,7 +817,8 @@ id).
   Codex sign-in, the default and preferred), their own model key in
   Perspicax for the engine's provider (`speaker-key`, or `owner-key` when
   they own the bot), the organization's key (a key in Settings >
-  Connections; there is no switch any more), else the no_access card with
+  Connections; there is no switch any more) when the person may use it
+  (below), else the no_access card with
   **Sign in with my subscription** (Settings > Organization > My engines)
   and **Add my key in Perspicax**. The owner's subscription and key never
   pay for the people the bot is shared with. A bot's routines always run on
@@ -827,6 +828,24 @@ id).
   subscription", "Your key", "Owner's credentials", "Organization's key"),
   never the secret, and the usage rows carry `access` and
   `payerPrincipalId`.
+- **The organization's key, per person (2026-10-16, JC).** The accounts the
+  organization provides (a key in Settings > Connections, and voice mode on
+  its xAI key) serve an organization admin always, and a member only for
+  the engine instances Perspicax lists on their person sheet
+  (`sagax_server_engines` in the directory: engine instance ids such as
+  `grok`, `xaiApi`, `claudeApi`, and `xaiVoice` for voice mode). The
+  default is none, for existing and new members: an admin checks the
+  engines on the person's sheet in the Perspicax console (Sagax > People >
+  the person > "Moteurs fournis par l'organisation"), or with
+  `PUT /api/v1/users/{id}/sagax-server-engines`. A Perspicax that does not
+  send the list gives a member none (logged once per person). A member's
+  own subscription, own key in Perspicax and own key on this server keep
+  serving them whatever the list. A refused turn shows the no_access card
+  with `cause: "server_engine_not_allowed"` (the payer: the person who
+  spoke, or the owner for a routine); voice mode answers the same cause.
+  The model picker hides, for a member, an engine that only the
+  organization's key would serve and that they were not given
+  (`GET /api/me/engines` marks it `orgKeyNotGiven`).
 - **Access cards are private (2026-10-01).** A refused turn's card (no
   access, a disabled payer, a routine whose owner has no credentials, the
   engine not installed, a person's own key refused) and its notification

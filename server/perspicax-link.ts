@@ -132,6 +132,11 @@ const personSchema = z.object({
    * plugins, skills and MCP servers in Sagax (`manage`, the default) or an
    * admin does (`off`). Absent from an older Perspicax: manage. */
   sagax_integrations: z.enum(["manage", "off"]).optional().catch(undefined),
+  /** Perspicax migration 0063 (2026-10-16, JC): the engine instance ids this
+   * person may run on the accounts the organization provides (the org key
+   * of Settings > Connections). [] = none, the default for every member.
+   * Absent from an older Perspicax: none too (serverEngines). */
+  sagax_server_engines: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,80}$/)).max(100).optional().catch(undefined),
   /** 2026-10-09: the person's effective Sagax permissions (computed by
    * Perspicax: the union of its default permission set, the sets given to
    * the person and the sets of their teams, since Perspicax 0051; every key
@@ -443,6 +448,17 @@ export class PerspicaxDirectory {
   integrationRights(sub: string): "manage" | "off" {
     const person = this.data?.people.find((entry) => entry.sub === sub);
     return person?.sagax_integrations === "off" ? "off" : "manage";
+  }
+
+  /** 2026-10-16 (JC): the engine instance ids this subject may run on the
+   * organization's provided accounts, from the last directory. null when
+   * the directory did not send the field (an older Perspicax, a subject it
+   * does not list, before the first directory): the caller treats that as
+   * none for a member, logged once. An admin is never narrowed (caller). */
+  serverEngines(sub: string): string[] | null {
+    const person = this.data?.people.find((entry) => entry.sub === sub);
+    if (!person || !Array.isArray(person.sagax_server_engines)) return null;
+    return [...person.sagax_server_engines];
   }
 
   /** 2026-10-09: the permissions Perspicax computed for this subject, or

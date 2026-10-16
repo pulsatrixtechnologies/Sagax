@@ -704,11 +704,15 @@ export function ModelPicker({
   const notAllowed = (instance: InstanceInfo) => orgMode && !engineAllowed(allowedEngines, instance.instanceId);
   const connectedByMe = (instance: InstanceInfo) => Boolean(myEngines?.some((engine) =>
     engine.instanceId === instance.instanceId && engine.subscription.signedIn));
+  // 2026-10-16 (JC): an engine the organization pays for but has not given
+  // this person, and that nothing of their own serves, is not offered.
+  const notGiven = (instance: InstanceInfo) => Boolean(orgMode && myEngines?.some((engine) =>
+    engine.instanceId === instance.instanceId && engine.orgKeyNotGiven === true && engine.myTurns === "none"));
   // An organization server offers an engine only when that engine's own
   // shell, file and web tools stay off the Sagax server. The bot's current
   // engine stays so its state is explained.
   const pickerInstances = orgMode
-    ? configured.filter((instance) => (instance.instanceId === selection.instanceId || !orgRefusesEngine(instance)) &&
+    ? configured.filter((instance) => (instance.instanceId === selection.instanceId || (!orgRefusesEngine(instance) && !notGiven(instance))) &&
       (!notAllowed(instance) || connectedByMe(instance)))
     : configured;
   const selectable = pickerInstances.filter((instance) => !notAllowed(instance));
