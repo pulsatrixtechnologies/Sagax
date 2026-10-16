@@ -9,11 +9,11 @@ import type { Bot, Group } from "@/state/store";
 import { restoreComposerDraft } from "@/lib/drafts";
 import { setLocale } from "@/lib/i18n";
 
-const fixture = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), group: undefined as unknown }));
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
   return { ...original, useStore: () => ({
-    state: { ...original.initialState, bots: [bot], groups: [group], instances: [] },
+    state: { ...original.initialState, bots: [bot], groups: [(fixture.group as Group | undefined) ?? group], instances: [] },
     dispatch: fixture.dispatch,
   }) };
 });
@@ -73,5 +73,84 @@ describe("the goal chip in a room's composer", () => {
     expect(chip()!.getAttribute("aria-pressed")).toBe("true");
     flushSync(() => chip()!.click());
     expect(chip()).toBeNull();
+  });
+
+  const runningRoom = (status: string) => ({
+    ...group,
+    messages: [{
+      id: "run-card", role: "bot", kind: "goal.run",
+      goalRun: { runId: "r1", goal: "ship the release", status, coordinatorBotId: bot.id, coordinatorName: "Atlas", turnCount: 1, maxTurns: 8, startedAt: 1 },
+    }],
+  }) as unknown as Group;
+  const renderRoom = (room: Group) => flushSync(() => root.render(createElement(Composer, { group: room, members: [bot] })));
+  const textarea = () => container.querySelector("textarea")!;
+  const type = (value: string) => {
+    const input = textarea();
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    flushSync(() => {
+      setter.call(input, value);
+      input.setSelectionRange(value.length, value.length);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const option = (label: string) => [...container.querySelectorAll<HTMLElement>('[role="option"]')]
+    .find((row) => row.textContent?.includes(label));
+
+  it("turns goal mode on and off from the + menu's modes", () => {
+    restoreComposerDraft(draftId, { text: "", attachments: [], channelMode: "chat" });
+    render();
+    flushSync(() => container.querySelector<HTMLButtonElement>("[data-composer-plus]")!.click());
+    const row = container.querySelector<HTMLButtonElement>('[data-composer-plus-item="goal"]')!;
+    expect(row.getAttribute("role")).toBe("menuitemcheckbox");
+    expect(row.getAttribute("aria-checked")).toBe("false");
+    expect(row.dataset.composerPlusGroup).toBe("modes");
+    flushSync(() => row.click());
+    expect(chip()).not.toBeNull();
+    flushSync(() => container.querySelector<HTMLButtonElement>("[data-composer-plus]")!.click());
+    const on = container.querySelector<HTMLButtonElement>('[data-composer-plus-item="goal"]')!;
+    expect(on.getAttribute("aria-checked")).toBe("true");
+    flushSync(() => on.click());
+    expect(chip()).toBeNull();
+  });
+
+  it("lists /goal's subcommands under Goal, dimmed when there is nothing to act on", () => {
+    fixture.group = undefined;
+    restoreComposerDraft(draftId, { text: "", attachments: [], channelMode: "chat" });
+    render();
+    type("/goal ");
+    for (const label of ["/goal status", "/goal pause", "/goal resume", "/goal stop"]) {
+      expect(option(label)?.getAttribute("aria-disabled")).toBe("true");
+    }
+    expect(container.textContent).toContain("No goal in this conversation yet");
+  });
+
+  it("stops a running goal from /goal stop in the menu", () => {
+    const room = runningRoom("working");
+    fixture.group = room;
+    fixture.dispatch.mockClear();
+    restoreComposerDraft(draftId, { text: "", attachments: [], channelMode: "chat" });
+    renderRoom(room);
+    type("/goal st");
+    expect(option("/goal stop")?.getAttribute("aria-disabled")).toBeNull();
+    flushSync(() => option("/goal stop")!.click());
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "interruptGroup", groupId: room.id, threadId: room.threadId });
+    expect(textarea().value).toBe("");
+    fixture.group = undefined;
+  });
+
+  it("shows the run's card for /goal status and refills its goal for /goal resume", () => {
+    const room = runningRoom("stopped");
+    fixture.group = room;
+    fixture.dispatch.mockClear();
+    restoreComposerDraft(draftId, { text: "", attachments: [], channelMode: "chat" });
+    renderRoom(room);
+    type("/goal sta");
+    flushSync(() => option("/goal status")!.click());
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "focusMessage", threadId: room.threadId, messageId: "run-card" });
+    type("/goal re");
+    flushSync(() => option("/goal resume")!.click());
+    expect(textarea().value).toBe("ship the release");
+    expect(chip()).not.toBeNull();
+    fixture.group = undefined;
   });
 });

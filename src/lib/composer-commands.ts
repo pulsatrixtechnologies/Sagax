@@ -7,13 +7,39 @@ import {
   type HarnessCommandGroup,
   type HarnessCommandUnavailable,
 } from "../../shared/harness-commands";
+import type { GroupGoalRunStatus } from "../../shared/group-goal-run";
 
-export type ComposerSlashCommandId = "goal" | "learn" | "setup";
+/** What /goal does besides starting one: typed after it (`/goal stop`). */
+export const GOAL_SUBCOMMANDS = ["status", "pause", "resume", "stop"] as const;
+export type GoalSubcommand = (typeof GOAL_SUBCOMMANDS)[number];
+
+export type ComposerSlashCommandId = "goal" | `goal-${GoalSubcommand}` | "learn" | "setup";
+
+/** Sagax's own commands sit under two headings: the room's goal (/goal and
+ * its subcommands, Objective) and the rest (Sagax). */
+export type ComposerSagaxGroup = "goal" | "sagax";
 
 export interface ComposerSlashCommand {
   id: ComposerSlashCommandId;
-  label: `/${ComposerSlashCommandId}`;
+  /** `/goal`, `/goal status`, `/learn`… */
+  label: string;
   description: string;
+  /** What follows it, shown after the label (`<objective>`). */
+  argumentHint?: string;
+  /** Listed, dimmed, with this reason: nothing to act on, or not offered yet. */
+  unavailableReason?: string;
+}
+
+/** The heading a Sagax command is listed under. */
+export function sagaxCommandGroup(id: ComposerSlashCommandId): ComposerSagaxGroup {
+  return id === "goal" || id.startsWith("goal-") ? "goal" : "sagax";
+}
+
+/** The typed `/goal status` (or pause, resume, stop), alone in the draft. */
+export function goalSubcommandFromComposer(text: string): GoalSubcommand | null {
+  const match = /^\/goal\s+(\w+)\s*$/i.exec(text);
+  const word = match?.[1]?.toLowerCase();
+  return word && (GOAL_SUBCOMMANDS as readonly string[]).includes(word) ? (word as GoalSubcommand) : null;
 }
 
 /** A bot's enabled skill as the skills listing names it (src/lib/use-slash-skills.ts). */
@@ -34,14 +60,34 @@ export function composerSlashTrigger(text: string, caretInput: number): Composer
   const caret = Math.max(0, Math.min(text.length, Math.floor(caretInput)));
   const prefix = text.slice(0, caret);
   const match = /^\/([\w.:-]*)$/.exec(prefix);
-  if (!match) return null;
-  return { query: match[1] ?? "", start: 0, end: caret };
+  if (match) return { query: match[1] ?? "", start: 0, end: caret };
+  // `/goal ` then the start of one of its subcommands keeps the menu open on
+  // them; any other word is the goal itself and closes it.
+  const sub = /^\/goal[ \t]+(\w*)$/i.exec(prefix);
+  const word = sub?.[1]?.toLowerCase();
+  if (word === undefined || !GOAL_SUBCOMMANDS.some((name) => name.startsWith(word))) return null;
+  return { query: `goal ${word}`, start: 0, end: caret };
+}
+
+/** Why a goal subcommand cannot run now, given the room's latest goal run;
+ * null when it can. There is no pause path yet (shared/group-goal-run.ts):
+ * stop, then resume, starts it again. */
+export type GoalSubcommandBlock = "noGoal" | "notRunning" | "alreadyRunning" | "completed" | "pauseUnsupported";
+
+export function goalSubcommandBlock(sub: GoalSubcommand, status: GroupGoalRunStatus | undefined): GoalSubcommandBlock | null {
+  if (sub === "pause") return "pauseUnsupported";
+  if (!status) return "noGoal";
+  if (sub === "status") return null;
+  if (sub === "stop") return status === "working" ? null : "notRunning";
+  if (status === "working") return "alreadyRunning";
+  return status === "completed" ? "completed" : null;
 }
 
 /** A typed `/goal …` is equivalent to selecting Goal mode from the menu.
  * null means this is an ordinary chat message; an empty string means the
  * command is present but still needs a goal description or attachment. */
 export function goalTextFromComposer(text: string): string | null {
+  if (goalSubcommandFromComposer(text)) return null;
   const match = /^\/goal(?:\s+([\s\S]*))?$/i.exec(text);
   return match ? (match[1] ?? "").trimStart() : null;
 }
@@ -58,9 +104,9 @@ export function replaceComposerSlashTrigger(
 }
 
 /** One row of the "/" menu: a Sagax command, or one of the engine's own
- * (shared/harness-commands.ts), grouped Sagax, Engine, Plugins, MCP. */
+ * (shared/harness-commands.ts), grouped Objective, Sagax, Engine, Plugins, MCP. */
 export type ComposerMenuItem =
-  | { kind: "sagax"; key: string; group: "sagax"; label: string; description: string; command: ComposerSlashCommand }
+  | { kind: "sagax"; key: string; group: ComposerSagaxGroup; label: string; description: string; command: ComposerSlashCommand }
   | {
     kind: "engine";
     key: string;
@@ -76,7 +122,7 @@ export type ComposerMenuItem =
     mentionPrefix?: string;
   };
 
-export const COMPOSER_MENU_GROUPS = ["sagax", "engine", "plugins", "mcp"] as const;
+export const COMPOSER_MENU_GROUPS = ["goal", "sagax", "engine", "plugins", "mcp"] as const;
 export type ComposerMenuGroup = (typeof COMPOSER_MENU_GROUPS)[number];
 const MENU_LIMIT = 80;
 
@@ -86,11 +132,13 @@ function matchRank(query: string, names: readonly string[], description: string)
   // a plugin command by its short name (`using-px-flow` for `pulsatrix-flow:using-px-flow`)
   if (names.some((name) => name.split(":").pop()?.startsWith(query))) return 1;
   if (names.some((name) => name.includes(query))) return 2;
-  if (description.toLowerCase().includes(query)) return 3;
+  // `goal s` is a subcommand being typed, never words of a description
+  if (!query.includes(" ") && description.toLowerCase().includes(query)) return 3;
   return null;
 }
 
-/** The "/" menu for a query: Sagax's commands first, then the engine's by
+/** The "/" menu for a query: Sagax's commands first (the goal's, then the
+ * others), then the engine's by
  * group; within a group the closest names first, what the chat cannot run
  * last. An engine command a Sagax one shadows is offered as /engine:<name>. */
 export function composerCommandMenu(
@@ -101,8 +149,8 @@ export function composerCommandMenu(
   const query = queryInput.toLowerCase();
   const ranked: Array<{ item: ComposerMenuItem; rank: number; order: number }> = [];
   sagax.forEach((command, order) => {
-    const rank = matchRank(query, [command.id], command.description);
-    if (rank !== null) ranked.push({ item: { kind: "sagax", key: `sagax:${command.id}`, group: "sagax", label: command.label, description: command.description, command }, rank, order });
+    const rank = matchRank(query, [command.label.slice(1).toLowerCase(), command.id], command.description);
+    if (rank !== null) ranked.push({ item: { kind: "sagax", key: `sagax:${command.id}`, group: sagaxCommandGroup(command.id), label: command.label, description: command.description, command }, rank, order });
   });
   engine.forEach((command, order) => {
     const label = engineCommandLabel(command);

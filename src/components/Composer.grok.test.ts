@@ -103,15 +103,21 @@ describe("composer controls (Grok Bot's prompt bar)", () => {
     expect($("[data-composer-voice]")!.getAttribute("style") ?? "").not.toContain("--cta-fill");
   });
 
-  it("opens one + menu: Attach files, Teach a task (the /learn command), then the approval row", () => {
+  it("opens one + menu in groups: Attach files and Teach a task, the modes, then the approval row", () => {
     fixture.instances = [{ instanceId: "test", driverKind: "claude", displayName: "Claude", capabilities: { agentsMcp: true } } as unknown as InstanceInfo];
     render(createElement(Composer, { bot: bot("teal") }));
     click($("[data-composer-plus]"));
     const menu = $('[data-composer-plus-menu]')!;
     expect(menu.getAttribute("role")).toBe("menu");
-    const labels = [...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim());
-    expect(labels[0]).toBe("Attach files");
-    expect(labels[1]).toBe("Teach a task");
+    const items = [...menu.querySelectorAll<HTMLElement>("[data-composer-plus-item]")];
+    expect(items.map((item) => [item.dataset.composerPlusGroup, item.dataset.composerPlusItem])).toEqual([
+      ["add", "attach"], ["add", "teach"], ["modes", "setup"],
+    ]);
+    const labels = items.map((item) => item.querySelector(".truncate")?.textContent);
+    expect(labels).toEqual(["Attach files", "Teach a task", "Set up this bot"]);
+    // a hairline between add and the modes, and before the conversation's rows
+    expect(items[2]!.previousElementSibling?.getAttribute("role")).toBe("separator");
+    expect(menu.querySelectorAll('[role="separator"]').length).toBe(2);
     expect(menu.querySelector('[data-composer-plus-row="approval"]')).not.toBeNull();
     click(menu.querySelector('[data-composer-plus-item="teach"]'));
     expect(textarea().value).toBe("/learn ");
