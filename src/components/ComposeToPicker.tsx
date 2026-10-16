@@ -40,18 +40,44 @@ export function composePeople(people: Iterable<OrgDirectoryPerson>, viewer: stri
     (!query || `${person.name} ${person.login} ${person.email ?? ""}`.toLowerCase().includes(query)));
 }
 
-/** Rows under the To: field. Group mode keeps the confirm row, then the
- * bots. "New bot" is offered only when the server lets this viewer create one.
- * On an organization server the people follow the bots (browse mode only):
- * choosing one opens the direct conversation with them. */
-export function composeRows(mode: ComposeMode, bots: Bot[], canCreateBots = true, people: OrgDirectoryPerson[] = []): ComposeRow[] {
-  const botRows = bots.map((bot): ComposeRow => ({ kind: "bot", bot }));
-  if (mode === "group") return [{ kind: "create-group" }, ...botRows];
+/** At most this many results (bots and people together) under the create rows. */
+export const COMPOSE_RESULT_LIMIT = 6;
+
+/** How well a name answers the query: 0 the name starts with it, 1 a word
+ * of the name does, 2 it only matches elsewhere (inside a word, the title,
+ * the login or the email). */
+function matchRank(name: string, query: string): number {
+  const text = name.trim().toLowerCase();
+  if (text.startsWith(query)) return 0;
+  if (text.split(/[\s._@-]+/).some((word) => word.startsWith(query))) return 1;
+  return 2;
+}
+
+/** Rows under the To: field. The create rows always come first: group mode
+ * keeps the confirm row, browse mode offers "New bot" (only when the server
+ * lets this viewer create one) and "Create group chat". Then come at most
+ * COMPOSE_RESULT_LIMIT results: the bots, then on an organization server the
+ * people (browse mode only; choosing one opens the direct conversation with
+ * them). With a query the matches are ranked best first, ties keeping that
+ * order. Shortcuts follow the visible rows, so they never skip a number. */
+export function composeRows(mode: ComposeMode, bots: Bot[], canCreateBots = true, people: OrgDirectoryPerson[] = [], query = ""): ComposeRow[] {
+  const results: ComposeRow[] = [
+    ...bots.map((bot): ComposeRow => ({ kind: "bot", bot })),
+    ...(mode === "browse" ? people.map((person): ComposeRow => ({ kind: "person", person })) : []),
+  ];
+  const q = query.trim().toLowerCase();
+  const ranked = q
+    ? results
+      .map((row, index) => ({ row, index, rank: matchRank(row.kind === "bot" ? row.bot.name : row.kind === "person" ? row.person.name || row.person.login : "", q) }))
+      .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      .map(({ row }) => row)
+    : results;
+  const shown = ranked.slice(0, COMPOSE_RESULT_LIMIT);
+  if (mode === "group") return [{ kind: "create-group" }, ...shown];
   return [
     ...(canCreateBots ? [{ kind: "create-bot" } as const] : []),
     { kind: "create-group" },
-    ...botRows,
-    ...people.map((person): ComposeRow => ({ kind: "person", person })),
+    ...shown,
   ];
 }
 
@@ -92,7 +118,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
   const bots = state.bots.filter((bot) => !bot.hidden && !isExternalBot(bot, viewer) && matches(bot, q));
   const orgPeople = useOrgPeople();
   const people = useMemo(() => composePeople(orgPeople.values(), viewer, q), [orgPeople, viewer, q]);
-  const rows = useMemo(() => composeRows(mode, bots, canCreateBots, people), [mode, bots, canCreateBots, people]);
+  const rows = useMemo(() => composeRows(mode, bots, canCreateBots, people, q), [mode, bots, canCreateBots, people, q]);
   const active = rows.length ? Math.min(cursor, rows.length - 1) : 0;
 
   useEffect(() => setCursor(0), [q, mode]);
