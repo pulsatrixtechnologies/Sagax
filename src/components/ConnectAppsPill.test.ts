@@ -9,7 +9,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { setLocale } from "@/lib/i18n";
 import { initialState, reducer } from "@/state/store";
-import { ConnectAppsPill, SidebarConnectApps, sidebarPillApps, type PillApp } from "./ConnectAppsPill";
+import { readFileSync } from "node:fs";
+
+import { ConnectAppsPill, pillFit, SidebarConnectApps, sidebarPillApps, tilesWidth, type PillApp } from "./ConnectAppsPill";
 
 const inventory = vi.hoisted(() => ({ services: {} as Record<string, { connected: boolean }> }));
 vi.mock("./plugins/connected-apps", async (importOriginal) => ({
@@ -106,11 +108,54 @@ describe("the sidebar's Connect apps pill", () => {
   });
 
   it("shows the connected apps, three at most, else the usual suggestions", () => {
-    expect(sidebarPillApps([], null).map((item) => item.slug)).toEqual(["gmail", "slack", "github"]);
+    expect(sidebarPillApps([], null).map((item) => item.slug)).toEqual(["gmail", "notion", "googledrive"]);
     const cards = new Map([["notion", { slug: "notion", label: "Notion", blurb: "", logo: "https://logo/notion.png", domain: "notion.so" }]]);
     const shown = sidebarPillApps(["slack", "notion", "gmail", "asana"], cards);
     expect(shown.map((item) => item.slug)).toEqual(["asana", "gmail", "notion"]);
     expect(shown[2]).toMatchObject({ label: "Notion", logo: "https://logo/notion.png" });
+  });
+});
+
+describe("the pill's tiles, after Grok Bot", () => {
+  it("stacks three 18px tiles right after the label, 6px over one another (42px)", () => {
+    const button = render(apps).querySelector("button")!;
+    const tiles = button.querySelector<HTMLElement>("[data-pill-tiles]")!;
+    expect(tiles.previousElementSibling!.textContent).toBe("Connect apps");
+    expect(tiles.className).not.toContain("ml-auto");
+    expect(tiles.style.width).toBe("42px");
+    expect(tilesWidth(3)).toBe(42);
+    const each = [...tiles.querySelectorAll<HTMLElement>("[data-pill-tile]")];
+    expect(each.map((tile) => tile.dataset.pillTile)).toEqual(["start", "middle", "end"]);
+    expect(each.map((tile) => tile.className.includes("-ml-1.5"))).toEqual([false, true, true]);
+    for (const tile of each) {
+      expect(tile.className).toContain("size-[18px]");
+      expect(tile.className).toContain("rounded-[6px]");
+      expect(tile.firstElementChild!.className).toContain("bg-white");
+      expect(tile.firstElementChild!.className).toContain("border-[0.5px]");
+    }
+  });
+
+  it("never truncates the label while it fits: tiles go first, then the padding", () => {
+    const label = 180;
+    expect(pillFit(16 + label + 6 + 42 + 12 + 2, label, 3)).toBe("full");
+    expect(pillFit(16 + label + 6 + 42 + 12 + 1, label, 3)).toBe("compact");
+    expect(pillFit(12 + label + 12 + 2, label, 3)).toBe("compact");
+    expect(pillFit(12 + label + 12 + 1, label, 3)).toBe("snug");
+    expect(pillFit(8 + label + 8 + 2, label, 3)).toBe("snug");
+    expect(pillFit(8 + label + 8 + 1, label, 3)).toBe("tight");
+    expect(pillFit(16 + label + 16 + 2, label, 0)).toBe("full");
+    const button = render(apps).querySelector("button")!;
+    expect(button.querySelector("span")!.className).toContain("whitespace-nowrap");
+    expect(button.querySelector("span")!.className).not.toContain("truncate");
+  });
+
+  it("fans the tiles out on hover, and keeps them still with reduced motion", () => {
+    const css = readFileSync("src/styles.css", "utf8");
+    const motion = css.slice(css.indexOf(".connect-apps-pill {"));
+    expect(motion).toContain("@media (prefers-reduced-motion: no-preference)");
+    expect(motion).toMatch(/:root:not\(\[data-reduced-motion="true"\]\) \.connect-apps-pill:is\(:hover, :focus-visible\) \[data-pill-tile="start"\] \{\s*transform: translateX\(-3px\) rotate\(-8deg\);/);
+    expect(motion).toMatch(/\[data-pill-tile="end"\] \{\s*transform: translateX\(3px\) rotate\(8deg\);/);
+    expect(motion).toContain(":root[data-reduced-motion=\"true\"] .connect-apps-pill");
   });
 });
 

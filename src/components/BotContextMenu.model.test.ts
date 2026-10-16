@@ -1,7 +1,8 @@
 // The sidebar's bot menu, one flat menu (JC, 2026-10-15): New thread |
-// Pin, Move to ›, Mark as Unread, Mark all as read | Rename, Edit bot,
-// Model…, Make primary bot, Put on the desktop | Hide from sidebar,
-// Archive, Delete. No More, no Copy conversation ID.
+// Pin, Move to › | Rename, Edit bot, Make primary bot, Put on the desktop |
+// Hide from sidebar, Archive, Delete. No More, no Copy conversation ID, and
+// (for 0.5.7) no New thread in a working folder, Mark as Unread, Mark all as
+// read or Model….
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -89,8 +90,8 @@ afterEach(() => vi.unstubAllGlobals());
 describe("the sidebar's bot menu", () => {
   it("lists every action in one menu, in JC's order", () => {
     const { html } = render();
-    expect(items(html)).toEqual(["new-thread", "pin", "move", "mark-unread", "mark-all-read", "rename", "edit", "model", "put-on-desktop", "hide", "archive", "delete"]);
-    for (const label of [">New thread<", ">Pin<", ">Move to<", ">Mark as Unread<", ">Mark all conversations as read<", ">Rename the bot<", ">Edit bot<", ">Model…<", ">Hide from sidebar<", ">Archive<"]) expect(html).toContain(label);
+    expect(items(html)).toEqual(["new-thread", "pin", "move", "rename", "edit", "put-on-desktop", "hide", "archive", "delete"]);
+    for (const label of [">New thread<", ">Pin<", ">Move to<", ">Rename the bot<", ">Edit bot<", ">Hide from sidebar<", ">Archive<"]) expect(html).toContain(label);
     expect(html).not.toContain("Rename Bot");
   });
 
@@ -139,17 +140,20 @@ describe("the sidebar's bot menu", () => {
     expect(props.onRename).toHaveBeenCalledWith(bot.id);
   });
 
-  it("opens the model window on that bot from Model…", () => {
-    const { props } = render();
-    buttons().get("model")!.props.onClick();
-    expect(fixture.models).toEqual([bot.id]);
-    expect(props.onClose).toHaveBeenCalledOnce();
+  it("no longer offers Mark as Unread, Mark all as read, Model… or New thread in a working folder", () => {
+    const html = render(bot, { ...handlers(), onNewInFolder: vi.fn() } as ReturnType<typeof handlers>).html;
+    for (const id of ["mark-unread", "mark-all-read", "model", "new-thread-folder"]) expect(items(html)).not.toContain(id);
+    for (const label of [">Mark as Unread<", ">Mark all conversations as read<", ">Model…<", ">New thread in a working folder…<"]) expect(html).not.toContain(label);
+    expect(fixture.models).toEqual([]);
+    expect(items(html)).toEqual(expect.arrayContaining(["rename", "edit"]));
   });
+
 
   it("says it in French, bot and not robot", () => {
     setLocale("fr");
     const main = render().html;
-    for (const label of [">Nouveau fil<", ">Épingler<", ">Déplacer vers<", ">Marquer comme non lu<", ">Tout marquer comme lu<", ">Renommer le bot<", ">Modifier le bot<", ">Modèle…<", ">Mettre sur le bureau<", ">Masquer de la barre latérale<", ">Archiver<", ">Supprimer<"]) expect(main).toContain(label);
+    for (const label of [">Nouveau fil<", ">Épingler<", ">Déplacer vers<", ">Renommer le bot<", ">Modifier le bot<", ">Mettre sur le bureau<", ">Masquer de la barre latérale<", ">Archiver<", ">Supprimer<"]) expect(main).toContain(label);
+    for (const label of [">Marquer comme non lu<", ">Tout marquer comme lu<", ">Modèle…<"]) expect(main).not.toContain(label);
     expect(main).not.toContain(">Plus<");
     expect(main).not.toContain("Copier l'ID");
     expect(main).not.toContain("robot");

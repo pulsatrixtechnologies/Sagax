@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -66,14 +67,20 @@ describe("SidebarSectionHeader", () => {
     expect(html).toContain("1 working");
   });
 
-  it("shows what a folded section holds at the right, and nothing while open", () => {
-    const header = (collapsed: boolean, count?: number) => renderToStaticMarkup(
-      createElement(SidebarSectionHeader, { name: "Personnel", collapsed, count, onToggle: () => {}, reorderable: false, dragging: false }),
+  it("shows only the group's name, never a count, folded or open (Grok Bot's My Team)", () => {
+    const header = (collapsed: boolean) => renderToStaticMarkup(
+      createElement(SidebarSectionHeader, { name: "Mon équipe", collapsed, onToggle: () => {}, reorderable: false, dragging: false }),
     );
-    expect(header(true, 6)).toContain('<span data-section-count="" class="ml-auto shrink-0 text-[12px] leading-4 tabular-nums">6</span>');
-    expect(header(false, 6)).not.toContain("data-section-count");
-    expect(header(true, 0)).not.toContain("data-section-count");
-    expect(header(true)).not.toContain("data-section-count");
+    for (const html of [header(true), header(false)]) {
+      expect(html).not.toContain("data-section-count");
+      expect(html).not.toContain("tabular-nums");
+      expect(html.replace(/<[^>]+>/g, "")).toBe("Mon équipe");
+    }
+  });
+
+  it("draws the focus frame only for keyboard focus, never after a click", () => {
+    const css = readFileSync("src/styles.css", "utf8");
+    expect(css).toMatch(/\[data-sidebar-section-header\]\[data-pointer-focus\]:focus-visible \{\s*outline: none;/);
   });
 
   it("retains the accessible attention summary when the heading cannot collapse", () => {

@@ -1,7 +1,7 @@
 /** Isolated gallery for Playwright screenshots of the whole desktop sidebar
  * (bot rows, Primary Bot, sections, foot) beside Grok Bot's. Not shipped in
  * the app. It answers /api itself with a made-up team, so nothing reaches a
- * server. ?skin=<id>&lang=<code>&threads=header|sidebar */
+ * server. ?skin=<id>&lang=<code>&threads=header|sidebar&width=<px, 368> */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { setLocale } from "../lib/i18n";
@@ -17,7 +17,7 @@ setLocale(params.get("lang") ?? "fr");
 try {
   localStorage.setItem("sagax.interfaceMode.v1", "advanced");
   localStorage.setItem("sagax-sidebar-shortcuts", "1");
-  localStorage.setItem("omb-sidebar-width-v2", "368");
+  localStorage.setItem("omb-sidebar-width-v2", params.get("width") ?? "368");
   localStorage.setItem("omb-threads-location", params.get("threads") === "sidebar" ? "sidebar" : "header");
 } catch {
   // the gallery still renders with the defaults

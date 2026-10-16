@@ -4,7 +4,7 @@
 // src/lib/connect-apps-signal.ts (the latest turn needed an app that is not
 // connected), never here. The icons are Connect apps' own (ServiceIcon:
 // the catalog logo, else the site's icon, else a monogram).
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -22,30 +22,106 @@ export interface PillApp {
 /** At most three icons, like the model. */
 export const PILL_ICONS = 3;
 
+// Grok Bot's pill, by its measurements (JC, 2026-10-15): 36px tall, 16px
+// side padding (12px after the tiles), the tiles 6px after the label. The
+// tiles are 18px rounded squares (6px), each a white 16px tile inside a 1px
+// ring the pill's own colour, stacked 6px over the one before (42px for
+// three). On hover they fan out (styles.css, [data-pill-tile]).
+const PAD = 16;
+const PAD_AFTER_TILES = 12;
+const PAD_COMPACT = 12;
+/** Past Grok's narrow padding, so "Connecter des applications" still fits
+ * the default 280px sidebar (JC: the label is never cut). */
+const PAD_SNUG = 8;
+const TILES_GAP = 6;
+const TILE = 18;
+const TILE_OVERLAP = 6;
+const BORDER = 2;
+
+export type PillFit = "full" | "compact" | "snug" | "tight";
+
+export function tilesWidth(count: number): number {
+  return count > 0 ? TILE + (Math.min(count, PILL_ICONS) - 1) * (TILE - TILE_OVERLAP) : 0;
+}
+
+/** How the pill fits its width: the label and the tiles ("full"), the label
+ * alone with 12px sides ("compact", Grok's narrow sidebar), with 8px sides
+ * ("snug"), or not even that ("tight": the label is cut, which only a sidebar
+ * dragged near its narrowest does). */
+export function pillFit(available: number, labelWidth: number, tiles: number): PillFit {
+  const full = PAD + labelWidth + (tiles > 0 ? TILES_GAP + tilesWidth(tiles) + PAD_AFTER_TILES : PAD) + BORDER;
+  if (available >= full) return "full";
+  if (available >= PAD_COMPACT * 2 + labelWidth + BORDER) return "compact";
+  if (available >= PAD_SNUG * 2 + labelWidth + BORDER) return "snug";
+  return "tight";
+}
+
 /** The pill itself: a wide rounded button, the label then up to three app
- * icons. The conversation's pill and the sidebar's foot share it. */
-export function ConnectAppsButton({ apps, onOpen, ariaLabel, title, className, ...data }: {
+ * tiles. The conversation's pill and the sidebar's foot share it; the
+ * sidebar's (fit) gives the tiles up before it cuts the label. */
+export function ConnectAppsButton({ apps, onOpen, ariaLabel, title, className, fit = false, ...data }: {
   apps: readonly PillApp[];
   onOpen: () => void;
   ariaLabel: string;
   title?: string;
   className?: string;
+  /** Measure the width it gets and drop the tiles (then the padding) first. */
+  fit?: boolean;
   [data: `data-${string}`]: string | undefined;
 }) {
+  const shown = apps.slice(0, PILL_ICONS);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [state, setState] = useState<PillFit>("full");
+  const label = t("chat.connectApps.pill");
+  useLayoutEffect(() => {
+    const button = buttonRef.current;
+    const text = labelRef.current;
+    if (!fit || !button || !text) return;
+    const measure = () => setState(pillFit(button.getBoundingClientRect().width, text.scrollWidth, shown.length));
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(button);
+    return () => observer.disconnect();
+  }, [fit, shown.length, label]);
+  const tiles = shown.length > 0 && state === "full";
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={onOpen}
       aria-label={ariaLabel}
-      title={title}
+      title={title ?? (state === "tight" ? label : undefined)}
+      data-pill-fit={fit ? state : undefined}
       {...data}
-      className={cn("inline-flex h-9 max-w-full items-center gap-2.5 rounded-full border border-hairline/40 bg-panel pl-4 pr-3 text-[13px] font-medium leading-5 text-ink transition-colors hover:bg-raised", className)}
+      className={cn(
+        "connect-apps-pill inline-flex h-9 max-w-full items-center justify-center rounded-full border border-hairline/40 bg-panel text-[13px] font-medium leading-5 text-ink hover:bg-raised",
+        state === "full" ? "px-4" : state === "compact" ? "px-3" : "px-2",
+        tiles && "pr-3",
+        className,
+      )}
     >
-      <span className="min-w-0 truncate">{t("chat.connectApps.pill")}</span>
-      {apps.length > 0 && (
-        <span className="flex shrink-0 items-center gap-1" aria-hidden="true">
-          {apps.slice(0, PILL_ICONS).map((app) => (
-            <ServiceIcon key={app.slug} card={{ logo: app.logo, domain: app.domain, label: app.label }} className="size-[18px] rounded-[5px] text-[10px]" />
+      <span ref={labelRef} className={cn("block min-w-0 whitespace-nowrap", state === "tight" && "overflow-hidden text-ellipsis")}>{label}</span>
+      {shown.length > 0 && (
+        <span
+          data-pill-tiles=""
+          data-hidden={tiles ? undefined : ""}
+          aria-hidden="true"
+          className="relative inline-flex h-[18px] shrink-0 items-start"
+          style={{ width: tilesWidth(shown.length) }}
+        >
+          {shown.map((app, index) => (
+            <span
+              key={app.slug}
+              data-pill-tile={index === 0 ? "start" : index === shown.length - 1 ? "end" : "middle"}
+              className={cn("box-border inline-flex size-[18px] shrink-0 rounded-[6px] p-px", index > 0 && "-ml-1.5")}
+              style={{ animationDelay: `${index * 50}ms` }}
+            >
+              <span className="flex size-4 items-center justify-center overflow-hidden rounded-[4px] border-[0.5px] border-black/10 bg-white">
+                <ServiceIcon card={{ logo: app.logo, domain: app.domain, label: app.label }} className="size-3 rounded-none text-[9px] text-neutral-600 bg-white" />
+              </span>
+            </span>
           ))}
         </span>
       )}
@@ -114,11 +190,14 @@ export function ConversationConnectApps({ botId, messages, busy }: { botId: stri
   );
 }
 
-/** Shown in the sidebar's foot when nothing is connected yet. */
+/** Shown in the sidebar's foot when nothing is connected yet: Grok Bot's
+ * three (Gmail, Notion, Drive). */
 const SUGGESTED_APPS: readonly PillApp[] = [
-  { slug: "gmail", label: "Gmail", logo: null, domain: "gmail.com" },
-  { slug: "slack", label: "Slack", logo: null, domain: "slack.com" },
-  { slug: "github", label: "GitHub", logo: null, domain: "github.com" },
+  // Google's own product marks: the favicon service answers both Gmail and
+  // Drive with the plain Google "G".
+  { slug: "gmail", label: "Gmail", logo: "https://ssl.gstatic.com/images/branding/product/1x/gmail_2020q4_32dp.png", domain: "gmail.com" },
+  { slug: "notion", label: "Notion", logo: null, domain: "notion.so" },
+  { slug: "googledrive", label: "Google Drive", logo: "https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png", domain: "drive.google.com" },
 ];
 
 /** The icons of the sidebar's pill: the person's connected apps (three at
@@ -130,7 +209,7 @@ export function sidebarPillApps(connected: readonly string[], cards: ReadonlyMap
     : [...SUGGESTED_APPS];
   return base.map((app) => {
     const card = cards?.get(app.slug);
-    return card ? { slug: app.slug, label: card.label, logo: card.logo, domain: card.domain ?? app.domain } : app;
+    return card ? { slug: app.slug, label: card.label, logo: card.logo ?? app.logo, domain: card.domain ?? app.domain } : app;
   });
 }
 
@@ -166,16 +245,18 @@ export function SidebarConnectApps({ onOpen, iconOnly = false, icon }: { onOpen:
     );
   }
   // Grok Bot's foot pill: it takes the row's width beside the avatar, 36px
-  // tall, the label and the icons centred together, 14px medium text, on
-  // the rail's raised card with a hairline.
+  // tall, the label and the tiles centred together, 14px medium text, on
+  // the rail's raised card with a hairline. Narrow, it gives up the tiles
+  // before the label.
   return (
     <ConnectAppsButton
       apps={sidebarPillApps(connected, cards)}
       onOpen={onOpen}
       ariaLabel={label}
+      fit
       data-tour="nav-apps"
       data-sidebar-connect-apps=""
-      className="min-w-0 flex-1 justify-center border-sidebar-hairline-weak bg-sidebar-card pl-4 pr-3 text-[14px] text-sidebar-ink hover:bg-sidebar-elevated-hover"
+      className="min-w-0 flex-1 border-sidebar-hairline-weak bg-sidebar-card text-[14px] text-sidebar-ink hover:bg-sidebar-elevated-hover"
     />
   );
 }

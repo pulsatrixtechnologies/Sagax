@@ -1,4 +1,4 @@
-import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
+import type { DragEvent, FocusEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -7,11 +7,25 @@ import {
   type SidebarSectionAttention,
 } from "@/lib/sidebar-attention";
 
+// How focus last moved: a click (or a right click that opened the group's
+// menu and handed focus back on close) must not draw the blue focus frame on
+// the header; Tab or an arrow key does (JC, 2026-10-15). Chromium counts a
+// programmatic focus() after a menu as :focus-visible, hence this flag.
+let lastInput: "pointer" | "keyboard" = "keyboard";
+let listening = false;
+function trackInput() {
+  if (listening || typeof document === "undefined") return;
+  listening = true;
+  document.addEventListener("pointerdown", () => { lastInput = "pointer"; }, true);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Tab" || event.key.startsWith("Arrow")) lastInput = "keyboard";
+  }, true);
+}
+
 export function SidebarSectionHeader({
   name,
   collapsed,
   attention,
-  count,
   alert,
   onToggle,
   reorderable,
@@ -24,8 +38,6 @@ export function SidebarSectionHeader({
   name: string;
   collapsed: boolean;
   attention?: SidebarSectionAttention;
-  /** What the section holds, shown at the right while it is folded. */
-  count?: number;
   alert?: boolean;
   onToggle?: () => void;
   reorderable: boolean;
@@ -36,7 +48,13 @@ export function SidebarSectionHeader({
   onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const attentionLabel = attention ? sidebarAttentionLabel(attention) : "";
+  trackInput();
+  const onHeaderFocus = (event: FocusEvent<HTMLButtonElement>) => {
+    if (lastInput === "pointer") event.currentTarget.dataset.pointerFocus = "";
+    else delete event.currentTarget.dataset.pointerFocus;
+  };
   const onHeaderKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "Tab" || event.key.startsWith("Arrow")) delete event.currentTarget.dataset.pointerFocus;
     if (!reorderable || !event.altKey) return;
     if (event.key === "ArrowUp") {
       event.preventDefault();
@@ -94,7 +112,9 @@ export function SidebarSectionHeader({
         <button
           type="button"
           onClick={onToggle}
+          onFocus={onHeaderFocus}
           onKeyDown={onHeaderKeyDown}
+          data-sidebar-section-header=""
           aria-expanded={!collapsed}
           aria-keyshortcuts={reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
           title={
@@ -109,14 +129,12 @@ export function SidebarSectionHeader({
           // The reference window's header: the name in sentence case (as
           // upstream), 12px regular in the secondary ink, then the section's
           // attention marks; no chevron (a click folds it, aria-expanded
-          // says which way), and while folded what it holds at the right
+          // says which way). Only the name, no count, as Grok Bot's "My
+          // Team" (JC, 2026-10-15)
           className="group/section flex h-7 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink"
         >
           <span className="sidebar-section-label truncate text-[12px] font-normal leading-4">{name}</span>
           {marks}
-          {collapsed && count !== undefined && count > 0 && (
-            <span data-section-count="" className="ml-auto shrink-0 text-[12px] leading-4 tabular-nums">{count}</span>
-          )}
         </button>
       ) : (
         <div className="flex h-7 min-w-0 items-center gap-2 px-2">

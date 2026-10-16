@@ -5,7 +5,6 @@ import {
   Archive,
   BellDot,
   Check,
-  CheckCheck,
   ChevronRight,
   ClipboardCopy,
   ArrowLeftRight,
@@ -62,8 +61,7 @@ import { peopleDmPeer } from "@/lib/people-dm";
 import { BotRoleTag, PersonLabelTag } from "./LabelTag";
 import { SidebarUnreadThreads, sidebarUnreadThreads } from "./SidebarUnreadThreads";
 import { nudgeLineText } from "@/lib/nudge-line";
-import { Cpu, Eye, UserRound } from "lucide-react";
-import { openModelWindow } from "@/lib/model-window";
+import { Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
 import { PersonAvatar } from "./MessageAuthor";
@@ -104,7 +102,7 @@ import { BotProjectDialog, FolderActions, FolderIcon, navigateThreadMenu } from 
 import { NewTaskFolderDialog } from "./NewTaskFolderDialog";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { draggedFolder, draggedThread, FOLDER_DRAG_TYPE, THREAD_DRAG_TYPE, moveFolder, placeFolder } from "@/lib/folder-order";
-import { botUnreadThreadIds, folderUnreadThreadIds, markBotRead, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
+import { folderUnreadThreadIds, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
 import { personPickerThreads } from "@/lib/person-threads";
 import { approvalModeFor } from "../../shared/approval-mode";
 import { liveActivityLabel } from "@/lib/live-activity";
@@ -1152,12 +1150,8 @@ export function BotContextMenu({
   onReplacePrimary,
   variant = "sidebar",
   onEditPersona,
-  onNewInFolder,
 }: {
   menu: MenuState | null;
-  /** New thread in a working folder (Advanced, the owner or an admin): the
-   * sidebar no longer unfolds the thread list whose menu held it. */
-  onNewInFolder?: (bot: Bot) => void;
   onClose: () => void;
   onArchive?: (bot: Bot) => void;
   onDelete?: (bot: Bot) => void;
@@ -1182,29 +1176,6 @@ export function BotContextMenu({
   const bot = shown ? state.bots.find((b) => b.id === shown.botId) : undefined;
   const floating = useSyncExternalStore(subscribeFloatingBots, () => (shown ? isBotFloating(shown.botId) : false), () => false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const latestMenu = useRef(menu);
-  useLayoutEffect(() => { latestMenu.current = menu; }, [menu]);
-  const readInFlight = useRef(false);
-  const [readingBotId, setReadingBotId] = useState<string | null>(null);
-  const [readError, setReadError] = useState<{ botId: string; message: string } | null>(null);
-  useEffect(() => { setReadError(null); }, [menu?.botId]);
-  const readAll = async (owner: Bot) => {
-    if (readInFlight.current) return;
-    readInFlight.current = true;
-    setReadingBotId(owner.id);
-    setReadError(null);
-    const openedMenu = menu;
-    try {
-      await markBotRead(owner, api, (updated) => dispatch({ type: "botPatched", bot: updated }));
-      if (latestMenu.current === openedMenu) onClose();
-    } catch (error) {
-      const guidance = t("sidebar.bot.markAllReadFailed");
-      setReadError({ botId: owner.id, message: error instanceof Error ? `${guidance} ${error.message}` : guidance });
-    } finally {
-      readInFlight.current = false;
-      setReadingBotId(null);
-    }
-  };
   useLayoutEffect(() => {
     const element = menuRef.current;
     if (!element || !shown) return;
@@ -1384,21 +1355,11 @@ export function BotContextMenu({
   const newThreadItem = showThreads ? item(<Plus size={16} className="text-ink" />, t("task.newShort"), () => {
     dispatch({ type: "newTask", botId: bot.id });
   }, { id: "new-thread" }) : null;
-  const newInFolderItem = showThreads && onNewInFolder ? item(<FolderOpen size={16} className="text-ink" />, t("task.folder.new"), () => {
-    onClose();
-    onNewInFolder(bot);
-  }, { id: "new-thread-folder" }) : null;
 
-  // One flat menu, no More (JC, 2026-10-15): New thread | Pin, Move to ›,
-  // Mark as Unread, Mark all as read | Rename, Edit bot, Model…, Make
-  // primary bot, Put on the desktop | Hide from sidebar, Archive, Delete.
-  const markAllReadItem = item(
-    readingBotId === bot.id ? <Loader2 size={16} className="animate-spin text-ink-secondary" /> : <CheckCheck size={16} className="text-ink-secondary" />,
-    readingBotId === bot.id ? t("sidebar.bot.markingAllRead") : t("sidebar.bot.markAllRead"),
-    () => { void readAll(bot); },
-    { id: "mark-all-read", disabled: readingBotId !== null || botUnreadThreadIds(bot).length === 0, keepOpen: true },
-  );
-  const modelItem = item(<Cpu size={16} className="text-ink" />, t("sidebar.bot.model"), () => openModelWindow(bot.id), { id: "model" });
+  // One flat menu, no More (JC, 2026-10-15): New thread | Pin, Move to › |
+  // Rename, Edit bot, Make primary bot, Put on the desktop | Hide from
+  // sidebar, Archive, Delete. Mark as Unread, Mark all as read and Model…
+  // left this menu (JC, 2026-10-15, for 0.5.7).
   const entries = remoteClient ? [
     ...(newThreadItem ? [newThreadItem] : []),
     floatItem,
@@ -1408,7 +1369,7 @@ export function BotContextMenu({
     }, { id: "move" })] : []),
     editItem,
   ] : [
-    ...(newThreadItem ? [newThreadItem, ...(newInFolderItem ? [newInFolderItem] : []), divider("d-new")] : []),
+    ...(newThreadItem ? [newThreadItem, divider("d-new")] : []),
     item(
       bot.pinned ? <PinOff size={16} className="text-ink" /> : <Pin size={16} className="text-ink" />,
       bot.pinned ? t("sidebar.bot.unpin") : t("sidebar.bot.pin"),
@@ -1416,14 +1377,9 @@ export function BotContextMenu({
       { id: "pin" },
     ),
     ...(moveItem ? [moveItem] : []),
-    item(<BellDot size={16} className="text-ink" />, t("sidebar.bot.markUnread"), () =>
-      dispatch({ type: "markUnread", botId: bot.id }), { id: "mark-unread" },
-    ),
-    markAllReadItem,
     divider("d-name"),
     ...(canRename ? [item(<Pencil size={16} className="text-ink" />, t("persona.menu.rename"), () => onRename(bot.id), { id: "rename" })] : []),
     editItem,
-    modelItem,
     ...(primaryItem ? [primaryItem] : []),
     floatItem,
     divider("d-place"),
@@ -1453,7 +1409,6 @@ export function BotContextMenu({
       className={cn("fixed z-40 max-h-[calc(100dvh-16px)] w-[228px] min-w-[200px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
       {entries}
-      {readError?.botId === bot.id && <p role="alert" className="px-3.5 py-2 text-[12px] text-danger">{readError.message}</p>}
     </div>,
     document.body,
   );
@@ -2488,8 +2443,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const cancelConfirm = useCallback(() => setConfirm(null), []);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renameBotId, setRenameBotId] = useState<string | null>(null);
-  const [folderDialogBot, setFolderDialogBot] = useState<Bot | null>(null);
-  const canChooseFolder = useOwnerOrAdmin() === true;
   const [sectionPicker, setSectionPicker] = useState<MenuState | null>(null);
 
   const [teamMenu, setTeamMenu] = useState<{ name: string; x: number; y: number } | null>(null);
@@ -2618,7 +2571,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const searchTitle = `${t("sidebar.search")} (${paletteShortcutLabel()})`;
   // null on 404 and on any other failure, so the roster stays.
   // Chosen in Settings > Appearance or by dragging the edge; one store.
-  const advancedMode = useAdvancedMode();
   const density = useSidebarDensity();
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   // `collapsed` follows the drag itself: the density store answers a beat
@@ -3184,7 +3136,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                     } : undefined}
                     collapsed={collapsed}
                     attention={attention}
-                    count={sectionChiefItems.length + sectionBotItems.length + sectionGroupItems.length}
                     onToggle={layoutInteractive ? () => toggleSection(id) : undefined}
                     reorderable={layoutInteractive && sectionIds.length > 1}
                     dragging={draggingSectionId === id}
@@ -3263,7 +3214,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <SidebarSectionHeader
                     name={sectionLabel(BUILT_IN_SECTION_ID)}
                     collapsed={collapsed}
-                    count={builtInBots.length}
                     reorderable={false}
                     dragging={false}
                     onToggle={layoutInteractive ? () => toggleSection(BUILT_IN_SECTION_ID) : undefined}
@@ -3363,11 +3313,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           onRename={(botId) => setRenameBotId(botId)}
           onMakePrimary={(bot) => void makePrimaryBot(bot.id)}
           onReplacePrimary={(bot) => setPrimaryPicker({ currentId: bot.id, pending: false, error: null })}
-          onNewInFolder={canChooseFolder && advancedMode && !remoteClient ? (bot) => setFolderDialogBot(bot) : undefined}
         />
-      {folderDialogBot && <NewTaskFolderDialog bot={folderDialogBot} onClose={() => setFolderDialogBot(null)} onReturnFocus={() => {
-        document.querySelector<HTMLElement>(`[data-sidebar-bot-row="${CSS.escape(folderDialogBot.id)}"]`)?.focus();
-      }} />}
       <PrimaryBotPicker
         open={primaryPicker !== null}
         bots={sidebarBots}

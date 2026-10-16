@@ -39,8 +39,8 @@ const render = () => flushSync(() => root.render(createElement(BotEditorStore, {
   children: createElement(Sidebar, { open: true, onClose: () => {} }),
 })));
 // Grok Bot's rows (JC, 2026-10-15): the thread list no longer unfolds
-// under the bot, so New thread and New thread in a working folder are in the
-// bot's own menu (right click on the row).
+// under the bot, so New thread is in the bot's own menu (right click on the
+// row). New thread in a working folder left that menu for 0.5.7.
 const openMenu = () => {
   const row = document.querySelector<HTMLElement>('[data-sidebar-bot-row="pepper"]');
   flushSync(() => row?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })));
@@ -66,23 +66,12 @@ afterEach(() => {
 });
 
 describe("working folder through the rendered sidebar", () => {
-  it("opens the dialog from the thread list menu and submits a new thread with its chosen path", () => {
+  it("leaves New thread in a working folder out of the bot menu, even for an admin in Advanced mode (0.5.7)", () => {
     render();
     openMenu();
     expect(menuItem("New thread")).toBeDefined();
-    flushSync(() => menuItem("New thread in a working folder…")!.click());
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-label="New thread in a working folder…"]')!;
-    expect(dialog).not.toBeNull();
-    const input = dialog.querySelector<HTMLInputElement>("input")!;
-    expect(input.value).toBe("/projects/default");
-    expect(dispatch).not.toHaveBeenCalled();
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "/projects/next");
-    flushSync(() => input.dispatchEvent(new Event("input", { bubbles: true })));
-    flushSync(() => dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
-    expect(dispatch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: "newTask", botId: bot.id, cwd: "/projects/next" }));
-    flushSync(() => dispatch.mock.calls[0]![0].onCreated());
+    expect(menuItem("New thread in a working folder…")).toBeUndefined();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(document.activeElement).toBe(document.querySelector('[data-sidebar-bot-row="pepper"]'));
   });
 
   it("retains one-click normal creation and hides explicit folders from chat-only sessions", () => {
