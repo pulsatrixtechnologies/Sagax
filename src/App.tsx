@@ -177,14 +177,16 @@ function Shell() {
     const organization = viewer?.profileManagedBy === "perspicax" || org !== null || serverMode?.active === true;
     setInterfaceModeRole({ organization, role: viewer?.role ?? null });
   }, [org, serverMode, state.config?.viewer]);
-  // Simple does not offer the inspector, the computer panel or connected apps.
-  // Closing them leaves their saved settings as they were.
+  // Simple does not offer the inspector or the computer panel. Closing them
+  // leaves their saved settings as they were. Connect apps stays open in
+  // Simple (JC, 2026-10-16): its pill is in every sidebar, and an
+  // organization member starts on Simple, so closing it here made the pill
+  // do nothing for them. What they may change inside is the server's call.
   useEffect(() => {
     if (advanced) return;
     if (state.inspectorOpen) dispatch({ type: "toggleInspector", open: false });
     if (state.computerOpen) dispatch({ type: "toggleComputer", open: false });
-    if (state.pluginsOpen) dispatch({ type: "togglePlugins", open: false });
-  }, [advanced, state.inspectorOpen, state.computerOpen, state.pluginsOpen, dispatch]);
+  }, [advanced, state.inspectorOpen, state.computerOpen, dispatch]);
 
   // Nothing on this machine can run a bot. A missing cloud login does not
   // count — that CLI can still host a local model. Wait for the first
