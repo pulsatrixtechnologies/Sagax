@@ -4,15 +4,34 @@ import type { Duplex } from "node:stream";
 import type { RequestAuth } from "../request-auth.ts";
 import type { TerminalProviderKind, TerminalResource } from "../../shared/terminal-resources.ts";
 
+/** What the server knows about the person asking, for one bot. Built by
+ * index.ts (terminalAccessFor) and checked by the registry on every list,
+ * resolve and open. */
+export interface TerminalAccess {
+  /** An organization server (Perspicax sign-in). Solo: the operator only. */
+  organization: boolean;
+  /** Organization admin, or the operator of a solo server. Server hosts
+   * (SSH, unRAID, VPS) are theirs only. */
+  admin: boolean;
+  /** The bot is this person's own. A personal environment opens for one's
+   * own bot; an admin may also open their own environment for another bot. */
+  ownsBot: boolean;
+}
+
 export interface TerminalListContext {
   auth: RequestAuth;
   principalId: string;
   botId?: string;
   threadId?: string;
+  /** Absent: nothing is offered (fail closed). */
+  access?: TerminalAccess;
 }
 
 export interface TerminalOpenContext extends TerminalListContext {
   sessionId: string;
+  /** Size the shell starts at; the widget sends resizes afterwards. */
+  cols: number;
+  rows: number;
 }
 
 /** Server-side attachment: a byte stream with resize and teardown. */

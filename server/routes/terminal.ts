@@ -6,13 +6,14 @@ import { z } from "zod";
 import { isSameOrigin, type RequestAuth } from "../request-auth.ts";
 import { encodeWebSocketFrame, websocketAccept, webSocketFrameDecoder } from "../ws-bridge.ts";
 import { PASS, type RouteHandler } from "./table.ts";
+import { parseTerminalControl } from "../../shared/terminal-resources.ts";
 import type { createTerminalSessionManager } from "../terminal-sessions.ts";
-import type { TerminalResourceRegistry } from "../terminal-resources/registry.ts";
+import type { createTerminalRequestService } from "../terminal-requests.ts";
 
 const SESSION = /^\/api\/terminal\/sessions\/([\w-]+)(?:\/(ws|bot-input|close))?$/;
 
 export interface TerminalRouteDeps {
-  registry: TerminalResourceRegistry;
+  requests: Pick<ReturnType<typeof createTerminalRequestService>, "destinations">;
   sessions: ReturnType<typeof createTerminalSessionManager>;
   principalId(auth: RequestAuth): string | undefined;
   live(auth: RequestAuth): boolean;
@@ -35,11 +36,13 @@ export function createTerminalRoutes(deps: TerminalRouteDeps): RouteHandler {
     if (path === "/api/terminal/resources" && method === "GET") {
       const principalId = deps.principalId(auth);
       if (!principalId) return json(res, 401, { error: "Sign in to list terminal resources." });
-      const resources = await deps.registry.listAll({
-        auth,
-        principalId,
-        botId: typeof req.headers["x-sagax-bot-id"] === "string" ? req.headers["x-sagax-bot-id"] : undefined,
-      });
+      // What THIS person may open for that bot: their own environments and,
+      // for an admin, the server's hosts. Nothing of anyone else's.
+      const query = new URL(req.url ?? "", "http://x").searchParams;
+      const botId = query.get("botId") ?? "";
+      const threadId = query.get("threadId") ?? "";
+      if (!/^[\w-]{1,80}$/.test(botId) || !/^[\w-]{1,80}$/.test(threadId)) return json(res, 400, { error: "botId and threadId are required" });
+      const { resources } = await deps.requests.destinations({ botId, threadId, principalId });
       return json(res, 200, { resources });
     }
 
@@ -66,8 +69,10 @@ export function createTerminalRoutes(deps: TerminalRouteDeps): RouteHandler {
         `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${websocketAccept(shake.key)}\r\n\r\n`,
       );
       const decode = webSocketFrameDecoder();
+      // The widget leaving (closed, reloaded, navigated away) ends the
+      // session: audited, and the shell stopped.
       const closeBridge = () => {
-        attachment.close();
+        deps.sessions.close(sessionId, principalId);
         socket.destroy();
       };
       attachment.output.on("data", (chunk: Buffer) => {
@@ -81,7 +86,15 @@ export function createTerminalRoutes(deps: TerminalRouteDeps): RouteHandler {
           return;
         }
         for (const frame of frames) {
-          if (frame.opcode === 1 || frame.opcode === 2) attachment.input.write(frame.payload);
+          // Text: a control message (a resize) when it parses as one;
+          // anything else, and every binary frame, is keystrokes.
+          if (frame.opcode === 1) {
+            const control = parseTerminalControl(frame.payload.toString("utf8"));
+            if (control) deps.sessions.resize(sessionId, principalId, control.cols, control.rows);
+            else attachment.input.write(frame.payload);
+          }
+          if (frame.opcode === 2) attachment.input.write(frame.payload);
+          if (frame.opcode === 9) socket.write(encodeWebSocketFrame(10, frame.payload));
           if (frame.opcode === 8) closeBridge();
         }
       };

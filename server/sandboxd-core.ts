@@ -5,7 +5,7 @@
 // its deployment instance; anything else with a matching name is refused.
 import type { Duplex } from "node:stream";
 
-import type { DockerApi } from "./sandboxd-docker.ts";
+import type { DockerApi, TtyExec, TtySize } from "./sandboxd-docker.ts";
 import {
   SANDBOX_INSTANCE_LABEL,
   SANDBOX_KEY_RE,
@@ -88,6 +88,10 @@ export const STDIO_ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const STDIO_ENV_RESERVED = new Set(["HOME", "PATH", "USER", "SAGAX_ENVIRONMENT"]);
 /** MCP servers of one person running at once (one per server and turn). */
 export const MAX_STDIO_STREAMS = 8;
+/** In-chat terminals open at once in one sandbox (the server allows 3 per person). */
+export const MAX_TTY_STREAMS = 4;
+/** The login shell of the sandbox user, in a terminal. */
+export const SANDBOX_TTY_ARGV = ["/bin/bash", "-l"] as const;
 
 export interface SandboxStdioSpec {
   argv: string[];
@@ -111,6 +115,7 @@ export class SandboxService {
   private readonly locks = new Map<string, Promise<void>>();
   private readonly desktopStreams = new Map<string, number>();
   private readonly stdioStreams = new Map<string, number>();
+  private readonly ttyStreams = new Map<string, number>();
   private readonly osInfo = new Map<string, { os: string; arch: string }>();
   egress: EgressPolicyState;
 
@@ -516,6 +521,49 @@ export class SandboxService {
       if (!released) { released = true; this.releaseStdioStream(key); }
     });
     return stream;
+  }
+
+  /** The in-chat terminal (server/terminal-resources/adapters/sandbox.ts):
+   * the sandbox user's login shell in a terminal, in /workspace, on the
+   * same sandbox and under the same user, limits and network policy as
+   * every command a bot runs there. Starts the sandbox when needed and
+   * counts as use while open. Nothing here runs on the host. */
+  async ttyStream(key: string, size: TtySize): Promise<TtyExec> {
+    this.checkKey(key);
+    const cols = Math.floor(Number(size?.cols));
+    const rows = Math.floor(Number(size?.rows));
+    if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols < 2 || cols > 1000 || rows < 1 || rows > 500) {
+      throw new SandboxError(400, "bad_tty", "the terminal size is invalid");
+    }
+    if (!this.docker.execTty) throw new SandboxError(501, "unsupported", "this provisioner cannot open a terminal");
+    const open = this.ttyStreams.get(key) ?? 0;
+    if (open >= MAX_TTY_STREAMS) throw new SandboxError(429, "busy", "too many terminals are open in this environment");
+    await this.ensure(key);
+    this.ttyStreams.set(key, open + 1);
+    let tty: TtyExec;
+    try {
+      tty = await this.docker.execTty(sandboxNames(key).container, {
+        Cmd: [...SANDBOX_TTY_ARGV], User: `${SANDBOX_UID}:${SANDBOX_UID}`, Env: ["TERM=xterm-256color"], WorkingDir: SANDBOX_WORKSPACE,
+      }, { cols, rows });
+    } catch (error) {
+      this.releaseTtyStream(key);
+      throw error;
+    }
+    this.touch(key);
+    const timer = setInterval(() => this.touch(key), CONTROL_TOUCH_MS);
+    timer.unref?.();
+    let released = false;
+    tty.stream.once("close", () => {
+      clearInterval(timer);
+      if (!released) { released = true; this.releaseTtyStream(key); }
+    });
+    return tty;
+  }
+
+  private releaseTtyStream(key: string): void {
+    const left = (this.ttyStreams.get(key) ?? 1) - 1;
+    if (left > 0) this.ttyStreams.set(key, left);
+    else this.ttyStreams.delete(key);
   }
 
   private releaseStdioStream(key: string): void {

@@ -651,7 +651,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "list_terminal_resources",
     description:
-      "List shell-capable resources this person may open in the in-chat terminal (SSH hosts, unRAID, cloud computers, and other registered providers). Credentials never leave the server; use the returned id and provider with offer_shell_terminal.",
+      "Terminal destinations this person may open: their cloud computer (sandbox), Local VM (local-vm), own computer (desktop), and for an admin the server's SSH/unRAID hosts. Marks the default: where you work.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -661,23 +661,20 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "offer_shell_terminal",
     description:
-      "Ask the person to approve opening an interactive shell on a terminal-capable resource. They must tap Ouvrir un terminal on the card; nothing runs until they allow. The bot cannot type unless they later enable bot input on the session.",
+      "Offer an in-chat terminal card when the person wants to connect to a machine, debug live, or a step needs their typing (password prompt, installer, TUI); not for what your own tools can run. Default destination: where you work; set provider (and resource_id) only to pick another. They can change it on the card. Nothing opens until they approve; you type only if they allow bot input.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
-        resource_id: { type: "string", description: "Resource id from list_terminal_resources." },
-        provider: {
-          type: "string",
-          description: "Provider kind from list_terminal_resources (for example ssh, unraid, sandbox, docker-exec).",
-        },
+        resource_id: { type: "string", description: "Optional, from list_terminal_resources." },
+        provider: { type: "string", description: "Optional: sandbox, local-vm, desktop, ssh or unraid." },
         reason: {
           type: "string",
           maxLength: 500,
-          description: "Short explanation shown on the approval card.",
+          description: "Short explanation shown on the card.",
         },
       },
-      required: ["resource_id", "provider", "reason"],
+      required: ["reason"],
     },
   },
   {

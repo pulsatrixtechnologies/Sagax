@@ -32,7 +32,7 @@ import {
   type K8sSandboxConfig,
 } from "./sandboxd-k8s-spec.ts";
 import { SandboxService } from "./sandboxd-core.ts";
-import type { ContainerStats, ContainerSummary, DockerApi, ExecRequest, ExecResult } from "./sandboxd-docker.ts";
+import type { ContainerStats, ContainerSummary, DockerApi, ExecRequest, ExecResult, TtyExec, TtySize } from "./sandboxd-docker.ts";
 import { createSandboxdHandler, createSandboxdUpgradeHandler } from "./sandboxd.ts";
 import {
   SANDBOX_KEY_RE,
@@ -399,6 +399,16 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
     },
     async execStream(name: string, request: ExecRequest): Promise<Duplex> {
       return client.execStream(ns, name, request.Cmd);
+    },
+    async execTty(name: string, request: ExecRequest, size: TtySize): Promise<TtyExec> {
+      if (!client.execTty) throw new Error("this Kubernetes client has no terminal exec");
+      // A Kubernetes exec runs as the pod's own user in its own working
+      // directory: the sandbox user and /workspace, as for every exec here.
+      const tty = await client.execTty(ns, name, request.Cmd, size);
+      let key = "";
+      try { key = sandboxKeyFromContainerName(name); } catch { /* name already checked by the caller */ }
+      audit.record({ action: "sandbox.tty", outcome: "ok", ...(key ? { key } : {}), detail: { argv0: request.Cmd[0] ?? "" } });
+      return tty;
     },
     async runOnce(name: string, spec: Record<string, unknown>) {
       const labels = asObj(spec.Labels) as Record<string, string>;

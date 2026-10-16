@@ -1587,7 +1587,9 @@ export type Action =
   // `threadId` is the thread the card was shown in; `groupId` when the card
   // is in a room: the message lives on the room's list, and the answer goes
   // to the room's thread
-  | { type: "answerCard"; botId: string; messageId: string; answer: string; threadId?: string; groupId?: string }
+  | { type: "answerCard"; botId: string; messageId: string; answer: string; threadId?: string; groupId?: string;
+      /** A terminal card: the destination the person picked (absent: the bot's). */
+      terminalDestination?: import("../../shared/terminal-request").TerminalDestinationPick }
   | { type: "dismissCard"; botId: string; messageId: string; threadId?: string; groupId?: string }
   // permission cards answer by THREAD, so a request raised inside a room
   // can be answered the same way as one in a 1:1 chat
@@ -4294,6 +4296,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                     reviewedSha256: response.behavior === "allow" && card.skillRequest
                       ? reviewedSkillSha256(card.skillRequest)
                       : undefined,
+                    ...(card.terminalRequest && response.behavior === "allow" && action.terminalDestination
+                      ? { terminalDestination: action.terminalDestination }
+                      : {}),
                   }),
                 });
               }

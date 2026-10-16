@@ -649,6 +649,29 @@ export function createLocalVm({
       return { ...text(out.slice(0, OUTPUT_LIMIT)), ...(answer.code === 0 ? {} : { isError: true }) };
     },
   };
+  /** The in-chat terminal on this VM (electron/desktop-terminal.mjs): the
+   * argv of `docker exec -it` into the desktop user's login shell, in its
+   * workspace, the same user and container as every vm_run_command. The VM
+   * counts as in use until `release` (the terminal closed), so the idle stop
+   * waits for it. */
+  api.terminalCommand = async (container) => {
+    const runtime = await need();
+    const vm = await pick(runtime, container);
+    if (vm.stale) throw new Error(staleMessage(vm));
+    if (vm.state !== "running") throw new Error("The Local VM is not running. Start it from your Computer tab, then open the terminal again.");
+    inUse += 1;
+    touch();
+    let held = true;
+    return {
+      // Windows has no terminal for docker to attach to (electron/script-pty.mjs):
+      // plain pipes there, and bash told it is interactive.
+      argv: platform === "win32"
+        ? [runtime.cli, "exec", "-i", "-u", "cua", "-w", "/home/cua/workspace", "-e", "HOME=/home/cua", "-e", "TERM=xterm-256color", vm.name, "bash", "-li"]
+        : [runtime.cli, "exec", "-it", "-u", "cua", "-w", "/home/cua/workspace", "-e", "HOME=/home/cua", "-e", "TERM=xterm-256color", vm.name, "bash", "-l"],
+      env: runEnv(),
+      release() { if (held) { held = false; inUse -= 1; touch(); } },
+    };
+  };
   // Commands, creations and screen grabs are use, held for as long as they run.
   for (const name of ["create", "exec", "screenshot", "computer"]) {
     const work = api[name];

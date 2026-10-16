@@ -1,7 +1,5 @@
-import { spawn } from "node:child_process";
-import { PassThrough } from "node:stream";
-
 import { isValidSshAlias } from "../../config.ts";
+import { spawnScriptPty } from "../../../electron/script-pty.mjs";
 import type { TerminalAttachment, TerminalListContext, TerminalOpenContext, TerminalResourceAdapter } from "../types.ts";
 
 export interface SshAliasTerminalHost {
@@ -11,64 +9,38 @@ export interface SshAliasTerminalHost {
   alias: string;
 }
 
+/** A host of the server reached by its SSH alias (config.json). A server
+ * resource: an organization admin's only (registry.ts). `ssh -t` runs in a
+ * local terminal (electron/script-pty.mjs) so the remote one follows the
+ * widget's size. */
 export function createSshAliasAdapter(
   kind: "ssh" | "unraid",
   hosts: () => readonly SshAliasTerminalHost[],
   sshArgv: (alias: string) => { command: string; args: string[]; env: NodeJS.ProcessEnv },
 ): TerminalResourceAdapter {
+  const row = (host: SshAliasTerminalHost) => ({
+    id: host.id,
+    provider: kind,
+    label: host.label,
+    hostLabel: host.hostLabel,
+    status: "unknown" as const,
+    scope: "server" as const,
+  });
   return {
     kind,
     async list(_ctx: TerminalListContext) {
-      return hosts().map((host) => ({
-        id: host.id,
-        provider: kind,
-        label: host.label,
-        hostLabel: host.hostLabel,
-        status: "unknown" as const,
-      }));
+      return hosts().filter((host) => isValidSshAlias(host.alias)).map(row);
     },
     async resolve(resourceId, _ctx) {
       const host = hosts().find((item) => item.id === resourceId);
       if (!host || !isValidSshAlias(host.alias)) return null;
-      return {
-        id: host.id,
-        provider: kind,
-        label: host.label,
-        hostLabel: host.hostLabel,
-        status: "unknown",
-      };
+      return row(host);
     },
-    async open(resourceId, _ctx: TerminalOpenContext): Promise<TerminalAttachment> {
+    async open(resourceId, ctx: TerminalOpenContext): Promise<TerminalAttachment> {
       const host = hosts().find((item) => item.id === resourceId);
       if (!host || !isValidSshAlias(host.alias)) throw new Error("Resource unavailable");
       const { command, args, env } = sshArgv(host.alias);
-      const input = new PassThrough();
-      const output = new PassThrough();
-      const proc = spawn(command, args, {
-        stdio: ["pipe", "pipe", "pipe"],
-        env,
-      });
-      proc.stdout.on("data", (chunk) => output.write(chunk));
-      proc.stderr.on("data", (chunk) => output.write(chunk));
-      input.on("data", (chunk) => proc.stdin.write(chunk));
-      proc.on("close", () => {
-        output.end();
-        input.destroy();
-      });
-      return {
-        input,
-        output,
-        proc,
-        resize(cols, rows) {
-          proc.stdin.write(`\x1b[8;${rows};${cols}t`);
-        },
-        close() {
-          proc.kill("SIGTERM");
-          setTimeout(() => proc.kill("SIGKILL"), 2_000).unref();
-          input.destroy();
-          output.destroy();
-        },
-      };
+      return spawnScriptPty([command, ...args], { cols: ctx.cols, rows: ctx.rows, env });
     },
   };
 }

@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n";
 import { isPersistentQuestionCard, parseChoices } from "../../shared/ask-question";
 import { ASK_FIELD, ASK_QUIET_BUTTON, AskCard, AskSettledLine, moveChoiceFocus, returnFocusToComposer } from "./AskCard";
 import { ExpandableText } from "./ExpandableText";
+import { TerminalDestinationPicker, terminalAnswerPick, terminalDestinationKey, terminalDestinationLabel } from "./terminal/TerminalDestinationPicker";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 
@@ -43,6 +44,8 @@ export function OptionCard({
 }) {
   const { state, dispatch } = useStore();
   const [custom, setCustom] = useState("");
+  // A terminal card: the destination the person picked ("" = the bot's).
+  const [terminalPick, setTerminalPick] = useState("");
   const card = message.card;
   const bot = state.bots.find((candidate) => candidate.id === botId);
   const transcript = bot ? visibleMessages(bot) : [];
@@ -50,15 +53,26 @@ export function OptionCard({
   // later user message that means they already talked past this quiz.
   if (!card || shouldHideOnboardingCard(message, transcript) || (card.requestId && card.dismissed && card.answered)) return null;
 
-  const title = card.title;
+  const terminalPicked = card.terminalRequest && !card.answered
+    ? (card.terminalRequest.destinations ?? []).find((choice) => terminalDestinationKey(choice) === (terminalPick || terminalDestinationKey(card.terminalRequest!)))
+    : undefined;
+  // A terminal card names the destination picked right now, in the app's language.
+  const title = terminalPicked ? t("terminal.card.title", { destination: terminalDestinationLabel(terminalPicked) }) : card.title;
   const subtitle = card.subtitle;
   // Cards saved before the server flattened `ask_user` choices can still hold
   // `{ label }` rows; a label is drawable, an object as a React child is not.
   const options = parseChoices(card.options, LETTERS.length) ?? [];
 
+  const terminal = card.terminalRequest;
+  const terminalDestinations = terminal?.destinations ?? [];
+  const terminalChoice = terminalPick || (terminal ? terminalDestinationKey(terminal) : "");
   const answer = (text: string) => {
     if (!text.trim()) return;
-    dispatch({ type: "answerCard", botId, threadId, messageId: message.id, answer: text.trim(), groupId });
+    const picked = terminal ? terminalAnswerPick(terminal, terminalPick, text) : undefined;
+    dispatch({
+      type: "answerCard", botId, threadId, messageId: message.id, answer: text.trim(), groupId,
+      ...(picked ? { terminalDestination: picked } : {}),
+    });
     if (card.requestId) returnFocusToComposer();
   };
 
@@ -100,6 +114,9 @@ export function OptionCard({
       onDismiss={dismiss}
       dismissLabel={t("onboarding.card.dismiss")}
     >
+      {terminal && !card.answered && (
+        <TerminalDestinationPicker destinations={terminalDestinations} value={terminalChoice} onChange={setTerminalPick} />
+      )}
       {options.length > 0 && (
         <div onKeyDown={moveChoiceFocus} className="overflow-hidden rounded-2xl border border-hairline/40">
           {options.map((opt, i) => (

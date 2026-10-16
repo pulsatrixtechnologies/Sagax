@@ -23,6 +23,7 @@ import { pathToFileURL } from "node:url";
 
 import { ensureSandboxdKey, SANDBOXD_AUTH_HEADER, SandboxdVerifier } from "./sandboxd-auth.ts";
 import { SandboxError, SandboxService } from "./sandboxd-core.ts";
+import { ttyFrameDecoder } from "./sandbox-tty-frames.ts";
 import { dockerApi } from "./sandboxd-docker.ts";
 import { sandboxBackendFromEnv } from "./sandboxd-k8s-spec.ts";
 import { egressHelperSpec, egressUninstallScript, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
@@ -109,6 +110,11 @@ const DESKTOP_PATH = /^\/v1\/sandboxes\/([a-f0-9]{32})\/desktop$/;
 export const SANDBOXD_STDIO_UPGRADE = "sagax-stdio";
 const STDIO_PATH = /^\/v1\/sandboxes\/([a-f0-9]{32})\/stdio$/;
 const MAX_STDIO_SPEC_BYTES = 1_600_000;
+/** The in-chat terminal (server/terminal-resources/adapters/sandbox.ts): the
+ * size rides the signed URL; keystrokes and resizes come framed
+ * (server/sandbox-tty-frames.ts); the terminal's output goes back raw. */
+export const SANDBOXD_TTY_UPGRADE = "sagax-tty";
+const TTY_PATH = /^\/v1\/sandboxes\/([a-f0-9]{32})\/tty$/;
 
 /** Read the first line of an upgraded socket (the stdio spec), bounded. */
 function readFirstLine(socket: Duplex, head: Buffer): Promise<{ line: Buffer; rest: Buffer }> {
@@ -177,6 +183,43 @@ export function createSandboxdUpgradeHandler(service: SandboxService, verifier: 
         const code = error instanceof SandboxError ? error.code : "internal";
         if (!(error instanceof SandboxError)) console.error(`sandboxd: stdio stream failed: ${error instanceof Error ? error.message : String(error)}`);
         socket.end(`${JSON.stringify({ sagaxStdioError: code, message: error instanceof SandboxError ? error.message : "the provisioner failed" })}\n`);
+      });
+      return;
+    }
+    const tty = TTY_PATH.exec(url.pathname);
+    if (tty) {
+      if (method !== "POST" || String(req.headers.upgrade ?? "").toLowerCase() !== SANDBOXD_TTY_UPGRADE) return refuseUpgrade(socket, 404, "not_found");
+      const cols = Number(url.searchParams.get("cols"));
+      const rows = Number(url.searchParams.get("rows"));
+      socket.pause();
+      void service.ttyStream(tty[1]!, { cols, rows }).then((terminal) => {
+        const stream = terminal.stream;
+        if (socket.destroyed) { stream.destroy(); return; }
+        socket.write(`HTTP/1.1 101 Switching Protocols\r\nconnection: Upgrade\r\nupgrade: ${SANDBOXD_TTY_UPGRADE}\r\n\r\n`);
+        const decode = ttyFrameDecoder();
+        const onFrames = (chunk: Buffer) => {
+          const frames = decode(chunk);
+          if (!Array.isArray(frames)) { socket.destroy(); return; }
+          for (const frame of frames) {
+            if (frame.type === "data") stream.write(frame.payload);
+            else void terminal.resize({ cols: frame.cols, rows: frame.rows });
+          }
+        };
+        if (head.length) onFrames(head);
+        socket.on("data", onFrames);
+        stream.on("data", (chunk: Buffer) => { if (!socket.destroyed) socket.write(chunk); });
+        stream.on("error", () => socket.destroy());
+        // The server's side ending (the person closed the terminal) ends
+        // the shell; the shell ending ends the stream.
+        socket.on("end", () => { stream.destroy(); socket.destroy(); });
+        socket.on("close", () => stream.destroy());
+        stream.on("close", () => socket.destroy());
+        stream.on("end", () => socket.end());
+        socket.resume();
+      }, (error: unknown) => {
+        if (error instanceof SandboxError) return refuseUpgrade(socket, error.status, error.code);
+        console.error(`sandboxd: terminal failed: ${error instanceof Error ? error.message : String(error)}`);
+        refuseUpgrade(socket, 500, "internal");
       });
       return;
     }

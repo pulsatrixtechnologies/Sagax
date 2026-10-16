@@ -5,8 +5,9 @@ import { readFileSync } from "node:fs";
 import { isIP } from "node:net";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import type { Duplex } from "node:stream";
+import { Duplex } from "node:stream";
 
+import { ttyDataFrames, ttyResizeFrame } from "./sandbox-tty-frames.ts";
 import { signSandboxdRequest, SANDBOXD_AUTH_HEADER } from "./sandboxd-auth.ts";
 import type { SandboxExecInput, SandboxExecOutput, SandboxStats, SandboxStatus, SandboxStdioSpec } from "./sandboxd-core.ts";
 import { SANDBOX_KEY_RE } from "./user-sandbox-spec.ts";
@@ -48,6 +49,10 @@ export interface SandboxdClient {
    * (server/sandbox-stdio-mcp.ts). The command rides the stream's first
    * line; the signed path names its SHA-256. */
   stdioStream(key: string, spec: SandboxStdioSpec): Promise<Duplex>;
+  /** The in-chat terminal in this sandbox: the size rides the signed URL;
+   * what is written is framed (server/sandbox-tty-frames.ts), what is read
+   * is the terminal's raw output. Optional: a test double may lack it. */
+  ttyStream?(key: string, size: { cols: number; rows: number }): Promise<{ stream: Duplex; resize(cols: number, rows: number): void }>;
 }
 
 export interface SandboxdTls {
@@ -161,6 +166,33 @@ export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: ty
       const socket = await upgrade(keyPath(sandboxKey, `/stdio?digest=${digest}`), "sagax-stdio");
       socket.write(Buffer.concat([line, Buffer.from("\n")]));
       return socket;
+    },
+    ttyStream: async (sandboxKey, size) => {
+      const cols = Math.max(2, Math.min(1000, Math.floor(size.cols)));
+      const rows = Math.max(1, Math.min(500, Math.floor(size.rows)));
+      const socket = await upgrade(keyPath(sandboxKey, `/tty?cols=${cols}&rows=${rows}`), "sagax-tty");
+      // Keystrokes go framed; reads are the raw terminal output.
+      const stream = new Duplex({
+        read() { socket.resume(); },
+        write(chunk: Buffer, _encoding, callback) {
+          const frames = ttyDataFrames(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          for (const frame of frames.slice(0, -1)) socket.write(frame);
+          const last = frames.at(-1);
+          if (last) socket.write(last, callback); else callback();
+        },
+        final(callback) { socket.end(); callback(); },
+        destroy(error, callback) { socket.destroy(); callback(error); },
+      });
+      socket.on("data", (chunk: Buffer) => { if (!stream.push(chunk)) socket.pause(); });
+      socket.on("end", () => stream.push(null));
+      socket.on("close", () => { if (!stream.destroyed) stream.destroy(); });
+      socket.on("error", (error) => stream.destroy(error));
+      return {
+        stream,
+        resize(nextCols: number, nextRows: number) {
+          if (!socket.destroyed) socket.write(ttyResizeFrame(nextCols, nextRows));
+        },
+      };
     },
     info: () => call<SandboxdInfo>("GET", "/v1/status"),
     status: (sandboxKey) => call<SandboxStatus>("GET", keyPath(sandboxKey)),

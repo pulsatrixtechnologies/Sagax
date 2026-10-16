@@ -2,7 +2,7 @@
 // create body so the tests can assert what would reach a real daemon.
 import { Duplex } from "node:stream";
 
-import type { ContainerSummary, DockerApi, ExecRequest, ExecResult } from "../sandboxd-docker.ts";
+import type { ContainerSummary, DockerApi, ExecRequest, ExecResult, TtyExec, TtySize } from "../sandboxd-docker.ts";
 
 export class FakeDocker implements DockerApi {
   containers = new Map<string, { running: boolean; paused?: boolean; labels: Record<string, string>; spec: Record<string, unknown>; startedAt: number }>();
@@ -85,6 +85,30 @@ export class FakeDocker implements DockerApi {
     stream.push(Buffer.from("RFB 003.008\n"));
     this.streams.push(stream);
     return stream;
+  }
+  /** The in-chat terminal: answers "size" with its size, echoes the rest
+   * prefixed with "tty:". Every size it was given is kept. */
+  ttySizes: TtySize[] = [];
+  async execTty(name: string, exec: ExecRequest, size: TtySize): Promise<TtyExec> {
+    if (!this.containers.get(name)?.running) throw new Error("container not running");
+    this.execs.push({ name, exec });
+    this.ttySizes.push(size);
+    let current = size;
+    const stream: Duplex = new Duplex({
+      read() {},
+      write(chunk: Buffer, _encoding, callback) {
+        const text = chunk.toString();
+        stream.push(Buffer.from(text.trim() === "size" ? `size ${current.cols}x${current.rows}\n` : `tty:${text}`));
+        callback();
+      },
+      final(callback) { stream.push(null); callback(); },
+    });
+    this.streams.push(stream);
+    const sizes = this.ttySizes;
+    return {
+      stream,
+      async resize(next) { current = next; sizes.push(next); },
+    };
   }
   async pauseContainer(name: string) {
     this.calls.push(`pause ${name}`);

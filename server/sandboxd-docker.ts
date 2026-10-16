@@ -18,6 +18,17 @@ export interface ExecResult {
   truncated: boolean;
 }
 
+export interface TtySize {
+  cols: number;
+  rows: number;
+}
+
+/** An interactive exec: one raw stream (a terminal has no separate stderr). */
+export interface TtyExec {
+  stream: Duplex;
+  resize(size: TtySize): Promise<void>;
+}
+
 export interface ContainerSummary {
   name: string;
   /** Running or paused: it holds its memory either way. */
@@ -78,6 +89,11 @@ export interface DockerApi {
    * view's relay to the desktop's VNC port, inside the sandbox). stdout is
    * demultiplexed; stderr is dropped. Ending the stream closes the exec. */
   execStream(name: string, exec: ExecRequest): Promise<Duplex>;
+  /** One interactive exec in a terminal (Tty): the in-chat terminal. Input
+   * and output are one raw byte stream; `resize` sets the terminal's size.
+   * Optional so a test double without it still type-checks; the service
+   * refuses a terminal when it is missing. */
+  execTty?(name: string, exec: ExecRequest, size: TtySize): Promise<TtyExec>;
   /** Create, run to completion, collect output and remove a one-shot
    * container (the egress policy helper only). */
   runOnce(name: string, spec: Record<string, unknown>, timeoutMs: number): Promise<{ exitCode: number; output: string }>;
@@ -238,6 +254,27 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
   };
   const subnetsOf = (raw: Record<string, unknown>) =>
     (((raw.IPAM as { Config?: { Subnet?: string }[] } | undefined)?.Config) ?? []).map((entry) => entry.Subnet).filter((value): value is string => Boolean(value));
+  /** Start an exec and take over its connection (HTTP upgrade to raw tcp). */
+  const attachExec = async (id: string, tty: boolean) => {
+    version ??= negotiateVersion(socketPath);
+    const apiVersion = await version;
+    const payload = Buffer.from(JSON.stringify({ Detach: false, Tty: tty }));
+    return new Promise<import("node:net").Socket>((resolve, reject) => {
+      const req = request({
+        socketPath, method: "POST", path: `/${apiVersion}/exec/${id}/start`, timeout: 30_000,
+        headers: { "content-type": "application/json", "content-length": payload.length, connection: "Upgrade", upgrade: "tcp" },
+      });
+      req.on("upgrade", (_res, upgraded, head) => {
+        upgraded.setTimeout(0);
+        if (head.length) upgraded.unshift(head);
+        resolve(upgraded);
+      });
+      req.on("response", (res) => { res.resume(); reject(new DockerError(res.statusCode ?? 0, `Docker exec attach failed (${res.statusCode})`)); });
+      req.on("timeout", () => req.destroy(new Error("Docker request timed out")));
+      req.on("error", reject);
+      req.end(payload);
+    });
+  };
 
   return {
     async ping() {
@@ -297,30 +334,41 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
       }
       return { exitCode, stdout: streams.stdout, stderr: streams.stderr, truncated: streams.truncated || started.truncated };
     },
+    async execTty(name, exec, size) {
+      const created = await json("POST", `/containers/${safeName(name)}/exec`, {
+        AttachStdin: true, AttachStdout: true, AttachStderr: true, Tty: true, Privileged: false,
+        ConsoleSize: [size.rows, size.cols], ...exec,
+      });
+      const id = String(created.Id ?? "");
+      if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Docker returned no exec id");
+      const socket = await attachExec(id, true);
+      const stream = new Duplex({
+        write(chunk: Buffer, _encoding, callback) { socket.write(chunk, callback); },
+        final(callback) { socket.end(); callback(); },
+        read() { socket.resume(); },
+        destroy(error, callback) { socket.destroy(); callback(error); },
+      });
+      // A terminal's output is raw: no 8-byte stream headers to remove.
+      socket.on("data", (chunk: Buffer) => { if (!stream.push(chunk)) socket.pause(); });
+      socket.on("end", () => stream.push(null));
+      socket.on("close", () => { if (!stream.destroyed) stream.destroy(); });
+      socket.on("error", (error) => stream.destroy(error));
+      return {
+        stream,
+        async resize(next) {
+          const rows = Math.max(1, Math.min(500, Math.floor(next.rows)));
+          const cols = Math.max(2, Math.min(1000, Math.floor(next.cols)));
+          await call("POST", `/exec/${id}/resize?h=${rows}&w=${cols}`, undefined, { timeoutMs: 10_000 }).catch(() => undefined);
+        },
+      };
+    },
     async execStream(name, exec) {
       const created = await json("POST", `/containers/${safeName(name)}/exec`, {
         AttachStdin: true, AttachStdout: true, AttachStderr: false, Tty: false, Privileged: false, ...exec,
       });
       const id = String(created.Id ?? "");
       if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Docker returned no exec id");
-      version ??= negotiateVersion(socketPath);
-      const apiVersion = await version;
-      const payload = Buffer.from(JSON.stringify({ Detach: false, Tty: false }));
-      const socket = await new Promise<import("node:net").Socket>((resolve, reject) => {
-        const req = request({
-          socketPath, method: "POST", path: `/${apiVersion}/exec/${id}/start`, timeout: 30_000,
-          headers: { "content-type": "application/json", "content-length": payload.length, connection: "Upgrade", upgrade: "tcp" },
-        });
-        req.on("upgrade", (_res, upgraded, head) => {
-          upgraded.setTimeout(0);
-          if (head.length) upgraded.unshift(head);
-          resolve(upgraded);
-        });
-        req.on("response", (res) => { res.resume(); reject(new DockerError(res.statusCode ?? 0, `Docker exec attach failed (${res.statusCode})`)); });
-        req.on("timeout", () => req.destroy(new Error("Docker request timed out")));
-        req.on("error", reject);
-        req.end(payload);
-      });
+      const socket = await attachExec(id, false);
       const stream = new Duplex({
         write(chunk: Buffer, _encoding, callback) { socket.write(chunk, callback); },
         final(callback) { socket.end(); callback(); },

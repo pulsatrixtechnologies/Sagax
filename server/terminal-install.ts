@@ -6,10 +6,13 @@ import { createTerminalAuditLog } from "./terminal-audit.ts";
 import { TerminalResourceRegistry } from "./terminal-resources/registry.ts";
 import { testTerminalAdapter } from "./terminal-resources/adapters/test.ts";
 import { createSshAliasAdapter, type SshAliasTerminalHost } from "./terminal-resources/adapters/ssh-alias.ts";
+import { createPersonalTerminalAdapter, type PersonalTerminalDeps } from "./terminal-resources/adapters/personal.ts";
+import type { TerminalAccess } from "./terminal-resources/types.ts";
 import { createTerminalSessionManager } from "./terminal-sessions.ts";
-import { createTerminalRequestService } from "./terminal-requests.ts";
+import { createTerminalRequestService, type TerminalWorkPlace } from "./terminal-requests.ts";
 import { createTerminalRoutes } from "./routes/terminal.ts";
 import { createTerminalInternalRoutes } from "./routes/terminal-internal.ts";
+import type { InternalRouteHandler } from "./routes/internal-route.ts";
 import type { Store } from "./store.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import type { IncomingMessage } from "node:http";
@@ -19,6 +22,8 @@ export interface TerminalFeature {
   registry: TerminalResourceRegistry;
   sessions: ReturnType<typeof createTerminalSessionManager>;
   requests: ReturnType<typeof createTerminalRequestService>;
+  /** The bot's tools, for INTERNAL_ROUTES (behind the turn's capability). */
+  internalRoute: InternalRouteHandler;
   wire(
     routes: RouteHandler[],
     options: {
@@ -79,6 +84,16 @@ export function installTerminalFeature(deps: {
   store: Store;
   cfg: () => AppConfig;
   principalId: (auth: RequestAuth) => string | undefined;
+  /** What this person may open for this bot (index.ts terminalAccessFor). */
+  access: (principalId: string, botId: string) => TerminalAccess;
+  /** Where the bot works now, for the card's default. */
+  workPlace?: (botId: string, threadId: string, principalId: string) => TerminalWorkPlace;
+  /** Whose conversation it is when the task names nobody. */
+  owner?: (botId: string, threadId: string) => string;
+  /** The bot owns this conversation (internal routes). */
+  ownsThread: (botId: string, threadId: string) => boolean;
+  /** The person's own environments, when this server has them. */
+  personal?: Partial<Record<"sandbox" | "local-vm" | "desktop", PersonalTerminalDeps>>;
   now?: () => number;
 }): TerminalFeature {
   const now = deps.now ?? (() => Date.now());
@@ -90,6 +105,10 @@ export function installTerminalFeature(deps: {
   const hosts = () => configuredHosts(deps.cfg());
   registry.register(createSshAliasAdapter("ssh", () => hosts().ssh, (alias) => sshArgv(deps.dataDir, alias)));
   registry.register(createSshAliasAdapter("unraid", () => hosts().unraid, (alias) => sshArgv(deps.dataDir, alias)));
+  for (const kind of ["sandbox", "local-vm", "desktop"] as const) {
+    const personal = deps.personal?.[kind];
+    if (personal) registry.register(createPersonalTerminalAdapter(kind, personal));
+  }
 
   const sessions = createTerminalSessionManager({ registry, audit, now });
   const requests = createTerminalRequestService({
@@ -99,21 +118,18 @@ export function installTerminalFeature(deps: {
     principalId: deps.principalId,
     audit,
     now,
+    access: deps.access,
+    ...(deps.workPlace ? { workPlace: deps.workPlace } : {}),
+    ...(deps.owner ? { owner: deps.owner } : {}),
   });
-
-  const routeDeps = {
-    registry,
-    sessions,
-    principalId: deps.principalId,
-  };
 
   return {
     registry,
     sessions,
     requests,
+    internalRoute: createTerminalInternalRoutes({ requests, ownsThread: deps.ownsThread }),
     wire(routes, options) {
-      routes.push(createTerminalRoutes({ ...routeDeps, upgrade: options.upgrade, live: options.live }));
-      routes.push(createTerminalInternalRoutes({ requests, registry, principalId: deps.principalId }));
+      routes.push(createTerminalRoutes({ requests, sessions, principalId: deps.principalId, upgrade: options.upgrade, live: options.live }));
     },
   };
 }

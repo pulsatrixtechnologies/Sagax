@@ -988,32 +988,36 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   if (name === "list_terminal_resources") {
     const query = new URLSearchParams({ fromBotId: BOT_ID, fromThreadId: THREAD_ID });
     const r = await api(`/api/internal/terminal/resources?${query.toString()}`);
+    if (r.error) return { text: String(r.error), isError: true };
     const resources = Array.isArray(r.resources) ? r.resources : [];
     if (!resources.length) {
-      return { text: "No shell-capable resources are available for this person on this server." };
+      return { text: "No terminal destination is available to this person here (their cloud computer, Local VM and computer are not reachable, and the server hosts are an organization admin's). Tell them; do not offer a terminal." };
     }
-    return { text: `Terminal-capable resources:\n${JSON.stringify(resources, null, 2)}` };
+    const fallback = r.default && typeof r.default === "object" ? `\nDefault (where you work now): ${JSON.stringify(r.default)}` : "";
+    return { text: `Terminal destinations this person may open:\n${JSON.stringify(resources, null, 2)}${fallback}` };
   }
   if (name === "offer_shell_terminal") {
     const resourceId = typeof args.resource_id === "string" ? args.resource_id.trim() : "";
     const provider = typeof args.provider === "string" ? args.provider.trim() : "";
     const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
-    if (!resourceId || !provider || !reason) {
-      return { text: "offer_shell_terminal needs resource_id, provider, and reason.", isError: true };
+    if (!reason) {
+      return { text: "offer_shell_terminal needs a reason (one short sentence shown on the card).", isError: true };
     }
     const r = await api("/api/internal/terminal/offer", {
       method: "POST",
       body: JSON.stringify({
-        fromBotId: BOT_ID,
-        fromThreadId: THREAD_ID,
-        resourceId,
-        provider,
+        ...(resourceId ? { resourceId } : {}),
+        ...(provider ? { provider } : {}),
         reason,
       }),
     });
     if (r.error) return { text: String(r.error), isError: true };
+    const destination = r.destination && typeof r.destination === "object" ? r.destination as { label?: unknown; provider?: unknown; hostLabel?: unknown } : null;
+    const where = destination && typeof destination.hostLabel === "string"
+      ? ` on ${String(destination.label ?? destination.provider ?? "")} (${destination.hostLabel})`
+      : "";
     return {
-      text: "A terminal approval card is in the chat. End this turn; the person must tap Ouvrir un terminal before any shell opens. Never ask them to paste passwords into chat.",
+      text: `A terminal card${where} is in the chat; the person may pick another destination on it before opening. End this turn; nothing opens until they tap Ouvrir un terminal. The terminal is theirs: you cannot type in it unless they turn on bot input. Never ask them to paste passwords into chat.`,
     };
   }
   if (name === "send_voice_note") {

@@ -23,6 +23,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { assertOutsideProtected, createSharedCua, personalSecretPaths, protectedIdentities, sharedComputerError } from "./shared-computer-access.mjs";
 import { createLendingActivity } from "./lending-activity.mjs";
 import { openDesktopTunnel } from "./desktop-tunnel.mjs";
+import { loginShellArgv, openBridgeTerminal } from "./desktop-terminal.mjs";
 import { createLocalVm } from "./local-vm.mjs";
 import { archiveKind, extractArchive, extractedFolderName } from "./archive-extract.mjs";
 import { executeLocalModel, normalizeLoopbackBase, probeLoopbackCatalog } from "./local-models.mjs";
@@ -72,7 +73,7 @@ const WRITE_MAX = 1024 * 1024;
 const FETCH_MAX = 256 * 1024;
 /** The server's largest upload (an archive, server/attachments.ts). */
 const STAGE_MAX = 90 * 1024 * 1024;
-const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "stage_file", "extract_archive", "local_model"]);
+const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "stage_file", "extract_archive", "local_model", "terminal_open", "vm_terminal_open"]);
 const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final", "endpoint", "http_method", "http_path", "json"]);
 const LOCAL_MODEL_PROBE_MS = 15_000;
 /** A picker that opens right after a probe reuses it instead of probing again. */
@@ -97,6 +98,11 @@ export function validBridgeOperation(operation) {
   if (operation.http_method !== undefined && operation.http_method !== "GET" && operation.http_method !== "POST") return false;
   if (operation.http_path !== undefined && operation.http_path !== "/models" && operation.http_path !== "/chat/completions" && operation.http_path !== "/messages") return false;
   if (operation.json !== undefined && (typeof operation.json !== "string" || operation.json.length > 1_000_000)) return false;
+  if (operation.action === "terminal_open" || operation.action === "vm_terminal_open") {
+    const args = operation.arguments;
+    if (!args || typeof args.ticket !== "string" || !/^[a-f0-9]{48}$/.test(args.ticket)) return false;
+    if (!Number.isInteger(args.cols) || !Number.isInteger(args.rows)) return false;
+  }
   if (operation.action === "local_model") {
     if (operation.url !== undefined) return false;
     if (operation.http_method !== "GET" && operation.http_method !== "POST") return false;
@@ -328,6 +334,12 @@ export async function executeBridgeOperation(operation, deps, signal) {
       }
       return text(operation.final ? `saved ${target}` : "ok");
     }
+    case "terminal_open":
+    case "vm_terminal_open": {
+      if (!deps.terminal) return failure("This app cannot open a terminal here.");
+      await deps.terminal(operation);
+      return text("The terminal is open.");
+    }
     case "extract_archive": {
       // A staged archive, unpacked next to it with the safety rules of
       // archive-extract.mjs (no links, nothing outside the folder, bomb limits).
@@ -352,6 +364,8 @@ const describe = operation => {
     case "fetch_url": case "browse": try { return new URL(operation.url).host; } catch { return ""; }
     case "computer_call": case "vm_computer_call": return String(operation.tool_name ?? "");
     case "stage_file": case "extract_archive": return String(operation.name ?? "");
+    case "terminal_open": return "terminal";
+    case "vm_terminal_open": return "Local VM terminal";
     case "local_model": return `${operation.endpoint ?? ""} ${operation.http_path ?? ""}`.trim().slice(0, 300);
     default: return "";
   }
@@ -514,6 +528,28 @@ export function createDesktopBridge({
             if (!live.aborted) { await delay(retryMs, undefined, { signal: live }).catch(() => {}); void startTunnel(); }
           };
           void startTunnel();
+          // In-chat terminals the person opened here; they end with this registration.
+          const terminals = new Set();
+          live.addEventListener("abort", () => { for (const entry of terminals) entry.close(); terminals.clear(); }, { once: true });
+          const openTerminal = async (operation) => {
+            const vm = operation.action === "vm_terminal_open";
+            let held = null;
+            const entry = { close: () => {} };
+            const terminal = await openBridgeTerminal({
+              url: `${env.origin.replace(/^http/, "ws")}/api/desktop-bridge/${id}/terminal`,
+              headers: { cookie: await cookieHeader(env.origin), origin: env.origin, "x-sagax-bridge-secret": secret },
+              ticket: operation.arguments.ticket, cols: operation.arguments.cols, rows: operation.arguments.rows,
+              command: async () => {
+                if (!vm) return { argv: loginShellArgv({ platform }), env: process.env, cwd: home };
+                held = await localVm.terminalCommand();
+                return held;
+              },
+              WebSocketImpl, platform, home,
+              onClose: () => { held?.release?.(); terminals.delete(entry); },
+            }).catch((error) => { held?.release?.(); throw error; });
+            entry.close = terminal.close;
+            terminals.add(entry);
+          };
           const call = (action, body = {}) => request(env, `/api/desktop-bridge/${id}/${action}`, body, signal, secret);
           while (!signal.aborted) {
             const { job } = await call("poll");
@@ -539,7 +575,7 @@ export function createDesktopBridge({
             };
             try {
               result = await executeBridgeOperation(operation, {
-                home, attachmentsDir, protectedPaths: roots, fetchUrl, browse, localVm, progress,
+                home, attachmentsDir, protectedPaths: roots, fetchUrl, browse, localVm, progress, terminal: openTerminal,
                 localModelBase: (endpoint) => localCatalog.get(endpoint) ?? null,
                 localModelAnthropic: (endpoint) => localAnthropic.has(endpoint),
                 computer: cuaConnection ? async (op, sig) => {

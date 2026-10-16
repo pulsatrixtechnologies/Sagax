@@ -217,3 +217,39 @@ describe("sandboxd MCP server stream (a person's own command)", () => {
     await expect(service.stdioStream(sandboxKey, { argv: ["sh"], env: { PATH: "/tmp" } })).rejects.toMatchObject({ code: "bad_stdio" });
   });
 });
+
+describe("sandboxd terminal (the in-chat terminal)", () => {
+  it("starts the environment, opens the sandbox user's login shell at the asked size and follows resizes", async () => {
+    const tty = await sandboxdClient(base, () => KEY).ttyStream!(sandboxKey, { cols: 101, rows: 33 });
+    const read = () => new Promise<string>((resolve) => tty.stream.once("data", (chunk: Buffer) => resolve(chunk.toString())));
+    tty.stream.write("size\n");
+    expect(await read()).toBe("size 101x33\n");
+    tty.resize(140, 50);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    tty.stream.write("size\n");
+    expect(await read()).toBe("size 140x50\n");
+    tty.stream.write("ls\r");
+    expect(await read()).toBe("tty:ls\r");
+    tty.stream.destroy();
+    const shell = docker.execs.at(-1)!;
+    expect(shell.name).toBe(`sagax-user-${sandboxKey}`);
+    expect(shell.exec).toMatchObject({ Cmd: ["/bin/bash", "-l"], User: "1000:1000", WorkingDir: "/workspace" });
+    expect(docker.ttySizes).toEqual([{ cols: 101, rows: 33 }, { cols: 140, rows: 50 }]);
+  });
+
+  it("refuses an unsigned terminal and a bad size", async () => {
+    const path = `/v1/sandboxes/${sandboxKey}/tty?cols=80&rows=24`;
+    const unsigned = await new Promise<number>((resolve, reject) => {
+      const req = request(`${base}${path}`, { method: "POST", headers: { connection: "Upgrade", upgrade: "sagax-tty" } });
+      req.on("response", (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+      req.on("upgrade", (res, socket) => { socket.destroy(); resolve(res.statusCode ?? 0); });
+      req.on("error", reject);
+      req.end();
+    });
+    expect(unsigned).toBe(401);
+    // The client keeps the size in bounds before it signs the URL.
+    const tty = await sandboxdClient(base, () => KEY).ttyStream!(sandboxKey, { cols: 1, rows: 24 });
+    tty.stream.destroy();
+    expect(docker.ttySizes).toEqual([{ cols: 2, rows: 24 }]);
+  });
+});

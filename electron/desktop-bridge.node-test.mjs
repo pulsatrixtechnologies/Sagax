@@ -43,6 +43,24 @@ test("operations are checked for shape before anything runs", () => {
   assert.equal(validBridgeOperation({ action: "computer_call", arguments: [] }), false);
   assert.equal(validBridgeOperation({ action: "vm_computer_call", tool_name: "click", arguments: { x: 1, y: 2 } }), true);
   assert.equal(validBridgeOperation({ action: "vm_computer_call", arguments: [] }), false);
+  // The in-chat terminal: a well-formed ticket and a size, nothing else.
+  assert.equal(validBridgeOperation({ action: "terminal_open", arguments: { ticket: "a".repeat(48), cols: 100, rows: 30 } }), true);
+  assert.equal(validBridgeOperation({ action: "vm_terminal_open", arguments: { ticket: "a".repeat(48), cols: 100, rows: 30 } }), true);
+  assert.equal(validBridgeOperation({ action: "terminal_open", arguments: { ticket: "../x", cols: 100, rows: 30 } }), false);
+  assert.equal(validBridgeOperation({ action: "terminal_open", arguments: { ticket: "a".repeat(48) } }), false);
+  assert.equal(validBridgeOperation({ action: "terminal_open" }), false);
+});
+
+test("a terminal request opens the person's terminal through the app, and says so when it cannot", async () => {
+  const home = sandboxHome();
+  const opened = [];
+  const operation = { action: "vm_terminal_open", arguments: { ticket: "b".repeat(48), cols: 100, rows: 30 } };
+  const result = await executeBridgeOperation(operation, { ...deps(home), terminal: async (op) => { opened.push(op); } }, signal());
+  assert.deepEqual(opened, [operation]);
+  assert.match(result.content[0].text, /terminal is open/);
+  const none = await executeBridgeOperation({ action: "terminal_open", arguments: operation.arguments }, deps(home), signal());
+  assert.equal(none.isError, true);
+  fs.rmSync(home, { recursive: true, force: true });
 });
 
 test("a Local VM screen call goes to the VM, not the person's screen", async () => {

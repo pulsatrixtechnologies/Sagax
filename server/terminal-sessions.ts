@@ -8,7 +8,7 @@ import {
   parseTerminalResourceKey,
 } from "../shared/terminal-resources.ts";
 import type { TerminalAuditEvent } from "./terminal-audit.ts";
-import type { TerminalAttachment } from "./terminal-resources/types.ts";
+import type { TerminalAccess, TerminalAttachment } from "./terminal-resources/types.ts";
 import type { TerminalResourceRegistry } from "./terminal-resources/registry.ts";
 
 interface LiveSession {
@@ -63,7 +63,10 @@ export function createTerminalSessionManager(deps: TerminalSessionManagerDeps) {
     session.endedReason = reason;
     session.attachment?.close();
     session.attachment = undefined;
-    deps.audit.write({ at: deps.now(), kind: "session.ended", principalId: session.principalId, sessionId: session.id, reason: reason ?? "closed" });
+    deps.audit.write({
+      at: deps.now(), kind: "session.ended", principalId: session.principalId, sessionId: session.id, reason: reason ?? "closed",
+      resourceId: `${session.provider}:${session.resourceId}`, provider: session.provider, botId: session.botId, threadId: session.threadId,
+    });
   }
 
   function sweepIdle() {
@@ -101,6 +104,10 @@ export function createTerminalSessionManager(deps: TerminalSessionManagerDeps) {
       resourceKey: string;
       label: string;
       hostLabel: string;
+      /** Who is opening it, for the registry's rights check. */
+      access: TerminalAccess;
+      cols: number;
+      rows: number;
     }) {
       sweepIdle();
       const parsed = parseTerminalResourceKey(input.resourceKey);
@@ -143,8 +150,15 @@ export function createTerminalSessionManager(deps: TerminalSessionManagerDeps) {
             botId: input.botId,
             threadId: input.threadId,
             sessionId: id,
+            access: input.access,
+            cols: input.cols,
+            rows: input.rows,
           },
         );
+        // The shell ending on its own (exit, a dropped connection) ends the
+        // session too, so it is audited and stops counting.
+        session.attachment.output.once("end", () => end(session, "closed"));
+        session.attachment.output.once("close", () => end(session, "closed"));
         session.status = "live";
         deps.audit.write({
           at: deps.now(),
@@ -153,12 +167,22 @@ export function createTerminalSessionManager(deps: TerminalSessionManagerDeps) {
           sessionId: id,
           resourceId: input.resourceKey,
           provider: parsed.provider,
+          botId: input.botId,
+          threadId: input.threadId,
         });
       } catch (error) {
         end(session, "error");
         throw error;
       }
       return publicView(session);
+    },
+    /** The widget's new size, for the live shell of this person only. */
+    resize(sessionId: string, principalId: string, cols: number, rows: number) {
+      const session = sessions.get(sessionId);
+      if (!session || session.principalId !== principalId || session.status !== "live" || !session.attachment) return false;
+      touch(session);
+      try { session.attachment.resize(cols, rows); } catch { /* a closed shell */ }
+      return true;
     },
     attachIo(sessionId: string, principalId: string) {
       const session = sessions.get(sessionId);

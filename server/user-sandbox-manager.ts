@@ -144,6 +144,7 @@ export class UserSandboxManager {
       exec: (key, input) => run(() => client.exec(key, input)),
       desktopStream: (key, options) => run(() => client.desktopStream(key, options)),
       stdioStream: (key, spec) => run(() => client.stdioStream(key, spec)),
+      ...(client.ttyStream ? { ttyStream: (key: string, size: { cols: number; rows: number }) => run(() => client.ttyStream!(key, size)) } : {}),
     };
   }
 
@@ -444,6 +445,15 @@ export class UserSandboxManager {
 
   /** A person's own MCP server command, running in their environment,
    * as a byte stream (server/sandbox-stdio-mcp.ts). Starts it when needed. */
+  /** The person's own in-chat terminal in their environment (by person:
+   * never anyone else's). Wakes a stopped cluster like a bot's command. */
+  async ttyStream(principalId: string, size: { cols: number; rows: number }, botId?: string): Promise<{ stream: Duplex; resize(cols: number, rows: number): void }> {
+    this.refuseIfOut(principalId);
+    const client = this.clientFor(principalId, botId, "wake");
+    if (!client.ttyStream) throw new UserSandboxUnavailable("This server's provisioner cannot open a terminal.", "tty_unsupported");
+    return this.call(() => client.ttyStream!(this.keyFor(principalId), size));
+  }
+
   async stdioStream(principalId: string, spec: SandboxStdioSpec, botId?: string): Promise<Duplex> {
     this.refuseIfOut(principalId);
     return this.call(() => this.clientFor(principalId, botId, "wake").stdioStream(this.keyFor(principalId), spec));

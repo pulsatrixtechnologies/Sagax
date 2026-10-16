@@ -65,15 +65,23 @@ export function TerminalChatEmbed({ embed }: { embed: TerminalEmbed }) {
       if (typeof event.data === "string") term.write(event.data);
       else term.write(new Uint8Array(event.data));
     };
+    // Keystrokes go as binary frames; a text frame is a control message
+    // (the size, so the shell wraps where the widget does).
+    const encoder = new TextEncoder();
+    const sendSize = () => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+    };
     ws.onopen = () => {
       setStatus("live");
       setError(null);
+      sendSize();
     };
+    term.onResize(sendSize);
     ws.onerror = () => setError(t("terminal.connectionError"));
     ws.onclose = () => setStatus("ended");
 
     term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      if (ws.readyState === WebSocket.OPEN) ws.send(encoder.encode(data));
     });
 
     const onResize = () => fit.fit();

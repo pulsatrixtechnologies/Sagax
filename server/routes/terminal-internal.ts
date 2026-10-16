@@ -1,47 +1,61 @@
+// The bot's two terminal tools (list_terminal_resources, offer_shell_terminal),
+// served behind the per-turn agents capability the internal block of
+// server/index.ts checks first (bearer, bot, live turn): so this module is in
+// INTERNAL_ROUTES, never in ROUTES. The bot and the conversation are the
+// capability's, never the body's; the person is the conversation's owner.
+//
+//   GET  /api/internal/terminal/resources   what this person may open here
+//   POST /api/internal/terminal/offer       stage the approval card
 import { z } from "zod";
 
 import type { TerminalProviderKind } from "../../shared/terminal-resources.ts";
-import { PASS, type RouteHandler } from "./table.ts";
+import { PASS } from "./table.ts";
+import type { InternalRouteHandler } from "./internal-route.ts";
 import type { createTerminalRequestService } from "../terminal-requests.ts";
-import type { TerminalResourceRegistry } from "../terminal-resources/registry.ts";
-import type { RequestAuth } from "../request-auth.ts";
 
 const offerBody = z.object({
-  fromBotId: z.string().min(1),
-  fromThreadId: z.string().min(1),
-  resourceId: z.string().min(1),
-  provider: z.string().min(1),
+  /** Older proxies still send these; the capability's own values win. */
+  fromBotId: z.string().optional(),
+  fromThreadId: z.string().optional(),
+  resourceId: z.string().min(1).max(200).optional(),
+  provider: z.string().min(1).max(40).optional(),
   reason: z.string().max(2_000).optional(),
 }).strict();
 
 export function createTerminalInternalRoutes(deps: {
   requests: ReturnType<typeof createTerminalRequestService>;
-  registry: TerminalResourceRegistry;
-  principalId(auth: RequestAuth): string | undefined;
-}): RouteHandler {
-  return async ({ req, res, path, method, auth, json, readBody }) => {
+  /** The conversation belongs to this bot (connectorThread in index.ts). */
+  ownsThread(botId: string, threadId: string): boolean;
+}): InternalRouteHandler {
+  return async ({ res, path, method, json, capability, readBody }) => {
+    if (path !== "/api/internal/terminal/resources" && path !== "/api/internal/terminal/offer") return PASS;
+    if (!deps.ownsThread(capability.botId, capability.threadId)) {
+      return json(res, 403, { error: "source conversation does not belong to sender" });
+    }
     if (path === "/api/internal/terminal/resources" && method === "GET") {
-      const principalId = deps.principalId(auth);
-      if (!principalId) return json(res, 403, { error: "forbidden" });
-      const botId = String(new URL(req.url ?? "", "http://x").searchParams.get("fromBotId") ?? "");
-      const threadId = String(new URL(req.url ?? "", "http://x").searchParams.get("fromThreadId") ?? "");
-      const resources = await deps.registry.listAll({ auth, principalId, botId, threadId });
-      return json(res, 200, { resources });
+      const { resources, defaultResource } = await deps.requests.destinations({ botId: capability.botId, threadId: capability.threadId });
+      return json(res, 200, {
+        resources,
+        ...(defaultResource ? { default: { provider: defaultResource.provider, resourceId: defaultResource.id } } : {}),
+      });
     }
     if (path === "/api/internal/terminal/offer" && method === "POST") {
-      const parsed = offerBody.safeParse(await readBody(req));
+      const parsed = offerBody.safeParse(await readBody());
       if (!parsed.success) return json(res, 400, { error: "Invalid terminal offer" });
-      const provider = parsed.data.provider as TerminalProviderKind;
       const result = await deps.requests.submit({
-        botId: parsed.data.fromBotId,
-        threadId: parsed.data.fromThreadId,
-        resourceId: parsed.data.resourceId,
-        provider,
+        botId: capability.botId,
+        threadId: capability.threadId,
+        ...(parsed.data.resourceId ? { resourceId: parsed.data.resourceId } : {}),
+        ...(parsed.data.provider ? { provider: parsed.data.provider as TerminalProviderKind } : {}),
         reason: parsed.data.reason ?? "",
       });
       if ("error" in result) return json(res, 404, { error: result.error });
-      return json(res, 200, result);
+      return json(res, 200, {
+        requestId: result.requestId,
+        messageId: result.messageId,
+        destination: { provider: result.resource.provider, resourceId: result.resource.id, label: result.resource.label, hostLabel: result.resource.hostLabel },
+      });
     }
-    return PASS;
+    return json(res, 405, { error: "method not allowed" });
   };
 }

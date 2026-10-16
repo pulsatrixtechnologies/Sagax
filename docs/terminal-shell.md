@@ -1,44 +1,74 @@
-# Terminal-capable resources
+# In-chat terminal: destinations
 
-Sagax treats every shell endpoint through one abstraction. A **resource** is
-something a signed-in person may open in the in-chat terminal after explicit
-approval. Credentials and connection strings never reach the client.
+Sagax has one interactive terminal: the one in the conversation. There is no
+terminal button or menu entry. The bot proposes it as a card when it is
+useful (the person wants to connect to a machine, to debug live, or a step
+needs their own typing); the person approves it, and an xterm opens in the
+thread. Credentials and connection strings never reach the client.
 
-## Model
+## Destinations
 
-- `shared/terminal-resources.ts` — provider kinds, `TerminalResource`,
-  `TerminalSessionPublic`, `TerminalEmbed`.
-- `server/terminal-resources/registry.ts` — `TerminalResourceRegistry` and
-  `TerminalResourceAdapter` (`list`, `resolve`, `open`).
-- `server/terminal-sessions.ts` — session lifecycle (idle timeout, per-person
-  limit, audit).
-- `server/terminal-requests.ts` — approval card (`Ouvrir un terminal` /
-  `Refuser`) before `open`.
+A **destination** (`TerminalResource`) is a place a person may open the
+terminal on. Two kinds (`scope`):
 
-## Adapters
+| Provider | Scope | What it is | Who may open it |
+|----------|-------|------------|-----------------|
+| `sandbox` | personal | The person's cloud computer (their server environment: Docker or, on GOX, Kubernetes through the provisioner) | The person, for their own bot (an admin: from any bot) |
+| `local-vm` | personal | Organization: the Local VM on the person's computer, through their Sagax app. Solo: this server's Local VM of the bot | Same |
+| `desktop` | personal | "Cet ordinateur". Organization: the person's computer through their Sagax app, when their Where bots work is their computer or the bot works there. Solo: this computer, only when the server is the Sagax app on it | Same |
+| `ssh`, `unraid` | server | A host of the server from `config.json` (`terminalShell.hosts[]`, `terminalShell.unraidSshAlias`, `SAGAX_UNRAID_SSH_ALIAS`, `vps.sshAlias`) | Organization admins (a solo server's operator) |
+| `test` | server | Vitest echo shell (`SAGAX_TERMINAL_TEST=1`) | Same |
 
-| Provider | Role today |
-|----------|------------|
-| `unraid` | SSH alias (first shipped adapter) |
-| `ssh` | Generic SSH host from config / VPS alias |
-| `test` | Vitest echo shell (`SAGAX_TERMINAL_TEST=1`) |
+A personal destination has the single id `mine`: it always means the
+environment of the person who lists or opens it, so a card answered by
+someone else opens THEIR environment under THEIR rights, never the owner's.
 
-Planned kinds in the shared type (`sandbox`, `docker-exec`, `local-vm`,
-`desktop`, `cloud-vm`, …) register the same way: implement
-`TerminalResourceAdapter`, call `registry.register` in
-`server/terminal-install.ts`.
+## The bot's tools
 
-## Security (all adapters)
+- `list_terminal_resources`: what this person may open here, and the default
+  (where the bot works now).
+- `offer_shell_terminal { reason, provider?, resource_id? }`: stages the card.
+  Without a destination, the card proposes where the bot works (its
+  Workspace, or the place Auto chose this turn); else the person's cloud
+  computer, Local VM, computer, in that order.
 
-- Approval card required; bot tools `list_terminal_resources` and
-  `offer_shell_terminal` only stage the card.
-- WebSocket attach uses the same authenticated upgrade path as voice mode and
-  the desktop viewer.
-- `terminal-sessions.jsonl` audit log; 15 minute idle close; bot input off
-  until the person enables it on the session.
+Both are member-scope tools (`server/member-tool-scope.ts`): the list is
+already filtered for the person and the card only stages a request.
 
-## Configuration
+## The card
 
-`config.json` → `terminalShell.hosts[]` with `{ id, label, alias, provider }`,
-optional `unraidSshAlias`, or `SAGAX_UNRAID_SSH_ALIAS`. VPS `sshAlias` is
-also offered as an `ssh` resource.
+The card shows the bot's destination and, when there is more than one, a
+**Destination** menu with every other destination this person may open.
+The allow sends the pick (`terminalDestination`) and the widget's size
+(`terminalSize`). The server opens the pick only when the card offered it
+AND the registry allows it for the person answering
+(`server/terminal-resources/registry.ts`, `terminalResourceAllowed`); a
+refusal leaves the card open.
+
+## How each destination runs
+
+| Destination | Path |
+|-------------|------|
+| `sandbox` | The provisioner's `/v1/sandboxes/<key>/tty` upgrade (signed, size in the URL): `docker exec` with a TTY (`sandboxd-docker.ts execTty`) or the Kubernetes exec API with `tty=true` and its resize channel (`sandboxd-k8s-client.ts execTty`), as the sandbox user in `/workspace`. Keystrokes and resizes are framed (`server/sandbox-tty-frames.ts`). |
+| `local-vm`, `desktop` (organization) | A bridge operation (`terminal_open`, `vm_terminal_open`) with a one-time ticket; the app connects back (`GET /api/desktop-bridge/<id>/terminal/<ticket>`, session cookie + bridge secret, same person) and runs the shell (`electron/desktop-terminal.mjs`): the login shell, or `docker exec -it -u cua` into the Local VM (`electron/local-vm.mjs terminalCommand`, which holds the VM against its idle stop). |
+| `local-vm`, `desktop` (solo), `ssh`, `unraid` | A local PTY from the system's `script` command (`electron/script-pty.mjs`): `docker exec -it -u cua`, the login shell, `ssh -tt`. |
+
+The widget sends keystrokes as binary WebSocket frames and its size as a
+text frame `{"type":"resize","cols":..,"rows":..}`; every destination
+follows the size.
+
+## Security and audit
+
+- Approval card required; nothing runs before the allow. The bot cannot type
+  unless the person turns on bot input.
+- The person's rights are checked on list, on offer, and again at open.
+- WebSocket attach uses the authenticated upgrade path (voice mode, desktop
+  viewer). Closing the widget ends the session; 15 minute idle close; 3 live
+  sessions per person.
+- `terminal-sessions.jsonl` (DATA_DIR): `session.requested`,
+  `session.destination` (the person changed the destination),
+  `session.refused`, `session.denied`, `session.opened`, `session.ended`,
+  each with the person, bot, conversation and destination. A terminal on
+  the person's computer is also in their Computer tab's activity
+  (`desktop-bridge-audit.jsonl`); the Kubernetes provisioner audits
+  `sandbox.tty`.

@@ -68,6 +68,9 @@ export const DESKTOP_BRIDGE_ACTIONS = [
   "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call",
   // One allowlisted call to a loopback model the desktop published (endpoint id, never a URL).
   "local_model",
+  // The in-chat terminal the person opened on their computer or its Local VM
+  // (server/desktop-terminal.ts): the app connects back with the ticket.
+  "terminal_open", "vm_terminal_open",
 ] as const;
 export type DesktopBridgeAction = (typeof DESKTOP_BRIDGE_ACTIONS)[number];
 
@@ -103,13 +106,13 @@ export type DesktopBridgeOperation = z.infer<typeof desktopBridgeOperation>;
 /** Which capability an action needs; the desktop checks it again. */
 export function desktopBridgeCapability(action: DesktopBridgeAction): keyof DesktopBridgeRegistration["capabilities"] {
   switch (action) {
-    case "run_command": return "shell";
+    case "run_command": case "terminal_open": return "shell";
     case "read_file": case "write_file": case "list_files": case "search_files": case "stage_file": case "extract_archive": return "files";
     case "fetch_url": return "fetch";
     case "browse": return "browser";
     case "computer_tools": case "computer_call": return "computer";
     case "vm_status": case "vm_start": case "vm_run_command": case "vm_create":
-    case "vm_stop": case "vm_pause": case "vm_resume": case "vm_setup": case "vm_install": case "vm_screenshot": case "vm_computer_call": return "localVm";
+    case "vm_stop": case "vm_pause": case "vm_resume": case "vm_setup": case "vm_install": case "vm_screenshot": case "vm_computer_call": case "vm_terminal_open": return "localVm";
     case "local_model": return "localModels";
   }
 }

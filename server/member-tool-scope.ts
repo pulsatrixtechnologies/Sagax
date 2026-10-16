@@ -85,6 +85,12 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   propose_team_memory: "own-setup",
   propose_team_setup: "own-setup",
   propose_bot_deletion: "own-setup",
+  // The in-chat terminal (2026-10-15, JC): the list is what THIS person may
+  // open (their own environments; the server's hosts for an admin only), and
+  // the offer only stages a card the person approves; the server checks the
+  // person's rights again when they open it (terminal-resources/registry.ts).
+  list_terminal_resources: "read",
+  offer_shell_terminal: "conversation",
 });
 
 /** The agents tools that keep the admin gate, and why:
@@ -93,14 +99,11 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
  *   attach_file     reads any path on the server into the chat
  *   vm_exec         a shell command
  *   shared_computer files, a terminal or the screen of a shared desktop
- *   list_terminal_resources, offer_shell_terminal
- *                   the terminal-capable resources and a shell on one
  *   launch_cloud_agent, cloud_agent_follow_up, cancel_cloud_agent,
  *   archive_cloud_agent
  *                   a cloud coding agent run on a provider account */
 export const HOST_LEVEL_AGENT_TOOLS: ReadonlySet<string> = new Set([
   "act", "manage_pairing", "manage_settings", "api_reload", "review_write", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
-  "list_terminal_resources", "offer_shell_terminal",
   "launch_cloud_agent", "cloud_agent_follow_up", "cancel_cloud_agent", "archive_cloud_agent",
 ]);
 

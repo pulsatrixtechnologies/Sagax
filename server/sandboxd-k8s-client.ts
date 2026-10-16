@@ -30,6 +30,9 @@ export interface K8sClient {
   exec(namespace: string, pod: string, command: string[]): Promise<K8sExecResult>;
   /** stdin and stdout stay open (the desktop relay). stderr is dropped. */
   execStream(namespace: string, pod: string, command: string[]): Promise<Duplex>;
+  /** An interactive exec in a terminal (tty=true): one raw stream, and the
+   * v4 protocol's resize channel (4). The in-chat terminal. */
+  execTty?(namespace: string, pod: string, command: string[], size: { cols: number; rows: number }): Promise<{ stream: Duplex; resize(size: { cols: number; rows: number }): Promise<void> }>;
   metrics(namespace: string, pod: string): Promise<{ cpu: number; memoryBytes: number } | null>;
 }
 
@@ -156,15 +159,16 @@ export function kubernetesClient(auth: K8sAuth): K8sClient {
     req.end(payload);
   });
 
-  const openExec = (namespace: string, pod: string, command: string[], stdin: boolean) => new Promise<WebSocket>((resolve, reject) => {
+  const openExec = (namespace: string, pod: string, command: string[], stdin: boolean, tty = false) => new Promise<WebSocket>((resolve, reject) => {
     const url = endpoint(auth, `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(pod)}/exec`);
     url.protocol = "wss:";
     const params = new URLSearchParams();
     for (const arg of command) params.append("command", arg);
     params.set("stdout", "true");
-    params.set("stderr", "true");
+    // A terminal has one output: Kubernetes refuses stderr beside a tty.
+    params.set("stderr", tty ? "false" : "true");
     params.set("stdin", stdin ? "true" : "false");
-    params.set("tty", "false");
+    params.set("tty", tty ? "true" : "false");
     url.search = params.toString();
     const token = auth.token?.();
     const socket = new WebSocket(url, ["v4.channel.k8s.io"], {
@@ -225,6 +229,35 @@ export function kubernetesClient(auth: K8sAuth): K8sClient {
       socket.on("close", () => stream.push(null));
       socket.on("error", (error) => stream.destroy(error));
       return stream;
+    },
+    async execTty(namespace, pod, command, size) {
+      const socket = await openExec(namespace, pod, command, true, true);
+      const send = (channel: number, payload: Buffer) => new Promise<void>((resolve, reject) => {
+        if (socket.readyState !== WebSocket.OPEN) { reject(new Error("the exec stream is closed")); return; }
+        socket.send(Buffer.concat([Buffer.from([channel]), payload]), { binary: true }, (error) => (error ? reject(error) : resolve()));
+      });
+      const resize = async (next: { cols: number; rows: number }) => {
+        const Width = Math.max(2, Math.min(1000, Math.floor(next.cols)));
+        const Height = Math.max(1, Math.min(500, Math.floor(next.rows)));
+        await send(4, Buffer.from(JSON.stringify({ Width, Height }))).catch(() => undefined);
+      };
+      const stream = new Duplex({
+        read() {},
+        write(chunk, _encoding, callback) {
+          const payload = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          send(0, payload).then(() => callback(), callback);
+        },
+        final(callback) { socket.close(); callback(); },
+        destroy(error, callback) { socket.terminate(); callback(error); },
+      });
+      socket.on("message", (data) => {
+        const frame = frameData(data);
+        if (frame.length > 1 && frame[0] === 1) stream.push(Buffer.from(frame.subarray(1)));
+      });
+      socket.on("close", () => stream.push(null));
+      socket.on("error", (error) => stream.destroy(error));
+      await resize(size);
+      return { stream, resize };
     },
     async metrics(namespace, pod) {
       const response = await call("GET", `/apis/metrics.k8s.io/v1beta1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(pod)}`);

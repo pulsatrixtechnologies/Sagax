@@ -24,6 +24,7 @@ import type { Duplex } from "node:stream";
 import { localVmDesktopSpec } from "./container-computer.ts";
 import { desktopBridgeRegistration, desktopSystemInfo, type DesktopBridgeOperation, type DesktopBridges } from "./desktop-bridge.ts";
 import type { DesktopTunnels } from "./desktop-egress.ts";
+import type { DesktopTerminals } from "./desktop-terminal.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
 const ID_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/(poll|lease|progress|result|disconnect|system)$/;
@@ -36,9 +37,12 @@ const LOCAL_VM_ACTIONS: Record<string, DesktopBridgeOperation["action"]> = {
   setup: "vm_setup", install: "vm_install", screenshot: "vm_screenshot",
 };
 const TUNNEL_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/tunnel$/;
+/** The person's app calling back for an in-chat terminal (server/desktop-terminal.ts). */
+const TERMINAL_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/terminal\/([a-f0-9]{48})$/;
 
+/** The desktop bridge answers these upgrades itself (tunnel, terminal). */
 export function isDesktopTunnelPath(path: string): boolean {
-  return TUNNEL_ROUTE.test(path);
+  return TUNNEL_ROUTE.test(path) || TERMINAL_ROUTE.test(path);
 }
 
 export interface BridgeAuditEntry {
@@ -232,5 +236,40 @@ export function attachDesktopTunnel(server: Server, deps: {
     const secret = String(req.headers["x-sagax-bridge-secret"] ?? "");
     if (!deps.bridgeOwner(match[1]!, session.id, secret)) return refuse(403, "Forbidden");
     deps.tunnels.accept(socket, head, key, { person: session.person, session: session.id, bridgeId: match[1]! });
+  });
+}
+
+/** The app's callback socket for an in-chat terminal: authenticated exactly
+ * like the tunnel (live session cookie of the person whose desktop
+ * registered `id` with this secret), then matched to a ticket this server
+ * issued for that same person. Anything else is refused before a byte. */
+export function attachDesktopTerminal(server: Server, deps: {
+  organization: () => boolean;
+  session: (req: IncomingMessage) => { id: string; person: string } | null;
+  sameOrigin: (req: IncomingMessage) => boolean;
+  bridgeOwner: (id: string, session: string, secret: string) => boolean;
+  terminals: DesktopTerminals;
+}): void {
+  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    let path: string;
+    try { path = new URL(req.url ?? "", "http://localhost").pathname; } catch { return; }
+    const match = TERMINAL_ROUTE.exec(path);
+    if (!match) return;
+    const refuse = (status: number, text: string) => {
+      socket.end(`HTTP/1.1 ${status} ${text}\r\nconnection: close\r\ncontent-length: 0\r\n\r\n`);
+      socket.destroy();
+    };
+    if (!(socket instanceof Socket)) { socket.destroy(); return; }
+    socket.on("error", () => socket.destroy());
+    if (!deps.organization()) return refuse(404, "Not Found");
+    const key = req.headers["sec-websocket-key"];
+    if (req.method !== "GET" || req.headers.upgrade?.toLowerCase() !== "websocket" || req.headers["sec-websocket-version"] !== "13"
+      || typeof key !== "string" || !/^[A-Za-z0-9+/]{22}==$/.test(key)) return refuse(400, "Bad Request");
+    if (!deps.sameOrigin(req)) return refuse(403, "Forbidden");
+    const session = deps.session(req);
+    if (!session) return refuse(401, "Unauthorized");
+    const secret = String(req.headers["x-sagax-bridge-secret"] ?? "");
+    if (!deps.bridgeOwner(match[1]!, session.id, secret)) return refuse(403, "Forbidden");
+    if (!deps.terminals.accept(socket, head, key, { person: session.person, ticket: match[2]! })) return refuse(404, "Not Found");
   });
 }

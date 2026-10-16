@@ -382,3 +382,23 @@ test("a command still running defers the idle stop", async () => {
   await clock.advance(10 * 60_000);
   assert.equal(stops(), 1);
 });
+
+test("the in-chat terminal runs docker exec -it as the desktop user, and holds the VM until it closes", async () => {
+  const docker = fakeDocker({ existing: container({ running: true }) });
+  const clock = fakeClock();
+  const vm = createLocalVm({ exec: docker.exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]), ...clock });
+  const stops = () => docker.calls.filter(call => call.endsWith(" stop openmausbot-computer")).length;
+  const terminal = await vm.terminalCommand();
+  assert.deepEqual(terminal.argv.slice(1), ["exec", "-it", "-u", "cua", "-w", "/home/cua/workspace", "-e", "HOME=/home/cua", "-e", "TERM=xterm-256color", "openmausbot-computer", "bash", "-l"]);
+  await clock.advance(30 * 60_000);
+  assert.equal(stops(), 0, "an open terminal is use");
+  terminal.release();
+  terminal.release();
+  await clock.advance(10 * 60_000);
+  assert.equal(stops(), 1);
+  const stopped = createLocalVm({ exec: fakeDocker({ existing: container({ running: false }) }).exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]) });
+  await assert.rejects(stopped.terminalCommand(), /not running/);
+  const windows = createLocalVm({ exec: fakeDocker({ existing: container({ running: true }) }).exec, dataDir: "C:\\Users\\ada\\.openmausbot", home: "C:\\Users\\ada", platform: "win32", env: {}, exists: () => true });
+  const plain = await windows.terminalCommand().catch(() => null);
+  if (plain) assert.deepEqual(plain.argv.slice(1, 3), ["exec", "-i"]);
+});

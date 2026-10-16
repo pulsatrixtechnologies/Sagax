@@ -690,6 +690,13 @@ import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
+import type { TerminalWorkPlace } from "./terminal-requests.ts";
+import type { TerminalAccess } from "./terminal-resources/types.ts";
+import { streamTerminalAttachment } from "./terminal-resources/adapters/personal.ts";
+import { parseTerminalDestinationPick, type TerminalDestinationPick } from "../shared/terminal-request.ts";
+import { DesktopTerminals } from "./desktop-terminal.ts";
+import { spawnScriptPty } from "../electron/script-pty.mjs";
+import { loginShellArgv } from "../electron/desktop-terminal.mjs";
 import { resolveAndSendTerminal } from "./terminal-requests.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
 import {
@@ -999,7 +1006,7 @@ import { FLOW_TOOLS_MCP_NAME } from "./flow-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, autoStartLine, autoStartTarget, parseAutoComputerTarget, selectAutoComputer, type AutoComputerState, type AutoComputerTarget, type AutoStart, type FixedWorksOn } from "./auto-computer.ts";
 import { parseWorkspaceLine, workspaceLineName } from "../shared/workspace-line.ts";
 import { computerSelectTarget } from "../shared/execution-target.ts";
-import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
+import { attachDesktopTerminal, attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
 import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
 import { archiveInlineTexts, archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
@@ -8549,11 +8556,150 @@ function terminalPrincipalId(auth: RequestAuth): string | undefined {
   const id = actorPrincipalId(auth).trim().toLowerCase();
   return id || undefined;
 }
+/** In-chat terminals on people's own computers and Local VMs through their
+ * Sagax app (organization server, server/desktop-terminal.ts). */
+const desktopTerminals = new DesktopTerminals((person, operation) => desktopBridges.request(person, operation, () => true));
+/** What `principalId` may open in the in-chat terminal for `botId`
+ * (2026-10-15, JC): the server's hosts stay an organization admin's; a
+ * person's own environments are theirs, for their own bot. */
+function terminalAccessFor(principalId: string, botId: string): TerminalAccess {
+  const person = principalId.trim().toLowerCase();
+  const organization = IDENTITY.kind === "perspicax";
+  if (!organization) {
+    // Solo: the operator and nobody else.
+    const operator = person === localPrincipalId().trim().toLowerCase();
+    return { organization, admin: operator, ownsBot: operator };
+  }
+  const record = person ? principals.byId(person) : null;
+  const admin = record?.local === true || record?.orgRole === "admin";
+  const bot = store.bot(botId);
+  const ownsBot = Boolean(bot && person && effectiveBotOwner(bot).trim().toLowerCase() === person);
+  return { organization, admin, ownsBot };
+}
+/** Where `botId` works in this conversation now, as a terminal destination:
+ * the place Auto chose this turn, else its Workspace (or the conversation's
+ * pin), else where Auto would start. */
+function terminalWorkPlace(botId: string, threadId: string, principalId: string): TerminalWorkPlace {
+  const bot = store.bot(botId);
+  if (!bot) return null;
+  const plan = turnSurfacePlan(bot, undefined, threadId).computer;
+  const fixed = (computer: typeof plan): TerminalWorkPlace => computer === "cloud" ? "sandbox" : computer === "vm" ? "local-vm" : computer === "local" ? "desktop" : null;
+  if (IDENTITY.kind !== "perspicax") return fixed(plan) ?? "local-vm";
+  const live = turnWorkplaces.get(threadId);
+  if (live?.botId === botId) {
+    const selected = live.auto?.auto ? live.auto.selected : null;
+    if (selected === "cloud") return "sandbox";
+    if (selected === "local_vm") return "local-vm";
+    if (selected === "this_computer") return "desktop";
+    if (live.decision.target === "user-sandbox") return "sandbox";
+    if (live.decision.target === "user-desktop") return plan === "vm" ? "local-vm" : "desktop";
+  }
+  return fixed(plan) ?? (workplacePreference(principalId).place === "computer" && desktopBridges.connected(principalId) ? "desktop" : "sandbox");
+}
+/** The person allowed bots on their own computer: their Where bots work is
+ * their computer, or this bot works there (This computer, Local VM). */
+function terminalDesktopAllowed(principalId: string, botId: string, threadId: string | undefined): boolean {
+  if (workplacePreference(principalId).place === "computer") return true;
+  const bot = store.bot(botId);
+  const plan = bot ? turnSurfacePlan(bot, undefined, threadId).computer : undefined;
+  return plan === "local" || plan === "vm";
+}
+/** The destination a person picked on a terminal card and the size of
+ * their terminal, from the answer's body; anything malformed is dropped. */
+function terminalAnswerExtras(body: Record<string, unknown>): { pick?: TerminalDestinationPick; cols?: number; rows?: number } {
+  const pick = parseTerminalDestinationPick(body.terminalDestination);
+  const size = body.terminalSize && typeof body.terminalSize === "object" ? body.terminalSize as { cols?: unknown; rows?: unknown } : null;
+  const cols = Number(size?.cols);
+  const rows = Number(size?.rows);
+  const sized = Number.isInteger(cols) && Number.isInteger(rows) && cols >= 2 && cols <= 1000 && rows >= 1 && rows <= 500;
+  return { ...(pick ? { pick } : {}), ...(sized ? { cols, rows } : {}) };
+}
+function terminalSize(ctx: { cols: number; rows: number }) {
+  return { cols: ctx.cols, rows: ctx.rows };
+}
+/** A terminal on the person's computer is in their Computer tab's activity
+ * too, like every other bridge action. */
+async function bridgeTerminal(ctx: { principalId: string; botId?: string; threadId?: string; cols: number; rows: number }, target: "desktop" | "vm") {
+  const detail = target === "vm" ? "vm_terminal_open" : "terminal_open";
+  try {
+    const attachment = await desktopTerminals.open(ctx.principalId, target, terminalSize(ctx));
+    bridgeAudit.record({ person: ctx.principalId, botId: ctx.botId, threadId: ctx.threadId, target: "user-desktop", kind: "tool", detail, ok: true });
+    return attachment;
+  } catch (error) {
+    bridgeAudit.record({ person: ctx.principalId, botId: ctx.botId, threadId: ctx.threadId, target: "user-desktop", kind: "tool", detail, ok: false, error: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
+}
 const terminalFeature = installTerminalFeature({
   dataDir: DATA_DIR,
   store,
   cfg: () => cfg,
   principalId: terminalPrincipalId,
+  access: terminalAccessFor,
+  workPlace: terminalWorkPlace,
+  owner: (botId) => {
+    const bot = store.bot(botId);
+    return bot ? effectiveBotOwner(bot) : "";
+  },
+  ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+  personal: {
+    // The person's server environment (the provisioner, Docker or
+    // Kubernetes): the same sandbox, user and limits as their bots' commands.
+    sandbox: {
+      async available() {
+        return IDENTITY.kind === "perspicax" && userSandbox ? { hostLabel: "Environnement serveur" } : null;
+      },
+      async open(ctx) {
+        if (!userSandbox) throw new Error("The server environment is not enabled on this server.");
+        return streamTerminalAttachment(await userSandbox.ttyStream(ctx.principalId, terminalSize(ctx), ctx.botId));
+      },
+    },
+    // Organization: the Local VM on the person's computer, through their app
+    // (electron/local-vm.mjs). Solo: this server's own Local VM of the bot.
+    "local-vm": {
+      async available(ctx) {
+        if (IDENTITY.kind === "perspicax") {
+          const desktop = desktopBridges.current(ctx.principalId);
+          if (!desktop?.capabilities.localVm || !ctx.botId || !terminalDesktopAllowed(ctx.principalId, ctx.botId, ctx.threadId)) return null;
+          return { hostLabel: `VM locale (${desktop.name})` };
+        }
+        if (!ctx.botId) return null;
+        const target = localVmTargetForStatus(ctx.botId, ctx.threadId);
+        const status = await containerComputerStatus(undefined, undefined, target, { probeDesktop: false }).catch(() => null);
+        if (!status?.runtime || status.container === "missing") return null;
+        return status.container === "running"
+          ? { hostLabel: target.containerName, status: "online" }
+          : { hostLabel: target.containerName, status: "offline", statusNote: "La VM locale est arrêtée; démarrez-la avant d'ouvrir le terminal." };
+      },
+      async open(ctx) {
+        if (IDENTITY.kind === "perspicax") return bridgeTerminal(ctx, "vm");
+        const target = localVmTargetForStatus(ctx.botId ?? "", ctx.threadId);
+        const runtime = (await containerRuntimeStatus()).runtime;
+        if (!runtime) throw new Error("No container runtime is available for the Local VM.");
+        // The same container, user and workspace as vm_exec, in a terminal.
+        return spawnScriptPty([
+          runtime, "exec", "-it", "-u", "cua", "-w", VM_WORKSPACE_GUEST, "-e", "HOME=/home/cua", "-e", "TERM=xterm-256color",
+          target.containerName, "bash", "-l",
+        ], { ...terminalSize(ctx), env: { ...process.env, PATH: augmentedPath() } });
+      },
+    },
+    // Organization: the person's own computer through their app. Solo: this
+    // computer, only when the server is the Sagax app running on it.
+    desktop: {
+      async available(ctx) {
+        if (IDENTITY.kind === "perspicax") {
+          const desktop = desktopBridges.current(ctx.principalId);
+          if (!desktop?.capabilities.shell || !ctx.botId || !terminalDesktopAllowed(ctx.principalId, ctx.botId, ctx.threadId)) return null;
+          return { hostLabel: desktop.name };
+        }
+        return DESKTOP_MANAGED ? { hostLabel: hostname(), status: "online" } : null;
+      },
+      async open(ctx) {
+        if (IDENTITY.kind === "perspicax") return bridgeTerminal(ctx, "desktop");
+        return spawnScriptPty(loginShellArgv(), { ...terminalSize(ctx), cwd: homedir(), env: { ...process.env, PATH: augmentedPath() } });
+      },
+    },
+  },
 });
 function closeSessionStreams(sessionId: string): void {
   browserLive.closeForOwner(sessionId);
@@ -23000,6 +23146,8 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     runNow: (routineId) => routines?.runNow(routineId),
     audit: (routine, run, principalId) => auditRoutineRunNowBy(principalId ? { kind: "person", principalId, via: "sagax" } : { kind: "worker" }, routine, run),
   }),
+  // list_terminal_resources and offer_shell_terminal (server/routes/terminal-internal.ts)
+  terminalFeature.internalRoute,
 ];
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
 // Install statuses come from the organization library's own state, never
@@ -37511,6 +37659,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             requestId: String(body.requestId),
             behavior,
             principalId,
+            ...terminalAnswerExtras(body),
           })) return;
         }
         if (sendSkillResolution(res, resolveSkillRequest({
@@ -37612,6 +37761,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             requestId,
             behavior,
             principalId,
+            ...terminalAnswerExtras(body),
           })) return;
         }
         const routineCard = store.messagesFor(threadId).find(
@@ -40527,6 +40677,7 @@ const desktopTunnelDeps = {
   tunnels: desktopTunnels,
 };
 attachDesktopTunnel(server, desktopTunnelDeps);
+attachDesktopTerminal(server, { ...desktopTunnelDeps, terminals: desktopTerminals });
 if (IDENTITY.kind === "perspicax") {
   egressProxy = await startEgressProxy({
     tunnels: desktopTunnels,
@@ -40756,6 +40907,7 @@ if (TUNNEL_SOCKET) {
   tunnelListener = createServer(handleRequest);
   desktopViewer.attach(tunnelListener, handleRequest);
   attachDesktopTunnel(tunnelListener, desktopTunnelDeps);
+  attachDesktopTerminal(tunnelListener, { ...desktopTunnelDeps, terminals: desktopTerminals });
   tunnelListener.listen(TUNNEL_SOCKET, () => {
     console.log(`openmausbot tunnel listener on ${TUNNEL_SOCKET}`);
   });
@@ -40793,6 +40945,8 @@ const gracefulShutdown = createGracefulShutdown({
       revokeAllInternalCapabilities();
       sharedComputers.close();
       desktopBridges.close();
+      desktopTerminals.close();
+      terminalFeature.sessions.stop();
       desktopLocalModels.close();
       desktopTunnels.close();
       void egressProxy?.close();
