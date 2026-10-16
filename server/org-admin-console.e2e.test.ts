@@ -144,6 +144,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
   let routineId = "";
   const sockets: Socket[] = [];
   let cardId = "";
+  let seeded = new Set<string>();
 
   beforeAll(async () => {
     chmodSync(FAKE_CLAUDE, 0o755);
@@ -174,6 +175,10 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
       return got && got.length === 4 ? got : null;
     });
     for (const person of people) ids[person.login] = person.principalId;
+    // The first run seeds one bot with a random name from server/names.ts
+    // (Atlas and Pixel are in that list): the name filters below leave it out.
+    seeded = new Set(((await admin("GET", "bots", ALICE)).body.bots as Array<{ id: string }>).map((bot) => bot.id));
+    expect(seeded.size).toBe(1);
     bob = await signIn(BOB);
     await signIn(MONA);
     zoe = await signIn(ZOE);
@@ -267,7 +272,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(routineId).toMatch(/\w/);
     const paged = await admin("GET", `bots?owner=${ids.bob}&limit=1`, ALICE);
     expect(paged.body).toMatchObject({ items: [{ id: bots.beacon!.id, owner: { name: "Bob" } }], next: null });
-    expect((await admin("GET", "bots?q=atl", ALICE)).body.items.map((bot: { id: string }) => bot.id)).toEqual([bots.atlas!.id]);
+    expect((await admin("GET", "bots?q=atl", ALICE)).body.items.map((bot: { id: string }) => bot.id).filter((id: string) => !seeded.has(id))).toEqual([bots.atlas!.id]);
     const usage = await admin("GET", "usage", ALICE);
     expect((usage.body.rows as Array<any>).find((row) => row.botId === bots.atlas!.id)).toMatchObject({ engine: "claude", turns: 1 });
     const audit = await admin("GET", `audit?category=rights&target=${bots.atlas!.id}`, ALICE);
@@ -540,7 +545,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect((await admin("GET", `bots/${pixel.id}/avatar`, ALICE)).body.code).toBe("not_found");
     const dressed = await api("PATCH", `/api/bots/${pixel.id}`, alice, { title: "Design helper", description: "Draws the mockups.", mascotLook: { character: "bunbu", skins: { bunbu: "pastel" } } });
     expect(dressed.status, dressed.text).toBe(200);
-    const listed = ((await admin("GET", "bots?q=pixel", ALICE)).body.items as Array<any>)[0];
+    const listed = ((await admin("GET", "bots?q=pixel", ALICE)).body.items as Array<any>).find((bot) => bot.id === pixel.id);
     expect(listed.look).toMatchObject({ kind: "mascot", character: "bunbu", family: "animals", skin: "pastel", image: null });
     expect(listed.persona).toEqual({ displayName: "Pixel", title: "Design helper", description: "Draws the mockups." });
 
