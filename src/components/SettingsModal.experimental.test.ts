@@ -96,6 +96,34 @@ describe("Settings > Experimental", () => {
     expect((toggle as { disabled?: boolean }).disabled).toBe(true);
   });
 
+  it("is laid out as Grok Bot's pages: one group, a label and a switch per feature, no help paragraphs", async () => {
+    fixture.section = "experimental";
+    fixture.features = { dataWindow: false, decisionModel: true };
+    const html = await render();
+    expect(html).toContain('data-settings-group="experimental"');
+    expect(html).toContain(">Experimental features</h3>");
+    // skill authoring and the decision model are on
+    expect(html).toContain("· 2 of 5 on");
+    for (const feature of ["skillAuthoring", "browser", "connectedApps", "decisionModel", "dataWindow"]) {
+      expect(html, feature).toContain(`data-experimental-feature="${feature}"`);
+    }
+    expect(html).not.toContain("Early features may change");
+    expect(html).not.toContain("Save a bot's verification run as a skill");
+    expect(html).not.toContain("Adds the Decision model card");
+    // the deep link of the browser notes still lands here
+    expect(html).toContain('data-settings-card="experimental.features"');
+    expect(html).not.toMatch(/[–—]/);
+  });
+
+  it("greys a feature this server cannot run, with the reason on demand", async () => {
+    fixture.section = "experimental";
+    const html = await render();
+    const row = /data-experimental-feature="dataWindow"[\s\S]*?<\/button><\/div><\/div><\/div><\/div>/.exec(html)?.[0] ?? html;
+    expect(row).toContain('data-unavailable=""');
+    expect(row).toContain("Not available on this server");
+    expect(row).toContain('aria-label="More about Data window"');
+  });
+
   it("saves each switch as its own server feature", async () => {
     fixture.section = "experimental";
     fixture.features = { dataWindow: false };
