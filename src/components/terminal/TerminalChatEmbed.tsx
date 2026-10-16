@@ -8,6 +8,7 @@ import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
+import { loadTerminalFonts, TERMINAL_FONT_FAMILY } from "./terminal-font";
 
 const THEME = {
   background: "#0d1117",
@@ -35,11 +36,12 @@ export function TerminalChatEmbed({ embed }: { embed: TerminalEmbed }) {
       import("@xterm/addon-search"),
       import("@xterm/addon-web-links"),
       import("@xterm/addon-webgl"),
+      loadTerminalFonts(),
     ]).then(([{ Terminal }, { FitAddon }, { SearchAddon }, { WebLinksAddon }, { WebglAddon }]) => {
     if (!live) return;
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      fontFamily: TERMINAL_FONT_FAMILY,
       fontSize: 13,
       theme: THEME,
       allowProposedApi: true,
@@ -84,13 +86,17 @@ export function TerminalChatEmbed({ embed }: { embed: TerminalEmbed }) {
       if (ws.readyState === WebSocket.OPEN) ws.send(encoder.encode(data));
     });
 
-    const onResize = () => fit.fit();
-    window.addEventListener("resize", onResize);
-    const ro = new ResizeObserver(() => fit.fit());
+    // The widget follows the transcript column: the window, the sidebar or a
+    // split view resizing it refits the grid, and sendSize tells the shell.
+    const refit = () => {
+      if (host.clientWidth > 0 && host.clientHeight > 0) fit.fit();
+    };
+    window.addEventListener("resize", refit);
+    const ro = new ResizeObserver(refit);
     ro.observe(host);
 
     cleanup = () => {
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize", refit);
       ro.disconnect();
       ws.close();
       term.dispose();

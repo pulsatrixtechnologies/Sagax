@@ -47,6 +47,14 @@ Copyright the noVNC authors, under MPL-2.0 and its accompanying licenses.
 Attribution, license terms and the corresponding source location are in
 public/novnc-NOTICE.txt (novnc-NOTICE.txt in the built UI).
 
+The in-chat terminal bundles the unmodified Symbols Nerd Font Mono font of
+Nerd Fonts v3.4.0 (recompressed to WOFF2), Copyright (c) 2014 Ryan L McIntyre,
+under the MIT License, as a fallback for shell prompt icons. Its glyphs come
+from Codicons and Font Awesome (CC BY 4.0), Material Design Icons (Apache
+License 2.0), Pomicons and Weather Icons (SIL OFL 1.1), Devicons, Octicons,
+Seti-UI, Powerline and IEC Power Symbols (MIT) and Font Logos (Unlicense).
+Details, source and checksums: third_party/nerd-fonts-symbols.
+
 The iOS companion app bundles the unmodified mermaid library (mermaid.min.js,
 the version pinned by pnpm-lock.yaml), Copyright (c) 2014 - 2022 Knut
 Sveidqvist, under the MIT License (third_party/mermaid/LICENSE), to draw

@@ -86,6 +86,10 @@ extraResources:
     to: licenses/98css-LICENSE.txt
   - from: third_party/geist/OFL.txt
     to: licenses/Geist-OFL.txt
+  - from: third_party/nerd-fonts-symbols/LICENSE
+    to: licenses/nerd-fonts-symbols-LICENSE.txt
+  - from: third_party/nerd-fonts-symbols/README.md
+    to: licenses/nerd-fonts-symbols-README.md
   # The model provider catalog: models.dev data and OpenCode's refresh logic.
   - from: third_party/models-dev/LICENSE
     to: licenses/models-dev-LICENSE.txt
