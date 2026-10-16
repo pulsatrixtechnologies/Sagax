@@ -167,32 +167,19 @@ const BODY_KEYS = new Set(["body", "content", "text", "html", "bodytext", "bodyh
 /** Every other key a send call may carry. Anything not here (attachments,
  * reply-to, from, sender, headers, an extra field) is not the approved draft. */
 const NEUTRAL_KEYS = new Set(["subject", "contenttype", "content_type", "ishtml", "is_html", "mimetype", "format", "savetosentitems", "save_to_sent_items", "userid", "user_id", "importance"]);
-const ADDRESS_IN_TEXT = /^[^\s@<>(),;:"'[\]\\{}]+@[^\s@<>(),;:"'[\]\\{}]+\.[a-z]{2,}$/i;
 
 function keyOf(key: string): string {
   return key.toLowerCase().replace(/[_-]/g, "");
 }
 
-/** The body as text: tags and the common entities of an HTML body removed,
- * line endings and runs of white space folded. */
+/** The body as it will be sent: line endings and the white space around
+ * it folded, nothing else. An HTML body is never read as the text it shows:
+ * a comment, a link target or an image would ride along unseen. */
 export function normalizeEmailBody(body: string): string {
-  let text = body.replace(/\r\n?/g, "\n");
-  if (/<[a-z][\s\S]*>/i.test(text)) {
-    text = text
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&amp;/g, "&");
-  }
-  return text.replace(/\s+/g, " ").trim();
+  return body.replace(/\r\n?/g, "\n").trim();
 }
 
-/** FNV-1a of the normalized body: the approved body, bound to the pass. */
+/** FNV-1a of the body as it will be sent: the approved body, bound to the pass. */
 export function emailBodyHash(body: string): string {
   const text = normalizeEmailBody(body);
   let hash = 0x811c9dc5;
@@ -209,25 +196,47 @@ interface CallReading {
   bodies: string[];
   /** a key or a value outside the approved shape */
   extra: boolean;
+  /** the call says its body is HTML */
+  html: boolean;
+}
+
+/** Any address a mail server could deliver to, IDN, punycode and IP
+ * literals included: parsed to be compared, never dropped. */
+const ANY_ADDRESS = /^[^\s@<>",;]+@(?:\[[^\]\s]+\]|[^\s@<>",;[\]]+)$/u;
+
+function readAddressText(text: string, into: Set<string>, reading: CallReading): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const angle = /^(.*)<([^<>]*)>\s*$/s.exec(trimmed);
+  const address = (angle ? angle[2]! : trimmed).trim().toLowerCase();
+  // a display name the person never approved can impersonate someone
+  if (angle && angle[1]!.trim() && angle[1]!.trim().replace(/^"|"$/g, "").toLowerCase() !== address) reading.extra = true;
+  if (!ANY_ADDRESS.test(address)) reading.extra = true;
+  else into.add(address);
 }
 
 function readAddresses(value: unknown, into: Set<string>, reading: CallReading): void {
   if (typeof value === "string") {
-    for (const part of value.split(/[,;]/)) {
-      const trimmed = part.trim();
-      if (!trimmed) continue;
-      const angle = /<([^<>]+)>\s*$/.exec(trimmed);
-      const address = (angle ? angle[1]! : trimmed).trim().toLowerCase();
-      if (ADDRESS_IN_TEXT.test(address)) into.add(address);
-      else if (!angle) reading.extra = true;
-    }
+    for (const part of value.split(/[,;]/)) readAddressText(part, into, reading);
   } else if (Array.isArray(value)) {
     for (const item of value) readAddresses(item, into, reading);
   } else if (value && typeof value === "object") {
+    let address: string | undefined;
+    let name: string | undefined;
     for (const [key, item] of Object.entries(value)) {
-      if (!ADDRESS_KEYS.has(keyOf(key))) reading.extra = true;
-      else if (keyOf(key) !== "name") readAddresses(item, into, reading);
+      const field = keyOf(key);
+      if (!ADDRESS_KEYS.has(field)) reading.extra = true;
+      else if (field === "name") {
+        if (typeof item === "string") name = item.trim();
+        else if (item !== null && item !== undefined) reading.extra = true;
+      } else if (typeof item === "string") {
+        address = item.trim().toLowerCase();
+        readAddressText(item, into, reading);
+      } else {
+        readAddresses(item, into, reading);
+      }
     }
+    if (name && name.toLowerCase() !== address) reading.extra = true;
   } else if (value !== null && value !== undefined) {
     reading.extra = true;
   }
@@ -251,6 +260,8 @@ function readCall(value: unknown, reading: CallReading): void {
       else readCall(item, reading);
     } else if (NEUTRAL_KEYS.has(key) || NEUTRAL_KEYS.has(rawKey.toLowerCase())) {
       if (item !== null && typeof item === "object") reading.extra = true;
+      if ((key === "contenttype" || key === "mimetype" || key === "format") && typeof item === "string" && /html/i.test(item)) reading.html = true;
+      if (key === "ishtml" && item === true) reading.html = true;
     } else {
       reading.extra = true;
     }
@@ -272,16 +283,22 @@ export function emailSendCallMatches(draft: EmailDraftToSend, tool: string, inpu
   const qualified = tool.startsWith("mcp__") || !tool.includes("__") ? tool : `mcp__${tool}`;
   if (!isOutboundTool(tool) && !isOutboundTool(qualified)) return false;
   if (connector && !connectorOwnsTool(connector, tool)) return false;
+  // a plain send: a forward or a reply carries the earlier thread along
+  const actionWords = tool.replace(/^(?:mcp__)?[^_]+?__/, "").toLowerCase().split(/[^a-z0-9]+/);
+  if (!actionWords.includes("send") || actionWords.some((word) => ["forward", "reply", "replyall", "respond", "draft"].includes(word))) return false;
   const args = parseArgs(input);
   if (!args) return false;
-  const reading: CallReading = { recipients: { to: new Set(), cc: new Set(), bcc: new Set() }, subjects: [], bodies: [], extra: false };
+  const reading: CallReading = { recipients: { to: new Set(), cc: new Set(), bcc: new Set() }, subjects: [], bodies: [], extra: false, html: false };
   readCall(args, reading);
   if (reading.extra) return false;
   if (!sameSet(reading.recipients.to, draft.to) || !sameSet(reading.recipients.cc, draft.cc) || !sameSet(reading.recipients.bcc, draft.bcc)) return false;
   if (reading.subjects.length > 1 || (reading.subjects[0] ?? "") !== draft.subject.trim()) return false;
-  const approved = emailBodyHash(draft.body);
   if (draft.body.trim() && !reading.bodies.length) return false;
-  return reading.bodies.every((body) => emailBodyHash(body) === approved);
+  // exact text, not a hash collision away: the hash binds, equality decides
+  const approved = normalizeEmailBody(draft.body);
+  if (!reading.bodies.every((body) => normalizeEmailBody(body) === approved)) return false;
+  // an HTML send is only the approved draft when that draft was this HTML
+  return !reading.html || /<[a-z!/][\s\S]*>/i.test(approved);
 }
 
 /** Whether a tool belongs to the connector the person approved: the MCP

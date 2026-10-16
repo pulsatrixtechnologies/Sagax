@@ -84,7 +84,7 @@ export function factsForCall(call: CustomRuleCall, home: string | undefined = se
 
 export function reviewCustomRules(rules: readonly CustomRule[], call: CustomRuleCall, botId: string, home: string | undefined = serverHome()): { decision: CustomRuleDecision; facts: CallFacts } {
   const facts = factsForCall(call, home);
-  return { decision: evaluateCustomRules(rules, facts, { botId, ...(home ? { home } : {}) }), facts };
+  return { decision: evaluateCustomRules(rules, facts, { botId, ...(home ? { home } : {}), resolve: realPath }), facts };
 }
 
 export function customRuleNotice(decision: CustomRuleDecision): CustomRuleNotice | undefined {
@@ -107,7 +107,7 @@ export function customRuleNotice(decision: CustomRuleDecision): CustomRuleNotice
  * undefined when no rule text can cover it (it then is not offered). */
 export function customRuleCandidate(facts: CallFacts, language: string | undefined, home: string | undefined = serverHome()): CustomRuleCandidate | undefined {
   const when = candidateWhen(facts, language ?? "fr");
-  if (!ruleCoversCall(compileRule(when, home), facts, "allow")) return undefined;
+  if (!ruleCoversCall(compileRule(when, home, realPath), facts, "allow")) return undefined;
   return { when, risks: [...facts.risks] };
 }
 
@@ -115,6 +115,6 @@ export function customRuleCandidate(facts: CallFacts, language: string | undefin
  * "Toujours permettre ceci", so a rule is never saved from a card it would
  * not answer. */
 export function ruleCoversCard(rule: CustomRule, call: CustomRuleCall, botId: string, home: string | undefined = serverHome()): boolean {
-  const decision = evaluateCustomRules([rule], factsForCall(call, home), { botId, ...(home ? { home } : {}) });
+  const decision = evaluateCustomRules([rule], factsForCall(call, home), { botId, ...(home ? { home } : {}), resolve: realPath });
   return rule.behavior === "allow" ? decision.kind === "allow" : decision.kind === rule.behavior;
 }

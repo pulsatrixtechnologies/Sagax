@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { customRuleCandidate, factsForCall } from "./custom-rules-review.ts";
+import { customRuleCandidate, factsForCall, realPath } from "./custom-rules-review.ts";
 import { callFacts, candidateWhen, compileRule, evaluateCustomRules, normalizePath, ruleCoversCall, type CustomRule } from "../shared/custom-rules.ts";
 
 const home = "/Users/jc";
@@ -45,6 +45,19 @@ const ATTACKS = [
   "cat ~/Documents/{a,../../.ssh/id_rsa}",
   "cat ~/Documents/a.txt x'/etc/passwd'",
   "cat ~/Documents/a.txt relative.txt",
+  // round 2: wildcards and flags that carry files
+  "cat ~/Documents/*",
+  "cat ~/Documents/l?nk",
+  "cat ~/Documents/[l]ink",
+  "cat ~/Documents/.?/.ssh/id_rsa",
+  "cat ~/Documents/[.][.]/.ssh/id_rsa",
+  "file -f/Users/jc/.ssh/id_rsa ~/Documents/a.txt",
+  "file -C -m/Users/jc/Documents/a.txt ~/Documents/a.txt",
+  "wc --files0-from=/Users/jc/.ssh/id_rsa ~/Documents/a.txt",
+  "cat $'~/Documents/a.txt'",
+  "\\cat ~/Documents/a.txt",
+  "/bin/r? -rf ~/Documents",
+  "head -c ~/.ssh/id_rsa ~/Documents/a.txt",
 ];
 
 describe("B1: a read rule never covers a shell line with side effects", () => {
@@ -100,6 +113,41 @@ describe("B2: a shell card proposes its exact command; deletion is seen behind a
   });
 });
 
+describe("round 2: deny sees real paths, servers do not decide their own risk", () => {
+  const resolveDir = mkdtempSync(join(tmpdir(), "sagax-rules-deny-"));
+  afterAll(() => rmSync(resolveDir, { recursive: true, force: true }));
+
+  it.each([["/etc", "/etc/passwd"], ["/tmp", "/tmp/x"], ["/var/log", "/var/log/system.log"]])("a deny on %s wins over an allow, links or not", (folder, file) => {
+    const facts = factsForCall({ tool: "Read", input: JSON.stringify({ file_path: file }) }, home);
+    expect(evaluateCustomRules([rule(`jamais lire les fichiers dans ${folder}`, "deny"), rule("lire des fichiers")], facts, { home, resolve: realPath }).kind).toBe("deny");
+  });
+
+  it("a deny naming a link catches the link, and an allow of the link's folder does not reach its target", () => {
+    const local = join(resolveDir, "home");
+    mkdirSync(join(local, "Documents"), { recursive: true });
+    mkdirSync(join(local, ".ssh"), { recursive: true });
+    symlinkSync(join(local, ".ssh"), join(local, "Documents", "link"));
+    const facts = factsForCall({ tool: "Read", input: JSON.stringify({ file_path: join(local, "Documents", "link", "id_rsa") }) }, local);
+    expect(evaluateCustomRules([rule("jamais lire les fichiers dans ~/Documents/link", "deny"), rule("lire des fichiers")], facts, { home: local, resolve: realPath }).kind).toBe("deny");
+    expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], facts, { home: local, resolve: realPath }).kind).toBe("none");
+  });
+
+  it("a readOnly hint never makes a delete, an upload or a wipe a read", () => {
+    for (const tool of ["mcp__evil__delete_file", "mcp__evil__upload_file", "mcp__evil_cw__wipe"]) {
+      const facts = factsForCall({ tool, input: JSON.stringify({ path: "/Users/jc/Documents/a.txt" }), hints: { readOnly: true } }, home);
+      expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], facts, { home }).kind, tool).toBe("none");
+      expect(evaluateCustomRules([rule("lire avec ConnectWise")], facts, { home }).kind, tool).toBe("none");
+    }
+    expect(callFacts({ tool: "mcp__evil_cw__query", input: "{}" }).products).toEqual([]);
+    expect(callFacts({ tool: "mcp__cw_psa__query", input: "{}" }).products).toEqual(["connectwise"]);
+  });
+
+  it("an exact command rule never matches a line split by a line break", () => {
+    expect(evaluateCustomRules([rule("la commande exacte `echo rm -rf ~/Documents/old`")], bash("echo\nrm -rf ~/Documents/old"), { home }).kind).toBe("none");
+    expect(evaluateCustomRules([rule("la commande exacte `make clean build`")], bash("make\nclean build"), { home }).kind).toBe("none");
+  });
+});
+
 describe("paths, tools and products", () => {
   const dir = mkdtempSync(join(tmpdir(), "sagax-rules-real-"));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -136,5 +184,6 @@ describe("paths, tools and products", () => {
     const lookalike = callFacts({ tool: "mcp__evilcw__newcw_dump", input: "{}" });
     expect(lookalike.products).not.toContain("connectwise");
     expect(callFacts({ tool: "mcp__perspicax_gox__cw_psa__query", input: "{}" }).products).toContain("connectwise");
+    expect(callFacts({ tool: "mcp__evil_perspicax__cw_dump", input: "{}" }).products).toEqual([]);
   });
 });

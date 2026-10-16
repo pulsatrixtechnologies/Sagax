@@ -698,13 +698,17 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   permettre ceci" saves a rule from a card only when it covers that card
   (409 `rule_not_covering` otherwise); on a shell card it proposes the
   exact command line only. Shell lines are read word by word (`readShell`):
-  find, rg, tree, less, awk, sed and xargs are never reads; chaining,
-  redirection, substitution or quotes make a line opaque (only an exact
-  command rule allows it); `/bin/rm`, `env rm`, `sudo rm`, `xargs rm`,
+  find, rg, tree, less, awk, sed, xargs and file are never reads; a pure
+  reader keeps to its own short flags (no long flag, no `=`, no attached
+  value); chaining, redirection, substitution, quotes or a wildcard
+  (`* ? [ ] { }`) make a line opaque (only an exact command rule allows it); `/bin/rm`, `env rm`, `sudo rm`, `xargs rm`,
   network tools and interpreters are recognized anywhere. Paths: only this
-  person's home is `~` (`~user`, `~+`, `~-` refused), real paths are
-  matched, deny and ask compare case-insensitively. Tools are named whole,
-  server included; products match whole name tokens. No model reviewer is
+  person's home is `~` (`~user`, `~+`, `~-` refused), a wildcard path is
+  never a known path; rule folders and call paths are both resolved: an
+  allow needs every path inside as written and as resolved, a deny or ask
+  catches either, case-insensitively. A server's readOnlyHint never makes a
+  call a read. Tools are named whole, server included; products match known
+  server ids (or a Perspicax or Composio gateway's tool prefix). No model reviewer is
   wired: `customRulesReviewPrompt`, `tightenCustomDecision` and
   `safetyReviewPrompt(call, policy)` are the tighten-only contract for one.
 
@@ -715,8 +719,11 @@ editable; Envoyer writes an approval card (`POST
 /api/threads/:id/email-drafts`) and never sends. Allow sends once: through
 the bot's own mail connector (Microsoft 365, Outlook or Gmail MCP server or
 app) with a 10-minute one-shot pass bound to that bot, that connector's
-server, the exact To, Cc, Bcc, subject and a hash of the approved body, and
-no other field (no attachment, reply-to, from or header); or through the
+server and a plain send tool (no forward or reply), the exact To, Cc, Bcc
+(every recipient part parsed, IDN and IP literals included; no display
+name), subject and exact approved body (HTML only if the draft was that
+HTML), and no other field (no attachment, reply-to, from or header); or
+through the
 server's mail settings. The pass is consumed before the safety review is
 relaxed for it, and the person's deny rules still apply. Bcc is refused in
 a room and never shown in a card's arguments. A partial send records who

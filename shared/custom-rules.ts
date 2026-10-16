@@ -91,6 +91,9 @@ export interface CompiledRule {
   objects: ObjectKind[];
   /** Folders, normalized: `~/Documents`, `/srv/data`. */
   paths: string[];
+  /** The same folders where they really point (symbolic links followed),
+   * when the caller can resolve them; otherwise equal to `paths`. */
+  realPaths: string[];
   /** Tool names written in backticks or after "outil"/"tool". */
   tools: string[];
   /** Product keys (connectwise, github...). */
@@ -110,6 +113,8 @@ export interface CallFacts {
   /** Paths the call acts on, normalized. Empty when none; `null` when one of
    * them could not be read safely (relative, climbing out, chained shell). */
   paths: string[] | null;
+  /** The same paths where they really point; null like `paths`. */
+  realPaths: string[] | null;
   products: string[];
   risks: RiskClass[];
   /** A shell call: its command line, whitespace folded. */
@@ -149,23 +154,35 @@ const OBJECT_WORDS: Record<ObjectKind, readonly string[]> = {
   command: ["commande", "commandes", "command", "commands", "terminal", "shell"],
 };
 
-/** Products a rule may name (its words) and the whole tokens of a tool's
- * server or name that are that product: `cw_psa__query` is ConnectWise,
- * `newcw_tools` or `my_outlookish` is not. */
-const PRODUCTS: Record<string, { words: readonly string[]; tokens: readonly string[] }> = {
-  connectwise: { words: ["connectwise", "cw", "psa"], tokens: ["cw", "connectwise", "psa"] },
-  sentinelone: { words: ["sentinelone", "sentinel", "s1"], tokens: ["sentinelone", "sentinel", "s1"] },
-  github: { words: ["github"], tokens: ["github", "gh"] },
-  slack: { words: ["slack"], tokens: ["slack"] },
-  outlook: { words: ["outlook", "microsoft", "m365", "office", "office365"], tokens: ["outlook", "microsoft", "m365", "office365"] },
-  gmail: { words: ["gmail"], tokens: ["gmail"] },
-  teams: { words: ["teams"], tokens: ["teams"] },
-  calendar: { words: ["calendrier", "agenda", "calendar"], tokens: ["calendar", "calendrier", "agenda"] },
-  twilio: { words: ["twilio"], tokens: ["twilio"] },
-  bookstack: { words: ["bookstack"], tokens: ["bookstack"] },
-  tailscale: { words: ["tailscale"], tokens: ["tailscale"] },
-  perspicax: { words: ["perspicax"], tokens: ["perspicax"] },
+/** Products a rule may name (its words), the MCP server ids that are that
+ * product (`evil_cw` is not ConnectWise), and the first word of a tool
+ * name behind a known gateway (Perspicax's `cw_psa__query`, Composio's
+ * `GMAIL_SEND_EMAIL`). */
+const PRODUCTS: Record<string, { words: readonly string[]; servers: readonly string[]; prefixes: readonly string[] }> = {
+  connectwise: { words: ["connectwise", "cw", "psa"], servers: ["cw", "cw_psa", "cw-psa", "connectwise", "connectwise_psa"], prefixes: ["cw"] },
+  sentinelone: { words: ["sentinelone", "sentinel", "s1"], servers: ["sentinelone", "s1"], prefixes: ["sentinelone"] },
+  github: { words: ["github"], servers: ["github"], prefixes: ["github"] },
+  slack: { words: ["slack"], servers: ["slack"], prefixes: ["slack"] },
+  outlook: { words: ["outlook", "microsoft", "m365", "office", "office365"], servers: ["outlook", "microsoft", "m365", "ms365", "office365", "microsoft_365", "microsoft-365"], prefixes: ["outlook"] },
+  gmail: { words: ["gmail"], servers: ["gmail"], prefixes: ["gmail"] },
+  teams: { words: ["teams"], servers: ["teams", "microsoft_teams"], prefixes: ["teams", "microsoftteams"] },
+  calendar: { words: ["calendrier", "agenda", "calendar"], servers: ["calendar", "google_calendar", "googlecalendar"], prefixes: ["googlecalendar", "calendar"] },
+  twilio: { words: ["twilio"], servers: ["twilio"], prefixes: ["twilio"] },
+  bookstack: { words: ["bookstack"], servers: ["bookstack"], prefixes: ["bookstack"] },
+  tailscale: { words: ["tailscale"], servers: ["tailscale"], prefixes: ["tailscale"] },
+  perspicax: { words: ["perspicax"], servers: [], prefixes: [] },
 };
+
+/** Which products a tool belongs to, by its whole server id. */
+function productsOf(server: string | undefined, name: string): string[] {
+  const id = (server ?? "").toLowerCase();
+  const first = name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)[0] ?? "";
+  const gateway = id === "perspicax" || /^perspicax_[a-z0-9_]+$/.test(id) || id === "composio";
+  return Object.entries(PRODUCTS).filter(([key, product]) =>
+    product.servers.includes(id)
+    || (gateway && product.prefixes.includes(first))
+    || (key === "perspicax" && (id === "perspicax" || id.startsWith("perspicax_")))).map(([key]) => key);
+}
 
 const PATH_IN_TEXT = /(?:^|[\s«"'(])((?:~|\.{1,2})?\/[^\s,;«»"'()]*)/g;
 
@@ -177,6 +194,9 @@ const PATH_IN_TEXT = /(?:^|[\s«"'(])((?:~|\.{1,2})?\/[^\s,;«»"'()]*)/g;
 export function normalizePath(raw: string, home?: string, resolve?: (absolute: string) => string): string | null {
   let path = raw.trim().replace(/^["']|["']$/g, "");
   if (!path) return null;
+  // a wildcard is expanded by the shell or the tool into paths nobody read
+  // (`.?` is `..` to some shells, `*` follows links): never a known path
+  if (/[*?[\]{}]/.test(path)) return null;
   path = path.replace(/^\$HOME(?=\/|$)/, "~").replace(/^\$\{HOME\}(?=\/|$)/, "~");
   if (path.startsWith("~") && path.length > 1 && path[1] !== "/") return null;
   const homeRoot = home && home !== "/" ? home.replace(/\/+$/, "") : undefined;
@@ -245,7 +265,7 @@ export function parseRuleSentence(text: string, fallback: CustomRuleBehavior = "
 }
 
 /** What a rule's words name. Pure and cheap: the editor shows it live. */
-export function compileRule(when: string, home?: string): CompiledRule {
+export function compileRule(when: string, home?: string, resolve?: (absolute: string) => string): CompiledRule {
   // "la commande exacte `git status`": one command line, nothing else; its
   // words are not read as actions, folders or tools
   const commands: string[] = [];
@@ -264,9 +284,13 @@ export function compileRule(when: string, home?: string): CompiledRule {
   if (objects.includes("web") && !actions.length) actions.push("read");
   if (objects.includes("command") && !actions.includes("command")) actions.push("command");
   const paths: string[] = [];
+  const realPaths: string[] = [];
   for (const match of text.matchAll(PATH_IN_TEXT)) {
     const path = normalizePath(match[1]!, home);
-    if (path && path !== "/" && !paths.includes(path)) paths.push(path);
+    if (!path || path === "/" || paths.includes(path)) continue;
+    paths.push(path);
+    const real = resolve ? normalizePath(match[1]!, home, resolve) : path;
+    if (real && !realPaths.includes(real)) realPaths.push(real);
   }
   if (paths.length && !objects.includes("file")) objects.push("file");
   const rest = text;
@@ -279,7 +303,7 @@ export function compileRule(when: string, home?: string): CompiledRule {
   }
   const products = Object.entries(PRODUCTS).filter(([, product]) => has(product.words)).map(([key]) => key);
   const recognized = actions.length > 0 || tools.length > 0 || products.length > 0 || commands.length > 0;
-  return { actions, objects, paths, tools, products, commands, recognized };
+  return { actions, objects, paths, realPaths, tools, products, commands, recognized };
 }
 
 // ── calls ────────────────────────────────────────────────────────────────
@@ -300,11 +324,43 @@ const SHELL_IRREVERSIBLE = /\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r|\bmkfs
 /** Chaining, pipes, redirection, substitution, process substitution, line
  * continuation, quotes and brace expansion: what a folder or family rule
  * cannot read. `$HOME` alone is fine. */
-const SHELL_OPAQUE = /[;&|`<>(){}\n\\'"]|\$(?!HOME\b|\{HOME\})/;
+const SHELL_OPAQUE = /[;&|`<>(){}\n\\'"*?[\]]|\$(?!HOME\b|\{HOME\})/;
 /** Programs that only read the paths they are given, with no flag that
  * writes, runs or reaches the network. find, rg, tree, less, awk, sed and
  * xargs are not here: each has a flag that deletes, runs or writes. */
-const PURE_READERS = new Set(["ls", "cat", "head", "tail", "wc", "stat", "file", "du", "pwd", "realpath", "basename", "dirname", "md5", "shasum", "sha256sum", "sha1sum", "md5sum"]);
+const PURE_READERS = new Set(["ls", "cat", "head", "tail", "wc", "stat", "du", "pwd", "realpath", "basename", "dirname", "md5", "md5sum", "sha1sum", "sha256sum"]);
+/** The short flags each pure reader may carry, as letters of one `-xyz`
+ * word. No long flag, no `=`, no value attached to a flag: `file -f<list>`,
+ * `wc --files0-from=<list>` and the like read other files or write. head and
+ * tail also take `-n N`, `-c N` and `-N`. */
+const READER_FLAGS: Record<string, string> = {
+  ls: "1aAdFhlLrRStu", cat: "bensvtAET", head: "qv", tail: "fFqrv", wc: "clmwL", stat: "L",
+  du: "achkmsHL", pwd: "LP", realpath: "", basename: "", dirname: "", md5: "", md5sum: "", sha1sum: "", sha256sum: "",
+};
+
+/** Whether every flag of a pure reader is one it may carry; numbers after
+ * `-n` and `-c` are counts, never paths. */
+function readerFlagsAllowed(program: string, args: readonly string[]): { ok: boolean; operands: string[] } {
+  const letters = READER_FLAGS[program] ?? "";
+  const operands: string[] = [];
+  let endOfFlags = false;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
+    if (!endOfFlags && arg === "--") { endOfFlags = true; continue; }
+    if (!endOfFlags && arg.startsWith("-") && arg.length > 1) {
+      if ((program === "head" || program === "tail") && /^-\d+$/.test(arg)) continue;
+      if ((program === "head" || program === "tail") && (arg === "-n" || arg === "-c")) {
+        if (!/^\d+$/.test(args[index + 1] ?? "")) return { ok: false, operands };
+        index++;
+        continue;
+      }
+      if (!/^-[A-Za-z]+$/.test(arg) || arg.slice(1).split("").some((letter) => !letters.includes(letter))) return { ok: false, operands };
+      continue;
+    }
+    operands.push(arg);
+  }
+  return { ok: true, operands };
+}
 /** Prefixes that run the next word as the program. */
 const WRAPPERS = new Set(["env", "command", "builtin", "exec", "sudo", "doas", "nice", "nohup", "time", "timeout", "stdbuf", "ionice", "xargs", "busybox", "caffeinate", "unbuffer", "chroot", "su", "watch", "parallel"]);
 const DELETERS = new Set(["rm", "rmdir", "unlink", "shred", "srm", "trash", "truncate", "wipe"]);
@@ -313,8 +369,10 @@ const INTERPRETERS = new Set(["bash", "sh", "zsh", "fish", "dash", "ksh", "csh",
 const WRITERS = new Set(["cp", "mv", "mkdir", "touch", "chmod", "chown", "chgrp", "tee", "ln", "dd", "install", "sed", "patch", "tar", "zip", "unzip", "git", "open"]);
 const FIND_SIDE_EFFECTS = /^-(delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/;
 
+/** Spaces and tabs folded; a line break stays a line break (it starts a
+ * second command). */
 export function normalizeCommand(line: string): string {
-  return line.trim().replace(/\s+/g, " ");
+  return line.trim().replace(/[ \t]+/g, " ");
 }
 
 function binaryOf(word: string): string {
@@ -326,6 +384,7 @@ interface ShellReading {
   pureRead: boolean;
   /** null when one argument is not a path this module can read safely */
   paths: string[] | null;
+  realPaths: string[] | null;
   actions: Set<ActionKind>;
   risks: Set<RiskClass>;
 }
@@ -378,19 +437,25 @@ export function readShell(line: string, home?: string, resolve?: (absolute: stri
   if (wrapped && program && !PURE_READERS.has(program)) risks.add("irreversible");
 
   let paths: string[] | null = [];
+  let realPaths: string[] | null = [];
   let allPaths = true;
-  for (const word of words.slice(index + 1)) {
-    if (word.startsWith("-") || /^\d+$/.test(word)) continue;
+  const reader = PURE_READERS.has(program) && words[index] === program ? readerFlagsAllowed(program, words.slice(index + 1)) : null;
+  // a pure reader's operands are its paths; any other program's path-like
+  // words are still read so a deny or ask rule sees them
+  const operands = reader ? reader.operands : words.slice(index + 1).filter((word) => !word.startsWith("-") && !/^\d+$/.test(word));
+  for (const word of operands) {
     if (!/^(~|\.{1,2}\/|\/|\$HOME)/.test(word)) { allPaths = false; continue; }
-    const path = normalizePath(word, home, resolve);
-    if (!path) { paths = null; break; }
+    const path = normalizePath(word, home);
+    const real = resolve ? normalizePath(word, home, resolve) : path;
+    if (!path || !real) { paths = null; realPaths = null; break; }
     if (!paths.includes(path)) paths.push(path);
+    if (!realPaths.includes(real)) realPaths.push(real);
   }
-  if (opaque) paths = null;
-  const pureRead = !opaque && !wrapped && PURE_READERS.has(program) && words[index] === program && allPaths && paths !== null
+  if (opaque) { paths = null; realPaths = null; }
+  const pureRead = !opaque && !wrapped && reader !== null && reader.ok && allPaths && paths !== null
     && !actions.has("delete") && !actions.has("send") && !actions.has("write") && risks.size === 0;
   if (pureRead) actions.add("read");
-  return { opaque, pureRead, paths, actions, risks };
+  return { opaque, pureRead, paths, realPaths, actions, risks };
 }
 
 function stringsAt(args: Record<string, unknown> | undefined, keys: readonly string[]): string[] {
@@ -443,12 +508,19 @@ export function callFacts(call: CallInput): CallFacts {
   const objects = new Set<ObjectKind>();
   const risks = new Set<RiskClass>();
   let paths: string[] | null = [];
+  let realPaths: string[] | null = [];
   let shell: { command: string; pureRead: boolean; opaque: boolean } | undefined;
   const addPath = (raw: string) => {
-    if (paths === null) return;
-    const path = normalizePath(raw, call.home, call.resolve);
-    if (!path) paths = null;
-    else if (!paths.includes(path)) paths.push(path);
+    if (paths === null || realPaths === null) return;
+    const path = normalizePath(raw, call.home);
+    const real = call.resolve ? normalizePath(raw, call.home, call.resolve) : path;
+    if (!path || !real) {
+      paths = null;
+      realPaths = null;
+      return;
+    }
+    if (!paths.includes(path)) paths.push(path);
+    if (!realPaths.includes(real)) realPaths.push(real);
   };
 
   const commandText = call.command ?? (COMMAND_TOOLS.has(bare) ? stringsAt(args, ["command", "cmd", "script"])[0] : undefined);
@@ -466,9 +538,12 @@ export function callFacts(call: CallInput): CallFacts {
     for (const risk of reading.risks) risks.add(risk);
     if (reading.pureRead || actions.has("delete") || actions.has("write")) objects.add("file");
     paths = reading.paths;
+    realPaths = reading.realPaths;
     shell = { command: normalizeCommand(line), pureRead: reading.pureRead, opaque: reading.opaque };
   } else {
-    const described = describeApproval(toolName, call.input, call.hints);
+    // a server's own readOnlyHint never makes a call a read for a custom
+    // rule; only a destructive hint is kept (it can only tighten)
+    const described = describeApproval(toolName, call.input, call.hints?.destructive ? { destructive: true } : undefined);
     if (described.risk === "read") actions.add("read");
     else if (described.risk === "write") actions.add("write");
     else if (described.risk === "destructive") actions.add("delete");
@@ -490,14 +565,14 @@ export function callFacts(call: CallInput): CallFacts {
   }
   if (actions.has("delete")) risks.add("destructive");
   if (call.classKey?.startsWith("git:")) risks.add("irreversible");
-  const tokens = `${parsed.server ?? ""}_${bare}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  const products = Object.entries(PRODUCTS).filter(([, product]) => product.tokens.some((token) => tokens.includes(token))).map(([key]) => key);
+  const products = productsOf(parsed.server, parsed.name);
   return {
     tool: (parsed.server ? `${parsed.server}__${parsed.name}` : parsed.name).toLowerCase(),
     ...(parsed.server ? { server: parsed.server.toLowerCase() } : {}),
     actions: [...actions],
     objects: [...objects],
     paths,
+    realPaths,
     products,
     risks: [...risks],
     ...(shell ? { command: shell.command, pureRead: shell.pureRead, opaque: shell.opaque } : {}),
@@ -538,9 +613,22 @@ export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavio
     if (behavior === "allow" ? !compiled.objects.every(objectHolds) : !compiled.objects.some(objectHolds)) return false;
   }
   if (compiled.paths.length) {
-    if (!facts.paths || facts.paths.length === 0) return behavior !== "allow" && facts.paths === null;
-    const inside = (path: string) => compiled.paths.some((folder) => within(path, folder, behavior !== "allow"));
-    if (behavior === "allow" ? !facts.paths.every(inside) : !facts.paths.some(inside)) return false;
+    const raw = facts.paths;
+    const real = facts.realPaths;
+    if (behavior === "allow") {
+      // allow: every path inside, both as written and where it really points
+      if (!raw || !real || raw.length === 0 || real.length === 0) return false;
+      if (!raw.every((path) => compiled.paths.some((folder) => within(path, folder)))) return false;
+      if (!real.every((path) => compiled.realPaths.some((folder) => within(path, folder)))) return false;
+    } else {
+      // deny and ask: an unreadable path is caught; otherwise any path,
+      // written or real, inside any form of the folder, in any case
+      if (raw && real) {
+        const folders = [...compiled.paths, ...compiled.realPaths];
+        const inside = (path: string) => folders.some((folder) => within(path, folder, true));
+        if (!raw.some(inside) && !real.some(inside)) return false;
+      }
+    }
   }
   // a tool is named whole, its server included (`perspicax_gox__cw_psa__query`)
   if (compiled.tools.length && !compiled.tools.includes(facts.tool)) return false;
@@ -558,10 +646,10 @@ const BEHAVIOR_WEIGHT: Record<CustomRuleBehavior, number> = { deny: 3, ask: 2, a
  * own rule before one for all bots. An allow whose risk scope does not
  * cover the call's risk classes decides nothing (the card stays) and says
  * which classes were missing. */
-export function evaluateCustomRules(rules: readonly CustomRule[], facts: CallFacts, options: { botId?: string; home?: string } = {}): CustomRuleDecision {
+export function evaluateCustomRules(rules: readonly CustomRule[], facts: CallFacts, options: { botId?: string; home?: string; resolve?: (absolute: string) => string } = {}): CustomRuleDecision {
   const matching = rules
     .filter((rule) => rule.enabled && (rule.botId === null || options.botId === undefined || rule.botId === options.botId))
-    .filter((rule) => ruleCoversCall(compileRule(rule.when, options.home), facts, rule.behavior))
+    .filter((rule) => ruleCoversCall(compileRule(rule.when, options.home, options.resolve), facts, rule.behavior))
     .sort((a, b) => BEHAVIOR_WEIGHT[b.behavior] - BEHAVIOR_WEIGHT[a.behavior] || Number(b.botId !== null) - Number(a.botId !== null) || a.createdAt - b.createdAt);
   const top = matching[0];
   if (!top) return { kind: "none" };

