@@ -14,7 +14,9 @@ import { rememberOpenThreadHash } from "./lib/open-thread-hash";
 import { syncUserPreferences } from "./lib/user-preferences-sync";
 import { cacheSignInProfileFromSession } from "./lib/sign-in-profile-cache";
 import { startPresence } from "./lib/presence";
+import { startRoutineAwayBeat } from "./lib/routine-away-beat";
 import { installAnimationPause } from "./lib/animation-pause";
+import { installConsoleRing } from "./lib/console-ring";
 import { syncDesktopAppearance } from "./lib/desktop-appearance-sync";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
 import "./styles.css";
@@ -34,6 +36,8 @@ if (floatingBot) document.documentElement.dataset.floatingBot = "";
 // After the window flags, so a floating mascot or Hibou 98 is not paused
 // just because its window is never the focused one.
 installAnimationPause();
+// The window's console lines, redacted, for Settings > Download logs.
+installConsoleRing();
 
 // Slice 7: an "Open in Sagax" link survives the sign-in (/pair, Perspicax).
 rememberOpenThreadHash();
@@ -102,6 +106,9 @@ async function chooseRoot(): Promise<React.ReactNode> {
   // phone (Same as my computer) and wears a look the phone chose
   // (src/lib/desktop-appearance-sync.ts). Elsewhere the route answers 404.
   if (session.kind === "loopback" && !dataWindow) void syncDesktopAppearance();
+  // "Only when I'm here" routines on a solo server (src/lib/routine-away-beat.ts;
+  // an organization server answers 404 and its presence is the signal).
+  if ((session.kind === "loopback" || session.kind === "session") && !dataWindow) void startRoutineAwayBeat();
   if (dataWindow) {
     const { DataWindow } = await import("./components/data/DataWindow");
     return <DataWindow />;

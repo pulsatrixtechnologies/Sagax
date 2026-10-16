@@ -103,15 +103,34 @@ enum MicrophonePermission {
     }
 }
 
+/// Motion that honours Reduce Motion (Settings > Accessibility > Motion).
+enum Motion {
+    /// `animation`, or none under Reduce Motion: the change still happens,
+    /// it just does not travel.
+    static func animation(_ animation: Animation, reduce: Bool) -> Animation? {
+        reduce ? nil : animation
+    }
+}
+
+extension AnyTransition {
+    /// A strip rising from the composer; a fade under Reduce Motion.
+    static func slideUp(reduce: Bool) -> AnyTransition {
+        reduce ? .opacity : .move(edge: .bottom).combined(with: .opacity)
+    }
+}
+
 /// The three `sensoryFeedback` kinds the app uses, so call sites stay
 /// declarative on iOS 16 too.
 enum FeedbackKind {
-    case selection, warning, success
+    /// `impact` is a light tap: a reply landing, a refusal.
+    case selection, warning, success, impact
 
     fileprivate func play() {
         switch self {
         case .selection:
             UISelectionFeedbackGenerator().selectionChanged()
+        case .impact:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         case .warning:
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         case .success:
@@ -135,6 +154,7 @@ extension View {
             case .selection: sensoryFeedback(.selection, trigger: trigger)
             case .warning: sensoryFeedback(.warning, trigger: trigger)
             case .success: sensoryFeedback(.success, trigger: trigger)
+            case .impact: sensoryFeedback(.impact(weight: .light), trigger: trigger)
             }
         } else {
             onValueChange(of: trigger) { _ in kind.play() }

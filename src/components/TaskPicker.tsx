@@ -5,6 +5,7 @@
 // own transcript and its own provider session — so sensitive work, a
 // long job and a quick question can sit side by side under one agent.
 import { copyText } from "@/lib/copy-text";
+import { openTeamBotFromThread, teamBotSourceAllowed } from "@/lib/teambot-from-thread";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronLeft, MessagesSquare, MoreHorizontal, Plus, Search } from "lucide-react";
 import { api, currentTaskBot, useStore, type Bot, type BotProject, type Group, type GroupTaskUpdatePatch, type Task } from "@/state/store";
@@ -106,6 +107,7 @@ export type PickerThreadActions = {
   onArchive?: (threadId: string, archivedAt: number | null) => void;
   onSnooze?: (threadId: string, snoozedUntil: number | null) => void;
   onRefreshPermissions?: (threadId: string) => void;
+  onCreateTeamBot?: (threadId: string) => void;
 };
 
 export type PickerFolderActions = {
@@ -138,6 +140,7 @@ export function pickerRowActions(task: Pick<PickerTask, "threadId">, given: {
     ...(extra?.onCopyLink ? { onCopyLink: () => extra.onCopyLink!(id) } : {}),
     ...(extra?.onRegenerateTitle ? { onRegenerateTitle: (onSettled: (ok: boolean) => void) => extra.onRegenerateTitle!(id, onSettled) } : {}),
     ...(extra?.onRefreshPermissions ? { onRefreshPermissions: () => extra.onRefreshPermissions!(id) } : {}),
+    ...(extra?.onCreateTeamBot ? { onCreateTeamBot: () => extra.onCreateTeamBot!(id) } : {}),
   };
 }
 
@@ -608,6 +611,9 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
       if (mode === "auto" && bot.computer === "local" && threadMode !== "auto") { setPermissionRefresh({ threadId, kind: "local-auto" }); return; }
       dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId });
     },
+    ...(teamBotSourceAllowed(bot.id) ? {
+      onCreateTeamBot: (threadId: string) => openTeamBotFromThread({ botId: bot.id, threadId, title: (bot.tasks ?? []).find((task) => task.threadId === threadId)?.title ?? "" }),
+    } : {}),
   };
   const folderActions: PickerFolderActions = {
     saving: folderSaving,

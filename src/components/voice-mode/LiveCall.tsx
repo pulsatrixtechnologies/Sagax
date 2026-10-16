@@ -12,6 +12,7 @@
 // publishes the call (live-call-store.ts); the app's pill (LiveCall) and the
 // desktop mascot's only show it and drive it.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getUserMediaWithFallback, preferredAudioInputId } from "@/lib/audio-input";
 
 import { useStore, useStreaming, visibleMessages, type Bot } from "@/state/store";
 import { clearVoiceCallId, currentCall, endCall, setVoiceCallId } from "@/lib/call";
@@ -134,6 +135,9 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       threadId: () => threadRef.current,
       voice: readVoiceModeSettings,
       settings: readCallSettings,
+      // the microphone chosen in Settings; gone, the call opens the default
+      deviceId: preferredAudioInputId,
+      getUserMedia: (constraints) => getUserMediaWithFallback(constraints),
     });
     setCall(live);
     // the real-Electron check (scripts/verify-voice-mode.ts) drives the call

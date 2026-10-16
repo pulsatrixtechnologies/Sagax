@@ -116,7 +116,9 @@ struct MarkdownText: View {
     }
 
     var body: some View {
-        let blocks = Markdown.blocks(source)
+        // A settled reply's blocks never change; the live one grows every
+        // frame and would only fill the cache with drafts of itself.
+        let blocks = caret ? Markdown.blocks(source) : MarkdownParseCache.blocks(source)
         // A fence the message has not closed is still being written: charts,
         // widgets and email cards wait for it (ChatMarkdown `pendingAt`).
         let openFence = RichBlocks.unclosedFenceOffset(source) >= 0
@@ -327,10 +329,7 @@ struct MarkdownText: View {
     /// The words VoiceOver should hear, with inline markers removed. The
     /// visible text still goes through Foundation so emphasis stays styled.
     private func renderedInline(_ text: String) -> String {
-        if let attributed = try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
+        if let attributed = MarkdownParseCache.inline(text) {
             return String(attributed.characters)
         }
         return text
@@ -406,10 +405,28 @@ struct MarkdownText: View {
     /// sent so far, not vanish until it closes the bracket.
     private func inline(_ text: String, tail: Bool = false) -> Text {
         let rendered: Text
-        if var attributed = try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
+        if let attributed = styledInline(text, cacheable: !tail) {
+            rendered = Text(attributed)
+        } else {
+            rendered = Text(text)
+        }
+        return rendered + caretText(tail)
+    }
+
+    /// The parsed and styled run for `text`, or nil when Foundation cannot
+    /// parse it. A settled block is parsed once and kept (`MarkdownParseCache`)
+    /// keyed by its text and everything its style depends on; the block the
+    /// live reply is still writing (`cacheable` false) is parsed fresh.
+    private func styledInline(_ text: String, cacheable: Bool) -> AttributedString? {
+        // The iPad desktop styles from its theme value; only the phone's
+        // styling is fully described by the key.
+        let key = cacheable && desktop == nil
+            ? MarkdownParseCache.styleKey(text, mentions: mentions, everyone: mentionEveryone, revealed: revealed)
+            : nil
+        if let key, let hit = MarkdownParseCache.styled(key) { return hit.value }
+        let parsed = cacheable ? MarkdownParseCache.inline(text) : MarkdownParseCache.parseInline(text)
+        let styled = parsed.map { parsed -> AttributedString in
+            var attributed = parsed
             if let desktop {
                 // a custom face takes no bold or italic from the intent: set
                 // the weight and the slant on the run (Geist has no italic;
@@ -468,11 +485,10 @@ struct MarkdownText: View {
             MentionTint.apply(to: &attributed, peers: mentions, everyone: mentionEveryone)
             styleFootnotes(&attributed)
             styleSpoilers(&attributed)
-            rendered = Text(attributed)
-        } else {
-            rendered = Text(text)
+            return attributed
         }
-        return rendered + caretText(tail)
+        if let key { MarkdownParseCache.store(styled, for: key) }
+        return styled
     }
 
     // MARK: Spoilers and footnote marks
@@ -538,5 +554,75 @@ struct MarkdownText: View {
     /// concatenated in costs nothing and keeps the callers branch-free.
     private func caretText(_ tail: Bool) -> Text {
         tail ? Text("\u{2007}▍").foregroundColor(Theme.parity(Color.secondary, Theme.textSecondary)) : Text("")
+    }
+}
+
+/// Parsed markdown, kept between renders. Parsing is pure (the same text
+/// always gives the same blocks and the same inline runs), so a reply that
+/// has settled is parsed once instead of on every render of the chat.
+/// `NSCache` is thread-safe and gives the memory back under pressure.
+enum MarkdownParseCache {
+    final class Box<Value>: NSObject {
+        let value: Value
+        init(_ value: Value) { self.value = value }
+    }
+
+    private static let blockCache: NSCache<NSString, Box<[MarkdownBlock]>> = {
+        let cache = NSCache<NSString, Box<[MarkdownBlock]>>()
+        cache.countLimit = 400
+        return cache
+    }()
+    private static let inlineCache: NSCache<NSString, Box<AttributedString?>> = {
+        let cache = NSCache<NSString, Box<AttributedString?>>()
+        cache.countLimit = 3000
+        return cache
+    }()
+    private static let styledCache: NSCache<NSString, Box<AttributedString?>> = {
+        let cache = NSCache<NSString, Box<AttributedString?>>()
+        cache.countLimit = 3000
+        return cache
+    }()
+
+    static func blocks(_ source: String) -> [MarkdownBlock] {
+        let key = source as NSString
+        if let hit = blockCache.object(forKey: key) { return hit.value }
+        let blocks = Markdown.blocks(source)
+        blockCache.setObject(Box(blocks), forKey: key)
+        return blocks
+    }
+
+    /// Foundation's inline parse, as `MarkdownText` asks for it.
+    static func parseInline(_ text: String) -> AttributedString? {
+        try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+    }
+
+    static func inline(_ text: String) -> AttributedString? {
+        let key = text as NSString
+        if let hit = inlineCache.object(forKey: key) { return hit.value }
+        let parsed = parseInline(text)
+        inlineCache.setObject(Box(parsed), forKey: key)
+        return parsed
+    }
+
+    /// The text plus everything the phone's styling reads: the skin (its
+    /// colours and face), the mentions, and which spoilers are open.
+    static func styleKey(_ text: String, mentions: [MentionPeer], everyone: Bool, revealed: Set<String>) -> NSString {
+        var style = Hasher()
+        style.combine(ThemeRuntime.palette.id)
+        style.combine(ThemeRuntime.palette.isDark)
+        style.combine(ThemeRuntime.typeface.rawValue)
+        style.combine(ThemeRuntime.desktopFace)
+        style.combine(mentions)
+        style.combine(everyone)
+        style.combine(revealed)
+        return "\(style.finalize())\u{1}\(text)" as NSString
+    }
+
+    static func styled(_ key: NSString) -> Box<AttributedString?>? {
+        styledCache.object(forKey: key)
+    }
+
+    static func store(_ styled: AttributedString?, for key: NSString) {
+        styledCache.setObject(Box(styled), forKey: key)
     }
 }

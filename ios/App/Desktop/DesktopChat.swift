@@ -162,11 +162,15 @@ extension ChatView {
 
     /// The composer slot: the desktop pill, or the phone's composer.
     var composerSlot: some View {
-        Group {
-            if desktopChat != nil {
-                AnyView(desktopComposer)
-            } else {
-                AnyView(composer)
+        // The only part of the chat that observes the draft: typing
+        // re-renders the composer, never the transcript.
+        ObservingView(model: draftModel) {
+            Group {
+                if desktopChat != nil {
+                    AnyView(desktopComposer)
+                } else {
+                    AnyView(composer)
+                }
             }
         }
     }
@@ -217,7 +221,7 @@ extension ChatView {
         VStack(spacing: 6) {
             composerAccessories
             AnyView(DesktopComposerPill(
-                draft: $draft,
+                draft: draftBinding,
                 prompt: desktopPrompt,
                 focused: $composerFocused,
                 canSend: canSend,
@@ -242,9 +246,7 @@ extension ChatView {
                 send: { submit() },
                 voice: startVoiceMode,
                 hardwareReturn: { submit(busyMode: openBusyChoice) },
-                draftChanged: { old, new in
-                    withAnimation(.easeInOut(duration: 0.15)) { draftChanged(from: old, to: new) }
-                }
+                draftChanged: { old, new in draftChanged(from: old, to: new) }
             ))
         }
         // the dock is `px-4` (the transcript `px-5`), both at most 960

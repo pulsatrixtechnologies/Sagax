@@ -517,6 +517,8 @@ private extension Shape {
 struct CallWaveform: View {
     @ObservedObject var call: CallController
     @State private var history = WaveHistory()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     /// The desktop's dots: 7 between columns, 6 between rows, 4 wide.
     private static let column: CGFloat = 7
@@ -527,18 +529,25 @@ struct CallWaveform: View {
     var body: some View {
         let quiet = call.state.phase == .held || call.state.phase == .connecting
         let muted = call.state.muted
-        TimelineView(.animation(minimumInterval: 1 / 30)) { timeline in
+        // Any frame rate: the columns advance with the clock (WaveHistory),
+        // not once per drawn frame, so 120 Hz draws smoother, not faster.
+        // Reduce Motion keeps the levels, ten times a second, without the
+        // shimmer; nothing is drawn while the app is in the background.
+        let schedule: AnimationTimelineSchedule = reduceMotion
+            ? .animation(minimumInterval: 0.1, paused: scenePhase != .active)
+            : .animation(minimumInterval: nil, paused: scenePhase != .active)
+        TimelineView(schedule) { timeline in
             Canvas { context, size in
                 let columns = max(1, Int(size.width / Self.column))
                 let levels = call.levels
-                history.push(mic: quiet || muted ? 0 : levels.mic, bot: quiet ? 0 : levels.bot, columns: columns)
                 let time = timeline.date.timeIntervalSinceReferenceDate
+                history.advance(to: time, mic: quiet || muted ? 0 : levels.mic, bot: quiet ? 0 : levels.bot, columns: columns)
                 let middle = size.height / 2
                 let offset = (size.width - CGFloat(columns - 1) * Self.column) / 2
                 for i in 0..<columns {
                     let theirs = history.bot[i]
                     let mine = history.mic[i]
-                    let shimmer = quiet ? 0 : 0.08 * abs(sin(time * 1000 / 600 + Double(i) * 0.45))
+                    let shimmer = quiet || reduceMotion ? 0 : 0.08 * abs(sin(time * 1000 / 600 + Double(i) * 0.45))
                     let level = Double(max(theirs, mine))
                     let reach = Int((level * Double(Self.rows - 1) / 2).rounded())
                     let color = theirs >= mine && level > 0.05 ? CallTheme.accent : CallTheme.ink
@@ -558,6 +567,29 @@ struct CallWaveform: View {
 final class WaveHistory {
     private(set) var mic: [Float] = []
     private(set) var bot: [Float] = []
+
+    /// One column per 1/30 s of clock time, whatever the frame rate.
+    static let step: TimeInterval = 1.0 / 30
+    private var clock: TimeInterval?
+
+    /// Add the columns that `time` has moved past since the last call, all
+    /// at the current levels; none when it has not moved a whole column.
+    func advance(to time: TimeInterval, mic level: Float, bot output: Float, columns: Int) {
+        guard let last = clock else {
+            clock = time
+            push(mic: level, bot: output, columns: columns)
+            return
+        }
+        let steps = Int((time - last) / Self.step)
+        if steps <= 0 {
+            // a new width still resets the columns at once
+            if mic.count != columns { push(mic: level, bot: output, columns: columns) }
+            return
+        }
+        // after a pause, at most one screen of new columns
+        for _ in 0..<min(steps, columns) { push(mic: level, bot: output, columns: columns) }
+        clock = last + Double(steps) * Self.step
+    }
 
     func push(mic level: Float, bot output: Float, columns: Int) {
         if mic.count != columns {

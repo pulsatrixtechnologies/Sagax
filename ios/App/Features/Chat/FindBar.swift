@@ -291,7 +291,7 @@ extension ChatView {
 
     func openFind() {
         guard session.surfaceGate.allows(.findInConversation) else { return }
-        withAnimation(.easeInOut(duration: 0.15)) { finder.open() }
+        withAnimation(.snappy(duration: 0.2)) { finder.open() }
     }
 
     /// Cite (CO8): the quote joins this thread's next message, and the

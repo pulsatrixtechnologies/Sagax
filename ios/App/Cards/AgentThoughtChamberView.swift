@@ -9,6 +9,7 @@ public struct AgentThoughtChamberView: View {
     public let isStreaming: Bool
     
     @State private var isExpanded: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     public init(
         reasoning: String,
@@ -46,7 +47,7 @@ public struct AgentThoughtChamberView: View {
     @ViewBuilder
     private func headerButton(isDark: Bool, total: Int) -> some View {
         Button {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+            withAnimation(Motion.animation(.spring(response: 0.35, dampingFraction: 0.72), reduce: reduceMotion)) {
                 isExpanded.toggle()
             }
             Haptics.selection()
@@ -101,9 +102,12 @@ public struct AgentThoughtChamberView: View {
                 // the bottom and keep following as steps arrive, the way the
                 // reply bubble follows its own text.
                 .scrollAnchorCompat(.bottom)
-                .onValueChange(of: reasoning) { _ in
+                // Once per new step, not per token, and without animation:
+                // an animated scroll per token interrupts the last one and
+                // the list stutters (the reply bubble follows the same rule).
+                .onValueChange(of: steps.count) { _ in
                     guard isStreaming, let newest = steps.last else { return }
-                    withAnimation { proxy.scrollTo(newest.number, anchor: .bottom) }
+                    proxy.scrollTo(newest.number, anchor: .bottom)
                 }
             }
         }
@@ -114,7 +118,7 @@ public struct AgentThoughtChamberView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Theme.hairline, lineWidth: 0.5)
         )
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
     }
     
     @ViewBuilder

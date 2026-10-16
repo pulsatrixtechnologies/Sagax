@@ -7,6 +7,7 @@ import { DATA_DIR } from "./config.ts";
 import type { RuntimeEvent } from "./contracts.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { awayDecision, awayReportDue, loadAwaySkips, recordAwaySkip, type AwayVerdict, type RoutineAwaySkips } from "./routine-away.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { RoutineRequestOperation } from "../shared/routine-request.ts";
 import { normalizeCronSchedule, nextCronRuns, type RoutineCronSchedule } from "../shared/routine-schedule.ts";
@@ -123,6 +124,11 @@ export interface Routine {
   runAs?: string;
   /** Slice 6: why the routine creates no runs until its person acts. */
   suspended?: RoutineSuspension;
+  /** 2026-10-16: runs only while its person is there (server/routine-away.ts).
+   * Absent: runs whether they are there or not. */
+  onlyWhenPresent?: boolean;
+  /** Occurrences skipped while the person was away, until dismissed. */
+  awaySkips?: RoutineAwaySkips;
   nextRunAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -307,6 +313,8 @@ export interface RoutineInput {
   attachments?: RoutineContextAttachment[];
   continuity?: boolean;
   overlap?: "skip" | "queue";
+  /** Only while the person is there (server/routine-away.ts). */
+  onlyWhenPresent?: boolean;
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;
 }
@@ -423,6 +431,11 @@ export interface RoutineManagerOptions {
    * card, its Undo, the person's switch while the conversation is open).
    * Changes made elsewhere (the console, a deleted bot) never call it. */
   onEnabledChanged?: (routine: Routine, change: RoutineEnabledChange) => void;
+  /** 2026-10-16: whether the routine's person is there now, for a routine
+   * with onlyWhenPresent (server/routine-away.ts). Absent: unknown (runs). */
+  presence?: (routine: Routine) => AwayVerdict;
+  /** 2026-10-16: the person is back; `skips` is what was skipped meanwhile. */
+  onAwaySkipsReported?: (routine: Routine, skips: RoutineAwaySkips) => void;
 }
 
 /** The longest a run's start waits for the memory hint. */
@@ -588,6 +601,7 @@ function cloneRoutine(routine: Routine): Routine {
     schedule: cloneSchedule(routine.schedule),
     attachments: cloneAttachments(routine.attachments),
     ...(routine.suspended ? { suspended: { ...routine.suspended } } : {}),
+    ...(routine.awaySkips ? { awaySkips: { ...routine.awaySkips } } : {}),
   };
 }
 
@@ -966,6 +980,7 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
     attachments,
     ...(continuity ? { continuity: true } : {}),
     ...(input.overlap === "queue" ? { overlap: "queue" as const } : {}),
+    ...(input.onlyWhenPresent === true ? { onlyWhenPresent: true } : {}),
   };
 }
 
@@ -1029,7 +1044,11 @@ export class RoutineManager {
               installedPackage: loadInstalledPackage(routine.installedPackage),
               runAs: loadRunAs(routine.runAs),
               suspended: loadSuspension(routine.suspended),
+              onlyWhenPresent: routine.onlyWhenPresent === true ? true : undefined,
+              awaySkips: loadAwaySkips(routine.awaySkips),
             };
+            if (loaded.onlyWhenPresent === undefined) delete loaded.onlyWhenPresent;
+            if (loaded.awaySkips === undefined) delete loaded.awaySkips;
             if (loaded.timeoutMinutes === undefined) delete loaded.timeoutMinutes;
             if (loaded.installedPackage === undefined) delete loaded.installedPackage;
             if (loaded.runAs === undefined) delete loaded.runAs;
@@ -1351,6 +1370,7 @@ export class RoutineManager {
       attachments: patch.attachments ?? routine.attachments,
       continuity: patch.continuity ?? routine.continuity,
       overlap: Object.hasOwn(patch, "overlap") ? patch.overlap : routine.overlap,
+      onlyWhenPresent: patch.onlyWhenPresent ?? routine.onlyWhenPresent,
     }, now);
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
     const scheduleChanged = JSON.stringify(clean.schedule) !== JSON.stringify(routine.schedule);
@@ -1384,6 +1404,8 @@ export class RoutineManager {
       // rather than false, so switching continuity off has to delete it.
       if (!clean.continuity) delete routine.continuity;
       if (clean.overlap !== "queue") delete routine.overlap;
+      // Switching "Only when I'm here" off forgets what it skipped.
+      if (!clean.onlyWhenPresent) { delete routine.onlyWhenPresent; delete routine.awaySkips; }
       if (Object.hasOwn(patch, "timeoutMinutes") && patch.timeoutMinutes == null) {
         delete routine.timeoutMinutes;
       }
@@ -1755,9 +1777,18 @@ export class RoutineManager {
           await this.options.interruptTurn?.(run.botId, threadId).catch(() => {});
         }
       }
+      // Only when I'm here (server/routine-away.ts): skip a recurring
+      // occurrence, or hold a one-time routine, while the person is away.
+      const awaySkipped: Routine[] = [];
       const dueRoutines = this.routines.filter(
         (routine) => routine.enabled && !routine.suspended && routine.nextRunAt != null && routine.nextRunAt <= now,
-      );
+      ).filter((routine) => {
+        const decision = routine.onlyWhenPresent ? awayDecision(routine, this.presenceOf(routine)) : "run";
+        if (decision === "skip") awaySkipped.push(routine);
+        return decision === "run";
+      });
+      if (awaySkipped.length > 0) this.skipWhileAway(awaySkipped, now);
+      this.reportAwaySkips(now);
       const scheduledRuns: RoutineRun[] = [];
       const allocations: ResultsThreadAllocation[] = [];
       if (dueRoutines.length > 0) {
@@ -1777,7 +1808,9 @@ export class RoutineManager {
               (run.triggerSource ?? (run.manual ? "manual" : "schedule")) === "schedule");
             if (!overlapping || (routine.overlap === "queue" && !scheduledQueued)) {
               const run = this.newRun(routine, scheduledFor, false, allocations);
-              if (late > CATCH_UP_MS) {
+              // A one-time routine held while its person was away runs late
+              // on their return rather than being written off as missed.
+              if (late > CATCH_UP_MS && !(routine.onlyWhenPresent && routine.schedule.type === "once")) {
                 run.status = "missed";
                 run.finishedAt = now;
                 run.error = "This computer was offline for more than 12 hours after the scheduled time";
@@ -2120,6 +2153,59 @@ export class RoutineManager {
   }
 
   /** Slice 6: pause one routine (once) and tell the wiring. */
+  private presenceOf(routine: Routine): AwayVerdict {
+    try {
+      return this.options.presence?.(routine) ?? "unknown";
+    } catch {
+      return "unknown";
+    }
+  }
+
+  /** Recurring occurrences due while their person is away: no run, the
+   * count grows, the next occurrence is planned as usual. */
+  private skipWhileAway(skipped: Routine[], now: number): void {
+    this.commitMutation(() => {
+      for (const routine of skipped) {
+        const scheduledFor = routine.nextRunAt ?? now;
+        routine.awaySkips = recordAwaySkip(routine.awaySkips, scheduledFor);
+        routine.nextRunAt = nextOccurrence(routine.schedule, Math.max(now, scheduledFor), this.zoneOf(routine));
+        if (routine.schedule.type === "interval" && routine.nextRunAt === null) {
+          routine.enabled = false;
+          routine.updatedAt = Math.max(now, routine.updatedAt + 1);
+        }
+      }
+    });
+    for (const routine of skipped) this.emitRoutine(routine);
+  }
+
+  /** The person is back: report each routine's skipped runs once. */
+  private reportAwaySkips(now: number): void {
+    const back = this.routines.filter((routine) => routine.awaySkips && routine.awaySkips.reportedAt === undefined &&
+      awayReportDue(routine, this.presenceOf(routine)));
+    if (back.length === 0) return;
+    this.commitMutation(() => {
+      for (const routine of back) routine.awaySkips = { ...routine.awaySkips!, reportedAt: now };
+    });
+    for (const routine of back) {
+      this.emitRoutine(routine);
+      try {
+        this.options.onAwaySkipsReported?.(cloneRoutine(routine), { ...routine.awaySkips! });
+      } catch (error) {
+        console.error("routine: could not report runs skipped while away", error);
+      }
+    }
+  }
+
+  /** The person has read the report: forget the skipped runs. */
+  clearAwaySkips(id: string): Routine | null {
+    const routine = this.routines.find((candidate) => candidate.id === id);
+    if (!routine) return null;
+    if (!routine.awaySkips) return cloneRoutine(routine);
+    this.commitMutation(() => { delete routine.awaySkips; });
+    this.emitRoutine(routine);
+    return cloneRoutine(routine);
+  }
+
   private suspendRoutine(routineId: string, reason: RoutineSuspendReason, run: RoutineRun | null): boolean {
     const routine = this.routines.find((candidate) => candidate.id === routineId);
     if (!routine || routine.suspended) return false;

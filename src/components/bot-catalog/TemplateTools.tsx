@@ -61,6 +61,11 @@ interface DirectoryCandidate {
 /** appearance colors for community bots folded into a scouted team */
 const DIRECTORY_COLORS = ["cyan", "red", "purple", "green", "orange"] as const;
 
+/** A bot template's public link (…/share/template/<token>). Pure. */
+export function isTemplateLink(value: string): boolean {
+  return /^https?:\/\/[^\s]+\/share\/template\/[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{32}(?:\.json)?(?:[?#]\S*)?$/.test(value.trim());
+}
+
 export async function openExternal(url: string): Promise<void> {
   if (window.ogb?.openExternal) {
     await window.ogb.openExternal(url);
@@ -231,10 +236,14 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
     setGithubLoading(true);
     setError("");
     try {
-      const manifest = await api("/api/team-library/github", {
-        method: "POST",
-        body: JSON.stringify({ url: requestedUrl.trim() }),
-      });
+      // A bot template's public link (server/template-links.ts) is read
+      // through its own route; anything else is a GitHub or install link.
+      const manifest = isTemplateLink(requestedUrl)
+        ? (await api<{ document: unknown }>("/api/template-links/import", { method: "POST", body: JSON.stringify({ url: requestedUrl.trim() }) })).document
+        : await api("/api/team-library/github", {
+          method: "POST",
+          body: JSON.stringify({ url: requestedUrl.trim() }),
+        });
       setPending(teamImportPreview(manifest));
       setSource("github");
     } catch (cause) {
@@ -412,6 +421,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                 <Github size={25} className="text-ink-secondary" />
                 <h3 className="mt-3 text-[14px] font-medium text-ink">Load from GitHub</h3>
                 <p className="mt-1 text-[12.5px] leading-relaxed text-ink-secondary">Paste a public repo or a direct team JSON link.</p>
+                <p data-template-link-hint className="mt-1 text-[12px] leading-relaxed text-ink-tertiary">{t("templateLink.importHint")}</p>
                 <div className="mt-4 flex gap-2">
                   <input
                     value={githubUrl}

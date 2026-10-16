@@ -101,7 +101,7 @@ public struct GitPRDiffCardView: View {
 
                         if lines.count > 80 {
                             Button(showAllLines ? "Show first 80 lines" : "Show all \(lines.count) lines") {
-                                withAnimation(.easeInOut(duration: 0.2)) { showAllLines.toggle() }
+                                withAnimation(.snappy(duration: 0.2)) { showAllLines.toggle() }
                                 Haptics.selection()
                             }
                             .font(.caption2.weight(.semibold))

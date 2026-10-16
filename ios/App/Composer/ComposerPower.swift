@@ -105,7 +105,7 @@ extension ChatView {
     }
 
     func closeCommandMenu() {
-        withAnimation(.easeInOut(duration: 0.15)) {
+        withAnimation(.snappy(duration: 0.2)) {
             power.commandMenuForced = false
             power.commandMenuDismissed = true
             if draft == "/" { draft = "" }
@@ -161,9 +161,18 @@ extension ChatView {
     /// desktop clears its dismissal on change), and a long block inserted
     /// in one edit (the field's own paste) becomes a chip.
     func draftChanged(from old: String, to new: String) {
-        if power.commandMenuDismissed { power.commandMenuDismissed = false }
-        if power.commandMenuForced, new.hasPrefix("/") { power.commandMenuForced = false }
-        if power.busyChoice?.threadId == threadId, new != old { power.busyChoice = nil }
+        // Only a keystroke that changes the strips above the field animates,
+        // and only those changes: the field itself follows the typing as is.
+        let reopensMenu = power.commandMenuDismissed
+        let unforcesMenu = power.commandMenuForced && new.hasPrefix("/")
+        let dropsChoice = power.busyChoice?.threadId == threadId && new != old
+        if reopensMenu || unforcesMenu || dropsChoice {
+            withAnimation(.snappy(duration: 0.2)) {
+                if reopensMenu { power.commandMenuDismissed = false }
+                if unforcesMenu { power.commandMenuForced = false }
+                if dropsChoice { power.busyChoice = nil }
+            }
+        }
         if power.pasteCheckSuppressed {
             power.pasteCheckSuppressed = false
             return
@@ -172,7 +181,9 @@ extension ChatView {
               session.surfaceGate.allows(.pasteAttachment),
               let paste = PastedText.detect(old: old, new: new)
         else { return }
-        power.add(PastedText(text: paste.pasted), threadId: threadId)
+        withAnimation(.snappy(duration: 0.2)) {
+            power.add(PastedText(text: paste.pasted), threadId: threadId)
+        }
         draft = paste.remaining
     }
 

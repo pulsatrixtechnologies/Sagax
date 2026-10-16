@@ -66,7 +66,7 @@ struct RunCardView: View {
                 }
                 Spacer(minLength: 4)
                 iconButton(collapsed ? "chevron.up" : "chevron.down", label: collapsed ? "Expand the run" : "Collapse the run", id: "run-card-toggle") {
-                    withAnimation(.easeInOut(duration: 0.15)) { collapsed.toggle() }
+                    withAnimation(.snappy(duration: 0.2)) { collapsed.toggle() }
                 }
                 iconButton("xmark", label: "Dismiss the run", id: "run-card-dismiss", action: onDismiss)
             }
@@ -202,7 +202,7 @@ extension ChatView {
                     canSave: canSave,
                     staged: RunSteps.skillStaged(messages, steps: steps),
                     onDismiss: {
-                        withAnimation(.easeInOut(duration: 0.15)) {
+                        withAnimation(.snappy(duration: 0.2)) {
                             runCardDismissals.dismiss(threadId: threadId, lastStepId: last.id)
                         }
                     },
@@ -213,7 +213,7 @@ extension ChatView {
                     }
                 )
                 .id(threadId)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(.slideUp(reduce: reduceMotion))
                 .task {
                     // Save needs to know the engine mounts the agents tools.
                     if power.engines == nil {

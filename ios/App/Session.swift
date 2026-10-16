@@ -13,6 +13,7 @@ import SwiftUI
 import CompanionCore
 import UserNotifications
 import UIKit
+import Combine
 
 /// Stream lifecycle, in Console.app and the Xcode console. A companion that
 /// is silently not connected looks exactly like one with nothing to say, so
@@ -50,7 +51,27 @@ final class Session: ObservableObject {
         case offline(String)
     }
 
-    @Published private(set) var state = CompanionState()
+    /// Everything the phone knows, folded from the stream. Published by
+    /// hand rather than with `@Published`: a streaming token is folded
+    /// quietly (`foldQuietly`) and announced at most once per display frame
+    /// to `streamingStore` and `statePublisher`, never to the whole view tree.
+    /// Every other write publishes at once, exactly as before.
+    private(set) var state = CompanionState() {
+        didSet { stateDidChange() }
+    }
+    /// The live text, for the few views that draw it (`ChatLiveTail`).
+    let streamingStore = StreamingStore()
+    /// Every state change, including streamed tokens at most once per
+    /// display frame. Starts with the current state, like `@Published`.
+    var statePublisher: AnyPublisher<CompanionState, Never> {
+        Deferred { [weak self] in Just(self?.state ?? CompanionState()) }
+            .append(stateSubject)
+            .eraseToAnyPublisher()
+    }
+    private let stateSubject = PassthroughSubject<CompanionState, Never>()
+    private var foldingQuietly = false
+    private var streamPending = false
+    private lazy var streamFlush = FrameCoalescer { [weak self] in self?.flushStream() }
     @Published private(set) var connection: Connection?
     @Published private(set) var connections: [Connection] = []
     let threadSelection = BotThreadSelection()
@@ -208,6 +229,9 @@ final class Session: ObservableObject {
     // MARK: - Pairing
 
     init() {
+        // Writes in an initializer skip `didSet`: hand the live text of a
+        // preview fixture (`-chat-reasoning-preview`) to its store here.
+        defer { publishStream() }
         Self.removeStaleFilePreviews()
         _ = NotificationCoordinator.shared
         NotificationCoordinator.shared.responseHandler = { [weak self] target in
@@ -650,7 +674,49 @@ final class Session: ObservableObject {
 
     private func applyDemoFrame(_ frame: Frame) {
         guard isDemo else { return }
-        state.apply(frame)
+        if frame.isStreamedText { foldQuietly { state.apply(frame) } } else { state.apply(frame) }
+    }
+
+    // MARK: - Publishing the state
+
+    private func stateDidChange() {
+        if foldingQuietly {
+            if !streamPending {
+                streamPending = true
+                streamFlush.request()
+            }
+            return
+        }
+        objectWillChange.send()
+        // Anything else that lands also carries the latest tokens: a settled
+        // reply clears the live bubble in the same render that draws it.
+        streamPending = false
+        publishStream()
+    }
+
+    /// Fold a streamed token without telling the view tree. The change
+    /// still reaches the state at once; `flushStream` announces it.
+    private func foldQuietly(_ write: () -> Void) {
+        foldingQuietly = true
+        defer { foldingQuietly = false }
+        write()
+    }
+
+    private func flushStream() {
+        guard streamPending else { return }
+        streamPending = false
+        publishStream()
+        // With no conversation on screen the home is what shows, and its
+        // Updates pill reads a working bot's line from the live text: keep
+        // it current, once per frame, as it was per token before. With a
+        // chat open the home is hidden under it and only the chat's live
+        // tail redraws.
+        if AttentionCenter.shared.viewingThreadId == nil { objectWillChange.send() }
+    }
+
+    private func publishStream() {
+        streamingStore.sync(text: state.streaming, reasoning: state.reasoning)
+        stateSubject.send(state)
     }
 
     /// Leave the demo for the welcome screen (or the saved pairing, if one
@@ -1021,7 +1087,8 @@ final class Session: ObservableObject {
                         refreshConnectionMetadata(using: client)
                         continue
                     }
-                    state.apply(frame)
+                    let streamed = frame.frame.isStreamedText
+                    if streamed { foldQuietly { state.apply(frame) } } else { state.apply(frame) }
                     // people: presence and labels (#167, #172)
                     PeopleDirectory.shared.apply(frame.frame)
                     // a routine changed or ran: the account's routines badge
@@ -1050,7 +1117,7 @@ final class Session: ObservableObject {
                     }
                     NotificationCoordinator.shared.setBadge(state.unreadCount)
                     withdrawSettledIfFewerUnread()
-                    state.advance(to: frame.seq)
+                    if streamed { foldQuietly { state.advance(to: frame.seq) } } else { state.advance(to: frame.seq) }
                 }
                 // the stream ended without an error — the harness went away
                 log.notice("stream ended without an error")

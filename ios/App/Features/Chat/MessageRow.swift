@@ -341,3 +341,16 @@ struct MessageRow: View {
         return { openThread(ref) }
     }
 }
+
+/// A row is the same row while its message, its chat record and its place in
+/// the run are. The callbacks are rebuilt on every render of the screen and
+/// never compare equal, which without this made every row re-evaluate its
+/// body (markdown included) whenever the chat screen did.
+extension MessageRow: Equatable {
+    static func == (lhs: MessageRow, rhs: MessageRow) -> Bool {
+        lhs.message == rhs.message
+            && lhs.chat == rhs.chat
+            && lhs.endsRun == rhs.endsRun
+            && (lhs.openThread == nil) == (rhs.openThread == nil)
+    }
+}

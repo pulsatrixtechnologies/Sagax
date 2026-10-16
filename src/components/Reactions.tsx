@@ -1,23 +1,26 @@
 // Emoji reactions on a chat message (shared/reactions.ts, src/lib/reactions.ts):
 //
 // - ReactButton: the smiley in the message's hover bar; it opens the picker.
-// - ReactionPicker: the eight quick reactions, then a search in the built-in
-//   emoji set (src/lib/emoji-list.ts). Escape or a press outside closes it.
+// - ReactionPicker: the eight quick reactions, then the full emoji catalogue
+//   (src/lib/emoji-catalog.ts, lazy, en + fr words) with search and category
+//   tabs (EmojiCatalogGrid). Escape or a press outside closes it.
 // - ReactionChips: one chip per emoji under the message (emoji + count),
 //   highlighted when the viewer is among the reactors; a click toggles the
 //   viewer's own; hovering or focusing it lists who reacted, a bot with its
 //   mascot (from `bots`).
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { SmilePlus } from "lucide-react";
 
 import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { cn } from "@/lib/cn";
-import { searchEmoji } from "@/lib/emoji-list";
 import { t } from "@/lib/i18n";
 import { reactionActorName, reactionChips, reactionTooltip, type ReactionChip } from "@/lib/reactions";
 import type { Bot } from "@/state/store";
 import { QUICK_REACTIONS, type ReactionActor } from "../../shared/reactions";
 import { BotAvatar } from "./Avatar";
+import { EmojiCatalogGrid, useEmojiChoices } from "./EmojiCatalogGrid";
+
+const QUICK_SET: ReadonlySet<string> = new Set<string>(QUICK_REACTIONS);
 
 /** The smiley that opens the picker. */
 export function ReactButton({ open, onToggle, className }: { open: boolean; onToggle: () => void; className?: string }) {
@@ -70,12 +73,8 @@ export function ReactionPicker({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
-  const quick = new Set<string>(QUICK_REACTIONS);
-  const results = useMemo(() => {
-    const found = searchEmoji(query);
-    return query.trim() ? found : found.filter((entry) => !quick.has(entry.emoji));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  const catalog = useEmojiChoices(query, QUICK_SET);
+  const results = catalog.choices;
   const pick = (emoji: string) => {
     onPick(emoji);
     onClose();
@@ -90,11 +89,11 @@ export function ReactionPicker({
       rootRef.current?.querySelector<HTMLElement>("[data-emoji-result]")?.focus();
     }
   };
-  const choice = (emoji: string, label: string, kind: "quick" | "result") => (
+  const choice = (emoji: string, label: string) => (
     <button
       key={emoji}
       type="button"
-      {...(kind === "quick" ? { "data-quick-reaction": emoji } : { "data-emoji-result": emoji })}
+      data-quick-reaction={emoji}
       onClick={() => pick(emoji)}
       aria-label={label}
       title={label}
@@ -120,7 +119,7 @@ export function ReactionPicker({
       )}
     >
       <div className="flex items-center justify-between">
-        {QUICK_REACTIONS.map((emoji) => choice(emoji, t("reactions.reactWith", { emoji }), "quick"))}
+        {QUICK_REACTIONS.map((emoji) => choice(emoji, t("reactions.reactWith", { emoji })))}
       </div>
       <input
         ref={inputRef}
@@ -132,10 +131,7 @@ export function ReactionPicker({
         aria-label={t("reactions.search")}
         className="h-7 rounded-md border-[0.5px] border-border bg-inset px-2 text-[12.5px] text-ink outline-none placeholder:text-ink-tertiary focus:border-accent"
       />
-      <div role="group" aria-label={t("reactions.results")} className="grid max-h-40 grid-cols-8 overflow-y-auto">
-        {results.map((entry) => choice(entry.emoji, t("reactions.reactWith", { emoji: entry.emoji }), "result"))}
-      </div>
-      {results.length === 0 && <p className="px-1 pb-1 text-[12px] text-ink-tertiary">{t("reactions.none")}</p>}
+      <EmojiCatalogGrid state={catalog} onPick={pick} mine={mine} labelFor={(entry) => t("reactions.reactWith", { emoji: entry.emoji })} />
     </div>
   );
 }

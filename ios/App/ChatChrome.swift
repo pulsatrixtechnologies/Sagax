@@ -167,8 +167,8 @@ struct ComposerVoiceSendButton: View {
         }
         .buttonStyle(.plain)
         .disabled(busy)
-        .animation(.easeOut(duration: 0.15), value: canSend)
-        .animation(.easeOut(duration: 0.15), value: onCall)
+        .animation(.snappy(duration: 0.2), value: canSend)
+        .animation(.snappy(duration: 0.2), value: onCall)
         .accessibilityLabel(canSend ? Text(String(localized: "Send")) : onCall ? Text(String(localized: "End call")) : Text(String(localized: "Start voice mode")))
         .accessibilityIdentifier(canSend ? "composer-send" : onCall ? "composer-end-call" : "composer-voice")
     }

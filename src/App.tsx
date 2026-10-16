@@ -15,6 +15,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { ChatView } from "@/components/ChatView";
 import { GroupView } from "@/components/GroupView";
 import { PersonPanel } from "@/components/PersonPanel";
+import { SideThreadPanel } from "@/components/SideThreadPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
 import {
@@ -54,6 +55,7 @@ import { ModelWindowHost } from "./components/ModelWindowHost";
 import { DataWindowViewSync } from "@/components/DataWindowButton";
 import { useExternalChatLinks } from "@/hooks/use-external-chat-links";
 import { ChatNotice } from "@/components/ChatErrorBanner";
+import { TeamBotFromThreadHost } from "@/components/TeamBotFromThreadDialog";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -440,6 +442,9 @@ function Shell() {
       )}
       {composeOpen && <ComposeToPicker onClose={() => setComposeOpen(false)} />}
       </div>
+      {/* A bot thread opened beside the main chat (Open beside, or
+          Option-click on a thread row); one at a time. */}
+      <SideThreadPanel />
       {/* The panels below are siblings, so their keys must differ even
           though each is remounted per bot. Two siblings keyed `bot.id`
           collide in React's keyed reconciliation whenever both are open
@@ -477,6 +482,7 @@ function Shell() {
           palette on top when one of them is open underneath */}
       <CommandPalette onOpenChange={setPaletteOpen} onNewConversation={openCompose} />
       <StagedOrgImport />
+      <TeamBotFromThreadHost />
       <RetroAssistantHost />
       <AchievementToaster />
       <CallEngineHost />

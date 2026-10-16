@@ -104,6 +104,10 @@ targets:
         # The bot's Live Activity — its face and ask in the Dynamic Island
         # and on the lock screen.
         NSSupportsLiveActivities: true
+        # ProMotion: without this key an iPhone caps every animation the app
+        # drives (SwiftUI, TimelineView, CADisplayLink) at 60 Hz; only system
+        # scrolling reaches 120 Hz. iPad needs nothing.
+        CADisableMinimumFrameDurationOnPhone: true
         CFBundleURLTypes:
           # sagax:// only. Servers and desktops from 0.4.0 emit it for
           # every phone link (pairing QR, sign-in return, widgets), and

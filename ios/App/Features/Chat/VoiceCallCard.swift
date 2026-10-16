@@ -10,6 +10,8 @@ struct VoiceCallCard: View {
     var forceOpen: Bool
     @EnvironmentObject private var session: Session
     @ObservedObject private var call = CallController.shared
+    /// The bot's words as they stream, under the live caption.
+    @ObservedObject private var live: StreamingStore
     @State private var open: Bool
     @State private var copied = false
     @State private var pending: Thumb?
@@ -17,8 +19,9 @@ struct VoiceCallCard: View {
 
     private enum Thumb: String { case up, down }
 
-    init(chat: Chat, card: VoiceCallCardModel, forceOpen: Bool) {
+    init(chat: Chat, card: VoiceCallCardModel, forceOpen: Bool, live: StreamingStore) {
         self.chat = chat
+        _live = ObservedObject(wrappedValue: live)
         self.card = card
         self.forceOpen = forceOpen
         _open = State(initialValue: forceOpen)
@@ -178,7 +181,7 @@ struct VoiceCallCard: View {
         guard open, call.active, call.callId == card.callId else { return shown }
         let heard = call.heard.trimmingCharacters(in: .whitespacesAndNewlines)
         let caption = call.caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        let streaming = (session.state.streaming[chat.threadId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let streaming = (live.text[chat.threadId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let botLine = caption.isEmpty ? streaming : caption
         if !heard.isEmpty, shown.last?.text != heard {
             shown.append(SpokenLine(id: "live-heard", role: .user, text: heard))

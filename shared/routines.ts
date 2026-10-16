@@ -111,6 +111,11 @@ export interface Routine {
   /** Slice 6: paused because its person is out or lost the right to run
    * the bot (never for lack of a delegation since 2026-10-08). */
   suspended?: { reason: RoutineSuspendReason; at: number };
+  /** 2026-10-16: runs only while its person is there (server/routine-away.ts). */
+  onlyWhenPresent?: boolean;
+  /** Occurrences skipped while the person was away; `reportedAt` once they
+   * are back. Cleared by POST /api/routines/:id/away-seen. */
+  awaySkips?: { count: number; firstAt: number; lastAt: number; reportedAt?: number };
   nextRunAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -191,6 +196,8 @@ export interface RoutineInput {
   overlap?: "skip" | "queue";
   /** Each run starts with the previous run's report. */
   continuity?: boolean;
+  /** 2026-10-16: runs only while its person is there (server/routine-away.ts). */
+  onlyWhenPresent?: boolean;
   attachments?: RoutineContextAttachment[];
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;

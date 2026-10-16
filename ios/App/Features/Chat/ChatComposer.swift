@@ -50,7 +50,7 @@ extension ChatView {
         var busyMode: BusySendMode?
         if BusySendChoice.offered(for: chatAtSend), session.surfaceGate.allows(.busySendChoice) {
             guard let chosen else {
-                withAnimation(.easeInOut(duration: 0.15)) {
+                withAnimation(.snappy(duration: 0.2)) {
                     power.busyChoice = (chatAtSend.threadId, BusySendChoice.suggest(requestText))
                 }
                 return
@@ -174,7 +174,7 @@ extension ChatView {
                 HStack(alignment: .bottom, spacing: 0) {
                     TextField(
                         "",
-                        text: $draft,
+                        text: draftBinding,
                         prompt: Text(composerPrompt).foregroundColor(Theme.composerPlaceholder),
                         axis: .vertical
                     )
@@ -192,10 +192,11 @@ extension ChatView {
                             !dictation.isListening && !dictation.isStarting
                                 && !preparingAttachments && !sendingMessage
                         )
+                        // Not in an animated transaction: a keystroke must
+                        // not animate every layout change it causes. The
+                        // strips it shows or hides animate themselves.
                         .onValueChangePair(of: draft) { old, new in
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                draftChanged(from: old, to: new)
-                            }
+                            draftChanged(from: old, to: new)
                         }
                         // The software keyboard's Return inserts a newline,
                         // like Messages; only the send button sends. A

@@ -38,7 +38,19 @@ struct ChatView: View {
     @Environment(\.desktopChat) var desktopChat
     /// The desktop transcript's tokens (set with `desktopChat`).
     @Environment(\.desktopChatText) var desktopChatText
-    @State var draft = ""
+    /// The composer's text. Held in a model this screen does not observe:
+    /// a keystroke re-renders the composer (`composerSlot` observes it), not
+    /// the transcript above it.
+    @State var draftModel = ComposerDraftModel()
+    var draft: String {
+        get { draftModel.text }
+        nonmutating set { if draftModel.text != newValue { draftModel.text = newValue } }
+    }
+    /// The field's binding to `draft`.
+    var draftBinding: Binding<String> {
+        let model = draftModel
+        return Binding(get: { model.text }, set: { if model.text != $0 { model.text = $0 } })
+    }
     @State var revealedMessageId: String?
     @State var showingTasks = false
     @State var showingComputer = false
@@ -459,6 +471,11 @@ struct ChatView: View {
                                         openLink: openLink,
                                         openThread: openThread
                                     )
+                                    // Skips the row when only the screen
+                                    // around it changed (a keystroke, the
+                                    // follow state); what the row reads from
+                                    // the session still updates it.
+                                    .equatable()
                                 case let .activityRun(run):
                                     StepRunRow(
                                         run: run, chat: current, openLink: openLink, openThread: openThread,
@@ -469,7 +486,8 @@ struct ChatView: View {
                                     VoiceCallCard(
                                         chat: current,
                                         card: card,
-                                        forceOpen: card.messages.contains { $0.id == revealedMessageId }
+                                        forceOpen: card.messages.contains { $0.id == revealedMessageId },
+                                        live: session.streamingStore
                                     )
                                 }
                             }
@@ -484,24 +502,17 @@ struct ChatView: View {
                         // one arrives — the store clears it on the same frame
                         // that appends the message, so there is never a beat
                         // where both are on screen.
-                        if !(call.active && call.isOnCall(current)), let live = session.state.streaming[threadId], !live.isEmpty {
-                            StreamingBubble(text: live, reasoning: nil, color: current.color)
-                                .padding(.top, Self.rowGap)
-                                .id(Self.liveBubbleId)
-                        } else if !(call.active && call.isOnCall(current)), activityDetail != ActivityDetail.hidden.rawValue,
-                                  let thinking = session.state.reasoning[threadId], !thinking.isEmpty {
-                            // Only while there is no answer yet. Once tokens
-                            // of the reply exist, the reasoning is behind us
-                            // and showing both is just noise.
-                            StreamingBubble(text: nil, reasoning: thinking, color: current.color)
-                                .padding(.top, Self.rowGap)
-                                .id(Self.liveBubbleId)
-                        } else if current.busy {
-                            TypingIndicatorView(tintColor: MausPalette.color(current.color))
-                                .padding(.top, Self.rowGap)
-                                .id(Self.liveBubbleId)
-                                .accessibilityLabel("\(current.name) is working")
-                        }
+                        // Only this tail observes the tokens: the rows above
+                        // are not rebuilt while the reply streams.
+                        ChatLiveTail(
+                            store: session.streamingStore,
+                            threadId: threadId,
+                            onCall: call.active && call.isOnCall(current),
+                            showsReasoning: activityDetail != ActivityDetail.hidden.rawValue,
+                            busy: current.busy,
+                            color: current.color,
+                            name: current.name
+                        )
 
                         // The bottom of the conversation: 26.3 pt from the
                         // last bubble to the composer's top, less the
@@ -548,7 +559,7 @@ struct ChatView: View {
                     if !follow.following, !transcript.isEmpty {
                         JumpToLatestButton {
                             follow.resume()
-                            withAnimation { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                            withAnimation(Motion.animation(.snappy, reduce: reduceMotion)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
                         }
                         .padding(.bottom, 12)
                     }
@@ -588,7 +599,7 @@ struct ChatView: View {
                     // send takes you back to the end.
                     if last.role == .user { follow.resume() }
                     guard follow.following else { return }
-                    withAnimation { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                    withAnimation(Motion.animation(.snappy, reduce: reduceMotion)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
                 }
                 // Long markdown replies finish laying out after the first
                 // pass; settle on the newest message once they have, unless a
@@ -604,10 +615,10 @@ struct ChatView: View {
                 // the string so this fires once per delta batch, and without
                 // animation — animating every token turns a smooth stream
                 // into a stutter, because each scroll interrupts the last.
-                .onValueChange(of: session.state.streaming[threadId]?.count ?? 0) { length in
+                .background(LiveStreamFollower(store: session.streamingStore, threadId: threadId) { length in
                     guard length > 0, follow.following else { return }
                     proxy.scrollTo(Self.bottomId, anchor: .bottom)
-                }
+                })
 #if DEBUG
                 .task { await desktopParityLaunch(proxy) }
 #endif
@@ -727,5 +738,52 @@ struct ChatView: View {
 
     var hasPendingApproval: Bool {
         messages.contains { $0.card?.isPending == true }
+    }
+}
+
+/// The end of the transcript while a bot works: the reply as it is typed,
+/// its reasoning before any answer exists, or the typing dots. The only part
+/// of the chat that re-renders per streamed frame (`StreamingStore`).
+struct ChatLiveTail: View {
+    @ObservedObject var store: StreamingStore
+    let threadId: String
+    /// On a call the words are spoken, not typed out.
+    let onCall: Bool
+    let showsReasoning: Bool
+    let busy: Bool
+    let color: String
+    let name: String
+    /// Replies that finished streaming while this chat was open.
+    @State private var finished = 0
+
+    var body: some View {
+        tail
+            // a light tap when the reply is done, the way Messages marks an
+            // arrival (Settings > Haptics off: none)
+            .feedback(.impact, trigger: finished)
+            .onValueChangePair(of: store.text[threadId]?.isEmpty == false) { was, now in
+                if was && !now { finished += 1 }
+            }
+    }
+
+    @ViewBuilder
+    private var tail: some View {
+        if !onCall, let live = store.text[threadId], !live.isEmpty {
+            StreamingBubble(text: live, reasoning: nil, color: color)
+                .padding(.top, ChatView.rowGap)
+                .id(ChatView.liveBubbleId)
+        } else if !onCall, showsReasoning, let thinking = store.reasoning[threadId], !thinking.isEmpty {
+            // Only while there is no answer yet. Once tokens
+            // of the reply exist, the reasoning is behind us
+            // and showing both is just noise.
+            StreamingBubble(text: nil, reasoning: thinking, color: color)
+                .padding(.top, ChatView.rowGap)
+                .id(ChatView.liveBubbleId)
+        } else if busy {
+            TypingIndicatorView(tintColor: MausPalette.color(color))
+                .padding(.top, ChatView.rowGap)
+                .id(ChatView.liveBubbleId)
+                .accessibilityLabel("\(name) is working")
+        }
     }
 }

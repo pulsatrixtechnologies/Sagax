@@ -2945,6 +2945,26 @@ and `sidebar-logo-preferences.test.ts`:
   `DesktopTheme.swift`) mirrors the head (no logo), tiles, headers with the
   folded count and rows.
 
+## Side thread and compact sidebar (Grok Bot parity, 2026-10-16)
+
+- Side thread (`src/lib/side-thread.ts`, `SideThreadPanel.tsx`): a bot
+  thread opens in a resizable column right of the main chat from its row's
+  menu (Open beside / Ouvrir à côté) or Option-click (Alt-click). One at a
+  time, this window's own (never the app store or the server); its width is
+  stored apart (`sagax.sideThread.width.v1`, 360 to 900 px, through
+  `DockedPanelResize` bounds). It is `ChatView` with `side` (its own header,
+  no calls, ⌘F, error or notice banners) over its own copy of the thread:
+  the newest page from `GET /api/threads/:id/messages`, then the live
+  `message`, `message.patch` and `thread` frames (`listenLiveFrames`), so a
+  remote client works the same. It closes itself when the main chat opens
+  that thread or the thread is gone. Rooms do not offer it. Tests:
+  `src/lib/side-thread.test.ts`, `ChatView.side.test.ts`, `ThreadMenu.test.ts`.
+- Compact sidebar = icons density, the rail (`sidebar-preferences.ts`). The
+  head keeps no collapse button (2026-10-02); the rail's foot has the
+  pressed toggle back, Enter on the edge toggles, and the arrow keys walk
+  the rail (`src/lib/sidebar-rail.ts`). A working room wears the green dot
+  like a bot. Tests: `Sidebar.compact.test.ts`, `src/lib/sidebar-rail.test.ts`.
+
 ## Primary Bot (formerly Chief of Staff)
 
 A person's Primary Bot is their main contact among their bots: it gets the
@@ -3257,3 +3277,69 @@ build its own bubble. Gallery: `src/gallery/chat-widgets.html`
   card that failed or was set aside. Never while the turn runs, never on an
   empty conversation. It opens Connect apps with those apps first
   (`pluginsFocusApps`, section "needed").
+
+## Team Bot from a conversation, template links, away routines, emoji (2026-10-16)
+
+Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
+
+- Team Bot from a conversation (thread menu, `TeamBotFromThreadDialog.tsx`,
+  `server/routes/team-bot-from-thread.ts`, `server/team-bot-draft.ts`): the
+  draft comes from the conversation's own bot model through its one-shot
+  (`threadTitleGate`, the generated-title path), conversation as data, text
+  lines only, secrets scrubbed; a fallback draft from the title and lines
+  when the model cannot. Plugins and connectors of the source bot are ticked
+  boxes. Memory carry-over is an explicit opt-in, OFF by default:
+  `POST /api/bots/:id/team-bot-carry` answers 400 `memory_opt_in` without a
+  literal `includeMemory: true` and writes nothing; with it, only the ticked
+  notes plus `memory/conversation-carry-over.md` (compaction summary
+  helper), all listed in the dialog first. The bot is created by
+  `POST /api/bots` and published by the existing Team Bot path (Sharing,
+  Perspicax grants); the app adds no multi-person view.
+- Template public links (`server/template-links.ts`,
+  `server/routes/template-links.ts`, Share preset > Share the link): the
+  preset file frozen as a template, `GET /share/template/<id>.<hmac>` (card,
+  no script, strict CSP) and `.json` (import), answered before the auth gate.
+  HMAC-SHA256 under `template-links.key` (0600); revoking deletes the record
+  and the token then answers the same 404 as a made-up one. Starter notes
+  (`seed`) and connections never go into a link (`publicTemplateDocument`).
+  Import from a link: Templates > Import (`/api/template-links/import`;
+  another server's link through its JSON, public addresses only).
+- Only when I'm here (`server/routine-away.ts`, editor switch, off by
+  default): while the routine's person is away a recurring occurrence is
+  skipped and counted (`awaySkips`), a one-time routine waits and runs late
+  on return; on return the count is reported once (notification, the
+  Automations banner) and kept until `POST /api/routines/:id/away-seen`.
+  Away = organization presence (online is here) or, on a solo server, the
+  page's beat (`POST /api/routines/away/beat`, `src/lib/routine-away-beat.ts`).
+  No signal is "unknown" and the routine runs.
+- Emoji: the full catalogue (`src/lib/emoji-catalog.ts`, emojibase-data,
+  English and French words, lazy chunks) in reactions and the composer
+  (`EmojiCatalogGrid`, `ComposerEmojiButton`); stored in the bare form
+  (`canonicalEmoji`) so both pickers make one chip.
+
+## Voice notes, microphone choice, logs and feedback (2026-10-16)
+
+- Voice notes (+ > Record a voice note, `src/components/useVoiceNoteRecorder.ts`,
+  `src/lib/voice-note.ts`): a 16 kHz WAV from the window's own microphone,
+  uploaded through `/api/files` like any audio file (`<attached-file>`, name
+  `voice-note-<date>.wav`), its words through the dictation route
+  (`/voice/transcribe`, cut in clips under `VOICE_MODE_MAX_AUDIO_BYTES`) as
+  the message text, then the ordinary send. Five minutes at most. No new
+  server route. The transcript shows a recorded note with `VoiceNoteBubble`
+  (speed 1x, 1.5x, 2x; jump to a word only when word timings are given,
+  which no speech to text of ours returns yet). iOS: the speed button only.
+- Microphone (Settings > Models and voice > Audio, `src/lib/audio-input.ts`):
+  one choice on this computer (`sagax.audioInput.v1`, never in the
+  preferences that travel) for dictation, voice notes, Live calls and voice
+  mode calls; a missing device falls back to the default, a refusal never
+  retries. The macOS dictation helper keeps the system input.
+- Download logs (General > Advanced > Diagnostics, desktop): one text file
+  saved where the person picks (`desktop:export-logs`, local page only):
+  the server log window on disk, server.log, this window's console
+  (`src/lib/console-ring.ts`, redacted when kept with `shared/redact.ts`),
+  the updater log and crash events, every line redacted again by
+  `electron/log-bundle.mjs`. Nothing is sent. Send feedback is a mail draft
+  to hello@pulsatrix.ca with the version and the system, nothing attached.
+  Tests: `electron/log-bundle.test.mjs`, `src/lib/console-ring.test.ts`,
+  `src/lib/feedback.test.ts`, `src/lib/audio-input.test.ts`,
+  `src/lib/voice-note.test.ts`, `src/components/Composer.voiceNote.test.ts`.

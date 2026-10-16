@@ -236,6 +236,17 @@ extension Frame {
     }
 }
 
+extension Frame {
+    /// A token of a reply or of its reasoning. Folding one changes only
+    /// `CompanionState.streaming` / `reasoning`, so the app may announce it
+    /// once per display frame instead of once per token. The frame that ends
+    /// the stream (a settled message, `turn.completed`) is not one of these.
+    public var isStreamedText: Bool {
+        guard case let .runtime(event) = self else { return false }
+        return event.type == "content.delta"
+    }
+}
+
 /// A frame plus its position in the stream.
 ///
 /// `seq` lives out here rather than inside the enum because an enum cannot

@@ -4,6 +4,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadEmojiCatalog } from "@/lib/emoji-catalog";
 import { setLocale } from "@/lib/i18n";
 import type { Bot } from "@/state/store";
 import { ReactionChips, ReactionPicker } from "./Reactions";
@@ -50,16 +51,34 @@ describe("ReactionPicker", () => {
     expect(document.activeElement).toBe(host.querySelector('input[type="search"]'));
   });
 
-  it("searches the built-in set by words, and Enter picks the first", async () => {
+  it("searches the full catalogue in English and French, and Enter picks the first", async () => {
+    await loadEmojiCatalog();
     const { onPick, onClose } = await renderPicker();
-    await type("rock");
-    expect(results()).toEqual(["🚀"]);
+    expect(host.querySelector("[data-emoji-catalog]")!.getAttribute("data-emoji-catalog")).toBe("full");
+    await type("rocket");
+    expect(results()[0]).toBe("🚀");
+    await type("fusée");
+    expect(results()).toContain("🚀");
+    await type("fusee");
+    expect(results()).toContain("🚀");
+    await type("rocket");
     const input = host.querySelector<HTMLInputElement>('input[type="search"]')!;
     await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
     expect(onPick).toHaveBeenCalledWith("🚀");
     expect(onClose).toHaveBeenCalled();
     await type("zzzz-nothing");
     expect(host.textContent).toContain("No emoji found");
+  });
+
+  it("browses the catalogue one category at a time", async () => {
+    await loadEmojiCatalog();
+    await renderPicker();
+    const smileys = results();
+    expect(smileys.length).toBeGreaterThan(100);
+    expect(smileys).not.toContain("👍");
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-emoji-group="9"]')!.click());
+    expect(results()).toContain("🇨🇦");
+    expect(results()).not.toContain("😀");
   });
 
   it("picks a quick reaction, and closes on Escape", async () => {

@@ -55,6 +55,7 @@ import { useRoutineScope } from "@/lib/use-routine-scope";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { ResultsDestination } from "@/components/routines/ResultsDestination";
 import { RunAsField, useRunAsOptions } from "@/components/routines/RunAsField";
+import { RoutineAwayBanner } from "@/components/routines/RoutineAwayBanner";
 import { canRunRoutineNow, routineRunInFlight } from "@/components/routines/RunNowButton";
 import { CronScheduleFields, CronSchedulePreview } from "@/components/routines/CronScheduleFields";
 import { cronChoiceFor, cronDraftFor, cronEditorValue, isCronChoice, type CronChoice } from "@/components/routines/cron-editor";
@@ -381,6 +382,8 @@ function EventEditor({
   const [intervalTimeoutDefaultApplied, setIntervalTimeoutDefaultApplied] = useState(Boolean(existingRoutine));
   const [overlap, setOverlap] = useState<"skip" | "queue">(existingRoutine?.overlap ?? "skip");
   const [continuity, setContinuity] = useState(Boolean(existingRoutine?.continuity));
+  // Only when I'm here (server/routine-away.ts): off unless chosen.
+  const [onlyWhenPresent, setOnlyWhenPresent] = useState(existingRoutine?.onlyWhenPresent === true);
   const [recurrence, setRecurrence] = useState<RecurrenceChoice>(recurrenceFor(schedule, initialAt));
   const [cronDraft, setCronDraft] = useState(() => cronDraftFor(schedule.type === "cron" ? schedule : undefined, initialAt));
   const [cronChanged, setCronChanged] = useState(false);
@@ -567,6 +570,7 @@ function EventEditor({
           overlap,
           // Room goals can't carry a report yet, and a one-time run has no next run.
           continuity: routineTarget === "bot" && recurrence !== "none" && continuity,
+          onlyWhenPresent,
           attachments: routineTarget === "room-goal" ? [] : attachments as RoutineContextAttachment[],
           ...(routineTarget === "bot" ? { resultsThreadId } : {}),
           // Sent only when the person was changed in the dropdown.
@@ -936,6 +940,15 @@ function EventEditor({
               <span>
                 <span className="block text-[12.5px] font-medium text-ink">{t("routines.continuityLabel")}</span>
                 <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.continuityHelp")}</span>
+              </span>
+            </label>
+          )}
+          {kind === "routine" && (
+            <label data-routine-only-present className="ml-8 flex items-start gap-3 rounded-xl border border-hairline/40 bg-inset/40 px-3.5 py-3">
+              <input type="checkbox" aria-label={t("routines.away.onlyLabel")} checked={onlyWhenPresent} onChange={(event) => setOnlyWhenPresent(event.target.checked)} className="mt-0.5 accent-accent" />
+              <span>
+                <span className="block text-[12.5px] font-medium text-ink">{t("routines.away.onlyLabel")}</span>
+                <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.away.onlyHelp")}</span>
               </span>
             </label>
           )}
@@ -1932,6 +1945,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
           {section === "calendar" && scheduleView === "calendar" && state.routinesLoadState === "loading" && state.routines.length === 0 && <p role="status" className="w-full text-[11.5px] text-ink-secondary">{t("routines.loading")}</p>}
         </div>}
       </header>
+      <RoutineAwayBanner routines={state.routines} dispatch={dispatch} />
       {/* `display: contents` outside `fill` mode: the wrapper takes no part
           in layout, so embedded/standalone keep their exact original flex
           children. Only `fill` (the one mode rendered inside the content

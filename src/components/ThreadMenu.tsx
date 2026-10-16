@@ -2,12 +2,12 @@
 // the header's "All threads" picker open this same component, so a thread
 // offers the same actions wherever it is listed. One menu, no More (JC,
 // 2026-10-15), in short sections like Grok Bot's (JC, 2026-10-16):
-// Rename, Regenerate title, Pin, Move to folder › | Archive, Snooze › |
-// Copy link, Remove link | Refresh permissions | Delete in red. Only Snooze
+// Open beside | Rename, Regenerate title, Pin, Move to folder › | Archive, Snooze › |
+// Copy link, Create a Team Bot, Remove link | Refresh permissions | Delete in red. Only Snooze
 // and Move to folder open a page, one level down.
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, ChevronRight, Clock, FolderInput, Link2, Link2Off, Loader2, Pencil, Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, ChevronRight, Clock, FolderInput, Link2, Link2Off, Loader2, PanelRight, Pencil, Pin, PinOff, RefreshCw, Trash2, UsersRound } from "lucide-react";
 import type { BotProject, Task } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -36,6 +36,10 @@ export type ThreadMenuActions = {
   onRemoveLink?: () => void;
   /** Copy the bot's current approval level onto this thread. */
   onRefreshPermissions?: () => void;
+  /** Start a Team Bot from this conversation (TeamBotFromThreadDialog). */
+  onCreateTeamBot?: () => void;
+  /** Show the thread beside the main chat (src/lib/side-thread.ts). */
+  onOpenAside?: () => void;
 };
 
 /** The next local 6 PM, rolling to tomorrow once tonight's is past. */
@@ -139,6 +143,10 @@ export function ThreadMenuItems({ task, actions, folders = [], page, onPage, onC
   // away, share, settings, then Delete alone in red. A divider goes only
   // between two sections that have something in them.
   const sections: ReactNode[][] = [
+    // open: beside the main chat (side thread), its own section on top
+    [
+      actions.onOpenAside && <Item key="open-aside" id="open-aside" icon={<PanelRight size={12} />} label={t("sideThread.openAside")} onClick={run(actions.onOpenAside)} />,
+    ],
     [
       <Item key="rename" id="rename" icon={<Pencil size={12} />} label={t("task.renameAria")} onClick={run(actions.onRename)} />,
       actions.onRegenerateTitle && <Item key="regenerate" id="regenerate" icon={regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
@@ -154,6 +162,7 @@ export function ThreadMenuItems({ task, actions, folders = [], page, onPage, onC
     ],
     [
       actions.onCopyLink && <Item key="copy-link" id="copy-link" icon={<Link2 size={12} />} label={t("task.copyLink")} onClick={run(actions.onCopyLink)} />,
+      actions.onCreateTeamBot && <Item key="create-team-bot" id="create-team-bot" icon={<UsersRound size={12} />} label={t("teamBotFromThread.menu")} title={t("teamBotFromThread.menu")} onClick={run(actions.onCreateTeamBot)} />,
       actions.onRemoveLink && task.link && <Item key="remove-link" id="remove-link" icon={<Link2Off size={12} />} label={t("task.removeLink")} onClick={run(actions.onRemoveLink)} />,
     ],
     [

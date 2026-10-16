@@ -458,10 +458,17 @@ struct DesktopHoverSquareStyle: ButtonStyle {
 /// The three typing dots of a working row (`WorkingDots size 3.5`).
 struct DesktopWorkingDots: View {
     @Environment(\.desktopTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var visible = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.2)) { context in
-            let phase = Int(context.date.timeIntervalSinceReferenceDate * 3) % 3
+        // Three steps a second (it woke five times a second), paused off
+        // screen, in the background and under Reduce Motion, where the
+        // first dot stays lit.
+        let moving = visible && !reduceMotion && scenePhase == .active
+        TimelineView(.animation(minimumInterval: 1.0 / 3, paused: !moving)) { context in
+            let phase = moving ? Int(context.date.timeIntervalSinceReferenceDate * 3) % 3 : 0
             HStack(spacing: 3) {
                 ForEach(0..<3, id: \.self) { index in
                     Circle()
@@ -472,6 +479,8 @@ struct DesktopWorkingDots: View {
             }
         }
         .frame(height: 18)
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
     }
 }
 

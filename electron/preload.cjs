@@ -373,6 +373,10 @@ const bridge = {
   /** Writes the redacted diagnostics report to a user-chosen file; resolves
    * the path, or null when the save dialog was cancelled. */
   exportDiagnostics: () => ipcRenderer.invoke("desktop:export-diagnostics"),
+  /** Download logs: the window's console lines (already redacted) go with
+   * the server's log window into one redacted text file the person saves;
+   * resolves the path, or null when the save dialog was cancelled. */
+  exportLogs: (rendererLines) => ipcRenderer.invoke("desktop:export-logs", Array.isArray(rendererLines) ? rendererLines.filter((line) => typeof line === "string") : []),
   /** Ask where to save a bot-created file (inside ~/.sagax), copy it
    * there and reveal it. Returns the chosen path, or null if the user
    * cancelled the dialog. The chat bubble shows the

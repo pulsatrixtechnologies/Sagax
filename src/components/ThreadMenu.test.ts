@@ -163,3 +163,27 @@ describe("the All threads picker's row menu", () => {
     expect(ids(renderToStaticMarkup(createElement(ThreadMenuItems, props({ actions }))))).toEqual(["rename", "pin", "move", "archive", "snooze", "copy-link", "refresh-permissions", "delete"]);
   });
 });
+
+describe("Open beside (side thread)", () => {
+  it("comes first when the owner offers it, and runs then closes", () => {
+    const onOpenAside = vi.fn();
+    const onClose = vi.fn();
+    const given = props({ actions: { ...allActions(), onOpenAside }, onClose });
+    const html = renderToStaticMarkup(createElement(ThreadMenuItems, given));
+    expect(ids(html)[0]).toBe("open-aside");
+    expect(html).toContain("Open beside");
+    items(given).get("open-aside")!.onClick();
+    expect(onOpenAside).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("is absent where the owner does not offer it (rooms, the thread on screen)", () => {
+    expect(ids(markup())).not.toContain("open-aside");
+  });
+
+  it("reads Ouvrir à côté in French", () => {
+    setLocale("fr");
+    const html = renderToStaticMarkup(createElement(ThreadMenuItems, props({ actions: { ...allActions(), onOpenAside: vi.fn() } })));
+    expect(html).toContain("Ouvrir à côté");
+  });
+});

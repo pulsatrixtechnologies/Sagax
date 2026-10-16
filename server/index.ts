@@ -843,7 +843,7 @@ import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotCatalogRoutes, memberImportReset } from "./routes/bot-catalog.ts";
 import { createBotZipRoutes } from "./routes/bot-zip.ts";
 import { BotZipError, closeInspected, importBotZip, inspectBotZip, planBotZip, previewBotZip, stageBotZipUpload, writeBotZip, type BotZipHost } from "./bot-zip.ts";
-import { MEMORY_INDEX, readMemoryDoc } from "./memory-store.ts";
+import { MEMORY_INDEX, memoryOverview, readMemoryDoc } from "./memory-store.ts";
 import { isExpired as memoryEntryExpired, parseMemoryEntries } from "./memory-entries.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
 import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
@@ -919,6 +919,11 @@ import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { createGroupFolderRoutes } from "./routes/group-folders.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
+import { createRoutineAwayRoutes } from "./routes/routine-away.ts";
+import { createTemplateLinkRoutes, handleTemplateLinkPublic } from "./routes/template-links.ts";
+import { TemplateLinks } from "./template-links.ts";
+import { createTeamBotFromThreadRoutes } from "./routes/team-bot-from-thread.ts";
+import { awaySkipsDetail, LocalAwayTracker, verdictFromPresence, type AwayVerdict } from "./routine-away.ts";
 import { createPersonLabelRoutes } from "./routes/person-labels.ts";
 import { createMediaWidgetRoutes, handleMediaProxy } from "./routes/media-widgets.ts";
 import { initMediaProxy } from "./media-proxy.ts";
@@ -1063,6 +1068,8 @@ const MIME: Record<string, string> = {
 
 ensureDirs();
 initMediaProxy(DATA_DIR);
+/** Public share links for bot templates (server/template-links.ts). */
+const templateLinks = new TemplateLinks(DATA_DIR);
 // The desktop parent owns the primary lease and delegates one private child
 // claim; a standalone/headless server owns the primary lease itself. Acquire
 // before any durable identity, sessions, config, or Store state is loaded.
@@ -5984,6 +5991,30 @@ async function mountPersonalMcp(
     integrations.custom = { ...integrations.custom, [name]: { type: server.type, url: server.url, headers } };
   }
 }
+// Public share links for bot templates (routes/template-links.ts): the
+// person's New bot defaults frozen as a template, never their starter notes.
+ROUTES.push(createTemplateLinkRoutes({
+  links: templateLinks,
+  buildTemplate: (body) => {
+    const built = defaultsPresetFor({ presetName: body.name, presetDescription: body.description, presetAvatar: body.picture }, false);
+    return createLibraryPackageExport({
+      name: body.name,
+      authorName: cfg.profile?.name?.trim(),
+      published: readPublishedLibrary(),
+      preset: built.preset,
+      skipped: built.skipped,
+    }).document;
+  },
+  creator: (auth) => IDENTITY.kind === "perspicax" && auth.kind === "session" ? auth.session.principalId?.trim() || undefined : undefined,
+  origin: (req) => (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin : null) ?? publicUrl() ?? requestOrigin(req) ?? "http://127.0.0.1",
+  reachable: (origin) => {
+    try {
+      return !isLoopbackHost(new URL(origin).host);
+    } catch {
+      return false;
+    }
+  },
+}));
 ROUTES.push(createPersonConnectionRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   managedByAdmin: integrationsLocked,
@@ -6060,6 +6091,51 @@ function pluginSkillsForTurn(bot: { id: string; ownerUserId?: unknown }, instanc
   if (personIntegrationsOff(effectiveBotOwner(bot))) return "";
   return pluginTurnPrompt({ driverKind: instance.driverKind, integrationsOff: false, files: pluginTurnFiles(botPlugins.pluginDirs(bot.id)) });
 }
+// "Create a Team Bot from this conversation" (routes/team-bot-from-thread.ts):
+// the draft by the conversation's bot model, and the opt-in memory carry-over.
+// The bot itself goes through POST /api/bots and is shared with the team by
+// the existing Team Bot path (Sharing, Perspicax grants).
+ROUTES.push(createTeamBotFromThreadRoutes({
+  bot: (id) => {
+    const bot = store.bot(id);
+    return bot && !bot.hidden ? { id: bot.id, name: bot.name } : undefined;
+  },
+  thread: (auth, botId, threadId) => {
+    const bot = store.bot(botId);
+    const task = bot ? store.taskByThread(botId, threadId) : undefined;
+    if (!bot || !task) return null;
+    if (viewerBotLevel(auth, bot) === null && !orgAdminCaller(auth) && auth.kind === "session" && !auth.scopes.includes("admin")) return null;
+    if (cloudThreadRefusal(auth, threadId)) return null;
+    if (!botThreadReadable(bot, threadId, sessionPrincipal(auth) ?? undefined)) return null;
+    return { title: task.title, messages: store.messagesTail(threadId, 400).messages };
+  },
+  mayChange: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    if (IDENTITY.kind !== "perspicax") return auth.kind !== "session" || auth.scopes.includes("admin");
+    const level = viewerBotLevel(auth, bot);
+    return level === "owner" || level === "manage" || orgAdminCaller(auth);
+  },
+  generate: (botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return null;
+    const gate = threadTitleGate(bot);
+    return gate.ok && gate.instance.generateText ? gate.instance.generateText.bind(gate.instance) : null;
+  },
+  memoryNotes: (botId) => {
+    try {
+      const overview = memoryOverview(botId);
+      return [
+        ...(overview.index.bytes > 0 ? [{ path: MEMORY_INDEX, bytes: overview.index.bytes }] : []),
+        ...overview.topics.map((topic) => ({ path: topic.path, bytes: topic.bytes })),
+      ];
+    } catch {
+      return [];
+    }
+  },
+  readNote: (botId, notePath) => readMemoryDoc(botId, notePath).text,
+  writeNote: (_auth, botId, notePath, text) => { journalMemoryWrite(botId, notePath, text, { actor: "person", via: "api" }); },
+}));
 ROUTES.push(createBotPluginRoutes<BotRecord>({
   plugins: botPlugins,
   bot: (id) => store.bot(id) ?? undefined,
@@ -17422,6 +17498,14 @@ _loadPending();
 // clocks in, the server's by default and, on an organization server, each
 // routine's person's own when they chose one.
 setRoutineTimeZone(() => botSettings.server().timeZone ?? undefined);
+/** A solo server's person, from their pages' beats (server/routine-away.ts). */
+const localRoutineAway = new LocalAwayTracker();
+/** Whether the person a routine runs as is there now. Presence on an
+ * organization server (declared further down; read only once routines tick). */
+function routineAwayVerdict(principalId: string | undefined): AwayVerdict {
+  if (IDENTITY.kind === "perspicax") return principalId ? verdictFromPresence(presence.view(principalId).state) : "unknown";
+  return localRoutineAway.verdict(Date.now());
+}
 routines = new RoutineManager({
   timeZoneFor: (routine) => {
     if (IDENTITY.kind !== "perspicax" || !routine.botId) return undefined;
@@ -17599,6 +17683,15 @@ routines = new RoutineManager({
     const detail = `${redactSecretsInText(run.routineName)}: target busy${minutes != null ? ` for ${minutes} minutes` : ""}`;
     const notificationBot = routineSourceOwner(run)?.bot ?? bot;
     notify(deliverableNotification("routine-deferred", notificationBot, routineSourceThread(run) ?? bot.threadId, detail));
+  },
+  // 2026-10-16: "Only when I'm here" (server/routine-away.ts): the routine's
+  // person's presence on an organization server, the page's beat on a solo one.
+  presence: (routine) => routineAwayVerdict(effectiveRunAs(routine)),
+  onAwaySkipsReported: (routine, skips) => {
+    const bot = store.bot(routine.botId);
+    if (!bot) return;
+    notify(deliverableNotification("routine-deferred", bot, bot.threadId, awaySkipsDetail(redactSecretsInText(routine.name), skips),
+      { title: "Routines skipped while you were away" }));
   },
 });
 // A Cloud home is personal (server/cloud-owner.ts): every stored session
@@ -26336,6 +26429,24 @@ ROUTES.push(createPresenceRoutes({
   hidden: presenceHiddenFor,
   heartbeat: (principalId, sessionId, beat) => presence.heartbeat(principalId, sessionId, beat),
 }));
+// "Only when I'm here" routines (server/routine-away.ts, routes/routine-away.ts).
+ROUTES.push(createRoutineAwayRoutes<Routine>({
+  organization: () => IDENTITY.kind === "perspicax",
+  beat: (beat) => {
+    localRoutineAway.beat(beat, Date.now());
+    return localRoutineAway.verdict(Date.now());
+  },
+  verdict: (auth) => routineAwayVerdict(auth.kind === "session" ? auth.session.principalId?.trim() || undefined : undefined),
+  routineFor: (auth, id) => {
+    const routine = routines?.listRoutines().find((candidate) => candidate.id === id);
+    if (!routine) return undefined;
+    if (auth.kind !== "session" || auth.scopes.includes("admin")) return routine;
+    const viewer = auth.session.principalId?.trim().toLowerCase();
+    return viewer && effectiveRunAs(routine)?.toLowerCase() === viewer ? routine : undefined;
+  },
+  clear: (id) => routines?.clearAwaySkips(id) ?? null,
+  onWire: (routine) => routineOnWire(routine),
+}));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
   // A person's Perspicax avatar (personAvatarUrl), read through the link and
@@ -29298,6 +29409,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // authorization (routes/media-widgets.ts), so AVPlayer, <video> and a
     // cast receiver can play without the session's header or cookie.
     if (await handleMediaProxy(req, res, path, method)) return;
+    // A bot template's public link: its signed token is the authorization
+    // for one read-only template (routes/template-links.ts).
+    if (handleTemplateLinkPublic(templateLinks, req, res, path, method)) return;
     const gate = resolveRequestAuth(req, {
       sessions,
       cookieName: SESSION_COOKIE,
