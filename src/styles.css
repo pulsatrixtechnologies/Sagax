@@ -2202,6 +2202,20 @@ body {
   /* The drawer still moves, it just arrives instantly. */
   aside { transition: none; }
 }
+/* Sidebar thread rows (SidebarThreadRow.tsx, the `group/thread` row): an
+   off-screen row is neither laid out nor painted until it scrolls near the
+   view, so a long thread list costs only what shows (Grok Bot does the same
+   on its rows). `auto` remembers each row's last height once drawn; 32px is
+   a comfortable row before that (compact rows are 28px). The row's menu is a
+   portal and its drag preview the browser's, so the paint containment clips
+   nothing but the focus ring's outer pixel, which the clip margin gives back.
+   scrollIntoView (useRevealedThreadRow) renders the row it scrolls to. */
+[data-sidebar] .group\/thread {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 32px;
+  overflow-clip-margin: 2px;
+}
+
 /* View transitions between main views (src/lib/view-transitions.ts). Only
    the main column is named, and only while a navigation plays, so the
    sidebar and everything else just cross-fade quickly as the root. The old

@@ -101,3 +101,15 @@ describe("no layout property animates where a transform or a clip does the job",
     }
   });
 });
+
+describe("sidebar thread rows off screen cost nothing", () => {
+  it("each row skips layout and paint until it nears the view, with a remembered height", () => {
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    const rule = css.match(/\[data-sidebar\] \.group\\\/thread \{([^}]*)\}/)?.[1] ?? "";
+    expect(rule).toContain("content-visibility: auto;");
+    expect(rule).toContain("contain-intrinsic-block-size: auto 32px;");
+    // the row the rule targets is still the thread row's own box
+    const row = readFileSync(new URL("../components/SidebarThreadRow.tsx", import.meta.url), "utf8");
+    expect(row).toContain('"group/thread relative flex min-w-0 items-center rounded-lg"');
+  });
+});
