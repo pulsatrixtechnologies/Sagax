@@ -231,7 +231,7 @@ const sagax = {
   name: "sagax",
   port: 9434,
   prepare() {
-    const app = opts["sagax-app"];
+    const app = this.appPath ?? opts["sagax-app"];
     const fixture = opts.fixture;
     if (!app || !existsSync(app)) throw new Error("--sagax-app <staged Sagax.app> is required (scripts/perf/stage-app.mjs)");
     if (!fixture || !existsSync(path.join(fixture, "perf-fixture.json"))) throw new Error("--fixture <dir> from scripts/perf/seed-fixture.ts is required");
@@ -327,6 +327,12 @@ const grok = {
 };
 
 const ADAPTERS = { sagax, grok };
+// Two Sagax builds side by side (before/after a change), each with the same
+// fixture: --apps sagax:before,sagax:after,grok --sagax-app before=A.app,after=B.app
+const sagaxBuilds = new Map((opts["sagax-app"] ?? "").split(",").filter((x) => x.includes("=")).map((x) => x.split("=")));
+for (const [label, appPath] of sagaxBuilds) ADAPTERS[`sagax:${label}`] = { ...sagax, name: `sagax:${label}`, kind: "sagax", appPath };
+sagax.kind = "sagax";
+grok.kind = "grok";
 
 // ------------------------------------------------------------- session -----
 class Session {
@@ -421,7 +427,7 @@ async function launch(adapter, round) {
     await sleep(25);
   }
   if (readyAt === null) { killTree(child.pid); throw new Error(`${adapter.name}: never became interactive`); }
-  if (adapter.name === "sagax" && adapter.master) {
+  if (adapter.kind === "sagax" && adapter.master) {
     const advanced = await cdp.eval(`localStorage.getItem("sagax.interfaceMode.v1")`);
     if (advanced !== "advanced") throw new Error("sagax: Advanced mode not set before first paint");
   }
@@ -538,7 +544,7 @@ const SCENARIOS = {
     await s.escape();
     await sleep(300);
     // Sagax shows Connect apps in the main area: go back to a conversation.
-    if (s.a.name === "sagax" && (await s.cdp.eval(`!!document.getElementById("plugins-title")`))) {
+    if (s.a.kind === "sagax" && (await s.cdp.eval(`!!document.getElementById("plugins-title")`))) {
       await s.mouse(await s.center(s.a.row(s.a.bots[0])));
       await sleep(400);
     }
@@ -573,7 +579,7 @@ const SCENARIOS = {
   },
   async scroll(s) {
     const lt = s.a.longThread;
-    if (s.a.name === "sagax") {
+    if (s.a.kind === "sagax") {
       // a read bot folds its threads: open the bot, then the thread
       await s.mouse(await s.center(s.a.row(lt.bot)));
       await sleep(600);

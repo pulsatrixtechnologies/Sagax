@@ -81,9 +81,9 @@ keep the per-launch folders.
 
 `results.json` holds every sample (`apps.<app>.cold|warm.<scenario>[]`, the
 startup and memory samples) and `summary`, the median and p95 per scenario.
-Compare two builds by staging each into its own `.app` and running the bench
-on each in turn, with Grok Bot in both runs as the reference that tells how
-much the machine itself moved between them.
+Compare two builds in the same run, in alternation with Grok Bot as the
+reference: stage each into its own `.app`, then
+`--apps sagax:before,sagax:after,grok --sagax-app before=/tmp/A.app,after=/tmp/B.app`.
 
 ## Limits
 
