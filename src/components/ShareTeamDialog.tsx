@@ -275,7 +275,7 @@ export function ShareTeamDialog({ team, onClose }: { team: string; onClose: () =
         }}>
         <header className={WINDOW_HEADER}>
           <div className="flex min-w-0 items-center gap-1.5">
-            <h2 id="share-team-title" className={`${WINDOW_TITLE} min-w-0 truncate`}>{t("teamShare.title", { name: team || t("teamLibrary.general") })}</h2>
+            <h2 id="share-team-title" className={`${WINDOW_TITLE} min-w-0`}>{t("teamShare.title", { name: team || t("teamLibrary.general") })}</h2>
             <HelpTip label={t("settings.moreAbout", { title: t("teamShare.title", { name: team || t("teamLibrary.general") }) })}>{t("teamShare.intro")}</HelpTip>
           </div>
           <button aria-label={t("teamShare.close")} disabled={saving} onClick={onClose} className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
@@ -299,7 +299,7 @@ export function ShareTeamDialog({ team, onClose }: { team: string; onClose: () =
             <fieldset disabled={saving} className="min-w-0">
               <SettingsGroup groupId="share-team-choices" title={t("teamShare.choices")}>
                 <SwitchRow className="px-3.5 py-2.5" label={t("teamShare.includePictures")} checked={includePictures} onChange={setIncludePictures} />
-                <SwitchRow className="px-3.5 py-2.5" label={t("teamShare.includeNotes")} description={notesLine(includeMemory)} checked={includeMemory} onChange={setIncludeMemory} />
+                <SwitchRow className="px-3.5 py-2.5" label={t("teamShare.includeNotes")} help={notesLine(includeMemory)} checked={includeMemory} onChange={setIncludeMemory} />
                 <FoldRow cardId="share-team.skills" label={t("teamShare.includeSkills")} count={available?.length}>
                   <ShareSkillChoices available={available ?? []} ticked={ticked} counted={available !== null} onToggle={toggleSkill} />
                 </FoldRow>

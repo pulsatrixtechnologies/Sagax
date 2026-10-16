@@ -140,7 +140,7 @@ export function TeamMemoryDialog({ section, label, onClose }: { section: string;
         <header className={WINDOW_HEADER}>
           <div className="flex min-w-0 items-center gap-1.5">
             <Brain size={16} aria-hidden="true" className="shrink-0 text-ink-secondary" />
-            <h2 id="team-memory-title" className={`${WINDOW_TITLE} min-w-0 truncate`}>
+            <h2 id="team-memory-title" className={`${WINDOW_TITLE} min-w-0`}>
               {t("teamMemory.title", { label })}
             </h2>
             <HelpTip label={t("settings.moreAbout", { title: t("teamMemory.title", { label }) })}>{t("teamMemory.intro")}</HelpTip>

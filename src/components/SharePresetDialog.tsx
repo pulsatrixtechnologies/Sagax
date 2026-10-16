@@ -163,7 +163,7 @@ export function SharePresetDialog({ onClose }: { onClose: () => void }) {
         }}>
         <header className={WINDOW_HEADER}>
           <div className="flex min-w-0 items-center gap-1.5">
-            <h2 id="share-preset-title" className={`${WINDOW_TITLE} min-w-0 truncate`}>{t("presetShare.title")}</h2>
+            <h2 id="share-preset-title" className={`${WINDOW_TITLE} min-w-0`}>{t("presetShare.title")}</h2>
             <HelpTip label={t("settings.moreAbout", { title: t("presetShare.title") })}>{t("presetShare.intro")}</HelpTip>
           </div>
           <button aria-label={t("presetShare.close")} disabled={saving} onClick={onClose} className={WINDOW_CLOSE}><X size={18} className="pointer-events-none" /></button>
