@@ -1,7 +1,7 @@
 import { killCliTree, spawnCli } from "./procs.ts";
 import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
 import { randomBytes } from "node:crypto";
-import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formStaysOnOrigin, nonceSelector, parseFillArguments, parseProbe, probeScript, problemText, SecretRedactor } from "./credential-fill.ts";
+import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formStaysOnOrigin, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript } from "./credential-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
 
 export interface BrowserSpawnSpec {
@@ -76,15 +76,27 @@ export interface CredentialFillAccess {
   armed(): boolean;
 }
 
+/** The bot's script, run only if the page is still on `origin`: the check is
+ * in the same evaluation, so nothing can switch the document in between. */
+function guardScript(params: unknown, origin: string): unknown {
+  const call = params as { arguments?: Record<string, unknown> } | null;
+  const script = call?.arguments?.script;
+  if (typeof script !== "string") return params;
+  const guard = `if (location.origin !== ${JSON.stringify(origin)}) throw new Error("The page changed before the script ran; nothing ran.");\n`;
+  return { ...call, arguments: { ...call!.arguments, script: guard + script } };
+}
+
 /** Tools that run the bot's own code in the page or reach into frames. */
 function scriptTool(name: string | undefined): boolean {
   return typeof name === "string" && /eval|script|evaluate|frame|init|inject|addstyle|add_style|cdp/i.test(name);
 }
+const BROWSER_FILLING = "The browser is busy typing a saved login. Try again in a moment.";
+const EXCLUSIVE_WAIT_MS = 15_000;
+const SCRIPTS_OFF_AFTER_FILL = "Scripts in the page are turned off in this browser since Sagax filled a saved login in it, so nothing can read it back. Use snapshots, clicks, fills and get_text, or call restart_browser to start a clean browser.";
 const SCRIPTS_OFF_WHILE_ALLOWED = "Scripts in the page are turned off in this browser while you are allowed to use a saved login, so nothing can capture it. Use snapshots, clicks, fills and get_text.";
 const SCREENSHOT_AFTER_FILL_REFUSAL = "Screenshots are turned off on a site where Sagax filled a saved credential, so the value cannot appear in an image. Use a snapshot or get_text here.";
 
 const FIELD_NAMES: Record<VaultFillField, string> = { username: "user name", password: "password", totp: "one-time code", apiKey: "API key" };
-const EVAL_AFTER_FILL_REFUSAL = "agent_browser_eval is turned off on a site where Sagax filled a saved credential, so a script cannot read it back. Use snapshots, clicks and get_text here, or move to another site.";
 
 function toolText(text: string, isError = false): { content: Array<{ type: "text"; text: string }>; isError?: true } {
   return { content: [{ type: "text", text }], ...(isError ? { isError: true as const } : {}) };
@@ -282,6 +294,9 @@ interface Gate {
    * uncertainty behind: only a restart clears that. */
   lostCall: string | null;
   closing: boolean;
+  /** A fill_credential holds the session alone: every other agent action is
+   * refused until it ends, so no tab switch or script lands between its steps. */
+  exclusive: boolean;
   changed: Set<() => void>;
 }
 
@@ -318,7 +333,7 @@ export class BrowserRuntime {
   private gate(session: string): Gate {
     let gate = this.gates.get(session);
     if (!gate) {
-      gate = { owner: null, ready: false, releasing: false, agents: 0, humans: 0, uncertain: false, lostCall: null, closing: false, changed: new Set() };
+      gate = { owner: null, ready: false, releasing: false, agents: 0, humans: 0, uncertain: false, lostCall: null, closing: false, exclusive: false, changed: new Set() };
       this.gates.set(session, gate);
     }
     return gate;
@@ -338,6 +353,7 @@ export class BrowserRuntime {
     if (gate.owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
     if (gate.uncertain) throw new Error(BROWSER_INTERRUPTED);
     if (gate.closing) throw new Error("The browser is closing. Try again shortly.");
+    if (gate.exclusive) throw new Error(BROWSER_FILLING);
     gate.agents++;
     try {
       const result = await fn();
@@ -422,15 +438,22 @@ export class BrowserRuntime {
         if (method === "tools/call" && toolName === FILL_CREDENTIAL_TOOL) {
           return await this.fillCredential(session, entry.client, params, beforeDispatch, credentials);
         }
+        let guardedParams = params;
         if (method === "tools/call" && scriptTool(toolName)) {
-          // While the bot may use a saved login, no script of its own runs
-          // anywhere in this browser; before that, the origin is recorded so
-          // a later fill there refuses (a listener could still be waiting).
+          // While the bot may use a saved login, and in a browser where one
+          // was filled (until a restart), no script of its own runs at all.
+          // Otherwise the origin it runs on is recorded, and the script is
+          // guarded in the same evaluation, so a later fill there refuses
+          // (a listener could still be waiting) and a tab switch in between
+          // cannot make it run on another document than the one recorded.
           if (credentials?.armed()) return toolText(SCRIPTS_OFF_WHILE_ALLOWED, true);
+          if (this.redactor.hasTaint(session)) return toolText(SCRIPTS_OFF_AFTER_FILL, true);
+          if (toolName !== "agent_browser_eval") return toolText("This tool is not available in Sagax's browser.", true);
           const origin = await this.engineOrigin(entry.client);
           beforeDispatch?.();
-          if (!origin || this.redactor.isTainted(session, origin)) return toolText(EVAL_AFTER_FILL_REFUSAL, true);
+          if (!origin) return toolText("The page's address could not be read; the script did not run.", true);
           this.redactor.scriptedOn(session, origin);
+          guardedParams = guardScript(params, origin);
         }
         if (method === "tools/call" && toolName === "agent_browser_screenshot" && this.redactor.hasTaint(session)) {
           const origin = await this.engineOrigin(entry.client);
@@ -439,7 +462,7 @@ export class BrowserRuntime {
         }
         // The model sees slimmed schemas and text-only, bounded results; the
         // launch/session parameters OMB owns never reach the engine from a call.
-        const request = method === "tools/call" ? stripHarnessOwnedArguments(params) : params;
+        const request = method === "tools/call" ? stripHarnessOwnedArguments(guardedParams) : params;
         // Read the page around an action with eval, not a snapshot: a
         // snapshot renumbers every @eN ref the model holds. A failed read only
         // leaves the change out; a lost transport still engages recovery.
@@ -538,8 +561,9 @@ export class BrowserRuntime {
     }
   }
 
-  /** The active page's URL as the engine knows it (CDP), never as page
-   * script reports it. Empty when it cannot be read. */
+  /** The active page's URL as the engine reads it (location.href, which a
+   * page cannot redefine, through agent_browser_get_url), never as a page
+   * script reports it in its own answer. Empty when it cannot be read. */
   private async engineUrl(client: BrowserClient): Promise<string> {
     const text = firstText(await client.rpc("tools/call", { name: "agent_browser_get_url", arguments: {} })).trim();
     try { return new URL(text).href; } catch { return ""; }
@@ -550,17 +574,47 @@ export class BrowserRuntime {
     try { return href ? new URL(href).origin : ""; } catch { return ""; }
   }
 
-  /** fill_credential (server/credential-fill.ts). The page's address comes
-   * from the engine, not from page script; a probe with no secret marks the
-   * target in the top document; the vault answers only for a granted bot on
-   * a bound site; the engine types the value itself (agent_browser_fill:
-   * CDP input, no page-visible script carries it), into the marked element
-   * only, after the address is read again. The result names the item and
-   * the field, never the value. */
+  /** Hold the session alone: new agent actions are refused, then wait for
+   * those already running (this one aside) to end. False on timeout. */
+  private async holdExclusive(session: string): Promise<boolean> {
+    const gate = this.gate(session);
+    if (gate.exclusive) return false;
+    gate.exclusive = true;
+    const deadline = Date.now() + EXCLUSIVE_WAIT_MS;
+    while (gate.agents > 1) {
+      if (Date.now() > deadline || gate.closing || gate.owner !== null) {
+        gate.exclusive = false;
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return true;
+  }
+
+  /** fill_credential (server/credential-fill.ts), holding the session alone
+   * so no other action (a tab switch, a script) lands between its steps.
+   * The page's address comes from the engine; a probe with no secret marks
+   * the target in the top document; the vault answers only for a granted bot
+   * on a bound site; the value is typed by a strict-mode script that checks,
+   * in the same evaluation and before it touches the value, that it runs in
+   * the top frame of that same origin, on the marked element, focused. The
+   * script goes to the engine as agent_browser_eval, which hands it to the
+   * engine's command over stdin, never on a command line (agent-browser
+   * 0.38.2 mcp.rs call_eval): no process list shows it. The result names the
+   * item and the field, never the value. */
   private async fillCredential(session: string, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess | undefined): Promise<unknown> {
     const request = parseFillArguments(params);
     if (typeof request === "string") return toolText(request, true);
     if (!credentials) return toolText("Saved credentials are not available to you here; nothing was filled.", true);
+    if (!await this.holdExclusive(session)) return toolText(BROWSER_FILLING, true);
+    try {
+      return await this.fillHeld(session, client, request, beforeDispatch, credentials);
+    } finally {
+      this.gate(session).exclusive = false;
+    }
+  }
+
+  private async fillHeld(session: string, client: BrowserClient, request: Exclude<ReturnType<typeof parseFillArguments>, string>, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess): Promise<unknown> {
     const stillOurs = () => {
       beforeDispatch?.();
       if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
@@ -579,13 +633,12 @@ export class BrowserRuntime {
       }
     }
     const nonce = randomBytes(16).toString("hex");
-    const probe = parseProbe(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: probeScript(aim, request.field, nonce), timeoutMs: 5_000 } }));
+    const probe = parseProbe(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: probeScript(aim, request.field, nonce, origin), timeoutMs: 5_000 } }));
     stillOurs();
     if (!probe) return toolText("The page could not be read; nothing was filled.", true);
+    if (probe.problem === "moved") return toolText(problemText("moved", request.field), true);
     if (!probe.top) return toolText(problemText("frame", request.field), true);
     if (probe.problem) return toolText(problemText(probe.problem, request.field), true);
-    if ((await this.engineUrl(client)) !== href) return toolText(problemText("moved", request.field), true);
-    stillOurs();
     if (!formStaysOnOrigin(probe.targets, origin)) return toolText(problemText("cross_origin_form", request.field), true);
     const resolved = await credentials.resolve({ handle: request.credential, field: request.field, pageUrl: href });
     stillOurs();
@@ -594,13 +647,11 @@ export class BrowserRuntime {
     // on, including an error that quotes it, is redacted.
     this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp" });
     this.redactor.taint(session, origin);
-    if ((await this.engineUrl(client)) !== href) return toolText(problemText("moved", request.field), true);
-    stillOurs();
-    // A page that navigated away cannot hold the one-time mark, so the
-    // engine finds no element there and types nothing.
-    const filled = await client.rpc("tools/call", { name: "agent_browser_fill", arguments: { selector: nonceSelector(nonce), text: resolved.value } });
+    const written = parseWrite(await client.rpc("tools/call", {
+      name: "agent_browser_eval", arguments: { script: writeScript(nonce, request.field, origin, resolved.value), timeoutMs: 5_000 },
+    }));
     beforeDispatch?.();
-    if ((filled as { isError?: unknown } | null)?.isError === true) return toolText(problemText("fill_failed", request.field), true);
+    if (written !== "ok") return toolText(problemText(written ?? "fill_failed", request.field), true);
     return toolText(`Filled the ${FIELD_NAMES[request.field]} of "${resolved.label}" on ${new URL(href).host}. You do not see the value; check the page and submit the form when ready.`);
   }
 

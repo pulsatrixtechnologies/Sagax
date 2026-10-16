@@ -3426,22 +3426,27 @@ where the person picks or saves a login and allows it this time (the
 conversation, 15 minutes) or always for that bot; the bot resumes with the
 handle (`server/routes/credential-vault.ts`, `grantedNote`). The browser's
 harness tool `fill_credential` (`server/credential-fill.ts`, run by
-`server/browser-runtime.ts`) reads the page's URL from the engine
-(`agent_browser_get_url`, never page script), focuses the ref, probes the
-page with a script that has no secret (top frame, a fillable input of the top
-document, a password only into `type=password`, where the form posts) and
-marks the target with a one-time attribute, asks the vault (grant and site
-check on the engine's URL), reads the URL again, then has the engine type the
-value (`agent_browser_fill` on the marked element). Sites are exact by
+`server/browser-runtime.ts`) holds the session alone (`holdExclusive`: other
+agent actions are refused, running ones drain), reads the page's URL through
+the engine (`agent_browser_get_url`, `location.href`), focuses the ref,
+probes with a script that has no secret (origin guard first; top frame; a
+fillable input of the top document; a password only into `type=password`;
+where the form posts) and marks the target with a one-time attribute, asks
+the vault (grant and site check on that URL), then writes with a strict-mode
+script (origin guard first, marked element, focused) sent as
+`agent_browser_eval`, which agent-browser passes over stdin: never
+`agent_browser_fill`, whose text lands on a command line. Sites are exact by
 default; `*.example.com` opts into subdomains, `example.com:8443` a port,
 `http://localhost:3000` the only plain http. Every later browser result of
-that session is redacted (value, encodings, user:pass in base64), the bot's
-own script tools are refused in the whole browser while it holds a grant, a
-fill refuses on an origin where a script ran in that browser session, and
-screenshots are refused on a filled site. On a headless server the vault
+that session is redacted (value, encodings, user:pass in base64), script
+tools are refused in the whole browser while the bot holds a grant and,
+after any fill, for every bot until a restart; a bot's eval carries an
+origin guard; a fill refuses on an origin where a script ran in that browser
+session, and screenshots are refused on a filled site. On a headless server the vault
 routes need a paired session (or `SAGAX_CREDENTIAL_VAULT_LOOPBACK=1`). The
 `op` CLI runs only from `/opt/homebrew/bin/op`, `/usr/local/bin/op` or
-`/usr/bin/op`, not writable by others, AgileBits-signed on macOS, with a
+`/usr/bin/op`, with no folder above it writable by others, located again
+before each run, satisfying the AgileBits code requirement on macOS, with a
 short environment.
 One-time codes are computed at fill time (`server/totp.ts`).
 

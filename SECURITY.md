@@ -95,26 +95,36 @@ release.
   from the server's vault key (the OS keychain through Electron safeStorage
   on the desktop, a 0600 key file on a server), one file per person, bound to
   that person. A bot only ever holds an opaque handle: `fill_credential`
-  (`server/credential-fill.ts`) has the browser engine type the value
-  (agent_browser_fill, CDP input; no page-visible script carries it) only
-  for a granted bot (once: that conversation for 15 minutes; always: until
-  revoked), only when the page's address as the engine reports it (never as
-  page script reports it) matches one of the item's sites, into an input of
-  the top document marked by a one-time attribute, never into a frame, never
-  into a form that posts to another origin. Sites are exact by default (host,
+  (`server/credential-fill.ts`) holds the bot's browser session alone (every
+  other action of any bot on that session is refused until it ends), reads
+  the page's address through the engine (`location.href`, which a page
+  cannot redefine, never a value a page script reports), and types the
+  value only for a granted bot (once: that conversation for 15 minutes;
+  always: until revoked), only when that address matches one of the item's
+  sites, into an input of the top document marked by a one-time attribute
+  and holding the focus, never into a frame, never into a form that posts to
+  another origin. The value is typed by a strict-mode script whose first
+  statement checks the top frame and the origin before it names the value;
+  the engine receives that script over stdin (agent-browser's eval), never
+  on a command line, so no process list shows it. Sites are exact by default (host,
   https, port); subdomains only through an explicit `*.example.com`, refused
   on a shared suffix such as `co.uk`; plain http only for an explicit
   `http://localhost:<port>`. While a bot may use a login, its own page
   scripts (eval and any script or frame tool) are refused in its whole
-  browser, a fill is refused on an origin where any bot ran a script in that
-  browser session until a restart, and screenshots are refused on a filled
-  site. Every later browser result is redacted (the value and its common
+  browser; once a value was filled in a browser session, every bot's
+  scripts are refused in it until a restart; a fill is refused on an origin
+  where any bot ran a script in that browser session until a restart; a
+  bot's script carries an origin guard in the same evaluation; screenshots
+  are refused on a filled site. Every later browser result is redacted (the value and its common
   encodings, and user:pass pairs in base64). The vault routes answer the
   desktop's own app, a paired session, or on a headless server a loopback
   caller only when the operator sets `SAGAX_CREDENTIAL_VAULT_LOOPBACK=1`;
   reads are POSTs. The optional 1Password CLI runs only from a fixed install
-  path that nobody else can write, with AgileBits' code signature on macOS,
-  and a short environment with no Sagax or provider key. Any way for a bot,
+  path where neither the file nor any folder above it can be written by
+  others, checked again before every run, satisfying on macOS the code
+  requirement `anchor apple generic and certificate leaf[subject.OU] =
+  "2BUA8C4S2C" and identifier "com.1password.op"`, with a short environment
+  with no Sagax or provider key. Any way for a bot,
   an AI client or another person to read a value back (a tool result, an SSE
   event, a transcript, a log, a loopback request), to fill it on another
   origin, in a frame or into a cross-origin form, or to grant itself an
@@ -122,7 +132,12 @@ release.
   the bound site itself can read what was typed into its own form; a user
   name or a one-time code can appear in a page read before it is redacted
   on another site; on an organization server bots keep their browser
-  session (cookies) across the people they work for.
+  session (cookies) across the people they work for; a process running as
+  the same operating-system user (a bot's shell on the desktop, an engine on
+  Full access) can reach the agent-browser daemon's socket and Chrome's
+  DevTools port directly, and so the pages and what was typed into them:
+  the vault's guarantees are against the model and its tools, not against
+  code already running as that user.
 - **Process spawning.** Spawning must never route user-influenced strings
   through a shell. Report any `shell: true` or `cmd.exe` string-building you
   find.

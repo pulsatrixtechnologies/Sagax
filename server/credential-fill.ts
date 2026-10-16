@@ -2,24 +2,24 @@
 //
 // The bot calls fill_credential with an opaque handle (cred_...), a field
 // and, optionally, the input's @eN ref or a CSS selector. The browser runtime
-// (server/browser-runtime.ts) then, inside one agent action:
+// (server/browser-runtime.ts) then, holding the browser session alone:
 //
-//   1. focuses the ref (a click) when one is given,
-//   2. reads the page with a script that carries no secret: its top-level
-//      URL, whether the script runs in the top frame, and whether a fillable
-//      input in the top document is the target (never an iframe),
-//   3. asks the vault for the value (server/credential-vault.ts): only for a
-//      granted bot and a URL on one of the item's sites over https,
-//   4. types the value with a second script that re-checks, in the page and
-//      in the same synchronous step as the write, that the page is still the
-//      same top-level origin and the target is still the same kind of input.
+//   1. reads the page's URL through the engine (location.href, which a page
+//      cannot redefine), never from a page script's own answer,
+//   2. focuses the ref (a click) when one is given,
+//   3. probes with a script that carries no secret and starts with an
+//      origin and top-frame guard: a fillable input of the top document,
+//      where its form posts; it marks the target with a one-time attribute,
+//   4. asks the vault for the value (server/credential-vault.ts): only for a
+//      granted bot and a URL on one of the item's sites,
+//   5. writes with a strict-mode script whose first statement is the same
+//      guard, then the marked element, focused, gets the value. The script
+//      reaches the engine over stdin (agent_browser_eval), never argv.
 //
-// The value travels from the vault to the browser engine only. The bot's
-// result names the item and the field, never the value, and every later
-// browser result of that session is redacted (SecretRedactor), as are the
-// common encodings of the value. A bot's own agent_browser_eval is refused on
-// an origin where a credential was filled, so a script cannot read the field
-// back. Residual risks: SECURITY.md (Credential vault) and AGENTS.md.
+// The bot's result names the item and the field, never the value; every
+// later browser result of that session is redacted (SecretRedactor), as are
+// the common encodings of the value; scripts are refused in that browser
+// after a fill. Residual risks: SECURITY.md (Credential vault) and AGENTS.md.
 import {
   VAULT_FILL_FIELDS,
   isVaultFillField,
@@ -32,7 +32,7 @@ export const REDACTED_CREDENTIAL = "[credential]";
 export const FILL_CREDENTIAL_TOOL_SPEC = {
   name: FILL_CREDENTIAL_TOOL,
   description:
-    "Fill a login the person saved in Sagax into the current page, without ever seeing it. credential is the handle request_login gave you (cred_...). field is username, password, totp (the current one-time code) or apiKey. target is the input's @eN ref from a snapshot or a CSS selector; omit it to let Sagax find the field (required for apiKey). The value is typed only when the page's top-level address is on the credential's sites over https, never into a frame. You never receive the value: later page reads show it as [credential], and agent_browser_eval is refused on that site. Submit the form yourself with a click afterwards.",
+    "Fill a login the person saved in Sagax into the current page, without ever seeing it. credential is the handle request_login gave you (cred_...). field is username, password, totp (the current one-time code) or apiKey. target is the input's @eN ref from a snapshot or a CSS selector; omit it to let Sagax find the field (required for apiKey). The value is typed only when the page's top-level address is on the credential's sites over https, never into a frame. You never receive the value: later page reads show it as [credential], and page scripts are turned off in this browser until it restarts. Submit the form yourself with a click afterwards.",
   inputSchema: {
     type: "object",
     properties: {
@@ -112,17 +112,20 @@ function judge(found, field) {
   return null;
 }`;
 
-/** The probe: carries no secret and is not trusted for the page's address
- * (the runtime reads the URL from the engine, never from page script). It
- * answers whether it runs in the top frame, why the target would be refused,
- * and where the target's form posts; it marks the target with a one-time
- * attribute so the engine's own fill (agent_browser_fill, typed by the
- * engine, not by a page-visible script) reaches that exact element of the
- * top document. A CSS attribute selector never crosses into a frame. */
-export function probeScript(aim: Aim, field: VaultFillField, nonce: string): string {
-  return `(() => {'use strict';${FINDER}
-const top = window.top === window;
-const found = top ? pick(${JSON.stringify(aim)}, ${JSON.stringify(field)}) : { frame: true };
+/** The guard every script of the fill starts with, before anything else
+ * runs: the top frame of the expected origin. window.top and location are
+ * unforgeable, so a page cannot answer for another one. */
+function originGuard(origin: string, failure: string): string {
+  return `if (window.top !== window || location.origin !== ${JSON.stringify(origin)}) return ${JSON.stringify(failure)};`;
+}
+
+/** The probe: carries no secret. It answers whether it runs in the top
+ * frame of the expected origin, why the target would be refused, and where
+ * the target's form posts; it marks the target with a one-time attribute so
+ * the write reaches that exact element of the top document. */
+export function probeScript(aim: Aim, field: VaultFillField, nonce: string, origin: string): string {
+  return `(() => {'use strict';${originGuard(origin, '{"top":true,"problem":"moved","targets":[]}')}${FINDER}
+const found = pick(${JSON.stringify(aim)}, ${JSON.stringify(field)});
 const problem = judge(found, ${JSON.stringify(field)});
 const targets = [];
 if (!problem) {
@@ -134,8 +137,40 @@ if (!problem) {
     for (const button of Array.from(form.querySelectorAll('[formaction]'))) targets.push(new URL(button.getAttribute('formaction'), location.href).href);
   }
 }
-return JSON.stringify({ top, problem, targets });
+return JSON.stringify({ top: true, problem, targets });
 })()`;
+}
+
+/** The write: strict mode, the origin guard first, then the marked element
+ * of the top document, still the right kind, focused, gets the value. The
+ * answer is a bare word, never the value. */
+export function writeScript(nonce: string, field: VaultFillField, origin: string, value: string): string {
+  return `(() => {'use strict';${originGuard(origin, "moved")}${FINDER}
+const el = document.querySelector(${JSON.stringify(nonceSelector(nonce))});
+if (!el || !el.isConnected || el.ownerDocument !== document) return 'moved';
+const problem = judge({ el }, ${JSON.stringify(field)});
+if (problem) return problem;
+if (document.activeElement !== el) el.focus();
+if (document.activeElement !== el) return 'focus';
+const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)});
+el.dispatchEvent(new Event('input', { bubbles: true }));
+el.dispatchEvent(new Event('change', { bubbles: true }));
+return 'ok';
+})()`;
+}
+
+/** The write's bare answer, or null when the result is anything else. */
+export function parseWrite(result: unknown): string | null {
+  const content = (result as { content?: unknown; isError?: unknown } | null);
+  if (!content || content.isError === true || !Array.isArray(content.content)) return null;
+  const part = (content.content as unknown[]).find((item) => typeof (item as { text?: unknown } | null)?.text === "string") as { text: string } | undefined;
+  try {
+    const value: unknown = JSON.parse(part?.text ?? "");
+    return typeof value === "string" && /^[a-z_]{1,20}$/.test(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface ProbeResult { top: boolean; problem: string | null; targets: string[] }
@@ -193,6 +228,7 @@ export function problemText(problem: string, field: VaultFillField): string {
     case "cross_origin_form": return "This form sends to another site than the page; Sagax does not fill a login into it. Nothing was filled.";
     case "scripted": return "You ran a script on this site in this browser, so Sagax will not fill a saved login here. Call restart_browser, open the page again, then fill without running scripts.";
     case "fill_failed": return "The browser could not type into the field; nothing was filled. Take a new snapshot and pass the input's current ref.";
+    case "focus": return "Another part of the page took the focus from the field; nothing was filled. Try again.";
     default: return "The field could not be filled; nothing was typed.";
   }
 }

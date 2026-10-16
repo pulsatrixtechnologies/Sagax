@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -83,6 +83,32 @@ describe("1Password", () => {
       rmSync(dir, { recursive: true, force: true });
     }
     await expect(locateOp("win32")).resolves.toBeNull();
+  });
+
+  it("refuses a binary under any folder others can write, and locates again before every run", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-op-up-"));
+    const middle = join(dir, "open");
+    const inner = join(middle, "bin");
+    try {
+      mkdirSync(inner, { recursive: true });
+      for (const folder of [dir, inner]) chmodSync(folder, 0o755);
+      chmodSync(middle, 0o777);
+      const file = join(inner, "op");
+      writeFileSync(file, "#!/bin/sh\n");
+      chmodSync(file, 0o755);
+      expect(safeBinaryPath(file)).toBeNull();
+      chmodSync(middle, 0o755);
+      expect(safeBinaryPath(file)).not.toBeNull();
+    } finally {
+      chmodSync(middle, 0o755);
+      rmSync(dir, { recursive: true, force: true });
+    }
+    const locate = vi.fn(located);
+    const exec = vi.fn<ExecFileFn>(async (_command, args) => args[0] === "account" ? JSON.stringify([{ account_uuid: "x" }]) : args[0] === "item" ? "[]" : "2.30.0");
+    const op = new OnePassword({ env: {}, exec, organization: () => false, locate });
+    await op.status(true);
+    await op.listItems();
+    expect(locate.mock.calls.length).toBeGreaterThanOrEqual(exec.mock.calls.length);
   });
 
   it("uses Connect when it is configured", async () => {

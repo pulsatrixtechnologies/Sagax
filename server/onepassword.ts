@@ -54,6 +54,10 @@ export const OP_INSTALL_PATHS: Partial<Record<NodeJS.Platform, readonly string[]
   linux: ["/usr/bin/op", "/usr/local/bin/op"],
 };
 export const AGILEBITS_TEAM_ID = "2BUA8C4S2C";
+export const OP_IDENTIFIER = "com.1password.op";
+/** The designated requirement the binary must satisfy: Apple-issued
+ * Developer ID chain, AgileBits' team, the CLI's own identifier. */
+export const OP_REQUIREMENT = `=anchor apple generic and certificate leaf[subject.OU] = "${AGILEBITS_TEAM_ID}" and identifier "${OP_IDENTIFIER}"`;
 const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 const ENV_ALLOWLIST = ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME"];
 
@@ -62,16 +66,20 @@ function owned(stats: { uid: number }): boolean {
   return stats.uid === 0 || stats.uid === uid;
 }
 
-/** The real path of a file that may run: a regular file whose real path and
- * folder belong to root or to this user and are not writable by group or
- * others. Null otherwise. */
+/** The real path of a file that may run: a regular file belonging to root
+ * or to this user, not writable by group or others, and every folder above
+ * it up to the root the same (a writable folder anywhere above lets someone
+ * swap a folder in). Null otherwise. */
 export function safeBinaryPath(path: string): string | null {
   try {
     const real = realpathSync(path);
     const file = statSync(real);
     if (!file.isFile() || (file.mode & 0o022) !== 0 || !owned(file)) return null;
-    const folder = statSync(dirname(real));
-    if ((folder.mode & 0o022) !== 0 || !owned(folder)) return null;
+    for (let folder = dirname(real); ; folder = dirname(folder)) {
+      const stats = statSync(folder);
+      if ((stats.mode & 0o022) !== 0 || !owned(stats)) return null;
+      if (dirname(folder) === folder) break;
+    }
     return real;
   } catch {
     return null;
@@ -86,12 +94,7 @@ export async function locateOp(platform: NodeJS.Platform = process.platform): Pr
     if (!real) continue;
     if (platform !== "darwin") return real;
     const signed = await new Promise<boolean>((resolve) => {
-      execFile("/usr/bin/codesign", ["--verify", "--strict", real], { timeout: 10_000 }, (verifyError) => {
-        if (verifyError) return resolve(false);
-        execFile("/usr/bin/codesign", ["-dv", "--verbose=2", real], { timeout: 10_000 }, (error, _stdout, stderr) => {
-          resolve(!error && new RegExp(`^TeamIdentifier=${AGILEBITS_TEAM_ID}$`, "m").test(String(stderr)));
-        });
-      });
+      execFile("/usr/bin/codesign", ["--verify", "--strict", "-R", OP_REQUIREMENT, real], { timeout: 10_000 }, (error) => resolve(!error));
     });
     if (signed) return real;
   }
@@ -148,7 +151,6 @@ export class OnePassword {
   private readonly fetch: FetchFn;
   private readonly organization: () => boolean;
   private readonly locate: () => Promise<string | null>;
-  private opPath: Promise<string | null> | null = null;
   private cachedStatus: { at: number; status: OnePasswordStatus } | null = null;
 
   constructor(options: { env?: NodeJS.ProcessEnv; exec?: ExecFileFn; fetch?: FetchFn; organization: () => boolean; locate?: () => Promise<string | null> }) {
@@ -188,9 +190,10 @@ export class OnePassword {
     return env;
   }
 
+  /** Located and checked again before every run: a binary swapped after
+   * the last check is never run on the strength of it. */
   private binary(): Promise<string | null> {
-    this.opPath ??= this.locate().catch(() => null);
-    return this.opPath;
+    return this.locate().catch(() => null);
   }
 
   private async op(args: string[]): Promise<unknown> {
