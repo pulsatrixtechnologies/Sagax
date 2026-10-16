@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, Bell, Check, Coins, Download, ExternalLink, FlaskConical, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, Bell, CalendarDays, Check, Coins, Download, ExternalLink, FlaskConical, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { connectedAppsEnabled, decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -160,6 +160,13 @@ export function memberHidesSection(id: AppSettingsSection, input: {
  * folder on this computer). */
 export function orgMemoryAvailable(): boolean {
   return typeof window !== "undefined" && Boolean(window.ogb?.orgMemory);
+}
+
+/** Automations' entry in the settings nav: shown unless a search excludes it. */
+export function automationsMatch(query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return [t("sidebar.nav.automations"), "automations", "automatisations", "routines", "schedule", "calendar", "calendrier", "webhooks"].some((word) => word.toLowerCase().includes(q));
 }
 
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string, extra: string[] = []): boolean {
@@ -665,6 +672,22 @@ export function SettingsModal() {
               {t(labelKey)}
             </button>
           ))}
+          {/* Automations left the avatar menu for here (JC, 2026-10-16): a
+              link to its own page, not a section of Settings */}
+          {!remoteActive && automationsMatch(query) && (
+            <button
+              type="button"
+              data-settings-automations
+              onClick={() => {
+                dispatch({ type: "toggleAppSettings", open: false });
+                dispatch({ type: "showRoutines" });
+              }}
+              className="flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover motion-reduce:transition-none"
+            >
+              <CalendarDays size={15} strokeWidth={1.5} className="shrink-0" />
+              {t("sidebar.nav.automations")}
+            </button>
+          )}
         </nav>
 
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">

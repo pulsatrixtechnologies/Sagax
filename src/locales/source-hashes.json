@@ -11542,7 +11542,15 @@
       "settings.toolAccess.people.grants": "b3e1c95a4be3eee494bd46fd81a663eb9ce4a37be2b00242c9f4cb6082fba1bc",
       "backup.exportPill": "3664895579f0a7e68c4aa09c91316e20239bc74499010e6423ece40cad7c28f7",
       "backup.restorePill": "a76e13b9839270eb73ed11417f7d8acca55df0ad52065799361631d0fff74f27",
-      "backup.restoreHint": "f496a575066b5b8efa449dbf50aad373912213a533f76809c839efdf9495f3b8"
+      "backup.restoreHint": "f496a575066b5b8efa449dbf50aad373912213a533f76809c839efdf9495f3b8",
+      "sidebar.account.usage": "8d59829c1e15afe1a7fae93e8e5e32d8511bec5fd598a09f4fea6033b31e8a66",
+      "sidebar.account.monthCost": "ed9fa2a8bf519fac5506cc2268b2814f16c1102987dafeb3b19a450a3fbd88aa",
+      "sidebar.account.viewUsage": "2e4ae39a4ee5a0280ead9b65a47f3aafa0eddf25382cd52895b97dda7532015d",
+      "sidebar.account.mobile": "ac8c5d7dbe7542dcd3c0424934feca475c98874fa621162292a1239ac62cb483",
+      "sidebar.account.help": "b79cac926e0b2e347e72cc91d5174037c9e17ae7733fd7bdb570f71b10cd7bfc",
+      "sidebar.account.switchOrganization": "ffe5e5890218331c9644c1a6c6ca99f3238185efbd1cc17e8055b3ad7741c3b0",
+      "sidebar.account.addOrganization": "c220e8cdf0f58ee62e2e3547dbe0f96c3ff24efd4559808c2584a3baebe40961",
+      "sidebar.account.solo": "015681d61bf6e15d688e3d6951c1b9b4dc41bffaf0398790cd9cc6d7751360d7"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

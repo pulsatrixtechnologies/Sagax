@@ -1,6 +1,7 @@
 // The footer row, the way Perspicax lays out its account footer: the avatar
 // and the full name, opening the profile menu. The sidebar's places are rows
 // above it (SidebarPlaces.test.ts), so the tour's `tools` anchor is not here.
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -216,5 +217,15 @@ describe("sidebar footer row", () => {
     expect(html).toContain("width:36px");
     expect(html).not.toContain("data-sidebar-account-row");
     expect(html).not.toContain("width:40px");
+  });
+});
+
+describe("the footer avatar (Grok Bot's foot, 2026-10-16)", () => {
+  it("draws no presence dot on the avatar", () => {
+    fixture.state = { ...fixture.state, config: { ...fixture.state.config, viewer: { principalId: "pr_me" } } as AppState["config"] };
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { avatarOnly: true }));
+    expect(html).not.toContain("data-presence");
+    // the dot only draws once presence is known, so the source says it too
+    expect(readFileSync("src/components/SidebarProfileMenu.tsx", "utf8")).not.toContain("<PresenceDot");
   });
 });

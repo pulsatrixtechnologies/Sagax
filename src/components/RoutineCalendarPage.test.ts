@@ -172,3 +172,13 @@ describe("the routine details modal (JC, 2026-10-08: larger, less vertical)", ()
     expect(empty).not.toContain("min-[720px]:grid");
   });
 });
+
+describe("the Team map button (2026-10-16)", () => {
+  it("opens the team map from the Automations header", () => {
+    const buttons = page();
+    const teamMap = [...buttons.entries()].find(([label]) => label === "Team map" || label === "Carte de l'équipe");
+    expect(teamMap).toBeDefined();
+    teamMap![1].onClick!();
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "showTeamMap" });
+  });
+});

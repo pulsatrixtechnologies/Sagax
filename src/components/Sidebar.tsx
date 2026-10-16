@@ -2907,23 +2907,16 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
   // Grok Bot's foot (JC, 2026-10-15): the avatar and the Connect apps pill,
-  // nothing else. Browse bots moved into the account menu, with Archived
-  // bots when there are any; Team map and Automations were already there.
-  const accountPlaces: SidebarMenuItem[] = remoteClient ? [] : [
-    {
-      key: "browse-bots",
-      label: t("sidebar.browseBots"),
-      icon: <LayoutGrid size={18} />,
-      onSelect: () => dispatch(openBotCatalog()),
-    },
-    ...(archivedBots.length > 0 ? [{
-      key: "archived",
-      label: t("sidebar.archived.title"),
-      icon: <Archive size={18} />,
-      trailing: <span className="text-[11.5px] text-ink-secondary">{archivedBots.length}</span>,
-      onSelect: () => setArchivedBotsOpen(true),
-    }] : []),
-  ];
+  // nothing else. Archived bots, when there are any, join Achievements and
+  // Team map in the account menu; Browse bots is in Connect apps' header
+  // (2026-10-16).
+  const accountPlaces: SidebarMenuItem[] = !remoteClient && archivedBots.length > 0 ? [{
+    key: "archived",
+    label: t("sidebar.archived.title"),
+    icon: <Archive size={18} />,
+    trailing: <span className="text-[11.5px] text-ink-secondary">{archivedBots.length}</span>,
+    onSelect: () => setArchivedBotsOpen(true),
+  }] : [];
   return (
     <SidebarMascotProvider rootRef={sidebarRef}>
     <aside

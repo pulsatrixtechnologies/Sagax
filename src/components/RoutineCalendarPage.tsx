@@ -27,6 +27,7 @@ import {
   Laptop,
   List,
   Loader2,
+  Network,
   Paperclip,
   Pause,
   Play,
@@ -1886,7 +1887,22 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
             <span className="flex size-9 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink"><CalendarDays size={16} /></span>
             <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">Automations</h1>
           </div>
-          {section === "webhooks" && <div className="ml-auto flex items-center gap-2" style={windowNoDragStyle}>{automationActions}</div>}
+          <div className="ml-auto flex items-center gap-2" style={windowNoDragStyle}>
+            {/* Team map left the avatar menu's neighbourhood of Automations
+                (JC, 2026-10-16): it opens from here too */}
+            {!routinesOnly && (
+              <button
+                type="button"
+                data-routines-team-map
+                onClick={() => dispatch({ type: "showTeamMap" })}
+                className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 py-1.5 text-[12px] text-ink hover:bg-raised"
+              >
+                <Network size={13} aria-hidden="true" />
+                {t("sidebar.nav.teamMap")}
+              </button>
+            )}
+            {section === "webhooks" && automationActions}
+          </div>
         </div>
         {section !== "webhooks" && scoped.available && <div className="mt-2" style={windowNoDragStyle}>
           <RoutineScopeBar prefs={scoped.prefs} allowed={scoped.allowed} teams={scoped.facets.teams} owners={scoped.facets.owners} advanced={advanced} onChange={(next) => { scoped.setPrefs(next); setRoutineFilter(undefined); }} />

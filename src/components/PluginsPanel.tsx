@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Loader2, TriangleAlert } from "lucide-react";
 
-import { api, ApiError, useStore } from "@/state/store";
+import { api, ApiError, openBotCatalog, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
 import { isWhopServer } from "@/lib/whop-integration";
@@ -799,6 +799,10 @@ export function PluginsPanel() {
         extraConnected={scope === "bot" ? 0 : claudeConnectors}
         onClose={close}
         onOpenManage={() => setPage({ page: "manage" })}
+        onBrowseBots={remoteClient ? undefined : () => {
+          dispatch({ type: "togglePlugins", open: false });
+          dispatch(openBotCatalog());
+        }}
         onOpenItem={openItem}
         renderAction={renderAction}
         renderBelow={renderBelow}

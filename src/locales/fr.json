@@ -7709,5 +7709,13 @@
   "settings.toolAccess.people.grants": "Autorisations",
   "backup.exportPill": "Exporter",
   "backup.restorePill": "Restaurer",
-  "backup.restoreHint": "Remplace tout ici, une fois le fichier vérifié."
+  "backup.restoreHint": "Remplace tout ici, une fois le fichier vérifié.",
+  "sidebar.account.usage": "Utilisation",
+  "sidebar.account.monthCost": "Coût ce mois-ci",
+  "sidebar.account.viewUsage": "Voir l'utilisation",
+  "sidebar.account.mobile": "Obtenir Sagax sur mobile",
+  "sidebar.account.help": "Aide",
+  "sidebar.account.switchOrganization": "Changer d'organisation",
+  "sidebar.account.addOrganization": "Ajouter une organisation",
+  "sidebar.account.solo": "Cet ordinateur (solo)"
 }

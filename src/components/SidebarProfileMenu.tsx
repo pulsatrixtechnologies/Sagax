@@ -27,26 +27,42 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDownToLine,
+  ArrowLeftRight,
+  BookOpen,
+  Building2,
   CalendarClock,
-  CalendarDays,
   Check,
   CloudDownload,
+  Gauge,
   Info,
   Keyboard,
+  Laptop,
   Loader2,
+  LogOut,
   Network,
+  Plus,
   RefreshCw,
+  ScrollText,
   Settings as SettingsIcon,
   ShieldCheck,
+  Smartphone,
   Trophy,
 } from "lucide-react";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOrgApprovalsCount } from "@/lib/org-approvals";
 
 import { InitialsAvatar } from "./Avatar";
-import { PresenceDot, presenceDotSize } from "./PresenceDot";
 import { AboutDialog } from "./AboutDialog";
-import { SidebarPopoverMenu, type SidebarMenuItem } from "./SidebarPopoverMenu";
+import { SidebarPopoverMenu, type SidebarMenuItem, type SidebarSubmenuEntry } from "./SidebarPopoverMenu";
+import { useServerMode } from "./ServerModeSettings";
+import { api } from "@/state/store";
+import { SAGAX_MOBILE_URL, switchTargets as listSwitchTargets, usageLines as planUsageLines, usagePercent as planUsagePercent, type SwitchTarget, type UsageLine } from "@/lib/account-menu";
+import { connectedPlanRows, type PlanRow, type PlanUsageReport } from "@/lib/plan-usage";
+import { costOf, formatCost, personalUsagePeriods, usageQuery, type PersonalUsageSummary } from "@/lib/usage-personal";
+import { requestReleaseNotes } from "@/lib/release-notes-ui";
+import { serverModeBridge } from "@/lib/launch";
+import { openExternalLink } from "@/lib/app-links";
+import { canViewUsage } from "@/lib/viewer";
 import { ShortcutHint } from "./ShortcutHint";
 import { useStore } from "@/state/store";
 import { useUpdaterState, type UpdaterState } from "@/lib/updater";
@@ -242,59 +258,132 @@ function useUpdateButtonWide(version: string | null): [boolean, (on: boolean) =>
   return [pointer || announcing, setPointer];
 }
 
-/** The footer menu: account-level places (Archived bots) first, then a
- * hairline, then the profile items. Without them it is the profile menu
- * alone. */
+/** The footer menu: the profile items with the account-level places
+ * (Archived bots) added to the group of Achievements and Team map, just
+ * above the hairline. Without places it is the profile menu alone. */
 export function footerMenuItems(places: SidebarMenuItem[], profileItems: SidebarMenuItem[]): SidebarMenuItem[] {
   if (places.length === 0) return profileItems;
-  const [first, ...rest] = profileItems;
-  return first ? [...places, { ...first, separatorBefore: true }, ...rest] : places;
+  const at = profileItems.findIndex((item) => item.separatorBefore);
+  if (at < 0) return [...profileItems, ...places];
+  return [...profileItems.slice(0, at), ...places, ...profileItems.slice(at)];
 }
 
 export interface ProfileMenuHandlers {
   onTeamMap: () => void;
-  onAutomations: () => void;
   onSettings: () => void;
   onAchievements: () => void;
   onShortcuts: () => void;
+  onReleaseNotes: () => void;
   onAbout: () => void;
+  onViewUsage: () => void;
+  onSwitch: (id: string) => void;
+  onAddOrganization: () => void;
+  onSignOut: () => void;
+  onMobile: () => void;
 }
 
-/** Team map, Automations, a hairline, then the account items. Phone and
- * Help Center are not offered here. */
+/** Grok Bot's account menu (JC, 2026-10-16; src/lib/account-menu.ts):
+ * Usage ›, Get Sagax on mobile, Help ›, Settings, Achievements and Team map,
+ * a hairline, Switch organization ›, Sign out. */
 export function profileMenuItems(input: {
-  teamMapLabel: string;
-  automationsLabel: string;
-  settingsLabel: string;
+  /** null: no plan reports a window, so Usage carries no percent */
+  usagePercent: number | null;
+  usageLines: UsageLine[];
+  /** this month's cost of the person's own turns, formatted; null unknown */
+  monthCost: string | null;
+  mobile: boolean;
   achievementsLabel: string | null;
-  aboutLabel: string;
   teamMapActive: boolean;
-  automationsActive: boolean;
   shortcutsTrailing?: ReactNode;
+  /** Check for updates, where the desktop app answers */
   updateItem: SidebarMenuItem | null;
+  /** Switch organization ›: empty where this app has no saved servers */
+  switchTargets: SwitchTarget[];
+  canAddOrganization: boolean;
+  /** Sign out: an organization server only */
+  signOut: boolean;
   handlers: ProfileMenuHandlers;
 }): SidebarMenuItem[] {
+  const usage: SidebarSubmenuEntry[] = [
+    ...input.usageLines.map((line) => ({ key: line.key, label: line.label, subtitle: line.subtitle, value: line.value, info: true })),
+    ...(input.monthCost !== null ? [{ key: "month-cost", label: t("sidebar.account.monthCost"), value: input.monthCost, info: true }] : []),
+  ];
+  const help: SidebarSubmenuEntry[] = [
+    { key: "shortcuts", label: t("sidebar.menu.shortcuts"), icon: <Keyboard size={16} />, trailing: input.shortcutsTrailing, onSelect: input.handlers.onShortcuts },
+    { key: "release-notes", label: t("releaseNotes.menu"), icon: <ScrollText size={16} />, onSelect: input.handlers.onReleaseNotes },
+    ...(input.updateItem ? [{
+      key: "update",
+      label: input.updateItem.label,
+      icon: <RefreshCw size={16} />,
+      disabled: input.updateItem.disabled,
+      onSelect: input.updateItem.onSelect,
+    }] : []),
+    { key: "about", label: t("sidebar.menu.about"), icon: <Info size={16} />, onSelect: input.handlers.onAbout },
+  ];
+  const switching: SidebarSubmenuEntry[] = [
+    ...input.switchTargets.map((target) => ({
+      key: `switch:${target.id}`,
+      label: target.name,
+      icon: target.local ? <Laptop size={16} /> : <Building2 size={16} />,
+      checked: target.active,
+      onSelect: target.active ? undefined : () => input.handlers.onSwitch(target.id),
+    })),
+    ...(input.canAddOrganization ? [{
+      key: "add-organization",
+      label: t("sidebar.account.addOrganization"),
+      icon: <Plus size={16} />,
+      separatorBefore: input.switchTargets.length > 0,
+      onSelect: input.handlers.onAddOrganization,
+    }] : []),
+  ];
+  const lower: SidebarMenuItem[] = [
+    ...(switching.length > 0 ? [{
+      key: "switch-organization",
+      label: t("sidebar.account.switchOrganization"),
+      icon: <ArrowLeftRight size={18} />,
+      submenu: switching,
+      submenuAlign: "bottom" as const,
+      submenuWidth: 228,
+      onSelect: () => {},
+    }] : []),
+    ...(input.signOut ? [{
+      key: "sign-out",
+      label: t("settings.serverMode.signOut"),
+      icon: <LogOut size={18} />,
+      onSelect: input.handlers.onSignOut,
+    }] : []),
+  ];
+  if (lower[0]) lower[0] = { ...lower[0], separatorBefore: true };
   return [
     {
-      key: "team-map",
-      label: input.teamMapLabel,
-      icon: <Network size={18} />,
-      active: input.teamMapActive,
-      onSelect: input.handlers.onTeamMap,
+      key: "usage",
+      label: t("sidebar.account.usage"),
+      icon: <Gauge size={18} />,
+      value: input.usagePercent === null ? undefined : t("planUsage.used", { used: input.usagePercent }),
+      submenu: [
+        ...usage,
+        { key: "view-usage", label: t("sidebar.account.viewUsage"), separatorBefore: usage.length > 0, onSelect: input.handlers.onViewUsage },
+      ],
+      submenuWidth: 228,
+      onSelect: () => {},
     },
+    ...(input.mobile ? [{
+      key: "mobile",
+      label: t("sidebar.account.mobile"),
+      icon: <Smartphone size={18} />,
+      onSelect: input.handlers.onMobile,
+    }] : []),
     {
-      key: "routines",
-      tourId: "nav-automations",
-      label: input.automationsLabel,
-      icon: <CalendarDays size={18} />,
-      active: input.automationsActive,
-      onSelect: input.handlers.onAutomations,
+      key: "help",
+      label: t("sidebar.account.help"),
+      icon: <BookOpen size={18} />,
+      submenu: help,
+      onSelect: () => {},
     },
     {
       key: "settings",
-      label: input.settingsLabel,
+      label: t("sidebar.menu.settings"),
       icon: <SettingsIcon size={18} />,
-      separatorBefore: true,
       onSelect: input.handlers.onSettings,
     },
     ...(input.achievementsLabel
@@ -306,21 +395,68 @@ export function profileMenuItems(input: {
         }]
       : []),
     {
-      key: "shortcuts",
-      label: t("sidebar.menu.shortcuts"),
-      icon: <Keyboard size={18} />,
-      trailing: input.shortcutsTrailing,
-      onSelect: input.handlers.onShortcuts,
+      key: "team-map",
+      label: t("sidebar.nav.teamMap"),
+      icon: <Network size={18} />,
+      active: input.teamMapActive,
+      onSelect: input.handlers.onTeamMap,
     },
-    ...(input.updateItem ? [input.updateItem] : []),
-    {
-      key: "about",
-      label: input.aboutLabel,
-      icon: <Info size={18} />,
-      separatorBefore: true,
-      onSelect: input.handlers.onAbout,
-    },
+    ...lower,
   ];
+}
+
+/** Calls onOpen once the menu it sits in is open. */
+function WhenOpen({ open, onOpen }: { open: boolean; onOpen: () => void }) {
+  useEffect(() => { if (open) onOpen(); }, [open, onOpen]);
+  return null;
+}
+
+interface AccountMenuData {
+  percent: number | null;
+  lines: UsageLine[];
+  monthCost: string | null;
+  targets: SwitchTarget[];
+}
+
+/** Usage ›'s plan windows (GET /api/plan-usage) and this month's cost (GET
+ * /api/me/usage, or /api/usage?mine=1 on an older server), the same reads
+ * as Settings > Usage; and Switch organization ›'s saved servers. Read once
+ * the menu first opens; each part stays empty when it cannot be read. */
+function useAccountMenuData(enabled: boolean): AccountMenuData {
+  const { state } = useStore();
+  const org = usePerspicaxOrg();
+  const plans = enabled && (org !== null || canViewUsage(state.config));
+  const [rows, setRows] = useState<PlanRow[]>([]);
+  const [monthCost, setMonthCost] = useState<string | null>(null);
+  const [environments, setEnvironments] = useState<Parameters<typeof listSwitchTargets>[0]>(null);
+  useEffect(() => {
+    if (!plans) return;
+    let alive = true;
+    void api<PlanUsageReport>("/api/plan-usage").then((report) => { if (alive) setRows(connectedPlanRows(report)); }, () => {});
+    return () => { alive = false; };
+  }, [plans]);
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    const month = personalUsagePeriods().month;
+    void api<PersonalUsageSummary>(usageQuery(month, "day"))
+      .catch(() => api<PersonalUsageSummary>(usageQuery(month, "day", true)))
+      .then((summary) => { if (alive) setMonthCost(formatCost(costOf(summary))); }, () => {});
+    void Promise.resolve(window.ogb?.environments?.state())
+      .then((next) => { if (alive && next) setEnvironments(next); }, () => {});
+    return () => { alive = false; };
+  }, [enabled]);
+  return {
+    percent: planUsagePercent(rows),
+    lines: planUsageLines(rows, {
+      weekly: t("planUsage.weekly"),
+      fiveHour: t("planUsage.fiveHour"),
+      used: (used) => t("planUsage.used", { used }),
+      resetsIn: (when) => t("planUsage.resetsIn", { when }),
+    }),
+    monthCost,
+    targets: listSwitchTargets(environments, t("sidebar.account.solo")),
+  };
 }
 
 export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine = true }: {
@@ -334,8 +470,10 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   memberLine?: boolean;
 }) {
   const { state, dispatch } = useStore();
-  const selfPrincipalId = viewerActorId(state.config);
   const update = useUpdateItem();
+  // the menu's figures (plan, cost, saved servers) are read the first time
+  // it opens, not with every sidebar
+  const [menuOpened, setMenuOpened] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const achievements = useAchievements();
@@ -370,19 +508,23 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   });
 
   const routineAttention = state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt);
+  const account = useAccountMenuData(menuOpened);
+  const serverMode = useServerMode();
+  const lockedServer = serverMode?.active === true;
   const profileItems = profileMenuItems({
-    teamMapLabel: t("sidebar.nav.teamMap"),
-    automationsLabel: t("sidebar.nav.automations"),
-    settingsLabel: t("sidebar.menu.settings"),
+    usagePercent: account.percent,
+    usageLines: account.lines,
+    monthCost: account.monthCost,
+    mobile: SAGAX_MOBILE_URL !== null,
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
-    aboutLabel: t("sidebar.menu.about"),
     teamMapActive: state.activeView === "team-map",
-    automationsActive: state.activeView === "routines",
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
-    updateItem: update?.item ?? null,
+    updateItem: update ? { ...update.item, label: t("sidebar.update.check") } : null,
+    switchTargets: lockedServer ? [] : account.targets,
+    canAddOrganization: !lockedServer && Boolean(window.ogb?.environments),
+    signOut: lockedServer,
     handlers: {
       onTeamMap: () => dispatch({ type: "showTeamMap" }),
-      onAutomations: () => dispatch({ type: "showRoutines" }),
       onSettings: () => dispatch({ type: "toggleAppSettings" }),
       onAchievements: openAchievements,
       onShortcuts: () => {
@@ -390,7 +532,16 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
         triggerRef.current?.closest("button")?.focus();
         dispatch({ type: "toggleShortcuts", open: true });
       },
+      onReleaseNotes: () => requestReleaseNotes("browse"),
       onAbout: () => setAboutOpen(true),
+      onViewUsage: () => dispatch({ type: "toggleAppSettings", open: true, section: "usage" }),
+      onSwitch: (id) => { void Promise.resolve(window.ogb?.environments?.switch(id)).catch(() => {}); },
+      onAddOrganization: () => dispatch({ type: "toggleAppSettings", open: true, section: "organization" }),
+      onSignOut: () => {
+        const bridge = serverModeBridge(window.ogb);
+        if (bridge) void bridge.leave().catch(() => {});
+      },
+      onMobile: () => { if (SAGAX_MOBILE_URL) openExternalLink(SAGAX_MOBILE_URL); },
     },
   });
   const items = footerMenuItems(places, profileItems);
@@ -404,15 +555,14 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   const placeAttention = places.some((item) => item.attention);
 
   const avatar = (size: number) => (
-    // the footer avatar, always in its real colours, with your own presence
-    // (organization server: your real state, "hidden from others" when hidden)
+    // the footer avatar, always in its real colours; no presence dot (Grok
+    // Bot's foot, JC 2026-10-16)
     <span className="relative flex shrink-0 rounded-full">
       {profile?.avatarUrl ? (
         <img src={profile.avatarUrl} alt="" style={{ width: size, height: size }} className="rounded-full object-cover" />
       ) : (
         <InitialsAvatar initials={initials} size={size} />
       )}
-      <PresenceDot principalId={selfPrincipalId} className="absolute -bottom-0.5 -right-0.5" ringClassName="border-sidebar" sizeClassName={presenceDotSize(size)} />
     </span>
   );
 
@@ -422,17 +572,19 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     <SidebarPopoverMenu
       items={items}
       ariaLabel={name}
-      menuClassName={avatarOnly ? "left-0 w-64" : undefined}
+      menuClassName={avatarOnly ? "left-0 w-max min-w-[228px] max-w-[300px]" : undefined}
       renderTrigger={({ open }) => avatarOnly ? (
         <span
           ref={triggerRef}
           title={name}
+          data-menu-opened={open || undefined}
           className={cn(
             "relative flex size-9 items-center justify-center rounded-full transition-[filter]",
             open ? "ring-2 ring-accent/60" : "hover:brightness-90",
           )}
         >
           {avatar(36)}
+          <WhenOpen open={open} onOpen={() => setMenuOpened(true)} />
           {noteworthy && (
             <span
               title={noteworthy.label}
@@ -453,6 +605,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
           className="flex w-full min-w-0 items-center gap-2.5 text-left"
         >
           {avatar(40)}
+          <WhenOpen open={open} onOpen={() => setMenuOpened(true)} />
           <span
             data-account-name=""
             className={cn(

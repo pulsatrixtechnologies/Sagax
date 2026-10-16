@@ -12,6 +12,7 @@ import {
 } from "./SidebarProfileMenu";
 import { APP_REPOSITORY, DOCS_URL, HELP_CENTER_URL, LICENSE_URL, platformLabel } from "@/lib/app-links";
 import type { UpdaterState } from "@/lib/updater";
+import { setLocale } from "@/lib/i18n";
 
 const state = (patch: Partial<UpdaterState>): UpdaterState => ({ status: "idle", ...patch }) as UpdaterState;
 
@@ -163,73 +164,96 @@ describe("outward links", () => {
   });
 });
 
-describe("profileMenuItems", () => {
+describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
+  const noop = () => {};
   const handlers = {
-    onTeamMap: () => {},
-    onAutomations: () => {},
-    onSettings: () => {},
-    onAchievements: () => {},
-    onShortcuts: () => {},
-    onAbout: () => {},
+    onTeamMap: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
+    onViewUsage: noop, onSwitch: noop, onAddOrganization: noop, onSignOut: noop, onMobile: noop,
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
-    teamMapLabel: "Team map",
-    automationsLabel: "Automations",
-    settingsLabel: "Settings",
+    usagePercent: 42,
+    usageLines: [{ key: "claude:weekly", label: "Claude Max · Weekly", value: "42% used" }],
+    monthCost: "$3.10",
+    mobile: false,
     achievementsLabel: "Achievements",
-    aboutLabel: "About",
     teamMapActive: false,
-    automationsActive: true,
     updateItem: null,
+    switchTargets: [],
+    canAddOrganization: false,
+    signOut: false,
     handlers,
     ...patch,
   });
 
-  it("has no Release notes row: that lives only in About", () => {
-    const update = { key: "update", label: "Check for updates", onSelect: () => {} };
-    const menu = items({ updateItem: update as never });
-    expect(menu.some((entry) => entry.key === "release-notes" || /release/i.test(entry.label))).toBe(false);
-    expect(menu.map((entry) => entry.key)).toEqual(["team-map", "routines", "settings", "achievements", "shortcuts", "update", "about"]);
+  it("is Usage, Help, Settings, Achievements and Team map, in that order", () => {
+    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "achievements", "team-map"]);
   });
 
-  it("leads with Team map and Automations, then a hairline, and leaves out phone and help", () => {
-    const menu = items();
-    expect(menu.map((entry) => entry.key)).toEqual([
-      "team-map", "routines", "settings", "achievements", "shortcuts", "about",
-    ]);
-    expect(menu.find((entry) => entry.key === "settings")?.separatorBefore).toBe(true);
-    expect(menu.find((entry) => entry.key === "about")?.separatorBefore).toBe(true);
-    expect(menu.find((entry) => entry.key === "team-map")?.separatorBefore).toBeUndefined();
-    expect(menu.find((entry) => entry.key === "routines")).toMatchObject({
-      active: true,
-      tourId: "nav-automations",
+  it("leaves Browse bots, Automations, Check for updates, Keyboard shortcuts and About out of the first level", () => {
+    const update = { key: "update", label: "Check for updates", onSelect: noop };
+    const keys = items({ updateItem: update }).map((entry) => entry.key);
+    for (const gone of ["browse-bots", "routines", "update", "shortcuts", "about"]) expect(keys).not.toContain(gone);
+  });
+
+  it("shows the plan's percent in grey beside Usage, and no percent without a plan", () => {
+    setLocale("fr");
+    try {
+      const usage = items().find((entry) => entry.key === "usage")!;
+      expect(usage.label).toBe("Utilisation");
+      expect(usage.value).toBe("42\u00a0% utilisé");
+      expect(usage.submenu!.map((entry) => entry.key)).toEqual(["claude:weekly", "month-cost", "view-usage"]);
+      expect(usage.submenu!.find((entry) => entry.key === "view-usage")).toMatchObject({ label: "Voir l'utilisation", separatorBefore: true });
+      const bare = items({ usagePercent: null, usageLines: [], monthCost: null }).find((entry) => entry.key === "usage")!;
+      expect(bare.value).toBeUndefined();
+      expect(bare.submenu!.map((entry) => entry.key)).toEqual(["view-usage"]);
+    } finally {
+      setLocale("en");
+    }
+  });
+
+  it("puts Keyboard shortcuts, Release notes, Check for updates and About under Help", () => {
+    const update = { key: "update", label: "Check for updates", onSelect: noop };
+    expect(items({ updateItem: update }).find((entry) => entry.key === "help")!.submenu!.map((entry) => entry.key))
+      .toEqual(["shortcuts", "release-notes", "update", "about"]);
+    expect(items().find((entry) => entry.key === "help")!.submenu!.map((entry) => entry.key))
+      .toEqual(["shortcuts", "release-notes", "about"]);
+  });
+
+  it("offers Get Sagax on mobile only with a link", () => {
+    expect(items().some((entry) => entry.key === "mobile")).toBe(false);
+    expect(items({ mobile: true }).map((entry) => entry.key).indexOf("mobile")).toBe(1);
+  });
+
+  it("ends with a hairline, Switch organization and Sign out where they apply", () => {
+    const menu = items({
+      switchTargets: [{ id: "local", name: "Cet ordinateur (solo)", local: true, active: true }, { id: "gox", name: "GOX", local: false, active: false }],
+      canAddOrganization: true,
+      signOut: true,
     });
-    expect(menu.find((entry) => entry.key === "routines")).not.toHaveProperty("attention");
-    expect(menu.some((entry) => entry.key === "phone" || entry.key === "help")).toBe(false);
-  });
-
-  it("drops achievements when they are not ready and keeps one hairline under the pair", () => {
-    const menu = items({ achievementsLabel: null, automationsActive: false });
-    expect(menu.map((entry) => entry.key)).toEqual(["team-map", "routines", "settings", "shortcuts", "about"]);
-    expect(menu.filter((entry) => entry.separatorBefore).map((entry) => entry.key)).toEqual(["settings", "about"]);
+    expect(menu.map((entry) => entry.key).slice(-2)).toEqual(["switch-organization", "sign-out"]);
+    expect(menu.filter((entry) => entry.separatorBefore).map((entry) => entry.key)).toEqual(["switch-organization"]);
+    const switching = menu.find((entry) => entry.key === "switch-organization")!;
+    expect(switching.submenu!.map((entry) => [entry.key, entry.checked ?? false])).toEqual([
+      ["switch:local", true], ["switch:gox", false], ["add-organization", false],
+    ]);
+    expect(items().some((entry) => entry.separatorBefore)).toBe(false);
   });
 });
 
 describe("footerMenuItems", () => {
-  const item = (key: string) => ({ key, label: key, onSelect: () => {} });
+  const item = (key: string, separatorBefore?: boolean) => ({ key, label: key, separatorBefore, onSelect: () => {} });
 
-  it("lists the places first, then a hairline, then the profile items", () => {
+  it("adds the places to the group just above the hairline", () => {
     const merged = footerMenuItems(
-      [item("team-map"), item("routines"), item("plugins"), item("templates")],
-      [item("phone"), item("settings"), item("about")],
+      [item("archived")],
+      [item("usage"), item("settings"), item("team-map"), item("switch-organization", true), item("sign-out")],
     );
-    expect(merged.map((entry) => entry.key)).toEqual(["team-map", "routines", "plugins", "templates", "phone", "settings", "about"]);
-    expect(merged.find((entry) => entry.key === "phone")?.separatorBefore).toBe(true);
-    expect(merged.filter((entry) => entry.separatorBefore)).toHaveLength(1);
+    expect(merged.map((entry) => entry.key)).toEqual(["usage", "settings", "team-map", "archived", "switch-organization", "sign-out"]);
   });
 
-  it("is the profile menu alone without places", () => {
-    const profile = [item("phone"), item("settings")];
+  it("ends with the places when there is no hairline, and is the profile menu alone without places", () => {
+    expect(footerMenuItems([item("archived")], [item("usage"), item("team-map")]).map((entry) => entry.key)).toEqual(["usage", "team-map", "archived"]);
+    const profile = [item("usage"), item("settings")];
     expect(footerMenuItems([], profile)).toBe(profile);
   });
 });

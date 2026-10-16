@@ -6,7 +6,7 @@ import type { SendKey } from "@/lib/send-key";
 import { en, locales } from "@/locales";
 import type { AppSettingsSection } from "@/state/store";
 import type { Switch } from "./SettingsPrimitives";
-import { chooseThreadsView, SECTIONS, sectionMatches, SettingsModal } from "./SettingsModal";
+import { automationsMatch, chooseThreadsView, SECTIONS, sectionMatches, SettingsModal } from "./SettingsModal";
 
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 
@@ -446,5 +446,14 @@ describe("Settings → Notifications", () => {
     expect(html).not.toContain("How a new message or a nudge gets your attention");
     expect(html).not.toContain("Play a sound when a person writes to you");
     expect(html).not.toMatch(/[–—]/);
+  });
+});
+
+describe("Automations in the settings nav (2026-10-16)", () => {
+  it("is listed with no search, and found by its name or a routine word", () => {
+    expect(automationsMatch("")).toBe(true);
+    expect(automationsMatch("automat")).toBe(true);
+    expect(automationsMatch("routines")).toBe(true);
+    expect(automationsMatch("theme")).toBe(false);
   });
 });

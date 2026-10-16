@@ -157,3 +157,18 @@ export function planRows(report: PlanUsageReport | null): PlanRow[] {
 export function connectedPlanRows(report: PlanUsageReport | null): PlanRow[] {
   return planRows(report).filter((row) => row.state === "windows" || row.state === "no-windows");
 }
+
+/** How long until a window resets ("2d 3h", "45m"); null once past. */
+export function formatResetDistance(resetsAt: string | null, now: number): string | null {
+  if (!resetsAt) return null;
+  const at = Date.parse(resetsAt);
+  if (!Number.isFinite(at) || at <= now) return null;
+  const minutes = Math.floor((at - now) / 60_000);
+  if (minutes < 1) return "less than a minute";
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  return `${mins}m`;
+}

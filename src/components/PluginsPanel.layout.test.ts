@@ -60,6 +60,17 @@ describe("Plugins panel views", () => {
     expect(html).toMatch(/data-plugin-row="app:slack"[\s\S]*?data-plugin-status="connected"/);
   });
 
+  it("main view: Browse bots sits beside the search when the panel offers it (2026-10-16)", () => {
+    const props = {
+      items, loading: false, search: "", onSearch: noop, filter: "all" as const, onFilter: noop, onClose: noop,
+      onOpenManage: noop, onOpenItem: noop, type: "any" as const, onType: noop,
+      renderAction: () => null,
+    };
+    expect(renderToStaticMarkup(createElement(ConnectAppsView, props))).not.toContain("data-plugins-browse-bots");
+    const html = renderToStaticMarkup(createElement(ConnectAppsView, { ...props, onBrowseBots: noop }));
+    expect(html).toMatch(/placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse Bots[\s\S]*?data-plugins-connected/);
+  });
+
   it("manage page: back arrow, Add manually, installed cards with status, private skills", () => {
     const html = renderToStaticMarkup(createElement(ManageView, {
       items, countLabel: () => "1 connector", sourceLabel: (source) => source, onBack: noop, onClose: noop, onOpenItem: noop,

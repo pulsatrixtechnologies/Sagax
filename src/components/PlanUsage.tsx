@@ -12,23 +12,9 @@ import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { perspicaxKeysUrl, usePerspicaxOrg } from "@/lib/perspicax-org";
-import { connectedPlanRows, planRows, type PlanRow, type PlanUsageReport, type PlanWindow } from "@/lib/plan-usage";
+import { connectedPlanRows, formatResetDistance, planRows, type PlanRow, type PlanUsageReport, type PlanWindow } from "@/lib/plan-usage";
 import { usageLocale } from "@/lib/usage-personal";
 import { CompactRow, PILL, SettingsGroup } from "./SettingsPrimitives";
-
-function formatResetDistance(resetsAt: string | null, now: number): string | null {
-  if (!resetsAt) return null;
-  const at = Date.parse(resetsAt);
-  if (!Number.isFinite(at) || at <= now) return null;
-  const minutes = Math.floor((at - now) / 60_000);
-  if (minutes < 1) return "less than a minute";
-  const days = Math.floor(minutes / 1440);
-  const hours = Math.floor((minutes % 1440) / 60);
-  const mins = minutes % 60;
-  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
-  if (hours > 0) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-  return `${mins}m`;
-}
 
 function dueResetDeadlines(report: PlanUsageReport, now: number, seen: Set<string>): string[] {
   const due: string[] = [];

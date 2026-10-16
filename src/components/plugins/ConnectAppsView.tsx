@@ -5,7 +5,7 @@
 // filter row is All plus one Category menu; the connection state refreshes
 // when the panel opens (Refresh stays in Manage).
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Loader2, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, LayoutGrid, Loader2, Search, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -152,6 +152,9 @@ export interface ConnectAppsViewProps {
   sourceLabel?: (source: string) => string;
   onClose: () => void;
   onOpenManage: () => void;
+  /** Browse bots, beside the search (2026-10-16: it left the avatar menu);
+   * absent, no button */
+  onBrowseBots?: () => void;
   onOpenItem: (item: PluginItem) => void;
   /** the row's Add / Connect button */
   renderAction: (item: PluginItem) => ReactNode;
@@ -167,7 +170,7 @@ export interface ConnectAppsViewProps {
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
   const { items, loading, search, onSearch, filter, onFilter, type = "any", onType, extraSources = [], extraConnected = 0, sourceLabel,
-    onClose, onOpenManage, onOpenItem, renderAction, renderBelow, notices, scope, focus } = props;
+    onClose, onOpenManage, onBrowseBots, onOpenItem, renderAction, renderBelow, notices, scope, focus } = props;
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [filter, type, search]);
 
@@ -212,6 +215,17 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
               className="min-w-0 flex-1 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
             />
           </label>
+          {onBrowseBots && (
+            <button
+              type="button"
+              data-plugins-browse-bots
+              onClick={onBrowseBots}
+              className="flex shrink-0 items-center gap-2 rounded-[14px] border border-border px-3.5 py-2.5 text-[13px] leading-[18px] text-ink hover:bg-hover"
+            >
+              <LayoutGrid size={16} className="text-ink-secondary" aria-hidden="true" />
+              <span>{t("sidebar.browseBots")}</span>
+            </button>
+          )}
           <button
             type="button"
             data-plugins-connected

@@ -148,7 +148,7 @@ describe("sections", () => {
 });
 
 describe("foot", () => {
-  it("is the avatar then the Connect apps pill; Browse bots is in the avatar's menu", () => {
+  it("is the avatar then the Connect apps pill; Browse bots left the avatar's menu for Connect apps", () => {
     fixture.state = { bots: [bot("atlas")], sections: [] };
     const html = render();
     const foot = html.slice(html.indexOf("data-sidebar-foot"));
@@ -156,7 +156,6 @@ describe("foot", () => {
     expect(foot.indexOf("data-test-account")).toBeLessThan(foot.indexOf("data-sidebar-connect-apps"));
     expect(foot).toContain(">Connecter des applications</span>");
     expect(foot).not.toContain("data-sidebar-place=");
-    expect(fixture.places.map((place) => place.key)).toEqual(["browse-bots"]);
-    expect(fixture.places[0]?.label).toBe("Parcourir les bots");
+    expect(fixture.places.map((place) => place.key)).toEqual([]);
   });
 });
