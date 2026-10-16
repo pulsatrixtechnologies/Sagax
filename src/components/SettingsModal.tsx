@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, Bell, CalendarDays, Check, Coins, Download, ExternalLink, FlaskConical, KeyRound, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, Bell, Check, Coins, Download, ExternalLink, FlaskConical, KeyRound, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { connectedAppsEnabled, decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -69,7 +69,8 @@ export const ORGANIZATION_ADVANCED_KEYWORDS = ["routines", "conversation", "sche
 
 /** The headings of the settings nav (2026-10-16, JC): Cursor Settings and
  * Grok Bot keep a short rail in a few groups; Sagax names its groups. A
- * heading shows while one of its pages (or Automations, for AI) does. */
+ * heading shows while one of its pages does. Automations lives in the
+ * avatar menu, not here (JC, 2026-10-16). */
 export type SettingsNavGroup = "you" | "ai" | "workspace" | "app";
 
 export const NAV_GROUPS: Array<{ id: SettingsNavGroup; labelKey: LocaleKey }> = [
@@ -180,13 +181,6 @@ export function memberHidesSection(id: AppSettingsSection, input: {
  * folder on this computer). */
 export function orgMemoryAvailable(): boolean {
   return typeof window !== "undefined" && Boolean(window.ogb?.orgMemory);
-}
-
-/** Automations' entry in the settings nav: shown unless a search excludes it. */
-export function automationsMatch(query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return [t("sidebar.nav.automations"), "automations", "automatisations", "routines", "schedule", "calendar", "calendrier", "webhooks"].some((word) => word.toLowerCase().includes(q));
 }
 
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string, extra: string[] = []): boolean {
@@ -685,10 +679,7 @@ export function SettingsModal() {
               heading shows while one of its entries does, a search too. */}
           {NAV_GROUPS.map((group) => {
             const entries = visibleSections.filter((entry) => entry.group === group.id);
-            // Automations left the avatar menu for here (JC, 2026-10-16): a
-            // link to its own page, not a section of Settings, under AI.
-            const automations = group.id === "ai" && !remoteActive && automationsMatch(query);
-            if (entries.length === 0 && !automations) return null;
+            if (entries.length === 0) return null;
             const headingId = `app-settings-nav-${group.id}`;
             return (
               <div key={group.id} role="group" aria-labelledby={headingId} data-settings-nav-group={group.id} className="flex shrink-0 flex-col gap-0.5">
@@ -711,20 +702,6 @@ export function SettingsModal() {
                     {t(labelKey)}
                   </button>
                 ))}
-                {automations && (
-                  <button
-                    type="button"
-                    data-settings-automations
-                    onClick={() => {
-                      dispatch({ type: "toggleAppSettings", open: false });
-                      dispatch({ type: "showRoutines" });
-                    }}
-                    className="flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover motion-reduce:transition-none"
-                  >
-                    <CalendarDays size={15} strokeWidth={1.5} className="shrink-0" />
-                    {t("sidebar.nav.automations")}
-                  </button>
-                )}
               </div>
             );
           })}

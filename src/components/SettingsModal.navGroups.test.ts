@@ -54,14 +54,14 @@ describe("Settings nav groups", () => {
     ]);
   });
 
-  it("draws the headings in order, each over its pages, Automations under AI", () => {
+  it("draws the headings in order, each over its pages; Automations is in the avatar menu, not here", () => {
     const rail = nav(render());
     const headings = [...rail.matchAll(/data-settings-nav-group="([^"]+)"/g)].map((match) => match[1]);
     expect(headings).toEqual(["you", "ai", "workspace", "app"]);
     for (const label of ["Personal", "AI", "Installation", "App"]) expect(rail, label).toContain(`>${label}</div>`);
     const ai = rail.slice(rail.indexOf('data-settings-nav-group="ai"'), rail.indexOf('data-settings-nav-group="workspace"'));
     expect(ai).toContain(">Models and voice</button>");
-    expect(ai).toContain("data-settings-automations");
+    expect(rail).not.toContain("data-settings-automations");
     const app = rail.slice(rail.indexOf('data-settings-nav-group="app"'));
     expect(app.indexOf(">Updates</button>")).toBeLessThan(app.indexOf(">Experimental</button>"));
     // each group is labelled by its heading for assistive tech

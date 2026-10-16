@@ -33,6 +33,7 @@ import {
   CalendarClock,
   Check,
   CloudDownload,
+  CalendarDays,
   Gauge,
   Info,
   Keyboard,
@@ -270,6 +271,7 @@ export function footerMenuItems(places: SidebarMenuItem[], profileItems: Sidebar
 
 export interface ProfileMenuHandlers {
   onTeamMap: () => void;
+  onAutomations: () => void;
   onSettings: () => void;
   onAchievements: () => void;
   onShortcuts: () => void;
@@ -283,8 +285,9 @@ export interface ProfileMenuHandlers {
 }
 
 /** Grok Bot's account menu (JC, 2026-10-16; src/lib/account-menu.ts):
- * Usage ›, Get Sagax on mobile, Help ›, Settings, Achievements and Team map,
- * a hairline, Switch organization ›, Sign out. */
+ * Usage ›, Get Sagax on mobile, Help ›, Settings, Automations, Achievements
+ * and Team map, a hairline, Switch organization ›, Sign out. Automations came
+ * back here from the settings nav (JC, 2026-10-16). */
 export function profileMenuItems(input: {
   /** null: no plan reports a window, so Usage carries no percent */
   usagePercent: number | null;
@@ -294,6 +297,9 @@ export function profileMenuItems(input: {
   mobile: boolean;
   achievementsLabel: string | null;
   teamMapActive: boolean;
+  automationsActive: boolean;
+  /** a failed routine run not seen yet: a dot on Automations */
+  automationsAttention?: boolean;
   shortcutsTrailing?: ReactNode;
   /** Check for updates, where the desktop app answers */
   updateItem: SidebarMenuItem | null;
@@ -385,6 +391,16 @@ export function profileMenuItems(input: {
       label: t("sidebar.menu.settings"),
       icon: <SettingsIcon size={18} />,
       onSelect: input.handlers.onSettings,
+    },
+    {
+      key: "routines",
+      tourId: "nav-automations",
+      label: t("sidebar.nav.automations"),
+      icon: <CalendarDays size={18} />,
+      active: input.automationsActive,
+      attention: input.automationsAttention,
+      attentionTone: "accent" as const,
+      onSelect: input.handlers.onAutomations,
     },
     ...(input.achievementsLabel
       ? [{
@@ -518,6 +534,8 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     mobile: SAGAX_MOBILE_URL !== null,
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
     teamMapActive: state.activeView === "team-map",
+    automationsActive: state.activeView === "routines",
+    automationsAttention: routineAttention,
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
     updateItem: update ? { ...update.item, label: t("sidebar.update.check") } : null,
     switchTargets: lockedServer ? [] : account.targets,
@@ -525,6 +543,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     signOut: lockedServer,
     handlers: {
       onTeamMap: () => dispatch({ type: "showTeamMap" }),
+      onAutomations: () => dispatch({ type: "showRoutines" }),
       onSettings: () => dispatch({ type: "toggleAppSettings" }),
       onAchievements: openAchievements,
       onShortcuts: () => {

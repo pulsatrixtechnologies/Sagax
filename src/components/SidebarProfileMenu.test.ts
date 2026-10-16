@@ -167,7 +167,7 @@ describe("outward links", () => {
 describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
   const noop = () => {};
   const handlers = {
-    onTeamMap: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
+    onTeamMap: noop, onAutomations: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
     onViewUsage: noop, onSwitch: noop, onAddOrganization: noop, onSignOut: noop, onMobile: noop,
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
@@ -177,6 +177,7 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
     mobile: false,
     achievementsLabel: "Achievements",
     teamMapActive: false,
+    automationsActive: false,
     updateItem: null,
     switchTargets: [],
     canAddOrganization: false,
@@ -185,14 +186,24 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
     ...patch,
   });
 
-  it("is Usage, Help, Settings, Achievements and Team map, in that order", () => {
-    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "achievements", "team-map"]);
+  it("is Usage, Help, Settings, Automations, Achievements and Team map, in that order", () => {
+    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "achievements", "team-map"]);
   });
 
-  it("leaves Browse bots, Automations, Check for updates, Keyboard shortcuts and About out of the first level", () => {
+  it("opens Automations from the menu, keeps the tour anchor and the failed-run dot (JC, 2026-10-16)", () => {
+    let opened = 0;
+    const entry = items({ automationsAttention: true, handlers: { ...handlers, onAutomations: () => { opened += 1; } } }).find((item) => item.key === "routines")!;
+    expect(entry.label).toBe("Automations");
+    expect(entry.tourId).toBe("nav-automations");
+    expect(entry.attention).toBe(true);
+    entry.onSelect();
+    expect(opened).toBe(1);
+  });
+
+  it("leaves Browse bots, Check for updates, Keyboard shortcuts and About out of the first level", () => {
     const update = { key: "update", label: "Check for updates", onSelect: noop };
     const keys = items({ updateItem: update }).map((entry) => entry.key);
-    for (const gone of ["browse-bots", "routines", "update", "shortcuts", "about"]) expect(keys).not.toContain(gone);
+    for (const gone of ["browse-bots", "update", "shortcuts", "about"]) expect(keys).not.toContain(gone);
   });
 
   it("shows the plan's percent in grey beside Usage, and no percent without a plan", () => {
