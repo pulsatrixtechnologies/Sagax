@@ -2508,8 +2508,6 @@
   "vm.err.stop": "Não foi possível parar a VM local",
   "vm.err.vpsInventory": "A consulta do inventário VPS falhou ({code})",
   "vm.err.vpsUnavailable": "O inventário de computadores VPS está indisponível",
-  "vm.host.computer": "computador",
-  "vm.host.mac": "Mac",
   "vm.isolation.max": "Máximo de desktops por bot",
   "vm.isolation.maxAria": "Máximo de desktops por bot",
   "vm.isolation.maxDetail": "Limita o armazenamento e o uso de recursos do host; cada desktop em execução pode usar até 4 GB e 2 CPUs.",

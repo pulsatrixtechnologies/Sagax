@@ -829,8 +829,6 @@
   "vm.perBot.deleteBlocked": "ローカル VM を削除する前に、このボットのターンを止めてください",
   "vm.perBot.deleteTitle": "{name} のローカル VM を削除",
   "vm.main.title": "ローカル VM",
-  "vm.host.mac": "Mac",
-  "vm.host.computer": "コンピューター",
   "vm.main.statusUnavailable": "状態を取得できません",
   "vm.main.readyPerBot": "ボットごとのデスクトップに対応可能",
   "vm.main.perBotUnsupported": "ボットごとのモードには Docker か Podman が必要です",

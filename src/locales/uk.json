@@ -1195,8 +1195,6 @@
   "vm.perBot.deleteBlocked": "Зупиніть запит цього бота перед видаленням його локальної ВМ",
   "vm.perBot.deleteTitle": "Видалити локальну ВМ {name}",
   "vm.main.title": "Локальна ВМ",
-  "vm.host.mac": "Mac",
-  "vm.host.computer": "комп'ютер",
   "vm.main.statusUnavailable": "Статус недоступний",
   "vm.main.readyPerBot": "Готово до столів на бота",
   "vm.main.perBotUnsupported": "Режим на бота потребує Docker чи Podman",

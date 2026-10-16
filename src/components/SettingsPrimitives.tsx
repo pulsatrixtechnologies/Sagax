@@ -334,17 +334,23 @@ export function CommandLine({ command, copyLabel = "Copy command" }: { command: 
 export function SettingsGroup({
   title,
   groupId,
+  accessory,
   children,
 }: {
   title: string;
   /** `data-settings-group`, for tests and deep links */
   groupId: string;
+  /** Shown after the heading, as Grok Bot's "Your computer · <name>". */
+  accessory?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} data-settings-group={groupId} className="flex flex-col gap-2 has-[>div:empty]:hidden">
-      <h3 id={headingId} className="px-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{title}</h3>
+      <div className="flex min-w-0 items-center gap-1.5 px-1">
+        <h3 id={headingId} className="shrink-0 text-[13px] font-normal leading-[18px] text-ink-secondary">{title}</h3>
+        {accessory}
+      </div>
       <div className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5 empty:hidden">{children}</div>
     </section>
   );
@@ -483,3 +489,42 @@ export function CompactRow({ label, children, className, rowId }: { label: strin
     </div>
   );
 }
+
+/** A Grok-style row that keeps one short grey line under its label (the
+ * Computer page): label and explanation at the left, the control at the
+ * right. `below` holds what the row opens (a list, a screen, steps). */
+export function DescribedRow({
+  label,
+  description,
+  icon,
+  children,
+  below,
+  rowId,
+}: {
+  label: string;
+  description?: React.ReactNode;
+  icon?: React.ReactNode;
+  children?: React.ReactNode;
+  below?: React.ReactNode;
+  rowId?: string;
+}) {
+  const labelId = useId();
+  return (
+    <div role="group" aria-labelledby={labelId} data-settings-row={rowId} className="px-3.5 py-2.5">
+      <div className="flex min-h-[28px] flex-wrap items-center justify-between gap-x-5 gap-y-2">
+        <div className="flex min-w-0 flex-1 basis-[240px] items-start gap-2">
+          {icon && <span aria-hidden="true" className="mt-px shrink-0 text-ink-secondary">{icon}</span>}
+          <div className="min-w-0">
+            <div id={labelId} className="text-[13px] leading-[18px] text-ink">{label}</div>
+            {description && <div className="mt-0.5 text-[12px] leading-4 text-ink-secondary">{description}</div>}
+          </div>
+        </div>
+        {children && <div className="ml-auto flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">{children}</div>}
+      </div>
+      {below}
+    </div>
+  );
+}
+
+/** Grok Bot's filled red pill, for a reset that erases. */
+export const DANGER_PILL = "ui-button bg-danger font-medium text-danger-ink enabled:hover:brightness-110 disabled:opacity-50";

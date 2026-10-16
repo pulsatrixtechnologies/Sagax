@@ -9,7 +9,7 @@ import { ToolActivity } from "../ToolActivity";
 import { ServerEnvironmentCard } from "./OrgComputerSettings";
 
 describe("Server environment card (Settings > Computer)", () => {
-  it("shows one line, the state, resources, the screen button and Reset only behind the menu", () => {
+  it("shows the state, resources and the screen button, then Reset as its own row with a red pill", () => {
     const markup = renderToStaticMarkup(createElement(ServerEnvironmentCard, {
       initial: {
         configured: true, state: "running", lastUsedAt: Date.UTC(2026, 9, 1, 12), workspaceBytes: 50 * 1048576, overQuota: false,
@@ -20,9 +20,12 @@ describe("Server environment card (Settings > Computer)", () => {
     expect(markup).toContain('data-server-environment="running"');
     expect(markup).toContain("1 CPU, 1024 MB memory, 2048 MB disk");
     expect(markup).toContain("Show the screen");
-    expect(markup).toContain('aria-label="More actions"');
-    // Reset is in the closed "..." menu, and nothing opens a browser window.
-    expect(markup).not.toContain(">Reset<");
+    // Grok Bot's Reset row (0.5.6): a short grey line and a filled red pill;
+    // the confirmation still comes first. Nothing opens a browser window.
+    expect(markup).toContain('data-settings-row="serverEnvironmentReset"');
+    expect(markup).toContain("Reset server environment");
+    expect(markup).toMatch(/<button[^>]*class="ui-button bg-danger[^"]*"[^>]*data-server-environment-reset=""|data-server-environment-reset=""[^>]*class="ui-button bg-danger/);
+    expect(markup).not.toContain('aria-label="More actions"');
     expect(markup).not.toContain("desktop-viewer");
   });
 

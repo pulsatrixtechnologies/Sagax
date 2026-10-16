@@ -18,7 +18,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { Card, CommandLine, cardCount } from "./SettingsPrimitives";
+import { Card, CommandLine, DANGER_PILL, DescribedRow, SettingsGroup, cardCount } from "./SettingsPrimitives";
 import { SettingsText } from "./SettingsLink";
 import { MacLocalControl } from "./MacLocalControl";
 import { cn } from "@/lib/cn";
@@ -1068,7 +1068,7 @@ export function LocalVmAutoStatus({ auto, perBot, busy, onEnsure, onReset }: {
           aria-busy={busy}
           disabled={busy}
           onClick={onEnsure}
-          className="flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1 text-[12.5px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
+          className="ui-button ui-button-primary gap-1.5 font-medium disabled:opacity-50"
         >
           {action === "start" ? <Play size={12} /> : <RotateCcw size={12} />}
           {t(action === "start" ? "vm.auto.start" : "vm.auto.retry")}
@@ -1081,7 +1081,7 @@ export function LocalVmAutoStatus({ auto, perBot, busy, onEnsure, onReset }: {
         disabled={busy}
         onClick={onReset}
         title={perBot ? t("vm.reset.confirmPerBot") : t("vm.reset.confirm")}
-        className="flex items-center gap-1.5 rounded-lg border border-hairline/40 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40"
+        className={DANGER_PILL}
       >
         <RefreshCw size={12} /> {t("vm.reset.action")}
       </button>
@@ -1579,7 +1579,6 @@ export function LocalComputerSection() {
         status?.persistence === "unsafe"),
   );
   const unavailable = !loading && !status;
-  const host = status?.platform === "darwin" ? t("vm.host.mac") : t("vm.host.computer");
   const perBot = status?.mode === "per-bot";
   const perBotRuntimeUnsupported = perBot && status?.runtime === "container";
   const headerReady = perBot ? Boolean(status?.daemonUp && status?.image && !perBotRuntimeUnsupported) : ready;
@@ -1628,57 +1627,59 @@ export function LocalComputerSection() {
       <MacLocalControl />
 
       {!orgBridge && manageComputers && <>
-      <Card
-        collapsible
-        cardId="computer.main"
-        title={t("vm.main.title")}
-        summary={statusText}
-        subtitle={perBot
-          ? t("vm.main.perBotSubtitle", { host })
-          : t("vm.main.sharedSubtitle", { host })}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            aria-live="polite"
-            className={cn(
-              "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px]",
-              headerReady ? "bg-accent/15 text-accent-text" : "bg-control text-ink-secondary",
+      {/* 0.5.6 (JC): Grok Bot's "Bot's computer" group. One row: the
+          Local VM's state in one short grey line, Recheck and Watch as
+          pills; the automatic care and Reset under it. The setup,
+          isolation and safety cards stay below, folded. */}
+      <SettingsGroup title={t("computer.group.bots")} groupId="botsComputer">
+        <div data-settings-card="computer.main">
+          <DescribedRow
+            label={t("vm.main.title")}
+            rowId="localVm"
+            description={(
+              <span aria-live="polite" className="inline-flex items-center gap-1.5" data-local-vm-ready={headerReady ? "yes" : "no"}>
+                {loading ? <Loader2 size={11} className="animate-spin" aria-hidden="true" /> : headerReady ? <Check size={11} className="text-success" aria-hidden="true" /> : <Circle size={7} aria-hidden="true" />}
+                {statusText}
+              </span>
+            )}
+            below={(
+              <>
+                <LocalVmAutoStatus
+                  auto={status?.auto ?? null}
+                  perBot={perBot}
+                  busy={autoBusy}
+                  onEnsure={() => void ensureVm()}
+                  onReset={() => void resetVm()}
+                />
+                {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}
+              </>
             )}
           >
-            {loading ? <Loader2 size={12} className="animate-spin" /> : headerReady ? <Check size={12} /> : <Circle size={9} />}
-            {statusText}
-          </span>
-          <button
-            onClick={() => {
-              setLoading(true);
-              setRefreshKey((key) => key + 1);
-              setInventoryRefreshKey((key) => key + 1);
-            }}
-            disabled={loading || pending !== null}
-            className="flex items-center gap-1.5 rounded-lg border border-hairline/40 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40"
-          >
-            <RefreshCw size={12} /> {t("vm.main.recheck")}
-          </button>
-          {ready && !perBot && (
-            <a
-              href={status?.viewer_url ?? c?.view}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1.5 rounded-lg border border-hairline/40 px-2.5 py-1 text-[12.5px] text-ink hover:bg-control"
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                setRefreshKey((key) => key + 1);
+                setInventoryRefreshKey((key) => key + 1);
+              }}
+              disabled={loading || pending !== null}
+              className="ui-button gap-1.5 disabled:opacity-40"
             >
-              <ExternalLink size={12} /> {t("vm.main.watch")}
-            </a>
-          )}
+              <RefreshCw size={12} aria-hidden="true" /> {t("vm.main.recheck")}
+            </button>
+            {ready && !perBot && (
+              <a
+                href={status?.viewer_url ?? c?.view}
+                target="_blank"
+                rel="noreferrer"
+                className="ui-button gap-1.5"
+              >
+                <ExternalLink size={12} aria-hidden="true" /> {t("vm.main.watch")}
+              </a>
+            )}
+          </DescribedRow>
         </div>
-        <LocalVmAutoStatus
-          auto={status?.auto ?? null}
-          perBot={perBot}
-          busy={autoBusy}
-          onEnsure={() => void ensureVm()}
-          onReset={() => void resetVm()}
-        />
-        {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}
-      </Card>
+      </SettingsGroup>
 
       <Card
         collapsible

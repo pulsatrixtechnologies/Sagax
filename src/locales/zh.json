@@ -827,8 +827,6 @@
   "vm.perBot.deleteBlocked": "删除这个机器人的本地虚拟机前，请先停止它的轮次",
   "vm.perBot.deleteTitle": "删除 {name} 的本地虚拟机",
   "vm.main.title": "本地虚拟机",
-  "vm.host.mac": "Mac",
-  "vm.host.computer": "电脑",
   "vm.main.statusUnavailable": "无法获取状态",
   "vm.main.readyPerBot": "已可用于按机器人分配的桌面",
   "vm.main.perBotUnsupported": "按机器人模式需要 Docker 或 Podman",

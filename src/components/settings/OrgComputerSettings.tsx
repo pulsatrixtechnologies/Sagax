@@ -1,11 +1,15 @@
-// Settings > Computer on an organization server: where bots work (the
-// person's computer, routines, and network), the Local VM on their own computer
-// (found through their desktop app: which runtime, its state, "Set up in one
-// click" with visible steps, install offers) and their server environment
-// (one line, state, resources, Reset behind "..." with a confirmation, and
-// its screen shown here in the app, never in a browser window).
+// Settings > Computer on an organization server (0.5.6: Grok Bot's
+// Computer page, JC). "Your computer" (its name after the heading): whether
+// routines may use it, the network its bots reach through it, the person's
+// other computers, and the recent activity behind a link (#555). Local
+// models stay a folded card of their own (#555). "Bots' computer": the
+// person's server environment (state and resources, its screen shown here
+// in the app, never in a browser window, and Reset as a red pill with a
+// confirmation) and the Local VM on their own computer (found through their
+// desktop app: which runtime, its state, "Set up in one click" with visible
+// steps, install offers). One short grey line under each label.
 import { useEffect, useState } from "react";
-import { Check, Circle, Loader2, MoreHorizontal, X } from "lucide-react";
+import { Check, Circle, Loader2, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { currentDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
@@ -14,7 +18,7 @@ import { t } from "@/lib/i18n";
 import { loadServerEnvironment, resetServerEnvironment, type ServerEnvironmentStatus } from "@/lib/server-environment";
 import { ServerComputerScreen, useDesktopLocalVm } from "../computer/OrgComputerTab";
 import { screenStateLabel } from "../computer/ComputerScreen";
-import { Card } from "../SettingsPrimitives";
+import { DANGER_PILL, DescribedRow, HelpTip, SettingsGroup } from "../SettingsPrimitives";
 import { BotWorkplaceSettings } from "./BotWorkplaceSettings";
 import { LocalModelsSettings } from "./LocalModelsSettings";
 import { serverEnvironmentStateText } from "./MyServerEnvironment";
@@ -25,16 +29,36 @@ export function OrgComputerSettings({ bridge, initialLocal = null, initialServer
   initialServer?: ServerEnvironmentStatus | null;
   confirm?: (text: string) => boolean;
 }) {
+  const desktop = currentDesktop(bridge);
   return (
     <>
-      <BotWorkplaceSettings status={bridge} />
+      <SettingsGroup
+        title={t("computer.group.yours")}
+        groupId="yourComputer"
+        accessory={(
+          <>
+            {desktop && <span className="min-w-0 truncate text-[13px] leading-[18px] text-ink" data-computer-name="">{desktop.name}</span>}
+            <HelpTip label={t("botWorkplace.title")}>{t("botWorkplace.help")}</HelpTip>
+          </>
+        )}
+      >
+        <BotWorkplaceSettings status={bridge} />
+      </SettingsGroup>
       <LocalModelsSettings />
-      <LocalVmCard bridge={bridge} initial={initialLocal} confirm={confirm} />
-      <ServerEnvironmentCard initial={initialServer} confirm={confirm} />
+      <SettingsGroup title={t("computer.group.bots")} groupId="botsComputer">
+        <ServerEnvironmentCard initial={initialServer} confirm={confirm} />
+        <LocalVmCard bridge={bridge} initial={initialLocal} confirm={confirm} />
+      </SettingsGroup>
     </>
   );
 }
 
+function pillClass(primary = false): string {
+  return primary ? "ui-button ui-button-primary font-medium disabled:opacity-50" : "ui-button disabled:opacity-50";
+}
+
+/** The Local VM on the person's own computer: one row (state and runtime,
+ * the setup or repair pill, Recheck), with what it needs below it. */
 function LocalVmCard({ bridge, initial, confirm }: { bridge: DesktopBridgeStatus; initial: DesktopLocalVmStatus | null; confirm: (text: string) => boolean }) {
   const desktop = currentDesktop(bridge);
   const connected = Boolean(desktop?.capabilities?.localVm);
@@ -46,38 +70,33 @@ function LocalVmCard({ bridge, initial, confirm }: { bridge: DesktopBridgeStatus
     if (!confirm(t("localVm.consent.oneClick", { folder: vm.status?.workspace ?? "" }))) return;
     void vm.act("setup");
   };
+  const description = !connected
+    ? <span role="status">{t("localVm.problem.not_connected")}</span>
+    : (
+      <span className="inline-flex flex-wrap items-center gap-x-1.5">
+        <StateDot tone={view.state === "running" ? "ok" : view.state === "error" ? "bad" : "idle"} />
+        <span>{screenStateLabel(view.state)}</span>
+        {vm.status && <span data-runtime-product={vm.status.runtime.product ?? ""}>· {t(runtime.key, { product: runtime.product })}</span>}
+      </span>
+    );
   return (
-    <Card cardId="computer.orgLocalVm" title={t("localVm.title")} subtitle={t("localVm.subtitle")} summary={screenStateLabel(view.state)}>
-      <div className="flex flex-col gap-3 text-[13px]" data-org-local-vm={view.state} data-local-vm-problem={view.problem ?? ""}>
-        {!connected ? (
-          <p role="status" className="text-ink-secondary">{t("localVm.problem.not_connected")}</p>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              <StateChip label={screenStateLabel(view.state)} tone={view.state === "running" ? "ok" : view.state === "error" ? "bad" : "idle"} />
-              {vm.status && <span className="text-[12px] text-ink-secondary" data-runtime-product={vm.status.runtime.product ?? ""}>{t(runtime.key, { product: runtime.product })}</span>}
-            </div>
+    <div data-settings-card="computer.orgLocalVm" data-org-local-vm={view.state} data-local-vm-problem={view.problem ?? ""}>
+      <DescribedRow
+        label={t("localVm.title")}
+        description={description}
+        rowId="localVm"
+        below={connected && (
+          <div className="mt-2 flex flex-col gap-2 text-[13px] empty:hidden">
             {view.problem && view.problem !== "not_connected" && (
               <p className="text-[12px] leading-relaxed text-ink-secondary">{t(localVmProblemKey(view.problem), { product: runtime.product, folder: vm.status?.vm?.folder ?? "" })}</p>
             )}
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={oneClick} disabled={vm.pending !== null || setup?.state === "running" || view.problem === "foreign"}
-                className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50 md:min-h-0">
-                {setup?.state === "running" && <Loader2 size={13} aria-hidden="true" className="animate-spin" />}
-                {setup?.state === "error" ? t("localVm.retry") : view.repair ? t("localVm.repair") : t("localVm.setupOneClick")}
-              </button>
-              <button type="button" onClick={() => void vm.refresh()} disabled={vm.pending !== null}
-                className="min-h-[44px] rounded-lg border border-hairline/40 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40 md:min-h-0">
-                {t("vm.main.recheck")}
-              </button>
-            </div>
             {view.problem === "no_runtime" && (
               <div className="flex flex-col gap-1.5 rounded-lg bg-inset p-3" data-install-offers>
                 <span className="text-[12px] text-ink-secondary">{t(desktop?.platform === "win32" ? "localVm.install.helpWindows" : "localVm.install.help")}</span>
                 <div className="flex flex-wrap gap-2">
                   {installChoices(desktop?.platform).map((choice) => (
                     <button key={choice} type="button" onClick={() => void vm.act("install", { choice })} disabled={vm.pending !== null}
-                      className="min-h-[44px] rounded-lg bg-control px-3 py-1.5 text-[12px] text-ink hover:bg-raised-hover disabled:opacity-50 md:min-h-0">
+                      className="ui-button min-h-[44px] disabled:opacity-50 md:min-h-0">
                       {t(`localVm.install.${choice}`)}
                     </button>
                   ))}
@@ -88,10 +107,23 @@ function LocalVmCard({ bridge, initial, confirm }: { bridge: DesktopBridgeStatus
             {setup?.state === "error" && setup.error && <p role="alert" className="text-[12px] text-danger">{setup.error}</p>}
             {setup?.state === "done" && setup.previousFolder && <p className="text-[12px] text-ink-secondary">{t("localVm.previousFolder", { folder: setup.previousFolder })}</p>}
             {vm.error && <p role="alert" className="text-[12px] text-danger">{vm.error}</p>}
+          </div>
+        )}
+      >
+        {connected && (
+          <>
+            <button type="button" onClick={() => void vm.refresh()} disabled={vm.pending !== null} className={cn(pillClass(), "min-h-[44px] md:min-h-0")}>
+              {t("vm.main.recheck")}
+            </button>
+            <button type="button" onClick={oneClick} disabled={vm.pending !== null || setup?.state === "running" || view.problem === "foreign"}
+              className={cn(pillClass(true), "min-h-[44px] gap-1.5 md:min-h-0")}>
+              {setup?.state === "running" && <Loader2 size={13} aria-hidden="true" className="animate-spin" />}
+              {setup?.state === "error" ? t("localVm.retry") : view.repair ? t("localVm.repair") : t("localVm.setupOneClick")}
+            </button>
           </>
         )}
-      </div>
-    </Card>
+      </DescribedRow>
+    </div>
   );
 }
 
@@ -111,17 +143,15 @@ export function SetupSteps({ steps }: { steps: SetupStep[] }) {
   );
 }
 
-function StateChip({ label, tone }: { label: string; tone: "ok" | "bad" | "idle" }) {
-  return (
-    <span className={cn("rounded-full px-2.5 py-0.5 text-[12px]", tone === "ok" ? "bg-accent/15 text-accent-text" : tone === "bad" ? "bg-danger/10 text-danger" : "bg-control text-ink-secondary")}>{label}</span>
-  );
+function StateDot({ tone }: { tone: "ok" | "bad" | "idle" }) {
+  return <span aria-hidden="true" className={cn("inline-block size-1.5 shrink-0 rounded-full", tone === "ok" ? "bg-success" : tone === "bad" ? "bg-danger" : "bg-ink-secondary/60")} />;
 }
 
-/** The person's server environment, compact: what it is in one line, its
- * state, its resources, the screen on demand, Reset behind "...". */
+/** The person's server environment, as two rows of "Bots' computer":
+ * its state and resources with its screen on demand, then Reset (a red
+ * pill, after a confirmation), as Grok Bot's Update and Reset rows. */
 export function ServerEnvironmentCard({ initial = null, confirm = (text: string) => window.confirm(text) }: { initial?: ServerEnvironmentStatus | null; confirm?: (text: string) => boolean }) {
   const [status, setStatus] = useState<ServerEnvironmentStatus | null>(initial);
-  const [menu, setMenu] = useState(false);
   const [showScreen, setShowScreen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -130,7 +160,6 @@ export function ServerEnvironmentCard({ initial = null, confirm = (text: string)
   };
   useEffect(() => { if (!initial) void load(); }, []);
   const reset = async () => {
-    setMenu(false);
     if (!confirm(t("serverEnvironment.reset.confirm"))) return;
     setBusy(true);
     setError("");
@@ -138,40 +167,45 @@ export function ServerEnvironmentCard({ initial = null, confirm = (text: string)
   };
   const limits = status?.limits;
   const usable = Boolean(status?.configured) && !status?.pendingDeletionAt && status?.state !== "unavailable";
+  const state = serverEnvironmentStateText(status);
   return (
-    <Card cardId="computer.orgServerEnvironment" title={t("serverEnvironment.sectionTitle")} subtitle={t("serverEnvironment.oneLine")} summary={serverEnvironmentStateText(status)}>
-      <div className="flex flex-col gap-3 text-[13px]" data-server-environment={status?.state ?? (status ? "off" : "loading")}>
-        {!status ? <Loader2 size={14} aria-hidden="true" className="animate-spin text-ink-secondary" /> : !status.configured ? (
-          <p role="status" className="text-ink-secondary">{t("serverEnvironment.notConfigured")}</p>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              <StateChip label={serverEnvironmentStateText(status)} tone={status.state === "running" ? "ok" : status.state === "unavailable" ? "bad" : "idle"} />
-              {limits && <span className="text-[12px] text-ink-secondary">{t("serverEnvironment.resourcesValue", { cpus: limits.cpus, memory: limits.memoryMb, disk: limits.diskMb })}</span>}
-              <div className="relative ml-auto">
-                <button type="button" aria-label={t("serverEnvironment.more")} aria-expanded={menu} onClick={() => setMenu((open) => !open)}
-                  className="flex size-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-control hover:text-ink">
-                  <MoreHorizontal size={16} aria-hidden="true" />
-                </button>
-                {menu && (
-                  <div role="menu" className="absolute right-0 top-9 z-10 min-w-40 rounded-lg border border-hairline bg-raised p-1 shadow-md">
-                    <button type="button" role="menuitem" disabled={busy || !usable} onClick={() => void reset()}
-                      className="w-full rounded-md px-2 py-1.5 text-left text-[13px] text-danger hover:bg-control disabled:opacity-50">
-                      {t("serverEnvironment.reset")}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-            <button type="button" disabled={!usable} onClick={() => setShowScreen((open) => !open)} aria-expanded={showScreen}
-              className="ui-button w-fit min-h-[44px] md:min-h-0">
-              {t(showScreen ? "serverEnvironment.hideScreen" : "serverEnvironment.showScreen")}
-            </button>
-            {showScreen && <ServerComputerScreen caption={t("serverEnvironment.sectionTitle")} />}
-          </>
+    <div data-settings-card="computer.orgServerEnvironment" data-server-environment={status?.state ?? (status ? "off" : "loading")}>
+      <DescribedRow
+        label={t("serverEnvironment.sectionTitle")}
+        rowId="serverEnvironment"
+        description={!status
+          ? <Loader2 size={12} aria-hidden="true" className="animate-spin" />
+          : !status.configured
+            ? <span role="status">{t("serverEnvironment.notConfigured")}</span>
+            : (
+              <span className="inline-flex flex-wrap items-center gap-x-1.5">
+                <StateDot tone={status.state === "running" ? "ok" : status.state === "unavailable" ? "bad" : "idle"} />
+                <span>{state}</span>
+                {limits && <span>· {t("serverEnvironment.resourcesValue", { cpus: limits.cpus, memory: limits.memoryMb, disk: limits.diskMb })}</span>}
+              </span>
+            )}
+        below={showScreen && <div className="mt-3"><ServerComputerScreen caption={t("serverEnvironment.sectionTitle")} /></div>}
+      >
+        {status?.configured && (
+          <button type="button" disabled={!usable} onClick={() => setShowScreen((open) => !open)} aria-expanded={showScreen}
+            className={cn(pillClass(), "min-h-[44px] md:min-h-0")}>
+            {t(showScreen ? "serverEnvironment.hideScreen" : "serverEnvironment.showScreen")}
+          </button>
         )}
-        {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
-      </div>
-    </Card>
+      </DescribedRow>
+      {status?.configured && (
+        <DescribedRow
+          label={t("serverEnvironment.resetTitle")}
+          description={t("serverEnvironment.resetHint")}
+          rowId="serverEnvironmentReset"
+          below={error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
+        >
+          <button type="button" disabled={busy || !usable} onClick={() => void reset()} data-server-environment-reset="" className={cn(DANGER_PILL, "min-h-[44px] md:min-h-0")}>
+            {busy && <Loader2 size={13} aria-hidden="true" className="animate-spin" />}
+            {t("serverEnvironment.reset")}
+          </button>
+        </DescribedRow>
+      )}
+    </div>
   );
 }

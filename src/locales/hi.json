@@ -827,8 +827,6 @@
   "vm.perBot.deleteBlocked": "इस बॉट की लोकल VM हटाने से पहले उसकी बारी रोकें",
   "vm.perBot.deleteTitle": "{name} की लोकल VM हटाएँ",
   "vm.main.title": "लोकल VM",
-  "vm.host.mac": "Mac",
-  "vm.host.computer": "कंप्यूटर",
   "vm.main.statusUnavailable": "स्थिति उपलब्ध नहीं",
   "vm.main.readyPerBot": "हर बॉट के डेस्कटॉप के लिए तैयार",
   "vm.main.perBotUnsupported": "हर-बॉट मोड के लिए Docker या Podman चाहिए",

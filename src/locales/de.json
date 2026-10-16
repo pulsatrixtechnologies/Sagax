@@ -834,8 +834,6 @@
   "vm.perBot.deleteBlocked": "Stoppe den Zug dieses Bots, bevor du seine lokale VM löschst",
   "vm.perBot.deleteTitle": "{name}s lokale VM löschen",
   "vm.main.title": "Lokale VM",
-  "vm.host.mac": "Mac",
-  "vm.host.computer": "Computer",
   "vm.main.statusUnavailable": "Status nicht verfügbar",
   "vm.main.readyPerBot": "Bereit für Desktops pro Bot",
   "vm.main.perBotUnsupported": "Der Pro-Bot-Modus benötigt Docker oder Podman",

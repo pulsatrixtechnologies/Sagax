@@ -547,8 +547,12 @@ describe("Settings → Computers", () => {
   // Settings cards are collapsible here: the title is the first span of the card's toggle.
   const cards = () => [...renderToStaticMarkup(createElement(LocalComputerSection)).matchAll(/<button type="button" aria-expanded="[a-z]+"[^>]*><span class="min-w-0 truncate">([^<]+)<\/span>/g)].map((match) => match[1]);
 
+  // 0.5.6: the Local VM is a row of the "Bots' computer" group, not a card.
+  const html = () => renderToStaticMarkup(createElement(LocalComputerSection));
+
   it("sets up a Local VM on a desktop or self-hosted server", () => {
-    expect(cards()).toEqual(expect.arrayContaining(["Local VM", "Setup"]));
+    expect(cards()).toContain("Setup");
+    expect(html()).toMatch(/data-settings-group="botsComputer"[\s\S]*data-settings-row="localVm"[\s\S]*>Local VM</);
     // Boat Computer is experimental: its card shows only when switched on.
     expect(cards()).not.toContain("Cloud computers");
     storeFixture.config = { features: { skillAuthoring: true, boatComputer: true } };
@@ -559,7 +563,7 @@ describe("Settings → Computers", () => {
     storeFixture.config = { cloudHome: true };
     const titles = cards();
     expect(titles).not.toContain("Cloud computers");
-    expect(titles).toContain("Local VM");
+    expect(html()).toContain('data-settings-row="localVm"');
     expect(titles).toContain("Setup");
   });
 });

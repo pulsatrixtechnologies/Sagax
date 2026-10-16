@@ -1167,8 +1167,6 @@
   "vm.perBot.deleteBlocked": "請先停止這個機器人的回合，才能刪除其本機 VM",
   "vm.perBot.deleteTitle": "刪除 {name} 的本機 VM",
   "vm.main.title": "本機 VM",
-  "vm.host.mac": "Mac",
-  "vm.host.computer": "電腦",
   "vm.main.statusUnavailable": "無法取得狀態",
   "vm.main.readyPerBot": "已可建立各機器人專屬桌面",
   "vm.main.perBotUnsupported": "各機器人模式需要 Docker 或 Podman",
