@@ -303,6 +303,7 @@ import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
+import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-draft-send.ts";
 import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
@@ -23765,6 +23766,9 @@ ROUTES.push(createOwnerApprovalRoutes({
     summary: `Permission mode: ${before} to ${after}`, decision: "user-approved", source: "user",
   }),
 }));
+// 2026-10-16: an email draft's Send: an approval card, then the send on Allow
+// (server/routes/email-drafts.ts, server/email-draft-send.ts).
+ROUTES.push(createEmailDraftRoutes({ ask: requestEmailDraftSend, status: emailDraftStatus }));
 // 2026-10-16: a person's custom auto-review rules (server/routes/custom-rules.ts).
 ROUTES.push(createCustomRuleRoutes({
   store: customRules,
@@ -34106,22 +34110,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
       const asked = await requestCwAction(auth, m[1], body);
       return json(res, asked.status, asked.body);
-    }
-
-    // An email draft's "Envoyer" (server/email-draft-send.ts): an approval
-    // card, then the send once the person allows it.
-    m = path.match(/^\/api\/threads\/([\w-]+)\/email-drafts$/);
-    if (m && method === "POST") {
-      const body = await readBody(req);
-      if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
-      const asked = await requestEmailDraftSend(auth, m[1], body);
-      return json(res, asked.status, asked.body);
-    }
-    m = path.match(/^\/api\/threads\/([\w-]+)\/email-drafts\/([\w-]{1,64})$/);
-    if (m && method === "GET") {
-      res.setHeader("cache-control", "no-store");
-      const status = emailDraftStatus(m[1], m[2]);
-      return json(res, status.status, status.body);
     }
 
     // Read receipts (server/read-receipts.ts): GET answers the positions
