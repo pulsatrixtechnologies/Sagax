@@ -12,6 +12,7 @@
 // Calm by construction: no motion above about 4 Hz, every change of clip is
 // blended, reactions have cooldowns, and a clip started by the person or the
 // pointer stays at least MIN_DWELL_MS before another one may replace it.
+import { DISPLAY_RATE } from "@/lib/frame-gate";
 import { blendFrames, CLIP_MS, clipPose, easeInOut, isTimed, REST, TAKEOFF_MS, type ClipName, type MascotFrame, type TimedClip } from "./clips";
 import {
   chooseDirection,
@@ -422,12 +423,14 @@ export function stepMascot(state: MascotState, input: MascotInput, options: Masc
   }
 }
 
-/** How fast to draw: smoothly while it moves, slower at rest, slower still asleep. */
+/** How fast to draw: at the display's own rate while it moves (120 Hz on a
+ * ProMotion screen), slower at rest, slower still asleep. The slow rates are
+ * the battery's: a desktop mascot is always on screen. */
 export function mascotFrameRate(activity: MascotActivity, hovered: boolean, reduced: boolean): number {
   if (activity === "working" || activity === "sleep") return reduced ? 10 : 12;
   const busy = hovered || activity !== "idle";
   if (reduced) return busy ? 30 : 20;
-  return busy ? 60 : 30;
+  return busy ? DISPLAY_RATE : 30;
 }
 
 /* ----------------------------------------------------------------- motion */

@@ -1,6 +1,9 @@
 // The mascot shapes (clean room, 2026-10-08): one soft body in eight shapes
 // (shared/mascot-look.ts, shape-art.ts) with two rounded eyes cut through it,
 // shaded like clay by default, in thirteen skins (Plain is the clay finish) (skin-fx/shape-skins.tsx).
+// The live loop writes an idle frame (outline, transform, light) straight onto
+// the drawing at the display's rate; React draws only when a move adds or
+// drops its extras, or the colour changes.
 // shape-engine.ts moves it: the gaze wanders, the body drifts and breathes,
 // the eyes blink, the face turns toward the pointer, changes of shape, face
 // and color slide, and the fourteen moves (SHAPE_MOVES) play on request.
@@ -9,7 +12,7 @@
 // every size still and plays no move. The desktop mascot draws the same
 // component and moves the whole drawing itself.
 import "./shape-mascot.css";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
 import { MASCOT_SHAPES, SHAPE_SKIN_TIER, SHAPE_SKINS, type MascotShape, type ShapeSkin, type SkinTier } from "../../shared/mascot-look";
@@ -102,11 +105,11 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
     <svg viewBox="0 0 100 100" width="100%" height="100%" ref={bodyRef} className={bodyClass} style={{ overflow: "visible", display: "block" }} data-eyes={frame.eyes ? "cut" : "none"}>
       <defs>
         <clipPath id={`${uid}-body`}>
-          <path d={cut} clipRule="evenodd" />
+          <path d={cut} clipRule="evenodd" data-shape-cut="" />
         </clipPath>
         {clay && (
           <>
-            <radialGradient id={`${uid}-clay`} gradientUnits="userSpaceOnUse" cx={frame.light.x} cy={frame.light.y} r={frame.light.r}>
+            <radialGradient id={`${uid}-clay`} gradientUnits="userSpaceOnUse" cx={frame.light.x} cy={frame.light.y} r={frame.light.r} data-shape-light="">
               {clayStops(frame.color).map((stop) => (
                 <stop key={stop.offset} offset={stop.offset} stopColor={stop.color} />
               ))}
@@ -143,17 +146,18 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
       {rings("back")}
       {settled && layers.under}
       <g className="shape-body">
-        <g transform={frame.transform} mask={frame.badge ? `url(#${uid}-notch)` : undefined}>
+        <g transform={frame.transform} mask={frame.badge ? `url(#${uid}-notch)` : undefined} data-shape-motion="">
           <path
             className="shape-fill"
             d={cut}
             fillRule="evenodd"
+            data-shape-cut=""
             fill={fill}
             stroke={!layers.ownEdge && paint.stroke ? paint.stroke : undefined}
             strokeWidth={!layers.ownEdge && paint.stroke ? paint.strokeWidth : undefined}
             strokeLinejoin="round"
           />
-          {paint.shine && <path d={cut} fillRule="evenodd" fill={`url(#${uid}-shine)`} />}
+          {paint.shine && <path d={cut} fillRule="evenodd" fill={`url(#${uid}-shine)`} data-shape-cut="" />}
           {layers.inner && <g clipPath={`url(#${uid}-body)`}>{layers.inner}</g>}
           {settled && layers.edge}
           {frame.dots.map((dot, i) => (
@@ -183,6 +187,27 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
       {settled && layers.around && <g className="skin-fx-around">{layers.around}</g>}
     </svg>
   );
+}
+
+/** Whether a live frame can go straight onto the drawing of the last one React
+ * drew: neither has a move's extras (dots, specks, rings, ribbons, a badge),
+ * the colour and the eyes are the same and the skin's edge is in the same
+ * place. Then only the outline, the transform and the light change. */
+export function shapeFrameWritable(drawn: ShapeFrame, next: ShapeFrame): boolean {
+  const plain = (frame: ShapeFrame) => !frame.badge && !frame.dots.length && !frame.specks.length && !frame.rings.length && !frame.ribbons.length;
+  return plain(drawn) && plain(next) && drawn.color === next.color && Boolean(drawn.eyes) === Boolean(next.eyes) && (drawn.morphed < 0.5) === (next.morphed < 0.5);
+}
+
+/** Write a frame's outline, transform and light onto a drawing of ShapeFrameSvg. */
+export function writeShapeFrame(svg: Pick<SVGSVGElement, "querySelectorAll">, frame: ShapeFrame): void {
+  const cut = frame.body + frame.eyes;
+  svg.querySelectorAll("[data-shape-cut]").forEach((path) => path.setAttribute("d", cut));
+  svg.querySelectorAll("[data-shape-motion]").forEach((group) => group.setAttribute("transform", frame.transform));
+  svg.querySelectorAll("[data-shape-light]").forEach((light) => {
+    light.setAttribute("cx", String(frame.light.x));
+    light.setAttribute("cy", String(frame.light.y));
+    light.setAttribute("r", String(frame.light.r));
+  });
 }
 
 /** The pointer around a box, -1..1 on each axis at about three box widths away. */
@@ -264,10 +289,19 @@ export function ShapeMascot({
     const run = new ShapeEngine(state, seconds());
     engine.current = run;
     let raf = 0;
+    // the frame React drew last: an idle frame (drift, breath, gaze, blink)
+    // only moves the outline, so it is written onto the drawing, like Grump's
+    let drawn: ShapeFrame | null = null;
     const tick = () => {
       raf = requestAnimationFrame(tick);
       if (document.hidden || root.current?.hasAttribute("data-fx-paused")) return;
-      setFrame(run.frame(seconds()));
+      const next = run.frame(seconds());
+      if (drawn && body.current && shapeFrameWritable(drawn, next)) {
+        writeShapeFrame(body.current, next);
+        return;
+      }
+      drawn = next;
+      setFrame(next);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
@@ -300,6 +334,11 @@ export function ShapeMascot({
       window.removeEventListener("blur", onLeave);
     };
   }, [live, trackPointer]);
+
+  // after React draws a frame, its outline is the one on screen again
+  useLayoutEffect(() => {
+    if (live && frame && body.current) writeShapeFrame(body.current, frame);
+  }, [live, frame]);
 
   const shown = live && frame ? frame : still;
   const palette = fxPalette(paint.fx, hex);

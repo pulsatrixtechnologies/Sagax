@@ -311,8 +311,9 @@ describe("mascot motion", () => {
     expect(blinkAt(1000)).toBe(0);
   });
 
-  it("draws fast while it moves, slowly at rest or asleep", () => {
-    expect(mascotFrameRate("spin", false, false)).toBe(60);
+  it("draws at the display's rate while it moves (120 Hz on ProMotion), slowly at rest or asleep", () => {
+    expect(mascotFrameRate("spin", false, false)).toBe(Number.POSITIVE_INFINITY);
+    expect(mascotFrameRate("idle", true, false)).toBe(Number.POSITIVE_INFINITY);
     expect(mascotFrameRate("idle", false, false)).toBe(30);
     expect(mascotFrameRate("sleep", false, false)).toBeLessThan(20);
   });

@@ -37,6 +37,7 @@ import { createFrameSmoother, type MascotActivity, type MascotFrame, type Mascot
 import Owl25D, { flatTilt, flatTurn } from "./Owl25D";
 import type { FloatingPose } from "./protocol";
 import type { MascotFamily } from "./wardrobe";
+import { createFrameGate } from "@/lib/frame-gate";
 
 export interface MascotRenderProps {
   color: string;
@@ -134,13 +135,13 @@ function Motion25D({ size, frame, fps, onHitTest, children, transform = motion25
   live.current = { frame, fps };
   useEffect(() => {
     let raf = 0;
-    let last = 0;
+    // the display's own rate while it moves (120 Hz on ProMotion), slower at rest (mascotFrameRate)
+    const gate = createFrameGate();
     const smooth = createFrameSmoother();
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       if (document.hidden) return;
-      if (now - last < 1000 / Math.max(1, Math.min(60, live.current.fps())) - 3) return;
-      last = now;
+      if (!gate(now, live.current.fps())) return;
       if (box.current) box.current.style.transform = transform(smooth(live.current.frame(now), now), size);
     };
     raf = requestAnimationFrame(tick);

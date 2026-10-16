@@ -7,11 +7,14 @@
 // ones breathe, blink and wiggle a trumpet in CSS (ogre-mascot.css) and play
 // a skin's idle effect, equip animation and move effects. A move (one of
 // Ogre's own, or a clip that maps to one) or an action (the desktop's walk,
-// nap, arms crossed) runs the rig frame by frame, at most 60 times a second.
-// Reduced motion keeps it still.
+// nap, arms crossed) runs the rig at the display's own rate (120 Hz on
+// ProMotion): a frame that only moves parts is written straight onto the
+// drawing's groups (their `transform`), and React draws again only when a
+// part's shape changes (a face, a stance, a limb, a prop). Reduced motion
+// keeps it still.
 import "./ogre-mascot.css";
 import "./skin-fx/skin-fx.css";
-import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
 import { OGRE_SKIN_TIER, type OgreSkin } from "../../shared/mascot-look";
@@ -151,7 +154,7 @@ function Layers({ layers, palette, uid, fx, bodyPath }: { layers: readonly OgreL
         const pivot = PIVOT[layer.key];
         const children = layer.children ? <Layers layers={layer.children} palette={palette} uid={`${uid}-${layer.key}`} fx={fx} bodyPath={bodyPath} /> : null;
         return (
-          <g key={layer.key} transform={layer.transform || undefined} className={CLASS[layer.key]} style={pivot ? { transformOrigin: `${pivot[0]}px ${pivot[1]}px` } : undefined}>
+          <g key={layer.key} data-ogre-layer={layer.key} transform={layer.transform || undefined} className={CLASS[layer.key]} style={pivot ? { transformOrigin: `${pivot[0]}px ${pivot[1]}px` } : undefined}>
             {layer.key === "head" && fx.head?.under}
             {layer.key === "body" && fx.body?.under}
             <Ops ops={layer.ops} palette={palette} uid={`${uid}-${layer.key}`} />
@@ -167,16 +170,63 @@ function Layers({ layers, palette, uid, fx, bodyPath }: { layers: readonly OgreL
   );
 }
 
+/** Whether two drawings have the same parts, so only their groups' transforms
+ * differ (exported for tests). Ops from the parts cache are the same arrays
+ * from one frame to the next; a limb or a prop is rebuilt every frame and
+ * compared by its paths. */
+export function sameOgreShapes(a: readonly OgreLayer[], b: readonly OgreLayer[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i];
+    const y = b[i];
+    if (x.key !== y.key || !sameOps(x.ops, y.ops)) return false;
+    if (Boolean(x.children) !== Boolean(y.children)) return false;
+    if (x.children && y.children && !sameOgreShapes(x.children, y.children)) return false;
+  }
+  return true;
+}
+
+function sameOps(a: readonly OgreOp[], b: readonly OgreOp[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i];
+    const y = b[i];
+    if (x === y) continue;
+    if (x.d !== y.d || x.fill !== y.fill || x.stroke !== y.stroke || x.width !== y.width || x.opacity !== y.opacity || x.clip !== y.clip || x.round !== y.round) return false;
+  }
+  return true;
+}
+
+/** Write each layer's transform onto its group in `svg` (exported for tests). */
+export function writeOgreTransforms(svg: Pick<SVGSVGElement, "querySelectorAll">, layers: readonly OgreLayer[]): void {
+  const groups = new Map<string, Element>();
+  svg.querySelectorAll("[data-ogre-layer]").forEach((group) => groups.set(group.getAttribute("data-ogre-layer") ?? "", group));
+  const write = (list: readonly OgreLayer[]) => {
+    for (const layer of list) {
+      const group = groups.get(layer.key);
+      if (group) {
+        if (layer.transform) group.setAttribute("transform", layer.transform);
+        else group.removeAttribute("transform");
+      }
+      if (layer.children) write(layer.children);
+    }
+  };
+  write(layers);
+}
+
 /**
  * Runs the rig while something plays (a one-shot move, or a held action): a
- * frame at most 60 times a second, none while the page is hidden; null when
- * the rig rests (the still drawing and its CSS idle show).
+ * frame on every display frame (120 Hz on ProMotion), none while the page is
+ * hidden; null when the rig rests (the still drawing and its CSS idle show).
+ * A frame that keeps every part's shape goes straight onto the drawing's
+ * groups (`svg`); only a change of shape draws through React.
  */
-function useRig(enabled: boolean, action: OgreMove | null, shot: { move: OgreMove; key: number } | null, facing: 1 | -1, onShake: ((amount: number) => void) | undefined): OgreFrame | null {
+function useRig(enabled: boolean, action: OgreMove | null, shot: { move: OgreMove; key: number } | null, facing: 1 | -1, onShake: ((amount: number) => void) | undefined, svg: React.RefObject<SVGSVGElement | null>, draw: { size: number; marks?: ReturnType<typeof ogreSkinPaint>["marks"] }): OgreFrame | null {
   const [frame, setFrame] = useState<OgreFrame | null>(null);
   const rig = useRef<OgreRig | null>(null);
-  const live = useRef({ onShake });
-  live.current = { onShake };
+  const live = useRef({ onShake, draw });
+  live.current = { onShake, draw };
   const [awake, setAwake] = useState(0);
   // the held action and the facing go straight to the rig
   useEffect(() => {
@@ -201,12 +251,11 @@ function useRig(enabled: boolean, action: OgreMove | null, shot: { move: OgreMov
       return;
     }
     let raf = 0;
-    let last = 0;
-    const tick = (ms: number) => {
+    // the layers React drew last: a frame with the same shapes is only written
+    let drawn: OgreLayer[] | null = null;
+    const tick = () => {
       raf = requestAnimationFrame(tick);
       if (typeof document !== "undefined" && document.hidden) return;
-      if (ms - last < 1000 / 60 - 3) return;
-      last = ms;
       const now = performance.now() / 1000;
       if (!current.busy(now)) {
         cancelAnimationFrame(raf);
@@ -216,6 +265,12 @@ function useRig(enabled: boolean, action: OgreMove | null, shot: { move: OgreMov
       }
       const next = current.frame(now);
       live.current.onShake?.(next.shake);
+      const layers = ogreFrameLayers(next, live.current.draw);
+      if (drawn && svg.current && sameOgreShapes(drawn, layers)) {
+        writeOgreTransforms(svg.current, layers);
+        return;
+      }
+      drawn = layers;
       setFrame(next);
     };
     raf = requestAnimationFrame(tick);
@@ -241,12 +296,23 @@ export interface OgreDrawingProps {
 /** One drawing of Ogre at a frame (the still rest frame, or the rig's). */
 export function OgreDrawing({ uid, palette, skin, hex, size, frame, full, svgRef, svgClass, defs, marks }: OgreDrawingProps) {
   const layers = useMemo(() => ogreFrameLayers(frame, { size, marks }), [frame, size, marks]);
+  // The rig writes transforms onto the groups between React's draws; after
+  // each draw, put this frame's back, so React's idea of them is the truth.
+  const own = useRef<SVGSVGElement | null>(null);
+  const setSvg = useCallback((node: SVGSVGElement | null) => {
+    own.current = node;
+    if (typeof svgRef === "function") svgRef(node);
+    else if (svgRef) (svgRef as { current: SVGSVGElement | null }).current = node;
+  }, [svgRef]);
+  useLayoutEffect(() => {
+    if (own.current) writeOgreTransforms(own.current, layers);
+  }, [layers]);
   const bodyPath = frame.stance === "rest" ? OGRE_ART.body : frame.stance === "log" ? movePath(OGRE_ART.torso, 0, LOG_DROP) : OGRE_ART.torso;
   const head = useMemo(() => ogreSkinLayers(skin, OGRE_ART.head, hex, `${uid}-hf`, full, "head"), [skin, hex, uid, full]);
   const body = useMemo(() => ogreSkinLayers(skin, bodyPath, hex, `${uid}-bf`, full), [skin, bodyPath, hex, uid, full]);
   const box = frame.stance === "rest" ? ogreViewBox(size) : "0 0 100 100";
   return (
-    <svg viewBox={box} width="100%" height="100%" ref={svgRef} className={svgClass} style={{ overflow: "visible", display: "block" }} data-stance={frame.stance}>
+    <svg viewBox={box} width="100%" height="100%" ref={setSvg} className={svgClass} style={{ overflow: "visible", display: "block" }} data-stance={frame.stance}>
       {(defs || head?.defs || body?.defs) && (
         <defs>
           {defs}
@@ -278,7 +344,7 @@ export function OgreMascot({ skin = "plain", color, size = 44, mood = "idle", ex
   // a one-shot move of the ogre's own (or a clip that maps to one) runs the rig; so does a held action
   const own = moveBody ? ogreMoveFor(move?.clip) : null;
   const shot = useMemo(() => (own && move?.key ? { move: own, key: move.key } : null), [own, move?.key]);
-  const rigFrame = useRig(live, action, shot, facing, onShake);
+  const rigFrame = useRig(live, action, shot, facing, onShake, svg, { size, marks: paint.marks });
   // reduced motion: a move shows its face and stance, still
   const reducedMove = reduced ? (action ?? own) : null;
   const still = useMemo(() => {

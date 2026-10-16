@@ -26,6 +26,7 @@ import { owlSkinId, owlSkinLook, owlSkinPalette } from "@/lib/owl/owl-skins";
 import { OwlSkinBack, OwlSkinDefs, OwlSkinEyeGlow, OwlSkinFront, OwlSkinPlumage, OwlSkinWing } from "@/components/OwlSkinFx";
 import { createFrameSmoother, type MascotFrame } from "./behavior";
 import { flatTilt, flatTurn } from "./flat-turn";
+import { createFrameGate } from "@/lib/frame-gate";
 
 export { FLAT_MIN_WIDTH, FLAT_TILT_MAX, flatTilt, flatTurn } from "./flat-turn";
 
@@ -111,7 +112,8 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
 
   useEffect(() => {
     let raf = 0;
-    let last = 0;
+    // the display's own rate while it moves (120 Hz on ProMotion), slower at rest (mascotFrameRate)
+    const gate = createFrameGate();
     // eased toward each frame with a clamped step: a jumpy pointer never shakes the owl
     const smooth = createFrameSmoother();
     const draw = (now: number) => {
@@ -135,9 +137,7 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       if (document.hidden) return;
-      const interval = 1000 / Math.max(1, Math.min(60, live.current.fps()));
-      if (now - last < interval - 3) return;
-      last = now;
+      if (!gate(now, live.current.fps())) return;
       draw(now);
     };
     draw(performance.now());
