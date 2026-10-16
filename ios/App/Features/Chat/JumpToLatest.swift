@@ -95,9 +95,13 @@ struct BottomFollowProbe: UIViewRepresentable {
 struct JumpToLatestButton: View {
     @Environment(\.themePalette) var themePalette
     let action: () -> Void
+    @State private var taps = 0
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            taps += 1
+            action()
+        } label: {
             Image(systemName: "arrow.down")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
@@ -109,6 +113,7 @@ struct JumpToLatestButton: View {
         .chatGlassRim(Circle())
         .accessibilityLabel(Text("Jump to latest messages"))
         .accessibilityIdentifier("jump-to-latest")
+        .feedback(.selection, trigger: taps)
         .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 }

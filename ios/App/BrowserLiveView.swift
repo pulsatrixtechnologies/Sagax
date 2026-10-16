@@ -65,7 +65,7 @@ final class BrowserPreviewModel: ObservableObject {
                         if case .offline = message { ended = .offline; break }
                         if case .waiting = message { phase = .busy }
                         guard let seq = state.apply(message) else { continue }
-                        if let data = state.image, let picture = UIImage(data: data) {
+                        if let data = state.image, let picture = await ImageDecoding.prepared(data) {
                             image = picture
                             phase = .live
                         }
@@ -337,7 +337,7 @@ final class BrowserTakeoverModel: ObservableObject {
                     // the server took the browser back (the bot, another window, a restart)
                     if case .control = message, !state.owned { holding = false }
                     guard let seq else { continue }
-                    if let data = state.image, let picture = UIImage(data: data) { image = picture }
+                    if let data = state.image, let picture = await ImageDecoding.prepared(data) { image = picture }
                     if let viewer = state.viewerId {
                         try? await client.browserAck(botId: botId, viewerId: viewer, seq: seq)
                     }

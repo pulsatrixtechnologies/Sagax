@@ -753,8 +753,21 @@ struct ChatLiveTail: View {
     let busy: Bool
     let color: String
     let name: String
+    /// Replies that finished streaming while this chat was open.
+    @State private var finished = 0
 
     var body: some View {
+        tail
+            // a light tap when the reply is done, the way Messages marks an
+            // arrival (Settings > Haptics off: none)
+            .feedback(.impact, trigger: finished)
+            .onValueChangePair(of: store.text[threadId]?.isEmpty == false) { was, now in
+                if was && !now { finished += 1 }
+            }
+    }
+
+    @ViewBuilder
+    private var tail: some View {
         if !onCall, let live = store.text[threadId], !live.isEmpty {
             StreamingBubble(text: live, reasoning: nil, color: color)
                 .padding(.top, ChatView.rowGap)

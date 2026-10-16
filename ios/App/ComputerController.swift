@@ -111,9 +111,17 @@ final class ComputerController: ObservableObject {
 
     /// A frame from the event stream.
     func streamFrame(_ data: Data?) {
-        guard let data, let decoded = UIImage(data: data) else { return }
-        setImage(decoded)
+        guard let data else { return }
+        // Decoded off the main thread; a frame that finishes after a newer
+        // one has been asked for is dropped, so frames never go backwards.
+        streamFrameSequence += 1
+        let sequence = streamFrameSequence
+        Task {
+            guard let decoded = await ImageDecoding.prepared(data), sequence == streamFrameSequence else { return }
+            setImage(decoded)
+        }
     }
+    private var streamFrameSequence = 0
 
     private func setImage(_ new: UIImage) {
         image = new
@@ -293,7 +301,7 @@ final class ComputerController: ObservableObject {
         defer { if !silently { refreshing = false } }
         do {
             let shot = try await client.computerScreenshot(botId: botId)
-            if let data = shot.data, let decoded = UIImage(data: data) { setImage(decoded) }
+            if let data = shot.data, let decoded = await ImageDecoding.prepared(data) { setImage(decoded) }
             return true
         } catch {
             if !silently { notice = String(localized: "Could not refresh the picture: \(error.localizedDescription)") }

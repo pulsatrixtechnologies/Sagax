@@ -20,6 +20,9 @@ struct ApprovalDock: View {
     @EnvironmentObject private var session: Session
     @State private var requestId: String?
     @State private var answering = false
+    /// Taps on Allow and on Deny, for their haptics (`feedback`).
+    @State private var allowed = 0
+    @State private var refused = 0
     /// iPad desktop shell: PendingApproval.tsx's box.
     @Environment(\.desktopChatText) private var desktop
 
@@ -430,7 +433,8 @@ struct ApprovalDock: View {
         _ title: String, style: ButtonStyleKind, id: String, _ action: @escaping () async -> Void
     ) -> some View {
         Button {
-            Haptics.selection()
+            // a firm "done" for Allow, a light tap for Deny (`feedback` below)
+            if style == .primary { allowed += 1 } else { refused += 1 }
             run(action)
         } label: {
             Text(title)
@@ -445,6 +449,7 @@ struct ApprovalDock: View {
         .buttonStyle(.plain)
         .disabled(answering)
         .accessibilityIdentifier(id)
+        .feedback(style == .primary ? .success : .impact, trigger: style == .primary ? allowed : refused)
     }
 
     private func quietButton(_ title: String, id: String, _ action: @escaping () async -> Void) -> some View {

@@ -106,12 +106,15 @@ enum MicrophonePermission {
 /// The three `sensoryFeedback` kinds the app uses, so call sites stay
 /// declarative on iOS 16 too.
 enum FeedbackKind {
-    case selection, warning, success
+    /// `impact` is a light tap: a reply landing, a refusal.
+    case selection, warning, success, impact
 
     fileprivate func play() {
         switch self {
         case .selection:
             UISelectionFeedbackGenerator().selectionChanged()
+        case .impact:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         case .warning:
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         case .success:
@@ -135,6 +138,7 @@ extension View {
             case .selection: sensoryFeedback(.selection, trigger: trigger)
             case .warning: sensoryFeedback(.warning, trigger: trigger)
             case .success: sensoryFeedback(.success, trigger: trigger)
+            case .impact: sensoryFeedback(.impact(weight: .light), trigger: trigger)
             }
         } else {
             onValueChange(of: trigger) { _ in kind.play() }

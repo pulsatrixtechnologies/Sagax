@@ -36,7 +36,8 @@ struct ScreenShot: View {
             } else {
                 data = nil
             }
-            image = data.flatMap(UIImage.init(data:))
+            // decoded off the main thread, not on the first draw
+            if let data { image = await ImageDecoding.prepared(data) }
         }
     }
 }
