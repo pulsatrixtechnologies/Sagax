@@ -1115,6 +1115,38 @@ carries as `resources/ui` (outside the asar) and serves from there. Tests: `src/
 `src/components/GroupView.test.ts`. The server image must be installed
 before an organization server accepts `{ groupId }`.
 
+## Glyph ripple behind the conversation (2026-10-16)
+
+Settings > Appearance > Conversation > "Glyph ripple on click" ("Effet de
+caractères au clic"; `sagax-glyph-ripple`, per person and computer, off
+unless `"1"`, `src/lib/glyph-ripple-preferences.ts`). Desktop only: a coarse
+pointer gets nothing, and the iOS app (native) has no such setting. Keep
+these rules, covered by `src/lib/glyph-ripple.test.ts`,
+`src/lib/glyph-ripple-preferences.test.ts` and
+`src/components/GlyphRippleLayer.dom.test.ts`:
+
+- One `<canvas>` (`GlyphRippleLayer.tsx`), first child of the main chat
+  pane, `pointer-events: none`, `aria-hidden`; the transcript scroller is
+  `relative` only while the field is on, so it paints over the canvas. No
+  canvas, listener or class when off. Side chats never show it.
+- At rest: faint monospace letters and digits in islands, drawn ONCE (and
+  again on resize, density or skin change). A ring (`src/lib/glyph-ripple.ts`)
+  runs requestAnimationFrame only while alive (1.1 s), touches only the
+  cells in the ring and the ones it lit the frame before, draws from a
+  pre-rendered atlas (no fillText per frame), at most 3 rings. No React in
+  the loop. A hidden window settles at once.
+- Colours: `--color-ink` and `--glyph-ripple-tint` (the skin's accent, a
+  blue on Midnight whose accent is grey), read as resolved colours from the
+  canvas; opacities per scheme in `LEVELS`.
+- A ring starts on a main-button mouse or pen pointerdown on the transcript
+  scroller (a message or empty space, the dock's empty margins included),
+  never in the composer (outside the scroller), a field, an edited message,
+  a menu, a dialog or `[data-no-glyph-ripple]`. The click is never stopped
+  or delayed (passive listener).
+- Reduced motion (the system setting or the app's `data-reduced-motion`,
+  `prefersReducedMotion()`): the still field stays, no ring at all.
+- Gallery: `src/gallery/glyph-ripple.html` (`?skin=<id>&off=1`).
+
 ## Seen by: read receipts (2026-10-08)
 
 Who has seen a message, people and bots (JC, 2026-10-08). Keep these rules,

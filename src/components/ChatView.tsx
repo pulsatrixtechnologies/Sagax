@@ -101,6 +101,7 @@ import { MessageBoundary } from "./MessageBoundary";
 import { WidgetMessage } from "./widget/WidgetMessage";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
+import { GlyphRippleLayer, useGlyphRippleShown } from "./GlyphRippleLayer";
 import { ChatErrorBanner, ChatNotice } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
 import { ReplyQuote } from "./ReplyQuote";
@@ -1419,6 +1420,8 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const { node: exchangeColumnNode, ref: exchangeColumnRef } = useExchangeColumn();
   const composerDockRef = useRef<HTMLDivElement>(null);
   const composerDock = useComposerDockPad(composerDockRef);
+  // Settings > Appearance > Glyph ripple on click (main conversation only)
+  const glyphRipple = useGlyphRippleShown() && !side;
   // A guest on an OMB Cloud home writes only in conversations it opened.
   const canWrite = useCanWriteIn(bot.threadId);
 
@@ -1781,9 +1784,12 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       {/* Messages + composer share one pane so bubbles scroll into the pill
           instead of dying on a rectangular clip above a black dock. */}
       <div className="relative min-h-0 flex-1">
+      {/* Behind the transcript, which is positioned only while the field is
+          on so it paints over the canvas (GlyphRippleLayer.tsx). */}
+      <GlyphRippleLayer paneRef={scrollRef} shown={glyphRipple} />
       <div
         ref={scrollRef}
-        className="h-full overflow-x-hidden overflow-y-auto overscroll-y-contain px-5 [overflow-anchor:none]"
+        className={cn("h-full overflow-x-hidden overflow-y-auto overscroll-y-contain px-5 [overflow-anchor:none]", glyphRipple && "relative")}
         {...scrollHandlers}
       >
         <div

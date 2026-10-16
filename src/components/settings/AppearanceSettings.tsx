@@ -22,6 +22,7 @@ import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
+import { setGlyphRippleEnabled, useGlyphRipple } from "@/lib/glyph-ripple-preferences";
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { SidebarHiddenSettings } from "../SidebarHiddenSettings";
 import { SkinPicker } from "../SkinPicker";
@@ -110,6 +111,17 @@ function SidebarDensityRow() {
         }))}
       />
     </CompactRow>
+  );
+}
+
+/** The character field behind the conversation (GlyphRippleLayer.tsx). The
+ * grey line says what it is and that reduced motion keeps it still. */
+export function GlyphRippleRow() {
+  const enabled = useGlyphRipple();
+  return (
+    <DescribedRow label={t("settings.glyphRipple.title")} description={t("settings.glyphRipple.description")} rowId="glyphRipple">
+      <Switch checked={enabled} aria-label={t("settings.glyphRipple.title")} onClick={() => setGlyphRippleEnabled(!enabled)} />
+    </DescribedRow>
   );
 }
 
@@ -275,6 +287,7 @@ export function AppearanceSettings() {
       <SettingsGroup title={t("settings.group.conversation")} groupId="conversation">
         <ThreadsViewRow />
         <SendKeyRow />
+        <GlyphRippleRow />
         {advanced && !remoteActive && editConfig && <ToolCallsRow />}
         {advanced && <SwitchLine label={t("settings.runCard.title")} ariaLabel={t("settings.runCard.show")} checked={runCard} onChange={setShowRunCard} rowId="runCard" />}
         {advanced && <SwitchLine label={t("settings.inspectorButton.title")} ariaLabel={t("settings.inspectorButton.show")} checked={inspector} onChange={setShowInspectorButton} rowId="inspectorButton" />}

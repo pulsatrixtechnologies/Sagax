@@ -421,6 +421,9 @@
    must resolve them against ITS ink, not the document's. Declared before
    the skin blocks, so a skin can still set any of them outright. */
 [data-skin] {
+  /* the ring of the conversation's glyph field (GlyphRippleLayer.tsx): the
+     skin's accent unless the skin names a tint of its own */
+  --glyph-ripple-tint: var(--color-accent);
   --color-popover: var(--color-menu);
   --color-popover-ink: var(--color-ink);
   --color-popover-ink-secondary: var(--color-ink-secondary);
@@ -641,6 +644,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="midnight"] {
   --code-color-scheme: dark;
+  --glyph-ripple-tint: #4d8dff;  /* Midnight's accent is grey: the glyph ring takes a blue */
   --color-app: #121212;          /* Sand Dark chrome: window, chat, bot panel */
   --color-panel: #161616;        /* Sand Dark pane: dialogs, banners */
   --color-raised: #1f1f1f;       /* Sand Dark elevated: controls, composer */
