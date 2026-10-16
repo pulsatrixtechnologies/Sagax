@@ -57,19 +57,18 @@ function render(candidate = bot) {
 beforeEach(() => { fixture.slots = []; fixture.state.revealThread = null; });
 
 // JC (2026-10-12): bot row + its selected thread made two stacked rounded
-// blocks. Unfolded, the selected thread carries the one highlight and the bot
-// row only a subtle state.
-describe("sidebar threads: one highlight for the selected thread", () => {
-  it("the unfolded bot row has no selected fill; the current thread row has the only one", () => {
+// blocks. Since Grok Bot's rows (2026-10-15) the thread list no longer
+// unfolds under the bot, even in the sidebar location: the selected bot row
+// carries the one highlight.
+describe("sidebar threads: one highlight for the selected conversation", () => {
+  it("draws the selected fill on the bot row only, with no thread rows under it", () => {
     const multiple = { ...bot, tasks: [...bot.tasks!, { threadId: "older", title: "Earlier", createdAt: 0 }] };
     fixture.state.revealThread = { threadId: "current", nonce: 1 };
     render(multiple);
     for (const effect of fixture.effects) effect();
     const markup = render(multiple);
-    expect(markup).toContain('data-sidebar-thread-row="current"');
-    const rowStart = markup.indexOf('data-sidebar-bot-row="atlas"');
-    const botButton = markup.slice(rowStart, markup.indexOf("</button>", rowStart));
-    expect(botButton).not.toContain("bg-sidebar-selected");
+    expect(markup).not.toContain("data-sidebar-thread-row");
     expect(markup.match(/bg-sidebar-selected/g)).toHaveLength(1);
+    expect(markup).toMatch(/data-sidebar-bot-row="atlas"[^>]*class="[^"]*bg-sidebar-selected/);
   });
 });

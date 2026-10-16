@@ -201,29 +201,28 @@ describe("BotListItem", () => {
     expect(renderRow(bot({ busy: true }))).toMatch(/data-testid="working-dot" class="[^"]*-bottom-0\.5/);
   });
 
-  const titlePill = /<span class="max-w-\[46%\] shrink truncate[^"]*">([^<]*)<\/span>/;
 
-  it("draws no title pill: the title is in the avatar's tooltip and read out with the name", () => {
-    const markup = renderRow(bot({ title: "Developer" }));
-
-    expect(titlePill.test(markup)).toBe(false);
-    expect(markup).toContain('title="Atlas · Developer"');
-    expect(markup).toContain('<span class="sr-only">, Developer</span>');
-    expect(markup.indexOf(", Developer<")).toBeGreaterThan(markup.indexOf(">Atlas<"));
-    expect(markup).toContain('title="Double-click to rename"');
-
-    expect(renderRow(bot())).not.toContain("sr-only\">, ");
-    expect(renderRow(bot({ title: "  " }))).not.toContain("sr-only\">, ");
+  // Grok Bot's row (JC, 2026-10-15): the role (Bot settings > Title) is a
+  // pill right after the name, in the same line.
+  it("draws the role as a pill right after the name", () => {
+    const markup = renderRow(bot({ title: "ConnectWise Ops & MS 365" }));
+    const pill = markup.match(/<span data-bot-role-tag=""[^>]*>[\s\S]*?<\/span><\/span>/)?.[0] ?? "";
+    expect(pill).toContain(">ConnectWise Ops &amp; MS 365<");
+    for (const token of ["rounded-[4px]", "border-[0.5px]", "text-[11px]", "leading-4", "px-1", "py-px", "basis-[2em]", "max-w-fit", "text-sidebar-ink-secondary"]) {
+      expect(pill.split(/[\s"]/)).toContain(token);
+    }
+    expect(markup.indexOf("data-bot-role-tag")).toBeGreaterThan(markup.indexOf(">Atlas<"));
+    expect(markup).toContain('title="Atlas · ConnectWise Ops &amp; MS 365"');
+    expect(renderRow(bot())).not.toContain("data-bot-role-tag");
+    expect(renderRow(bot({ title: "  " }))).not.toContain("data-bot-role-tag");
   });
 
-  it("keeps a long title out of the row, the name truncating alone", () => {
+  it("lets the name give way before the role pill shrinks under 2em", () => {
     const longTitle = "Meta-Agent, opensource team maintainer";
     const markup = renderRow(bot({ name: "Team Maintainer", title: longTitle }));
-
-    expect(titlePill.test(markup)).toBe(false);
     expect(markup).toContain(">Team Maintainer<");
-    expect(markup).toContain(`title="Team Maintainer · ${longTitle}"`);
-    expect(markup).toContain("truncate");
+    expect(markup).toContain(`>${longTitle}<`);
+    expect(markup).toMatch(/class="flex min-w-0 shrink items-center gap-1 text-\[14px\] font-medium leading-5 text-sidebar-ink"/);
   });
 
   it("previews the last reply as plain text, without its markdown", () => {
@@ -378,9 +377,11 @@ describe("bot deletion feedback", () => {
       expect(renderRow(bot({ busy: true }))).toContain('data-testid="working-dot"');
       expect(renderRow(bot({ activity: "waiting-on-you" }))).toContain('data-testid="waiting-dot"');
       const unread = renderRow(bot({ unread: true }));
-      // Unread rows go bold with a screen-reader label instead of a dot (478bd6216); the icon rail keeps its marker.
+      // Grok Bot's unread: the name keeps its weight, a blue dot sits at the
+      // row's end, and the screen-reader label stays.
       expect(unread).toMatch(/sr-only[^>]*>Unread threads</);
-      expect(unread).toContain("font-semibold");
+      expect(unread).not.toContain("font-semibold");
+      expect(unread).toContain("data-sidebar-unread-dot");
       expect(unread).not.toContain("bg-white");
     });
 
@@ -392,7 +393,7 @@ describe("bot deletion feedback", () => {
 
     it("reads the title out and shows the star when quiet rows are off", () => {
       const markup = renderRow(bot({ title: "Developer", chiefOfStaff: true }));
-      expect(markup).toContain(", Developer<");
+      expect(markup).toContain(">Developer<");
       expect(markup).toContain('data-testid="primary-bot-badge"');
     });
   });

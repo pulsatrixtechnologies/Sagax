@@ -55,11 +55,11 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("bot-first sidebar", () => {
   it.each([
-    // the reference window's comfortable row: a 44px portrait, 56px tall
-    { enabled: true, density: "comfortable", size: 44, spacing: ["min-h-[56px]", "gap-1.5", "py-1.5", "pl-1"] },
+    // Grok Bot's comfortable row: a 36px portrait, 54px tall, 8px padding
+    { enabled: true, density: "comfortable", size: 36, spacing: ["h-[54px]", "gap-2", "py-2", "pl-2", "rounded-[10px]"] },
     { enabled: true, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
     { enabled: true, density: "icons", size: 36, spacing: ["justify-center", "px-1", "py-1.5"] },
-    { enabled: false, density: "comfortable", size: 44, spacing: ["min-h-[56px]", "gap-1.5", "py-1.5", "pl-1"] },
+    { enabled: false, density: "comfortable", size: 36, spacing: ["h-[54px]", "gap-2", "py-2", "pl-2", "rounded-[10px]"] },
     { enabled: false, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
     { enabled: false, density: "icons", size: 36, spacing: ["justify-center", "px-1", "py-1.5"] },
   ] as const)("sizes bot portraits and row spacing in $density density with threads $enabled", ({ enabled, density, size, spacing }) => {
@@ -299,19 +299,19 @@ describe("group rows line up with bot rows", () => {
   const rowClass = (markup: string, marker: string) => markup.match(new RegExp(`${marker}[^>]*class="([^"]*)"`))?.[1]
     ?? markup.match(new RegExp(`class="([^"]*)"[^>]*${marker}`))?.[1] ?? "";
 
-  it.each([true, false])("puts a room row at the bot row's inset and 44px box with showThreads=%s in the header location, no outline around stacked faces", (showThreads) => {
+  it.each([true, false])("puts a room row at the bot row's inset and 36px box with showThreads=%s in the header location, no outline around stacked faces", (showThreads) => {
     fixture.showThreads = showThreads;
     fixture.state.bots = [bot, pepper];
     const groupMarkup = renderToStaticMarkup(createElement(GroupListItem, { group: twoBots, density: "comfortable", onMenu: vi.fn() }));
     const botMarkup = renderToStaticMarkup(createElement(BotListItem, { bot: pepper, density: "comfortable", onMenu: vi.fn() }));
     // a room lists its threads under the row only in the sidebar location,
     // like a bot and a person, so in the header location it never moves
-    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).toContain("pl-1");
+    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).toContain("pl-2");
     expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).not.toContain("pl-6");
-    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain("pl-1");
+    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain("pl-2");
     expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).not.toContain("pl-6");
-    // same 44px avatar footprint as the bot row
-    expect(groupMarkup).toContain("relative shrink-0 size-11");
+    // same 36px avatar footprint as the bot row (Grok Bot's)
+    expect(groupMarkup).toContain("relative shrink-0 size-9");
     expect(groupMarkup).not.toMatch(/ring-2 ring-panel/);
   });
 });
@@ -337,7 +337,7 @@ describe("people rows line up with bot rows", () => {
     const botMarkup = renderToStaticMarkup(createElement(BotListItem, { bot, density, onMenu: vi.fn() }));
     const personInset = inset(classOf(personMarkup, 'data-sidebar-group-row="dm-ada"'));
     const botInset = inset(classOf(botMarkup, `data-sidebar-bot-row="${bot.id}"`));
-    expect(personInset).toEqual([density === "compact" ? "pl-2" : "pl-1"]);
+    expect(personInset).toEqual(["pl-2"]);
     expect(personInset).toEqual(botInset);
     expect(personMarkup).not.toContain("Ada Example threads");
     // no achievement title or points on a person's row
@@ -355,7 +355,7 @@ describe("bot row does not move with thread mode", () => {
       function Capture() { tree = BotListItem({ ...rowProps(density), bot }); return tree; }
       const markup = renderToStaticMarkup(createElement(Capture));
       const row = findElement(tree, "data-sidebar-bot-row", bot.id)!;
-      const avatar = markup.match(/<span class="relative flex shrink-0"[^>]*>/)?.[0];
+      const avatar = markup.match(/<span class="relative flex shrink-0[^"]*"[^>]*>/)?.[0];
       return { row: stripButtonPadding(String(row.props.className)), avatar };
     };
     const on = grab(true);

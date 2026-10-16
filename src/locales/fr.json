@@ -2919,7 +2919,7 @@
   "onboarding.server.connect": "Se connecter à un serveur",
   "onboarding.server.title": "Vous utilisez {app} au travail?",
   "onboarding.skip": "Passer pour l'instant",
-  "onboarding.tour.tools": "Le bas de la barre latérale : Carte de l’équipe, Automatisations, Applications connectées et Parcourir les bots, toujours à un clic. Votre nom, juste en dessous, ouvre vos réglages.",
+  "onboarding.tour.tools": "Le pied de la barre latérale : votre avatar ouvre la Carte de l’équipe, les Automatisations, Parcourir les bots et vos réglages. La pilule Connecter des applications est juste à côté.",
   "onboarding.welcome": "Bienvenue dans {app}",
   "org.addressFailed": "Impossible d'enregistrer l'adresse du serveur.",
   "org.addressInvalid": "Utilise une adresse https, un nom Tailscale ou http://localhost.",
@@ -4300,9 +4300,6 @@
   "settings.sidebarLogo.show": "Afficher le logo de la barre latérale",
   "settings.sidebarLogo.subtitle": "Afficher le logo et le nom Sagax en haut de la barre latérale.",
   "settings.sidebarLogo.title": "Logo de la barre latérale",
-  "settings.sidebarShortcuts.show": "Afficher les raccourcis dans la barre latérale",
-  "settings.sidebarShortcuts.subtitle": "Affiche Applications connectées et Parcourir les bots en lignes au pied de la barre latérale. Activé, votre titre et vos points quittent la ligne du compte pour faire de la place ; ils restent dans Succès.",
-  "settings.sidebarShortcuts.title": "Raccourcis dans la barre latérale",
   "settings.skin.subtitle": "S'applique aussitôt.",
   "settings.skin.title": "Thème",
   "settings.subPage.back": "Retour à {section}",
@@ -6502,7 +6499,7 @@
   "onboarding.spot.connector": "Quand un bot a besoin d'une application que vous n'avez pas connectée, il vous le demande ici. Connectez-vous une fois dans votre navigateur et tous les bots peuvent l'utiliser.",
   "onboarding.spot.gotIt": "Compris",
   "onboarding.spot.model": "Ce bot s'exécute sur le modèle affiché ici. Changez-le quand vous voulez, même en pleine conversation.",
-  "onboarding.tour.apps": "Applications connectées. Gmail, Slack, GitHub, Notion et des centaines d'autres. Allons voir.",
+  "onboarding.tour.apps": "Connecter des applications. Gmail, Slack, GitHub, Notion et des centaines d'autres. Allons voir.",
   "onboarding.tour.apps-panel": "Le marché d'applications. Connectez-vous une fois à une application et tous les bots peuvent l'utiliser comme outil. Nous allons fermer ceci et continuer.",
   "onboarding.tour.automations": "Automatisations. Des bots qui s'exécutent à l'horaire, ou quand un webhook les appelle. Ouvrons-la.",
   "onboarding.tour.automations-page": "Un calendrier. Déposez un bot sur une heure et il s'exécute tout seul ; le résultat arrive dans sa conversation. Suivant vous ramène à la conversation.",
@@ -7731,5 +7728,9 @@
   "workspaceLine.localVm": "Dans la VM locale",
   "workspaceLine.fallbackOffline": "Passé sur {place} : votre ordinateur est hors ligne",
   "workspaceLine.fallbackRoutine": "Passé sur {place} : les routines n'ont pas accès à votre ordinateur",
-  "workspaceLine.fallbackUnavailable": "Passé sur {place} : {wanted} n'est pas disponible"
+  "workspaceLine.fallbackUnavailable": "Passé sur {place} : {wanted} n'est pas disponible",
+  "sidebar.section.myTeam": "Mon équipe",
+  "sidebar.section.builtIn": "Intégrés",
+  "sidebar.threadsFor": "Fils de {name}",
+  "sidebar.openUnreadThread": "Ouvrir {name}, non lu"
 }

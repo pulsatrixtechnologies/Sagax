@@ -110,7 +110,7 @@ export function SidebarSectionHeader({
           // upstream), 12px regular in the secondary ink, then the section's
           // attention marks; no chevron (a click folds it, aria-expanded
           // says which way), and while folded what it holds at the right
-          className="group/section flex h-7 w-full min-w-0 items-center gap-2 rounded-lg px-3 text-left text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink"
+          className="group/section flex h-7 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink"
         >
           <span className="sidebar-section-label truncate text-[12px] font-normal leading-4">{name}</span>
           {marks}
@@ -119,7 +119,7 @@ export function SidebarSectionHeader({
           )}
         </button>
       ) : (
-        <div className="flex h-7 min-w-0 items-center gap-2 px-3">
+        <div className="flex h-7 min-w-0 items-center gap-2 px-2">
           <span className="sidebar-section-label truncate text-[12px] font-normal leading-4 text-sidebar-ink-secondary">{name}</span>
           {marks}
         </div>

@@ -39,7 +39,6 @@ import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { otherAuthorName, viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
 import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
-import { migrateSidebarShortcuts, useSidebarShortcuts } from "@/lib/sidebar-shortcuts-preferences";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
@@ -60,7 +59,8 @@ import { requestPrimaryBot } from "@/lib/bot-quick-actions";
 import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
-import { LabelTag, PersonLabelTag } from "./LabelTag";
+import { BotRoleTag, PersonLabelTag } from "./LabelTag";
+import { SidebarUnreadThreads, sidebarUnreadThreads } from "./SidebarUnreadThreads";
 import { nudgeLineText } from "@/lib/nudge-line";
 import { Cpu, Eye, UserRound } from "lucide-react";
 import { openModelWindow } from "@/lib/model-window";
@@ -128,8 +128,11 @@ import {
 import {
   BOT_CHATS_SECTION_ID,
   BOTS_SECTION_ID,
+  BUILT_IN_SECTION_ID,
   CHANNELS_SECTION_ID,
   PINNED_SECTION_ID,
+  isBuiltInBot,
+  isMyTeamSectionName,
   mergeSectionOrder,
   moveSection,
   orderedSidebarSections,
@@ -150,7 +153,7 @@ import { buildTeamMapSections } from "@/lib/team-map";
 import { sidebarSectionAttention } from "@/lib/sidebar-attention";
 import { botListItemPointerIntent } from "@/lib/sidebar-selection";
 import { phoneSettingsAction, SidebarPhoneButton } from "./SidebarPhoneButton";
-import { SidebarPlaces, type SidebarPlace } from "./SidebarPlaces";
+import { SidebarPlaces } from "./SidebarPlaces";
 import { PulsatrixMark } from "./PulsatrixMark";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 
@@ -252,6 +255,9 @@ const SECTION_LABEL_KEYS: Record<string, LocaleKey> = {
  * named themselves is their text and stays exactly as typed. */
 function sectionLabel(id: string): string {
   if (id === GENERAL_SECTION_ID) return t("sidebar.section.general");
+  if (id === BUILT_IN_SECTION_ID) return t("sidebar.section.builtIn");
+  const name = userSectionName(id);
+  if (name !== null && isMyTeamSectionName(name)) return t("sidebar.section.myTeam");
   const key = SECTION_LABEL_KEYS[id];
   return key ? t(key) : sidebarSectionLabel(id);
 }
@@ -337,10 +343,10 @@ export function groupPreview(group: Group, bots: Bot[], config: ConfigStatus | n
 /** A small member stack identifies a group without turning it into a card. */
 export function StackedMauses({ members, density, viewerId }: { members: Bot[]; density: SidebarDensity; viewerId: string }) {
   const iconOnly = density === "icons";
-  // Same footprint as a bot row's avatar (BotListItem: 28 compact, 44
-  // comfortable) so group and bot names share one left edge.
-  const slotSize = iconOnly ? "size-12" : density === "compact" ? "size-7" : "size-11";
-  const singleSize = iconOnly ? 44 : density === "compact" ? 28 : 44;
+  // Same footprint as a bot row's avatar (BotListItem: 28 compact, 36
+  // comfortable, Grok Bot's) so group and bot names share one left edge.
+  const slotSize = iconOnly ? "size-12" : density === "compact" ? "size-7" : "size-9";
+  const singleSize = iconOnly ? 44 : density === "compact" ? 28 : 36;
   if (members.length <= 1) {
     const b = members[0];
     return (
@@ -350,12 +356,12 @@ export function StackedMauses({ members, density, viewerId }: { members: Bot[]; 
     );
   }
   const shown = members.slice(0, 3);
-  const face = iconOnly ? 22 : density === "compact" ? 16 : 24;
+  const face = iconOnly ? 22 : density === "compact" ? 16 : 20;
   const spots = shown.length === 2
     ? ["left-0 top-0.5", "right-0 bottom-0"]
     : ["left-0 top-0", "left-0 bottom-0", "right-0 bottom-0"];
   return (
-    <div className={cn("relative shrink-0", iconOnly ? "size-10" : density === "compact" ? "size-7" : "size-11")}>
+    <div className={cn("relative shrink-0", iconOnly ? "size-10" : density === "compact" ? "size-7" : "size-9")}>
       {/* No outline ring: a ring in a fixed color reads as a dark border on
           hover and selected rows. The faces simply overlap. */}
       {shown.map((b, index) => (
@@ -438,12 +444,13 @@ export function GroupListItem({
         onMenu({ groupId: group.id, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
       }}
       className={cn(
-        "relative flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
-        density === "icons" ? "justify-center px-1 py-1.5" : density === "compact" ? cn(inSidebar ? "gap-1.5 py-1" : "gap-2 py-1.5", "pr-9") : "min-h-[56px] gap-1.5 py-1.5 pr-2",
-        // The same box and inset as BotListItem, so every row's avatar and
-        // name line up: a room or a person moves like a bot row (#152),
-        // only in the sidebar location, where its chevron sits.
-        density !== "icons" && (inSidebar ? "pl-6" : density === "compact" ? "pl-2" : "pl-1"),
+        "relative flex w-full items-center text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
+        density === "icons" ? "justify-center rounded-lg px-1 py-1.5" : density === "compact" ? cn(inSidebar ? "gap-1.5 py-1" : "gap-2 py-1.5", "rounded-lg pr-9") : "h-[54px] gap-2 rounded-[10px] py-2 pr-2",
+        // The same box and inset as BotListItem (Grok Bot's 54px row), so
+        // every row's avatar and name line up: a room or a person moves like
+        // a bot row (#152), only in the sidebar location, where its chevron
+        // sits.
+        density !== "icons" && (inSidebar ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
       title={density === "icons" ? rowName : undefined}
@@ -451,7 +458,7 @@ export function GroupListItem({
       data-people-dm={peer ? peer.id : undefined}
     >
       {peer
-        ? <span className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-11")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 44} presenceId={peer.id} presenceRing="border-sidebar" /></span>
+        ? <span className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-9")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 36} presenceId={peer.id} presenceRing="border-sidebar" /></span>
         : <StackedMauses members={members} density={density} viewerId={viewerActorId(state.config)} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
@@ -1145,8 +1152,12 @@ export function BotContextMenu({
   onReplacePrimary,
   variant = "sidebar",
   onEditPersona,
+  onNewInFolder,
 }: {
   menu: MenuState | null;
+  /** New thread in a working folder (Advanced, the owner or an admin): the
+   * sidebar no longer unfolds the thread list whose menu held it. */
+  onNewInFolder?: (bot: Bot) => void;
   onClose: () => void;
   onArchive?: (bot: Bot) => void;
   onDelete?: (bot: Bot) => void;
@@ -1373,6 +1384,10 @@ export function BotContextMenu({
   const newThreadItem = showThreads ? item(<Plus size={16} className="text-ink" />, t("task.newShort"), () => {
     dispatch({ type: "newTask", botId: bot.id });
   }, { id: "new-thread" }) : null;
+  const newInFolderItem = showThreads && onNewInFolder ? item(<FolderOpen size={16} className="text-ink" />, t("task.folder.new"), () => {
+    onClose();
+    onNewInFolder(bot);
+  }, { id: "new-thread-folder" }) : null;
 
   // One flat menu, no More (JC, 2026-10-15): New thread | Pin, Move to ›,
   // Mark as Unread, Mark all as read | Rename, Edit bot, Model…, Make
@@ -1393,7 +1408,7 @@ export function BotContextMenu({
     }, { id: "move" })] : []),
     editItem,
   ] : [
-    ...(newThreadItem ? [newThreadItem, divider("d-new")] : []),
+    ...(newThreadItem ? [newThreadItem, ...(newInFolderItem ? [newInFolderItem] : []), divider("d-new")] : []),
     item(
       bot.pinned ? <PinOff size={16} className="text-ink" /> : <Pin size={16} className="text-ink" />,
       bot.pinned ? t("sidebar.bot.unpin") : t("sidebar.bot.pin"),
@@ -1915,7 +1930,6 @@ export function BotListItem({
   bot,
   density,
   quiet = false,
-  query = "",
   onMenu,
   startRename = false,
   onRenameStarted,
@@ -1931,60 +1945,43 @@ export function BotListItem({
 }) {
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
-  // Threads listed under the bot (Settings > Threads location > In the sidebar).
-  // Exclusive with the chat header's thread button.
-  const threadsLocation = useThreadsLocationChoice();
-  const inSidebar = showThreads && threadsLocation === "sidebar";
   const remoteClient = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
   const [renaming, setRenaming] = useState(false);
   const selected = state.activeView === "chat" && state.selectedId === bot.id;
-  const [threadsOpen, setThreadsOpen] = useState(Boolean(query));
-  useEffect(() => { if (query && inSidebar) setThreadsOpen(true); }, [query, inSidebar]);
-  // a thread opened from a chip or #Title link: unfold this bot so the row
-  // it lands on is on screen (BotThreadList scrolls it into view)
-  const reveal = state.revealThread;
-  const revealHere = Boolean(reveal && (bot.threadId === reveal.threadId || bot.tasks?.some((task) => task.threadId === reveal.threadId)));
-  useEffect(() => { if (revealHere && inSidebar) setThreadsOpen(true); }, [reveal, revealHere, inSidebar]);
-  // one thread is the bot itself; the disclosure only earns its place once
-  // there is a list (a second thread or a folder) to open
-  const hasThreadList = (bot.tasks?.filter((task) => !task.routineRunId && !isInterBotThread(bot.id, task)).length ?? 1) > 1 || (bot.projects?.length ?? 0) > 0 || Boolean(query);
+  // Grok Bot's rows (JC, 2026-10-15): a bot's threads no longer unfold under
+  // it, whatever Settings > Threads location says; the chat header's thread
+  // button is the one place for them. Only its unread threads (at most
+  // three, never the one on screen) sit under the row (SidebarUnreadThreads).
   const deleting = state.deletingBots[bot.id] === true;
   const mascotMotion = selected && state.mascotMotion?.botId === bot.id ? state.mascotMotion : null;
   const pendingQueued = state.pendingQueued;
   const instances = state.instances;
   const iconOnly = density === "icons";
-  const expanded = inSidebar && !iconOnly && threadsOpen && hasThreadList;
+  const comfortable = density === "comfortable";
   useEffect(() => {
     if (iconOnly) setRenaming(false);
   }, [iconOnly]);
-  // the reference window's 44px portrait in comfortable rows
-  const avatarSize = iconOnly ? 36 : density === "compact" ? 28 : 44;
+  // Grok Bot's row (comfortable): 54px tall, 8px padding, 10px corners, a
+  // 36px portrait 8px from the name. Compact and the rail keep theirs.
+  const avatarSize = iconOnly ? 36 : density === "compact" ? 28 : 36;
   // the visible branch, so a version switch changes the row with the chat
   const visible = useVisibleMessages(bot);
-  const last = lastNonReceipt(visible);
-  // the role from Bot Settings → Title is not drawn in the row, as upstream:
-  // a row is the name and what was last said. The role stays in the
-  // avatar's tooltip and is read out with the name.
+  // The role (Bot settings > Title) is the pill beside the name, as Grok
+  // Bot draws it ("ConnectWise Ops & MS 365").
   const title = bot.title.trim();
-  // Header mode: the same wrapper classes with threads on or off. Sidebar
-  // mode keeps the old pl-6 inset for the chevron, like room rows.
+  const unreadThreads = !iconOnly && showThreads ? sidebarUnreadThreads(bot, selected ? bot.threadId : null) : [];
   const rowClass = cn(
-    "flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
+    "flex w-full items-center text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
     iconOnly
-      ? "justify-center px-1 py-1.5"
-      : density === "compact"
-        ? cn(inSidebar ? "gap-1.5 py-1 pl-6" : "gap-2 py-1.5 pl-2", "pr-9")
-        : cn("min-h-[56px] gap-1.5 py-1.5 pr-9", inSidebar ? "pl-6" : "pl-1"),
-    // room for New thread beside the "..." while both show
+      ? "justify-center rounded-lg px-1 py-1.5"
+      : comfortable
+        ? "h-[54px] gap-2 rounded-[10px] py-2 pl-2 pr-2"
+        : "gap-2 rounded-lg py-1.5 pl-2 pr-9",
+    // room for New thread and the "..." while they show (hover, focus, touch)
     !iconOnly && "group-hover:pr-[64px] group-focus-within:pr-[64px] max-md:pr-[64px] touch:pr-[64px]",
     // The Primary Bot is called out by the star on its avatar, not by
-    // tinting the whole row: an accent border and fill read as "selected"
-    // even when another bot was active.
-    // Unfolded, the selected thread below carries the one highlight; the
-    // bot row keeps only a subtle state (no second stacked block), as the
-    // group rows above do.
-    selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
-    selected && expanded && "text-sidebar-ink",
+    // tinting the whole row.
+    selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
   );
   const activityTasks = sidebarBotActivityTasks(bot, pendingQueued);
   const waiting = bot.activity === "waiting-on-you" || activityTasks.some((task) => task.activity === "waiting-on-you");
@@ -2000,11 +1997,16 @@ export function BotListItem({
   // bottom-right corner; a status dot then sits at the top-right instead.
   const primary = isViewersPrimaryBot(bot, orgViewerId(state));
   const dotCorner = primary ? "-top-0.5" : "-bottom-0.5";
+  // Grok Bot marks an unread bot with a blue dot at the row's end, the name
+  // keeps its weight.
+  const trailingDot = !iconOnly && unread && !renaming && !deleting;
   const body = (
     <>
       {/* flex, not inline: an inline wrapper adds a baseline gap under the
-          avatar and makes the row taller than before the presence dot */}
-      <span className="relative flex shrink-0" title={iconOnly ? undefined : [bot.name, title].filter(Boolean).join(" · ")}>
+          avatar and makes the row taller than before the presence dot. It
+          fades out under the unread threads' disclosure while that is
+          pointed at, as Grok Bot does. */}
+      <span className="relative flex shrink-0 transition-opacity group-has-[[data-sidebar-threads-toggle]:hover]/threads:opacity-0 group-has-[[data-sidebar-threads-toggle]:focus-visible]/threads:opacity-0" title={iconOnly ? undefined : [bot.name, title].filter(Boolean).join(" · ")}>
         <SidebarMascotAvatar
           botId={bot.id}
           bot={bot}
@@ -2025,9 +2027,9 @@ export function BotListItem({
         {teammateWait && <StatusDot tone="accent" testId="teammate-wait-dot" role="status" label={t("sidebar.preview.waitingOnTeammate")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
         {!teammateWait && !waiting && !working && queued && <StatusDot tone="queued" testId="queued-dot" role="status" label={t("task.queued")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
       </span>
-      <div className={cn("min-w-0 flex-1", iconOnly && "hidden")}>
-        <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", selected || unread ? "font-semibold" : "font-medium")}>
+      <div className={cn("flex min-w-0 flex-1 flex-col", iconOnly && "hidden", trailingDot && "mr-4 group-hover:mr-0 group-focus-within:mr-0 max-md:mr-0 touch:mr-0")}>
+        <div data-sidebar-bot-title className="flex min-w-0 items-center gap-1.5">
+          <span className="flex min-w-0 shrink items-center gap-1 text-[14px] font-medium leading-5 text-sidebar-ink">
             {bot.pinned && <Pin size={12} className="shrink-0 text-sidebar-ink-secondary" />}
             <RenameTitle
               key={iconOnly ? "icons" : "expanded"}
@@ -2049,28 +2051,22 @@ export function BotListItem({
               className="min-w-0 truncate"
               inputClassName="w-full rounded bg-inset px-1 py-0.5 text-[14px] font-medium"
             />
-            {/* the role is read out with the name, not drawn (upstream) */}
-            {title && !renaming && <span className="sr-only">{`, ${title}`}</span>}
           </span>
-          {selected && last && !renaming && !expanded && (
-            <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary transition-opacity group-hover:opacity-0 group-focus-within:opacity-0 touch:opacity-0">
-              {formatTime(last.at)}
-            </span>
-          )}
+          {title && !renaming && <BotRoleTag text={title} />}
           {unread && <span className="sr-only">{t("task.unreadMany")}</span>}
         </div>
-        {(!expanded || deleting) && (!quiet || statusLine) && <div className="flex items-center justify-between gap-2">
+        {(!quiet || statusLine) && <div className="flex min-h-[18px] min-w-0 items-center gap-1">
           {deleting ? (
             <span role="status" className="flex min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">
               <Loader2 size={12} className="shrink-0 animate-spin" />
               {t("sidebar.bot.deletingRow")}
             </span>
           ) : (
-            <span className={cn("flex min-h-[18px] min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px]", unread ? "text-sidebar-ink" : "text-sidebar-ink-secondary")}>
+            <span className="flex min-h-[18px] min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">
               {working ? (
                 // the same typing dots as the chat header; sized to the text's
                 // line box so the row does not jump when work starts or ends
-                <span className="flex h-[1.5em] items-center" role="status">
+                <span className="flex h-[18px] items-center" role="status">
                   <WorkingDots size={3.5} />
                   <span className="sr-only">{t("sidebar.preview.working")}</span>
                 </span>
@@ -2099,9 +2095,12 @@ export function BotListItem({
     const insideRenameInput = event.target instanceof HTMLInputElement;
     if (botListItemPointerIntent(event.type, insideRenameInput) === "select") openConversation();
   };
+  const openThread = (threadId: string) => {
+    if (selected && threadId === bot.threadId) return;
+    dispatch({ type: "switchTask", botId: bot.id, threadId });
+  };
 
-  return (
-    <>
+  const row = (
     <div className="group relative" title={iconOnly ? [bot.name, bot.title?.trim()].filter(Boolean).join(" · ") : undefined}>
       {/* Keep this wrapper mounted while RenameTitle swaps its label for an
           input. Replacing the wrapper tree remounts RenameTitle, loses its
@@ -2118,8 +2117,7 @@ export function BotListItem({
             : undefined
         }
         aria-busy={deleting || undefined}
-        // with no thread list open, the row is the conversation being looked at
-        aria-current={selected && !expanded && !renaming ? "page" : undefined}
+        aria-current={selected && !renaming ? "page" : undefined}
         data-sidebar-bot-row={bot.id}
         onClick={onSelect}
         onKeyDown={(event) => {
@@ -2134,13 +2132,9 @@ export function BotListItem({
       >
         {body}
       </div>
-      {inSidebar && !iconOnly && hasThreadList && <button
-        type="button"
-        aria-label={t(threadsOpen ? "task.collapseNamed" : "task.expandNamed", { name: bot.name })}
-        aria-expanded={threadsOpen}
-        onClick={() => setThreadsOpen((open) => !open)}
-        className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60"
-      ><ChevronRight aria-hidden="true" size={13} className={cn("transition-transform", threadsOpen && "rotate-90")} /></button>}
+      {trailingDot && (
+        <span data-sidebar-unread-dot aria-hidden="true" className="absolute right-2 top-1/2 size-2 -translate-y-1/2 rounded-full bg-unread pointer-events-none transition-opacity group-hover:opacity-0 group-focus-within:opacity-0 max-md:opacity-0 touch:opacity-0" />
+      )}
       {!renaming && iconOnly && unread && (
         <span className="pointer-events-none absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-unread" />
       )}
@@ -2158,11 +2152,12 @@ export function BotListItem({
         </span>
       )}
     </div>
-    {/* Header mode (default): nothing sits under the bot; the chat header's
-        thread button is the one place for its threads. Sidebar mode lists
-        them here and the header button is hidden, never both. Threads off:
-        only the activity rows. */}
-    {!iconOnly && threadsOpen && hasThreadList && inSidebar && <BotThreadList bot={bot} selected={selected} density={density} query={bot.name.toLowerCase().includes(query.toLowerCase()) || bot.title.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
+  );
+
+  return (
+    <>
+    <SidebarUnreadThreads bot={bot} threads={unreadThreads} onOpen={openThread}>{row}</SidebarUnreadThreads>
+    {/* Threads off: only the activity rows. */}
     {!showThreads && <SidebarBotActivity bot={bot} rowThreadId={selected ? bot.threadId : botOpensTo(bot, showThreads)} density={density} pendingQueued={pendingQueued} dispatch={dispatch} />}
     </>
   );
@@ -2493,6 +2488,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const cancelConfirm = useCallback(() => setConfirm(null), []);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renameBotId, setRenameBotId] = useState<string | null>(null);
+  const [folderDialogBot, setFolderDialogBot] = useState<Bot | null>(null);
+  const canChooseFolder = useOwnerOrAdmin() === true;
   const [sectionPicker, setSectionPicker] = useState<MenuState | null>(null);
 
   const [teamMenu, setTeamMenu] = useState<{ name: string; x: number; y: number } | null>(null);
@@ -2621,14 +2618,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const searchTitle = `${t("sidebar.search")} (${paletteShortcutLabel()})`;
   // null on 404 and on any other failure, so the roster stays.
   // Chosen in Settings > Appearance or by dragging the edge; one store.
-  const advanced = useAdvancedMode();
+  const advancedMode = useAdvancedMode();
   const density = useSidebarDensity();
-  // Settings > Appearance > Sidebar shortcuts. A person with no stored
-  // choice keeps what the experimental switches showed, written once.
-  const sidebarShortcuts = useSidebarShortcuts(state.config);
-  useEffect(() => {
-    migrateSidebarShortcuts(state.config);
-  }, [state.config]);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   // `collapsed` follows the drag itself: the density store answers a beat
   // later, and a second crossing in that beat must not toggle twice.
@@ -2790,7 +2781,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const hiddenEntries = hiddenKeySet(sidebarHidden);
   const sidebarShown = withoutHiddenEntries(layoutBots, layoutGroups, hiddenEntries, viewerId);
   const sidebarBots = sidebarListedBots(sidebarShown.bots, viewerId, orgMode, layoutSections);
-  const pinnedBots = sidebarBots.filter((bot) => !bot.hidden && bot.pinned);
+  // The pin grid at the top: the viewer's Primary Bot first, always there
+  // with its orange star and role (Grok Bot's head of the list), then the
+  // pinned bots. A bot in the grid is not a row below.
+  const inTopGrid = (bot: Bot) => Boolean(bot.pinned) || isViewersPrimaryBot(bot, viewerId);
+  const pinnedBots = sidebarBots
+    .filter((bot) => !bot.hidden && inTopGrid(bot))
+    .sort((a, b) => Number(isViewersPrimaryBot(b, viewerId)) - Number(isViewersPrimaryBot(a, viewerId)));
   const matchingBots = sidebarBots
     .filter((b) => !b.hidden)
     .filter(
@@ -2802,11 +2799,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         b.tasks?.some((task) => !task.routineRunId && task.title.toLowerCase().includes(q)) ||
         b.projects?.some((folder) => folder.name.toLowerCase().includes(q)),
     );
+  // Built-in bots get their own section under the person's teams.
+  const builtInBots = matchingBots.filter((bot) => isBuiltInBot(bot) && !inTopGrid(bot));
+  const teamBots = matchingBots.filter((bot) => !isBuiltInBot(bot));
   const visibleGroups = sidebarShown.groups.filter((g) => !q || g.name.toLowerCase().includes(q) || g.tasks?.some((task) => task.title.toLowerCase().includes(q)));
   const {
     sectionChiefs,
     sectionedBots,
-  } = partitionSidebarBots(matchingBots);
+  } = partitionSidebarBots(teamBots);
   const { botChats, sectionedRooms, unsectionedRooms } = partitionSidebarGroups(visibleGroups);
 
   // User sections keep first-appearance order. The saved layout keeps an
@@ -2826,13 +2826,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     ...sectionedRooms.map((group) => group.section!),
   ])];
   const teamOrder = (key: string) => key === "" ? -1 : teamNames.includes(key) ? teamNames.indexOf(key) : teamNames.length;
-  const teamMap = buildTeamMapSections(matchingBots, teamNames, { general: unsectionedRooms.length > 0 })
+  const teamMap = buildTeamMapSections(teamBots, teamNames, { general: unsectionedRooms.length > 0 })
     .sort((a, b) => teamOrder(a.key) - teamOrder(b.key))
     .filter((team) => {
       if (team.key) return true;
       // Pinned bots already sit in the pin grid, so they are not rows here.
       // An Unassigned header with nothing under it stays off. A room still keeps it.
-      const botRows = [...team.chiefs, ...team.members].filter((bot) => !bot.pinned).length;
+      const botRows = [...team.chiefs, ...team.members].filter((bot) => !inTopGrid(bot)).length;
       return botRows + unsectionedRooms.length > 0;
     });
   const naturalSectionIds = [
@@ -2954,28 +2954,24 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
-  // The Connect apps pill and Browse Bots stay in view above the account row
-  // while Settings > Appearance > Sidebar shortcuts is on (a per-person
-  // choice; src/lib/sidebar-shortcuts-preferences.ts). The pill took the
-  // Connected apps row's place (JC, 2026-10-15). Team map and Automations
-  // are in the account menu.
-  const shortcutsShown = advanced && sidebarShortcuts;
-  // Browse Bots: the bot catalogue, on its home view.
-  const places: SidebarPlace[] = shortcutsShown && !remoteClient ? [{
-    key: "browse-bots",
-    label: t("sidebar.browseBots"),
-    icon: LayoutGrid,
-    animation: "grid",
-    onSelect: () => dispatch(openBotCatalog()),
-  }] : [];
-  // Archived bots is housekeeping, not a place: it stays in the account menu.
-  const accountPlaces: SidebarMenuItem[] = !remoteClient && archivedBots.length > 0 ? [{
-    key: "archived",
-    label: t("sidebar.archived.title"),
-    icon: <Archive size={18} />,
-    trailing: <span className="text-[11.5px] text-ink-secondary">{archivedBots.length}</span>,
-    onSelect: () => setArchivedBotsOpen(true),
-  }] : [];
+  // Grok Bot's foot (JC, 2026-10-15): the avatar and the Connect apps pill,
+  // nothing else. Browse bots moved into the account menu, with Archived
+  // bots when there are any; Team map and Automations were already there.
+  const accountPlaces: SidebarMenuItem[] = remoteClient ? [] : [
+    {
+      key: "browse-bots",
+      label: t("sidebar.browseBots"),
+      icon: <LayoutGrid size={18} />,
+      onSelect: () => dispatch(openBotCatalog()),
+    },
+    ...(archivedBots.length > 0 ? [{
+      key: "archived",
+      label: t("sidebar.archived.title"),
+      icon: <Archive size={18} />,
+      trailing: <span className="text-[11.5px] text-ink-secondary">{archivedBots.length}</span>,
+      onSelect: () => setArchivedBotsOpen(true),
+    }] : []),
+  ];
   return (
     <SidebarMascotProvider rootRef={sidebarRef}>
     <aside
@@ -3093,7 +3089,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       </div>
 
       {/* Bot list. GET /api/org 404 keeps this roster. */}
-      <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto pb-6 pt-1", density === "icons" ? "px-2" : "pl-2 pr-3")}
+      <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto pb-6 pt-1", density === "icons" ? "px-2" : "pl-3 pr-[13px]")}
         onContextMenu={orgMode ? (event) => { if (event.target === event.currentTarget || (event.target as HTMLElement).dataset?.sidebarEmpty !== undefined) openOrgMenu(event, null, null); } : undefined}>
         {pinnedBots.length > 0 && (
           // The reference window's tiles: 95 x 115, 4px apart and centred as
@@ -3118,17 +3114,17 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                       ? "flex w-20 min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5"
                       // the selected tile is a neutral lighter card with a
                       // 16px radius
-                      : "flex h-[115px] w-[95px] shrink-0 flex-col items-center gap-[3px] rounded-2xl px-1 pb-1 pt-1.5",
+                      // Grok Bot's pinned tile: 6px over a 60px portrait, 6px
+                      // between portrait, name and role, 4px under, 8px aside
+                      : "flex w-[95px] shrink-0 flex-col items-center gap-1.5 rounded-2xl px-1 pb-1 pt-1.5",
                     density === "icons"
                       ? selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover"
                       : selected ? "bg-sidebar-card" : "hover:bg-sidebar-hover/60",
                   )}
                 >
-                  <SidebarMascotAvatar botId={bot.id} bot={bot} primary={isViewersPrimaryBot(bot, viewerId)} primaryRingClassName={selected && density !== "icons" ? "ring-sidebar-card" : "ring-sidebar"} state="idle" size={density === "icons" ? 36 : 64} animated={false} />
+                  <SidebarMascotAvatar botId={bot.id} bot={bot} primary={isViewersPrimaryBot(bot, viewerId)} primaryRingClassName={selected && density !== "icons" ? "ring-sidebar-card" : "ring-sidebar"} state="idle" size={density === "icons" ? 36 : 60} animated={false} />
                   {density !== "icons" && <span className="w-full truncate text-center text-[12px] leading-4 text-sidebar-ink">{bot.name}</span>}
-                  {density !== "icons" && title ? (
-                    <LabelTag text={title} size="small" className="max-w-full" />
-                  ) : null}
+                  {density !== "icons" && title ? <BotRoleTag text={title} tile /> : null}
                 </button>
               );
             })}
@@ -3141,14 +3137,15 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           {sectionIds.map((id, index) => {
             const team = teamMap.find((item) => (item.key ? userSectionId(item.key) : GENERAL_SECTION_ID) === id);
             const sectionName = team?.key || userSectionName(id);
-            const sectionChiefItems = (team?.chiefs ?? []).filter((bot) => !bot.pinned);
+            const sectionDisplayName = team?.key && !isMyTeamSectionName(team.key) ? team.key : sectionLabel(id);
+            const sectionChiefItems = (team?.chiefs ?? []).filter((bot) => !inTopGrid(bot));
             const sectionGroupItems =
               id === BOT_CHATS_SECTION_ID
                 ? botChats
                 : team
                   ? (team.key ? sectionedRooms.filter((group) => group.section === team.key) : unsectionedRooms)
                   : [];
-            const sectionBotItems = (team?.members ?? []).filter((bot) => !bot.pinned);
+            const sectionBotItems = (team?.members ?? []).filter((bot) => !inTopGrid(bot));
             const collapsed = sectionCollapsed(id);
             const queued = collapsed ? [...sectionChiefItems, ...sectionBotItems].flatMap((bot) =>
               sidebarBotActivityTasks(bot, state.pendingQueued).filter((task) => task.queued).map((task) => `${bot.name}: ${task.title}`)) : [];
@@ -3179,7 +3176,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <SectionNameInput initial={team.key} onSave={(name) => renameOrgSection(team.key!, name)} onCancel={() => setSectionEdit(null)} />
                 ) : density !== "icons" && !(id === GENERAL_SECTION_ID && loneGeneral) && (
                   <SidebarSectionHeader
-                    name={team?.key || sectionLabel(id)}
+                    name={sectionDisplayName}
                     onContextMenu={orgMode && layoutInteractive && id !== BOT_CHATS_SECTION_ID ? (event) => openOrgMenu(event, team?.key || null, id) : !remoteClient && layoutInteractive && sectionName ? (event) => {
                       event.preventDefault();
                       teamMenuReturn.current = event.currentTarget.querySelector<HTMLElement>("button") ?? event.currentTarget;
@@ -3209,8 +3206,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <div
                     data-sidebar-nest
                     role="group"
-                    aria-label={team?.key || sectionLabel(id)}
-                    className={density === "icons" ? "flex flex-col gap-1" : "flex flex-col gap-0.5"}
+                    aria-label={sectionDisplayName}
+                    className="flex flex-col gap-1"
                   >
                     {sectionChiefItems.map((bot) => (
                       <div key={bot.id} {...itemDragProps("bot", bot.id)}>
@@ -3258,6 +3255,41 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             );
           })}
 
+          {builtInBots.length > 0 && (() => {
+            const collapsed = sectionCollapsed(BUILT_IN_SECTION_ID);
+            return (
+              <div data-sidebar-section-id={BUILT_IN_SECTION_ID} className={cn("flex flex-col gap-1", density !== "icons" && sectionIds.length > 0 && "pt-2.5")}>
+                {density !== "icons" && (
+                  <SidebarSectionHeader
+                    name={sectionLabel(BUILT_IN_SECTION_ID)}
+                    collapsed={collapsed}
+                    count={builtInBots.length}
+                    reorderable={false}
+                    dragging={false}
+                    onToggle={layoutInteractive ? () => toggleSection(BUILT_IN_SECTION_ID) : undefined}
+                  />
+                )}
+                {!collapsed && (
+                  <div data-sidebar-nest role="group" aria-label={sectionLabel(BUILT_IN_SECTION_ID)} className="flex flex-col gap-1">
+                    {builtInBots.map((bot) => (
+                      <div key={bot.id} {...itemDragProps("bot", bot.id)}>
+                        <BotListItem
+                          bot={bot}
+                          density={density}
+                          quiet={quietRows}
+                          query={q}
+                          onMenu={setMenu}
+                          startRename={renameBotId === bot.id}
+                          onRenameStarted={() => setRenameBotId(null)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {density !== "icons" && <HiddenEntriesRow rows={hiddenSidebarRows(sidebarHidden.items, { bots: state.bots, groups: state.groups, viewerId, people: sidebarPeople })} />}
         </div>
       </div>
@@ -3272,8 +3304,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           the places so they never push them. */}
       <div
         data-sidebar-foot
-        data-tour={places.length === 0 ? "tools" : undefined}
-        className={cn("pb-3 pt-1", density === "icons" ? "px-2" : "pl-2 pr-3")}
+        data-tour="tools"
+        className={cn(density === "icons" ? "px-2 pb-3 pt-1" : "px-4 pb-4")}
       >
         {density === "icons" && !remoteClient && archivedBots.length > 0 && (
           <button
@@ -3292,30 +3324,30 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             onOpen={() => dispatch(phoneSettingsAction())}
           />
         )}
-        {shortcutsShown && (
-          <SidebarConnectApps
-            iconOnly={density === "icons"}
-            icon={<Puzzle size={20} />}
-            onOpen={() => dispatch({ type: "togglePlugins", open: true })}
-          />
-        )}
-        <SidebarPlaces places={places} iconOnly={density === "icons"} />
         {density === "icons" ? (
-          <div className="flex items-center justify-center">
-            <button
-              onClick={() => dispatch({ type: "toggleAppSettings" })}
-              data-sidebar-account-rail
-              className="flex h-10 min-w-0 items-center justify-center rounded-lg px-2 text-left hover:bg-sidebar-hover"
-              aria-label={t("sidebar.appSettings")}
-              title={state.config?.profile?.name?.trim() || t("sidebar.appSettings")}
-            >
-              <InitialsAvatar initials={profileInitials(state.config?.profile)} size={28} />
-            </button>
-          </div>
+          <>
+            <SidebarConnectApps iconOnly icon={<Puzzle size={20} />} onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
+            {/* the rail's avatar opens Settings, so Browse bots keeps its icon */}
+            {!remoteClient && <SidebarPlaces iconOnly places={[{ key: "browse-bots", label: t("sidebar.browseBots"), icon: LayoutGrid, animation: "grid", onSelect: () => dispatch(openBotCatalog()) }]} />}
+            <div className="flex items-center justify-center">
+              <button
+                onClick={() => dispatch({ type: "toggleAppSettings" })}
+                data-sidebar-account-rail
+                className="flex h-10 min-w-0 items-center justify-center rounded-lg px-2 text-left hover:bg-sidebar-hover"
+                aria-label={t("sidebar.appSettings")}
+                title={state.config?.profile?.name?.trim() || t("sidebar.appSettings")}
+              >
+                <InitialsAvatar initials={profileInitials(state.config?.profile)} size={28} />
+              </button>
+            </div>
+          </>
         ) : (
-          // One row, the way Perspicax lays out its account footer: your
-          // avatar and your full name, opening the profile menu.
-          <SidebarProfileMenu places={accountPlaces} memberLine={!shortcutsShown} />
+          // Grok Bot's foot: your avatar (it opens the account menu, Browse
+          // bots included), 8px, then the wide Connect apps pill.
+          <div data-sidebar-account-row className="flex items-center gap-2">
+            <SidebarProfileMenu avatarOnly places={accountPlaces} />
+            <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
+          </div>
         )}
       </div>
 
@@ -3331,7 +3363,11 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           onRename={(botId) => setRenameBotId(botId)}
           onMakePrimary={(bot) => void makePrimaryBot(bot.id)}
           onReplacePrimary={(bot) => setPrimaryPicker({ currentId: bot.id, pending: false, error: null })}
+          onNewInFolder={canChooseFolder && advancedMode && !remoteClient ? (bot) => setFolderDialogBot(bot) : undefined}
         />
+      {folderDialogBot && <NewTaskFolderDialog bot={folderDialogBot} onClose={() => setFolderDialogBot(null)} onReturnFocus={() => {
+        document.querySelector<HTMLElement>(`[data-sidebar-bot-row="${CSS.escape(folderDialogBot.id)}"]`)?.focus();
+      }} />}
       <PrimaryBotPicker
         open={primaryPicker !== null}
         bots={sidebarBots}

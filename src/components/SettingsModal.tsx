@@ -64,7 +64,6 @@ import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@/lib/send-key";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
-import { setSidebarShortcuts, useSidebarShortcuts } from "@/lib/sidebar-shortcuts-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
 
@@ -590,22 +589,6 @@ function SidebarLogoRow() {
         checked={enabled}
         aria-label={t("settings.sidebarLogo.show")}
         onClick={() => setShowSidebarLogo(!enabled)}
-      />
-    </SettingRow>
-  );
-}
-
-/** Connected apps and Browse Bots as menu rows at the foot of the sidebar.
- * On, the account row drops its title and points line for lack of room. */
-function SidebarShortcutsRow() {
-  const { state } = useStore();
-  const enabled = useSidebarShortcuts(state.config);
-  return (
-    <SettingRow title={t("settings.sidebarShortcuts.title")} subtitle={t("settings.sidebarShortcuts.subtitle")}>
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.sidebarShortcuts.show")}
-        onClick={() => setSidebarShortcuts(!enabled)}
       />
     </SettingRow>
   );
@@ -1395,7 +1378,6 @@ export function SettingsModal() {
                   <ThreadsViewRow />
                   {/* Simple shows what most people change; the rest is Advanced (2026-10-14). */}
                   {advanced && <SidebarLogoRow />}
-                  {advanced && <SidebarShortcutsRow />}
                   {advanced && <RoutinesBadgeRow />}
                   {advanced && <InspectorButtonRow />}
                   {advanced && <ShowUnreadyProvidersRow />}

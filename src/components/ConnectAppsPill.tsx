@@ -165,16 +165,17 @@ export function SidebarConnectApps({ onOpen, iconOnly = false, icon }: { onOpen:
       </button>
     );
   }
+  // Grok Bot's foot pill: it takes the row's width beside the avatar, 36px
+  // tall, the label and the icons centred together, 14px medium text, on
+  // the rail's raised card with a hairline.
   return (
-    <div className="mb-1.5 px-0.5">
-      <ConnectAppsButton
-        apps={sidebarPillApps(connected, cards)}
-        onOpen={onOpen}
-        ariaLabel={label}
-        data-tour="nav-apps"
-        data-sidebar-connect-apps=""
-        className="w-full justify-between"
-      />
-    </div>
+    <ConnectAppsButton
+      apps={sidebarPillApps(connected, cards)}
+      onOpen={onOpen}
+      ariaLabel={label}
+      data-tour="nav-apps"
+      data-sidebar-connect-apps=""
+      className="min-w-0 flex-1 justify-center border-sidebar-hairline-weak bg-sidebar-card pl-4 pr-3 text-[14px] text-sidebar-ink hover:bg-sidebar-elevated-hover"
+    />
   );
 }

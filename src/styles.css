@@ -587,7 +587,8 @@
   --color-sidebar-ink: #f5f5f5;           /* = ink */
   --color-sidebar-ink-secondary: #f5f5f5a8; /* = ink-secondary */
   --color-sidebar-hover: #f5f5f50f;       /* 6% white */
-  --color-sidebar-selected: #f5f5f51a;    /* 10% white: the selected row, #252525 on the rail */
+  --color-sidebar-selected: #f5f5f514;    /* 8% white: Grok Bot's selected row, #202020 on the rail */
+  --color-primary-badge: #d79d3d;         /* Grok Bot's main-bot star corner (bg yellow bright) */
   --color-sidebar-hairline: #333333;      /* not Grok Bot (6% white = #1c1c1c): nudged to 1.5:1 */
   --sidebar-mark-on-dark: inline-block;
   --sidebar-mark-on-light: none;

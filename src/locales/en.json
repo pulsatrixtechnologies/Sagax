@@ -3847,7 +3847,7 @@
   "onboarding.spot.connector": "When a bot needs an app you haven't connected, it asks here. Sign in once in your browser and every bot can use it.",
   "onboarding.spot.gotIt": "Got it",
   "onboarding.spot.model": "This bot runs on the model shown here. Change it any time, even mid-conversation.",
-  "onboarding.tour.apps": "Connected apps. Gmail, Slack, GitHub, Notion, and hundreds more. Let's have a look.",
+  "onboarding.tour.apps": "Connect apps. Gmail, Slack, GitHub, Notion, and hundreds more. Let's have a look.",
   "onboarding.tour.apps-panel": "The marketplace. Sign in to an app once and every bot can use it as a tool. We'll close this and move on.",
   "onboarding.tour.automations": "Automations. Bots that run on a schedule, or when a webhook calls. Let's open it.",
   "onboarding.tour.automations-page": "A calendar. Drop a bot on a time and it runs by itself; the result lands in its chat. Next takes you back to the chat.",
@@ -3861,7 +3861,7 @@
   "onboarding.tour.next": "Next",
   "onboarding.tour.progress": "Step {current} of {total}",
   "onboarding.tour.skip": "Skip tour",
-  "onboarding.tour.tools": "The foot of the sidebar: Team map, Automations, Connected apps and Browse Bots, always one click away. Your name below opens your settings.",
+  "onboarding.tour.tools": "The foot of the sidebar: your avatar opens Team map, Automations, Browse Bots and your settings. The Connect apps pill sits right beside it.",
   "onboarding.welcome": "Welcome to {app}",
   "org.addressFailed": "Could not save the server address.",
   "org.addressInvalid": "Use an https address, a Tailscale name, or http://localhost.",
@@ -5733,9 +5733,6 @@
   "settings.sidebarLogo.show": "Show the sidebar logo",
   "settings.sidebarLogo.subtitle": "Show the Sagax logo and name at the top of the sidebar.",
   "settings.sidebarLogo.title": "Sidebar logo",
-  "settings.sidebarShortcuts.show": "Show the sidebar shortcuts",
-  "settings.sidebarShortcuts.subtitle": "Show Connected apps and Browse Bots as rows at the foot of the sidebar. While on, your title and points leave the account row to make room; they stay in Achievements.",
-  "settings.sidebarShortcuts.title": "Sidebar shortcuts",
   "settings.skin.subtitle": "Applies instantly.",
   "settings.skin.title": "Skin",
   "settings.subPage.back": "Back to {section}",
@@ -7731,5 +7728,9 @@
   "workspaceLine.localVm": "In the Local VM",
   "workspaceLine.fallbackOffline": "Moved to {place}: your computer is offline",
   "workspaceLine.fallbackRoutine": "Moved to {place}: routines may not use your computer",
-  "workspaceLine.fallbackUnavailable": "Moved to {place}: {wanted} is not available"
+  "workspaceLine.fallbackUnavailable": "Moved to {place}: {wanted} is not available",
+  "sidebar.section.myTeam": "My team",
+  "sidebar.section.builtIn": "Built-in",
+  "sidebar.threadsFor": "Threads for {name}",
+  "sidebar.openUnreadThread": "Open {name}, unread"
 }

@@ -8,6 +8,25 @@ export const BOTS_SECTION_ID = "builtin:bots";
 export const ATTENTION_SECTION_ID = "builtin:attention";
 export const PINNED_THREADS_SECTION_ID = "builtin:pinned-threads";
 export const TOOLS_SECTION_ID = "builtin:tools";
+/** Grok Bot's "Built-in" section: the bots the organization library put on
+ * this computer (installedPackage.source "org") that the person has not
+ * filed in a section of their own. */
+export const BUILT_IN_SECTION_ID = "builtin:integrated";
+
+/** A bot that the app or the organization provides rather than one the
+ * person made: Sagax has no "built-in bot" field, so the closest one is a
+ * bot installed from the organization library. Filed in a section, it
+ * stays there. */
+export function isBuiltInBot(bot: { section?: string; installedPackage?: { source?: "file" | "org" } }): boolean {
+  return bot.installedPackage?.source === "org" && !bot.section;
+}
+
+/** "My team" is the name Grok Bot and earlier imports give the person's
+ * default team; it reads in the interface's language ("Mon équipe"). Any
+ * other name stays exactly as typed. */
+export function isMyTeamSectionName(name: string): boolean {
+  return name.trim().toLowerCase() === "my team";
+}
 
 const USER_SECTION_PREFIX = "section:";
 

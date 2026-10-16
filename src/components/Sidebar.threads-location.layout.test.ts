@@ -44,19 +44,17 @@ describe("threads location: one place at a time", () => {
     expect(header()).toContain('aria-label="All threads"');
   });
 
-  it("In the sidebar: threads and folders sit under the bot; New thread / New folder are not inline", () => {
+  // Grok Bot's rows (JC, 2026-10-15): a bot's thread list no longer unfolds
+  // in the sidebar, whatever the setting; the header button is always its
+  // place. Rooms and people keep the setting.
+  it("In the sidebar location too, a bot's threads stay in the header and nothing unfolds under the bot", () => {
     prefs.location = "sidebar";
     const rail = sidebar();
-    expect(rail).toContain('aria-label="Atlas threads"');
-    expect(rail).toContain('data-sidebar-thread-row="older"');
-    expect(rail).toContain('data-sidebar-project="p1"');
-    expect(rail).toContain("Collapse Atlas threads");
-    expect(rail).not.toContain("data-sidebar-thread-list-actions");
-    expect(rail).not.toContain(">New thread<");
-    expect(rail).not.toContain(">New folder<");
-    const row = rail.match(/<div[^>]*data-sidebar-bot-row="atlas"[\s\S]*?<\/div><\/div>/)?.[0] ?? "";
-    expect(row).not.toContain('aria-label="New thread"');
-    expect(header()).toBe("");
+    expect(rail).toContain('data-sidebar-bot-row="atlas"');
+    expect(rail).not.toContain("data-sidebar-thread-row");
+    expect(rail).not.toContain("data-sidebar-project");
+    expect(rail).not.toContain("Collapse Atlas threads");
+    expect(header()).toContain('aria-label="All threads"');
   });
 
   it("lists folders and chats straight, with no My conversations or Threads heading", () => {

@@ -579,11 +579,10 @@ export function botPickerThreads(bot: Pick<Bot, "tasks">): Task[] {
 
 export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen?: boolean }) {
   const { state, dispatch } = useStore();
-  // Threads on and located in the header. In the sidebar location the picker
-  // is hidden: the two places are exclusive.
-  const threadsOn = useShowThreads();
-  const location = useThreadsLocationChoice();
-  const showThreads = threadsOn && location === "header";
+  // A bot's threads live here whatever Threads location says: the sidebar
+  // no longer unfolds a bot's thread list (Grok Bot's rows, JC 2026-10-15),
+  // it only lists its unread threads. Rooms and people keep the setting.
+  const showThreads = useShowThreads();
   const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [folderSaving, setFolderSaving] = useState(false);

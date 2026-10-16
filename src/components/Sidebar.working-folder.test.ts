@@ -22,7 +22,7 @@ vi.mock("@/lib/cloud-guest", () => ({ useCanWriteIn: () => true }));
 
 const { Sidebar } = await import("./Sidebar");
 const { BotEditorStore, initialState } = await import("@/state/store");
-const { setLocale, t } = await import("@/lib/i18n");
+const { setLocale } = await import("@/lib/i18n");
 const { setThreadsLocation } = await import("@/lib/thread-preferences");
 const bot: Bot = {
   id: "pepper", name: "Pepper", threadId: "current", title: "", description: "", color: "green", unread: false,
@@ -38,13 +38,12 @@ const render = () => flushSync(() => root.render(createElement(BotEditorStore, {
     flushBotPatches: async () => null, refreshInstances: async () => {}, refreshModels: async () => {} },
   children: createElement(Sidebar, { open: true, onClose: () => {} }),
 })));
-// Sagax keeps new-thread items out of the bot row menu: they live in the
-// thread list's own menu (right click on the list).
+// Grok Bot's rows (JC, 2026-10-15): the thread list no longer unfolds
+// under the bot, so New thread and New thread in a working folder are in the
+// bot's own menu (right click on the row).
 const openMenu = () => {
-  const expand = document.querySelector<HTMLButtonElement>(`button[aria-label="${t("task.expandNamed", { name: "Pepper" })}"]`);
-  if (expand) flushSync(() => expand.click());
-  const list = [...document.querySelectorAll<HTMLElement>('[role="group"]')].find((group) => group.getAttribute("aria-label") === t("task.namedList", { name: "Pepper" }));
-  flushSync(() => list?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })));
+  const row = document.querySelector<HTMLElement>('[data-sidebar-bot-row="pepper"]');
+  flushSync(() => row?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })));
 };
 const menuItem = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === label);
 
@@ -54,7 +53,7 @@ beforeEach(() => {
   dispatch.mockReset();
   vi.stubGlobal("fetch", () => new Promise(() => {}));
   setLocale("en");
-  // the thread list sits under the bot only in Sidebar mode (Header is the default)
+  // whatever the location, the bot's menu holds the working-folder item
   setThreadsLocation("sidebar");
   host = document.createElement("div");
   document.body.append(host);

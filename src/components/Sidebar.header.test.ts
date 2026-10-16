@@ -126,52 +126,34 @@ describe("sidebar header", () => {
     },
   );
 
-  // Settings > Appearance > Sidebar shortcuts (2026-10-14): on, the Connect
-  // apps pill (in place of the Connected apps row, JC 2026-10-15) and the
-  // Browse Bots row, and no title or points under the name; off, neither,
-  // and the line is back.
-  it("shows the Connect apps pill and the Browse Bots row, and no title or points, while Sidebar shortcuts is on", () => {
+  // Grok Bot's foot (JC, 2026-10-15): the avatar (the account menu) and the
+  // wide Connect apps pill, whatever Sidebar shortcuts said. No Browse Bots
+  // row and no name row: Browse Bots is in the avatar's menu.
+  it.each([true, false])("draws only the avatar and the Connect apps pill at the foot (shortcuts %s)", (shortcuts) => {
     fixture.density = "comfortable";
-    fixture.shortcuts = true;
+    fixture.shortcuts = shortcuts;
     resetAchievementsForTests({ status: "ready", snapshot: achievementSnapshot() });
     const html = render();
-    const rows = [...html.matchAll(/data-sidebar-place="([^"]+)"/g)].map((match) => match[1]);
-    expect(rows).toEqual(["browse-bots"]);
-    expect(html).not.toContain(">Connected apps</span>");
-    expect(html).toContain(">Browse Bots</span>");
-    const pill = (html.match(/<button[^>]*data-sidebar-connect-apps[^>]*>/g) ?? [])[0] ?? "";
+    const foot = html.slice(html.indexOf("data-sidebar-foot"));
+    expect(foot).toContain("data-sidebar-account-row");
+    expect(foot).not.toContain("data-sidebar-place=");
+    expect(foot).not.toContain(">Browse Bots</span>");
+    expect(foot).not.toContain("data-account-name");
+    expect(foot).not.toContain("data-member-line");
+    const pill = (foot.match(/<button[^>]*data-sidebar-connect-apps[^>]*>/g) ?? [])[0] ?? "";
     expect(pill).toContain('data-tour="nav-apps"');
     expect(pill).toContain("rounded-full");
-    expect(html).toContain(">Connect apps</span>");
-    // the pill sits above Browse Bots, both above the account row
-    expect(html.indexOf("data-sidebar-connect-apps")).toBeLessThan(html.indexOf('data-sidebar-place="browse-bots"'));
-    expect(html).not.toContain('data-place-anim="puzzle"');
-    expect(html).toContain('data-place-anim="grid"');
-    expect(html).not.toContain("data-member-line");
-    expect(html).not.toContain(">Commander<");
-    expect(html).not.toContain("data-gamertag");
+    expect(pill).toContain("flex-1");
+    expect(pill).toContain("h-9");
+    expect(foot).toContain(">Connect apps</span>");
+    // the avatar comes first, then the pill
+    expect(foot.indexOf("aria-haspopup")).toBeLessThan(foot.indexOf("data-sidebar-connect-apps"));
+    expect(html).toMatch(/data-sidebar-foot[^>]*class="px-4 pb-4"/);
   });
 
-  it("shows neither menu rows nor a Connect apps pill, and keeps title and points, while Sidebar shortcuts is off", () => {
-    fixture.density = "comfortable";
-    fixture.shortcuts = false;
-    resetAchievementsForTests({ status: "ready", snapshot: achievementSnapshot() });
-    const html = render();
-    expect(html).not.toContain("data-sidebar-place=");
-    expect(html).not.toContain(">Connected apps</span>");
-    expect(html).not.toContain(">Browse Bots</span>");
-    expect(html).not.toContain("data-sidebar-connect-apps");
-    expect(html).not.toContain(">Connect apps</span>");
-    expect(html).toContain("data-member-line");
-    expect(html).toContain(">Commander<");
-    expect(html).toContain("data-gamertag");
-  });
-
-  it("keeps the rows as icon buttons on the collapsed rail", () => {
+  it("keeps Connect apps and Browse Bots as icon buttons on the collapsed rail", () => {
     fixture.density = "icons";
-    fixture.shortcuts = true;
     const html = render();
-    expect(html).not.toContain('aria-label="Connected apps"');
     expect((html.match(/<button[^>]*data-sidebar-connect-apps[^>]*>/g) ?? [])[0]).toContain('aria-label="Connect apps"');
     expect(html).toContain('aria-label="Browse Bots"');
     expect(html).toContain('data-place-anim="grid"');

@@ -41,19 +41,21 @@ beforeEach(() => {
 });
 
 describe("sidebar unread rows", () => {
-  it("bolds an unread bot, keeps the Unread label, and draws no dot", () => {
+  // Grok Bot's rows (JC, 2026-10-15): an unread bot keeps its name's
+  // weight and gets one blue dot at the row's end.
+  it("marks an unread bot with one blue dot at the row's end, keeps the Unread label, and no bold name", () => {
     fixture.state = { bots: [bot("quiet"), bot("loud", { unread: true })], groups: [], sections: [] };
     const html = render();
-    expect(html).not.toContain("bg-unread");
+    expect(html.match(/data-sidebar-unread-dot/g)).toHaveLength(1);
     expect(html.match(/sr-only[^>]*>Unread threads</g)).toHaveLength(1);
-    expect(html).toMatch(/font-semibold[^"]*"[^>]*>(?:<[^>]+>)*loud</);
-    expect(html).not.toMatch(/font-semibold[^"]*"[^>]*>(?:<[^>]+>)*quiet</);
+    expect(html).not.toMatch(/font-semibold[^"]*"[^>]*>(?:<[^>]+>)*loud</);
+    expect(html.indexOf("data-sidebar-unread-dot")).toBeGreaterThan(html.indexOf('data-sidebar-bot-row="loud"'));
   });
 
   it("bolds an unread room and draws no dot", () => {
     fixture.state = { bots: [], groups: [room("read-room"), room("new-room", { unread: true })], sections: [] };
     const html = render();
-    expect(html).not.toContain("bg-unread");
+    expect(html).not.toContain("data-sidebar-unread-dot");
     expect(html.match(/sr-only[^>]*>Unread threads</g)).toHaveLength(1);
     expect(html).toMatch(/font-semibold[^"]*"[^>]*>(?:<[^>]+>)*new-room</);
     expect(html).not.toMatch(/font-semibold[^"]*"[^>]*>(?:<[^>]+>)*read-room</);
