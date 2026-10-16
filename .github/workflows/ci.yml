@@ -96,8 +96,11 @@ jobs:
     # scripts/testing/duration-sequencer.ts splits the files by their recorded
     # CI seconds, not by count, so the heavy e2e files no longer share one
     # shard. The cap catches a hang, not normal suite growth: 0.5.0 brought
-    # a shard to 17 minutes of tests plus setup, so Ubuntu has 30.
-    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 30 || 35 }}
+    # a shard to 17 minutes of tests plus setup, so Ubuntu has 30. By 0.5.10
+    # a balanced Windows shard ran about 31 minutes of tests, and shard 1
+    # also runs the broker and Electron step: 35 cancelled it mid-suite, so
+    # Windows and macOS have 45.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 30 || 45 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10

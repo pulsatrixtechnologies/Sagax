@@ -73,7 +73,7 @@ describe("CI concurrency", () => {
     expect(workflow.jobs.vitest.strategy.matrix).toEqual({
       os: "${{ fromJSON(needs.static.outputs.vitest_os) }}", shard: [1, 2, 3, 4],
     });
-    expect(workflow.jobs.vitest["timeout-minutes"]).toBe("${{ matrix.os == 'ubuntu-latest' && 30 || 35 }}");
+    expect(workflow.jobs.vitest["timeout-minutes"]).toBe("${{ matrix.os == 'ubuntu-latest' && 30 || 45 }}");
   });
 
   it("keeps each PR to one macOS job unless native code changed", () => {
