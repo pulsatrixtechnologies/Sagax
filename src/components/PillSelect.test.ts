@@ -59,10 +59,13 @@ describe("PillSelect", () => {
     expect(document.activeElement).toBe(pill());
   });
 
-  it("Escape closes without a change", async () => {
+  it("Escape closes the menu only (Settings stays open) without a change", async () => {
     await act(async () => pill().click());
     await frame();
-    await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    await act(async () => { document.activeElement!.dispatchEvent(escape); });
+    // handled: the Settings modal's window listener skips a handled Escape
+    expect(escape.defaultPrevented).toBe(true);
     expect(listbox()).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(pill());

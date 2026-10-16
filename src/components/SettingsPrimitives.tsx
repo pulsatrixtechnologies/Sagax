@@ -345,7 +345,7 @@ export function SettingsGroup({
   return (
     <section aria-labelledby={headingId} data-settings-group={groupId} className="flex flex-col gap-2 has-[>div:empty]:hidden">
       <h3 id={headingId} className="px-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{title}</h3>
-      <div className="flex flex-col overflow-clip rounded-xl border-[0.5px] border-border bg-elevated py-1.5 empty:hidden">{children}</div>
+      <div className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5 empty:hidden">{children}</div>
     </section>
   );
 }
@@ -409,6 +409,9 @@ export function PillSelect<T extends string>({
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
             show();
+          } else if (event.key === "Escape" && open) {
+            event.preventDefault();
+            close();
           }
         }}
         data-pill-select=""
@@ -431,6 +434,13 @@ export function PillSelect<T extends string>({
             else if (event.key === "Home") { event.preventDefault(); focusOption(0); }
             else if (event.key === "End") { event.preventDefault(); focusOption(items.length - 1); }
             else if (event.key === "Tab") close();
+            else if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+              // Handled here, before the Settings modal's own Escape (a
+              // window listener that skips a handled event): close the
+              // menu, not Settings.
+              event.preventDefault();
+              close(true);
+            }
           }}
           className="popover-surface absolute right-0 top-full z-40 mt-1 flex max-h-[280px] w-max min-w-[180px] max-w-[min(18rem,calc(100vw-2rem))] flex-col gap-0.5 overflow-y-auto rounded-xl border-[0.5px] border-border bg-elevated p-1.5"
         >
