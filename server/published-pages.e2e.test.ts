@@ -8,7 +8,7 @@ import { expect, it } from "vitest";
 import { launchVerificationServer } from "../scripts/control-omb.ts";
 import { PublishedPages } from "./published-pages.ts";
 
-it("serves a published page sandboxed, and stops at once when it is revoked", async () => {
+it("serves a published page in its wrapper and sandboxed frame, and stops at once when it is revoked", async () => {
   const fixture = await launchVerificationServer();
   try {
     const url = fixture.info.url;
@@ -26,17 +26,28 @@ it("serves a published page sandboxed, and stops at once when it is revoked", as
     const published = await api(`/api/pages/${id}/publish`, "POST", { version: 1, access: "link", expiresAt: null });
     expect(published.status).toBe(200);
     const path: string = published.body.page.path;
-    const read = await fetch(`${url}${path}`, { headers: { origin: "https://elsewhere.example" } });
-    expect(read.status).toBe(200);
-    const csp = read.headers.get("content-security-policy") ?? "";
-    expect(csp).toContain("sandbox allow-scripts");
+    const wrapper = await fetch(`${url}${path}`, { headers: { origin: "https://elsewhere.example" } });
+    expect(wrapper.status).toBe(200);
+    expect(wrapper.headers.get("set-cookie")).toBeNull();
+    expect(wrapper.headers.get("content-security-policy")).toContain(`/pages/frame/${path.slice("/pages/view/".length)};`);
+    const body = await wrapper.text();
+    expect(body).toContain("never enter a password here");
+    const frameSrc = /<iframe src="([^"]+)"/.exec(body)![1]!.replace(/&amp;/g, "&");
+    // never as a top-level document
+    expect((await fetch(`${url}${frameSrc}`, { headers: { "sec-fetch-dest": "document" } })).status).toBe(404);
+    const frame = await fetch(`${url}${frameSrc}`, { headers: { "sec-fetch-dest": "iframe" } });
+    expect(frame.status).toBe(200);
+    const csp = frame.headers.get("content-security-policy") ?? "";
+    expect(csp).toMatch(/; sandbox allow-scripts$/);
     expect(csp).not.toContain("allow-same-origin");
     expect(csp).toContain("connect-src 'none'");
-    expect(read.headers.get("set-cookie")).toBeNull();
-    expect(read.headers.get("access-control-allow-origin")).toBeNull();
-    expect(await read.text()).toContain("<p>Bonjour</p>");
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(frame.headers.get("set-cookie")).toBeNull();
+    expect(frame.headers.get("access-control-allow-origin")).toBeNull();
+    expect(await frame.text()).toContain("<p>Bonjour</p>");
     expect((await api(`/api/pages/${id}/revoke`, "POST", {})).status).toBe(200);
     expect((await fetch(`${url}${path}`)).status).toBe(404);
+    expect((await fetch(`${url}${frameSrc}`, { headers: { "sec-fetch-dest": "iframe" } })).status).toBe(404);
   } finally {
     await fixture.close();
   }

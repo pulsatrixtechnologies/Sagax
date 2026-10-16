@@ -3812,47 +3812,78 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
 
 A bot proposes a page (HTML, Markdown or a small one-file static app) with
 the agents tool `propose_page`; the person publishes it from its card
-(`shared/published-pages.ts`, store `server/published-pages.ts`
-(`published-pages.json` and `published-pages.key`, both 0600), renderer
+(`shared/published-pages.ts`, store `server/published-pages.ts`, renderer
 `server/published-pages-render.ts`, routes `server/routes/published-pages.ts`,
 UI `src/components/PublishedPages.tsx`: the chat card and Settings > Pages
-publiées). Keep these rules, covered by `server/published-pages.test.ts` and
-`src/components/PublishedPages.test.ts`:
+publiées). Keep these rules, covered by `server/published-pages.test.ts`,
+`server/published-pages.e2e.test.ts` and `src/components/PublishedPages.test.ts`
+(security review of #646 folded in):
 
 - Publishing is an outward action and only the person does it. The tool
   goes through the internal card route (`createAgentCard`, tool
   `propose_page`) and stores a `proposed` version plus a bot row with
   `pagePublish`; whatever the bot sends (access, publish flags) is ignored.
-  `POST /api/pages/:id/publish` needs an explicit `access` and is answered
-  only for a person: a session (on an organization server, one with a
-  principal, and only for that person's own pages; another person's page
-  reads as 404) or this computer's owner on a one-person server, never a
-  bot's shell on a shared server (`isPerson`). Choosing "Toute personne
-  ayant le lien" asks a second press on the card. Not available in rooms.
-- Who can see it: `private` (its person: the bot owner's principal on an
-  organization server, the owner on a one-person server), `org` (any human,
-  enabled person signed in to this server; never a guest), `link` (anyone
-  holding the link). Expiry: never, or a time within a year. Revoke drops
-  the link id at once; publishing again mints a new link, so a revoked link
-  never comes back. A bad signature, a revoked or expired page and a reader
-  who may not see it all get the same 404 page.
-- Isolation, every answer of `GET /pages/view/<id>.<hmac>` (answered before
-  the auth gate, after the template links): `Content-Security-Policy` with
-  `sandbox allow-scripts allow-modals allow-forms` (Markdown: bare
-  `sandbox`, `script-src 'none'`), never `allow-same-origin`, so the page
-  has an opaque origin even opened in a tab and cannot read the Sagax
-  cookie, storage or API; `default-src 'none'`, `connect-src 'none'`,
-  `form-action 'none'`, `frame-ancestors 'none'`, data:/blob: images only;
-  `no-store`, `no-referrer`, `nosniff`, no Set-Cookie. The app's preview is
-  the same document in an iframe sandboxed to `PAGE_FRAME_SANDBOX` (no
-  same-origin, no popups, no top navigation) with the CSP as a meta tag.
-  Markdown is rendered by our own escaper (no raw HTML, links http(s) and
-  mailto only). Title and content lose secret-shaped text before storage.
-- Versions: each `propose_page` with `page_id` (same conversation only)
-  adds a version that waits for its own Publish; readers keep the
-  published one. Up to 20 versions per page, 200 pages per server.
-- Not done yet: a separate origin for pages (a `SAGAX_PAGES_ORIGIN` host)
-  on top of the sandbox, multi-file apps, an admin audit row per publish
+  `POST /api/pages/:id/publish` needs an explicit `access`. Not available in
+  rooms. Choosing "Toute personne ayant le lien" asks a second press.
+- Whose page it is: the conversation's person (`pageOwnerFor` =
+  `threadOwner` of `server/thread-privacy.ts`: the thread's recorded owner,
+  else the bot owner), never simply the bot's owner. A member's private
+  conversation with someone else's team bot gives the member the page; the
+  bot owner gets 404. Who manages pages: on an organization server the
+  page's person only (a session with that principal); on a one-person server
+  the computer's owner only (`computerOwner`), never another paired session;
+  never a bot's shell on a shared server. Another person's page reads as 404.
+- Who reads it: `private` (its person; on a one-person server the computer's
+  owner), `org` (any human, enabled person signed in to this server, never a
+  guest; on a one-person server any paired session), `link` (anyone holding
+  the link). Expiry: never, or a time within a year. Revoke drops the link
+  id at once (and every frame ticket with it); publishing again mints a new
+  link. A bad signature, a revoked or expired page and a reader who may not
+  see it all get the same 404 page.
+- Isolation. The reader never lands on the page itself. `GET
+  /pages/view/<id>.<hmac>` (before the auth gate and the cookie re-issue: no
+  Set-Cookie) is a Sagax wrapper with a permanent banner, "Page publiée par
+  <bot> pour <personne> : ceci n'est pas un écran Sagax, n'y entrez jamais
+  de mot de passe" (English for other readers), no script and nothing to
+  dismiss, that embeds the page in an iframe sandboxed to `allow-scripts`
+  only (Markdown: empty sandbox). The wrapper's CSP has `script-src 'none'`,
+  `frame-ancestors 'none'` and `frame-src`/`child-src` set to this page's
+  frame path (a host-source with the path), so the page cannot navigate its
+  frame anywhere else, cannot navigate the top window (no
+  allow-top-navigation), open a window (no allow-popups), show prompt() (no
+  allow-modals) or submit a form (no allow-forms, `form-action 'none'`).
+  `GET /pages/frame/<token>?t=<ticket>` serves the page only with the
+  wrapper's five-minute HMAC ticket and only when `Sec-Fetch-Dest`, if sent,
+  is `iframe`; its CSP is `sandbox` without allow-same-origin (opaque
+  origin: no Sagax cookie, storage or API), `default-src 'none'`,
+  `connect-src 'none'`, `frame-src 'none'`, data:/blob: images only, and
+  `frame-ancestors` the wrapper's origin. No allow-modals or allow-forms
+  anywhere. Markdown is rendered by our own escaper: no raw HTML, links
+  written as text with their address. Title and content lose secret-shaped
+  text before storage.
+- Separate origin: `SAGAX_PAGES_ORIGIN=https://pages.example.com` (an
+  origin, no path) serves the frames there, and that host answers nothing
+  but `/pages/frame/` (no app, API or sign-in: `handlePagesOriginRequest`
+  runs first in `handleRequest`). It is used only when the app's own public
+  origin is known (organization public origin or custom domain) and
+  differs; the frames' `frame-ancestors` is then that app origin, and the
+  app origin no longer serves frames. The wrapper stays on the app origin
+  (it checks the reader's session).
+- The app's preview: the same document in an iframe sandboxed the same way
+  (scripts only, Markdown nothing), CSP as a meta tag, and a navigation
+  guard: a second load of the frame resets it and says so.
+- Storage and caps: the index `published-pages.json` (0600, no content) is
+  read again only when its mtime or size changes; each version's content is
+  `published-pages/<pageId>/<n>` (0600, folders 0700), cached in memory once
+  read. At most 50 pages per person and per bot, 500 per server, 20
+  versions per page (the published one is never dropped), 512 KB per
+  version, 100 MB for all content.
+- Residual risks (documented, not closed): the page can still draw a fake
+  login form inside its own frame under the banner (nothing it types can
+  leave: no network, no navigation out, no form submission); the frame-src
+  path match relies on the browser's Host (a reverse proxy must pass it
+  through, as Caddy does); `dns-prefetch` hints are not covered by CSP in
+  every browser. Not done: multi-file apps, an admin audit row per publish
   (the page keeps its own history), the phone apps' card (they show the
   row's text).
 

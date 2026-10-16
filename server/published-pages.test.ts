@@ -1,8 +1,9 @@
 // Published pages (server/published-pages.ts, server/routes/published-pages.ts,
 // server/published-pages-render.ts): approval before anything is served,
-// sandbox and CSP isolation of the served bytes, each access level,
-// revocation, expiry, versions, and a person's own pages only.
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+// ownership by the conversation's person, the wrapper and its sandboxed
+// frame, each access level, revocation, expiry, versions, caps and storage,
+// the separate pages origin, and a person's own pages only.
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -11,12 +12,19 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createAgentCard, type AgentCardStore } from "./chat-widgets.ts";
 import { json, readBody } from "./harness/http.ts";
-import { PublishedPages } from "./published-pages.ts";
-import { markdownToHtml, pageDocument } from "./published-pages-render.ts";
+import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
+import { escapeHtml, markdownToHtml, pageDocument, wrapperBanner } from "./published-pages-render.ts";
 import type { RequestAuth } from "./request-auth.ts";
-import { createPublishedPageRoutes, handlePublishedPagePublic, pageReadable, type PageViewer } from "./routes/published-pages.ts";
+import {
+  createPublishedPageRoutes,
+  handlePagesOriginRequest,
+  handlePublishedPagePublic,
+  pageReadable,
+  type PageViewer,
+  type PublicPageOptions,
+} from "./routes/published-pages.ts";
 import type { Message } from "./store.ts";
-import { PAGE_FRAME_SANDBOX, pageCsp, parsePageProposal, validExpiry } from "../shared/published-pages.ts";
+import { PAGE_LIMITS, pageCsp, pageFrameSandbox, parsePageProposal, validExpiry } from "../shared/published-pages.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -31,9 +39,10 @@ function store(): { pages: PublishedPages; dir: string } {
 }
 
 const HTML = "<!doctype html><html><body><h1>Rapport</h1><script>document.title='x'</script></body></html>";
+const OWNER: PageViewer = { computerOwner: true };
 
-function proposed(pages: PublishedPages, ownerId?: string) {
-  const result = pages.propose({ botId: "bot1", threadId: "t1", title: "Rapport", kind: "html", content: HTML, ...(ownerId ? { ownerId } : {}) });
+function proposed(pages: PublishedPages, ownerId?: string, extra: { botId?: string; content?: string } = {}) {
+  const result = pages.propose({ botId: extra.botId ?? "bot1", threadId: "t1", title: "Rapport", kind: "html", content: extra.content ?? HTML, ...(ownerId ? { ownerId } : {}) });
   if (!result.ok) throw new Error(result.error);
   return result;
 }
@@ -57,10 +66,29 @@ function request(path: string, method = "GET", headers: Record<string, string> =
   return { req, res, done };
 }
 
-async function view(pages: PublishedPages, path: string, viewer: PageViewer, method = "GET"): Promise<Answer> {
-  const { req, res, done } = request(path, method, { "accept-language": "fr-CA" });
-  expect(handlePublishedPagePublic(pages, () => viewer, req, res, path, method)).toBe(true);
+function options(pages: PublishedPages, viewer: PageViewer, separate: PublicPageOptions["separate"] = null): PublicPageOptions {
+  return { pages, viewer: () => viewer, names: () => ({ botName: "Scout", personName: "Alice" }), separate };
+}
+
+async function hit(opts: PublicPageOptions, url: string, headers: Record<string, string> = {}, method = "GET"): Promise<Answer> {
+  const path = new URL(url, "http://x").pathname;
+  const { req, res, done } = request(url, method, { host: "sagax.example.com", "accept-language": "fr-CA", ...headers });
+  const answered = handlePagesOriginRequest(opts, req, res, path, method) || handlePublishedPagePublic(opts, req, res, path, method);
+  expect(answered).toBe(true);
   return done;
+}
+
+function frameSrc(wrapper: string): string {
+  const src = /<iframe src="([^"]+)"/.exec(wrapper)?.[1];
+  if (!src) throw new Error("no frame in the wrapper");
+  return src.replace(/&amp;/g, "&");
+}
+
+/** The wrapper, then the frame it embeds, as a browser would load them. */
+async function read(pages: PublishedPages, path: string, viewer: PageViewer): Promise<{ wrapper: Answer; frame?: Answer }> {
+  const wrapper = await hit(options(pages, viewer), path);
+  if (wrapper.status !== 200) return { wrapper };
+  return { wrapper, frame: await hit(options(pages, null), frameSrc(wrapper.body), { "sec-fetch-dest": "iframe" }) };
 }
 
 const session = (principalId?: string): RequestAuth => ({
@@ -71,11 +99,15 @@ const session = (principalId?: string): RequestAuth => ({
 });
 const serviceLoopback: RequestAuth = { kind: "loopback", scopes: ["client"], trust: "service" };
 
+/** organization: the person is the session's principal; a one-person
+ * server: only the computer's owner (here, a session without principal). */
 function routes(pages: PublishedPages, organization = true) {
   return createPublishedPageRoutes({
     pages,
     owner: (auth) => organization && auth.kind === "session" ? auth.session.principalId : undefined,
-    isPerson: (auth) => auth.kind === "session" ? (!organization || Boolean(auth.session.principalId)) : auth.trust !== "service" && !organization,
+    isPerson: (auth) => organization
+      ? auth.kind === "session" && Boolean(auth.session.principalId)
+      : auth.kind === "session" ? !auth.session.principalId : auth.trust !== "service",
     origin: () => "https://sagax.example.com",
     reachable: () => true,
     now: () => now,
@@ -93,8 +125,14 @@ async function call(handler: ReturnType<typeof routes>, auth: RequestAuth, metho
   return { status: answer.status, body: answer.body ? JSON.parse(answer.body) as Record<string, any> : null };
 }
 
+function published(pages: PublishedPages, access: "private" | "org" | "link" = "link", ownerId?: string) {
+  const { page } = proposed(pages, ownerId);
+  pages.publish(page.id, { version: 1, access, expiresAt: null });
+  return { id: page.id, path: pages.path(pages.get(page.id)!.linkId!) };
+}
+
 describe("approval before anything is served", () => {
-  it("a proposal is stored as a draft with no reading link; nothing serves it", async () => {
+  it("a proposal is stored as a draft with no reading link; nothing serves it", () => {
     const { pages, dir } = store();
     const { page, version } = proposed(pages);
     expect(page.status).toBe("draft");
@@ -104,6 +142,7 @@ describe("approval before anything is served", () => {
     if (process.platform !== "win32") {
       expect(statSync(join(dir, "published-pages.key")).mode & 0o777).toBe(0o600);
       expect(statSync(join(dir, "published-pages.json")).mode & 0o777).toBe(0o600);
+      expect(statSync(join(dir, "published-pages", page.id, "1")).mode & 0o777).toBe(0o600);
     }
   });
 
@@ -177,111 +216,218 @@ describe("approval before anything is served", () => {
   });
 });
 
-describe("sandbox and CSP isolation", () => {
-  it("serves the page under a sandbox without allow-same-origin and with no network", async () => {
+describe("ownership: the conversation's person, not the bot's owner", () => {
+  it("a member's private thread with someone else's team bot gives the member the page", async () => {
     const { pages } = store();
-    const { page } = proposed(pages);
-    pages.publish(page.id, { version: 1, access: "link", expiresAt: null });
-    const answer = await view(pages, pages.path(pages.get(page.id)!.linkId!), null);
-    expect(answer.status).toBe(200);
-    const csp = String(answer.headers["content-security-policy"]);
-    expect(csp).toMatch(/(^|; )sandbox allow-scripts/);
-    expect(csp).not.toContain("allow-same-origin");
-    expect(csp).not.toContain("allow-top-navigation");
-    expect(csp).toContain("default-src 'none'");
-    expect(csp).toContain("connect-src 'none'");
-    expect(csp).toContain("frame-ancestors 'none'");
-    expect(csp).toContain("form-action 'none'");
-    expect(answer.headers["set-cookie"]).toBeUndefined();
-    expect(answer.headers["cache-control"]).toBe("no-store");
-    expect(answer.headers["referrer-policy"]).toBe("no-referrer");
-    expect(answer.headers["x-content-type-options"]).toBe("nosniff");
-    expect(answer.body).toBe(HTML);
+    // the thread records the member; the bot belongs to its owner
+    const ownerId = pageOwnerFor({ ownerPrincipalId: "pr_member" }, "pr_botowner");
+    expect(ownerId).toBe("pr_member");
+    const { page } = proposed(pages, ownerId);
+    const handler = routes(pages);
+    // the bot owner neither sees nor publishes it
+    expect((await call(handler, session("pr_botowner"), "GET", "/api/pages")).body!.pages).toEqual([]);
+    expect((await call(handler, session("pr_botowner"), "GET", `/api/pages/${page.id}`)).status).toBe(404);
+    expect((await call(handler, session("pr_botowner"), "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "private", expiresAt: null })).status).toBe(404);
+    // the member does
+    expect((await call(handler, session("pr_member"), "GET", "/api/pages")).body!.pages.map((entry: { id: string }) => entry.id)).toEqual([page.id]);
+    const ok = await call(handler, session("pr_member"), "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "private", expiresAt: null });
+    expect(ok.status).toBe(200);
+    // and only the member reads it
+    const path = ok.body!.page.path as string;
+    expect((await read(pages, path, { principalId: "pr_botowner", computerOwner: false })).wrapper.status).toBe(404);
+    expect((await read(pages, path, { principalId: "pr_member", computerOwner: false })).frame?.status).toBe(200);
   });
 
-  it("a Markdown page runs no script and its raw HTML is escaped", async () => {
+  it("a thread with no recorded owner (older, webhook) falls back to the bot owner", () => {
+    expect(pageOwnerFor(undefined, "pr_botowner")).toBe("pr_botowner");
+    expect(pageOwnerFor({}, "PR_BotOwner")).toBe("pr_botowner");
+  });
+
+  it("on a one-person server only the computer's owner manages and reads private pages", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages);
+    const handler = routes(pages, false);
+    // a paired session that is not the computer's owner
+    expect((await call(handler, session("pr_guest"), "GET", "/api/pages")).status).toBe(403);
+    expect((await call(handler, session("pr_guest"), "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "link", expiresAt: null })).status).toBe(403);
+    expect((await call(handler, session(), "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "private", expiresAt: null })).status).toBe(200);
+    const path = pages.path(pages.get(page.id)!.linkId!);
+    expect((await read(pages, path, { computerOwner: false })).wrapper.status).toBe(404);
+    expect((await read(pages, path, OWNER)).frame?.status).toBe(200);
+  });
+});
+
+describe("wrapper and sandboxed frame", () => {
+  it("the reader gets a Sagax wrapper with a permanent banner and the page in a scripts-only frame", async () => {
+    const { pages } = store();
+    const { path } = published(pages);
+    const { wrapper, frame } = await read(pages, path, null);
+    expect(wrapper.status).toBe(200);
+    expect(wrapper.body).toContain(escapeHtml(wrapperBanner({ botName: "Scout", personName: "Alice", lang: "fr" })));
+    expect(wrapper.body).toContain("jamais de mot de passe");
+    expect(wrapper.body).not.toContain("<script");
+    expect(wrapper.body).toMatch(/<iframe src="\/pages\/frame\/[^"]+\?t=[^"]+" sandbox="allow-scripts"/);
+    const csp = String(wrapper.headers["content-security-policy"]);
+    expect(csp).toContain("script-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    // the frame may load this page's frame path and nothing else
+    const token = path.slice("/pages/view/".length);
+    expect(csp).toContain(`frame-src sagax.example.com/pages/frame/${token};`);
+    expect(csp).not.toMatch(/frame-src[^;]*('self'|\*|https:)/);
+    expect(wrapper.headers["x-frame-options"]).toBe("DENY");
+    expect(wrapper.headers["set-cookie"]).toBeUndefined();
+    expect(frame!.status).toBe(200);
+    expect(frame!.body).toBe(HTML);
+  });
+
+  it("the page itself: sandbox without same-origin, top navigation, popups, modals or forms; no network", async () => {
+    const { pages } = store();
+    const { path } = published(pages);
+    const { frame } = await read(pages, path, null);
+    const csp = String(frame!.headers["content-security-policy"]);
+    expect(csp).toMatch(/; sandbox allow-scripts$/);
+    for (const flag of ["allow-same-origin", "allow-top-navigation", "allow-popups", "allow-modals", "allow-forms"]) expect(csp).not.toContain(flag);
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("connect-src 'none'");
+    expect(csp).toContain("frame-src 'none'");
+    expect(csp).toContain("form-action 'none'");
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(frame!.headers["set-cookie"]).toBeUndefined();
+    expect(frame!.headers["cache-control"]).toBe("no-store");
+    expect(frame!.headers["referrer-policy"]).toBe("no-referrer");
+    expect(frame!.headers["x-content-type-options"]).toBe("nosniff");
+    for (const kind of ["html", "markdown"] as const) {
+      for (const flag of ["allow-same-origin", "allow-top-navigation", "allow-popups", "allow-modals", "allow-forms"]) expect(pageFrameSandbox(kind)).not.toContain(flag);
+    }
+  });
+
+  it("the frame is never the main entry: no ticket, a forged or expired ticket, or a top-level load is a 404", async () => {
+    const { pages } = store();
+    const { path } = published(pages);
+    const { wrapper } = await read(pages, path, null);
+    const src = frameSrc(wrapper.body);
+    const bare = src.split("?")[0]!;
+    expect((await hit(options(pages, null), bare, { "sec-fetch-dest": "iframe" })).status).toBe(404);
+    expect((await hit(options(pages, null), `${bare}?t=${now + 1000}.${"A".repeat(32)}`, { "sec-fetch-dest": "iframe" })).status).toBe(404);
+    expect((await hit(options(pages, null), src, { "sec-fetch-dest": "document" })).status).toBe(404);
+    expect((await hit(options(pages, null), src, { "sec-fetch-dest": "iframe" })).status).toBe(200);
+    const before = now;
+    now += 6 * 60 * 1000;
+    try {
+      expect((await hit(options(pages, null), src, { "sec-fetch-dest": "iframe" })).status).toBe(404);
+    } finally {
+      now = before;
+    }
+  });
+
+  it("Markdown runs no script, escapes raw HTML and writes links as text", () => {
     expect(pageCsp("markdown")).toContain("script-src 'none'");
     expect(pageCsp("markdown")).toMatch(/; sandbox$/);
     const html = markdownToHtml("# Titre\n\n<script>alert(1)</script> **gras** [lien](javascript:alert(1)) [ok](https://example.com)\n\n- a\n- b\n\n```\n<b>x</b>\n```");
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
-    expect(html).not.toContain("href=\"javascript:");
-    expect(html).toContain("<a href=\"https://example.com\"");
+    expect(html).not.toContain("<a ");
+    expect(html).toContain("ok (<span class=\"url\">https://example.com</span>)");
+    expect(html).toContain("[lien](javascript:alert(1))");
     expect(html).toContain("<strong>gras</strong>");
     expect(html).toContain("<ul><li>a</li><li>b</li></ul>");
     expect(html).toContain("<pre><code>&lt;b&gt;x&lt;/b&gt;</code></pre>");
   });
 
-  it("the app's preview carries the CSP as a meta tag and its frame never gets same-origin", () => {
-    expect(PAGE_FRAME_SANDBOX).not.toContain("allow-same-origin");
-    expect(PAGE_FRAME_SANDBOX).not.toContain("allow-top-navigation");
+  it("the app's preview carries the CSP as a meta tag", () => {
     const doc = pageDocument({ kind: "html", title: "R", content: HTML }, { meta: true });
     expect(doc.startsWith("<!doctype html><meta http-equiv=\"Content-Security-Policy\"")).toBe(true);
     expect(doc).toContain("connect-src &#39;none&#39;");
     expect(pageCsp("html", { meta: true })).not.toContain("sandbox");
   });
 
-  it("only GET and HEAD, and the reading path never reaches the API", async () => {
+  it("only GET and HEAD, and the reading paths never reach the API", async () => {
     const { pages } = store();
-    const { req, res, done } = request("/pages/view/x", "POST");
-    expect(handlePublishedPagePublic(pages, () => ({}), req, res, "/pages/view/x", "POST")).toBe(true);
-    expect((await done).status).toBe(405);
-    const other = request("/api/pages", "GET");
-    expect(handlePublishedPagePublic(pages, () => ({}), other.req, other.res, "/api/pages", "GET")).toBe(false);
+    expect((await hit(options(pages, OWNER), "/pages/view/x", {}, "POST")).status).toBe(405);
+    const other = request("/api/pages", "GET", { host: "sagax.example.com" });
+    expect(handlePublishedPagePublic(options(pages, OWNER), other.req, other.res, "/api/pages", "GET")).toBe(false);
+  });
+});
+
+describe("separate pages origin (SAGAX_PAGES_ORIGIN)", () => {
+  const separate = { pagesOrigin: new URL("https://pages.example.net"), appOrigin: new URL("https://sagax.example.com") };
+
+  it("the wrapper frames the pages origin, which serves the frame only, framed only by the app", async () => {
+    const { pages } = store();
+    const { path } = published(pages);
+    const wrapper = await hit(options(pages, null, separate), path);
+    const src = frameSrc(wrapper.body);
+    expect(src.startsWith("https://pages.example.net/pages/frame/")).toBe(true);
+    expect(String(wrapper.headers["content-security-policy"])).toContain(`frame-src https://pages.example.net${new URL(src).pathname};`);
+    const frame = await hit(options(pages, null, separate), `${new URL(src).pathname}${new URL(src).search}`, { host: "pages.example.net", "sec-fetch-dest": "iframe" });
+    expect(frame.status).toBe(200);
+    expect(String(frame.headers["content-security-policy"])).toContain("frame-ancestors https://sagax.example.com;");
+    // the app origin no longer serves frames, and the pages origin serves nothing else
+    expect((await hit(options(pages, null, separate), `${new URL(src).pathname}${new URL(src).search}`, { "sec-fetch-dest": "iframe" })).status).toBe(404);
+    for (const other of ["/", "/api/pages", "/api/health", path]) {
+      const { req, res, done } = request(other, "GET", { host: "pages.example.net" });
+      expect(handlePagesOriginRequest(options(pages, OWNER, separate), req, res, new URL(other, "http://x").pathname, "GET")).toBe(true);
+      expect((await done).status).toBe(404);
+    }
+    // a request to the app's host is not the pages origin's
+    const app = request("/api/pages", "GET", { host: "sagax.example.com" });
+    expect(handlePagesOriginRequest(options(pages, OWNER, separate), app.req, app.res, "/api/pages", "GET")).toBe(false);
   });
 });
 
 describe("access levels", () => {
   it("pageReadable: link for anyone, org for any person of the server, private for its person", () => {
+    const bob = { principalId: "pr_b", computerOwner: false };
     expect(pageReadable({ access: "link", ownerId: "pr_a" }, null)).toBe(true);
     expect(pageReadable({ access: "org", ownerId: "pr_a" }, null)).toBe(false);
-    expect(pageReadable({ access: "org", ownerId: "pr_a" }, { principalId: "pr_b" })).toBe(true);
-    expect(pageReadable({ access: "private", ownerId: "pr_a" }, { principalId: "pr_b" })).toBe(false);
-    expect(pageReadable({ access: "private", ownerId: "pr_a" }, { principalId: "PR_A" })).toBe(true);
-    expect(pageReadable({ access: "private", ownerId: "pr_a" }, {})).toBe(false);
+    expect(pageReadable({ access: "org", ownerId: "pr_a" }, bob)).toBe(true);
+    expect(pageReadable({ access: "private", ownerId: "pr_a" }, bob)).toBe(false);
+    expect(pageReadable({ access: "private", ownerId: "pr_a" }, { principalId: "PR_A", computerOwner: false })).toBe(true);
+    expect(pageReadable({ access: "private", ownerId: "pr_a" }, OWNER)).toBe(false);
     expect(pageReadable({ access: "private", ownerId: "pr_a" }, null)).toBe(false);
-    // a one-person server: its owner is every session
-    expect(pageReadable({ access: "private" }, {})).toBe(true);
-    expect(pageReadable({ access: "private" }, { principalId: "pr_a" })).toBe(false);
+    // a one-person server: its computer's owner, not every paired session
+    expect(pageReadable({ access: "private" }, OWNER)).toBe(true);
+    expect(pageReadable({ access: "private" }, { computerOwner: false })).toBe(false);
+    expect(pageReadable({ access: "org" }, { computerOwner: false })).toBe(true);
   });
 
   it("each level over the reading link, with the same 404 for a reader who may not see it", async () => {
     const { pages } = store();
-    const { page } = proposed(pages, "pr_alice");
-    pages.publish(page.id, { version: 1, access: "private", expiresAt: null });
-    const path = pages.path(pages.get(page.id)!.linkId!);
-    const made = await view(pages, `/pages/view/${"A".repeat(22)}.${"B".repeat(32)}`, { principalId: "pr_alice" });
-    const anonymous = await view(pages, path, null);
+    const { id, path } = published(pages, "private", "pr_alice");
+    const made = await hit(options(pages, { principalId: "pr_alice", computerOwner: false }), `/pages/view/${"A".repeat(22)}.${"B".repeat(32)}`);
+    const anonymous = (await read(pages, path, null)).wrapper;
     expect(anonymous.status).toBe(404);
     expect(anonymous.body).toBe(made.body);
-    expect((await view(pages, path, { principalId: "pr_bob" })).status).toBe(404);
-    expect((await view(pages, path, { principalId: "pr_alice" })).status).toBe(200);
-    pages.update(page.id, { access: "org" });
-    expect((await view(pages, path, null)).status).toBe(404);
-    expect((await view(pages, path, { principalId: "pr_bob" })).status).toBe(200);
-    pages.update(page.id, { access: "link" });
-    expect((await view(pages, path, null)).status).toBe(200);
+    expect((await read(pages, path, { principalId: "pr_bob", computerOwner: false })).wrapper.status).toBe(404);
+    expect((await read(pages, path, { principalId: "pr_alice", computerOwner: false })).frame?.status).toBe(200);
+    pages.update(id, { access: "org" });
+    expect((await read(pages, path, null)).wrapper.status).toBe(404);
+    expect((await read(pages, path, { principalId: "pr_bob", computerOwner: false })).frame?.status).toBe(200);
+    pages.update(id, { access: "link" });
+    expect((await read(pages, path, null)).frame?.status).toBe(200);
   });
 });
 
 describe("revocation, expiry and versions", () => {
-  it("revoking takes the link down at once, and publishing again mints a new link", async () => {
+  it("revoking takes the link and its frames down at once, and publishing again mints a new link", async () => {
     const { pages } = store();
     const { page } = proposed(pages, "pr_alice");
     const handler = routes(pages);
     const alice = session("pr_alice");
-    const published = await call(handler, alice, "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "link", expiresAt: null });
-    const oldPath = published.body!.page.path as string;
-    expect((await view(pages, oldPath, null)).status).toBe(200);
+    const first = await call(handler, alice, "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "link", expiresAt: null });
+    const oldPath = first.body!.page.path as string;
+    const before = await read(pages, oldPath, null);
+    expect(before.frame?.status).toBe(200);
     const revoked = await call(handler, alice, "POST", `/api/pages/${page.id}/revoke`);
     expect(revoked.body!.page).toMatchObject({ status: "revoked", currentVersion: null });
     expect(revoked.body!.page.url).toBeUndefined();
-    expect((await view(pages, oldPath, null)).status).toBe(404);
+    expect((await read(pages, oldPath, null)).wrapper.status).toBe(404);
+    // a frame ticket minted before the revocation is dead too
+    expect((await hit(options(pages, null), frameSrc(before.wrapper.body), { "sec-fetch-dest": "iframe" })).status).toBe(404);
     const again = await call(handler, alice, "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "link", expiresAt: null });
     expect(again.body!.page.path).not.toBe(oldPath);
-    expect((await view(pages, oldPath, null)).status).toBe(404);
-    expect((await view(pages, again.body!.page.path, null)).status).toBe(200);
-    // changing who can see it needs a published page
+    expect((await read(pages, oldPath, null)).wrapper.status).toBe(404);
+    expect((await read(pages, again.body!.page.path, null)).frame?.status).toBe(200);
     await call(handler, alice, "POST", `/api/pages/${page.id}/revoke`);
     expect((await call(handler, alice, "PATCH", `/api/pages/${page.id}`, { access: "org" })).status).toBe(409);
   });
@@ -292,17 +438,16 @@ describe("revocation, expiry and versions", () => {
     const handler = routes(pages);
     const alice = session("pr_alice");
     const expiresAt = now + 60 * 60 * 1000;
-    const published = await call(handler, alice, "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "link", expiresAt });
-    const path = published.body!.page.path as string;
-    expect((await view(pages, path, null)).status).toBe(200);
+    const done = await call(handler, alice, "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "link", expiresAt });
+    const path = done.body!.page.path as string;
+    expect((await read(pages, path, null)).frame?.status).toBe(200);
     const before = now;
     now = expiresAt;
     try {
-      expect((await view(pages, path, null)).status).toBe(404);
+      expect((await read(pages, path, null)).wrapper.status).toBe(404);
       expect((await call(handler, alice, "GET", `/api/pages/${page.id}`)).body!.page.expired).toBe(true);
-      // the person extends it, and the same link reads again
       expect((await call(handler, alice, "PATCH", `/api/pages/${page.id}`, { expiresAt: null })).status).toBe(200);
-      expect((await view(pages, path, null)).status).toBe(200);
+      expect((await read(pages, path, null)).frame?.status).toBe(200);
     } finally {
       now = before;
     }
@@ -310,28 +455,61 @@ describe("revocation, expiry and versions", () => {
 
   it("a new version waits for its own Publish; readers keep the published one", async () => {
     const { pages } = store();
-    const first = proposed(pages, "pr_alice");
-    pages.publish(first.page.id, { version: 1, access: "link", expiresAt: null });
-    const path = pages.path(pages.get(first.page.id)!.linkId!);
-    const second = pages.propose({ pageId: first.page.id, botId: "bot1", threadId: "t1", title: "Rapport v2", kind: "markdown", content: "# v2" });
+    const { id, path } = published(pages, "link", "pr_alice");
+    const second = pages.propose({ pageId: id, botId: "bot1", threadId: "t1", title: "Rapport v2", kind: "markdown", content: "# v2" });
     expect(second.ok && second.version.n).toBe(2);
-    expect((await view(pages, path, null)).body).toBe(HTML);
-    pages.publish(first.page.id, { version: 2, access: "link", expiresAt: null });
-    expect((await view(pages, path, null)).body).toContain("<h1>v2</h1>");
-    // a bot of another conversation cannot add a version to this page
-    expect(pages.propose({ pageId: first.page.id, botId: "bot2", threadId: "t2", title: "x", kind: "html", content: "x" }).ok).toBe(false);
-    const preview = await call(routes(pages), session("pr_alice"), "GET", `/api/pages/${first.page.id}/versions/1`);
+    expect((await read(pages, path, null)).frame?.body).toBe(HTML);
+    pages.publish(id, { version: 2, access: "link", expiresAt: null });
+    expect((await read(pages, path, null)).frame?.body).toContain("<h1>v2</h1>");
+    expect(pages.propose({ pageId: id, botId: "bot2", threadId: "t2", title: "x", kind: "html", content: "x" }).ok).toBe(false);
+    const preview = await call(routes(pages), session("pr_alice"), "GET", `/api/pages/${id}/versions/1`);
     expect(preview.body!.version.html).toContain("Content-Security-Policy");
   });
 
-  it("delete removes the page and its link", async () => {
-    const { pages } = store();
-    const { page } = proposed(pages, "pr_alice");
+  it("delete removes the page, its content files and its link", async () => {
+    const { pages, dir } = store();
+    const { id, path } = published(pages, "link", "pr_alice");
+    expect(existsSync(join(dir, "published-pages", id))).toBe(true);
+    expect((await call(routes(pages), session("pr_alice"), "DELETE", `/api/pages/${id}`)).status).toBe(200);
+    expect(pages.get(id)).toBeNull();
+    expect(existsSync(join(dir, "published-pages", id))).toBe(false);
+    expect((await read(pages, path, null)).wrapper.status).toBe(404);
+  });
+});
+
+describe("caps and storage", () => {
+  it("content lives outside the index, and a version beyond the cap drops the oldest unpublished one", () => {
+    const { pages, dir } = store();
+    const { page } = proposed(pages, "pr_alice", { content: "<p>secret-free marker</p>" });
+    expect(readFileSync(join(dir, "published-pages.json"), "utf8")).not.toContain("secret-free marker");
+    expect(pages.content(page.id, 1)).toBe("<p>secret-free marker</p>");
     pages.publish(page.id, { version: 1, access: "link", expiresAt: null });
-    const path = pages.path(pages.get(page.id)!.linkId!);
-    expect((await call(routes(pages), session("pr_alice"), "DELETE", `/api/pages/${page.id}`)).status).toBe(200);
+    for (let i = 0; i < PAGE_LIMITS.versions + 2; i += 1) pages.propose({ pageId: page.id, botId: "bot1", threadId: "t1", title: "x", kind: "html", content: `v${i}` });
+    const kept = pages.get(page.id)!.versions;
+    expect(kept).toHaveLength(PAGE_LIMITS.versions);
+    expect(kept.some((version) => version.n === 1)).toBe(true);
+    expect(kept.some((version) => version.n === 2)).toBe(false);
+    expect(existsSync(join(dir, "published-pages", page.id, "2"))).toBe(false);
+  });
+
+  it("per person and per bot caps", () => {
+    const { pages } = store();
+    for (let i = 0; i < PAGE_LIMITS.pagesPerOwner; i += 1) proposed(pages, "pr_alice", { botId: `bot${i}` });
+    expect(pages.propose({ botId: "botx", threadId: "t9", title: "x", kind: "html", content: "x", ownerId: "pr_alice" })).toMatchObject({ ok: false, code: "too_many_owner" });
+    expect(pages.propose({ botId: "botx", threadId: "t9", title: "x", kind: "html", content: "x", ownerId: "pr_bob" }).ok).toBe(true);
+    for (let i = 0; i < PAGE_LIMITS.pagesPerBot - 1; i += 1) proposed(pages, `pr_p${i}`, { botId: "busy" });
+    expect(proposed(pages, "pr_last", { botId: "busy" }).ok).toBe(true);
+    expect(pages.propose({ botId: "busy", threadId: "t9", title: "x", kind: "html", content: "x", ownerId: "pr_other" })).toMatchObject({ ok: false, code: "too_many_bot" });
+  });
+
+  it("re-reads the index only when it changed on disk", () => {
+    const { pages, dir } = store();
+    const { page } = proposed(pages);
+    expect(pages.get(page.id)).not.toBeNull();
+    // another writer (a second instance on the same folder) is seen
+    const other = new PublishedPages(dir, () => now);
+    other.remove(page.id);
     expect(pages.get(page.id)).toBeNull();
-    expect((await view(pages, path, null)).status).toBe(404);
   });
 });
 

@@ -20,25 +20,43 @@ export const PAGE_LIMITS = {
   title: 120,
   /** One document, inline scripts, styles and data: URIs included. */
   contentBytes: 512 * 1024,
+  /** Versions kept per page (a published one is never dropped). */
   versions: 20,
-  pages: 200,
+  /** Pages per person, per bot, and on the whole server. */
+  pagesPerOwner: 50,
+  pagesPerBot: 50,
+  pages: 500,
+  /** Every kept version's content on the server, together. */
+  totalBytes: 100 * 1024 * 1024,
   /** The farthest expiry a person can set. */
   maxExpiryMs: 366 * 24 * 60 * 60 * 1000,
 } as const;
 
-/** Where a published page is read: `<prefix><token>`, before the auth gate. */
+/** The reader's entry: a Sagax wrapper page with a permanent warning banner
+ * that embeds the page itself in a sandboxed frame. Before the auth gate. */
 export const PAGE_VIEW_PREFIX = "/pages/view/";
+/** The page itself, only ever inside the wrapper's frame (a short-lived frame
+ * ticket in `?t=`, `frame-ancestors` limited to the wrapper's origin). */
+export const PAGE_FRAME_PREFIX = "/pages/frame/";
+/** How long a frame ticket the wrapper mints stays valid. */
+export const PAGE_FRAME_TICKET_MS = 5 * 60 * 1000;
 
-/** The iframe sandbox of a preview in the app. Never `allow-same-origin`. */
-export const PAGE_FRAME_SANDBOX = "allow-scripts allow-modals allow-forms";
+/** The iframe sandbox of a page, in the wrapper and in the app's preview:
+ * scripts only for HTML, nothing for Markdown. Never `allow-same-origin`,
+ * `allow-top-navigation*`, `allow-popups*`, `allow-modals` or `allow-forms`:
+ * the page can only navigate its own frame, cannot open a window or a
+ * prompt() asking for a password, and cannot submit a form. */
+export function pageFrameSandbox(kind: PageKind): string {
+  return kind === "html" ? "allow-scripts" : "";
+}
 
-/** The CSP every page answer carries (and its preview as a meta tag, minus
- * the directives a meta tag ignores). `sandbox` without `allow-same-origin`
- * gives the document an opaque origin even when it is opened directly in a
- * tab: it cannot read Sagax cookies or storage, and `connect-src 'none'`
- * plus `default-src 'none'` stop every request (no fetch, no beacon, no
- * remote image, script or font). A Markdown page runs no script at all. */
-export function pageCsp(kind: PageKind, options: { meta?: boolean } = {}): string {
+/** The CSP of the page itself (and of its preview as a meta tag, minus the
+ * directives a meta tag ignores). `sandbox` without `allow-same-origin` gives
+ * it an opaque origin: no Sagax cookie, storage or API. `default-src 'none'`
+ * and `connect-src 'none'` stop every request (no fetch, no beacon, no remote
+ * image, script or font). A Markdown page runs no script. `frameAncestors`
+ * names who may frame it: the wrapper's origin. */
+export function pageCsp(kind: PageKind, options: { meta?: boolean; frameAncestors?: string } = {}): string {
   const directives = [
     "default-src 'none'",
     kind === "html" ? "script-src 'unsafe-inline'" : "script-src 'none'",
@@ -47,13 +65,14 @@ export function pageCsp(kind: PageKind, options: { meta?: boolean } = {}): strin
     "media-src data: blob:",
     "font-src data:",
     "connect-src 'none'",
+    "frame-src 'none'",
     "form-action 'none'",
     "base-uri 'none'",
     "object-src 'none'",
   ];
   if (!options.meta) {
-    directives.push("frame-ancestors 'none'");
-    directives.push(`sandbox ${kind === "html" ? "allow-scripts allow-modals allow-forms" : ""}`.trim());
+    directives.push(`frame-ancestors ${options.frameAncestors ?? "'self'"}`);
+    directives.push(`sandbox ${pageFrameSandbox(kind)}`.trim());
   }
   return directives.join("; ");
 }

@@ -3,8 +3,8 @@
 // has same-origin.
 import { describe, expect, it } from "vitest";
 
-import { PAGE_FRAME_SANDBOX } from "../../shared/published-pages";
-import { expiryFromHours, publishBody } from "./PublishedPages";
+import { pageFrameSandbox } from "../../shared/published-pages";
+import { expiryFromHours, frameEscaped, publishBody } from "./PublishedPages";
 
 describe("published page card", () => {
   it("publishBody carries the version, the access the person picked and the expiry", () => {
@@ -14,11 +14,13 @@ describe("published page card", () => {
     expect(expiryFromHours(0, now)).toBeNull();
   });
 
-  it("previews in a sandbox without same-origin, top navigation or popups", () => {
-    const flags = PAGE_FRAME_SANDBOX.split(" ");
-    expect(flags).toContain("allow-scripts");
-    expect(flags).not.toContain("allow-same-origin");
-    expect(flags.some((flag) => flag.startsWith("allow-top-navigation"))).toBe(false);
-    expect(flags.some((flag) => flag.startsWith("allow-popups"))).toBe(false);
+  it("previews in a sandbox with scripts only (HTML) or nothing (Markdown)", () => {
+    expect(pageFrameSandbox("html")).toBe("allow-scripts");
+    expect(pageFrameSandbox("markdown")).toBe("");
+  });
+
+  it("a second load of the preview frame is a navigation away and resets it", () => {
+    expect(frameEscaped(1)).toBe(false);
+    expect(frameEscaped(2)).toBe(true);
   });
 });

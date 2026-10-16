@@ -1,18 +1,26 @@
 // Published pages (server/published-pages.ts, shared/published-pages.ts).
 //
 // Before the auth gate (handlePublishedPagePublic, server/index.ts):
-//   GET /pages/view/<token>   the published version, sandboxed:
-//     `Content-Security-Policy: sandbox ...` without allow-same-origin (an
-//     opaque origin, even opened in a tab), no network (connect-src 'none',
-//     default-src 'none'), no framing, no-store, no Set-Cookie.
-//   Who may read it: "link" anyone holding the link; "org" a signed-in
-//   person of this server (or this computer's owner on a one-person
-//   server); "private" only the page's person. A bad signature, a revoked
-//   link, an expired page and a reader who may not see it all answer the
-//   same 404.
+//   GET /pages/view/<token>    the reader's entry: a Sagax wrapper with a
+//     permanent banner ("not a Sagax screen, never enter a password") and the
+//     page in an iframe sandboxed to scripts only (Markdown: nothing). Its
+//     CSP runs no script, frames only this page's frame path (`frame-src`
+//     with the path, so the page cannot navigate its frame anywhere else)
+//     and cannot itself be framed. Who may read it is checked here:
+//     "link" anyone holding the link; "org" a signed-in person of this
+//     server; "private" only the page's person (on a one-person server, the
+//     computer's owner). A bad signature, a revoked link, an expired page
+//     and a reader who may not see it all answer the same 404.
+//   GET /pages/frame/<token>?t=<ticket>   the page itself, only with the
+//     wrapper's five-minute ticket, only as an iframe when the browser says
+//     (Sec-Fetch-Dest), under `sandbox` without allow-same-origin (opaque
+//     origin), no network, `frame-ancestors` the wrapper's origin, no-store,
+//     no Set-Cookie. With SAGAX_PAGES_ORIGIN the frames are served only on
+//     that origin, which serves nothing else (handlePagesOriginRequest).
 //
 // Behind the gate, a person's own pages only (never another's, never a
-// bot's shell on a shared server):
+// bot's shell, never a paired device that is not the computer's owner on a
+// one-person server):
 //   GET    /api/pages                       { pages: [...] }
 //   GET    /api/pages/:id                   { page }
 //   GET    /api/pages/:id/versions/:n       { version: { n, kind, title, html } }
@@ -26,22 +34,33 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { PageError, PageRecord, PublishedPages } from "../published-pages.ts";
-import { pageDocument } from "../published-pages-render.ts";
+import { pageDocument, wrapperDocument } from "../published-pages-render.ts";
 import type { RequestAuth } from "../request-auth.ts";
-import { PAGE_ACCESS, PAGE_VIEW_PREFIX, pageCsp, validExpiry, type PageAccess } from "../../shared/published-pages.ts";
+import { PAGE_ACCESS, PAGE_FRAME_PREFIX, PAGE_VIEW_PREFIX, pageCsp, validExpiry, type PageAccess } from "../../shared/published-pages.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
-/** Who is reading: null for nobody signed in. `principalId` is absent on a
- * one-person server, whose every session is its owner's. */
-export type PageViewer = { principalId?: string } | null;
+/** Who is reading: null for nobody signed in. `principalId` is the person
+ * on an organization server; `computerOwner` is the owner of a one-person
+ * server (its other paired sessions are not). */
+export type PageViewer = { principalId?: string; computerOwner: boolean } | null;
 
 /** Whether this reader may read this page. Pure. */
 export function pageReadable(page: Pick<PageRecord, "access" | "ownerId">, viewer: PageViewer): boolean {
   if (page.access === "link") return true;
   if (!viewer) return false;
   if (page.access === "org") return true;
-  if (page.ownerId === undefined) return viewer.principalId === undefined;
+  if (page.ownerId === undefined) return viewer.computerOwner;
   return (viewer.principalId ?? "").toLowerCase() === page.ownerId.toLowerCase();
+}
+
+export interface PublicPageOptions {
+  pages: PublishedPages | null;
+  viewer(req: IncomingMessage): PageViewer;
+  /** The banner's names: the bot, and the person it published for. */
+  names(page: PageRecord): { botName: string; personName: string };
+  /** SAGAX_PAGES_ORIGIN and this app's own origin (the frames' only
+   * ancestor). Both, or no separate origin at all. */
+  separate?: { pagesOrigin: URL; appOrigin: URL } | null;
 }
 
 const NOT_FOUND_HTML = (language: "fr" | "en") => language === "fr"
@@ -53,44 +72,122 @@ function language(req: IncomingMessage): "fr" | "en" {
   return /^\s*fr\b/i.test(header) ? "fr" : "en";
 }
 
-/** Answer a published page's reading link; false when the request is not one. */
-export function handlePublishedPagePublic(
-  pages: PublishedPages | null,
-  viewer: (req: IncomingMessage) => PageViewer,
-  req: IncomingMessage,
-  res: ServerResponse,
-  path: string,
-  method: string,
-): boolean {
-  if (!path.startsWith(PAGE_VIEW_PREFIX)) return false;
+function hostOf(req: IncomingMessage): string | null {
+  const host = typeof req.headers.host === "string" ? req.headers.host.trim().toLowerCase() : "";
+  return /^[a-z0-9.-]+(:\d{1,5})?$|^\[[0-9a-f:.]+\](:\d{1,5})?$/.test(host) ? host : null;
+}
+
+function common(res: ServerResponse): void {
   res.setHeader("referrer-policy", "no-referrer");
   res.setHeader("x-content-type-options", "nosniff");
   res.setHeader("cache-control", "no-store");
-  res.setHeader("cross-origin-resource-policy", "same-origin");
-  res.setHeader("cross-origin-opener-policy", "same-origin");
-  res.setHeader("x-frame-options", "DENY");
   res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), clipboard-read=()");
+}
+
+function notFound(req: IncomingMessage, res: ServerResponse, method: string): true {
+  res.writeHead(404, { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; sandbox", "x-frame-options": "DENY" });
+  res.end(method === "HEAD" ? undefined : NOT_FOUND_HTML(language(req)));
+  return true;
+}
+
+function tokenAfter(path: string, prefix: string): string {
+  try {
+    return decodeURIComponent(path.slice(prefix.length));
+  } catch {
+    return "";
+  }
+}
+
+function serveWrapper(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): true {
+  const token = tokenAfter(path, PAGE_VIEW_PREFIX);
+  const opened = token && options.pages ? options.pages.open(token) : null;
+  if (!opened || !pageReadable(opened.page, options.viewer(req))) return notFound(req, res, method);
+  const { page, version } = opened;
+  const ticket = options.pages!.frameTicket(page.linkId!);
+  const framePath = `${PAGE_FRAME_PREFIX}${token}`;
+  const separate = options.separate ?? null;
+  const host = hostOf(req);
+  // A host-source with a path: the frame may load this page's frame path and
+  // nothing else, so the page cannot navigate its frame to another site.
+  const frameSource = separate ? `${separate.pagesOrigin.origin}${framePath}` : host ? `${host}${framePath}` : "'self'";
+  const csp = [
+    "default-src 'none'",
+    "script-src 'none'",
+    "style-src 'unsafe-inline'",
+    "img-src 'none'",
+    `frame-src ${frameSource}`,
+    `child-src ${frameSource}`,
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+  res.setHeader("cross-origin-opener-policy", "same-origin");
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": csp, "x-frame-options": "DENY" });
+  const names = options.names(page);
+  res.end(method === "HEAD" ? undefined : wrapperDocument({
+    title: version.title,
+    kind: version.kind,
+    botName: names.botName,
+    personName: names.personName,
+    frameUrl: `${separate ? separate.pagesOrigin.origin : ""}${framePath}?t=${encodeURIComponent(ticket)}`,
+    lang: language(req),
+  }));
+  return true;
+}
+
+function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): true {
+  // Never the main entry: a browser that names the destination must name a frame.
+  const dest = req.headers["sec-fetch-dest"];
+  if (typeof dest === "string" && dest !== "iframe") return notFound(req, res, method);
+  const token = tokenAfter(path, PAGE_FRAME_PREFIX);
+  let ticket = "";
+  try {
+    ticket = new URL(req.url ?? "/", "http://x").searchParams.get("t") ?? "";
+  } catch {
+    ticket = "";
+  }
+  const opened = token && ticket && options.pages ? options.pages.openFrame(token, ticket) : null;
+  const content = opened ? options.pages!.content(opened.page.id, opened.version.n) : null;
+  if (!opened || content === null) return notFound(req, res, method);
+  const { version } = opened;
+  const ancestors = options.separate ? options.separate.appOrigin.origin : "'self'";
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(version.kind, { frameAncestors: ancestors }) });
+  res.end(method === "HEAD" ? undefined : pageDocument({ kind: version.kind, title: version.title, content, lang: language(req) }));
+  return true;
+}
+
+/** On the separate pages origin (SAGAX_PAGES_ORIGIN), the server answers the
+ * page frames and nothing else: no app, no API, no sign-in. True when the
+ * request was for that origin (it is then answered). */
+export function handlePagesOriginRequest(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): boolean {
+  const separate = options.separate;
+  if (!separate || hostOf(req) !== separate.pagesOrigin.host.toLowerCase()) return false;
+  common(res);
   if (method !== "GET" && method !== "HEAD") {
     res.writeHead(405, { allow: "GET, HEAD", "content-type": "text/plain; charset=utf-8", "content-security-policy": "default-src 'none'; sandbox" });
     res.end();
     return true;
   }
-  let token = "";
-  try {
-    token = decodeURIComponent(path.slice(PAGE_VIEW_PREFIX.length));
-  } catch {
-    token = "";
-  }
-  const opened = token ? pages?.open(token) ?? null : null;
-  if (!opened || !pageReadable(opened.page, viewer(req))) {
-    res.writeHead(404, { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; sandbox" });
-    res.end(method === "HEAD" ? undefined : NOT_FOUND_HTML(language(req)));
+  if (!path.startsWith(PAGE_FRAME_PREFIX)) return notFound(req, res, method);
+  return serveFrame(options, req, res, path, method);
+}
+
+/** Answer a published page's wrapper or frame on the app's origin; false
+ * when the request is not one. */
+export function handlePublishedPagePublic(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): boolean {
+  const view = path.startsWith(PAGE_VIEW_PREFIX);
+  const frame = path.startsWith(PAGE_FRAME_PREFIX);
+  if (!view && !frame) return false;
+  common(res);
+  if (method !== "GET" && method !== "HEAD") {
+    res.writeHead(405, { allow: "GET, HEAD", "content-type": "text/plain; charset=utf-8", "content-security-policy": "default-src 'none'; sandbox" });
+    res.end();
     return true;
   }
-  const { version } = opened;
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(version.kind) });
-  res.end(method === "HEAD" ? undefined : pageDocument({ kind: version.kind, title: version.title, content: version.content, lang: language(req) }));
-  return true;
+  if (view) return serveWrapper(options, req, res, path, method);
+  // With a separate pages origin, frames live there only.
+  if (options.separate) return notFound(req, res, method);
+  return serveFrame(options, req, res, path, method);
 }
 
 export interface PublishedPageRouteDeps {
@@ -98,7 +195,9 @@ export interface PublishedPageRouteDeps {
   /** The person's principal id on an organization server; undefined for the
    * owner of a one-person server (who manages every page). */
   owner(auth: RequestAuth): string | undefined;
-  /** False for a caller that is no person (a bot's shell on a shared server). */
+  /** False for a caller that is no person: a bot's shell on a shared
+   * server, or on a one-person server a paired session that is not the
+   * computer's owner (computerOwner in server/index.ts). */
   isPerson(auth: RequestAuth): boolean;
   /** Where links point: the server's public address, else the request's. */
   origin(req: IncomingMessage): string;
@@ -141,7 +240,9 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     if (versionPath !== undefined && method === "GET") {
       const version = page.versions.find((entry) => entry.n === Number(versionPath));
       if (!version) return json(res, 404, { error: "This version does not exist.", code: "no_version" });
-      return json(res, 200, { version: { n: version.n, kind: version.kind, title: version.title, state: version.state, html: pageDocument(version, { meta: true }) } });
+      const content = deps.pages.content(page.id, version.n);
+      if (content === null) return json(res, 404, { error: "This version's content is missing.", code: "no_content" });
+      return json(res, 200, { version: { n: version.n, kind: version.kind, title: version.title, state: version.state, html: pageDocument({ kind: version.kind, title: version.title, content }, { meta: true }) } });
     }
     if (!action && method === "GET") return json(res, 200, { page: wire(page, req) });
     if (!action && method === "DELETE") {

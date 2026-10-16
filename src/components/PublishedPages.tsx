@@ -6,7 +6,7 @@
 // online. PublishedPagesSettings is Settings > Pages publiées: every page of
 // the person, its link, who can see it, its expiry, its versions, Revoke
 // and Delete.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy, ExternalLink, Eye, EyeOff, FileText, Globe, Loader2, Lock, Trash2, Users, XCircle } from "lucide-react";
 
 import { copyText } from "@/lib/copy-text";
@@ -16,8 +16,9 @@ import { api, type Message } from "@/state/store";
 import {
   PAGE_ACCESS,
   PAGE_EXPIRY_CHOICES,
-  PAGE_FRAME_SANDBOX,
+  pageFrameSandbox,
   type PageAccess,
+  type PageKind,
   type PublishedPageSummary,
 } from "../../shared/published-pages";
 
@@ -58,31 +59,53 @@ function openPage(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-/** One version in a frame sandboxed to scripts only: no same-origin, so it
- * cannot reach the app, its cookies or its API; its CSP forbids every
- * request. */
+/** A frame load after the first one means the page navigated its frame
+ * away from the document we gave it. Pure. */
+export function frameEscaped(loads: number): boolean {
+  return loads > 1;
+}
+
+/** One version in a frame sandboxed to scripts only (Markdown: nothing): no
+ * same-origin, so it cannot reach the app, its cookies or its API; no top
+ * navigation, popups, modals or forms; its CSP forbids every request. If it
+ * navigates its own frame anyway, the frame is reset and the person told. */
 export function PagePreviewFrame({ pageId, version, title }: { pageId: string; version: number; title: string }) {
-  const [html, setHtml] = useState<string | null>(null);
+  const [doc, setDoc] = useState<{ html: string; kind: PageKind } | null>(null);
   const [error, setError] = useState("");
+  const [generation, setGeneration] = useState(0);
+  const [escaped, setEscaped] = useState(false);
+  const loads = useRef(0);
   useEffect(() => {
     let live = true;
-    api<{ version: { html: string } }>(`/api/pages/${encodeURIComponent(pageId)}/versions/${version}`)
-      .then((answer) => { if (live) setHtml(answer.version.html); })
+    api<{ version: { html: string; kind: PageKind } }>(`/api/pages/${encodeURIComponent(pageId)}/versions/${version}`)
+      .then((answer) => { if (live) setDoc({ html: answer.version.html, kind: answer.version.kind }); })
       .catch((cause) => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
     return () => { live = false; };
   }, [pageId, version]);
   if (error) return <p role="alert" className="text-[12px] text-danger">{error}</p>;
-  if (html === null) return <Loader2 size={14} className="animate-spin text-ink-secondary" />;
+  if (doc === null) return <Loader2 size={14} className="animate-spin text-ink-secondary" />;
   return (
-    <iframe
-      data-page-preview
-      title={t("pages.previewTitle", { title })}
-      sandbox={PAGE_FRAME_SANDBOX}
-      srcDoc={html}
-      referrerPolicy="no-referrer"
-      allow=""
-      className="h-[360px] w-full rounded-lg border border-hairline/40 bg-white"
-    />
+    <>
+      {escaped && <p role="alert" className="mb-1 text-[12px] text-warning">{t("pages.previewEscaped")}</p>}
+      <iframe
+        key={generation}
+        data-page-preview
+        title={t("pages.previewTitle", { title })}
+        sandbox={pageFrameSandbox(doc.kind)}
+        srcDoc={doc.html}
+        referrerPolicy="no-referrer"
+        allow=""
+        onLoad={() => {
+          loads.current += 1;
+          if (frameEscaped(loads.current)) {
+            loads.current = 0;
+            setEscaped(true);
+            setGeneration((value) => value + 1);
+          }
+        }}
+        className="h-[360px] w-full rounded-lg border border-hairline/40 bg-white"
+      />
+    </>
   );
 }
 

@@ -4,7 +4,13 @@
 // can only touch their own document. A Markdown page is turned into HTML
 // here by a small renderer that escapes every character first and emits
 // only a fixed set of tags (no raw HTML, links http(s) and mailto only), and
-// it runs no script at all.
+// it runs no script at all. A link is written as its words and its address
+// in plain text: an anchor would be inert in the sandbox anyway.
+//
+// The reader never lands on the page itself: wrapperDocument is a Sagax page
+// with a permanent banner (no script, nothing to dismiss) that embeds the
+// page in a frame sandboxed to scripts only, whose navigation the wrapper's
+// `frame-src` limits to the page's own frame path.
 import { pageCsp, type PageKind } from "../shared/published-pages.ts";
 
 export function escapeHtml(text: string): string {
@@ -31,7 +37,7 @@ function inline(escaped: string): string {
   out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, label: string, href: string) => {
     // The href is escaped text: &amp; is the only entity a URL keeps.
     const url = safeHref(href.replace(/&amp;/g, "&"));
-    return url ? `<a href="${escapeHtml(url)}" rel="noopener noreferrer" target="_blank">${label}</a>` : match;
+    return url ? `${label} (<span class="url">${escapeHtml(url)}</span>)` : match;
   });
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
   return out.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => codes[Number(index)] ?? "");
@@ -108,8 +114,8 @@ export function markdownToHtml(markdown: string): string {
 
 const MARKDOWN_STYLE = "body{font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#1f2328;background:#fff}"
   + "pre{background:#f6f8fa;padding:.75rem;border-radius:6px;overflow:auto}code{font:.9em ui-monospace,Menlo,monospace}"
-  + "blockquote{margin:0;padding-left:1rem;border-left:3px solid #d0d7de;color:#57606a}a{color:#0969da}"
-  + "@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}pre{background:#161b22}a{color:#4493f8}}";
+  + "blockquote{margin:0;padding-left:1rem;border-left:3px solid #d0d7de;color:#57606a}.url{color:#57606a;word-break:break-all}"
+  + "@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}pre{background:#161b22}.url{color:#9198a1}}";
 
 /** The full document a version is read as. `meta` adds the CSP as a meta tag
  * (the app's sandboxed preview, which has no response headers). Pure. */
@@ -125,4 +131,36 @@ export function pageDocument(input: { kind: PageKind; title: string; content: st
   return doctype
     ? `${doctype[0]}${meta}${input.content.slice(doctype[0].length)}`
     : `${meta}${input.content}`;
+}
+
+export interface WrapperInput {
+  title: string;
+  kind: PageKind;
+  botName: string;
+  personName: string;
+  /** Where the frame loads the page: the frame path plus its ticket, on this
+   * origin or the separate pages origin. */
+  frameUrl: string;
+  lang: "fr" | "en";
+}
+
+/** The banner's words. Pure. */
+export function wrapperBanner(input: Pick<WrapperInput, "botName" | "personName" | "lang">): string {
+  return input.lang === "fr"
+    ? `Page publiée par ${input.botName} pour ${input.personName} : ceci n'est pas un écran Sagax, n'y entrez jamais de mot de passe.`
+    : `Page published by ${input.botName} for ${input.personName}: this is not a Sagax screen, never enter a password here.`;
+}
+
+/** The reader's document: banner, then the page in its sandboxed frame. No
+ * script of its own. Pure. */
+export function wrapperDocument(input: WrapperInput): string {
+  const sandbox = input.kind === "html" ? "allow-scripts" : "";
+  return `<!doctype html><html lang="${input.lang}"><head><meta charset="utf-8">`
+    + `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>`
+    + "<style>html,body{margin:0;height:100%}body{display:flex;flex-direction:column;font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}"
+    + ".sagax-banner{flex:none;padding:8px 14px;background:#fff4ce;color:#3d2e00;border-bottom:2px solid #d4a600;font-weight:600}"
+    + "iframe{flex:1;border:0;width:100%;background:#fff}</style></head><body>"
+    + `<div class="sagax-banner" role="note">${escapeHtml(wrapperBanner(input))}</div>`
+    + `<iframe src="${escapeHtml(input.frameUrl)}" sandbox="${sandbox}" referrerpolicy="no-referrer" allow="" title="${escapeHtml(input.title)}"></iframe>`
+    + "</body></html>";
 }

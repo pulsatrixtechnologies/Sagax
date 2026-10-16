@@ -960,8 +960,8 @@ import { parseEvalJson } from "./meetings/meet-scripts.ts";
 import type { MeetingBrowser } from "./meetings/meeting-session.ts";
 import { createTemplateLinkRoutes, handleTemplateLinkPublic } from "./routes/template-links.ts";
 import { TemplateLinks } from "./template-links.ts";
-import { PublishedPages } from "./published-pages.ts";
-import { createPublishedPageRoutes, handlePublishedPagePublic, type PageViewer } from "./routes/published-pages.ts";
+import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
+import { createPublishedPageRoutes, handlePagesOriginRequest, handlePublishedPagePublic, type PageViewer, type PublicPageOptions } from "./routes/published-pages.ts";
 import { createTeamBotFromThreadRoutes } from "./routes/team-bot-from-thread.ts";
 import { awaySkipsDetail, LocalAwayTracker, verdictFromPresence, type AwayVerdict } from "./routine-away.ts";
 import { createPersonLabelRoutes } from "./routes/person-labels.ts";
@@ -6116,14 +6116,15 @@ async function mountPersonalMcp(
   }
 }
 // Published pages (routes/published-pages.ts): a person's own pages, managed
-// only from a person's session or this computer's owner, never a bot's shell
-// on a shared server.
+// only by that person on an organization server, or by this computer's owner
+// on a one-person server (never another paired session, never a bot's shell
+// on a shared server).
 ROUTES.push(createPublishedPageRoutes({
   pages: publishedPages,
   owner: (auth) => IDENTITY.kind === "perspicax" && auth.kind === "session" ? auth.session.principalId?.trim() || undefined : undefined,
-  isPerson: (auth) => auth.kind === "session"
-    ? IDENTITY.kind !== "perspicax" || Boolean(auth.session.principalId?.trim())
-    : auth.trust !== "service" && IDENTITY.kind !== "perspicax",
+  isPerson: (auth) => IDENTITY.kind === "perspicax"
+    ? auth.kind === "session" && Boolean(auth.session.principalId?.trim())
+    : computerOwner(auth),
   origin: (req) => (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin : null) ?? publicUrl() ?? requestOrigin(req) ?? "http://127.0.0.1",
   reachable: (origin) => {
     try {
@@ -6136,20 +6137,60 @@ ROUTES.push(createPublishedPageRoutes({
 
 /** Who is reading a published page (handlePublishedPagePublic): a session
  * cookie, or this computer's owner on a one-person server. On an
- * organization server only a person of it, never a guest or a disabled one. */
+ * organization server only a person of it, never a guest or a disabled one.
+ * On a one-person server only the computer's owner reads a private page;
+ * any other paired session counts as "my organization". */
 function publishedPageViewer(req: IncomingMessage): PageViewer {
   const cookie = parseCookies(typeof req.headers.cookie === "string" ? req.headers.cookie : undefined).get(SESSION_COOKIE);
   if (cookie) {
     const session = sessions.authenticate(cookie);
     if (!session) return null;
-    if (IDENTITY.kind !== "perspicax") return {};
+    if (IDENTITY.kind !== "perspicax") {
+      return { computerOwner: computerOwner({ kind: "session", session, via: "cookie", scopes: session.scopes }) };
+    }
     const person = session.principalId ? principals.byId(session.principalId) : null;
     if (!person || person.kind !== "human" || person.disabledAt !== undefined || person.consoleDisabled) return null;
-    return { principalId: person.id };
+    return { principalId: person.id, computerOwner: false };
   }
   const host = typeof req.headers.host === "string" ? req.headers.host : undefined;
-  if (IDENTITY.kind !== "perspicax" && LOOPBACK.trust !== "service" && !isProxied(req) && isLoopbackHost(host)) return {};
+  if (IDENTITY.kind !== "perspicax" && LOOPBACK.trust !== "service" && !isProxied(req) && isLoopbackHost(host)) return { computerOwner: true };
   return null;
+}
+
+/** SAGAX_PAGES_ORIGIN: a separate origin for the page frames, used only when
+ * this app's own public origin is known and differs from it (the frames'
+ * only allowed ancestor). Read on each request: the custom domain can change. */
+const PAGES_ORIGIN = (() => {
+  const raw = process.env.SAGAX_PAGES_ORIGIN?.trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if ((parsed.protocol === "https:" || parsed.protocol === "http:") && parsed.pathname === "/" && !parsed.search && !parsed.username) return parsed;
+  } catch { /* reported below */ }
+  console.warn("published pages: SAGAX_PAGES_ORIGIN is ignored (an http(s) origin with no path, such as https://pages.example.com)");
+  return null;
+})();
+function pagesSeparation(): { pagesOrigin: URL; appOrigin: URL } | null {
+  if (!PAGES_ORIGIN) return null;
+  try {
+    const app = new URL((IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin : null) ?? publicUrl() ?? "");
+    return app.host.toLowerCase() === PAGES_ORIGIN.host.toLowerCase() ? null : { pagesOrigin: PAGES_ORIGIN, appOrigin: app };
+  } catch {
+    return null;
+  }
+}
+function publishedPageOptions(): PublicPageOptions {
+  return {
+    pages: publishedPages,
+    viewer: publishedPageViewer,
+    names: (page) => {
+      const botName = store.bot(page.botId)?.name?.trim() || "un bot";
+      const person = page.ownerId ? principals.byId(page.ownerId) : null;
+      const personName = (person ? personDisplayName(person) : cfg.profile?.name?.trim()) || "Sagax";
+      return { botName, personName };
+    },
+    separate: pagesSeparation(),
+  };
 }
 
 // Public share links for bot templates (routes/template-links.ts): the
@@ -30278,6 +30319,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   let m: RegExpMatchArray | null = null;
   let releaseWorkspaceRequest: (() => void) | undefined;
   try {
+    // The separate pages origin (SAGAX_PAGES_ORIGIN) serves the published
+    // pages' frames and nothing else: before any other route or credential.
+    if (PAGES_ORIGIN && handlePagesOriginRequest(publishedPageOptions(), req, res, path, method)) return;
     // Unlike the legacy reachability probe, this attests the running
     // server's portal-membership capability, including live entitlement.
     if (method === "GET" && path === "/api/health/hosted") {
@@ -30533,7 +30577,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (handleTemplateLinkPublic(templateLinks, req, res, path, method)) return;
     // A published page: served sandboxed (opaque origin, no network) to the
     // readers its person chose (routes/published-pages.ts).
-    if (handlePublishedPagePublic(publishedPages, publishedPageViewer, req, res, path, method)) return;
+    if (handlePublishedPagePublic(publishedPageOptions(), req, res, path, method)) return;
     const gate = resolveRequestAuth(req, {
       sessions,
       cookieName: SESSION_COOKIE,
@@ -31261,7 +31305,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           threadId: internalCapability.threadId,
           input: body, authored: (id) => handoffs.authored(internalCapability.threadId, internalCapability.generation, id),
           proposePage: (proposal) => {
-            const speaking = botForThread(internalSender.id, internalCapability.threadId) ?? internalSender;
+            const owning = store.botByThread(internalCapability.threadId) ?? internalSender;
             const proposed = publishedPages.propose({
               ...proposal,
               // secret-shaped text never reaches a page a person may publish
@@ -31269,7 +31313,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               content: redactSecretsInText(proposal.content),
               botId: internalSender.id,
               threadId: internalCapability.threadId,
-              ...(IDENTITY.kind === "perspicax" ? { ownerId: approvalOwnerId(speaking) } : {}),
+              // the conversation's person (a member's private thread with a
+              // team bot is the member's), never simply the bot's owner
+              ...(IDENTITY.kind === "perspicax" ? { ownerId: pageOwnerFor(store.taskByThread(owning.id, internalCapability.threadId), effectiveBotOwner(owning)) } : {}),
             });
             return proposed.ok ? { ok: true, pageId: proposed.page.id, version: proposed.version.n } : proposed;
           },
