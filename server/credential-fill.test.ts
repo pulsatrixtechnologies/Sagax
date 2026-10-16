@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { vaultHandle } from "../shared/credential-vault.ts";
 import { BrowserRuntime, type BrowserSpawnSpec, type CredentialFillAccess } from "./browser-runtime.ts";
-import { aimOf, formPostsOnly, formStaysOnOrigin, urlEncodings, parseFillArguments, probeScript, REDACTED_CREDENTIAL, SecretRedactor, variants, writeScript } from "./credential-fill.ts";
+import { aimOf, formPostsOnly, formStaysOnOrigin, parseProbe, urlEncodings, parseFillArguments, probeScript, REDACTED_CREDENTIAL, SecretRedactor, variants, writeScript } from "./credential-fill.ts";
 import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 
 // Every credential below is fake test data.
@@ -87,6 +87,23 @@ describe("the probe in the page", () => {
     expect(run(mixed, probeScript({ mode: "auto" }, "password", "m", ORIGIN)).methods).toEqual(["post", "get"]);
   });
 
+  it("SIXTH: a form whose fields clobber its properties is still read through the prototype", () => {
+    // Fields named action, method, getAttribute and id shadow the form's own
+    // properties; a button tied by form= without matching ids still counts.
+    const clobbered = page("https://example.test/login",
+      '<form id="f" method="post" action="/s"><input name="action" value="x"><input name="method" value="post"><input name="getAttribute"><input name="id"><input id="pass" type="password"><button formmethod="get">Go</button></form><button form="f" formaction="https://evil.test/c">Other</button>');
+    const answer = run(clobbered, probeScript({ mode: "auto" }, "password", "c", ORIGIN));
+    expect(answer.problem).toBeNull();
+    expect(answer.methods).toEqual(["post", "get"]);
+    expect(answer.targets).toEqual(["https://example.test/s", "https://evil.test/c"]);
+  });
+
+  it("SIXTH: refuses (fails closed on) a probe with more than twenty ways to send the form", () => {
+    const many = (count: number) => ({ content: [{ type: "text", text: JSON.stringify(JSON.stringify({ top: true, problem: null, targets: Array(count).fill("https://example.test/s"), methods: Array(count).fill("post") })) }] });
+    expect(parseProbe(many(20))).not.toBeNull();
+    expect(parseProbe(many(21))).toBeNull();
+  });
+
   it("refuses a form that posts to another origin or to a script", () => {
     expect(formStaysOnOrigin(["https://example.test/session"], "https://example.test")).toBe(true);
     expect(formStaysOnOrigin(["https://evil.test/collect"], "https://example.test")).toBe(false);
@@ -139,6 +156,28 @@ describe("redaction", () => {
         for (let start = 0; start + 6 <= encoded.length; start++) expect(text, shown).not.toContain(encoded.slice(start, start + 6));
       }
     }
+  });
+
+  it("SIXTH: hides upper-case \\u escapes, base64 at every alignment, and double URL encoding", () => {
+    const redactor = new SecretRedactor();
+    redactor.remember("s", FAKE_PASSWORD, { pieces: true });
+    const upper = [...FAKE_PASSWORD].map((char) => `\\u${char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join("");
+    expect(redactor.redactText("s", upper)).not.toContain(upper.slice(0, 12));
+    for (const prefix of ["", "x", "xy", "xyz", "user:"]) {
+      for (const url of [false, true]) {
+        let blob = Buffer.from(`${prefix}${FAKE_PASSWORD}tail`).toString(url ? "base64url" : "base64");
+        const text = redactor.redactText("s", `token=${blob}`);
+        expect(text, `${prefix} ${url}`).toContain(REDACTED_CREDENTIAL);
+        blob = blob.replace(/=+$/, "");
+        // No eight-character run of the value's own base64 survives.
+        const value = Buffer.from(FAKE_PASSWORD).toString(url ? "base64url" : "base64").replace(/=+$/, "");
+        for (let start = 0; start + 8 <= value.length - 2; start++) expect(text).not.toContain(value.slice(start + 2, start + 8));
+      }
+    }
+    const twice = encodeURIComponent(encodeURIComponent("p@ss w0rd!(x)~"));
+    const r2 = new SecretRedactor();
+    r2.remember("s", "p@ss w0rd!(x)~", { pieces: true });
+    expect(r2.redactText("s", `next=${twice}`)).toBe(`next=${REDACTED_CREDENTIAL}`);
   });
 
   it("FIFTH: a user name is hidden whatever its case", () => {

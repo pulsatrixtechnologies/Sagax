@@ -134,14 +134,17 @@ if (!problem) {
   el.setAttribute('data-sagax-fill', ${JSON.stringify(nonce)});
   const form = el.form;
   if (form) {
-    targets.push(new URL(form.getAttribute('action') || location.href, location.href).href);
-    methods.push((form.getAttribute('method') || 'get').trim().toLowerCase());
-    for (const button of Array.from(form.querySelectorAll('[formaction]'))) targets.push(new URL(button.getAttribute('formaction'), location.href).href);
-    for (const button of Array.from(form.querySelectorAll('[formmethod]'))) methods.push((button.getAttribute('formmethod') || '').trim().toLowerCase());
-    for (const button of Array.from(document.querySelectorAll('[form]'))) {
-      if (button.getAttribute('form') !== form.id || !form.id) continue;
-      if (button.hasAttribute('formaction')) targets.push(new URL(button.getAttribute('formaction'), location.href).href);
-      if (button.hasAttribute('formmethod')) methods.push((button.getAttribute('formmethod') || '').trim().toLowerCase());
+    // Prototype methods, never the form's own properties: a field named
+    // "action", "getAttribute" or "id" would shadow them (DOM clobbering).
+    const attr = (node, name) => Element.prototype.getAttribute.call(node, name);
+    const has = (node, name) => Element.prototype.hasAttribute.call(node, name);
+    targets.push(new URL(attr(form, 'action') || location.href, location.href).href);
+    methods.push((attr(form, 'method') || 'get').trim().toLowerCase());
+    // Every control that belongs to this form, inside it or tied by form=.
+    for (const button of Array.from(Document.prototype.querySelectorAll.call(document, 'button,input'))) {
+      if (button.form !== form) continue;
+      if (has(button, 'formaction')) targets.push(new URL(attr(button, 'formaction'), location.href).href);
+      if (has(button, 'formmethod')) methods.push((attr(button, 'formmethod') || '').trim().toLowerCase());
     }
   }
 }
@@ -198,6 +201,8 @@ export function parseWrite(result: unknown): string | null {
   }
 }
 
+const MAX_FORM_ROUTES = 20;
+
 export interface ProbeResult { top: boolean; problem: string | null; targets: string[]; methods: string[] }
 
 /** The selector of the element a probe marked. */
@@ -224,8 +229,11 @@ export function parseEvalObject(result: unknown): Record<string, unknown> | null
 export function parseProbe(result: unknown): ProbeResult | null {
   const value = parseEvalObject(result);
   if (!value || typeof value.top !== "boolean") return null;
-  const targets = Array.isArray(value.targets) ? value.targets.filter((target): target is string => typeof target === "string").slice(0, 20) : [];
-  const methods = Array.isArray(value.methods) ? value.methods.filter((method): method is string => typeof method === "string").slice(0, 20) : [];
+  // Fail closed: a form with more ways to send it than this is not read
+  // partly and filled anyway.
+  if ((Array.isArray(value.targets) && value.targets.length > MAX_FORM_ROUTES) || (Array.isArray(value.methods) && value.methods.length > MAX_FORM_ROUTES)) return null;
+  const targets = Array.isArray(value.targets) ? value.targets.filter((target): target is string => typeof target === "string") : [];
+  const methods = Array.isArray(value.methods) ? value.methods.filter((method): method is string => typeof method === "string") : [];
   return { top: value.top, problem: typeof value.problem === "string" ? value.problem : null, targets, methods };
 }
 
@@ -281,6 +289,25 @@ function htmlEscaped(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+/** The base64 characters that depend on the value alone wherever it sits
+ * in a longer base64 blob: at byte offsets 0, 1 and 2, standard and
+ * url-safe. The characters it shares with unknown neighbours are dropped. */
+function base64Alignments(bytes: Buffer): string[] {
+  const out: string[] = [];
+  for (const offset of [0, 1, 2]) {
+    const encoded = Buffer.concat([Buffer.alloc(offset), bytes, Buffer.alloc(3)]).toString("base64");
+    const start = offset === 0 ? 0 : offset === 1 ? 2 : 3;
+    // The last full character of the value: (offset + length) bytes in, floor.
+    const end = Math.floor(((offset + bytes.length) * 8) / 6);
+    const core = encoded.slice(start, end);
+    if (core.length >= MIN_PIECE_LENGTH) {
+      out.push(core);
+      out.push(core.replace(/\+/g, "-").replace(/\//g, "_"));
+    }
+  }
+  return out;
+}
+
 function unicodeEscaped(value: string): string {
   return [...value].map((char) => {
     const code = char.codePointAt(0)!;
@@ -288,9 +315,6 @@ function unicodeEscaped(value: string): string {
   }).join("");
 }
 
-/** The value as a page, a log or a request could show it: itself, base64
- * (padded or not, url-safe), hex in both cases, reversed, URL and form
- * encoded, JSON, HTML (named, decimal and hex entities) and unicode escapes. */
 /** The value as a URL or a form submission carries it: encodeURIComponent,
  * strict RFC 3986 (also ! ' ( ) * and ~), and application/x-www-form-
  * urlencoded as a browser sends a GET form (URLSearchParams: space as +),
@@ -308,6 +332,11 @@ export function urlEncodings(value: string): string[] {
   return [...out];
 }
 
+/** The value as a page, a log or a request could show it: itself, base64
+ * (padded or not, url-safe, and as it reads at the two other byte
+ * alignments inside a longer blob), hex in both cases, reversed, URL and form
+ * encoded (also twice), JSON, HTML (named, decimal and hex entities) and
+ * unicode escapes in both cases. */
 export function variants(value: string): string[] {
   const out = new Set<string>([value]);
   const bytes = Buffer.from(value, "utf8");
@@ -317,12 +346,18 @@ export function variants(value: string): string[] {
   out.add(bytes.toString("hex"));
   out.add(bytes.toString("hex").toUpperCase());
   out.add([...value].reverse().join(""));
-  for (const encoded of urlEncodings(value)) out.add(encoded);
+  for (const encoded of urlEncodings(value)) {
+    out.add(encoded);
+    // Encoded twice (a URL inside a URL parameter).
+    for (const twice of urlEncodings(encoded)) out.add(twice);
+  }
+  for (const aligned of base64Alignments(bytes)) out.add(aligned);
   out.add(JSON.stringify(value).slice(1, -1));
   out.add(htmlEscaped(value));
   out.add(htmlEntities(value, false));
   out.add(htmlEntities(value, true));
   out.add(unicodeEscaped(value));
+  out.add(unicodeEscaped(value).replace(/\\u([0-9a-f]{4})/g, (_match, hex: string) => `\\u${hex.toUpperCase()}`));
   return [...out].filter((variant) => variant.length >= MIN_REDACT_LENGTH);
 }
 
