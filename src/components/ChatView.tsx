@@ -1375,10 +1375,19 @@ function PinnedBanner({
  * main chat. */
 export type SideChat = { header: ReactNode; label: string };
 
-export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) {
+export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   "use memo";
   const showInspector = useShowInspectorButton();
   const advanced = useAdvancedMode();
+  // A switch under way with a cached page of its thread (Bot.switchPreview)
+  // draws that thread at once: its page, its composer (locked, as while any
+  // snapshot is awaited) and its controls. The transcript is inert until the
+  // switch's own page lands and replaces it.
+  // The main chat only: a side thread shows its own thread, never the main one's switch.
+  const preview = !side && stored.switchPreview && stored.switchPreview.threadId === stored.switchingTo ? stored.switchPreview : null;
+  const profile = useMemo(() => preview
+    ? { ...stored, threadId: preview.threadId, messages: preview.messages, hasMore: preview.hasMore, activeLeafId: preview.activeLeafId ?? null, awaitingThreadSnapshot: true }
+    : stored, [stored, preview]);
   const bot = useMemo(() => currentTaskBot(profile), [profile]);
   const dataItem = useDataWindowItem(bot);
   const { state, dispatch } = useStore();
@@ -1502,7 +1511,8 @@ export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) 
     hasMore: bot.hasMore,
   });
   // Seen (src/lib/read-receipts.ts): this person's own position while the window has focus.
-  useReportRead(bot.threadId, scrollRef, messages.at(-1)?.id);
+  // Never for a cached page: the switch is what opens (and reads) the thread.
+  useReportRead(preview ? undefined : bot.threadId, scrollRef, messages.at(-1)?.id);
 
   const lastBotTextId = useMemo(
     () => [...messages].reverse().find((m) => m.role === "bot" && m.kind === "text")?.id,
@@ -1763,6 +1773,8 @@ export function ChatView({ bot: profile, side }: { bot: Bot; side?: SideChat }) 
       >
         <div
           ref={transcriptRef}
+          inert={preview ? true : undefined}
+          aria-busy={preview ? true : undefined}
           className="mx-auto flex w-full max-w-[960px] flex-col gap-3 pt-14"
           style={{ paddingBottom: composerDock.pad }}
           role="log"

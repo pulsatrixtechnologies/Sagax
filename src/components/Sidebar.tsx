@@ -1,5 +1,6 @@
 import { approvalCardOutcome } from "./ApprovalCard";
 import { useStoreDispatch, useStoreSelector } from "@/state/store-selector";
+import { useThreadPrefetch, type ThreadPrefetchIntent } from "@/state/thread-prefetch";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -1783,10 +1784,16 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
   const latest = useRef(bot);
   latest.current = bot;
   const botId = bot.id;
+  const prefetch = useThreadPrefetch();
   const actions = useMemo(() => {
     type Row = { threadId: string };
     const patch = (task: Row, change: Extract<Parameters<typeof dispatch>[0], { type: "updateTask" }>["patch"]) => dispatch({ type: "updateTask", botId, threadId: task.threadId, patch: change });
     return {
+      onPrefetch: prefetch ? (task: Row, intent: ThreadPrefetchIntent) => {
+        if (intent === "hover") prefetch.hover(task.threadId);
+        else if (intent === "leave") prefetch.leave(task.threadId);
+        else prefetch.focus(task.threadId);
+      } : undefined,
       onSelect: (task: Row) => { if (task.threadId !== latest.current.threadId) dispatch({ type: "switchTask", botId, threadId: task.threadId }); else dispatch({ type: "select", id: botId }); },
       onRename: (task: Row, title: string) => dispatch({ type: "renameTask", botId, threadId: task.threadId, title }),
       onRegenerateTitle: generatedTitles ? (task: Row, onSettled: (ok: boolean) => void) => dispatch({ type: "regenerateTaskTitle", botId, threadId: task.threadId, onSettled }) : undefined,
@@ -1806,7 +1813,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
         dispatch({ type: "refreshTaskPermissions", botId, threadId: task.threadId });
       },
     };
-  }, [botId, dispatch, generatedTitles]);
+  }, [botId, dispatch, generatedTitles, prefetch]);
   const rowState = (task: ThreadTreeTask) => {
     const thread = currentTaskBot(bot, task.threadId);
     return {

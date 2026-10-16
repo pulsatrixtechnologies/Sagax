@@ -12,6 +12,7 @@ import { ThreadMenu, nextSixPm, tomorrowNineAm } from "./ThreadMenu";
 import { THREAD_DRAG_TYPE } from "@/lib/folder-order";
 import { threadLinkLabel } from "../../shared/thread-link";
 import { wantsSideThread } from "@/lib/side-thread";
+import type { ThreadPrefetchIntent } from "@/state/thread-prefetch";
 
 type ThreadRowTask = Pick<Task, "threadId" | "title" | "projectId" | "busy" | "activity" | "unread" | "openedBy" | "closedBy" | "archivedAt" | "snoozedUntil" | "waitingForTeammates" | "link"> & {
   queued?: boolean;
@@ -253,6 +254,9 @@ type ThreadRowProps = {
   /** Show the thread beside the main chat: the menu's Open beside, and
    * Option-click (Alt-click) on the row. Bot threads only. */
   onOpenAside?: (task: ThreadRowTask) => void;
+  /** A read-only prefetch of the thread: the pointer rests on the row
+   * ("hover"), leaves it ("leave"), or the keyboard reaches it ("focus"). */
+  onPrefetch?: (task: ThreadRowTask, intent: ThreadPrefetchIntent) => void;
 };
 
 /** Same fields, each the same value: lists build each row's task afresh
@@ -270,7 +274,7 @@ const sameThreadRow = ({ task: previousTask, ...previous }: ThreadRowProps, { ta
 
 /** One quiet row for bot and group histories. Surface denotes selection;
  * working/waiting/unread remain independent signals, never different cards. */
-export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, current, compact, folders, onSelect, onRename, onRegenerateTitle, onDelete, onMove, onArchive, onPin, onSnooze, onLink, onRefreshPermissions, onOpenAside: openAside, activityLabel, now }: ThreadRowProps) {
+export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, current, compact, folders, onSelect, onRename, onRegenerateTitle, onDelete, onMove, onArchive, onPin, onSnooze, onLink, onRefreshPermissions, onOpenAside: openAside, onPrefetch, activityLabel, now }: ThreadRowProps) {
   // The thread on screen in the main chat has nothing to open beside it.
   const onOpenAside = current ? undefined : openAside;
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null);
@@ -317,6 +321,10 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
         type="button" data-sidebar-thread-row={task.threadId} aria-current={current ? "page" : undefined}
         title={[task.title, updatedStamp, status, closed ? t("task.closed") : null, archived ? t("task.archived") : null, snoozed ? t("task.snoozed") : null, task.unread ? t("task.unread") : null].filter(Boolean).join(" · ")}
         onClick={(event) => { if (onOpenAside && wantsSideThread(event)) { event.preventDefault(); onOpenAside(task); } else onSelect(task); }} onDoubleClick={startRename}
+        onPointerEnter={onPrefetch && !current ? () => onPrefetch(task, "hover") : undefined}
+        onPointerLeave={onPrefetch && !current ? () => onPrefetch(task, "leave") : undefined}
+        // keyboard focus only: a click focuses the row too, and the switch it makes reads the page anyway
+        onFocus={onPrefetch && !current ? (event) => { if (event.currentTarget.matches(":focus-visible")) onPrefetch(task, "focus"); } : undefined}
         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openMenu(event.clientX, event.clientY); }}
         onKeyDown={(event) => { if (event.key === "ContextMenu" || event.shiftKey && event.key === "F10") { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); openMenu(rect.left, rect.bottom); } }}
         className={cn("flex min-w-0 flex-1 items-center gap-2 rounded-lg pl-6 pr-1 text-left text-[13px] font-medium outline-none focus-visible:ring-1 focus-visible:ring-accent/60", compact ? "min-h-7 py-1" : "min-h-8 py-1.5", current ? "font-semibold text-sidebar-ink" : "text-sidebar-ink-secondary hover:text-sidebar-ink")}>

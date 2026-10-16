@@ -15,6 +15,7 @@ import {
   useReducer,
   useRef,
   useState,
+  startTransition,
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
@@ -79,6 +80,8 @@ import { announceServerPreferences } from "@/lib/user-preferences-sync";
 import { applyPersonLabel } from "@/lib/person-labels";
 import { announcePersonAvatar, withViewerAvatar } from "@/lib/person-avatars";
 import { StoreSourceContext, usePublishedStoreSource } from "./store-source";
+import { ThreadPrefetchContext } from "./thread-prefetch";
+import { createThreadPrefetcher, ThreadPageCache, type ThreadPage } from "@/lib/thread-page-cache";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -691,6 +694,10 @@ export interface Bot {
    * answers it, so meanwhile this is the thread on screen, never threadId:
    * the one left behind is not read by being left (the "bot" frame). */
   switchingTo?: string;
+  /** Renderer-only: the page of `switchingTo` this window last read
+   * (src/lib/thread-page-cache.ts), drawn while the switch is under way and
+   * replaced by the switch's own page (taskSwitched). Read-only on screen. */
+  switchPreview?: { threadId: string; messages: Message[]; hasMore?: boolean; activeLeafId?: string | null };
   /** leaf of the visible conversation branch (see visibleMessages) */
   activeLeafId?: string | null;
 }
@@ -1619,6 +1626,8 @@ export type Action =
   /** `whole`: the whole thread, not its newest page (a search hit can be older). */
   | { type: "switchTask"; botId: string; threadId: string; whole?: true }
   | { type: "switchTaskFailed"; botId: string; threadId: string }
+  /** A cached page of the thread a switch is opening, drawn until its snapshot lands. */
+  | { type: "previewThread"; botId: string; threadId: string; page: Pick<ThreadPage, "messages" | "hasMore" | "activeLeafId"> }
   | { type: "taskSwitched"; bot: Bot }
   | { type: "renameTask"; botId: string; threadId: string; title: string }
   /** Name the thread again from its conversation; the new title arrives with the bot event. */
@@ -3066,10 +3075,15 @@ export function reducer(state: AppState, action: Action): AppState {
       // snapshot. Only frames racing that request need replaying over it.
       const { [action.threadId]: _old, ...backgroundThreadEvents } = state.backgroundThreadEvents;
       return updateBot({ ...state, backgroundThreadEvents, selectedId: action.botId, activeView: "chat" }, action.botId,
-        (bot) => ({ ...bot, switchingTo: action.threadId }));
+        (bot) => ({ ...bot, switchingTo: action.threadId, switchPreview: undefined }));
     }
+    case "previewThread":
+      // Only for the switch still under way; a later switch has its own.
+      return updateBot(state, action.botId, (bot) => bot.switchingTo === action.threadId
+        ? { ...bot, switchPreview: { threadId: action.threadId, messages: action.page.messages, hasMore: action.page.hasMore, activeLeafId: action.page.activeLeafId } }
+        : bot);
     case "switchTaskFailed":
-      return updateBot(state, action.botId, (bot) => bot.switchingTo === action.threadId ? { ...bot, switchingTo: undefined } : bot);
+      return updateBot(state, action.botId, (bot) => bot.switchingTo === action.threadId ? { ...bot, switchingTo: undefined, switchPreview: undefined } : bot);
     case "renameTask":
       return updateBot(state, action.botId, (bot) => ({
         ...bot,
@@ -3159,6 +3173,7 @@ export function reducer(state: AppState, action: Action): AppState {
         hasMore: action.bot.hasMore,
         awaitingThreadSnapshot: false,
         switchingTo: undefined,
+        switchPreview: undefined,
       }));
       for (const frame of state.backgroundThreadEvents[action.bot.threadId] ?? []) switched = reducer(switched, frame);
       const { [action.bot.threadId]: _settled, ...backgroundThreadEvents } = switched.backgroundThreadEvents;
@@ -3819,6 +3834,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => botPatchQueue.dispose();
   }, [botPatchQueue]);
 
+  // The last pages of recently seen threads, and the sidebar's read-only
+  // prefetch into them (src/lib/thread-page-cache.ts): a switch draws the
+  // cached page at once, then takes the page its own request answers.
+  const threadPages = useMemo(() => new ThreadPageCache(), []);
+  const threadPrefetch = useMemo(() => createThreadPrefetcher({
+    cache: threadPages,
+    // GET, a pure read: the switch (POST) is what moves the selection
+    fetchPage: async (threadId, signal) => {
+      const page = await api<{ messages?: Message[]; hasMore?: boolean; activeLeafId?: string | null }>(
+        `/api/threads/${encodeURIComponent(threadId)}/messages?limit=${MESSAGE_PAGE_SIZE}`, { signal });
+      return { messages: page.messages ?? [], hasMore: Boolean(page.hasMore), activeLeafId: page.activeLeafId };
+    },
+  }), [threadPages]);
+
   const dispatch = useMemo(() => {
     const navigation = new Map<string, number>();
     let selectionRevision = 0;
@@ -3993,7 +4022,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Bot deletion is also server-authoritative: lifecycle guards may reject
       // it, and hiding the row first strands the computer the person must
       // remove. All other actions keep their existing optimistic behavior.
-      if (
+      if (action.type === "switchTask") {
+        const switching = action;
+        const leaving = stateRef.current.bots.find((candidate) => candidate.id === switching.botId);
+        // The thread left behind, as it stands, for a switch back to it.
+        if (leaving && leaving.threadId !== switching.threadId && !leaving.switchingTo && !leaving.awaitingThreadSnapshot && leaving.messages.length) {
+          threadPages.set(leaving.threadId, { messages: leaving.messages, hasMore: leaving.hasMore, activeLeafId: leaving.activeLeafId, at: Date.now() });
+        }
+        const cached = switching.whole ? undefined : threadPages.get(switching.threadId);
+        // The switch itself lands at once: the live frames and the read marks
+        // read Bot.switchingTo from the latest state. Drawing the cached page
+        // is a transition, so the click stays responsive while it renders.
+        rawDispatch(switching);
+        if (cached) startTransition(() => rawDispatch({ type: "previewThread", botId: switching.botId, threadId: switching.threadId, page: cached }));
+      } else if (
         action.type !== "cancelQueued" &&
         action.type !== "cancelGroupQueued" &&
         action.type !== "deleteBot"
@@ -4635,6 +4677,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               if (!r?.bot || navigation.get(action.botId) !== revision) return;
               const selectsAfterCreation = action.type === "newTask" && action.cwd !== undefined;
               if (selectsAfterCreation && selectionRevision !== selectedAtStart) return;
+              if (Array.isArray(r.bot.messages)) threadPages.set(r.bot.threadId, { messages: r.bot.messages, hasMore: r.bot.hasMore, activeLeafId: r.bot.activeLeafId, at: Date.now() });
               dispatch({ type: "taskSwitched", bot: r.bot });
               if (selectsAfterCreation) rawDispatch({ type: "select", id: action.botId });
             })
@@ -4660,6 +4703,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .catch((error) => { showError(error); action.onSettled?.(false); });
           break;
         case "deleteTask":
+          threadPages.delete(action.threadId);
           api<{ bot?: BotAnnouncement }>(`/api/bots/${action.botId}/tasks/${action.threadId}`, { method: "DELETE" })
             .then((r) => r?.bot && dispatch({ type: "botPatched", bot: r.bot }))
             .catch(showError);
@@ -5303,7 +5347,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <StoreSourceContext.Provider value={source}>
       <StoreContext.Provider value={value}>
-        <StreamContext.Provider value={stream}>{children}</StreamContext.Provider>
+        <ThreadPrefetchContext.Provider value={threadPrefetch}>
+          <StreamContext.Provider value={stream}>{children}</StreamContext.Provider>
+        </ThreadPrefetchContext.Provider>
       </StoreContext.Provider>
     </StoreSourceContext.Provider>
   );
