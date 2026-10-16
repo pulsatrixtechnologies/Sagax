@@ -22,9 +22,12 @@ export interface DevPodPrefs {
   dismissed: string[];
   /** The rail hidden from the header button while it fits beside the transcript. */
   railHidden: boolean;
+  /** Thread keys where the pods already floated open by themselves on a
+   * narrow window: closed there, they reopen only when asked. Newest last. */
+  autoFloated: string[];
 }
 
-export const DEFAULT_PREFS: DevPodPrefs = { enabled: false, collapsed: {}, hidden: [], order: [], dismissed: [], railHidden: false };
+export const DEFAULT_PREFS: DevPodPrefs = { enabled: false, collapsed: {}, hidden: [], order: [], dismissed: [], railHidden: false, autoFloated: [] };
 
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -46,6 +49,7 @@ export function parsePrefs(raw: string | null): DevPodPrefs {
       order: strings(value.order),
       dismissed: strings(value.dismissed).slice(-MAX_DISMISSED),
       railHidden: value.railHidden === true,
+      autoFloated: strings(value.autoFloated).slice(-MAX_DISMISSED),
     };
   } catch {
     return DEFAULT_PREFS;
@@ -124,6 +128,11 @@ export const setThreadDismissed = (threadKey: string, dismissed: boolean) =>
       ? [...current.dismissed.filter((key) => key !== threadKey), threadKey].slice(-MAX_DISMISSED)
       : current.dismissed.filter((key) => key !== threadKey),
   }));
+
+export const markAutoFloated = (threadKey: string) =>
+  updateDevPodPrefs((current) => current.autoFloated.includes(threadKey)
+    ? current
+    : { ...current, autoFloated: [...current.autoFloated, threadKey].slice(-MAX_DISMISSED) });
 
 export const setRailHidden = (railHidden: boolean) => updateDevPodPrefs((current) => ({ ...current, railHidden }));
 

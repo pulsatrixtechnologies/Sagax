@@ -102,18 +102,32 @@ describe("dev pods: Experimental switch", () => {
     expect(container.querySelector("[data-dev-pods-toggle]")!.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("hides itself on a narrow pane and floats from the header button until Escape", () => {
+  it("floats open by itself on a narrow pane the first time, and stays closed once closed", () => {
     resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: true });
     paneWidth = 1100;
-    renderPane({ bot: bot("narrow-thread", devMessages()) });
+    const messages = devMessages();
+    renderPane({ bot: bot("narrow-thread", messages) });
     const rail = () => container.querySelector<HTMLElement>("[data-dev-pods]")!;
-    expect(rail().dataset.open).toBe("false");
     expect(rail().dataset.mode).toBe("overlay");
-    const toggle = container.querySelector<HTMLButtonElement>("[data-dev-pods-toggle]")!;
-    act(() => toggle.click());
     expect(rail().dataset.open).toBe("true");
     act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
     expect(rail().dataset.open).toBe("false");
+
+    // more coding in the same conversation: it does not pop open again
+    renderPane({ bot: bot("narrow-thread", [...messages, tool("Bash", "git push")]) });
+    expect(rail().dataset.open).toBe("false");
+    // the header button still floats it
+    act(() => container.querySelector<HTMLButtonElement>("[data-dev-pods-toggle]")!.click());
+    expect(rail().dataset.open).toBe("true");
+  });
+
+  it("does not float by itself where it already did, or where it was dismissed", () => {
+    paneWidth = 1100;
+    resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: true, autoFloated: ["dev:seen-thread"], dismissed: ["dev:hidden-thread"] });
+    renderPane({ bot: bot("seen-thread", devMessages()) });
+    expect(container.querySelector<HTMLElement>("[data-dev-pods]")!.dataset.open).toBe("false");
+    renderPane({ bot: bot("hidden-thread", devMessages()) });
+    expect(container.querySelector<HTMLElement>("[data-dev-pods]")!.dataset.open).toBe("false");
   });
 
   it("opens at once when the person asks for the coding view, even on a narrow pane or dismissed", () => {
@@ -132,7 +146,7 @@ describe("dev pods: Experimental switch", () => {
   });
 
   it("an old request in scrollback does not pop the pods open", () => {
-    resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: true });
+    resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: true, autoFloated: ["dev:old-ask-thread"] });
     paneWidth = 1100;
     const ask: Message = { id: "old1", role: "user", kind: "text", text: "Turn on coding mode", at: Date.now() - 60 * 60_000 };
     renderPane({ bot: bot("old-ask-thread", [ask]) });

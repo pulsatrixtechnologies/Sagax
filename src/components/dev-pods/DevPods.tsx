@@ -24,6 +24,7 @@ import {
   movePod,
   setPodCollapsed,
   setPodHidden,
+  markAutoFloated,
   setRailHidden,
   setThreadDismissed,
   showAllPods,
@@ -188,8 +189,24 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
     if (Date.now() - request.at > REVEAL_FRESH_MS) return;
     setThreadDismissed(threadKey, false);
     if (geometry.fits) setRailHidden(false);
-    else updateDevPodsLive({ overlayOpen: true });
+    else {
+      markAutoFloated(threadKey);
+      updateDevPodsLive({ overlayOpen: true });
+    }
   }, [request, active, filled, threadKey, geometry.fits]);
+
+  // The first activation of a conversation on a window too narrow for the
+  // rail: the pods float open by themselves, like the header button does.
+  // Closed there (Escape, a click elsewhere, the header button), they stay
+  // closed for that conversation until the person asks.
+  const autoFloated = prefs.autoFloated.includes(threadKey);
+  const dismissedHere = prefs.dismissed.includes(threadKey);
+  const measured = pane.width > 0 && maxHeight > 0;
+  useEffect(() => {
+    if (!active || !filled || !measured || geometry.fits || autoFloated || dismissedHere) return;
+    markAutoFloated(threadKey);
+    updateDevPodsLive({ overlayOpen: true });
+  }, [active, filled, measured, geometry.fits, autoFloated, dismissedHere, threadKey]);
 
   const dismissed = prefs.dismissed.includes(threadKey);
   const overlayOpen = live.threadKey === threadKey && live.overlayOpen && !geometry.fits;
