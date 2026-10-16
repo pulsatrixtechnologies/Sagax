@@ -59,7 +59,7 @@ describe("typed triggers in the manager", () => {
     expect(JSON.stringify(created.webhook)).not.toContain(created.signingSecret!);
     // kept for HMAC checks, in the 0600 file only
     expect(readFileSync(file, "utf8")).toContain(created.signingSecret!);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it("keeps a pasted secret write-only and refuses deliveries until one is set", () => {

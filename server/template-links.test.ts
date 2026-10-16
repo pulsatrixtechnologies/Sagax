@@ -72,8 +72,10 @@ describe("template link signature and revocation", () => {
     expect(store.verify(flipped)).toBeNull();
     expect(store.open(`${"A".repeat(22)}.${mac}`)).toBeNull();
     expect(store.open("nope")).toBeNull();
-    expect(statSync(join(dir, "template-links.key")).mode & 0o777).toBe(0o600);
-    expect(statSync(join(dir, "template-links.json")).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect(statSync(join(dir, "template-links.key")).mode & 0o777).toBe(0o600);
+      expect(statSync(join(dir, "template-links.json")).mode & 0o777).toBe(0o600);
+    }
     // another server's key does not open this server's links
     expect(links().links.open(token)).toBeNull();
   });

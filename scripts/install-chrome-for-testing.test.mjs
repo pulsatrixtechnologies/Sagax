@@ -43,6 +43,10 @@ function zipWithChrome(platform) {
   return bytes;
 }
 
+// Unix modes (the crash handler's executable bit) exist only on a POSIX file
+// system; this installer runs in the Linux image. Windows reports 0o666.
+const posixOnly = it.skipIf(process.platform === "win32");
+
 describe("install Chrome for Testing", () => {
   it("maps Linux architectures onto the published zip names", () => {
     expect(chromePlatformFromArch("arm64")).toBe("linux-arm64");
@@ -77,7 +81,7 @@ describe("install Chrome for Testing", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("keeps the zip's executable bits so Chrome can start its crash handler", async () => {
+  posixOnly("keeps the zip's executable bits so Chrome can start its crash handler", async () => {
     // Python's zipfile.extractall drops Unix modes: chrome_crashpad_handler
     // came out 0644 and every launch logged FATAL posix_spawn ... Permission
     // denied (13) (Sagax 0.5.2 and 0.5.3 images, 2026-10-15).
@@ -98,7 +102,7 @@ describe("install Chrome for Testing", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("refuses an install whose crash handler is not executable", async () => {
+  posixOnly("refuses an install whose crash handler is not executable", async () => {
     const home = mkdtempSync(join(tmpdir(), "chrome-home-"));
     const bytes = zipWithChrome("linux64");
     await expect(
