@@ -11,8 +11,11 @@ import {
 } from "./embed-feed-release-notes.mjs";
 
 // latest-mac.yml exactly as published for 0.5.4 (no releaseNotes).
-const FEED = readFileSync(new URL("../electron/fixtures/update-feed/latest-mac-0.5.4.yml", import.meta.url), "utf8");
-const NOTES = readFileSync(new URL("../docs/releases/0.5.4.md", import.meta.url), "utf8");
+// A Windows checkout can hand both over with CRLF; the published feed and the
+// notes the release reads are LF.
+const lf = (text) => text.replace(/\r\n/g, "\n");
+const FEED = lf(readFileSync(new URL("../electron/fixtures/update-feed/latest-mac-0.5.4.yml", import.meta.url), "utf8"));
+const NOTES = lf(readFileSync(new URL("../docs/releases/0.5.4.md", import.meta.url), "utf8"));
 const directories = [];
 
 function project(version = "0.5.4", notes = NOTES) {

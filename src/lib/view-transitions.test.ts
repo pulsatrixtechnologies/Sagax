@@ -90,7 +90,8 @@ describe("navigate", () => {
   });
 
   it("the CSS names only the main column, takes no pointer events and stands still under reduced motion", () => {
-    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    // A Windows checkout can hand the file over with CRLF line ends.
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     expect(css).toContain('html[data-nav="main"] .app-content-frame {\n  view-transition-name: main-view;');
     expect(css).toMatch(/::view-transition \{\s*pointer-events: none;/);
     expect(css).toContain('html[data-nav-direction="back"]::view-transition-new(main-view)');
@@ -98,7 +99,7 @@ describe("navigate", () => {
   });
 
   it("main view switches go through it: a conversation or thread from the sidebar or the palette, ⌘1-9 and ⌘⇧[ ], closing Settings", () => {
-    const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+    const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
     const sidebar = read("../components/Sidebar.tsx");
     expect(sidebar).toContain("const openConversation = () => navigate(() => {");
     expect(sidebar).toContain('navigate(() => dispatch({ type: "switchTask", botId: bot.id, threadId }))');
