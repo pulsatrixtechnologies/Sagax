@@ -63,7 +63,7 @@ function transcriptShell(markup: string): string[] {
   return [scroll!, log!];
 }
 
-/** The markup without the pods' overlay (its sentinel and its rail). */
+/** The markup without the pods' overlay (its anchor and its rail). */
 function withoutPods(markup: string): string {
   const start = markup.indexOf('<span hidden=""></span><div data-dev-pods=""');
   if (start < 0) return markup;

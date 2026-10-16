@@ -144,10 +144,10 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
   const filled = presence.key === threadKey && arranged.some((definition) => presence.pods[definition.id]);
 
   // The pane's size and where it starts under the floating header.
-  const sentinel = useRef<HTMLSpanElement>(null);
+  const anchor = useRef<HTMLSpanElement>(null);
   const [pane, setPane] = useState({ width: 0, height: 0, top: 0 });
   useLayoutEffect(() => {
-    const node = sentinel.current?.parentElement;
+    const node = anchor.current?.parentElement;
     if (!node) return;
     const measure = () => setPane((current) => {
       const next = { width: node.clientWidth, height: node.clientHeight, top: node.offsetTop };
@@ -198,10 +198,10 @@ function DevPodsRail({ bot, messages, composerHeight, computerStart, dispatch }:
     [bot, task, messages, threadKey, computerStart, dispatch],
   );
 
-  if (!mounted) return <span ref={sentinel} hidden />;
+  if (!mounted) return <span ref={anchor} hidden />;
   return (
     <>
-      <span ref={sentinel} hidden />
+      <span ref={anchor} hidden />
       <div
         ref={railRef}
         data-dev-pods=""

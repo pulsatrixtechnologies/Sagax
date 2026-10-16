@@ -22,9 +22,9 @@ setLocale(params.get("lang") ?? "fr");
 resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: params.get("pods") !== "off" });
 const SERVERS = [
   { name: "github", enabled: true },
-  { name: "perspicax", enabled: true },
-  { name: "connectwise", enabled: true },
-  { name: "sentinelone", enabled: true },
+  { name: "linear", enabled: true },
+  { name: "notion", enabled: true },
+  { name: "slack", enabled: true },
 ];
 updateMcpServers(SERVERS);
 let opened = false;
