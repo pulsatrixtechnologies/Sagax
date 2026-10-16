@@ -41,6 +41,16 @@ describe("ToolActivity", () => {
     expect(html).not.toContain('data-testid="tool-step-json"');
   });
 
+  it("folds a failed MCP call to its product; the tool id only opens with the row", () => {
+    const tool = { name: "mcp__claude_ai_Pulsatrix_Perspicax__twilio_api__query", ok: false, input: JSON.stringify({ resource: "Accounts" }), durationMs: 27_000 };
+    const folded = renderToStaticMarkup(createElement(ToolActivity, { tool }));
+    expect(folded).toContain(">Could not use Twilio<");
+    expect(folded).toContain(">Accounts<");
+    expect(folded).not.toContain("twilio_api");
+    const opened = renderToStaticMarkup(createElement(ToolActivity, { tool, defaultOpen: true }));
+    expect(opened).toContain(">mcp__claude_ai_Pulsatrix_Perspicax__twilio_api__query<");
+  });
+
   it("distinguishes running, failed and unrecorded output", () => {
     const render = (ok?: boolean) => renderToStaticMarkup(createElement(ToolActivity, { tool: { name: "Read", ok }, defaultOpen: true }));
     expect(render()).toContain('data-phase="running"');

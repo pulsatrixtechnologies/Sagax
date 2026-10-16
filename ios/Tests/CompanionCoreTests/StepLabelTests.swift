@@ -64,8 +64,26 @@ final class StepLabelTests: XCTestCase {
         XCTAssertEqual(StepLabel.read(query, words: fr).label, "A consulté les billets dans ConnectWise PSA")
         var failed = query
         failed.ok = false
-        XCTAssertEqual(StepLabel.read(failed, words: en).label, "Could not use ConnectWise PSA (cw_psa__query)")
+        XCTAssertEqual(StepLabel.read(failed, words: en).label, "Could not use ConnectWise PSA")
         XCTAssertEqual(StepLabel.read(tool("mcp__perspicax__sentinelone__query", input: ["resource": "threats"]), words: en).label, "Viewed alerts in SentinelOne")
+    }
+
+    func testTheFoldedRowNeverShowsTheToolId() {
+        var twilio = tool("mcp__claude_ai_Pulsatrix_Perspicax__twilio_api__query", input: ["resource": "Accounts"])
+        for ok in [true, nil, false] as [Bool?] {
+            twilio.ok = ok
+            let label = StepLabel.read(twilio, words: en).label
+            XCTAssertNil(label.range(of: #"twilio_api|__|_query"#, options: .regularExpression), label)
+            XCTAssertTrue(label.contains("Twilio"), label)
+        }
+        twilio.ok = false
+        XCTAssertEqual(StepLabel.read(twilio, words: en), StepReading(label: "Could not use Twilio", target: "Accounts"))
+        XCTAssertEqual(StepLabel.read(twilio, words: fr), StepReading(label: "N'a pas pu utiliser Twilio", target: "Accounts"))
+        var bare = tool("mcp__twilio_api__query", input: [:])
+        bare.ok = false
+        XCTAssertEqual(StepLabel.read(bare, words: en).label, "Could not use Twilio API")
+        XCTAssertEqual(StepLabel.read(tool("mcp__perspicax__flow", input: [:]), words: en).label, "Used Pulsatrix")
+        XCTAssertEqual(StepLabel.read(tool("mcp", input: ["server": "acme_crm"]), words: en).label, "Checked Acme Crm")
     }
 
     func testAGatewayCallReadsAsTheToolItRan() {
@@ -79,7 +97,7 @@ final class StepLabelTests: XCTestCase {
         XCTAssertEqual(prefixed, "pulsatrix-psa")
         // housekeeping
         XCTAssertEqual(StepLabel.read(tool("mcp", input: ["search": "tickets"]), words: en), StepReading(label: "Searched for MCP tools", target: "tickets"))
-        XCTAssertEqual(StepLabel.read(tool("mcp", input: ["connect": "github"]), words: en).label, "Connected to github")
+        XCTAssertEqual(StepLabel.read(tool("mcp", input: ["connect": "github"]), words: en).label, "Connected to Github")
         XCTAssertEqual(StepLabel.read(tool("mcp", input: [:]), words: en).label, "Checked the MCP servers")
         XCTAssertNil(McpGateway.read("Bash", input: "{}"))
     }

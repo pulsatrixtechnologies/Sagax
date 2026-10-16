@@ -185,7 +185,7 @@ const PRODUCT_BY_SERVER: Array<[RegExp, string]> = [
 
 const ACRONYMS = new Set(["psa", "rmm", "api", "mcp", "ai", "it", "id", "url", "cw", "sso", "vpn", "dns"]);
 
-function titleCase(words: string): string {
+export function titleCase(words: string): string {
   return words
     .split(/[\s_-]+/)
     .filter(Boolean)

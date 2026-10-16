@@ -387,20 +387,30 @@ public enum StepLabel {
         })
         let isInternal = server.hasPrefix("sagax-")
         let product = override ?? (isInternal ? nil : reading.product)
-        // A failed call names where it went and the real tool: the verb the
-        // reading guessed from its arguments may be what failed.
+        // A failed call names where it went, never the raw tool id: the verb
+        // the reading guessed from its arguments may be what failed, and the
+        // id (twilio_api__query) stays in the opened row's detail.
         if phase == .failed && !isInternal {
-            return StepReading(label: words.t("step.mcpTool.failed", ["product": product ?? server, "tool": parsed.name]), target: reading.summary)
+            return StepReading(label: words.t("step.use.failed", ["name": product ?? serverName(server)]), target: reading.summary)
         }
-        let action: String
-        if let readAction = reading.action, !reading.verbless {
-            action = readAction
-        } else {
-            let raw = (reading.action ?? parsed.name).replacingOccurrences(of: #"_+"#, with: " ", options: .regularExpression)
-            action = words.t("step.use.\(phase.rawValue)", ["name": raw])
+        // A tool named for itself (flow, query) reads as the product it
+        // serves: "Used Twilio", not "Used query in Twilio".
+        guard let readAction = reading.action, !reading.verbless else {
+            let name = product ?? (reading.action ?? parsed.name)
+                .replacingOccurrences(of: #"_+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+            return StepReading(label: capitalize(words.t("step.use.\(phase.rawValue)", ["name": name])), target: reading.summary)
         }
+        let action = readAction
         let label = product.map { words.t("approval.phrase.inProduct", ["action": action, "product": $0]) } ?? action
         return StepReading(label: capitalize(label), target: reading.summary)
+    }
+
+    /// A server id as a person reads it: its product when one is known
+    /// (pulsatrix-psa is Pulsatrix), else its words titled (twilio_api
+    /// reads "Twilio API"). Never the raw id.
+    static func serverName(_ server: String) -> String {
+        ApprovalReading.productFor(server: server, name: "").product ?? ApprovalReading.titleCase(server)
     }
 
     /// pi-mcp-adapter's `mcp` gateway housekeeping, read as what it did.
@@ -408,7 +418,7 @@ public enum StepLabel {
         if action == .search {
             return StepReading(label: words.t("step.mcp.search.\(phase.rawValue)"), target: query.map { oneLine($0) })
         }
-        if let server { return StepReading(label: words.t("step.mcp.\(action.rawValue).\(phase.rawValue)", ["server": server])) }
+        if let server { return StepReading(label: words.t("step.mcp.\(action.rawValue).\(phase.rawValue)", ["server": serverName(server)])) }
         return StepReading(label: words.t("step.mcp.\(action.rawValue).bare.\(phase.rawValue)"))
     }
 

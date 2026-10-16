@@ -110,16 +110,37 @@ describe("an MCP call names its server and tool", () => {
     expect(stepLabel(gateway(tickets, true))).not.toMatch(/\bmcp\b/);
   });
 
-  it("names the product and the real tool when a call failed", () => {
-    expect(stepLabel(gateway(tickets, false))).toBe("Could not use ConnectWise PSA (cw_psa__query)");
-    expect(stepLabel({ name: "mcp__pulsatrix-psa__cw_psa__query", ok: false, input: JSON.stringify(tickets.args) })).toBe("Could not use ConnectWise PSA (cw_psa__query)");
+  it("names the product when a call failed, never the raw tool id", () => {
+    expect(stepLabel(gateway(tickets, false))).toBe("Could not use ConnectWise PSA");
+    expect(stepLabel({ name: "mcp__pulsatrix-psa__cw_psa__query", ok: false, input: JSON.stringify(tickets.args) })).toBe("Could not use ConnectWise PSA");
     // no product known: the server, titled, stands in
-    expect(stepLabel({ name: "mcp__acme-crm__lookup_widget", ok: false })).toBe("Could not use Acme Crm (lookup_widget)");
+    expect(stepLabel({ name: "mcp__acme-crm__lookup_widget", ok: false })).toBe("Could not use Acme Crm");
+  });
+
+  it("keeps the tool id out of the folded row in every phase, and in the detail", () => {
+    const accounts = JSON.stringify({ resource: "Accounts" });
+    const twilio = (ok?: boolean) => ({ name: "mcp__claude_ai_Pulsatrix_Perspicax__twilio_api__query", ok, input: accounts });
+    const raw = /twilio_api|__|mcp__|_query/;
+    expect(readStep(twilio(false))).toEqual({ label: "Could not use Twilio", target: "Accounts" });
+    for (const ok of [true, undefined, false]) {
+      expect(stepLabel(twilio(ok))).not.toMatch(raw);
+      expect(stepLabel(twilio(ok))).toContain("Twilio");
+    }
+    // the server alone, no product known: its words, titled
+    expect(stepLabel({ name: "mcp__twilio_api__query", ok: false })).toBe("Could not use Twilio API");
+    // a tool named for itself reads as its product
+    expect(stepLabel({ name: "mcp__perspicax__flow", ok: true })).toBe("Used Pulsatrix");
+    expect(stepLabel({ name: "mcp__acme-crm__frobnicate_widget", ok: undefined })).toBe("Using Acme Crm");
+    // the id stays one click away, in the detail's record
+    expect(JSON.parse(stepJson(twilio(false))).tool).toBe("mcp__claude_ai_Pulsatrix_Perspicax__twilio_api__query");
+    setLocale("fr");
+    expect(readStep(twilio(false))).toEqual({ label: "N'a pas pu utiliser Twilio", target: "Accounts" });
   });
 
   it("reads the gateway's housekeeping in words, with a readable fallback", () => {
-    expect(stepLabel(gateway({ server: "pulsatrix-psa" }, true))).toBe("Checked pulsatrix-psa");
-    expect(stepLabel(gateway({ action: "auth-start", server: "pulsatrix-psa" }, false))).toBe("Could not connect to pulsatrix-psa");
+    expect(stepLabel(gateway({ server: "pulsatrix-psa" }, true))).toBe("Checked Pulsatrix");
+    expect(stepLabel(gateway({ action: "auth-start", server: "pulsatrix-psa" }, false))).toBe("Could not connect to Pulsatrix");
+    expect(stepLabel(gateway({ server: "acme_crm" }, true))).toBe("Checked Acme Crm");
     expect(readStep(gateway({ search: "schedule today" }, true))).toEqual({ label: "Searched for MCP tools", target: "schedule today" });
     expect(stepLabel({ name: "mcp", ok: false })).toBe("Could not reach the MCP servers");
   });
@@ -127,7 +148,7 @@ describe("an MCP call names its server and tool", () => {
   it("speaks French when the interface is in French", () => {
     setLocale("fr");
     expect(stepLabel(gateway(tickets, true))).toBe("A consulté les billets dans ConnectWise PSA");
-    expect(stepLabel(gateway(tickets, false))).toBe("N'a pas pu utiliser ConnectWise PSA (cw_psa__query)");
+    expect(stepLabel(gateway(tickets, false))).toBe("N'a pas pu utiliser ConnectWise PSA");
     expect(stepLabel({ name: "mcp", ok: false })).toBe("N'a pas pu joindre les serveurs MCP");
     expect(stepLabel({ name: "Read", ok: true })).toBe("A lu un fichier");
     expect(stepDuration(173_000)).toBe("2 min 53 s");

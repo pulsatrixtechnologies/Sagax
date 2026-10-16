@@ -158,23 +158,21 @@ struct StepMessageRow: View {
             let reading = StepLabel.read(tool, words: words, nameOf: nameOf)
             let args = StepLabel.arguments(tool.input, words: words)
             let result = StepLabel.result(tool.output)
-            let expandable = !args.isEmpty || result != nil
             VStack(alignment: .leading, spacing: 4) {
                 Button {
-                    guard expandable else { return }
                     withAnimation(.easeOut(duration: 0.15)) { open.toggle() }
                     Haptics.selection()
                 } label: {
                     StepLineLabel(
                         label: reading.label, target: reading.target, phase: StepPhase.of(tool),
-                        duration: StepLabel.duration(tool.durationMs, words: words), expandable: expandable, expanded: open
+                        duration: StepLabel.duration(tool.durationMs, words: words), expandable: true, expanded: open
                     )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel([reading.label, reading.target].compactMap { $0 }.joined(separator: ", "))
                 .accessibilityIdentifier("step.\(message.id)")
                 if open {
-                    StepDetail(args: args, result: result, words: words)
+                    StepDetail(toolName: tool.name, args: args, result: result, words: words)
                 }
             }
         }
@@ -216,12 +214,21 @@ struct StepRepeatRow: View {
 /// What a step was given and the first lines of what it returned.
 struct StepDetail: View {
     @Environment(\.themePalette) var themePalette
+    let toolName: String
     let args: [(key: String, value: String)]
     let result: (text: String, cut: Bool)?
     let words: StepWords
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // the technical id lives here only, never on the folded line
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(verbatim: words.t("step.detail.tool")).font(.caption2.weight(.semibold)).foregroundStyle(Theme.textTertiary)
+                Text(verbatim: toolName)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Theme.textSecondary)
+                    .textSelection(.enabled)
+            }
             if !args.isEmpty {
                 Text(verbatim: words.t("step.detail.arguments")).font(.caption2.weight(.semibold)).foregroundStyle(Theme.textTertiary)
                 ForEach(Array(args.enumerated()), id: \.offset) { _, pair in

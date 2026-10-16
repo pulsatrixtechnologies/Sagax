@@ -256,22 +256,34 @@ function mcpLabel(tool: StepTool, phase: StepPhase): { label: string; target?: s
   const reading = shared.describeApproval(described, tool.input ?? tool.summary, undefined, new Date(), words);
   const internal = parsed.server.startsWith("sagax-");
   const product = override ?? (internal ? undefined : reading.product);
-  // A failed call names where it went and the real tool: the verb the
-  // reading guessed from its arguments may be what failed.
+  // A failed call names where it went, never the raw tool id: the verb the
+  // reading guessed from its arguments may be what failed, and the id
+  // (twilio_api__query) stays in the opened row's detail.
   if (phase === "failed" && !internal) {
-    return { label: t("step.mcpTool.failed", { product: product ?? parsed.server, tool: parsed.name }), target: reading.summary };
+    return { label: t("step.use.failed", { name: product ?? serverName(parsed.server) }), target: reading.summary };
   }
-  const action = !reading.action || reading.verbless
-    ? t(`step.use.${phase}` as LocaleKey, { name: (reading.action ?? parsed.name).replace(/_+/g, " ") })
-    : reading.action;
+  // A tool named for itself (flow, query) reads as the product it serves:
+  // "Used Twilio", not "Used query in Twilio".
+  if (!reading.action || reading.verbless) {
+    const name = product ?? (reading.action ?? parsed.name).replace(/_+/g, " ").trim();
+    return { label: capitalize(t(`step.use.${phase}` as LocaleKey, { name })), target: reading.summary };
+  }
+  const action = reading.action;
   const label = product ? t("approval.phrase.inProduct", { action, product }) : action;
   return { label: capitalize(label), target: reading.summary };
+}
+
+/** A server id as a person reads it: its product when one is known
+ * (pulsatrix-psa is Pulsatrix), else its words titled (twilio_api reads
+ * "Twilio API"). Never the raw id. */
+function serverName(server: string): string {
+  return shared.productFor({ server, name: "" }).product ?? shared.titleCase(server);
 }
 
 /** pi-mcp-adapter's `mcp` gateway housekeeping, read as what it did. */
 function gatewayLabel(call: Extract<McpGatewayCall, { kind: "admin" }>, phase: StepPhase): StepReading {
   if (call.action === "search") return { label: t(`step.mcp.search.${phase}` as LocaleKey), target: call.query ? oneLine(call.query) : undefined };
-  if (call.server) return { label: t(`step.mcp.${call.action}.${phase}` as LocaleKey, { server: call.server }) };
+  if (call.server) return { label: t(`step.mcp.${call.action}.${phase}` as LocaleKey, { server: serverName(call.server) }) };
   return { label: t(`step.mcp.${call.action}.bare.${phase}` as LocaleKey) };
 }
 

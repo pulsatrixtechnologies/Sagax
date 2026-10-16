@@ -106,7 +106,7 @@ describe("a group of steps", () => {
       .map((label) => label.textContent);
     expect(labels).toEqual([
       "Viewed tickets in ConnectWise PSA",
-      "Could not use ConnectWise PSA (cw_psa__query) ×3",
+      "Could not use ConnectWise PSA ×3",
       "Viewed tickets in ConnectWise PSA",
     ]);
     // the merged row opens to each call, each with its own detail
