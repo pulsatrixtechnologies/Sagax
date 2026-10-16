@@ -18,14 +18,20 @@ struct ChatListView: View {
     @AppStorage(PrefKey.updatesButton) var showUpdatesButton = false
     @AppStorage(PrefKey.rosterChromeAtTop) private var storedChromeAtTop = false
     /// Search, + and the Updates pill at the top (the Personalization
-    /// switch). Never on an iPad: there the top row would push the avatar
-    /// under the window controls, so the chrome stays at the bottom as on
-    /// the iPhone's default (JC, 2026-10-15).
+    /// switch). Never on an iPad: the avatar owns the top trailing corner
+    /// there, so the chrome stays at the bottom as on the iPhone's default
+    /// (JC, 2026-10-15).
     private var rosterChromeAtTop: Bool {
         storedChromeAtTop && UIDevice.current.userInterfaceIdiom != .pad
     }
-    /// The width the iPad's window controls take at the top leading corner.
-    @State private var windowControlsInset: CGFloat = 0
+    /// The avatar sits in the top trailing corner on an iPad (the phone UI
+    /// in Slide Over, Split View or a narrow window): the window controls
+    /// (close, minimize, tile) live in the top leading corner, and an avatar
+    /// pushed after them read as part of them (JC, 2026-10-15). The iPhone
+    /// keeps it leading, under the status bar.
+    private var avatarAtTrailingCorner: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
     /// Driven so that making a bot can open it. Value-based navigation alone
     /// cannot push without a tap, and a new bot appearing silently at the
     /// bottom of the roster is a poor answer to pressing +.
@@ -319,18 +325,12 @@ struct ChatListView: View {
     /// second hidden route to the same screen.
     private var header: some View {
         HStack(alignment: .center) {
-            // the account menu, as on the standard home
-            Menu {
-                HomeAccountMenuItems(select: selectAccount)
-            } label: {
-                ProfileAvatar(name: session.connection?.name ?? "You", size: 30)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
+            if avatarAtTrailingCorner {
+                // balances the account button so the title stays centred
+                Color.clear.frame(width: 44, height: 44)
+            } else {
+                legacyAccountButton
             }
-            .buttonStyle(.plain)
-            .glassCapsule()
-            .accessibilityLabel(Text("Account"))
-            .accessibilityIdentifier("home-account")
 
             Spacer(minLength: 8)
 
@@ -346,14 +346,31 @@ struct ChatListView: View {
 
             Spacer(minLength: 8)
 
-            // balances the account button so the title stays centred
-            Color.clear.frame(width: 44, height: 44)
+            if avatarAtTrailingCorner {
+                legacyAccountButton
+            } else {
+                // balances the account button so the title stays centred
+                Color.clear.frame(width: 44, height: 44)
+            }
         }
         .padding(.horizontal, 16)
-        .padding(.leading, windowControlsInset)
         .padding(.top, 4)
         .padding(.bottom, 12)
-        .windowControlsInset($windowControlsInset)
+    }
+
+    /// The account menu, as on the standard home.
+    private var legacyAccountButton: some View {
+        Menu {
+            HomeAccountMenuItems(select: selectAccount)
+        } label: {
+            ProfileAvatar(name: session.connection?.name ?? "You", size: 30)
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassCapsule()
+        .accessibilityLabel(Text("Account"))
+        .accessibilityIdentifier("home-account")
     }
 
     private var headerSubtitle: String {
@@ -1316,6 +1333,12 @@ extension ChatListView {
         return extra
     }
 
+    /// A home overlay (Settings, Search, New bot, New group, the + menu)
+    /// covers the home: the bottom chrome steps aside under it.
+    private var homeOverlayOpen: Bool {
+        showingSettings || showingSearch || showingCreateBot || showingNewGroup || showingPlusMenu
+    }
+
     private var standardHome: some View {
         let headerClearance = HomeMetrics.headerTop + HomeMetrics.headerHeight + 8 + standardTopChromeInset
         return Group {
@@ -1323,9 +1346,22 @@ extension ChatListView {
                 standardHomeScroll(headerClearance: headerClearance)
             } else {
                 standardHomeScroll(headerClearance: headerClearance)
-                    .safeAreaInset(edge: .bottom, spacing: 0) { AnyView(standardBottomBar) }
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        // Hidden, not removed, under an overlay: the inset
+                        // keeps its height, so nothing under it moves.
+                        AnyView(standardBottomBar)
+                            .opacity(homeOverlayOpen ? 0 : 1)
+                            .allowsHitTesting(!homeOverlayOpen)
+                            .accessibilityHidden(homeOverlayOpen)
+                    }
             }
         }
+        // Search and New bot focus a field as they open. They ignore the
+        // keyboard themselves, but the home under them did not: its bottom
+        // bar (Updates pill, search, +) rode the keyboard up the screen
+        // (JC, 2026-10-15). The home has no field of its own, so it never
+        // makes room for the keyboard.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .overlay(alignment: .top) {
             if CompanionLayout.supportsIslandPresentation {
                 NeedsYouIsland(
@@ -1379,10 +1415,16 @@ extension ChatListView {
     private var standardHeader: some View {
         VStack(spacing: Theme.Metric.controlGap) {
             HStack(spacing: Theme.Metric.controlGap) {
-                HomeAccountButton(select: selectAccount)
-                Spacer(minLength: 0)
-                if rosterChromeAtTop {
-                    standardChromeTrailing
+                if avatarAtTrailingCorner {
+                    // the iPad: the window controls own the leading corner
+                    Spacer(minLength: 0)
+                    HomeAccountButton(select: selectAccount)
+                } else {
+                    HomeAccountButton(select: selectAccount)
+                    Spacer(minLength: 0)
+                    if rosterChromeAtTop {
+                        standardChromeTrailing
+                    }
                 }
             }
             if rosterChromeAtTop, showUpdatesButton {
@@ -1391,10 +1433,8 @@ extension ChatListView {
             }
         }
         .padding(.horizontal, Theme.Metric.screenEdge)
-        .padding(.leading, windowControlsInset)
         .padding(.top, HomeMetrics.headerTop)
         .padding(.bottom, rosterChromeAtTop ? 8 : 0)
-        .windowControlsInset($windowControlsInset)
     }
 
     /// Search and + at the trailing edge (top placement) or in the bottom bar.
