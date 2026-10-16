@@ -25,6 +25,22 @@ export class NoVoiceConfigured extends Error {
   }
 }
 
+/** Who the speech is for may use the xAI key (2026-10-16): on an
+ * organization server the caller passes whether the organization gave its
+ * xAI voice to that person (server/org-xai-media.ts). Absent: allowed (a
+ * solo server, or a provider that is not xAI). */
+export interface VoiceKeyAccess {
+  xaiKeyGiven?: boolean;
+}
+
+/** The xAI voice was refused for this person: no fallback to the key. */
+export class XaiVoiceNotGiven extends Error {
+  readonly code = "server_engine_not_allowed" as const;
+  constructor(message = "Your organization has not given you its xAI voice (read aloud and voice notes). Ask an admin to give it to you in Perspicax.") {
+    super(message);
+  }
+}
+
 /** The ElevenLabs credential in use: the person's own key, else the one
  * included with Cloud Pro. Settings' own-key flows read cfg.tts.key instead. */
 const elevenLabs = (cfg: AppConfig) => voiceCredential(cfg.tts?.key);
@@ -32,7 +48,8 @@ const elevenLabs = (cfg: AppConfig) => voiceCredential(cfg.tts?.key);
 /** Grok voice runs on the xAI key, the one Grok bots use (2026-10-14: one
  * key per provider in Settings > Models and voice). A Grok voice key saved
  * by an older build was folded into it by loadConfig(). */
-function grokVoiceKey(cfg: AppConfig): string | undefined {
+function grokVoiceKey(cfg: AppConfig, access?: VoiceKeyAccess): string | undefined {
+  if (access?.xaiKeyGiven === false) return undefined;
   const key = cfg.xai?.key?.trim();
   return key || undefined;
 }
@@ -67,9 +84,9 @@ export function voiceConfigured(cfg: AppConfig): boolean {
 
 /** A per-bot voice is a complete choice too; it should not be blocked just
  * because the app-wide fallback has not been selected yet. */
-export function voiceReady(cfg: AppConfig, voiceId?: string): boolean {
+export function voiceReady(cfg: AppConfig, voiceId?: string, access?: VoiceKeyAccess): boolean {
   const provider = voiceProvider(cfg);
-  if (provider === "xai") return Boolean(grokVoiceKey(cfg) && (voiceId || cfg.tts?.voice));
+  if (provider === "xai") return Boolean(grokVoiceKey(cfg, access) && (voiceId || cfg.tts?.voice));
   if (provider === "system") {
     return systemVoices.systemVoicesAvailable() && Boolean(voiceId || cfg.tts?.voice);
   }
@@ -105,9 +122,10 @@ export function verifyKey(provider: "elevenlabs" | "fish", key: string) {
   return provider === "fish" ? fish.verifyKey(key) : elevenlabs.verifyKey(key);
 }
 
-export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner): Promise<elevenlabs.Voice[]> {
+export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner, access?: VoiceKeyAccess): Promise<elevenlabs.Voice[]> {
   const provider = voiceProvider(cfg);
   if (provider === "xai") {
+    if (access?.xaiKeyGiven === false) throw new XaiVoiceNotGiven();
     const key = grokVoiceKey(cfg);
     return key ? grok.listVoices(key) : [];
   }
@@ -126,10 +144,13 @@ export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner): Pro
 }
 
 /** Synthesize one utterance. Throws NoVoiceConfigured when there is nothing
- * to speak with, which the route turns into a 409 the client can explain. */
-export function speak(cfg: AppConfig, text: string, voiceId?: string, run?: systemVoices.Runner) {
+ * to speak with, which the route turns into a 409 the client can explain,
+ * and XaiVoiceNotGiven (a 403) when the xAI voice is not this person's. */
+export function speak(cfg: AppConfig, text: string, voiceId?: string, run?: systemVoices.Runner, access?: VoiceKeyAccess) {
   const provider = voiceProvider(cfg);
   if (provider === "xai") {
+    // Never a fallback to the organization's key for someone it was not given to.
+    if (access?.xaiKeyGiven === false) throw new XaiVoiceNotGiven();
     const key = grokVoiceKey(cfg);
     if (!key) throw new NoVoiceConfigured("key", "Add an xAI key in Settings > Models and voice. Grok voice uses it.");
     const voice = voiceId || cfg.tts?.voice;

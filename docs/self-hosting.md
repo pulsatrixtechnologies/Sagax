@@ -833,7 +833,8 @@ id).
   its xAI key) serve an organization admin always, and a member only for
   the engine instances Perspicax lists on their person sheet
   (`sagax_server_engines` in the directory: engine instance ids such as
-  `grok`, `xaiApi`, `claudeApi`, and `xaiVoice` for voice mode; `*` for
+  `grok`, `xaiApi`, `claudeApi`, `xaiVoice` for voice and speech, and
+  `xaiImage` for avatar images; `*` for
   every one, which the admin API accepts and the console does not offer). The
   default is none, for existing and new members: an admin checks the
   engines on the person's sheet in the Perspicax console (Sagax > People >
@@ -844,6 +845,16 @@ id).
   serving them whatever the list. A refused turn shows the no_access card
   with `cause: "server_engine_not_allowed"` (the payer: the person who
   spoke, or the owner for a routine); voice mode answers the same cause.
+  The organization's xAI key also pays for speech and images, and follows
+  the same list: `xaiVoice` covers voice mode and, when the voice engine is
+  xAI, read aloud, voice notes and `/api/tts/*` (for a bot turn: the person
+  it speaks for, a routine's owner, or the bot's owner when nobody is
+  known); `xaiImage` covers bot avatars generated on xAI (the signed-in
+  person asking). A member without the id gets a 403 with
+  `cause: "server_engine_not_allowed"` (a bot's voice note is refused the
+  same way), nothing is sent to xAI, and there is no fallback to the key;
+  their `GET /api/config` shows the xAI voice and images as not configured
+  (`xaiKeyNotGiven: true`). A solo server is unchanged.
   The model picker hides, for a member, an engine that only the
   organization's key would serve and that they were not given
   (`GET /api/me/engines` marks it `orgKeyNotGiven`).

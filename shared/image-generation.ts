@@ -1,5 +1,10 @@
 export type AvatarImageProvider = "openai" | "xai" | "custom";
 
+/** The id a person sheet's `sagax_server_engines` uses for image generation
+ * (bot avatars) on the organization's xAI key (2026-10-16), next to
+ * `xaiVoice` (shared/voice-mode.ts). */
+export const IMAGE_SERVER_ENGINE = "xaiImage";
+
 export interface ImageGenerationConfig {
   provider?: AvatarImageProvider;
   /** Legacy OpenAI key; never sent to another provider. */

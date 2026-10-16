@@ -129,7 +129,9 @@ access (`oauth`: a sign-in with the provider's account, `apiKey`: a key,
 `engines`. Since 2026-10-16 each engine also says `orgKey`: the
 organization's key serves it (never the key), and when the organization
 has an xAI key a row `{ "id": "xaiVoice", "voice": true, "orgKey": true }`
-stands for voice mode. These are the ids a person sheet's
+stands for voice mode (and read aloud and voice notes when the voice
+engine is xAI), and a row `{ "id": "xaiImage", "image": true, "orgKey":
+true }` for bot avatars generated on that key. These are the ids a person sheet's
 `sagax_server_engines` (Perspicax) gives a member; see "The organization's
 key, per person" in self-hosting.md.
 

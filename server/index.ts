@@ -711,6 +711,8 @@ import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes, resolveVoiceKey, type VoiceModeDeps, type VoiceSpeaker } from "./voice-mode.ts";
 import { VOICE_SERVER_ENGINE } from "../shared/voice-mode.ts";
+import { IMAGE_SERVER_ENGINE } from "../shared/image-generation.ts";
+import { ORG_XAI_VOICE_NOTE_REFUSAL, orgXaiKeyAllowed, orgXaiMediaStatusFor, orgXaiRefusal, type OrgXaiMedia } from "./org-xai-media.ts";
 import { configuredKeyterms, VOICE_KEYTERM_RECENT_MESSAGES, voiceKeyterms } from "./voice-keyterms.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
@@ -3674,7 +3676,10 @@ function agentsIntegration(
       // bot can actually speak, and the route re-checks on every call.
       SAGAX_VOICE_NOTES: (() => {
         const speaking = botForThread(botId, threadId) ?? store.bot(botId);
-        return tts.voiceReady(cfg, speaking?.voice) && speaking?.voiceNotes !== false ? "1" : "0";
+        // 2026-10-16: on the organization's xAI voice only for the person
+        // this turn is for (the route re-checks).
+        const given = orgXaiMediaGiven("voice", turnMediaPrincipal(threadId), effectiveBotOwner(speaking ?? {}));
+        return tts.voiceReady(cfg, speaking?.voice, { xaiKeyGiven: given }) && speaking?.voiceNotes !== false ? "1" : "0";
       })(),
       // end_call is offered only while this thread is on a live phone call.
       // The route re-checks; a turn that is not a call never sees the tool.
@@ -9830,7 +9835,8 @@ function sseFrameFor(
   // A config frame names its viewer: each stream gets its own profile and
   // viewer block, never another person's.
   if (payload?.kind === "config" && clientFrame !== null && client.identity) {
-    const projected = configForViewer(configForAccess(payload as ReturnType<typeof configStatus>, client.admin), client.identity());
+    const identity = client.identity();
+    const projected = orgXaiMediaView(configForViewer(configForAccess(payload as ReturnType<typeof configStatus>, client.admin), identity), identity);
     return `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...projected, seq })}\n\n`;
   }
   // A live screen of a person's cloud computer reaches that person only.
@@ -23010,6 +23016,40 @@ function serverEngineAllowedFor(principalId: string, instanceId: string): boolea
   }
   return list.includes("*") || list.includes(instanceId);
 }
+/** 2026-10-16: the organization's xAI key pays for speech (Grok voice) and
+ * avatar images only for the people Perspicax gives them to, by the same
+ * list (`xaiVoice`, `xaiImage`): server/org-xai-media.ts. Solo: always. */
+function orgXaiMediaGiven(media: OrgXaiMedia, principalId: string | null | undefined, ownerPrincipalId?: string | null): boolean {
+  return orgXaiKeyAllowed(media, { organization: IDENTITY.kind === "perspicax", principalId, ownerPrincipalId, allowed: serverEngineAllowedFor });
+}
+/** The person a request is for: the signed-in person, or this server's
+ * operator for a loopback owner request (as /api/me/engines). A reduced
+ * service caller is nobody. */
+function requesterPrincipal(auth: RequestAuth): string | null {
+  if (auth.kind === "session") return auth.session.principalId?.trim() || null;
+  return auth.trust === "service" ? null : localPrincipalId();
+}
+/** The person a turn on this thread is for: a routine's owner, else the
+ * person it speaks for; null when unknown (the caller then judges the bot's
+ * owner). */
+function turnMediaPrincipal(threadId: string): string | null {
+  if (turnRoutineLineage.has(threadId)) return turnRoutinePayers.get(threadId)?.trim().toLowerCase() || null;
+  return turnSpeakerPrincipals.get(threadId)?.trim().toLowerCase() || null;
+}
+/** The image settings an avatar generation for this person may use, or
+ * null when the provider is xAI on the organization's key and it was not
+ * given to them. The key is left out whenever it is not theirs to use. */
+function orgAvatarImageConfig(principalId: string | null): { imageGen?: AppConfig["imageGen"]; xai?: { key?: string } } | null {
+  const given = orgXaiMediaGiven("image", principalId);
+  if (!given && avatarImageStatus(cfg).provider === "xai") return null;
+  return { imageGen: cfg.imageGen, ...(given ? { xai: cfg.xai } : {}) };
+}
+/** A config status as this viewer sees it: the xAI voice and images are not
+ * configured for a member the organization did not give them to. */
+function orgXaiMediaView<T extends Parameters<typeof orgXaiMediaStatusFor>[0]>(status: T, viewer: ViewerIdentity | null): T {
+  if (IDENTITY.kind !== "perspicax" || !viewer) return status;
+  return orgXaiMediaStatusFor(status, { voice: orgXaiMediaGiven("voice", viewer.principalId), image: orgXaiMediaGiven("image", viewer.principalId) });
+}
 /** A person's Perspicax subject (only from this server's issuer) and
  * whether they are disabled. */
 function orgPersonFacts(person: { subject?: { iss: string; sub: string }; disabledAt?: unknown } | null | undefined): { sub?: string; disabled?: true } {
@@ -23922,7 +23962,7 @@ ROUTES.push(createTtsProviderRoutes({
     broadcast({ kind: "config", ...status });
     return status;
   },
-  view: (auth, status) => configForViewer(configForAccess(status as ReturnType<typeof configStatus>, auth.scopes.includes("admin")), viewerIdentity(auth)),
+  view: (auth, status) => { const viewer = viewerIdentity(auth); return orgXaiMediaView(configForViewer(configForAccess(status as ReturnType<typeof configStatus>, auth.scopes.includes("admin")), viewer), viewer); },
 }));
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
@@ -29448,6 +29488,10 @@ function orgAdminEngines(): AdminEngine[] {
   });
   // Voice mode on the organization's xAI key is given the same way.
   if (cfg.xai?.key) engines.push({ id: VOICE_SERVER_ENGINE, name: "Grok voice (xAI)", kind: "cloud", installed: true, auth: "apiKey", orgKey: true, voice: true });
+  // 2026-10-16: Grok voice also covers read aloud and voice notes when the
+  // voice engine is xAI; avatar images on the organization's xAI key are
+  // given the same way.
+  if (cfg.xai?.key) engines.push({ id: IMAGE_SERVER_ENGINE, name: "Grok images (xAI)", kind: "cloud", installed: true, auth: "apiKey", orgKey: true, image: true });
   return engines;
 }
 /** A bot whose engine left the organization's list falls back to Auto on an
@@ -34032,8 +34076,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (voiceBot.voiceNotes === false) {
           return json(res, 403, { error: "voice notes are turned off for this bot" });
         }
+        // 2026-10-16: the organization's xAI voice speaks only for the person
+        // this turn is for (a routine: its owner; nobody known: the owner).
+        const voiceGiven = orgXaiMediaGiven("voice", turnMediaPrincipal(internalCapability.threadId), effectiveBotOwner(internalSender));
         try {
-          const audio = await tts.speak(cfg, text, voiceBot.voice);
+          const audio = await tts.speak(cfg, text, voiceBot.voice, undefined, { xaiKeyGiven: voiceGiven });
           // Synthesis can outlive its turn: a stop or settle during the await
           // revokes the capability and clears the live turn. Re-check both
           // before saving so the clip cannot park under the :active fallback
@@ -34053,6 +34100,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // "no voice configured" is a setup state, not a provider failure —
           // 409 with the hint, exactly like /api/tts/speak.
           if (error instanceof tts.NoVoiceConfigured) return json(res, 409, { error: error.message });
+          if (error instanceof tts.XaiVoiceNotGiven) return json(res, 403, { error: ORG_XAI_VOICE_NOTE_REFUSAL, cause: error.code });
           const status = (error as { status?: number }).status;
           if (typeof status === "number" && status >= 400 && status < 500) {
             return json(res, status, { error: error instanceof Error ? error.message : "voice note failed" });
@@ -36841,7 +36889,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const checked = avatarGenerationRequestSchema.safeParse({ prompt: body.prompt });
       if (!checked.success) return json(res, 400, { error: checked.error.message });
       const { prompt } = checked.data;
-      const generated = await generateAvatarImage(cfg, {
+      const imageCfg = orgAvatarImageConfig(requesterPrincipal(auth));
+      if (!imageCfg) return json(res, 403, orgXaiRefusal("image"));
+      const generated = await generateAvatarImage(imageCfg, {
         name: profile.patch.name ?? "", title: profile.patch.title ?? "", description: profile.patch.description ?? "",
       }, prompt);
       // A preview belongs to the draft. Upload it through the existing image
@@ -37060,11 +37110,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // delete this bot while it is in flight. Snapshot the two fields this
       // request owns before the first await so a late result cannot win.
       const initialAvatar = snapshotAvatarGenerationState(existing);
+      // 2026-10-16: on the organization's xAI key only for the person asking.
+      const imageCfg = orgAvatarImageConfig(requesterPrincipal(auth));
+      if (!imageCfg) return json(res, 403, orgXaiRefusal("image"));
       const parsed = avatarGenerationRequestSchema.safeParse(await readBody(req));
       if (!parsed.success) {
         return json(res, 400, { error: `prompt must be at most 400 characters` });
       }
-      const generated = await generateAvatarImage(cfg, existing, parsed.data.prompt);
+      const generated = await generateAvatarImage(imageCfg, existing, parsed.data.prompt);
       const current = store.bot(existing.id);
       if (!current) return json(res, 404, { error: "no such bot" });
       if (!avatarGenerationStateMatches(initialAvatar, current)) {
@@ -41070,7 +41123,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
     // ── app config (API keys — never echoed back, booleans only) ──
     if (method === "GET" && path === "/api/config") {
-      return json(res, 200, configForViewer(configForAccess(configStatus(), auth.scopes.includes("admin")), viewerIdentity(auth)));
+      return json(res, 200, orgXaiMediaView(configForViewer(configForAccess(configStatus(), auth.scopes.includes("admin")), viewerIdentity(auth)), viewerIdentity(auth)));
     }
     if ((method === "PUT" || method === "PATCH") && path === "/api/config") {
       const body = await readBody(req);
@@ -41111,7 +41164,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (!Object.keys(patch).length) {
         // Only a Grok voice key that was not kept: nothing else to save.
-        if (grokVoiceFold) return json(res, 200, configForViewer(configForAccess(configStatus(), auth.scopes.includes("admin")), viewerIdentity(auth)));
+        if (grokVoiceFold) return json(res, 200, orgXaiMediaView(configForViewer(configForAccess(configStatus(), auth.scopes.includes("admin")), viewerIdentity(auth)), viewerIdentity(auth)));
         return json(res, 400, { error: "nothing to save" });
       }
       if (patch.decider) {
@@ -41651,7 +41704,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         finalized.acknowledgements.every(Boolean),
         removedBrowserProfileIds.length === 1 ? "The browser profile" : "The browser profiles",
       );
-      return json(res, 200, configForViewer(finalized.value, viewerIdentity(auth)));
+      return json(res, 200, orgXaiMediaView(configForViewer(finalized.value, viewerIdentity(auth)), viewerIdentity(auth)));
       } finally {
         for (const provider of transitioningProviders) computerProviderConfigTransitions.delete(provider);
         if (changingLocalVmMode) localVmModeChangeBusy = false;
@@ -41667,14 +41720,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "POST" && path === "/api/tts/prepare") {
       const body = await readBody(req);
       return json(res, 200, {
-        ready: tts.voiceReady(cfg, typeof body.voiceId === "string" ? body.voiceId : undefined),
+        ready: tts.voiceReady(cfg, typeof body.voiceId === "string" ? body.voiceId : undefined, { xaiKeyGiven: orgXaiMediaGiven("voice", requesterPrincipal(auth)) }),
         utterances: toUtterances(String(body.text ?? "")),
       });
     }
     if (method === "GET" && path === "/api/tts/voices") {
       try {
-        return json(res, 200, { voices: await tts.listVoices(cfg) });
+        return json(res, 200, { voices: await tts.listVoices(cfg, undefined, { xaiKeyGiven: orgXaiMediaGiven("voice", requesterPrincipal(auth)) }) });
       } catch (e) {
+        if (e instanceof tts.XaiVoiceNotGiven) return json(res, 200, { voices: [], ...orgXaiRefusal("voice") });
         return json(res, 200, { voices: [], error: e instanceof Error ? e.message : String(e) });
       }
     }
@@ -41687,7 +41741,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // voice account into an unbounded, billable synthesis job.
       if (text.length > 500) return json(res, 413, { error: "voice utterances are limited to 500 characters" });
       try {
-        const audio = await tts.speak(cfg, text, typeof body.voiceId === "string" ? body.voiceId : undefined);
+        const audio = await tts.speak(cfg, text, typeof body.voiceId === "string" ? body.voiceId : undefined, undefined, { xaiKeyGiven: orgXaiMediaGiven("voice", requesterPrincipal(auth)) });
         res.writeHead(200, {
           "content-type": audio.mime,
           "content-length": String(audio.bytes.byteLength),
@@ -41698,6 +41752,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // "you haven't set this up yet" is not a provider failure — 409 so
         // the client can point at App Settings instead of showing a 502
         if (e instanceof tts.NoVoiceConfigured) return json(res, 409, { error: e.message });
+        if (e instanceof tts.XaiVoiceNotGiven) return json(res, 403, orgXaiRefusal("voice"));
         return json(res, 502, { error: e instanceof Error ? e.message : String(e) });
       }
     }

@@ -160,6 +160,26 @@ describe("configuration", () => {
     );
   });
 
+  it("never speaks on the xAI key for a person the organization did not give its voice to (2026-10-16)", async () => {
+    seen.length = 0;
+    const { speak, listVoices, voiceReady, XaiVoiceNotGiven } = await voice();
+    const xai: AppConfig = { xai: { key: "xai-org-key" }, tts: { provider: "xai", voice: "eve" } };
+    expect(() => speak(xai, "hi", undefined, undefined, { xaiKeyGiven: false })).toThrow(XaiVoiceNotGiven);
+    await expect(listVoices(xai, undefined, { xaiKeyGiven: false })).rejects.toBeInstanceOf(XaiVoiceNotGiven);
+    expect(voiceReady(xai, "eve", { xaiKeyGiven: false })).toBe(false);
+    expect(voiceReady(xai, "eve", { xaiKeyGiven: true })).toBe(true);
+    expect(voiceReady(xai, "eve")).toBe(true);
+    try {
+      speak(xai, "hi", undefined, undefined, { xaiKeyGiven: false });
+    } catch (error) {
+      expect((error as InstanceType<typeof XaiVoiceNotGiven>).code).toBe("server_engine_not_allowed");
+      expect(String((error as Error).message)).not.toContain("xai-org-key");
+    }
+    // another provider never asks
+    expect(voiceReady(cfg({ key: "k", voice: "v-1" }), undefined, { xaiKeyGiven: false })).toBe(true);
+    expect(seen).toHaveLength(0);
+  });
+
   it("lists no voices without a key, rather than calling out", async () => {
     seen.length = 0;
     const { listVoices } = await voice();

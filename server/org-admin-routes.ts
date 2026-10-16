@@ -77,8 +77,12 @@ export interface AdminEngine {
    * Connections), never the key: a person sheet's `sagax_server_engines`
    * gives it to members. */
   orgKey?: boolean;
-  /** The voice mode row (`xaiVoice`): not a bot engine. */
+  /** The voice row (`xaiVoice`: voice mode, and read aloud and voice notes
+   * when the voice engine is xAI): not a bot engine. */
   voice?: true;
+  /** The image row (`xaiImage`, 2026-10-16: bot avatars generated on the
+   * organization's xAI key): not a bot engine. */
+  image?: true;
 }
 /** The built-in routes, as `GET capabilities` names them. */
 const BUILT_IN_ROUTES: Array<Pick<ConsoleRoute, "method" | "path">> = [
