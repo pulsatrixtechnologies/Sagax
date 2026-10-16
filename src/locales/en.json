@@ -7895,5 +7895,10 @@
   "palette.cmd.goalStop": "Stop the goal",
   "palette.cmd.shortcuts": "Keyboard shortcuts",
   "palette.cmd.releaseNotes": "Release notes",
-  "palette.cmd.tour": "Replay the guided tour"
+  "palette.cmd.tour": "Replay the guided tour",
+  "settings.nav.you": "Personal",
+  "settings.nav.ai": "AI",
+  "settings.nav.workspace": "Workspace",
+  "settings.nav.app": "App",
+  "settings.updates.group": "This app"
 }

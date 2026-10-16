@@ -11728,7 +11728,12 @@
       "palette.cmd.goalStop": "bb2f6a0dee0affc9f50934ed6e13507a3613cd2498e30813a3a08769ad74ccd6",
       "palette.cmd.shortcuts": "e9bef0b0f3c25e6eaf3a754817a8b4f62e1c8473cb2be3e190975926dbf72d6f",
       "palette.cmd.releaseNotes": "1254829bd9996472de64de2e8c130a27d2a3841c0209bfeefcad382cd3609ace",
-      "palette.cmd.tour": "4362820da263add4a1da8fd9c490f25676cef7c4d8cc3825efa159ecf54d283a"
+      "palette.cmd.tour": "4362820da263add4a1da8fd9c490f25676cef7c4d8cc3825efa159ecf54d283a",
+      "settings.nav.you": "845f9286400f42697fbb196d24c794efa933ce1d20e2b93a7cf770b69f96f6fc",
+      "settings.nav.ai": "11fb682be0a0233d5fb899721ecfc1827d20f0d2ff2e093310efa61efca8af1c",
+      "settings.nav.workspace": "87bb59ba2f92f2a5a9f13e021fd58dd14ae5c065b1046146875e6e68d5ebc8b7",
+      "settings.nav.app": "0d04bfeb7d64b71c74fc925cca93d683154e8cc7e6e5838faced498e34c9984d",
+      "settings.updates.group": "0982cb1775e60cc8424ea970cb48323b85bd55a1a9c92136f0b7e0e0c19e77ea"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -65,32 +65,48 @@ const COMPOSIO_PLATFORM_URL = "https://platform.composio.dev";
  * and General matches them there (sectionMatches `extra`). */
 export const ORGANIZATION_ADVANCED_KEYWORDS = ["routines", "conversation", "schedule", "mcp", "timeout", "group turns", "rooms"];
 
+/** The headings of the settings nav (2026-10-16, JC): Cursor Settings and
+ * Grok Bot keep a short rail in a few groups; Sagax names its groups. A
+ * heading shows while one of its pages (or Automations, for AI) does. */
+export type SettingsNavGroup = "you" | "ai" | "workspace" | "app";
+
+export const NAV_GROUPS: Array<{ id: SettingsNavGroup; labelKey: LocaleKey }> = [
+  { id: "you", labelKey: "settings.nav.you" },
+  { id: "ai", labelKey: "settings.nav.ai" },
+  { id: "workspace", labelKey: "settings.nav.workspace" },
+  { id: "app", labelKey: "settings.nav.app" },
+];
+
 export const SECTIONS: Array<{
   id: AppSettingsSection;
   labelKey: LocaleKey;
+  /** The nav heading it sits under (NAV_GROUPS). */
+  group: SettingsNavGroup;
   icon: typeof User;
   keywords: string[];
 }> = [
+  // 2026-10-16: in the order of their nav groups (NAV_GROUPS), as Cursor
+  // Settings groups its rail: you, AI, the workspace, this app last.
   // 0.5.6 (JC): General is laid out as Grok Bot's (Account, Appearance,
   // System); Updates is a page of its own, as there.
-  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "nettoyage", "grants", "autorisations", "theme", "thème", "language", "langue", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
-  // 2026-10-14: Memory is a card of this page (it was its own section).
-  { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy", "full access", "accès complet", "approvals", "approbations", "waiting for an admin", "en attente", "people from before", "rattacher", "invite", "inviter", "invitation", "people", "personnes", "this computer", "cet ordinateur", "serveurs", "oublier", "forget", ...ORGANIZATION_ADVANCED_KEYWORDS] },
-  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
+  { id: "general", group: "you", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "nettoyage", "grants", "autorisations", "theme", "thème", "language", "langue", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
+  { id: "appearance", group: "you", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
   // 2026-10-14: Privacy is a card of this page on an organization server.
-  { id: "notifications", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
-  { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles", "experimental", "expérimental", "data window", "fenêtre data", "decision model", "modèle de décision", "connected apps", "apps connectées", "compétences", "navigateur", "unavailable", "indisponible"] },
+  { id: "notifications", group: "you", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
   // Models and voice (2026-10-14): Integrations and Models and accounts in
   // one page; Connected apps and Decision model are cards of it.
-  { id: "engines", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées", "decision", "jev", "typesafe", "routing", "auto", "who answers", "auto model", "modèle auto", "moteurs", "needs setup", "à configurer", "voice engine", "moteur de voix", "fish audio", "live calls", "appels en direct", "image provider", "fournisseur d'images", "génération d'images", "cloud coding agents"] },
-  { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur", "your computer", "votre ordinateur", "other computers", "autres ordinateurs", "network", "réseau", "traffic", "trafic", "server environment", "environnement serveur", "reset", "réinitialiser", "repair", "réparer"] },
-  { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing", "plan", "forfait", "coût", "usage", "spend", "this month", "ce mois-ci", "last 30 days", "30 derniers jours", "by bot", "par bot", "by model", "par modèle", "renews", "renouvelle", "sagax business"] },
-  // 0.5.6: this app's updates and the pre-release channel (were in General
-  // and General > Advanced). Shown where the desktop app answers.
-  { id: "updates", labelKey: "settings.updates.title", icon: Download, keywords: ["updates", "update", "version", "mise à jour", "mises à jour", "prerelease", "pre-release", "beta", "bêta", "restart"] },
+  { id: "engines", group: "ai", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées", "decision", "jev", "typesafe", "routing", "auto", "who answers", "auto model", "modèle auto", "moteurs", "needs setup", "à configurer", "voice engine", "moteur de voix", "fish audio", "live calls", "appels en direct", "image provider", "fournisseur d'images", "génération d'images", "cloud coding agents"] },
+  // 2026-10-14: Memory is a card of this page (it was its own section).
+  { id: "organization", group: "workspace", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy", "full access", "accès complet", "approvals", "approbations", "waiting for an admin", "en attente", "people from before", "rattacher", "invite", "inviter", "invitation", "people", "personnes", "this computer", "cet ordinateur", "serveurs", "oublier", "forget", ...ORGANIZATION_ADVANCED_KEYWORDS] },
+  { id: "computer", group: "workspace", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur", "your computer", "votre ordinateur", "other computers", "autres ordinateurs", "network", "réseau", "traffic", "trafic", "server environment", "environnement serveur", "reset", "réinitialiser", "repair", "réparer"] },
+  { id: "usage", group: "workspace", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing", "plan", "forfait", "coût", "usage", "spend", "this month", "ce mois-ci", "last 30 days", "30 derniers jours", "by bot", "par bot", "by model", "par modèle", "renews", "renouvelle", "sagax business"] },
   // 2026-10-15: People and Installations are hidden in the app, like Email,
   // Activity and Pair devices (settings-sections.ts HIDDEN).
-  { id: "backups", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery", "backup", "sauvegarde", "exporter", "restaurer", "replace", "remplacer", "mot de passe"] },
+  { id: "backups", group: "workspace", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery", "backup", "sauvegarde", "exporter", "restaurer", "replace", "remplacer", "mot de passe"] },
+  // 0.5.6: this app's updates and the pre-release channel (were in General
+  // and General > Advanced). Shown where the desktop app answers.
+  { id: "updates", group: "app", labelKey: "settings.updates.title", icon: Download, keywords: ["updates", "update", "version", "mise à jour", "mises à jour", "prerelease", "pre-release", "beta", "bêta", "restart"] },
+  { id: "experimental", group: "app", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles", "experimental", "expérimental", "data window", "fenêtre data", "decision model", "modèle de décision", "connected apps", "apps connectées", "compétences", "navigateur", "unavailable", "indisponible"] },
 ];
 
 /** Former sections that are a card of another page now (2026-10-14), by the
@@ -656,38 +672,54 @@ export function SettingsModal() {
               {t("settings.noMatch", { query: query.trim() })}
             </div>
           )}
-          {visibleSections.map(({ id, labelKey, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: id })}
-              aria-current={section === id ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink transition-colors motion-reduce:transition-none",
-                section === id ? "bg-selected" : "hover:bg-hover",
-              )}
-            >
-              {/* Grok Bot's nav item (198px rail, 7/9px padding, 9px gap,
-                  8px corners, 15px icon) with its thinner glyph stroke */}
-              <Icon size={15} strokeWidth={1.5} className="shrink-0" />
-              {t(labelKey)}
-            </button>
-          ))}
-          {/* Automations left the avatar menu for here (JC, 2026-10-16): a
-              link to its own page, not a section of Settings */}
-          {!remoteActive && automationsMatch(query) && (
-            <button
-              type="button"
-              data-settings-automations
-              onClick={() => {
-                dispatch({ type: "toggleAppSettings", open: false });
-                dispatch({ type: "showRoutines" });
-              }}
-              className="flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover motion-reduce:transition-none"
-            >
-              <CalendarDays size={15} strokeWidth={1.5} className="shrink-0" />
-              {t("sidebar.nav.automations")}
-            </button>
-          )}
+          {/* 2026-10-16 (JC): the rail in headed groups, as Cursor Settings
+              groups its own (you, AI, the workspace, this app last). A
+              heading shows while one of its entries does, a search too. */}
+          {NAV_GROUPS.map((group) => {
+            const entries = visibleSections.filter((entry) => entry.group === group.id);
+            // Automations left the avatar menu for here (JC, 2026-10-16): a
+            // link to its own page, not a section of Settings, under AI.
+            const automations = group.id === "ai" && !remoteActive && automationsMatch(query);
+            if (entries.length === 0 && !automations) return null;
+            const headingId = `app-settings-nav-${group.id}`;
+            return (
+              <div key={group.id} role="group" aria-labelledby={headingId} data-settings-nav-group={group.id} className="flex shrink-0 flex-col gap-0.5">
+                <div id={headingId} className="px-[9px] pb-1 pt-3 text-[11.5px] font-medium leading-4 text-ink-tertiary">
+                  {t(group.labelKey)}
+                </div>
+                {entries.map(({ id, labelKey, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: id })}
+                    aria-current={section === id ? "page" : undefined}
+                    className={cn(
+                      "flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink transition-colors motion-reduce:transition-none",
+                      section === id ? "bg-selected" : "hover:bg-hover",
+                    )}
+                  >
+                    {/* Grok Bot's nav item (198px rail, 7/9px padding, 9px gap,
+                        8px corners, 15px icon) with its thinner glyph stroke */}
+                    <Icon size={15} strokeWidth={1.5} className="shrink-0" />
+                    {t(labelKey)}
+                  </button>
+                ))}
+                {automations && (
+                  <button
+                    type="button"
+                    data-settings-automations
+                    onClick={() => {
+                      dispatch({ type: "toggleAppSettings", open: false });
+                      dispatch({ type: "showRoutines" });
+                    }}
+                    className="flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover motion-reduce:transition-none"
+                  >
+                    <CalendarDays size={15} strokeWidth={1.5} className="shrink-0" />
+                    {t("sidebar.nav.automations")}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -709,9 +741,16 @@ export function SettingsModal() {
               }}
               className="w-full min-w-0 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none sm:hidden"
             >
-              {availableSections.map(({ id, labelKey }) => (
-                <option key={id} value={id}>{t(labelKey)}</option>
-              ))}
+              {NAV_GROUPS.map((group) => {
+                const entries = availableSections.filter((entry) => entry.group === group.id);
+                return entries.length === 0 ? null : (
+                  <optgroup key={group.id} label={t(group.labelKey)}>
+                    {entries.map(({ id, labelKey }) => (
+                      <option key={id} value={id}>{t(labelKey)}</option>
+                    ))}
+                  </optgroup>
+                );
+              })}
             </select>
           </div>
 
@@ -795,9 +834,12 @@ export function SettingsModal() {
             )}
 
             {section === "updates" && (
-              <div className="flex flex-col overflow-clip rounded-xl border-[0.5px] border-border bg-elevated py-1.5" data-settings-card="updates">
-                <UpdatesRow />
-                <PrereleaseRow />
+              <div data-settings-card="updates">
+                {/* 2026-10-16: a titled card, as every other page's */}
+                <SettingsGroup title={t("settings.updates.group")} groupId="updates">
+                  <UpdatesRow />
+                  <PrereleaseRow />
+                </SettingsGroup>
               </div>
             )}
 

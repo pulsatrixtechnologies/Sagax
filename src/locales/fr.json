@@ -7895,5 +7895,10 @@
   "palette.cmd.goalStop": "Arrêter l'objectif",
   "palette.cmd.shortcuts": "Raccourcis clavier",
   "palette.cmd.releaseNotes": "Notes de version",
-  "palette.cmd.tour": "Revoir la visite guidée"
+  "palette.cmd.tour": "Revoir la visite guidée",
+  "settings.nav.you": "Personnel",
+  "settings.nav.ai": "IA",
+  "settings.nav.workspace": "Espace de travail",
+  "settings.nav.app": "Application",
+  "settings.updates.group": "Cette application"
 }
