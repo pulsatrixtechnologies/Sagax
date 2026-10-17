@@ -72,7 +72,7 @@ final class ModelPickerRulesTests: XCTestCase {
     func testAllowedProviders() throws {
         let list = [try instance("codex"), try instance("claude"), try instance("grok")]
         XCTAssertTrue(ModelPickerRules.engineAllowed(nil, "x"))
-        XCTAssertTrue(ModelPickerRules.engineAllowed([], "x"))
+        XCTAssertFalse(ModelPickerRules.engineAllowed([], "x"))
         XCTAssertFalse(ModelPickerRules.engineAllowed(["codex"], "x"))
         XCTAssertEqual(ModelPickerRules.listed(list, allowed: ["codex"], organization: true, selectedId: "grok").map(\.instanceId), ["codex", "grok"])
         XCTAssertEqual(ModelPickerRules.listed(list, allowed: ["codex"], organization: false, selectedId: "grok").count, 3)

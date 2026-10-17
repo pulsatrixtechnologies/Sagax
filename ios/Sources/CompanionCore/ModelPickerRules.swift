@@ -49,9 +49,10 @@ public enum ModelPickerRules {
         return (offered.filter { !isLocal($0) }, local.filter { $0.loaded == true } + local.filter { $0.loaded != true })
     }
 
-    /// `engineAllowed`: nil or an empty list allows every engine.
+    /// `engineAllowed`: nil allows every engine; an empty list allows none
+    /// (2026-10-17, shared/org-allowed-engines.ts).
     public static func engineAllowed(_ allowed: [String]?, _ instanceId: String) -> Bool {
-        guard let allowed, !allowed.isEmpty else { return true }
+        guard let allowed else { return true }
         return allowed.contains(instanceId)
     }
 
