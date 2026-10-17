@@ -104,12 +104,17 @@ past what this setting allows (`memberRoomTurnLevel`). Custom stays Ask (a
 `config.toml` on the shared server is not the member's), and Full keeps the
 organization rules above.
 
+It also governs the owner's own **permission mode** of a member's bot
+(Automatic, Bypass, `server/owner-approval.ts`): while the setting is off
+the mode runs as Approval, and choosing Automatic or Bypass is refused with
+`member_auto_not_allowed` (re-review of 2026-10-17).
+
 What this setting does not govern: a bot an organization admin owns (its
 Auto stays the admin's choice), and the owner's own environment below (a
-bot working in its owner's environment without a card, and the owner's
-"permission mode auto" for that environment, `memberEnvironmentAutonomy`),
-which has its own switch. Turning `memberAutoApproval` off does not stop
-owner-environment autonomy; turn `memberEnvironmentAutonomy` off for that. Every organization turn withholds the engines' own tools that act on
+bot working in its owner's environment without a card,
+`memberEnvironmentAutonomy`), which has its own switch. Turning
+`memberAutoApproval` off does not stop owner-environment autonomy; turn
+`memberEnvironmentAutonomy` off for that. Every organization turn withholds the engines' own tools that act on
 the server (shell, files, fetch: `docs/user-sandbox.md`), so what reaches
 Sagax is a Sagax tool, routed per tool: a card that would act on the shared
 server or beyond the owner's own rights still goes to an organization admin

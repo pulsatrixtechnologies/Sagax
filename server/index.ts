@@ -24708,6 +24708,12 @@ ROUTES.push(createOwnerApprovalRoutes({
     if (bot) revokeLegacyKey(bot, key);
   },
   bypassRefusal,
+  // a member's bot may not choose Automatic or Bypass while an admin turned
+  // automatic levels off for members' bots (member-auto-approval.ts)
+  modeRefusal: (botId, mode) => {
+    const bot = store.bot(botId);
+    return bot && mode !== "approval" && memberOwnedInOrg(bot) && !memberAutoApprovalAllowed(cfg.organization) ? { ...MEMBER_AUTO_NOT_ALLOWED } : null;
+  },
   audit: (row, auth) => orgAudit({
     category: "approval", action: row.action,
     target: row.botId ? auditBotTarget(row.botId) : { kind: "person", id: row.personId },
@@ -26512,6 +26518,10 @@ function ownerScopedMcpServerFor(bot: BotRecord, threadId: string): (server: str
  * Full access policy went off, or their profile lost bots.fullAccess). */
 function effectivePermissionMode(bot: BotRecord, ownerId: string): BotPermissionMode {
   const mode = ownerApprovals.modeOf(bot.id, ownerId);
+  // 2026-10-17 (re-review of #688): a member's bot answers nothing by
+  // itself while an admin turned automatic levels off for members' bots
+  // (member-auto-approval.ts): Automatic and Bypass run as Approval.
+  if (mode !== "approval" && memberOwnedInOrg(bot) && !memberAutoApprovalAllowed(cfg.organization)) return "approval";
   if (mode !== "bypass" || IDENTITY.kind !== "perspicax") return mode;
   if (!orgFullAccessPolicy()) return "approval";
   if (botOwnerOrgRole(bot) === "admin") return mode;

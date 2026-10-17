@@ -35,6 +35,9 @@ export interface OwnerApprovalRouteDeps {
   revokeLegacy: (botId: string, key: string) => void;
   /** Why this person may not turn Bypass on, or null. */
   bypassRefusal: (auth: RequestAuth) => string | null;
+  /** A mode this bot may not take now (a member's bot while the
+   * organization turned automatic levels off), or null. */
+  modeRefusal?: (botId: string, mode: BotPermissionMode) => { error: string; code: string } | null;
   audit: (row: { action: string; botId?: string; personId: string; before?: Record<string, unknown>; after?: Record<string, unknown> }, auth: RequestAuth) => void;
   /** One journal row for a mode change. */
   journalMode: (bot: { id: string; name: string; threadId: string }, before: BotPermissionMode, after: BotPermissionMode) => void;
@@ -191,6 +194,8 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
         if (refusal) return json(res, 403, { error: refusal, code: "bypass_not_allowed" });
       }
       const before = deps.store.modeOf(botId, ownerId);
+      const modeRefused = next !== before ? deps.modeRefusal?.(botId, next) ?? null : null;
+      if (modeRefused) return json(res, 403, modeRefused);
       if (MODE_RANK[next] > MODE_RANK[before] && deps.stepUp) {
         const refused = deps.stepUp(auth, me, "permission-mode", { botId, mode: next }, body.stepUp);
         if (refused) return json(res, refused.status, refused.body);

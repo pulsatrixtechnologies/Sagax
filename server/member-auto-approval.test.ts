@@ -48,6 +48,13 @@ describe("memberRoomTurnLevel (a Primary Bot's handoff in a room)", () => {
     expect(body.indexOf("delegatedLevel(")).toBeLessThan(body.indexOf("memberRoomTurnLevel("));
   });
 
+  it("the owner's permission mode of a member's bot runs as Approval while the setting is off (index.ts effectivePermissionMode)", () => {
+    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const start = source.indexOf("function effectivePermissionMode(");
+    const body = source.slice(start, source.indexOf("\n}\n", start));
+    expect(body).toMatch(/if \(mode !== "approval" && memberOwnedInOrg\(bot\) && !memberAutoApprovalAllowed\(cfg\.organization\)\) return "approval";/);
+  });
+
   it("keeps Custom at Ask and leaves Ask and Full to their own rules", () => {
     for (const allowed of [true, false]) {
       expect(memberRoomTurnLevel("custom", allowed)).toBe("ask");

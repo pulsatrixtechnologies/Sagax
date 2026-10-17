@@ -441,6 +441,14 @@ posixOnly("organization server environments (user-sandbox)", () => {
         expect(refused.status, refused.text).toBe(403);
         expect(refused.body).toMatchObject({ code: "member_auto_not_allowed" });
       }
+      // re-review 2026-10-17: nor the owner's permission mode (Automatic, Bypass)
+      for (const mode of ["auto", "bypass"]) {
+        const refused = await api("PUT", `/api/bots/${fern.id}/permission-mode`, bob, { mode, confirmBypass: true });
+        expect(refused.status, refused.text).toBe(403);
+        // Bypass may already be refused by the Full access policy
+        expect(mode === "bypass" ? ["member_auto_not_allowed", "bypass_not_allowed"] : ["member_auto_not_allowed"], refused.text).toContain(refused.body.code);
+      }
+      expect((await api("PUT", `/api/bots/${fern.id}/permission-mode`, bob, { mode: "approval" })).status).toBe(200);
       // on again: nothing comes back by itself; the member chooses again
       expect((await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: true })).status).toBe(200);
       expect(await runs("on again")).toBe("default");
