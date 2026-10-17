@@ -162,6 +162,17 @@ export function narrowBotForViewer<T extends Record<string, unknown>>(
       else if (field === "unread") out.unread = false;
     }
   }
+  // 2026-10-17 (follow-up of #698): the thread a viewer is given is always
+  // in their `tasks` (an AI client's hidden thread they opened, a thread the
+  // wire list left out), so web, Android and older iOS clients never see a
+  // selected thread their list does not hold. Only a record of the viewer's
+  // own thread is added (ownThreads), never anyone else's.
+  const selected = typeof out.threadId === "string" ? out.threadId : "";
+  const listed = Array.isArray(out.tasks) ? (out.tasks as ThreadRecord[]) : undefined;
+  if (selected && listed && !listed.some((task) => task.threadId === selected)) {
+    const record = input.mineTask && input.mineTask.threadId === selected ? (input.mineTask as unknown as ThreadRecord) : undefined;
+    if (record && ownThreads([record], input.viewerId, input.botOwnerPrincipalId).length === 1) out.tasks = [...listed, record];
+  }
   if (input.activity) {
     out.activity = input.activity.activity;
     out.busy = input.activity.busy;

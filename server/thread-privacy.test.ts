@@ -184,6 +184,34 @@ describe("narrowBotForViewer", () => {
     expect(JSON.stringify(none)).not.toContain("a1");
   });
 
+  it("2026-10-17: the thread a viewer is given is always in their tasks (an opened hidden thread)", () => {
+    // bob opened his AI client's hidden thread: the wire list left it out
+    const bobs = narrowBotForViewer(wire, {
+      viewerId: BOB, botOwnerPrincipalId: ALICE, mine: "h1",
+      mineTask: { threadId: "h1", ownerPrincipalId: BOB, hidden: true, busy: false, activity: "idle" },
+    });
+    expect(bobs.threadId).toBe("h1");
+    expect(bobs.tasks.map((task) => task.threadId)).toEqual(["b1", "h1"]);
+    // the owner's view of their own hidden thread too
+    const alices = narrowBotForViewer({ ...wire, threadId: "h2" }, {
+      viewerId: ALICE, botOwnerPrincipalId: ALICE, mine: "h2",
+      mineTask: { threadId: "h2", ownerPrincipalId: ALICE, hidden: true },
+    });
+    expect(alices.tasks.map((task) => task.threadId)).toEqual(["a1", "h2"]);
+    // never a record that is not the viewer's, nor one for another thread
+    const forged = narrowBotForViewer(wire, {
+      viewerId: BOB, botOwnerPrincipalId: ALICE, mine: "x1",
+      mineTask: { threadId: "x1", ownerPrincipalId: ALICE, title: "Alice's other" },
+    });
+    expect(forged.tasks.map((task) => task.threadId)).toEqual(["b1"]);
+    expect(JSON.stringify(forged)).not.toContain("Alice's other");
+    const mismatched = narrowBotForViewer(wire, {
+      viewerId: BOB, botOwnerPrincipalId: ALICE, mine: "y1",
+      mineTask: { threadId: "b1", ownerPrincipalId: BOB },
+    });
+    expect(mismatched.tasks.map((task) => task.threadId)).toEqual(["b1"]);
+  });
+
   it("a frame without tasks keeps its transcript only when the thread is the viewer's", () => {
     const frame = { id: "bot1", threadId: "b1", messages: [{ id: "x", text: "bob's words" }] };
     expect(narrowBotForViewer(frame, { viewerId: BOB, botOwnerPrincipalId: ALICE, mine: "b1" })).toBe(frame);
