@@ -214,9 +214,10 @@ it("Grok: warms at call start, then every call turn is a bare prompt whose tools
     }
     // one process, one session, and nothing but prompts after the warm
     expect(t.processes()).toHaveLength(1);
-    // (Grok's per-turn session/set_model pin is a wire call on the live
-    // session, not an establishment: it is left as it was)
-    const establishing = (methods: string[]) => methods.filter((method) => method !== "session/set_model");
+    // (Grok's per-turn session/set_model pin and its _x.ai/mcp/list check
+    // that the MCP servers are ready before a prompt (#691) are wire calls on
+    // the live session, not an establishment: they are left out)
+    const establishing = (methods: string[]) => methods.filter((method) => method !== "session/set_model" && method !== "_x.ai/mcp/list");
     expect(establishing(t.rpc())).toEqual([
       "initialize", "authenticate", "session/new", "session/prompt",
       "session/prompt", "session/prompt", "session/prompt",
