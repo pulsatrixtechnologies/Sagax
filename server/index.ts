@@ -882,7 +882,7 @@ import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
 import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
 import { createOwnerApprovalRoutes } from "./routes/owner-approvals.ts";
 import { SecurityKeys, SecurityKeyStore } from "./security-keys.ts";
-import { alwaysAllowStepUp, approvalGrantsFor, approvalStepUp, callStepUpClasses, cardRiskClasses, type StepUpDecision } from "./step-up-gate.ts";
+import { actionClassContext, alwaysAllowStepUp, approvalGrantsFor, approvalStepUp, callStepUpClasses, cardRiskClasses, type StepUpDecision } from "./step-up-gate.ts";
 import { createSecurityKeyRoutes, securityKeyCeremonyRoutes, settingsStepUp } from "./routes/security-keys.ts";
 import { SETTINGS_ACTION_CLASS, STEP_UP_CLASSES, approvalModeLoosens, botActClasses, toolChangesRules, type StepUpAnswer, type StepUpClass, type StepUpRefusal, type StepUpSettingsAction } from "../shared/step-up.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
@@ -12573,7 +12573,10 @@ bus.subscribe((event: RuntimeEvent) => {
       // tools, the owner's environment) is held for a card when the person
       // protects one of the call's classes with a security key, so that
       // card then asks for the key (#648).
-      const internalTool = permission && asker && event.requestId ? sagaxInternalTool(event.mcpTool ?? event.tool) : null;
+      // 2026-10-17: a built-in is Sagax's by identity, never by a name another
+      // server of the turn could have spelled (sagax-internal-tools.ts).
+      const foreignServers = permission && asker && event.requestId ? foreignMcpServerNames(asker, event.threadId) : [];
+      const internalTool = permission && asker && event.requestId ? sagaxInternalTool(event.mcpTool ?? event.tool, foreignServers) : null;
       const selfAnswerStepUp = (ownEnvironment || internalTool) && asker
         ? autoAnswerStepUp(asker, event.threadId, {
           tool: event.tool,
@@ -12588,6 +12591,7 @@ bus.subscribe((event: RuntimeEvent) => {
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
         ownerScopedMcpServer: ownerScopedMcpServerFor(asker, event.threadId),
         ownEnvironment,
+        foreignMcpServers: foreignServers,
       }));
       // A confidential thread's card goes to its owner only: one they could
       // not answer (an organization admin's card, another person's machine)
@@ -26570,7 +26574,7 @@ function ownEnvironmentOrigin(bot: BotRecord, threadId: string): "owner" | "othe
  * speaks for (shared/step-up.ts). Non-empty: Sagax never answers the call
  * itself, the card shows and its Allow needs the key. */
 function autoAnswerStepUp(bot: BotRecord, threadId: string, call: Parameters<typeof callStepUpClasses>[0]): StepUpClass[] {
-  const classes = callStepUpClasses(call);
+  const classes = callStepUpClasses(call, threadActionClassContext(bot.id, threadId));
   if (!classes.length) return [];
   // the person who answers this thread's cards (a confidential thread's
   // owner, ownerDecision's owner too), not only the bot's owner
@@ -26578,6 +26582,29 @@ function autoAnswerStepUp(bot: BotRecord, threadId: string, call: Parameters<typ
   const out = new Set<StepUpClass>(securityKeys.required(owner, classes, owner));
   const speaker = turnSpeakerPrincipals.get(threadId);
   if (speaker && speaker !== owner) for (const name of securityKeys.required(speaker, classes, owner)) out.add(name);
+  return [...out];
+}
+/** 2026-10-17 (leftovers of #690): the names of the MCP servers a turn of
+ * this bot may mount that are not Sagax's own: the configured ones and the
+ * personal connections of the owner and of the person the turn speaks for.
+ * A tool name one of them could have spelled is never taken for a built-in
+ * (sagax-internal-tools.ts foreignToolSpelling). Unreadable sources name
+ * nothing more; the registry refuses the reserved names anyway. */
+function foreignMcpServerNames(bot: BotRecord, threadId: string): string[] {
+  const out = new Set<string>();
+  try {
+    for (const name of Object.keys(engineMcpServers(bot))) out.add(name);
+  } catch {
+    // an unreadable configuration names no server
+  }
+  for (const person of [effectiveBotOwner(bot), turnSpeakerPrincipals.get(threadId)]) {
+    if (!person || !isPrincipalId(person)) continue;
+    try {
+      for (const name of Object.keys(personConnections.servers(person))) out.add(name);
+    } catch {
+      // a vault that does not open names no server
+    }
+  }
   return [...out];
 }
 /** Organization server (org-full-access.ts): the admin policy, on unless
@@ -26649,12 +26676,22 @@ function ruleManager(auth: RequestAuth): string | null {
 function stepUpGate(person: string | null, threadId: string, requestId: string, behavior: string, answer: StepUpAnswer, stepUp: unknown): StepUpDecision {
   const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
   const card = message?.card;
+  const context = threadActionClassContext(botForApproval(threadId, message ?? {})?.id, threadId);
   const act = card?.botActRequest ? botActStepUpContent(requestId) : undefined;
   return approvalStepUp({
     keys: securityKeys, person, policyPerson: stepUpPolicyPerson(threadId, message),
-    threadId, requestId, card, behavior, answer, risks: card ? cardRiskClasses(card) : [], stepUp,
+    threadId, requestId, card, behavior, answer, risks: card ? cardRiskClasses(card, context) : [], stepUp,
     ...(act ? { extraClasses: act.classes, extraContent: act.content } : {}),
   });
+}
+
+/** 2026-10-17: the thread's own folder, against which a file write is
+ * judged (shared/step-up.ts actionToolClasses): a write there is
+ * irreversible, one that may replace a file anywhere else destructive too. */
+function threadActionClassContext(botId: string | undefined, threadId: string): ReturnType<typeof actionClassContext> {
+  // an id that is not one plain folder name names no folder of its own
+  const plain = (value: string) => /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(value) && !value.includes("..");
+  return actionClassContext(botId && plain(botId) && plain(threadId) ? [join(TASK_WORKSPACES_DIR, botId, threadId)] : []);
 }
 
 /** Whose chosen classes apply when nobody answers as a person: the bot's
@@ -26677,7 +26714,7 @@ function botActStepUpContent(requestId: string): { classes: ReturnType<typeof bo
 function alwaysAllowStepUpGate(person: string | null, botId: string, threadId: string, requestId: string, key: string, stepUp: unknown): StepUpDecision {
   const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
   const card = message?.card;
-  return alwaysAllowStepUp({ keys: securityKeys, person, policyPerson: stepUpPolicyPerson(threadId, message), botId, threadId, requestId, card, key, risks: card ? cardRiskClasses(card) : [], stepUp });
+  return alwaysAllowStepUp({ keys: securityKeys, person, policyPerson: stepUpPolicyPerson(threadId, message), botId, threadId, requestId, card, key, risks: card ? cardRiskClasses(card, threadActionClassContext(botId, threadId)) : [], stepUp });
 }
 
 /** An approval level made looser needs the person's key when they chose

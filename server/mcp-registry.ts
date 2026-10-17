@@ -142,7 +142,19 @@ const RESERVED_MCP_NAMES = new Set([
   // so no person's server may take these names.
   "sagax-environment",
   "sagax-desktop",
+  // 2026-10-17 (leftovers of #690): a server named `mcp` spells its tool
+  // `data__data_sql` as `mcp__data__data_sql` on a chat engine, the name of
+  // the built-in Data tool on Claude (sagax-internal-tools.ts).
+  "mcp",
 ]);
+
+/** Name families Sagax mounts itself or reads as a separator: Sagax's own
+ * servers (`sagax-computer`, `sagax-flow`...), Perspicax profiles
+ * (`perspicax_<slug>`, owner-scoped: index.ts ownerScopedMcpServerFor),
+ * claude.ai connectors (`claude_ai_<Service>`) and the legacy app's servers.
+ * A double underscore is the separator of `<server>__<tool>` and is refused
+ * anywhere in a name. */
+const RESERVED_MCP_PREFIX = /^(?:sagax[-_]|perspicax[-_]|claude[-_]ai[-_]|openmausbot[-_])/;
 
 const stdioEntrySchema = z.object({
   command: z.string().trim().min(1).max(1_024),
@@ -224,7 +236,7 @@ export function mcpServerNameError(name: string): string | null {
   if (!MCP_NAME.test(name)) {
     return "Use 1–32 lowercase letters, numbers, underscores, or hyphens, starting with a letter.";
   }
-  if (RESERVED_MCP_NAMES.has(name)) return "That name is reserved by Sagax.";
+  if (RESERVED_MCP_NAMES.has(name) || RESERVED_MCP_PREFIX.test(name) || name.includes("__")) return "That name is reserved by Sagax.";
   return null;
 }
 

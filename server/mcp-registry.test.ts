@@ -30,6 +30,14 @@ describe("custom MCP registry", () => {
     expect(mcpServerNameError("safe-notes")).toBeNull();
   });
 
+  it("2026-10-17: refuses names that could spell a built-in tool or take a Sagax family", () => {
+    for (const name of ["mcp", "data__x", "a__b", "sagax-computer", "sagax-flow", "sagax_x", "perspicax_cw", "claude_ai_github", "openmausbot_x"]) {
+      expect(mcpServerNameError(name), name).toMatch(/reserved/);
+      expect(parseStoredMcpServer(name, { command: "x" }), name).toMatchObject({ ok: false });
+    }
+    for (const name of ["mcp-github", "mcpx", "my_data", "notes_2", "sagaxy"]) expect(mcpServerNameError(name), name).toBeNull();
+  });
+
   it("refuses harness-owned environment names in stored and renderer entries", () => {
     for (const key of ["SAGAX_HARNESS_URL", "OGB_BOX_TOKEN", "ELECTRON_RUN_AS_NODE"]) {
       expect(parseStoredMcpServer("notes", { command: "notes-mcp", env: { [key]: "bad" } })).toEqual({

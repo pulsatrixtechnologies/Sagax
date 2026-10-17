@@ -47,8 +47,32 @@ export function dataToolName(name: string | undefined): string | null {
   return match && DATA_TOOL_NAMES.includes(match[1]!) ? match[1]! : null;
 }
 
-/** Why a tool is one of Sagax's own person-scoped tools, or null. */
-export function sagaxInternalTool(name: string | undefined): "data" | "agents" | null {
+/** Whether a server Sagax did not mount itself could have spelled this
+ * tool name (2026-10-17, leftovers of #690): a server named `mcp` whose
+ * tool is `data__data_sql` reads `mcp__data__data_sql` on a chat engine,
+ * the very spelling of the built-in Data tool on Claude. A built-in is
+ * recognized by identity: its name is Sagax's only when no other server of
+ * the turn could have produced it. `foreignServers`: the names of every
+ * server mounted for the turn that is not Sagax's own (the configured ones,
+ * the person's own connections). */
+export function foreignToolSpelling(name: string | undefined, foreignServers: Iterable<string> = []): boolean {
+  const folded = name?.trim().toLowerCase() ?? "";
+  if (!folded) return false;
+  for (const raw of foreignServers) {
+    const server = raw.trim().toLowerCase();
+    if (!server) continue;
+    for (const lead of [server, `mcp__${server}`, `mcp.${server}`, `mcp:${server}`]) {
+      if (folded.startsWith(`${lead}__`) || folded.startsWith(`${lead}.`) || folded.startsWith(`${lead}:`) || folded.startsWith(`${lead}/`)) return true;
+    }
+  }
+  return false;
+}
+
+/** Why a tool is one of Sagax's own person-scoped tools, or null. A name
+ * another server of the turn could have spelled is never one
+ * (foreignToolSpelling). */
+export function sagaxInternalTool(name: string | undefined, foreignServers?: Iterable<string>): "data" | "agents" | null {
+  if (foreignServers && foreignToolSpelling(name, foreignServers)) return null;
   if (dataToolName(name)) return "data";
   return memberOwnScopeTool(name?.trim()) ? "agents" : null;
 }

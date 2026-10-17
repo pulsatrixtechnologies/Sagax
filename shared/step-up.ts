@@ -351,3 +351,147 @@ export function usableRpId(hostname: string, protocol: string): string | null {
   if (protocol !== "https:") return null;
   return host;
 }
+
+// ── the classes of an action tool (2026-10-17, leftovers of #688/#689/#690) ──
+//
+// Writing a file, driving a screen and opening a web page were in no class,
+// so a person who protected "destructive" with a security key saw Sagax's own
+// environment tools, their Local VM and an engine's file writes run without
+// it. Read from the call's name and arguments only; when in doubt a call is
+// in a class.
+
+/** Tools that create or replace a file (any engine, any server). */
+const FILE_WRITE_TOOL = /^(?:write|edit|multiedit|notebookedit|str_replace_editor|str_replace_based_edit_tool|apply_patch|move_file|(?:write|create|save|edit)[_-](?:text[_-])?file|file[_-](?:write|edit|create))$/i;
+/** The arguments that name the file a write lands in. */
+const FILE_WRITE_PATH_KEYS = ["path", "file_path", "filePath", "notebook_path", "filename", "destination", "target_path"] as const;
+/** Computer-use tools that only look at a screen. */
+const SCREEN_READS: ReadonlySet<string> = new Set([
+  "screenshot", "get_screen_size", "get_desktop_state", "list_apps", "list_windows", "get_cursor_position", "cursor_position", "zoom", "computer_list_tools",
+]);
+/** Servers whose tools drive a screen. */
+const SCREEN_SERVERS: ReadonlySet<string> = new Set(["computer", "sagax-computer"]);
+/** Keys that remove, close or quit, alone or in a combination. */
+const DESTRUCTIVE_KEY = /(?:^|[\s+_-])(?:delete|del|backspace|back_space|kp_delete)(?:$|[\s+_-])/i;
+/** Modifiers that make a key a command (close, quit, select all, erase). */
+const COMMAND_MODIFIER = /(?:^|[\s+_-])(?:cmd|command|super|meta|win|windows|ctrl|control|alt|option|opt)(?:$|[\s+_-])/i;
+/** Navigation tools: they read a page unless they send something. */
+const WEB_NAV_TOOL = /^(?:browse|fetch_url|fetch|webfetch|open_url|navigate|browser_navigate|goto|open_page)$/i;
+const WEB_SEND_KEYS = ["body", "data", "form", "form_data", "formData", "fields", "submit", "post_data", "postData", "payload", "json"] as const;
+
+/** Where a write is judged from: the thread's own folders, and the server's
+ * view of its disk. Without them, any write that names a path is judged as
+ * possibly overwriting. */
+export interface ActionClassContext {
+  /** The thread's own folders (absolute, real). */
+  threadFolders?: readonly string[];
+  /** Whether a path exists, after the server resolved it. */
+  exists?: (absolute: string) => boolean;
+  /** The server's realpath (deepest existing ancestor when missing). */
+  resolve?: (absolute: string) => string;
+}
+
+function serverOf(tool: string): string | undefined {
+  const match = /^(?:mcp__)?([A-Za-z0-9][A-Za-z0-9_.-]*?)__[A-Za-z0-9][A-Za-z0-9_.-]*$/.exec(tool);
+  return match ? match[1]!.toLowerCase() : undefined;
+}
+
+function insideFolder(path: string, folder: string): boolean {
+  const base = folder.replace(/\/+$/, "");
+  return path === base || path.startsWith(`${base}/`);
+}
+
+function keyTexts(value: unknown, depth = 0): string[] {
+  if (depth > 3 || value === null || value === undefined) return [];
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => keyTexts(item, depth + 1));
+  return [];
+}
+
+/** A screen action's classes: irreversible unless it only looks; also
+ * destructive for a delete key or any key with a command modifier
+ * (cmd+q, ctrl+w, alt+F4, super+Delete). */
+function screenActionClasses(toolName: string, args: Record<string, unknown> | undefined): RiskClass[] {
+  const name = toolName.trim().toLowerCase();
+  if (SCREEN_READS.has(name)) return [];
+  const out: RiskClass[] = ["irreversible"];
+  // a key tool's text is its key (Claude's computer: action "key", text "cmd+q")
+  const keyTool = /key|hotkey|shortcut/.test(name) || (typeof args?.action === "string" && /key|hotkey|shortcut/i.test(args.action));
+  const keys = [
+    ...keyTexts(args?.key), ...keyTexts(args?.keys), ...keyTexts(args?.combo), ...keyTexts(args?.hotkey), ...keyTexts(args?.shortcut),
+    ...(keyTool ? keyTexts(args?.text) : []),
+  ];
+  const modifiers = keyTexts(args?.modifiers);
+  const destructive = keys.some((item) => DESTRUCTIVE_KEY.test(` ${item} `))
+    || modifiers.some((item) => COMMAND_MODIFIER.test(` ${item} `))
+    || keys.some((item) => COMMAND_MODIFIER.test(` ${item} `) && /[+\s-]/.test(item.trim()));
+  if (destructive) out.push("destructive");
+  return out;
+}
+
+/** The risk classes of an action tool, from its name and arguments: a file
+ * write (irreversible; destructive when it may replace a file outside the
+ * thread's own folders), a screen action (computer_use, the Local VM's
+ * screen, a computer server: irreversible; destructive for a delete key or a
+ * command combination), a web page opened with a form, a body or a method
+ * other than GET (external-send). Other calls: none from here. */
+export function actionToolClasses(call: { tool: string; mcpTool?: string; input?: string }, context: ActionClassContext = {}): RiskClass[] {
+  const name = call.mcpTool ?? call.tool;
+  const bare = bareToolName(name).toLowerCase();
+  const server = serverOf(name);
+  const args = parsedInput(call.input);
+  const out = new Set<RiskClass>();
+
+  if (FILE_WRITE_TOOL.test(bare)) {
+    out.add("irreversible");
+    const paths = FILE_WRITE_PATH_KEYS.map((key) => args?.[key]).filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    // a server's write lands on another machine (the person's server
+    // environment, their computer, a third party): Sagax cannot see what is
+    // there, so it may replace a file. A write here is judged on this disk.
+    if (server || !paths.length) out.add("destructive");
+    else {
+      for (const raw of paths) {
+        if (!raw.startsWith("/")) { out.add("destructive"); break; }
+        const real = context.resolve ? context.resolve(raw) : raw;
+        if ((context.threadFolders ?? []).some((folder) => insideFolder(real, folder))) continue;
+        if (!context.exists || context.exists(real)) { out.add("destructive"); break; }
+      }
+    }
+  }
+
+  // computer use: any server's computer_use (sagax-environment, sagax-desktop)
+  if (bare === "computer_use") {
+    const inner = typeof args?.tool_name === "string" ? args.tool_name : "";
+    const innerArgs = args?.arguments && typeof args.arguments === "object" && !Array.isArray(args.arguments) ? args.arguments as Record<string, unknown> : undefined;
+    for (const risk of inner ? screenActionClasses(inner, innerArgs) : ["irreversible", "destructive"] as RiskClass[]) out.add(risk);
+    if (inner.toLowerCase() === "open_url") for (const risk of webSendClasses(innerArgs)) out.add(risk);
+  }
+  // the Local VM's screen (sagax-desktop local_vm, action use)
+  if (bare === "local_vm" && args?.action === "use") {
+    const inner = typeof args.tool_name === "string" ? args.tool_name : "";
+    const innerArgs = args.arguments && typeof args.arguments === "object" && !Array.isArray(args.arguments) ? args.arguments as Record<string, unknown> : undefined;
+    for (const risk of inner ? screenActionClasses(inner, innerArgs) : ["irreversible", "destructive"] as RiskClass[]) out.add(risk);
+  }
+  // a computer server's own tools (Claude's computer, the cloud computer)
+  if (server && SCREEN_SERVERS.has(server) && bare !== "computer_select") {
+    for (const risk of screenActionClasses(bare, args)) out.add(risk);
+  }
+
+  if (WEB_NAV_TOOL.test(bare)) for (const risk of webSendClasses(args)) out.add(risk);
+  return RISK_ORDER.filter((risk) => out.has(risk));
+}
+
+const RISK_ORDER: readonly RiskClass[] = ["destructive", "irreversible", "money", "external-send"];
+
+/** A navigation that sends: a method other than GET or HEAD, a body, form
+ * fields or a submit. */
+function webSendClasses(args: Record<string, unknown> | undefined): RiskClass[] {
+  if (!args) return [];
+  const method = typeof args.method === "string" ? args.method.trim().toUpperCase() : "";
+  if (method && method !== "GET" && method !== "HEAD") return ["external-send"];
+  for (const key of WEB_SEND_KEYS) {
+    const value = args[key];
+    if (value === undefined || value === null || value === false || value === "") continue;
+    return ["external-send"];
+  }
+  return [];
+}

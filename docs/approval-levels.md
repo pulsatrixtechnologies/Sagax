@@ -143,7 +143,17 @@ CLI login) and reaches the internet, so this is bounded
   Security). Any shell command that is not a plain read is destructive and
   irreversible, and so is the Local VM's `run` (`sagax-desktop__local_vm`
   with `action: "run"`), so with that class chosen every such command is a
-  card and its Allow needs the key;
+  card and its Allow needs the key. Since 2026-10-17 the action tools are in
+  a class too (`shared/step-up.ts` `actionToolClasses`): a file write
+  (`write_file`, `Write`, `Edit`, `apply_patch`...) is irreversible, and
+  destructive when it may replace a file outside the thread's own folder (a
+  write on another machine, the person's environment or computer, always
+  may); `computer_use` and the Local VM's screen (`local_vm` with `action:
+  "use"`) are irreversible unless they only look (screenshot, screen size,
+  apps), and destructive for a delete key or a key with a command modifier
+  (cmd, ctrl, alt, super); `browse`, `fetch_url` or `open_url` with a
+  method other than GET or HEAD, a body, form fields or a submit is
+  external-send;
 - only the owner's own turn: a turn another bot started (`ask_bot`,
   `delegate_bot`, `coordinate_bots`, a peer ask), a routine, a webhook, a
   typed trigger, an email or any other automation, a room without a known

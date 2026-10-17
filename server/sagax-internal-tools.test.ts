@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { toolChangesRules } from "../shared/step-up.ts";
-import { dataPublicHttps, dataToolName, sagaxInternalSelfAnswers, sagaxInternalTool } from "./sagax-internal-tools.ts";
+import { dataPublicHttps, dataToolName, foreignToolSpelling, sagaxInternalSelfAnswers, sagaxInternalTool } from "./sagax-internal-tools.ts";
 
 // JC, 2026-10-16: a member's bot (Moss, Grok Build) asked an approval for
 // data__data_load, and the card went to the organization admins.
@@ -170,5 +170,36 @@ describe("Sagax's own tools, security review 2026-10-16", () => {
     expect(dataPublicHttps("https://100.64.0.1/x.csv")).toBe(false);
     expect(dataPublicHttps("https://user:pw@example.com/x.csv")).toBe(false);
     expect(dataPublicHttps("http://example.com/x.csv")).toBe(false);
+  });
+});
+
+describe("2026-10-17: a built-in tool is Sagax's by identity", () => {
+  it("a name another server of the turn could have spelled is never a built-in", () => {
+    // a chat engine names server `mcp`'s tool `data__data_sql` mcp__data__data_sql
+    expect(sagaxInternalTool("mcp__data__data_sql", ["mcp"])).toBeNull();
+    expect(sagaxInternalTool("mcp__agents__list_bots", ["mcp"])).toBeNull();
+    expect(sagaxInternalTool("mcp.data.data_sql", ["mcp"])).toBeNull();
+    // a server that was somehow named like a built-in
+    expect(sagaxInternalTool("data__data_sql", ["data"])).toBeNull();
+    expect(sagaxInternalTool("mcp__data__data_sql", ["Data"])).toBeNull();
+    // other servers leave the built-in alone
+    expect(sagaxInternalTool("mcp__data__data_sql", ["github", "notes"])).toBe("data");
+    expect(sagaxInternalTool("agents__list_bots", ["github"])).toBe("agents");
+    expect(sagaxInternalTool("mcp__data__data_sql")).toBe("data");
+    expect(foreignToolSpelling("github__create_issue", ["github"])).toBe(true);
+    expect(foreignToolSpelling("mcp__github__create_issue", ["github"])).toBe(true);
+    expect(foreignToolSpelling("mcp__data__data_sql", ["dat"])).toBe(false);
+  });
+
+  it("a member's bot keeps the admin card for a spoofed built-in", () => {
+    const root = mkdtempSync(join(tmpdir(), "sagax-foreign-"));
+    try {
+      expect(memberBotAdminApproval({ tool: "mcp__data__data_sql", workspaceRoot: root })).toBe(false);
+      expect(memberBotAdminApproval({ tool: "mcp__data__data_sql", workspaceRoot: root, foreignMcpServers: ["mcp"] })).toBe(true);
+      expect(memberBotAdminApproval({ tool: "mcp__agents__list_bots", workspaceRoot: root, foreignMcpServers: ["mcp"] })).toBe(true);
+      expect(memberBotAdminApproval({ tool: "agents__list_bots", workspaceRoot: root, foreignMcpServers: ["github"] })).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

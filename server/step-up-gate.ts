@@ -4,15 +4,19 @@
 // content and this answer. server/index.ts calls it on every answer path.
 
 import { createHash } from "node:crypto";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, dirname, resolve as resolvePath } from "node:path";
 
 import type { RiskClass } from "../shared/custom-rules.ts";
 import {
   STEP_UP_CLASSES,
+  actionToolClasses,
   canonicalJson,
   cardContentText,
   normalizeAnswer,
   stepUpClassesForCard,
   riskClassesFromFacts,
+  type ActionClassContext,
   type StepUpAnswer,
   type StepUpClass,
   type StepUpRefusal,
@@ -128,14 +132,41 @@ export function approvalGrantsFor(input: { threadId: string; requestId: string; 
   return { grants };
 }
 
+/** The server's view of its own disk for an action tool's classes
+ * (shared/step-up.ts actionToolClasses): the thread's own folders, real
+ * paths (the deepest existing ancestor for a file not yet there, so a link
+ * in the way is followed) and whether a file is already there. */
+export function actionClassContext(threadFolders: readonly string[]): ActionClassContext {
+  const real = (absolute: string): string => {
+    let probe = resolvePath(absolute);
+    const rest: string[] = [];
+    while (!existsSync(probe) && dirname(probe) !== probe) {
+      rest.unshift(basename(probe));
+      probe = dirname(probe);
+    }
+    try {
+      return resolvePath(realpathSync(probe), ...rest);
+    } catch {
+      return resolvePath(absolute);
+    }
+  };
+  return {
+    threadFolders: threadFolders.map((folder) => real(folder)),
+    resolve: real,
+    exists: (absolute) => existsSync(absolute),
+  };
+}
+
 /** The call's risk classes as custom rules read them, with every shell
  * command that is not a plain read in destructive and irreversible
- * (riskClassesFromFacts). A card that cannot be read is in every class. */
-export function cardRiskClasses(card: OptionCardData): RiskClass[] {
+ * (riskClassesFromFacts), and the classes of an action tool (a file write,
+ * a screen action, a page opened to send: actionToolClasses). A card that
+ * cannot be read is in every class. */
+export function cardRiskClasses(card: OptionCardData, context: ActionClassContext = {}): RiskClass[] {
   if (!card.tool) return [];
   try {
     const binding = card.customRuleCandidate?.binding;
-    return riskClassesFromFacts(factsForCall({
+    const risks = riskClassesFromFacts(factsForCall({
       tool: card.tool,
       ...(card.mcpTool ? { mcpTool: card.mcpTool } : {}),
       ...(card.toolInput ? { input: card.toolInput } : {}),
@@ -143,6 +174,8 @@ export function cardRiskClasses(card: OptionCardData): RiskClass[] {
       ...(binding?.command ? { command: binding.command } : {}),
       summary: card.subtitle,
     }));
+    const action = actionToolClasses({ tool: card.tool, ...(card.mcpTool ? { mcpTool: card.mcpTool } : {}), ...(card.toolInput ? { input: card.toolInput } : {}) }, context);
+    return [...new Set([...risks, ...action])];
   } catch {
     return ["destructive", "irreversible", "money", "external-send"];
   }
@@ -160,7 +193,7 @@ export function callStepUpClasses(call: {
   summary?: string;
   command?: string;
   hints?: OptionCardData["toolHints"];
-}): StepUpClass[] {
+}, context: ActionClassContext = {}): StepUpClass[] {
   const card: OptionCardData = {
     title: "", subtitle: call.summary ?? "", options: [], requestType: "permission", tool: call.tool,
     ...(call.mcpTool ? { mcpTool: call.mcpTool } : {}),
@@ -177,6 +210,7 @@ export function callStepUpClasses(call: {
       ...(call.command ? { command: call.command } : {}),
       summary: call.summary ?? "",
     }));
+    risks = [...new Set([...risks, ...actionToolClasses({ tool: call.tool, ...(call.mcpTool ? { mcpTool: call.mcpTool } : {}), ...(call.input ? { input: call.input } : {}) }, context)])];
   } catch {
     return [...STEP_UP_CLASSES];
   }
