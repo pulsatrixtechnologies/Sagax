@@ -646,7 +646,15 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     expect(existsSync(join(data, "bots", botId, "data-scopes"))).toBe(false);
     expect(existsSync(join(data, "data-scopes", botId, suffix))).toBe(true);
     expect(filesText(join(data, "bots", botId))).not.toContain(`${SECRET}-DATA`);
+    // 2026-10-17 (re-review of #689): its export lands in the thread's own
+    // folder, never the bot's shared workspace
+    const exported = await api("POST", `/api/bots/${botId}/data/export?thread=${thread}`, bob, { cardId: run.body.card.id, format: "csv" });
+    expect(exported.status, exported.text).toBe(200);
+    expect(exported.body.path.startsWith(join(data, "task-workspaces", botId, thread))).toBe(true);
+    expect(readFileSync(exported.body.path, "utf8")).toContain(`${SECRET}-DATA`);
+    expect(filesText(join(data, "workspaces", botId))).not.toContain(`${SECRET}-DATA`);
     expect((await api("DELETE", `/api/bots/${botId}/tasks/${thread}`, bob)).status).toBe(200);
     await waitFor(async () => !existsSync(join(data, "data-scopes", botId, suffix)));
+    expect(existsSync(exported.body.path)).toBe(false);
   }, 60_000);
 });

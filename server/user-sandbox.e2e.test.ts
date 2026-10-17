@@ -476,6 +476,19 @@ posixOnly("organization server environments (user-sandbox)", () => {
         expect(mode === "bypass" ? ["member_auto_not_allowed", "bypass_not_allowed"] : ["member_auto_not_allowed"], refused.text).toContain(refused.body.code);
       }
       expect((await api("PUT", `/api/bots/${fern.id}/permission-mode`, bob, { mode: "approval" })).status).toBe(200);
+      // re-review 2026-10-17: nor a new bot saved on an automatic level
+      // (refused, or saved on Ask: never stored as Auto)
+      for (const mode of ["auto", "edits"]) {
+        const created = await api("POST", "/api/bots", bob, { name: `Gale ${mode}`, approvalMode: mode });
+        if (created.status === 403) {
+          expect(created.body).toMatchObject({ code: "member_auto_not_allowed" });
+          continue;
+        }
+        expect(created.status, created.text).toBe(201);
+        expect(created.body.bot.approvalMode).toBe("ask");
+        expect((created.body.bot.tasks as Array<{ approvalMode?: string }>).every((task) => (task.approvalMode ?? "ask") === "ask")).toBe(true);
+        expect((await api("DELETE", `/api/bots/${created.body.bot.id}`, bob)).status).toBeLessThan(300);
+      }
       // on again: nothing comes back by itself; the member chooses again
       expect((await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: true })).status).toBe(200);
       expect(await runs("on again")).toBe("default");

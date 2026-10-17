@@ -169,7 +169,8 @@ import { BUILT_IN_DATA_SYSTEM_PROMPT } from "./data/instructions.ts";
 import { DATA_INTERNAL_MCP_PATH, dataRpc } from "./data/rpc.ts";
 import { createDataRoutes } from "./data/routes.ts";
 import { DataSheetRegistry } from "./data/sheet.ts";
-import { dataFrameAllowed, dataScopeAudience, dataScopeBotId, dataScopeFolder, dataScopeKey, dataScopeKind, dataScopeThread, forgetDataScopes, setConfidentialThreadResolver, threadScopeKeyFor, type DataScopeKind } from "./data/scope.ts";
+import { erasePersonData } from "./data/erase.ts";
+import { dataFrameAllowed, dataScopeAudience, dataScopeBotId, dataScopeFolder, dataScopeKey, dataScopeKind, dataScopeThread, forgetDataScopes, organizationExportRoots, setConfidentialThreadResolver, threadScopeKeyFor, type DataScopeKind } from "./data/scope.ts";
 import { DataFailure } from "./data/types.ts";
 import { DATA_DOWNLOADS_DIR } from "./data/engine.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
@@ -2371,7 +2372,8 @@ function applyAutoReviewDefault(auth: RequestAuth, botId: string, threadId: stri
     supportsAuto: supportsApprovalMode(thread.modelSelection, "auto"),
     thisComputer: thread.computer === "local",
   });
-  if (mode) store.patchTask(botId, threadId, { approvalMode: mode, autoApprove: mode === "auto" });
+  // never an automatic level the organization refuses for a member's bot
+  if (mode && !memberAutoRefused(thread, [approvalModeFor(thread)], mode)) store.patchTask(botId, threadId, { approvalMode: mode, autoApprove: mode === "auto" });
 }
 
 function canManageCommandAllowlist(auth: RequestAuth): boolean {
@@ -4566,13 +4568,22 @@ function dataSelfAnswerRoots(bot: BotRecord, threadId: string): string[] {
  * Downloads when it exists, the bot's working folder, its workspace. On an
  * organization server only the bot's workspace (the server's Downloads and
  * working folders are nobody's), or a confidential thread's own folder. */
-function dataExportRoots(bot: { id: string; cwd?: string }, scopeKey: string = bot.id): string[] {
+function dataExportRoots(bot: { id: string; cwd?: string }, scopeKey: string = bot.id, threadId?: string): string[] {
   if (IDENTITY.kind === "perspicax") {
-    if (dataScopeKind(scopeKey) === "thread") {
-      const thread = dataScopeThread(scopeKey);
-      return thread ? [join(TASK_WORKSPACES_DIR, bot.id, thread)] : [];
-    }
-    return [workspaceDir(bot.id)];
+    // 2026-10-17 (re-review of #689): a person's export lands in their own
+    // thread or scope folder, never the shared bot workspace
+    const kind = dataScopeKind(scopeKey);
+    const record = store.bot(bot.id);
+    const person = kind === "person" ? dataScopeAudience(scopeKey) : undefined;
+    const thread = kind === "thread" ? dataScopeThread(scopeKey) : undefined;
+    return organizationExportRoots({
+      kind,
+      workspace: workspaceDir(bot.id),
+      scopeFolder: dataScopeFolder(scopeKey),
+      threadFolder: thread ? join(TASK_WORKSPACES_DIR, bot.id, thread) : null,
+      personThreadFolders: record && person ? dataThreadFolders(record, person) : [],
+      turnThreadFolder: threadId && /^[A-Za-z0-9_-]{1,128}$/.test(threadId) ? join(TASK_WORKSPACES_DIR, bot.id, threadId) : null,
+    });
   }
   const downloads = join(homedir(), "Downloads");
   return [...(existsSync(downloads) ? [downloads] : []), ...(bot.cwd ? [bot.cwd] : []), workspaceDir(bot.id)];
@@ -6946,6 +6957,17 @@ const DELEGATED_LEVEL_NAMES: Partial<Record<ApprovalMode, string>> = { edits: "A
 function applyDelegatedLevel(from: BotRecord, fromThreadId: string, target: BotRecord, threadId: string): void {
   const level = delegatedLevel(from, fromThreadId, target, ownThreadLevel(target, threadId));
   if (!level || store.taskByThread(target.id, threadId)?.approvalMode === level) return;
+  // 2026-10-17 (re-review of #688): a Primary Bot's Auto or Auto-accept
+  // edits is never saved on a member's thread while the organization turned
+  // automatic levels off for members' bots; the thread keeps its own level.
+  if (memberAutoRefused(target, [store.taskByThread(target.id, threadId)?.approvalMode], level)) {
+    store.appendMessage(threadId, {
+      role: "bot",
+      kind: "activity",
+      tool: { name: `${DELEGATED_LEVEL_NAMES[level] ?? level} not passed on by ${from.name}: automatic levels are off for members' bots in this organization`, ok: false },
+    });
+    return;
+  }
   store.patchTask(target.id, threadId, { approvalMode: level, autoApprove: false, alwaysAllow: [] });
   const name = DELEGATED_LEVEL_NAMES[level] ?? level;
   store.appendMessage(threadId, {
@@ -25333,15 +25355,31 @@ ROUTES.push(createAccountRoutes({
     const person = principalId.trim().toLowerCase();
     let bots = 0;
     let threads = 0;
+    const confidentialThreads: Array<{ botId: string; threadId: string }> = [];
     for (const bot of store.bots.slice()) { // a copy: deleting changes the list
       if (recordedBotOwner(bot) === person) {
         if ((await deleteBotWithLifecycle(bot.id)).status === 200) bots++;
         continue;
       }
       for (const task of store.tasks(bot.id)) {
-        if (task.ownerPrincipalId === person && store.deleteTask(bot.id, task.threadId)) threads++;
+        if (task.ownerPrincipalId !== person) continue;
+        // Loi 25 (2026-10-17): a confidential thread leaves nothing behind,
+        // as when its owner deletes it (its folder, files and Data)
+        const confidentialFiles = store.isConfidentialThread(task.threadId) ? confidentialThreadAttachments(bot.id, task.threadId) : null;
+        if (!store.deleteTask(bot.id, task.threadId)) continue;
+        threads++;
+        if (confidentialFiles) {
+          wipeConfidentialThread(bot.id, task.threadId, confidentialFiles);
+          confidentialThreads.push({ botId: bot.id, threadId: task.threadId });
+        }
       }
     }
+    // Loi 25 (2026-10-17, re-review of #689): their own Data on every other
+    // bot and their confidential threads' Data (data/erase.ts), awaited, so
+    // the answer means it is gone
+    await erasePersonData({
+      principalId: person, botIds: store.bots.map((bot) => bot.id), confidentialThreads, engine: dataEngine, sheets: dataSheets,
+    });
     await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
     userPreferenceStore.remove(principalId);
     try { credentialVault.drop(person); } catch (error) { console.warn(`account deletion: credential vault not removed: ${String(error)}`); }
@@ -26748,7 +26786,7 @@ function approvalModeStepUpGate(input: {
  * while the organization does not allow them (member-auto-approval.ts).
  * Checked before approvalModeStepUpGate, which still asks the key when the
  * organization allows them. */
-function memberAutoRefused(bot: BotRecord, froms: Array<string | undefined>, to: string): boolean {
+function memberAutoRefused(bot: { ownerUserId?: unknown }, froms: Array<string | undefined>, to: string): boolean {
   return memberAutoChangeRefused({ memberOwned: memberOwnedInOrg(bot), policyAllowed: memberAutoApprovalAllowed(cfg.organization), froms, to });
 }
 
@@ -28215,7 +28253,8 @@ ROUTES.push(createOrgImportRoute({
       routineRunAs: (index) => people.routinesRunAs[index],
       ...(sectionChannels ? { sectionChannels } : {}),
     });
-    for (const bot of imported.bots) broadcast({ kind: "bot", bot: publicBot(bot) });
+    settleMemberAutoLevels(imported.bots.map((bot) => bot.id));
+    for (const bot of imported.bots) broadcast({ kind: "bot", bot: publicBot(store.bot(bot.id) ?? bot) });
     for (const group of imported.groups) broadcast({ kind: "group", group: { ...publicGroupState(group), ...transcriptPage(group.threadId, undefined) } });
     audienceChanged();
     return {
@@ -29455,6 +29494,7 @@ async function importPackageFor(raw: unknown, ownerPrincipalId: string): Promise
     throw error;
   }
   for (const bot of result.bots) store.patchBot(bot.id, { ownerUserId: ownerPrincipalId });
+  settleMemberAutoLevels(result.bots.map((bot) => bot.id));
   for (const bot of result.bots) {
     const current = store.bot(bot.id);
     if (current) broadcast({ kind: "bot", bot: publicBot(current) });
@@ -29482,6 +29522,12 @@ function setBotApprovalModeFromConsole(botId: string, mode: "ask" | "auto", thre
   }
   if (bot.approvalGrant) throw new ConsoleRefusal(409, "busy", "The bot's approval level is still being confirmed.");
   const tasks = threads && mode === "auto" ? store.tasks(bot.id) : [];
+  // 2026-10-17 (re-review of #688): an admin's console never saves an
+  // automatic level on a member's bot, or its threads, while the
+  // organization turned them off; refused, never stored.
+  if (memberAutoRefused(bot, [before, ...tasks.map((task) => task.approvalMode)], mode)) {
+    throw new ConsoleRefusal(403, MEMBER_AUTO_NOT_ALLOWED.code, MEMBER_AUTO_NOT_ALLOWED.error);
+  }
   if (bot.busy || threadBusy(bot.id, bot.threadId) || tasks.some((task) => threadBusy(bot.id, task.threadId))) {
     throw new ConsoleRefusal(409, "busy", "The bot is working: try again when its turn ends.");
   }
@@ -29534,11 +29580,14 @@ const orgBotsDeps: BotsDeps = {
     if (!copy) throw new ConsoleRefusal(500, "clone_failed", "The copy could not be made.");
     // The source's model and settings; a copy starts with no grants, no
     // memory, no threads and no routines, and never with full access.
-    const mode = approvalModeFor(source);
+    // a member's copy never starts on an automatic level the organization
+    // refuses for members' bots (member-auto-approval.ts)
+    const sourceMode = approvalModeFor(source);
+    const mode = memberAutoRefused(copy, ["ask"], sourceMode) ? "ask" : sourceMode;
     store.patchBot(copy.id, {
       modelSelection: structuredClone(source.modelSelection),
       ...(input.name ? { name: input.name } : {}),
-      ...(mode !== "full" && mode !== "custom" ? { approvalMode: mode, autoApprove: source.autoApprove } : {}),
+      ...(mode !== "full" && mode !== "custom" ? { approvalMode: mode, autoApprove: mode === sourceMode ? source.autoApprove : false } : {}),
       ...(source.speakReplies !== undefined ? { speakReplies: source.speakReplies } : {}),
       ...(source.voice !== undefined ? { voice: source.voice } : {}),
       ...(source.voiceNotes !== undefined ? { voiceNotes: source.voiceNotes } : {}),
@@ -29576,6 +29625,7 @@ const orgBotsDeps: BotsDeps = {
     if (bot.chiefOfStaff) store.clearPrimaryBot(botId);
     store.patchBot(botId, { ownerUserId: ownerPrincipalId });
     store.setBotGrants(botId, grants);
+    settleMemberAutoLevels([botId]);
     audienceChanged();
   },
   setModel: (botId, input) => {
@@ -30193,6 +30243,18 @@ function resetMemberAutoLevelsOnce(): void {
   } catch (error) {
     console.warn("organization: the members' automatic levels marker was not saved", error);
   }
+}
+/** 2026-10-17 (re-review of #688): bots that just became a member's (an
+ * import, a copy, a transfer, a new bot on the organization's default)
+ * keep no automatic level the organization refuses for members' bots:
+ * those saved levels go back to Ask, as the one-time pass does. */
+function settleMemberAutoLevels(botIds: readonly string[]): void {
+  if (IDENTITY.kind !== "perspicax" || memberAutoApprovalAllowed(cfg.organization)) return;
+  const bots = botIds.map((id) => store.bot(id)).filter((bot): bot is BotRecord => Boolean(bot));
+  const reset = memberAutoLevelResets(bots, (bot) => memberOwnedInOrg(bot as BotRecord));
+  const ask = { approvalMode: "ask" as const, autoApprove: false };
+  for (const thread of reset.threads) store.patchTask(thread.botId, thread.threadId, ask);
+  for (const botId of reset.bots) store.patchBot(botId, ask);
 }
 function saveOrgMemberAutoApproval(allowed: boolean, actor: AdminActor): void {
   const before = memberAutoApprovalAllowed(cfg.organization);
@@ -30852,7 +30914,8 @@ const agentApi = createAgentApi({
       ...(chief.visibility ? { visibility: chief.visibility } : {}),
       temporary: record,
     });
-    return agentSummary(bot);
+    settleMemberAutoLevels([bot.id]);
+    return agentSummary(store.bot(bot.id) ?? bot);
   },
   profile(caller, agentId) {
     const bot = store.bot(agentId);
@@ -32764,7 +32827,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 200, { result: await dataRpc(body, {
           database, sheet: dataSheets.for(scopeKey),
           compileChart, validateVegaLite, renderer: chartRenderer,
-          exportRoots: () => dataExportRoots(internalSender, scopeKey),
+          exportRoots: () => dataExportRoots(internalSender, scopeKey, internalCapability.threadId),
           confinedRoots: () => dataConfinedRoots(scopeKey),
           downloadDir: () => dataDownloadDir(scopeKey),
           signal: abort.signal, assertActive: requireActiveInternalCapability,
@@ -34729,6 +34792,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             },
             { seedMessages: false },
           );
+          // a member's Primary Bot never makes a bot on a level the
+          // organization refuses for members' bots
+          settleMemberAutoLevels([created.id]);
           const safeBot = store.patchBot(created.id, {
             composio: false,
             connectorTools: {},
@@ -37852,6 +37918,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (settings.computer === "local" && settings.approvalMode === "auto" && body.acknowledgeLocalAuto !== true) {
         return json(res, 400, { error: "Auto mode on this computer requires confirming the warning first (acknowledgeLocalAuto)" });
       }
+      // 2026-10-17 (re-review of #688): a member's new bot is never saved on
+      // an automatic level the organization refuses for members' bots.
+      if (settings.approvalMode && memberAutoRefused({ ownerUserId: creatingBotOwnerId(auth) }, ["ask"], settings.approvalMode)) {
+        return json(res, 403, MEMBER_AUTO_NOT_ALLOWED);
+      }
       if (settings.avatarUrl && !storedAvatarExists(settings.avatarUrl)) {
         return json(res, 400, { error: "avatarUrl must reference an existing stored image" });
       }
@@ -37921,7 +37992,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // The server's new bot level (Approve for me, or the organization's
         // policy) unless the request chose another level, or the bot works
         // on this computer (that warning is its own confirmation).
-        const approvalMode = ordinary.approvalMode ?? (ordinary.computer === "local" ? "ask" : newBotApprovalMode());
+        const defaultMode = ordinary.computer === "local" ? "ask" : newBotApprovalMode();
+        const approvalMode = ordinary.approvalMode ?? (memberAutoRefused(bot, ["ask"], defaultMode) ? "ask" : defaultMode);
         store.patchBot(bot.id, {
           // Store creation completes workspace defaults (including effort).
           // Applying the rest of the template must not undo that selection.

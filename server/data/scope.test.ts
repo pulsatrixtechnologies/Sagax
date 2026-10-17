@@ -16,7 +16,10 @@ import {
   dataScopeKey,
   dataScopeKind,
   dataScopeThread,
+  DATA_EXPORTS_DIR,
   forgetDataScopes,
+  organizationExportRoots,
+  personScopeKeyFor,
   setConfidentialThreadResolver,
   threadScopeKeyFor,
 } from "./scope.ts";
@@ -135,5 +138,44 @@ describe("dataFrameAllowed", () => {
     expect(dataFrameAllowed({ kind: "data", audience: "", dataScope: "person" }, "anon:1", local)).toBe(false);
     expect(dataFrameAllowed({ kind: "data", audience: "", dataScope: "person" }, undefined, local)).toBe(false);
     expect(dataFrameAllowed({ kind: "data", audience: null, dataScope: "person" }, "b@example.com", local)).toBe(false);
+  });
+});
+
+describe("personScopeKeyFor (2026-10-17, Loi 25)", () => {
+  it("is the key dataScopeKey gives that person on someone else's bot", () => {
+    const key = dataScopeKey({ ...org, principalId: "  Bob@Example.com " });
+    expect(personScopeKeyFor("bot-1", "bob@example.com")).toBe(key);
+    expect(personScopeKeyFor("bot-1", "BOB@EXAMPLE.COM")).toBe(key);
+    expect(personScopeKeyFor("bot-2", "bob@example.com")).not.toBe(key);
+  });
+});
+
+describe("organizationExportRoots (2026-10-17, re-review of #689)", () => {
+  const workspace = "/data/workspaces/bot-1";
+  const scopeFolder = "/data/data-scopes/bot-1/p-abc";
+  const mine = ["/data/task-workspaces/bot-1/t1", "/data/task-workspaces/bot-1/t2"];
+
+  it("keeps the bot's workspace for the bot scope (its owner)", () => {
+    expect(organizationExportRoots({ kind: "bot", workspace, scopeFolder: "/data/bots/bot-1" })).toEqual([workspace]);
+  });
+
+  it("never offers the shared bot workspace to a person's scope", () => {
+    const roots = organizationExportRoots({ kind: "person", workspace, scopeFolder, personThreadFolders: mine });
+    expect(roots).not.toContain(workspace);
+    expect(roots[0]).toBe(join(scopeFolder, DATA_EXPORTS_DIR));
+    expect(roots).toEqual([join(scopeFolder, DATA_EXPORTS_DIR), ...mine]);
+  });
+
+  it("puts the turn's own thread first when it is one of the person's", () => {
+    expect(organizationExportRoots({ kind: "person", workspace, scopeFolder, personThreadFolders: mine, turnThreadFolder: mine[1] })[0]).toBe(mine[1]);
+    // another person's thread is never offered
+    const roots = organizationExportRoots({ kind: "person", workspace, scopeFolder, personThreadFolders: mine, turnThreadFolder: "/data/task-workspaces/bot-1/theirs" });
+    expect(roots).not.toContain("/data/task-workspaces/bot-1/theirs");
+    expect(roots[0]).toBe(join(scopeFolder, DATA_EXPORTS_DIR));
+  });
+
+  it("keeps a confidential thread to its own folder, or nothing", () => {
+    expect(organizationExportRoots({ kind: "thread", workspace, scopeFolder, threadFolder: "/data/task-workspaces/bot-1/c1", personThreadFolders: mine })).toEqual(["/data/task-workspaces/bot-1/c1"]);
+    expect(organizationExportRoots({ kind: "thread", workspace, scopeFolder, threadFolder: null })).toEqual([]);
   });
 });

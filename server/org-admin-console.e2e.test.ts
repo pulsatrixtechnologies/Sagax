@@ -394,6 +394,21 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     const listed = ((await admin("GET", "bots", ALICE)).body.bots as Array<{ id: string; approvalMode: string }>).find((bot) => bot.id === bots.atlas!.id);
     expect(listed?.approvalMode).toBe("auto");
     expect((await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.atlas!.id], mode: "ask" })).body.results).toEqual([{ id: bots.atlas!.id, ok: true }]);
+    // 2026-10-17 (re-review of #688): while automatic levels are off for
+    // members' bots, the console never saves Auto on a member's bot; an
+    // admin's own bot still moves
+    expect((await admin("POST", "settings", ALICE, { memberAutoApproval: false })).status).toBe(200);
+    try {
+      const refused = await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.beacon!.id, bots.atlas!.id], mode: "auto", threads: true });
+      expect(refused.body.results, refused.text).toEqual([
+        { id: bots.beacon!.id, ok: false, code: "member_auto_not_allowed", message: expect.any(String) },
+        { id: bots.atlas!.id, ok: true },
+      ]);
+      expect((await admin("GET", `bots/${bots.beacon!.id}`, ALICE)).body.bot.permissions.approvalMode).not.toMatch(/^(auto|edits)$/);
+      expect((await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.atlas!.id], mode: "ask" })).body.results).toEqual([{ id: bots.atlas!.id, ok: true }]);
+    } finally {
+      expect((await admin("POST", "settings", ALICE, { memberAutoApproval: true })).status).toBe(200);
+    }
 
     // package and import
     const pkg = await fetch(`${BASE}/api/org/admin/bots/${bots.atlas!.id}/package`, { headers: { authorization: `Bearer ${console$(ALICE).bearer}` } });

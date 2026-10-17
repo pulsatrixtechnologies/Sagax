@@ -100,7 +100,15 @@ bot's own and each thread's) is set back to Ask, once
 (`organization.memberAutoResetAt` records the pass), so turning the setting
 on again brings no earlier level back. The same holds for a room turn: a
 Primary Bot's handoff (`roomTurnApprovalMode`) never lifts a member's bot
-past what this setting allows (`memberRoomTurnLevel`). Custom stays Ask (a
+past what this setting allows (`memberRoomTurnLevel`), and a Primary Bot
+never saves its Auto or Auto-accept edits on a member's thread it opens
+(`applyDelegatedLevel`). No other path stores one either (re-review of
+2026-10-17): the admin console's `approvalMode` action on a member's bot
+answers `member_auto_not_allowed` for that bot, a member's new bot (or one
+a Primary Bot makes for them) starts on Ask whatever the New bot defaults
+say, and a bot that becomes a member's (a console copy, import or
+transfer, a solo backup brought in) has its automatic levels set back to
+Ask. Custom stays Ask (a
 `config.toml` on the shared server is not the member's), and Full keeps the
 organization rules above.
 
@@ -304,7 +312,11 @@ hop checked and the socket pinned to the checked address, redirects by
 hand (5 at most, https and public only), 200 MiB and 5 minutes at most,
 into the scope's `data-downloads` folder, read from there and removed.
 Loopback, private, link-local, cluster and cloud metadata addresses are
-refused. Exports land in the bot's workspace. A solo server is unchanged.
+refused. Exports land in the bot's workspace for its owner; a person's
+own Data (below) exports into their own thread folder or
+`<data>/data-scopes/<botId>/p-<hash>/data-exports`, never the shared
+workspace, and a confidential thread's into its own folder (2026-10-17). A
+solo server is unchanged.
 
 Each person has their own Data on a shared bot (`server/data/scope.ts`):
 on an organization server, a turn spoken by someone other than the bot's
@@ -320,7 +332,9 @@ owner only, on a solo server too; the Data tab asks for it with
 it. Live `data`
 frames carry an `audience` and reach only that person (the bot scope only
 its owner). Files in the bot's workspace stay shared by everyone who uses
-the bot.
+the bot. Deleting a person's account (`DELETE /api/me`, Loi 25) erases
+their own Data on every bot, their confidential threads' Data and their
+exports there, each database closed first (`server/data/erase.ts`).
 
 Auto-accept edits and Ask card whatever the provider asks about. Approve for
 me cards whatever the provider's reviewer leaves for you, with the note "The

@@ -104,9 +104,15 @@ export function dataScopeKey(request: DataScopeRequest): string | null {
   if (!request.organization) return botId;
   if (principal === undefined || principal === normalize(request.ownerPrincipalId)) return botId;
   // An unknown speaker ("") gets a scope of its own too: never the owner's.
-  const key = `${botId}${DATA_SCOPE_SEPARATOR}p-${digest(principal)}`;
+  const key = personScopeKeyFor(botId, principal);
   members.set(key, { audience: principal });
   return key;
+}
+
+/** The scope key of a person's own Data on a bot (`<botId>~p-<hash>`), as
+ * dataScopeKey computes it for that person on an organization server. */
+export function personScopeKeyFor(botId: string, principalId: string): string {
+  return `${botId}${DATA_SCOPE_SEPARATOR}p-${digest(normalize(principalId))}`;
 }
 
 /** The bot a scope key belongs to. */
@@ -149,6 +155,41 @@ export function dataScopesFolderOf(botId: string, scopesRoot: string = DATA_SCOP
 /** The scope key of a confidential thread's own Data (`<botId>~t-<hash>`). */
 export function threadScopeKeyFor(botId: string, threadId: string): string {
   return `${botId}${DATA_SCOPE_SEPARATOR}t-${digest(threadId)}`;
+}
+
+/** The folder, in a person's own scope folder, their exports land in when
+ * no thread of theirs is named. */
+export const DATA_EXPORTS_DIR = "data-exports";
+
+/** Where an export may land on an organization server, most preferred
+ * first (2026-10-17, re-review of #689):
+ *   - the bot scope (its owner): the bot's workspace;
+ *   - a person's scope: the turn's own thread folder when it is one of
+ *     theirs, their other ordinary threads' folders, then `data-exports`
+ *     in their own scope folder. Never the bot's workspace, which every
+ *     person on a shared bot reaches;
+ *   - a confidential thread: that thread's folder only. */
+export function organizationExportRoots(input: {
+  kind: DataScopeKind;
+  workspace: string;
+  scopeFolder: string;
+  /** A confidential thread's folder (thread scope). */
+  threadFolder?: string | null;
+  /** The person's ordinary threads' folders on this bot (person scope). */
+  personThreadFolders?: readonly string[];
+  /** The folder of the thread the request or turn is in, if any. */
+  turnThreadFolder?: string | null;
+}): string[] {
+  if (input.kind === "thread") return input.threadFolder ? [input.threadFolder] : [];
+  if (input.kind === "bot") return [input.workspace];
+  const own = input.personThreadFolders ?? [];
+  const first = input.turnThreadFolder && own.includes(input.turnThreadFolder) ? [input.turnThreadFolder] : [];
+  return [...new Set([...first, join(input.scopeFolder, DATA_EXPORTS_DIR), ...own])];
+}
+
+/** Forgets one derived key (its scope was erased). */
+export function forgetDataScope(key: string): void {
+  members.delete(key);
 }
 
 /** Forgets every derived key of a deleted bot. */

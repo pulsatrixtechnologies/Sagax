@@ -29,7 +29,8 @@ export interface DataRouteDeps {
   validateVegaLite: VegaLiteValidator;
   renderer: ChartRenderer;
   /** Folders an export may land in for this bot and scope, most preferred first. */
-  exportRoots(bot: { id: string; cwd?: string }, scopeKey: string): string[];
+  /** `thread`: the thread the request names (`?thread=`), if any. */
+  exportRoots(bot: { id: string; cwd?: string }, scopeKey: string, thread?: string): string[];
   /** The viewer's Data scope key on this bot (scope.ts dataScopeKey), or
    * null to refuse (a confidential thread that is not theirs). Absent: the
    * bot id, one database per bot. */
@@ -132,7 +133,7 @@ export function createDataRoutes(deps: DataRouteDeps): RouteHandler {
     const sheet = deps.sheets.for(scopeKey);
     const context: DataContext = {
       database, sheet, compileChart: deps.compileChart, validateVegaLite: deps.validateVegaLite, renderer: deps.renderer,
-      exportRoots: () => deps.exportRoots(bot, scopeKey), signal: abort.signal, connection: "panel", by: "person",
+      exportRoots: () => deps.exportRoots(bot, scopeKey, thread), signal: abort.signal, connection: "panel", by: "person",
     };
     try {
       if (rest === "" && method === "GET") {
