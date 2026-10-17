@@ -10,12 +10,15 @@ import {
   dataFrameAllowed,
   dataScopeAudience,
   dataScopeBotId,
+  DATA_SCOPES_ROOT,
   dataScopeFolder,
+  dataScopesFolderOf,
   dataScopeKey,
   dataScopeKind,
   dataScopeThread,
   forgetDataScopes,
   setConfidentialThreadResolver,
+  threadScopeKeyFor,
 } from "./scope.ts";
 
 afterEach(() => setConfidentialThreadResolver(null));
@@ -79,11 +82,21 @@ describe("dataScopeKey", () => {
     expect(dataScopeKey({ ...org, principalId: "owner@example.com", threadId: "t-1" })).toBe("bot-1");
   });
 
-  it("puts a derived scope's folder under its bot's folder", () => {
+  it("puts a derived scope's folder outside its bot's folder, which the bot scope's database reaches", () => {
     const folder = (botId: string) => join("/data/bots", botId);
-    expect(dataScopeFolder("bot-1", folder)).toBe(join("/data/bots", "bot-1"));
-    expect(dataScopeFolder("bot-1~p-0123456789abcdef", folder)).toBe(join("/data/bots", "bot-1", "data-scopes", "p-0123456789abcdef"));
-    expect(dataScopeFolder("bot-1~t-0123456789abcdef", folder)).toBe(join("/data/bots", "bot-1", "data-scopes", "t-0123456789abcdef"));
+    expect(dataScopeFolder("bot-1", folder, "/data/data-scopes")).toBe(join("/data/bots", "bot-1"));
+    expect(dataScopeFolder("bot-1~p-0123456789abcdef", folder, "/data/data-scopes")).toBe(join("/data/data-scopes", "bot-1", "p-0123456789abcdef"));
+    expect(dataScopeFolder("bot-1~t-0123456789abcdef", folder, "/data/data-scopes")).toBe(join("/data/data-scopes", "bot-1", "t-0123456789abcdef"));
+    expect(dataScopesFolderOf("bot-1", "/data/data-scopes")).toBe(join("/data/data-scopes", "bot-1"));
+    // the server's defaults: never below DATA_DIR/bots/<id>
+    expect(dataScopeFolder("bot-1~p-0123456789abcdef").startsWith(join(dataScopeFolder("bot-1"), "/"))).toBe(false);
+    expect(dataScopeFolder("bot-1~p-0123456789abcdef").startsWith(DATA_SCOPES_ROOT)).toBe(true);
+  });
+
+  it("names a confidential thread's scope the way dataScopeKey does", () => {
+    setConfidentialThreadResolver(() => ({ ownerPrincipalId: "owner@example.com" }));
+    expect(dataScopeKey({ ...org, principalId: "owner@example.com", threadId: "t-9" })).toBe(threadScopeKeyFor("bot-1", "t-9"));
+    expect(threadScopeKeyFor("bot-1", "t-9")).toBe(`bot-1~t-${hex("t-9")}`);
   });
 
   it("forgets a deleted bot's derived keys", () => {

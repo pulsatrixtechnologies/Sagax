@@ -83,6 +83,7 @@ title; a stamp on a Markdown export the person makes of their own thread.
 | Perspicax work log row | metadata row per turn | none |
 | Built-in browser | the bot's persistent profile (`bot-<id>`) or a shared one | a throwaway guest session of that thread (`conf-<thread>-<random>`), never saved, discarded at the end of each turn and when the thread is deleted |
 | Where it works | the speaker's or, for a routine, the bot owner's environment; the bot's project folder | always the thread owner's environment, and the thread's own folder (`task-workspaces/<bot>/<thread>`); a new confidential thread may not take another working folder |
+| Data (DuckDB tables and the Data tab's sheet) | the bot's database, or on an organization server the speaker's own on a shared bot | a database and sheet of that thread only (`<data>/data-scopes/<bot>/t-<hash>`, `server/data/scope.ts`), its owner's alone (the Data tab names it with `?thread=`); no other scope of the bot reaches the thread's folder or this database |
 | Routines | can be proposed or created with results in the thread | refused (`propose_routine` and `POST /api/routines` with that `resultsThreadId`) |
 | Artifacts (`save_artifact`, ...) | saved | refused: an artifact outlives the thread and an admin may open it |
 | Decision log | rows with the call's summary | rows with ids, time, tool name, decision and who answered only; rows written before the thread turned confidential are stripped the same way, and so are rows that land after it was deleted |
@@ -94,6 +95,7 @@ thread loses (messages, event and native logs):
 
 - its work folder `task-workspaces/<bot>/<thread>` and its kept tool
   results `tool-results/<thread>`;
+- its own Data database and sheet (`data-scopes/<bot>/t-<hash>`);
 - the stored attachments its messages point at that no other thread points
   at;
 - its waiting memory capture, its browser session, its pending memory

@@ -659,6 +659,56 @@ describe("a confined database (organization server)", () => {
     }
   });
 
+  it("the bot's own scope cannot ATTACH or read another person's or a confidential thread's Data", async () => {
+    const ws = join(root, "attach-ws");
+    mkdirSync(ws, { recursive: true });
+    const e = engine({ confine: () => [ws] });
+    for (const key of ["shared~p-0123456789abcdef", "shared~t-fedcba9876543210"]) {
+      const other = await e.forBot(key);
+      await other.run("CREATE OR REPLACE TABLE private_rows AS SELECT 'secret' AS s", bot);
+      await other.close();
+    }
+    const scopes = join(root, "data", "data-scopes", "shared");
+    writeFileSync(join(scopes, "p-0123456789abcdef", "sheet.json"), "{\"cards\":[]}");
+    const own = await e.forBot("shared");
+    await own.run("CREATE OR REPLACE TABLE mine AS SELECT 1 AS one", bot);
+    for (const sql of [
+      `ATTACH '${join(scopes, "p-0123456789abcdef", "data.duckdb")}' AS theirs (READ_ONLY)`,
+      `ATTACH '${join(scopes, "t-fedcba9876543210", "data.duckdb")}' AS secret (READ_ONLY)`,
+      `SELECT * FROM read_text('${join(scopes, "p-0123456789abcdef", "sheet.json")}')`,
+      `SELECT * FROM read_text('${join(root, "bots", "shared", "..", "..", "data", "data-scopes", "shared", "p-0123456789abcdef", "sheet.json")}')`,
+      `SELECT * FROM glob('${join(scopes, "*", "*")}')`,
+    ]) {
+      await expect(own.run(sql, bot)).rejects.toBeInstanceOf(DataFailure);
+    }
+    // and a person's scope cannot reach the bot's own database either
+    const person = await e.forBot("shared~p-0123456789abcdef");
+    await expect(person.run(`ATTACH '${join(root, "bots", "shared", "data.duckdb")}' AS owner (READ_ONLY)`, bot)).rejects.toBeInstanceOf(DataFailure);
+  });
+
+  it("reopens under the new folder list when a scope's confinement changes", async () => {
+    const kept = join(root, "drift-kept");
+    const gone = join(root, "drift-gone");
+    const added = join(root, "drift-added");
+    for (const dir of [kept, gone, added]) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "a.csv"), "x\n1\n");
+    }
+    let roots = [kept, gone];
+    const e = engine({ confine: () => roots });
+    const db = await e.forBot("drift");
+    await db.run("CREATE OR REPLACE TABLE stays AS SELECT 1 AS one", bot);
+    expect((await db.run(`SELECT count(*) FROM read_csv('${join(gone, "a.csv")}')`, bot)).rows).toEqual([["1"]]);
+    await expect(db.run(`SELECT count(*) FROM read_csv('${join(added, "a.csv")}')`, bot)).rejects.toBeInstanceOf(DataFailure);
+    // a thread became confidential: its folder is taken away at the next statement
+    roots = [kept, added];
+    await expect(db.run(`SELECT count(*) FROM read_csv('${join(gone, "a.csv")}')`, bot)).rejects.toBeInstanceOf(DataFailure);
+    expect((await db.run(`SELECT count(*) FROM read_csv('${join(added, "a.csv")}')`, bot)).rows).toEqual([["1"]]);
+    expect((await db.run(`SELECT count(*) FROM read_csv('${join(kept, "a.csv")}')`, bot)).rows).toEqual([["1"]]);
+    // the database itself survives the reopen
+    expect((await db.listTables()).map((table) => table.name)).toEqual(["stays"]);
+  });
+
   it("loads a confined https source from the server's downloaded copy in the scope's own folder", async () => {
     const { loadData } = await import("./tools.ts");
     const { DataSheetStore } = await import("./sheet.ts");
@@ -691,19 +741,38 @@ describe("a confined database (organization server)", () => {
     expect((await database.run("SELECT sum(total) FROM sales", bot)).rows).toEqual([["7"]]);
   });
 
-  it("keeps a derived Data scope's database under its bot's folder and deletes it with the bot", async () => {
+  it("keeps a derived Data scope's database outside its bot's folder and deletes it with the bot", async () => {
     const e = engine();
     const scoped = await e.forBot("owned~p-0123456789abcdef");
     await scoped.run("CREATE OR REPLACE TABLE mine AS SELECT 1 AS one", bot);
     const own = await e.forBot("owned");
     await own.run("CREATE OR REPLACE TABLE shared AS SELECT 2 AS two", bot);
-    expect(existsSync(join(root, "bots", "owned", "data-scopes", "p-0123456789abcdef", "data.duckdb"))).toBe(true);
+    expect(existsSync(join(root, "data", "data-scopes", "owned", "p-0123456789abcdef", "data.duckdb"))).toBe(true);
+    // nothing of another scope below the bot's folder, which its database reaches
+    expect(existsSync(join(root, "bots", "owned", "data-scopes"))).toBe(false);
     // one person's tables are not in the bot's database, nor the other way round
     expect((await own.listTables()).map((table) => table.name)).toEqual(["shared"]);
     expect((await scoped.listTables()).map((table) => table.name)).toEqual(["mine"]);
     await e.deleteBot("owned");
-    expect(existsSync(join(root, "bots", "owned", "data-scopes"))).toBe(false);
+    expect(existsSync(join(root, "data", "data-scopes", "owned"))).toBe(false);
     expect(existsSync(join(root, "bots", "owned", "data.duckdb"))).toBe(false);
+  });
+
+  it("deletes one derived scope (a confidential thread's) and leaves the bot's and the others", async () => {
+    const e = engine();
+    const thread = await e.forBot("keeper~t-0123456789abcdef");
+    await thread.run("CREATE OR REPLACE TABLE secret AS SELECT 1 AS one", bot);
+    const person = await e.forBot("keeper~p-fedcba9876543210");
+    await person.run("CREATE OR REPLACE TABLE theirs AS SELECT 1 AS one", bot);
+    const own = await e.forBot("keeper");
+    await own.run("CREATE OR REPLACE TABLE shared AS SELECT 1 AS one", bot);
+    await e.deleteScope!("keeper~t-0123456789abcdef");
+    expect(existsSync(join(root, "data", "data-scopes", "keeper", "t-0123456789abcdef"))).toBe(false);
+    expect(existsSync(join(root, "data", "data-scopes", "keeper", "p-fedcba9876543210", "data.duckdb"))).toBe(true);
+    expect((await own.listTables()).map((table) => table.name)).toEqual(["shared"]);
+    // a reopened thread scope starts empty
+    expect(await (await e.forBot("keeper~t-0123456789abcdef")).listTables()).toEqual([]);
+    await expect(e.deleteScope!("keeper")).rejects.toBeInstanceOf(DataFailure);
   });
 
   it("confines through allowed_directories, no remote source, and a locked configuration", async () => {

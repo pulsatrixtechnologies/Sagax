@@ -133,6 +133,29 @@ afterEach(async () => {
 });
 
 describe("DataPanel", () => {
+  it("asks for a confidential thread's own Data and keeps its sheet apart from the bot's", async () => {
+    const secret = { ...bot, tasks: [{ threadId: "thread-1", confidential: true, title: "", createdAt: 0 }] } as Bot;
+    fixture.sheets.pepper = sheet([card("shared", {})]);
+    fixture.sheets["pepper#thread-1"] = sheet([card("secret", {})]);
+    flushSync(() => root.render(createElement(DataPanel, { bot: secret })));
+    await settle();
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "loadDataSheet", botId: "pepper", threadId: "thread-1" }));
+    expect(viewedResult()).toEqual({ botId: "pepper", threadId: "thread-1", cardId: "secret" });
+    await typeAndRun("select 2");
+    expect(fixture.api.mock.calls.filter(([path]) => path.includes("/data/run")).map(([path]) => path)).toEqual(["/api/bots/pepper/data/run?thread=thread-1"]);
+    expect(fixture.api.mock.calls.filter(([path]) => path.startsWith("/api/bots/pepper/data/page")).every(([path]) => path.endsWith("?thread=thread-1"))).toBe(true);
+  });
+
+  it("names no thread for an ordinary one", async () => {
+    fixture.sheets.pepper = sheet([card("shared", {})]);
+    render();
+    await settle();
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "loadDataSheet", botId: "pepper" }));
+    expect(fixture.dispatch.mock.calls.some(([action]) => action.type === "loadDataSheet" && "threadId" in action)).toBe(false);
+    await typeAndRun("select 2");
+    expect(runRequests().map(([path]) => path)).toEqual(["/api/bots/pepper/data/run"]);
+  });
+
   it("shares only the mounted selection and its unsaved draft with chat", async () => {
     fixture.sheets.pepper = sheet([card("old", {}), card("orders", {})]);
     render();

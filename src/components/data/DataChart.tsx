@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { Result } from "vega-embed";
-import { DATA_LIMITS, DATA_ROUTES, type DataPage } from "../../../shared/data-surface";
+import { DATA_LIMITS, DATA_ROUTES, withDataThread, type DataPage } from "../../../shared/data-surface";
 import { vegaConfig } from "../../../shared/vega-config";
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -10,6 +10,8 @@ import { rowObjects, type Cell } from "./data-format";
 
 export interface DataChartProps {
   botId: string;
+  /** A confidential thread's own Data (withDataThread); absent otherwise. */
+  dataThread?: string;
   cardId: string;
   /** The compiled Vega-Lite spec, data-free; the rows bind as dataset "table". */
   spec: Record<string, unknown>;
@@ -21,13 +23,13 @@ export interface DataChartProps {
 
 /** The reduced rows, paged like the grid pages: never more than pageSize
  * per request, never more than the chart cap in total. */
-export async function fetchChartRows(botId: string, cardId: string, rowCount: number | undefined, signal?: AbortSignal): Promise<Array<Record<string, Cell>>> {
+export async function fetchChartRows(botId: string, cardId: string, rowCount: number | undefined, signal?: AbortSignal, dataThread?: string): Promise<Array<Record<string, Cell>>> {
   const rows: Array<Record<string, Cell>> = [];
   let offset = 0;
   let total = Math.min(rowCount ?? DATA_LIMITS.pageSize, DATA_LIMITS.chartMaxMarks);
   while (offset < total) {
     signal?.throwIfAborted();
-    const page = await api<DataPage>(DATA_ROUTES.page(botId), {
+    const page = await api<DataPage>(withDataThread(DATA_ROUTES.page(botId), dataThread), {
       method: "POST",
       body: JSON.stringify({ cardId, offset, limit: Math.min(DATA_LIMITS.pageSize, total - offset) }),
       signal,
@@ -58,7 +60,7 @@ export function bindChartRows(spec: Record<string, unknown>, rows: Array<Record<
 /** A Vega-Lite chart of a card's reduced rows. vega-embed (~270 KB gzipped)
  * loads on the first chart, not with the app. The theme comes from the
  * skin; the shared config carries OMB's palette and fonts. */
-export function DataChart({ botId, cardId, spec, rowCount, theme, revision }: DataChartProps) {
+export function DataChart({ botId, dataThread, cardId, spec, rowCount, theme, revision }: DataChartProps) {
   const host = useRef<HTMLDivElement>(null);
   const displayed = useRef<{ result: Result; naturalHeight?: number } | null>(null);
   const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
@@ -97,7 +99,7 @@ export function DataChart({ botId, cardId, spec, rowCount, theme, revision }: Da
     };
     setState({ loading: displayed.current === null, error: null });
     void (async () => {
-      const [{ default: embed }, rows] = await Promise.all([import("vega-embed"), fetchChartRows(botId, cardId, rowCount, abort.signal)]);
+      const [{ default: embed }, rows] = await Promise.all([import("vega-embed"), fetchChartRows(botId, cardId, rowCount, abort.signal, dataThread)]);
       if (!alive) return;
       const bound = bindChartRows(JSON.parse(specText) as Record<string, unknown>, rows);
       const unit = "mark" in bound || "layer" in bound;
@@ -142,7 +144,7 @@ export function DataChart({ botId, cardId, spec, rowCount, theme, revision }: Da
       abort.abort();
       if (!committed) discardCandidate();
     };
-  }, [botId, cardId, specText, rowCount, theme, revision]);
+  }, [botId, dataThread, cardId, specText, rowCount, theme, revision]);
   return (
     <div className="relative min-h-0 w-full flex-1" data-testid="data-chart">
       <div ref={host} className="relative h-full w-full" />

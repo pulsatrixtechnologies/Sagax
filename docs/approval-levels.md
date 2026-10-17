@@ -196,8 +196,13 @@ member's Data call is never an admin card.
 On an organization server Data runs inside the Sagax server, so each bot's
 database is **confined** (`server/data/engine.ts` `confineConnection`):
 after loading `excel` and `sqlite`, it sets `allowed_directories` to the
-scope's own folder, the bot's workspace and its task workspaces (no remote
-prefix at all), turns `enable_external_access` off and locks the
+scope's own folder, the bot's workspace and the task folder of each
+ordinary thread of that scope's person (never the whole
+`task-workspaces/<bot>` folder, which holds every person's threads,
+confidential ones included; a confidential thread's scope reaches only its
+own thread's folder; no remote prefix at all; when that list changes, for
+instance when a thread becomes confidential, the database reopens under the
+new list before its next statement), turns `enable_external_access` off and locks the
 configuration. DuckDB then refuses every other file (the server's data,
 another person's attachments) and every remote source from SQL, `https://`
 included, as well as database connections (`postgres://`, `mysql://`), on
@@ -214,11 +219,15 @@ refused. Exports land in the bot's workspace. A solo server is unchanged.
 Each person has their own Data on a shared bot (`server/data/scope.ts`):
 on an organization server, a turn spoken by someone other than the bot's
 owner, and the Data tab that person opens, use a database and sheet of
-their own (`<botId>~p-<hash>`, stored under the bot folder in
-`data-scopes/`), so nobody reads the tables another person loaded. The
-owner, routines and a solo server keep the bot's own database. A
-confidential thread gets one of its own (`<botId>~t-<hash>`) through
-`setConfidentialThreadResolver`, reachable by its owner only. Live `data`
+their own (`<botId>~p-<hash>`, stored in `<data>/data-scopes/<botId>/`,
+never inside the bot folder, which the bot's own database may read), so
+nobody reads the tables another person loaded. The owner, routines and a
+solo server keep the bot's own database. A confidential thread
+(`docs/confidential-threads.md`) gets one of its own (`<botId>~t-<hash>`,
+the server wires `setConfidentialThreadResolver` to it), reachable by its
+owner only, on a solo server too; the Data tab asks for it with
+`?thread=<id>` and keeps its sheet apart, and deleting the thread deletes
+it. Live `data`
 frames carry an `audience` and reach only that person (the bot scope only
 its owner). Files in the bot's workspace stay shared by everyone who uses
 the bot.

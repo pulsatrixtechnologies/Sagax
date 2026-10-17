@@ -21,7 +21,7 @@ import type * as DuckDB from "@duckdb/node-api";
 
 import { DATA_LIMITS, DATA_RESULTS_SCHEMA } from "../../shared/data-surface.ts";
 import { DATA_DIR } from "../config.ts";
-import { DATA_SCOPES_DIR, dataScopeBotId, dataScopeFolder } from "./scope.ts";
+import { DATA_SCOPES_DIR, dataScopeBotId, dataScopeFolder, dataScopesFolderOf } from "./scope.ts";
 import {
   DataFailure,
   type BotDatabase,
@@ -43,6 +43,9 @@ type Cell = string | number | boolean | null;
 
 export const DATA_DB_FILE = "data.duckdb";
 export const DATA_TMP_DIR = "data-tmp";
+/** Where a confined https load is downloaded before DuckDB reads it, in the
+ * scope's own folder (server/data/download.ts). */
+export const DATA_DOWNLOADS_DIR = "data-downloads";
 const IDLE_CLOSE_MS = 10 * 60_000;
 /** A first-time INSTALL downloads the extension; it gets this budget, not the statement's. */
 export const EXTENSION_INSTALL_TIMEOUT_MS = 5 * 60_000;
@@ -54,9 +57,11 @@ const RESULT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const PLAIN_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
 export interface DataEngineOptions {
-  /** Where a bot's database lives. Default: the bot folder (DATA_DIR/bots/<id>).
-   * A derived scope key (scope.ts) lives under its bot's folder. */
+  /** Where a bot's database lives. Default: the bot folder (DATA_DIR/bots/<id>). */
   botFolder?: (botId: string) => string;
+  /** Where derived scope keys (scope.ts) live, `<scopesRoot>/<botId>/<suffix>`:
+   * never inside a bot folder. Default `<dataDir>/data-scopes`. */
+  scopesRoot?: string;
   /** Holds the shared extension directory. Default: DATA_DIR. */
   dataDir?: string;
   env?: NodeJS.ProcessEnv;
@@ -341,8 +346,17 @@ function formatEpoch(seconds: number, dateOnly: boolean): string {
   return dateOnly ? iso.slice(0, 10) : iso.slice(0, 16).replace("T", " ");
 }
 
+/** A confinement's folders as one comparable value (order and duplicates
+ * do not matter). */
+function rootsSignature(roots: readonly string[] | null): string | null {
+  return roots === null ? null : JSON.stringify([...new Set(roots)].sort());
+}
+
 class BotDb implements BotDatabase {
   private state: Promise<Open> | null = null;
+  /** The folders the open database was confined to (rootsSignature), set
+   * once it opened; undefined while closed or opening. */
+  private openedRoots: string | null | undefined = undefined;
   private closing: Promise<void> | null = null;
   private idleTimer: NodeJS.Timeout | null = null;
   private inFlight = 0;
@@ -354,6 +368,23 @@ class BotDb implements BotDatabase {
   constructor(botId: string, engine: Engine) { this.botId = botId; this.engine = engine; }
 
   private open(): Promise<Open> {
+    // DuckDB's confinement is locked when the database opens. When the
+    // folders this scope may reach changed since (a thread became
+    // confidential, a new thread of this person's), the database reopens
+    // under the new list before the next statement: a folder taken away is
+    // never reachable again, and a new one becomes reachable. A removal
+    // closes at once (statements in flight are interrupted); a mere
+    // addition waits until nothing else runs.
+    if (this.state && this.openedRoots !== undefined && this.engine.confine) {
+      const now = this.engine.confine(this.botId) ?? null;
+      const signature = rootsSignature(now);
+      if (signature !== this.openedRoots) {
+        const before: string[] = this.openedRoots === null ? [] : JSON.parse(this.openedRoots) as string[];
+        const after = new Set(now ?? []);
+        const removed = this.openedRoots === null ? now !== null : before.some((root) => !after.has(root));
+        if (removed || this.inFlight <= 1) void this.close();
+      }
+    }
     if (!this.state) {
       // The file admits one instance per process: a reopen waits for the
       // close that may still be draining.
@@ -386,6 +417,7 @@ class BotDb implements BotDatabase {
       const reserved = new Set(keywords.getRowsJson().map((row) => String(row[0]).toLowerCase()));
       const roots = this.engine.confine?.(this.botId) ?? null;
       if (roots) await confineConnection(bot, [folder, ...roots]);
+      this.openedRoots = rootsSignature(roots);
       return { binding, instance, lanes: { bot: new Lane(bot), panel: new Lane(panel) }, reserved, confined: roots !== null };
     } catch (error) {
       bot?.closeSync();
@@ -769,6 +801,7 @@ FROM ${from}, omb_range WHERE ${id} IS NOT NULL GROUP BY bin ORDER BY bin`;
     const pending = this.state;
     if (!pending) return this.closing ?? undefined;
     this.state = null;
+    this.openedRoots = undefined;
     this.statsCache.clear();
     const closing = (async () => {
       let open: Open;
@@ -800,6 +833,7 @@ class Engine implements DataEngine {
   readonly dataDir: string;
   readonly idleMs: number;
   readonly folder: (botId: string) => string;
+  readonly scopesRoot: string;
   confine: DataConfinement | undefined;
 
   constructor(options: DataEngineOptions) {
@@ -807,7 +841,8 @@ class Engine implements DataEngine {
     this.dataDir = options.dataDir ?? DATA_DIR;
     this.idleMs = options.idleMs ?? IDLE_CLOSE_MS;
     const botFolder = options.botFolder;
-    this.folder = (key) => dataScopeFolder(key, botFolder);
+    this.scopesRoot = options.scopesRoot ?? join(this.dataDir, DATA_SCOPES_DIR);
+    this.folder = (key) => dataScopeFolder(key, botFolder, this.scopesRoot);
     if (options.binding) this.loaded = { binding: options.binding };
     this.confine = options.confine;
   }
@@ -864,10 +899,22 @@ class Engine implements DataEngine {
     for (const key of keys) this.databases.delete(key);
     await Promise.all(open.map((db) => db.close()));
     const folder = this.folder(botId);
-    for (const name of [DATA_DB_FILE, `${DATA_DB_FILE}.wal`, DATA_TMP_DIR, DATA_SCOPES_DIR]) {
-      // Windows keeps a just-closed file busy for a moment; rm retries EBUSY/EPERM.
+    // Windows keeps a just-closed file busy for a moment; rm retries EBUSY/EPERM.
+    for (const name of [DATA_DB_FILE, `${DATA_DB_FILE}.wal`, DATA_TMP_DIR, DATA_DOWNLOADS_DIR]) {
       await rm(join(folder, name), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     }
+    await rm(dataScopesFolderOf(botId, this.scopesRoot), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+
+  /** Closes one derived scope's database (a person's or a confidential
+   * thread's, scope.ts) and deletes its folder. The bot's own scope goes
+   * only with the bot (deleteBot). */
+  async deleteScope(scopeKey: string): Promise<void> {
+    if (dataScopeBotId(scopeKey) === scopeKey) throw new DataFailure({ code: "invalid_input", message: "deleteScope takes a derived scope key; delete the bot instead." });
+    const db = this.databases.get(scopeKey);
+    this.databases.delete(scopeKey);
+    await db?.close();
+    await rm(this.folder(scopeKey), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 
   async closeAll(): Promise<void> {

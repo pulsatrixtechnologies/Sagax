@@ -101,6 +101,9 @@ export interface DataEngine {
   forBot(botId: string): Promise<BotDatabase>;
   /** Closes the bot's database and deletes its files. */
   deleteBot(botId: string): Promise<void>;
+  /** Closes one derived Data scope's database (server/data/scope.ts) and
+   * deletes its folder: a confidential thread's, when the thread goes. */
+  deleteScope?(scopeKey: string): Promise<void>;
   closeAll(): Promise<void>;
   /** Organization server: confines every database opened afterwards to the
    * bot's own folder plus the folders this returns (engine.ts

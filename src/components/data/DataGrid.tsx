@@ -1,7 +1,7 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { CellStyleModule, InfiniteRowModelModule, RenderApiModule, RowApiModule, RowSelectionModule, ScrollApiModule, TooltipModule, themeQuartz, type ColDef, type GridApi, type IDatasource, type IRowNode } from "ag-grid-community";
-import { DATA_LIMITS, DATA_ROUTES, type DataColumn, type DataPage, type DataPageRequest } from "../../../shared/data-surface";
+import { DATA_LIMITS, DATA_ROUTES, withDataThread, type DataColumn, type DataPage, type DataPageRequest } from "../../../shared/data-surface";
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { copyText } from "@/lib/copy-text";
@@ -14,6 +14,8 @@ export interface DataGridHandle {
 
 export interface DataGridProps {
   botId: string;
+  /** A confidential thread's own Data (withDataThread); absent otherwise. */
+  dataThread?: string;
   target: { cardId: string } | { table: string };
   columns: DataColumn[];
   rowCount: number;
@@ -28,8 +30,9 @@ export interface DataGridRow { index: number; cells: Cell[] }
 export interface DataGridDatasource extends IDatasource { invalidate(): void }
 
 /** Each datasource owns only its in-flight requests; AG Grid owns a bounded block cache. */
-export function createDataGridDatasource({ botId, target, columns, rowCount, filter, filterColumn, isCurrent = () => true, onPage, onError }: {
+export function createDataGridDatasource({ botId, dataThread, target, columns, rowCount, filter, filterColumn, isCurrent = () => true, onPage, onError }: {
   botId: string;
+  dataThread?: string;
   target: DataGridProps["target"];
   columns: DataColumn[];
   rowCount: number;
@@ -77,7 +80,7 @@ export function createDataGridDatasource({ botId, target, columns, rowCount, fil
         limit: Math.min(DATA_LIMITS.pageSize, params.endRow - params.startRow, rowCount - params.startRow),
         ...(sort ? { sort } : {}), ...(filter ? { filter, ...(filterColumn !== undefined ? { filterColumn } : {}) } : {}),
       };
-      void api<DataPage>(DATA_ROUTES.page(botId), { method: "POST", body: JSON.stringify(request), signal: controller.signal }).then((page) => {
+      void api<DataPage>(withDataThread(DATA_ROUTES.page(botId), dataThread), { method: "POST", body: JSON.stringify(request), signal: controller.signal }).then((page) => {
         if (settled) return;
         if (!current()) { fail(); return; }
         settled = true;
@@ -118,7 +121,7 @@ export function DataResultFooter({ children, controls }: { children?: ReactNode;
 }
 
 /** Community's infinite model pages the existing SQL result; no browser-side load-all or sort. */
-export function DataGrid({ botId, target, columns, rowCount, name, revision, handle, footerControls }: DataGridProps) {
+export function DataGrid({ botId, dataThread, target, columns, rowCount, name, revision, handle, footerControls }: DataGridProps) {
   const grid = useRef<GridApi<DataGridRow> | null>(null);
   const [readyGrid, setReadyGrid] = useState<GridApi<DataGridRow> | null>(null);
   const source = useRef<DataGridDatasource | null>(null);
@@ -130,7 +133,7 @@ export function DataGrid({ botId, target, columns, rowCount, name, revision, han
   const filterColumn = filter ? appliedFilter.column : undefined;
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const schemaKey = JSON.stringify(columns.map(({ name, type }) => ({ name, type })));
-  const key = JSON.stringify([botId, target, revision, rowCount, filter, filterColumn, schemaKey]);
+  const key = JSON.stringify([botId, dataThread, target, revision, rowCount, filter, filterColumn, schemaKey]);
   const currentKey = useRef(key);
   currentKey.current = key;
   const [status, setStatus] = useState<{ key: string; total: number; error: string | null }>({ key, total: rowCount, error: null });
@@ -149,7 +152,7 @@ export function DataGrid({ botId, target, columns, rowCount, name, revision, han
     if (!readyGrid || readyGrid.isDestroyed()) return;
     // A fresh source belongs to this actual grid lifetime, including StrictMode remounts.
     const datasource = createDataGridDatasource({
-      botId, target, columns, rowCount, filter, filterColumn,
+      botId, dataThread, target, columns, rowCount, filter, filterColumn,
       isCurrent: () => currentKey.current === key && grid.current === readyGrid && !readyGrid.isDestroyed(),
       onPage: (page) => setStatus({ key, total: page.rowCount, error: null }),
       onError: (message) => setStatus((current) => ({ key, total: current.key === key ? current.total : rowCount, error: message })),

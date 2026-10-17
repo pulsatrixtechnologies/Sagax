@@ -6,7 +6,7 @@ import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { DATA_ROUTES, type DataSheet } from "../../shared/data-surface";
+import { DATA_ROUTES, dataSheetKey, withDataThread, type DataSheet } from "../../shared/data-surface";
 import type { ServerFrame } from "../../shared/wire";
 import type { AppState, BotAnnouncement } from "./store";
 
@@ -38,6 +38,7 @@ const answers: Record<string, unknown> = {
   "/api/routines": { routines: [], runs: [] },
   "/api/webhooks": { webhooks: [], attempts: [] },
   [DATA_ROUTES.sheet("bot")]: sheet(["from-get"]),
+  [withDataThread(DATA_ROUTES.sheet("bot"), "secret")]: sheet(["thread-own"]),
 };
 
 const { StoreProvider, useStore, dataSheetFromResponse } = await import("./store");
@@ -98,6 +99,25 @@ describe("data sheets in the store", () => {
     await send({ kind: "data", botId: "bot", sheet: sheet(["b"]) });
     expect(seen.dataSheets.bot?.cards.map((card) => card.id)).toEqual(["b"]);
     expect(seen.dataSheets.bot?.botId).toBe("bot");
+  });
+
+  it("keep a confidential thread's own sheet apart from the bot's, from GET and from frames", async () => {
+    dispatch({ type: "loadDataSheet", botId: "bot", threadId: "secret" });
+    await settle();
+    expect(sent("/api/bots/bot/data?thread=secret")).toHaveLength(1);
+    expect(seen.dataSheets[dataSheetKey("bot", "secret")]?.cards.map((card) => card.id)).toEqual(["thread-own"]);
+    const before = seen.dataSheets.bot?.cards.map((card) => card.id);
+    await send({ kind: "data", botId: "bot", threadId: "secret", sheet: sheet(["t1"]) });
+    expect(seen.dataSheets["bot#secret"]?.cards.map((card) => card.id)).toEqual(["t1"]);
+    expect(seen.dataSheets.bot?.cards.map((card) => card.id)).toEqual(before);
+  });
+
+  it("build thread routes and keys", () => {
+    expect(withDataThread("/api/bots/b/data/page", "t 1")).toBe("/api/bots/b/data/page?thread=t%201");
+    expect(withDataThread(DATA_ROUTES.histogram("b", "x", "c"), "t")).toBe("/api/bots/b/data/tables/x/histogram?column=c&thread=t");
+    expect(withDataThread("/api/bots/b/data")).toBe("/api/bots/b/data");
+    expect(dataSheetKey("b")).toBe("b");
+    expect(dataSheetKey("b", "t")).toBe("b#t");
   });
 
   it("tell the panel, not the app, when the route refuses", async () => {

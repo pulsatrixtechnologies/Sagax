@@ -22,7 +22,7 @@ import {
 import { flushSync } from "react-dom";
 import { ROUTINE_CONVERSATION_HEADER } from "../../shared/wire";
 import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark } from "../../shared/wire";
-import { DATA_ROUTES, type DataSheet, type DataTable } from "../../shared/data-surface";
+import { DATA_ROUTES, dataSheetKey, withDataThread, type DataSheet, type DataTable } from "../../shared/data-surface";
 import type { TurnDigest } from "../../shared/digest";
 import type { MessageReaction } from "../../shared/reactions";
 import type { AutoModelRecord } from "../../shared/auto-model";
@@ -1697,9 +1697,10 @@ export type Action =
   | { type: "computerStart"; botId: string; start: ComputerStart | null }
   | { type: "computerControl"; botId: string; held: boolean; helpReason: string | null }
   /** A whole sheet from the server: a `data` frame or the first GET. */
-  | { type: "dataSheet"; sheet: DataSheet; tables?: DataTable[] }
+  /** threadId: a confidential thread's own sheet (dataSheetKey). */
+  | { type: "dataSheet"; sheet: DataSheet; tables?: DataTable[]; threadId?: string }
   | { type: "dataView"; view: AppState["dataView"] }
-  | { type: "loadDataSheet"; botId: string; onError?: (message: string) => void }
+  | { type: "loadDataSheet"; botId: string; threadId?: string; onError?: (message: string) => void }
   | { type: "modelVariantRuntime"; event: RuntimeEvent }
   | { type: "setModel"; botId: string; selection: ModelSelection; threadId?: string; updateBotDefault?: boolean }
   | { type: "interrupt"; botId: string; threadId?: string; expectedUtteranceId?: string; onError?: () => void }
@@ -3260,12 +3261,14 @@ export function reducer(state: AppState, action: Action): AppState {
     case "followBotModel":
     case "loadDataSheet":
       return state;
-    case "dataSheet":
+    case "dataSheet": {
+      const key = dataSheetKey(action.sheet.botId, action.threadId);
       return {
         ...state,
-        dataSheets: { ...state.dataSheets, [action.sheet.botId]: action.sheet },
-        ...(action.tables ? { dataTables: { ...state.dataTables, [action.sheet.botId]: action.tables } } : {}),
+        dataSheets: { ...state.dataSheets, [key]: action.sheet },
+        ...(action.tables ? { dataTables: { ...state.dataTables, [key]: action.tables } } : {}),
       };
+    }
     case "dataView":
       return { ...state, dataView: action.view };
     case "sendGroup": {
@@ -4176,8 +4179,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // cards. A panel-local onError keeps a server without the surface
         // from raising the app-wide error line.
         case "loadDataSheet":
-          api(DATA_ROUTES.sheet(action.botId))
-            .then((body) => rawDispatch({ type: "dataSheet", sheet: dataSheetFromResponse(body, action.botId), tables: dataTablesFromResponse(body) }))
+          api(withDataThread(DATA_ROUTES.sheet(action.botId), action.threadId))
+            .then((body) => rawDispatch({ type: "dataSheet", sheet: dataSheetFromResponse(body, action.botId), tables: dataTablesFromResponse(body), ...(action.threadId ? { threadId: action.threadId } : {}) }))
             .catch((error) => (action.onError ?? showError)(error instanceof Error ? error.message : String(error)));
           break;
         case "markRoutineRunSeen":
@@ -5234,7 +5237,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           });
           break;
         case "data":
-          rawDispatch({ type: "dataSheet", sheet: frame.sheet });
+          rawDispatch({ type: "dataSheet", sheet: frame.sheet, ...(typeof frame.threadId === "string" && frame.threadId ? { threadId: frame.threadId } : {}) });
           break;
         case "bot.deleted":
           botPatchQueue.cancel(frame.botId);

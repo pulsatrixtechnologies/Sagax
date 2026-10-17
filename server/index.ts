@@ -169,8 +169,9 @@ import { BUILT_IN_DATA_SYSTEM_PROMPT } from "./data/instructions.ts";
 import { DATA_INTERNAL_MCP_PATH, dataRpc } from "./data/rpc.ts";
 import { createDataRoutes } from "./data/routes.ts";
 import { DataSheetRegistry } from "./data/sheet.ts";
-import { dataFrameAllowed, dataScopeAudience, dataScopeBotId, dataScopeFolder, dataScopeKey, dataScopeKind, dataScopeThread, forgetDataScopes, type DataScopeKind } from "./data/scope.ts";
+import { dataFrameAllowed, dataScopeAudience, dataScopeBotId, dataScopeFolder, dataScopeKey, dataScopeKind, dataScopeThread, forgetDataScopes, setConfidentialThreadResolver, threadScopeKeyFor, type DataScopeKind } from "./data/scope.ts";
 import { DataFailure } from "./data/types.ts";
+import { DATA_DOWNLOADS_DIR } from "./data/engine.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
 import { instructionsLead } from "../shared/instructions-lead.ts";
 import { isEffortLevel, ROUTINE_CONVERSATION_HEADER, type BotVisibility, type CardAnswerer, type ResolvedSender, type SteerQueueReason, type WireAccessCard, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
@@ -4458,16 +4459,27 @@ const dataSheets = new DataSheetRegistry({
  * an organization server the bot scope goes to the bot's owner only, a
  * person's scope to that person, a confidential thread's to its owner. A
  * solo server's bot scope reaches every client, as before. */
-function dataFrameAudience(scopeKey: string): { audience?: string; dataScope?: DataScopeKind } {
+function dataFrameAudience(scopeKey: string): { audience?: string; dataScope?: DataScopeKind; threadId?: string } {
   const kind = dataScopeKind(scopeKey);
   if (kind === "bot") {
     if (IDENTITY.kind !== "perspicax") return {};
     const bot = store.bot(scopeKey);
     return { audience: bot ? effectiveBotOwner(bot) : "", dataScope: "bot" };
   }
-  // A key this process never computed reaches nobody.
-  return { audience: dataScopeAudience(scopeKey) ?? "", dataScope: kind };
+  // A key this process never computed reaches nobody. A confidential
+  // thread's frame names its thread (its owner's client keeps that sheet
+  // apart from the bot's, shared/data-surface.ts dataSheetKey).
+  const thread = kind === "thread" ? dataScopeThread(scopeKey) : undefined;
+  return { audience: dataScopeAudience(scopeKey) ?? "", dataScope: kind, ...(thread ? { threadId: thread } : {}) };
 }
+// A confidential thread (#683, server/confidential-threads.ts) has a Data
+// database and sheet of its own, reachable by its owner only: the resolver
+// tells data/scope.ts which threads are confidential and whose they are. A
+// confidential thread whose owner cannot be found matches nobody.
+setConfidentialThreadResolver((threadId) => {
+  if (!store.isConfidentialThread(threadId)) return null;
+  return { ownerPrincipalId: confidentialThreadOwner(threadId) ?? "" };
+});
 /** The Data scope of a turn: the speaker's (turnSpeakerPrincipals) on an
  * organization server, the bot's for its owner, a routine or a solo server,
  * the thread's own for a confidential thread. Null: refused. */
@@ -4505,13 +4517,30 @@ function dataConfinedRoots(scopeKey: string): string[] | null {
     const thread = dataScopeThread(scopeKey);
     return thread ? [join(TASK_WORKSPACES_DIR, botId, thread)] : [];
   }
-  return [workspaceDir(botId), join(TASK_WORKSPACES_DIR, botId)];
+  // The bot's scope and a person's: the bot's workspace, plus the task
+  // folder of each ordinary thread of that scope's person (the bot's owner
+  // for the bot scope). Never the whole task-workspaces/<bot> folder: it
+  // holds every person's threads, confidential ones included. The engine
+  // reopens a database when this list changes (engine.ts BotDb.open).
+  const bot = store.bot(botId);
+  const person = bot ? (dataScopeKind(scopeKey) === "bot" ? effectiveBotOwner(bot) : dataScopeAudience(scopeKey)) : undefined;
+  const threads = bot && person ? dataThreadFolders(bot, person) : [];
+  return [workspaceDir(botId), ...threads];
+}
+/** The task folders of a person's ordinary threads on a bot. */
+function dataThreadFolders(bot: BotRecord, person: string): string[] {
+  const who = person.trim().toLowerCase();
+  if (!who) return [];
+  const owner = effectiveBotOwner(bot);
+  return (bot.tasks ?? [])
+    .filter((task) => task.confidential !== true && /^[A-Za-z0-9_-]{1,128}$/.test(task.threadId) && privateThreadOwner(task, owner) === who)
+    .map((task) => join(TASK_WORKSPACES_DIR, bot.id, task.threadId));
 }
 if (IDENTITY.kind === "perspicax") dataEngine.setConfinement?.(dataConfinedRoots);
 /** Where a confined https load is downloaded before DuckDB reads it: the
  * scope's own folder, which only that scope's database reaches. */
 function dataDownloadDir(scopeKey: string): string {
-  return join(dataScopeFolder(scopeKey), "data-downloads");
+  return join(dataScopeFolder(scopeKey), DATA_DOWNLOADS_DIR);
 }
 /** Where a bot's exports may land, most preferred first: the person's
  * Downloads when it exists, the bot's working folder, its workspace. On an
@@ -9383,6 +9412,10 @@ function wipeConfidentialThread(botId: string, threadId: string, attachmentNames
   confidentialMemoryPasses.forget(threadId);
   void forgetConfidentialBrowser(threadId).catch(() => undefined);
   void scrubThreadDecisions(DATA_DIR, threadId);
+  // its own Data database and sheet (data/scope.ts)
+  const dataKey = threadScopeKeyFor(botId, threadId);
+  try { dataSheets.deleteScope(dataKey); } catch { /* already gone */ }
+  if (dataEngine.unavailable() === null) void dataEngine.deleteScope?.(dataKey).catch((error: unknown) => console.warn(`confidential thread: could not delete its Data (${error instanceof Error ? error.message : "unknown"})`));
 }
 /** The thread a bot's peers, delegations, asides and any turn started
  * without a named thread land in: its selected thread, unless that one is

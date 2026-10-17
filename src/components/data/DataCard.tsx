@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 import { ChevronDown, Download, Loader2 } from "lucide-react";
-import { DATA_ROUTES, type DataCard as DataCardModel, type DataColumn, type DataExportFormat, type DataExportRequest, type DataReduction } from "../../../shared/data-surface";
+import { DATA_ROUTES, withDataThread, type DataCard as DataCardModel, type DataColumn, type DataExportFormat, type DataExportRequest, type DataReduction } from "../../../shared/data-surface";
 import { api, type Bot } from "@/state/store";
+import { openThreadConfidential } from "@/lib/confidential-thread";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { cn } from "@/lib/cn";
@@ -40,7 +41,7 @@ const menuItem = "rounded-md px-3 py-1.5 text-left text-[12px] hover:bg-inset di
 
 /** Export and copy for any paged result: a card's or a loaded table's. The
  * server writes the file and answers with where it put it. */
-export function useExportMenu(botId: string, target: Omit<DataExportRequest, "format">, grid: RefObject<DataGridHandle | null>) {
+export function useExportMenu(botId: string, target: Omit<DataExportRequest, "format">, grid: RefObject<DataGridHandle | null>, dataThread?: string) {
   const [notice, setNotice] = useState<{ kind: "status" | "alert"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const say = (kind: "status" | "alert", text: string) => {
@@ -50,7 +51,7 @@ export function useExportMenu(botId: string, target: Omit<DataExportRequest, "fo
   const exportAs = async (format: DataExportFormat) => {
     setBusy(true);
     try {
-      const result = await api<{ path?: string }>(DATA_ROUTES.export(botId), { method: "POST", body: JSON.stringify({ ...target, format }) });
+      const result = await api<{ path?: string }>(withDataThread(DATA_ROUTES.export(botId), dataThread), { method: "POST", body: JSON.stringify({ ...target, format }) });
       if (result?.path) say("status", t("data.card.exported", { path: result.path }));
     } catch (cause) {
       say("alert", t("data.card.exportFailed", { reason: cause instanceof Error ? cause.message : String(cause) }));
@@ -93,7 +94,9 @@ export function DataCard({ bot, card, theme, controls, running, onCancel }: Data
   const [view, setView] = useState<"chart" | "table">("chart");
   // One identity per card: the grid's paging keys off it.
   const target = useMemo(() => ({ cardId: card.id }), [card.id]);
-  const exporter = useExportMenu(bot.id, target, grid);
+  // A confidential thread has a Data of its own (server/data/scope.ts).
+  const dataThread = openThreadConfidential(bot) ? bot.threadId : undefined;
+  const exporter = useExportMenu(bot.id, target, grid, dataThread);
   const columns: DataColumn[] = card.columns ?? [];
   const reduction = card.reduction && card.reduction.method !== "none"
     ? t("data.card.reduction", { output: formatCount(card.reduction.outputRows), input: formatCount(card.reduction.inputRows), method: t(REDUCTION_KEYS[card.reduction.method]) })
@@ -132,12 +135,12 @@ export function DataCard({ bot, card, theme, controls, running, onCancel }: Data
         </div>
       : card.kind === "chart" && card.vegaLite && view === "chart"
         ? <div className="min-h-0 flex-1 overflow-auto" data-testid="data-chart-viewport"><div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col p-3">
-            <DataChart botId={bot.id} cardId={card.id} spec={card.vegaLite} rowCount={card.rowCount} theme={theme} revision={card.result ?? card.updatedAt} />
+            <DataChart botId={bot.id} dataThread={dataThread} cardId={card.id} spec={card.vegaLite} rowCount={card.rowCount} theme={theme} revision={card.result ?? card.updatedAt} />
             {reduction && <p className="mt-1 shrink-0 text-[11px] text-ink-tertiary">{reduction}</p>}
           </div></div>
         : card.kind === "text"
           ? <div className="chat-md min-h-0 flex-1 overflow-auto px-3 py-2 text-[13px]"><ChatMarkdown text={card.text ?? ""} /></div>
-          : <DataGrid botId={bot.id} target={target} columns={columns} rowCount={card.rowCount ?? 0} name={card.title} revision={card.result ?? card.updatedAt} handle={grid} footerControls={actions} />;
+          : <DataGrid botId={bot.id} dataThread={dataThread} target={target} columns={columns} rowCount={card.rowCount ?? 0} name={card.title} revision={card.result ?? card.updatedAt} handle={grid} footerControls={actions} />;
 
   return <article className="flex min-h-0 min-w-0 flex-1 flex-col text-ink" data-testid={`data-card-${card.kind}`} data-card-id={card.id} aria-label={card.title}>
     {body}

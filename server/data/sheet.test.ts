@@ -132,7 +132,7 @@ describe("DataSheetStore", () => {
     expect(registry.for("b2").cards()).toEqual([]);
   });
 
-  it("keeps a derived Data scope's sheet under its bot, with the real bot id, and deletes it with the bot", async () => {
+  it("keeps a derived Data scope's sheet outside its bot's folder, with the real bot id, and deletes it with the bot", async () => {
     const dir = freshDir();
     const frames: Array<{ botId: string; key: string; cards: number }> = [];
     const dropped: string[] = [];
@@ -140,6 +140,7 @@ describe("DataSheetStore", () => {
       broadcast: (frame, key) => frames.push({ botId: frame.botId, key, cards: frame.sheet.cards.length }),
       dropResult: async (key, name) => { dropped.push(`${key}:${name}`); },
       dir: (botId) => join(dir, botId),
+      scopesRoot: join(dir, "data-scopes"),
     });
     const person = "b1~p-0123456789abcdef";
     await registry.for(person).addCard({ kind: "table", title: "mine", by: "bot", status: "ready", result: "c_1" });
@@ -147,12 +148,23 @@ describe("DataSheetStore", () => {
     // one person's cards never show on the bot's sheet
     expect(registry.for("b1").cards().map((card) => card.title)).toEqual(["owner's"]);
     expect(registry.for(person).sheet()).toMatchObject({ botId: "b1", cards: [{ title: "mine" }] });
-    expect(existsSync(join(dir, "b1", "data-scopes", "p-0123456789abcdef", SHEET_FILE))).toBe(true);
+    expect(existsSync(join(dir, "data-scopes", "b1", "p-0123456789abcdef", SHEET_FILE))).toBe(true);
+    expect(existsSync(join(dir, "b1", "data-scopes"))).toBe(false);
     expect(frames).toEqual([{ botId: "b1", key: person, cards: 1 }, { botId: "b1", key: "b1", cards: 1 }]);
     await registry.for(person).removeCard("c_1");
     expect(dropped).toEqual([`${person}:c_1`]);
+    // a confidential thread's scope goes alone when its thread goes
+    const thread = "b1~t-fedcba9876543210";
+    await registry.for(thread).addCard({ kind: "text", title: "secret", text: "x", by: "bot", status: "ready" });
+    expect(existsSync(join(dir, "data-scopes", "b1", "t-fedcba9876543210", SHEET_FILE))).toBe(true);
+    registry.deleteScope(thread);
+    expect(existsSync(join(dir, "data-scopes", "b1", "t-fedcba9876543210"))).toBe(false);
+    expect(registry.for(thread).cards()).toEqual([]);
+    expect(existsSync(join(dir, "data-scopes", "b1", "p-0123456789abcdef", SHEET_FILE))).toBe(true);
+    registry.deleteScope("b1");
+    expect(existsSync(join(dir, "b1", SHEET_FILE))).toBe(true);
     registry.delete("b1");
-    expect(existsSync(join(dir, "b1", "data-scopes"))).toBe(false);
+    expect(existsSync(join(dir, "data-scopes", "b1"))).toBe(false);
     expect(existsSync(join(dir, "b1", SHEET_FILE))).toBe(false);
     expect(registry.for(person).cards()).toEqual([]);
   });

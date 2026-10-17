@@ -13,18 +13,26 @@
 //
 // The hex is the start of a SHA-256 of the principal (or thread id), so a key
 // names no person and holds no slash (engine.forBot refuses one). A derived
-// key's files live under the bot folder (`data-scopes/<suffix>`), so they go
-// with the bot. Pure apart from the small in-memory map of who a derived key
-// belongs to, which the live frames use to pick their audience.
+// key's files live OUTSIDE the bot folder, in `<data>/data-scopes/<botId>/
+// <suffix>` (2026-10-17 security review of #689): a confined database may
+// read its own folder, so the bot scope (whose folder is the bot folder)
+// must not find another person's or a confidential thread's data.duckdb or
+// sheet.json below it. They are deleted with the bot. Pure apart from the
+// small in-memory map of who a derived key belongs to, which the live
+// frames and the confinement use to pick their audience.
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
 import { botFolder as defaultBotFolder } from "../bot-folder.ts";
+import { DATA_DIR } from "../config.ts";
 
 /** Separates the bot id from the scope suffix. Bot ids never contain it. */
 export const DATA_SCOPE_SEPARATOR = "~";
-/** The folder, inside the bot folder, that holds the derived scopes. */
+/** The folder, in the data directory (never inside a bot folder), that
+ * holds the derived scopes: `<DATA_DIR>/data-scopes/<botId>/<suffix>`. */
 export const DATA_SCOPES_DIR = "data-scopes";
+/** The server's derived-scopes root. */
+export const DATA_SCOPES_ROOT = join(DATA_DIR, DATA_SCOPES_DIR);
 
 export type DataScopeKind = "bot" | "person" | "thread";
 
@@ -88,7 +96,7 @@ export function dataScopeKey(request: DataScopeRequest): string | null {
     if (confidential) {
       const owner = normalize(confidential.ownerPrincipalId);
       if (principal !== undefined && (!owner || principal !== owner)) return null;
-      const key = `${botId}${DATA_SCOPE_SEPARATOR}t-${digest(request.threadId)}`;
+      const key = threadScopeKeyFor(botId, request.threadId);
       members.set(key, { audience: owner, threadId: request.threadId });
       return key;
     }
@@ -125,11 +133,22 @@ export function dataScopeThread(key: string): string | undefined {
 }
 
 /** Where a scope's database and sheet live: the bot folder for the bot
- * scope, `<bot folder>/data-scopes/<suffix>` for a derived one. */
-export function dataScopeFolder(key: string, botFolder: (botId: string) => string = defaultBotFolder): string {
+ * scope, `<scopesRoot>/<botId>/<suffix>` for a derived one (never below the
+ * bot folder, which the bot scope's confined database reaches). */
+export function dataScopeFolder(key: string, botFolder: (botId: string) => string = defaultBotFolder, scopesRoot: string = DATA_SCOPES_ROOT): string {
   const botId = dataScopeBotId(key);
   if (key === botId) return botFolder(botId);
-  return join(botFolder(botId), DATA_SCOPES_DIR, key.slice(botId.length + DATA_SCOPE_SEPARATOR.length));
+  return join(dataScopesFolderOf(botId, scopesRoot), key.slice(botId.length + DATA_SCOPE_SEPARATOR.length));
+}
+
+/** The folder holding every derived scope of a bot (deleted with the bot). */
+export function dataScopesFolderOf(botId: string, scopesRoot: string = DATA_SCOPES_ROOT): string {
+  return join(scopesRoot, botId);
+}
+
+/** The scope key of a confidential thread's own Data (`<botId>~t-<hash>`). */
+export function threadScopeKeyFor(botId: string, threadId: string): string {
+  return `${botId}${DATA_SCOPE_SEPARATOR}t-${digest(threadId)}`;
 }
 
 /** Forgets every derived key of a deleted bot. */

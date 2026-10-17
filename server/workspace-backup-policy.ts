@@ -83,11 +83,11 @@ export function ephemeralWorkspaceTokenPath(path: string): boolean {
 
 /** A bot's DuckDB database (`bots/<id>/data.duckdb`, its WAL, its spill
  * directory; server/data/engine.ts), and the same for each derived Data
- * scope (`bots/<id>/data-scopes/<scope>/`, server/data/scope.ts) plus the
+ * scope (`data-scopes/<id>/<scope>/`, server/data/scope.ts) plus the
  * transient folder a confined https load downloads into. Copying the file
  * while the engine holds it open is not a consistent snapshot (an unflushed
  * WAL), it can run to gigabytes, and every table in it came from a source
  * the bot can load again. The sheet beside it (sheet.json) is backed up. */
 export function liveDataEnginePath(path: string): boolean {
-  return /^bots\/[^/]+\/(?:data-scopes\/[^/]+\/)?(?:data\.duckdb(?:\.wal)?$|data-tmp(?:\/|$)|data-downloads(?:\/|$))/.test(path);
+  return /^(?:bots\/[^/]+|data-scopes\/[^/]+\/[^/]+)\/(?:data\.duckdb(?:\.wal)?$|data-tmp(?:\/|$)|data-downloads(?:\/|$))/.test(path);
 }

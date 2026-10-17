@@ -33,12 +33,16 @@
 //   CT-12 (fourth review) Ana allows a confidential card in Sagax: the bot
 //         continues in that thread and the call runs once; her AI client
 //         still cannot answer one
+//   CT-13 (review of #689) Data: a confidential thread has a database and
+//         sheet of its own (?thread=), its owner's only, kept outside the
+//         bot's folder and wiped with the thread
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { CONFIDENTIAL_INCIDENT_TEXT } from "./confidential-threads.ts";
@@ -608,4 +612,41 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     expect(third?.ok).toBe(false);
     expect(third?.text ?? "").toMatch(/Allow/);
   }, 180_000);
+
+  it("CT-13: a confidential thread's Data is its own, its owner's only, outside the bot's folder, and goes with the thread", async () => {
+    // The Data tab's routes are admin scope: Bob (the bot's owner, an admin)
+    // opens a confidential thread of his own; Ana opens one too.
+    const mine = await api("POST", `/api/bots/${botId}/tasks`, bob, { title: "Donnees", confidential: true });
+    expect(mine.status, mine.text).toBe(201);
+    const thread = mine.body.task.threadId as string;
+    const theirs = await api("POST", `/api/bots/${botId}/tasks`, ana, { title: "Donnees d'Ana", confidential: true });
+    expect(theirs.status, theirs.text).toBe(201);
+    const anaThread = theirs.body.task.threadId as string;
+    const run = await api("POST", `/api/bots/${botId}/data/run?thread=${thread}`, bob, { sql: `SELECT '${SECRET}-DATA' AS s` });
+    expect(run.status, run.text).toBe(200);
+    const own = await api("GET", `/api/bots/${botId}/data?thread=${thread}`, bob);
+    expect(own.status, own.text).toBe(200);
+    expect(JSON.stringify(own.body)).toContain(`${SECRET}-DATA`);
+    // the bot's own Data (Bob's ordinary threads) does not hold it
+    const ordinary = await api("GET", `/api/bots/${botId}/data`, bob);
+    expect(ordinary.status, ordinary.text).toBe(200);
+    expect(JSON.stringify(ordinary.body)).not.toContain(`${SECRET}-DATA`);
+    // Ana's confidential thread is not Bob's, admin and bot owner as he is
+    for (const path of [`/api/bots/${botId}/data?thread=${anaThread}`]) {
+      const refused = await api("GET", path, bob);
+      expect(refused.status, refused.text).toBe(404);
+    }
+    const page = await api("POST", `/api/bots/${botId}/data/page?thread=${anaThread}`, bob, { cardId: "c_1", offset: 0, limit: 10 });
+    expect(page.status, page.text).toBe(404);
+    // a thread of another bot is refused too
+    const other = await api("POST", "/api/bots", bob, { name: "Autre" });
+    expect((await api("GET", `/api/bots/${other.body.bot.id}/data?thread=${thread}`, bob)).status).toBe(404);
+    // stored outside the bot folder, which the bot's own database may read
+    const suffix = `t-${createHash("sha256").update(thread, "utf8").digest("hex").slice(0, 16)}`;
+    expect(existsSync(join(data, "bots", botId, "data-scopes"))).toBe(false);
+    expect(existsSync(join(data, "data-scopes", botId, suffix))).toBe(true);
+    expect(filesText(join(data, "bots", botId))).not.toContain(`${SECRET}-DATA`);
+    expect((await api("DELETE", `/api/bots/${botId}/tasks/${thread}`, bob)).status).toBe(200);
+    await waitFor(async () => !existsSync(join(data, "data-scopes", botId, suffix)));
+  }, 60_000);
 });

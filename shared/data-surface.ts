@@ -184,6 +184,24 @@ export interface DataBroadcast {
   kind: "data";
   botId: string;
   sheet: DataSheet;
+  /** Set only on a confidential thread's own sheet (server/data/scope.ts),
+   * which reaches that thread's owner alone: the client keeps it apart
+   * from the bot's sheet (dataSheetKey). */
+  threadId?: string;
+}
+
+/** The client's key for a sheet: the bot id, or `<botId>#<threadId>` for a
+ * confidential thread's own Data (server/data/scope.ts). */
+export function dataSheetKey(botId: string, threadId?: string): string {
+  return threadId ? `${botId}#${threadId}` : botId;
+}
+
+/** A Data route for a confidential thread's own Data: the server answers
+ * with that thread's database and sheet (its owner only). No thread: the
+ * viewer's own Data on the bot. */
+export function withDataThread(path: string, threadId?: string): string {
+  if (!threadId) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}thread=${encodeURIComponent(threadId)}`;
 }
 
 /** Panel routes, all under `/api/bots/:botId/data`. The person's own

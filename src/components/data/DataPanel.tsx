@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { ChevronDown, Database, History, Loader2, Maximize2, Minimize2, Pin } from "lucide-react";
-import { DATA_ROUTES, type DataRunRequest } from "../../../shared/data-surface";
+import { DATA_ROUTES, dataSheetKey, withDataThread, type DataRunRequest } from "../../../shared/data-surface";
 import { api, useStore, type Bot } from "@/state/store";
+import { openThreadConfidential } from "@/lib/confidential-thread";
 import { t } from "@/lib/i18n";
 import { useColorScheme } from "@/lib/color-scheme";
 import { SourcesStrip } from "./SourcesStrip";
@@ -34,7 +35,12 @@ export function DataPanel({ bot, requestedCard }: { bot: Bot; requestedCard?: { 
 
 function BotDataPanel({ bot, requestedCard }: { bot: Bot; requestedCard?: { id: string; requestId: number } }) {
   const { state, dispatch } = useStore();
-  const sheet = state.dataSheets[bot.id];
+  // A confidential thread has a Data of its own, its owner's only
+  // (server/data/scope.ts): every request names it, and its sheet is kept
+  // apart from the bot's.
+  const dataThread = openThreadConfidential(bot) ? bot.threadId : undefined;
+  const sheetKey = dataSheetKey(bot.id, dataThread);
+  const sheet = state.dataSheets[sheetKey];
   const theme = useColorScheme();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -94,11 +100,11 @@ function BotDataPanel({ bot, requestedCard }: { bot: Bot; requestedCard?: { id: 
     requested.current = requestKey;
     if (!refresh) return;
     setLoadError(null);
-    dispatch({ type: "loadDataSheet", botId: bot.id, onError: setLoadError });
-  }, [bot.id, sheet, dispatch, requestKey, requestedCard?.id, state.connected]);
+    dispatch({ type: "loadDataSheet", botId: bot.id, ...(dataThread ? { threadId: dataThread } : {}), onError: setLoadError });
+  }, [bot.id, dataThread, sheet, dispatch, requestKey, requestedCard?.id, state.connected]);
 
   const cards = useMemo(() => cardsLatestFirst(sheet?.cards ?? []), [sheet?.cards]);
-  const tables = state.dataTables[bot.id] ?? sheet?.sources ?? [];
+  const tables = state.dataTables[sheetKey] ?? sheet?.sources ?? [];
   const selectedCard = selection ? cards.find((card) => card.id === selection.cardId) : null;
   const card = selection ? selectedCard ?? null : cards[0] ?? null;
   // The result the SQL box edits. A text result or an empty sheet has none,
@@ -137,7 +143,7 @@ function BotDataPanel({ bot, requestedCard }: { bot: Bot; requestedCard?: { id: 
     if (!target) creating.current = { pending: null };
     const request: DataRunRequest = target ? { cardId: target.id, sql, ...(live ? { live: true } : {}) } : { sql };
     try {
-      const body = await api<{ card?: { id: string }; result?: { id: string } } | undefined>(DATA_ROUTES.run(bot.id), { method: "POST", body: JSON.stringify(request), signal: controller.signal });
+      const body = await api<{ card?: { id: string }; result?: { id: string } } | undefined>(withDataThread(DATA_ROUTES.run(bot.id), dataThread), { method: "POST", body: JSON.stringify(request), signal: controller.signal });
       // A new card made while History held another result: show it.
       const id = body?.card?.id ?? body?.result?.id;
       if (!target && id && liveRequest.current?.controller === controller && selectionRef.current) setSelection({ cardId: id });
@@ -176,7 +182,7 @@ function BotDataPanel({ bot, requestedCard }: { bot: Bot; requestedCard?: { id: 
     liveRequest.current = null;
     setRunning(false);
     if (!target) return;
-    api(DATA_ROUTES.cancel(bot.id), { method: "POST", body: JSON.stringify({ cardId: target.id }) }).catch((cause) => setRunError(reason(cause)));
+    api(withDataThread(DATA_ROUTES.cancel(bot.id), dataThread), { method: "POST", body: JSON.stringify({ cardId: target.id }) }).catch((cause) => setRunError(reason(cause)));
   };
 
   useEffect(() => () => { dropPendingRun(); forgetRun(); dispatch({ type: "dataView", view: null }); }, [bot.id, bot.threadId, dispatch]);

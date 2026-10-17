@@ -101,11 +101,12 @@ describe("workspace backup data boundary", () => {
 
   it("leaves out a bot's live DuckDB database, WAL and spill directory, and nothing else in its folder", () => {
     for (const path of ["bots/b1/data.duckdb", "bots/b1/data.duckdb.wal", "bots/b1/data-tmp", "bots/b1/data-tmp/duckdb_temp_storage-0.tmp",
-      "bots/b1/data-downloads/x.csv", "bots/b1/data-scopes/p-0123456789abcdef/data.duckdb", "bots/b1/data-scopes/t-0123456789abcdef/data-tmp/x.tmp"]) {
+      "bots/b1/data-downloads/x.csv", "data-scopes/b1/p-0123456789abcdef/data.duckdb", "data-scopes/b1/t-0123456789abcdef/data-tmp/x.tmp",
+      "data-scopes/b1/p-0123456789abcdef/data-downloads/x.csv"]) {
       expect(liveDataEnginePath(path)).toBe(true);
     }
     for (const path of ["bots/b1/SOUL.md", "bots/b1/sheet.json", "bots/b1/data.duckdb.bak", "bots/b1/data-tmp.zip", "bots/data.duckdb", "data.duckdb",
-      "workspaces/bot/data.duckdb", "bots/b1/exports/data.duckdb", "attachments/data-tmp/x", "bots/b1/data-scopes/p-0123456789abcdef/sheet.json"]) {
+      "workspaces/bot/data.duckdb", "bots/b1/exports/data.duckdb", "attachments/data-tmp/x", "data-scopes/b1/p-0123456789abcdef/sheet.json", "data-scopes/b1/data.duckdb"]) {
       expect(liveDataEnginePath(path)).toBe(false);
     }
   });
