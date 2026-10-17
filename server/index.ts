@@ -27151,6 +27151,7 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
     activity: viewerBotActivity(record, viewerId),
     ...(mine ? { mine } : {}),
     ...(mineTask ? { mineTask: { ...wireTask(mineTask, record.modelSelection), ...store.projectBotForTask(record.id, mine!) } as unknown as Record<string, unknown> } : {}),
+    ...(mineTask ? { mineWireTask: wireTask(mineTask, record.modelSelection) as unknown as Record<string, unknown> } : {}),
   });
 }
 /** A JSON response as an organization viewer receives it: every bot it

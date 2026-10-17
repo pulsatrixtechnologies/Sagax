@@ -130,6 +130,10 @@ export function narrowBotForViewer<T extends Record<string, unknown>>(
     botOwnerPrincipalId: string;
     mine?: string;
     mineTask?: Record<string, unknown>;
+    /** The viewer's thread as a wire task, nothing more: the record added to
+     * `tasks` when the wire list left it out. Never `mineTask`, which also
+     * carries the projected bot (every person's threads). */
+    mineWireTask?: Record<string, unknown>;
     /** The bot's activity over this viewer's own threads (store.activityOf):
      * a bot reads busy while any of their threads works, as on a solo
      * server, and never because of someone else's. */
@@ -170,7 +174,8 @@ export function narrowBotForViewer<T extends Record<string, unknown>>(
   const selected = typeof out.threadId === "string" ? out.threadId : "";
   const listed = Array.isArray(out.tasks) ? (out.tasks as ThreadRecord[]) : undefined;
   if (selected && listed && !listed.some((task) => task.threadId === selected)) {
-    const record = input.mineTask && input.mineTask.threadId === selected ? (input.mineTask as unknown as ThreadRecord) : undefined;
+    const record = input.mineWireTask && input.mineWireTask.threadId === selected && !("tasks" in input.mineWireTask)
+      ? (input.mineWireTask as unknown as ThreadRecord) : undefined;
     if (record && ownThreads([record], input.viewerId, input.botOwnerPrincipalId).length === 1) out.tasks = [...listed, record];
   }
   if (input.activity) {

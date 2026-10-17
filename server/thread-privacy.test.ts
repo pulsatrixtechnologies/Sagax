@@ -188,26 +188,38 @@ describe("narrowBotForViewer", () => {
     // bob opened his AI client's hidden thread: the wire list left it out
     const bobs = narrowBotForViewer(wire, {
       viewerId: BOB, botOwnerPrincipalId: ALICE, mine: "h1",
-      mineTask: { threadId: "h1", ownerPrincipalId: BOB, hidden: true, busy: false, activity: "idle" },
+      // mineTask carries the projected bot: every person's threads, never sent
+      mineTask: { threadId: "h1", ownerPrincipalId: BOB, hidden: true, busy: false, activity: "idle", tasks: wire.tasks, mcpAccounts: { x: "secret-account" } },
+      mineWireTask: { threadId: "h1", ownerPrincipalId: BOB, hidden: true },
     });
     expect(bobs.threadId).toBe("h1");
     expect(bobs.tasks.map((task) => task.threadId)).toEqual(["b1", "h1"]);
+    expect(bobs.tasks.at(-1)).toEqual({ threadId: "h1", ownerPrincipalId: BOB, hidden: true });
+    expect(JSON.stringify(bobs)).not.toContain("Alice's plans");
+    expect(JSON.stringify(bobs)).not.toContain("secret-account");
+    // without a wire task nothing is added (mineTask alone never is)
+    const bare = narrowBotForViewer(wire, {
+      viewerId: BOB, botOwnerPrincipalId: ALICE, mine: "h1",
+      mineTask: { threadId: "h1", ownerPrincipalId: BOB, tasks: wire.tasks },
+    });
+    expect(bare.tasks.map((task) => task.threadId)).toEqual(["b1"]);
+    expect(JSON.stringify(bare)).not.toContain("Alice's plans");
     // the owner's view of their own hidden thread too
     const alices = narrowBotForViewer({ ...wire, threadId: "h2" }, {
       viewerId: ALICE, botOwnerPrincipalId: ALICE, mine: "h2",
-      mineTask: { threadId: "h2", ownerPrincipalId: ALICE, hidden: true },
+      mineWireTask: { threadId: "h2", ownerPrincipalId: ALICE, hidden: true },
     });
     expect(alices.tasks.map((task) => task.threadId)).toEqual(["a1", "h2"]);
     // never a record that is not the viewer's, nor one for another thread
     const forged = narrowBotForViewer(wire, {
       viewerId: BOB, botOwnerPrincipalId: ALICE, mine: "x1",
-      mineTask: { threadId: "x1", ownerPrincipalId: ALICE, title: "Alice's other" },
+      mineWireTask: { threadId: "x1", ownerPrincipalId: ALICE, title: "Alice's other" },
     });
     expect(forged.tasks.map((task) => task.threadId)).toEqual(["b1"]);
     expect(JSON.stringify(forged)).not.toContain("Alice's other");
     const mismatched = narrowBotForViewer(wire, {
       viewerId: BOB, botOwnerPrincipalId: ALICE, mine: "y1",
-      mineTask: { threadId: "b1", ownerPrincipalId: BOB },
+      mineWireTask: { threadId: "b1", ownerPrincipalId: BOB },
     });
     expect(mismatched.tasks.map((task) => task.threadId)).toEqual(["b1"]);
   });
