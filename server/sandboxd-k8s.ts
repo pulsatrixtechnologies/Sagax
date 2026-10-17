@@ -67,6 +67,66 @@ function waitingReason(pod: Obj): string {
 
 const READY_TIMEOUT_MS = 90_000;
 
+// 2026-10-17: a Kubernetes exec carries only a command line (no environment,
+// user or working directory: the pod's own). Values a caller hands over as
+// environment variables (a file's contents, typed text, a page address, a
+// token, the desktop's passwords) were dropped, so write_file, computer_use
+// typing and open_url, browse's screenshot, the GitHub connection and a
+// person's MCP server variables did not work on this backend. They must not
+// ride the command line either: it is in the API server's request URL and
+// in the environment's process list. So they go on stdin as one JSON object
+// whose exact size is named in the command; a small python3 loader (in the
+// sandbox image) reads exactly that many bytes, sets them and execs the
+// real command. Exactly, because the v4 protocol cannot close stdin, and a
+// stream (a person's MCP server) keeps the rest of its stdin.
+const EXEC_ENV_LOADER = [
+  "import json, os, signal, sys",
+  "signal.alarm(30)",
+  "n = int(sys.argv[1])",
+  "buf = bytearray()",
+  "while len(buf) < n:",
+  "    chunk = os.read(0, n - len(buf))",
+  "    if not chunk:",
+  "        sys.stderr.write('sagax: the command environment did not arrive\\n')",
+  "        sys.exit(125)",
+  "    buf += chunk",
+  "signal.alarm(0)",
+  "env = dict(os.environ)",
+  "env.update(json.loads(bytes(buf).decode('utf-8')))",
+  "if sys.argv[2] == 'null':",
+  "    fd = os.open(os.devnull, os.O_RDONLY)",
+  "    os.dup2(fd, 0)",
+  "    os.close(fd)",
+  "try:",
+  "    os.execvpe(sys.argv[3], sys.argv[3:], env)",
+  "except FileNotFoundError:",
+  "    sys.stderr.write('sagax: ' + sys.argv[3] + ': command not found\\n')",
+  "    sys.exit(127)",
+  "except PermissionError:",
+  "    sys.stderr.write('sagax: ' + sys.argv[3] + ': permission denied\\n')",
+  "    sys.exit(126)",
+].join("\n");
+
+/** The command and stdin that give `command` the variables of `env`
+ * (`NAME=value` strings) on a backend whose exec has no environment.
+ * `stdin: "null"` gives the command an empty stdin afterwards (a one-shot
+ * exec); `"keep"` leaves it the rest of the stream; bytes are the command's
+ * own stdin, after the variables. No variable: the command as it is. */
+export function withExecEnv(command: string[], env: readonly string[], stdin: "null" | "keep" | Buffer): { command: string[]; stdin?: Buffer } {
+  const vars: Record<string, string> = {};
+  for (const entry of env) {
+    const index = entry.indexOf("=");
+    if (index <= 0) continue;
+    vars[entry.slice(0, index)] = entry.slice(index + 1);
+  }
+  const bytes = Buffer.isBuffer(stdin) ? stdin : undefined;
+  if (Object.keys(vars).length === 0) return bytes ? { command, stdin: bytes } : { command };
+  const payload = Buffer.from(JSON.stringify(vars), "utf8");
+  // given bytes follow the variables, and the command keeps them as its stdin
+  const mode = bytes || stdin === "keep" ? "keep" : "null";
+  return { command: ["python3", "-I", "-c", EXEC_ENV_LOADER, String(payload.length), mode, ...command], stdin: bytes ? Buffer.concat([payload, bytes]) : payload };
+}
+
 export interface KubernetesApiOptions {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
@@ -385,8 +445,9 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
     async removeVolume(name: string) {
       await remove(pvcPath(name));
     },
-    async exec(name: string, request: ExecRequest, maxBytes: number): Promise<ExecResult> {
-      const result = await client.exec(ns, name, request.Cmd);
+    async exec(name: string, request: ExecRequest, maxBytes: number, stdin?: Buffer): Promise<ExecResult> {
+      const call = withExecEnv(request.Cmd, request.Env ?? [], stdin ?? "null");
+      const result = await client.exec(ns, name, call.command, call.stdin);
       let stdout = result.stdout;
       let stderr = result.stderr;
       let truncated = false;
@@ -398,7 +459,8 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
       return { exitCode: result.exitCode, stdout, stderr, truncated };
     },
     async execStream(name: string, request: ExecRequest): Promise<Duplex> {
-      return client.execStream(ns, name, request.Cmd);
+      const call = withExecEnv(request.Cmd, request.Env ?? [], "keep");
+      return client.execStream(ns, name, call.command, call.stdin);
     },
     async execTty(name: string, request: ExecRequest, size: TtySize): Promise<TtyExec> {
       if (!client.execTty) throw new Error("this Kubernetes client has no terminal exec");

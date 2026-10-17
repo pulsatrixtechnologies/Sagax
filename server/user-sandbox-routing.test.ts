@@ -123,12 +123,27 @@ describe("environment tools", () => {
     expect((result.content[0] as { text: string }).text).toContain("[exit 2]");
   });
 
-  it("writes content through env, never through the command line", async () => {
+  it("writes content through env, never through the command line, on the resolved path", async () => {
     const { calls, exec } = recorder();
     await callUserSandboxTool("write_file", { path: "notes/a.txt", content: "hello $(rm -rf /)" }, exec);
     expect(calls[0]!.argv.join(" ")).not.toContain("hello");
     expect(Buffer.from(calls[0]!.env!.SAGAX_CONTENT_B64!, "base64").toString()).toBe("hello $(rm -rf /)");
-    expect(calls[0]!.env!.SAGAX_PATH).toBe("notes/a.txt");
+    // the paths are sh's own arguments ($1 asked, $2 resolved, $3 size), not the script
+    expect(calls[0]!.argv.slice(3)).toEqual(["sh", "notes/a.txt", "/workspace/notes/a.txt", "17"]);
+    expect(calls[0]!.argv[2]).toContain('cat -- "$t" > "$2"');
+    expect(Object.keys(calls[0]!.env!)).toEqual(["SAGAX_CONTENT_B64"]);
+    expect(calls[0]!.stdinBase64).toBeUndefined();
+  });
+
+  it("writes large content on stdin (one variable is limited to 128 KiB)", async () => {
+    const { calls, exec } = recorder();
+    const content = "x".repeat(200 * 1024);
+    const result = await callUserSandboxTool("write_file", { path: "big.txt", content }, exec);
+    expect(result.isError).toBeFalsy();
+    expect(calls[0]!.env).toBeUndefined();
+    expect(Buffer.from(calls[0]!.stdinBase64!, "base64").toString()).toBe(content);
+    expect(calls[0]!.argv.at(-1)).toBe(String(200 * 1024));
+    expect(calls[0]!.argv.join(" ")).not.toContain("xxxx");
   });
 
   it("refuses to write when the workspace is over quota", async () => {

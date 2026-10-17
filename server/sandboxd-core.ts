@@ -59,6 +59,12 @@ export interface SandboxStats {
 export interface SandboxExecInput {
   argv: string[];
   env?: Record<string, string>;
+  /** Bytes for the command's stdin, in base64 (a large file body: one
+   * variable or argument is limited to 128 KiB by Linux). The command reads
+   * exactly that many bytes (`head -c N`): a Kubernetes exec cannot close
+   * stdin, so a read to end of file would wait for the time limit there.
+   * Without it the command's stdin is empty. */
+  stdinBase64?: string;
   timeoutSec?: number;
   maxOutputBytes?: number;
 }
@@ -101,6 +107,7 @@ export const MAX_EXEC_TIMEOUT_SEC = 600;
 export const DEFAULT_EXEC_TIMEOUT_SEC = 120;
 export const MAX_EXEC_OUTPUT_BYTES = 1024 * 1024;
 const MAX_EXEC_ENV_BYTES = 1_500_000;
+const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const MAX_CONCURRENT_EXECS = 4;
 const USAGE_TTL_MS = 60_000;
 const CAPACITY_IDLE_GRACE_MS = 60_000;
@@ -358,6 +365,12 @@ export class SandboxService {
       envBytes += name.length + value.length;
     }
     if (envBytes > MAX_EXEC_ENV_BYTES) throw new SandboxError(413, "too_large", "the request is too large");
+    let stdin: Buffer | undefined;
+    if (input.stdinBase64 !== undefined) {
+      if (typeof input.stdinBase64 !== "string" || !BASE64_RE.test(input.stdinBase64)) throw new SandboxError(400, "bad_exec", "stdin must be base64");
+      if (envBytes + input.stdinBase64.length > MAX_EXEC_ENV_BYTES) throw new SandboxError(413, "too_large", "the request is too large");
+      stdin = Buffer.from(input.stdinBase64, "base64");
+    }
     const timeoutSec = Math.min(MAX_EXEC_TIMEOUT_SEC, Math.max(1, Math.floor(input.timeoutSec ?? DEFAULT_EXEC_TIMEOUT_SEC)));
     const maxOutput = Math.min(MAX_EXEC_OUTPUT_BYTES, Math.max(1024, Math.floor(input.maxOutputBytes ?? 256 * 1024)));
     if ((this.busy.get(key) ?? 0) >= MAX_CONCURRENT_EXECS) throw new SandboxError(429, "busy", "too many commands are running in this environment");
@@ -369,7 +382,7 @@ export class SandboxService {
         User: `${SANDBOX_UID}:${SANDBOX_UID}`,
         Env: env.map(([name, value]) => `${name}=${value}`),
         WorkingDir: SANDBOX_WORKSPACE,
-      }, maxOutput);
+      }, maxOutput, stdin);
       return {
         exitCode: result.exitCode,
         stdout: result.stdout.toString("utf8"),

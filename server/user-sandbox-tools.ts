@@ -10,7 +10,7 @@
 // The desktop starts on the first such call (deploy/sandbox/sagax-desktop).
 import { MISUSE_MAX_COMMAND_SECONDS } from "../shared/misuse-guardrails.ts";
 import { wrapUntrusted } from "../shared/safety-review.ts";
-import type { SandboxExecOutput } from "./sandboxd-core.ts";
+import type { SandboxExecInput, SandboxExecOutput } from "./sandboxd-core.ts";
 import { procSecretPath, resolvedReadRefusal, type ResolvedEnvironmentPath } from "./sensitive-path.ts";
 
 export const USER_SANDBOX_TOOLS = [
@@ -100,10 +100,13 @@ export const SANDBOX_COMPUTER_TOOLS = [
 export type UserSandboxToolName = (typeof USER_SANDBOX_TOOLS)[number]["name"];
 
 const MAX_WRITE_BYTES = 1024 * 1024;
+/** Contents up to this size travel in one variable; larger ones on stdin
+ * (Linux limits one variable to 128 KiB, its base64 included). */
+const MAX_WRITE_ENV_BYTES = 64 * 1024;
 const MAX_PATH = 4096;
 
 export interface ToolExec {
-  exec(input: { argv: string[]; env?: Record<string, string>; timeoutSec?: number; maxOutputBytes?: number }): Promise<SandboxExecOutput>;
+  exec(input: SandboxExecInput): Promise<SandboxExecOutput>;
   overQuota(): Promise<boolean>;
   /** A refusal for a shell command, or null to run it (an admin who
    * manages this person's plugins and MCP servers: person-integrations.ts). */
@@ -166,8 +169,8 @@ function earlyRefusal(name: string, args: Record<string, unknown>, exec: ToolExe
 // process secret under /proc, a link into a credential location, or a name
 // that looked ordinary but leads to a dotfile (sensitive-path.ts). The read
 // then runs on the resolved path, after checking that the path still
-// resolves there. The paths go as arguments, never through the environment:
-// the Kubernetes backend (sandboxd-k8s.ts) runs only the command line.
+// resolves there. write_file goes through the same resolution. The paths go
+// as arguments to a fixed script, never interpolated into it.
 const RESOLVE_SCRIPT = [
   "import json, os, sys",
   "p = sys.argv[1]",
@@ -207,14 +210,27 @@ export async function resolveInSandbox(path: string, exec: ToolExec): Promise<{ 
   return refused ? { refused } : { resolved };
 }
 
-/** A read of the resolved path, run only while the requested path still
- * resolves there (a link swapped in between is refused). */
-function readResolved(path: string, real: string, command: string): { argv: string[] } {
-  // $1 the requested path, $2 the resolved one (sh's own arguments)
+/** A read (or a write) of the resolved path, run only while the requested
+ * path still resolves there (a link swapped in between is refused). */
+function readResolved(path: string, real: string, command: string, ...more: string[]): { argv: string[] } {
+  // $1 the requested path, $2 the resolved one, then `more` (sh's own arguments)
   return {
-    argv: ["sh", "-c", `python3 -I -c '${SAME_PLACE_SCRIPT}' "$1" "$2" || { echo "the path changed while it was read" >&2; exit 3; }; ${command}`, "sh", path, real],
+    argv: ["sh", "-c", `python3 -I -c '${SAME_PLACE_SCRIPT}' "$1" "$2" || { echo "the path changed while it was read" >&2; exit 3; }; ${command}`, "sh", path, real, ...more],
   };
 }
+
+// $3 is the size in bytes. The contents land in a temporary file first and
+// reach the target only when all of them arrived (a provisioner from before
+// stdin gives an empty stdin: the write is refused, the file untouched);
+// `cat >` keeps the target's own mode and links.
+const WRITE_SCRIPT = [
+  'mkdir -p -- "$(dirname -- "$2")" || exit 1',
+  't=$(mktemp) || exit 1',
+  'trap \'rm -f -- "$t"\' EXIT',
+  'if [ -n "${SAGAX_CONTENT_B64+x}" ]; then printf %s "$SAGAX_CONTENT_B64" | base64 -d > "$t"; else head -c "$3" > "$t"; fi',
+  '[ "$(wc -c < "$t" | tr -d \' \')" -eq "$3" ] || { echo "the file contents did not all arrive; nothing was written" >&2; exit 4; }',
+  'cat -- "$t" > "$2"',
+].join("\n");
 
 /** A public http(s) URL only; the host egress policy also blocks private
  * destinations, this check just fails fast with a clear message. */
@@ -341,10 +357,19 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       const bytes = Buffer.from(args.content, "utf8");
       if (bytes.length > MAX_WRITE_BYTES) return text("content is larger than 1 MiB; write it in parts or generate it with run_command", true);
       if (await exec.overQuota()) return text("Your server environment is over its disk quota. Delete files in /workspace first.", true);
+      // The same resolution as a read: a write through a link into `.ssh`
+      // (authorized_keys), `.git-credentials` or a dotfile is refused, and
+      // the write lands on the resolved path only while the path still
+      // leads there. The contents never ride the command line: a variable
+      // when small, stdin beyond (sandboxd-k8s.ts withExecEnv carries both
+      // on stdin on Kubernetes).
+      const where = await resolveInSandbox(path, exec);
+      if ("refused" in where) return text(where.refused, true);
+      const content = bytes.toString("base64");
       const result = await exec.exec({
-        argv: ["sh", "-c", 'mkdir -p -- "$(dirname -- "$SAGAX_PATH")" && printf %s "$SAGAX_CONTENT_B64" | base64 -d > "$SAGAX_PATH"'],
-        env: { SAGAX_PATH: path, SAGAX_CONTENT_B64: bytes.toString("base64") },
-        timeoutSec: 30,
+        ...readResolved(path, where.resolved.real, WRITE_SCRIPT, String(bytes.length)),
+        ...(bytes.length <= MAX_WRITE_ENV_BYTES ? { env: { SAGAX_CONTENT_B64: content } } : { stdinBase64: content }),
+        timeoutSec: 60,
       });
       return result.exitCode === 0 ? text(`wrote ${bytes.length} bytes to ${path}`) : text(result.stderr.trim() || `could not write ${path}`, true);
     }

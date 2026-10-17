@@ -62,6 +62,14 @@ let provisioner: Server;
 let intranet: Server;
 let intranetPort = 0;
 const docker = new FakeDocker();
+// read_file resolves its path in the environment first (user-sandbox-tools.ts
+// resolveInSandbox): answer as an environment without links would.
+docker.execResult = (exec) => {
+  const at = exec.Cmd.indexOf("python3");
+  const path = at >= 0 && exec.Cmd[at + 3]?.includes("sagaxResolved") ? exec.Cmd[at + 4] : undefined;
+  const stdout = path === undefined ? "ok" : JSON.stringify({ sagaxResolved: 1, real: path.startsWith("/") ? path : `/workspace/${path}`, links: [] });
+  return { exitCode: 0, stdout: Buffer.from(stdout), stderr: Buffer.alloc(0), truncated: false };
+};
 
 type Auth = { cookie?: string };
 const api = async (method: string, path: string, auth?: Auth, body?: unknown): Promise<{ status: number; body: any; text: string }> => {

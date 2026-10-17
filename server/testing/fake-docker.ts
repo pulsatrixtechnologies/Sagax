@@ -10,7 +10,7 @@ export class FakeDocker implements DockerApi {
   volumes = new Map<string, { labels: Record<string, string> }>();
   images = new Set<string>(["sagax-sandbox:test"]);
   calls: string[] = [];
-  execs: { name: string; exec: ExecRequest }[] = [];
+  execs: { name: string; exec: ExecRequest; stdin?: Buffer }[] = [];
   execResult: (exec: ExecRequest) => ExecResult = () => ({ exitCode: 0, stdout: Buffer.from("ok"), stderr: Buffer.alloc(0), truncated: false });
   helperOutput = { exitCode: 0, output: "sagax-egress-ok\n" };
   now: () => number = Date.now;
@@ -65,9 +65,9 @@ export class FakeDocker implements DockerApi {
     this.volumes.set(String(spec.Name), { labels: (spec.Labels ?? {}) as Record<string, string> });
   }
   async removeVolume(name: string) { this.calls.push(`rmvol ${name}`); this.volumes.delete(name); }
-  async exec(name: string, exec: ExecRequest) {
+  async exec(name: string, exec: ExecRequest, _maxBytes?: number, stdin?: Buffer) {
     if (!this.containers.get(name)?.running) throw new Error("container not running");
-    this.execs.push({ name, exec });
+    this.execs.push({ name, exec, ...(stdin ? { stdin } : {}) });
     return this.execResult(exec);
   }
   /** The desktop relay: greets like a VNC server, then echoes what it gets

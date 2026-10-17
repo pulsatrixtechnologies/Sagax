@@ -49,13 +49,13 @@ Code: `server/user-sandbox-routing.ts` (targets, owner), `server/user-sandbox-to
 the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-spec.ts`
 (the exact container, network and egress policy).
 
-`read_file` and `list_files` resolve their path inside the environment first
+`read_file`, `list_files` and `write_file` resolve their path inside the environment first
 (python3, `resolveInSandbox`): a `/proc` secret (`environ`, `cmdline`, `mem`,
 the `fd`, `root` and `cwd` links, also under `task/<tid>`) is never read, a
 symbolic link in any component that leads to a credential location (`.ssh`,
 `.git-credentials`, `.config/gh`, `.aws`...) is refused, and so is an
-ordinary name whose real place is a dotfile. The read then runs on the
-resolved path while the requested path still resolves there
+ordinary name whose real place is a dotfile. The read (or the write) then
+runs on the resolved path while the requested path still resolves there
 (`server/sensitive-path.ts`, 2026-10-17).
 
 ## Lifecycle

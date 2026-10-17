@@ -85,10 +85,11 @@ export function createSandboxdHandler(service: SandboxService, verifier: Sandbox
       if (method === "POST" && action === "exec") {
         let parsed: unknown;
         try { parsed = JSON.parse(body.toString("utf8")); } catch { return send(res, 400, { error: "invalid JSON", code: "bad_exec" }); }
-        const input = parsed as { argv?: unknown; env?: unknown; timeoutSec?: unknown; maxOutputBytes?: unknown };
+        const input = parsed as { argv?: unknown; env?: unknown; stdinBase64?: unknown; timeoutSec?: unknown; maxOutputBytes?: unknown };
         return send(res, 200, await service.exec(key, {
           argv: input.argv as string[],
           ...(input.env && typeof input.env === "object" ? { env: input.env as Record<string, string> } : {}),
+          ...(input.stdinBase64 !== undefined ? { stdinBase64: input.stdinBase64 as string } : {}),
           ...(typeof input.timeoutSec === "number" ? { timeoutSec: input.timeoutSec } : {}),
           ...(typeof input.maxOutputBytes === "number" ? { maxOutputBytes: input.maxOutputBytes } : {}),
         }));

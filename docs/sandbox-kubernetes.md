@@ -206,6 +206,19 @@ publish the ClusterIP differ.
 | LKE | the encrypted Linode class the operator installed | the cluster CNI, when it enforces policy | internal Service |
 | Proxmox / k3s | the encrypted CSI class the operator installed | same as k3s | internal Service |
 
+## Exec variables
+
+A Kubernetes exec carries only a command line: no environment, user or
+working directory (the pod's own). The variables a caller hands over
+(`write_file` contents, `computer_use` text and addresses, `browse`
+screenshots, the GitHub connection, the desktop passwords, a person's MCP
+server variables) go on stdin as one JSON object whose size the command
+names; a python3 loader in the sandbox image reads exactly that many bytes,
+sets them and execs the real command (`withExecEnv` in
+`server/sandboxd-k8s.ts`). They never ride the command line, which is in
+the API server's request URL and in the process list. The in-chat terminal
+keeps no variable (`TERM` stays the pod's).
+
 ## Audit
 
 `server/sandbox-audit.ts` opens the log with `O_APPEND | O_CREAT | O_WRONLY |

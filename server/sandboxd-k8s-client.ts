@@ -27,9 +27,10 @@ export interface K8sClient {
   request(method: "GET" | "POST" | "DELETE" | "PATCH", path: string, body?: unknown, contentType?: string): Promise<K8sResponse>;
   /** Run a command to completion. stdout and stderr are collected here, so a
    * caller cannot miss bytes that arrive as the socket opens. */
-  exec(namespace: string, pod: string, command: string[]): Promise<K8sExecResult>;
-  /** stdin and stdout stay open (the desktop relay). stderr is dropped. */
-  execStream(namespace: string, pod: string, command: string[]): Promise<Duplex>;
+  exec(namespace: string, pod: string, command: string[], stdin?: Buffer): Promise<K8sExecResult>;
+  /** stdin and stdout stay open (the desktop relay). stderr is dropped.
+   * `prelude` is written to stdin first, before the stream's own bytes. */
+  execStream(namespace: string, pod: string, command: string[], prelude?: Buffer): Promise<Duplex>;
   /** An interactive exec in a terminal (tty=true): one raw stream, and the
    * v4 protocol's resize channel (4). The in-chat terminal. */
   execTty?(namespace: string, pod: string, command: string[], size: { cols: number; rows: number }): Promise<{ stream: Duplex; resize(size: { cols: number; rows: number }): Promise<void> }>;
@@ -113,6 +114,8 @@ export function kubernetesClientFromEnv(env: NodeJS.ProcessEnv = process.env): K
   return kubernetesClient(inClusterAuth(env));
 }
 
+const STDIN_FRAME_BYTES = 64 * 1024;
+
 function endpoint(auth: K8sAuth, path: string): URL {
   if (!auth.server.startsWith("https://")) throw new Error("the Kubernetes API must be https");
   return new URL(path, auth.server);
@@ -188,12 +191,23 @@ export function kubernetesClient(auth: K8sAuth): K8sClient {
     });
   });
 
+  /** Bytes for the command's stdin (channel 0), in frames of at most 64 KiB. */
+  const sendStdin = async (socket: WebSocket, bytes: Buffer): Promise<void> => {
+    for (let offset = 0; offset < bytes.length; offset += STDIN_FRAME_BYTES) {
+      const chunk = bytes.subarray(offset, offset + STDIN_FRAME_BYTES);
+      await new Promise<void>((resolve, reject) => {
+        if (socket.readyState !== WebSocket.OPEN) { reject(new Error("the exec stream is closed")); return; }
+        socket.send(Buffer.concat([Buffer.from([0]), chunk]), { binary: true }, (error) => (error ? reject(error) : resolve()));
+      });
+    }
+  };
+
   const frameData = (data: WebSocket.RawData): Buffer => Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
 
   return {
     request: (method, path, body, contentType) => call(method, path, body, contentType),
-    async exec(namespace, pod, command) {
-      const socket = await openExec(namespace, pod, command, false);
+    async exec(namespace, pod, command, stdin) {
+      const socket = await openExec(namespace, pod, command, stdin !== undefined);
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
       let exitCode: number | null = null;
@@ -208,11 +222,17 @@ export function kubernetesClient(auth: K8sAuth): K8sClient {
         });
         socket.on("error", reject);
         socket.on("close", () => resolve(exitCode));
+        // The v4 protocol cannot close stdin: the reader takes exactly the
+        // bytes it was told to expect (sandboxd-k8s.ts withExecEnv). A
+        // command that ends before reading them all closes the socket: its
+        // exit status still answers, so a failed send is not an error here.
+        if (stdin !== undefined) sendStdin(socket, stdin).catch(() => undefined);
       });
       return { stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr), exitCode: exitCodeDone };
     },
-    async execStream(namespace, pod, command) {
+    async execStream(namespace, pod, command, prelude) {
       const socket = await openExec(namespace, pod, command, true);
+      if (prelude !== undefined) await sendStdin(socket, prelude).catch((error: Error) => { socket.terminate(); throw error; });
       const stream = new Duplex({
         read() {},
         write(chunk, _encoding, callback) {

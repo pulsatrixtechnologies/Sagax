@@ -98,6 +98,11 @@ describe("sandboxd authorization", () => {
     expect(docker.execs[0]!.exec.User).toBe("1000:1000");
     expect(docker.execs[0]!.exec.Cmd.slice(0, 4)).toEqual(["timeout", "-k", "2", "120"]);
     await expect(client.exec(sandboxKey, { argv: ["true"], env: { PATH: "/evil" } })).rejects.toBeInstanceOf(SandboxdRequestError);
+    // stdin travels as base64 and reaches the exec as bytes
+    await client.exec(sandboxKey, { argv: ["head", "-c", "5"], stdinBase64: Buffer.from("héllo").toString("base64") });
+    expect(docker.execs.find((entry) => entry.exec.Cmd.includes("head"))!.stdin?.toString("utf8")).toBe("héllo");
+    expect(docker.execs[0]!.stdin).toBeUndefined();
+    await expect(client.exec(sandboxKey, { argv: ["true"], stdinBase64: "not base64!" })).rejects.toBeInstanceOf(SandboxdRequestError);
     expect((await client.markUsed(sandboxKey)).state).toBe("running");
     expect((await client.remove(sandboxKey)).state).toBe("missing");
   });

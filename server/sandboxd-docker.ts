@@ -84,7 +84,9 @@ export interface DockerApi {
   inspectVolume(name: string): Promise<{ labels: Record<string, string> } | null>;
   createVolume(spec: Record<string, unknown>): Promise<void>;
   removeVolume(name: string): Promise<void>;
-  exec(name: string, exec: ExecRequest, maxBytes: number): Promise<ExecResult>;
+  /** Run to completion. `stdin`, when given, is written to the command's
+   * stdin, which is then closed; without it the stdin is empty. */
+  exec(name: string, exec: ExecRequest, maxBytes: number, stdin?: Buffer): Promise<ExecResult>;
   /** One exec whose stdin and stdout stay open as a byte stream (the live
    * view's relay to the desktop's VNC port, inside the sandbox). stdout is
    * demultiplexed; stderr is dropped. Ending the stream closes the exec. */
@@ -317,22 +319,56 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
     }),
     async createVolume(spec) { await json("POST", "/volumes/create", spec); },
     async removeVolume(name) { await json("DELETE", `/volumes/${safeName(name)}`, undefined, [204, 404]); },
-    async exec(name, exec, maxBytes) {
+    async exec(name, exec, maxBytes, stdin) {
       const created = await json("POST", `/containers/${safeName(name)}/exec`, {
-        AttachStdin: false, AttachStdout: true, AttachStderr: true, Tty: false, Privileged: false, ...exec,
+        AttachStdin: stdin !== undefined, AttachStdout: true, AttachStderr: true, Tty: false, Privileged: false, ...exec,
       });
       const id = String(created.Id ?? "");
       if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Docker returned no exec id");
-      const started = await call("POST", `/exec/${id}/start`, { Detach: false, Tty: false }, { raw: true, maxBytes, timeoutMs: 15 * 60_000 });
-      if (started.status !== 200 && started.status !== 101) throw new DockerError(started.status, `Docker exec start failed (${started.status})`);
-      const streams = demuxDockerStream(started.body, maxBytes);
+      let output: { body: Buffer; truncated: boolean };
+      if (stdin === undefined) {
+        const started = await call("POST", `/exec/${id}/start`, { Detach: false, Tty: false }, { raw: true, maxBytes, timeoutMs: 15 * 60_000 });
+        if (started.status !== 200 && started.status !== 101) throw new DockerError(started.status, `Docker exec start failed (${started.status})`);
+        output = started;
+      } else {
+        // stdin needs the hijacked connection: write it, close our side
+        // (the command reads end of file), read the multiplexed output.
+        const socket = await attachExec(id, false);
+        output = await new Promise<{ body: Buffer; truncated: boolean }>((resolve) => {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          let truncated = false;
+          const cap = maxBytes * 2 + 65_536;
+          const timer = setTimeout(() => socket.destroy(new Error("Docker exec timed out")), 15 * 60_000);
+          const finish = () => { clearTimeout(timer); resolve({ body: Buffer.concat(chunks), truncated }); };
+          socket.on("data", (chunk: Buffer) => {
+            if (truncated) return;
+            if (size + chunk.length > cap) {
+              truncated = true;
+              chunks.push(chunk.subarray(0, Math.max(0, cap - size)));
+              size = cap;
+              socket.destroy();
+              return;
+            }
+            size += chunk.length;
+            chunks.push(chunk);
+          });
+          socket.on("end", finish);
+          socket.on("close", finish);
+          // a command that ends before reading all of stdin breaks the pipe:
+          // what it wrote and its exit code (inspected below) still answer
+          socket.on("error", finish);
+          socket.end(stdin);
+        });
+      }
+      const streams = demuxDockerStream(output.body, maxBytes);
       let exitCode: number | null = null;
       for (let attempt = 0; attempt < 20; attempt++) {
         const inspected = await json("GET", `/exec/${id}/json`) as { Running?: boolean; ExitCode?: number | null };
         if (!inspected.Running) { exitCode = inspected.ExitCode ?? null; break; }
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      return { exitCode, stdout: streams.stdout, stderr: streams.stderr, truncated: streams.truncated || started.truncated };
+      return { exitCode, stdout: streams.stdout, stderr: streams.stderr, truncated: streams.truncated || output.truncated };
     },
     async execTty(name, exec, size) {
       const created = await json("POST", `/containers/${safeName(name)}/exec`, {
