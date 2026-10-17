@@ -86,8 +86,11 @@ final class ParityChatUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["profile-name"].firstMatch.waitForExistence(timeout: 10), "bot panel")
         attach("Bot panel from the name capsule", app)
         app.buttons["panel-close"].tap()
-        XCTAssertTrue(app.buttons["header-computer"].waitForExistence(timeout: 10))
-
+        // the computer is in the header's "..." menu (Grok Bot iOS 1.14)
+        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 10))
+        app.buttons["chat-more"].tap()
+        XCTAssertTrue(app.buttons["header-computer"].waitForExistence(timeout: 5))
+        attach("The header's more menu", app)
         app.buttons["header-computer"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["panel-computer"].firstMatch.waitForExistence(timeout: 10), "the panel on Computer")
         attach("Panel on Computer", app)

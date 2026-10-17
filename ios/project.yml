@@ -166,7 +166,8 @@ targets:
           reach you here.
         NSCameraUsageDescription: >-
           Sagax uses the camera to scan a pairing QR code shown on your
-          computer and, when you choose it, to take your profile photo.
+          computer and, when you choose it, to take your profile photo or a
+          photo to send to a bot.
         NSMicrophoneUsageDescription: >-
           Sagax listens while you dictate a message to a bot, record a
           voice note for one, or talk with one on a call.

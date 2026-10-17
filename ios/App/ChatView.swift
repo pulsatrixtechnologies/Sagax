@@ -88,6 +88,8 @@ struct ChatView: View {
     @StateObject var citations = CitationDrafts()
     @State var shareFile: ShareFile?
     @State var showingPhotoPicker = false
+    /// The composer's "+" > Take Photo: the system camera.
+    @State var showingCamera = false
     @State var showingFileImporter = false
     @State var selectedPhotos: [PhotosPickerItem] = []
     @State var attachments: [PendingMessageAttachment] = []
@@ -260,6 +262,13 @@ struct ChatView: View {
             matching: .images,
             preferredItemEncoding: .current
         )
+        .fullScreenCover(isPresented: $showingCamera) {
+            CameraCapture(front: false) { image in
+                showingCamera = false
+                if let image { importCameraPhoto(image) }
+            }
+            .ignoresSafeArea()
+        }
         .onValueChange(of: selectedPhotos) { items in
             guard !items.isEmpty else { return }
             Task { await importPhotos(items) }

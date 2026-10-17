@@ -91,6 +91,15 @@ extension ChatView {
                 id: "photos", systemImage: "photo.on.rectangle", title: "Photo Library",
                 subtitle: "Add a photo to this message", disabled: !canAddAttachment
             ) { showingPhotoPicker = true },
+        ]
+        // Take Photo (Grok Bot's composer menu), where the phone has a camera
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            out.append(PlusAction(
+                id: "camera", systemImage: "camera", title: "Take Photo",
+                subtitle: "Take a photo with the camera", disabled: !canAddAttachment
+            ) { showingCamera = true })
+        }
+        out += [
             PlusAction(
                 id: "files", systemImage: "paperclip", title: "Choose File",
                 subtitle: "Add a document from Files", disabled: !canAddAttachment

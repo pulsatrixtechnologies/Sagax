@@ -73,6 +73,24 @@ extension ChatView {
         }
     }
 
+    /// A photo just taken with the camera, as a JPEG.
+    func importCameraPhoto(_ image: UIImage) {
+        guard !preparingAttachments, !sendingMessage else { return }
+        guard let data = image.jpegData(compressionQuality: 0.9) else {
+            attachmentError = AttachmentImportError.unsupported("that photo").localizedDescription
+            return
+        }
+        let candidate = PendingMessageAttachment(id: UUID(), data: data, name: "Photo.jpg", mime: "image/jpeg", kind: .image)
+        do {
+            try AttachmentPolicy.validate(attachments + [candidate])
+            attachmentError = nil
+            attachments.append(candidate)
+            Haptics.selection()
+        } catch {
+            attachmentError = error.localizedDescription
+        }
+    }
+
     func importFiles(_ result: Result<[URL], Error>) {
         guard case let .success(urls) = result else {
             if case let .failure(error) = result { attachmentError = error.localizedDescription }

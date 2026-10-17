@@ -251,8 +251,10 @@ struct OwnPhotoCropView: View {
     }
 }
 
-/// The system camera, front camera first.
+/// The system camera.
 struct CameraCapture: UIViewControllerRepresentable {
+    /// The front camera first (a portrait); false for the back one.
+    var front = true
     let done: (UIImage?) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(done: done) }
@@ -260,7 +262,7 @@ struct CameraCapture: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = .camera
-        if UIImagePickerController.isCameraDeviceAvailable(.front) { picker.cameraDevice = .front }
+        if front, UIImagePickerController.isCameraDeviceAvailable(.front) { picker.cameraDevice = .front }
         picker.delegate = context.coordinator
         return picker
     }

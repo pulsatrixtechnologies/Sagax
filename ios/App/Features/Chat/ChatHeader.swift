@@ -3,6 +3,7 @@
 // iPad desktop layout share it.
 import SwiftUI
 import CompanionCore
+import UIKit
 
 extension ChatView {
     var mascotState: MausState { MausState.forChat(current, in: session.state) }
@@ -37,28 +38,7 @@ extension ChatView {
                         .padding(.trailing, 8)
                         .transition(.opacity)
                 }
-                if case .bot = current {
-                    // outline monitor, ink 18 x 16.7 pt (drawn: the SF
-                    // symbols fill the screen)
-                    Button {
-                        Haptics.selection()
-                        openPanel(.computerButton)
-                    } label: {
-                        ComputerGlyph()
-                            .fill(Theme.textPrimary)
-                            .frame(width: ComputerGlyph.size.width, height: ComputerGlyph.size.height)
-                            .offset(y: 0.1)
-                            .frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .themeGlass(Circle())
-                    .chatGlassRim(Circle())
-                    .accessibilityLabel("Watch \(current.name)'s computer")
-                    .accessibilityIdentifier("header-computer")
-                } else {
-                    Color.clear.frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
-                }
+                chatMoreButton
             }
             ChatNameCapsule(chat: current, state: mascotState) { openProfile() }
                 // narrower beside the dev pods button, so the two never meet
@@ -77,6 +57,62 @@ extension ChatView {
         .padding(.top, 6)
         .frame(maxWidth: CompanionLayout.headerWidth)
         .frame(maxWidth: .infinity)
+    }
+
+    /// The "..." at the top right (Grok Bot iOS 1.14): the profile, the
+    /// computer (it had its own button before), the threads the name's
+    /// long press offers, then sharing and the bot's id.
+    var chatMoreButton: some View {
+        Menu {
+            chatMoreItems
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .themeGlass(Circle())
+        .chatGlassRim(Circle())
+        .simultaneousGesture(TapGesture().onEnded { Haptics.selection() })
+        .accessibilityLabel(Text("More"))
+        .accessibilityIdentifier("chat-more")
+    }
+
+    @ViewBuilder
+    var chatMoreItems: some View {
+        if case .bot = current {
+            Button { openProfile() } label: {
+                Label(String(localized: "View profile"), systemImage: "person.crop.circle")
+            }
+            .accessibilityIdentifier("chat-more.profile")
+            Button { openPanel(.computerButton) } label: {
+                Label(String(localized: "Watch computer"), systemImage: "display")
+            }
+            .accessibilityIdentifier("header-computer")
+        }
+        nameCapsuleMenu
+        Divider()
+        Button {
+            Task {
+                if let url = await session.export(threadId: current.threadId, format: "markdown") {
+                    shareFile = ShareFile(url: url)
+                }
+            }
+        } label: {
+            Label(String(localized: "Share transcript"), systemImage: "square.and.arrow.up")
+        }
+        .accessibilityIdentifier("chat-more.share")
+        if case let .bot(bot) = current {
+            Button {
+                UIPasteboard.general.string = bot.id
+                Haptics.selection()
+            } label: {
+                Label(String(localized: "Copy ID"), systemImage: "doc.on.clipboard")
+            }
+            .accessibilityIdentifier("chat-more.copy-id")
+        }
     }
 
     /// Touch and hold the name: threads and the profile.

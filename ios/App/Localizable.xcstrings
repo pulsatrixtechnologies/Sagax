@@ -67704,10 +67704,22 @@
     },
     "Take Photo": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Take Photo"
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Prendre une photo"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tirar foto"
           }
         }
       }
@@ -68774,6 +68786,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@, das %@ às %@"
+          }
+        }
+      }
+    },
+    "Take a photo with the camera": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Take a photo with the camera"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prendre une photo avec l'appareil"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tirar uma foto com a câmera"
           }
         }
       }
