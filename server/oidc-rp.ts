@@ -313,6 +313,10 @@ export const CONSOLE_ASSERTION_SKEW_SECONDS = 5;
 
 /** The OpenID Connect Back-Channel Logout 1.0 event key. */
 export const BACKCHANNEL_LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout";
+/** The RISC "account purged" event (OpenID RISC Profile 1.0) Perspicax adds
+ * to a logout token once it erased the person's account: this server then
+ * erases their data too (server/oidc-login.ts, OidcGrantKeeper.purgePerson). */
+export const ACCOUNT_PURGED_EVENT = "https://schemas.openid.net/secevent/risc/event-type/account-purged";
 
 interface JwsCheck {
   token: string;
@@ -428,6 +432,9 @@ export interface LogoutClaims {
   jti: string;
   /** Seconds since the epoch. */
   exp: number;
+  /** The token also carries ACCOUNT_PURGED_EVENT: the account was erased at
+   * the provider, so the person's data here goes too. */
+  purged?: true;
 }
 
 /** Verify an OpenID Connect Back-Channel Logout 1.0 logout token: the same
@@ -448,7 +455,24 @@ export async function verifyLogoutToken(input: JwsCheck): Promise<LogoutClaims> 
   if (!jti) throw new OidcError("logout_token_jti", "The logout token has no identifier.");
   const sub = stringClaim(claims.sub, MAX_SUB_LENGTH);
   if (!sub) throw new OidcError("logout_token_sub", "The logout token names no subject.");
-  return { iss: input.issuer, sub, jti, exp: claims.exp as number };
+  // The account purged event (an object) says the account was erased. Its
+  // `subject` (iss_sub), when present, must name this token's person: a
+  // token naming one person and purging another is refused whole.
+  const purgedEvent = (events as Record<string, unknown>)[ACCOUNT_PURGED_EVENT];
+  let purged = false;
+  if (purgedEvent !== undefined) {
+    if (!purgedEvent || typeof purgedEvent !== "object" || Array.isArray(purgedEvent)) throw new OidcError("logout_token_events", "The account purged event is not an object.");
+    const subject = (purgedEvent as Record<string, unknown>).subject;
+    if (subject !== undefined) {
+      if (!subject || typeof subject !== "object" || Array.isArray(subject)) throw new OidcError("logout_token_events", "The account purged event names no subject.");
+      const named = subject as Record<string, unknown>;
+      if ((named.iss !== undefined && named.iss !== input.issuer) || (named.sub !== undefined && named.sub !== sub)) {
+        throw new OidcError("logout_token_events", "The account purged event names another subject.");
+      }
+    }
+    purged = true;
+  }
+  return { iss: input.issuer, sub, jti, exp: claims.exp as number, ...(purged ? { purged: true as const } : {}) };
 }
 
 /** What a verified console assertion names (slice 7). */

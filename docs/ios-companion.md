@@ -605,11 +605,17 @@ the callback without a device token (its single-use state is the
 authorization, and the code is useless without the server's PKCE verifier).
 Without either, a companion start answers 409 `callback_unreachable`.
 
-**Account deletion.** Perspicax has no account-deletion endpoint for a linked
-server yet, so `DELETE /api/me` answers 501 `perspicax_deletion_unavailable`
-on an organization server and deletes nothing. The Sagax cleanup (owned bots,
-own threads, server environment, saved settings, sessions) is wired behind
-it for when Perspicax adds one. A personal computer answers 400
+**Account deletion.** On an organization server `DELETE /api/me` first asks
+Perspicax to erase the person's account (`POST
+/api/v1/pulsabot/people/me/erase`, Perspicax 2026-10-17 and later), then
+deletes their Sagax data (owned bots, own threads, server environment, saved
+settings, sign-in grants and routine delegation, sessions, and their name,
+address and photo on this server). Nothing is deleted unless Perspicax erased
+the account first. An older Perspicax answers 501
+`perspicax_deletion_unavailable` (the phone says to ask the organization); an
+expired Perspicax sign-in is 409 `account_sign_in_again`; the organization's
+last active admin is 409 `last_admin`; any other refusal is
+`perspicax_deletion_failed`. A personal computer answers 400
 `personal_server`: the phone forgets the pairing and erases its own data.
 
 ## Stream and state model

@@ -12,7 +12,9 @@
 //     its environment descriptor so /pair offers only this button;
 //   - keeps the provider's refresh token as the session's grant
 //     (server/idp-session.ts) and answers POST
-//     /api/auth/oidc/backchannel-logout (OpenID Connect Back-Channel Logout);
+//     /api/auth/oidc/backchannel-logout (OpenID Connect Back-Channel Logout;
+//     a token that also carries the RISC account purged event erases the
+//     person's data here and answers `{ purged: true, bots, threads }`);
 //   - signs the desktop app and the phones in through the system browser:
 //     /auth/oidc/start?client=desktop|phone ends on a sagax:// (phone) or
 //     openmausbot:// / sagax:// (desktop) link
@@ -236,6 +238,13 @@ export interface OidcGrantKeeper {
    * delegation is issued from this access token when they hold none, with
    * no consent step (RoutineConsents.keepAlive). Fire and forget. */
   signedIn?(input: { principalId: string; accessToken?: string; accessExpiresAt?: number }): void;
+  /** 2026-10-17: the logout token also carried the account purged event
+   * (ACCOUNT_PURGED_EVENT): Perspicax erased the account, so erase the
+   * person's data on this server, as DELETE /api/me does. Idempotent: a
+   * person this server never knew, or already erased, is zeros. Throws when
+   * the erasure did not run; the provider then retries. Absent: the push is
+   * answered as a plain logout (`{}`), which the provider keeps retrying. */
+  purgePerson?(input: { iss: string; sub: string }): Promise<{ bots: number; threads: number }>;
 }
 
 /** The browser binding cookie of a sign-in or delegation flow: the same
@@ -414,6 +423,20 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     seenJti.set(claims.jti, claims.exp * 1000 + JTI_CACHE_EXTRA_MS);
     const done = deps.grants.backchannelLogout({ iss: claims.iss, sub: claims.sub });
     log(`oidc back-channel logout: subject ${claims.sub.slice(0, 64)}, ${done.sessions} session(s) revoked, ${done.pairings} pairing code(s) cancelled`);
+    // 2026-10-17: the account was erased at the provider. `purged: true`
+    // only once the data erasure ran: the provider counts that answer, and
+    // nothing else, as delivered (a 500 is retried with a fresh jti).
+    if (claims.purged && deps.grants.purgePerson) {
+      let removed: { bots: number; threads: number };
+      try {
+        removed = await deps.grants.purgePerson({ iss: claims.iss, sub: claims.sub });
+      } catch (error) {
+        log(`oidc account purge failed for subject ${claims.sub.slice(0, 64)}: ${error instanceof Error ? error.message : String(error)}`);
+        return jsonAnswer(res, 500, { error: "purge_failed" });
+      }
+      log(`oidc account purge: subject ${claims.sub.slice(0, 64)}, ${removed.bots} bot(s) and ${removed.threads} thread(s) erased`);
+      return jsonAnswer(res, 200, { purged: true, bots: removed.bots, threads: removed.threads });
+    }
     jsonAnswer(res, 200, {});
   };
 

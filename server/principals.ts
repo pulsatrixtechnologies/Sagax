@@ -52,6 +52,12 @@ const principalSchema = z.object({
    * the next successful sign-in or refresh. While set, no session of theirs
    * is served. */
   disabledAt: z.number().optional(),
+  /** 2026-10-17: the person's account was erased (DELETE /api/me or the
+   * provider's account purged event). The record stays, stripped of their
+   * name, address, login, photo, label and teams, so what still names this
+   * id (a message in someone else's thread, an audit row) resolves to no one
+   * instead of nothing; the directory never fills it again. */
+  erasedAt: z.number().optional(),
   /** 2026-10-08: an organization admin turned this person off in this Sagax
    * server from the Perspicax console (People, Disable). Independent of
    * `disabledAt` (Perspicax's word): a sign-in does not clear it, only the
@@ -382,6 +388,7 @@ export class PrincipalRegistry {
     // A verified sign-in or refresh is the provider saying this person is in.
     const wasDisabled = found.disabledAt !== undefined;
     delete found.disabledAt;
+    delete found.erasedAt;
     if (created || JSON.stringify(found) !== before) this.persist();
     if (wasDisabled) this.disabledChanged(found, false);
     if (teamsChanged && !created) this.accessChanged(found.id);
@@ -402,6 +409,9 @@ export class PrincipalRegistry {
     const name = input.name?.trim().slice(0, 200) || undefined;
     const login = input.login?.trim().slice(0, 200) || undefined;
     let found = this.principals.find((p) => p.subject?.iss === iss && p.subject.sub === sub);
+    // An erased account stays erased: a directory answer fetched before the
+    // erasure never fills it again (only a verified sign-in could).
+    if (found?.erasedAt !== undefined) return { ...found };
     const created = !found;
     if (!found) {
       found = { id: this.newId(), kind: "human", subject: { iss, sub }, createdAt: this.now() };
@@ -468,7 +478,7 @@ export class PrincipalRegistry {
    * started); a newer one stays. Null when nothing changed. */
   markEnabled(iss: string, sub: string, disabledBefore: number): Principal | null {
     const found = this.principals.find((p) => p.subject?.iss === iss && p.subject.sub === sub);
-    if (!found || found.disabledAt === undefined || found.disabledAt >= disabledBefore) return null;
+    if (!found || found.disabledAt === undefined || found.disabledAt >= disabledBefore || found.erasedAt !== undefined) return null;
     delete found.disabledAt;
     this.persist();
     this.disabledChanged(found, false);
@@ -539,6 +549,29 @@ export class PrincipalRegistry {
     if (label) found.label = label;
     else delete found.label;
     this.persist();
+    return { ...found };
+  }
+
+  /** 2026-10-17 (Loi 25): the person's account was erased. Their personal
+   * information goes (name, address, login, control-plane account, photo
+   * version, label, teams, copied-to accounts, the console's disable reason)
+   * and they stay out (`disabledAt`). The id, the provider subject (an opaque
+   * id, kept so the erasure is idempotent and the directory cannot fill the
+   * record again), the role and the dates stay. Null for an unknown id or
+   * the local operator; idempotent. */
+  erase(id: string, at: number = this.now()): Principal | null {
+    const found = this.principals.find((p) => p.id === id);
+    if (!found || found.local) return null;
+    const before = JSON.stringify(found);
+    const hadTeams = Boolean(found.teams?.length);
+    const wasDisabled = found.disabledAt !== undefined;
+    for (const key of ["email", "name", "login", "controlPlaneUserId", "avatar", "label", "teams", "linkedSubjects"] as const) delete found[key];
+    if (found.consoleDisabled?.reason !== undefined) delete found.consoleDisabled.reason;
+    found.disabledAt ??= at;
+    found.erasedAt ??= at;
+    if (JSON.stringify(found) !== before) this.persist();
+    if (!wasDisabled) this.disabledChanged(found, true);
+    if (hadTeams) this.accessChanged(found.id);
     return { ...found };
   }
 

@@ -2,25 +2,44 @@
 //
 // Organization server (SAGAX_IDENTITY=perspicax): the account is the person's
 // Perspicax account. With { confirm: true } the server asks Perspicax to
-// delete it, then deletes the person's Sagax data: the bots they own (with
-// their threads, memory and computers), their own threads on other bots,
-// their server environment and /workspace, their saved settings, and signs
-// out every session of theirs. Perspicax has no account-deletion endpoint
-// for a linked server yet (<PRIVATE_REPO_NAME> route table, 2026-10-01): until it
-// does this answers 501 `perspicax_deletion_unavailable` and deletes nothing,
-// so an account is never half removed. The phone shows the row and explains.
+// erase it (PerspicaxDirectory.eraseOwnAccount: POST
+// /api/v1/pulsabot/people/me/erase with the link token and the person's live
+// sign-in access token, 2026-10-17), then deletes the person's Sagax data
+// (deletePersonData in server/index.ts, shared with the account purged push
+// of the back-channel logout): the bots they own (with their threads, memory
+// and computers), their own threads on other bots, their server environment
+// and /workspace, their saved settings, their sign-in grants and routine
+// delegation, their name, address and photo on the principal, and every
+// session of theirs. Nothing is deleted here unless Perspicax erased the
+// account first, so an account is never half removed:
+//   - an older Perspicax without the route: 501 `perspicax_deletion_unavailable`
+//     (the phone shows the row and explains);
+//   - the person's Perspicax sign-in is no longer valid: 409
+//     `account_sign_in_again`, never 401 (clients read 401 as their own
+//     session ending; same reason as `avatar_sign_in_again`);
+//   - the last active admin: 409 `last_admin`;
+//   - another refusal: its 4xx with `perspicax_deletion_failed`; no link, no
+//     answer or a 5xx: 502 `perspicax_deletion_failed`.
 //
 // Personal server: there is no account here; 400 `personal_server`, and the
 // phone forgets its pairing and erases its own data.
 import { PASS, type RouteHandler } from "./table.ts";
 
+/** What Perspicax answered the erasure of the person's account. */
+export type PerspicaxDeletion =
+  | { ok: true }
+  | { ok: false; error: "unsupported" | "subject" | "last_admin" | "refused" | "link" | "unreachable"; status?: number };
+
 export interface AccountRouteDeps {
   organization: () => boolean;
-  /** Deletes the person's Perspicax account, or null while Perspicax offers no such call. */
-  perspicaxDeletion: ((principalId: string) => Promise<void>) | null;
+  /** Erases the person's Perspicax account (their sign-in token and the
+   * link, PerspicaxDirectory.eraseOwnAccount). Never throws for a refusal. */
+  perspicaxDeletion: (principalId: string) => Promise<PerspicaxDeletion>;
   /** Deletes the person's data on this server (see the header). */
   deletePersonData: (principalId: string) => Promise<{ bots: number; threads: number }>;
 }
+
+const FAILED = "Perspicax did not delete the account; nothing was deleted here.";
 
 export function createAccountRoutes(deps: AccountRouteDeps): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
@@ -37,19 +56,33 @@ export function createAccountRoutes(deps: AccountRouteDeps): RouteHandler {
     }
     const body = await readBody(req) as Record<string, unknown> | null;
     if (body?.confirm !== true) return json(res, 400, { error: "Confirm the deletion ({ confirm: true }): it cannot be undone.", code: "confirm" });
-    if (!deps.perspicaxDeletion) {
-      return json(res, 501, {
-        error: "Your organization's Pulsatrix Perspicax does not offer account deletion from Sagax yet. Ask your administrator to delete your account.",
-        code: "perspicax_deletion_unavailable",
-      });
-    }
+    let erased: PerspicaxDeletion;
     try {
-      await deps.perspicaxDeletion(principalId);
-    } catch (error) {
-      const status = (error as { status?: unknown })?.status;
-      return json(res, typeof status === "number" && status >= 400 && status < 500 ? status : 502, {
-        error: "Perspicax did not delete the account; nothing was deleted here.", code: "perspicax_deletion_failed",
-      });
+      erased = await deps.perspicaxDeletion(principalId);
+    } catch {
+      erased = { ok: false, error: "unreachable" };
+    }
+    if (!erased.ok) {
+      switch (erased.error) {
+        case "unsupported":
+          return json(res, 501, {
+            error: "Your organization's Pulsatrix Perspicax does not offer account deletion from Sagax yet. Ask your administrator to delete your account.",
+            code: "perspicax_deletion_unavailable",
+          });
+        case "subject":
+          return json(res, 409, { error: "Your Pulsatrix sign-in has expired. Sign in again, then retry.", code: "account_sign_in_again" });
+        case "last_admin":
+          return json(res, 409, {
+            error: "You are your organization's last active administrator in Pulsatrix Perspicax: make someone else an administrator first, then delete your account.",
+            code: "last_admin",
+          });
+        case "refused": {
+          const status = erased.status;
+          return json(res, typeof status === "number" && status >= 400 && status < 500 ? status : 502, { error: FAILED, code: "perspicax_deletion_failed" });
+        }
+        default:
+          return json(res, 502, { error: FAILED, code: "perspicax_deletion_failed" });
+      }
     }
     const removed = await deps.deletePersonData(principalId);
     return json(res, 200, { deleted: true, ...removed });

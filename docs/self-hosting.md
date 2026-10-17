@@ -652,6 +652,32 @@ What changes:
   to that origin, for example `http://pulsabot:8799`; the path is added by
   Perspicax. That route takes no other authentication than the token's
   ES256 signature, so it is safe to expose.
+- Account erasure (Perspicax 2026-10-17 and later). A person deletes their
+  own account from Sagax (`DELETE /api/me`, iPhone Account > Delete
+  Account): the server calls Perspicax `POST
+  /api/v1/pulsabot/people/me/erase` with `{ "confirm": true }`, the link
+  token as Bearer and the person's live sign-in access token in
+  `X-Perspicax-Subject-Token`, so it can only erase the person whose token it
+  holds. Only once Perspicax answers `{ "erased": true }` does the server
+  delete that person's data here. An older Perspicax (404 or 405 without the
+  `X-Perspicax-Erasure` header) leaves everything as it was: 501
+  `perspicax_deletion_unavailable`.
+- When an account is erased in Perspicax (from Sagax or the console),
+  Perspicax pushes it to every linked server as a back-channel logout token
+  whose `events` also hold the RISC account purged event
+  (`https://schemas.openid.net/secevent/risc/event-type/account-purged`,
+  subject `iss_sub` equal to the token's `iss` and `sub`). The server logs
+  the person out as usual, then erases their data as `DELETE /api/me` does:
+  the bots they own, their threads elsewhere, their Data, server environment,
+  saved settings, grants and routine delegation, and their name, address,
+  login, photo, label and teams. The principal record stays, emptied and
+  marked out (`erasedAt`), so what still names its id (a message in someone
+  else's thread, an audit row) resolves to nobody; the directory never fills
+  it again. It answers `200 {"purged": true, "bots": n, "threads": n}` once
+  the erasure ran (zeros for a person this server never knew), and `500
+  {"error": "purge_failed"}` when it did not, which Perspicax retries with a
+  fresh token. Both paths are idempotent and never run at once for the same
+  person.
 - The person is found by the Perspicax account (`iss` + `sub`), never by
   email: the address, name and login are attributes refreshed at each
   sign-in. `GET /api/auth/session` shows `principalId`, `email`, `name`,

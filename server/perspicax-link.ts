@@ -233,6 +233,24 @@ export type OwnAvatarWrite =
   | { ok: true; avatar: string | null }
   | { ok: false; error: "link" | "subject" | "unsupported" | "rejected" | "unreachable"; status?: number; message?: string };
 
+/** 2026-10-17: where the signed-in person erases their own Perspicax account
+ * from Sagax (DELETE /api/me, server/routes/account.ts). Same two tokens as
+ * OWN_AVATAR_PATH; body `{ "confirm": true }`. Every answer of that route
+ * carries ACCOUNT_ERASURE_HEADER: a 404 or 405 without it is an older
+ * Perspicax that has no such route. */
+export const OWN_ACCOUNT_ERASE_PATH = "/api/v1/pulsabot/people/me/erase";
+export const ACCOUNT_ERASURE_HEADER = "x-perspicax-erasure";
+export const OWN_ACCOUNT_ERASE_TIMEOUT_MS = 10_000;
+const OWN_ACCOUNT_ERASE_ANSWER_MAX_BYTES = 8 * 1024;
+/** What the erasure of the person's own account did. `subject`: Perspicax
+ * refused the person's sign-in token; `last_admin`: the last active admin
+ * cannot be erased; `unsupported`: an older Perspicax without the route;
+ * `refused`: another 4xx (its status kept); `link`: no link or the link
+ * token was refused; `unreachable`: no answer, a 5xx or an unreadable one. */
+export type OwnAccountErasure =
+  | { ok: true; sub: string; auditId?: string }
+  | { ok: false; error: "link" | "subject" | "last_admin" | "unsupported" | "refused" | "unreachable"; status?: number };
+
 /** What an image's first bytes say it is; only a PNG or a JPEG is served. */
 export function avatarContentType(bytes: Uint8Array): AvatarImage["contentType"] | null {
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return "image/png";
@@ -949,6 +967,77 @@ export class PerspicaxDirectory {
       return { ok: true, avatar };
     }
     return { ok: true, avatar: null };
+  }
+
+  /** 2026-10-17: the signed-in person erases their own Perspicax account:
+   * `POST` OWN_ACCOUNT_ERASE_PATH `{ "confirm": true }` with the link token
+   * (`Authorization: Bearer`, which server calls) and the person's live
+   * sign-in access token (SUBJECT_TOKEN_HEADER, who), as writeOwnAvatar
+   * does: the request names nobody, so this server can only erase the person
+   * whose token it holds. A 401 re-reads the link file once. Never logs a
+   * token; never throws. */
+  async eraseOwnAccount(subjectToken: string): Promise<OwnAccountErasure> {
+    let link = this.link ?? this.readLink();
+    if (!link) return { ok: false, error: "link" };
+    const version = VERSION_HEADER.test(this.options.version) ? this.options.version : "unknown";
+    const call = (token: string) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}${OWN_ACCOUNT_ERASE_PATH}`, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(OWN_ACCOUNT_ERASE_TIMEOUT_MS),
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+        [SUBJECT_TOKEN_HEADER]: subjectToken,
+        "x-pulsabot-version": version,
+      },
+      body: JSON.stringify({ confirm: true }),
+    });
+    let response: Response;
+    try {
+      response = await call(link.linkToken);
+      if (response.status === 401) {
+        void response.body?.cancel().catch(() => {});
+        const again = this.readLink();
+        if (!again) return { ok: false, error: "link" };
+        link = again;
+        response = await call(link.linkToken);
+      }
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    const status = response.status;
+    const marked = response.headers.get(ACCOUNT_ERASURE_HEADER) === "1";
+    if (status === 401) {
+      void response.body?.cancel().catch(() => {});
+      return { ok: false, error: "link", status };
+    }
+    if (!marked && (status === 404 || status === 405)) {
+      void response.body?.cancel().catch(() => {});
+      return { ok: false, error: "unsupported", status };
+    }
+    let text: string | null;
+    try {
+      text = await readLimited(response, OWN_ACCOUNT_ERASE_ANSWER_MAX_BYTES);
+    } catch {
+      return { ok: false, error: "unreachable", status };
+    }
+    let parsed: Record<string, unknown> = {};
+    try {
+      const value: unknown = text ? JSON.parse(text) : null;
+      if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+    } catch {
+      /* not JSON */
+    }
+    if (status === 200) {
+      const sub = typeof parsed.sub === "string" ? parsed.sub : "";
+      if (parsed.erased !== true || !sub) return { ok: false, error: "unreachable", status };
+      return { ok: true, sub, ...(typeof parsed.audit_id === "string" ? { auditId: parsed.audit_id.slice(0, 128) } : {}) };
+    }
+    if (status === 403 && parsed.code === "subject") return { ok: false, error: "subject", status };
+    if (status === 409 && parsed.code === "last_admin") return { ok: false, error: "last_admin", status };
+    if (status >= 400 && status < 500) return { ok: false, error: "refused", status };
+    return { ok: false, error: "unreachable", status };
   }
 
   start(intervalMs: number): void {
