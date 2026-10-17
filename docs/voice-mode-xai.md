@@ -104,9 +104,12 @@ queue on Stop.
 
 A call turn that runs tools can leave the person in silence for half a
 minute. The call (desktop `LiveCall`, `src/lib/voice-mode/progress.ts`;
-iPhone `CallProgress` in `CallConversation`) then says a short line of its
-own, never a canned filler: each line comes from a tool event of this turn,
-the activity rows after the person's last line.
+the Mac's older dictation call `CallView` and its room call
+`GroupCallView`; iPhone `CallProgress` in `CallConversation`) then says a
+short line of its own, never a canned filler: each line comes from a tool
+event of this turn, the activity rows after the person's last line. None of
+these desktop calls reads the server's English chip narration (the chip's
+`spoken` text, which can name a tool).
 
 - What is said: the category of the tool still running ("Je vérifie.", "I'm
   looking it up.", "Je fais la modification.", from `progressKind`: built-in
@@ -120,8 +123,14 @@ the activity rows after the person's last line.
   person's last words are French and the page is in English or French,
   else the page's (`progressLocale`, `tIn`, keys `voiceMode.progress.*`). A
   language whose pack lacks the words says nothing: silence beats the wrong
-  language. The iPhone says them in the app's language
-  (`Localizable.xcstrings`).
+  language. `CallView` and `GroupCallView` have no call language: the
+  same rule with Auto. The iPhone follows the same rule
+  (`CallProgress.language`), with the words of that language's
+  `Localizable.xcstrings` entry, never simply the app's language.
+- A room call: one turn may reach several members, so a line stays
+  generic. It is said in a member's voice only when every tool row of the
+  turn is that member's (`turnToolAuthor`), otherwise in the call's own
+  voice, never another bot's.
 - When: only in the call's thinking phase with the bot busy, nothing
   audible, nothing else queued and no approval or question waiting. The
   first line of a turn once a tool has run 1.5 s with nothing said: this is

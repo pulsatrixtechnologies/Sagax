@@ -1904,6 +1904,11 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   `server/voice-first-sentence.ts`), later ones after 7 s of silence and
   9 s apart, five a turn; never over the bot's voice, the person's words,
   an open approval or question; a barge-in stops them until the next turn.
+  The Mac's older dictation call (`CallView`) and room call
+  (`GroupCallView`) use the same planner, never the chip's `spoken` text;
+  a room line is in a member's voice only when all the turn's tools are
+  that member's (`turnToolAuthor`). The iPhone picks the words of the
+  call's language (`CallProgress.language`), not the app's.
   Covered by `progress.test.ts`, `VoiceModeBar.test.ts` and the iPhone's
   `CallConversationTests`. Tests:
   `call-logic.test.ts`, `voice-build.test.ts`,

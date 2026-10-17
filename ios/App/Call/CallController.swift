@@ -722,8 +722,9 @@ final class CallController: ObservableObject {
                 player.speaker = speaker(speakerId)
                 engine.speakNow(text)
             case let .progress(line):
+                guard let words = progressWords(line, messages: messages) else { break }
                 player.speaker = speaker(nil)
-                engine.speakNow(progressWords(line))
+                engine.speakNow(words)
             case let .announce(text, speakerId):
                 player.speaker = speaker(speakerId)
                 engine.speakNow(text)
@@ -740,30 +741,71 @@ final class CallController: ObservableObject {
             messages: lastMessages, thinking: engine.state.phase == .thinking,
             botBusy: lastBusy ?? false, playerBusy: player.busy
         ) else { return }
+        guard let words = progressWords(line, messages: lastMessages) else { return }
         player.speaker = speaker(nil)
-        engine.speakNow(progressWords(line))
+        engine.speakNow(words)
     }
 
-    /// The app's words for a progress line (Localizable.xcstrings): never
-    /// the tool's name, its arguments or an identifier.
-    func progressWords(_ line: CallProgressLine) -> String {
+    /// The app's words for a progress line (Localizable.xcstrings), in the
+    /// call's language like the desktop (CallProgress.language), not the
+    /// app's: never the tool's name, its arguments or an identifier. Nil when
+    /// the app has no words in that language (silence beats the wrong one).
+    func progressWords(_ line: CallProgressLine, messages: [Message]) -> String? {
+        let language = CallProgress.language(
+            callLanguage: voiceSettings.language,
+            lastUserText: CallProgress.lastUserText(messages),
+            appLanguage: Bundle.main.preferredLocalizations.first ?? "en"
+        )
+        // English is the strings' source language: its words are the keys
+        let isEnglish = language.lowercased() == "en" || language.lowercased().hasPrefix("en-")
+        let bundle = Self.wordsBundle(language)
+        if bundle == nil && !isEnglish { return nil }
+        let locale = Locale(identifier: language)
+        // the language's own words, or (English only) the source words
+        func words(_ key: String, _ english: @autoclosure () -> String, _ localized: (Bundle) -> String) -> String? {
+            if let bundle, Self.hasWords(key, in: bundle) { return localized(bundle) }
+            return isEnglish ? english() : nil
+        }
         switch line {
         case let .kind(kind):
             switch kind {
-            case .check: return String(localized: "I'm checking.")
-            case .search: return String(localized: "I'm looking it up.")
-            case .web: return String(localized: "I'm looking online.")
-            case .command: return String(localized: "I'm running it now.")
-            case .change: return String(localized: "I'm making the change.")
-            case .screen: return String(localized: "I'm looking at the screen.")
-            case .teammate: return String(localized: "I'm asking a teammate.")
-            case .work: return String(localized: "I'm on it.")
+            case .check: return words("I'm checking.", "I'm checking.") { String(localized: "I'm checking.", bundle: $0, locale: locale) }
+            case .search: return words("I'm looking it up.", "I'm looking it up.") { String(localized: "I'm looking it up.", bundle: $0, locale: locale) }
+            case .web: return words("I'm looking online.", "I'm looking online.") { String(localized: "I'm looking online.", bundle: $0, locale: locale) }
+            case .command: return words("I'm running it now.", "I'm running it now.") { String(localized: "I'm running it now.", bundle: $0, locale: locale) }
+            case .change: return words("I'm making the change.", "I'm making the change.") { String(localized: "I'm making the change.", bundle: $0, locale: locale) }
+            case .screen: return words("I'm looking at the screen.", "I'm looking at the screen.") { String(localized: "I'm looking at the screen.", bundle: $0, locale: locale) }
+            case .teammate: return words("I'm asking a teammate.", "I'm asking a teammate.") { String(localized: "I'm asking a teammate.", bundle: $0, locale: locale) }
+            case .work: return words("I'm on it.", "I'm on it.") { String(localized: "I'm on it.", bundle: $0, locale: locale) }
             }
         case .still:
-            return String(localized: "Still on it.")
+            return words("Still on it.", "Still on it.") { String(localized: "Still on it.", bundle: $0, locale: locale) }
         case let .steps(count):
-            return String(localized: "\(count) steps done, I'm still going.")
+            return words("%lld steps done, I'm still going.", count == 1 ? "1 step done, I'm still going." : "\(count) steps done, I'm still going.") {
+                String(localized: "\(count) steps done, I'm still going.", bundle: $0, locale: locale)
+            }
         }
+    }
+
+    /// The app's own words in one language: that language's .lproj (exact,
+    /// then its base language). English is the strings' source language.
+    private static func wordsBundle(_ language: String) -> Bundle? {
+        let wanted = language.lowercased()
+        let base = String(wanted.split(separator: "-").first ?? "")
+        let available = Bundle.main.localizations
+        let match = available.first { $0.lowercased() == wanted }
+            ?? available.first { $0.lowercased() == base }
+        if let match, let path = Bundle.main.path(forResource: match, ofType: "lproj"), let bundle = Bundle(path: path) {
+            return bundle
+        }
+        return nil
+    }
+
+    private static let missing = "\u{1}missing"
+
+    /// The bundle says these words itself (no fall-back to the key).
+    private static func hasWords(_ key: String, in bundle: Bundle) -> Bool {
+        bundle.localizedString(forKey: key, value: missing, table: nil) != missing
     }
 
     private func speaker(_ id: String?) -> CallSpeaker? {

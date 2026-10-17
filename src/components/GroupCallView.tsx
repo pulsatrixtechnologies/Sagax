@@ -3,6 +3,14 @@
 // Capture stays half-duplex for the same reason as one-to-one calls: the
 // native recognizer has no acoustic echo cancellation. Bot replies are
 // explicitly queued so a fast second member never cuts off the first.
+//
+// While the room works in silence the call says a short progress line built
+// from this turn's real tool events, rate-limited like a Live call
+// (src/lib/voice-mode/progress.ts): never the server's English chip
+// narration (the chip's `spoken` text), never a tool name. One turn may
+// reach several members, so a line is generic and is said in a member's voice only when
+// every tool of the turn is that member's (`turnToolAuthor`); otherwise in
+// the call's own voice, never attributed to the wrong bot.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, PhoneOff, X } from "lucide-react";
 
@@ -21,9 +29,13 @@ import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "./PendingApproval";
 import { spokenDecision } from "@/lib/voice-mode/answers";
-import { t } from "@/lib/i18n";
+import { activeLocale, t, tIn } from "@/lib/i18n";
+import { CallProgress, progressLocale, progressText, turnToolAuthor, turnTools } from "@/lib/voice-mode/progress";
+import { looksFrench } from "@/lib/voice-mode/turns";
 
 const CALL_ENDPOINT_MS = 850;
+/** How often the call asks whether a progress line is due. */
+const PROGRESS_TICK_MS = 500;
 
 type Phase = "listening" | "sending" | "working" | "speaking";
 
@@ -115,6 +127,10 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
   const listenWhenDrained = useRef(false);
   const listenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allowBargeIn = useRef(false);
+  /** Short progress lines from this turn's real tool events (progress.ts). */
+  const progress = useRef(new CallProgress());
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   const move = useCallback((next: Phase) => {
     phaseRef.current = next;
@@ -197,6 +213,7 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
     sayGeneration.current += 1;
     speaker.stop();
     setSpeakingMemberId(null);
+    progress.current.stop();
     allowBargeIn.current = true;
     if (wasBusy) dispatch({ type: "interruptGroup", groupId: group.id });
     listen();
@@ -309,6 +326,7 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
 
       allowBargeIn.current = false;
       move(busyRef.current ? "working" : "sending");
+      progress.current.turnSent(Date.now());
       dispatch({ type: "sendGroup", groupId: group.id, text: routed.text, threadId: group.threadId });
       scheduleListen(false, 600);
     });
@@ -405,14 +423,38 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
       const member = members.find((candidate) => candidate.id === reply.from?.botId);
       enqueueSpeech(reply.text!, member);
     }
-    if (!replies.length) {
-      const chip = [...fresh].reverse().find((message) => message.kind === "activity" && message.tool?.spoken);
-      if (chip?.tool?.spoken) {
-        const member = members.find((candidate) => candidate.id === chip.from?.botId);
-        enqueueSpeech(chip.tool.spoken, member);
-      }
-    }
+    if (replies.length) progress.current.heard(Date.now());
+    // No tool-chip narration: the progress tick below says the turn's lines.
   }, [approval, enqueueSpeech, group.busyBotId, group.working, members, messages, question, scheduleListen]);
+
+  // ── progress while the room works in silence (progress.ts) ────────────
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const planner = progress.current;
+      if (!planner.active || !alive.current || currentCall() !== group.id) return;
+      const line = planner.next({
+        now: Date.now(),
+        thinking: phaseRef.current === "working",
+        botBusy: busyRef.current,
+        botSpeaking: phaseRef.current === "speaking" || speaker.isSpeaking(),
+        // an approval being settled keeps the call quiet too (see above)
+        awaitingAnswer: Boolean(askedApproval.current || askedQuestion.current),
+        queued: queuedJobs.current.size > 0,
+        tools: turnTools(messagesRef.current),
+      });
+      if (!line) return;
+      // this call has no language of its own: the person's last words
+      // (French or not) on an English or French page, else the page's
+      const lastUserText = [...messagesRef.current].reverse().find((message) => message.role === "user" && !message.parallelTask)?.text;
+      const locale = progressLocale({ lastUserText, pageLocale: activeLocale(), looksFrench });
+      const text = progressText(line, (key, params) => tIn(locale, key, params));
+      if (!text) return;
+      const author = turnToolAuthor(messagesRef.current);
+      const member = author ? membersRef.current.find((candidate) => candidate.id === author) : undefined;
+      enqueueSpeech(text, member);
+    }, PROGRESS_TICK_MS);
+    return () => clearInterval(timer);
+  }, [enqueueSpeech, group.id]);
 
   useEffect(() => {
     const busy = Boolean(group.working || group.busyBotId);

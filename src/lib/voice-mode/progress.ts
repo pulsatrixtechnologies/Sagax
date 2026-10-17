@@ -217,21 +217,42 @@ export function progressLocale(opts: { callLanguage?: string; lastUserText?: str
   return opts.looksFrench(last) ? "fr" : "en";
 }
 
-/** The activity rows of the call's current turn: those after the person's
- * last own line (a parallel task's rows are another topic's work). */
-export function turnTools(messages: ReadonlyArray<{
+type TurnMessage = {
   id: string;
   role?: string;
   kind?: string;
   tool?: { name?: string; ok?: boolean };
   parallelTask?: unknown;
-}>): ProgressTool[] {
-  const out: ProgressTool[] = [];
+  from?: { botId?: string };
+};
+
+/** The current turn's activity rows, newest first: those after the person's
+ * last own line (a parallel task's rows are another topic's work). */
+function turnRows<M extends TurnMessage>(messages: ReadonlyArray<M>): M[] {
+  const out: M[] = [];
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]!;
     if (message.role === "user" && !message.parallelTask) break;
     if (message.kind !== "activity" || !message.tool?.name || message.parallelTask) continue;
-    out.push({ id: message.id, name: message.tool.name, ...(typeof message.tool.ok === "boolean" ? { ok: message.tool.ok } : {}) });
+    out.push(message);
   }
-  return out.reverse();
+  return out;
+}
+
+/** The activity rows of the call's current turn: those after the person's
+ * last own line (a parallel task's rows are another topic's work). */
+export function turnTools(messages: ReadonlyArray<TurnMessage>): ProgressTool[] {
+  return turnRows(messages)
+    .map((message) => ({ id: message.id, name: message.tool!.name!, ...(typeof message.tool!.ok === "boolean" ? { ok: message.tool!.ok } : {}) }))
+    .reverse();
+}
+
+/** A room turn may reach several bots: the one bot whose tools are all of
+ * this turn's rows, or null when they are several (or none is named). A
+ * progress line is only said in a bot's voice when it is that bot's work;
+ * otherwise it is said in the call's own voice, never another bot's. */
+export function turnToolAuthor(messages: ReadonlyArray<TurnMessage>): string | null {
+  const bots = new Set<string | undefined>(turnRows(messages).map((message) => message.from?.botId));
+  if (bots.size !== 1) return null;
+  return [...bots][0] ?? null;
 }

@@ -8,6 +8,10 @@
 // said (the quick first sentence before a slow step, on every engine);
 // later lines after 7 s of silence and 9 s since the last one, five per
 // turn at most; a barge-in stops them until the next turn is sent.
+//
+// In the call's language (`language`), like the desktop, never simply the
+// app's: on auto, an app in English or French follows the person's last
+// words.
 import Foundation
 
 public enum CallProgressKind: String, Equatable, Sendable {
@@ -169,6 +173,65 @@ public struct CallProgress: Sendable {
             for (names, kind) in verbs where names.contains(word) { return kind }
         }
         return .work
+    }
+
+    // MARK: - The call's language
+
+    /// The language of the app's own words on a call (the desktop's
+    /// `progressLocale`): the one picked for the call; on auto, an app in
+    /// English or French follows the person's last words (French or not),
+    /// any other app language is kept (the French guess only tells French
+    /// from English).
+    public static func language(callLanguage: String, lastUserText: String?, appLanguage: String) -> String {
+        let chosen = callLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !chosen.isEmpty && chosen != "auto" { return chosen }
+        let app = appLanguage.lowercased()
+        let enOrFr = app == "en" || app == "fr" || app.hasPrefix("en-") || app.hasPrefix("fr-")
+        let last = lastUserText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard enOrFr, !last.isEmpty else { return appLanguage }
+        return looksFrench(last) ? "fr" : "en"
+    }
+
+    /// The person's last own line of the thread (not a parallel topic's).
+    public static func lastUserText(_ messages: [Message]) -> String? {
+        messages.last(where: { $0.role == .user && $0.parallelTask == nil })?.text
+    }
+
+    /// French function words, accents stripped (the desktop's turns.ts).
+    private static let frenchMarkers: Set<String> = [
+        "et", "ou", "mais", "donc", "parce", "que", "qu", "qui", "quel", "quelle", "quels", "quelles", "de", "du", "des", "le", "la", "les", "l", "un", "une",
+        "au", "aux", "pour", "avec", "dans", "sur", "en", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
+        "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "euhm", "heu", "hum", "ben", "puis",
+        "pis", "faque", "fak", "genre", "tse", "ouin", "mettons", "chez", "vers", "sans", "par", "entre", "sous",
+        "ces", "cet", "chaque", "dont",
+        "je", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles", "pas", "ne", "y", "moi", "toi",
+        "combien", "comment", "pourquoi", "quoi", "oui", "non", "merci",
+    ]
+
+    /// English words that are also French markers: never counted.
+    private static let englishWords: Set<String> = [
+        "and", "or", "but", "so", "because", "to", "the", "a", "an", "of", "in", "on", "at", "for", "with", "from", "about",
+        "my", "your", "our", "their", "his", "her", "its", "if", "that", "what", "when", "which", "who", "is", "are", "was", "be",
+        "into", "like", "than", "then", "as", "by", "me", "uh", "um", "umm", "uhm", "erm", "er", "hmm", "hm", "mm", "mmm", "please",
+        "plus", "minus", "times", "versus", "vs",
+    ]
+
+    /// The line is Québec or French: an accent, or more than one French
+    /// function word (the desktop's `looksFrench`).
+    public static func looksFrench(_ text: String) -> Bool {
+        if text.range(of: "[àâäéèêëïîôùûüçœ]", options: [.regularExpression, .caseInsensitive]) != nil { return true }
+        let plain = text.lowercased().folding(options: .diacriticInsensitive, locale: nil)
+        var marks = 0
+        var word = ""
+        func count() {
+            if !word.isEmpty, frenchMarkers.contains(word), !englishWords.contains(word) { marks += 1 }
+            word = ""
+        }
+        for scalar in plain.unicodeScalars {
+            if ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar) { word.unicodeScalars.append(scalar) } else { count() }
+        }
+        count()
+        return marks >= 2
     }
 
     /// The activity rows of the call's current turn: those after the

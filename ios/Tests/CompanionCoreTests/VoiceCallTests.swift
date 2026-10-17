@@ -821,6 +821,32 @@ final class CallConversationTests: XCTestCase {
         XCTAssertNil(CallProgress.kind(""))
     }
 
+    func testProgressLinesFollowTheCallsLanguageNotTheApps() {
+        // a picked language wins over the app's
+        XCTAssertEqual(CallProgress.language(callLanguage: "fr", lastUserText: "what is next", appLanguage: "en"), "fr")
+        XCTAssertEqual(CallProgress.language(callLanguage: "pt-BR", lastUserText: nil, appLanguage: "fr"), "pt-BR")
+        // auto: an English or French app follows the person's last words
+        XCTAssertEqual(CallProgress.language(callLanguage: "auto", lastUserText: "Peux-tu vérifier mes billets?", appLanguage: "en"), "fr")
+        XCTAssertEqual(CallProgress.language(callLanguage: "auto", lastUserText: "check my tickets please", appLanguage: "fr"), "en")
+        XCTAssertEqual(CallProgress.language(callLanguage: "auto", lastUserText: "est-ce que tu peux le faire", appLanguage: "en"), "fr")
+        // auto with nothing said yet, or another app language: the app's
+        XCTAssertEqual(CallProgress.language(callLanguage: "auto", lastUserText: nil, appLanguage: "fr"), "fr")
+        XCTAssertEqual(CallProgress.language(callLanguage: "auto", lastUserText: "check my tickets", appLanguage: "pt-BR"), "pt-BR")
+    }
+
+    func testTheLanguageGuessReadsThePersonsLastOwnLine() {
+        var earlier = Message(id: "u0", role: .user, kind: .text, at: 0)
+        earlier.text = "Bonjour, je veux voir mes billets"
+        var last = Message(id: "u1", role: .user, kind: .text, at: 1)
+        last.text = "and the invoices too"
+        var reply = Message(id: "b", role: .bot, kind: .text, at: 2)
+        reply.text = "Je regarde."
+        XCTAssertEqual(CallProgress.lastUserText([earlier, last, reply]), "and the invoices too")
+        XCTAssertFalse(CallProgress.looksFrench("and the invoices too"))
+        XCTAssertTrue(CallProgress.looksFrench("Bonjour, je veux voir mes billets"))
+        XCTAssertFalse(CallProgress.looksFrench("on the plus side"), "English words that are also French ones never count")
+    }
+
     func testARoomStillReadsItsMembersNarratedSteps() {
         var conversation = CallConversation(existing: [], room: true)
         var chip = Message(id: "t", role: .bot, kind: .activity, at: 0)

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { tIn } from "@/lib/i18n";
@@ -10,6 +11,7 @@ import {
   progressKind,
   progressLocale,
   progressText,
+  turnToolAuthor,
   turnTools,
   type ProgressInput,
   type ProgressTool,
@@ -194,5 +196,51 @@ describe("turnTools", () => {
       { id: "t3", role: "bot", kind: "activity", tool: { name: "Grep" } },
     ];
     expect(turnTools(rows)).toEqual([{ id: "t1", name: "Bash", ok: true }, { id: "t3", name: "Grep" }]);
+  });
+});
+
+describe("turnToolAuthor: a room turn may reach several bots", () => {
+  it("names the one bot whose tools are all of this turn's rows", () => {
+    const rows = [
+      { id: "t0", role: "bot", kind: "activity", tool: { name: "Read", ok: true }, from: { botId: "b" } },
+      { id: "u1", role: "user", kind: "text" },
+      { id: "t1", role: "bot", kind: "activity", tool: { name: "Bash", ok: true }, from: { botId: "a" } },
+      { id: "r1", role: "bot", kind: "text", from: { botId: "b" } },
+      { id: "t2", role: "bot", kind: "activity", tool: { name: "Grep" }, from: { botId: "a" } },
+    ];
+    expect(turnToolAuthor(rows)).toBe("a");
+  });
+
+  it("names nobody when the turn's tools belong to several bots, none is named, or there are none", () => {
+    const user = { id: "u1", role: "user", kind: "text" };
+    expect(turnToolAuthor([
+      user,
+      { id: "t1", role: "bot", kind: "activity", tool: { name: "Bash" }, from: { botId: "a" } },
+      { id: "t2", role: "bot", kind: "activity", tool: { name: "Grep" }, from: { botId: "b" } },
+    ])).toBeNull();
+    expect(turnToolAuthor([
+      user,
+      { id: "t1", role: "bot", kind: "activity", tool: { name: "Bash" }, from: { botId: "a" } },
+      { id: "t2", role: "bot", kind: "activity", tool: { name: "Grep" } },
+    ])).toBeNull();
+    expect(turnToolAuthor([user])).toBeNull();
+  });
+});
+
+describe("the older macOS call and the room call", () => {
+  const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+  const calls = { CallView: read("../../components/CallView.tsx"), GroupCallView: read("../../components/GroupCallView.tsx") };
+
+  it.each(Object.entries(calls))("%s never reads the server's chip narration: only the planner's line, in the call's words", (_name, source) => {
+    expect(source).not.toMatch(/tool\??\.spoken/);
+    expect(source).toContain("tools: turnTools(messagesRef.current),");
+    expect(source).toContain("const text = progressText(line, (key, params) => tIn(locale, key, params));");
+    expect(source).toContain("progress.current.turnSent(Date.now());");
+    expect(source).toContain("progress.current.stop();");
+  });
+
+  it("the room says a line in a member's voice only when the turn's tools are all that member's", () => {
+    expect(calls.GroupCallView).toContain("const author = turnToolAuthor(messagesRef.current);");
+    expect(calls.GroupCallView).toContain("queued: queuedJobs.current.size > 0,");
   });
 });

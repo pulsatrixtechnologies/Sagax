@@ -14,9 +14,10 @@
 //
 // The other half of making a call bearable is narration. An agent turn is
 // 5-60 seconds of tool calls; silence that long reads as a dropped call. So
-// every activity chip the harness narrates (`tool.spoken`) is read aloud as
-// it happens, which is why waiting feels like listening to someone work
-// rather than listening to nothing.
+// while the bot works in silence the call says a short line of its own,
+// built from this turn's real tool events and rate-limited
+// (src/lib/voice-mode/progress.ts, the Live call's rules): never the
+// server's English chip narration, never a tool name or an identifier.
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { AudioLines, Loader2, PhoneOff, X } from "lucide-react";
 import { CTA_CIRCLE, CTA_DEFAULT, CTA_TONED, ctaStyle, type BotCtaColors } from "@/lib/voice-cta";
@@ -39,7 +40,9 @@ import { useVoiceModeCheck, useVoiceModeStatus } from "@/lib/voice-mode/api";
 import { managedProfile } from "@/lib/profile-management";
 import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
 import { nativeSpeechEngine, type SpeechEngine } from "@/lib/voice-mode/engine";
-import { t } from "@/lib/i18n";
+import { activeLocale, t, tIn } from "@/lib/i18n";
+import { CallProgress, progressLocale, progressText, turnTools } from "@/lib/voice-mode/progress";
+import { looksFrench } from "@/lib/voice-mode/turns";
 import type { VoiceModeStatus } from "../../shared/voice-mode";
 import { LiveCall, LiveCallEngine } from "./voice-mode/LiveCall";
 
@@ -50,6 +53,8 @@ import { spokenPart } from "@/lib/voice-mode/spoken";
 
 type Phase = "listening" | "sending" | "working" | "speaking";
 const CALL_ENDPOINT_MS = 850;
+/** How often the call asks whether a progress line is due. */
+const PROGRESS_TICK_MS = 500;
 
 /** An organization server: the server says so in voice mode's status, and
  * the session's viewer is managed by Perspicax. There, voice mode is the
@@ -376,6 +381,12 @@ function Call({ bot }: { bot: Bot }) {
   const phaseRef = useRef<Phase>(initialPhase);
   const alive = useRef(true);
   const sayGeneration = useRef(0);
+  /** Short progress lines from this turn's real tool events (progress.ts). */
+  const progress = useRef(new CallProgress());
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const busyRef = useRef(Boolean(bot.busy));
+  busyRef.current = Boolean(bot.busy);
 
   /** Change the rendered phase and the synchronous phase used by native
    * callbacks together. React state alone is too late: the helper can exit
@@ -520,6 +531,7 @@ function Call({ bot }: { bot: Bot }) {
       }
 
       move("sending");
+      progress.current.turnSent(Date.now());
       dispatch({ type: "send", botId: bot.id, text: said, threadId: bot.threadId, voiceCall: { callId } });
     });
     const offEnd = engine.onEnd(({ code, reason }) => {
@@ -613,19 +625,49 @@ function Call({ bot }: { bot: Bot }) {
     // only the newest of each kind matters: a burst of tool chips should
     // not queue thirty seconds of narration behind the actual answer
     const reply = [...fresh].reverse().find((m) => m.role === "bot" && m.kind === "text" && m.text?.trim());
-    const chip = [...fresh].reverse().find((m) => m.kind === "activity" && m.tool?.spoken);
     for (const m of fresh) spokenIds.current.add(m.id);
 
     // a written follow-up below a --- line is for the chat, never said
     const spoken = reply?.text ? spokenPart(reply.text).trim() : "";
     if (spoken) {
+      progress.current.heard(Date.now());
       void sayThenListen(spoken);
-    } else if (chip?.tool?.spoken && phase === "working") {
-      void say(chip.tool.spoken).then((stillMine) => {
-        if (stillMine && phaseRef.current === "speaking") move("working");
-      });
     }
+    // No tool-chip narration (the chip's `spoken` text is the server's
+    // English and can name a tool): the progress tick below says the lines.
   }, [messages, approval, question, phase, bot.busy, bot.name, hush, listen, move, say, sayThenListen]);
+
+  // ── progress while the bot works in silence (progress.ts) ─────────────
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const planner = progress.current;
+      if (!planner.active || !alive.current || currentCall() !== bot.id || ending.current) return;
+      const line = planner.next({
+        now: Date.now(),
+        thinking: phaseRef.current === "working",
+        botBusy: busyRef.current,
+        botSpeaking: phaseRef.current === "speaking" || speaker.isSpeaking(),
+        // an approval being settled keeps the call quiet too (see above)
+        awaitingAnswer: Boolean(askedApproval.current || askedQuestion.current),
+        queued: false,
+        tools: turnTools(messagesRef.current),
+      });
+      if (!line) return;
+      // this call has no language of its own: the person's last words
+      // (French or not) on an English or French page, else the page's
+      const lastUserText = [...messagesRef.current].reverse().find((m) => m.role === "user" && !m.parallelTask)?.text;
+      const locale = progressLocale({ lastUserText, pageLocale: activeLocale(), looksFrench });
+      const text = progressText(line, (key, params) => tIn(locale, key, params));
+      if (!text) return;
+      void say(text).then((stillMine) => {
+        if (!stillMine || phaseRef.current !== "speaking") return;
+        // the turn ended under the line with nothing to say: listen again
+        if (!busyRef.current && !askedApproval.current && !askedQuestion.current) listen();
+        else move("working");
+      });
+    }, PROGRESS_TICK_MS);
+    return () => clearInterval(timer);
+  }, [bot.id, listen, move, say]);
 
   // busy is the harness's word for "a turn is running"
   useEffect(() => {
@@ -691,6 +733,7 @@ function Call({ bot }: { bot: Bot }) {
       } else if (e.code === "Space" && speaker.isSpeaking()) {
         e.preventDefault();
         sayGeneration.current += 1;
+        progress.current.stop();
         speaker.stop();
         listen();
       }
