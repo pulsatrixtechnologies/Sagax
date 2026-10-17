@@ -22,6 +22,16 @@
 set -euo pipefail
 
 export DISPLAY=:1
+
+# The values Sagax hands this script (passwords, typed text, an address)
+# become plain shell variables, never exported: Xvnc, openbox, tint2 and
+# Chromium start from here and run on, and /proc/<pid>/environ of a
+# long-running process is readable by every process of the sandbox user.
+VNC_FULL="${SAGAX_VNC_FULL:-}"
+VNC_VIEW="${SAGAX_VNC_VIEW:-}"
+TYPE_TEXT="${SAGAX_TEXT:-}"
+OPEN_URL="${SAGAX_URL:-}"
+unset SAGAX_VNC_FULL SAGAX_VNC_VIEW SAGAX_TEXT SAGAX_URL
 STATE=/tmp/sagax-desktop
 RFB_PORT=5901
 WIDTH=1280
@@ -57,8 +67,8 @@ start() {
   exec 9>"$STATE/start.lock"
   flock -w 25 9 || { log "another start of the desktop is still running"; exit 1; }
   chmod 1777 /tmp/.X11-unix 2>/dev/null || true
-  if [ -n "${SAGAX_VNC_FULL:-}" ] && [ -n "${SAGAX_VNC_VIEW:-}" ]; then
-    write_passwords "$SAGAX_VNC_FULL" "$SAGAX_VNC_VIEW"
+  if [ -n "$VNC_FULL" ] && [ -n "$VNC_VIEW" ]; then
+    write_passwords "$VNC_FULL" "$VNC_VIEW"
   elif [ ! -s "$STATE/passwd" ]; then
     write_passwords "$(random_password)" "$(random_password)"
   fi
@@ -142,15 +152,15 @@ case "${1:-}" in
     ;;
   type)
     start >/dev/null
-    exec xdotool type --clearmodifiers --delay 8 -- "${SAGAX_TEXT:-}"
+    exec xdotool type --clearmodifiers --delay 8 -- "$TYPE_TEXT"
     ;;
   open-url)
     start >/dev/null
-    case "${SAGAX_URL:-}" in
+    case "$OPEN_URL" in
       http://*|https://*) ;;
       *) log "only http and https addresses"; exit 2 ;;
     esac
-    browser "$SAGAX_URL"
+    browser "$OPEN_URL"
     echo opened
     ;;
   browser|terminal|files)

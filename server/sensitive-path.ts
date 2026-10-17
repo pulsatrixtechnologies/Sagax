@@ -16,6 +16,17 @@
 // - credentialLocation: where a symbolic link must never lead (a component
 //   of a read that is a link into `.ssh`, `.git-credentials`,
 //   `.config/gh`, `.aws`...): the read is refused, whoever asked.
+//
+// Hard links (2026-10-17, leftovers of #694/#701): a hard link has no
+// target to follow, so the environment lists the file's other names
+// (`aliases`, user-sandbox-tools.ts RESOLVE_SCRIPT) when a regular file of
+// the sandbox user has more than one; a name in a credential location, or
+// a dotfile, refuses the call, and a list that could not be completed fails
+// closed. Root-owned files are skipped there: an inode has one owner, so a
+// root-owned file is never a hard link to the person's credentials.
+// Bind mounts cannot be made from inside the environment (no capability,
+// no-new-privileges, the runtime's seccomp profile): the only mounts are the
+// provisioner's own (docs/user-sandbox.md).
 
 /** A file name that holds credentials even without a leading dot. */
 export const CREDENTIAL_NAME = /^(?:credentials?(?:\.[a-z]+)?|hosts\.yml|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|authorized_keys|known_hosts|[^/]*\.(?:pem|key|p12|pfx|kdbx|keychain(?:-db)?)|kubeconfig|secrets?(?:\.[a-z]+)?|token(?:s)?(?:\.[a-z]+)?)$/i;
@@ -55,6 +66,11 @@ export function credentialLocation(path: string): boolean {
     || (part === ".config" && CREDENTIAL_CONFIG.test(parts[index + 1] ?? "")));
 }
 
+/** Whether the last part of a path is a dotfile name. */
+function hiddenName(path: string): boolean {
+  return partsOf(path).at(-1)?.startsWith(".") ?? false;
+}
+
 /** Whether a read of this path needs a card even in the owner's own
  * environment for a turn that is not the owner's own: a dotfile, a `..`, a
  * credential name, a percent-encoded name or a process secret. */
@@ -72,6 +88,14 @@ export interface ResolvedEnvironmentPath {
   /** For each component of the path that is a symbolic link, where it
    * leads (resolved). */
   links: string[];
+  /** The opened object's identity (`dev:ino`), checked again when the file
+   * is opened (null: nothing there yet). */
+  id?: string | null;
+  /** The other names of a regular file with more than one hard link. */
+  aliases?: string[];
+  /** False when those names could not all be found (an unreadable folder,
+   * too many entries): the call fails closed. */
+  aliasesComplete?: boolean;
 }
 
 /** Why a read of `requested`, resolved as `resolved`, is refused, or null.
@@ -88,6 +112,16 @@ export function resolvedReadRefusal(requested: string, resolved: ResolvedEnviron
   }
   if (!sensitiveEnvironmentPath(requested) && sensitiveEnvironmentPath(resolved.real)) {
     return "This path leads through a symbolic link to a dotfile or a credential path. It is not followed; name the real path instead.";
+  }
+  // A hard link: a name that is already sensitive got its card on that
+  // name; an ordinary one must not lead to a dotfile or a credential file.
+  if (!sensitiveEnvironmentPath(requested)) {
+    if (resolved.aliasesComplete === false) {
+      return "This file has other hard links that could not all be checked, so it is not used here.";
+    }
+    if ((resolved.aliases ?? []).some((alias) => credentialLocation(alias) || hiddenName(alias))) {
+      return "This file is a hard link to a dotfile or a credential file. It is not used here; name the real path instead.";
+    }
   }
   return null;
 }

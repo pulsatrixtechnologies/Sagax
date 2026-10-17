@@ -128,9 +128,11 @@ describe("environment tools", () => {
     await callUserSandboxTool("write_file", { path: "notes/a.txt", content: "hello $(rm -rf /)" }, exec);
     expect(calls[0]!.argv.join(" ")).not.toContain("hello");
     expect(Buffer.from(calls[0]!.env!.SAGAX_CONTENT_B64!, "base64").toString()).toBe("hello $(rm -rf /)");
-    // the paths are sh's own arguments ($1 asked, $2 resolved, $3 size), not the script
-    expect(calls[0]!.argv.slice(3)).toEqual(["sh", "notes/a.txt", "/workspace/notes/a.txt", "17"]);
-    expect(calls[0]!.argv[2]).toContain('cat -- "$t" > "$2"');
+    // the paths are sh's own arguments ($1 asked, $2 resolved, $3 identity,
+    // $4 size, $5 the open guard), not the script
+    expect(calls[0]!.argv.slice(3, 8)).toEqual(["sh", "notes/a.txt", "/workspace/notes/a.txt", "", "17"]);
+    expect(calls[0]!.argv[2]).toContain('python3 -I -c "$5" write "$2" "$3" "$t"');
+    expect(calls[0]!.argv[8]).toContain("O_NOFOLLOW");
     expect(Object.keys(calls[0]!.env!)).toEqual(["SAGAX_CONTENT_B64"]);
     expect(calls[0]!.stdinBase64).toBeUndefined();
   });
@@ -142,7 +144,7 @@ describe("environment tools", () => {
     expect(result.isError).toBeFalsy();
     expect(calls[0]!.env).toBeUndefined();
     expect(Buffer.from(calls[0]!.stdinBase64!, "base64").toString()).toBe(content);
-    expect(calls[0]!.argv.at(-1)).toBe(String(200 * 1024));
+    expect(calls[0]!.argv[7]).toBe(String(200 * 1024));
     expect(calls[0]!.argv.join(" ")).not.toContain("xxxx");
   });
 
@@ -157,9 +159,10 @@ describe("environment tools", () => {
     const { calls, exec } = recorder();
     await callUserSandboxTool("read_file", { path: "-rf" }, exec);
     // the paths are sh's own arguments ($1, $2), never env (the Kubernetes
-    // backend runs only the command line) nor part of the script
-    expect(calls[0]!.argv[2]).toContain('exec head -c 200000 -- "$2"');
-    expect(calls[0]!.argv.slice(3)).toEqual(["sh", "-rf", "/workspace/-rf"]);
+    // backend runs only the command line) nor part of the script; the guard
+    // opens the resolved path itself and `head` reads that descriptor
+    expect(calls[0]!.argv[2]).toBe('exec python3 -I -c "$5" read "$2" "$3" "$4"');
+    expect(calls[0]!.argv.slice(3, 8)).toEqual(["sh", "-rf", "/workspace/-rf", "", "200000"]);
     expect(calls[0]!.argv[2]).not.toContain("-rf\"");
     expect(calls[0]!.env).toBeUndefined();
   });

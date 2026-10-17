@@ -167,12 +167,28 @@ function earlyRefusal(name: string, args: Record<string, unknown>, exec: ToolExe
 // (python3, present in the image): its real place and, for each component
 // that is a symbolic link, where that link leads. The server then refuses a
 // process secret under /proc, a link into a credential location, or a name
-// that looked ordinary but leads to a dotfile (sensitive-path.ts). The read
-// then runs on the resolved path, after checking that the path still
-// resolves there. write_file goes through the same resolution. The paths go
-// as arguments to a fixed script, never interpolated into it.
+// that looked ordinary but leads to a dotfile (sensitive-path.ts). write_file
+// goes through the same resolution. The paths go as arguments to fixed
+// scripts, never interpolated into them.
+//
+// Leftovers of #694/#701 (same day):
+// - hard links: a regular file of the sandbox user with more than one link
+//   also reports its other names (`aliases`), found by a bounded walk of the
+//   home folder (then of the file's own mount when some are elsewhere), never
+//   crossing a mount and never following a link; an unreadable folder or too
+//   many entries leaves the list incomplete, which fails closed. Root-owned
+//   files are not walked: an inode has one owner, so a root-owned file is
+//   never a second name of the person's credentials.
+// - the race between the check and the use: the resolution also reports the
+//   object's identity (`dev:ino`). The read, the listing and the write then
+//   open the resolved path themselves (OPEN_GUARD: O_NOFOLLOW, no link at
+//   the last step), and check on the descriptor they hold that its path
+//   (/proc/self/fd/N; F_GETPATH on macOS for the local tests) is still the
+//   resolved one and its identity still the one that was checked. Only then
+//   does `head` read that descriptor, `ls` list it (its working folder) or
+//   the contents go into it: what was checked is what is used.
 const RESOLVE_SCRIPT = [
-  "import json, os, sys",
+  "import json, os, stat, sys, time",
   "p = sys.argv[1]",
   "cur = os.getcwd() if not p.startswith('/') else '/'",
   "links = []",
@@ -186,10 +202,141 @@ const RESOLVE_SCRIPT = [
   "    if os.path.islink(cur):",
   "        links.append(os.path.realpath(cur))",
   "        cur = os.path.realpath(cur)",
-  "sys.stdout.write(json.dumps({'sagaxResolved': 1, 'real': os.path.realpath(p), 'links': links}))",
+  "real = os.path.realpath(p)",
+  "out = {'sagaxResolved': 1, 'real': real, 'links': links, 'id': None}",
+  "def mount_root(path, dev):",
+  "    while path != '/':",
+  "        up = os.path.dirname(path)",
+  "        try:",
+  "            if os.lstat(up).st_dev != dev:",
+  "                return path",
+  "        except OSError:",
+  "            return path",
+  "        path = up",
+  "    return '/'",
+  "def walk(root, st, found, budget):",
+  "    stack = [root]",
+  "    while stack:",
+  "        d = stack.pop()",
+  "        try:",
+  "            entries = list(os.scandir(d))",
+  "        except OSError:",
+  "            return False",
+  "        for e in entries:",
+  "            budget[0] -= 1",
+  "            if budget[0] < 0 or time.monotonic() > budget[1]:",
+  "                return False",
+  "            try:",
+  "                es = e.stat(follow_symlinks=False)",
+  "            except OSError:",
+  "                continue",
+  "            if es.st_dev != st.st_dev:",
+  "                continue",
+  "            if stat.S_ISDIR(es.st_mode):",
+  "                stack.append(e.path)",
+  "            elif es.st_ino == st.st_ino and e.path != real and e.path not in found:",
+  "                found.append(e.path)",
+  "                if len(found) >= st.st_nlink - 1:",
+  "                    return True",
+  "    return len(found) >= st.st_nlink - 1",
+  "try:",
+  "    st = os.lstat(real)",
+  "    out['id'] = '%d:%d' % (st.st_dev, st.st_ino)",
+  "    if stat.S_ISREG(st.st_mode) and st.st_nlink > 1 and st.st_uid == os.geteuid():",
+  "        found, budget = [], [200000, time.monotonic() + 15]",
+  "        home = os.path.realpath(os.path.expanduser('~'))",
+  "        roots = []",
+  "        try:",
+  "            if os.lstat(home).st_dev == st.st_dev:",
+  "                roots.append(home)",
+  "        except OSError:",
+  "            pass",
+  "        whole = mount_root(real, st.st_dev)",
+  "        if whole not in roots:",
+  "            roots.append(whole)",
+  "        done = False",
+  "        for root in roots:",
+  "            done = walk(root, st, found, budget)",
+  "            if done or budget[0] < 0 or time.monotonic() > budget[1]:",
+  "                break",
+  "        out['aliases'] = found[:64]",
+  "        out['aliasesComplete'] = bool(done) and len(found) <= 64",
+  "except FileNotFoundError:",
+  "    pass",
+  "sys.stdout.write(json.dumps(out))",
 ].join("\n");
 
-const SAME_PLACE_SCRIPT = "import os, sys; sys.exit(0 if os.path.realpath(sys.argv[1]) == sys.argv[2] else 3)";
+/** Opens the resolved path (argv: mode read|list|write, the resolved path,
+ * the identity the resolution saw or "", then the byte count for a read or
+ * the temporary file for a write) and checks the descriptor before using
+ * it. Exit 3: the path changed. */
+const OPEN_GUARD = [
+  "import errno, os, stat, sys",
+  "mode, real, want = sys.argv[1], sys.argv[2], sys.argv[3]",
+  "def fail(message, code):",
+  "    sys.stderr.write(message + '\\n')",
+  "    sys.exit(code)",
+  "def changed():",
+  "    fail('the path changed while it was read', 3)",
+  "def where(fd):",
+  "    try:",
+  "        return os.readlink('/proc/self/fd/%d' % fd)",
+  "    except OSError:",
+  "        pass",
+  "    import fcntl",
+  "    if hasattr(fcntl, 'F_GETPATH'):",
+  "        return os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).split(b'\\0', 1)[0])",
+  "    fail('the opened path could not be checked', 5)",
+  "flags = os.O_NOFOLLOW | getattr(os, 'O_CLOEXEC', 0) | os.O_NONBLOCK",
+  "created = False",
+  "try:",
+  "    if mode == 'write':",
+  "        try:",
+  "            fd = os.open(real, flags | os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)",
+  "            created = True",
+  "        except FileExistsError:",
+  "            fd = os.open(real, flags | os.O_WRONLY)",
+  "    else:",
+  "        fd = os.open(real, flags | os.O_RDONLY)",
+  "except OSError as error:",
+  "    if error.errno == errno.ELOOP:",
+  "        changed()",
+  "    fail('%s: %s' % (real, error.strerror), 1)",
+  "st = os.fstat(fd)",
+  "here = where(fd)",
+  "ident = '%d:%d' % (st.st_dev, st.st_ino)",
+  "if here != real or (ident != want if not created else want != ''):",
+  "    if created:",
+  "        try:",
+  "            if os.lstat(here).st_ino == st.st_ino:",
+  "                os.unlink(here)",
+  "        except OSError:",
+  "            pass",
+  "    changed()",
+  "os.set_blocking(fd, True)",
+  "if mode == 'read':",
+  "    if stat.S_ISDIR(st.st_mode):",
+  "        fail('%s is a folder; list it with list_files' % real, 1)",
+  "    os.dup2(fd, 0)",
+  "    os.execvp('head', ['head', '-c', sys.argv[4]])",
+  "if mode == 'list':",
+  "    if stat.S_ISDIR(st.st_mode):",
+  "        os.fchdir(fd)",
+  "        os.execvp('ls', ['ls', '-la'])",
+  "    os.execvp('ls', ['ls', '-la', '--', real])",
+  "if not stat.S_ISREG(st.st_mode):",
+  "    fail('%s is not a regular file' % real, 1)",
+  "os.ftruncate(fd, 0)",
+  "with open(sys.argv[4], 'rb') as source:",
+  "    while True:",
+  "        chunk = source.read(65536)",
+  "        if not chunk:",
+  "            break",
+  "        view = memoryview(chunk)",
+  "        while view:",
+  "            view = view[os.write(fd, view):]",
+  "os.close(fd)",
+].join("\n");
 
 /** Where one path really is in the environment, or a refusal. Anything
  * that cannot be read fails closed. */
@@ -202,34 +349,46 @@ export async function resolveInSandbox(path: string, exec: ToolExec): Promise<{ 
   if (result.exitCode !== 0 || result.truncated) return unreadable;
   let parsed: unknown;
   try { parsed = JSON.parse(result.stdout); } catch { return unreadable; }
-  const value = parsed as { sagaxResolved?: unknown; real?: unknown; links?: unknown };
-  if (!value || value.sagaxResolved !== 1 || typeof value.real !== "string" || !value.real.startsWith("/")
-    || !Array.isArray(value.links) || !value.links.every((link) => typeof link === "string")) return unreadable;
-  const resolved = { real: value.real, links: value.links as string[] };
-  const refused = resolvedReadRefusal(path, resolved) ?? (resolved.real !== path ? exec.pathRefusal?.(resolved.real) ?? null : null);
+  const value = parsed as { sagaxResolved?: unknown; real?: unknown; links?: unknown; id?: unknown; aliases?: unknown; aliasesComplete?: unknown };
+  const strings = (list: unknown): list is string[] => Array.isArray(list) && list.every((item) => typeof item === "string");
+  if (!value || value.sagaxResolved !== 1 || typeof value.real !== "string" || !value.real.startsWith("/") || !strings(value.links)
+    || (value.id !== undefined && value.id !== null && (typeof value.id !== "string" || !/^\d+:\d+$/.test(value.id)))
+    || (value.aliases !== undefined && !strings(value.aliases))
+    || (value.aliasesComplete !== undefined && typeof value.aliasesComplete !== "boolean")) return unreadable;
+  const resolved: ResolvedEnvironmentPath = {
+    real: value.real,
+    links: value.links,
+    id: typeof value.id === "string" ? value.id : null,
+    ...(value.aliases !== undefined ? { aliases: value.aliases } : {}),
+    ...(value.aliasesComplete !== undefined ? { aliasesComplete: value.aliasesComplete } : {}),
+  };
+  const others = [...(resolved.real !== path ? [resolved.real] : []), ...(resolved.aliases ?? [])];
+  const refused = resolvedReadRefusal(path, resolved) ?? others.map((other) => exec.pathRefusal?.(other)).find((reason) => reason);
   return refused ? { refused } : { resolved };
 }
 
-/** A read (or a write) of the resolved path, run only while the requested
- * path still resolves there (a link swapped in between is refused). */
-function readResolved(path: string, real: string, command: string, ...more: string[]): { argv: string[] } {
-  // $1 the requested path, $2 the resolved one, then `more` (sh's own arguments)
-  return {
-    argv: ["sh", "-c", `python3 -I -c '${SAME_PLACE_SCRIPT}' "$1" "$2" || { echo "the path changed while it was read" >&2; exit 3; }; ${command}`, "sh", path, real, ...more],
-  };
+/** The read, listing or write of the resolved path through OPEN_GUARD:
+ * `sh -c` with $1 the requested path, $2 the resolved one, $3 the identity
+ * the resolution saw, $4 the byte count, $5 the guard. */
+function guarded(path: string, resolved: ResolvedEnvironmentPath, command: string, count: string): { argv: string[] } {
+  return { argv: ["sh", "-c", command, "sh", path, resolved.real, resolved.id ?? "", count, OPEN_GUARD] };
 }
 
-// $3 is the size in bytes. The contents land in a temporary file first and
+const READ_SCRIPT = 'exec python3 -I -c "$5" read "$2" "$3" "$4"';
+const LIST_SCRIPT = 'exec python3 -I -c "$5" list "$2" "$3" ""';
+
+// $4 is the size in bytes. The contents land in a temporary file first and
 // reach the target only when all of them arrived (a provisioner from before
 // stdin gives an empty stdin: the write is refused, the file untouched);
-// `cat >` keeps the target's own mode and links.
+// the guard then opens the target itself, checks it and truncates and fills
+// that descriptor, which keeps the target's own mode.
 const WRITE_SCRIPT = [
   'mkdir -p -- "$(dirname -- "$2")" || exit 1',
   't=$(mktemp) || exit 1',
   'trap \'rm -f -- "$t"\' EXIT',
-  'if [ -n "${SAGAX_CONTENT_B64+x}" ]; then printf %s "$SAGAX_CONTENT_B64" | base64 -d > "$t"; else head -c "$3" > "$t"; fi',
-  '[ "$(wc -c < "$t" | tr -d \' \')" -eq "$3" ] || { echo "the file contents did not all arrive; nothing was written" >&2; exit 4; }',
-  'cat -- "$t" > "$2"',
+  'if [ -n "${SAGAX_CONTENT_B64+x}" ]; then printf %s "$SAGAX_CONTENT_B64" | base64 -d > "$t"; else head -c "$4" > "$t"; fi',
+  '[ "$(wc -c < "$t" | tr -d \' \')" -eq "$4" ] || { echo "the file contents did not all arrive; nothing was written" >&2; exit 4; }',
+  'python3 -I -c "$5" write "$2" "$3" "$t"',
 ].join("\n");
 
 /** A public http(s) URL only; the host egress policy also blocks private
@@ -343,7 +502,7 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       const max = Math.min(1_000_000, Math.max(1, Math.floor(typeof args.max_bytes === "number" ? args.max_bytes : 200_000)));
       const where = await resolveInSandbox(path, exec);
       if ("refused" in where) return text(where.refused, true);
-      const result = await exec.exec({ ...readResolved(path, where.resolved.real, `exec head -c ${max} -- "$2"`), timeoutSec: 30, maxOutputBytes: max + 1024 });
+      const result = await exec.exec({ ...guarded(path, where.resolved, READ_SCRIPT, String(max)), timeoutSec: 30, maxOutputBytes: max + 1024 });
       if (result.exitCode !== 0) return text(result.stderr.trim() || `could not read ${path}`, true);
       return text(wrapUntrusted("file", result.stdout));
     }
@@ -367,7 +526,7 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       if ("refused" in where) return text(where.refused, true);
       const content = bytes.toString("base64");
       const result = await exec.exec({
-        ...readResolved(path, where.resolved.real, WRITE_SCRIPT, String(bytes.length)),
+        ...guarded(path, where.resolved, WRITE_SCRIPT, String(bytes.length)),
         ...(bytes.length <= MAX_WRITE_ENV_BYTES ? { env: { SAGAX_CONTENT_B64: content } } : { stdinBase64: content }),
         timeoutSec: 60,
       });
@@ -379,7 +538,7 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       if (pathRefused) return text(pathRefused, true);
       const where = await resolveInSandbox(path, exec);
       if ("refused" in where) return text(where.refused, true);
-      return commandOutput(await exec.exec({ ...readResolved(path, where.resolved.real, 'exec ls -la -- "$2"'), timeoutSec: 30 }));
+      return commandOutput(await exec.exec({ ...guarded(path, where.resolved, LIST_SCRIPT, ""), timeoutSec: 30 }));
     }
     if (name === "browse") {
       const url = browsableUrl(args.url);

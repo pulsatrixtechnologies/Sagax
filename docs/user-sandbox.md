@@ -54,9 +54,46 @@ the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-s
 the `fd`, `root` and `cwd` links, also under `task/<tid>`) is never read, a
 symbolic link in any component that leads to a credential location (`.ssh`,
 `.git-credentials`, `.config/gh`, `.aws`...) is refused, and so is an
-ordinary name whose real place is a dotfile. The read (or the write) then
-runs on the resolved path while the requested path still resolves there
-(`server/sensitive-path.ts`, 2026-10-17).
+ordinary name whose real place is a dotfile (`server/sensitive-path.ts`,
+2026-10-17).
+
+- **Hard links.** A regular file of the sandbox user with more than one
+  link also reports its other names, found by a bounded walk of the home
+  folder (then of the file's own mount), never crossing a mount or
+  following a link. An ordinary name whose other name is a dotfile or a
+  credential file (`.git-credentials`, `.ssh/id_*`, `*.pem`...) is
+  refused; if the names cannot all be found (an unreadable folder, more
+  than 200,000 entries or 15 seconds) the call fails closed. A second
+  ordinary name (a pnpm or uv package store) is fine. Root-owned files are
+  not walked: an inode has one owner, so they are never a second name of
+  the person's credentials.
+- **Bind mounts.** They cannot be made from inside the environment: no
+  capability (`CapDrop: ALL`, `capabilities.drop: [ALL]`),
+  `no-new-privileges`, the runtime's seccomp profile (no `mount`, no
+  unprivileged `unshare`). The only mounts are the provisioner's own
+  (`/workspace`, the tmpfs folders), so no check is made for them.
+- **Check and use are the same object.** The resolution also reports the
+  object's identity (`dev:ino`). The read, the listing and the write open
+  the resolved path themselves (`O_NOFOLLOW`), then check on the
+  descriptor they hold that its path (`/proc/self/fd/N`) is still the
+  resolved one and its identity the one that was checked; `head` then
+  reads that descriptor, `ls` lists it (as its working folder) and the
+  write truncates and fills it. A link, a hard link or a folder swapped in
+  between is refused ("the path changed"); a file a refused write had just
+  created is removed. Only folders that `mkdir -p` makes for a write can
+  remain in that case.
+- **Process environments.** `run_command` (and any process in the
+  environment) can read `/proc/self/environ` and the `environ` of the
+  sandbox user's other processes, so no secret is put there: a command's
+  exec adds no variable of its own, the container and the pod set only
+  `HOME`, `LANG`, `PATH` and `SAGAX_ENVIRONMENT` with no service account
+  token and no service links, and `sagax-desktop` turns the values it is
+  handed (VNC passwords, typed text, an address) into unexported shell
+  variables before Xvnc, openbox, tint2 or Chromium start. The exceptions
+  are the person's own: the variables they give their own MCP servers
+  live in those servers' environment for as long as they run, like the
+  files those servers read. `run_command` keeps its card for a turn that
+  is not the owner's own.
 
 ## Lifecycle
 
