@@ -458,7 +458,6 @@
   "approval.voice.skill": "{requester} が尋ねています: {title} 画面のスキルを確認してください。{action}してよいですか？",
   "approval.voice.defaultUpdateProfile": "このプロフィールを更新しますか？",
   "approval.voice.profile": "{requester} が自分のプロフィールを更新したいそうです: {title}。画面の変更を確認してください。確定してよいですか？",
-  "approval.voice.command": "{requester} が{tool}したいそうです。{detail}。許可してよいですか？",
   "approval.voice.defaultConfirmRoutine": "このルーティンを確定しますか？",
   "approval.voice.routine": "{requester} が尋ねています: {title} 画面のスケジュールと指示を確認してください。確定してよいですか？",
   "approval.label.updateSkill": "この学習済みスキルを更新",

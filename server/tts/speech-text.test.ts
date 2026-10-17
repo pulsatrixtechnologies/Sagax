@@ -44,6 +44,10 @@ describe("speakable", () => {
     expect(speakable("I changed server/drivers/acp/core.ts today")).toBe("I changed core.ts today");
   });
 
+  it("never reads an identifier and keeps only the last name of an absolute path", () => {
+    expect(speakable("Thread `3f2a9c1e-7b4d-4e2a-9f10-0c5b8d7e6a21` (#481516) is in /Users/someone/work/notes.md")).toBe("Thread is in notes.md");
+  });
+
   it("keeps short inline code but not long snippets", () => {
     expect(speakable("Run `pnpm test` first")).toBe("Run pnpm test first");
     const long = speakable(`Use \`${"x".repeat(60)}\` here`);

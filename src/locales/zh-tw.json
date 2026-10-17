@@ -53,7 +53,6 @@
   "approval.voice.skill": "{requester} 詢問：{title} 請審核畫面上的技能。要{action}它嗎？",
   "approval.voice.defaultUpdateProfile": "要更新這份角色資料嗎？",
   "approval.voice.profile": "{requester} 想要更新自己的角色資料：{title}。請審核畫面上的變更。要確認嗎？",
-  "approval.voice.command": "{requester} 想要{tool}。{detail}。要允許嗎？",
   "approval.voice.defaultConfirmRoutine": "要確認這項例行工作嗎？",
   "approval.voice.routine": "{requester} 詢問：{title} 請審核畫面上的排程與指示。要確認嗎？",
   "approval.label.updateSkill": "更新這項已學會的技能",

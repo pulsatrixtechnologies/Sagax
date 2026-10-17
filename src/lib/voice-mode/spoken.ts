@@ -5,8 +5,13 @@
 // safety net on this side, before a sentence goes to text to speech (the
 // server's speakable text, server/tts/speech-text.ts, runs again on it).
 //
+// Identifiers (UUIDs, hashes, tokens, "#1234") are never said and absolute
+// paths keep their last name (shared/spoken-identifiers.ts).
+//
 // The bot ends a call with a written follow-up below a line of only `---`:
 // that part is for the chat and is never spoken.
+
+import { stripSpokenIdentifiers } from "../../../shared/spoken-identifiers";
 
 /** A line of only ---, *** or ___: the written follow-up starts below it. */
 const FOLLOW_UP_RULE = /^[ \t]{0,3}(?:-{3,}|\*{3,}|_{3,})[ \t]*$/m;
@@ -50,6 +55,7 @@ export function speakableSentence(piece: string): string {
   text = text.replace(/`([^`\n]*)`/g, "$1");
   text = text.replace(/[`*]+/g, " ");
   text = text.replace(PICTOGRAPHS, "");
+  text = stripSpokenIdentifiers(text);
   text = text.replace(/\s+/g, " ").replace(/\s+([.,!?;:])/g, "$1").replace(/^[\s,;:]+/, "").trim();
   return /[\p{L}\p{N}]/u.test(text) ? text : "";
 }

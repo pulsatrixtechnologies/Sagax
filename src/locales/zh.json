@@ -456,7 +456,6 @@
   "approval.voice.skill": "{requester} 询问：{title} 请在屏幕上查看该技能。我要{action}它吗？",
   "approval.voice.defaultUpdateProfile": "要更新这份资料吗？",
   "approval.voice.profile": "{requester} 想更新自己的资料：{title}。请在屏幕上查看该变更。我要确认吗？",
-  "approval.voice.command": "{requester} 想{tool}。{detail}。我要允许吗？",
   "approval.voice.defaultConfirmRoutine": "要确认这个例行任务吗？",
   "approval.voice.routine": "{requester} 询问：{title} 请在屏幕上查看时间安排和指令。我要确认吗？",
   "approval.label.updateSkill": "更新这个已学技能",

@@ -62,7 +62,6 @@
   "approval.voice.skill": "{requester} питає: {title} Перегляньте навичку на екрані. Погоджувати {action}?",
   "approval.voice.defaultUpdateProfile": "Оновити цей профіль?",
   "approval.voice.profile": "{requester} хоче оновити свій профіль: {title}. Перегляньте зміну на екрані. Підтвердити?",
-  "approval.voice.command": "{requester} хоче {tool}. {detail}. Дозволити?",
   "approval.voice.defaultConfirmRoutine": "Підтвердити цю рутину?",
   "approval.voice.routine": "{requester} питає: {title} Перегляньте розклад та інструкції на екрані. Підтвердити?",
   "approval.label.updateSkill": "Оновити цю вивчену навичку",

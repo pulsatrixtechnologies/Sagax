@@ -11,8 +11,13 @@
 // becomes "a code block" — the user is looking at the screen if they care,
 // and this is the half of the feature that decides whether it is pleasant.
 //
+// Identifiers (UUIDs, hashes, tokens, "#1234") are never said and absolute
+// paths keep their last name (shared/spoken-identifiers.ts).
+//
 // Pure and synchronous on purpose: it is the piece most likely to need
 // tuning against real transcripts, so it stays trivially testable.
+
+import { stripSpokenIdentifiers } from "../../shared/spoken-identifiers.ts";
 
 /** A fenced block becomes a mention of itself, with its language if known. */
 function describeCodeBlock(fence: string): string {
@@ -103,6 +108,7 @@ export function speakable(input: string): string {
   // checkboxes read as literal brackets otherwise
   text = text.replace(/\[[ xX]\]\s*/g, "");
 
+  text = stripSpokenIdentifiers(text);
   text = shortenPaths(text);
 
   // emoji and the pictographic ranges: a voice either ignores them or,

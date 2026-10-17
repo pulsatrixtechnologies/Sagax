@@ -43,7 +43,7 @@ import { t } from "@/lib/i18n";
 import type { VoiceModeStatus } from "../../shared/voice-mode";
 import { LiveCall, LiveCallEngine } from "./voice-mode/LiveCall";
 
-import { NO, YES } from "@/lib/voice-mode/answers";
+import { spokenDecision } from "@/lib/voice-mode/answers";
 
 type Phase = "listening" | "sending" | "working" | "speaking";
 const CALL_ENDPOINT_MS = 850;
@@ -457,8 +457,9 @@ function Call({ bot }: { bot: Bot }) {
           hush();
           return;
         }
-        if (YES.test(said) || NO.test(said)) {
-          const allow = YES.test(said);
+        const decision = spokenDecision(said);
+        if (decision) {
+          const allow = decision === "allow";
           if (allow && open.skill) {
             setHeard("");
             void sayThenListen("Open this chat to review the complete skill before enabling it. You can say no now to deny it.");
@@ -497,7 +498,7 @@ function Call({ bot }: { bot: Bot }) {
         }
         // not a decision — leave the card up and say so rather than
         // guessing consent from an ambiguous sentence
-        void sayThenListen("Sorry — is that a yes or a no?");
+        void sayThenListen(t("voiceMode.allowOnceOrDeny"));
         return;
       }
 

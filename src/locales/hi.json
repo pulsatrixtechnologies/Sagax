@@ -456,7 +456,6 @@
   "approval.voice.skill": "{requester} पूछता है: {title} स्क्रीन पर कौशल देखें। क्या मैं इसे {action} करूँ?",
   "approval.voice.defaultUpdateProfile": "यह प्रोफ़ाइल अपडेट करें?",
   "approval.voice.profile": "{requester} अपनी प्रोफ़ाइल अपडेट करना चाहता है: {title}. स्क्रीन पर बदलाव देखें। क्या मैं इसकी पुष्टि करूँ?",
-  "approval.voice.command": "{requester} {tool} चाहता है। {detail}। क्या मैं अनुमति दूँ?",
   "approval.voice.defaultConfirmRoutine": "इस रूटीन की पुष्टि करें?",
   "approval.voice.routine": "{requester} पूछता है: {title} स्क्रीन पर समय और निर्देश देखें। क्या मैं पुष्टि करूँ?",
   "approval.label.updateSkill": "यह सीखा हुआ कौशल अपडेट करें",

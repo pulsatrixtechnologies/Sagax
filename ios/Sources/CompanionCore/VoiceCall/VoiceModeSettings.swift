@@ -198,25 +198,45 @@ public func formatCallTime(_ seconds: TimeInterval) -> String {
     return hours > 0 ? "\(hours):\(String(format: "%02d", minutes)):\(secs)" : "\(minutes):\(secs)"
 }
 
-/// Spoken answers to a permission card, shared by every call. Anything else
-/// is read as a reply to the bot, not as consent: an approval must never be
-/// granted by a sentence that merely contained the word "sure".
+/// Spoken answers to a permission card, shared by every call. The card is
+/// spoken as a question with its two options ("Allow once, or deny?") and
+/// the answer must pick one: the desktop's `spokenConsent(said, "voice")`
+/// (shared/call-consent.ts), same rules. A whole-utterance yes in English or
+/// French allows once; a no, with a reason or not, denies; a hedge
+/// ("okay", "d'accord"), a mix ("no wait, yes"), a condition ("yes, but
+/// rename it"), a question or "always allow" is asked again. An approval
+/// must never be granted by a sentence that merely contained "sure".
 public enum CallAnswers {
+    private static let hedges = try! NSRegularExpression(
+        pattern: #"^(?:(?:um+|uh+|er+|euh+|heu+|so|well|hmm+|ben|bon|alors|ok|okay|sure|fine|d'accord|correct|parfait)(?:[\s,.!?-]+|$))+"#,
+        options: [.caseInsensitive]
+    )
     private static let yes = try! NSRegularExpression(
-        pattern: "^(yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|allow|approve|approved|fine|please do|oui|ouais|d'accord|vas-y|allez-y|j'approuve)\\b",
+        pattern: #"^(?:yes|yeah|yep|yup|go ahead|do it|allow(?: it)?(?: once)?|approve(?: it)?|approved|confirm(?: it)?|please do|oui|confirme|je confirme|confirmer|ouais|vas-y|allez-y|autorise(?:-le)?(?: une fois)?|autoriser(?: une fois)?|j'autorise|approuve|j'approuve|j'accepte|accepte)(?:[\s,]+(?:please|go ahead|do it|yes|once|oui|vas-y|allez-y|une fois|merci|s'il te pla[iî]t|s'il vous pla[iî]t))*[.!]*$"#,
         options: [.caseInsensitive]
     )
     private static let no = try! NSRegularExpression(
-        pattern: "^(no|nope|don'?t|do not|stop|deny|denied|cancel|never|skip it|non|refuse|annule|jamais)\\b",
+        pattern: #"^(?:no|nope|nah|don'?t|do not|stop|deny|denied|cancel|never|skip it|non|nan|refuse|refuser|je refuse|annule|annuler|jamais|pas question|laisse faire|laisse tomber)(?=$|[\s,.!-])"#,
+        options: [.caseInsensitive]
+    )
+    private static let notADeny = try! NSRegularExpression(
+        pattern: #"\?|(?<![\p{L}\p{N}])(?:but|wait|actually|instead|unless|yes|yeah|allow|approve|confirm|go ahead|mais|attends|en fait|plutôt|sauf|oui|ouais|vas-y|allez-y|autorise|approuve|confirme)(?![\p{L}\p{N}])"#,
         options: [.caseInsensitive]
     )
 
-    public static func isYes(_ said: String) -> Bool { matches(yes, said) }
-    public static func isNo(_ said: String) -> Bool { matches(no, said) }
-
-    private static func matches(_ regex: NSRegularExpression, _ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)) != nil
+    /// true: allow once; false: deny; nil: not one of the two options, ask again.
+    public static func decision(_ said: String) -> Bool? {
+        var text = said.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "\u{2018}", with: "'")
+            .replacingOccurrences(of: "\u{02BC}", with: "'")
+        text = hedges.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        if text.isEmpty { return nil }
+        let whole = NSRange(text.startIndex..., in: text)
+        if yes.firstMatch(in: text, range: whole) != nil { return true }
+        guard let match = no.firstMatch(in: text, range: whole), let end = Range(match.range, in: text)?.upperBound else { return nil }
+        let rest = String(text[end...])
+        return notADeny.firstMatch(in: rest, range: NSRange(rest.startIndex..., in: rest)) == nil ? false : nil
     }
 }
 

@@ -24,7 +24,8 @@ public enum CallPrompt: Equatable, Sendable {
     public enum ApprovalKind: Equatable, Sendable { case command, skill, routine, profile }
     case approval(requester: String, kind: ApprovalKind, tool: String, title: String, detail: String, updating: Bool)
     case question(requester: String, subtitle: String, options: [String])
-    case yesOrNo
+    /// Not one of the two options: "allow once, or deny?" again.
+    case allowOnceOrDeny
     case skillReview
     case approvalFailed
 }
@@ -175,13 +176,12 @@ public struct CallConversation: Sendable {
 
     public mutating func utterance(_ said: String, memberNames: [String] = [], mentionsOnly: Bool = false) -> UtteranceAction {
         if let open = askedApproval, !open.submitted {
-            if CallAnswers.isYes(said) || CallAnswers.isNo(said) {
-                let allow = CallAnswers.isYes(said)
+            if let allow = CallAnswers.decision(said) {
                 if allow && open.skill { return .say(.skillReview) }
                 askedApproval?.submitted = true
                 return .decide(requestId: open.requestId, allow: allow)
             }
-            return .say(.yesOrNo)
+            return .say(.allowOnceOrDeny)
         }
         if let question = askedQuestion {
             askedQuestion = nil

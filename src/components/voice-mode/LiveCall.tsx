@@ -16,7 +16,7 @@ import { getUserMediaWithFallback, preferredAudioInputId } from "@/lib/audio-inp
 
 import { useStore, useStreaming, visibleMessages, type Bot } from "@/state/store";
 import { clearVoiceCallId, currentCall, endCall, setVoiceCallId } from "@/lib/call";
-import { NO, YES } from "@/lib/voice-mode/answers";
+import { spokenDecision } from "@/lib/voice-mode/answers";
 import { voiceCallSession } from "@/lib/voice-mode/api";
 import { callTimers, keepCallAlive } from "@/lib/voice-mode/call-alive";
 import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mode/call";
@@ -254,8 +254,9 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       setNotice(null);
       const open = askedApproval.current;
       if (open && !open.submitted) {
-        if (YES.test(said) || NO.test(said)) {
-          const allow = YES.test(said);
+        const decision = spokenDecision(said);
+        if (decision) {
+          const allow = decision === "allow";
           if (allow && open.skill) {
             void call.say(t("voiceMode.skillReview"));
             return;
@@ -274,7 +275,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
           });
           return;
         }
-        void call.say(t("voiceMode.yesOrNo"));
+        // not one of the two options: ask them again, never guess
+        void call.say(t("voiceMode.allowOnceOrDeny"));
         return;
       }
       const openQuestion = askedQuestion.current;

@@ -456,7 +456,6 @@
   "approval.voice.skill": "{requester} pregunta: {title} Revisa la habilidad en pantalla. ¿Debo {action} esta habilidad?",
   "approval.voice.defaultUpdateProfile": "¿Actualizar este perfil?",
   "approval.voice.profile": "{requester} quiere actualizar su perfil: {title}. Revisa el cambio en pantalla. ¿Lo confirmo?",
-  "approval.voice.command": "{requester} quiere {tool}. {detail}. ¿Lo permito?",
   "approval.voice.defaultConfirmRoutine": "¿Confirmar esta rutina?",
   "approval.voice.routine": "{requester} pregunta: {title} Revisa el horario y las instrucciones en pantalla. ¿Lo confirmo?",
   "approval.label.updateSkill": "Actualizar esta habilidad aprendida",

@@ -116,9 +116,12 @@ export function spokenApprovalPrompt(pending: Pending, requester: string): strin
     const detail = isTechnicalText(pending.detail)
       ? describeApproval(pending.tool, input, card?.toolHints).summary
       : pending.detail;
+    // asked as a question with its two options; the spoken answer must pick
+    // one (src/lib/voice-mode/answers.ts). Always allow is never offered by
+    // voice: it widens a grant and stays a tap on the card.
     return detail?.trim()
-      ? t("approval.voice.command", { requester, tool, detail })
-      : t("approval.voice.commandNoDetail", { requester, tool });
+      ? t("approval.voice.commandAsk", { requester, tool, detail })
+      : t("approval.voice.commandNoDetailAsk", { requester, tool });
   }
   const title = pending.message.card?.title.trim() || t("approval.voice.defaultConfirmRoutine");
   return t("approval.voice.routine", {

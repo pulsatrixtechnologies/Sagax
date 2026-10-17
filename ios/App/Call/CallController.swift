@@ -751,7 +751,8 @@ final class CallController: ObservableObject {
                 default: String(localized: "use \(tool)")
                 }
                 let shown = String(detail.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
-                return String(localized: "\(requester) wants to \(action). \(shown). Should I allow it?")
+                // asked with its two options; the answer must pick one (CallAnswers.decision)
+                return String(localized: "\(requester) wants to \(action). \(shown). Allow once, or deny?")
             }
         case let .question(requester, subtitle, options):
             let detail = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -759,8 +760,8 @@ final class CallController: ObservableObject {
             let choices = options.isEmpty ? "" : " " + options.joined(separator: ", ") + "."
             if case .room = target { return String(localized: "\(requester) asks: \(detail)\(end)\(choices)") }
             return "\(detail)\(end)\(choices)"
-        case .yesOrNo:
-            return String(localized: "Sorry, is that a yes or a no?")
+        case .allowOnceOrDeny:
+            return String(localized: "Sorry, I need one of the two answers: allow once, or deny?")
         case .skillReview:
             return String(localized: "Open this chat to review the complete skill before enabling it. You can say no now to deny it.")
         case .approvalFailed:

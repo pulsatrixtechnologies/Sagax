@@ -688,12 +688,48 @@ final class CallConversationTests: XCTestCase {
         XCTAssertEqual(tool, "Bash")
         XCTAssertEqual(detail, "ls -la")
         XCTAssertFalse(conversation.mayInterruptBot(busy: true), "an approval being answered keeps its turn")
-        XCTAssertEqual(conversation.utterance("sure thing, but first tell me why"), .decide(requestId: "r1", allow: true))
+        // a hedge with a condition is not consent: the options are asked again
+        XCTAssertEqual(conversation.utterance("sure thing, but first tell me why"), .say(.allowOnceOrDeny))
+        XCTAssertEqual(conversation.utterance("yes, go ahead"), .decide(requestId: "r1", allow: true))
         var other = CallConversation(existing: [])
         _ = other.settle(messages: [card], botName: "Ara", thinking: true, playerBusy: false)
-        XCTAssertEqual(other.utterance("what does it do?"), .say(.yesOrNo))
+        XCTAssertEqual(other.utterance("what does it do?"), .say(.allowOnceOrDeny))
         XCTAssertEqual(other.utterance("non merci"), .decide(requestId: "r1", allow: false))
         XCTAssertEqual(other.decisionFailed(requestId: "r1"), .approvalFailed)
+    }
+
+    func testASpokenApprovalMustPickOneOfTheTwoOptions() {
+        for said in ["yes", "Yes, go ahead.", "allow once", "uh, yes please", "okay, do it", "Oui, vas-y.", "autoriser une fois", "j\u{2019}autorise", "ben oui", "je confirme"] {
+            XCTAssertEqual(CallAnswers.decision(said), true, said)
+        }
+        for said in ["no", "No, don't do that.", "non merci", "je refuse", "pas question", "don't do it", "okay no"] {
+            XCTAssertEqual(CallAnswers.decision(said), false, said)
+        }
+        for said in ["okay", "sure", "d'accord", "", "yes, but rename it first", "yes wait no", "oui mais pas ce fichier-là",
+                     "no wait, yes", "non, vas-y", "non, plutôt l'autre", "always allow", "toujours autoriser", "yesterday was fine", "nonsense"] {
+            XCTAssertNil(CallAnswers.decision(said), said)
+        }
+    }
+
+    func testIdentifiersAreNeverSpoken() {
+        func say(_ text: String) -> String {
+            SpokenIdentifiers.strip(text).replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+        }
+        XCTAssertEqual(say("The thread 3f2a9c1e-7b4d-4e2a-9f10-0c5b8d7e6a21 is archived."), "The thread is archived.")
+        XCTAssertEqual(say("Fixed in commit 9fceb02d0ae598e95dc970b74767f19372d61af8."), "Fixed in commit.")
+        XCTAssertEqual(say("Use whsec_Q2x9vLm4Tz8Kp1Rb7Yw3 now"), "Use now")
+        XCTAssertEqual(say("The call call-0123456789 ended"), "The call ended")
+        XCTAssertEqual(say("The printer ticket (#481516) is closed."), "The printer ticket is closed.")
+        XCTAssertEqual(say("The member (id: 4242) answered."), "The member answered.")
+        XCTAssertEqual(say("Saved to /Users/someone/Documents/report.pdf for you."), "Saved to report.pdf for you.")
+        XCTAssertEqual(say("Copied to C:\\Users\\someone\\Desktop\\notes.txt"), "Copied to notes.txt")
+        for text in ["It costs 1,250.50 dollars and is due 2026-10-17 at 15:30.", "Call 514-555-0123 tomorrow.",
+                     "C'est 24/7, en km/h.", "The decade of facade internationalization, COVID-19 and the ed25519 key.",
+                     "We are at 3 of 10, PR 702 is open.", "L'idée est bonne, I'd say so."] {
+            XCTAssertEqual(say(text), text)
+        }
+        XCTAssertEqual(SpokenText.speakableSentence("Done, commit **9fceb02d0ae5** (id: 3f2a9c1e-7b4d-4e2a-9f10-0c5b8d7e6a21)."), "Done, commit.")
     }
 
     func testAQuestionIsAnsweredWithTheNextWords() {

@@ -25,11 +25,35 @@ typed to a bot while its call is live carry the call id too). For such a turn
 the server adds a hidden "Phone call" section to the bot's system prompt
 (`server/voice-call-prompt.ts`): a live phone call with the person, words from
 speech recognition that may be misheard (infer the meaning, never mention a
-transcript, dictation or voice mode, never ask to type), short spoken answers
-of one to three sentences, no markdown, lists, tables, code, emojis or URLs,
-numbers said aloud, one clarifying question at a time, a short spoken note
-before slow tool work, and at the end of the call an optional written
-follow-up below a line of `---` that is never spoken. The bot's own persona,
+transcript, dictation or voice mode, never ask to type), the voice output
+contract (verdict first, one to four short spoken sentences, no markdown,
+lists, tables, code, emojis, URLs or file paths, never an identifier read
+aloud, times and numbers said the way a person says them in the language of
+the last message, at most one question per turn and only for a real
+decision, one short sentence before a slow step and a progress line only at
+a real milestone, a failure said in one sentence with what to do next, then
+silence), and at the end of the call an optional written follow-up below a
+line of `---` that is never spoken.
+
+Under that contract, every speech path removes identifiers on its own
+(`shared/spoken-identifiers.ts`: UUIDs, hashes, tokens, JWTs, `#1234`
+numbers, `id: 42` labels; absolute and home paths keep their last name):
+the page's sentence cleaner (`src/lib/voice-mode/spoken.ts`), the server's
+speakable text (`server/tts/speech-text.ts`) and the iPhone's
+(`SpokenText.speakableSentence`, same rules in Swift). The streaming
+voice's appended words (`speakableDelta`) are cleaned piece by piece, so an
+identifier split across two pieces relies on the page's clause cleaner,
+which always sees it whole.
+
+An approval on a call is spoken as a question with its two options ("Allow
+once, or deny?", `approval.voice.commandAsk`). The answer must pick one
+(`spokenConsent(said, "voice")`, `shared/call-consent.ts`; the iPhone's
+`CallAnswers.decision`): a whole-utterance yes in English or French allows
+once; a no, with a reason or not, denies; a hedge ("okay", "d'accord"), a
+mix ("no wait, yes"), a condition ("yes, but rename it"), a question or
+"always allow" asks the options again (`voiceMode.allowOnceOrDeny`). Always
+allow is never reachable by voice, and a card that needs a security key is
+refused on the server whatever was said. The bot's own persona,
 instructions and language stay; only formatting and turn-taking change. When
 the person cut the bot's previous answer (barge-in or the interrupt button),
 the turn says so, and the bot drops that thought.

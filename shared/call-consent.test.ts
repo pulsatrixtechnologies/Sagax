@@ -57,4 +57,32 @@ describe("spokenConsent", () => {
       expect(spokenConsent("fine")).toBe("allow");
     });
   });
+
+  // Every call that speaks the card as "Allow once, or deny?" (voice mode,
+  // take turns, a room, the iPhone): the answer must pick an option.
+  describe("on a voice call (two options)", () => {
+    it("allows on a whole-utterance yes, in English or French", () => {
+      for (const said of ["yes", "Yes, go ahead.", "allow once", "Allow it", "uh, yes please", "okay, do it", "oui", "Oui, vas-y.", "ouais", "autoriser une fois", "Autorise-le", "j\u2019autorise", "ben oui", "d'accord, vas-y", "je confirme", "confirm it"]) {
+        expect(spokenConsent(said, "voice"), said).toBe("allow");
+      }
+    });
+
+    it("denies on a clear no, a reason allowed", () => {
+      for (const said of ["no", "No, don't do that.", "deny", "cancel it", "non", "Non merci", "refuser", "je refuse", "pas question", "annule ça", "don't do it", "okay no"]) {
+        expect(spokenConsent(said, "voice"), said).toBe("deny");
+      }
+    });
+
+    it("asks again for a hedge, a mix, a question, a condition or Always allow", () => {
+      for (const said of [
+        "okay", "sure", "fine", "d'accord", "ok?", "", "   ",
+        "yes, but rename it first", "yes wait no", "yes, what does it delete?", "oui mais pas ce fichier-là",
+        "no wait, yes", "non, vas-y", "no? what is it", "non, plutôt l'autre",
+        "always allow", "allow always", "toujours autoriser",
+        "yesterday was fine", "I'm not sure", "what does it do", "nonsense",
+      ]) {
+        expect(spokenConsent(said, "voice"), JSON.stringify(said)).toBeNull();
+      }
+    });
+  });
 });

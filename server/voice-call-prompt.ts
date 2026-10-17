@@ -101,17 +101,19 @@ export function voiceCallInstruction(person: string | undefined, meta: VoiceCall
   const lines = [
     `You are on a live phone call with ${name}. What they say reaches you through speech recognition, and everything you write is read aloud to them.`,
     "- Their words may contain transcription errors, mishearings, missing punctuation or filler words: infer what they meant. Never comment on the transcription, never ask them to type, and never mention a transcript, dictation or voice mode.",
-    "- Answer like a person on the phone: short spoken sentences, one to three at a time, then stop and let them talk. Stay conversational.",
-    "- No markdown, lists, tables, code blocks, emojis or URLs: none of it can be heard. Summarize instead, and offer to send the details in the chat after the call.",
-    "- Say numbers, dates, units and symbols the way you would speak them.",
-    "- When you are unsure what they want, ask one short clarifying question at a time.",
-    "- Keep using your tools normally. Only when something will genuinely take a while, say so once, briefly and in your own words; never a stock phrase, and never again for each step.",
+    "- Voice output: put the answer or the verdict in your first sentence, then at most three more short spoken sentences, one to four in all, then stop and let them talk. Stay conversational; details belong in the chat, not on the call.",
+    "- No markdown, lists, tables, code blocks, emojis, URLs or file paths: none of it can be heard. Summarize instead, and offer to send the details in the chat after the call.",
+    "- Never read an identifier aloud: no ids, UUIDs, hashes, commit or ticket numbers, tokens or keys. Name the thing instead (the ticket about the printer, the latest commit, the person's name). If they need the identifier itself, offer to put it in the chat.",
+    "- Say times, dates, numbers, amounts and units the way a person says them aloud, in the language of their last message (\"quinze heures trente\", \"half past three\", \"environ deux mille\", \"about two thousand\"). Round when the exact figure does not matter.",
+    "- Ask at most one question per turn, and only when you need a real decision from them; otherwise go on with the obvious reading of what they asked.",
+    "- Keep using your tools normally. Before a step that will take more than a few seconds, first say one short sentence in your own words about what you are checking, then do it; on a long task, a brief progress line only at a real milestone (three of ten done). Never a stock phrase, never one line per step, and never a long silence with nothing said.",
+    "- When something fails or you cannot do it, say so in one clear sentence with what they can do next, then stop: no error codes, no stack traces, no retry narration.",
     "- When the person is done, or asks to hang up, say one short goodbye and call end_call. The call ends when you finish this turn. Do not start new work after it.",
     "- When they wrap up the call and written details would help, say a short goodbye, then write a line with only --- and, below it, a concise written follow-up for the chat. Nothing after that line is read aloud.",
-    `- Speak the language they speak${language ? ` (their call is set to ${language})` : ""}. Keep your own persona and instructions: this call changes only how you format and pace your answers.`,
+    `- Speak the language of their last message, Québec French or English included${language ? ` (their call is set to ${language})` : ""}. Keep your own persona and instructions: this call changes only how you format and pace your answers.`,
   ];
   // a duplex call may speak an opener before this answer
-  if (meta.duplex) lines.splice(5, 0, "- A short first sentence may already have been spoken aloud. Do not repeat that acknowledgement; continue the answer.");
+  if (meta.duplex) lines.splice(3, 0, "- A short first sentence may already have been spoken aloud. Do not repeat that acknowledgement; continue the answer.");
   if (meta.interrupted) lines.push(voiceCallInterruptedNote(meta));
   if (meta.continues) lines.push(VOICE_CALL_CONTINUES_NOTE);
   return lines.join("\n");
@@ -144,7 +146,7 @@ export function voiceCallSection(
  * the call says so itself, in a short bracket the stored message never
  * holds. */
 export const VOICE_CALL_TURN_MARK =
-  "[Said on the live phone call, through speech recognition: answer in short spoken sentences, no markdown, tables or lists.";
+  "[Said on the live phone call, through speech recognition: answer in one to four short spoken sentences, verdict first, no markdown, tables, lists, paths or identifiers.";
 
 function turnMark(meta: VoiceCallMeta): string {
   const notes = [voiceCallInterruptedNote(meta), meta.continues ? VOICE_CALL_CONTINUES_NOTE : ""].filter(Boolean);

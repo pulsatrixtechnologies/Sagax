@@ -20,9 +20,9 @@ import { CallTargetButton, useOrganizationCall } from "./CallView";
 import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "./PendingApproval";
+import { spokenDecision } from "@/lib/voice-mode/answers";
+import { t } from "@/lib/i18n";
 
-const YES = /^(yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|allow|approve|approved|fine|please do)\b/i;
-const NO = /^(no|nope|don'?t|do not|stop|deny|denied|cancel|never|skip it)\b/i;
 const CALL_ENDPOINT_MS = 850;
 
 type Phase = "listening" | "sending" | "working" | "speaking";
@@ -235,8 +235,9 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
           hush();
           return;
         }
-        if (YES.test(said) || NO.test(said)) {
-          const allow = YES.test(said);
+        const decision = spokenDecision(said);
+        if (decision) {
+          const allow = decision === "allow";
           if (allow && openApproval.skill) {
             setHeard("");
             enqueueSpeech(
@@ -279,7 +280,7 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
           });
           return;
         }
-        enqueueSpeech("Sorry — is that a yes or a no?", openApproval.member, true);
+        enqueueSpeech(t("voiceMode.allowOnceOrDeny"), openApproval.member, true);
         return;
       }
 

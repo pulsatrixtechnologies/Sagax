@@ -79,10 +79,17 @@ public enum SpokenText {
 
     private static let letterOrNumber = try! NSRegularExpression(pattern: "[\\p{L}\\p{N}]")
 
-    /// A sentence without markdown, emoji, URLs or HTML, whitespace folded.
+    /// A sentence without markdown, emoji, URLs, HTML or identifiers
+    /// (SpokenIdentifiers), whitespace folded.
     public static func speakableSentence(_ piece: String) -> String {
         var text = piece
         for rule in rules {
+            text = rule.regex.stringByReplacingMatches(
+                in: text, range: NSRange(text.startIndex..., in: text), withTemplate: rule.template
+            )
+        }
+        text = SpokenIdentifiers.strip(text)
+        for rule in rules.suffix(3) {
             text = rule.regex.stringByReplacingMatches(
                 in: text, range: NSRange(text.startIndex..., in: text), withTemplate: rule.template
             )

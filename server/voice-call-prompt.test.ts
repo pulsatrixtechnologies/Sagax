@@ -54,10 +54,17 @@ describe("the phone-call instruction", () => {
     expect(text).toContain("You are on a live phone call with Ada.");
     expect(text).toContain("transcription errors");
     expect(text).toContain("never mention a transcript, dictation or voice mode");
-    expect(text).toContain("one to three at a time");
-    expect(text).toContain("No markdown, lists, tables, code blocks, emojis or URLs");
+    expect(text).toContain("put the answer or the verdict in your first sentence");
+    expect(text).toContain("one to four in all");
+    expect(text).toContain("No markdown, lists, tables, code blocks, emojis, URLs or file paths");
+    expect(text).toContain("Never read an identifier aloud");
+    expect(text).toContain("in the language of their last message");
+    expect(text).toContain("Ask at most one question per turn, and only when you need a real decision");
+    expect(text).toContain("say one short sentence in your own words about what you are checking");
+    expect(text).toContain("say so in one clear sentence with what they can do next, then stop");
+    expect(text).toContain("Québec French or English");
     expect(text).not.toContain("Je regarde");
-    expect(text).toContain("never a stock phrase");
+    expect(text).toContain("Never a stock phrase");
     expect(text).toContain("(their call is set to French)");
     expect(text).toContain("Keep your own persona and instructions");
     // no duplex opener on this call: nothing to "not repeat"

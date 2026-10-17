@@ -25319,12 +25319,12 @@
         }
       }
     },
-    "%@ wants to %@. %@. Should I allow it?": {
+    "%@ wants to %@. %@. Allow once, or deny?": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ veut %2$@. %3$@. Dois-je l'autoriser?"
+            "value": "%1$@ veut %2$@. %3$@. Autoriser une fois, ou refuser ?"
           }
         }
       }
@@ -25339,12 +25339,12 @@
         }
       }
     },
-    "Sorry, is that a yes or a no?": {
+    "Sorry, I need one of the two answers: allow once, or deny?": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pardon, est-ce un oui ou un non?"
+            "value": "Pardon, il me faut une des deux réponses : autoriser une fois, ou refuser ?"
           }
         }
       }

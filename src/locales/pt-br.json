@@ -93,7 +93,6 @@
   "approval.tool.writeFile": "escrever um arquivo",
   "approval.voice.actionEnable": "ativá-la",
   "approval.voice.actionUpdate": "atualizá-la",
-  "approval.voice.command": "{requester} quer {tool}. {detail}. Devo permitir?",
   "approval.voice.defaultConfirmRoutine": "Confirmar esta rotina?",
   "approval.voice.defaultEnableSkill": "Ativar esta habilidade?",
   "approval.voice.defaultUpdateProfile": "Atualizar este perfil?",

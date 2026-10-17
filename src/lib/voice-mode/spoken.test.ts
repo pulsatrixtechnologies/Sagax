@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import { speakableSentence, spokenPart } from "./spoken";
 
 describe("what a call reads aloud", () => {
+  it("never reads an identifier aloud", () => {
+    expect(speakableSentence("Done, commit **9fceb02d0ae5** (id: 3f2a9c1e-7b4d-4e2a-9f10-0c5b8d7e6a21).")).toBe("Done, commit.");
+    expect(speakableSentence("Le fichier /Users/someone/Desktop/facture.pdf est prêt.")).toBe("Le fichier facture.pdf est prêt.");
+  });
+
   it("drops markdown and keeps the words", () => {
     expect(speakableSentence("## **Bold** and _soft_ and `code` and ~~gone~~")).toBe("Bold and soft and code and gone");
     expect(speakableSentence("- [x] a done item")).toBe("a done item");
