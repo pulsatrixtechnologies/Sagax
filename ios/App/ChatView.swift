@@ -110,6 +110,13 @@ struct ChatView: View {
     @State var fileDownloadTask: Task<Void, Never>?
     @State var fileDownloadRequestID: UUID?
     @State var threadOpenTask: Task<Void, Never>?
+    /// Why this bot chat could not be opened, after asking the server again
+    /// (`ChatOpenProblemView`); nil while it shows or is being checked.
+    @State var openProblem: BotThreadAvailability?
+    /// The bots were reloaded from the server for this open.
+    @State var openChecked = false
+    /// Try again: runs the opening task once more for the same thread.
+    @State var openAttempt = 0
     @FocusState var composerFocused: Bool
     @StateObject var dictation = SpeechDictation()
     /// The composer's voice note (hold the mic, or + > Record a voice note).
@@ -154,10 +161,17 @@ struct ChatView: View {
     /// must not move a draft, approval, or Stop action to a different thread.
     var threadId: String { current.threadId }
 
+    /// Whether the bot's thread on screen can be shown, by the rule the bot
+    /// projects a thread with (nil for a room). Bug 2026-10-16: asking only
+    /// the bot's thread list closed a chat on its first frame when an
+    /// organization server sent the viewer's thread outside that list.
+    var threadAvailability: BotThreadAvailability? {
+        guard case let .bot(bot) = chat else { return nil }
+        return BotThreadAvailability.of(botId: bot.id, threadId: selectedThreadId, in: session.state)
+    }
+
     var selectedThreadWasRemoved: Bool {
-        guard case let .bot(bot) = chat else { return false }
-        guard let live = session.state.bot(bot.id) else { return true }
-        return live.tasks.map { !$0.contains { $0.threadId == selectedThreadId } } ?? false
+        threadAvailability.map { !$0.isOpen } ?? false
     }
 
     /// The room on screen was in the state and is gone (deleted on the
@@ -336,9 +350,9 @@ struct ChatView: View {
     }
 
     var arrival: some View {
-        AnyView(layout)
-        .task(id: threadId) {
-            if selectedThreadWasRemoved { dismiss(); return }
+        AnyView(openContent)
+        .task(id: "\(threadId)#\(openAttempt)") {
+            guard await resolveOpenThread() else { return }
             let openedChat = current
             session.threadSelection.rememberThread(openedChat, connectionID: session.connection?.id)
             AttentionCenter.shared.viewingThreadId = openedChat.threadId
@@ -364,7 +378,14 @@ struct ChatView: View {
 #endif
         }
         .onValueChange(of: selectedThreadWasRemoved) { removed in
-            if removed { dismiss() }
+            if removed {
+                // Removed while on screen: ask the server before leaving, so
+                // a frame that only narrowed the bot does not close the chat.
+                if openProblem == nil { Task { await confirmRemoval() } }
+            } else if openProblem != nil {
+                // the bot or its thread arrived after all (a stream frame)
+                retryOpen()
+            }
         }
         // A room deleted while open leaves the screen (its composer would
         // write into nothing), and so does a conversation the person closes

@@ -68399,6 +68399,116 @@
           }
         }
       }
+    },
+    "Opening %@…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening %@…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouverture de %@…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrindo %@…"
+          }
+        }
+      }
+    },
+    "%@ is not available": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is not available"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n'est pas disponible"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ não está disponível"
+          }
+        }
+      }
+    },
+    "This conversation can't be opened": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This conversation can't be opened"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette conversation ne peut pas s'ouvrir"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conversa não pode ser aberta"
+          }
+        }
+      }
+    },
+    "The server no longer lists this bot for you. It may have been deleted, or your access changed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server no longer lists this bot for you. It may have been deleted, or your access changed."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur ne vous montre plus ce bot. Il a peut-être été supprimé, ou votre accès a changé."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O servidor não mostra mais este bot para você. Ele pode ter sido excluído, ou seu acesso mudou."
+          }
+        }
+      }
+    },
+    "The server has no conversation of yours with %@ yet. Try again to start one, or check your access on your computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server has no conversation of yours with %@ yet. Try again to start one, or check your access on your computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur n'a pas encore de conversation à vous avec %@. Réessayez pour en démarrer une, ou vérifiez votre accès sur votre ordinateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O servidor ainda não tem uma conversa sua com %@. Tente de novo para iniciar uma, ou verifique seu acesso no computador."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

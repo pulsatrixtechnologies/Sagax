@@ -269,7 +269,7 @@ final class Session: ObservableObject {
         }
         if (arguments.contains("-store-preview") || arguments.contains("-computer-switcher-preview")),
            let url = Bundle.main.url(
-               forResource: arguments.contains("-cards-preview") ? "CardsPreview" : arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : "StorePreview",
+               forResource: arguments.contains("-cards-preview") ? "CardsPreview" : arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : arguments.contains("-open-thread-preview") ? "OpenThreadPreview" : "StorePreview",
                withExtension: "json"
            ),
            let data = try? Data(contentsOf: url),
@@ -2192,9 +2192,27 @@ final class Session: ObservableObject {
         }
     }
 
+    /// Reload the bots and rooms from the server (`GET /api/bots`), for a
+    /// chat the phone cannot show from what it holds. On an organization
+    /// server this list also starts the person's own thread with a bot they
+    /// have none with yet. False when there is no server or it failed; the
+    /// caller then explains instead of guessing.
+    @discardableResult
+    func reloadConversations() async -> Bool {
+        guard let client else { return false }
+        do {
+            try await hydrate(using: client)
+            return true
+        } catch {
+            log.info("reload for an open failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
     /// A pinned background thread may not be in a fresh fleet snapshot.
     func loadThreadIfNeeded(_ threadId: String) async {
-        guard let client, !state.hasLoadedPage(forThread: threadId) else { return }
+        // A bot with no thread of the person's yet has nothing to load.
+        guard let client, !threadId.isEmpty, !state.hasLoadedPage(forThread: threadId) else { return }
         do {
             let page = try await client.messages(threadId: threadId)
             state.merge(page, intoThread: threadId)
