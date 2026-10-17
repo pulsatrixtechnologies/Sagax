@@ -92,6 +92,10 @@ final class CallController: ObservableObject {
     private var organization = false
     private var previewVoice: String?
     private var callAlive: Timer?
+    /// asks the conversation for a progress line while the bot works in silence
+    private var progressTick: Timer?
+    /// the thread as last observed (the progress tick reads it)
+    private var lastMessages: [Message] = []
     private var callEnd: (() -> Void)?
     /// Kept for the life of the controller. `end()` clears `observers`, so
     /// the server's hang-up must not live in that list.
@@ -290,6 +294,10 @@ final class CallController: ObservableObject {
                       !terms.isEmpty, self?.recognizer === recognizer else { return }
                 recognizer?.useContextualStrings(terms)
             }
+            progressTick?.invalidate()
+            progressTick = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                DispatchQueue.main.async { self?.tickProgress() }
+            }
             callAlive = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { _ in
                 Task { await client.voiceCallSession(botId: bot.id, state: .alive, callId: call.callId, threadId: call.threadId, language: call.language) }
             }
@@ -387,6 +395,8 @@ final class CallController: ObservableObject {
         noteCallClockEnded()
         CallQuiet.shared.set(threadId, live: false)
         callAlive?.invalidate()
+        progressTick?.invalidate()
+        progressTick = nil
         callAlive = nil
         callEnd?()
         callEnd = nil
@@ -693,7 +703,8 @@ final class CallController: ObservableObject {
         if let live = conversation.stream(state.streaming[threadId]) {
             engine.replyProgress(live)
         }
-        let actions = conversation.settle(messages: messages, botName: name, thinking: engine.state.phase == .thinking, playerBusy: player.busy, duplex: callSettings.fullDuplex)
+        lastMessages = messages
+        let actions = conversation.settle(messages: messages, botName: name, thinking: engine.state.phase == .thinking, playerBusy: player.busy, duplex: callSettings.fullDuplex, botBusy: busy)
         interrupted = conversation.interrupted
         unheard = conversation.unheard
         for action in actions {
@@ -710,10 +721,48 @@ final class CallController: ObservableObject {
             case let .narrate(text, speakerId):
                 player.speaker = speaker(speakerId)
                 engine.speakNow(text)
+            case let .progress(line):
+                player.speaker = speaker(nil)
+                engine.speakNow(progressWords(line))
             case let .announce(text, speakerId):
                 player.speaker = speaker(speakerId)
                 engine.speakNow(text)
             }
+        }
+    }
+
+    /// A progress line is due once a tool has run a moment with nothing
+    /// said, then after a real silence (CallProgress): the thread does not
+    /// change then, so a short tick asks.
+    private func tickProgress() {
+        guard let engine, let player, case .bot? = target else { return }
+        guard let line = conversation.progressLine(
+            messages: lastMessages, thinking: engine.state.phase == .thinking,
+            botBusy: lastBusy ?? false, playerBusy: player.busy
+        ) else { return }
+        player.speaker = speaker(nil)
+        engine.speakNow(progressWords(line))
+    }
+
+    /// The app's words for a progress line (Localizable.xcstrings): never
+    /// the tool's name, its arguments or an identifier.
+    func progressWords(_ line: CallProgressLine) -> String {
+        switch line {
+        case let .kind(kind):
+            switch kind {
+            case .check: return String(localized: "I'm checking.")
+            case .search: return String(localized: "I'm looking it up.")
+            case .web: return String(localized: "I'm looking online.")
+            case .command: return String(localized: "I'm running it now.")
+            case .change: return String(localized: "I'm making the change.")
+            case .screen: return String(localized: "I'm looking at the screen.")
+            case .teammate: return String(localized: "I'm asking a teammate.")
+            case .work: return String(localized: "I'm on it.")
+            }
+        case .still:
+            return String(localized: "Still on it.")
+        case let .steps(count):
+            return String(localized: "\(count) steps done, I'm still going.")
         }
     }
 

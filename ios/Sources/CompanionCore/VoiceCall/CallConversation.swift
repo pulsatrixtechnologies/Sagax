@@ -16,7 +16,9 @@
 // - An approval is asked aloud and answered yes or no; anything else is
 //   "is that a yes or a no?", never consent. A question card is answered
 //   with the next words said.
-// - While the bot works with nothing to say, a narrated tool step is read.
+// - While the bot works in silence, a short progress line built from the
+//   turn's real tool events is said, rate-limited (CallProgress). A room
+//   still reads its members' narrated tool steps.
 import Foundation
 
 /// A sentence the call says on its own, worded by the app (localized).
@@ -50,8 +52,10 @@ public struct CallConversation: Sendable {
         case replyDone(String, speakerId: String?)
         /// a whole reply in a room, queued after the others
         case reply(String, speakerId: String?)
-        /// a narrated tool step while the bot works
+        /// a narrated tool step while a room's member works
         case narrate(String, speakerId: String?)
+        /// a short progress line while the bot works in silence (CallProgress)
+        case progress(CallProgressLine)
         /// a short spoken update for an older topic that just finished
         case announce(String, speakerId: String?)
     }
@@ -76,6 +80,10 @@ public struct CallConversation: Sendable {
     private var lastCutUnheard: String?
     /// a room: every member's reply is spoken in turn, nothing streams
     public let room: Bool
+    /// short progress lines from the turn's tool events (one bot only)
+    private var progress = CallProgress()
+    /// milliseconds, injectable for tests
+    public var clock: @Sendable () -> Double = { Date().timeIntervalSince1970 * 1000 }
 
     public init(existing: [Message], room: Bool = false) {
         spoken = Set(existing.map(\.id))
@@ -132,6 +140,13 @@ public struct CallConversation: Sendable {
 
     /// The live text to feed the call's reply, or nil (cut, or nothing).
     public mutating func stream(_ live: String?) -> String? {
+        let accepted = acceptStream(live)
+        // the bot's own words are being said: no quick progress line now
+        if let accepted, !accepted.isEmpty { progress.heard(now: clock()) }
+        return accepted
+    }
+
+    private mutating func acceptStream(_ live: String?) -> String? {
         guard !room else { return nil }
         if live == nil || live?.isEmpty == true {
             if waitForClear { waitForClear = false }
@@ -158,6 +173,7 @@ public struct CallConversation: Sendable {
 
     /// The bot's speech was cut: the rest of that answer is not spoken.
     public mutating func speechCancelled(currentStream: String?, cut: PlaybackCut? = nil) {
+        progress.stop()
         if let unheard = cut?.unheard, !unheard.isEmpty { lastCutUnheard = unheard }
         dropOldReply = true
         dropStream = currentStream ?? ""
@@ -167,6 +183,7 @@ public struct CallConversation: Sendable {
     /// The bot's running turn is being stopped: what it still streams is
     /// never spoken.
     public mutating func botInterrupted(currentStream: String?) {
+        progress.stop()
         dropOldReply = true
         dropStream = currentStream ?? dropStream ?? ""
         waitForClear = (dropStream ?? "").isEmpty
@@ -189,7 +206,10 @@ public struct CallConversation: Sendable {
         }
         // a new turn keeps the drop: a dying answer that lands after this
         // send is still the cut turn, never spoken
-        guard room else { return .send(said) }
+        guard room else {
+            progress.turnSent(now: clock())
+            return .send(said)
+        }
         let routed = GroupCallRouting.route(said, memberNames: memberNames)
         if mentionsOnly && !routed.addressed { return .needsName }
         return .send(routed.text)
@@ -207,7 +227,7 @@ public struct CallConversation: Sendable {
     /// What to say for messages that settled since the last call.
     /// `thinking`: the call rests in its thinking phase (narration allowed);
     /// `playerBusy`: something is already being said.
-    public mutating func settle(messages: [Message], botName: String, thinking: Bool, playerBusy: Bool, duplex: Bool = false) -> [SettleAction] {
+    public mutating func settle(messages: [Message], botName: String, thinking: Bool, playerBusy: Bool, duplex: Bool = false, botBusy: Bool = true) -> [SettleAction] {
         let approval = Self.pendingApproval(messages)
         let question = Self.pendingQuestion(messages)
         if let asked = askedApproval, approval?.card?.requestId != asked.requestId { askedApproval = nil }
@@ -269,13 +289,28 @@ public struct CallConversation: Sendable {
                 out.append(.replyDone(reply.text ?? "", speakerId: reply.from?.botId))
             }
         }
-        if replies.isEmpty && (thinking || room) {
+        if !replies.isEmpty { progress.heard(now: clock()) }
+        if replies.isEmpty && room {
             if let chip = fresh.last(where: { $0.kind == .activity && !($0.tool?.spoken ?? "").isEmpty }),
-               let line = chip.tool?.spoken, room || duplex || !playerBusy {
+               let line = chip.tool?.spoken {
                 out.append(.narrate(line, speakerId: chip.from?.botId))
             }
         }
+        if replies.isEmpty && !room, let line = progressLine(messages: messages, thinking: thinking, botBusy: botBusy, playerBusy: playerBusy) {
+            out.append(.progress(line))
+        }
         return out
+    }
+
+    /// The progress line due now, if any (CallProgress). The call asks on
+    /// every change of the thread and on a short tick while the bot works.
+    public mutating func progressLine(messages: [Message], thinking: Bool, botBusy: Bool, playerBusy: Bool) -> CallProgressLine? {
+        guard !room else { return nil }
+        let awaiting = (askedApproval.map { !$0.submitted } ?? false) || askedQuestion != nil
+        return progress.next(
+            now: clock(), thinking: thinking, botBusy: botBusy, botSpeaking: playerBusy,
+            awaitingAnswer: awaiting, tools: CallProgress.turnTools(messages)
+        )
     }
 
     private func sourceUserId(messages: [Message], reply: Message, index: Int) -> String? {

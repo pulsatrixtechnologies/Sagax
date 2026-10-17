@@ -663,19 +663,12 @@ final class CallConversationTests: XCTestCase {
         XCTAssertEqual(conversation.stream("It is sunny."), "It is sunny.")
     }
 
-    func testDuplexNarratesAToolChipWhileTheCuePlays() {
+    func testAOneBotCallNeverReadsTheServersToolNarration() {
         var conversation = CallConversation(existing: [])
         var chip = Message(id: "t", role: .bot, kind: .activity, at: 0)
-        chip.tool = ToolActivity(name: "Bash", spoken: "Checking your calendar")
-        XCTAssertEqual(
-            conversation.settle(messages: [chip], botName: "Ara", thinking: true, playerBusy: true, duplex: true),
-            [.narrate("Checking your calendar", speakerId: nil)]
-        )
-        var quiet = CallConversation(existing: [])
-        XCTAssertEqual(
-            quiet.settle(messages: [chip], botName: "Ara", thinking: true, playerBusy: true),
-            []
-        )
+        chip.tool = ToolActivity(name: "Bash", spoken: "running helpdesk__find_tickets")
+        XCTAssertEqual(conversation.settle(messages: [chip], botName: "Ara", thinking: true, playerBusy: true, duplex: true), [])
+        XCTAssertEqual(conversation.settle(messages: [chip], botName: "Ara", thinking: true, playerBusy: false), [])
     }
 
     func testAnApprovalIsAskedAndAnsweredYesOrNoOnly() {
@@ -743,11 +736,96 @@ final class CallConversationTests: XCTestCase {
         XCTAssertEqual(conversation.utterance("Tuesday"), .answer(requestId: "rq", messageId: "q", text: "Tuesday"))
     }
 
-    func testANarratedStepIsReadWhileTheBotWorks() {
+    func testAProgressLineComesFromTheTurnsRunningToolThenWaitsForSilence() {
+        final class Clock: @unchecked Sendable { var now: Double = 0 }
+        let clock = Clock()
         var conversation = CallConversation(existing: [])
+        conversation.clock = { clock.now }
+        XCTAssertEqual(conversation.utterance("peux-tu regarder mes billets"), .send("peux-tu regarder mes billets"))
+        var user = Message(id: "u", role: .user, kind: .text, at: 0)
+        user.text = "peux-tu regarder mes billets"
+        var chip = Message(id: "t", role: .bot, kind: .activity, at: 0)
+        chip.tool = ToolActivity(name: "mcp__helpdesk__find_tickets", spoken: "running find_tickets")
+        // just started: nothing yet
+        XCTAssertEqual(conversation.settle(messages: [user, chip], botName: "Ara", thinking: true, playerBusy: false), [])
+        clock.now = CallProgress.firstMs
+        XCTAssertEqual(conversation.progressLine(messages: [user, chip], thinking: true, botBusy: true, playerBusy: true), nil, "never over the bot's voice")
+        clock.now = CallProgress.firstMs + 100
+        XCTAssertEqual(conversation.progressLine(messages: [user, chip], thinking: true, botBusy: true, playerBusy: false), .kind(.search))
+        clock.now += 1_000
+        XCTAssertNil(conversation.progressLine(messages: [user, chip], thinking: true, botBusy: true, playerBusy: false), "one line per gap")
+        // the bot's own words stream: the silence starts over
+        clock.now += CallProgress.gapMs
+        XCTAssertEqual(conversation.stream("Je regarde"), "Je regarde")
+        clock.now += CallProgress.quietMs - 1
+        XCTAssertNil(conversation.progressLine(messages: [user, chip], thinking: true, botBusy: true, playerBusy: false))
+        clock.now += 1
+        XCTAssertEqual(conversation.progressLine(messages: [user, chip], thinking: true, botBusy: true, playerBusy: false), .still)
+        // a barge-in stops them until the next turn
+        conversation.speechCancelled(currentStream: nil)
+        clock.now += CallProgress.gapMs * 2
+        XCTAssertNil(conversation.progressLine(messages: [user, chip], thinking: true, botBusy: true, playerBusy: false))
+    }
+
+    func testTheFirstProgressLineIsQuickWhenNothingWasSaid() {
+        var progress = CallProgress()
+        progress.turnSent(now: 0)
+        let tools = [CallProgress.Tool(id: "a", name: "Bash")]
+        XCTAssertNil(progress.next(now: 0, thinking: true, botBusy: true, botSpeaking: false, awaitingAnswer: false, tools: tools))
+        XCTAssertNil(progress.next(now: CallProgress.firstMs - 1, thinking: true, botBusy: true, botSpeaking: false, awaitingAnswer: false, tools: tools))
+        XCTAssertEqual(progress.next(now: CallProgress.firstMs, thinking: true, botBusy: true, botSpeaking: false, awaitingAnswer: false, tools: tools), .kind(.command))
+        // an approval waiting: nothing
+        var waiting = CallProgress()
+        waiting.turnSent(now: 0)
+        _ = waiting.next(now: 0, thinking: true, botBusy: true, botSpeaking: false, awaitingAnswer: false, tools: tools)
+        XCTAssertNil(waiting.next(now: 5_000, thinking: true, botBusy: true, botSpeaking: false, awaitingAnswer: true, tools: tools))
+        // the bot's own words came first: no quick line
+        var spoke = CallProgress()
+        spoke.turnSent(now: 0)
+        spoke.heard(now: 100)
+        _ = spoke.next(now: 100, thinking: true, botBusy: true, botSpeaking: false, awaitingAnswer: false, tools: tools)
+        XCTAssertNil(spoke.next(now: 2_000, thinking: true, botBusy: true, botSpeaking: false, awaitingAnswer: false, tools: tools))
+    }
+
+    func testProgressLinesCountRealStepsAndStopAtFive() {
+        var progress = CallProgress()
+        progress.turnSent(now: 0)
+        var now: Double = 0
+        func tick(_ tools: [CallProgress.Tool]) -> CallProgressLine? {
+            now += CallProgress.gapMs
+            return progress.next(now: now, thinking: true, botBusy: true, botSpeaking: false, awaitingAnswer: false, tools: tools)
+        }
+        _ = progress.next(now: 0, thinking: true, botBusy: true, botSpeaking: false, awaitingAnswer: false, tools: [.init(id: "a", name: "Read")])
+        XCTAssertEqual(tick([.init(id: "a", name: "Read")]), .kind(.check))
+        XCTAssertEqual(tick([.init(id: "a", name: "Read", ok: true), .init(id: "b", name: "Bash")]), .kind(.command))
+        let three: [CallProgress.Tool] = [.init(id: "a", name: "Read", ok: true), .init(id: "b", name: "Bash", ok: true), .init(id: "c", name: "Bash")]
+        XCTAssertEqual(tick(three), .steps(2))
+        XCTAssertEqual(tick(three), .still)
+        XCTAssertEqual(tick(three), .still)
+        XCTAssertNil(tick(three), "five lines a turn at most")
+    }
+
+    func testAToolNameIsOnlyEverACategory() {
+        XCTAssertEqual(CallProgress.kind("Bash"), .command)
+        XCTAssertEqual(CallProgress.kind("Edit"), .change)
+        XCTAssertEqual(CallProgress.kind("WebSearch"), .web)
+        XCTAssertEqual(CallProgress.kind("mcp__helpdesk__find_tickets"), .search)
+        XCTAssertEqual(CallProgress.kind("psa__update_ticket"), .change)
+        XCTAssertEqual(CallProgress.kind("tickets.list"), .check)
+        XCTAssertEqual(CallProgress.kind("createInvoice"), .change)
+        XCTAssertEqual(CallProgress.kind("mcp__x__frobnicate"), .work)
+        XCTAssertNil(CallProgress.kind("end_call"))
+        XCTAssertNil(CallProgress.kind("AskUserQuestion"))
+        XCTAssertNil(CallProgress.kind("TodoWrite"))
+        XCTAssertNil(CallProgress.kind("auto-approved: Bash"))
+        XCTAssertNil(CallProgress.kind(""))
+    }
+
+    func testARoomStillReadsItsMembersNarratedSteps() {
+        var conversation = CallConversation(existing: [], room: true)
         var chip = Message(id: "t", role: .bot, kind: .activity, at: 0)
         chip.tool = ToolActivity(name: "Bash", spoken: "Checking your calendar")
-        XCTAssertEqual(conversation.settle(messages: [chip], botName: "Ara", thinking: true, playerBusy: false), [.narrate("Checking your calendar", speakerId: nil)])
+        XCTAssertEqual(conversation.settle(messages: [chip], botName: "Room", thinking: false, playerBusy: true), [.narrate("Checking your calendar", speakerId: nil)])
     }
 
     func testARoomSpeaksEveryMemberInTurnAndRoutesNames() {

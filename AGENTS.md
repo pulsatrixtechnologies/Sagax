@@ -1892,7 +1892,20 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   only the latest utterance (`voiceCall.duplex`, issue #292). Off, the
   page's duplex and speculative marks are dropped and words said while it
   works join that turn. No canned
-  tool filler and no tool-chip narration on a call. Tests:
+  tool filler and no tool-chip narration on a call: while the bot works in
+  silence the call says a short progress line built from the turn's real
+  tool events (`src/lib/voice-mode/progress.ts`, the iPhone's
+  `CallProgress`): only the tool's category ("Je vérifie.", "I'm making the
+  change.") or the count of finished steps, never its name, arguments or an
+  identifier, in the call's language (`tIn`, `voiceMode.progress.*`; a
+  language without those words gets none); the first once a tool has run
+  1.5 s with nothing said (the quick first line on every engine; the
+  model's own parallel opener stays HTTP Grok only, why in
+  `server/voice-first-sentence.ts`), later ones after 7 s of silence and
+  9 s apart, five a turn; never over the bot's voice, the person's words,
+  an open approval or question; a barge-in stops them until the next turn.
+  Covered by `progress.test.ts`, `VoiceModeBar.test.ts` and the iPhone's
+  `CallConversationTests`. Tests:
   `call-logic.test.ts`, `voice-build.test.ts`,
   `call.test.ts`, `duplex-policy.test.ts`, `speech-fence.test.ts`,
   `speech-stream.test.ts`,

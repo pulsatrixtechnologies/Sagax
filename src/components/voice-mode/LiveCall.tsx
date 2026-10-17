@@ -38,7 +38,9 @@ import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { publishLiveCall, retractLiveCall, useLiveCall, type LiveCallData, type LiveCallMetrics } from "@/lib/voice-mode/live-call-store";
 import { noteVoiceCallEnded, noteVoiceCallRunning } from "@/lib/voice-call-clock";
 import { callBarLines } from "@/lib/voice-call-transcript";
-import { t } from "@/lib/i18n";
+import { activeLocale, t, tIn } from "@/lib/i18n";
+import { CallProgress, progressLocale, progressText, turnTools } from "@/lib/voice-mode/progress";
+import { looksFrench } from "@/lib/voice-mode/turns";
 import { announceTopic, callHasBackgroundWork, howToSpeakTopicResult, sourceUserId, topicLabel } from "@/lib/voice-mode/voice-topics";
 import { nextSpeakSlot, type SpeakItem, type SpeakPriority } from "@/lib/voice-mode/voice-speak-queue";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "../PendingApproval";
@@ -50,6 +52,9 @@ import { VoiceModeBar, type VoiceAccessCard } from "./VoiceModeBar";
  * frame over the bot -> the bot ducked / cancelled (all ms).
  */
 export type CallMetrics = LiveCallMetrics;
+
+/** How often the call asks whether a progress line is due. */
+const PROGRESS_TICK_MS = 500;
 
 /** Runs the call with this bot and publishes it; draws nothing. */
 export function LiveCallEngine({ bot }: { bot: Bot }) {
@@ -98,6 +103,10 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   const fence = useRef<SpeechFence>(createSpeechFence());
   /** The utterance the opener may speak for. Cleared when that turn is dropped. */
   const openerOwner = useRef<VoiceOpenerOwner | null>(null);
+  /** Short progress lines from this turn's real tool events (progress.ts). */
+  const progress = useRef(new CallProgress());
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const pendingSpeak = useRef<Array<SpeakItem & { text: string; kind: "say" | "done" }>>([]);
   /** a send's retry belongs to this call: it never fires after the hang-up */
   const timers = useRef(callTimers());
@@ -165,6 +174,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       }),
       live.on("speech-cancelled", (cut) => {
         openerOwner.current = null;
+        progress.current.stop();
         setCaption("");
         if (cut.unheard) lastCut.current = { unheard: cut.unheard };
         // what was being said is cut: the rest of that answer is not spoken
@@ -172,6 +182,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       }),
       live.on("interrupt-bot", (target) => {
         openerOwner.current = null;
+        progress.current.stop();
         const current = botRef.current;
         // an approval or option card being answered by voice keeps its turn
         if (askedApproval.current || askedQuestion.current || !current.busy) return;
@@ -276,6 +287,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       // and logs its stages under it (the call's timeline uses the same)
       const utteranceId = spokenId ?? crypto.randomUUID();
       openerOwner.current = { threadId: current.threadId, callId, utteranceId, replyStarted: false };
+      progress.current.turnSent(Date.now());
       // a send that failed (a network blip, a turn that ended under it) is
       // tried again once with the same utterance; then the person is told,
       // never left waiting on silence
@@ -327,6 +339,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       const text = acceptVoiceOpener(openerOwner.current, (event as CustomEvent<VoiceOpenerOwner & { text?: string }>).detail);
       if (!text) return;
       openerOwner.current = openerOwner.current ? { ...openerOwner.current, replyStarted: true } : null;
+      progress.current.heard(Date.now());
       void call.say(text);
     };
     window.addEventListener(VOICE_OPENER_EVENT, onOpener);
@@ -353,6 +366,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
     if (openerOwner.current && accepted.text.trim()) {
       openerOwner.current = { ...openerOwner.current, replyStarted: true };
     }
+    if (accepted.text.trim()) progress.current.heard(Date.now());
     call.replyProgress(accepted.text);
   }, [call, live]);
 
@@ -419,9 +433,37 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       }
     }
     drainSpeak();
-    // No canned filler ("je regarde") and no tool narration on a call:
-    // the bot's own words say when something takes time.
+    // No canned filler and no tool-chip narration here: while the bot works
+    // in silence, the progress tick below says a short line built from this
+    // turn's real tool events, rate-limited (progress.ts).
   }, [call, messages, approval, question, bot.name, drainSpeak]);
+
+  // ── progress while the bot works in silence (progress.ts) ─────────────
+  useEffect(() => {
+    if (!call) return;
+    const timer = setInterval(() => {
+      const planner = progress.current;
+      if (!planner.active) return;
+      const asked = askedApproval.current;
+      const line = planner.next({
+        now: Date.now(),
+        thinking: call.current.phase === "thinking",
+        botBusy: Boolean(botRef.current.busy),
+        botSpeaking: call.player.busy || call.current.botAudible,
+        awaitingAnswer: Boolean((asked && !asked.submitted) || askedQuestion.current),
+        queued: pendingSpeak.current.length > 0,
+        tools: turnTools(messagesRef.current),
+      });
+      if (!line) return;
+      const lastUserText = [...messagesRef.current].reverse().find((message) => message.role === "user" && !message.parallelTask)?.text;
+      const locale = progressLocale({ callLanguage: readVoiceModeSettings().language, lastUserText, pageLocale: activeLocale(), looksFrench });
+      const text = progressText(line, (key, params) => tIn(locale, key, params));
+      // a filler: its own short clip, never the answer's utterance, never
+      // its first audio, and a barge-in cuts it like any speech
+      if (text) void call.sayFiller(text);
+    }, PROGRESS_TICK_MS);
+    return () => clearInterval(timer);
+  }, [call]);
 
   useEffect(() => {
     if (state && !state.botAudible) drainSpeak();

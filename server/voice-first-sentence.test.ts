@@ -81,7 +81,10 @@ describe("VoiceFirstSentenceJobs", () => {
     expect(emitted).toEqual(["Let me check."]);
   });
 
-  it("does not call an ACP engine", async () => {
+  // Claude (a cold one-shot CLI, no streaming), Codex (no one-shot text) and
+  // ACP (one prompt per session): their quick first line is the call's
+  // progress line from the turn's first tool (src/lib/voice-mode/progress.ts)
+  it.each(["grokAgent", "claudeAgent", "codex"])("does not call a %s engine", async (driverKind) => {
     const jobs = new VoiceFirstSentenceJobs();
     let called = false;
     beginVoiceFirstSentence({
@@ -90,7 +93,7 @@ describe("VoiceFirstSentenceJobs", () => {
       callId: "call-0123456789",
       utteranceId: "utt-0123456789",
       text: "Hello there",
-      driverKind: "grokAgent",
+      driverKind,
       modelIds: ["grok-3-mini"],
       emit: () => {},
       generate: async () => { called = true; return ""; },

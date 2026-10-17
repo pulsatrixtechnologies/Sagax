@@ -5,6 +5,21 @@
 // generateText). An ACP engine is primed instead (cachePrime on the warm),
 // because a second CLI spawn would be slower than the warm process.
 //
+// Why the other engines have no parallel opener (checked 2026-10-17):
+// - Claude: its generateText is a fresh `claude -p` process on the helper
+//   model, with no streaming and no system or model option. A cold CLI
+//   start costs more than the warm call process takes to write its own
+//   first words, so the opener would land after the answer has begun.
+// - Codex: the driver has no one-shot text path; a second app-server thread
+//   would pay its handshake and session before a single token.
+// - ACP (Grok CLI and the other agents): a session runs one prompt at a
+//   time and the warm session is the call's; a second session means
+//   session/new and every MCP server reconnected.
+// For every engine, the quick first line before a slow step is the call's
+// own progress line, from the turn's first tool that runs past 1.5 s with
+// nothing said (src/lib/voice-mode/progress.ts, the iPhone's CallProgress),
+// and the bot's own words before a tool, spoken as they stream.
+//
 // The voice routes stay ears and a voice. This call goes through the bot's
 // engine, never the xAI voice key, and never xAI chat from voice-mode.ts.
 

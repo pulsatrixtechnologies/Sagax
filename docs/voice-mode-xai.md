@@ -100,6 +100,44 @@ in-flight turn, discards the steer queue, and starts only those words
 dropped and the send takes the steer path. Typed chat still keeps its
 queue on Stop.
 
+## Progress lines
+
+A call turn that runs tools can leave the person in silence for half a
+minute. The call (desktop `LiveCall`, `src/lib/voice-mode/progress.ts`;
+iPhone `CallProgress` in `CallConversation`) then says a short line of its
+own, never a canned filler: each line comes from a tool event of this turn,
+the activity rows after the person's last line.
+
+- What is said: the category of the tool still running ("Je vérifie.", "I'm
+  looking it up.", "Je fais la modification.", from `progressKind`: built-in
+  tool names first, then the first verb of a connector tool's name), or,
+  for the same work again, the number of steps finished ("3 étapes faites,
+  je continue.") or "still on it". Never the tool's name, its arguments or
+  an identifier (the words also go through `stripSpokenIdentifiers`).
+  Tools whose own card or words are spoken (`end_call`, questions, plans)
+  get none.
+- Language: the call's chosen language, else (Auto) French when the
+  person's last words are French and the page is in English or French,
+  else the page's (`progressLocale`, `tIn`, keys `voiceMode.progress.*`). A
+  language whose pack lacks the words says nothing: silence beats the wrong
+  language. The iPhone says them in the app's language
+  (`Localizable.xcstrings`).
+- When: only in the call's thinking phase with the bot busy, nothing
+  audible, nothing else queued and no approval or question waiting. The
+  first line of a turn once a tool has run 1.5 s with nothing said: this is
+  the quick first sentence before a slow step on every engine (Claude,
+  Codex, ACP, API). Later lines need 7 s of silence (the bot's own words
+  reset it) and 9 s since the last line; five a turn at most. A 500 ms tick
+  asks.
+- Barge-in, an interrupt or a new turn: a line being said is cut like any
+  speech (it is a filler clip, never the answer's utterance and never the
+  turn's first audio), and no line follows until the next turn is sent.
+
+The model's own parallel opener (`voice.opener`, one sentence from a fast
+model beside the turn) stays with HTTP Grok on a full-duplex call;
+`server/voice-first-sentence.ts` says why Claude, Codex and ACP engines do
+not get one.
+
 ## Full-duplex conversation (issue #292)
 
 The stacked answers JC heard were not the TTS sentence queue (that is
@@ -123,7 +161,9 @@ please", with at most two filler or polite words around it,
 SRV-01" is work for the bot, sent like any other request, never swallowed.
 The call speaks no canned filler
 and no tool-chip narration; the prompt asks the bot to say so once, in
-its own words, only when something will genuinely take a while. A duplex
+its own words, only when something will genuinely take a while. What the
+call does say on its own while the bot works in silence is a progress
+line built from the turn's real tool events (see "Progress lines" below). A duplex
 send that races another is latest-wins (the slower one is superseded, never queued).
 `startTurn` thread_busy is retried until the interrupt cap. Cancelled
 turns stop streaming (`content.delta` of that turnId is not broadcast).

@@ -1925,7 +1925,17 @@
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
       "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
       "approval.voice.commandAsk": "921f8b0f3572ab34f536f57269e4fbe0b2c52281940d1e9b4e53bcc1823247ba",
-      "approval.voice.commandNoDetailAsk": "ebe5e2c4e6f814d854394a1ef094f77a11354b987a8d1a408feaba1c4fc2fcbe"
+      "approval.voice.commandNoDetailAsk": "ebe5e2c4e6f814d854394a1ef094f77a11354b987a8d1a408feaba1c4fc2fcbe",
+      "voiceMode.progress.check": "b49074666faac5ff844b9502deae4d206fcb93947fb41d491dbd2c25f07034b3",
+      "voiceMode.progress.search": "1e6e379b0aa55fc5d2e7c810eead65e7dcf84a28405c0a5774473f4c943395ed",
+      "voiceMode.progress.web": "e6ca93129509311429c061bd3528f6a17d688d22e5ac8d4efa800940552e0048",
+      "voiceMode.progress.command": "3caf4e40dfebb413f96eda2558b74f440de4e6f589b40a3f564b465ee82ab56e",
+      "voiceMode.progress.change": "1c87cb68ab3c9e264f6d7d84f10b472a0e015863126b1f44533c7fe5759aded1",
+      "voiceMode.progress.screen": "7de0ce0fbe9ab89f7459c132beeb6b14beb8adec9b819f179156d49d389a1079",
+      "voiceMode.progress.teammate": "c0966d38d1b980f28ffe36f17f6b7ceca34abc99e4428758732ee949278a1831",
+      "voiceMode.progress.work": "bcc039e853101b71db491d69ddfe164212faf18ccbfcf793f559ebb2560b8448",
+      "voiceMode.progress.still": "3b0da9b06237ee47d63c7170edb7cd8d8ee10c4ff38a7b6763e3a048868aac09",
+      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51"
     },
     "es": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -3833,7 +3843,17 @@
       "pdf.openDefault": "9e0b4d6b797b382046a669828dfc57809e4ea51acc412be0b702767f7d3ac1e1",
       "pdf.openDefaultAria": "8b1cd9454a77b0d8278634cbe7ba48ffabfe88ecf9988c933cb186c31c09d804",
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
-      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31"
+      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
+      "voiceMode.progress.check": "b49074666faac5ff844b9502deae4d206fcb93947fb41d491dbd2c25f07034b3",
+      "voiceMode.progress.search": "1e6e379b0aa55fc5d2e7c810eead65e7dcf84a28405c0a5774473f4c943395ed",
+      "voiceMode.progress.web": "e6ca93129509311429c061bd3528f6a17d688d22e5ac8d4efa800940552e0048",
+      "voiceMode.progress.command": "3caf4e40dfebb413f96eda2558b74f440de4e6f589b40a3f564b465ee82ab56e",
+      "voiceMode.progress.change": "1c87cb68ab3c9e264f6d7d84f10b472a0e015863126b1f44533c7fe5759aded1",
+      "voiceMode.progress.screen": "7de0ce0fbe9ab89f7459c132beeb6b14beb8adec9b819f179156d49d389a1079",
+      "voiceMode.progress.teammate": "c0966d38d1b980f28ffe36f17f6b7ceca34abc99e4428758732ee949278a1831",
+      "voiceMode.progress.work": "bcc039e853101b71db491d69ddfe164212faf18ccbfcf793f559ebb2560b8448",
+      "voiceMode.progress.still": "3b0da9b06237ee47d63c7170edb7cd8d8ee10c4ff38a7b6763e3a048868aac09",
+      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51"
     },
     "fr": {
       "access.addKey": "8a9f02fd9bdb83ac02d3240dcade949d6f3ffa2fc0b3df528e348bb4d29ae639",
@@ -12543,7 +12563,17 @@
       "organization.confidentialDefault.short": "d676a4e698c1fd9d08ddb8ec3896dca1a48ec40a575dd9f3e36ceeca20a8d884",
       "approval.voice.commandAsk": "921f8b0f3572ab34f536f57269e4fbe0b2c52281940d1e9b4e53bcc1823247ba",
       "approval.voice.commandNoDetailAsk": "ebe5e2c4e6f814d854394a1ef094f77a11354b987a8d1a408feaba1c4fc2fcbe",
-      "voiceMode.allowOnceOrDeny": "9206906856c48d84a8e63403c5f326b84e7768e97766a531f080c3395b07837d"
+      "voiceMode.allowOnceOrDeny": "9206906856c48d84a8e63403c5f326b84e7768e97766a531f080c3395b07837d",
+      "voiceMode.progress.check": "b49074666faac5ff844b9502deae4d206fcb93947fb41d491dbd2c25f07034b3",
+      "voiceMode.progress.search": "1e6e379b0aa55fc5d2e7c810eead65e7dcf84a28405c0a5774473f4c943395ed",
+      "voiceMode.progress.web": "e6ca93129509311429c061bd3528f6a17d688d22e5ac8d4efa800940552e0048",
+      "voiceMode.progress.command": "3caf4e40dfebb413f96eda2558b74f440de4e6f589b40a3f564b465ee82ab56e",
+      "voiceMode.progress.change": "1c87cb68ab3c9e264f6d7d84f10b472a0e015863126b1f44533c7fe5759aded1",
+      "voiceMode.progress.screen": "7de0ce0fbe9ab89f7459c132beeb6b14beb8adec9b819f179156d49d389a1079",
+      "voiceMode.progress.teammate": "c0966d38d1b980f28ffe36f17f6b7ceca34abc99e4428758732ee949278a1831",
+      "voiceMode.progress.work": "bcc039e853101b71db491d69ddfe164212faf18ccbfcf793f559ebb2560b8448",
+      "voiceMode.progress.still": "3b0da9b06237ee47d63c7170edb7cd8d8ee10c4ff38a7b6763e3a048868aac09",
+      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -21074,7 +21104,17 @@
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
       "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
       "approval.voice.commandAsk": "921f8b0f3572ab34f536f57269e4fbe0b2c52281940d1e9b4e53bcc1823247ba",
-      "approval.voice.commandNoDetailAsk": "ebe5e2c4e6f814d854394a1ef094f77a11354b987a8d1a408feaba1c4fc2fcbe"
+      "approval.voice.commandNoDetailAsk": "ebe5e2c4e6f814d854394a1ef094f77a11354b987a8d1a408feaba1c4fc2fcbe",
+      "voiceMode.progress.check": "b49074666faac5ff844b9502deae4d206fcb93947fb41d491dbd2c25f07034b3",
+      "voiceMode.progress.search": "1e6e379b0aa55fc5d2e7c810eead65e7dcf84a28405c0a5774473f4c943395ed",
+      "voiceMode.progress.web": "e6ca93129509311429c061bd3528f6a17d688d22e5ac8d4efa800940552e0048",
+      "voiceMode.progress.command": "3caf4e40dfebb413f96eda2558b74f440de4e6f589b40a3f564b465ee82ab56e",
+      "voiceMode.progress.change": "1c87cb68ab3c9e264f6d7d84f10b472a0e015863126b1f44533c7fe5759aded1",
+      "voiceMode.progress.screen": "7de0ce0fbe9ab89f7459c132beeb6b14beb8adec9b819f179156d49d389a1079",
+      "voiceMode.progress.teammate": "c0966d38d1b980f28ffe36f17f6b7ceca34abc99e4428758732ee949278a1831",
+      "voiceMode.progress.work": "bcc039e853101b71db491d69ddfe164212faf18ccbfcf793f559ebb2560b8448",
+      "voiceMode.progress.still": "3b0da9b06237ee47d63c7170edb7cd8d8ee10c4ff38a7b6763e3a048868aac09",
+      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -81,6 +81,19 @@ export function t(key: LocaleKey, params?: Record<string, string | number>): str
   return interpolate(active === "fr" || active.startsWith("fr-") ? elideFrench(template, params) : template, params);
 }
 
+/** Look up a catalog string in another language than the page's (a call
+ * speaks the call's language). Null when that language's pack lacks the
+ * key: the caller decides, rather than falling back to English. */
+export function tIn(tag: string, key: LocaleKey, params?: Record<string, string | number>): string | null {
+  const available = new Set(Object.keys(locales));
+  const resolved = resolveLocale(tag, available);
+  if (resolved === "en" && !/^en(?:-|$)/i.test(tag)) return null;
+  const template = (locales[resolved] ?? en)[key];
+  if (!template) return null;
+  if (!params) return template;
+  return interpolate(resolved === "fr" ? elideFrench(template, params) : template, params);
+}
+
 function interpolate(template: string, params: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
     name in params ? String(params[name]) : match,
