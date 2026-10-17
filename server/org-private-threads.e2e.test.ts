@@ -12,8 +12,10 @@
 //   PT-3  the one-time migration ran and logged its counts only
 //   PT-4  only a group's owner changes its settings or deletes it; another
 //         person reads them and may leave; an admin may delete (moderation)
+//   PT-5  single stream (thread mode off) on a shared bot: bob's new topic
+//         carries the digest of his own earlier topic, never alice's
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -152,7 +154,7 @@ posixOnly("Perspicax organization: private threads with a shared bot, group chat
       version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
     }), { mode: 0o640 });
     writeFileSync(join(data, "config.json"), JSON.stringify({
-      instances: { claude: { driver: "claudeAgent", config: { cli: FAKE_CLAUDE, fullAuto: true } } },
+      instances: { claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: join(home, "claude-dump.json") }, config: { cli: FAKE_CLAUDE, fullAuto: true } } },
     }));
     await start();
     alice = await signIn(ALICE);
@@ -391,5 +393,34 @@ posixOnly("Perspicax organization: private threads with a shared bot, group chat
     // alice, an admin not listed in it, does not even see it
     expect((await api("PATCH", `/api/groups/${mine.body.group.id}`, alice, { name: "not yours" })).status).toBe(404);
     expect((await api("DELETE", `/api/groups/${mine.body.group.id}`, bob)).status).toBe(200);
+  }, 120_000);
+  it("PT-5: single stream on a shared bot: each person's digest holds their own topics only", async () => {
+    const bob = await signIn(BOB);
+    const settled = async (auth: Auth, thread: string, text: string) => waitFor(async () => {
+      const got = await api("GET", `/api/threads/${thread}/messages`, auth);
+      const messages = (got.body.messages ?? []) as Array<{ role: string; kind: string; text?: string }>;
+      const at = messages.findIndex((m) => m.role === "user" && m.text === text);
+      return at >= 0 && messages.slice(at + 1).some((m) => m.role === "bot" && m.kind === "text");
+    }, 30_000);
+    // Both write from a single-stream client in their own first thread.
+    expect((await api("POST", `/api/bots/${botId}/messages`, alice, { text: "ALICE-ONLY stream topic", threadId: aliceThread, singleStream: true })).status).toBe(202);
+    await settled(alice, aliceThread, "ALICE-ONLY stream topic");
+    expect((await api("POST", `/api/bots/${botId}/messages`, bob, { text: "BOB-FIRST stream topic", threadId: bobThread, singleStream: true })).status).toBe(202);
+    await settled(bob, bobThread, "BOB-FIRST stream topic");
+    // Bob's new topic: a fresh thread of his, with his own earlier topic only.
+    const topic = await api("POST", `/api/bots/${botId}/tasks`, bob, { stream: true });
+    expect(topic.status, topic.text).toBe(201);
+    const topicThread = topic.body.task.threadId as string;
+    expect(topic.body.task.ownerPrincipalId).toBe(ids.bob);
+    expect(JSON.stringify(topic.body)).not.toContain("streamSegment");
+    expect((await api("POST", `/api/bots/${botId}/messages`, bob, { text: "BOB-SECOND what came before?", threadId: topicThread, singleStream: true })).status).toBe(202);
+    await settled(bob, topicThread, "BOB-SECOND what came before?");
+    const sent = JSON.parse(readFileSync(join(home, "claude-dump.json"), "utf8")) as { systemPrompt?: string };
+    const prompt = sent.systemPrompt ?? "";
+    expect(prompt).toContain("Earlier topics in this same conversation");
+    expect(prompt).toContain(`id ${bobThread}`);
+    expect(prompt).not.toContain(aliceThread);
+    expect(prompt).not.toContain("ALICE-ONLY");
+    expect(prompt).not.toContain("alice secret plan");
   }, 120_000);
 });

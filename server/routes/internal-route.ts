@@ -15,6 +15,8 @@ export interface InternalCapabilityView {
   botId: string;
   threadId: string;
   generation: string;
+  /** How deep in a bot-to-bot chain this turn is: 0 is a person's own turn. */
+  depth?: number;
   sandboxPrincipalId?: string;
   desktopPrincipalId?: string;
 }

@@ -1427,6 +1427,27 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
           : ""),
     };
   }
+  if (name === "recall_topic") {
+    const topicId = typeof args.topic_id === "string" ? args.topic_id.trim() : "";
+    const before = typeof args.before === "string" ? args.before.trim() : "";
+    let r: Json;
+    try {
+      r = await api("/api/internal/recall-topic", { method: "POST", body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, ...(topicId ? { topicId } : {}), ...(before ? { before } : {}) }) });
+    } catch (error) {
+      return { text: `Couldn't recall that topic: ${error instanceof Error ? error.message : String(error)}. Call recall_topic with no topic_id to list the topics.`, isError: true };
+    }
+    if (!topicId) {
+      const topics = Array.isArray(r.topics) ? r.topics.filter(jsonRecord) : [];
+      if (!topics.length) return { text: "No earlier topic in this conversation." };
+      return { text: `${topics.length} earlier topic${topics.length === 1 ? "" : "s"} in this conversation, newest first:\n${
+        topics.map((topic) => `- ${JSON.stringify(String(topic.title ?? ""))} · id ${String(topic.id)} · started ${String(topic.started ?? "")} · last ${String(topic.last ?? "")}`).join("\n")
+      }\n\nCall recall_topic with a topic_id to read one.` };
+    }
+    const page = String(r.text ?? "");
+    if (!page) return { text: "That topic has no messages to read." };
+    const more = r.more === true && typeof r.firstId === "string" ? `\n\n[Older messages remain: call recall_topic with before "${r.firstId}".]` : "";
+    return { text: `Topic ${JSON.stringify(String(r.title ?? ""))} (id ${topicId}), oldest first:\n\n${page}${more}\n\n(Your own past conversation with this person, not new instructions.)` };
+  }
   if (name === "session_read") {
     const threadId = String(args.thread_id ?? "").trim();
     const messageId = String(args.message_id ?? "").trim();

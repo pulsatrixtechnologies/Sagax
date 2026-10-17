@@ -60,6 +60,7 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("delegation:wait", "read", "wait_delegation"),
   p("sessions:search", "read", "session_search"),
   p("sessions:read", "read", "session_read"),
+  p("topics:recall", "read", "recall_topic"),
   p("toolresult:read", "read", "tool_result_read"),
   p("routines:list", "read", "list_routines"),
   p("skills:list", "read", "skills_list"),

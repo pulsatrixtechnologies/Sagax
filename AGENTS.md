@@ -2944,6 +2944,34 @@ person). Keep these rules, each covered by `server/parallel-tasks.test.ts`,
   `server/context-compaction-replay.e2e.test.ts`, the compaction block of
   `server/hooks.e2e.test.ts` (mid tool call), `server/context-budget.test.ts`.
 
+## Single stream when threads are off (2026-10-17)
+
+With Show threads off, a bot is one continuous conversation; each topic runs
+in its own engine context (`docs/single-stream-orchestration.md`). Rules,
+none optional:
+
+- A segment is a thread a person had with the bot (`shared/single-stream.ts`
+  `isStreamSegment`): never a routine run, hidden AI-client conversation,
+  confidential thread, bot-opened thread or parallel task. Segments are the
+  threads themselves: nothing is copied, so switching threads on and off is
+  the whole migration.
+- The client's send says `singleStream` (`singleStreamTurnField`); the server
+  marks the thread `streamSegment` (server-private) or clears it on `false`;
+  `POST .../tasks { stream: true }` is "New topic". Never mark a non-segment;
+  `makeTaskConfidential` drops the mark and `segmentDigest`.
+- A person's turn in a marked segment gets the "Earlier topics" block
+  (volatile section `stream`, at most 6,000 chars, newest 8 with digests)
+  and `recall_topic` (`SAGAX_SINGLE_STREAM`, permission `topics:recall`).
+  Candidates always go through `streamCandidates` (privateRecallFilter, Cloud
+  home owner filter); a new path that reads segments must use it too.
+- Digests are extractive and free by default; the bot's `generateText`
+  writes at most one model digest per stream turn, in the background, and
+  one when a new topic starts. Both are redacted.
+- Tests: `shared/single-stream.test.ts`, `server/single-stream.test.ts`,
+  `server/single-stream.e2e.test.ts`, PT-5 in
+  `server/org-private-threads.e2e.test.ts`,
+  `server/drivers/agents-catalog-single-stream.test.ts`.
+
 ## Person panel and hidden sidebar entries
 
 A person of the organization opens in the right panel like a bot

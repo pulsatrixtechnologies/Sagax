@@ -45,8 +45,11 @@ import { basename, join, sep } from "node:path";
 import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntimeGrant } from "./external-runtime.ts";
 
 import { z } from "zod";
-import { boundedContextText, selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES, type CompactionRecord } from "./context-rebuild.ts";
+import { boundedContextText, selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES, type CompactionRecord, type ReplayEntry } from "./context-rebuild.ts";
 import { draftSummary, foldPoint } from "./compaction-summary.ts";
+import { composeStreamDigest, draftSegmentDigest, extractSegmentDigest, recallTopicPage, streamCandidate, STREAM_FULL_ENTRIES, type SegmentDigest } from "./single-stream.ts";
+import { isStreamSegment } from "../shared/single-stream.ts";
+import { createRecallTopicInternalRoutes } from "./routes/recall-topic-internal.ts";
 import { compactBudget, contextWindowFor, defaultCompactAt, nativeCompactionPoint, shouldCompact } from "./context-budget.ts";
 import { autoCompactWindow, claudeSignedIn, resolveClaudeConfigDir, setSoloClaudeLinkedHandler } from "./drivers/claude.ts";
 import { claudeAccountLinked, soloClaudeAccountLinked, type SoloClaudeLinkCache } from "./claude-account.ts";
@@ -3710,6 +3713,9 @@ function agentsIntegration(
       // join_meeting: Settings > Experimental > Meeting notetaker, direct
       // conversations only. The internal route re-checks both.
       SAGAX_MEETINGS: meetingNotetakerEnabled(cfg) && !store.groupByThread(threadId) ? "1" : "0",
+      // recall_topic: a person's turn in a single-stream segment
+      // (server/single-stream.ts). The route re-checks.
+      SAGAX_SINGLE_STREAM: depth === 0 && store.taskByThread(botId, threadId)?.streamSegment === true ? "1" : "0",
       // And for a role: team setup, bot creation and deletion, rooms and
       // retries are shown only to a Chief of Staff, whom their routes require.
       SAGAX_CHIEF_OF_STAFF: store.bot(botId)?.chiefOfStaff === true ? "1" : "0",
@@ -17523,6 +17529,13 @@ async function startTurn(
         coordinationNode.parentId ? coordinator.node(coordinationNode.parentId) : undefined))) {
         throw new DirectTurnSetupCancelled("Coordination access changed before dispatch");
       }
+      // Single stream (thread mode off): a person's turn in a stream segment
+      // carries the digest of their earlier topics (server/single-stream.ts),
+      // never on a call (a phone turn stays short), and those topics leave
+      // the recent-work brief so nothing is said twice.
+      const streamPart = !onCall && streamTurn(bot, threadId, { person: commsDepth === 0 && !coordinationNode && !opts?.automationSource && !opts?.unattended && !warmOnly && !userMessage.peerAsk })
+        ? streamDigestPrompt(bot, threadId) : null;
+      if (streamPart?.text) refreshStreamDigests(bot.id, threadId);
       const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         // first after the soul: the block names agent tools, so it only goes
@@ -17561,7 +17574,8 @@ async function startTurn(
         // what the bot said lately in its other conversations, so a task
         // never redoes — or forgets — what another one already did
         // not on a call: a phone turn stays short (docs/voice-mode-xai.md, "Latency")
-        { id: "recent", label: "Recent work", text: onCall ? "" : recentWorkPrompt(recentWorkFor(bot, threadId, { userName: botUserName(bot) })) },
+        { id: "recent", label: "Recent work", text: onCall ? "" : recentWorkPrompt(recentWorkFor(bot, threadId, { userName: botUserName(bot) }).filter((line) => !streamPart?.threadIds.has(line.threadId))) },
+        { id: "stream", label: "Earlier topics", text: streamPart?.text ?? "" },
         // RULES.md: listed here, placed right after the soul by buildSystemPrompt
         { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: Boolean(integrations.agents) }) },
         { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace, enabled: bot.memoryEnabled !== false }) },
@@ -24357,6 +24371,26 @@ ROUTES.push(createArtifactRoutes({
   },
 }));
 const INTERNAL_ROUTES: InternalRouteHandler[] = [
+  // recall_topic (server/routes/recall-topic-internal.ts, server/single-stream.ts)
+  createRecallTopicInternalRoutes({
+    ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    topics: (capability) => {
+      const bot = store.bot(capability.botId);
+      const source = store.taskByThread(capability.botId, capability.threadId);
+      if (!bot || capability.depth !== 0 || !source || source.streamSegment !== true || !isStreamSegment(source)) return null;
+      const lending = cloudLendingView(capability);
+      return streamCandidates(bot, capability.threadId)
+        .filter((task) => !lending || cloudOwnerOnlyThread(task.threadId))
+        .sort((a, b) => segmentStamp(b) - segmentStamp(a))
+        .map((task) => ({ id: task.threadId, title: task.title, createdAt: task.createdAt, lastAt: segmentStamp(task) }));
+    },
+    page: (capability, topicId, before) => {
+      const bot = store.bot(capability.botId)!;
+      const userName = botUserName(bot);
+      const page = recallTopicPage(segmentHistory(bot, topicId).entries, (entry) => (entry.role === "user" ? userName : bot.name), before);
+      return { ...page, text: redactSecretsInText(page.text) };
+    },
+  }),
   // request_login (server/routes/credential-vault-internal.ts)
   createCredentialVaultInternalRoutes({
     vault: credentialVault,
@@ -27440,6 +27474,126 @@ function recentWorkFor(bot: BotRecord, threadId: string, opts: { userName: strin
     { ...bot, threadId, tasks: (bot.tasks ?? []).filter((task) => allow(task.threadId)) },
     { ...opts, currentThreadId: threadId, ...filter },
   );
+}
+
+// ── single stream (thread mode off, server/single-stream.ts) ──────────────
+/** The segments a stream turn in `threadId` may draw on: the bot's stream
+ * segments (shared/single-stream.ts: never confidential, hidden, routine,
+ * parallel or bot-opened) other than this one, narrowed like recall to the
+ * same person's threads, and on a Cloud home to the owner's own. */
+function streamCandidates(bot: BotRecord, threadId: string): TaskRecord[] {
+  if (store.isConfidentialThread(threadId) || store.groupByThread(threadId)) return [];
+  const allow = privateRecallFilter(bot, threadId);
+  return store.tasks(bot.id).filter((task) => streamCandidate(task, threadId, allow) && (!CLOUD_HOME || cloudOwnerOnlyThread(task.threadId)));
+}
+
+/** A segment's words as context entries, plus its file names and newest id. */
+function segmentHistory(bot: BotRecord, threadId: string): { entries: ReplayEntry[]; files: string[]; lastId?: string } {
+  const messages = store.activePath(threadId);
+  const entries = directContext(bot, threadId, messages).filter((entry) => entry.text.trim()).map(({ id, role, text }) => ({ id, role, text }));
+  const files = messages.flatMap((message) => (message.attachments ?? []).flatMap((attachment) =>
+    attachment.kind === "file" ? [attachment.name] : attachment.kind === "image" && attachment.name ? [attachment.name] : []));
+  return { entries, files, lastId: messages.at(-1)?.id };
+}
+
+/** Extractive digests worked out this run, by thread: free to recompute, so
+ * kept in memory rather than written to bots.json on every turn. */
+const extractedSegmentDigests = new Map<string, SegmentDigest>();
+/** Segments whose model-written digest is being drafted: one at a time each. */
+const segmentDigestDrafts = new Set<string>();
+
+function segmentStamp(task: TaskRecord): number {
+  return task.updatedAt ?? task.createdAt;
+}
+
+/** The digest of one segment for a stream turn: the stored one while no
+ * newer message came, else a fresh extractive one (no model call). */
+function segmentDigestText(bot: BotRecord, task: TaskRecord): string {
+  if (task.segmentDigest && task.segmentDigest.at >= segmentStamp(task)) return task.segmentDigest.text;
+  const cached = extractedSegmentDigests.get(task.threadId);
+  if (cached && cached.at >= segmentStamp(task)) return cached.text;
+  const { entries, files, lastId } = segmentHistory(bot, task.threadId);
+  if (!entries.length || !lastId) return "";
+  const digest: SegmentDigest = { text: redactSecretsInText(extractSegmentDigest(entries, files)), anchorId: lastId, at: Date.now(), by: "extract" };
+  extractedSegmentDigests.set(task.threadId, digest);
+  return digest.text;
+}
+
+/** Whether this bot's model may write a segment digest now: the same gates as
+ * a generated title, less the titles switch (compaction uses the engine the
+ * same way, unasked). */
+function streamDigestEngine(bot: BotRecord): ProviderInstance | null {
+  if (hostedModels && !hostedModels.allows(bot.modelSelection)) return null;
+  const instance = registry.get(bot.modelSelection.instanceId);
+  if (!instance?.generateText || policyModelRefusal(instance)) return null;
+  try {
+    assertWithinBudget(cfg, DATA_DIR);
+  } catch {
+    return null;
+  }
+  return instance;
+}
+
+/** In the background, have the bot's model write the digest of the newest
+ * segment whose stored digest is stale (at most one per call, so a stream
+ * turn costs one small one-shot at most). Never blocks a turn; a failure
+ * keeps the extractive digest. */
+function refreshStreamDigests(botId: string, threadId: string): void {
+  const bot = store.bot(botId);
+  if (!bot) return;
+  const stale = streamCandidates(bot, threadId)
+    .filter((task) => !segmentDigestDrafts.has(task.threadId) && !(task.segmentDigest?.by === "model" && task.segmentDigest.at >= segmentStamp(task)))
+    .sort((a, b) => segmentStamp(b) - segmentStamp(a))[0];
+  if (!stale) return;
+  const instance = streamDigestEngine(bot);
+  const { entries, files, lastId } = segmentHistory(bot, stale.threadId);
+  if (!instance || entries.length < 2 || !lastId) return;
+  segmentDigestDrafts.add(stale.threadId);
+  void draftSegmentDigest({ title: stale.title, history: entries, files, generateText: instance.generateText!.bind(instance) })
+    .then((drafted) => {
+      const current = store.taskByThread(botId, stale.threadId);
+      // Deleted, made confidential or changed hands meanwhile: nothing kept.
+      if (!current || !isStreamSegment(current) || current.ownerPrincipalId !== stale.ownerPrincipalId) return;
+      const at = Date.now();
+      store.patchTask(botId, stale.threadId, { segmentDigest: { text: redactSecretsInText(drafted.text), anchorId: lastId, at, by: drafted.by } });
+      extractedSegmentDigests.delete(stale.threadId);
+      console.info(`[stream] ${botId} ${stale.threadId}: ${drafted.by} digest, ${drafted.text.length} chars`);
+    })
+    .catch((error) => console.warn(`[stream] digest failed for ${stale.threadId}: ${error instanceof Error ? error.message : String(error)}`))
+    .finally(() => segmentDigestDrafts.delete(stale.threadId));
+}
+
+/** Whether a turn in `threadId` is a person's single-stream turn: the thread
+ * is a stream segment someone wrote in from a single-stream client, and the
+ * turn is that person's (no teammate, routine, webhook or call). */
+function streamTurn(bot: BotRecord, threadId: string, opts: { person: boolean }): boolean {
+  const task = store.taskByThread(bot.id, threadId);
+  return Boolean(opts.person && task?.streamSegment === true && isStreamSegment(task));
+}
+
+/** A person's send says whether their client shows one stream. Only a stream
+ * segment is ever marked (never a confidential, hidden, routine, parallel or
+ * bot-opened thread). */
+function noteStreamSend(botId: string, threadId: string, singleStream: boolean): void {
+  const task = store.taskByThread(botId, threadId);
+  if (!task) return;
+  if (singleStream && task.streamSegment !== true && isStreamSegment(task)) store.patchTask(botId, threadId, { streamSegment: true });
+  else if (!singleStream && task.streamSegment === true) store.patchTask(botId, threadId, { streamSegment: undefined });
+}
+
+/** The "Earlier topics" system-prompt block of a stream turn, or "". */
+function streamDigestPrompt(bot: BotRecord, threadId: string): { text: string; threadIds: ReadonlySet<string> } {
+  const candidates = streamCandidates(bot, threadId);
+  if (!candidates.length) return { text: "", threadIds: new Set() };
+  // Only the newest topics get a digest body (composeStreamDigest), so only
+  // theirs are worked out: an old bot with hundreds of threads reads eight.
+  const newest = [...candidates].sort((a, b) => segmentStamp(b) - segmentStamp(a));
+  const composed = composeStreamDigest(newest.map((task, index) => ({
+    threadId: task.threadId, title: task.title, createdAt: task.createdAt, lastAt: segmentStamp(task),
+    ...(index < STREAM_FULL_ENTRIES ? { digest: segmentDigestText(bot, task) } : {}),
+  })));
+  console.info(`[stream] ${bot.id} ${threadId}: digest of ${composed.full} topic(s) + ${composed.indexed} indexed, ${composed.chars} chars (~${Math.ceil(composed.chars / 4)} tokens)${composed.omitted ? `, ${composed.omitted} omitted` : ""}`);
+  return { text: composed.text ? `\n\n${composed.text}` : "", threadIds: new Set(candidates.map((task) => task.threadId)) };
 }
 
 function searchHitVisibleNow(threadId: string, viewerId: string | undefined): boolean {
@@ -39747,6 +39901,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const dataContext = press ? undefined : parseDataContext(body.dataContext);
       // the coding view is on for the device that sent this (server/dev-pods-prompt.ts)
       devPodsThreads.note(threadId, parseDevPods(body.devPods));
+      // Single stream (server/single-stream.ts): a client showing one
+      // continuous conversation (threads off) marks this thread a stream
+      // segment; a client showing threads clears the mark. A client that says
+      // nothing (an older build, the phone, a relay) leaves it as it is.
+      if (typeof body.singleStream === "boolean" && !guardedBody) noteStreamSend(bot.id, threadId, body.singleStream);
       // What a send to a busy conversation does (shared/parallel-tasks.ts):
       // join the running turn (steer, the default), run as its own task in
       // parallel, or wait for the running turn (after).
@@ -40182,6 +40341,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // words take the context the client sends now, if any.
       const dataContext = parseDataContext(body.dataContext) ?? (text === source.text ? source.dataContext : undefined);
       devPodsThreads.note(bot.threadId, parseDevPods(body.devPods));
+      if (typeof body.singleStream === "boolean") noteStreamSend(bot.id, bot.threadId, body.singleStream);
       // On a Cloud home an edit is its author's line, so the owner's own edit
       // keeps their conversation theirs for lending (server/cloud-lending.ts).
       const message = await startTurn(bot.id, text, { threadId: bot.threadId, editedMessageId: messageId, replyTo, sendId, trigger: usageTriggerFor(auth), speaker: speakerFor(auth), dataContext,
@@ -40669,6 +40829,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "projectId must belong to this bot" });
       }
       if (body.hidden !== undefined && body.hidden !== true) return json(res, 400, { error: "hidden must be true when given" });
+      if (body.stream !== undefined && typeof body.stream !== "boolean") return json(res, 400, { error: "stream must be a boolean when given" });
       // An AI client's hidden conversation (#291, the member API's
       // sagax_send): started beside the person's chat, never selected, so
       // nothing on their screens moves to it.
@@ -40693,6 +40854,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Settings > Bot > Auto-review: a new conversation starts reviewed.
       if (body.approvalMode === undefined) applyAutoReviewDefault(auth, bot.id, task.threadId);
       if (creator && !hidden) selectViewerThread(bot.id, creator, task.threadId);
+      // "New topic" in a single stream (threads off): a stream segment from
+      // the start, and the topic it closes gets its digest written now, in
+      // the background, while the person types (server/single-stream.ts).
+      if (body.stream === true && !hidden && !confidentialChoice.confidential) {
+        noteStreamSend(bot.id, task.threadId, true);
+        refreshStreamDigests(bot.id, task.threadId);
+      }
       // Who opened it decides who may answer its cards on a shared workspace.
       if (auth.kind === "session") threadStarters.set(task.threadId, actorKey(auth));
       // A non-owner's new thread is not the bot's selection: answer with

@@ -70,6 +70,14 @@ export function setShowThreads(enabled: boolean): void {
   notify();
 }
 
+/** What a send to a bot carries: whether this client shows one continuous
+ * conversation (threads off). The server then treats the thread as a segment
+ * of that stream: the bot gets the digest of the earlier topics and
+ * recall_topic (server/single-stream.ts). Read at send time, never cached. */
+export function singleStreamTurnField(): { singleStream: boolean } {
+  return { singleStream: !showThreads() };
+}
+
 /** The person's own choice in Settings > Appearance, whatever the mode. */
 export function useShowThreadsChoice(): boolean {
   return useSyncExternalStore(subscribe, showThreads, () => SHOW_THREADS_DEFAULT);

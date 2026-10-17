@@ -37,7 +37,7 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
  * bot, because its "2h ago" labels drift even when nothing else changed.
  * The phone-call section (server/voice-call-prompt.ts) rides only on the
  * turns of a voice call and the first written turn after it. */
-const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability"]);
+const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "stream"]);
 
 /** The team availability section, defined once for the direct turn, the room
  * turn and the preview. Its id is what puts it in the volatile half: a call

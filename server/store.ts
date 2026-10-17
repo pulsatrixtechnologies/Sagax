@@ -33,6 +33,7 @@ import { REMOVED_COMPUTER_DRIVER, type ComputerEngineMove } from "./computer-eng
 import type { ProfileRequestChanges } from "../shared/profile-request.ts";
 import type { TaskParallelOf } from "../shared/parallel-tasks.ts";
 import type { SelectedComputer } from "../shared/execution-target.ts";
+import type { SegmentDigest } from "./single-stream.ts";
 import type { TeamSetupRequest, TeamSetupResult } from "../shared/team-setup.ts";
 import type { GroupGoalRunCardData } from "../shared/group-goal-run.ts";
 import { isMentionBoundary, isMentionNameContinuation } from "../shared/mention-boundary.ts";
@@ -134,12 +135,22 @@ export interface TaskRecord extends Omit<WireTask, TaskWireDerivedKeys> {
    * one is the bot's main thread (server/main-thread.ts), which clients get
    * worked out (WireBot.mainThreadId). Absent until someone writes. */
   askedAt?: number;
+  /** Single stream (thread mode off, server/single-stream.ts): a person
+   * wrote here from a client showing one continuous conversation, so a
+   * person's turn here carries the digest of their earlier topics and may
+   * call recall_topic. Only `true` is stored; a send from a client showing
+   * threads clears it. Never set on a confidential thread. */
+  streamSegment?: true;
+  /** The digest other stream turns read about this thread, anchored to the
+   * newest message it saw. Server-private, dropped when the thread turns
+   * confidential. */
+  segmentDigest?: SegmentDigest;
 }
 
 /** TaskRecord fields no client may see. Everything else must be on WireTask:
  * the exactness assertion below fails to compile when either side drifts,
  * so a new server field forces a decision — wire-visible or private here. */
-export type TaskWirePrivateKeys = "resumeCursors" | "lastInstanceId" | "handedMessages" | "appliedCompactionId" | "contextSummaries" | "contextFloor" | "lastContextModel" | "surfaceSource" | "askedAt" | "autoWorkspace";
+export type TaskWirePrivateKeys = "resumeCursors" | "lastInstanceId" | "handedMessages" | "appliedCompactionId" | "contextSummaries" | "contextFloor" | "lastContextModel" | "surfaceSource" | "askedAt" | "autoWorkspace" | "streamSegment" | "segmentDigest";
 /** WireTask fields computed by toWireTask and never stored on a TaskRecord. */
 export type TaskWireDerivedKeys = "surfaceAuto" | "followsBotModel";
 export type TaskWireProjection = Pick<TaskRecord, Exclude<keyof TaskRecord, TaskWirePrivateKeys>> & Pick<WireTask, TaskWireDerivedKeys>;
@@ -157,7 +168,7 @@ export const taskWireProjectionIsExact: TaskWireProjectionIsExact = true;
 export function toWireTask(task: TaskRecord, botModel: ModelSelection): WireTask {
   const { resumeCursors: _resumeCursors, lastInstanceId: _lastInstanceId, handedMessages: _handedMessages,
     appliedCompactionId: _appliedCompactionId, contextSummaries: _contextSummaries, contextFloor: _contextFloor, lastContextModel: _lastContextModel,
-    surfaceSource, askedAt: _askedAt, autoWorkspace: _autoWorkspace, ...stored } = task;
+    surfaceSource, askedAt: _askedAt, autoWorkspace: _autoWorkspace, streamSegment: _streamSegment, segmentDigest: _segmentDigest, ...stored } = task;
   const wire: WireTask = { ...stored, modelSelection: structuredClone(task.modelSelection ?? botModel), followsBotModel: task.modelSelection === undefined };
   // Who pinned stays private. A client learns only whether the pin is the
   // machine's own record, so it never presents one as the person's choice.
@@ -168,7 +179,7 @@ const TASK_PATCH_FIELDS = [
   "title", "projectId", "modelSelection", "approvalMode", "autoApprove", "alwaysAllow",
   "unread", "lastReadMessageId", "rewound", "archivedAt", "pinned", "pinnedMessageId", "resumeCursors", "lastInstanceId", "cwd",
   "routineRunId", "surface", "surfaceSource", "snoozedUntil", "link", "linkAuto", "appliedCompactionId", "contextSummaries", "contextFloor", "lastContextModel",
-  "autoModel", "autoWorkspace",
+  "autoModel", "autoWorkspace", "streamSegment", "segmentDigest",
 ] as const satisfies readonly (keyof TaskRecord)[];
 export type TaskPatch = Partial<Pick<TaskRecord, typeof TASK_PATCH_FIELDS[number]>>;
 
@@ -2100,6 +2111,10 @@ export class Store {
     if (!bot || !task) return null;
     if (task.confidential === true) return task;
     task.confidential = true;
+    // Nothing of a confidential thread feeds the single stream: its digest
+    // goes, and it stops being a stream segment (server/single-stream.ts).
+    delete task.streamSegment;
+    delete task.segmentDigest;
     if (bot.threadId === threadId) this.mirrorActiveTask(bot, task);
     this.saveBots();
     this.emit({ type: "bot", botId });

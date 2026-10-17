@@ -159,6 +159,8 @@
 //                      contains that text.
 //                      An argument "$ATTACHED_FILE" becomes the path the
 //                      prompt's first <attached-file> tag names.
+//                      An argument "$PROMPT_ID" becomes the id the prompt
+//                      names after "PROMPT_ID=".
 //   FAKE_CLAUDE_PROXY_FETCH an http URL each such turn GETs through
 //                      HTTP_PROXY first; the reply carries proxy:<status>:<body>.
 //   FAKE_CLAUDE_MCP_PAUSE_MS a pause between two calls (a test can change
@@ -849,9 +851,12 @@ const playTurn = (prompt: JsonValue, late = false) => {
     // <attached-file> tag names (where the harness said the file is).
     const attached = /<attached-file path=\\"(.*?)\\"/.exec(promptText);
     const attachedPath = attached ? JSON.parse(`"${attached[1]}"`) as string : "";
+    // "$PROMPT_ID" in an argument: the id the prompt names after
+    // "PROMPT_ID=" (a test that only learns an id at run time sends it).
+    const promptId = /PROMPT_ID=([\w-]+)/.exec(promptText)?.[1] ?? "";
     const withAttached = (call: FakeMcpCall): FakeMcpCall => ({
       ...call,
-      arguments: Object.fromEntries(Object.entries(call.arguments).map(([key, value]) => [key, value === "$ATTACHED_FILE" ? attachedPath : value])),
+      arguments: Object.fromEntries(Object.entries(call.arguments).map(([key, value]) => [key, value === "$ATTACHED_FILE" ? attachedPath : value === "$PROMPT_ID" ? promptId : value])),
     });
     void runFakeMcpCalls(fakeMcpCalls.filter((call) => !call.when || promptText.includes(call.when)).map(withAttached), argAfter("--mcp-config")).then(
       (note) => playReply(prompt, note),
