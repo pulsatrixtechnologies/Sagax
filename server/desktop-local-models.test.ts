@@ -214,14 +214,29 @@ describe("desktop local models", () => {
     expect(env.ANTHROPIC_API_KEY).not.toBe("sk-ant-real");
     expect(env.ANTHROPIC_AUTH_TOKEN).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(env)).not.toContain("127.0.0.1:8002");
-    // What Claude Code sends (base + /v1/messages) reaches the forwarder.
-    const sent = await fetch(`${env.ANTHROPIC_BASE_URL}/v1/messages`, {
+    // What Claude Code really sends: the Anthropic SDK beta client posts to
+    // base + /v1/messages?beta=true (Claude Code 2.1.x, seen on the wire).
+    const body = JSON.stringify({ model: "qwen3", max_tokens: 1, stream: true, system: "s".repeat(80_000), tools: [{ name: "Bash", input_schema: { type: "object" } }], messages: [{ role: "user", content: "hi" }] });
+    const sent = await fetch(`${env.ANTHROPIC_BASE_URL}/v1/messages?beta=true`, {
       method: "POST",
-      headers: { "x-api-key": env.ANTHROPIC_API_KEY!, "content-type": "application/json" },
-      body: JSON.stringify({ model: "qwen3", max_tokens: 1, messages: [{ role: "user", content: "hi" }] }),
+      headers: { "x-api-key": env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01", "anthropic-beta": "claude-code-20250219", "content-type": "application/json" },
+      body,
     });
     expect(sent.status).toBe(200);
-    expect(bridge.calls.at(-1)?.operation).toMatchObject({ http_path: "/messages", endpoint: "desk8002" });
+    expect(bridge.calls.at(-1)?.operation).toMatchObject({ http_path: "/messages", endpoint: "desk8002", json: body });
+    // The query is dropped, never forwarded to the desktop.
+    expect(JSON.stringify(bridge.calls.at(-1)?.operation)).not.toContain("beta=true");
+    const before = bridge.calls.length;
+    // Only that exact query, only on /messages.
+    for (const path of ["/messages?beta=false", "/messages?beta=true&x=1", "/messages?url=http://10.0.0.8", "/chat/completions?beta=true", "/models?beta=true"]) {
+      const refused = await fetch(`${env.ANTHROPIC_BASE_URL}/v1${path}`, {
+        method: "POST",
+        headers: { "x-api-key": env.ANTHROPIC_API_KEY!, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(refused.status, path).toBe(400);
+    }
+    expect(bridge.calls.length).toBe(before);
   });
 
   it("labels the DwarfStar catalog by name and keeps its context window", async () => {

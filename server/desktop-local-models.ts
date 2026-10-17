@@ -420,12 +420,16 @@ export class DesktopLocalModels {
       res.end("This local model request was refused.");
       return;
     }
-    if (url.search) {
+    const match = /^\/d\/(desk[a-z0-9]{3,24})\/v1(\/models|\/chat\/completions|\/messages)$/.exec(url.pathname);
+    // Claude Code (the Anthropic SDK beta client) always posts to
+    // /v1/messages?beta=true. That exact query is accepted on /messages and
+    // dropped (the bridge forwards the bare allowlisted path); any other query
+    // is refused.
+    if (url.search && !(match?.[2] === "/messages" && url.search === "?beta=true")) {
       res.writeHead(400, textHeaders);
       res.end("This local model request was refused.");
       return;
     }
-    const match = /^\/d\/(desk[a-z0-9]{3,24})\/v1(\/models|\/chat\/completions|\/messages)$/.exec(url.pathname);
     if (!match) {
       res.writeHead(404, textHeaders);
       res.end("This local model request was refused.");
