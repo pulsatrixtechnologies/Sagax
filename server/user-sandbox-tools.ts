@@ -166,10 +166,11 @@ function earlyRefusal(name: string, args: Record<string, unknown>, exec: ToolExe
 // process secret under /proc, a link into a credential location, or a name
 // that looked ordinary but leads to a dotfile (sensitive-path.ts). The read
 // then runs on the resolved path, after checking that the path still
-// resolves there.
+// resolves there. The paths go as arguments, never through the environment:
+// the Kubernetes backend (sandboxd-k8s.ts) runs only the command line.
 const RESOLVE_SCRIPT = [
   "import json, os, sys",
-  "p = os.environ['SAGAX_PATH']",
+  "p = sys.argv[1]",
   "cur = os.getcwd() if not p.startswith('/') else '/'",
   "links = []",
   "for part in p.split('/'):",
@@ -185,7 +186,7 @@ const RESOLVE_SCRIPT = [
   "sys.stdout.write(json.dumps({'sagaxResolved': 1, 'real': os.path.realpath(p), 'links': links}))",
 ].join("\n");
 
-const SAME_PLACE_SCRIPT = 'import os, sys; sys.exit(0 if os.path.realpath(os.environ["SAGAX_PATH"]) == os.environ["SAGAX_REAL"] else 3)';
+const SAME_PLACE_SCRIPT = "import os, sys; sys.exit(0 if os.path.realpath(sys.argv[1]) == sys.argv[2] else 3)";
 
 /** Where one path really is in the environment, or a refusal. Anything
  * that cannot be read fails closed. */
@@ -193,7 +194,7 @@ export async function resolveInSandbox(path: string, exec: ToolExec): Promise<{ 
   // a process secret named outright is refused before anything runs
   const named = resolvedReadRefusal(path, { real: "/", links: [] });
   if (named && procSecretPath(path)) return { refused: named };
-  const result = await exec.exec({ argv: ["python3", "-I", "-c", RESOLVE_SCRIPT], env: { SAGAX_PATH: path }, timeoutSec: 30, maxOutputBytes: 256 * 1024 });
+  const result = await exec.exec({ argv: ["python3", "-I", "-c", RESOLVE_SCRIPT, path], timeoutSec: 30, maxOutputBytes: 256 * 1024 });
   const unreadable = { refused: `could not resolve ${path} in the environment, so it is not read` };
   if (result.exitCode !== 0 || result.truncated) return unreadable;
   let parsed: unknown;
@@ -208,10 +209,10 @@ export async function resolveInSandbox(path: string, exec: ToolExec): Promise<{ 
 
 /** A read of the resolved path, run only while the requested path still
  * resolves there (a link swapped in between is refused). */
-function readResolved(path: string, real: string, command: string): { argv: string[]; env: Record<string, string> } {
+function readResolved(path: string, real: string, command: string): { argv: string[] } {
+  // $1 the requested path, $2 the resolved one (sh's own arguments)
   return {
-    argv: ["sh", "-c", `python3 -I -c '${SAME_PLACE_SCRIPT}' || { echo "the path changed while it was read" >&2; exit 3; }; ${command}`],
-    env: { SAGAX_PATH: path, SAGAX_REAL: real },
+    argv: ["sh", "-c", `python3 -I -c '${SAME_PLACE_SCRIPT}' "$1" "$2" || { echo "the path changed while it was read" >&2; exit 3; }; ${command}`, "sh", path, real],
   };
 }
 
@@ -326,7 +327,7 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       const max = Math.min(1_000_000, Math.max(1, Math.floor(typeof args.max_bytes === "number" ? args.max_bytes : 200_000)));
       const where = await resolveInSandbox(path, exec);
       if ("refused" in where) return text(where.refused, true);
-      const result = await exec.exec({ ...readResolved(path, where.resolved.real, `exec head -c ${max} -- "$SAGAX_REAL"`), timeoutSec: 30, maxOutputBytes: max + 1024 });
+      const result = await exec.exec({ ...readResolved(path, where.resolved.real, `exec head -c ${max} -- "$2"`), timeoutSec: 30, maxOutputBytes: max + 1024 });
       if (result.exitCode !== 0) return text(result.stderr.trim() || `could not read ${path}`, true);
       return text(wrapUntrusted("file", result.stdout));
     }
@@ -353,7 +354,7 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       if (pathRefused) return text(pathRefused, true);
       const where = await resolveInSandbox(path, exec);
       if ("refused" in where) return text(where.refused, true);
-      return commandOutput(await exec.exec({ ...readResolved(path, where.resolved.real, 'exec ls -la -- "$SAGAX_REAL"'), timeoutSec: 30 }));
+      return commandOutput(await exec.exec({ ...readResolved(path, where.resolved.real, 'exec ls -la -- "$2"'), timeoutSec: 30 }));
     }
     if (name === "browse") {
       const url = browsableUrl(args.url);

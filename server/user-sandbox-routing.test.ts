@@ -97,7 +97,7 @@ function recorder(result: Partial<SandboxExecOutput> = {}, overQuota = false) {
   const exec: ToolExec = {
     exec: async (input) => {
       // the environment resolves a read's path first (resolveInSandbox)
-      if (input.argv[0] === "python3") return { exitCode: 0, stdout: JSON.stringify({ sagaxResolved: 1, real: `/workspace/${input.env?.SAGAX_PATH ?? ""}`, links: [] }), stderr: "", truncated: false, timedOut: false };
+      if (input.argv[0] === "python3") return { exitCode: 0, stdout: JSON.stringify({ sagaxResolved: 1, real: `/workspace/${input.argv[4] ?? ""}`, links: [] }), stderr: "", truncated: false, timedOut: false };
       calls.push(input);
       return { exitCode: 0, stdout: "out", stderr: "", truncated: false, timedOut: false, ...result };
     },
@@ -141,8 +141,12 @@ describe("environment tools", () => {
   it("passes paths after -- so they are never options", async () => {
     const { calls, exec } = recorder();
     await callUserSandboxTool("read_file", { path: "-rf" }, exec);
-    expect(calls[0]!.argv.at(-1)).toContain('exec head -c 200000 -- "$SAGAX_REAL"');
-    expect(calls[0]!.env).toEqual({ SAGAX_PATH: "-rf", SAGAX_REAL: "/workspace/-rf" });
+    // the paths are sh's own arguments ($1, $2), never env (the Kubernetes
+    // backend runs only the command line) nor part of the script
+    expect(calls[0]!.argv[2]).toContain('exec head -c 200000 -- "$2"');
+    expect(calls[0]!.argv.slice(3)).toEqual(["sh", "-rf", "/workspace/-rf"]);
+    expect(calls[0]!.argv[2]).not.toContain("-rf\"");
+    expect(calls[0]!.env).toBeUndefined();
   });
 
   it("browses only http(s) URLs without credentials", async () => {
