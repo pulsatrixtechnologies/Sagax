@@ -9,9 +9,15 @@ const engines = [
 
 describe("the organization's allowed model providers", () => {
   it("allows every engine while no list is set, and only the listed ones after", () => {
-    for (const none of [null, undefined, []]) expect(engineAllowed(none, "codex")).toBe(true);
+    for (const none of [null, undefined]) expect(engineAllowed(none, "codex")).toBe(true);
     expect(engineAllowed(["claude"], "claude")).toBe(true);
     expect(engineAllowed(["claude"], "codex")).toBe(false);
+  });
+
+  it("2026-10-17: an empty list allows no engine (Perspicax saves none as [])", () => {
+    for (const id of ["claude", "codex", "grok"]) expect(engineAllowed([], id)).toBe(false);
+    // no engine can take the bot: it keeps its model and its turns are refused
+    expect(allowedFallbackSelection({ instanceId: "codex", model: "gpt-5.6" }, [], engines, { instanceId: "claude", model: "claude-sonnet-5" })).toBeNull();
   });
 
   it("leaves a bot on an allowed engine alone", () => {

@@ -1065,18 +1065,28 @@ describe("the organization's allowed model providers", () => {
     expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "grok"]);
   });
 
-  it("lists everything when the list is empty or missing, and on a solo server", () => {
+  it("lists everything when the list is missing, and on a solo server", () => {
     fixture.instances = [signedIn(), codex];
     fixture.config = { allowedEngines: ["claude"] };
     // Solo: the setting is an organization's; nothing is filtered.
     expect(rail(open(bot("claude", "claude-opus-5-5")))!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "codex"]);
     fixture.org = orgFixture;
     fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false)];
-    for (const config of [{ allowedEngines: [] }, { allowedEngines: null }, null]) {
+    for (const config of [{ allowedEngines: null }, null]) {
       fixture.values = [];
       fixture.config = config;
       expect(rail(open(bot("claude", "claude-opus-5-5")))!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "codex"]);
     }
+  });
+
+  it("2026-10-17: an empty list allows no provider (Perspicax saves none as [])", () => {
+    fixture.instances = [signedIn(), codex];
+    fixture.org = orgFixture;
+    fixture.myEngines = [mine("claude", "claudeAgent", true), mine("codex", "codex", true)];
+    fixture.values = [];
+    fixture.config = { allowedEngines: [] };
+    const column = rail(open(bot("claude", "claude-opus-5-5")))?.props as { instances: InstanceInfo[]; notAllowed?: (instance: InstanceInfo) => boolean } | undefined;
+    for (const instance of column?.instances ?? []) expect(column!.notAllowed!(instance)).toBe(true);
   });
 
   it("shows a provider the person connected but no longer allowed once, disabled, and nothing from it can be picked", () => {

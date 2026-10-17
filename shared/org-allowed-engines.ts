@@ -1,7 +1,8 @@
 // Organization server: the engines (model providers) the organization allows,
 // set by an admin in Perspicax (`allowedEngines`, POST /api/org/admin/settings,
-// docs/org-admin-api.md). A list of engine instance ids; null, absent or an
-// empty list means every engine, as before the setting existed. The server
+// docs/org-admin-api.md). A list of engine instance ids; null or absent
+// means every engine, as before the setting existed. An empty list means
+// none (2026-10-17, Perspicax 1.8.34 saves "none" as []): no engine runs. The server
 // refuses a model on another engine, moves a bot whose engine left the list
 // onto Auto on an allowed engine, and Auto never picks outside the list. The
 // model picker lists only these providers, under Cloud, API keys and Local,
@@ -13,7 +14,8 @@ export type AllowedEngines = readonly string[] | null | undefined;
 
 /** Whether the organization lets this engine run turns. */
 export function engineAllowed(allowed: AllowedEngines, instanceId: string): boolean {
-  return !allowed || allowed.length === 0 || allowed.includes(instanceId);
+  if (allowed === null || allowed === undefined) return true;
+  return allowed.includes(instanceId);
 }
 
 /** An engine as the fallback sees it: its id, whether it runs here, and the

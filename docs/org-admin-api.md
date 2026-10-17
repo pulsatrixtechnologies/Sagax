@@ -943,8 +943,9 @@ engine in `allowedEngines` this server does not have), 400 `invalid_policy`
 (a marketplace entry). Each changed setting writes its own `org.settings`
 row with its before and after.
 
-`allowedEngines` (engine instance ids, `null` or an empty list for every
-engine) is enforced everywhere since 2026-10-09:
+`allowedEngines` (engine instance ids, `null` for every engine; an empty
+list means no engine at all since 2026-10-17, Perspicax 1.8.34) is enforced
+everywhere since 2026-10-09:
 
 - The console's model changes (`POST bots/{id}/model`, bulk `model`) answer
   400 `engine_not_allowed`.

@@ -539,6 +539,13 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     // the engine policy holds for the console's model change
     expect((await admin("POST", `bots/${bots.atlas!.id}/model`, ALICE, { engineInstanceId: "broken", model: null })).body.code).toBe("engine_not_allowed");
     expect((await admin("POST", "settings", ALICE, { allowedEngines: ["ghost"] })).body.code).toBe("engine_not_installed");
+    // 2026-10-17: an empty list is "none" (Perspicax 1.8.34), never "every engine"
+    const none = await admin("POST", "settings", ALICE, { allowedEngines: [] });
+    expect(none.body.settings.policies).toMatchObject({ allowedEngines: [] });
+    expect((await api("GET", "/api/config", alice)).body.allowedEngines).toEqual([]);
+    expect((await admin("POST", `bots/${bots.atlas!.id}/model`, ALICE, { engineInstanceId: "claude", model: null })).body.code).toBe("engine_not_allowed");
+    const noneRefused = await api("PATCH", `/api/bots/${bots.atlas!.id}/tasks/${bots.atlas!.threadId}`, alice, { modelSelection: { instanceId: "hold", model: "fake-model" }, updateBotDefault: true });
+    expect(noneRefused.status, noneRefused.text).toBe(403);
     expect((await admin("POST", "settings", ALICE, { nope: true })).body.code).toBe("bad_request");
     const reset = await admin("POST", "settings", ALICE, { allowFullAccess: true, allowedEngines: null, pluginMarketplaces: { mode: "any" } });
     expect(reset.body.settings.policies).toMatchObject({ allowedEngines: null, allowedMarketplaces: null });

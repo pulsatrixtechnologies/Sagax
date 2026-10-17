@@ -30189,7 +30189,8 @@ function consoleEngineAllowed(instanceId: string): boolean {
  * every engine (shared/org-allowed-engines.ts). */
 function orgAllowedEngines(): string[] | null {
   const allowed = cfg.organization?.allowedEngines;
-  return IDENTITY.kind === "perspicax" && Array.isArray(allowed) && allowed.length ? allowed : null;
+  // [] is "none" (2026-10-17): only null or absent means every engine
+  return IDENTITY.kind === "perspicax" && Array.isArray(allowed) ? allowed : null;
 }
 /** Why a turn or a model choice may not use this engine here, if it may not. */
 function orgEngineAllowRefusal(instanceId: string): string | undefined {
