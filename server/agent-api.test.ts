@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AGENT_TOOL_NAMES, AGENT_TOOL_POLICY, COLD_PAGE_SIZE, createAgentApi, ENTRY_TEXT_MAX, decodeCursor, encodeCursor, FIND_LIMIT_MAX,
-  matchScore, SEND_FILES_MAX, signHandle, verifyHandle,
+  matchScore, SEND_FILES_MAX, signHandle, turnLabel, verifyHandle,
   type AgentApiDeps, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type StoredMessage, type TurnState,
 } from "./agent-api.ts";
 
@@ -159,7 +159,7 @@ describe("agent API policy", () => {
     const row = w.audits.at(-1)!;
     expect(row.entry).toMatchObject({ tool: "send_prompt", agentId: "bot-a", outcome: "ok" });
     expect(JSON.stringify(row)).not.toContain("top secret");
-    expect(row.entry.detail).toMatchObject({ mode: "blocking", onBusy: "supersede", files: 0, access: "write" });
+    expect(row.entry.detail).toMatchObject({ mode: "blocking", onBusy: "queue", files: 0, access: "write" });
   });
 
   it("refuses unknown tools and unknown parameters", async () => {
@@ -385,16 +385,19 @@ describe("send_prompt / await_turn", () => {
     expect(w.notified).toEqual(["bot-a:true:echo: later:as:person-jc"]);
   });
 
-  it("on_busy: supersede interrupts (default), reject refuses, queue leaves the running turn", async () => {
+  it("on_busy: queue leaves the running turn (default, 2026-10-17), reject refuses, supersede interrupts", async () => {
     const w = world({ replyAfterPolls: 50 });
     const caller = bot("bot-x");
-    await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "first" });
+    const first = await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "first" });
+    // a short label a person can read beside the handle
+    expect(String(first.body.label)).toMatch(/: first$/);
     const rejected = await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "second", on_busy: "reject" });
     expect(rejected.status).toBe(409);
     expect(rejected.body.code).toBe("busy");
     await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "third", on_busy: "queue" });
-    expect(w.interrupted).toEqual([]);
     await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "fourth" });
+    expect(w.interrupted).toEqual([]);
+    await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "fifth", on_busy: "supersede" });
     expect(w.interrupted).toHaveLength(1);
     expect((await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "x", on_busy: "later" })).status).toBe(400);
   });
@@ -508,6 +511,26 @@ describe("transcripts", () => {
     const { w, c } = await seeded();
     const r = await w.api.call(c, "read_latest_page_with_threads", { agent_id: "bot-a", limit: 2 });
     expect(r.body.threads).toEqual([expect.objectContaining({ count: 6, in_page: 2, hidden: true, status: "idle" })]);
+  });
+
+  it("read_latest_page and read_latest_page_with_threads read one conversation by thread_id, the caller's own only", async () => {
+    const { w, c } = await seeded();
+    const tid = [...w.threads.keys()][0]!;
+    const one = await w.api.call(c, "read_latest_page", { agent_id: "bot-a", limit: 2, thread_id: tid });
+    expect(one.status, JSON.stringify(one.body)).toBe(200);
+    expect((one.body.entries as Array<{ thread_id: string }>).every((e) => e.thread_id === tid)).toBe(true);
+    const withThreads = await w.api.call(c, "read_latest_page_with_threads", { agent_id: "bot-a", thread_id: tid });
+    expect((withThreads.body.threads as Array<{ thread_id: string }>).map((t) => t.thread_id)).toEqual([tid]);
+    expect((await w.api.call(c, "read_latest_page", { agent_id: "bot-a", thread_id: "not-mine" })).body.code).toBe("unknown_thread");
+    expect((await w.api.call(bot("bot-y"), "read_latest_page", { agent_id: "bot-a", thread_id: tid })).status).toBe(404);
+    expect((await w.api.call(c, "read_latest_page", { agent_id: "bot-a", thread_id: "a/b" })).status).toBe(400);
+  });
+
+  it("turnLabel keeps the agent's name and the prompt's first words", () => {
+    expect(turnLabel("Cryptic", "  check   the\nbackups ")).toBe("Cryptic: check the backups");
+    const long = turnLabel("Cryptic", "word ".repeat(40));
+    expect(long.length).toBeLessThanOrEqual("Cryptic: ".length + 62);
+    expect(long.endsWith("...")).toBe(true);
   });
 
   it("read_transcript_page bounds by unix ms (inclusive) and a cursor", async () => {

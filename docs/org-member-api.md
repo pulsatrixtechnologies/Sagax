@@ -64,8 +64,9 @@ any other shape, so the plan's `clients.bots.read` is written
 | `GET threads/{id}/stream?anchor&wait` | `clients.botsRead` | watch a running turn, streamed (lot C.3) |
 | `POST routines/{id}/run` | `clients.routinesRun` | run now |
 | `GET routines/runs/{id}` | `clients.routinesRun` | one run |
+| `GET approvals?status=pending` | `clients.botsRead` | the cards waiting on the person, across their conversations (2026-10-17) |
 | `GET approvals/{id}?threadId` | `clients.botsRead` | may the person answer this card (lot C.3) |
-| `POST approvals/{id}` | `clients.approvalsAnswer`, or owning the bot | allow or deny |
+| `POST approvals/{id}` | `clients.approvalsAnswer`, or owning the bot | allow, deny or pick an option |
 | `POST people/{id}/nudge` | `clients.peopleNudge` | nudge |
 | `POST agents/{tool}` | per tool (below) | the agent-to-agent tools |
 
@@ -147,10 +148,20 @@ message, joined, at most 32,000 characters. Every answer also carries
   "threadId": "a5fe...", "status": "working",
   "messages": [{ "id": "m_84...", "role": "bot", "kind": "text", "text": "Half way.", "at": 1791500000000, "sender": null }],
   "steps": { "count": 3, "recent": [{ "tool": "Bash", "ok": true }] },
-  "approvals": [{ "id": "req_4", "threadId": "a5fe...", "title": "Run a command?", "subtitle": "uptime", "tool": "Bash", "options": ["Allow", "Deny"] }],
+  "approvals": [{ "id": "req_4", "threadId": "a5fe...", "title": "Run a command?", "subtitle": "uptime", "tool": "Bash", "options": ["Allow", "Deny"],
+    "kind": "permission", "answerWith": "decision", "choices": [], "freeText": false, "createdAt": 1791500000000, "expiresAt": null }],
   "cursor": "m_84..."
 }
 ```
+
+Each card says how it is answered (2026-10-17): `kind` `permission` (a tool
+call) or `request` (a card of Sagax's own: a routine, a skill, a terminal)
+take `decision`; `kind` `question` (`ask_user`, `AskUserQuestion`) takes one
+of its `choices` (`{id, label}`, `id` its position from 1), or `text` when
+`freeText`. A card with several questions lists them in `questions`, each
+with its own options. A turn that stops on a card (a send with a wait, the
+stream's `final`, and `agents/send_prompt` or `agents/await_turn` with
+`status: waiting_for_approval`) carries that card in line as `approval`.
 
 - `messages`: text lines only (`text`, `nudge`, `access`), never a tool's
   input or output.
@@ -241,13 +252,51 @@ else needs it from a permission set (an admin holds every key). Without it:
 `403 forbidden_permission`, `permission: clients.approvalsAnswer`.
 
 
-`{"threadId": "a5fe...", "decision": "allow"}` or `"deny"`; `{id}` is the
-card's request id (`approvals[].id`). Answers `{answered: true, decision}`.
+`{"threadId": "a5fe...", "decision": "allow"}` or `"deny"`, plus `"option"`
+(an option id or its exact label; a list of them, one per question, for a
+card with several questions) or `"text"` (the person's own words, at most
+2,000 characters) for a question. `{id}` is the card's request id
+(`approvals[].id`). `decision` may be left out when `option` or `text` is
+given.
+
+- A question answered `allow` with no option takes its only option, or the
+  yes of a yes/no pair (`Yes`/`No`, `Oui`/`Non`); otherwise `409
+  option_required` with `options: [{id, label}]` (and `questions`). An option
+  the card does not have is `409 option_unknown` with the same list.
+- `deny` always closes the card: a question gets the no of a yes/no pair, or
+  a sentence telling the bot the person declined.
+- `200 {answered: true, closed: true, decision, state, option?}` only once
+  the card is really closed (re-read after the answer, up to 3 s); `state` is
+  `allowed`, `denied`, `answered`, `dismissed`, `expired` or `unavailable`
+  (closed, but the turn had already ended). A card still open afterwards is
+  `409 not_closed`.
+- Idempotent: a card already closed answers `200 {closed: true,
+  alreadyAnswered: true, state}`, and a second call while the first is still
+  answering gets the first one's outcome (one answer per card id).
+- A card in a confidential thread is `404` here, as are its reads (#683):
+  only the person, in Sagax, answers it.
+
 Who may answer is Sagax's rule (the bot's owner, an admin for a server
 command). The card records its answerer as the person, by the name the
 organization knows them by, with `via: "ai-client"` (the app shows "from an
 AI client" beside the outcome), and the admin activity log keeps one
-`client.approval` row naming the person and `via: perspicax-mcp`.
+`client.approval` row naming the person and `via: perspicax-mcp` (with
+`answer`: `decision`, `option` or `text`, never the words).
+
+### `GET approvals?status=pending`
+
+The cards waiting on the person across their conversations: each bot's
+threads they see in Sagax and their hidden AI-client conversation with it,
+read through the person's own read (a thread they cannot see stays out),
+confidential threads never listed, at most 50 waiting threads read.
+
+```json
+{ "count": 1, "approvals": [{ "id": "req_4", "threadId": "a5fe...", "botId": "b_31...", "botName": "Cryptic",
+  "title": "Your bot has a question", "subtitle": "Where should I deliver?", "kind": "question", "answerWith": "option",
+  "choices": [{ "id": "1", "label": "Deliver here" }, { "id": "2", "label": "Deliver here and by the relay" }, { "id": "3", "label": "No" }],
+  "freeText": true, "createdAt": 1791500000000, "expiresAt": null, "canAnswer": true,
+  "whoCanApprove": { "kind": "owner", "principalId": "pr_7c1e...", "name": "Bob", "sentence": "The bot's owner, Bob." } }] }
+```
 
 ### `POST people/{id}/nudge`
 

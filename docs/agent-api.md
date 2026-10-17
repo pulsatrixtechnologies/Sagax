@@ -21,12 +21,12 @@ names, parameters and limits as Grok Bot's agent tools, plus `get_agent` and
 | `get_agent` | read | `agents.read` | `agent_id`: the full profile for an audit (see below) |
 | `create_agent` | admin | `agents.create` | one temporary agent per call (see below), `name` (≤ 80 chars, one line), optional `description` and `idle_hours` (1 to 720, default 24); it greets the person itself. Only on the person's explicit ask |
 | `delete_agent` | admin | `agents.create` | `agent_id` of a temporary agent: archives it (see below). A lasting agent answers 409 `not_temporary` |
-| `send_prompt` | write | `agents.send` | `agent_id`, `prompt` (≤ 32,000 chars), `mode` `fire_and_forget` (default) / `blocking` / `async`, `timeout_ms` (1 s to 10 min, default 120 s), `on_busy` `supersede` (default) / `reject` / `queue`, up to 8 `files` (workspace-relative, 25 MiB each). Answers a `handle` |
+| `send_prompt` | write | `agents.send` | `agent_id`, `prompt` (≤ 32,000 chars), `mode` `fire_and_forget` (default) / `blocking` / `async`, `timeout_ms` (1 s to 10 min, default 120 s), `on_busy` `queue` (default since 2026-10-17: waits its turn) / `reject` / `supersede` (stops the running turn and the approval it waits on), up to 8 `files` (workspace-relative, 25 MiB each). Answers a `handle` and a short `label` (the agent's name and the prompt's first words) |
 | `await_turn` | read | `agents.read` | `agent_id`, `handle`, `timeout_ms`. Never send the prompt again: wait again with the same handle |
 | `read_transcript` | read | `agents.read` | the whole transcript (the newest 2,000 entries; `truncated` says when there were more) |
 | `read_transcript_page` | read | `agents.read` | one bounded page: `limit` (1 to 200) and `before_ms` required, `after_ms` optional (inclusive unix ms), `cursor` for the next older page |
-| `read_latest_page` | read | `agents.read` | the newest page: `limit` ≤ 200 (default 20), `cursor` |
-| `read_latest_page_with_threads` | read | `agents.read` | the newest page and the conversations it spans, with their status |
+| `read_latest_page` | read | `agents.read` | the newest page: `limit` ≤ 200 (default 20), `cursor`, optional `thread_id` (one of the caller's conversations, 404 `unknown_thread` otherwise) |
+| `read_latest_page_with_threads` | read | `agents.read` | the newest page and the conversations it spans, with their status; optional `thread_id` like `read_latest_page` |
 | `read_transcript_cold` | read | `agents.read` | the stored transcript only: pages of 50 by `cursor`; never reads live state, never wakes a computer or sandbox |
 
 `list_agents`, `find_agents` and `create_agent` answer each agent as `{id,

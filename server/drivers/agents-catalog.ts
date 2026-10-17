@@ -1368,7 +1368,7 @@ const AGENT_API_TOOLS = [
   },
   {
     name: "send_prompt",
-    description: "Send a prompt to an agent in your own hidden conversation with it. mode fire_and_forget (default) and async return a handle once accepted (async also tells you when the turn ends); blocking waits up to timeout_ms. After a timeout, resume with await_turn and the handle: never re-send. An empty reply with finished=true means the agent said nothing. on_busy: supersede (default) stops its running turn, reject refuses, queue waits.",
+    description: "Send a prompt to an agent in your own hidden conversation with it. mode fire_and_forget (default) and async return a handle once accepted (async also tells you when the turn ends); blocking waits up to timeout_ms. After a timeout, resume with await_turn and the handle: never re-send. An empty reply with finished=true means the agent said nothing. on_busy: queue (default) waits its turn, reject refuses, supersede stops its running turn (and any approval it waits on).",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       agent_id: AGENT_ID,
       prompt: { type: "string", minLength: 1, maxLength: 32000 },

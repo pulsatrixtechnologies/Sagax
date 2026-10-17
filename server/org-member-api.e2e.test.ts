@@ -19,6 +19,10 @@
 //       ends with the structured summary
 //   M7  the agent-to-agent tools (agents/{tool}): a person's AI client lists,
 //       sends (blocking and async + await_turn) and reads pages; scopes hold
+//   M9  2026-10-17: an ask_user question with three options: the stream
+//       carries it in line, the pending list shows it to its owner only, a
+//       bare allow is 409 option_required, an option closes it (the bot gets
+//       the option's words), a second answer is alreadyAnswered
 //   M8  Perspicax #321: create_agent makes a temporary agent the app never
 //       shows; get_agent reads its profile; only its owner or an admin pins
 //       or deletes it; delete_agent archives it and keeps it on disk
@@ -188,6 +192,7 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
         claude: { driver: "claudeAgent", config: { cli: FAKE_CLAUDE, fullAuto: true } },
         slow: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_GATE_DIR: gates }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
         hold: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: join(home, "hold-dump.json"), FAKE_CLAUDE_RELEASE: join(gates, "release") }, config: { cli: FAKE_CLAUDE, fullAuto: false } },
+        ask: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: join(home, "ask-dump.json"), FAKE_CLAUDE_RELEASE: join(gates, "ask-release") }, config: { cli: FAKE_CLAUDE, fullAuto: false } },
       },
     }));
     await start();
@@ -201,6 +206,7 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     bots.orion = await createBot(bob, "Orion", "slow");
     bots.atlas = await createBot(alice, "Atlas", "claude");
     bots.vega = await createBot(alice, "Vega", "hold");
+    bots.lyra = await createBot(alice, "Lyra", "ask");
     const routine = await api("POST", "/api/routines", alice, { name: "Daily digest", botId: bots.atlas.id, prompt: "Write the digest.", enabled: false,
       schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
     expect(routine.status, routine.text).toBe(201);
@@ -431,6 +437,63 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     const rows = (audit.body.rows as Array<any>).filter((row) => String(row.action).startsWith("agents."));
     expect(rows.find((row) => row.action === "agents.send_prompt")).toMatchObject({ actor: { kind: "person", name: "Bob" } });
     expect(JSON.stringify(rows)).not.toContain("sum the invoices");
+  }, 90_000);
+
+  it("M9: an ask_user question with three options: in line, listed, option_required, answered by option, idempotent", async () => {
+    const events = (text: string) => text.trim().split("\n").map((line) => JSON.parse(line) as any);
+    const assertion = () => idp.consoleAssertion({ sub: ALICE.sub, aud: BASE, role: "admin", teams: [], claims: (c) => ({ ...c, act: { sub: "perspicax-mcp" } }) });
+    const streamed = fetch(`${BASE}/api/org/member/bots/${bots.lyra!.id}/messages`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${assertion()}`, "content-type": "application/json" },
+      body: JSON.stringify({ text: "livre le rapport", wait: 60, stream: true }),
+    });
+    const dump = join(home, "ask-dump.json");
+    await waitFor(async () => existsSync(dump), 20_000);
+    const socketPath = (JSON.parse(readFileSync(dump, "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers.ogb.args.at(-1) as string;
+    const socket = connect(socketPath);
+    sockets.push(socket);
+    let received = "";
+    socket.on("data", (chunk) => { received += chunk.toString(); });
+    await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+    const cardId = "c9-ask-1";
+    const choices = ["Livrer ici", "Livrer ici et par le relais", "Non"];
+    socket.write(JSON.stringify({ t: "ask", id: cardId, kind: "question", tool: "ask_user", input: { question: "Où livrer le rapport ?", choices } }) + "\n");
+
+    const res = await streamed;
+    const first = events(await res.text());
+    const final = first.at(-1);
+    expect(final, JSON.stringify(first)).toMatchObject({ event: "final", status: "waiting", pending: true });
+    expect(final.approval).toMatchObject({ id: cardId, kind: "question", answerWith: "option", choices: choices.map((label, i) => ({ id: String(i + 1), label })) });
+    const threadId = final.threadId as string;
+
+    // Listed to Alice (her bot's card); Bob reaches none of it.
+    const listed = await member("GET", "approvals?status=pending", ALICE);
+    expect(listed.status, listed.text).toBe(200);
+    expect((listed.body.approvals as Array<any>).find((a) => a.id === cardId)).toMatchObject({ threadId, botId: bots.lyra!.id, botName: "Lyra", canAnswer: true });
+    const bobList = await member("GET", "approvals?status=pending", BOB);
+    expect(bobList.status, bobList.text).toBe(200);
+    expect(JSON.stringify(bobList.body)).not.toContain(cardId);
+
+    // A bare allow cannot pick for her.
+    const bare = await member("POST", `approvals/${cardId}`, ALICE, { threadId, decision: "allow" });
+    expect(bare.status, bare.text).toBe(409);
+    expect(bare.body).toMatchObject({ code: "option_required", options: choices.map((label, i) => ({ id: String(i + 1), label })) });
+    expect(received).toBe("");
+
+    const answered = await member("POST", `approvals/${cardId}`, ALICE, { threadId, option: "Livrer ici et par le relais" });
+    expect(answered.status, answered.text).toBe(200);
+    expect(answered.body).toMatchObject({ answered: true, closed: true, decision: "allow", option: "Livrer ici et par le relais" });
+    await waitFor(async () => received.includes("\n"));
+    expect(JSON.parse(received.split("\n")[0]!)).toMatchObject({ t: "answer", id: cardId, behavior: "answer", message: "Livrer ici et par le relais" });
+    const page = await api("GET", `/api/threads/${threadId}/messages?limit=100`, alice);
+    expect((page.body.messages as Array<any>).find((m) => m.card?.requestId === cardId)?.card.answered).toBeDefined();
+    expect((await member("GET", `threads/${threadId}`, ALICE)).body.approvals).toEqual([]);
+
+    const again = await member("POST", `approvals/${cardId}`, ALICE, { threadId, option: "Non" });
+    expect(again.status, again.text).toBe(200);
+    expect(again.body).toMatchObject({ closed: true, alreadyAnswered: true });
+    expect(received.trim().split("\n")).toHaveLength(1);
+    writeFileSync(join(gates, "ask-release"), "");
   }, 90_000);
 
   it("M8: temporary agents: hidden from the app, profile, owner-only pin and delete, archive kept on disk", async () => {

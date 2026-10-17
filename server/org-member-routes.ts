@@ -8,8 +8,9 @@
 //   GET  /api/org/member/threads/{id}          messages since a cursor
 //   POST /api/org/member/routines/{id}/run     run a routine now
 //   GET  /api/org/member/routines/runs/{id}    one run
+//   GET  /api/org/member/approvals?status=pending  the cards waiting on the person
 //   GET  /api/org/member/approvals/{id}        may the person answer it
-//   POST /api/org/member/approvals/{id}        allow or deny a card
+//   POST /api/org/member/approvals/{id}        allow, deny or pick an option
 //   POST /api/org/member/people/{id}/nudge     nudge a person
 //   GET  /api/org/member/threads/{id}/stream   watch a running turn (NDJSON)
 //   POST /api/org/member/agents/{tool}          the agent-to-agent API
@@ -39,7 +40,11 @@
 // `via: "perspicax-mcp"`. No row carries message text.
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { formatQuestionAnswers, MAX_CUSTOM_ANSWER, MAX_OPTIONS, parseAskQuestions, parseChoices, type AskQuestion } from "../shared/ask-question.ts";
+import { meetingRequestBehavior } from "../shared/meeting-request.ts";
 import { can, permissionLabel, type PermissionKey, type PermissionPrincipal } from "../shared/permissions.ts";
+import { skillRequestBehavior } from "../shared/skill-request.ts";
+import { terminalRequestBehavior } from "../shared/terminal-request.ts";
 import type { ConsoleAssertion } from "./oidc-rp.ts";
 import { AssertionReplayCache } from "./org-admin-routes.ts";
 import { compileRoutes, matchRoutes } from "./org-admin-console.ts";
@@ -269,13 +274,244 @@ export interface MemberMessage {
   sender: { name: string } | null;
 }
 
+/** How a card is answered (2026-10-17, the AI-client approval loop):
+ * `permission` and `request` cards take a decision (allow or deny);
+ * `question` cards (ask_user, AskUserQuestion) take one of their options,
+ * or words of the person's own when `freeText`. */
+export type ApprovalKind = "permission" | "question" | "request";
+
+/** One option of a card: `id` is its position from 1, `label` its words. */
+export interface ApprovalChoice {
+  id: string;
+  label: string;
+}
+
+/** A question of a card that asks several at once. */
+export interface ApprovalQuestion {
+  question: string;
+  multiSelect: boolean;
+  options: ApprovalChoice[];
+}
+
 export interface MemberApproval {
   id: string;
   threadId: string;
   title: string;
   subtitle: string;
   tool: string | null;
+  /** The card's option labels (older clients read these). */
   options: string[];
+  kind: ApprovalKind;
+  /** decision: send allow or deny; option: send one of `choices`. */
+  answerWith: "decision" | "option";
+  /** The options to choose from, with their ids; empty for a decision. */
+  choices: ApprovalChoice[];
+  /** A card with several questions: one option per question. */
+  questions?: ApprovalQuestion[];
+  /** Words of the person's own are accepted (`text`). */
+  freeText: boolean;
+  createdAt: number | null;
+  expiresAt: number | null;
+}
+
+/** The sentence a question gets when the person declines it: an answer (a
+ * question takes no deny), which closes the card and tells the bot. */
+export const QUESTION_DECLINED_MESSAGE = "The person declined to answer this question from their AI client. Do not go ahead with what it asked; continue without it, or say what you need.";
+
+/** How long an answer waits for its card to close before it says so. */
+export const APPROVAL_CLOSE_WAIT_MS = 3_000;
+const APPROVAL_CLOSE_POLL_MS = 100;
+/** The most threads one pending list reads. */
+export const PENDING_THREADS_MAX = 50;
+
+const YES_LABELS = new Set(["yes", "oui", "allow", "ok", "okay", "confirm", "confirmer", "approve", "approuver", "continue", "continuer", "go", "proceed", "accept", "accepter"]);
+const NO_LABELS = new Set(["no", "non", "deny", "refuser", "cancel", "annuler", "stop", "decline", "reject", "rejeter"]);
+const normalLabel = (label: string) => label.trim().toLocaleLowerCase().replace(/[.!?]+$/, "");
+
+/** How a card is answered: the card decides, never its labels (src/lib/card-answer.ts). */
+export function approvalKind(card: Record<string, unknown>): ApprovalKind {
+  if (card.requestType === "question" || objectOf(card.questionRequest)) return "question";
+  if (card.requestType === "permission" || typeof card.tool === "string") return "permission";
+  return "request";
+}
+
+const choicesOf = (labels: readonly string[]): ApprovalChoice[] => labels.map((label, index) => ({ id: String(index + 1), label }));
+
+/** The questions of a card that carries a structured set (AskUserQuestion). */
+function cardQuestions(card: Record<string, unknown>): AskQuestion[] | null {
+  const request = objectOf(card.questionRequest);
+  return request ? parseAskQuestions({ questions: request.questions }) : null;
+}
+
+/** A card as an AI client reads it. */
+export function describeApproval(threadId: string, message: Record<string, unknown>, card: Record<string, unknown>): MemberApproval {
+  const kind = approvalKind(card);
+  const labels = parseChoices(card.options, MAX_OPTIONS) ?? [];
+  const questions = kind === "question" ? cardQuestions(card) : null;
+  const several = questions && questions.length > 1 ? questions : null;
+  const single = questions && questions.length === 1 ? questions[0]! : null;
+  const choices = kind === "permission" ? [] : several ? [] : choicesOf(single ? single.options.map((o) => o.label) : labels);
+  return {
+    id: str(card.requestId) ?? "",
+    threadId,
+    title: str(card.title) ?? "",
+    subtitle: str(card.subtitle) ?? "",
+    tool: str(card.tool),
+    options: labels,
+    kind,
+    answerWith: kind === "question" ? "option" : "decision",
+    choices,
+    ...(several ? { questions: several.map((q) => ({ question: q.question, multiSelect: q.multiSelect === true, options: choicesOf(q.options.map((o) => o.label)) })) } : {}),
+    freeText: kind === "question" && (questions ? questions.every((q) => q.custom !== false) : true),
+    createdAt: typeof message.at === "number" ? message.at : null,
+    expiresAt: typeof card.expiresAt === "number" ? card.expiresAt : null,
+  };
+}
+
+/** What `POST approvals/{id}` asks Sagax's respond route, or why it cannot. */
+export type AnswerPlan =
+  | { ok: true; body: { behavior: "allow" | "deny" | "answer"; message?: string }; decision: "allow" | "deny"; picked: string | null; via: "decision" | "option" | "text" }
+  | { ok: false; status: number; code: string; message: string; extra?: Record<string, unknown> };
+
+export interface AnswerInput {
+  decision?: "allow" | "deny";
+  option?: string | string[];
+  text?: string;
+}
+
+const optionList = (choices: readonly ApprovalChoice[]) => choices.map((c) => `${c.id}. ${c.label}`).join("; ");
+
+/** One option by its id or its exact label (case and a trailing point aside). */
+function matchChoice(choices: readonly ApprovalChoice[], wanted: string): ApprovalChoice | null {
+  const exact = choices.find((c) => c.label === wanted);
+  if (exact) return exact;
+  const loose = choices.find((c) => normalLabel(c.label) === normalLabel(wanted));
+  return loose ?? choices.find((c) => c.id === wanted.trim()) ?? null;
+}
+
+/** The yes of a yes/no pair, or the only option: what a bare allow means. */
+function impliedChoice(choices: readonly ApprovalChoice[]): ApprovalChoice | null {
+  if (choices.length === 1) return choices[0]!;
+  if (choices.length !== 2) return null;
+  const [a, b] = choices as [ApprovalChoice, ApprovalChoice];
+  if (YES_LABELS.has(normalLabel(a.label)) && NO_LABELS.has(normalLabel(b.label))) return a;
+  if (YES_LABELS.has(normalLabel(b.label)) && NO_LABELS.has(normalLabel(a.label))) return b;
+  return null;
+}
+
+/** The no of a yes/no pair, when a bare deny should pick it. */
+function declineChoice(choices: readonly ApprovalChoice[]): ApprovalChoice | null {
+  if (choices.length !== 2) return null;
+  const yes = impliedChoice(choices);
+  return yes ? choices.find((c) => c !== yes) ?? null : null;
+}
+
+/** Plans the answer of one card from what the client sent. */
+export function planAnswer(approval: MemberApproval, card: Record<string, unknown>, input: AnswerInput): AnswerPlan {
+  const needOption = (code: string, message: string): AnswerPlan => ({
+    ok: false, status: 409, code, message,
+    extra: { options: approval.choices, ...(approval.questions ? { questions: approval.questions } : {}), freeText: approval.freeText },
+  });
+  const options = Array.isArray(input.option) ? input.option : input.option !== undefined ? [input.option] : [];
+  if (approval.kind === "permission") {
+    let decision = input.decision;
+    if (options.length) {
+      if (options.length > 1) return { ok: false, status: 400, code: "bad_request", message: "A permission takes one option: allow or deny." };
+      const word = normalLabel(options[0]!);
+      const label = approval.options.find((o) => normalLabel(o) === word) ?? null;
+      const picked: "allow" | "deny" | null = word === "allow" || word === "deny" ? word : label ? (normalLabel(label) === "deny" ? "deny" : "allow") : null;
+      if (!picked) return needOption("option_unknown", `This approval is answered allow or deny${approval.options.length ? ` (its buttons: ${approval.options.join(", ")})` : ""}.`);
+      if (decision && decision !== picked) return { ok: false, status: 400, code: "bad_request", message: "decision and option disagree." };
+      decision = picked;
+    }
+    if (!decision) return { ok: false, status: 400, code: "decision_required", message: "Send decision allow or deny." };
+    return { ok: true, decision, picked: null, via: options.length ? "option" : "decision",
+      body: decision === "deny" && input.text ? { behavior: "deny", message: input.text } : { behavior: decision } };
+  }
+  if (approval.kind === "request") {
+    let decision = input.decision;
+    if (options.length && !decision) {
+      const choice = options.length === 1 ? matchChoice(approval.choices, options[0]!) : null;
+      if (!choice) return needOption("option_unknown", `No such option. This card's options: ${optionList(approval.choices) || "none"}; or send decision allow or deny.`);
+      const label = choice.label;
+      decision = card.skillRequest ? skillRequestBehavior(label)
+        : card.terminalRequest ? terminalRequestBehavior(label)
+          : card.meetingRequest ? meetingRequestBehavior(label)
+            : approval.choices.length === 2 ? (choice === approval.choices[0] ? "allow" : "deny")
+              : undefined;
+      if (!decision) return { ok: false, status: 409, code: "decision_required", message: "This card is answered with decision allow or deny." };
+    }
+    if (!decision) return { ok: false, status: 400, code: "decision_required", message: "Send decision allow or deny." };
+    return { ok: true, decision, picked: null, via: options.length ? "option" : "decision", body: { behavior: decision } };
+  }
+  // A question: an answer, never allow or deny (the broker refuses those
+  // and the card would stay open; server/drivers/claude.ts).
+  const questions = cardQuestions(card);
+  const several = questions && questions.length > 1 ? questions : null;
+  const single = questions && questions.length === 1 ? questions : null;
+  const words = (labels: string[]): string => {
+    if (several) return formatQuestionAnswers(several, labels.map((label) => [label]));
+    if (single) return formatQuestionAnswers(single, [labels]);
+    return labels.join(", ");
+  };
+  if (input.text !== undefined) {
+    if (options.length) return { ok: false, status: 400, code: "bad_request", message: "Send option or text, not both." };
+    if (!approval.freeText) return needOption("free_text_refused", `This question takes one of its options only: ${optionList(approval.choices)}.`);
+    const text = input.text.trim();
+    return { ok: true, decision: input.decision ?? "allow", picked: null, via: "text", body: { behavior: "answer", message: several ? text : words([text]) } };
+  }
+  if (several) {
+    if (!options.length) {
+      if (input.decision === "deny") return { ok: true, decision: "deny", picked: null, via: "decision", body: { behavior: "answer", message: QUESTION_DECLINED_MESSAGE } };
+      return needOption("option_required", `This card asks ${several.length} questions: send option as a list, one option per question, in order.`);
+    }
+    if (options.length !== several.length) return needOption("option_required", `Send ${several.length} options, one per question, in order.`);
+    const labels: string[] = [];
+    for (const [index, question] of several.entries()) {
+      const choice = matchChoice(choicesOf(question.options.map((o) => o.label)), options[index]!);
+      if (!choice) return needOption("option_unknown", `No such option for question ${index + 1} (${question.question.slice(0, 120)}).`);
+      labels.push(choice.label);
+    }
+    return { ok: true, decision: "allow", picked: labels.join(" | "), via: "option", body: { behavior: "answer", message: words(labels) } };
+  }
+  if (!options.length) {
+    if (input.decision === "deny") {
+      const no = declineChoice(approval.choices);
+      if (no) return { ok: true, decision: "deny", picked: no.label, via: "decision", body: { behavior: "answer", message: words([no.label]) } };
+      return { ok: true, decision: "deny", picked: null, via: "decision", body: { behavior: "answer", message: QUESTION_DECLINED_MESSAGE } };
+    }
+    const implied = impliedChoice(approval.choices);
+    if (!implied) {
+      return needOption("option_required", approval.choices.length
+        ? `This approval has options: choose one of ${optionList(approval.choices)} (send option with its id or its label).`
+        : "This question has no options: send text with the answer.");
+    }
+    return { ok: true, decision: "allow", picked: implied.label, via: "decision", body: { behavior: "answer", message: words([implied.label]) } };
+  }
+  const multi = single?.[0]?.multiSelect === true;
+  if (options.length > 1 && !multi) return needOption("option_required", "This question takes one option.");
+  const labels: string[] = [];
+  for (const wanted of options) {
+    const choice = matchChoice(approval.choices, wanted);
+    if (!choice) return needOption("option_unknown", `No such option: ${wanted.slice(0, 120)}. Choose one of ${optionList(approval.choices)}.`);
+    labels.push(choice.label);
+  }
+  return { ok: true, decision: "allow", picked: labels.join(", "), via: "option", body: { behavior: "answer", message: words(labels) } };
+}
+
+/** Where a card stands, in one word. */
+export type ApprovalState = "pending" | "allowed" | "denied" | "answered" | "dismissed" | "expired" | "unavailable";
+
+export function approvalState(card: Record<string, unknown> | null, declined = false): ApprovalState {
+  if (!card) return "answered";
+  const answered = str(card.answered);
+  if (card.expired === true) return "expired";
+  if (answered === "allow") return "allowed";
+  if (answered === "deny") return "denied";
+  if (answered === "unavailable") return "unavailable";
+  if (answered) return declined ? "denied" : "answered";
+  if (card.dismissed === true) return "dismissed";
+  return "pending";
 }
 
 interface ThreadRead {
@@ -317,14 +553,7 @@ export function readThreadPage(threadId: string, raw: unknown, since: string | n
     const card = objectOf(m.card);
     const requestId = str(card?.requestId);
     if (!card || !requestId || card.answered !== undefined || card.dismissed === true || card.expired === true) continue;
-    approvals.push({
-      id: requestId,
-      threadId,
-      title: str(card.title) ?? "",
-      subtitle: str(card.subtitle) ?? "",
-      tool: str(card.tool),
-      options: Array.isArray(card.options) ? (card.options as unknown[]).filter((o): o is string => typeof o === "string") : [],
-    });
+    approvals.push(describeApproval(threadId, m, card));
   }
   const last = all.at(-1);
   return {
@@ -582,8 +811,120 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
       pending: !done,
       reply,
       approvals: read.approvals,
+      // The card the turn waits on, in line: answer it with POST
+      // approvals/{id} without reading the thread first.
+      ...(shownStatus === "waiting" ? { approval: read.approvals[0] ?? null } : {}),
       cursor: read.cursor,
       summary: summarizeTurn(page.raw, anchor, deps.threadLink?.(threadId, botId) ?? null),
+    };
+  };
+
+  /** A card in a raw page, with the message that carries it. */
+  const cardIn = (raw: unknown, requestId: string): { message: Record<string, unknown>; card: Record<string, unknown> } | null => {
+    const list = Array.isArray(objectOf(raw)?.messages) ? (objectOf(raw)!.messages as unknown[]) : [];
+    for (const entry of list) {
+      const message = objectOf(entry);
+      const card = objectOf(message?.card);
+      if (message && card && card.requestId === requestId) return { message, card };
+    }
+    return null;
+  };
+
+  /** One answer at a time per card: a second call while the first runs
+   * gets the first one's outcome (dedupe by card id). */
+  const answering = new Map<string, Promise<Answer>>();
+
+  /** Answer one card, then wait until Sagax really closed it. */
+  const answerCard = async (person: MemberPerson, threadId: string, requestId: string, input: AnswerInput): Promise<Answer> => {
+    const page = await rawPage(person, threadId);
+    if (!("raw" in page)) return page;
+    const found = cardIn(page.raw, requestId);
+    const approval = found ? describeApproval(threadId, found.message, found.card) : null;
+    // A card older than the page read: answered by decision, as before.
+    const plan = approval && found ? planAnswer(approval, found.card, input)
+      : input.decision ? { ok: true as const, decision: input.decision, picked: null, via: "decision" as const, body: { behavior: input.decision } }
+        : { ok: false as const, status: 400, code: "decision_required", message: "Send decision allow or deny." };
+    if (!plan.ok) return fail(plan.status, plan.code, plan.message, plan.extra);
+    const reply = await deps.perform(person, { method: "POST", path: `/api/threads/${encodeURIComponent(threadId)}/respond`, body: { requestId, ...plan.body } });
+    if (!okStatus(reply)) return passThrough(reply, "This card cannot be answered.");
+    // Answered means closed: Sagax said yes, now the card must say so too.
+    const deadline = now() + APPROVAL_CLOSE_WAIT_MS;
+    let open = deps.approvalAnswerer?.(threadId, requestId)?.open ?? false;
+    while (open && now() < deadline) {
+      await sleep(APPROVAL_CLOSE_POLL_MS);
+      open = deps.approvalAnswerer?.(threadId, requestId)?.open ?? false;
+    }
+    if (open) {
+      return fail(409, "not_closed", "Sagax took the answer, but this approval is still open. Answer it in the Sagax app, or read it again and send one of its options.", {
+        closed: false, ...(approval ? { options: approval.choices, kind: approval.kind } : {}),
+      });
+    }
+    deps.noteAnsweredVia?.(person, threadId, requestId);
+    deps.record(person, { action: "client.approval", target: { kind: "thread", id: threadId }, after: { requestId, decision: plan.decision, answer: plan.via } });
+    const after = await rawPage(person, threadId);
+    const settled = "raw" in after ? cardIn(after.raw, requestId)?.card ?? null : null;
+    const state = approvalState(settled, plan.decision === "deny" && plan.body.behavior === "answer");
+    return answer({
+      answered: state !== "unavailable",
+      closed: true,
+      decision: plan.decision,
+      state,
+      ...(plan.picked ? { option: plan.picked } : {}),
+      ...(state === "unavailable" ? { message: "The approval closed, but the bot's turn had already ended: the answer did not reach it. Send it a new prompt if the work still matters." } : {}),
+    });
+  };
+
+  /** Threads where a card may wait for this person: each bot's threads the
+   * person sees in Sagax, and their hidden AI-client conversation with it. */
+  const pendingApprovals = async (person: MemberPerson): Promise<Answer> => {
+    const listed = await deps.perform(person, { method: "GET", path: "/api/bots", query: { messages: "0" } });
+    if (!okStatus(listed)) return passThrough(listed, "Your bots cannot be read.");
+    const threads = new Map<string, { botId: string; botName: string }>();
+    for (const raw of (objectOf(listed.body)?.bots as unknown[] | undefined) ?? []) {
+      const bot = objectOf(raw);
+      if (!bot || typeof bot.id !== "string") continue;
+      const about = { botId: bot.id, botName: str(bot.name) ?? "" };
+      const ids = [str(bot.threadId), deps.hiddenThreadOf?.(bot.id, person.principalId) ?? null,
+        ...((bot.tasks as unknown[] | undefined) ?? []).map((task) => str(objectOf(task)?.threadId))];
+      for (const id of ids) if (id && THREAD_ID.test(id) && !threads.has(id)) threads.set(id, about);
+    }
+    const approvals: Array<MemberApproval & { botId: string; botName: string; canAnswer: boolean; whoCanApprove: WhoCanApprove | null }> = [];
+    let read = 0;
+    for (const [threadId, about] of threads) {
+      // A confidential thread is answered in Sagax only (#683): never listed.
+      if (deps.confidential?.(threadId) || deps.threadStatus(threadId) !== "waiting") continue;
+      if (read >= PENDING_THREADS_MAX) break;
+      read += 1;
+      // The person's own read: a thread they cannot see stays out.
+      const page = await readThread(person, threadId, null, MEMBER_THREAD_LIMIT_MAX);
+      if (!isRead(page)) continue;
+      for (const approval of page.approvals) {
+        const info = deps.approvalAnswerer?.(threadId, approval.id) ?? null;
+        const check = info ? answerCheck(person, info) : null;
+        approvals.push({ ...approval, ...about, canAnswer: check?.canAnswer ?? false, whoCanApprove: check?.whoCanApprove ?? null });
+      }
+    }
+    approvals.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0) || a.id.localeCompare(b.id));
+    return answer({ approvals, count: approvals.length });
+  };
+
+  /** An agent tool that stopped on a card (send_prompt, await_turn): the
+   * card in line, so the client answers it without reading the thread. */
+  const withApproval = async (person: MemberPerson, body: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const threadId = str(body.thread_id);
+    if (body.status !== "waiting_for_approval" || !threadId || !THREAD_ID.test(threadId) || deps.confidential?.(threadId)) return body;
+    const page = await readThread(person, threadId, null, MEMBER_THREAD_LIMIT_MAX);
+    if (!isRead(page)) return body;
+    const approval = page.approvals[0] ?? null;
+    return {
+      ...body,
+      approval,
+      approvals: page.approvals,
+      ...(approval ? {
+        next: approval.answerWith === "option"
+          ? `Ask the person, then call sagax_approve with thread_id ${threadId}, approval_id ${approval.id} and option (one of approval.choices, by id or label); then call await_turn again with this handle.`
+          : `Ask the person, then call sagax_approve with thread_id ${threadId}, approval_id ${approval.id} and decision allow or deny; then call await_turn again with this handle.`,
+      } : {}),
     };
   };
 
@@ -784,27 +1125,69 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
       },
     },
     {
+      method: "GET", path: "approvals", permission: "clients.botsRead",
+      async handle({ person, url }) {
+        const status = url.searchParams.get("status");
+        if (status !== null && status !== "" && status !== "pending") return fail(400, "bad_request", "status is pending.");
+        return pendingApprovals(person);
+      },
+    },
+    {
       // No route-level permission: the bot's owner answers the cards of their
       // own bots by default; anyone else needs clients.approvalsAnswer
       // (decided per card below). An admin holds every key.
+      //
+      // 2026-10-17: { decision?, option?, text? }. A question takes one of its
+      // options (by id or label) or words of the person's own; a bare allow
+      // picks the only option or the yes of a yes/no pair, else 409
+      // option_required with the options. `closed: true` only once the card
+      // is really closed; a card already closed answers alreadyAnswered.
       method: "POST", path: "approvals/{id}",
       async handle({ person, params, body }) {
         const input = objectOf(body);
         const decision = input?.decision;
         const threadId = input?.threadId;
-        if (!input || Object.keys(input).some((key) => key !== "decision" && key !== "threadId") || (decision !== "allow" && decision !== "deny") || typeof threadId !== "string" || !THREAD_ID.test(threadId)) {
-          return fail(400, "bad_request", "Send { \"threadId\": \"...\", \"decision\": \"allow\" } or \"deny\".");
-        }
+        const option = input?.option;
+        const text = input?.text;
+        const usage = "Send { \"threadId\": \"...\", \"decision\": \"allow\" or \"deny\" }, with \"option\" (an option id or label) for a question, or \"text\" (the person's own words).";
+        if (!input || Object.keys(input).some((key) => !["decision", "threadId", "option", "text"].includes(key)) || typeof threadId !== "string" || !THREAD_ID.test(threadId)) return fail(400, "bad_request", usage);
+        if (decision !== undefined && decision !== "allow" && decision !== "deny") return fail(400, "bad_request", usage);
+        const optionOk = option === undefined || (typeof option === "string" && option.trim().length > 0 && option.length <= 200)
+          || (Array.isArray(option) && option.length > 0 && option.length <= MAX_OPTIONS && option.every((o) => typeof o === "string" && o.trim().length > 0 && o.length <= 200));
+        if (!optionOk) return fail(400, "bad_request", "option is an option id or label, or a list of them (one per question).");
+        if (text !== undefined && (typeof text !== "string" || !text.trim() || text.length > MAX_CUSTOM_ANSWER)) return fail(400, "bad_request", `text is 1 to ${MAX_CUSTOM_ANSWER} characters.`);
+        if (decision === undefined && option === undefined && text === undefined) return fail(400, "bad_request", usage);
         if (deps.confidential?.(threadId)) return fail(404, "not_found", "No such approval in this conversation.");
         const info = deps.approvalAnswerer?.(threadId, params.id!) ?? null;
         if (!holdsAnswerPermission(person, info)) {
           return fail(403, "forbidden_permission", `Your profile does not include ${permissionLabel("clients.approvalsAnswer", "en")}, and this bot is not yours. Ask an admin to add it in Perspicax.`, { permission: "clients.approvalsAnswer" });
         }
-        const reply = await deps.perform(person, { method: "POST", path: `/api/threads/${encodeURIComponent(threadId)}/respond`, body: { requestId: params.id!, behavior: decision } });
-        if (!okStatus(reply)) return passThrough(reply, "This card cannot be answered.");
-        deps.noteAnsweredVia?.(person, threadId, params.id!);
-        deps.record(person, { action: "client.approval", target: { kind: "thread", id: threadId }, after: { requestId: params.id!, decision } });
-        return answer({ answered: true, decision });
+        if (!info?.found) return fail(404, "not_found", "No such approval in this conversation.");
+        const key = `${threadId}/${params.id!}`;
+        const running = answering.get(key);
+        if (running) {
+          const first = await running;
+          return first.status === 200 ? answer({ ...(first.body as Record<string, unknown>), alreadyAnswered: true }) : first;
+        }
+        if (!info.open) {
+          // Idempotent: the same answer twice, or one given in Sagax.
+          const page = await rawPage(person, threadId);
+          if (!("raw" in page)) return page;
+          const card = cardIn(page.raw, params.id!)?.card ?? null;
+          const state = approvalState(card);
+          return answer({ answered: true, closed: true, alreadyAnswered: true, state, decision: state === "denied" ? "deny" : state === "allowed" || state === "answered" ? "allow" : null });
+        }
+        const work = answerCard(person, threadId, params.id!, {
+          ...(decision ? { decision: decision as "allow" | "deny" } : {}),
+          ...(option !== undefined ? { option: option as string | string[] } : {}),
+          ...(text !== undefined ? { text: text as string } : {}),
+        });
+        answering.set(key, work);
+        try {
+          return await work;
+        } finally {
+          answering.delete(key);
+        }
       },
     },
     {
@@ -815,6 +1198,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
       async handle({ person, params, body, signal }) {
         if (!deps.agentApi) return fail(404, "not_found", "This server does not offer the agent API.");
         const reply = await deps.agentApi(person, params.tool!, body ?? {}, signal);
+        if (reply.status === 200 && (params.tool === "send_prompt" || params.tool === "await_turn")) return answer(await withApproval(person, reply.body));
         return answer(reply.body, reply.status);
       },
     },

@@ -531,6 +531,14 @@ export function matchScore(agent: AgentSummary, query: string): number {
   return score;
 }
 
+/** A short label for a turn, for a person to read beside its handle:
+ * the agent's name and the prompt's first words. */
+export function turnLabel(agentName: string, prompt: string): string {
+  const words = prompt.replace(/\s+/g, " ").trim();
+  const short = words.length > 60 ? `${words.slice(0, 59).replace(/\s+\S*$/, "")}...` : words;
+  return `${agentName}: ${short}`;
+}
+
 export function createAgentApi(deps: AgentApiDeps): AgentApi {
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -583,7 +591,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
   const timeoutNote = "The turn is still going. Call await_turn with this handle to wait for it; never send the prompt again.";
   const resultBody = (result: TurnResult): Record<string, unknown> => ({
     ...result,
-    ...(result.finished ? (result.reply ? {} : { note: "The turn finished without text." }) : { next: result.status === "waiting_for_approval" ? "A person must answer an approval in that conversation in Sagax; then call await_turn with this handle." : timeoutNote }),
+    ...(result.finished ? (result.reply ? {} : { note: "The turn finished without text." }) : { next: result.status === "waiting_for_approval" ? "An approval waits in that conversation: a person answers it (in Sagax, or from an AI client with sagax_approve); then call await_turn with this handle." : timeoutNote }),
   });
 
   const handlers: Record<AgentToolName, (caller: AgentCaller, args: Args, signal?: AbortSignal) => Promise<AgentApiAnswer | Refusal>> = {
@@ -682,8 +690,10 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       if (!prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return refuse(400, "bad_request", `prompt is 1 to ${PROMPT_MAX_CHARS} characters.`);
       const mode = (args.mode ?? "fire_and_forget") as SendMode;
       if (!["fire_and_forget", "blocking", "async"].includes(mode)) return refuse(400, "bad_request", "mode is fire_and_forget, blocking or async.");
-      const onBusy = (args.on_busy ?? "supersede") as OnBusy;
-      if (!["supersede", "reject", "queue"].includes(onBusy)) return refuse(400, "bad_request", "on_busy is supersede (default), reject or queue.");
+      // 2026-10-17: queue by default. supersede stopped a running turn (and
+      // its approval) the caller often did not know was still going.
+      const onBusy = (args.on_busy ?? "queue") as OnBusy;
+      if (!["supersede", "reject", "queue"].includes(onBusy)) return refuse(400, "bad_request", "on_busy is queue (default), reject or supersede.");
       const timeoutMs = intArg(args, "timeout_ms", TIMEOUT_MS_MIN, TIMEOUT_MS_MAX, TIMEOUT_MS_DEFAULT);
       if (isRefusal(timeoutMs)) return timeoutMs;
       const files = args.files ?? [];
@@ -711,7 +721,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       const state = deps.turnState(agentId, threadId);
       if (state !== "idle") {
         if (onBusy === "reject") {
-          return refuse(409, "busy", `${agent.name} is still working on your previous prompt. Wait with await_turn, or send with on_busy queue or supersede.`, { thread_id: threadId });
+          return refuse(409, "busy", `${agent.name} is still working on your previous prompt. Wait with await_turn, or send with on_busy queue (waits its turn) or supersede (stops the running turn).`, { thread_id: threadId });
         }
         if (onBusy === "supersede" && (state === "running" || state === "waiting")) await deps.interrupt(agentId, threadId);
       }
@@ -720,7 +730,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       if (isRefusal(posted)) return posted;
       const body: HandleBody = { a: agentId, t: threadId, m: posted.messageId, i: issuedAt, c: callerKey(caller) };
       const handle = signHandle(deps.secret, body);
-      const accepted = { handle, agent_id: agentId, thread_id: threadId, mode, accepted: true, files: fileInputs.length };
+      const accepted = { handle, label: turnLabel(agent.name, prompt), agent_id: agentId, thread_id: threadId, mode, accepted: true, files: fileInputs.length };
       if (mode === "fire_and_forget") return ok({ ...accepted, finished: false, status: "accepted" });
       if (mode === "async") {
         if (deps.notify) {
@@ -832,7 +842,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
   };
 
   const latest = async (caller: AgentCaller, args: Args, withThreads: boolean): Promise<AgentApiAnswer | Refusal> => {
-    const bad = onlyKeys(args, ["agent_id", "limit", "cursor"]);
+    const bad = onlyKeys(args, ["agent_id", "limit", "cursor", "thread_id"]);
     if (bad) return bad;
     const agentId = agentIdArg(args);
     if (isRefusal(agentId)) return agentId;
@@ -840,9 +850,14 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
     if (isRefusal(limit)) return limit;
     const cursor = cursorArg(args);
     if (isRefusal(cursor)) return cursor;
+    const wanted = args.thread_id === undefined || args.thread_id === null || args.thread_id === "" ? null : args.thread_id;
+    if (wanted !== null && (typeof wanted !== "string" || !ID.test(wanted))) return refuse(400, "bad_request", "thread_id is a conversation id, as send_prompt or await_turn returned it.");
     const agent = await reachable(caller, agentId);
     if (isRefusal(agent)) return agent;
-    const threads = deps.threads(caller, agentId);
+    const allThreads = deps.threads(caller, agentId);
+    // One conversation only, when asked: one of the caller's own.
+    const threads = wanted === null ? allThreads : allThreads.filter((thread) => thread.threadId === wanted);
+    if (wanted !== null && !threads.length) return refuse(404, "unknown_thread", "No conversation of yours with this agent has that id. Use the thread_id send_prompt or await_turn returned.");
     const all = collectEntries(deps, threads);
     const page = pageBefore(all, cursor, limit!);
     const body: Record<string, unknown> = { agent_id: agentId, status: agent.status, entries: page.entries, next_cursor: page.next_cursor };
@@ -906,7 +921,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
         const detail: Record<string, unknown> = {};
         if (tool === "send_prompt") {
           detail.mode = args.mode ?? "fire_and_forget";
-          detail.onBusy = args.on_busy ?? "supersede";
+          detail.onBusy = args.on_busy ?? "queue";
           detail.files = Array.isArray(args.files) ? args.files.length : 0;
           if (typeof shaped.body.thread_id === "string") detail.threadId = shaped.body.thread_id;
         }
