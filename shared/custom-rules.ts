@@ -720,7 +720,13 @@ export function callFacts(call: CallInput): CallFacts {
     if (!realPaths.includes(real)) realPaths.push(real);
   };
 
-  const commandText = call.command ?? (COMMAND_TOOLS.has(bare) ? stringsAt(args, ["command", "cmd", "script"])[0] : undefined);
+  // The Local VM's run (sagax-desktop__local_vm, action "run") is a shell
+  // command like run_command (2026-10-17 security review of #690): its line
+  // is read as a command, never a plain read (a server's tool), so it is
+  // destructive and irreversible for the security key classes.
+  const localVmRun = bare === "local_vm" && args?.action === "run";
+  const commandText = call.command ?? (COMMAND_TOOLS.has(bare) ? stringsAt(args, ["command", "cmd", "script"])[0]
+    : localVmRun ? stringsAt(args, ["command"])[0] ?? "" : undefined);
   if (!parsed.server && (FILE_READ_TOOLS.has(bare) || FILE_WRITE_TOOLS.has(bare) || FILE_DELETE_TOOLS.has(bare))) {
     objects.add("file");
     actions.add(FILE_DELETE_TOOLS.has(bare) ? "delete" : FILE_WRITE_TOOLS.has(bare) ? "write" : "read");

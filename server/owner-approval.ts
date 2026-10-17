@@ -185,7 +185,7 @@ export type OwnerDecisionSource = "owner-rule" | "owner-rule-deny" | "owner-auto
 export type OwnerDecision =
   | { kind: "allow"; source: Exclude<OwnerDecisionSource, "owner-rule-deny">; rule?: OwnerRule }
   | { kind: "deny"; source: "owner-rule-deny"; rule: OwnerRule }
-  | { kind: "card"; reason: "admin" | "hold" | "no-rule" | "ask-rule" | "destructive"; rule?: OwnerRule; destructive?: DestructiveKind };
+  | { kind: "card"; reason: "admin" | "hold" | "no-rule" | "ask-rule" | "destructive" | "step-up" | "origin"; rule?: OwnerRule; destructive?: DestructiveKind };
 
 /** What happens to a permission call of the owner route before a card. */
 export function ownerDecision(input: {
@@ -197,11 +197,24 @@ export function ownerDecision(input: {
   /** A safety hold, a sandbox widening, a question, a guest's turn: a
    * person answers, whatever the mode or rules say. */
   personMustAnswer?: boolean;
+  /** The call falls in a class the person protects with a security key
+   * (server/step-up-gate.ts callStepUpClasses): no rule and no mode allows
+   * it, the card shows and its Allow needs the key. A deny rule still
+   * denies. */
+  stepUpRequired?: boolean;
+  /** Sagax itself would not run this call unasked (an own-environment call
+   * from a turn that is not the owner's own, member-environment.ts):
+   * neither the mode (auto, bypass) nor an Always allow rule answers it,
+   * since what started the turn (another bot, a webhook, an email) may carry
+   * someone else's words. A deny rule still denies. */
+  autonomyRefused?: boolean;
 }): OwnerDecision {
   if (input.adminRoute) return { kind: "card", reason: "admin" };
   if (input.personMustAnswer) return { kind: "card", reason: "hold" };
   const rule = matchOwnerRule(input.rules, input.call);
   if (rule?.behavior === "deny") return { kind: "deny", source: "owner-rule-deny", rule };
+  if (input.stepUpRequired) return { kind: "card", reason: "step-up", ...(rule ? { rule } : {}) };
+  if (input.autonomyRefused) return { kind: "card", reason: "origin", ...(rule ? { rule } : {}) };
   if (rule?.behavior === "allow") return { kind: "allow", source: "owner-rule", rule };
   const destructive = destructiveKindOf(input.call);
   if (destructive) return { kind: "card", reason: "destructive", destructive, ...(rule ? { rule } : {}) };

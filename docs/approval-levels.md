@@ -141,13 +141,24 @@ CLI login) and reaches the internet, so this is bounded
 - never when the call falls in a class the person (the bot's owner, or the
   person the turn speaks for) protects with a security key (Settings >
   Security). Any shell command that is not a plain read is destructive and
-  irreversible, so with that class chosen every such command is a card and
-  its Allow needs the key;
+  irreversible, and so is the Local VM's `run` (`sagax-desktop__local_vm`
+  with `action: "run"`), so with that class chosen every such command is a
+  card and its Allow needs the key;
 - only the owner's own turn: a turn another bot started (`ask_bot`,
   `delegate_bot`, `coordinate_bots`, a peer ask), a routine, a webhook, a
   typed trigger, an email or any other automation, a room without a known
   person, or someone else speaking gets the reads only (`read_file`,
-  `list_files`, `computer_list_tools`). Every other call keeps its card;
+  `list_files`, `computer_list_tools`), and never of a dotfile or a
+  credential path (`.git-credentials`, `.config/gh/hosts.yml`, `.ssh`,
+  `.netrc`, `.npmrc`, `.aws`, `.docker/config.json`, `.kube`, any name that
+  starts with a dot, a `..` segment, a key or credentials file). Every other
+  call keeps its card;
+- the owner's own **permission mode** (Automatic, Bypass, Settings > the
+  bot's permissions) and their **Always allow** rules follow the same two
+  limits: a call in a class protected by a security key keeps its card
+  (its Allow needs the key), and a call from a turn that is not the owner's
+  own runs unasked only as such a read (`server/owner-approval.ts`
+  `ownerDecision`, re-review of 2026-10-17). A deny rule still denies;
 - the person's own deny and ask rules, the safety review and the grant
   guard decide first, on every engine. On a Grok turn under the approval
   gate (`docs/grok-approval-gate.md`) the gate holds these calls like any
@@ -166,6 +177,18 @@ CLI login) and reaches the internet, so this is bounded
   and a receipt in the conversation;
 - This computer (every other `sagax-desktop` tool: the person's real files,
   apps and network) is not an isolated environment and keeps its cards.
+
+Entering **Full access** answers every call, so it needs the person's
+security key as soon as they protect any class (not only the rule-change
+class), wherever the level is changed.
+
+What Sagax does not see: on **Approve for me** with Claude, Claude's own
+automatic reviewer (`--permission-mode auto`) decides inside the engine and
+lets through what it judges safe without asking Sagax. Those calls never
+reach Sagax's approval path, so neither the limits above, nor the security
+keys, nor the person's own rules apply to them; only what that reviewer
+leaves to Sagax does. Use **Ask** or **Auto-accept edits** to have every
+such call go through Sagax.
 
 ### A Primary Bot's level covers the work it delegates
 
@@ -217,8 +240,16 @@ card, on any engine and at any level (`server/sagax-internal-tools.ts`, a
 reviewed list of exact names):
 
 - the **Data** tools (`data_load`, `data_describe`, `data_sql`, `data_show`,
-  `data_export`): the bot's own DuckDB database, while the call stays in the
-  bot's own workspace (its workspace and task workspaces). A load of a file
+  `data_export`): the bot's own DuckDB database, only where DuckDB itself
+  cannot reach further. On an organization server the engine is confined to
+  the scope's own folders with no network (`server/data/engine.ts`), and a
+  call answers itself while it stays in the bot's own workspace (its
+  workspace and task workspaces). In solo DuckDB is not confined and a text
+  check of SQL cannot stop a file read (`read_csv(chr(47)||...)`,
+  `$$/etc/hosts$$`, `../../`), so only a `data_load` of a local file inside
+  the bot's workspace answers itself there; every `data_sql`,
+  `data_describe`, `data_show`, `data_export` and remote load is a card
+  (re-review of 2026-10-17). On an organization server, a load of a file
   elsewhere, a database connection (`postgres://`, `mysql://`), plain
   `http://`, another remote scheme, an `https://` address on a private,
   loopback, link-local or metadata network (or a local name), and SQL that

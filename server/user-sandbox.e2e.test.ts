@@ -560,6 +560,49 @@ posixOnly("organization server environments (user-sandbox)", () => {
       // declining never needs a key
       expect((await api("POST", `/api/threads/${threadId}/respond`, bob, { requestId: exfil.id, behavior: "deny" })).status).toBe(200);
       await waitFor(async () => exfil.answer()?.behavior === "deny");
+
+      // re-review 2026-10-17: Bob's own permission mode (Automatic) answers
+      // neither a keyed class nor, from a hand-off, a non-read or a read of
+      // a credential path; a plain read still runs
+      const auto = await api("PUT", `/api/bots/${dagny.id}/permission-mode`, bob, { mode: "auto" });
+      expect(auto.status, auto.text).toBe(200);
+      const keyed = await ask("mcp__sagax-environment__run_command", { command: "rm -rf /home/sagax/project" });
+      expect((await cardOf(keyed.id)).card.adminApproval).not.toBe(true);
+      expect(keyed.answer()).toBeUndefined();
+      const secret = await ask("mcp__sagax-environment__read_file", { path: "/workspace/.git-credentials" });
+      await cardOf(secret.id);
+      expect(secret.answer()).toBeUndefined();
+      const ghLogin = await ask("mcp__sagax-environment__read_file", { path: "/home/sagax/.config/gh/hosts.yml" });
+      await cardOf(ghLogin.id);
+      expect(ghLogin.answer()).toBeUndefined();
+      const vmRun = await ask("mcp__sagax-desktop__local_vm", { action: "run", command: "ls" });
+      // the Local VM may not be mounted for this turn: whatever answers, it never runs unasked
+      await sleep(1_500);
+      expect(vmRun.answer()?.behavior).not.toBe("allow");
+      const plain = await ask("mcp__sagax-environment__read_file", { path: "/home/sagax/notes.txt" });
+      await waitFor(async () => plain.answer()?.behavior === "allow");
+      expect((await api("PUT", `/api/bots/${dagny.id}/permission-mode`, bob, { mode: "approval" })).status).toBe(200);
+
+      // entering Full needs the key once any class is protected: Alice (an
+      // admin, who may choose levels) protects only "destructive"
+      const aliceKey = fakeAuthenticator();
+      const aliceRegistered = await api("POST", "/api/security-keys/register", alice, { name: "Alice's key", via: "desktop-window" });
+      expect(aliceRegistered.status, aliceRegistered.text).toBe(200);
+      const aliceOptions = (await api("GET", `/api/security-keys/ceremony/${aliceRegistered.body.ceremonyId}`, alice)).body.options;
+      const aliceDone = await api("POST", `/api/security-keys/ceremony/${aliceRegistered.body.ceremonyId}`, alice, { response: aliceKey.register(aliceOptions, localhost, "localhost") });
+      expect(aliceDone.status, aliceDone.text).toBe(200);
+      expect((await api("PUT", "/api/security-keys/classes", alice, { classes: ["destructive"] })).status).toBe(200);
+      const ivy = await createBot(alice, "Ivy");
+      const fullPolicy = (await api("GET", "/api/org", alice)).body.settings?.allowFullAccess;
+      expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: true })).status).toBe(200);
+      const full = await api("PATCH", `/api/bots/${ivy.id}`, alice, { approvalMode: "full", confirmFullAccess: true });
+      expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: fullPolicy === true })).status).toBe(200);
+      expect(full.status, full.text).toBe(403);
+      expect(full.body, full.text).toMatchObject({ code: "step_up_required" });
+      expect(full.body.classes).toContain("destructive");
+      // a level below Full is not keyed by "destructive" alone
+      const edits = await api("PATCH", `/api/bots/${ivy.id}`, alice, { approvalMode: "edits" });
+      expect(edits.status, edits.text).toBe(200);
     } finally {
       for (const socket of sockets) socket.destroy();
       await api("POST", `/api/bots/${dagny.id}/interrupt`, bob, {});

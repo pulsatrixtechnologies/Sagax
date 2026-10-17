@@ -32,7 +32,11 @@
 // - only for the owner's own turn: a turn another bot started (ask,
 //   delegate, coordinate, a peer ask), a routine, a webhook, a typed trigger,
 //   an email or any other automation, a room or another person gets the
-//   reads only, every other call keeps its card;
+//   reads only, every other call keeps its card; and even those reads never
+//   reach a dotfile or a credential path (`.git-credentials`,
+//   `.config/gh/hosts.yml`, `.ssh`, `.netrc`, `.npmrc`, `.aws`,
+//   `.docker/config.json`, `.kube`, any `.`-name, a `..` segment, a key
+//   file), which keep their card (ownEnvironmentSensitiveRead);
 // - the person's own deny and ask rules, the safety review and the grant
 //   guard run first (server/index.ts request.opened), on every engine: the
 //   Grok gate holds these calls and sends them there (grok-approval-gate.ts).
@@ -84,6 +88,29 @@ export function ownEnvironmentReadTool(name: string | undefined): boolean {
   return Boolean(parts && parts.server !== DESKTOP_BRIDGE_MCP_NAME && SERVER_ENVIRONMENT_READ_TOOLS.has(parts.tool));
 }
 
+/** A file name that holds credentials even without a leading dot. */
+const CREDENTIAL_NAME = /^(?:credentials?(?:\.[a-z]+)?|hosts\.yml|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|authorized_keys|known_hosts|[^/]*\.(?:pem|key|p12|pfx|kdbx|keychain(?:-db)?)|kubeconfig|secrets?(?:\.[a-z]+)?|token(?:s)?(?:\.[a-z]+)?)$/i;
+
+/** Whether a read in the owner's environment reaches a dotfile or a
+ * credential path: a `.`-name or `..` anywhere in the path (`.ssh`,
+ * `.git-credentials`, `.config/gh/hosts.yml`, `.netrc`, `.npmrc`, `.aws`,
+ * `.docker/config.json`, `.kube`), or a key or credentials file. Input that
+ * cannot be read counts as sensitive (fail closed). No path (a listing of
+ * the working folder, the screen tools) is not. */
+export function ownEnvironmentSensitiveRead(input: string | undefined): boolean {
+  if (input === undefined || input.trim() === "" || input.trim() === "{}") return false;
+  let args: unknown;
+  try { args = JSON.parse(input); } catch { return true; }
+  if (!args || typeof args !== "object" || Array.isArray(args)) return true;
+  const path = (args as Record<string, unknown>).path;
+  if (path === undefined) return false;
+  if (typeof path !== "string") return true;
+  const parts = path.trim().replace(/^~(?=\/|$)/, "").split(/[\\/]+/).filter(Boolean);
+  // a percent-encoded or otherwise escaped name is not read here
+  if (/%[0-9a-f]{2}/i.test(path)) return true;
+  return parts.some((part) => part.startsWith(".") || CREDENTIAL_NAME.test(part));
+}
+
 /** Whose turn a permission request comes from, for the owner's own
  * environment: "owner" only when the bot's owner (or the operator at this
  * computer) wrote the request themselves; "other" for another bot's hop, a
@@ -119,6 +146,9 @@ export function ownEnvironmentAutonomy(input: {
   call: boolean;
   mode: ApprovalMode;
   tool: string | undefined;
+  /** The call's arguments (JSON), to keep a read of a dotfile or a
+   * credential path from a turn that is not the owner's own. */
+  input?: string;
   origin: "owner" | "other";
   /** The security key classes the person chose that this call falls in. */
   stepUpRequired: readonly string[];
@@ -126,7 +156,8 @@ export function ownEnvironmentAutonomy(input: {
   if (!input.call) return false;
   if (input.mode !== "auto" && input.mode !== "edits") return false;
   if (input.stepUpRequired.length) return false;
-  return input.origin === "owner" || ownEnvironmentReadTool(input.tool);
+  if (input.origin === "owner") return true;
+  return ownEnvironmentReadTool(input.tool) && !ownEnvironmentSensitiveRead(input.input);
 }
 
 /** The organization's policy: on unless an admin turned it off. */

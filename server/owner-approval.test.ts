@@ -99,6 +99,26 @@ describe("Always allow / Allow once / Deny", () => {
   });
 });
 
+describe("the owner's mode and rules never answer what Sagax would not (re-review of #690, 2026-10-17)", () => {
+  it("a call in a class protected by a security key keeps its card in auto and bypass, an Always allow included", () => {
+    for (const mode of ["auto", "bypass", "approval"] as const) {
+      expect(ownerDecision({ mode, rules: [rule()], call: call(ticketUpdate), stepUpRequired: true })).toMatchObject({ kind: "card", reason: "step-up" });
+      expect(ownerDecision({ mode, rules: [], call: call(ticketUpdate), stepUpRequired: true })).toMatchObject({ kind: "card", reason: "step-up" });
+    }
+    // a deny rule still denies
+    const deny = rule({ id: "r2", behavior: "deny", scope: {} });
+    expect(ownerDecision({ mode: "bypass", rules: [deny], call: call(ticketUpdate), stepUpRequired: true })).toMatchObject({ kind: "deny" });
+  });
+
+  it("a turn that is not the owner's own (another bot, a webhook, an email) gets no automatic answer, nor an Always allow", () => {
+    for (const mode of ["auto", "bypass"] as const) {
+      expect(ownerDecision({ mode, rules: [], call: call(ticketUpdate), autonomyRefused: true })).toMatchObject({ kind: "card", reason: "origin" });
+      expect(ownerDecision({ mode, rules: [rule()], call: call(ticketUpdate), autonomyRefused: true })).toMatchObject({ kind: "card", reason: "origin" });
+    }
+    expect(ownerDecision({ mode: "auto", rules: [], call: call(ticketUpdate) })).toMatchObject({ kind: "allow", source: "owner-auto" });
+  });
+});
+
 describe("Always allow on a read card (JC, 2026-10-15: Rocket reading Twilio accounts)", () => {
   const TWILIO_QUERY = "mcp__perspicax_gox__twilio_api__query";
   const accounts = (extra: Record<string, unknown> = {}) => JSON.stringify({ resource: "Accounts", fields: ["sid", "friendlyName"], limit: 5, ...extra });

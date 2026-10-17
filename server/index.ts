@@ -884,7 +884,7 @@ import { createOwnerApprovalRoutes } from "./routes/owner-approvals.ts";
 import { SecurityKeys, SecurityKeyStore } from "./security-keys.ts";
 import { alwaysAllowStepUp, approvalGrantsFor, approvalStepUp, callStepUpClasses, cardRiskClasses, type StepUpDecision } from "./step-up-gate.ts";
 import { createSecurityKeyRoutes, securityKeyCeremonyRoutes, settingsStepUp } from "./routes/security-keys.ts";
-import { SETTINGS_ACTION_CLASS, approvalModeLoosens, botActClasses, toolChangesRules, type StepUpAnswer, type StepUpClass, type StepUpRefusal, type StepUpSettingsAction } from "../shared/step-up.ts";
+import { SETTINGS_ACTION_CLASS, STEP_UP_CLASSES, approvalModeLoosens, botActClasses, toolChangesRules, type StepUpAnswer, type StepUpClass, type StepUpRefusal, type StepUpSettingsAction } from "../shared/step-up.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createComputerCareRoutes } from "./routes/computer-care.ts";
 import { createBrowserNetworkRoutes } from "./routes/browser-network.ts";
@@ -4547,11 +4547,19 @@ if (IDENTITY.kind === "perspicax") dataEngine.setConfinement?.(dataConfinedRoots
 function dataDownloadDir(scopeKey: string): string {
   return join(dataScopeFolder(scopeKey), DATA_DOWNLOADS_DIR);
 }
-/** 2026-10-16 security review: where a Data call may reach and still answer
- * itself without a card, solo and organization alike: the bot's workspace
- * and its task workspaces (sagax-internal-tools.ts sagaxInternalSelfAnswers).
- * Anything else keeps its card, which the person may allow. */
-function dataSelfAnswerRoots(bot: { id: string }): string[] {
+/** 2026-10-16 security review: where a Data load may reach and still
+ * answer itself without a card: the bot's workspace and its task workspaces
+ * (sagax-internal-tools.ts sagaxInternalSelfAnswers). In solo, where DuckDB
+ * is not confined, only such a load answers itself; SQL, describe, show and
+ * export keep their card there (2026-10-17). */
+function dataSelfAnswerRoots(bot: BotRecord, threadId: string): string[] {
+  // On an organization server: exactly the folders the turn's own Data
+  // scope is confined to (data/scope.ts), never another person's or a
+  // confidential thread's.
+  if (IDENTITY.kind === "perspicax") {
+    const scopeKey = dataScopeForTurn(bot, threadId);
+    return scopeKey === null ? [] : dataConfinedRoots(scopeKey) ?? [];
+  }
   return [workspaceDir(bot.id), join(TASK_WORKSPACES_DIR, bot.id)];
 }
 /** Where a bot's exports may land, most preferred first: the person's
@@ -12655,14 +12663,18 @@ bus.subscribe((event: RuntimeEvent) => {
             cwActionPasses.take(event.threadId, event.mcpTool ?? event.tool, event.input) !== null,
           ...(customDecision?.kind === "ask" ? { customRule: { behavior: "ask" as const, id: customDecision.rule.id } } : {}),
           emailDraftApproved: emailDraftCall && !adminApproval && !guestDriven && !event.requiresExplicitApproval,
-          // 2026-10-16: Sagax's own person-scoped tools never ask
-          // (sagax-internal-tools.ts), on any engine and at any level.
+          // 2026-10-16: Sagax's own person-scoped tools answer themselves
+          // (sagax-internal-tools.ts) on any engine and at any level, except
+          // a Data call that is not visibly contained (in solo: anything but
+          // a load inside the bot's workspace), a send, a rule change or a
+          // class the person protects with a security key.
           sagaxInternal: !adminApproval && !guestDriven && !event.requiresExplicitApproval && internalTool !== null
-            && sagaxInternalSelfAnswers(event.mcpTool ?? event.tool, typeof event.input === "string" ? event.input : undefined, asker ? dataSelfAnswerRoots(asker) : []),
+            && sagaxInternalSelfAnswers(event.mcpTool ?? event.tool, typeof event.input === "string" ? event.input : undefined, asker ? dataSelfAnswerRoots(asker, event.threadId) : [], IDENTITY.kind === "perspicax"),
           // Only at Auto or Auto-accept edits, only the owner's own turn
           // (reads excepted), never a call a security key protects.
           ownEnvironment: Boolean(asker) && ownEnvironmentAutonomy({
             call: ownEnvironment, mode: adminApproval ? "ask" : effectiveApprovalMode, tool: event.mcpTool ?? event.tool,
+            ...(typeof event.input === "string" ? { input: event.input } : {}),
             origin: asker ? ownEnvironmentOrigin(asker, event.threadId) : "other", stepUpRequired: selfAnswerStepUp,
           }),
           ...(event.mcpTool ? { toolName: event.mcpTool } : {}),
@@ -12680,12 +12692,35 @@ bus.subscribe((event: RuntimeEvent) => {
       const ownerCall = ownerLayer && asker
         ? { ownerId: approvalOwnerId(asker, event.threadId), botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}) }
         : null;
+      // 2026-10-17 (re-review of #690): the owner's permission mode (auto,
+      // bypass) and Always allow rules never answer what Sagax itself would
+      // not: a call in a class the person protects with a security key keeps
+      // its card (its Allow then needs the key), and an own-environment call
+      // from a turn that is not the owner's own (another bot, a routine, a
+      // webhook, a trigger, an email) runs unasked only as a plain read,
+      // never of a dotfile or credential path.
+      const ownerStepUp = ownerCall && asker
+        ? (ownEnvironment || internalTool ? selfAnswerStepUp : autoAnswerStepUp(asker, event.threadId, {
+          tool: event.tool,
+          ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
+          ...(typeof event.input === "string" ? { input: event.input } : {}),
+          ...(event.command?.command ? { command: event.command.command } : {}),
+          summary: event.summary,
+        }))
+        : [];
+      const ownerOriginRefused = Boolean(ownerCall && asker && ownEnvironment && !ownEnvironmentAutonomy({
+        call: true, mode: "auto", tool: event.mcpTool ?? event.tool,
+        ...(typeof event.input === "string" ? { input: event.input } : {}),
+        origin: ownEnvironmentOrigin(asker, event.threadId), stepUpRequired: [],
+      }));
       const owner = ownerCall && asker
         ? ownerDecision({
           mode: effectivePermissionMode(asker, ownerCall.ownerId),
           rules: ownerApprovals.rulesOf(ownerCall.ownerId, asker.id),
           call: ownerCall,
           personMustAnswer: safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true,
+          stepUpRequired: ownerStepUp.length > 0,
+          autonomyRefused: ownerOriginRefused,
         })
         : null;
       if (owner?.kind === "deny" && asker && event.requestId) {
@@ -12722,7 +12757,9 @@ bus.subscribe((event: RuntimeEvent) => {
         : ownerVerdict;
       const customNotice = customDecision ? customRuleNotice(customDecision) : undefined;
       // What "Always allow" or "Always deny" would remember on this card.
-      const ownerRuleCandidate = owner?.kind === "card" && owner.reason !== "hold" && owner.reason !== "admin"
+      // Never on a card a rule could not answer (a security key class, a
+      // turn that is not the owner's own).
+      const ownerRuleCandidate = owner?.kind === "card" && owner.reason !== "hold" && owner.reason !== "admin" && owner.reason !== "step-up" && owner.reason !== "origin"
         ? ruleCandidateFor({ tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}) }, serverApprovalWords(cfg.language))
         : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
@@ -26652,8 +26689,12 @@ function approvalModeStepUpGate(input: {
   person: string | null; botId: string; op: string; thread: string; froms: Array<string | undefined>; to: string;
   stepUp?: unknown; allowance?: unknown; widensAllow?: boolean;
 }): StepUpDecision {
-  const classes: Array<"rule-change" | "always-grant"> = [];
-  if (input.froms.some((from) => approvalModeLoosens(from, input.to))) classes.push("rule-change");
+  const classes: StepUpClass[] = [];
+  const loosens = input.froms.some((from) => approvalModeLoosens(from, input.to));
+  if (loosens) classes.push("rule-change");
+  // Full answers every call, whatever its class (2026-10-17, re-review of
+  // #690): entering it needs the key when the person protects any class.
+  if (loosens && input.to === "full") for (const name of STEP_UP_CLASSES) if (!classes.includes(name)) classes.push(name);
   if (input.widensAllow) classes.push("always-grant");
   if (!classes.length) return null;
   const bot = store.bot(input.botId);

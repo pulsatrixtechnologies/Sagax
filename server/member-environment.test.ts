@@ -9,12 +9,14 @@ import {
   ownEnvironmentAutonomy,
   ownEnvironmentCall,
   ownEnvironmentReadTool,
+  ownEnvironmentSensitiveRead,
   ownEnvironmentTool,
   ownEnvironmentTurnOrigin,
 } from "./member-environment.ts";
 import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 import { USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { DESKTOP_BRIDGE_MCP_NAME } from "../shared/bot-workplace.ts";
+import { callStepUpClasses } from "./step-up-gate.ts";
 
 const OWNER = "pr_owner";
 const MOUNTED = new Set([USER_SANDBOX_MCP_NAME, DESKTOP_BRIDGE_MCP_NAME]);
@@ -138,6 +140,38 @@ describe("own-environment autonomy, security review 2026-10-16", () => {
     // the Grok gate now sends these calls here: the same rules answer its card
     expect(autoVerdict("auto", "other", { ownEnvironment: true, sagaxGate: true, toolName: "sagax-environment__run_command" }).source).toBe("own-environment");
     expect(autoVerdict("ask", "other", { ownEnvironment: true, sagaxGate: true }).approve).toBeNull();
+  });
+
+  it("re-review 2026-10-17: another bot's or an automation's read never reaches a dotfile or a credential path", () => {
+    const read = (path: unknown) => autonomy({ origin: "other", tool: "sagax-environment__read_file", input: JSON.stringify({ path }) });
+    for (const path of [
+      "/workspace/.git-credentials", ".git-credentials", "~/.config/gh/hosts.yml", "/home/u/.ssh/id_ed25519", "/workspace/.netrc",
+      ".npmrc", "/root/.aws/credentials", "/home/u/.docker/config.json", ".kube/config", "/workspace/.env", "notes/../.ssh/id_rsa",
+      "/workspace/../etc/shadow", "keys/server.pem", "/workspace/id_rsa", "/workspace/credentials.json", "/workspace/%2essh/x",
+    ]) {
+      expect(read(path), path).toBe(false);
+      expect(ownEnvironmentSensitiveRead(JSON.stringify({ path })), path).toBe(true);
+    }
+    expect(read(42)).toBe(false);
+    expect(autonomy({ origin: "other", tool: "sagax-environment__read_file", input: "not json" })).toBe(false);
+    expect(autonomy({ origin: "other", tool: "sagax-environment__list_files", input: JSON.stringify({ path: "/workspace/.ssh" }) })).toBe(false);
+    // ordinary reads still run, and a listing of the working folder
+    expect(read("/workspace/report.csv")).toBe(true);
+    expect(read("notes/today.md")).toBe(true);
+    expect(autonomy({ origin: "other", tool: "sagax-environment__list_files", input: "{}" })).toBe(true);
+    expect(autonomy({ origin: "other", tool: "sagax-environment__computer_list_tools" })).toBe(true);
+    // the owner's own turn is not limited this way (their own key classes are)
+    expect(autonomy({ origin: "owner", tool: "sagax-environment__read_file", input: JSON.stringify({ path: "~/.ssh/id_rsa" }) })).toBe(true);
+  });
+
+  it("re-review 2026-10-17: the Local VM's run is destructive and irreversible, like run_command", () => {
+    const vm = callStepUpClasses({ tool: "other", mcpTool: "sagax-desktop__local_vm", input: JSON.stringify({ action: "run", command: "ls" }), summary: "" });
+    const shell = callStepUpClasses({ tool: "other", mcpTool: "sagax-environment__run_command", input: JSON.stringify({ command: "ls" }), summary: "" });
+    expect(vm).toEqual(expect.arrayContaining(["destructive", "irreversible"]));
+    expect(shell).toEqual(expect.arrayContaining(["destructive", "irreversible"]));
+    expect(callStepUpClasses({ tool: "other", mcpTool: "mcp__sagax-desktop__local_vm", input: JSON.stringify({ action: "run" }), summary: "" })).toEqual(expect.arrayContaining(["destructive", "irreversible"]));
+    // status is not a command
+    expect(callStepUpClasses({ tool: "other", mcpTool: "sagax-desktop__local_vm", input: JSON.stringify({ action: "status" }), summary: "" })).not.toContain("irreversible");
   });
 
   it("the Grok gate no longer lets the environment or Data through by itself", () => {

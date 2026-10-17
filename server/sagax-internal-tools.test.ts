@@ -82,11 +82,11 @@ describe("Sagax's own tools, security review 2026-10-16", () => {
     expect(autoVerdict("auto", "other", { sagaxInternal: true, stepUpRequired: ["destructive"] }).approve).toBeNull();
   });
 
-  it("answers a Data call only while it stays in the bot's workspace", () => {
+  it("on a confined engine (organization) answers a Data call only while it stays in the bot's workspace", () => {
     const root = mkdtempSync(join(tmpdir(), "sagax-data-self-"));
     try {
       writeFileSync(join(root, "sales.csv"), "a\n1\n");
-      const load = (args: Record<string, unknown>) => sagaxInternalSelfAnswers("data__data_load", JSON.stringify(args), [root]);
+      const load = (args: Record<string, unknown>) => sagaxInternalSelfAnswers("data__data_load", JSON.stringify(args), [root], true);
       expect(load({ source: join(root, "sales.csv") })).toBe(true);
       expect(load({ source: join(root, "later", "new.csv") })).toBe(true);
       expect(load({ source: "/etc/passwd", kind: "csv" })).toBe(false);
@@ -106,8 +106,8 @@ describe("Sagax's own tools, security review 2026-10-16", () => {
       expect(load({ source: "s3://bucket/a.csv" })).toBe(false);
       expect(load({ source: "https://example.com/a.csv" })).toBe(true);
       expect(load({ source: "https://docs.google.com/spreadsheets/d/abc/edit" })).toBe(true);
-      expect(sagaxInternalSelfAnswers("data__data_load", "not json", [root])).toBe(false);
-      const sql = (text: string) => sagaxInternalSelfAnswers("mcp__data__data_sql", JSON.stringify({ sql: text }), [root]);
+      expect(sagaxInternalSelfAnswers("data__data_load", "not json", [root], true)).toBe(false);
+      const sql = (text: string) => sagaxInternalSelfAnswers("mcp__data__data_sql", JSON.stringify({ sql: text }), [root], true);
       expect(sql("SELECT region, sum(total) FROM sales GROUP BY 1")).toBe(true);
       expect(sql("SELECT * FROM read_csv('/etc/passwd')")).toBe(false);
       expect(sql("SELECT * FROM '/etc/hosts'")).toBe(false);
@@ -115,11 +115,43 @@ describe("Sagax's own tools, security review 2026-10-16", () => {
       expect(sql("SELECT * FROM \"~/secret.csv\"")).toBe(false);
       expect(sql("ATTACH 'x.db' AS x")).toBe(false);
       expect(sql("SELECT getenv('HOME')")).toBe(false);
-      expect(sagaxInternalSelfAnswers("data__data_export", JSON.stringify({ table: "sales", format: "csv", path: "/Users/x/Downloads/sales.csv" }), [root])).toBe(true);
-      expect(sagaxInternalSelfAnswers("data__data_show", JSON.stringify({ sql: "SELECT 1", kind: "table", title: "Load by region" }), [root])).toBe(true);
+      expect(sagaxInternalSelfAnswers("data__data_export", JSON.stringify({ table: "sales", format: "csv", path: "/Users/x/Downloads/sales.csv" }), [root], true)).toBe(true);
+      expect(sagaxInternalSelfAnswers("data__data_show", JSON.stringify({ sql: "SELECT 1", kind: "table", title: "Load by region" }), [root], true)).toBe(true);
       // the agents tools keep answering, Data or not
-      expect(sagaxInternalSelfAnswers("agents__delegate_bot", "{}", [root])).toBe(true);
-      expect(sagaxInternalSelfAnswers("sagax-environment__run_command", "{}", [root])).toBe(false);
+      expect(sagaxInternalSelfAnswers("agents__delegate_bot", "{}", [root], true)).toBe(true);
+      expect(sagaxInternalSelfAnswers("sagax-environment__run_command", "{}", [root], true)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("in solo (unconfined) no SQL, describe, show or export answers itself: the bypass probes get a card", () => {
+    const root = mkdtempSync(join(tmpdir(), "sagax-data-solo-"));
+    try {
+      writeFileSync(join(root, "sales.csv"), "a\n1\n");
+      const solo = (tool: string, args: Record<string, unknown> | string) => sagaxInternalSelfAnswers(tool, typeof args === "string" ? args : JSON.stringify(args), [root], false);
+      for (const text of [
+        "SELECT * FROM read_csv(chr(47)||'etc'||chr(47)||'hosts')",
+        "SELECT * FROM read_csv($$/etc/hosts$$)",
+        "SELECT * FROM read_csv('../../etc/hosts')",
+        "SELECT * FROM read_csv(concat('/et', 'c/hosts'))",
+        "SELECT 1",
+      ]) {
+        for (const tool of ["data__data_sql", "mcp__data__data_show", "data__data_export", "data__data_describe"]) {
+          expect(solo(tool, { sql: text, target: text, table: "sales", format: "csv" }), `${tool}: ${text}`).toBe(false);
+        }
+      }
+      expect(solo("data__data_sql", "")).toBe(false);
+      expect(solo("data__data_sql", "{}")).toBe(false);
+      // a load of a file inside the bot's own workspace still answers itself
+      expect(solo("data__data_load", { source: join(root, "sales.csv") })).toBe(true);
+      // never a remote, a relative or an escaping path in solo
+      expect(solo("data__data_load", { source: "https://example.com/a.csv" })).toBe(false);
+      expect(solo("data__data_load", { source: "../../etc/hosts" })).toBe(false);
+      expect(solo("data__data_load", { source: `${root}/../../etc/hosts` })).toBe(false);
+      expect(solo("data__data_load", { source: "/etc/hosts", kind: "csv" })).toBe(false);
+      // the agents tools are not Data
+      expect(solo("agents__delegate_bot", "{}")).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
