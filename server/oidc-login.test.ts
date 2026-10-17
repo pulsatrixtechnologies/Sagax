@@ -6,12 +6,12 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { IDP_SWEEP_SLACK_MS, IdpGrantVault, IdpSessionManager } from "./idp-session.ts";
-import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneErrorLink, phoneReturnLink, profileManagement, sagaxReturnLink, scopesForRole, validLoopbackReturn, writesManagedProfile } from "./oidc-login.ts";
+import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, type OidcGrantKeeper, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneErrorLink, phoneReturnLink, profileManagement, sagaxReturnLink, scopesForRole, validLoopbackReturn, writesManagedProfile } from "./oidc-login.ts";
 import { RoutineConsents } from "./org-routine-consent.ts";
-import { OidcRelyingParty } from "./oidc-rp.ts";
+import { ACCOUNT_PURGED_EVENT, OidcRelyingParty } from "./oidc-rp.ts";
 import { PrincipalRegistry } from "./principals.ts";
 import { SessionRegistry } from "./sessions.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
@@ -164,6 +164,7 @@ describe("the sign-in routes (in process)", () => {
   const signedIn: Array<{ principalId: string; accessToken?: string }> = [];
   let rp: OidcRelyingParty;
   let consents: RoutineConsents;
+  let grantKeeper: OidcGrantKeeper;
 
   beforeAll(async () => {
     provider = await startFakeOidcProvider({ user: USER });
@@ -179,11 +180,7 @@ describe("the sign-in routes (in process)", () => {
     manager = new IdpSessionManager({ vault, rp, sessions, principals, log: () => {} });
     consents = new RoutineConsents({ vault, rp, principals, log: () => {} });
     sessions.onExchanged((session) => { if (session.idp?.grantRef) manager.bindSession(session.idp.grantRef, session.id); });
-    const routes = createOidcLoginRoutes({
-      config, rp, sessionCookie: "omb_session_test",
-      forSubject: (input) => principals.forSubject(input),
-      issueSession: (input) => sessions.issue(input),
-      grants: {
+    grantKeeper = {
         unavailableReason: () => vaultOk ? null : "no key",
         createGrant: (input) => { createdGrants.push({ bindBy: input.bindBy, at: Date.now() }); return manager.createGrant(input); },
         bindSession: (ref, id) => manager.bindSession(ref, id),
@@ -192,7 +189,12 @@ describe("the sign-in routes (in process)", () => {
         createRoutineDelegation: (input) => consents.create(input),
         sessionPrincipal: (id) => sessions.byId(id)?.principalId ?? null,
         signedIn: (input) => signedIn.push({ principalId: input.principalId, ...(input.accessToken ? { accessToken: input.accessToken } : {}) }),
-      },
+    };
+    const routes = createOidcLoginRoutes({
+      config, rp, sessionCookie: "omb_session_test",
+      forSubject: (input) => principals.forSubject(input),
+      issueSession: (input) => sessions.issue(input),
+      grants: grantKeeper,
       openPairing: (input) => sessions.openPairing(input),
       serverName: () => "Acme & Co bots",
       log: () => {},
@@ -527,6 +529,72 @@ describe("the sign-in routes (in process)", () => {
       expect(replay.status).toBe(400);
       // an unknown subject verifies and does nothing
       expect((await post(`logout_token=${provider.logoutToken({ sub: "nobody-here" })}`)).status).toBe(200);
+    });
+
+    describe("with the account purged event", () => {
+      const LOGOUT = "http://schemas.openid.net/event/backchannel-logout";
+      const purgedToken = (sub: string) => provider.logoutToken({
+        sub,
+        claims: (c) => ({ ...c, events: { [LOGOUT]: {}, [ACCOUNT_PURGED_EVENT]: { subject: { format: "iss_sub", iss: provider.issuer, sub } } } }),
+      });
+      afterEach(() => { delete grantKeeper.purgePerson; });
+
+      it("logs the person out, erases their data and answers { purged: true, bots, threads }", async () => {
+        const purges: Array<{ iss: string; sub: string; sessionsLeft: number }> = [];
+        grantKeeper.purgePerson = async (input) => {
+          const principal = principals.bySubject(input.iss, input.sub);
+          purges.push({ ...input, sessionsLeft: sessions.list().filter((session) => session.principalId === principal?.id).length });
+          return { bots: 1, threads: 4 };
+        };
+        const { callback } = await walk();
+        const cookie = callback!.headers.getSetCookie().find((c) => c.startsWith("omb_session_test="))!;
+        const token = decodeURIComponent(cookie.split(";")[0]!.split("=")[1]!);
+        const res = await post(`logout_token=${encodeURIComponent(purgedToken(USER.sub))}`);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("cache-control")).toBe("no-store");
+        expect(await res.json()).toEqual({ purged: true, bots: 1, threads: 4 });
+        // the logout ran first, as without the event
+        expect(sessions.authenticate(token)).toBeNull();
+        expect(purges).toEqual([{ iss: provider.issuer, sub: USER.sub, sessionsLeft: 0 }]);
+        // a subject this server never knew is purged too (the keeper says zeros)
+        grantKeeper.purgePerson = async () => ({ bots: 0, threads: 0 });
+        const unknown = await post(`logout_token=${encodeURIComponent(purgedToken("nobody-here"))}`);
+        expect(await unknown.json()).toEqual({ purged: true, bots: 0, threads: 0 });
+      });
+
+      it("answers 500 purge_failed when the erasure throws, and a fresh token is honoured again", async () => {
+        grantKeeper.purgePerson = async () => { throw new Error("disk full"); };
+        const res = await post(`logout_token=${encodeURIComponent(purgedToken(USER.sub))}`);
+        expect(res.status).toBe(500);
+        expect(await res.json()).toEqual({ error: "purge_failed" });
+        grantKeeper.purgePerson = async () => ({ bots: 0, threads: 2 });
+        const retry = await post(`logout_token=${encodeURIComponent(purgedToken(USER.sub))}`);
+        expect(retry.status).toBe(200);
+        expect(await retry.json()).toEqual({ purged: true, bots: 0, threads: 2 });
+      });
+
+      it("never says purged without a keeper that erases, nor for a plain logout token", async () => {
+        const plain = await post(`logout_token=${encodeURIComponent(purgedToken(USER.sub))}`);
+        expect(plain.status).toBe(200);
+        expect(await plain.json()).toEqual({});
+        let called = 0;
+        grantKeeper.purgePerson = async () => { called++; return { bots: 0, threads: 0 }; };
+        const logoutOnly = await post(`logout_token=${encodeURIComponent(provider.logoutToken({ sub: USER.sub }))}`);
+        expect(await logoutOnly.json()).toEqual({});
+        expect(called).toBe(0);
+      });
+
+      it("refuses a purge naming another subject with 400 and erases nothing", async () => {
+        let called = 0;
+        grantKeeper.purgePerson = async () => { called++; return { bots: 0, threads: 0 }; };
+        const token = provider.logoutToken({
+          sub: USER.sub,
+          claims: (c) => ({ ...c, events: { [LOGOUT]: {}, [ACCOUNT_PURGED_EVENT]: { subject: { format: "iss_sub", iss: provider.issuer, sub: "someone-else" } } } }),
+        });
+        const res = await post(`logout_token=${encodeURIComponent(token)}`);
+        expect(res.status).toBe(400);
+        expect(called).toBe(0);
+      });
     });
   });
 });

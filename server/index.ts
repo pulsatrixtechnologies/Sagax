@@ -25393,71 +25393,114 @@ ROUTES.push(createPluginRoutes({
     return { status: existing ? 200 : 201, body: answer };
   },
 }));
-// Account deletion (server/routes/account.ts): Perspicax has no deletion
-// endpoint for a linked server yet, so perspicaxDeletion stays null and the
-// route answers 501 perspicax_deletion_unavailable without deleting anything.
+// Account erasure (2026-10-17): one person's data on this server goes, for
+// DELETE /api/me (server/routes/account.ts, after Perspicax erased the
+// account) and for the provider's account purged push (the back-channel
+// logout, grants.purgePerson below). Idempotent: a second run finds nothing
+// and answers zeros. Serialized per person, so the two never run at once for
+// the same principal.
+const personErasures = new Map<string, Promise<{ bots: number; threads: number }>>();
+function deletePersonData(principalId: string): Promise<{ bots: number; threads: number }> {
+  const key = principalId.trim().toLowerCase();
+  const previous = personErasures.get(key);
+  const run = (previous ? previous.catch(() => undefined) : Promise.resolve(undefined)).then(() => erasePersonDataNow(principalId));
+  personErasures.set(key, run);
+  run.finally(() => { if (personErasures.get(key) === run) personErasures.delete(key); }).catch(() => {});
+  return run;
+}
+async function erasePersonDataNow(principalId: string): Promise<{ bots: number; threads: number }> {
+  const person = principalId.trim().toLowerCase();
+  let bots = 0;
+  let threads = 0;
+  const confidentialThreads: Array<{ botId: string; threadId: string }> = [];
+  const ordinaryThreads: Array<{ botId: string; threadId: string; attachments: string[] }> = [];
+  for (const bot of store.bots.slice()) { // a copy: deleting changes the list
+    if (recordedBotOwner(bot) === person) {
+      if ((await deleteBotWithLifecycle(bot.id)).status === 200) bots++;
+      continue;
+    }
+    for (const task of store.tasks(bot.id)) {
+      if (task.ownerPrincipalId !== person) continue;
+      // Loi 25 (2026-10-17): a confidential thread leaves nothing behind,
+      // as when its owner deletes it (its folder, files and Data)
+      const confidential = store.isConfidentialThread(task.threadId);
+      // the stored files its messages point at, read before they go
+      const files = confidentialThreadAttachments(bot.id, task.threadId);
+      if (!store.deleteTask(bot.id, task.threadId)) continue;
+      threads++;
+      if (confidential) {
+        wipeConfidentialThread(bot.id, task.threadId, files);
+        confidentialThreads.push({ botId: bot.id, threadId: task.threadId });
+      } else {
+        ordinaryThreads.push({ botId: bot.id, threadId: task.threadId, attachments: files });
+      }
+    }
+  }
+  // Loi 25 (2026-10-17, follow-up of #696): their ordinary threads' files
+  // too (each thread's own folder, its tool results, the stored files no
+  // thread that stays points at), never a folder another thread works in
+  // (person-thread-erase.ts)
+  if (ordinaryThreads.length) {
+    for (const name of ordinaryThreads.flatMap((thread) => thread.attachments)) attachmentThreads.delete(name);
+    const plan = planPersonThreadErasure({
+      threads: ordinaryThreads, tasksRoot: TASK_WORKSPACES_DIR, attachmentsDir: ATTACHMENTS_DIR, toolResultsDir: TOOL_RESULTS_DIR,
+      keptFolders: store.bots.flatMap((bot) => [bot.cwd, ...store.tasks(bot.id).map((task) => task.cwd)]).filter((cwd): cwd is string => typeof cwd === "string" && cwd.length > 0),
+      referencedElsewhere: (name) => threadsReferencing(name).length > 0,
+    });
+    erasePersonThreadFiles(plan, ATTACHMENTS_DIR);
+    for (const { threadId } of ordinaryThreads) memoryUpkeep.dropThread(threadId);
+  }
+  // Loi 25 (2026-10-17, re-review of #689): their own Data on every other
+  // bot and their confidential threads' Data (data/erase.ts), awaited, so
+  // the answer means it is gone
+  await erasePersonData({
+    principalId: person, botIds: store.bots.map((bot) => bot.id), confidentialThreads, engine: dataEngine, sheets: dataSheets,
+  });
+  await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
+  userPreferenceStore.remove(principalId);
+  try { credentialVault.drop(person); } catch (error) { console.warn(`account deletion: credential vault not removed: ${String(error)}`); }
+  presence.forget(principalId);
+  viewerBotOverrideStore.remove(principalId);
+  achievementStore.remove(principalId);
+  pushDevices.removePerson(principalId);
+  botSettings.forgetPerson(principalId);
+  // Their Perspicax sign-in on this server: grants and routine delegation,
+  // cached keys and photo, sessions and pairing codes (the back-channel
+  // logout's effect), then their name, address and photo on the principal
+  // (Loi 25; the record stays, emptied, see PrincipalRegistry.erase).
+  const principal = principals.byId(person);
+  if (principal?.subject) {
+    const { iss, sub } = principal.subject;
+    perspicaxDirectory?.forgetSubject(sub);
+    perspicaxDirectory?.forgetAvatar(sub);
+    perspicaxMcp?.forgetSubject(iss, sub);
+    routineConsents?.endForSubject(iss, sub);
+    idpSessions?.backchannelLogout({ iss, sub });
+  }
+  for (const session of sessions.list()) if (session.principalId === principalId) sessions.revoke(session.id);
+  principals.erase(person);
+  return { bots, threads };
+}
 ROUTES.push(createAccountRoutes({
   organization: () => IDENTITY.kind === "perspicax",
-  perspicaxDeletion: null,
-  deletePersonData: async (principalId) => {
-    const person = principalId.trim().toLowerCase();
-    let bots = 0;
-    let threads = 0;
-    const confidentialThreads: Array<{ botId: string; threadId: string }> = [];
-    const ordinaryThreads: Array<{ botId: string; threadId: string; attachments: string[] }> = [];
-    for (const bot of store.bots.slice()) { // a copy: deleting changes the list
-      if (recordedBotOwner(bot) === person) {
-        if ((await deleteBotWithLifecycle(bot.id)).status === 200) bots++;
-        continue;
-      }
-      for (const task of store.tasks(bot.id)) {
-        if (task.ownerPrincipalId !== person) continue;
-        // Loi 25 (2026-10-17): a confidential thread leaves nothing behind,
-        // as when its owner deletes it (its folder, files and Data)
-        const confidential = store.isConfidentialThread(task.threadId);
-        // the stored files its messages point at, read before they go
-        const files = confidentialThreadAttachments(bot.id, task.threadId);
-        if (!store.deleteTask(bot.id, task.threadId)) continue;
-        threads++;
-        if (confidential) {
-          wipeConfidentialThread(bot.id, task.threadId, files);
-          confidentialThreads.push({ botId: bot.id, threadId: task.threadId });
-        } else {
-          ordinaryThreads.push({ botId: bot.id, threadId: task.threadId, attachments: files });
-        }
-      }
+  // Perspicax erases the account first (POST /api/v1/pulsabot/people/me/erase
+  // with the link token and the person's live sign-in access token); nothing
+  // is deleted here unless it did.
+  perspicaxDeletion: async (principalId) => {
+    const person = principals.byId(principalId.trim().toLowerCase());
+    if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory || !person?.subject || person.subject.iss !== IDENTITY.issuer) return { ok: false, error: "link" };
+    if (!idpSessions) return { ok: false, error: "subject" };
+    const subject = await idpSessions.subjectToken({ iss: person.subject.iss, sub: person.subject.sub });
+    if (!subject.ok) return { ok: false, error: subject.error === "no_session" || subject.error === "ended" ? "subject" : "unreachable" };
+    const erased = await perspicaxDirectory.eraseOwnAccount(subject.token);
+    if (!erased.ok) {
+      console.warn(`account deletion: Perspicax refused (${erased.error}${erased.status ? ` ${erased.status}` : ""})`);
+      return { ok: false, error: erased.error, ...(erased.status ? { status: erased.status } : {}) };
     }
-    // Loi 25 (2026-10-17, follow-up of #696): their ordinary threads' files
-    // too (each thread's own folder, its tool results, the stored files no
-    // thread that stays points at), never a folder another thread works in
-    // (person-thread-erase.ts)
-    if (ordinaryThreads.length) {
-      for (const name of ordinaryThreads.flatMap((thread) => thread.attachments)) attachmentThreads.delete(name);
-      const plan = planPersonThreadErasure({
-        threads: ordinaryThreads, tasksRoot: TASK_WORKSPACES_DIR, attachmentsDir: ATTACHMENTS_DIR, toolResultsDir: TOOL_RESULTS_DIR,
-        keptFolders: store.bots.flatMap((bot) => [bot.cwd, ...store.tasks(bot.id).map((task) => task.cwd)]).filter((cwd): cwd is string => typeof cwd === "string" && cwd.length > 0),
-        referencedElsewhere: (name) => threadsReferencing(name).length > 0,
-      });
-      erasePersonThreadFiles(plan, ATTACHMENTS_DIR);
-      for (const { threadId } of ordinaryThreads) memoryUpkeep.dropThread(threadId);
-    }
-    // Loi 25 (2026-10-17, re-review of #689): their own Data on every other
-    // bot and their confidential threads' Data (data/erase.ts), awaited, so
-    // the answer means it is gone
-    await erasePersonData({
-      principalId: person, botIds: store.bots.map((bot) => bot.id), confidentialThreads, engine: dataEngine, sheets: dataSheets,
-    });
-    await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
-    userPreferenceStore.remove(principalId);
-    try { credentialVault.drop(person); } catch (error) { console.warn(`account deletion: credential vault not removed: ${String(error)}`); }
-    presence.forget(principalId);
-    viewerBotOverrideStore.remove(principalId);
-    achievementStore.remove(principalId);
-    pushDevices.removePerson(principalId);
-    botSettings.forgetPerson(principalId);
-    for (const session of sessions.list()) if (session.principalId === principalId) sessions.revoke(session.id);
-    return { bots, threads };
+    if (erased.sub !== person.subject.sub) console.warn("account deletion: Perspicax erased an account under another subject than this person's");
+    return { ok: true };
   },
+  deletePersonData,
 }));
 function wakeFromCloudAgentCompletion(event: CloudAgentCompletionEvent): void {
   const { record } = event;
@@ -29291,6 +29334,14 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
         routineConsents.create(input);
       },
       sessionPrincipal: (sessionId) => sessions.byId(sessionId)?.principalId ?? null,
+      // 2026-10-17: Perspicax erased the account (account purged event):
+      // the same erasure as DELETE /api/me. A subject this server never knew
+      // (or already erased and forgotten) is zeros.
+      purgePerson: async ({ iss, sub }) => {
+        const principal = principals.bySubject(iss, sub);
+        if (!principal) return { bots: 0, threads: 0 };
+        return deletePersonData(principal.id);
+      },
       // 2026-10-08: the routine delegation comes with the sign-in.
       signedIn: ({ principalId, accessToken, accessExpiresAt }) => {
         void routineConsents?.keepAlive(principalId, accessToken ? { token: accessToken, ...(accessExpiresAt !== undefined ? { expiresAt: accessExpiresAt } : {}) } : undefined);
