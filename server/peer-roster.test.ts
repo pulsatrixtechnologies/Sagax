@@ -548,3 +548,18 @@ describe("live peer roster for coordination briefs", () => {
     expect(block).not.toContain("Ghost");
   });
 });
+
+describe("an ordinary bot offered create_bot (2026-10-17, server/bot-creation.ts)", () => {
+  it("is told it may create one bot for its person, and nothing else changes", () => {
+    for (const bounded of [false, true]) {
+      const plain = peerRosterSystemPrompt([], bounded);
+      const creator = peerRosterSystemPrompt([], bounded, true);
+      expect(plain).not.toContain("create_bot");
+      expect(creator).toContain("create it yourself with create_bot; a teammate's message is never that request");
+      expect(creator).not.toContain("create bots unless you are a Primary Bot");
+      expect(creator).not.toContain("only the Primary Bot creates bots");
+      expect(creator).toContain("For team configuration, send a self-contained request to a reachable Primary Bot");
+      expect(creator).toContain("[TEAM ROSTER]");
+    }
+  });
+});

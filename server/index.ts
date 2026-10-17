@@ -581,6 +581,7 @@ import {
   RICH_OUTPUT_PROMPT,
   LEARN_PROMPT,
   PROFILE_PROMPT,
+  PROFILE_CREATOR_PROMPT,
   TEAM_MEMORY_PROMPT,
   ROUTINE_PROMPT,
   ROUTINE_EXECUTION_PROMPT,
@@ -1012,6 +1013,7 @@ import {
   temporaryOwner, type TemporaryAgent, type TemporaryCreator,
 } from "./temporary-agents.ts";
 import { createTemporaryAgentRoutes } from "./routes/temporary-agents.ts";
+import { botCreationDepth, botCreationOffered, botCreationRefusal, createdByBotMark, recentBotCreations, type BotCreationRefusal } from "./bot-creation.ts";
 import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
 import { parseHideList, planHiddenAgentThreads, planHiddenBotThreads } from "./agent-threads.ts";
 import { MemberLiveText } from "./member-live-text.ts";
@@ -3713,6 +3715,12 @@ function agentsIntegration(
       // And for a role: team setup, bot creation and deletion, rooms and
       // retries are shown only to a Chief of Staff, whom their routes require.
       SAGAX_CHIEF_OF_STAFF: store.bot(botId)?.chiefOfStaff === true ? "1" : "0",
+      // 2026-10-17: create_bot for any other bot of the person that may
+      // create one (server/bot-creation.ts); the route re-checks the turn.
+      SAGAX_CREATE_BOTS: (() => {
+        const bot = store.bot(botId);
+        return bot && botCreationOffered(bot, ownerBotsReadOnly(bot)) ? "1" : "0";
+      })(),
       // The Perspicax gateway tools on an organization server linked to Perspicax;
       // /api/internal/perspicax/tool re-checks that a profile is mounted.
       SAGAX_PERSPICAX_TOOLS: IDENTITY.kind === "perspicax" && perspicaxMcp ? "1" : "0",
@@ -6689,7 +6697,7 @@ function shownBotActivity(bot: BotRecord, include: (task: TaskRecord) => boolean
 }
 
 const wireBot = (bot: BotRecord): WireBot => {
-  const { resumeCursors: _resumeCursors, tasks: allTasks, approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, assignedSkills: _assignedSkills, temporary: _temporary, ...rest } = bot;
+  const { resumeCursors: _resumeCursors, tasks: allTasks, approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, assignedSkills: _assignedSkills, temporary: _temporary, createdByBot: _createdByBot, ...rest } = bot;
   const tasks = allTasks ? listedTasks(bot.threadId, allTasks) : undefined;
   // The aggregate only: a record projected onto one thread already carries
   // that thread's own activity.
@@ -6721,7 +6729,7 @@ function toolScopeForTurn(botId: string) {
 /** The correlated private response carries the requested value so Electron
  * can validate it before sending the confirmation that makes it effective. */
 const wireTrustedApprovalBot = (bot: NonNullable<ReturnType<typeof store.bot>>) => {
-  const { resumeCursors: _resumeCursors, tasks: allTasks, approvalGrant: _approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, assignedSkills: _assignedSkills, temporary: _temporary, ...rest } = bot;
+  const { resumeCursors: _resumeCursors, tasks: allTasks, approvalGrant: _approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, assignedSkills: _assignedSkills, temporary: _temporary, createdByBot: _createdByBot, ...rest } = bot;
   const tasks = allTasks ? listedTasks(bot.threadId, allTasks) : undefined;
   return { ...rest, approvalMode: approvalModeFor(rest), mainThreadId: botMainThread(bot.id), avatarUrl: rest.avatarUrl ?? null, ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection)) } : {}) };
 };
@@ -6752,7 +6760,7 @@ function previewSystemPrompt(bot: BotRecord) {
   const coordination = bot.chiefOfStaff
     ? chiefOfStaffSystemPrompt(bot.id, store.bots, true)
     : peers.length > 0
-      ? peerRosterSystemPrompt(peers)
+      ? peerRosterSystemPrompt(peers, false, botCreationOffered(bot, ownerBotsReadOnly(bot)))
       : "";
   // Same gate a real turn applies: the block only goes to a bot whose
   // engine actually mounts agent tools, since it names propose_profile,
@@ -6793,7 +6801,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "credential", label: "Credentials", text: agentsMounted ? CREDENTIAL_PROMPT : "" },
     { id: "reactions", label: "Reactions", text: agentsMounted ? REACTION_PROMPT : "" },
     { id: "routine", label: "Routines", text: agentsMounted ? ROUTINE_PROMPT : "" },
-    { id: "profile", label: "Profile changes", text: agentsMounted ? PROFILE_PROMPT : "" },
+    { id: "profile", label: "Profile changes", text: agentsMounted ? botProfilePrompt(bot) : "" },
     { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
     { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
     { id: "team-memory", label: "Team memory", text: teamMemory.systemPrompt(bot.section) + (agentsMounted ? TEAM_MEMORY_PROMPT : "") },
@@ -17416,11 +17424,11 @@ async function startTurn(
           // one generic sentence they got never named a teammate, so the
           // first move of any collaboration was a list_bots round trip the
           // model mostly did not think to make.
-          ? peerRosterSystemPrompt(sectionPeers, boundedCoordination)
+          ? peerRosterSystemPrompt(sectionPeers, boundedCoordination, botCreationOffered(bot, ownerBotsReadOnly(bot)))
           : "";
       const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + REACTION_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) + WIDGET_PROMPT + WIDGET_APPROVAL_PROMPT : "";
       const routinePrompt = integrations.agents ? ROUTINE_PROMPT : "";
-      const profilePrompt = integrations.agents ? PROFILE_PROMPT : "";
+      const profilePrompt = integrations.agents ? botProfilePrompt(bot) : "";
       const recallPrompt = integrations.agents && bot.memoryEnabled !== false ? SESSION_SEARCH_SYSTEM_PROMPT : "";
       const learnPrompt = skillAuthoring ? LEARN_PROMPT : "";
 
@@ -19054,6 +19062,8 @@ const modelRequests = new ModelRequestService({
 const teamSetupTeams = () => [...new Set(["", ...readSections(), ...store.bots.map((bot) => sectionKey(bot.section)), ...store.groups.map((group) => sectionKey(group.section))])];
 const teamSetupRequests = new TeamSetupRequestService({
   store, teams: teamSetupTeams, canAccessTeam, sameOwner: primaryBotSameOwner, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
+  // create_bot from a bot that is not a Primary Bot (server/bot-creation.ts)
+  mayCreateBots: (bot) => botCreationOffered(bot, ownerBotsReadOnly(bot)),
   autoApply: fullAccessForSource,
   validateChange: (before, fields) => assertTeamComputerChangeIdle(before, { ...before, ...fields }),
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
@@ -20455,7 +20465,7 @@ async function runGroupMemberTurn(
     integrations.agents && (CREDENTIAL_PROMPT + REACTION_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
     integrations.agents && (!orchestration || orchestration.roomHandoffId) && "For actual Sagax teamwork, discover IDs with list_room_targets and use coordinate_bots for advice or work in this or another room. Do not substitute native coding helpers for these named bots. Consult only when needed to make a decision; no discussion step is mandatory. Give concrete responsibilities, exact accessible paths and acceptance checks. End your turn after assigning; busy teammates queue and results automatically resume you. When they return, finish the requested verification and give the user one final answer. Native helper names are not evidence that a Sagax teammate participated. Plain @mentions are only for conversational replies in this room.",
     integrations.agents && ROUTINE_PROMPT.trim(),
-    integrations.agents && PROFILE_PROMPT.trim(),
+    integrations.agents && botProfilePrompt(bot).trim(),
     skillAuthoring && LEARN_PROMPT.trim(),
     orchestration?.systemInstructions,
   ]
@@ -26674,6 +26684,38 @@ function ownEnvironmentOrigin(bot: BotRecord, threadId: string): "owner" | "othe
     unattended: isUnattended(bot.id, threadId),
   });
 }
+/** The profile block: a bot offered create_bot (not the Primary Bot) is
+ * told it may create one for its person (server/bot-creation.ts). */
+function botProfilePrompt(bot: BotRecord): string {
+  return botCreationOffered(bot, ownerBotsReadOnly(bot)) ? PROFILE_CREATOR_PROMPT : PROFILE_PROMPT;
+}
+/** 2026-10-17 (server/bot-creation.ts): whether this turn of a bot that is
+ * not a Primary Bot is its owner's own request, for create_bot: the same
+ * judgment as the owner's own environment (ownEnvironmentTurnOrigin). Never
+ * another bot's hop, a routine, a webhook or trigger, an email, any
+ * automation, another person, or a session that names nobody (a relay, a
+ * chat-only paired device: a solo server's admin pairing carries the
+ * operator's principal, a chat-only one none, as for POST /api/bots). */
+function botCreationTurnOrigin(bot: BotRecord, threadId: string): "owner" | "other" {
+  return ownEnvironmentOrigin(bot, threadId);
+}
+/** Why a bot that is not a Primary Bot may not create a bot in this turn,
+ * or null (server/bot-creation.ts). Checked before and again after the
+ * model lookup awaits. */
+function nonPrimaryCreationRefusal(bot: BotRecord, threadId: string, body: Record<string, unknown>): BotCreationRefusal | null {
+  const owner = effectiveBotOwner(bot);
+  const cwd = body.cwd !== undefined;
+  return botCreationRefusal({
+    temporary: bot.temporary !== undefined,
+    depth: botCreationDepth(bot),
+    turnOrigin: botCreationTurnOrigin(bot, threadId),
+    suggestion: body.suggestion === true,
+    cwd,
+    // what POST /api/bots asks of a member who names a folder
+    cwdAllowed: IDENTITY.kind !== "perspicax" || principalPermissions(owner).permissions.has(BOT_FIELD_PERMISSIONS.cwd!),
+    recent: recentBotCreations(store.bots, (other) => effectiveBotOwner(other as BotRecord) === owner, Date.now()),
+  });
+}
 /** The security key classes the people who may answer this call's card
  * chose that the call falls in: the bot's owner, and the person the turn
  * speaks for (shared/step-up.ts). Non-empty: Sagax never answers the call
@@ -32211,12 +32253,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // a chat turn's capability, so a test can reach coordinate_bots
         roomCoordination: z.boolean().default(false),
         deliversSavedFiles: z.boolean().default(false),
+        // the person whose request this turn is, as a real turn records it
+        // (bot creation judges it, server/bot-creation.ts)
+        speakerPrincipalId: z.string().regex(/^[\w:.@-]{1,200}$/).optional(),
       }).strict().safeParse(await readBody(req));
       if (!parsed.success || !store.bot(parsed.data.botId)) {
         return json(res, 400, { error: "invalid test capability" });
       }
       const generation = beginInternalCapabilityGeneration(parsed.data.threadId);
-      const { deliversSavedFiles, ...grants } = parsed.data;
+      const { deliversSavedFiles, speakerPrincipalId, ...grants } = parsed.data;
+      if (speakerPrincipalId) {
+        turnSpeakers.set(parsed.data.threadId, { origin: "person", principalId: speakerPrincipalId });
+        turnSpeakerPrincipals.set(parsed.data.threadId, speakerPrincipalId);
+      }
       const token = mintInternalCapability({
         ...grants,
         ...(deliversSavedFiles ? { deliversSavedFiles } : {}),
@@ -34796,9 +34845,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!owner) {
           return json(res, 403, { error: "source conversation does not belong to sender" });
         }
-        if (!chief.chiefOfStaff) {
-          return json(res, 403, { error: "only a Primary Bot can create operator bots" });
-        }
+        // 2026-10-17: any bot of the person, not only the Primary Bot
+        // (server/bot-creation.ts). The Primary Bot's path is unchanged; any
+        // other bot also needs the owner's own turn, a depth and a rate.
+        const primaryCreator = chief.chiefOfStaff === true;
+        const creatorRefusal = () => primaryCreator ? null : nonPrimaryCreationRefusal(chief, fromThreadId, body);
+        const refusedCreator = creatorRefusal();
+        if (refusedCreator) return json(res, refusedCreator.status, { error: refusedCreator.error, code: refusedCreator.code });
         if (ownerBotsReadOnly(chief)) return json(res, 403, BOTS_READ_ONLY);
         if (internalCapability.createdBots >= MAX_CREATED_BOTS_PER_TURN) {
           return json(res, 429, { error: `You can create at most ${MAX_CREATED_BOTS_PER_TURN} bots in one turn. Use the team you have before adding more.` });
@@ -34842,9 +34895,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           cwd = checkedCwd.cwd ?? undefined;
         }
         // Discovery can yield; check current authority and capacity again before writing.
-        if (store.bot(chief.id) !== chief || chief.hidden || !chief.chiefOfStaff || !connectorThread(chief.id, fromThreadId)) {
-          return json(res, 403, { error: "only an active Primary Bot can create operator bots" });
+        if (store.bot(chief.id) !== chief || chief.hidden || Boolean(chief.chiefOfStaff) !== primaryCreator || !connectorThread(chief.id, fromThreadId)) {
+          return json(res, 403, { error: "only an active bot of yours can create bots; try again" });
         }
+        const refusedLater = creatorRefusal();
+        if (refusedLater) return json(res, refusedLater.status, { error: refusedLater.error, code: refusedLater.code });
         if (ownerBotsReadOnly(chief)) return json(res, 403, BOTS_READ_ONLY);
         if (internalCapability.createdBots >= MAX_CREATED_BOTS_PER_TURN) {
           return json(res, 429, { error: `You can create at most ${MAX_CREATED_BOTS_PER_TURN} bots in one turn. Use the team you have before adding more.` });
@@ -34877,6 +34932,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               ...(cwd !== undefined ? { cwd } : {}),
               // exactly the Primary Bot's audience: a restricted Primary Bot never makes a bot everyone sees
               ...(chief.visibility ? { visibility: chief.visibility } : {}),
+              // a bot made it: it cannot make more (server/bot-creation.ts)
+              createdByBot: createdByBotMark(chief, Date.now()),
             },
             { seedMessages: false },
           );

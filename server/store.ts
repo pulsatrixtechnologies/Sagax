@@ -14,6 +14,7 @@ import { ensureSections, readSections, changeEmptySection } from "./section-cont
 import type { TeamComputers } from "./team-computers.ts";
 import { removeBotFolder, soulFile, soulHash, writeSoulMirror } from "./bot-folder.ts";
 import { cleanTemporaryAgent, type TemporaryAgent } from "./temporary-agents.ts";
+import { createdByBotMark, type BotCreatedBy } from "./bot-creation.ts";
 import type { BotProfilePatch } from "./bot-profile.ts";
 import { peerAllowKey, type PeerAction } from "./peer-approval-key.ts";
 import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, loadBrowserProfileIdAliases } from "./config.ts";
@@ -461,6 +462,9 @@ export interface BotRecord extends Omit<WireBot, "avatarUrl" | "tasks"> {
   /** Perspicax #321: made by create_agent (server/temporary-agents.ts).
    * Never on the wire: the Sagax app does not list such a bot. */
   temporary?: TemporaryAgent;
+  /** 2026-10-17: made by a bot (create_bot, team setup), server/bot-creation.ts.
+   * Never on the wire, never set by a PATCH: it caps how deep bots make bots. */
+  createdByBot?: BotCreatedBy;
 }
 
 /** Slice 5: at most 8 profile ids per bot. */
@@ -482,7 +486,7 @@ export function cleanBotPerspicax(value: unknown): BotPerspicax | undefined {
  * WireTask[], avatarUrl is coerced to always-present). The exactness
  * assertion fails to compile when either side drifts, so a new server
  * field forces a decision — wire-visible or private here. */
-export type BotWirePrivateKeys = "resumeCursors" | "tasks" | "avatarUrl" | "approvalGrant" | "lastProfileRequestId" | "lastTeamSetupReceipt" | "packageBase" | "perspicax" | "assignedSkills" | "temporary";
+export type BotWirePrivateKeys = "resumeCursors" | "tasks" | "avatarUrl" | "approvalGrant" | "lastProfileRequestId" | "lastTeamSetupReceipt" | "packageBase" | "perspicax" | "assignedSkills" | "temporary" | "createdByBot";
 export type BotWireProjection = Pick<BotRecord, Exclude<keyof BotRecord, BotWirePrivateKeys>>;
 export type BotWireProjectionIsExact = AssertExact<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection> & AssertSameKeys<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection>;
 export const botWireProjectionIsExact: BotWireProjectionIsExact = true;
@@ -2116,7 +2120,7 @@ export class Store {
     profile: Partial<
       Pick<
         BotRecord,
-        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "modelSelection" | "section" | "cwd" | "visibility" | "ownerUserId" | "toolScope" | "temporary"
+        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "modelSelection" | "section" | "cwd" | "visibility" | "ownerUserId" | "toolScope" | "temporary" | "createdByBot"
       >
     > = {},
     opts: {
@@ -2157,6 +2161,7 @@ export class Store {
       ...(profile.ownerUserId?.trim() ? { ownerUserId: profile.ownerUserId.trim().toLowerCase() } : {}),
       // Marked before its first announcement, so the app never lists it.
       ...(profile.temporary ? { temporary: structuredClone(profile.temporary) } : {}),
+      ...(profile.createdByBot ? { createdByBot: { ...profile.createdByBot } } : {}),
     };
     if (section) bot.section = section;
     if (profile.cwd) bot.cwd = profile.cwd;
@@ -2236,6 +2241,8 @@ export class Store {
           ...(chief.visibility && chief.visibility !== "everyone" ? { visibility: structuredClone(chief.visibility) } : {}),
           // ...and belongs to the Primary Bot's own person.
           ...(chief.ownerUserId ? { ownerUserId: chief.ownerUserId } : {}),
+          // ...and remembers a bot made it (server/bot-creation.ts depth).
+          createdByBot: createdByBotMark(chief, createdAt),
           tasks: [{ threadId: operation.threadId, title: UNTITLED_THREAD, createdAt, updatedAt: createdAt, resumeCursors: {},
             approvalMode: "auto", autoApprove: true,
             unread: false, activity: "idle", busy: false }],

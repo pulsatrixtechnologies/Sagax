@@ -141,6 +141,7 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   assignedSkills: "settings",
   perspicax: "settings",
   temporary: { drop: "an imported bot is never temporary (Perspicax #321)" },
+  createdByBot: { drop: "a person imports the bot: it starts as a person's bot (server/bot-creation.ts)" },
   section: "settings",
   managedSections: "settings",
   projects: "settings",

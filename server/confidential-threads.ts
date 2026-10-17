@@ -108,6 +108,10 @@ const REFUSED_INTERNAL_ROUTES: Record<string, string> = {
   "/api/internal/post-to-room": "peer",
   "/api/internal/create-room": "peer",
   "/api/internal/manage-room": "peer",
+  // a new bot's instructions (its soul) are words from the thread, and
+  // that bot outlives it (create_bot, team setup; 2026-10-17)
+  "/api/internal/create-bot": "peer",
+  "/api/internal/team-setup-requests": "peer",
   // a bot acting as the person reaches other conversations through their routes
   "/api/internal/act": "peer",
 };

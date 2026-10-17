@@ -239,6 +239,7 @@ remembered, exported, logged or shared beyond its owner
   `scrubThreadDecisions`).
 - Nothing leaves to another bot, room or channel: `ask-bot`, `delegate-bot`,
   `coordinate-bots`, `post-to-room`, `create-room`, `manage-room`, `act`,
+  `create-bot` and `team-setup-requests` (a new bot's soul outlives the thread),
   `start_thread` on another bot and the agent API refuse
   (`CONFIDENTIAL_PEER_REFUSED`); Perspicax outbound calls and every
   `<profile>__write`/`__action` wait for the owner's card with the exact
@@ -3558,6 +3559,45 @@ name `chiefOfStaff` (`shared/wire.ts`); everything a person reads says
   header), never the old crown chip. The sidebar menu offers "Replace with
   different Bot" (opens `PrimaryBotPicker`, "Choose a primary Bot") on it and
   "Make primary bot" on the viewer's other bots.
+
+## Any bot creates bots (2026-10-17)
+
+JC: "allow non primary bot to create other bots". Every bot of a person may
+call `create_bot` (`POST /api/internal/create-bot`), not only the Primary
+Bot (rules in `server/bot-creation.ts`). Keep:
+
+- The Primary Bot's path is unchanged. Any other bot takes the same path:
+  the new bot belongs to the creator's owner (never to a bot or another
+  person), keeps the creator's audience, starts locked down (connected apps
+  off, no connector tools, no automatic approvals, no peer approvals,
+  members' Auto levels settled), and waits on the same card below Full
+  Access on a solo server (`TeamSetupRequestService` `mayCreateBots`, one
+  create in its own team only) or is created directly on an organization
+  server, as the Primary Bot's is.
+- Extra limits for a bot that is not the Primary Bot, each a refusal with a
+  `code`: only its owner's own request (`ownEnvironmentTurnOrigin`: never
+  another bot's hop, a routine, a webhook or trigger, an email, any
+  automation, another person such as a Team Bot's other users, or a session
+  that names nobody), `not_owner_turn`; a bot made by a bot (`createdByBot`,
+  server-private, never on the wire, never set by PATCH, dropped by a bot
+  zip import) never creates another unless the person makes it their
+  Primary Bot, `too_deep`; a temporary agent never does, `temporary_agent`;
+  at most `BOT_CREATIONS_PER_HOUR` (6) bots made by bots per person per
+  rolling hour, `rate_limited`, on top of the 4 per turn; no `suggestion`
+  (nobody asked), `suggestion_primary_only`; a `cwd` only when the owner
+  holds `folders.botWorkingFolder` on an organization server,
+  `permission_missing`.
+- A confidential thread creates no bot, Primary Bot included:
+  `create-bot` and `team-setup-requests` are confidential refusals.
+- The catalog shows `create_bot` (without `suggestion`) to such a bot when
+  `SAGAX_CREATE_BOTS=1` (`botCreationOffered`); the prompts
+  (`PROFILE_CREATOR_PROMPT`, `peerRosterSystemPrompt(..., createsBots)`)
+  tell it so. Team setup, deletion, rooms and retries stay the Primary
+  Bot's. `create_agent` (agent API) stays the Primary Bot's.
+- Tests: `server/bot-creation.test.ts`,
+  `server/drivers/agents-catalog-create-bots.test.ts`,
+  `server/team-setup-requests.test.ts`, `server/create-bot-any-bot.e2e.test.ts`,
+  `server/org-member-access.e2e.test.ts` (MA-4b).
 
 ## Legacy names kept for compatibility
 

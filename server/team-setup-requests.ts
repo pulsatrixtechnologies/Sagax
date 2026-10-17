@@ -36,6 +36,15 @@ const planSchema = z.object({
   ])).min(1).max(24),
 }).strict();
 
+/** A plan a bot that is not a Primary Bot may ask for: one new bot in its own
+ * team, and nothing else. */
+function creatorPlan(bot: BotRecord, request: Pick<TeamSetupRequest, "operations" | "newTeams" | "deletion" | "suggestion">): boolean {
+  if (request.deletion || request.suggestion || request.newTeams.length || request.operations.length !== 1) return false;
+  const [operation] = request.operations;
+  return operation.action === "create" && operation.fields.chiefOfStaff === undefined &&
+    section(operation.fields.section) === section(bot.section);
+}
+
 export class TeamSetupError extends Error {
   readonly status: number;
   constructor(message: string, status = 400) { super(message); this.status = status; }
@@ -100,6 +109,10 @@ interface Options {
   driverCapabilities?(instanceId: string): DriverCapabilities | undefined;
   validateChange?(before: BotRecord, fields: TeamSetupFields): void;
   maxBots: number;
+  /** 2026-10-17 (server/bot-creation.ts): a bot that is not a Primary Bot
+   * may still ask for exactly one new bot in its own team (create_bot);
+   * the route already applied the creator rules. Absent: Primary Bots only. */
+  mayCreateBots?(bot: BotRecord): boolean;
   ownsThread(botId: string, threadId: string): boolean;
   deleteBot(botId: string, revalidate: () => void, request: TeamSetupRequest): Promise<void>;
 }
@@ -119,6 +132,18 @@ export class TeamSetupRequestService {
     const chief = this.options.store.bot(botId);
     if (!chief || chief.hidden || !chief.chiefOfStaff) throw new TeamSetupError("Only an active Primary Bot can propose team setup", 403);
     return chief;
+  }
+
+  /** The bot asking: a Primary Bot for any plan, else a bot that may create
+   * bots for a plan that only creates one bot in its own team, nothing
+   * more (no new team, no Primary Bot role, no suggestion, no deletion).
+   * `shape: "any"` is the early check before the plan is built; validate
+   * judges the built plan. */
+  private requester(botId: string, request: Pick<TeamSetupRequest, "operations" | "newTeams" | "deletion" | "suggestion"> | "any"): BotRecord {
+    const bot = this.options.store.bot(botId);
+    if (bot && !bot.hidden && bot.chiefOfStaff) return bot;
+    if (bot && !bot.hidden && this.options.mayCreateBots?.(bot) && (request === "any" || creatorPlan(bot, request))) return bot;
+    throw new TeamSetupError("Only an active Primary Bot can propose team setup", 403);
   }
 
   /**
@@ -163,7 +188,7 @@ export class TeamSetupRequestService {
   }
 
   private validate(request: TeamSetupRequest, confirming: boolean, immediate = false): void {
-    const chief = this.chief(request.botId);
+    const chief = this.requester(request.botId, request);
     if (!this.options.ownsThread(request.botId, request.threadId)) throw new TeamSetupError("The requesting conversation no longer exists", 409);
     if (immediate && !this.options.autoApply?.(request.botId, request.threadId)) throw new TeamSetupError("Full Access is no longer enabled for this conversation", 409);
     if (confirming && !immediate && !this.options.store.messagesFor(request.threadId).some((message) => message.card?.requestId === request.requestId && !message.card.answered && !message.card.dismissed)) throw new TeamSetupError("This setup card is no longer pending", 409);
@@ -216,7 +241,7 @@ export class TeamSetupRequestService {
   private prepare(args: SetupArgs) {
     const parsed = planSchema.safeParse(args.plan);
     if (!parsed.success) throw new TeamSetupError(parsed.error.issues[0]?.message ?? "Invalid team setup");
-    const chief = this.chief(args.botId);
+    const chief = this.requester(args.botId, "any");
     const combined = new Map<string, typeof parsed.data.operations[number]>();
     for (const operation of parsed.data.operations) {
       const key = operation.action === "create" ? `create:${operation.key}` : `update:${operation.botId}`;
@@ -292,7 +317,7 @@ export class TeamSetupRequestService {
   private cardData(request: TeamSetupRequest, immediate = false): OptionCardData {
     const permission = this.options.canPersist(request.botId, request.threadId);
     if (!permission.ok) throw new TeamSetupError(permission.error, permission.status);
-    const chief = this.chief(request.botId);
+    const chief = this.requester(request.botId, request);
     const lines = [`Why: ${request.reason}`];
     if (request.suggestion) lines.push(`@${chief.name} is suggesting this. You did not ask for it.`);
     if (request.deletion) lines.push(`Delete @${request.deletion.name} (${request.deletion.botId}).`, "Permanently removes this bot, all its conversations, memory, instructions, skills, and any computer owned only by it. Generated project files and shared team computers remain. Active work or an unavailable provider can block deletion safely.");
@@ -343,7 +368,7 @@ export class TeamSetupRequestService {
       }
       lines.push("Existing execution permissions are unchanged.");
     }
-    lines.push(immediate ? "Full Access applies this request in the current turn without another confirmation." : "After this decision the Primary Bot continues once with the result.");
+    lines.push(immediate ? "Full Access applies this request in the current turn without another confirmation." : `After this decision ${chief.chiefOfStaff ? "the Primary Bot" : `@${chief.name}`} continues once with the result.`);
     const title = request.deletion ? `Delete @${request.deletion.name}?`
       : request.suggestion ? `Add @${request.operations[0]?.fields.name} to the team?`
         : `Apply setup for ${request.operations.length} ${request.operations.length === 1 ? "bot" : "bots"}?`;

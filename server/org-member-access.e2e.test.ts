@@ -349,6 +349,54 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect((await api("GET", "/api/org/bots", alice)).body.bots.some((bot: { name: string }) => bot.name === "Uma Denied")).toBe(false);
   }, 90_000);
 
+  it("MA-4b: any bot of a member creates a bot for her, from her own request only (2026-10-17)", async () => {
+    setUma("manage");
+    const uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly !== true && viewer.canCreateBots === true);
+    const maker = await createBot(uma, "Uma Maker", "claude");
+    const capability = async (botId: string, threadId: string, speakerPrincipalId?: string): Promise<string> => {
+      const res = await fetch(`${BASE}/api/testing/internal-capability`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-openmausbot-test-capability": CAPABILITY_KEY },
+        body: JSON.stringify({ botId, threadId, ...(speakerPrincipalId ? { speakerPrincipalId } : {}) }),
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { token: string }).token;
+    };
+    const create = async (from: { id: string; threadId: string }, token: string, name: string, extra: Record<string, unknown> = {}) => {
+      const res = await fetch(`${BASE}/api/internal/create-bot`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ fromBotId: from.id, fromThreadId: from.threadId, name, role: "Ops", instructions: "Help Uma.", ...extra }),
+      });
+      return { status: res.status, body: await res.json() as { id?: string; threadId?: string; error?: string; code?: string } };
+    };
+    const orgBots = async () => (await api("GET", "/api/org/bots", alice)).body.bots as Array<{ id: string; name: string; ownerPrincipalId: string }>;
+
+    // another person speaking to Uma's bot, or a turn nobody wrote, creates nothing
+    expect((await create(maker, await capability(maker.id, maker.threadId, ids.bob), "Bob Asked")).body.code).toBe("not_owner_turn");
+    expect((await create(maker, await capability(maker.id, maker.threadId), "Nobody Asked")).body.code).toBe("not_owner_turn");
+    // a member without the working-folder permission names no folder
+    const folder = await create(maker, await capability(maker.id, maker.threadId, ids.uma), "Uma Folder", { cwd: home });
+    expect(folder.status, JSON.stringify(folder.body)).toBe(403);
+    expect(folder.body.code).toBe("permission_missing");
+
+    // Uma's own request: the bot is hers, locked down like a Primary Bot's
+    const made = await create(maker, await capability(maker.id, maker.threadId, ids.uma), "Uma Helper");
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect((await orgBots()).find((bot) => bot.name === "Uma Helper")?.ownerPrincipalId).toBe(ids.uma);
+    const helper = ((await api("GET", "/api/bots", uma)).body.bots as Array<Record<string, any>>).find((bot) => bot.id === made.body.id)!;
+    expect(helper).toMatchObject({ composio: false, autoApprove: false, approvePeerComms: false });
+    expect(helper.approvalMode).not.toBe("full");
+    expect(helper.chiefOfStaff ?? false).toBe(false);
+    expect(helper).not.toHaveProperty("createdByBot");
+
+    // the bot Uma's bot made cannot make another, even from her own request
+    const deeper = await create({ id: helper.id, threadId: helper.threadId }, await capability(helper.id, helper.threadId, ids.uma), "Uma Grandchild");
+    expect(deeper.status, JSON.stringify(deeper.body)).toBe(409);
+    expect(deeper.body.code).toBe("too_deep");
+    expect((await orgBots()).some((bot) => ["Bob Asked", "Nobody Asked", "Uma Folder", "Uma Grandchild"].includes(bot.name))).toBe(false);
+  }, 90_000);
+
   it("MA-5: sagax_bots use cannot grant Full access or change the bot's default model", async () => {
     // Uma owns a bot from when she could manage one. Read-only must not
     // raise its approval level or rewrite its default model. A thread title

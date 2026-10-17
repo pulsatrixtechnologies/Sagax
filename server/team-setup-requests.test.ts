@@ -578,3 +578,61 @@ describe("Full Access team setup", () => {
     expect(h.messages).toHaveLength(0);
   });
 });
+
+describe("one new bot asked for by a bot that is not a Primary Bot (2026-10-17)", () => {
+  function creatorHarness(mayCreateBots: boolean) {
+    const bots: BotRecord[] = [];
+    const messages: Array<{ id: string; card?: OptionCardData }> = [];
+    const add = (id: string, overrides: Partial<BotRecord> = {}) => {
+      const value: BotRecord = { id, threadId: `${id}-thread`, name: id, title: "", description: "", soul: "", section: "Work",
+        notifications: true, color: "blue", unread: false, createdAt: 1, resumeCursors: {}, modelSelection: { instanceId: "claude", model: "sonnet" }, ...overrides };
+      bots.push(value); return value;
+    };
+    add("Clive", { chiefOfStaff: true });
+    const maker = add("Ada");
+    const applied: TeamSetupRequest[] = [];
+    const store = { bots, bot: (id: string) => bots.find((item) => item.id === id), messagesFor: () => messages,
+      appendMessage: (_thread: string, input: { card: OptionCardData }) => { const message = { id: `message-${messages.length}`, card: input.card }; messages.push(message); return message; },
+      patchMessage: (_thread: string, id: string, patch: { card: OptionCardData }) => { const message = messages.find((item) => item.id === id); if (!message) return null; Object.assign(message, patch); return message; },
+      applyTeamSetup: (request: TeamSetupRequest): TeamSetupResult => {
+        applied.push(request);
+        return { state: "applied", newTeams: [], bots: request.operations.map((op) => ({ id: op.botId, name: op.fields.name ?? "", action: "created" as const })) };
+      },
+    };
+    const service = new TeamSetupRequestService({ store, teams: () => ["", "Work", "Engineering"], maxBots: 100, canAccessTeam,
+      canPersist: () => ({ ok: true }), ownsThread: () => true, targetBusy: () => false, deleteBot: async () => {}, autoApply: () => false,
+      validateModel: () => null, mayCreateBots: (bot) => mayCreateBots && !bot.chiefOfStaff });
+    const submit = (operations: unknown[], extra: Record<string, unknown> = {}) => service.submit({ botId: maker.id, threadId: maker.threadId,
+      plan: { reason: "Add a checker", operations, ...extra } });
+    return { service, maker, applied, messages, submit };
+  }
+
+  it("shows one card for one bot in its own team and applies it on Allow", async () => {
+    const h = creatorHarness(true);
+    const card = await h.submit([specialist("Theo", "Work")]);
+    expect(card).toMatchObject({ state: "pending", applied: false });
+    expect(card.detail).toContain("After this decision @Ada continues once with the result.");
+    const resolved = await h.service.resolve({ botId: h.maker.id, threadId: h.maker.threadId, requestId: card.requestId, behavior: "allow" });
+    expect(resolved?.result.state).toBe("applied");
+    expect(h.applied).toHaveLength(1);
+  });
+
+  it("refuses anything beyond one new bot in its own team", async () => {
+    const h = creatorHarness(true);
+    const refused = async (operations: unknown[], extra: Record<string, unknown> = {}) => {
+      await expect(h.submit(operations, extra)).rejects.toMatchObject({ status: 403 });
+    };
+    await refused([specialist("Theo", "Engineering")]);
+    await refused([specialist("Theo", "Work"), specialist("Uma", "Work")]);
+    await refused([{ ...specialist("Theo", "Work"), fields: { ...specialist("Theo", "Work").fields, chiefOfStaff: true } }]);
+    await refused([{ action: "update", botId: "Clive", fields: { title: "Boss" } }]);
+    await refused([specialist("Theo", "Fresh")], { newTeams: ["Fresh"] });
+    await expect(h.service.submitDeletion({ botId: h.maker.id, threadId: h.maker.threadId, targetBotId: "Clive", reason: "no" })).rejects.toBeInstanceOf(TeamSetupError);
+    expect(h.applied).toHaveLength(0);
+  });
+
+  it("refuses a bot the server does not let create bots", async () => {
+    const h = creatorHarness(false);
+    await expect(h.submit([specialist("Theo", "Work")])).rejects.toMatchObject({ status: 403 });
+  });
+});
