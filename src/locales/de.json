@@ -55,6 +55,8 @@
   "approval.voice.profile": "{requester} möchte sein Profil aktualisieren: {title}. Prüfe die Änderung auf dem Bildschirm. Soll ich sie bestätigen?",
   "approval.voice.defaultConfirmRoutine": "Diese Routine bestätigen?",
   "approval.voice.routine": "{requester} fragt: {title} Prüfe Zeitplan und Anweisungen auf dem Bildschirm. Soll ich die Routine bestätigen?",
+  "approval.voice.commandAsk": "{requester} möchte {tool}. {detail}. Einmal erlauben oder ablehnen?",
+  "approval.voice.commandNoDetailAsk": "{requester} möchte {tool}. Einmal erlauben oder ablehnen?",
   "approval.label.updateSkill": "Erlernte Fähigkeit aktualisieren",
   "approval.label.enableSkill": "Erlernte Fähigkeit aktivieren",
   "approval.label.confirmProfileChange": "Diese Profiländerung bestätigen",

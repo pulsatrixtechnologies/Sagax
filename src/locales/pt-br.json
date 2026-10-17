@@ -100,6 +100,8 @@
   "approval.voice.profile": "{requester} quer atualizar o próprio perfil: {title}. Confira a alteração na tela. Devo confirmar?",
   "approval.voice.routine": "{requester} pergunta: {title} Confira o agendamento e as instruções na tela. Devo confirmar?",
   "approval.voice.skill": "{requester} pergunta: {title} Confira a habilidade na tela. Devo {action}?",
+  "approval.voice.commandAsk": "{requester} quer {tool}. {detail}. Permitir uma vez ou negar?",
+  "approval.voice.commandNoDetailAsk": "{requester} quer {tool}. Permitir uma vez ou negar?",
   "approvalMode.antigravity.desc": "Aprovar automaticamente os pedidos de ferramenta deste bot, incluindo comandos, edições e ações no computador. Sem revisão automática.",
   "approvalMode.antigravity.label": "Automático (acesso total)",
   "approvalMode.antigravityLocalOnly": "Automático (acesso total) está disponível no app de desktop instalado.",

@@ -1923,7 +1923,9 @@
       "pdf.openDefault": "9e0b4d6b797b382046a669828dfc57809e4ea51acc412be0b702767f7d3ac1e1",
       "pdf.openDefaultAria": "8b1cd9454a77b0d8278634cbe7ba48ffabfe88ecf9988c933cb186c31c09d804",
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
-      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31"
+      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
+      "approval.voice.commandAsk": "921f8b0f3572ab34f536f57269e4fbe0b2c52281940d1e9b4e53bcc1823247ba",
+      "approval.voice.commandNoDetailAsk": "ebe5e2c4e6f814d854394a1ef094f77a11354b987a8d1a408feaba1c4fc2fcbe"
     },
     "es": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -21070,7 +21072,9 @@
       "pdf.openDefault": "9e0b4d6b797b382046a669828dfc57809e4ea51acc412be0b702767f7d3ac1e1",
       "pdf.openDefaultAria": "8b1cd9454a77b0d8278634cbe7ba48ffabfe88ecf9988c933cb186c31c09d804",
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
-      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31"
+      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
+      "approval.voice.commandAsk": "921f8b0f3572ab34f536f57269e4fbe0b2c52281940d1e9b4e53bcc1823247ba",
+      "approval.voice.commandNoDetailAsk": "ebe5e2c4e6f814d854394a1ef094f77a11354b987a8d1a408feaba1c4fc2fcbe"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

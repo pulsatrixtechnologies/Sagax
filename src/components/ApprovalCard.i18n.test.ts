@@ -92,8 +92,10 @@ describe("German approval cards", () => {
     setLocale("de");
     const { pending } = commandApproval();
 
+    // asked as a question with its two options (#702): Always allow is
+    // never offered by voice
     expect(spokenApprovalPrompt(pending, "Mochi")).toBe(
-      "Mochi möchte einen Befehl ausführen. pnpm test. Soll ich das erlauben?",
+      "Mochi möchte einen Befehl ausführen. pnpm test. Einmal erlauben oder ablehnen?",
     );
   });
 
@@ -205,8 +207,9 @@ describe("Brazilian Portuguese approval cards", () => {
     setLocale("pt-BR");
     const { pending } = commandApproval();
 
+    // asked as a question with its two options (#702)
     expect(spokenApprovalPrompt(pending, "Mochi")).toBe(
-      "Mochi quer executar um comando. pnpm test. Devo permitir?",
+      "Mochi quer executar um comando. pnpm test. Permitir uma vez ou negar?",
     );
   });
 
