@@ -1029,7 +1029,7 @@ import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/r
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { memberEnvironmentAutonomyAllowed, OWN_ENVIRONMENT_ENV, ownEnvironmentCall } from "./member-environment.ts";
-import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberTurnLevel } from "./member-auto-approval.ts";
+import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberRoomTurnLevel, memberTurnLevel } from "./member-auto-approval.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
@@ -6949,7 +6949,13 @@ function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: 
   // handoff, only when its owner allowed it and the organization does.
   if (memberOwnedInOrg(bot) && orgDeniesFull(bot)) return "ask";
   const own = approvalModeForTurn(bot, Boolean(orchestration?.roomHandoffId), threadId);
-  return (from && source && delegatedLevel(from, source.threadId, bot, own)) || own;
+  const level = (from && source && delegatedLevel(from, source.threadId, bot, own)) || own;
+  // A member's bot: a Primary Bot's handoff never lifts it past what the
+  // organization allows members' bots (member-auto-approval.ts): Custom
+  // stays Ask, and Auto or Auto-accept edits run as Ask while an admin has
+  // turned organization.memberAutoApproval off (2026-10-17, review of #688).
+  if (memberOwnedInOrg(bot)) return memberRoomTurnLevel(level, memberAutoApprovalAllowed(cfg.organization));
+  return level;
 }
 
 /** Privileged approval-mode transitions are deliberately absent from the

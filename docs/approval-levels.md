@@ -98,9 +98,18 @@ with 403 `member_auto_not_allowed`. The first time it is turned off, every
 saved Auto-accept edits or Approve for me level of a member's bot (the
 bot's own and each thread's) is set back to Ask, once
 (`organization.memberAutoResetAt` records the pass), so turning the setting
-on again brings no earlier level back. Custom stays Ask (a `config.toml`
-on the shared server is not the member's), and Full keeps the organization
-rules above. Every organization turn withholds the engines' own tools that act on
+on again brings no earlier level back. The same holds for a room turn: a
+Primary Bot's handoff (`roomTurnApprovalMode`) never lifts a member's bot
+past what this setting allows (`memberRoomTurnLevel`). Custom stays Ask (a
+`config.toml` on the shared server is not the member's), and Full keeps the
+organization rules above.
+
+What this setting does not govern: a bot an organization admin owns (its
+Auto stays the admin's choice), and the owner's own environment below (a
+bot working in its owner's environment without a card, and the owner's
+"permission mode auto" for that environment, `memberEnvironmentAutonomy`),
+which has its own switch. Turning `memberAutoApproval` off does not stop
+owner-environment autonomy; turn `memberEnvironmentAutonomy` off for that. Every organization turn withholds the engines' own tools that act on
 the server (shell, files, fetch: `docs/user-sandbox.md`), so what reaches
 Sagax is a Sagax tool, routed per tool: a card that would act on the shared
 server or beyond the owner's own rights still goes to an organization admin

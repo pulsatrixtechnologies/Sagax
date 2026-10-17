@@ -41,6 +41,16 @@ export function memberTurnLevel(stored: ApprovalMode, policyAllowed: boolean): A
   return memberAutoLevel(stored) && !policyAllowed ? "ask" : stored;
 }
 
+/** The level a member's bot runs at for a room turn, after a Primary
+ * Bot's handoff may have raised it (roomTurnApprovalMode): Custom stays
+ * Ask, and Auto or Auto-accept edits follow memberTurnLevel, so a handoff
+ * never lifts a member's bot past what the organization allows. Full is
+ * judged before (org-full-access.ts). */
+export function memberRoomTurnLevel(level: ApprovalMode, policyAllowed: boolean): ApprovalMode {
+  if (level === "custom") return "ask";
+  return memberTurnLevel(level, policyAllowed);
+}
+
 /** Whether a change of a member's bot to `to` is refused: an automatic
  * level, while the organization does not allow it, that differs from a
  * level it replaces (resending the same level is not a change). */

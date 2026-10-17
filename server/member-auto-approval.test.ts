@@ -1,7 +1,8 @@
 // Automatic approval levels for members' bots (server/member-auto-approval.ts).
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberTurnLevel, type MemberAutoResetBot } from "./member-auto-approval.ts";
+import { memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberRoomTurnLevel, memberTurnLevel, type MemberAutoResetBot } from "./member-auto-approval.ts";
 
 describe("memberAutoApprovalAllowed", () => {
   it("is on unless an admin saved false", () => {
@@ -25,6 +26,33 @@ describe("memberTurnLevel", () => {
       expect(memberTurnLevel("ask", allowed)).toBe("ask");
       expect(memberTurnLevel("full", allowed)).toBe("full");
       expect(memberTurnLevel("custom", allowed)).toBe("custom");
+    }
+  });
+});
+
+describe("memberRoomTurnLevel (a Primary Bot's handoff in a room)", () => {
+  it("never lifts a member's bot to Auto or Auto-accept edits while the organization turned them off", () => {
+    expect(memberRoomTurnLevel("auto", false)).toBe("ask");
+    expect(memberRoomTurnLevel("edits", false)).toBe("ask");
+    expect(memberRoomTurnLevel("auto", true)).toBe("auto");
+    expect(memberRoomTurnLevel("edits", true)).toBe("edits");
+  });
+
+  it("is what the server's room turns apply to a member's bot (index.ts roomTurnApprovalMode)", () => {
+    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const start = source.indexOf("function roomTurnApprovalMode(");
+    const body = source.slice(start, source.indexOf("\n}\n", start));
+    expect(start).toBeGreaterThan(-1);
+    expect(body).toMatch(/if \(memberOwnedInOrg\(bot\)\) return memberRoomTurnLevel\(level, memberAutoApprovalAllowed\(cfg\.organization\)\);/);
+    // applied after the handoff's delegated level, not before
+    expect(body.indexOf("delegatedLevel(")).toBeLessThan(body.indexOf("memberRoomTurnLevel("));
+  });
+
+  it("keeps Custom at Ask and leaves Ask and Full to their own rules", () => {
+    for (const allowed of [true, false]) {
+      expect(memberRoomTurnLevel("custom", allowed)).toBe("ask");
+      expect(memberRoomTurnLevel("ask", allowed)).toBe("ask");
+      expect(memberRoomTurnLevel("full", allowed)).toBe("full");
     }
   });
 });
