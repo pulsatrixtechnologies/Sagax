@@ -3,7 +3,7 @@
 // HTTP. Every refusal the spec lists (T10) is proven by bending one thing.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { accessExpiresIn, avatarVersionFromPicture, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseRetryAfter, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
+import { ACCOUNT_PURGED_EVENT, accessExpiresIn, avatarVersionFromPicture, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseRetryAfter, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
 const REDIRECT = "http://127.0.0.1:9/auth/oidc/callback";
@@ -351,6 +351,41 @@ describe("OIDC relying party: back-channel logout tokens", () => {
   ])("refuses %s", async (_what, tamper, code) => {
     const party = rp();
     await expect(party.verifyLogoutToken(idp.logoutToken({ sub, ...tamper }))).rejects.toMatchObject({ code });
+  });
+
+  describe("the account purged event", () => {
+    const LOGOUT = "http://schemas.openid.net/event/backchannel-logout";
+    const purged = (subject?: unknown) => (c: Record<string, unknown>) => ({
+      ...c, events: { [LOGOUT]: {}, [ACCOUNT_PURGED_EVENT]: subject === undefined ? {} : { subject } },
+    });
+
+    it("is the RISC account purged event type", () => {
+      expect(ACCOUNT_PURGED_EVENT).toBe("https://schemas.openid.net/secevent/risc/event-type/account-purged");
+    });
+
+    it("says purged when the token carries it next to the logout event, never otherwise", async () => {
+      const party = rp();
+      expect(await party.verifyLogoutToken(idp.logoutToken({ sub, claims: purged({ format: "iss_sub", iss: idp.issuer, sub }) }))).toMatchObject({ sub, purged: true });
+      expect(await party.verifyLogoutToken(idp.logoutToken({ sub, claims: purged() }))).toMatchObject({ sub, purged: true });
+      expect((await party.verifyLogoutToken(idp.logoutToken({ sub }))).purged).toBeUndefined();
+    });
+
+    it.each([
+      ["another subject", purged({ format: "iss_sub", iss: "ISSUER", sub: "01J0000000000000000000OTHR" })],
+      ["another issuer", purged({ format: "iss_sub", iss: "https://evil.example", sub })],
+      ["a subject that is not an object", purged("someone")],
+      ["an event that is not an object", (c: Record<string, unknown>) => ({ ...c, events: { [LOGOUT]: {}, [ACCOUNT_PURGED_EVENT]: true } })],
+      ["the purge alone, without the logout event", (c: Record<string, unknown>) => ({ ...c, events: { [ACCOUNT_PURGED_EVENT]: {} } })],
+    ])("refuses %s", async (_what, claims) => {
+      const party = rp();
+      const fixed = (c: Record<string, unknown>) => {
+        const out = claims(c);
+        const event = (out.events as Record<string, { subject?: { iss?: string } }>)[ACCOUNT_PURGED_EVENT];
+        if (event?.subject?.iss === "ISSUER") event.subject.iss = idp.issuer;
+        return out;
+      };
+      await expect(party.verifyLogoutToken(idp.logoutToken({ sub, claims: fixed }))).rejects.toMatchObject({ code: "logout_token_events" });
+    });
   });
 
   it("never takes an id_token for a logout token, nor a logout token for an id_token", async () => {
