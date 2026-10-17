@@ -1,11 +1,13 @@
 // The conversation's glyph field (Settings > Appearance > "Glyph ripple on
 // click", off by default). One canvas behind the transcript, never in the
 // way of a click (pointer-events none, aria-hidden); the drawing and the
-// listeners live in src/lib/glyph-ripple.ts, outside React, so a ring never
-// re-renders anything. Desktop only: a coarse pointer (a phone or a tablet
-// browser) gets nothing; the iOS app is native and has no such setting yet.
+// listeners live in src/lib/glyph-energy.ts (the WebGL energy weave) and
+// src/lib/glyph-ripple.ts (the 2D ring when WebGL2 is missing), outside
+// React, so a wave never re-renders anything. Desktop only: a coarse
+// pointer (a phone or a tablet browser) gets nothing; the iOS app is native
+// and has no such setting yet.
 import { useEffect, useRef, type RefObject } from "react";
-import { mountGlyphField } from "@/lib/glyph-ripple";
+import { mountGlyphEnergy } from "@/lib/glyph-energy";
 import { useGlyphRipple } from "@/lib/glyph-ripple-preferences";
 
 /** A fine pointer (mouse, trackpad, pen): the desktop app and a desktop
@@ -30,7 +32,7 @@ export function GlyphRippleCanvas({ paneRef }: { paneRef: RefObject<HTMLElement 
     const canvas = canvasRef.current;
     const pane = paneRef.current;
     if (!canvas || !pane) return;
-    const { unmount } = mountGlyphField(canvas, pane);
+    const { unmount } = mountGlyphEnergy(canvas, pane);
     return unmount;
   }, [paneRef]);
   return (

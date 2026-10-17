@@ -1237,11 +1237,27 @@ these rules, covered by `src/lib/glyph-ripple.test.ts`,
   `relative` only while the field is on, so it paints over the canvas. No
   canvas, listener or class when off. Side chats never show it.
 - At rest: faint monospace letters and digits in islands, drawn ONCE (and
-  again on resize, density or skin change). A ring (`src/lib/glyph-ripple.ts`)
-  runs requestAnimationFrame only while alive (1.1 s), touches only the
-  cells in the ring and the ones it lit the frame before, draws from a
-  pre-rendered atlas (no fillText per frame), at most 3 rings. No React in
-  the loop. A hidden window settles at once.
+  again on resize, density or skin change). No React in the loop. A hidden
+  window settles at once.
+- The click effect is the energy weave (`src/lib/glyph-energy.ts`, WebGL2,
+  2026-10-17): per glyph cell, a front torn by angular and spatial fbm,
+  a wake threaded by ridged domain-warped veins flowing outward, a short
+  flash at the click, scramble and flicker at the front, a bloom on hot
+  glyphs, interference (cross terms of a coherent sum) where waves
+  overlap, exponential decay and a per-cell afterglow (ping-pong energy
+  texture). Pass 1 computes the energy on a cols x rows texture; pass 2
+  only reads textures (glyph atlas, rest field, energy, quiet map). At
+  most 6 waves of 1.8 s; requestAnimationFrame stops 650 ms after the last
+  wave or pointer move; the last frame stays on screen. A faint glow
+  follows a mouse or pen over the transcript (`pointermove`, passive).
+- Readability: when a wave starts (and every 300 ms while waves run, in a
+  frame, never in the handler) the text boxes of the message rows on
+  screen (`QUIET_SELECTOR` inside `[data-message-row]`) become a quiet
+  map: lit glyphs under text keep 38% of their brightness and get no
+  bloom. Mark anything else to protect with `[data-glyph-quiet]`.
+- No WebGL2 (or shaders that fail): the 2D ring (`src/lib/glyph-ripple.ts`,
+  1.1 s, only the ring's cells redrawn, at most 3 rings) through the same
+  `mountGlyphField` wiring (`GlyphEngine`).
 - Colours: `--color-ink` and `--glyph-ripple-tint` (the skin's accent, a
   blue on Midnight whose accent is grey), read as resolved colours from the
   canvas; opacities per scheme in `LEVELS`.
@@ -1251,7 +1267,7 @@ these rules, covered by `src/lib/glyph-ripple.test.ts`,
   a menu, a dialog or `[data-no-glyph-ripple]`. The click is never stopped
   or delayed (passive listener).
 - Reduced motion (the system setting or the app's `data-reduced-motion`,
-  `prefersReducedMotion()`): the still field stays, no ring at all.
+  `prefersReducedMotion()`): the still field stays, no wave and no glow.
 - Gallery: `src/gallery/glyph-ripple.html` (`?skin=<id>&off=1`).
 
 ## Seen by: read receipts (2026-10-08)

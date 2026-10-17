@@ -7993,7 +7993,7 @@
   "settings.privacy.presence.short": "Off: you appear offline to everyone.",
   "settings.sendKey.short": "{key} always sends.",
   "settings.glyphRipple.title": "Glyph ripple on click",
-  "settings.glyphRipple.description": "Faint characters behind the conversation; a click sends a wave through them. No wave when animations are reduced.",
+  "settings.glyphRipple.description": "Faint characters behind the conversation; a click sends a wave of energy through them and the pointer leaves a soft glow. Nothing moves when animations are reduced.",
   "settings.appearance.choose": "Choose",
   "settings.appearance.show": "Show",
   "settings.appearance.hide": "Hide",

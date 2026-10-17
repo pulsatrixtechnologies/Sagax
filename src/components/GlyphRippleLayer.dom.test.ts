@@ -6,7 +6,8 @@ import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GLYPH_RIPPLE_KEY, setGlyphRippleEnabled } from "@/lib/glyph-ripple-preferences";
-import { mountGlyphField, type GlyphContext } from "@/lib/glyph-ripple";
+import { mountGlyphField, type GlyphContext, type GlyphEngine } from "@/lib/glyph-ripple";
+import { mountGlyphEnergy } from "@/lib/glyph-energy";
 import { GlyphRippleLayer, useGlyphRippleShown } from "./GlyphRippleLayer";
 import { GlyphRippleRow } from "./settings/AppearanceSettings";
 
@@ -123,6 +124,64 @@ describe("mountGlyphField", () => {
     view.click(view.message);
     expect(view.field.rippleCount).toBe(0);
     view.cleanup();
+  });
+});
+
+describe("mountGlyphField with an engine that has a pointer glow", () => {
+  function mount() {
+    const canvas = document.createElement("canvas");
+    const pane = document.createElement("div");
+    const message = document.createElement("p");
+    pane.append(message);
+    document.body.append(canvas, pane);
+    const calls = { ripple: 0, hover: 0, leave: 0, destroy: 0 };
+    const engine: GlyphEngine = {
+      setColors: () => {},
+      resize: () => {},
+      ripple: () => {
+        calls.ripple += 1;
+        return true;
+      },
+      hover: () => void (calls.hover += 1),
+      leave: () => void (calls.leave += 1),
+      settle: () => {},
+      destroy: () => void (calls.destroy += 1),
+    };
+    const mounted = mountGlyphField(canvas, pane, engine);
+    const move = (pointerType: string) => message.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerType, clientX: 20, clientY: 20 }));
+    return { calls, move, pane, mounted, cleanup: () => { mounted.unmount(); canvas.remove(); pane.remove(); } };
+  }
+
+  it("feeds mouse moves to the glyph, never touch, and fades on leave", () => {
+    const view = mount();
+    view.move("mouse");
+    view.move("touch");
+    expect(view.calls.hover).toBe(1);
+    view.pane.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "mouse" }));
+    expect(view.calls.leave).toBe(1);
+    view.cleanup();
+    expect(view.calls.destroy).toBe(1);
+    view.move("mouse");
+    expect(view.calls.hover).toBe(1);
+  });
+
+  it("gives no glow with reduced motion", () => {
+    document.documentElement.dataset.reducedMotion = "true";
+    const view = mount();
+    view.move("mouse");
+    expect(view.calls.hover).toBe(0);
+    view.cleanup();
+  });
+
+  it("falls back to the 2D ring when the canvas has no WebGL2", () => {
+    const canvas = document.createElement("canvas");
+    const pane = document.createElement("div");
+    document.body.append(canvas, pane);
+    const { energy, unmount } = mountGlyphEnergy(canvas, pane);
+    expect(energy).toBeNull();
+    unmount();
+    canvas.remove();
+    pane.remove();
   });
 });
 

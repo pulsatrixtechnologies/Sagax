@@ -468,13 +468,51 @@ export function readGlyphColors(canvas: HTMLElement): GlyphColors {
   return { ink: style.color || "#888", tint: style.borderTopColor || style.color || "#888", scheme: readColorScheme() };
 }
 
+/** What mountGlyphField drives: the 2D ring here, or the WebGL energy weave
+ * (src/lib/glyph-energy.ts). */
+export interface GlyphEngine {
+  setColors(colors: GlyphColors): void;
+  resize(width: number, height: number, dpr: number): void;
+  ripple(clientX: number, clientY: number): boolean;
+  /** The pointer moved over the pane (engines without a pointer glow ignore it). */
+  hover?(clientX: number, clientY: number): void;
+  leave?(): void;
+  settle(): void;
+  destroy(): void;
+}
+
+/** The 2D ring on `canvas`, or null when the canvas has no 2D context. */
+export function create2DEngine(canvas: HTMLCanvasElement): { engine: GlyphEngine; field: GlyphField } | null {
+  const context = canvas.getContext("2d", { alpha: true });
+  if (!context) return null;
+  const field = new GlyphField({ context, atlas: canvasAtlas, rect: () => canvas.getBoundingClientRect() });
+  const engine: GlyphEngine = {
+    setColors: (colors) => void field.setColors(colors),
+    resize: (width, height, dpr) => field.resize(width, height, dpr),
+    ripple: (x, y) => field.ripple(x, y),
+    settle: () => field.settle(),
+    destroy: () => field.destroy(),
+  };
+  return { engine, field };
+}
+
 /** Mounts the field on `canvas` and listens for clicks on `pane`. Returns the
  * cleanup. Nothing runs between rings: no timer, no frame, no listener work
- * beyond one cheap test per pointerdown. */
-export function mountGlyphField(canvas: HTMLCanvasElement, pane: HTMLElement): { field: GlyphField | null; unmount: () => void } {
-  const context = canvas.getContext("2d", { alpha: true });
-  if (!context) return { field: null, unmount: () => {} };
-  const field = new GlyphField({ context, atlas: canvasAtlas, rect: () => canvas.getBoundingClientRect() });
+ * beyond one cheap test per pointerdown (and per pointermove when the engine
+ * has a pointer glow). `engine` defaults to the 2D ring. */
+export function mountGlyphField(
+  canvas: HTMLCanvasElement,
+  pane: HTMLElement,
+  engine?: GlyphEngine | null,
+): { field: GlyphField | null; engine: GlyphEngine | null; unmount: () => void } {
+  let field: GlyphField | null = null;
+  if (!engine) {
+    const made = create2DEngine(canvas);
+    if (!made) return { field: null, engine: null, unmount: () => {} };
+    engine = made.engine;
+    field = made.field;
+  }
+  const active: GlyphEngine = engine;
   let sizeFrame: number | null = null;
   let lastWidth = -1;
   let lastHeight = -1;
@@ -492,15 +530,15 @@ export function mountGlyphField(canvas: HTMLCanvasElement, pane: HTMLElement): {
     lastDpr = dpr;
     canvas.width = width;
     canvas.height = height;
-    field.setColors(readGlyphColors(canvas));
-    field.resize(width, height, dpr);
+    active.setColors(readGlyphColors(canvas));
+    active.resize(width, height, dpr);
   };
   const queueSize = () => {
     if (sizeFrame === null) sizeFrame = requestAnimationFrame(applySize);
   };
   const recolor = () => {
     if (lastWidth < 0) return;
-    field.setColors(readGlyphColors(canvas));
+    active.setColors(readGlyphColors(canvas));
   };
 
   applySize();
@@ -525,28 +563,43 @@ export function mountGlyphField(canvas: HTMLCanvasElement, pane: HTMLElement): {
   schemeQuery?.addEventListener("change", recolor);
 
   const onVisibility = () => {
-    if (document.hidden) field.settle();
+    if (document.hidden) active.settle();
     else queueSize();
   };
   document.addEventListener("visibilitychange", onVisibility);
 
   const onPointerDown = (event: PointerEvent) => {
     if (!startsRipple(event, { reducedMotion: prefersReducedMotion(), hidden: document.hidden })) return;
-    field.ripple(event.clientX, event.clientY);
+    active.ripple(event.clientX, event.clientY);
   };
   pane.addEventListener("pointerdown", onPointerDown, { passive: true });
+  // the pointer glow: a mouse or a pen over the conversation, never with
+  // reduced motion; the engine coalesces moves into its next frame
+  const hover = active.hover?.bind(active);
+  const onPointerMove = (event: PointerEvent) => {
+    if (event.pointerType === "touch" || document.hidden || prefersReducedMotion()) return;
+    hover?.(event.clientX, event.clientY);
+  };
+  const onPointerLeave = () => active.leave?.();
+  if (hover) {
+    pane.addEventListener("pointermove", onPointerMove, { passive: true });
+    pane.addEventListener("pointerleave", onPointerLeave, { passive: true });
+  }
 
   return {
     field,
+    engine: active,
     unmount: () => {
       pane.removeEventListener("pointerdown", onPointerDown);
+      pane.removeEventListener("pointermove", onPointerMove);
+      pane.removeEventListener("pointerleave", onPointerLeave);
       document.removeEventListener("visibilitychange", onVisibility);
       schemeQuery?.removeEventListener("change", recolor);
       themeObserver?.disconnect();
       densityQuery?.removeEventListener("change", onDensity);
       resizeObserver?.disconnect();
       if (sizeFrame !== null) cancelAnimationFrame(sizeFrame);
-      field.destroy();
+      active.destroy();
     },
   };
 }

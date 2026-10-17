@@ -7993,7 +7993,7 @@
   "settings.privacy.presence.short": "Désactivé : vous paraissez hors ligne pour tout le monde.",
   "settings.sendKey.short": "{key} envoie toujours.",
   "settings.glyphRipple.title": "Effet de caractères au clic",
-  "settings.glyphRipple.description": "Des caractères discrets derrière la conversation ; un clic y envoie une onde. Aucune onde lorsque les animations sont réduites.",
+  "settings.glyphRipple.description": "Des caractères discrets derrière la conversation ; un clic y envoie une onde d'énergie et le pointeur y laisse une lueur douce. Rien ne bouge lorsque les animations sont réduites.",
   "settings.appearance.choose": "Choisir",
   "settings.appearance.show": "Afficher",
   "settings.appearance.hide": "Masquer",
