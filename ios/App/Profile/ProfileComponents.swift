@@ -352,8 +352,9 @@ struct IdentifiedURL: Identifiable {
 // MARK: - Schedule wording
 
 enum RoutineWording {
-    /// The profile row's subtitle: the raw cron expression for a cron
-    /// schedule, otherwise a sentence ("Every Monday at 7:00 AM"), then
+    /// The profile row's subtitle: a sentence ("Every Monday at 7:00 AM",
+    /// "Weekdays at 8:11 AM", "Every 2 hours, from 7:13 AM to 9:13 PM"; a
+    /// cron a sentence cannot say stays the raw expression), then
     /// " · Paused" when it is off.
     static func subtitle(_ routine: Routine) -> String {
         let base = schedule(routine.schedule)
@@ -363,20 +364,40 @@ enum RoutineWording {
     static func schedule(_ schedule: RoutineSchedule) -> String {
         switch schedule.type {
         case .cron:
+            // a simple cron says itself ("Weekdays at 8:11 AM"); the rest
+            // stays the raw expression
+            if let wording = schedule.cronWording {
+                let times = ListFormatter.localizedString(byJoining: wording.minutesOfDay.map { clockText(hour: $0 / 60, minute: $0 % 60) })
+                return sentence(wording.days, time: times) + zoneSuffix(wording.timeZone)
+            }
             return schedule.cronDisplay ?? String(localized: "Cron")
         case .once:
             guard let at = schedule.at else { return String(localized: "One time") }
             return Date(timeIntervalSince1970: at / 1_000).formatted(date: .abbreviated, time: .shortened)
         case .interval:
-            let minutes = schedule.everyMinutes ?? 0
-            return String(localized: "Every \(minutes) min")
+            let every: String
+            if let hours = schedule.intervalHours {
+                every = hours == 1 ? String(localized: "Every hour") : String(localized: "Every \(hours) hours")
+            } else {
+                every = String(localized: "Every \(schedule.everyMinutes ?? 0) min")
+            }
+            // "Every 2 hours, from 7:13 AM to 9:13 PM"
+            if let window = schedule.window,
+               let start = clockText(window.start), let end = clockText(window.end) {
+                return String(localized: "\(every), from \(start) to \(end)")
+            }
+            return every
         case .unknown:
             return String(localized: "Newer schedule")
         case .daily:
             break
         }
-        let time = timeText(schedule)
-        switch schedule.dayPattern {
+        return sentence(schedule.dayPattern, time: timeText(schedule))
+    }
+
+    /// Which days, then when: "Weekdays at 8:11 AM".
+    private static func sentence(_ days: RoutineSchedule.DayPattern, time: String) -> String {
+        switch days {
         case .everyDay: return String(localized: "Every day at \(time)")
         case .weekdays: return String(localized: "Weekdays at \(time)")
         case .weekends: return String(localized: "Weekends at \(time)")
@@ -403,11 +424,32 @@ enum RoutineWording {
     }
 
     private static func timeText(_ schedule: RoutineSchedule) -> String {
-        guard let time = schedule.timeOfDay,
-              let date = Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date())
-        else { return schedule.time ?? "" }
+        guard let time = schedule.timeOfDay else { return schedule.time ?? "" }
+        return clockText(hour: time.hour, minute: time.minute)
+    }
+
+    /// "07:13" as the phone writes a time of day; nil when unreadable.
+    private static func clockText(_ text: String) -> String? {
+        let parts = text.split(separator: ":").compactMap { Int($0) }
+        guard parts.count >= 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
+        return clockText(hour: parts[0], minute: parts[1])
+    }
+
+    private static func clockText(hour: Int, minute: Int) -> String {
+        guard let date = Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) else {
+            return String(format: "%02d:%02d", hour, minute)
+        }
         // the reference spaces "7:00 AM" with an ordinary space
         return date.formatted(date: .omitted, time: .shortened).replacingOccurrences(of: "\u{202F}", with: " ")
+    }
+
+    /// A cron's times are in its own zone: named when it is not the phone's.
+    private static func zoneSuffix(_ zone: String?) -> String {
+        guard let zone, zone != TimeZone.current.identifier,
+              TimeZone(identifier: zone)?.secondsFromGMT() != TimeZone.current.secondsFromGMT()
+        else { return "" }
+        let city = zone.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") } ?? zone
+        return " (\(city))"
     }
 
     private static func weekdayName(_ day: Int) -> String {

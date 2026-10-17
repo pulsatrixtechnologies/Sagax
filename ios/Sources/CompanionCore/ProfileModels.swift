@@ -297,4 +297,77 @@ public extension RoutineSchedule {
         guard parts.count >= 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
         return (parts[0], parts[1])
     }
+
+    /// A cron schedule a sentence can say ("Weekdays at 8:11 AM",
+    /// "Weekdays at 12:17 PM and 4:17 PM"): one minute, one or more hours,
+    /// every day of the month and every month, and any day-of-week list or
+    /// range. Nil for anything else (steps, day-of-month or month limits),
+    /// which is shown raw.
+    struct CronWording: Equatable, Sendable {
+        public var days: DayPattern
+        /// Minutes after midnight, in order.
+        public var minutesOfDay: [Int]
+        /// The zone the times are in, when the schedule names one.
+        public var timeZone: String?
+    }
+
+    var cronWording: CronWording? {
+        guard type == .cron, let expression else { return nil }
+        let fields = expression.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        guard fields.count == 5,
+              let minute = Int(fields[0]), (0..<60).contains(minute),
+              fields[2] == "*" || fields[2] == "?",
+              fields[3] == "*"
+        else { return nil }
+        var hours: [Int] = []
+        for part in fields[1].split(separator: ",", omittingEmptySubsequences: false) {
+            guard let hour = Int(part), (0..<24).contains(hour) else { return nil }
+            hours.append(hour)
+        }
+        guard let days = Self.cronDays(fields[4]) else { return nil }
+        let pattern = RoutineSchedule(type: .daily, weekdays: days).dayPattern
+        let zone = timeZone.flatMap { $0.isEmpty ? nil : $0 }
+        return CronWording(
+            days: pattern,
+            minutesOfDay: Array(Set(hours)).sorted().map { $0 * 60 + minute },
+            timeZone: zone
+        )
+    }
+
+    /// Day-of-week field: `*`, numbers (0 or 7 = Sunday), three-letter
+    /// names, ranges and lists. Nil for steps or anything unknown.
+    private static func cronDays(_ field: String) -> [Int]? {
+        if field == "*" || field == "?" { return Array(0..<7) }
+        let names = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+        func day(_ text: Substring) -> Int? {
+            if let number = Int(text), (0...7).contains(number) { return number % 7 }
+            return names.firstIndex(of: text.uppercased())
+        }
+        var days = Set<Int>()
+        for part in field.split(separator: ",", omittingEmptySubsequences: false) {
+            let bounds = part.split(separator: "-", omittingEmptySubsequences: false)
+            switch bounds.count {
+            case 1:
+                guard let one = day(bounds[0]) else { return nil }
+                days.insert(one)
+            case 2:
+                guard let low = day(bounds[0]), let rawHigh = bounds[1].isEmpty ? nil : bounds[1],
+                      var high = Int(rawHigh).map({ $0 }) ?? names.firstIndex(of: rawHigh.uppercased())
+                else { return nil }
+                // "1-7" runs Monday to Sunday
+                if high == 0, low > 0 { high = 7 }
+                guard (0...7).contains(high), low <= high else { return nil }
+                for value in low...high { days.insert(value % 7) }
+            default:
+                return nil
+            }
+        }
+        return days.sorted()
+    }
+
+    /// An interval in whole hours ("Every 2 hours"): the hour count, else nil.
+    var intervalHours: Int? {
+        guard type == .interval, let minutes = everyMinutes, minutes >= 60, minutes % 60 == 0 else { return nil }
+        return minutes / 60
+    }
 }

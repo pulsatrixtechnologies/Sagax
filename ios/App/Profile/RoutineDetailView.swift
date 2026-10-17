@@ -254,7 +254,7 @@ private struct RunHistoryRow: View {
 
     var body: some View {
         ProfileRow(
-            title: Text(Date(timeIntervalSince1970: (run.startedAt ?? run.scheduledFor) / 1_000).formatted(date: .abbreviated, time: .shortened)),
+            title: Text(verbatim: Self.when.string(from: Date(timeIntervalSince1970: (run.startedAt ?? run.scheduledFor) / 1_000))),
             height: Theme.Profile.row
         ) {
             HStack(spacing: 6) {
@@ -264,13 +264,31 @@ private struct RunHistoryRow: View {
                 }
                 Text(verbatim: status)
                     .font(Theme.Font.body)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(statusColor)
             }
             .padding(.trailing, 18.7)
         }
         .contentShape(Rectangle())
         
         .accessibilityIdentifier("routine-run.\(run.id)")
+    }
+
+    /// "Today at 4:37 PM", "Yesterday at ...", then the date.
+    private static let when: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        formatter.doesRelativeDateFormatting = true
+        return formatter
+    }()
+
+    /// Green when it went through, red when it did not.
+    private var statusColor: Color {
+        switch run.status {
+        case "completed": Theme.success
+        case "failed", "missed": Theme.danger
+        default: Theme.textSecondary
+        }
     }
 
     private var status: String {
