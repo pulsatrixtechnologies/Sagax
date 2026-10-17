@@ -40,7 +40,10 @@ function enforce(): void {
 }
 
 const exec = (): ToolExec => ({
-  exec: async () => ({ stdout: "hello\n", stderr: "", exitCode: 0, truncated: false, timedOut: false }),
+  // the environment resolves a read's path first (user-sandbox-tools.ts resolveInSandbox)
+  exec: async (input) => input.argv[0] === "python3"
+    ? { stdout: JSON.stringify({ sagaxResolved: 1, real: input.env?.SAGAX_PATH ?? "/workspace", links: [] }), stderr: "", exitCode: 0, truncated: false, timedOut: false }
+    : { stdout: "hello\n", stderr: "", exitCode: 0, truncated: false, timedOut: false },
   overQuota: async () => false,
 });
 

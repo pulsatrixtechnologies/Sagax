@@ -95,7 +95,12 @@ describe("tool execution target labels", () => {
 function recorder(result: Partial<SandboxExecOutput> = {}, overQuota = false) {
   const calls: Parameters<ToolExec["exec"]>[0][] = [];
   const exec: ToolExec = {
-    exec: async (input) => { calls.push(input); return { exitCode: 0, stdout: "out", stderr: "", truncated: false, timedOut: false, ...result }; },
+    exec: async (input) => {
+      // the environment resolves a read's path first (resolveInSandbox)
+      if (input.argv[0] === "python3") return { exitCode: 0, stdout: JSON.stringify({ sagaxResolved: 1, real: `/workspace/${input.env?.SAGAX_PATH ?? ""}`, links: [] }), stderr: "", truncated: false, timedOut: false };
+      calls.push(input);
+      return { exitCode: 0, stdout: "out", stderr: "", truncated: false, timedOut: false, ...result };
+    },
     overQuota: async () => overQuota,
   };
   return { calls, exec };
@@ -136,7 +141,8 @@ describe("environment tools", () => {
   it("passes paths after -- so they are never options", async () => {
     const { calls, exec } = recorder();
     await callUserSandboxTool("read_file", { path: "-rf" }, exec);
-    expect(calls[0]!.argv).toEqual(["head", "-c", "200000", "--", "-rf"]);
+    expect(calls[0]!.argv.at(-1)).toContain('exec head -c 200000 -- "$SAGAX_REAL"');
+    expect(calls[0]!.env).toEqual({ SAGAX_PATH: "-rf", SAGAX_REAL: "/workspace/-rf" });
   });
 
   it("browses only http(s) URLs without credentials", async () => {

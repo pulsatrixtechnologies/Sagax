@@ -49,6 +49,7 @@
 import type { ApprovalMode } from "../shared/approval-mode.ts";
 import { DESKTOP_BRIDGE_MCP_NAME } from "../shared/bot-workplace.ts";
 import type { TurnSpeaker } from "./engine-access.ts";
+import { sensitiveEnvironmentPath } from "./sensitive-path.ts";
 import { USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 
 /** The server environment's tools (server/user-sandbox-tools.ts). */
@@ -88,15 +89,16 @@ export function ownEnvironmentReadTool(name: string | undefined): boolean {
   return Boolean(parts && parts.server !== DESKTOP_BRIDGE_MCP_NAME && SERVER_ENVIRONMENT_READ_TOOLS.has(parts.tool));
 }
 
-/** A file name that holds credentials even without a leading dot. */
-const CREDENTIAL_NAME = /^(?:credentials?(?:\.[a-z]+)?|hosts\.yml|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|authorized_keys|known_hosts|[^/]*\.(?:pem|key|p12|pfx|kdbx|keychain(?:-db)?)|kubeconfig|secrets?(?:\.[a-z]+)?|token(?:s)?(?:\.[a-z]+)?)$/i;
-
 /** Whether a read in the owner's environment reaches a dotfile or a
  * credential path: a `.`-name or `..` anywhere in the path (`.ssh`,
  * `.git-credentials`, `.config/gh/hosts.yml`, `.netrc`, `.npmrc`, `.aws`,
- * `.docker/config.json`, `.kube`), or a key or credentials file. Input that
- * cannot be read counts as sensitive (fail closed). No path (a listing of
- * the working folder, the screen tools) is not. */
+ * `.docker/config.json`, `.kube`), a key or credentials file, or a
+ * process's secrets under /proc (`/proc/self/environ`, `/proc/<pid>/cmdline`,
+ * `/proc/<pid>/mem`, 2026-10-17). Input that cannot be read counts as
+ * sensitive (fail closed). No path (a listing of the working folder, the
+ * screen tools) is not. A name is all this sees: the environment resolves
+ * the path's links before the read runs and refuses one that leads to a
+ * credential location (user-sandbox-tools.ts, sensitive-path.ts). */
 export function ownEnvironmentSensitiveRead(input: string | undefined): boolean {
   if (input === undefined || input.trim() === "" || input.trim() === "{}") return false;
   let args: unknown;
@@ -105,10 +107,7 @@ export function ownEnvironmentSensitiveRead(input: string | undefined): boolean 
   const path = (args as Record<string, unknown>).path;
   if (path === undefined) return false;
   if (typeof path !== "string") return true;
-  const parts = path.trim().replace(/^~(?=\/|$)/, "").split(/[\\/]+/).filter(Boolean);
-  // a percent-encoded or otherwise escaped name is not read here
-  if (/%[0-9a-f]{2}/i.test(path)) return true;
-  return parts.some((part) => part.startsWith(".") || CREDENTIAL_NAME.test(part));
+  return sensitiveEnvironmentPath(path);
 }
 
 /** Whose turn a permission request comes from, for the owner's own

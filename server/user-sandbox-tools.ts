@@ -11,6 +11,7 @@
 import { MISUSE_MAX_COMMAND_SECONDS } from "../shared/misuse-guardrails.ts";
 import { wrapUntrusted } from "../shared/safety-review.ts";
 import type { SandboxExecOutput } from "./sandboxd-core.ts";
+import { procSecretPath, resolvedReadRefusal, type ResolvedEnvironmentPath } from "./sensitive-path.ts";
 
 export const USER_SANDBOX_TOOLS = [
   {
@@ -157,6 +158,63 @@ function earlyRefusal(name: string, args: Record<string, unknown>, exec: ToolExe
   return null;
 }
 
+// 2026-10-17 (leftovers of the #690 review): a read names a path, but the
+// environment is another machine whose links Sagax cannot see. Before
+// read_file or list_files runs, the environment itself resolves the path
+// (python3, present in the image): its real place and, for each component
+// that is a symbolic link, where that link leads. The server then refuses a
+// process secret under /proc, a link into a credential location, or a name
+// that looked ordinary but leads to a dotfile (sensitive-path.ts). The read
+// then runs on the resolved path, after checking that the path still
+// resolves there.
+const RESOLVE_SCRIPT = [
+  "import json, os, sys",
+  "p = os.environ['SAGAX_PATH']",
+  "cur = os.getcwd() if not p.startswith('/') else '/'",
+  "links = []",
+  "for part in p.split('/'):",
+  "    if part in ('', '.'):",
+  "        continue",
+  "    if part == '..':",
+  "        cur = os.path.dirname(os.path.realpath(cur))",
+  "        continue",
+  "    cur = os.path.join(cur, part)",
+  "    if os.path.islink(cur):",
+  "        links.append(os.path.realpath(cur))",
+  "        cur = os.path.realpath(cur)",
+  "sys.stdout.write(json.dumps({'sagaxResolved': 1, 'real': os.path.realpath(p), 'links': links}))",
+].join("\n");
+
+const SAME_PLACE_SCRIPT = 'import os, sys; sys.exit(0 if os.path.realpath(os.environ["SAGAX_PATH"]) == os.environ["SAGAX_REAL"] else 3)';
+
+/** Where one path really is in the environment, or a refusal. Anything
+ * that cannot be read fails closed. */
+export async function resolveInSandbox(path: string, exec: ToolExec): Promise<{ resolved: ResolvedEnvironmentPath } | { refused: string }> {
+  // a process secret named outright is refused before anything runs
+  const named = resolvedReadRefusal(path, { real: "/", links: [] });
+  if (named && procSecretPath(path)) return { refused: named };
+  const result = await exec.exec({ argv: ["python3", "-I", "-c", RESOLVE_SCRIPT], env: { SAGAX_PATH: path }, timeoutSec: 30, maxOutputBytes: 256 * 1024 });
+  const unreadable = { refused: `could not resolve ${path} in the environment, so it is not read` };
+  if (result.exitCode !== 0 || result.truncated) return unreadable;
+  let parsed: unknown;
+  try { parsed = JSON.parse(result.stdout); } catch { return unreadable; }
+  const value = parsed as { sagaxResolved?: unknown; real?: unknown; links?: unknown };
+  if (!value || value.sagaxResolved !== 1 || typeof value.real !== "string" || !value.real.startsWith("/")
+    || !Array.isArray(value.links) || !value.links.every((link) => typeof link === "string")) return unreadable;
+  const resolved = { real: value.real, links: value.links as string[] };
+  const refused = resolvedReadRefusal(path, resolved) ?? (resolved.real !== path ? exec.pathRefusal?.(resolved.real) ?? null : null);
+  return refused ? { refused } : { resolved };
+}
+
+/** A read of the resolved path, run only while the requested path still
+ * resolves there (a link swapped in between is refused). */
+function readResolved(path: string, real: string, command: string): { argv: string[]; env: Record<string, string> } {
+  return {
+    argv: ["sh", "-c", `python3 -I -c '${SAME_PLACE_SCRIPT}' || { echo "the path changed while it was read" >&2; exit 3; }; ${command}`],
+    env: { SAGAX_PATH: path, SAGAX_REAL: real },
+  };
+}
+
 /** A public http(s) URL only; the host egress policy also blocks private
  * destinations, this check just fails fast with a clear message. */
 export function browsableUrl(value: unknown): string {
@@ -266,7 +324,9 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       const pathRefused = exec.pathRefusal?.(path);
       if (pathRefused) return text(pathRefused, true);
       const max = Math.min(1_000_000, Math.max(1, Math.floor(typeof args.max_bytes === "number" ? args.max_bytes : 200_000)));
-      const result = await exec.exec({ argv: ["head", "-c", String(max), "--", path], timeoutSec: 30, maxOutputBytes: max + 1024 });
+      const where = await resolveInSandbox(path, exec);
+      if ("refused" in where) return text(where.refused, true);
+      const result = await exec.exec({ ...readResolved(path, where.resolved.real, `exec head -c ${max} -- "$SAGAX_REAL"`), timeoutSec: 30, maxOutputBytes: max + 1024 });
       if (result.exitCode !== 0) return text(result.stderr.trim() || `could not read ${path}`, true);
       return text(wrapUntrusted("file", result.stdout));
     }
@@ -291,7 +351,9 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       const path = args.path === undefined ? "/workspace" : validPath(args.path);
       const pathRefused = exec.pathRefusal?.(path);
       if (pathRefused) return text(pathRefused, true);
-      return commandOutput(await exec.exec({ argv: ["ls", "-la", "--", path], timeoutSec: 30 }));
+      const where = await resolveInSandbox(path, exec);
+      if ("refused" in where) return text(where.refused, true);
+      return commandOutput(await exec.exec({ ...readResolved(path, where.resolved.real, 'exec ls -la -- "$SAGAX_REAL"'), timeoutSec: 30 }));
     }
     if (name === "browse") {
       const url = browsableUrl(args.url);
