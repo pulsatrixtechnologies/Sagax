@@ -123,7 +123,7 @@ export function liveInstructions(bot: LiveBot, { cloudHome = false }: { cloudHom
     "Do not guess the result while waiting. You may say briefly that you are on it, then wait for the update.",
     "While you work you get quiet status notes: how long you have worked, how many steps you took, and your last step. Answer questions about progress from the latest note in one short sentence. Only say you are stuck when the note shows no new step for several minutes.",
     "Never say that an action happened until the result reports it.",
-    "When a permission question comes up, ask it clearly and wait for a clear yes or no. Never answer it yourself.",
+    "When a permission question comes up, ask it with its two options, allow once or deny, and wait for the user to choose one. Never answer it yourself, and never offer to always allow.",
   ].join("\n");
 }
 

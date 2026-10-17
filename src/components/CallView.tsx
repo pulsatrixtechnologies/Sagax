@@ -44,6 +44,9 @@ import type { VoiceModeStatus } from "../../shared/voice-mode";
 import { LiveCall, LiveCallEngine } from "./voice-mode/LiveCall";
 
 import { spokenDecision } from "@/lib/voice-mode/answers";
+import { useVoiceCallMark } from "@/lib/voice-mode/call-mark";
+import { decideBotHangup, VOICE_CALL_ENDED_EVENT, type VoiceCallEndedDetail } from "@/lib/voice-mode/call-end";
+import { spokenPart } from "@/lib/voice-mode/spoken";
 
 type Phase = "listening" | "sending" | "working" | "speaking";
 const CALL_ENDPOINT_MS = 850;
@@ -331,6 +334,12 @@ function Call({ bot }: { bot: Bot }) {
   const [heard, setHeard] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const engine: SpeechEngine = nativeSpeechEngine;
+  // Every turn said on this call is a call turn (Message.voiceCall), like the
+  // live call's: the server adds the phone-call section (voice output rules)
+  // and offers end_call (src/lib/voice-mode/call-mark.ts).
+  const callId = useVoiceCallMark(bot.id, bot.threadId);
+  /** the call is ending (the bot said goodbye): the mic never reopens */
+  const ending = useRef(false);
   const pushToTalk = usePushToTalk(bot.id, phase === "listening", () => {
     setNote("Push to talk couldn't start. Check Microphone and Speech Recognition access.");
   });
@@ -381,7 +390,7 @@ function Call({ bot }: { bot: Bot }) {
   }, [engine]);
 
   const listen = useCallback(() => {
-    if (!alive.current || currentCall() !== bot.id) return;
+    if (!alive.current || currentCall() !== bot.id || ending.current) return;
     move("listening");
     setHeard("");
     setNote(null);
@@ -511,7 +520,7 @@ function Call({ bot }: { bot: Bot }) {
       }
 
       move("sending");
-      dispatch({ type: "send", botId: bot.id, text: said, threadId: bot.threadId });
+      dispatch({ type: "send", botId: bot.id, text: said, threadId: bot.threadId, voiceCall: { callId } });
     });
     const offEnd = engine.onEnd(({ code, reason }) => {
       if (!alive.current || currentCall() !== bot.id) return;
@@ -545,7 +554,7 @@ function Call({ bot }: { bot: Bot }) {
     // busy/approval are intentionally initial snapshots. Their live changes
     // are handled below without tearing down native event listeners.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bot.id, bot.threadId, dispatch, engine, hush, listen, move, sayThenListen]);
+  }, [bot.id, bot.threadId, callId, dispatch, engine, hush, listen, move, sayThenListen]);
 
   // ── narrate the work, speak the answer, read the approvals ───────────
   useEffect(() => {
@@ -607,8 +616,10 @@ function Call({ bot }: { bot: Bot }) {
     const chip = [...fresh].reverse().find((m) => m.kind === "activity" && m.tool?.spoken);
     for (const m of fresh) spokenIds.current.add(m.id);
 
-    if (reply?.text) {
-      void sayThenListen(reply.text);
+    // a written follow-up below a --- line is for the chat, never said
+    const spoken = reply?.text ? spokenPart(reply.text).trim() : "";
+    if (spoken) {
+      void sayThenListen(spoken);
     } else if (chip?.tool?.spoken && phase === "working") {
       void say(chip.tool.spoken).then((stillMine) => {
         if (stillMine && phaseRef.current === "speaking") move("working");
@@ -636,6 +647,40 @@ function Call({ bot }: { bot: Bot }) {
       listen();
     }
   }, [bot.busy, hush, listen, move]);
+
+  // The server said this call ended (the bot's end_call, or the person on
+  // another device): close the mic, let a goodbye finish, then hang up.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const onEnded = (event: Event) => {
+      const detail = (event as CustomEvent<VoiceCallEndedDetail>).detail;
+      if (!detail || detail.callId !== callId || detail.threadId !== bot.threadId) return;
+      if (detail.by !== "bot" && detail.by !== "person") return;
+      if (timer) clearTimeout(timer);
+      ending.current = true;
+      hush();
+      const started = Date.now();
+      let heardSpeech = false;
+      const tick = () => {
+        if (stopped) return;
+        const speaking = speaker.isSpeaking();
+        if (speaking) heardSpeech = true;
+        if (decideBotHangup({ speaking, heardSpeech, elapsedMs: Date.now() - started }) === "wait") {
+          timer = setTimeout(tick, 80);
+          return;
+        }
+        endCall(bot.id);
+      };
+      tick();
+    };
+    window.addEventListener(VOICE_CALL_ENDED_EVENT, onEnded);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener(VOICE_CALL_ENDED_EVENT, onEnded);
+    };
+  }, [bot.id, bot.threadId, callId, hush]);
 
   // Escape hangs up; space interrupts whatever is being said
   useEffect(() => {

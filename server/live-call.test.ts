@@ -144,7 +144,8 @@ describe("live startup context", () => {
   it("writes one-line instructions from the bot's own profile", () => {
     const text = liveInstructions({ name: "  Rigel\n", title: "QA", description: "Line one\nline two" });
     expect(text.split("\n")[0]).toBe("You are Rigel, QA, an AI agent that runs in Sagax on the user's own computer. Line one line two");
-    expect(text).toContain("Never answer it yourself.");
+    expect(text).toContain("Never answer it yourself, and never offer to always allow.");
+    expect(text).toContain("allow once or deny");
   });
 
   // On a Cloud the harness is a server in the cloud: a voice that says it

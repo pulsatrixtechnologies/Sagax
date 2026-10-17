@@ -6,7 +6,8 @@
 // connects the voice to the bot, so all three clients behave the same:
 //   delegation → a user message "via call", carrying the call's id, on the bot's thread;
 //   bot progress → quiet thinking; the turn's final text → spoken commentary;
-//   an approval card → a strict spoken yes/no; a question card → the next request;
+//   an approval card → "Allow once, or deny?", answered by the strict spoken
+//   rule of every call (spokenConsent "voice"); a question card → the next request;
 //   a typed message → nothing until the bot answers it; then the answer is read
 //   with what was typed (readTypedReplies on), or nothing about it at all
 //   reaches OpenAI (off);
@@ -594,8 +595,10 @@ export class LiveCallController {
     if (call.state.status !== "live") return;
     const open = call.approval;
     if (!open || open.submitted) return;
-    // Live's rule: hedges ("okay…", "sure") never decide on an open microphone
-    const decision = spokenConsent(said, "live");
+    // the rule of every call: one of the two options, a whole-utterance yes
+    // or a plain no; hedges ("okay…", "sure"), mixes, conditions, questions
+    // and "always allow" are asked again, which an open microphone needs too
+    const decision = spokenConsent(said, "voice");
     if (!decision) {
       if (heard.trim()) this.append(call, "instructions", LIVE_COPY.notClear, delegationId);
       return;
@@ -626,7 +629,7 @@ export class LiveCallController {
       call.consentTimer = null;
       if (!call.approval || call.approval.submitted) return;
       const pending = call.transcript.pending({ skipEcho: true });
-      return spokenConsent(pending, "live") ? this.decide(call, pending, call.activeDelegation) : undefined;
+      return spokenConsent(pending, "voice") ? this.decide(call, pending, call.activeDelegation) : undefined;
     }, CONSENT_SETTLE_MS);
   }
 

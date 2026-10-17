@@ -879,7 +879,7 @@ describe("LiveCallController relay", () => {
       const t = await live();
       t.message(approval());
       await vi.advanceTimersByTimeAsync(0);
-      expect(t.socket().appends("instructions").at(-1)).toMatchObject({ content: expect.stringContaining("I want to run a command. rm -rf build. May I?") });
+      expect(t.socket().appends("instructions").at(-1)).toMatchObject({ content: expect.stringContaining("I want to run a command. rm -rf build. Allow once, or deny?") });
       hear(t, "yes go ahead", 5_000);
       await delegate(t, "del_2", 5_200);
       expect(t.deps.respond).toHaveBeenCalledWith({ auth: owner, threadId: "t1", requestId: "r1", behavior: "allow", message: undefined });
@@ -896,17 +896,17 @@ describe("LiveCallController relay", () => {
       expect(t.deps.respond).toHaveBeenCalledWith(expect.objectContaining({ behavior: "deny", message: "Denied by the user, on a live call." }));
     });
 
-    it("asks again when the answer is not a clear yes or no", async () => {
+    it("asks the two options again when the answer is not one of them", async () => {
       const t = await live();
       t.message(approval());
       await vi.advanceTimersByTimeAsync(0);
       hear(t, "hmm what does that do", 5_000);
       await delegate(t, "del_2", 5_200);
       expect(t.deps.respond).not.toHaveBeenCalled();
-      expect(t.socket().appends("instructions").at(-1)).toMatchObject({ content: expect.stringContaining("not a clear yes or no") });
+      expect(t.socket().appends("instructions").at(-1)).toMatchObject({ content: LIVE_COPY.notClear });
     });
 
-    it.each(["yes, but do not delete it", "yes — wait, no", "yes, what does that delete?"])("never grants an ambiguous spoken decision: %s", async (said) => {
+    it.each(["yes, but do not delete it", "yes — wait, no", "yes, what does that delete?", "always allow", "allow always", "no wait, yes", "oui mais attends"])("never grants an ambiguous spoken decision: %s", async (said) => {
       const t = await live();
       t.message(approval());
       await vi.advanceTimersByTimeAsync(0);
@@ -915,6 +915,17 @@ describe("LiveCallController relay", () => {
       await delegate(t, "del_ambiguous", 5_200);
       expect(t.deps.respond).not.toHaveBeenCalled();
       expect(t.socket().appends("instructions").at(-1)).toMatchObject({ content: LIVE_COPY.notClear });
+    });
+
+    it("takes the same answers as every other call: allow once, French included", async () => {
+      for (const [said, behavior] of [["allow once", "allow"], ["oui", "allow"], ["autoriser une fois", "allow"], ["non, pas maintenant", "deny"]] as const) {
+        const t = await live();
+        t.message(approval());
+        await vi.advanceTimersByTimeAsync(0);
+        hear(t, said, 5_000);
+        await delegate(t, "del_2", 5_200);
+        expect(t.deps.respond, said).toHaveBeenCalledWith(expect.objectContaining({ behavior }));
+      }
     });
 
     it("accepts a yes heard in a quiet moment, without a delegation", async () => {
@@ -964,6 +975,17 @@ describe("LiveCallController relay", () => {
         hear(t, "no", 7_000);
         await delegate(t, "del_2", 7_200);
         expect(t.deps.respond).toHaveBeenCalledWith(expect.objectContaining({ behavior: "deny" }));
+      });
+
+      it("does not take the voice's own question, heard back, for an allow", async () => {
+        const t = await live();
+        t.message(approval());
+        await vi.advanceTimersByTimeAsync(0);
+        speak(t, "I want to run a command. Allow once, or deny?", 4_000, 6_000);
+        hear(t, "allow once or deny", 5_000, 5_900);
+        await vi.advanceTimersByTimeAsync(CONSENT_SETTLE_MS + 1);
+        await delegate(t, "del_2", 6_000);
+        expect(t.deps.respond).not.toHaveBeenCalled();
       });
 
       it("asks for a clear answer when all it heard was the voice itself", async () => {

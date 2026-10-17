@@ -6,7 +6,8 @@ import type { OptionCardData } from "./wire.ts";
 
 export type LiveCardKind = "approval" | "review" | "question";
 
-/** "approval": a provider or peer ask the voice may decide with a strict yes/no.
+/** "approval": a provider or peer ask the voice may decide by voice, with
+ * the two options of every call: allow once, or deny.
  * "review": a harness-native proposal (skill, routine, profile, default
  * model, team setup, a meeting to join) that must be reviewed on screen.
  * "question": a provider question. An expired proposal is settled: nothing
@@ -94,7 +95,7 @@ function brief(text: string, limit = DETAIL_LIMIT): string {
 
 export function spokenApprovalPrompt(card: OptionCardData): string {
   const detail = brief(card.subtitle);
-  return `I want to ${toolPhrase(card.tool)}.${detail ? ` ${detail}.` : ""} May I?`;
+  return `I want to ${toolPhrase(card.tool)}.${detail ? ` ${detail}.` : ""} Allow once, or deny?`;
 }
 
 export function spokenReviewPrompt(card: OptionCardData): string {
@@ -122,7 +123,7 @@ export function spokenQuestionPrompt(card: OptionCardData): string {
 
 export const LIVE_COPY = {
   notHeard: "The request was not heard clearly. Ask the user to say it again.",
-  notClear: "That was not a clear yes or no. Ask the user again for a clear yes or no.",
+  notClear: "That was not one of the two answers. Ask the user again: allow once, or deny?",
   deniedMessage: "Denied by the user, on a live call.",
   answeredInChat: "The user answered that request in the chat. Do not ask about it again.",
   working: "You are working on the request now. Nothing is done until the result comes back; do not guess it.",
@@ -138,5 +139,5 @@ export const LIVE_COPY = {
       lastStep ? `; last step: ${lastStep}, ${duration(lastStepAgoMs)} ago` : ""}).`,
   signedOut: "The call has ended because the sign-in that started it has ended. Sign in again to start a new call.",
   unpaired: "The call has ended because the phone that started it was unpaired from this computer.",
-  permissionRequest: (prompt: string) => `You need the user's permission. Say it in your own words: ${prompt} Ask for a clear yes or no, then delegate their answer.`,
+  permissionRequest: (prompt: string) => `You need the user's permission. Say it in your own words: ${prompt} Ask them to choose one of the two options, allow once or deny (never offer to always allow), then delegate their answer.`,
 };

@@ -470,7 +470,7 @@ posixOnly("Live call e2e", () => {
       await live.waitForAttach(session.id);
       live.emit(session.id, { type: "session.input_transcript.delta", delta: "run the check", start_ms: 100, end_ms: 900 });
       live.emit(session.id, { type: "session.delegation.created", offset_ms: 950, delegation: { id: "del_p", target: "client", type: "delegation" } });
-      await live.waitForCommand(session.id, (c) => c.type === "session.instructions.append" && String(c.content).includes("May I?"), 20_000);
+      await live.waitForCommand(session.id, (c) => c.type === "session.instructions.append" && String(c.content).includes("Allow once, or deny?"), 20_000);
       live.emit(session.id, { type: "session.input_transcript.delta", delta: "yes", start_ms: 5_000, end_ms: 5_300 });
       live.emit(session.id, { type: "session.delegation.created", offset_ms: 5_400, delegation: { id: "del_y", target: "client", type: "delegation" } });
       type Card = { requestId?: string; answered?: string; answeredBy?: unknown };

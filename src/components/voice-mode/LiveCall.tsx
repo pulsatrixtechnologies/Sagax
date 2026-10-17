@@ -15,10 +15,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getUserMediaWithFallback, preferredAudioInputId } from "@/lib/audio-input";
 
 import { useStore, useStreaming, visibleMessages, type Bot } from "@/state/store";
-import { clearVoiceCallId, currentCall, endCall, setVoiceCallId } from "@/lib/call";
+import { currentCall, endCall } from "@/lib/call";
+import { useVoiceCallMark } from "@/lib/voice-mode/call-mark";
 import { spokenDecision } from "@/lib/voice-mode/answers";
-import { voiceCallSession } from "@/lib/voice-mode/api";
-import { callTimers, keepCallAlive } from "@/lib/voice-mode/call-alive";
+import { callTimers } from "@/lib/voice-mode/call-alive";
 import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mode/call";
 import { readCallSettings } from "@/lib/voice-mode/call-settings";
 import {
@@ -72,28 +72,12 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   const botRef = useRef(bot);
   botRef.current = bot;
   // this call, for the server: every turn said on it is a phone turn
-  // (Message.voiceCall), which gets the hidden phone-call instruction
-  const callId = useRef(crypto.randomUUID()).current;
-  useEffect(() => {
-    setVoiceCallId(bot.id, callId);
-    return () => clearVoiceCallId(bot.id, callId);
-  }, [bot.id, callId]);
-  // the server knows the thread is on a call: any send to it while the call
+  // (Message.voiceCall), which gets the hidden phone-call instruction; the
+  // server knows the thread is on a call: any send to it while the call
   // lasts is a call turn (typed words, a queued line, a retry), and the
-  // call's tools stay the same from turn to turn
-  const callThread = bot.threadId;
-  useEffect(() => {
-    const language = readVoiceModeSettings().language;
-    const call = { callId, threadId: callThread, ...(language && language !== "auto" ? { language } : {}) };
-    void voiceCallSession(bot.id, "start", call);
-    // every 5 minutes, and at once after a sleep or a network change (the
-    // server forgets a call after 20 minutes without one)
-    const stop = keepCallAlive(() => void voiceCallSession(bot.id, "alive", call));
-    return () => {
-      stop();
-      void voiceCallSession(bot.id, "end", call);
-    };
-  }, [bot.id, callThread, callId]);
+  // call's tools stay the same from turn to turn (call-mark.ts, shared with
+  // the older call in CallView)
+  const callId = useVoiceCallMark(bot.id, bot.threadId);
 
   const messages = visibleMessages(bot);
   const approval = pendingApprovals(messages)[0];

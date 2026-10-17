@@ -4,7 +4,7 @@
 // the kitchen at 8am.
 import { describe, expect, it } from "vitest";
 
-import { narrateTool, speakable, speakableDelta, toUtterances } from "./speech-text.ts";
+import { DELTA_HOLD_MAX, narrateTool, speakable, speakableDelta, splitHeldDelta, toUtterances } from "./speech-text.ts";
 
 describe("speakable", () => {
   it("names a code block instead of reading it", () => {
@@ -163,5 +163,30 @@ describe("narrateTool", () => {
   it("falls back to naming an unknown tool, without reading its argv", () => {
     expect(narrateTool("deploy_thing")).toBe("running deploy_thing");
     expect(narrateTool('curl -X POST "https://x/y" --data @{}')).toBeNull();
+  });
+});
+
+describe("splitHeldDelta", () => {
+  it("holds the last unfinished word, and an id label with it", () => {
+    expect(splitHeldDelta(" le commit 3f9a")).toEqual({ ready: " le commit", held: " 3f9a" });
+    expect(splitHeldDelta("3f9a")).toEqual({ ready: "", held: "3f9a" });
+    expect(splitHeldDelta(" voilà ")).toEqual({ ready: " voilà ", held: "" });
+    expect(splitHeldDelta(" ticket id: ")).toEqual({ ready: " ticket", held: " id: " });
+    expect(splitHeldDelta(" ticket ID =")).toEqual({ ready: " ticket", held: " ID =" });
+    expect(splitHeldDelta(" trois")).toEqual({ ready: "", held: " trois" });
+  });
+
+  it("a sentence end makes the last word whole; a very long run is cleaned as it is", () => {
+    expect(splitHeldDelta(" c'est réglé.")).toEqual({ ready: " c'est réglé.", held: "" });
+    expect(splitHeldDelta(" vraiment?»")).toEqual({ ready: " vraiment?»", held: "" });
+    const run = "a1".repeat(DELTA_HOLD_MAX);
+    expect(splitHeldDelta(run)).toEqual({ ready: run, held: "" });
+    expect(splitHeldDelta("")).toEqual({ ready: "", held: "" });
+  });
+
+  it("a split identifier, joined again, is removed by the delta cleaner", () => {
+    const first = splitHeldDelta(" le hash 3f9a2c7");
+    const second = splitHeldDelta(`${first.held}e1b04d9 est là `);
+    expect(speakableDelta(first.ready) + speakableDelta(second.ready)).not.toMatch(/3f9a|e1b0/);
   });
 });

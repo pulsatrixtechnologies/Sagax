@@ -41,14 +41,18 @@ numbers, `id: 42` labels; absolute and home paths keep their last name):
 the page's sentence cleaner (`src/lib/voice-mode/spoken.ts`), the server's
 speakable text (`server/tts/speech-text.ts`) and the iPhone's
 (`SpokenText.speakableSentence`, same rules in Swift). The streaming
-voice's appended words (`speakableDelta`) are cleaned piece by piece, so an
-identifier split across two pieces relies on the page's clause cleaner,
-which always sees it whole.
+voice's appended words (`speakableDelta`) arrive in pieces that may cut a
+word in two, so the server holds the last unfinished word of an open
+utterance, and an `id:` label before it, until a space or a sentence end
+follows or the utterance finishes (`splitHeldDelta`, at most 400
+characters), then cleans it whole. The opening `say` of an answer is not
+held: its first words are the call's first audio.
 
 An approval on a call is spoken as a question with its two options ("Allow
 once, or deny?", `approval.voice.commandAsk`). The answer must pick one
 (`spokenConsent(said, "voice")`, `shared/call-consent.ts`; the iPhone's
-`CallAnswers.decision`): a whole-utterance yes in English or French allows
+`CallAnswers.decision`; the GPT-Live call too, `server/live-call-controller.ts`,
+whose voice is told the same two options): a whole-utterance yes in English or French allows
 once; a no, with a reason or not, denies; a hedge ("okay", "d'accord"), a
 mix ("no wait, yes"), a condition ("yes, but rename it"), a question or
 "always allow" asks the options again (`voiceMode.allowOnceOrDeny`). Always
@@ -72,7 +76,7 @@ the per-driver cases in `server/drivers/{claude,codex,openai-compat}.test.ts`.
 A live session gets the volatile section only when it changed, so every call
 turn's own words also carry a short bracketed call mark
 (`voiceCallTurnPrompt`, never stored). The server keeps the call's state
-per thread (`server/voice-call-session.ts`): LiveCall says when its call
+per thread (`server/voice-call-session.ts`): LiveCall and the older call say when their call
 starts, stays alive and ends (`POST /api/bots/<id>/voice/call`
 `{threadId, callId, state}`), and every send to that thread while the call
 lasts is a call turn, whatever path it takes (typed words, a queued line
@@ -177,7 +181,11 @@ The person presses the call button on a bot. When the server reports
 mode on any desktop (macOS, Windows) or browser, server mode included
 (`src/components/voice-mode/LiveCall.tsx`, engine `src/lib/voice-mode/call.ts`).
 Without it, a solo Mac keeps the older call (the macOS dictation helper and
-the configured TTS provider, half duplex).
+the configured TTS provider, half duplex). That call marks its turns like
+the live call (`useVoiceCallMark`, `src/lib/voice-mode/call-mark.ts`): each
+send carries `voiceCall`, the server knows the thread is on a call (so
+`end_call` is offered and hangs it up after the goodbye), and it speaks only
+`spokenPart` of an answer.
 
 - **Full duplex.** The microphone stays open for the whole call. While the bot
   speaks, the person can talk over it: on the first voiced frame (32 ms) the

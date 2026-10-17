@@ -50,7 +50,7 @@ describe("spoken prompts", () => {
     expect(toolPhrase("Bash")).toBe("run a command");
     expect(toolPhrase("mcp__ogb__computer_batch")).toBe("computer batch");
     expect(toolPhrase(undefined)).toBe("take an action");
-    expect(spokenApprovalPrompt(card({ requestId: "r1", tool: "Bash" }))).toBe("I want to run a command. rm -rf build. May I?");
+    expect(spokenApprovalPrompt(card({ requestId: "r1", tool: "Bash" }))).toBe("I want to run a command. rm -rf build. Allow once, or deny?");
   });
   it("keeps a long detail short enough to read aloud", () => {
     const prompt = spokenApprovalPrompt(card({ requestId: "r1", tool: "Bash", subtitle: "x ".repeat(800) }));

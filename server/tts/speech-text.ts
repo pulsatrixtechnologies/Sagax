@@ -136,6 +136,40 @@ export function speakable(input: string): string {
   return /[\p{L}\p{N}]/u.test(text) ? text : "";
 }
 
+/** Longest unfinished word an open utterance holds back (characters): past
+ * it the run is cleaned as it is (a run that long without a space is an
+ * opaque token, which the identifier filter removes in pieces too). */
+export const DELTA_HOLD_MAX = 400;
+
+/** A label that names the identifier coming next ("id:", "uuid =", "#"). */
+const ID_LABEL_TAIL = /(^|\s)((?:id|uuid|guid)\b\s*[:=#]?\s*)$/i;
+/** The text ends a sentence: its last word is whole. */
+const SENTENCE_END_TAIL = /[.!?…]["'»)\]]*$/;
+
+/**
+ * Split appended text where the identifier filter can see whole words.
+ * The streaming voice gets an answer in pieces that may cut a word (a UUID,
+ * a hash, "#1234") in two, and each half alone passes the filter
+ * (shared/spoken-identifiers.ts). So the last, unfinished word is held
+ * until a space or a sentence end follows it (or the utterance finishes),
+ * and an id label is held with it. `ready` may be cleaned and said now.
+ */
+export function splitHeldDelta(text: string): { ready: string; held: string } {
+  if (!text) return { ready: "", held: "" };
+  if (text.length > DELTA_HOLD_MAX || SENTENCE_END_TAIL.test(text)) return { ready: text, held: "" };
+  // the held word keeps the space before it, so the words stay apart
+  const cut = /\s$/.test(text) ? text.length : text.search(/\s*\S+$/);
+  let ready = text.slice(0, cut);
+  let held = text.slice(cut);
+  const label = ID_LABEL_TAIL.exec(ready);
+  if (label) {
+    const tail = `${label[1]}${label[2]}`;
+    held = `${tail}${held}`;
+    ready = ready.slice(0, ready.length - tail.length);
+  }
+  return { ready, held };
+}
+
 /**
  * Words appended to an open utterance, made speakable like `speakable` but
  * with their edges kept: " pense" stays apart from the word before it, and a

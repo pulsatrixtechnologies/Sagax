@@ -29,6 +29,7 @@
 // HTTP: the route (voice-mode.ts) wires the sockets, the tests drive it with
 // fakes.
 import type { SpeechStream, SpeechStreamHandlers } from "./tts/grok.ts";
+import { splitHeldDelta } from "./tts/speech-text.ts";
 
 /** Reconnect attempts in a row before the call falls back to POST. */
 export const SPEECH_RECONNECTS = 3;
@@ -121,6 +122,9 @@ interface Clause {
   sealed?: boolean;
   /** words appended while that end was still being spoken */
   pending?: string;
+  /** the last appended word, not finished yet: held until a space or a
+   * sentence end so the identifier filter sees it whole (splitHeldDelta) */
+  held?: string;
 }
 
 export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
@@ -368,6 +372,34 @@ export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
     arm(clearMs);
   };
 
+  /** Appended words for an open utterance: cleaned, kept, and said now
+   * when it is the one speaking. */
+  const addWords = (target: Clause, raw: string) => {
+    if (!raw) return;
+    let text = deps.speakableDelta ? deps.speakableDelta(raw, target.text) : raw;
+    // the utterance's first words: no space before them
+    if (!target.text || (target.sealed && target.sent === 0)) text = text.trimStart();
+    if (!text) return;
+    target.text += text;
+    if (target === current && open) {
+      // more words after an idle end: a new xAI utterance carries them
+      // (once the end's own audio is done)
+      if (target.sealed && target.doneSent) {
+        target.pending = (target.pending ?? "") + text;
+        return;
+      }
+      target.sealed = false;
+      sendText(target, text);
+      watch();
+    }
+  };
+  /** The utterance is complete: its last held word is whole now. */
+  const releaseHeld = (target: Clause) => {
+    const held = target.held;
+    target.held = "";
+    if (held) addWords(target, held);
+  };
+
   connect();
 
   return {
@@ -388,26 +420,19 @@ export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
         const target = current && current.id === id && !current.cancelled ? current : queue.find((clause) => clause.id === id);
         if (!target || target.finished) return;
         const raw = frame.text.slice(0, SPEECH_APPEND_MAX);
-        let text = deps.speakableDelta ? deps.speakableDelta(raw, target.text) : raw;
-        // the utterance's first words: no space before them
-        if (!target.text || (target.sealed && target.sent === 0)) text = text.trimStart();
-        if (!text) return;
-        target.text += text;
-        if (target === current && open) {
-          // more words after an idle end: a new xAI utterance carries them
-          // (once the end's own audio is done)
-          if (target.sealed && target.doneSent) {
-            target.pending = (target.pending ?? "") + text;
-            return;
-          }
-          target.sealed = false;
-          sendText(target, text);
-          watch();
-        }
+        if (!deps.speakableDelta) return addWords(target, raw);
+        // an identifier cut between two appends is cleaned whole: the last
+        // unfinished word waits for the next append or finish (audio is
+        // already playing then, so the wait is not heard). The opening
+        // `say` is not held: its first words are the call's first audio.
+        const { ready, held } = splitHeldDelta(`${target.held ?? ""}${raw}`);
+        target.held = held;
+        addWords(target, ready);
         return;
       }
       if (frame.type === "finish") {
         if (current && current.id === id && !current.cancelled) {
+          releaseHeld(current);
           current.finished = true;
           if (open) {
             sendDone(current);
@@ -416,7 +441,10 @@ export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
           return;
         }
         const queued = queue.find((clause) => clause.id === id);
-        if (queued) queued.finished = true;
+        if (queued) {
+          releaseHeld(queued);
+          queued.finished = true;
+        }
         return;
       }
       if (frame.type !== "say" || typeof frame.text !== "string") return;

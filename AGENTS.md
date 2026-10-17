@@ -1904,7 +1904,10 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   its contour continues it (`CONTOUR_CONTINUATION_MS`), even over the bot's
   first words. Tests: `prosody.test.ts`, `call.test.ts` ("faster end of
   turn").
-- Call turns carry `voiceCall` (Message.voiceCall); the server adds the
+- Call turns carry `voiceCall` (Message.voiceCall), on every call view: the
+  live call and the older macOS call mark them the same way
+  (`useVoiceCallMark`, `src/lib/voice-mode/call-mark.ts`, test
+  `call-mark.test.ts`); the server adds the
   hidden "Phone call" volatile section (`server/voice-call-prompt.ts`), never
   stored as the person's text. The call speaks only `spokenPart` of an answer,
   cleaned by `src/lib/voice-mode/spoken.ts`. Tests:

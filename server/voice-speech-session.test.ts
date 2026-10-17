@@ -144,8 +144,50 @@ describe("streaming voice session (server side)", () => {
     t.append("c1", ".");
     t.append("c1", ` ${"a".repeat(SPEECH_APPEND_MAX + 100)}`);
     await flush();
-    expect(t.up().deltas.slice(0, 3)).toEqual(["Je", " pense vraiment", "."]);
-    expect(t.up().deltas[3]!.length).toBeLessThanOrEqual(SPEECH_APPEND_MAX);
+    // the last word waits for the space after it (splitHeldDelta)
+    expect(t.up().deltas.slice(0, 4)).toEqual(["Je", " pense", " vraiment", " ."]);
+    expect(t.up().deltas[4]!.length).toBeLessThanOrEqual(SPEECH_APPEND_MAX);
+  });
+
+  it("an identifier cut between two appends is never said: the unfinished word waits until it is whole", async () => {
+    const t = make(undefined, speakableDelta);
+    t.up().accept();
+    await t.session.ready;
+    t.sayMore("c1", "Le commit");
+    t.append("c1", " 3f9a2c7");
+    t.append("c1", "e1b04d est");
+    t.append("c1", " poussé, ticket #12");
+    t.append("c1", "34, id:");
+    t.append("c1", " 9876 réglé");
+    await flush();
+    const said = t.up().deltas.join("");
+    expect(said).not.toMatch(/3f9a|e1b0|#12|34|9876/);
+    expect(said).toContain("Le commit");
+    expect(said).toContain("poussé, ticket");
+    // the last word is held until the utterance finishes, then said
+    expect(said).not.toContain("réglé");
+    t.finish("c1");
+    expect(t.up().deltas.join("")).toMatch(/réglé$/);
+    expect(t.up().dones).toBe(1);
+  });
+
+  it("a held word of a queued utterance is kept for it, and a cancelled one is never said", async () => {
+    const t = make(undefined, speakableDelta);
+    t.up().accept();
+    await t.session.ready;
+    t.say("c1", "Un.");
+    t.sayMore("c2", "Deux");
+    t.append("c2", " trois");
+    t.finish("c2");
+    await flush();
+    expect(t.up().deltas).toEqual(["Un."]);
+    t.up().handlers.onDone();
+    expect(t.up().deltas).toEqual(["Un.", "Deux trois"]);
+    t.sayMore("c3", "Quatre");
+    t.append("c3", " cinq");
+    t.cancel("c3");
+    t.finish("c3");
+    expect(t.up().deltas.join("")).not.toContain("cinq");
   });
 
   it("an open utterance with nothing speakable yet stays open for its words; one never given any just ends", async () => {

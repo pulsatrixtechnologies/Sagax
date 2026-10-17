@@ -51,6 +51,19 @@ describe("spokenConsent", () => {
       expect(spokenConsent("yes please", "live")).toBe("allow");
     });
 
+    // The Live call now uses "voice" (the rule of every call): nothing the
+    // Live rule refused may be granted by it.
+    it("the voice rule the Live call uses is never looser than the Live rule", () => {
+      for (const said of ["okay", "OK.", "ok", "sure", "fine", "Okay... wait, what does it delete?", "okay I need your permission to run a command",
+        "yes, but do not delete it", "yes — wait, no", "yes, what does that delete?", "yes, only if you make a backup", "always allow", "allow once or deny"]) {
+        expect(spokenConsent(said, "voice"), said).toBeNull();
+      }
+      expect(spokenConsent("Okay, yes", "voice")).toBe("allow");
+      expect(spokenConsent("sure, go ahead", "voice")).toBe("allow");
+      expect(spokenConsent("okay no", "voice")).toBe("deny");
+      expect(spokenConsent("fine, don't", "voice")).toBe("deny");
+    });
+
     it("leaves take turns as it was", () => {
       expect(spokenConsent("okay")).toBe("allow");
       expect(spokenConsent("sure", "turns")).toBe("allow");
