@@ -71,6 +71,10 @@ export function sagaxInternalTool(name: string | undefined): "data" | "agents" |
 //   its card too.
 
 const DATA_SQL_REACHES_OUT = /\b(?:attach|copy|install|load|pragma|getenv|read_text|read_blob)\b/i;
+/** Ways to build a place out of sight of QUOTED_PLACE: dollar quoting, chr()
+ * and char() codes, an escaped string. The confined engine refuses them
+ * anyway; here they only keep the card (defense in depth). */
+const DATA_SQL_HIDDEN_PLACE = /\$[A-Za-z_]*\$|\b(?:chr|char|unhex|from_base64|decode)\s*\(|\bE'/i;
 /** The arguments of the Data tools that carry SQL or a relation. */
 const DATA_SQL_KEYS: ReadonlySet<string> = new Set(["sql", "target", "query", "table", "filter", "where"]);
 const QUOTED_PLACE = /['"`]\s*(?:[/~\\]|[A-Za-z]:[\\/]|[A-Za-z][A-Za-z0-9+.-]*:\/\/)/;
@@ -157,5 +161,5 @@ export function sagaxInternalSelfAnswers(name: string | undefined, input: string
   }
   // data_export writes where the tool itself allows (its export roots). The
   // SQL a call carries must not name a file or a URL nor reach outside.
-  return !sqlTexts(args).some((text) => QUOTED_PLACE.test(text) || DATA_SQL_REACHES_OUT.test(text));
+  return !sqlTexts(args).some((text) => QUOTED_PLACE.test(text) || DATA_SQL_REACHES_OUT.test(text) || DATA_SQL_HIDDEN_PLACE.test(text));
 }

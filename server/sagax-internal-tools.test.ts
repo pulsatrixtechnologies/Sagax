@@ -115,6 +115,12 @@ describe("Sagax's own tools, security review 2026-10-16", () => {
       expect(sql("SELECT * FROM \"~/secret.csv\"")).toBe(false);
       expect(sql("ATTACH 'x.db' AS x")).toBe(false);
       expect(sql("SELECT getenv('HOME')")).toBe(false);
+      // re-review 2026-10-17: places built out of sight keep their card too
+      expect(sql("select * from read_csv($$https://10.0.0.1/x.csv$$)")).toBe(false);
+      expect(sql("select * from read_csv($q$/etc/hosts$q$)")).toBe(false);
+      expect(sql("select * from read_csv('https:'||chr(47)||chr(47)||'kubernetes.default.svc/x')")).toBe(false);
+      expect(sql("select * from read_csv(E'\\x2fetc\\x2fhosts')")).toBe(false);
+      expect(sql("SELECT a || b AS ab, price * 2 FROM sales")).toBe(true);
       expect(sagaxInternalSelfAnswers("data__data_export", JSON.stringify({ table: "sales", format: "csv", path: "/Users/x/Downloads/sales.csv" }), [root], true)).toBe(true);
       expect(sagaxInternalSelfAnswers("data__data_show", JSON.stringify({ sql: "SELECT 1", kind: "table", title: "Load by region" }), [root], true)).toBe(true);
       // the agents tools keep answering, Data or not

@@ -26572,7 +26572,9 @@ function ownEnvironmentOrigin(bot: BotRecord, threadId: string): "owner" | "othe
 function autoAnswerStepUp(bot: BotRecord, threadId: string, call: Parameters<typeof callStepUpClasses>[0]): StepUpClass[] {
   const classes = callStepUpClasses(call);
   if (!classes.length) return [];
-  const owner = approvalOwnerId(bot) || null;
+  // the person who answers this thread's cards (a confidential thread's
+  // owner, ownerDecision's owner too), not only the bot's owner
+  const owner = approvalOwnerId(bot, threadId) || null;
   const out = new Set<StepUpClass>(securityKeys.required(owner, classes, owner));
   const speaker = turnSpeakerPrincipals.get(threadId);
   if (speaker && speaker !== owner) for (const name of securityKeys.required(speaker, classes, owner)) out.add(name);
