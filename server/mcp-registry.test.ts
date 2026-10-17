@@ -8,6 +8,11 @@ import {
   parseMcpServerMutation,
   parseMcpServersImport,
   parseStoredMcpServer,
+  renameReservedMcpServer,
+  reservedMcpServerLog,
+  reservedMcpServerName,
+  reservedMcpServers,
+  suggestMcpServerName,
 } from "./mcp-registry.ts";
 
 describe("custom MCP registry", () => {
@@ -36,6 +41,53 @@ describe("custom MCP registry", () => {
       expect(parseStoredMcpServer(name, { command: "x" }), name).toMatchObject({ ok: false });
     }
     for (const name of ["mcp-github", "mcpx", "my_data", "notes_2", "sagaxy"]) expect(mcpServerNameError(name), name).toBeNull();
+  });
+
+  it("2026-10-17 (#695 follow-up): a saved server under a reserved name is listed apart, with a free name to offer", () => {
+    const saved = {
+      notes: { command: "npx" },
+      mcp: { command: "npx", enabled: true },
+      "sagax-tools": { type: "http", url: "https://tools.example/mcp", headers: {} },
+      a__b: { command: "x" },
+      "mcp-server": { command: "y" },
+    };
+    // never in the mounted listing
+    expect(listMcpServers(saved).map((server) => server.name)).toEqual(["notes", "mcp-server"]);
+    expect(reservedMcpServers(saved)).toEqual([
+      { name: "mcp", suggestedName: "mcp-2" },
+      { name: "sagax-tools", suggestedName: "tools" },
+      { name: "a__b", suggestedName: "a_b" },
+    ]);
+    expect(reservedMcpServerName("notes")).toBe(false);
+    expect(reservedMcpServerName("Bad.Name")).toBe(false);
+    expect(suggestMcpServerName("perspicax_cw", [])).toBe("cw");
+    expect(suggestMcpServerName("claude_ai_github", ["github"])).toBe("github-server");
+    expect(suggestMcpServerName("computer", [])).toBe("computer-server");
+    for (const name of ["mcp", "sagax-x", "a__b", "openmausbot_phone", "data", "claude_ai_" + "x".repeat(22)]) {
+      expect(mcpServerNameError(suggestMcpServerName(name, [])!), name).toBeNull();
+    }
+    expect(reservedMcpServerLog("mcp")).toMatch(/"mcp" is not mounted: its name is reserved by Sagax\. Rename or remove it/);
+  });
+
+  it("2026-10-17 (#695 follow-up): renames only a reserved name, to a free allowed one, and saves it off", () => {
+    const saved = { notes: { command: "npx" }, mcp: { command: "npx", args: ["srv"], enabled: true }, other: { command: "z" } };
+    const renamed = renameReservedMcpServer(saved, "mcp", "my-mcp");
+    expect(renamed).toMatchObject({ ok: true, server: { command: "npx", args: ["srv"], enabled: false } });
+    if (!renamed.ok) throw new Error("expected ok");
+    // the list keeps its order; the old name is gone
+    expect(Object.keys(renamed.next)).toEqual(["notes", "my-mcp", "other"]);
+    expect(renamed.next.mcp).toBeUndefined();
+    expect(listMcpServers(renamed.next).find((server) => server.name === "my-mcp")).toMatchObject({ enabled: false });
+
+    expect(renameReservedMcpServer(saved, "notes", "notes2")).toMatchObject({ ok: false, status: 400 });
+    expect(renameReservedMcpServer(saved, "missing", "x")).toMatchObject({ ok: false, status: 404 });
+    expect(renameReservedMcpServer(saved, "mcp", "notes")).toMatchObject({ ok: false, status: 409 });
+    // never to another reserved name
+    for (const to of ["computer", "sagax-y", "x__y", "Bad", 7]) {
+      expect(renameReservedMcpServer(saved, "mcp", to), String(to)).toMatchObject({ ok: false, status: 400 });
+    }
+    // an entry that does not read under any name stays where it is
+    expect(renameReservedMcpServer({ mcp: { nonsense: true } }, "mcp", "ok-name")).toMatchObject({ ok: false, status: 400 });
   });
 
   it("refuses harness-owned environment names in stored and renderer entries", () => {

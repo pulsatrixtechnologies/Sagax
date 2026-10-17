@@ -240,6 +240,71 @@ export function mcpServerNameError(name: string): string | null {
   return null;
 }
 
+/** A well-formed name Sagax reserves (2026-10-17, #695): a server saved
+ * under it by an older build is never mounted. */
+export function reservedMcpServerName(name: string): boolean {
+  return MCP_NAME.test(name) && (RESERVED_MCP_NAMES.has(name) || RESERVED_MCP_PREFIX.test(name) || name.includes("__"));
+}
+
+/** A free, allowed name close to a reserved one: the reserved family
+ * dropped, `__` folded, then `-server` or a number added. */
+export function suggestMcpServerName(name: string, taken: ReadonlySet<string> | readonly string[]): string | undefined {
+  const used = new Set(taken);
+  const trim = (value: string) => value.slice(0, 32).replace(/[-_]+$/, "");
+  let base = name.replace(RESERVED_MCP_PREFIX, "").replace(/_{2,}/g, "_").replace(/^[^a-z]+/, "");
+  base = trim(base) || "server";
+  const candidates = [base, `${trim(base.slice(0, 25))}-server`];
+  for (let index = 2; index < 100; index++) candidates.push(`${trim(base.slice(0, 28))}-${index}`);
+  return candidates.find((candidate) => mcpServerNameError(candidate) === null && !used.has(candidate));
+}
+
+/** What the MCP settings show about a stored server whose name is now
+ * reserved: it is not mounted until it is renamed (or removed). */
+export interface ReservedMcpServerListing {
+  name: string;
+  suggestedName?: string;
+}
+
+/** The stored servers whose name is reserved, with a free name to offer. */
+export function reservedMcpServers(raw: Record<string, unknown> | undefined): ReservedMcpServerListing[] {
+  const names = Object.keys(raw ?? {});
+  return names.filter(reservedMcpServerName).map((name) => {
+    const suggestedName = suggestMcpServerName(name, names);
+    return { name, ...(suggestedName ? { suggestedName } : {}) };
+  });
+}
+
+/** The log line for a stored server skipped because its name is reserved. */
+export function reservedMcpServerLog(name: string): string {
+  return `MCP server ${JSON.stringify(name)} is not mounted: its name is reserved by Sagax. Rename or remove it in Settings > Plugins > MCP servers.`;
+}
+
+export type McpServerRename =
+  | { ok: true; next: Record<string, unknown>; server: StoredMcpServer }
+  | { ok: false; status: number; error: string };
+
+/** Move a stored server whose name is reserved to an allowed name. Only a
+ * reserved name may move here; the entry is re-read under its new name and
+ * saved off, so it never runs again without the person turning it on. */
+export function renameReservedMcpServer(current: Record<string, unknown>, from: string, to: unknown): McpServerRename {
+  if (!Object.hasOwn(current, from)) return { ok: false, status: 404, error: "MCP server not found." };
+  if (!reservedMcpServerName(from)) return { ok: false, status: 400, error: "Only a server whose name is reserved can be renamed here." };
+  if (typeof to !== "string") return { ok: false, status: 400, error: "Send the new name as { \"to\": \"name\" }." };
+  const nameError = mcpServerNameError(to);
+  if (nameError) return { ok: false, status: 400, error: nameError };
+  if (Object.hasOwn(current, to)) return { ok: false, status: 409, error: "An MCP server with that name already exists." };
+  const parsed = parseStoredMcpServer(to, current[from]);
+  if (!parsed.ok) return { ok: false, status: 400, error: parsed.error };
+  const server: StoredMcpServer = { ...parsed.server, enabled: false };
+  const next: Record<string, unknown> = {};
+  // keep the list's order: the renamed entry takes the old one's place
+  for (const [name, value] of Object.entries(current)) {
+    if (name === from) next[to] = server;
+    else next[name] = value;
+  }
+  return { ok: true, next, server };
+}
+
 type Parsed = { ok: true; server: StoredMcpServer } | { ok: false; error: string };
 
 /** Resolve a `true` placeholder ("keep the saved value") against what is

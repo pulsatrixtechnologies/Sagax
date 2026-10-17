@@ -18,7 +18,7 @@ import { isModelVariant, type InstanceConfigMap, type ModelSelection } from "./c
 import { PROVIDER_ICON_PRESETS, providerIconError } from "../shared/provider-icon.ts";
 import type { McpServerSpec } from "./contracts.ts";
 import type { MailSettings } from "./mail-config.ts";
-import { isRemoteMcpServer, parseStoredMcpServer } from "./mcp-registry.ts";
+import { isRemoteMcpServer, parseStoredMcpServer, reservedMcpServerLog, reservedMcpServerName } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import { currentEnvName, defaultDataDir } from "../electron/legacy-names.mjs";
 
@@ -2268,6 +2268,20 @@ function skipMcpEntry(name: string, why: string): void {
   console.error(`mcpServers.${JSON.stringify(name)} skipped — ${why}`);
 }
 
+/** 2026-10-17 (#695 follow-up): a stored server whose name Sagax now
+ * reserves is never mounted; say so once, clearly, rather than skip it
+ * silently. Called at start and on every mount. */
+export function warnReservedMcpServers(cfg: AppConfig): string[] {
+  const names = Object.keys(cfg.mcpServers ?? {}).filter(reservedMcpServerName);
+  for (const name of names) {
+    const key = `${name}: reserved`;
+    if (reportedMcpSkips.has(key)) continue;
+    reportedMcpSkips.add(key);
+    console.warn(reservedMcpServerLog(name));
+  }
+  return names;
+}
+
 /** The validated, normalized custom servers from config — or {}. */
 /** Per server, the tools switched off on the Plugins detail page. Only
  * enabled, valid entries with at least one disabled tool are listed. */
@@ -2286,6 +2300,10 @@ export function customMcpServers(cfg: AppConfig, only?: string[]): Record<string
     // a bot with its own list gets exactly those names; a bot without one
     // keeps getting every enabled server, as before this field existed
     if (only && !only.includes(name)) continue;
+    if (reservedMcpServerName(name)) {
+      warnReservedMcpServers(cfg);
+      continue;
+    }
     const parsed = parseStoredMcpServer(name, raw);
     if (!parsed.ok) {
       skipMcpEntry(name, `${parsed.error} Expected { "command": "npx", "args": [...], "env": { ... } } or { "type": "http", "url": "https://…", "headers": { ... } }`);

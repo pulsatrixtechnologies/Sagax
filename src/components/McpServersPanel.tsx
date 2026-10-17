@@ -56,6 +56,14 @@ export type McpServerListing = (StdioMcpListing | RemoteMcpListing) & {
   source?: string;
 };
 
+/** A saved server whose name Sagax now reserves (`mcp`, `__`, `sagax-`...):
+ * never mounted until it is renamed or removed (server/mcp-registry.ts
+ * reservedMcpServers). */
+export interface ReservedMcpListing {
+  name: string;
+  suggestedName?: string;
+}
+
 export function isRemoteMcpListing(server: McpServerListing): server is RemoteMcpListing {
   return "url" in server;
 }
@@ -226,6 +234,7 @@ export function useMcpServers() {
   const policy = store.config?.managedPolicy;
   const restricted = Boolean(policy && !policy.mcp.allowCustom);
   const [servers, setServers] = useState<McpServerListing[] | null>(null);
+  const [reserved, setReserved] = useState<ReservedMcpListing[]>([]);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [draft, setDraft] = useState<McpDraft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState<string | null>(null);
@@ -286,6 +295,7 @@ export function useMcpServers() {
       .then((result) => {
         if (generation === loadGeneration.current) {
           setServers(result.servers ?? []);
+          setReserved(result.reserved ?? []);
           updateMcpServers(result.servers ?? []);
         }
       })
@@ -635,7 +645,7 @@ export function useMcpServers() {
     stopWaiting(name);
   };
 
-  const remove = async (server: McpServerListing) => {
+  const remove = async (server: Pick<McpServerListing, "name">) => {
     if (!window.confirm(t("mcp.removeConfirm", { name: server.name }))) return;
     setBusy(`delete:${server.name}`);
     loadGeneration.current += 1;
@@ -643,6 +653,7 @@ export function useMcpServers() {
     try {
       const result = await api(`/api/mcp/servers/${server.name}`, { method: "DELETE" });
       setServers(result.servers ?? []);
+      setReserved(result.reserved ?? []);
       updateMcpServers(result.servers ?? []);
       setProbe((current) => {
         const next = { ...current };
@@ -650,6 +661,30 @@ export function useMcpServers() {
         return next;
       });
       if (editing === server.name) closeEditor();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** A saved server whose name is now reserved, renamed: it comes back off. */
+  const renameReserved = async (server: ReservedMcpListing, to: string) => {
+    const next = to.trim();
+    if (!next) return;
+    setBusy(`rename:${server.name}`);
+    loadGeneration.current += 1;
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api(`/api/mcp/servers/${server.name}/rename`, {
+        method: "POST",
+        body: JSON.stringify({ to: next }),
+      });
+      setServers(result.servers ?? []);
+      setReserved(result.reserved ?? []);
+      updateMcpServers(result.servers ?? []);
+      setNotice({ key: "mcp.reserved.renamed", params: { from: server.name, to: next } });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -703,7 +738,7 @@ export function useMcpServers() {
   });
 
   return {
-    store, dispatch, servers, policy, restricted, editing, draft, setDraft, busy, error, notice, probe, importOpen, setImportOpen, importText, setImportText,
+    store, dispatch, servers, reserved, renameReserved, policy, restricted, editing, draft, setDraft, busy, error, notice, probe, importOpen, setImportOpen, importText, setImportText,
     oauthError, waiting, signingIn, clientDraft, setClientDraft, forgetClientDraft, load, signIn, signOut, save, toggle, test, remove,
     importServers, closeEditor, setDisabledTools, startAdd, startEdit, toggleImport,
     whopServer, whopConnected, whopLoading, connectWhop, cancelWhop,
@@ -947,6 +982,59 @@ export function McpServerEditor({ mcp }: { mcp: McpServers }) {
         )}
 
     </>
+  );
+}
+
+/** Saved servers whose name Sagax now reserves: never mounted, said here
+ * with a rename (to a free name, saved off) or a removal. */
+export function McpReservedServers({ mcp }: { mcp: McpServers }) {
+  const { reserved, busy, renameReserved, remove } = mcp;
+  if (!reserved.length) return null;
+  return (
+    <div className="mt-3 flex flex-col gap-2" data-mcp-reserved>
+      {reserved.map((server) => (
+        <McpReservedRow key={server.name} server={server} disabled={busy !== null} renaming={busy === `rename:${server.name}`}
+          onRename={(to) => void renameReserved(server, to)} onRemove={() => void remove(server)} />
+      ))}
+    </div>
+  );
+}
+
+function McpReservedRow({ server, disabled, renaming, onRename, onRemove }: {
+  server: ReservedMcpListing;
+  disabled: boolean;
+  renaming: boolean;
+  onRename: (to: string) => void;
+  onRemove: () => void;
+}) {
+  const [to, setTo] = useState(server.suggestedName ?? "");
+  return (
+    <div role="alert" className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-[12px] text-ink">
+      <div className="font-medium">{t("mcp.reserved.title", { name: server.name })}</div>
+      <p className="mt-1 leading-relaxed text-ink-secondary">{t("mcp.reserved.body")}</p>
+      <form
+        className="mt-2 flex flex-wrap items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onRename(to);
+        }}
+      >
+        <input
+          value={to}
+          onChange={(event) => setTo(event.target.value.toLowerCase())}
+          aria-label={t("mcp.reserved.newName", { name: server.name })}
+          maxLength={32}
+          spellCheck={false}
+          className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1.5 font-mono text-[12px] text-ink"
+        />
+        <button type="submit" disabled={disabled || !to.trim()} className="ui-button inline-flex items-center gap-1.5 text-[12px]">
+          {renaming && <Loader2 size={12} className="animate-spin" />} {t("mcp.reserved.rename")}
+        </button>
+        <button type="button" disabled={disabled} onClick={onRemove} className="rounded-lg px-2.5 py-1.5 text-[12px] text-danger hover:bg-danger/10">
+          {t("mcp.reserved.remove")}
+        </button>
+      </form>
+    </div>
   );
 }
 

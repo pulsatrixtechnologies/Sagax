@@ -8,6 +8,7 @@ import { cacheUntilConfigChanges,
   foldGrokVoiceKeyPatch,
   changedInstanceIds,
   customMcpServers,
+  warnReservedMcpServers,
   driverKeyBacked,
   engineLaunches,
   DATA_DIR,
@@ -2035,6 +2036,23 @@ describe("workspace credential env strip", () => {
 describe("customMcpServers", () => {
   const cfg = (mcpServers: Record<string, unknown>) =>
     ({ mcpServers }) as Parameters<typeof customMcpServers>[0];
+
+  it("2026-10-17 (#695 follow-up): never mounts a server saved under a reserved name, and says so once", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const saved = cfg({ notes: { command: "npx" }, mcp: { command: "npx", enabled: true }, "claude_ai_drive": { command: "y" } });
+      expect(Object.keys(customMcpServers(saved))).toEqual(["notes"]);
+      // the bot's own list naming it does not bring it back
+      expect(customMcpServers(saved, ["mcp"])).toEqual({});
+      expect(warnReservedMcpServers(saved)).toEqual(["mcp", "claude_ai_drive"]);
+      customMcpServers(saved);
+      const lines = warn.mock.calls.map((call) => String(call[0]));
+      expect(lines.filter((line) => line.startsWith('MCP server "mcp" is not mounted: its name is reserved by Sagax.'))).toHaveLength(1);
+      expect(lines.filter((line) => line.startsWith('MCP server "claude_ai_drive" is not mounted'))).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 
   it("normalizes a valid stdio entry and defaults args/env", () => {
     expect(

@@ -56,6 +56,7 @@ import {
   McpClientForm,
   McpImportForm,
   McpMessages,
+  McpReservedServers,
   McpServerEditor,
   WhopAction,
   WhopBelow,
@@ -773,6 +774,7 @@ export function PluginsPanel() {
           <>
             {mcp.restricted && mcp.policy && <p role="status" className="mt-3 text-[12.5px] leading-relaxed text-ink-secondary">{t("policy.mcpRestricted", { organization: mcp.policy.organizationName })}</p>}
             <McpMessages mcp={mcp} />
+            <McpReservedServers mcp={mcp} />
             <McpImportForm mcp={mcp} />
             {mcp.editing === "new" && <McpServerEditor mcp={mcp} />}
           </>

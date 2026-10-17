@@ -156,10 +156,19 @@ CLI login) and reaches the internet, so this is bounded
   (`write_file`, `Write`, `Edit`, `apply_patch`...) is irreversible, and
   destructive when it may replace a file outside the thread's own folder (a
   write on another machine, the person's environment or computer, always
-  may); `computer_use` and the Local VM's screen (`local_vm` with `action:
-  "use"`) are irreversible unless they only look (screenshot, screen size,
-  apps), and destructive for a delete key or a key with a command modifier
-  (cmd, ctrl, alt, super); `browse`, `fetch_url` or `open_url` with a
+  may). One write is in no class: a new file in the thread's own folder
+  (`task-workspaces/<bot>/<thread>`), checked on this server's disk (nothing
+  at the path, not even a broken link, and inside the folder after links
+  and `..`), neither a dot path (`.claude/`, `.mcp.json`, `.git/`,
+  `.envrc`...) nor an engine's instruction file (`CLAUDE.md`, `AGENTS.md`,
+  `GEMINI.md`), and not a move, a patch or a server's write: removing the
+  file undoes it. Replacing or editing a file there stays irreversible (that
+  folder has no checkpoint). `computer_use` and the Local VM's screen
+  (`local_vm` with `action: "use"`) are irreversible unless they only look
+  (screenshot, screen size, apps), and destructive for a delete key, a key
+  with a command modifier (cmd, ctrl, alt, super), or typed text a shell
+  reads as a deletion (`rm -rf ~`, `find . -delete`; any line, and text
+  too long to read); `browse`, `fetch_url` or `open_url` with a
   method other than GET or HEAD, a body, form fields or a submit is
   external-send;
 - only the owner's own turn: a turn another bot started (`ask_bot`,

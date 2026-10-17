@@ -11,7 +11,7 @@
 // Pure: no clock, no disk, no node built-ins. The server gives the risks it
 // read from the call (shared/custom-rules.ts callFacts).
 
-import type { RiskClass } from "./custom-rules.ts";
+import { readShell, type RiskClass } from "./custom-rules.ts";
 import type { OptionCardData } from "./wire.ts";
 
 export const STEP_UP_CLASSES = [
@@ -362,6 +362,14 @@ export function usableRpId(hostname: string, protocol: string): string | null {
 
 /** Tools that create or replace a file (any engine, any server). */
 const FILE_WRITE_TOOL = /^(?:write|edit|multiedit|notebookedit|str_replace_editor|str_replace_based_edit_tool|apply_patch|move_file|(?:write|create|save|edit)[_-](?:text[_-])?file|file[_-](?:write|edit|create))$/i;
+/** Write tools that never only create the file they name: a move removes
+ * its source, a patch names its files in its text. */
+const NEVER_CREATE_ONLY = /^(?:move_file|apply_patch)$/i;
+/** Paths inside the thread's folder that an engine or a tool reads as
+ * configuration or instructions (`.claude/settings.json` hooks, `.mcp.json`,
+ * `.git/hooks`, `.envrc`, `AGENTS.md`...): a new file there is not "only
+ * a new file". Any dot segment, and the engines' instruction files. */
+const SENSITIVE_SEGMENT = /^(?:\..*|claude\.md|agents?\.md|gemini\.md|codex\.md)$/i;
 /** The arguments that name the file a write lands in. */
 const FILE_WRITE_PATH_KEYS = ["path", "file_path", "filePath", "notebook_path", "filename", "destination", "target_path"] as const;
 /** Computer-use tools that only look at a screen. */
@@ -388,6 +396,10 @@ export interface ActionClassContext {
   exists?: (absolute: string) => boolean;
   /** The server's realpath (deepest existing ancestor when missing). */
   resolve?: (absolute: string) => string;
+  /** Whether nothing is at this path yet, not even a broken link, and the
+   * deepest thing that exists on its way is a live folder: a write there
+   * can only create a file. */
+  freshPath?: (absolute: string) => boolean;
 }
 
 function serverOf(tool: string): string | undefined {
@@ -398,6 +410,30 @@ function serverOf(tool: string): string | undefined {
 function insideFolder(path: string, folder: string): boolean {
   const base = folder.replace(/\/+$/, "");
   return path === base || path.startsWith(`${base}/`);
+}
+
+/** 2026-10-17 (#695 follow-up): a write that only creates a new file in the
+ * thread's own folder is undone by removing that file; nothing that was
+ * there is lost. Every named path must be absolute, land (after the
+ * server's realpath) strictly inside one of the thread's folders, have
+ * nothing there yet (fresh, no broken link) and name no configuration or
+ * instruction file. A tool's own server (another machine), a move, a patch,
+ * or a missing view of the disk never qualifies. Overwriting or editing a
+ * file in the thread's folder stays irreversible: that folder has no
+ * checkpoint (server/index.ts checkpointCwd). */
+function createsOnlyInThread(bare: string, server: string | undefined, paths: readonly string[], context: ActionClassContext): boolean {
+  if (server || NEVER_CREATE_ONLY.test(bare) || !paths.length) return false;
+  const folders = context.threadFolders ?? [];
+  if (!folders.length || !context.resolve || !context.freshPath) return false;
+  return paths.every((raw) => {
+    if (!raw.startsWith("/")) return false;
+    const real = context.resolve!(raw);
+    const folder = folders.find((candidate) => insideFolder(real, candidate) && real !== candidate.replace(/\/+$/, ""));
+    if (!folder) return false;
+    const inner = real.slice(folder.replace(/\/+$/, "").length + 1).split("/").filter(Boolean);
+    if (!inner.length || inner.some((segment) => SENSITIVE_SEGMENT.test(segment))) return false;
+    return context.freshPath!(raw);
+  });
 }
 
 function keyTexts(value: unknown, depth = 0): string[] {
@@ -424,8 +460,28 @@ function screenActionClasses(toolName: string, args: Record<string, unknown> | u
   const destructive = keys.some((item) => DESTRUCTIVE_KEY.test(` ${item} `))
     || modifiers.some((item) => COMMAND_MODIFIER.test(` ${item} `))
     || keys.some((item) => COMMAND_MODIFIER.test(` ${item} `) && /[+\s-]/.test(item.trim()));
+  // 2026-10-17 (#695 follow-up): typed text is read as the shell line it
+  // may be (a terminal on that screen runs it): `rm -rf ~` typed is
+  // destructive like the command (shared/custom-rules.ts readShell).
+  const typing = !keyTool && (/(?:^|[_-])type(?:$|[_-])|typing|(?:input|write|send|insert|enter)[_-]text/.test(name)
+    || (typeof args?.action === "string" && /^(?:type|typing|type[_-]text)$/i.test(args.action)));
+  const typed = typing ? [...keyTexts(args?.text), ...keyTexts(args?.value), ...keyTexts(args?.string)] : [];
+  if (!destructive && typed.some(typedTextIsDestructive)) out.push("destructive");
   if (destructive) out.push("destructive");
   return out;
+}
+
+/** Whether typed text holds a line the shell reads as a deletion. Each line
+ * on its own (a typed newline runs it). Text too long to read (over 256
+ * lines or a line over 8 KiB) is in the class: when in doubt, in a class. */
+function typedTextIsDestructive(text: string): boolean {
+  const lines = text.split(/\r?\n|\r/);
+  if (lines.length > 256) return true;
+  return lines.some((line) => {
+    const trimmed = line.trim();
+    if (trimmed.length > 8_192) return true;
+    return trimmed.length > 0 && readShell(trimmed).risks.has("destructive");
+  });
 }
 
 /** The risk classes of an action tool, from its name and arguments: a file
@@ -442,8 +498,9 @@ export function actionToolClasses(call: { tool: string; mcpTool?: string; input?
   const out = new Set<RiskClass>();
 
   if (FILE_WRITE_TOOL.test(bare)) {
-    out.add("irreversible");
     const paths = FILE_WRITE_PATH_KEYS.map((key) => args?.[key]).filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    // a new file in the thread's own folder is undone by removing it
+    if (!createsOnlyInThread(bare, server, paths, context)) out.add("irreversible");
     // a server's write lands on another machine (the person's server
     // environment, their computer, a third party): Sagax cannot see what is
     // there, so it may replace a file. A write here is judged on this disk.

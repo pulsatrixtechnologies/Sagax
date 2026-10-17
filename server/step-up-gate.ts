@@ -4,7 +4,7 @@
 // content and this answer. server/index.ts calls it on every answer path.
 
 import { createHash } from "node:crypto";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, resolve as resolvePath } from "node:path";
 
 import type { RiskClass } from "../shared/custom-rules.ts";
@@ -150,10 +150,40 @@ export function actionClassContext(threadFolders: readonly string[]): ActionClas
       return resolvePath(absolute);
     }
   };
+  // Nothing at the path itself (lstat: not even a broken link), and the
+  // deepest thing on its way that lstat sees is a live folder (a broken
+  // link there would send the write wherever it points).
+  const fresh = (absolute: string): boolean => {
+    let probe = resolvePath(absolute);
+    let first = true;
+    for (;;) {
+      let found = false;
+      try {
+        lstatSync(probe);
+        found = true;
+      } catch {
+        // nothing here: look one level up
+      }
+      if (found) {
+        if (first) return false;
+        try {
+          // realpathSync throws on a broken link
+          return lstatSync(realpathSync(probe)).isDirectory();
+        } catch {
+          return false;
+        }
+      }
+      const parent = dirname(probe);
+      if (parent === probe) return false;
+      probe = parent;
+      first = false;
+    }
+  };
   return {
     threadFolders: threadFolders.map((folder) => real(folder)),
     resolve: real,
     exists: (absolute) => existsSync(absolute),
+    freshPath: fresh,
   };
 }
 

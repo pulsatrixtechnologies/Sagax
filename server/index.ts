@@ -275,6 +275,7 @@ import {
   NATIVE_DIR,
   customMcpServers,
   mcpDisabledTools,
+  warnReservedMcpServers,
   onConfigSaved,
   driverKeyBacked,
   CLAUDE_API_INSTANCE,
@@ -349,12 +350,14 @@ import {
   parseMcpServerMutation,
   parseMcpServersImport,
   parseStoredMcpServer,
+  reservedMcpServers,
   type StoredMcpServer,
   type StoredRemoteMcpServer,
 } from "./mcp-registry.ts";
 import { withDisabledTools } from "./mcp-tool-filter.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
 import { createMcpToolNameRoutes } from "./routes/mcp-tool-names.ts";
+import { createMcpServerRenameRoutes } from "./routes/mcp-server-rename.ts";
 import { callbackPage, DEFAULT_MCP_ACCOUNT, isMcpAccountId, McpOAuthError, McpOAuthManager, McpOAuthVault, parseMcpAccountChoices, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
@@ -6432,6 +6435,45 @@ ROUTES.push(createTemplateLinkRoutes({
       return false;
     }
   },
+}));
+// A saved MCP server whose name is now reserved (#695 follow-up): renamed
+// from the MCP settings, saved off (routes/mcp-server-rename.ts).
+ROUTES.push(createMcpServerRenameRoutes({
+  servers: () => cfg.mcpServers ?? {},
+  acquire: () => {
+    if (mcpConfigBusy) return false;
+    mcpConfigBusy = true;
+    return true;
+  },
+  release: () => {
+    mcpConfigBusy = false;
+  },
+  refusal: (name, server) => {
+    if (IDENTITY.kind === "perspicax" && !isRemoteMcpServer(server)) return { error: ORG_HOST_COMMAND_REFUSAL, code: "org_host_command" };
+    const refusal = mcpPolicyRefusal(name, server);
+    return refusal ? { error: refusal, code: "managed_policy" } : undefined;
+  },
+  persist: persistMcpServers,
+  forgetSignIn: (name) => mcpOAuth.forget(name),
+  renameInBots: (from, to) => {
+    for (const bot of store.bots) {
+      const listed = bot.mcpServers?.includes(from);
+      const account = bot.mcpAccounts?.[from] !== undefined;
+      if (!listed && !account) continue;
+      const patch: Partial<BotRecord> = {};
+      if (listed) patch.mcpServers = [...new Set(bot.mcpServers!.map((name) => (name === from ? to : name)))];
+      if (account) {
+        const { [from]: _dropped, ...rest } = bot.mcpAccounts!;
+        patch.mcpAccounts = Object.keys(rest).length ? rest : undefined;
+      }
+      const updated = store.patchBot(bot.id, patch);
+      if (updated) broadcast({ kind: "bot", bot: wireBot(updated) });
+    }
+  },
+  afterRename: async (to, server) => {
+    if (isRemoteMcpServer(server)) await probeMcpOAuth([to]);
+  },
+  response: () => mcpServerResponse(),
 }));
 ROUTES.push(createPersonConnectionRoutes({
   organization: () => IDENTITY.kind === "perspicax",
@@ -23132,7 +23174,14 @@ function mcpServerResponse() {
     } : server;
     return managedPolicy.mcpAllowed(server.name, "url" in server ? server.url : undefined) ? listed : { ...listed, managedBy: policy!.organizationName };
   });
-  return { servers, ...(policy && !policy.mcp.allowCustom ? { managed: { organizationName: policy.organizationName, allowlist: policy.mcp.allowlist } } : {}) };
+  // a server saved under a name Sagax now reserves is never mounted: listed
+  // apart so the settings say so and offer a rename (#695 follow-up)
+  const reserved = reservedMcpServers(cfg.mcpServers);
+  return {
+    servers,
+    ...(reserved.length ? { reserved } : {}),
+    ...(policy && !policy.mcp.allowCustom ? { managed: { organizationName: policy.organizationName, allowlist: policy.mcp.allowlist } } : {}),
+  };
 }
 /** Adding or editing a server the organisation has not approved is refused. */
 function mcpPolicyRefusal(name: string, server: object): string | undefined {
@@ -43453,6 +43502,9 @@ restoreChannelMessages();
   for (const bot of store.bots) movedAutoPins += store.clearAutoSurfacePins(bot.id, undefined);
   if (movedAutoPins) console.log(`Auto: cleared ${movedAutoPins} auto-pinned thread(s); Auto picks where to work on each turn`);
 }
+// A saved MCP server whose name is now reserved is never mounted: say so at
+// start, not only at its first turn (#695 follow-up).
+warnReservedMcpServers(cfg);
 // Organization server, once: every bot thread from before private threads
 // gets its owner (server/thread-privacy.ts), before anyone can read one.
 migrateThreadOwners();

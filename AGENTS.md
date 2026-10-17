@@ -347,7 +347,13 @@ in `server/routes/security-keys.ts`. Rules, covered by
   (an owner rule from a card, a tool that edits rules; in Settings, a rule
   that allows, a deny or ask rule removed, turned off or softened, a looser
   permission mode, and any looser approval level of a bot or a thread). A
-  terminal is destructive and irreversible. A bot act card is classed by its
+  terminal is destructive and irreversible. File writes, screen actions and
+  pages opened to send are classed by `actionToolClasses`: a write is
+  irreversible, except a new file in the thread's own folder (fresh on this
+  disk, no broken link, no dot path or engine instruction file, not a move,
+  a patch or a server's write), which is in no class; typed text a shell
+  reads as a deletion (`rm -rf ~`) is destructive
+  (`server/step-up-action-classes.test.ts`). A bot act card is classed by its
   route (DELETE destructive, any write irreversible, gone fails closed) and
   its step-up is bound to that route. Each person's own, on an organization
   server too: the answering person's choice applies; a caller with no person
@@ -1909,7 +1915,15 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   (`useVoiceCallMark`, `src/lib/voice-mode/call-mark.ts`, test
   `call-mark.test.ts`); the server adds the
   hidden "Phone call" volatile section (`server/voice-call-prompt.ts`), never
-  stored as the person's text. The call speaks only `spokenPart` of an answer,
+  stored as the person's text. The room call (`GroupCallView`) does not mark
+  its turns, on purpose (2026-10-17): one spoken turn there can reach
+  several bots (`@everyone`, "everyone, ...", the room's default responder),
+  each answering in turn, while a call mark is one bot's: its call session
+  (`POST /voice/call` per bot and thread), the `end_call` tool that would
+  let one member hang up the whole room, the warm engine and the unanswered
+  call recovery that restarts that one bot. Marking room turns needs a room
+  call session on the server first (one per room thread, ended only by the
+  person), not the bot hook. The call speaks only `spokenPart` of an answer,
   cleaned by `src/lib/voice-mode/spoken.ts`. Tests:
   `server/voice-call-prompt.test.ts`, `server/voice-call-prompt.e2e.test.ts`.
 - xAI is only ears and a voice: never its realtime agent, responses, chat or
@@ -2646,6 +2660,34 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
 A change under `server/` needs the server image redeployed (sandboxd is the
 same image); `deploy/sandbox/Dockerfile` (gh, node, npm) needs the sandbox
 image rebuilt.
+
+## Reserved MCP server names (2026-10-17)
+
+`server/mcp-registry.ts` refuses `mcp`, any name with `__`, the built-in
+names and the families `sagax-`/`sagax_`, `perspicax_`, `claude_ai_`,
+`openmausbot_` (#695). A server an older build saved under such a name is
+never mounted, whatever a bot's own list says, and is never switched on
+again under that name. It is not silent:
+
+- the start and the first mount log `MCP server "<name>" is not mounted:
+  its name is reserved by Sagax...` once per name (`warnReservedMcpServers`);
+- `GET /api/mcp/servers` lists it apart (`reserved: [{ name,
+  suggestedName }]`), and Settings > Plugins > Manage shows a warning on it
+  with a rename field (a free name offered) and Remove
+  (`McpReservedServers`);
+- `POST /api/mcp/servers/:name/rename {to}` (`server/routes/mcp-server-rename.ts`,
+  admin) moves only a reserved name, to an allowed free one, re-reads the
+  entry under it, saves it off, forgets the sign-ins of both names, and
+  moves the bots that listed it (their account choice for it is dropped).
+  Policy and the organization host-command refusal apply to the new name.
+- Not covered: a personal connection (`server/person-connections.ts`)
+  saved before #695 under a name with `__` (its other reserved families
+  were already refused at creation) is still mounted, neither skipped nor
+  flagged; `foreignToolSpelling` keeps it from passing for a built-in.
+- Tests: `server/mcp-registry.test.ts`, `server/config.test.ts`
+  (customMcpServers), `server/routes/mcp-server-rename.test.ts`,
+  `src/components/McpServersPanel.reserved.test.ts`,
+  `server/mcp-reserved-rename.e2e.test.ts`.
 
 ## Connectors from the person's own Claude account
 
