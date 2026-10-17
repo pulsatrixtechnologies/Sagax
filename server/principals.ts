@@ -169,6 +169,7 @@ export class PrincipalRegistry {
   private principals: Principal[] = [];
   private writable = true;
   private readonly accessListeners: Array<(principalId: string) => void> = [];
+  private readonly roleListeners: Array<(principal: Principal, before: Principal["orgRole"]) => void> = [];
   private readonly disabledListeners: Array<(principal: Principal, disabled: boolean) => void> = [];
 
   constructor(options: { path: string; now?: () => number; newId?: () => string }) {
@@ -249,6 +250,24 @@ export class PrincipalRegistry {
    * through a team must be recomputed at once. */
   onAccessChanged(listener: (principalId: string) => void): void {
     this.accessListeners.push(listener);
+  }
+
+  /** 2026-10-17 (follow-up of #696): called after a known person's
+   * organization role changed (a sign-in or the directory says so), with
+   * the role they had before: a demoted admin's bots must lose what only an
+   * admin's may keep. */
+  onRoleChanged(listener: (principal: Principal, before: Principal["orgRole"]) => void): void {
+    this.roleListeners.push(listener);
+  }
+
+  private roleChanged(principal: Principal, before: Principal["orgRole"]): void {
+    for (const listener of this.roleListeners) {
+      try {
+        listener({ ...principal }, before);
+      } catch (error) {
+        console.error(`principals: a role listener failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
 
   private accessChanged(principalId: string): void {
@@ -345,6 +364,7 @@ export class PrincipalRegistry {
       this.principals.push(found);
     }
     const before = JSON.stringify(found);
+    const roleBefore = found.orgRole;
     if (email) found.email = email;
     else delete found.email;
     if (name) found.name = name;
@@ -365,6 +385,7 @@ export class PrincipalRegistry {
     if (created || JSON.stringify(found) !== before) this.persist();
     if (wasDisabled) this.disabledChanged(found, false);
     if (teamsChanged && !created) this.accessChanged(found.id);
+    if (!created && found.orgRole !== roleBefore) this.roleChanged(found, roleBefore);
     return { ...found };
   }
 
@@ -387,6 +408,7 @@ export class PrincipalRegistry {
       this.principals.push(found);
     }
     const before = JSON.stringify(found);
+    const roleBefore = found.orgRole;
     if (email) found.email = email;
     else delete found.email;
     if (name) found.name = name;
@@ -402,6 +424,7 @@ export class PrincipalRegistry {
     const teamsChanged = this.applyTeams(found, input.teams);
     if (created || JSON.stringify(found) !== before) this.persist();
     if (teamsChanged && !created) this.accessChanged(found.id);
+    if (!created && found.orgRole !== roleBefore) this.roleChanged(found, roleBefore);
     return { ...found };
   }
 

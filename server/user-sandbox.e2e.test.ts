@@ -503,6 +503,37 @@ posixOnly("organization server environments (user-sandbox)", () => {
     }
   }, 120_000);
 
+  it("2026-10-17 (follow-up of #696): a demoted admin's bots keep no stored Auto while the organization refuses it for members", async () => {
+    const CAROL: FakeOidcUser = { sub: "01J9S5CAROL0000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "admin" };
+    idp.directoryPeople = [ALICE, BOB, CAROL].map((user) => idp.personOf(user));
+    try {
+      expect((await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: false })).status).toBe(200);
+      const carol = await signIn(CAROL);
+      const juniper = await createBot(carol, "Juniper");
+      // an admin's bot may keep Auto with the setting off
+      const chosen = await api("PATCH", `/api/bots/${juniper.id}/tasks/${juniper.threadId}`, carol, { approvalMode: "auto" });
+      expect(chosen.status, chosen.text).toBe(200);
+      const levels = async (auth: Auth) => {
+        const bot = ((await api("GET", "/api/bots", auth)).body.bots as Array<{ id: string; approvalMode?: string; tasks?: Array<{ threadId: string; approvalMode?: string }> }>).find((b) => b.id === juniper.id)!;
+        return bot.tasks?.find((task) => task.threadId === juniper.threadId)?.approvalMode ?? bot.approvalMode;
+      };
+      expect(await levels(carol)).toBe("auto");
+      // Carol is no longer an admin: her next sign-in says so
+      idp.directoryPeople = [ALICE, BOB, { ...CAROL, role: "employee" }].map((user) => idp.personOf(user));
+      const demoted = await signIn({ ...CAROL, role: "employee" });
+      await waitFor(async () => log.includes("an owner is no longer an organization admin"));
+      expect(await levels(demoted)).toBe("ask");
+      // and she cannot choose it again
+      const refused = await api("PATCH", `/api/bots/${juniper.id}/tasks/${juniper.threadId}`, demoted, { approvalMode: "auto" });
+      expect(refused.status, refused.text).toBe(403);
+      expect(refused.body).toMatchObject({ code: "member_auto_not_allowed" });
+      expect((await api("DELETE", `/api/bots/${juniper.id}`, demoted)).status).toBeLessThan(300);
+    } finally {
+      idp.directoryPeople = [ALICE, BOB].map((user) => idp.personOf(user));
+      await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: true });
+    }
+  }, 120_000);
+
   // Last on purpose: Bob keeps a security key and a chosen class.
   it("security review 2026-10-16: another bot's hand-off cannot run a command in the owner's environment without a card and the owner's key", async () => {
     // Bob protects destructive calls with a security key

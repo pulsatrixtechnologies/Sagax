@@ -108,7 +108,11 @@ answers `member_auto_not_allowed` for that bot, a member's new bot (or one
 a Primary Bot makes for them) starts on Ask whatever the New bot defaults
 say, and a bot that becomes a member's (a console copy, import or
 transfer, a solo backup brought in) has its automatic levels set back to
-Ask. Custom stays Ask (a
+Ask. A bot whose owner stops being an organization admin is a member's bot
+from then on: its saved automatic levels go back to Ask when that change
+reaches the server (a sign-in or the directory), and every start checks all
+bots again, so no saved Auto outlives the setting (2026-10-17,
+`memberAutoSettle`). Custom stays Ask (a
 `config.toml` on the shared server is not the member's), and Full keeps the
 organization rules above.
 
@@ -322,10 +326,11 @@ hand (5 at most, https and public only), 200 MiB and 5 minutes at most,
 into the scope's `data-downloads` folder, read from there and removed.
 Loopback, private, link-local, cluster and cloud metadata addresses are
 refused. Exports land in the bot's workspace for its owner; a person's
-own Data (below) exports into their own thread folder or
-`<data>/data-scopes/<botId>/p-<hash>/data-exports`, never the shared
-workspace, and a confidential thread's into its own folder (2026-10-17). A
-solo server is unchanged.
+own Data (below) exports only into
+`<data>/data-scopes/<botId>/p-<hash>/data-exports`, which their own Data
+database alone reaches: never the shared workspace, nor their thread
+folders, which the admin console's file browser lists. A confidential
+thread's go into its own folder (2026-10-17). A solo server is unchanged.
 
 Each person has their own Data on a shared bot (`server/data/scope.ts`):
 on an organization server, a turn spoken by someone other than the bot's
@@ -343,7 +348,11 @@ frames carry an `audience` and reach only that person (the bot scope only
 its owner). Files in the bot's workspace stay shared by everyone who uses
 the bot. Deleting a person's account (`DELETE /api/me`, Loi 25) erases
 their own Data on every bot, their confidential threads' Data and their
-exports there, each database closed first (`server/data/erase.ts`).
+exports there, each database closed first (`server/data/erase.ts`), and the
+files of their own ordinary threads on other people's bots: each thread's
+own folder, its tool results and the stored files no thread that stays
+points at. A folder another thread works in is kept, and nothing of anyone
+else's goes (`server/person-thread-erase.ts`).
 
 Auto-accept edits and Ask card whatever the provider asks about. Approve for
 me cards whatever the provider's reviewer leaves for you, with the note "The

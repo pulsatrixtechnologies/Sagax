@@ -157,17 +157,19 @@ export function threadScopeKeyFor(botId: string, threadId: string): string {
   return `${botId}${DATA_SCOPE_SEPARATOR}t-${digest(threadId)}`;
 }
 
-/** The folder, in a person's own scope folder, their exports land in when
- * no thread of theirs is named. */
+/** The folder, in a person's own scope folder, their exports land in. */
 export const DATA_EXPORTS_DIR = "data-exports";
 
 /** Where an export may land on an organization server, most preferred
- * first (2026-10-17, re-review of #689):
+ * first:
  *   - the bot scope (its owner): the bot's workspace;
- *   - a person's scope: the turn's own thread folder when it is one of
- *     theirs, their other ordinary threads' folders, then `data-exports`
- *     in their own scope folder. Never the bot's workspace, which every
- *     person on a shared bot reaches;
+ *   - a person's scope: `data-exports` in their own scope folder only
+ *     (2026-10-17, follow-up of #696). Never the bot's workspace, which
+ *     every person on a shared bot reaches, and never their thread folders
+ *     either: those sit in `task-workspaces/<bot>`, which the admin
+ *     console's file browser lists for the whole bot. The scope folder is
+ *     reached by that person's own Data database alone, as their tables,
+ *     sheet and downloads are (thread-privacy.ts: only the thread's owner);
  *   - a confidential thread: that thread's folder only. */
 export function organizationExportRoots(input: {
   kind: DataScopeKind;
@@ -175,16 +177,10 @@ export function organizationExportRoots(input: {
   scopeFolder: string;
   /** A confidential thread's folder (thread scope). */
   threadFolder?: string | null;
-  /** The person's ordinary threads' folders on this bot (person scope). */
-  personThreadFolders?: readonly string[];
-  /** The folder of the thread the request or turn is in, if any. */
-  turnThreadFolder?: string | null;
 }): string[] {
   if (input.kind === "thread") return input.threadFolder ? [input.threadFolder] : [];
   if (input.kind === "bot") return [input.workspace];
-  const own = input.personThreadFolders ?? [];
-  const first = input.turnThreadFolder && own.includes(input.turnThreadFolder) ? [input.turnThreadFolder] : [];
-  return [...new Set([...first, join(input.scopeFolder, DATA_EXPORTS_DIR), ...own])];
+  return [join(input.scopeFolder, DATA_EXPORTS_DIR)];
 }
 
 /** Forgets one derived key (its scope was erased). */

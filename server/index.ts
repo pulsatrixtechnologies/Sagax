@@ -170,6 +170,7 @@ import { DATA_INTERNAL_MCP_PATH, dataRpc } from "./data/rpc.ts";
 import { createDataRoutes } from "./data/routes.ts";
 import { DataSheetRegistry } from "./data/sheet.ts";
 import { erasePersonData } from "./data/erase.ts";
+import { erasePersonThreadFiles, planPersonThreadErasure } from "./person-thread-erase.ts";
 import { dataFrameAllowed, dataScopeAudience, dataScopeBotId, dataScopeFolder, dataScopeKey, dataScopeKind, dataScopeThread, forgetDataScopes, organizationExportRoots, setConfidentialThreadResolver, threadScopeKeyFor, type DataScopeKind } from "./data/scope.ts";
 import { DataFailure } from "./data/types.ts";
 import { DATA_DOWNLOADS_DIR } from "./data/engine.ts";
@@ -1033,7 +1034,7 @@ import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/r
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { memberEnvironmentAutonomyAllowed, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTurnOrigin } from "./member-environment.ts";
-import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberRoomTurnLevel, memberTurnLevel } from "./member-auto-approval.ts";
+import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
@@ -4569,23 +4570,21 @@ function dataSelfAnswerRoots(bot: BotRecord, threadId: string): string[] {
 }
 /** Where a bot's exports may land, most preferred first: the person's
  * Downloads when it exists, the bot's working folder, its workspace. On an
- * organization server only the bot's workspace (the server's Downloads and
- * working folders are nobody's), or a confidential thread's own folder. */
-function dataExportRoots(bot: { id: string; cwd?: string }, scopeKey: string = bot.id, threadId?: string): string[] {
+ * organization server the bot's workspace for its owner, a person's own
+ * scope folder for anyone else (data/scope.ts organizationExportRoots), or
+ * a confidential thread's own folder. */
+function dataExportRoots(bot: { id: string; cwd?: string }, scopeKey: string = bot.id): string[] {
   if (IDENTITY.kind === "perspicax") {
-    // 2026-10-17 (re-review of #689): a person's export lands in their own
-    // thread or scope folder, never the shared bot workspace
+    // 2026-10-17 (follow-up of #696): a person's export lands in their own
+    // scope folder only, never the shared workspace nor a thread folder the
+    // bot's owner may reach
     const kind = dataScopeKind(scopeKey);
-    const record = store.bot(bot.id);
-    const person = kind === "person" ? dataScopeAudience(scopeKey) : undefined;
     const thread = kind === "thread" ? dataScopeThread(scopeKey) : undefined;
     return organizationExportRoots({
       kind,
       workspace: workspaceDir(bot.id),
       scopeFolder: dataScopeFolder(scopeKey),
       threadFolder: thread ? join(TASK_WORKSPACES_DIR, bot.id, thread) : null,
-      personThreadFolders: record && person ? dataThreadFolders(record, person) : [],
-      turnThreadFolder: threadId && /^[A-Za-z0-9_-]{1,128}$/.test(threadId) ? join(TASK_WORKSPACES_DIR, bot.id, threadId) : null,
     });
   }
   const downloads = join(homedir(), "Downloads");
@@ -25405,6 +25404,7 @@ ROUTES.push(createAccountRoutes({
     let bots = 0;
     let threads = 0;
     const confidentialThreads: Array<{ botId: string; threadId: string }> = [];
+    const ordinaryThreads: Array<{ botId: string; threadId: string; attachments: string[] }> = [];
     for (const bot of store.bots.slice()) { // a copy: deleting changes the list
       if (recordedBotOwner(bot) === person) {
         if ((await deleteBotWithLifecycle(bot.id)).status === 200) bots++;
@@ -25414,14 +25414,32 @@ ROUTES.push(createAccountRoutes({
         if (task.ownerPrincipalId !== person) continue;
         // Loi 25 (2026-10-17): a confidential thread leaves nothing behind,
         // as when its owner deletes it (its folder, files and Data)
-        const confidentialFiles = store.isConfidentialThread(task.threadId) ? confidentialThreadAttachments(bot.id, task.threadId) : null;
+        const confidential = store.isConfidentialThread(task.threadId);
+        // the stored files its messages point at, read before they go
+        const files = confidentialThreadAttachments(bot.id, task.threadId);
         if (!store.deleteTask(bot.id, task.threadId)) continue;
         threads++;
-        if (confidentialFiles) {
-          wipeConfidentialThread(bot.id, task.threadId, confidentialFiles);
+        if (confidential) {
+          wipeConfidentialThread(bot.id, task.threadId, files);
           confidentialThreads.push({ botId: bot.id, threadId: task.threadId });
+        } else {
+          ordinaryThreads.push({ botId: bot.id, threadId: task.threadId, attachments: files });
         }
       }
+    }
+    // Loi 25 (2026-10-17, follow-up of #696): their ordinary threads' files
+    // too (each thread's own folder, its tool results, the stored files no
+    // thread that stays points at), never a folder another thread works in
+    // (person-thread-erase.ts)
+    if (ordinaryThreads.length) {
+      for (const name of ordinaryThreads.flatMap((thread) => thread.attachments)) attachmentThreads.delete(name);
+      const plan = planPersonThreadErasure({
+        threads: ordinaryThreads, tasksRoot: TASK_WORKSPACES_DIR, attachmentsDir: ATTACHMENTS_DIR, toolResultsDir: TOOL_RESULTS_DIR,
+        keptFolders: store.bots.flatMap((bot) => [bot.cwd, ...store.tasks(bot.id).map((task) => task.cwd)]).filter((cwd): cwd is string => typeof cwd === "string" && cwd.length > 0),
+        referencedElsewhere: (name) => threadsReferencing(name).length > 0,
+      });
+      erasePersonThreadFiles(plan, ATTACHMENTS_DIR);
+      for (const { threadId } of ordinaryThreads) memoryUpkeep.dropThread(threadId);
     }
     // Loi 25 (2026-10-17, re-review of #689): their own Data on every other
     // bot and their confidential threads' Data (data/erase.ts), awaited, so
@@ -30294,17 +30312,38 @@ function resetMemberAutoLevelsOnce(): void {
   }
 }
 /** 2026-10-17 (re-review of #688): bots that just became a member's (an
- * import, a copy, a transfer, a new bot on the organization's default)
- * keep no automatic level the organization refuses for members' bots:
- * those saved levels go back to Ask, as the one-time pass does. */
-function settleMemberAutoLevels(botIds: readonly string[]): void {
-  if (IDENTITY.kind !== "perspicax" || memberAutoApprovalAllowed(cfg.organization)) return;
+ * import, a copy, a transfer, a new bot on the organization's default, an
+ * owner no longer an admin) keep no automatic level the organization
+ * refuses for members' bots: those saved levels go back to Ask, as the
+ * one-time pass does (member-auto-approval.ts memberAutoSettle). Answers
+ * what was set back. */
+function settleMemberAutoLevels(botIds: readonly string[]): MemberAutoReset {
   const bots = botIds.map((id) => store.bot(id)).filter((bot): bot is BotRecord => Boolean(bot));
-  const reset = memberAutoLevelResets(bots, (bot) => memberOwnedInOrg(bot as BotRecord));
+  const reset = memberAutoSettle({ identity: IDENTITY.kind, organization: cfg.organization, bots, memberOwned: (bot) => memberOwnedInOrg(bot as BotRecord) });
   const ask = { approvalMode: "ask" as const, autoApprove: false };
   for (const thread of reset.threads) store.patchTask(thread.botId, thread.threadId, ask);
   for (const botId of reset.bots) store.patchBot(botId, ask);
+  return reset;
 }
+/** 2026-10-17 (follow-up of #696): every bot, at start and when a person's
+ * organization role changes, so a demoted admin's bots never keep a stored
+ * Auto or Auto-accept edits the organization refuses for members' bots.
+ * The log line has counts, no names. */
+function settleMemberAutoLevelsFor(botIds: readonly string[], why: string): void {
+  const reset = settleMemberAutoLevels(botIds);
+  const total = reset.bots.length + reset.threads.length;
+  if (!total) return;
+  console.log(`organization: ${total} saved Auto or Auto-accept edits level(s) of members' bots set back to Ask (${reset.bots.length} bot default(s), ${reset.threads.length} thread(s), ${why}); automatic levels are off for members' bots`);
+  for (const botId of new Set([...reset.bots, ...reset.threads.map((thread) => thread.botId)])) {
+    const bot = store.bot(botId);
+    if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
+  }
+}
+principals.onRoleChanged((person, before) => {
+  // only a demotion can make an admin's bot a member's
+  if (before !== "admin" || person.orgRole === "admin") return;
+  settleMemberAutoLevelsFor(store.bots.filter((bot) => effectiveBotOwner(bot) === person.id).map((bot) => bot.id), "an owner is no longer an organization admin");
+});
 function saveOrgMemberAutoApproval(allowed: boolean, actor: AdminActor): void {
   const before = memberAutoApprovalAllowed(cfg.organization);
   saveConfig({ organization: { ...cfg.organization, memberAutoApproval: allowed } });
@@ -32876,7 +32915,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 200, { result: await dataRpc(body, {
           database, sheet: dataSheets.for(scopeKey),
           compileChart, validateVegaLite, renderer: chartRenderer,
-          exportRoots: () => dataExportRoots(internalSender, scopeKey, internalCapability.threadId),
+          exportRoots: () => dataExportRoots(internalSender, scopeKey),
           confinedRoots: () => dataConfinedRoots(scopeKey),
           downloadDir: () => dataDownloadDir(scopeKey),
           signal: abort.signal, assertActive: requireActiveInternalCapability,
@@ -43509,6 +43548,8 @@ warnReservedMcpServers(cfg);
 // gets its owner (server/thread-privacy.ts), before anyone can read one.
 migrateThreadOwners();
 resetMemberAutoLevelsOnce();
+// and every start after it: a level stored since (a demoted admin's bot)
+settleMemberAutoLevelsFor(store.bots.map((bot) => bot.id), "at start");
 hideEarlierAgentThreads();
 hideBotThreadsOnce();
 migrateBotRuntimeSettings();

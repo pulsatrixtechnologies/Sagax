@@ -313,3 +313,26 @@ describe("interim people (slice 8)", () => {
     expect(registry.listBySubjectIssuer("https://px.test").map((p) => p.id)).toEqual([person.id]);
   });
 });
+
+describe("a person's organization role changes (2026-10-17, follow-up of #696)", () => {
+  const ISS = "https://px.example.test";
+  it("tells the role listeners once, with the role before, from a sign-in or the directory, never on creation", () => {
+    const { reg } = registry();
+    const seen: Array<{ id: string; before: string | undefined; after: string | undefined }> = [];
+    reg.onRoleChanged((person, before) => seen.push({ id: person.id, before, after: person.orgRole }));
+    const ada = reg.forSubject({ iss: ISS, sub: "ADA", orgRole: "admin" });
+    reg.forSubject({ iss: ISS, sub: "ADA", orgRole: "admin" });
+    expect(seen).toEqual([]);
+    reg.upsertFromDirectory({ iss: ISS, sub: "ADA", orgRole: "member" });
+    expect(seen).toEqual([{ id: ada.id, before: "admin", after: "member" }]);
+    reg.forSubject({ iss: ISS, sub: "ADA", orgRole: "admin" });
+    expect(seen.at(-1)).toEqual({ id: ada.id, before: "member", after: "admin" });
+    // a sign-in without a role claim leaves the role, and says nothing
+    reg.forSubject({ iss: ISS, sub: "ADA" });
+    expect(seen).toHaveLength(2);
+    // a listener that throws never stops the update
+    reg.onRoleChanged(() => { throw new Error("boom"); });
+    expect(reg.upsertFromDirectory({ iss: ISS, sub: "ADA", orgRole: "member" }).orgRole).toBe("member");
+    expect(seen).toHaveLength(3);
+  });
+});

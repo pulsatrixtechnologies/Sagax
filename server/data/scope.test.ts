@@ -3,6 +3,8 @@
 // an organization server, a confidential thread's own through the hook, and
 // the live frames that follow the same rule.
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -23,6 +25,7 @@ import {
   setConfidentialThreadResolver,
   threadScopeKeyFor,
 } from "./scope.ts";
+import { resolveExportPath } from "./tools.ts";
 
 afterEach(() => setConfidentialThreadResolver(null));
 
@@ -150,32 +153,39 @@ describe("personScopeKeyFor (2026-10-17, Loi 25)", () => {
   });
 });
 
-describe("organizationExportRoots (2026-10-17, re-review of #689)", () => {
+describe("organizationExportRoots (2026-10-17, follow-up of #696)", () => {
   const workspace = "/data/workspaces/bot-1";
   const scopeFolder = "/data/data-scopes/bot-1/p-abc";
-  const mine = ["/data/task-workspaces/bot-1/t1", "/data/task-workspaces/bot-1/t2"];
 
   it("keeps the bot's workspace for the bot scope (its owner)", () => {
     expect(organizationExportRoots({ kind: "bot", workspace, scopeFolder: "/data/bots/bot-1" })).toEqual([workspace]);
   });
 
-  it("never offers the shared bot workspace to a person's scope", () => {
-    const roots = organizationExportRoots({ kind: "person", workspace, scopeFolder, personThreadFolders: mine });
-    expect(roots).not.toContain(workspace);
-    expect(roots[0]).toBe(join(scopeFolder, DATA_EXPORTS_DIR));
-    expect(roots).toEqual([join(scopeFolder, DATA_EXPORTS_DIR), ...mine]);
-  });
-
-  it("puts the turn's own thread first when it is one of the person's", () => {
-    expect(organizationExportRoots({ kind: "person", workspace, scopeFolder, personThreadFolders: mine, turnThreadFolder: mine[1] })[0]).toBe(mine[1]);
-    // another person's thread is never offered
-    const roots = organizationExportRoots({ kind: "person", workspace, scopeFolder, personThreadFolders: mine, turnThreadFolder: "/data/task-workspaces/bot-1/theirs" });
-    expect(roots).not.toContain("/data/task-workspaces/bot-1/theirs");
-    expect(roots[0]).toBe(join(scopeFolder, DATA_EXPORTS_DIR));
+  it("gives a person's scope its own data-exports folder only: never the shared workspace, never a thread folder", () => {
+    const roots = organizationExportRoots({ kind: "person", workspace, scopeFolder });
+    expect(roots).toEqual([join(scopeFolder, DATA_EXPORTS_DIR)]);
+    expect(roots.some((root) => root.includes("task-workspaces"))).toBe(false);
   });
 
   it("keeps a confidential thread to its own folder, or nothing", () => {
-    expect(organizationExportRoots({ kind: "thread", workspace, scopeFolder, threadFolder: "/data/task-workspaces/bot-1/c1", personThreadFolders: mine })).toEqual(["/data/task-workspaces/bot-1/c1"]);
+    expect(organizationExportRoots({ kind: "thread", workspace, scopeFolder, threadFolder: "/data/task-workspaces/bot-1/c1" })).toEqual(["/data/task-workspaces/bot-1/c1"]);
     expect(organizationExportRoots({ kind: "thread", workspace, scopeFolder, threadFolder: null })).toEqual([]);
+  });
+
+  it("refuses a person's export aimed at their thread folder or the bot's workspace (resolveExportPath)", () => {
+    const root = mkdtempSync(join(tmpdir(), "sagax-export-roots-"));
+    try {
+      const shared = join(root, "workspaces", "bot-1");
+      const threadFolder = join(root, "task-workspaces", "bot-1", "t1");
+      const own = join(root, "data-scopes", "bot-1", "p-abc");
+      for (const dir of [shared, threadFolder, own]) mkdirSync(dir, { recursive: true });
+      const roots = organizationExportRoots({ kind: "person", workspace: shared, scopeFolder: own });
+      expect(resolveExportPath(roots, undefined, "report", "csv")).toBe(join(own, DATA_EXPORTS_DIR, "report.csv"));
+      expect(() => resolveExportPath(roots, join(threadFolder, "report.csv"), "report", "csv")).toThrow(/outside the folders/);
+      expect(() => resolveExportPath(roots, join(shared, "report.csv"), "report", "csv")).toThrow(/outside the folders/);
+      expect(() => resolveExportPath(roots, "../../../task-workspaces/bot-1/t1/x.csv", "report", "csv")).toThrow(/outside the folders/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

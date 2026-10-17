@@ -104,3 +104,20 @@ export function memberAutoLevelResets(bots: readonly MemberAutoResetBot[], membe
 export function memberAutoResetPending(identity: "solo" | "perspicax", organization: { memberAutoApproval?: unknown; memberAutoResetAt?: unknown } | undefined): boolean {
   return identity === "perspicax" && organization?.memberAutoApproval === false && typeof organization?.memberAutoResetAt !== "number";
 }
+
+/** 2026-10-17 (follow-up of #696): which saved automatic levels go back to
+ * Ask now, for these bots, whenever the organization refuses them for
+ * members' bots: at each start (so nothing stored outlives the setting) and
+ * when a bot's owner stops being an organization admin (a demoted admin's
+ * bots are members' bots from then on). Unlike the one-time pass, no
+ * marker: it runs every time and finds nothing once settled. Nothing on a
+ * solo server or while the organization allows them. */
+export function memberAutoSettle(input: {
+  identity: "solo" | "perspicax";
+  organization: { memberAutoApproval?: unknown } | undefined;
+  bots: readonly MemberAutoResetBot[];
+  memberOwned: (bot: MemberAutoResetBot) => boolean;
+}): MemberAutoReset {
+  if (input.identity !== "perspicax" || memberAutoApprovalAllowed(input.organization)) return { bots: [], threads: [] };
+  return memberAutoLevelResets(input.bots, input.memberOwned);
+}
