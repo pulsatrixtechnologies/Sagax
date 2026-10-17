@@ -482,6 +482,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"pattern","route":"^\\/api\\/internal\\/threads\\/([\\w-]+)\\/close$","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/local-computer\\/(pull|run|start|stop|remove)$","tier":"write","readOnly":false,"scope":"local-computer:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/mcp\\/servers\\/([a-z][a-z0-9_-]{0,31})\\/oauth\\/(start|disconnect|probe|status)$","tier":"write","readOnly":false,"scope":"mcp:write","defaultEnabled":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/mcp\\/servers\\/([a-z][a-z0-9_-]{0,31})\\/rename$","tier":"admin","readOnly":false,"scope":"mcp:admin","defaultEnabled":false},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/mcp\\/servers\\/([a-z][a-z0-9_-]{0,31})\\/test$","tier":"write","readOnly":false,"scope":"mcp:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/mcp\\/servers\\/([a-z][a-z0-9_-]{0,31})$","tier":"write","readOnly":false,"scope":"mcp:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/me\\/bot-overrides\\/([\\w-]+)$","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
