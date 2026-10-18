@@ -167,7 +167,16 @@ export function OrgEngineSetupGate() {
     window.addEventListener(ORG_ENGINE_SETUP_EVENT, onOpen);
     return () => window.removeEventListener(ORG_ENGINE_SETUP_EVENT, onOpen);
   }, []);
-  if (!open || !readiness.organization || readiness.state === "loading") return null;
+  // focus the card (its first control) so Escape and Tab work at once
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const shown = open && readiness.organization && readiness.state !== "loading";
+  useEffect(() => {
+    if (!shown) return;
+    const card = dialogRef.current;
+    if (!card || card.contains(document.activeElement)) return;
+    (card.querySelector<HTMLElement>("[data-primary]") ?? card).focus({ preventScroll: true });
+  }, [shown]);
+  if (!shown) return null;
   const close = () => {
     markOrgEngineSetupSeen();
     setOpen(false);
@@ -176,6 +185,7 @@ export function OrgEngineSetupGate() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-app p-3 sm:p-8" data-org-engine-setup="">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}

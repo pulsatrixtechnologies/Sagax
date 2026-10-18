@@ -107,7 +107,8 @@ export function EnginesBeat({
   const allReady = instances !== null && summary.allReady;
   const expanded = open;
 
-  // (after the hooks above, whose order the tests rely on.) An organization server where nothing answers this person: the same step
+  // After the hooks above (the tests rely on their order). An organization
+  // server where nothing answers this person: the same step
   // as the first-run card (OrgEngineSetup.tsx), the engines the
   // organization allows connected with the person's own account. Kept once
   // shown, so connecting one shows its success line rather than this list.
