@@ -5332,6 +5332,7 @@
   "routines.upcoming.drop": "Drop on a time to schedule",
   "routines.upcoming.dropBot": "Drop {name} on a time to schedule it",
   "routines.upcoming.empty": "Nothing scheduled yet.",
+  "routines.upcoming.emptyFiltered": "No upcoming run for these filters.",
   "routines.upcoming.hide": "Hide upcoming routines",
   "routines.upcoming.list": "Upcoming routines",
   "routines.upcoming.show": "Show upcoming routines",

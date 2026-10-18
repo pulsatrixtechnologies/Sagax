@@ -24,12 +24,15 @@ export interface CalendarSidebarProps {
   /** Collapses the sidebar; its button sits in its own row above the month
    * so it never covers the month title. */
   onCollapse?: () => void;
+  /** Some routines match the filters but none will run (paused ones, for
+   * instance): the empty line says so instead of "Nothing scheduled". */
+  filteredOut?: boolean;
 }
 
 /** The calendar's right panel (2026-10-18, JC): the month, then what runs
  * next. Bots are scheduled by dragging them from the left sidebar, which
  * already lists them, so this panel no longer repeats them. */
-export function CalendarSidebar({ anchor, onSelectDate, routines, runs, bots, viewerPrincipalId, loading, error, onOpenRoutine, onCollapse }: CalendarSidebarProps) {
+export function CalendarSidebar({ anchor, onSelectDate, routines, runs, bots, viewerPrincipalId, loading, error, onOpenRoutine, onCollapse, filteredOut = false }: CalendarSidebarProps) {
   return (
     <aside
       aria-label={t("routines.upcoming.sidebar")}
@@ -67,7 +70,7 @@ export function CalendarSidebar({ anchor, onSelectDate, routines, runs, bots, vi
             loading={loading}
             error={error}
             onOpen={onOpenRoutine}
-            emptyText={t("routines.upcoming.empty")}
+            emptyText={t(filteredOut ? "routines.upcoming.emptyFiltered" : "routines.upcoming.empty")}
           />
         </div>
 

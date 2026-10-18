@@ -85,6 +85,8 @@ describe("the calendar's right panel", () => {
 
   it("says when nothing is scheduled", () => {
     expect(panel([])).toContain("Nothing scheduled yet.");
+    const filtered = renderToStaticMarkup(createElement(CalendarSidebar, { anchor: NOW, onSelectDate: vi.fn(), routines: [], runs: [], bots: [], onOpenRoutine: vi.fn(), filteredOut: true }));
+    expect(filtered).toContain("No upcoming run for these filters.");
   });
 });
 
