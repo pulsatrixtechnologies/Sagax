@@ -253,7 +253,8 @@ public enum DesktopWorksOn: String, CaseIterable, Hashable, Sendable {
         bot.computer.flatMap(DesktopWorksOn.init(rawValue:)) ?? .auto
     }
 
-    /// The value written: Auto clears the field.
+    /// The value written: "auto" (the server reads it as Auto and clears
+    /// the field), "off", or a place an older build offered.
     public var stored: String { rawValue }
 }
 
@@ -391,9 +392,12 @@ public enum DesktopWorksOnRules {
         config?.features?.boatComputer == true || config?.features?.vpsComputer == true
     }
 
-    /// The grid, in the desktop's order: Auto, the offered places, Off.
+    /// The choices, in the desktop's order: Auto and Off only. Workspace is
+    /// always Auto (JC 2026-10-18): the bot picks where each task runs among
+    /// the places it may use, so none is offered. Off stays: it gives the
+    /// bot no computer and no browser at all.
     public static func choices(config: ConfigStatus?, organization: Bool) -> [DesktopWorksOn] {
-        DesktopWorksOn.allCases.filter { offered($0, config: config, organization: organization) }
+        [.auto, .off]
     }
 
     /// The server has a browser engine (`browserAvailable`).

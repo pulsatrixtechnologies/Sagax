@@ -240,7 +240,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
       }),
     );
 
-    const env: NodeJS.ProcessEnv = {
+    const env: NodeJS.ProcessEnv = { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
       HOME: home,
       USERPROFILE: home,
       SAGAX_PORT: String(PORT),

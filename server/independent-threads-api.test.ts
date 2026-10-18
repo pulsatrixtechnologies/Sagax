@@ -12,6 +12,10 @@ import { handleToolCall, request } from "../scripts/mcp-server.ts";
 import { readHandoffs } from "./testing/handoff-rows.ts";
 import { memoryDate } from "./workspace.ts";
 
+// Drives a fixed Works on through the HTTP API (scripts/control-omb.ts passes
+// the seam to the fixture): Workspace is always Auto otherwise (JC 2026-10-18).
+process.env.SAGAX_TEST_FIXED_WORKSPACE = "1";
+
 describe("independent bot tasks through the isolated control surface", () => {
   let session: VerificationServer;
   let models: string[];

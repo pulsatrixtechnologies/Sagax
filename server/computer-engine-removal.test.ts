@@ -79,6 +79,8 @@ describe("moving saved bots off the engine", () => {
     const reloaded = new Store(newBotDefault);
     const moved = reloaded.bot(bot.id)!;
     expect(moved.modelSelection).toEqual(replacement);
+    // The move leaves Works on as it was; the start sweep
+    // (retireFixedWorkspaces) is what brings it back to Auto.
     expect(moved.computer).toBe("cloud");
     expect(moved.fallback).toEqual([{ instanceId: "codex", model: "codex-model" }]);
     expect(reloaded.taskByThread(bot.id, second.threadId)?.modelSelection).toEqual(replacement);
@@ -88,7 +90,7 @@ describe("moving saved bots off the engine", () => {
     expect(reloaded.retireInstances(removed, replacement, boat)).toEqual([]);
   });
 
-  it("keeps an Auto bot on its cloud computer, where the removed engine always ran", () => {
+  it("leaves an Auto bot on Auto, where Auto reaches the cloud computer the removed engine ran on", () => {
     const store = new Store(newBotDefault);
     const auto = store.createBot({ modelSelection: { instanceId: "computer", model: "claude-fable-5" } }, { seedMessages: false });
     const vps = store.createBot({ modelSelection: { instanceId: "computer", model: "claude-fable-5" } }, { seedMessages: false });
@@ -99,7 +101,8 @@ describe("moving saved bots off the engine", () => {
     const moves = store.retireInstances(removed, replacement, boat);
 
     const reloaded = new Store(newBotDefault);
-    expect(reloaded.bot(auto.id)?.computer).toBe("cloud");
+    // Workspace is always Auto (JC 2026-10-18): no Works on is written.
+    expect(reloaded.bot(auto.id)?.computer).toBeUndefined();
     expect(moves.find(move => move.botId === auto.id)?.cloud).toBe(true);
     // The removed engine never ran on a VPS, nor on This computer: those
     // bots now work where their setting says, which the line does not claim.
@@ -118,7 +121,7 @@ describe("moving saved bots off the engine", () => {
     expect(new Store(newBotDefault).bot(auto.id)?.computer).toBeUndefined();
   });
 
-  it("moves only the conversation that was on the engine, and keeps it on the cloud computer", () => {
+  it("moves only the conversation that was on the engine, and pins no place for it", () => {
     const store = new Store(newBotDefault);
     const bot = store.createBot({ modelSelection: { instanceId: "codex", model: "codex-model" } }, { seedMessages: false });
     const second = store.createTask(bot.id, "On the engine", false)!;
@@ -134,9 +137,9 @@ describe("moving saved bots off the engine", () => {
     expect(reloaded.bot(bot.id)?.computer).toBeUndefined();
     const task = reloaded.taskByThread(bot.id, second.threadId)!;
     expect(task.modelSelection).toEqual(replacement);
-    // Held like a person's pin: Auto records no place (JC 2026-10-16).
-    expect(task.surface).toBe("cloud");
-    expect(task.surfaceSource).toBe("user");
+    // Workspace is always Auto (JC 2026-10-18): no conversation pin.
+    expect(task.surface).toBeUndefined();
+    expect(task.surfaceSource).toBeUndefined();
     expect(reloaded.taskByThread(bot.id, bot.threadId)?.surface).toBeUndefined();
   });
 
@@ -290,7 +293,8 @@ describe("moving saved bots off the engine", () => {
     expect(store.retireInstances(removed, replacement, boat)).toEqual([
       { botId: bot.id, threadId: bot.threadId, scope: "bot", cloud: true, noComputer: false, askNow: false },
     ]);
-    expect(new Store(newBotDefault).bot(bot.id)).toMatchObject({ modelSelection: replacement, computer: "cloud" });
+    expect(new Store(newBotDefault).bot(bot.id)).toMatchObject({ modelSelection: replacement });
+    expect(new Store(newBotDefault).bot(bot.id)?.computer).toBeUndefined();
   });
 });
 

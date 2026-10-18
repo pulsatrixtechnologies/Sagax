@@ -36,6 +36,36 @@ isolation rather than sharing a server between tests. Suites pick free ports
 with `server/testing/ports.ts` and each vitest process gets its own Local VM
 namespace, so shards do not collide.
 
+## Workspace: always Auto, the bot chooses (2026-10-18)
+
+JC: "It should ALWAYS stick to default, and the bot chooses. So basically bot
+always have access to all of them, he is in control." Nobody picks a place
+for a bot or a conversation any more:
+
+- No Workspace row in the composer's + menu (and no "/setup" hint beside
+  "Set up this bot"; typing /setup still works), no place chip on iPad, and
+  Works on (bot editor's Workspace page, iPad and iPhone) offers Auto and
+  Off only. The bot picks per task among the places available to it
+  (`computer_select`, `select_computer`, start_thread `workspace`).
+- Off stays: it withholds every computer and the browser, and team-backup's
+  quarantine writes it. Lifting it would widen what a bot may reach.
+- The server reads a requested place as Auto, without an error
+  (`autoOnlyDestination`, `server/surface.ts`): `PATCH /api/bots/:id`
+  `computer` (null, "auto" and "off" too), `POST /api/bots` settings, a bot
+  zip import, and `PATCH .../tasks/:threadId` `surface` (validated, never
+  stored). The engine-removal move writes no place.
+- At start, `Store.retireFixedWorkspaces` moves a saved fixed Works on and
+  every conversation pin back to Auto, Off kept, idempotent (log line
+  "Workspace: N bot(s) and M conversation(s) back on Auto").
+- Guards are unchanged: organization policy (`managedPolicy.computers`),
+  Deny/Ask rules, security keys, approvals, the person's app connected for
+  their computer, routines on the owner's computer only when allowed.
+- Test seam `SAGAX_TEST_FIXED_WORKSPACE=1` (with VITEST or
+  `SAGAX_TEST_SEAMS=1`, never production): the suites that drive fixed
+  places through the API keep them. Tests:
+  `server/workspace-auto-only.test.ts`, `server/workspace-auto-only.e2e.test.ts`,
+  `src/components/computer/WorksOnSetting.test.ts`.
+
 ## Workspace: Auto remembers no place (2026-10-16)
 
 JC: "Il doit toujours être en automatique, et le mode choisi à chaque tour
@@ -43,11 +73,11 @@ lui-même." On every server (solo and organization):
 
 - Auto picks where to work on each turn from the request. No turn writes
   where it worked (the built-in browser, a claimed VM, the host, the cloud
-  computer) to the conversation: the auto pin of issue #1650 is gone. The
-  composer's Workspace menu keeps showing Auto.
-- Only the person's explicit choice in the composer (`surfaceSource:
-  "user"`) or a legacy pin of unknown origin holds a place
-  (`honouredPin`, `server/surface.ts`).
+  computer) to the conversation: the auto pin of issue #1650 is gone. Since
+  2026-10-18 the composer has no Workspace menu (see above).
+- Only a pin under the test seam above (`surfaceSource: "user"`) or a
+  legacy pin of unknown origin holds a place (`honouredPin`,
+  `server/surface.ts`); the start sweep clears both outside tests.
 - A select_computer move (solo) holds the request it was made in, its
   continuation and the card continuations under it
   (`computerSelectionMoves`, in memory), and is dropped at the next fresh
@@ -1549,8 +1579,8 @@ the same composer row in Simple and Advanced mode"),
 `src/components/ModelPicker.simple.test.ts`:
 
 - One row: paperclip, the approval icon and its full menu (a warning sign for
-  Full access, the command allowlist for an owner or admin), the "where the
-  bot works" chip, the message field, the model chip (effort included), voice
+  Full access, the command allowlist for an owner or admin), the message
+  field (no "where the bot works" chip since 2026-10-18), the model chip (effort included), voice
   and send. No approval chip or cards in Simple.
 - The slash menu lists the same commands in both modes.
 - Guards stay where they are, whatever the mode: the Full access and local

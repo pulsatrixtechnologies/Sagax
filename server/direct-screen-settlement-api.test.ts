@@ -11,6 +11,10 @@ import { removeTempDir } from "./testing/cleanup.ts";
 import { openSse, type SseRecorder } from "./testing/sse.ts";
 import { withoutTurnClock } from "./testing/turn-clock-text.ts";
 
+// Drives a fixed Works on through the HTTP API (scripts/control-omb.ts passes
+// the seam to the fixture): Workspace is always Auto otherwise (JC 2026-10-18).
+process.env.SAGAX_TEST_FIXED_WORKSPACE = "1";
+
 describe.skipIf(process.platform === "win32")("direct final-screen settlement", () => {
   let session: VerificationServer;
   let fixture: string;

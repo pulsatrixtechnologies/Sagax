@@ -377,6 +377,10 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
     // an "available" engine that CI never has (#2035).
     SAGAX_TEST_SEALED_PATH: "1",
   });
+  // A suite that drives a fixed Works on or a conversation pin through the
+  // HTTP API (Workspace is always Auto otherwise, JC 2026-10-18) opts in
+  // with this test seam; nothing else turns it on.
+  if (parentEnv.SAGAX_TEST_FIXED_WORKSPACE === "1") Object.assign(childEnv, { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1" });
   // The fake engine's own knobs (mode, replies, tool calls) are the one thing
   // a caller may script into the child: FAKE_CLAUDE_* crosses, nothing else.
   for (const [key, value] of Object.entries(parentEnv)) {

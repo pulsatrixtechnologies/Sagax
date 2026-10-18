@@ -40,9 +40,7 @@ import { MentionTextarea } from "./MentionTextarea";
 import { ComposerAttachments, pathForFile } from "./ComposerAttachments";
 import { splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
-import { PlaceChip } from "./PlaceChip";
 import { effectivePlace } from "@/lib/place";
-import { useAdvancedMode } from "@/lib/interface-mode";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
 import { ModelPicker } from "./ModelPicker";
@@ -195,7 +193,6 @@ export function Composer({
   const sendKey = useSendKey();
   const sendLabel = sendKeyLabel(sendKey);
   const remoteClient = window.ogb?.remoteClient?.active === true;
-  const advanced = useAdvancedMode();
   // Unified target: a 1:1 bot thread or a room. In a room the @ picker
   // offers members plus @everyone; explicit mentions override the room's
   // configured default responder.
@@ -1150,28 +1147,14 @@ export function Composer({
       group: "modes" as const,
       label: t("composer.plus.setup"),
       icon: <Wand2 size={15} aria-hidden="true" />,
-      hint: "/setup",
-      // the same as picking /setup in the "/" menu
+      // the same as picking /setup in the "/" menu; no "/setup" hint beside
+      // it (JC 2026-10-18), typing /setup still works
       onSelect: () => startDraftWith("/setup "),
     }] : []),
   ];
-  const showPlaceRow = Boolean(modeBot && !remoteClient && (advanced || Boolean(composerTask?.surface)));
-  const plusRows = (close: () => void) => (approvalControlRow(close) || showPlaceRow) ? (
-    <>
-      {approvalControlRow(close)}
-      {showPlaceRow && modeBot && (
-        <PlaceChip
-          variant="row"
-          bot={modeBot}
-          task={composerTask}
-          live={Boolean(modeBot.busy)}
-          disabled={Boolean(modeBot.busy)}
-          onPin={(surface) => dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId, patch: { surface } })}
-          onDone={close}
-        />
-      )}
-    </>
-  ) : null;
+  // No Workspace row (JC 2026-10-18): the bot always works on Auto and
+  // picks where each task runs, so nobody chooses a place here.
+  const plusRows = (close: () => void) => approvalControlRow(close) || null;
 
   return (
     <div className="pointer-events-none relative overflow-x-clip px-[max(16px,calc((100%-960px)/2))] pb-4">

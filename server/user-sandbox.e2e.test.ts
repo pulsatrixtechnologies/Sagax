@@ -187,7 +187,7 @@ posixOnly("organization server environments (user-sandbox)", () => {
     }));
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
-      env: {
+      env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
         SAGAX_IDENTITY: "perspicax",

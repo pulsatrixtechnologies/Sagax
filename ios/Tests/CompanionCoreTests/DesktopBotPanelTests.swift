@@ -96,18 +96,17 @@ final class DesktopBotPanelTests: XCTestCase {
         try JSONDecoder().decode(ConfigStatus.self, from: Data(json.utf8))
     }
 
-    func testWorksOnOffersCloudOnlyWithACloudComputer() throws {
+    func testWorksOnOffersAutoAndOffOnly() throws {
+        // Workspace is always Auto (JC 2026-10-18): the bot picks the place
+        // per task, so no place is offered; Off stays a restriction.
         let plain = try config("{}")
-        XCTAssertEqual(DesktopWorksOnRules.choices(config: plain, organization: false), [.auto, .vm, .local, .browser, .off])
         let boat = try config(#"{"features":{"boatComputer":true}}"#)
-        XCTAssertEqual(DesktopWorksOnRules.choices(config: boat, organization: false), [.auto, .cloud, .vm, .local, .browser, .off])
+        let home = try config(#"{"cloudHome":true}"#)
+        for (cfg, organization) in [(plain, false), (boat, false), (home, false), (plain, true)] {
+            XCTAssertEqual(DesktopWorksOnRules.choices(config: cfg, organization: organization), [.auto, .off])
+        }
         XCTAssertTrue(DesktopWorksOnRules.showsCloudBackend(worksOn: .auto, config: boat, organization: false))
         XCTAssertFalse(DesktopWorksOnRules.showsCloudBackend(worksOn: .auto, config: plain, organization: false))
-        // an OMB Cloud home has no computer of the person's own
-        let home = try config(#"{"cloudHome":true}"#)
-        XCTAssertEqual(DesktopWorksOnRules.choices(config: home, organization: false), [.auto, .cloud, .browser, .off])
-        // an organization server offers every place
-        XCTAssertEqual(DesktopWorksOnRules.choices(config: plain, organization: true), DesktopWorksOn.allCases)
     }
 
     func testBrowserBlockSaysWhy() throws {

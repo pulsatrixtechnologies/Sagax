@@ -1,7 +1,6 @@
 // iPad I4/I4b: More > Access as the current desktop draws it
-// (`bot-settings/AccessSection.tsx`), every card inline: Works on (Auto,
-// the places this server offers, Off; why Browser cannot be chosen; the
-// Off note; the Auto note and the cloud backend while a cloud computer is
+// (`bot-settings/AccessSection.tsx`), every card inline: Works on (Auto or
+// Off: the bot picks the place per task, JC 2026-10-18; the Off note; the Auto note and the cloud backend while a cloud computer is
 // offered), the working folder, Connected apps and the built-in browser
 // while Experimental features has them on, MCP servers (one switch each),
 // Webhooks and Always allowed. On an organization server Works on is its
@@ -68,19 +67,11 @@ struct BotPanelAccess: View {
     private var worksOnCard: some View {
         PanelCard {
             Text("Works on").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
-            (Text("Where this bot works. Browser is the built-in browser tab only; no desktop.")
-             + (bot.computer == nil ? Text(verbatim: " ") + Text("Now: \(String(localized: "Auto")).") : Text(verbatim: "")))
+            Text("The bot picks where each task runs: the cloud, a Local VM, this computer or the browser, among the places available to it and allowed. Off gives it no computer and no browser.")
                 .panelText(13, 19.5)
                 .foregroundStyle(theme.inkSecondary)
                 .padding(.top, 2)
             worksOnGrid.padding(.top, 12)
-            if !browserSelectable {
-                Text("\(String(localized: "Browser")) is not available: \(browserReason)")
-                    .panelText(11.5, 18.69)
-                    .foregroundStyle(theme.inkSecondary)
-                    .padding(.top, 8)
-                    .accessibilityIdentifier("desktop-access-browser-reason")
-            }
             if worksOn == .off {
                 note(bold: "Off means no screen.", "This bot gets no computer and no built-in browser, so it cannot open a web page, click, or type anywhere. Its connected apps, MCP servers, files and chat all still work.")
                     .padding(.top, 12)
@@ -119,15 +110,14 @@ struct BotPanelAccess: View {
 
     private var worksOnGrid: some View {
         let options = DesktopWorksOnRules.choices(config: config, organization: organization).map { place in
-            (place, label(place), canEdit && (place != .browser || browserSelectable))
+            (place, label(place), canEdit)
         }
-        return PanelSegmentGrid(options: options, selected: worksOn, columns: 3) { choice in
-            guard choice != worksOn else { return }
-            // a browser-only bot must actually have its browser
-            let patch = choice == .browser
-                ? BotPanelPatch(computer: choice.stored, browser: true)
-                : BotPanelPatch(computer: choice.stored)
-            Task { _ = await sendPanelPatch(patch, bot: bot, session: session) }
+        // A place an older build saved reads as Auto here (the server moves
+        // it back to Auto at start).
+        let selected: DesktopWorksOn = worksOn == .off ? .off : .auto
+        return PanelSegmentGrid(options: options, selected: selected, columns: 2) { choice in
+            guard choice != selected else { return }
+            Task { _ = await sendPanelPatch(BotPanelPatch(computer: choice.stored), bot: bot, session: session) }
         }
     }
 

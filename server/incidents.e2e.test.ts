@@ -14,6 +14,10 @@ import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.
 import { removeTempDir } from "./testing/cleanup.ts";
 import { openSse } from "./testing/sse.ts";
 
+// Drives a fixed Works on through the HTTP API (scripts/control-omb.ts passes
+// the seam to the fixture): Workspace is always Auto otherwise (JC 2026-10-18).
+process.env.SAGAX_TEST_FIXED_WORKSPACE = "1";
+
 /** A verification server and the calls every test makes against it;
  * `boat` is a loopback stand-in for the Boat provider, and `enterprise` a
  * stand-in layer for entitled behaviour (the spend limit), when needed. */

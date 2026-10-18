@@ -151,7 +151,7 @@ beforeAll(async () => {
     join(ROOT, "server/index.ts"),
   ], {
     cwd: ROOT,
-    env: {
+    env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
       PATH: [fakebin, dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter),
       HOME: fixtureHome, USERPROFILE: fixtureHome, SAGAX_DATA_DIR: data,
       APPDATA: join(fixtureHome, "appdata"), LOCALAPPDATA: join(fixtureHome, "localappdata"),

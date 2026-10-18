@@ -700,7 +700,7 @@ import { startAutoVmClaim, type AutoVmClaimSlot, type AutoVmClaimTable } from ".
 import { CONTROL_ACT_WITHIN_MS, CONTROL_BUSY, CONTROL_HANDED_BACK, CONTROL_WAIT_MS, CONTROL_WAITED, controlRefusal, type ControlState } from "./control-client.ts";
 import { computerFreeAfterText, computerParkedText, computerPersonAwayText, computerStoppedWaitingText, computerWaitingText, type ComputerHolder } from "./computer-wait.ts";
 import { modelContextWindow } from "./model-context-window.ts";
-import { browserIsThePlace, cloudPlaceRefusal, computerSkippedNote, computerToolsRefusal, honouredPin, parseSurface, PlaceUnavailableError, placeUnavailable, resolveSurface, surfaceLabel, surfaceOfComputerKind, surfacePrompt, type ComputerWant, type PlaceSource, type Surface } from "./surface.ts";
+import { autoOnlyDestination, browserIsThePlace, cloudPlaceRefusal, computerSkippedNote, computerToolsRefusal, honouredPin, parseSurface, PlaceUnavailableError, placeUnavailable, resolveSurface, surfaceLabel, surfaceOfComputerKind, surfacePrompt, type ComputerWant, type PlaceSource, type Surface } from "./surface.ts";
 import { cloudRefusal, type PlaceRow } from "../shared/place-view.ts";
 import {
   PendingTurnCancellations,
@@ -1649,6 +1649,21 @@ const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRON
 // as a plain cache key).
 const emailOtp = new EmailOtpStore();
 const mailResolved = () => resolveMailSettings({ file: cfg.mail, env: process.env });
+// SAGAX_TEST_FIXED_WORKSPACE=1 (test/e2e seam only): Workspace is always
+// Auto (JC 2026-10-18), so a Works on or a conversation pin naming a place
+// reads as Auto and the start sweep moves saved ones back to Auto. The
+// dispatch still knows fixed places (Off, team-backup's quarantine), and the
+// suites that drive it through the HTTP API keep them with this seam. Same
+// markers as the mail seam; a fixed place is narrower than Auto, so the seam
+// never widens what a bot may reach.
+const FIXED_WORKSPACE_SEAM = process.env.SAGAX_TEST_FIXED_WORKSPACE === "1" &&
+  process.env.NODE_ENV !== "production" && Boolean(process.env.VITEST || process.env.SAGAX_TEST_SEAMS === "1");
+if (process.env.SAGAX_TEST_FIXED_WORKSPACE === "1" && !FIXED_WORKSPACE_SEAM) {
+  console.warn("SAGAX_TEST_FIXED_WORKSPACE is set but ignored (needs VITEST or SAGAX_TEST_SEAMS=1, and NODE_ENV other than production)");
+}
+/** A Works on from a request: Off, else Auto (undefined), except under the
+ * test seam above. */
+const requestedWorksOn = <T>(value: T): T | "off" | undefined => FIXED_WORKSPACE_SEAM ? value : autoOnlyDestination(value);
 // SAGAX_MAIL_CAPTURE_FILE (test/e2e seam only): instead of sending, append
 // each message as one JSON line to this file. Requires an explicit test
 // marker (VITEST, set by the test runner itself, or SAGAX_TEST_SEAMS=1 for a
@@ -38489,6 +38504,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const resolvedPreset = typeof body.preset === "string" ? presetStore.resolve(body.preset) : null;
       const preset = resolvedPreset && presetOffered(resolvedPreset.row, orgInstallStatuses()) ? resolvedPreset : null;
       if (body.preset !== undefined && !preset) return json(res, 404, { error: PRESET_UNAVAILABLE_MESSAGE });
+      // Workspace is always Auto (JC 2026-10-18): New bot defaults or a
+      // request naming a place create an Auto bot. Off stays.
+      if (Object.hasOwn(settings, "computer")) settings.computer = requestedWorksOn(settings.computer) ?? undefined;
       body = { ...body, ...settings, name: settings.name };
       if (settings.approvalMode === "full" || settings.approvalMode === "custom") {
         return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation." });
@@ -39057,12 +39075,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           patch.computer = undefined;
         } else if (
           typeof body.computer === "string" &&
-          ["cloud", "vm", "local", "browser", "off"].includes(body.computer)
+          ["auto", "cloud", "vm", "local", "browser", "off"].includes(body.computer)
         ) {
-          requestedComputer = body.computer;
-          patch.computer = body.computer;
+          // Workspace is always Auto (JC 2026-10-18): a place an older app
+          // still sends reads as Auto, without an error. Off stays.
+          requestedComputer = body.computer === "auto" ? undefined : requestedWorksOn(body.computer);
+          patch.computer = requestedComputer;
         } else {
-          return json(res, 400, { error: "computer must be null (Auto), cloud, vm, local, browser, or off" });
+          return json(res, 400, { error: "computer must be null or auto (Auto), or off" });
         }
       }
       if (normalizedSelection) patch.modelSelection = normalizedSelection;
@@ -41349,18 +41369,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         patch.linkAuto = link ? undefined : false;
       }
       if (body.surface !== undefined) {
-        if (threadBusy(current.id, current.threadId)) return json(res, 409, { error: "Stop this thread before changing its computer destination." });
-        // Where this conversation works, chosen by the person and recorded as
-        // theirs, so a later Works on change never sweeps it. Null follows the
-        // bot's Works on again. Reachability is the turn's to judge.
-        computerSelectionMoves.delete(current.threadId);
-        if (body.surface === null) {
-          patch.surface = undefined;
-          patch.surfaceSource = undefined;
-        } else if (parseSurface(body.surface)) {
-          patch.surface = parseSurface(body.surface);
-          patch.surfaceSource = "user";
-        } else return json(res, 400, { error: "surface must be cloud, vm, local, browser, or null to follow the bot" });
+        // Workspace is always Auto (JC 2026-10-18): a conversation is never
+        // pinned to a place any more. An older app that still sends one gets
+        // no error and no pin; the bot keeps choosing per task.
+        if (body.surface !== null && !parseSurface(body.surface)) {
+          return json(res, 400, { error: "surface must be cloud, vm, local, browser, or null to follow the bot" });
+        }
+        if (FIXED_WORKSPACE_SEAM) {
+          if (threadBusy(current.id, current.threadId)) return json(res, 409, { error: "Stop this thread before changing its computer destination." });
+          computerSelectionMoves.delete(current.threadId);
+          patch.surface = body.surface === null ? undefined : parseSurface(body.surface);
+          patch.surfaceSource = body.surface === null ? undefined : "user";
+        }
       }
       if (body.pinnedMessageId !== undefined) {
         if (body.pinnedMessageId === null || body.pinnedMessageId === "") patch.pinnedMessageId = undefined;
@@ -44049,6 +44069,10 @@ restoreChannelMessages();
   let movedAutoPins = 0;
   for (const bot of store.bots) movedAutoPins += store.clearAutoSurfacePins(bot.id, undefined);
   if (movedAutoPins) console.log(`Auto: cleared ${movedAutoPins} auto-pinned thread(s); Auto picks where to work on each turn`);
+  // Workspace is always Auto (JC 2026-10-18): a fixed Works on and every
+  // conversation pin an older build saved go back to Auto. Off stays.
+  const retired = FIXED_WORKSPACE_SEAM ? { bots: 0, pins: 0 } : store.retireFixedWorkspaces();
+  if (retired.bots || retired.pins) console.log(`Workspace: ${retired.bots} bot(s) and ${retired.pins} conversation(s) back on Auto; the bot picks where each task runs`);
 }
 // A saved MCP server whose name is now reserved is never mounted: say so at
 // start, not only at its first turn (#695 follow-up).

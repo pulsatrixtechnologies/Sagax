@@ -85,7 +85,7 @@ describe("surface pin provenance against the real server", () => {
     base = `http://127.0.0.1:${port}`;
     output = "";
     const proc = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, join(ROOT, "server/index.ts")], {
-      cwd: ROOT, env: {
+      cwd: ROOT, env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         PATH: dirname(process.execPath), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_DATA_DIR: data,
         APPDATA: join(home, "appdata"), LOCALAPPDATA: join(home, "localappdata"),

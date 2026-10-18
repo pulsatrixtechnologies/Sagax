@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Bot, ConfigStatus } from "@/state/store";
-import { worksOnModes, WorksOnControl, WorksOnSetting, worksOnTip } from "./WorksOnSetting";
+import { WorksOnControl, worksOnMode, WorksOnSetting, worksOnTip, type WorksOnMode } from "./WorksOnSetting";
 
 const fixture = vi.hoisted(() => ({ config: null as unknown, organization: false }));
 vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
@@ -35,43 +35,30 @@ afterEach(() => vi.unstubAllGlobals());
 
 const labels = (markup: string) => [...markup.matchAll(/data-works-on-choice="([^"]+)"[^>]*>([^<]*)</g)].map((match) => match[2]);
 
-function control(config: Partial<ConfigStatus> | null, organization: boolean, value: Bot["computer"] | null = null) {
-  return renderToStaticMarkup(createElement(WorksOnControl, {
-    value,
-    organization,
-    modes: worksOnModes(config, organization),
-    disabled: {},
-    onChange: () => {},
-  }));
+function control(organization: boolean, value: WorksOnMode = null) {
+  return renderToStaticMarkup(createElement(WorksOnControl, { value, organization, onChange: () => {} }));
 }
 
-describe("one Works on control", () => {
-  it("offers this computer and a Local VM on a desktop or self-hosted server", () => {
-    expect(labels(control(null, false))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
-    expect(labels(control({}, false))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
-    expect(labels(control({ features: { skillAuthoring: true, boatComputer: true } }, false))).toEqual(["Auto", "Cloud computer", "Local VM", "This computer", "Browser", "Off"]);
+describe("one Works on control: Auto or Off (JC 2026-10-18)", () => {
+  it("offers no place on a solo or an organization server, only Auto and Off", () => {
+    expect(labels(control(false))).toEqual(["Auto", "Off"]);
+    expect(labels(control(true))).toEqual(["Auto · picks per task", "Off"]);
   });
 
-  it("keeps local places when a leftover Cloud home flag is present", () => {
-    expect(labels(control({ cloudHome: true } as Partial<ConfigStatus>, false))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
+  it("says the bot picks the place for each task, and what Off withholds", () => {
+    const markup = control(true);
+    expect(markup).toMatch(/<p id="works-on-setting-hint"[^>]*>The bot picks where each task runs/);
+    expect(markup).toContain("Off gives it no computer and no browser.");
+    expect(worksOnTip(null)).toMatch(/^Picks the place for each task among the available ones\. Never a place you or your organization did not allow/);
+    expect(worksOnTip("off")).toBe("No computer access");
   });
 
-  it("names every place on an organization server the way the composer chip does", () => {
-    expect(labels(control({}, true))).toEqual(["Auto · picks per task", "Cloud (server environment)", "Local VM", "This computer", "Browser", "Off"]);
-    expect(worksOnTip(null, null, false)).toBe("Choose automatically");
-    expect(worksOnTip(null)).toMatch(/^Picks the place for each task: your computer when the Sagax app is connected/);
-  });
-
-  it("says why an option is disabled, in the tooltip", () => {
-    const markup = renderToStaticMarkup(createElement(WorksOnControl, {
-      value: null,
-      organization: false,
-      modes: worksOnModes(null, false),
-      disabled: { local: "Local computer control requires the desktop app.", browser: "The built-in browser needs the Sagax desktop app" },
-      onChange: () => {},
-    }));
-    expect(markup).toContain('title="This computer is not available: Local computer control requires the desktop app."');
-    expect(markup).toContain('title="Browser is not available: The built-in browser needs the Sagax desktop app"');
+  it("reads a place an older build saved as Auto, and keeps Off", () => {
+    expect(worksOnMode(undefined)).toBeNull();
+    for (const place of ["cloud", "vm", "local", "browser"] as const) expect(worksOnMode(place)).toBeNull();
+    expect(worksOnMode("off")).toBe("off");
+    expect(control(false, worksOnMode("local"))).toMatch(/aria-checked="true"[^>]*data-works-on-choice="auto"/);
+    expect(control(false, "off")).toMatch(/aria-checked="true"[^>]*data-works-on-choice="off"/);
   });
 
   it("hides the control from an organization member who cannot save where the bot works", () => {

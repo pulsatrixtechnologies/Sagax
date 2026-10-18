@@ -1199,7 +1199,7 @@ beforeAll(async () => {
   `)}`;
   child = spawn(process.execPath, ["--import", browserPrelude, join(SERVER_DIR, "index.ts")], {
     cwd: ROOT,
-    env: {
+    env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
       ...(process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
@@ -1349,7 +1349,7 @@ describe("harness HTTP API", () => {
       let capturedStderr = "";
       const serverChild = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
         cwd: ROOT,
-        env: {
+        env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
           ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
           ...(process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {}),
           ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
@@ -1703,7 +1703,7 @@ describe("harness HTTP API", () => {
     let contenderStderr = "";
     const contender = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: ROOT,
-      env: {
+      env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         SAGAX_DATA_DIR: join(home, ".sagax"),
@@ -3759,7 +3759,7 @@ describe("harness HTTP API", () => {
     let isolatedStderr = "";
     const isolatedChild = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: ROOT,
-      env: {
+      env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: isolatedHome,
@@ -4001,7 +4001,7 @@ describe("harness HTTP API", () => {
     let isolatedStderr = "";
     const isolatedChild = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: ROOT,
-      env: {
+      env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: isolatedHome,
@@ -5549,7 +5549,7 @@ describe("harness HTTP API", () => {
     let isolatedStderr = "";
     const isolatedChild = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: ROOT,
-      env: {
+      env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
@@ -6544,7 +6544,7 @@ describe("harness HTTP API", () => {
       ["--import", desktopPrelude, join(SERVER_DIR, "index.ts")],
       {
         cwd: ROOT,
-        env: {
+        env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
           ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
           ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
           HOME: isolatedHome,
@@ -9272,7 +9272,7 @@ describe("harness HTTP API", () => {
       ["--import", ackDesktopPrelude, join(SERVER_DIR, "index.ts")],
       {
         cwd: ROOT,
-        env: {
+        env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
           ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
           ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
           HOME: isolatedHome,

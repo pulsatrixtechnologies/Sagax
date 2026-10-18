@@ -56,7 +56,6 @@ enum DesktopChatParity {
     static var openMenu: DesktopComposerMenu? {
         switch screen {
         case .chatApprovalMode: .approval
-        case .chatWhereMenu: .place
         default: nil
         }
     }

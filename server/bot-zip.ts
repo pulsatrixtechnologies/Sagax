@@ -66,6 +66,7 @@ import { ATTACHMENTS_DIR, readAttachment, saveImage, saveImportedAttachment } fr
 import { botFolder, SOUL_FILE } from "./bot-folder.ts";
 import type { BotPlugins } from "./bot-plugins.ts";
 import { profilePatchSchema } from "./bot-profile.ts";
+import { autoOnlyDestination } from "./surface.ts";
 import { memberImportReset } from "./routes/bot-catalog.ts";
 import type { Routine, RoutineManager } from "./routines.ts";
 import { restoreSkillManifest, setSkillEnabled, skillManifestForExport } from "./skills.ts";
@@ -924,7 +925,8 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
     };
     if (!options.asMember) {
       Object.assign(patch, {
-        ...(hostSettings.computer ? { computer: hostSettings.computer } : {}),
+        // Workspace is always Auto (JC 2026-10-18): only Off travels.
+        ...(autoOnlyDestination(hostSettings.computer) ? { computer: "off" as const } : {}),
         ...(hostSettings.cloudBackend ? { cloudBackend: hostSettings.cloudBackend } : {}),
         ...(hostSettings.autoStartVps !== undefined ? { autoStartVps: hostSettings.autoStartVps } : {}),
         ...(hostSettings.cwd && (host.cwdUsable?.(hostSettings.cwd) ?? true) ? { cwd: hostSettings.cwd } : {}),

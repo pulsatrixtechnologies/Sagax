@@ -2,6 +2,10 @@ import { createServer } from "node:http";
 import { expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 
+// Drives a fixed Works on through the HTTP API (scripts/control-omb.ts passes
+// the seam to the fixture): Workspace is always Auto otherwise (JC 2026-10-18).
+process.env.SAGAX_TEST_FIXED_WORKSPACE = "1";
+
 it("keeps the selected API model for direct, group and scheduled Boat turns and preserves human control", async () => {
   const rows: Array<{ id: string; name: string; state: string }> = [];
   const requests: any[] = [];

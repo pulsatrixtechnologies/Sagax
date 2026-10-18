@@ -43431,28 +43431,6 @@
         }
       }
     },
-    "Currently %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Currently %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Actuellement : %@"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Atualmente: %@"
-          }
-        }
-      }
-    },
     "Custom (config.toml)": {
       "localizations": {
         "en": {
@@ -43585,28 +43563,6 @@
         }
       }
     },
-    "Follow this bot's setting": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Follow this bot's setting"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suivre le réglage du bot"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Seguir a configuração do bot"
-          }
-        }
-      }
-    },
     "Full access": {
       "localizations": {
         "en": {
@@ -43625,28 +43581,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Acesso total"
-          }
-        }
-      }
-    },
-    "Hosted desktop": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hosted desktop"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bureau hébergé"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Área de trabalho hospedada"
           }
         }
       }
@@ -43691,28 +43625,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Visões do inspetor"
-          }
-        }
-      }
-    },
-    "Isolated local desktop": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Isolated local desktop"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bureau local isolé"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Área de trabalho local isolada"
           }
         }
       }
@@ -44245,50 +44157,6 @@
         }
       }
     },
-    "Where this conversation works": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Where this conversation works"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Où travaille cette conversation"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Onde esta conversa trabalha"
-          }
-        }
-      }
-    },
-    "Where this conversation works: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Where this conversation works: %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Où travaille cette conversation : %@"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Onde esta conversa trabalha: %@"
-          }
-        }
-      }
-    },
     "Wrap": {
       "localizations": {
         "en": {
@@ -44307,28 +44175,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Quebrar linhas"
-          }
-        }
-      }
-    },
-    "Your screen and apps": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your screen and apps"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Votre écran et vos apps"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sua tela e seus apps"
           }
         }
       }
@@ -46023,28 +45869,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Onde este bot trabalha (atualmente: auto). Navegador é só a aba do navegador integrado, sem área de trabalho."
-          }
-        }
-      }
-    },
-    "Where this bot works. Browser is the built-in browser tab only; no desktop.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Where this bot works. Browser is the built-in browser tab only; no desktop."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Où ce bot travaille. Navigateur est l'onglet de navigateur intégré seulement, sans bureau."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Onde este bot trabalha. Navegador é só a aba do navegador integrado, sem área de trabalho."
           }
         }
       }
@@ -52693,28 +52517,6 @@
         }
       }
     },
-    "Now: %@.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Now: %@."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Actuellement : %@."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agora: %@."
-          }
-        }
-      }
-    },
     "%@ is not available: %@": {
       "localizations": {
         "en": {
@@ -54273,28 +54075,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Estas opções são alteradas por um administrador ou no Sagax no seu computador."
-          }
-        }
-      }
-    },
-    "Where this bot runs its tools: a computer of its own, this computer, the built-in browser, or nowhere.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Where this bot runs its tools: a computer of its own, this computer, the built-in browser, or nowhere."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Où ce bot exécute ses outils : son propre ordinateur, cet ordinateur, le navigateur intégré, ou nulle part."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Onde este bot executa suas ferramentas: um computador próprio, este computador, o navegador integrado ou lugar nenhum."
           }
         }
       }
@@ -69002,6 +68782,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Filtrar por tipo"
+          }
+        }
+      }
+    },
+    "The bot picks where each task runs: the cloud, a Local VM, this computer or the browser, among the places available to it and allowed. Off gives it no computer and no browser.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The bot picks where each task runs: the cloud, a Local VM, this computer or the browser, among the places available to it and allowed. Off gives it no computer and no browser."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le bot choisit où chaque tâche s'exécute : le cloud, une VM locale, cet ordinateur ou le navigateur, parmi les endroits disponibles et autorisés. Désactivé ne lui donne ni ordinateur ni navigateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O bot escolhe onde cada tarefa é executada: a nuvem, uma VM local, este computador ou o navegador, entre os lugares disponíveis e permitidos. Desativado não lhe dá nenhum computador nem navegador."
           }
         }
       }

@@ -72,7 +72,7 @@ describe("browser installation opt-in", () => {
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 
-  it("allows an explicitly disabled bot to opt in after the workspace, while its browser destination stays unavailable", () => {
+  it("allows an explicitly disabled bot to opt in after the workspace, and Works on offers no browser destination", () => {
     expect(access()).not.toContain("Give this bot a built-in browser");
     fixture.config.features = { browser: true };
     const markup = access();
@@ -80,7 +80,8 @@ describe("browser installation opt-in", () => {
     expect(toggle).toContain('aria-checked="false"');
     expect(toggle).not.toContain("disabled=");
     const worksOn = renderToStaticMarkup(createElement(WorksOnSetting, { bot: { ...bot, browser: false } }));
-    expect(worksOn.match(/<button[^>]*data-works-on-choice="browser"[^>]*>/)?.[0]).toContain("disabled");
+    // Workspace is always Auto (JC 2026-10-18): Browser is not a choice
+    expect(worksOn).not.toContain('data-works-on-choice="browser"');
     expect(panel(false)).not.toContain("data-works-on-setting");
     expect(panel(false)).not.toContain("Install the browser engine");
     expect(panel(true)).not.toContain("Install the browser engine");

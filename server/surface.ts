@@ -17,6 +17,16 @@ export type { Surface, PlaceSource };
 /** The bot's "Works on" setting; undefined = Auto. */
 export type Destination = Surface | "off" | undefined;
 
+/** Workspace is always Auto (JC 2026-10-18): the bot picks where each task
+ * runs among every place that is available to it, and nobody chooses a
+ * place for a bot or a conversation any more. Off is not a place: it is the
+ * restriction that gives the bot no screen at all (and team-backup's
+ * quarantine), so it stays. Any other stored or requested value reads as
+ * Auto (undefined). */
+export function autoOnlyDestination(value: unknown): "off" | undefined {
+  return value === "off" ? "off" : undefined;
+}
+
 /** What the computer block of a dispatch aims for. Mirrors the old `wants`
  * local exactly, so its strict/auto branches keep their meaning. */
 export type ComputerWant = "cloud" | "vm" | "local" | "off" | undefined;

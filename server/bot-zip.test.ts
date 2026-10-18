@@ -191,6 +191,11 @@ describe("bot zip round trip", () => {
     expect(after.soul).toContain("«redacted");
     delete before.soul;
     delete after.soul;
+    // Workspace is always Auto (JC 2026-10-18): only Off travels, so the
+    // source's This computer arrives as Auto.
+    expect(before.computer).toBe("local");
+    expect(after.computer).toBeUndefined();
+    delete before.computer;
     expect(after).toEqual(before);
 
     // the files of the desk and the bot folder
@@ -312,7 +317,9 @@ describe("bot zip import rules", () => {
     expect(copy.approvalMode).toBe("ask");
     expect(copy.tasks).toHaveLength(1);
     const admin = await importBotZip(fx.host, inspected, { ownerPrincipalId: "pr_00000000-0000-4000-8000-000000000001", asMember: false, conversations: false, sharing: false });
-    expect(fx.store.bot(admin.botId)).toMatchObject({ computer: "local", browser: true, mcpServers: ["docs"], alwaysAllow: ["Bash"], approvalMode: "ask" });
+    // Workspace is always Auto (JC 2026-10-18): a place does not travel.
+    expect(fx.store.bot(admin.botId)).toMatchObject({ browser: true, mcpServers: ["docs"], alwaysAllow: ["Bash"], approvalMode: "ask" });
+    expect(fx.store.bot(admin.botId)!.computer).toBeUndefined();
     expect(fx.store.bot(admin.botId)!.name).toBe("Atlas 3");
     if (inspected.kind === "zip") inspected.reader.close();
   });

@@ -23,7 +23,7 @@ import { forgetBotMemoryJournal, journalFile } from "./memory-journal.ts";
 import { forgetWorkspaceUsage } from "./workspace-usage.ts";
 import { runCommand, type Command } from "./commands.ts";
 import { workspaceDir } from "./workspace.ts";
-import type { Destination } from "./surface.ts";
+import { autoOnlyDestination, type Destination } from "./surface.ts";
 import { newId, type ModelSelection } from "./contracts.ts";
 import { pickBotName } from "./names.ts";
 import { redactSecretsInText } from "./redact.ts";
@@ -2819,11 +2819,10 @@ export class Store {
    * Native resume cursors and handed-message records of the removed engine go
    * too; the conversations stay, and the new engine reads them from the
    * transcript. Each conversation keeps working where it did: on Auto the
-   * removed engine always ran on the bot's own cloud computer, so where
-   * `keepCloud` says that computer is still there and the new engine can use
-   * it, a moved bot's Works on becomes Cloud, and a moved conversation of an
-   * Auto bot is pinned there the way an Auto turn records where it landed.
-   * Where the new engine can't use a computer, an Auto-recorded cloud pin on
+   * removed engine always ran on the bot's own cloud computer; no place is
+   * written for that any more (Workspace is always Auto, JC 2026-10-18), and
+   * Auto reaches that computer by itself where `keepCloud` says it is still
+   * there. Where the new engine can't use a computer, an Auto-recorded cloud pin on
    * a moved conversation gives way, as on a Works on change
    * (clearAutoSurfacePins); a place the person chose stays chosen.
    * A level the new engine would have to confirm goes back to Ask, as on
@@ -2857,10 +2856,8 @@ export class Store {
       const patch: Partial<BotRecord> = {};
       const tasks = (bot.tasks ?? []).map((): Partial<TaskRecord> => ({}));
       const botMoved = retired(bot.modelSelection);
-      const keepsCloud = options.canWorkOnCloud && options.keepCloud(bot);
       let botAsk = false;
       if (botMoved) {
-        if (bot.computer === undefined && keepsCloud) patch.computer = "cloud";
         if (needsAsk(bot)) { Object.assign(patch, structuredClone(askNow)); botAsk = true; }
         patch.modelSelection = structuredClone(replacement);
       }
@@ -2869,7 +2866,6 @@ export class Store {
         patch.fallback = kept.length ? kept : undefined;
       }
       if (touches(bot.resumeCursors)) patch.resumeCursors = without(bot.resumeCursors);
-      const computer = patch.computer ?? bot.computer;
       /** Where a conversation worked before the move (its own place, else
        * the bot's Works on, and on Auto the bot's own cloud computer where
        * keepCloud says so), and what the move did to that. */
@@ -2898,13 +2894,8 @@ export class Store {
         // The engine this conversation ran on: its own, else the bot's.
         const moved = task.modelSelection ? retired(task.modelSelection) : botMoved;
         if (moved) {
-          // The conversation keeps the cloud computer it had, held like a
-          // person's pin until they clear it: Auto records no place
-          // (JC 2026-10-16), so an auto pin here would be dropped at once.
-          if (!botMoved && computer === undefined && task.surface === undefined && keepsCloud) {
-            taskPatch.surface = "cloud";
-            taskPatch.surfaceSource = "user";
-          }
+          // No place is written for it: Workspace is always Auto
+          // (JC 2026-10-18), and Auto reaches the cloud computer by itself.
           // The machine's memory of where Auto landed: with no computer on
           // the new engine, the next turn would be refused there once.
           if (!options.canWorkOnCloud && task.surface === "cloud" && task.surfaceSource === "auto") {
@@ -3298,6 +3289,35 @@ export class Store {
     const task = this.taskByThread(botId, threadId);
     if (!url || !task || task.linkAuto === false || (task.link && !task.linkAuto) || task.link === url) return null;
     return this.patchTask(botId, threadId, { link: url, linkAuto: true });
+  }
+
+  /** Workspace is always Auto (JC 2026-10-18): a Works on that fixed a
+   * place (Cloud, Local VM, This computer, Browser) goes back to Auto, and
+   * every conversation pin goes, whoever set it. Off stays: it withholds
+   * every screen, and lifting it would widen what the bot may reach.
+   * Idempotent; one save when anything changed. */
+  retireFixedWorkspaces(): { bots: number; pins: number } {
+    let bots = 0;
+    let pins = 0;
+    const touched = new Set<string>();
+    for (const bot of this.bots) {
+      if (bot.computer !== undefined && autoOnlyDestination(bot.computer) === undefined) {
+        delete bot.computer;
+        bots++;
+        touched.add(bot.id);
+      }
+      for (const task of bot.tasks ?? []) {
+        if (task.surface === undefined && task.surfaceSource === undefined) continue;
+        if (task.surface !== undefined) pins++;
+        delete task.surface;
+        delete task.surfaceSource;
+        touched.add(bot.id);
+      }
+    }
+    if (!touched.size) return { bots, pins };
+    this.saveBots();
+    for (const botId of touched) this.emit({ type: "bot", botId });
+    return { bots, pins };
   }
 
   /** A Works on change is the newest explicit choice, so this bot's

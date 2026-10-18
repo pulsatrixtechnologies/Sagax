@@ -294,25 +294,18 @@ describe("one dot per screen in the picker (JC 2026-10-15)", () => {
 });
 
 describe("the bot's Works on", () => {
-  it("uses the same place names as the composer chip, with the meaning in each tooltip", () => {
-    const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: "cloud", onChange: () => {}, disabled: {}, organization: true }));
+  it("offers Auto and Off only, with the meaning in each tooltip (JC 2026-10-18)", () => {
+    const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: null, onChange: () => {}, organization: true }));
     // the Workspace page titles it: one visible title, the heading for the
     // radio group read by assistive tech only, the meaning shown under it
     expect(markup).not.toContain("border-t border-hairline/40 pt-5");
     expect(markup).toContain('<h3 id="works-on-setting" class="sr-only">Workspace</h3>');
-    expect(markup).toMatch(/<p id="works-on-setting-hint"[^>]*>Where this bot works\./);
-    expect(markup.match(/role="radio"/g)).toHaveLength(6);
-    for (const label of [">Auto · picks per task<", ">Cloud (server environment)<", ">Local VM<", ">This computer<", ">Browser<", ">Off<"]) expect(markup).toContain(label);
-    expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="cloud"/);
-    expect(markup).toContain('title="Your own Linux machine on the organization server"');
-    expect(markup).not.toContain("Cloud is your server environment.");
-  });
-
-  it("explains a choice that cannot be picked in its tooltip", () => {
-    const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: null, onChange: () => {}, disabled: { local: "Open the Sagax app on this computer" } }));
-    expect(markup).toMatch(/disabled=""[^>]*title="This computer is not available: Open the Sagax app on this computer"[^>]*data-works-on-choice="local"/);
+    expect(markup).toMatch(/<p id="works-on-setting-hint"[^>]*>The bot picks where each task runs/);
+    expect(markup.match(/role="radio"/g)).toHaveLength(2);
+    for (const label of [">Auto · picks per task<", ">Off<"]) expect(markup).toContain(label);
+    for (const place of ["cloud", "vm", "local", "browser"]) expect(markup).not.toContain(`data-works-on-choice="${place}"`);
     expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="auto"/);
-    expect(worksOnTip(null)).toMatch(/^Picks the place for each task: your computer when the Sagax app is connected, the browser for web work, the cloud for routines/);
+    expect(worksOnTip(null)).toMatch(/^Picks the place for each task among the available ones/);
   });
 });
 

@@ -12,7 +12,7 @@ import CompanionCore
 
 /// Which popover of the pill is open.
 enum DesktopComposerMenu: Equatable {
-    case approval, place
+    case approval
 }
 
 struct DesktopComposerPill: View {
@@ -112,7 +112,8 @@ struct DesktopComposerPill: View {
         attach
         if let bot, session.canAdminister {
             DesktopApprovalButton(bot: bot, open: menuBinding(.approval), openAllowlist: openAllowlist)
-            DesktopPlaceButton(bot: bot, open: menuBinding(.place))
+            // No place chip (JC 2026-10-18): Workspace is always Auto and
+            // the bot picks where each task runs.
         }
     }
 
@@ -443,81 +444,6 @@ struct DesktopApprovalButton: View {
     }
 }
 
-/// PlaceChip: follow the bot's Works on, or pin this conversation to the
-/// Cloud computer, a Local VM or This computer.
-struct DesktopPlaceButton: View {
-    @EnvironmentObject private var session: Session
-    let bot: Bot
-    @Binding var open: Bool
-
-    var body: some View {
-        let surface = session.state.bot(bot.id)?.tasks?.first { $0.threadId == bot.threadId }?.surface
-        let effective = WorkPlace.effective(botComputer: bot.computer, taskSurface: surface)
-        let botDefault = bot.computer ?? "auto"
-        DesktopPillTrigger(systemImage: Self.icon(effective), lucide: DesktopLucide.forSymbol(Self.icon(effective)), active: open) { open.toggle() }
-            .disabled(effective == "off")
-            .accessibilityLabel(Text("Where this conversation works: \(Self.label(effective))"))
-            .accessibilityIdentifier("desktop-composer-place")
-            .overlay(alignment: .topLeading) {
-                if open {
-                    DesktopComposerMenuPanel(label: "Where this conversation works") {
-                        DesktopMenuRow(systemImage: Self.icon(botDefault), title: Text("Follow this bot's setting"),
-                                       detail: Text("Currently \(Self.label(botDefault))"), selected: surface == nil) {
-                            choose(nil, current: surface)
-                        }
-                        ForEach(WorkPlace.offered, id: \.self) { place in
-                            DesktopMenuRow(systemImage: Self.icon(place.rawValue), title: Text(Self.label(place.rawValue)),
-                                           detail: Text(Self.detail(place)), selected: surface == place.rawValue) {
-                                choose(place, current: surface)
-                            }
-                        }
-                    }
-                    .fixedSize()
-                    .frame(height: 0, alignment: .bottom)
-                    .offset(y: -8)
-                    .accessibilityIdentifier("desktop-place-menu")
-                }
-            }
-    }
-
-    private func choose(_ place: WorkPlace?, current: String?) {
-        open = false
-        guard place?.rawValue != current else { return }
-        Task { await session.updateSurface(place, for: bot) }
-    }
-
-    static func icon(_ place: String) -> String {
-        switch place {
-        case "cloud": "cloud"
-        case "vm": "macwindow"
-        case "local": "laptopcomputer"
-        case "browser": "globe"
-        case "off": "nosign"
-        default: "sparkles"
-        }
-    }
-
-    static func label(_ place: String) -> String {
-        switch place {
-        case "cloud": String(localized: "Cloud computer")
-        case "vm": String(localized: "Local VM")
-        case "local": String(localized: "This computer")
-        case "browser": String(localized: "Browser")
-        case "off": String(localized: "Off")
-        default: String(localized: "Auto")
-        }
-    }
-
-    static func detail(_ place: WorkPlace) -> LocalizedStringKey {
-        switch place {
-        case .cloud: "Hosted desktop"
-        case .vm: "Isolated local desktop"
-        case .local: "Your screen and apps"
-        case .browser: "Browser"
-        }
-    }
-}
-
 // MARK: - Session
 
 extension Session {
@@ -526,16 +452,6 @@ extension Session {
         guard let client = profileClient else { return }
         do {
             applyProfileBot(try await client.updateApprovalMode(botId: bot.id, threadId: bot.threadId, mode: level))
-        } catch {
-            if !Task.isCancelled { actionError = error.localizedDescription }
-        }
-    }
-
-    /// Pin this conversation to a place, or follow the bot again (nil).
-    func updateSurface(_ place: WorkPlace?, for bot: Bot) async {
-        guard let client = profileClient else { return }
-        do {
-            applyProfileBot(try await client.updateSurface(botId: bot.id, threadId: bot.threadId, place: place))
         } catch {
             if !Task.isCancelled { actionError = error.localizedDescription }
         }

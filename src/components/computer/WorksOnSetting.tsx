@@ -1,79 +1,61 @@
-// The bot's Works on, once, as More > Computer on a solo server and on an
-// organization server. The Computer tab does not show it. The labels are the same ones the
-// composer chip uses (placeLabelKey). What each place means, and why one
-// is not available, is in its tooltip.
-import { useState } from "react";
-
+// The bot's Works on, once, as the editor's Workspace page on a solo server
+// and on an organization server. Workspace is always Auto (JC 2026-10-18):
+// the bot picks where each task runs among every place it may use (the
+// cloud, a Local VM, this computer, the browser), so no place is offered
+// here. Off stays: it is the restriction that gives the bot no computer and
+// no browser at all, and lifting it would widen what the bot may reach.
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { placeLabelKey, placeOffered, type EffectivePlace } from "@/lib/place";
+import { placeLabelKey, type EffectivePlace } from "@/lib/place";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
-import { useStore, type Bot } from "@/state/store";
-import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
+import type { Bot } from "@/state/store";
 
 import { useBotSettingsDerived } from "../bot-settings/useBotSettingsDerived";
 
-export type WorksOnMode = Bot["computer"] | null;
-export const WORKS_ON_MODES = [null, "cloud", "vm", "local", "browser", "off"] as const;
+/** null is Auto. A place an older build saved reads as Auto (the server
+ * moves it back to Auto at start). */
+export type WorksOnMode = "off" | null;
+export const WORKS_ON_MODES: readonly WorksOnMode[] = [null, "off"];
 
-const SOLO_MEANS: Record<string, LocaleKey> = {
-  auto: "computer.dest.autoDesc", cloud: "computer.dest.cloudDesc", vm: "computer.dest.vmDesc",
-  local: "computer.dest.localDesc", browser: "computer.dest.browserDesc", off: "computer.dest.offDesc",
-};
-const ORG_MEANS: Record<string, LocaleKey> = {
-  auto: "worksOn.tip.autoOrg", cloud: "computer.dest.cloudOrgDesc", vm: "computer.dest.vmOrgDesc",
-  local: "computer.dest.localOrgDesc", browser: "computer.dest.browserDesc", off: "computer.dest.offDesc",
-};
-
-/** Choices this server offers. Auto and Off are always listed. An
- * organization server offers every place; a solo server hides Cloud until
- * a Boat or a VPS is on (placeOffered). */
-export function worksOnModes(
-  config: Parameters<typeof placeOffered>[1],
-  organization: boolean,
-): WorksOnMode[] {
-  return WORKS_ON_MODES.filter((mode) => mode === null || mode === "off" || placeOffered(mode, config, organization));
+/** What the bot's stored Works on means now: Off, else Auto. */
+export function worksOnMode(computer: Bot["computer"] | null | undefined): WorksOnMode {
+  return computer === "off" ? "off" : null;
 }
 
-/** The tooltip of one choice: what it means, or why it cannot be chosen. */
-export function worksOnTip(mode: WorksOnMode, disabledReason?: string | null, organization = true): string {
-  const key = (mode ?? "auto") as EffectivePlace;
-  const means = t((organization ? ORG_MEANS : SOLO_MEANS)[key]!);
-  return disabledReason ? t("worksOn.disabled", { place: t(placeLabelKey(key, organization)), reason: disabledReason }) : means;
+const MEANS: Record<"auto" | "off", LocaleKey> = {
+  auto: "worksOn.tip.autoOnly", off: "computer.dest.offDesc",
+};
+
+/** The tooltip of one choice: what it means. */
+export function worksOnTip(mode: WorksOnMode): string {
+  return t(MEANS[mode ?? "auto"]);
 }
 
 /** The view part, without the store: the panel feeds it, tests render it. */
-export function WorksOnControl({ value, onChange, disabled, organization = true, modes }: {
+export function WorksOnControl({ value, onChange, organization = true }: {
   value: WorksOnMode;
   onChange: (mode: WorksOnMode) => void;
-  /** Choices that cannot be picked, with the reason shown in their tooltip. */
-  disabled: Partial<Record<"local" | "browser", string>>;
-  /** Organization labels name the server environment. Solo labels match the chip. */
+  /** Organization labels say what Auto does there. Solo labels say Auto. */
   organization?: boolean;
-  /** Offered choices. Defaults to every place. */
-  modes?: readonly WorksOnMode[];
 }) {
-  const shown = modes ?? WORKS_ON_MODES;
   return (
     // The editor's Workspace page titles it already (JC 2026-10-15): the
     // heading stays for the radio group's name, read by assistive tech only,
     // and the explanation shows under the page title.
     <section aria-labelledby="works-on-setting" aria-describedby="works-on-setting-hint" data-works-on-setting={value ?? "auto"} data-works-on-org={organization ? "1" : "0"}>
       <h3 id="works-on-setting" className="sr-only">{t("computer.worksOn")}</h3>
-      <p id="works-on-setting-hint" className="text-[12.5px] leading-relaxed text-ink-secondary">{t(organization ? "worksOn.sectionTip" : "worksOn.help")}</p>
-      <div role="radiogroup" aria-labelledby="works-on-setting" className="mt-3 grid grid-cols-3 gap-0.5 rounded-lg bg-control p-0.5">
-        {shown.map((mode) => {
+      <p id="works-on-setting-hint" className="text-[12.5px] leading-relaxed text-ink-secondary">{t("worksOn.autoOnlyHelp")}</p>
+      <div role="radiogroup" aria-labelledby="works-on-setting" className="mt-3 grid grid-cols-2 gap-0.5 rounded-lg bg-control p-0.5">
+        {WORKS_ON_MODES.map((mode) => {
           const key = (mode ?? "auto") as EffectivePlace;
-          const reason = mode === "local" || mode === "browser" ? disabled[mode] : undefined;
-          const selected = (mode ?? null) === (value ?? null);
+          const selected = mode === value;
           return (
-            <button key={key} type="button" role="radio" aria-checked={selected} disabled={Boolean(reason)}
-              title={worksOnTip(mode, reason, organization)} data-works-on-choice={key}
+            <button key={key} type="button" role="radio" aria-checked={selected}
+              title={worksOnTip(mode)} data-works-on-choice={key}
               onClick={() => { if (!selected) onChange(mode); }}
               className={cn("min-h-[36px] truncate whitespace-nowrap rounded-md border px-2 py-1 text-[12px] md:min-h-0",
-                selected ? "border-accent-border bg-selected font-medium text-ink shadow-sm" : "border-transparent text-ink-secondary hover:bg-raised-hover hover:text-ink",
-                reason && "cursor-not-allowed opacity-40 hover:text-ink-secondary")}>
+                selected ? "border-accent-border bg-selected font-medium text-ink shadow-sm" : "border-transparent text-ink-secondary hover:bg-raised-hover hover:text-ink")}>
               {t(placeLabelKey(key, organization))}
             </button>
           );
@@ -87,36 +69,14 @@ export function WorksOnControl({ value, onChange, disabled, organization = true,
  * person cannot save `computer` (an organization member who does not own
  * the bot). */
 export function WorksOnSetting({ bot }: { bot: Bot }) {
-  const { state, dispatch } = useStore();
   const derived = useBotSettingsDerived(bot);
   const organization = usePerspicaxOrg() !== null;
-  const [warnLocal, setWarnLocal] = useState(false);
   if (!derived.canEdit("computer")) return null;
-  const disabled: Partial<Record<"local" | "browser", string>> = {};
-  if (!derived.localSelectable) disabled.local = derived.localDisabledReason ?? t("place.unavailable");
-  if (!derived.browserSelectable) disabled.browser = derived.browserDisabledReason;
   return (
-    <>
-      <WorksOnControl
-        value={bot.computer ?? null}
-        organization={organization}
-        modes={worksOnModes(state.config, organization)}
-        disabled={disabled}
-        onChange={(mode) => {
-          if (mode === "local" && derived.approvalMode === "auto") setWarnLocal(true);
-          // a browser-only bot must actually have its browser
-          else if (mode === "browser") derived.patch({ computer: mode, browser: true });
-          else derived.patch({ computer: mode });
-        }}
-      />
-      <LocalComputerAutoWarning
-        open={warnLocal}
-        onCancel={() => setWarnLocal(false)}
-        onConfirm={() => {
-          setWarnLocal(false);
-          dispatch({ type: "updateBot", botId: bot.id, patch: { computer: "local", acknowledgeLocalAuto: true } });
-        }}
-      />
-    </>
+    <WorksOnControl
+      value={worksOnMode(bot.computer)}
+      organization={organization}
+      onChange={(mode) => derived.patch({ computer: mode })}
+    />
   );
 }

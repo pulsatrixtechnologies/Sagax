@@ -351,21 +351,21 @@ struct BotWorksOnSection: View {
     private var current: Bot { session.state.bot(bot.id) ?? bot }
     private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit) }
     private var organization: Bool { session.surfaceGate.organization }
-    private var choices: [DesktopWorksOn] {
-        let offered = DesktopWorksOnRules.choices(config: config, organization: organization)
-        let now = DesktopWorksOn.of(current)
-        return offered.contains(now) ? offered : offered + [now]
-    }
+    /// Auto and Off only (JC 2026-10-18): the bot picks where each task runs.
+    private var choices: [DesktopWorksOn] { DesktopWorksOnRules.choices(config: config, organization: organization) }
+    /// A place an older build saved reads as Auto (the server moves it back
+    /// to Auto at start).
+    private var selected: DesktopWorksOn { DesktopWorksOn.of(current) == .off ? .off : .auto }
 
     var body: some View {
         Section {
-            Picker("Works on", selection: Binding(get: { DesktopWorksOn.of(current) }, set: { next in
+            Picker("Works on", selection: Binding(get: { selected }, set: { next in
+                guard next != selected else { return }
                 let target = current
-                Task { _ = await sendPanelPatch(BotPanelPatch(computer: next.stored, browser: next == .browser ? true : nil), bot: target, session: session) }
+                Task { _ = await sendPanelPatch(BotPanelPatch(computer: next.stored), bot: target, session: session) }
             })) {
                 ForEach(choices, id: \.self) { place in
                     Text(Self.name(place)).tag(place)
-                        .disabled(place == .browser && !DesktopWorksOnRules.browserSelectable(config: config, modelCanBrowse: true))
                 }
             }
             .disabled(!canEdit || current.busy == true)
@@ -373,7 +373,7 @@ struct BotWorksOnSection: View {
         } header: {
             Text("Works on")
         } footer: {
-            Text("Where this bot runs its tools: a computer of its own, this computer, the built-in browser, or nowhere.")
+            Text("The bot picks where each task runs: the cloud, a Local VM, this computer or the browser, among the places available to it and allowed. Off gives it no computer and no browser.")
         }
         .task { config = await session.configStatus() }
     }

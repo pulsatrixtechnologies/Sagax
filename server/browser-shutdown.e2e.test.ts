@@ -48,7 +48,7 @@ async function browserTurnThenQuit(config: Record<string, unknown> = {}) {
   const base = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "server/index.ts")], {
     cwd: ROOT,
-    env: { ...verificationServerEnvironment(process.env, home, port), SAGAX_AGENT_BROWSER_PATH: engine },
+    env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",  ...verificationServerEnvironment(process.env, home, port), SAGAX_AGENT_BROWSER_PATH: engine },
     stdio: ["ignore", "pipe", "pipe"],
   });
   children.push(child);
