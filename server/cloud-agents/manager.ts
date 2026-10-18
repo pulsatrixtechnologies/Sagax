@@ -204,6 +204,9 @@ export class CloudAgentManager {
       // No live sign-in to borrow a token from: the run goes on in
       // Perspicax, so the record waits for the next sync instead of failing.
       if (e instanceof ProviderHttpError && e.code === "not_signed_in") return record;
+      // A borrowed sign-in token that expired mid-call says nothing about the
+      // run itself: keep the record, the next sync borrows a fresh one.
+      if (e instanceof ProviderHttpError && e.status === 401 && !cloudAgentKeyProvider(record.provider)) return record;
       if (e instanceof ProviderHttpError && e.status === 401) {
         const failed = this.deps.store.patch(id, { status: "failed", error: "Provider credentials refused.", endedAt: this.now() });
         if (failed) this.maybeComplete(failed);

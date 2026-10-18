@@ -12,7 +12,6 @@
 //     lot: a 404 or 405 there is "not available yet", not an error.
 import type {
   PerspicaxEnvironment,
-  PerspicaxMutated,
   PerspicaxNewRun,
   PerspicaxPage,
   PerspicaxRun,
@@ -68,7 +67,10 @@ export class PerspicaxAgentsClient {
     } catch {
       throw new ProviderHttpError(502, "unreachable", "Perspicax did not answer.");
     }
-    if (optional && (res.status === 404 || res.status === 405 || res.status === 501)) return null;
+    if (optional && (res.status === 404 || res.status === 405 || res.status === 501)) {
+      await res.body?.cancel().catch(() => {});
+      return null;
+    }
     const text = await readCapped(res);
     if (!res.ok) {
       let message = `Perspicax answered ${res.status}.`;
@@ -93,6 +95,16 @@ export class PerspicaxAgentsClient {
     return (await this.call<T>(access, method, path, body)) as T;
   }
 
+  /** A run, or a `{ value: run }` mutation answer, checked for its id. */
+  private async runAnswer(access: PerspicaxAccess, method: string, path: string, body?: unknown, wrapped = false): Promise<PerspicaxRun> {
+    const answer = await this.must<unknown>(access, method, path, body);
+    const run = wrapped && answer && typeof answer === "object" ? (answer as { value?: unknown }).value : answer;
+    if (!run || typeof run !== "object" || typeof (run as { id?: unknown }).id !== "string") {
+      throw new ProviderHttpError(502, "bad_answer", "Perspicax sent an unreadable run.");
+    }
+    return run as PerspicaxRun;
+  }
+
   async environments(access: PerspicaxAccess): Promise<PerspicaxEnvironment[]> {
     const page = await this.must<PerspicaxPage<PerspicaxEnvironment>>(access, "GET", "/environments?page_size=200");
     return Array.isArray(page?.items) ? page.items.filter((env) => !env.archived) : [];
@@ -108,12 +120,11 @@ export class PerspicaxAgentsClient {
   }
 
   async run(access: PerspicaxAccess, id: string): Promise<PerspicaxRun> {
-    return this.must<PerspicaxRun>(access, "GET", `/runs/${checkId(id)}`);
+    return this.runAnswer(access, "GET", `/runs/${checkId(id)}`);
   }
 
   async create(access: PerspicaxAccess, input: PerspicaxNewRun): Promise<PerspicaxRun> {
-    const out = await this.must<PerspicaxMutated<PerspicaxRun>>(access, "POST", "/runs", input);
-    return out.value;
+    return this.runAnswer(access, "POST", "/runs", input, true);
   }
 
   async events(access: PerspicaxAccess, id: string, after = 0): Promise<RunEvent[]> {
@@ -122,11 +133,11 @@ export class PerspicaxAgentsClient {
   }
 
   async markRead(access: PerspicaxAccess, id: string): Promise<PerspicaxRun> {
-    return this.must<PerspicaxRun>(access, "POST", `/runs/${checkId(id)}/read`, {});
+    return this.runAnswer(access, "POST", `/runs/${checkId(id)}/read`, {});
   }
 
   async followUp(access: PerspicaxAccess, id: string, text: string, mode: FollowUpMode): Promise<PerspicaxRun> {
-    return (await this.must<PerspicaxMutated<PerspicaxRun>>(access, "POST", `/runs/${checkId(id)}/followup`, { text, mode })).value;
+    return this.runAnswer(access, "POST", `/runs/${checkId(id)}/followup`, { text, mode }, true);
   }
 
   async approve(access: PerspicaxAccess, id: string, approvalId: string, option: string): Promise<void> {
@@ -134,11 +145,11 @@ export class PerspicaxAgentsClient {
   }
 
   async stop(access: PerspicaxAccess, id: string): Promise<PerspicaxRun> {
-    return (await this.must<PerspicaxMutated<PerspicaxRun>>(access, "POST", `/runs/${checkId(id)}/stop`, {})).value;
+    return this.runAnswer(access, "POST", `/runs/${checkId(id)}/stop`, {}, true);
   }
 
   async archive(access: PerspicaxAccess, id: string): Promise<PerspicaxRun> {
-    return (await this.must<PerspicaxMutated<PerspicaxRun>>(access, "POST", `/runs/${checkId(id)}/archive`, {})).value;
+    return this.runAnswer(access, "POST", `/runs/${checkId(id)}/archive`, {}, true);
   }
 
   async diff(access: PerspicaxAccess, id: string): Promise<CodeArtifact<DiffFile>> {
@@ -190,7 +201,10 @@ export class PerspicaxAgentsClient {
       if (signal.aborted) return;
       throw new ProviderHttpError(502, "unreachable", "Perspicax did not answer.");
     }
-    if (!res.ok || !res.body) throw new ProviderHttpError(res.status || 502, "perspicax", `Perspicax answered ${res.status}.`);
+    if (!res.ok || !res.body) {
+      await res.body?.cancel().catch(() => {});
+      throw new ProviderHttpError(res.status || 502, "perspicax", `Perspicax answered ${res.status}.`);
+    }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";

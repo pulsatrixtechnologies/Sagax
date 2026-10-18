@@ -162,7 +162,7 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
           const abort = new AbortController();
           const cap = setTimeout(() => abort.abort(), STREAM_MAX_MS);
           cap.unref?.();
-          req.on("close", () => abort.abort());
+          res.on("close", () => abort.abort());
           res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform", connection: "keep-alive", "x-accel-buffering": "no" });
           res.write(": ok\n\n");
           const ping = setInterval(() => { if (!res.writableEnded) res.write(": keep-alive\n\n"); }, 15_000);

@@ -13,6 +13,8 @@ export interface CloudAgentRouteDeps {
   botVisible: (auth: RequestAuth, botId: string) => boolean;
   principalId: (auth: RequestAuth) => string | null;
   botName: (botId: string) => string | undefined;
+  /** The viewer may see this record: theirs, or one launched in a thread they can read. */
+  recordVisible: (auth: RequestAuth, record: import("../../shared/cloud-agents.ts").CloudAgentRecord) => boolean;
 }
 
 const BOT_PATH = /^\/api\/bots\/([\w-]+)\/cloud-agents(?:\/([\w-]+)(?:\/(follow-up|cancel|archive|artifacts|transcript))?)?$/;
@@ -26,7 +28,7 @@ function providerError(res: import("node:http").ServerResponse, json: typeof imp
 }
 
 export function createCloudAgentRoutes(deps: CloudAgentRouteDeps): RouteHandler {
-  return async ({ req, res, path, method, auth, json, readBody }) => {
+  return async ({ req, res, url, path, method, auth, json, readBody }) => {
     const credMatch = CREDS_PATH.exec(path);
     if (credMatch) {
       const principalId = deps.principalId(auth);
@@ -83,8 +85,12 @@ export function createCloudAgentRoutes(deps: CloudAgentRouteDeps): RouteHandler 
 
     if (!agentId) {
       if (method === "GET") {
-        await deps.manager.syncBot(botId);
-        return json(res, 200, { items: deps.manager.list(botId) });
+        // The stored records only: the sync timer and the stream frames keep
+        // them fresh, so opening a thread never calls the providers.
+        const thread = url.searchParams.get("thread") ?? "";
+        const items = deps.manager.list(botId)
+          .filter((record) => (!thread || record.threadId === thread) && deps.recordVisible(auth, record));
+        return json(res, 200, { items });
       }
       if (method === "POST") {
         if (!principalId) return json(res, 401, { error: "Unauthorized" });

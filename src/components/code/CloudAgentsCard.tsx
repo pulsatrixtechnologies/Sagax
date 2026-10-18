@@ -20,7 +20,7 @@ export function useThreadCloudAgents(botId: string, threadId: string): CloudAgen
   const [records, setRecords] = useState<CloudAgentRecord[]>([]);
   const refresh = useCallback(async () => {
     try {
-      const answer = await api<{ items?: CloudAgentRecord[] }>(`/api/bots/${encodeURIComponent(botId)}/cloud-agents`);
+      const answer = await api<{ items?: CloudAgentRecord[] }>(`/api/bots/${encodeURIComponent(botId)}/cloud-agents?thread=${encodeURIComponent(threadId)}`);
       setRecords((answer.items ?? []).filter((row) => row.threadId === threadId && !row.archived).sort((a, b) => a.createdAt - b.createdAt));
     } catch {
       // a refused or failed read leaves the last rows

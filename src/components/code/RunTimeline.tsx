@@ -29,8 +29,8 @@ function Tools({ item }: { item: Extract<TimelineItem, { kind: "tools" }> }) {
         {item.calls.length === 1 ? t("code.timeline.tools.one") : t("code.timeline.tools", { n: item.calls.length })}
       </summary>
       <ul className="ml-5 mt-1 flex flex-col gap-1">
-        {item.calls.map((call) => (
-          <li key={call.id} className="flex min-w-0 items-start gap-1.5">
+        {item.calls.map((call, index) => (
+          <li key={`${call.id}:${index}`} className="flex min-w-0 items-start gap-1.5">
             {call.ok === false ? <X size={12} aria-label={t("code.timeline.failed")} className="mt-0.5 shrink-0 text-danger" /> : <Check size={12} aria-hidden className="mt-0.5 shrink-0 text-success" />}
             <span className="min-w-0">
               <span className="font-medium text-ink">{call.name}</span>
@@ -57,7 +57,7 @@ function Approval({ item, onApprove }: { item: Extract<TimelineItem, { kind: "ap
         <div className="ml-6 mt-2 flex flex-wrap gap-2">
           {item.options.map((option, index) => (
             <button
-              key={option}
+              key={`${option}:${index}`}
               type="button"
               onClick={() => onApprove(item.approvalId, option)}
               className={cn("ui-button h-7 px-3 text-[12.5px]", index === 0 && "ui-button-primary")}

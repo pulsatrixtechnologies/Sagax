@@ -25962,9 +25962,10 @@ function wakeFromCloudAgentCompletion(event: CloudAgentCompletionEvent): void {
 // Perspicax runs (the desktop's Code section, lot P1.7). On an organization
 // server Sagax calls Perspicax with the person's own sign-in token. The
 // built-in fake Perspicax (server/testing/fake-perspicax-agents.ts) answers
-// instead only when a verification launcher sets SAGAX_CODE_FIXTURE=1 on a
-// solo server; an organization server never starts it.
-const codeFixture = process.env.SAGAX_CODE_FIXTURE === "1" && IDENTITY.kind !== "perspicax"
+// instead only when a verification launcher sets SAGAX_CODE_FIXTURE=1 (with
+// its sealed test PATH) on a solo server; an organization server never starts it.
+// SAGAX_TEST_SEALED_PATH is set by the verification launcher only.
+const codeFixture = process.env.SAGAX_CODE_FIXTURE === "1" && process.env.SAGAX_TEST_SEALED_PATH === "1" && IDENTITY.kind !== "perspicax"
   ? await (await import("./testing/fake-perspicax-agents.ts")).startFakePerspicaxAgents()
   : null;
 if (codeFixture) console.log(`[code] fake Perspicax agents API on ${codeFixture.url} (SAGAX_CODE_FIXTURE)`);
@@ -25978,9 +25979,12 @@ async function perspicaxAccessToken(principalId: string): Promise<string | null>
   return outcome.ok ? outcome.token : null;
 }
 /** The person a cloud agent request acts for: the signed-in person, or on a
- * solo server its operator (as the agents' internal route does). */
+ * solo server the operator's own loopback (never a reduced service caller or
+ * the worker relay, and never a session without a person, such as a paired
+ * client device). */
 function cloudAgentPrincipal(auth: RequestAuth): string | null {
-  return sessionPrincipal(auth) ?? (IDENTITY.kind !== "perspicax" ? localPrincipalId() : null);
+  if (auth.kind === "session") return sessionPrincipal(auth);
+  return IDENTITY.kind !== "perspicax" && auth.trust !== "service" && auth.relay === undefined ? localPrincipalId() : null;
 }
 
 const cloudAgentProviders = createProviderRegistry({ perspicaxBaseUrl: perspicaxBase });
@@ -26009,6 +26013,12 @@ ROUTES.push(createCloudAgentRoutes({
   },
   principalId: (auth) => cloudAgentPrincipal(auth),
   botName: (botId) => store.bot(botId)?.name,
+  recordVisible: (auth, record) => {
+    const viewerId = channelFilterViewerId(auth);
+    if (!viewerId || record.principalId === viewerId) return true;
+    const bot = record.botId ? store.bot(record.botId) : undefined;
+    return Boolean(bot && record.threadId) && botThreadReadable(bot!, record.threadId!, viewerId, "thread.read");
+  },
 }));
 
 ROUTES.push(createCodeRoutes({

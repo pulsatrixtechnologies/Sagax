@@ -54,14 +54,17 @@ export function useCodeStatus(): CodeStatus | null {
 }
 
 /** Read the run's live events (Sagax relays Perspicax's SSE). Calls `onEvent`
- * for each new one; reconnects from the last `seq` after a drop, until
- * `signal` aborts. Uses fetch, so the session cookie applies as for `api()`. */
-export async function followRunEvents(id: string, after: number, onEvent: (event: CodeEvent) => void, signal: AbortSignal): Promise<void> {
+ * for each new one; reconnects from the last `seq` after a drop while
+ * `keepGoing()` says so (the run still works), until `signal` aborts. A 4xx
+ * answer (refused, gone) ends it. Uses fetch, so the session cookie applies
+ * as for `api()`. */
+export async function followRunEvents(id: string, after: number, onEvent: (event: CodeEvent) => void, signal: AbortSignal, keepGoing: () => boolean = () => true): Promise<void> {
   let cursor = after;
   let backoff = 1_000;
   while (!signal.aborted) {
     try {
       const res = await fetch(`/api/code/runs/${enc(id)}/stream?after=${cursor}`, { signal, headers: { accept: "text/event-stream" } });
+      if (res.status >= 400 && res.status < 500) return;
       if (!res.ok || !res.body) throw new Error(`stream ${res.status}`);
       backoff = 1_000;
       const reader = res.body.getReader();
@@ -89,7 +92,7 @@ export async function followRunEvents(id: string, after: number, onEvent: (event
     } catch {
       if (signal.aborted) return;
     }
-    if (signal.aborted) return;
+    if (signal.aborted || !keepGoing()) return;
     await new Promise((resolve) => setTimeout(resolve, backoff));
     backoff = Math.min(backoff * 2, 15_000);
   }

@@ -165,3 +165,23 @@ describe("CloudAgentManager with the perspicax provider", () => {
     await expect(mgr.syncActive()).resolves.toBeUndefined();
   });
 });
+
+describe("CloudAgentStore files", () => {
+  it("keeps Perspicax runs out of the file an older build parses, and skips a bad row instead of wiping", async () => {
+    const { readFileSync, writeFileSync, existsSync } = await import("node:fs");
+    dataDir = mkdtempSync(join(tmpdir(), "sagax-store-"));
+    const store = new CloudAgentStore(dataDir);
+    store.create({ botId: "b", threadId: "t", principalId: "p", provider: "cursor", externalId: "bc-1", name: "A", repos: [] });
+    store.create({ botId: "b", threadId: "t", principalId: "p", provider: "perspicax", externalId: "run_1", name: "B", repos: [], status: "queued", envId: "env_1", origin: "sagax" });
+    const legacy = JSON.parse(readFileSync(join(dataDir, "cloud-agents", "records.json"), "utf8"));
+    expect(legacy.agents.map((a: { provider: string }) => a.provider)).toEqual(["cursor"]);
+    const px = JSON.parse(readFileSync(join(dataDir, "cloud-agents", "perspicax-records.json"), "utf8"));
+    expect(px.agents.map((a: { provider: string }) => a.provider)).toEqual(["perspicax"]);
+    legacy.agents.push({ id: "garbage" });
+    writeFileSync(join(dataDir, "cloud-agents", "records.json"), JSON.stringify(legacy));
+    const reopened = new CloudAgentStore(dataDir);
+    expect(reopened.listAll().map((a) => a.externalId).sort()).toEqual(["bc-1", "run_1"]);
+    reopened.patch(reopened.listAll()[0]!.id, { name: "A2" });
+    expect(existsSync(join(dataDir, "cloud-agents", "records.json.bak"))).toBe(true);
+  });
+});

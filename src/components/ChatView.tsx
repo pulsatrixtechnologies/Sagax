@@ -1093,13 +1093,15 @@ const MessagesList = memo(function MessagesList({
     () => cloudAgentAnchors(items.map((item) => listedItemMessages(item)[0]?.at ?? 0), cloudAgents),
     [items, cloudAgents],
   );
+  // Every row is wrapped the same way, keyed by its first message, so a card
+  // appearing under a row never remounts that row.
   const withCloudAgents = (index: number, node: ReactNode): ReactNode => {
     const group = cloudAnchors.get(index);
-    if (!group) return node;
+    const item = items[index]!;
     return (
-      <Fragment key={`cloud-agents:${group[0]!.id}`}>
+      <Fragment key={`row:${item.kind}:${listedItemMessages(item)[0]?.id ?? index}`}>
         {node}
-        <div className="flex justify-start"><CloudAgentsCard records={group} botId={botId} confidential={confidential} /></div>
+        {group && <div className="flex justify-start"><CloudAgentsCard records={group} botId={botId} confidential={confidential} /></div>}
       </Fragment>
     );
   };

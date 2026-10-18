@@ -16,7 +16,7 @@ import { formatAge, pillLabel, RunPillBadge, runCardPill } from "./RunCard";
 import { RunTimeline } from "./RunTimeline";
 import {
   approveRun, archiveRun, followRunEvents, followUpRun, loadCodeRun, loadRunCommits, loadRunDiff, loadRunEvents, loadRunFiles,
-  markRunRead, mergeEvents, runPrOf, runWorking, stopRun, timelineItems, workedMinutes,
+  markRunRead, mergeEvents, runActive, runPrOf, runWorking, stopRun, timelineItems, workedMinutes,
   type CodeEvent, type CodeRun, type FollowUpMode,
 } from "@/lib/code-runs";
 import { cn } from "@/lib/cn";
@@ -177,12 +177,14 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
   const [details, setDetails] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const lastStats = useRef<string>("");
+  const activeRef = useRef(true);
+  useEffect(() => { activeRef.current = run ? runActive(run) : true; }, [run]);
 
   const reloadRun = useCallback(async () => {
     try {
       const next = await loadCodeRun(runId);
       setRun(next);
-      const stats = JSON.stringify(next.stats ?? {});
+      const stats = JSON.stringify(next.stats ?? {}) + next.state;
       if (stats !== lastStats.current) {
         lastStats.current = stats;
         void loadRunDiff(runId).then(setDiff).catch(() => setDiff({ available: false, items: [] }));
@@ -214,7 +216,7 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
         if (["state", "pr", "status", "approval_answer", "followup"].includes(event.kind) && pending === null) {
           pending = window.setTimeout(() => { pending = null; if (live) void reloadRun(); }, 250);
         }
-      }, abort.signal);
+      }, abort.signal, () => activeRef.current);
     })();
     return () => { live = false; abort.abort(); };
   }, [runId, reloadRun]);
@@ -258,7 +260,7 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
   const pr = runPrOf(run);
   const pill = runCardPill(run.state, pr);
   const prPill = pr ? runCardPill("finished", pr) : pill;
-  const commitCount = commits?.items.length ?? (typeof run.stats.commits === "number" ? run.stats.commits : 0);
+  const commitCount = commits?.items.length ?? (typeof run.stats?.commits === "number" ? run.stats.commits : 0);
 
   const left = (
     <div className={cn("flex min-w-0 flex-1 flex-col", panel === "full" && "hidden")}>
