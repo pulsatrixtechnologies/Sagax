@@ -97,6 +97,7 @@ describe("erasing the person's own Perspicax account", () => {
     ["a 401 for the link token, even without the header", () => new Response(null, { status: 401 }), { error: "link", status: 401 }],
     ["a refused sign-in token", () => refusal(403, "subject"), { error: "subject", status: 403 }],
     ["the last active admin", () => refusal(409, "last_admin"), { error: "last_admin", status: 409 }],
+    ["a key a product still uses", () => refusal(409, "bound"), { error: "bound", status: 409 }],
     ["a link or service account", () => refusal(409, "conflict"), { error: "refused", status: 409 }],
     ["an unconfirmed body", () => refusal(400, "confirm"), { error: "refused", status: 400 }],
     ["no directory person (404 with the header)", () => refusal(404, "not_found"), { error: "refused", status: 404 }],

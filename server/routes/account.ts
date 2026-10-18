@@ -18,6 +18,11 @@
 //     `account_sign_in_again`, never 401 (clients read 401 as their own
 //     session ending; same reason as `avatar_sign_in_again`);
 //   - the last active admin: 409 `last_admin`;
+//   - a product an administrator configured still uses one of the person's
+//     keys: 409 `perspicax_key_in_use`;
+//   - no answer or an unreadable one: 502 `perspicax_deletion_failed`, worded
+//     so the person knows the deletion may have gone through (the account
+//     purged push then deletes the data here);
 //   - another refusal: its 4xx with `perspicax_deletion_failed`; no link, no
 //     answer or a 5xx: 502 `perspicax_deletion_failed`.
 //
@@ -28,7 +33,7 @@ import { PASS, type RouteHandler } from "./table.ts";
 /** What Perspicax answered the erasure of the person's account. */
 export type PerspicaxDeletion =
   | { ok: true }
-  | { ok: false; error: "unsupported" | "subject" | "last_admin" | "refused" | "link" | "unreachable"; status?: number };
+  | { ok: false; error: "unsupported" | "subject" | "last_admin" | "bound" | "refused" | "link" | "unreachable"; status?: number };
 
 export interface AccountRouteDeps {
   organization: () => boolean;
@@ -40,6 +45,8 @@ export interface AccountRouteDeps {
 }
 
 const FAILED = "Perspicax did not delete the account; nothing was deleted here.";
+const UNCONFIRMED = "Perspicax did not confirm the deletion. If it went through, your data here is deleted automatically within a few minutes; otherwise try again.";
+const FINISHING = "Your account is deleted in Perspicax. Deleting your data here did not finish; it finishes automatically within a few minutes.";
 
 export function createAccountRoutes(deps: AccountRouteDeps): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
@@ -76,6 +83,13 @@ export function createAccountRoutes(deps: AccountRouteDeps): RouteHandler {
             error: "You are your organization's last active administrator in Pulsatrix Perspicax: make someone else an administrator first, then delete your account.",
             code: "last_admin",
           });
+        case "bound":
+          return json(res, 409, {
+            error: "A product your administrator configured still uses one of your keys in Pulsatrix Perspicax: ask your administrator to remove it, then delete your account.",
+            code: "perspicax_key_in_use",
+          });
+        case "unreachable":
+          return json(res, 502, { error: UNCONFIRMED, code: "perspicax_deletion_failed" });
         case "refused": {
           const status = erased.status;
           return json(res, typeof status === "number" && status >= 400 && status < 500 ? status : 502, { error: FAILED, code: "perspicax_deletion_failed" });
@@ -84,7 +98,13 @@ export function createAccountRoutes(deps: AccountRouteDeps): RouteHandler {
           return json(res, 502, { error: FAILED, code: "perspicax_deletion_failed" });
       }
     }
-    const removed = await deps.deletePersonData(principalId);
+    let removed: { bots: number; threads: number };
+    try {
+      removed = await deps.deletePersonData(principalId);
+    } catch {
+      // The account purged push of Perspicax runs the same deletion again.
+      return json(res, 500, { error: FINISHING, code: "account_deletion_pending" });
+    }
     return json(res, 200, { deleted: true, ...removed });
   };
 }

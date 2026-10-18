@@ -614,8 +614,12 @@ address and photo on this server). Nothing is deleted unless Perspicax erased
 the account first. An older Perspicax answers 501
 `perspicax_deletion_unavailable` (the phone says to ask the organization); an
 expired Perspicax sign-in is 409 `account_sign_in_again`; the organization's
-last active admin is 409 `last_admin`; any other refusal is
-`perspicax_deletion_failed`. A personal computer answers 400
+last active admin is 409 `last_admin`; a key a product the administrator
+configured still uses is 409 `perspicax_key_in_use`; any other refusal is
+`perspicax_deletion_failed` (on 502 the message says the deletion may have
+gone through: the account purged push then finishes it); a local failure
+after Perspicax erased the account is 500 `account_deletion_pending`, which
+the same push finishes. A personal computer answers 400
 `personal_server`: the phone forgets the pairing and erases its own data.
 
 ## Stream and state model

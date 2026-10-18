@@ -72,6 +72,7 @@ describe("DELETE /api/me", () => {
   it.each([
     ["a refused sign-in token", { ok: false, error: "subject", status: 403 }, 409, "account_sign_in_again"],
     ["the last active admin", { ok: false, error: "last_admin", status: 409 }, 409, "last_admin"],
+    ["a key a product still uses", { ok: false, error: "bound", status: 409 }, 409, "perspicax_key_in_use"],
     ["another refusal (its 4xx)", { ok: false, error: "refused", status: 404 }, 404, "perspicax_deletion_failed"],
     ["a link or service account conflict", { ok: false, error: "refused", status: 409 }, 409, "perspicax_deletion_failed"],
     ["a refusal without a 4xx", { ok: false, error: "refused", status: 500 }, 502, "perspicax_deletion_failed"],
@@ -86,6 +87,22 @@ describe("DELETE /api/me", () => {
     expect(body.code).toBe(code);
     expect(body.error.length).toBeGreaterThan(0);
     expect(deleted).toEqual([]);
+  });
+
+  it("says the deletion may have gone through when Perspicax does not confirm it", async () => {
+    const { remove } = await serve(person(ADA), { perspicaxDeletion: async () => ({ ok: false, error: "unreachable" }) });
+    const body = await (await remove()).json() as { error: string };
+    expect(body.error).toMatch(/automatically/);
+  });
+
+  it("answers 500 account_deletion_pending when the local deletion fails after Perspicax erased the account", async () => {
+    const { remove } = await serve(person(ADA), {
+      perspicaxDeletion: async () => ({ ok: true }),
+      deletePersonData: async () => { throw new Error("disk"); },
+    });
+    const res = await remove();
+    expect(res.status).toBe(500);
+    expect((await res.json() as { code: string }).code).toBe("account_deletion_pending");
   });
 
   it("answers 502 and deletes nothing when the Perspicax call throws", async () => {

@@ -25801,7 +25801,12 @@ ROUTES.push(createAccountRoutes({
       console.warn(`account deletion: Perspicax refused (${erased.error}${erased.status ? ` ${erased.status}` : ""})`);
       return { ok: false, error: erased.error, ...(erased.status ? { status: erased.status } : {}) };
     }
-    if (erased.sub !== person.subject.sub) console.warn("account deletion: Perspicax erased an account under another subject than this person's");
+    if (erased.sub !== person.subject.sub) {
+      // Never delete this person's data on an answer about someone else:
+      // the account purged push names the right subject.
+      console.warn("account deletion: Perspicax erased an account under another subject than this person's");
+      return { ok: false, error: "unreachable" };
+    }
     return { ok: true };
   },
   deletePersonData,

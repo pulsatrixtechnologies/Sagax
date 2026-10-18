@@ -244,12 +244,13 @@ export const OWN_ACCOUNT_ERASE_TIMEOUT_MS = 10_000;
 const OWN_ACCOUNT_ERASE_ANSWER_MAX_BYTES = 8 * 1024;
 /** What the erasure of the person's own account did. `subject`: Perspicax
  * refused the person's sign-in token; `last_admin`: the last active admin
- * cannot be erased; `unsupported`: an older Perspicax without the route;
+ * cannot be erased; `bound`: a product an administrator configured still
+ * uses one of the person's keys; `unsupported`: an older Perspicax without the route;
  * `refused`: another 4xx (its status kept); `link`: no link or the link
  * token was refused; `unreachable`: no answer, a 5xx or an unreadable one. */
 export type OwnAccountErasure =
   | { ok: true; sub: string; auditId?: string }
-  | { ok: false; error: "link" | "subject" | "last_admin" | "unsupported" | "refused" | "unreachable"; status?: number };
+  | { ok: false; error: "link" | "subject" | "last_admin" | "bound" | "unsupported" | "refused" | "unreachable"; status?: number };
 
 /** What an image's first bytes say it is; only a PNG or a JPEG is served. */
 export function avatarContentType(bytes: Uint8Array): AvatarImage["contentType"] | null {
@@ -1036,6 +1037,7 @@ export class PerspicaxDirectory {
     }
     if (status === 403 && parsed.code === "subject") return { ok: false, error: "subject", status };
     if (status === 409 && parsed.code === "last_admin") return { ok: false, error: "last_admin", status };
+    if (status === 409 && parsed.code === "bound") return { ok: false, error: "bound", status };
     if (status >= 400 && status < 500) return { ok: false, error: "refused", status };
     return { ok: false, error: "unreachable", status };
   }
