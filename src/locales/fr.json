@@ -8868,5 +8868,18 @@
   "security.keys.addedNow": "Clé ajoutée.",
   "security.stepUp.browser": "Le navigateur n'a pas pu s'ouvrir. Réessayez.",
   "security.stepUp.reauth": "Reconnectez-vous, puis ajoutez votre première clé.",
-  "pages.yours": "Vos pages"
+  "pages.yours": "Vos pages",
+  "orgEngines.blocked.body": "Votre organisation n'a pas encore activé de modèle.",
+  "orgEngines.blocked.contact": "Contactez votre admin.",
+  "orgEngines.blocked.contactNamed": "Contactez votre admin : {names}.",
+  "orgEngines.blocked.title": "Aucun modèle pour l'instant",
+  "orgEngines.connect.intro": "{org} ne vous fournit pas encore de modèle. Connectez votre propre compte pour que vos bots puissent répondre. Il ne paie que vos propres tours.",
+  "orgEngines.connect.own": "Seuls les fournisseurs permis par votre organisation sont listés.",
+  "orgEngines.connect.title": "Connectez votre premier modèle",
+  "orgEngines.later": "Plus tard",
+  "orgEngines.notice.body": "Vos bots ne peuvent pas répondre tant qu'aucun compte n'est connecté.",
+  "orgEngines.notice.connect": "Connecter un compte",
+  "orgEngines.notice.title": "Aucun modèle ne vous répond pour l'instant",
+  "orgEngines.ready": "C'est prêt : {name} répond à vos messages.",
+  "orgEngines.yourOrganization": "Votre organisation"
 }

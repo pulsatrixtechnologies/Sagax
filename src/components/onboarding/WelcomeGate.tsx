@@ -17,6 +17,7 @@ import { emailGateDone } from "@/lib/analytics";
 import { launchBridges, launchDue, serverModeBridge } from "@/lib/launch";
 import { hostedMember, LOCAL_VIEWER, welcomeDue, welcomeViewer, type BeatId, type WelcomeViewer } from "@/lib/onboarding";
 import { api, useStore } from "@/state/store";
+import { OrgEngineSetupGate } from "@/components/OrgEngineSetup";
 import { LaunchScreen } from "./LaunchScreen";
 import { SharedWorkspaceHint } from "./SharedWorkspaceHint";
 import { WelcomeFlow } from "./WelcomeFlow";
@@ -131,7 +132,10 @@ export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
   // Explicit desktop connection Settings need no local provider onboarding.
   // Organisation remains optional; closing Settings resumes the normal tour.
   if (state.appSettingsOpen && state.appSettingsSection === "organization") return null;
-  if (!state.welcomeOpen && !due) return null;
+  // On an organization server, a person with no engine that answers them
+  // gets the step to connect their own (OrgEngineSetup.tsx): a member, who
+  // never gets the welcome flow, and an admin once it is done.
+  if (!state.welcomeOpen && !due) return <OrgEngineSetupGate />;
   const bot = state.bots.find((b) => !b.hidden) ?? null;
   const replay = state.welcomeOpen && !due;
   return (

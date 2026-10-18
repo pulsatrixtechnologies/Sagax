@@ -25,10 +25,14 @@ vi.mock("@/lib/analytics", () => ({ emailGateDone: () => false }));
 vi.mock("./WelcomeFlow", () => ({ WelcomeFlow: () => null }));
 vi.mock("./LaunchScreen", () => ({ LaunchScreen: () => null }));
 vi.mock("@/components/Avatar", () => ({ MausAvatar: () => null }));
+// The organization's engine step decides for itself (OrgEngineSetup.tsx);
+// here it only stands in where the welcome flow does not open.
+vi.mock("@/components/OrgEngineSetup", () => ({ OrgEngineSetupGate: () => null }));
 import { SharedWorkspaceHint } from "./SharedWorkspaceHint";
 import { useWelcomeViewer, WelcomeGate } from "./WelcomeGate";
 import { WelcomeFlow } from "./WelcomeFlow";
 import { LaunchScreen } from "./LaunchScreen";
+import { OrgEngineSetupGate } from "@/components/OrgEngineSetup";
 
 type Node = ReactElement<Record<string, unknown> & { onClick?: () => void; onClose?: () => void; onOpenServer?: () => void; onSolo?: () => void; children?: ReactNode }>;
 function render(component: () => ReactNode) {
@@ -42,6 +46,8 @@ function render(component: () => ReactNode) {
   const html = renderToStaticMarkup(createElement(Capture));
   return { html, tree: tree as Node | null };
 }
+/** No welcome surface: nothing, or only the organization's engine step. */
+const quiet = (tree: Node | null) => tree === null || tree.type === OrgEngineSetupGate;
 const gate = (viewer: WelcomeViewer | null) => render(() => WelcomeGate({ viewer }));
 const flush = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
@@ -136,7 +142,7 @@ describe("who gets the welcome flow", () => {
 
   it("leaves an OMB Cloud home's first run to its engine sign-in", () => {
     vi.stubGlobal("window", REMOTE_PAGE);
-    expect(gate({ hosted: false, canSave: true, cloudHome: true }).tree).toBeNull();
+    expect(quiet(gate({ hosted: false, canSave: true, cloudHome: true }).tree)).toBe(true);
     // Settings → Replay welcome tour still opens it there
     store.state = { ...store.state, welcomeOpen: true };
     expect(gate({ hosted: false, canSave: true, cloudHome: true }).tree?.type).toBe(WelcomeFlow);
@@ -185,7 +191,7 @@ describe("who gets the welcome flow", () => {
   it("adds nothing for a member of a server that is not hosted, such as the owner's own paired browser", () => {
     // no note: the team copy would be false there, and it would be new UI
     const { tree, html } = gate({ hosted: false, canSave: false });
-    expect(tree).toBeNull();
+    expect(quiet(tree)).toBe(true);
     expect(html).toBe("");
     // an explicit Settings replay still opens the ordinary flow, as before
     store.state = { ...store.state, welcomeOpen: true };
@@ -203,16 +209,16 @@ describe("who gets the welcome flow", () => {
   });
 
   it("shows nothing to a remote client member or while a browser's session is unknown", () => {
-    expect(gate(null).tree).toBeNull();
+    expect(quiet(gate(null).tree)).toBe(true);
     vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
-    expect(gate({ hosted: true, canSave: false }).tree).toBeNull();
-    expect(gate(LOCAL_VIEWER).tree).toBeNull();
+    expect(quiet(gate({ hosted: true, canSave: false }).tree)).toBe(true);
+    expect(quiet(gate(LOCAL_VIEWER).tree)).toBe(true);
   });
 
   it("stays closed after the admin finished it", () => {
     store.state = { ...store.state, config: { onboarding: { ...EMPTY_ONBOARDING, completedAt: "2026-09-23T00:00:00.000Z", version: WELCOME_VERSION } } };
-    expect(gate({ hosted: true, canSave: true }).tree).toBeNull();
-    expect(gate(LOCAL_VIEWER).tree).toBeNull();
+    expect(quiet(gate({ hosted: true, canSave: true }).tree)).toBe(true);
+    expect(quiet(gate(LOCAL_VIEWER).tree)).toBe(true);
   });
 });
 
@@ -242,7 +248,7 @@ describe("the launch screen before the tour", () => {
     expect(gate({ hosted: true, canSave: true }).tree?.type).toBe(WelcomeFlow);
     vi.stubGlobal("window", DESKTOP_PAGE);
     store.state = { ...store.state, config: { onboarding: { ...EMPTY_ONBOARDING, completedAt: "2026-09-23T00:00:00.000Z", version: WELCOME_VERSION } } };
-    expect(gate(LOCAL_VIEWER).tree).toBeNull();
+    expect(quiet(gate(LOCAL_VIEWER).tree)).toBe(true);
   });
 
   it("comes back after server mode was left (signed out), even with other servers saved", async () => {
@@ -250,10 +256,10 @@ describe("the launch screen before the tour", () => {
     store.state = { ...store.state, config: { onboarding: { ...EMPTY_ONBOARDING, completedAt: "2026-09-23T00:00:00.000Z", version: WELCOME_VERSION, launchMode: "server" } } };
     environmentsState.value = { environments: [{ id: "a", name: "Example", origin: "https://bot.example.test" }] };
     serverModeState.value = { active: true };
-    expect(gate(LOCAL_VIEWER).tree).toBeNull();
+    expect(quiet(gate(LOCAL_VIEWER).tree)).toBe(true);
     for (const effect of fixture.effects) effect();
     await flush();
-    expect(gate(LOCAL_VIEWER).tree).toBeNull();
+    expect(quiet(gate(LOCAL_VIEWER).tree)).toBe(true);
     fixture.values = [];
     serverModeState.value = { active: false };
     gate(LOCAL_VIEWER);

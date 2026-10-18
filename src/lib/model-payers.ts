@@ -5,6 +5,7 @@
 // that order and never recomputes the choice. A routine pays as the bot's
 // owner. Solo servers have no payer order.
 import type { MyEngine } from "@/lib/perspicax-org";
+import { PERSONAL_KEY_DRIVERS } from "../../shared/org-engine-readiness";
 
 /** A payer the person's own turns can use, in engine-credentials.ts order:
  * their subscription, their key in Perspicax, the organization's key. */
@@ -29,7 +30,7 @@ type EngineFacts = Pick<MyEngine, "installed" | "notAvailable" | "subscription" 
 /** Drivers whose provider key a person can keep in Perspicax
  * (server/engine-credentials.ts providersOfDriver). */
 export function keyProviderDriver(driver: string): boolean {
-  return ["claudeAgent", "codex", "grokAgent", "geminiAgent", "kimiAgent", "piAgent"].includes(driver);
+  return PERSONAL_KEY_DRIVERS.includes(driver);
 }
 
 export function payerOrder(engine: EngineFacts): PayerOrder {

@@ -2002,6 +2002,39 @@ pays for but has not given the person (`sagax_server_engines`,
   Tests: `shared/offered-engines.test.ts`, `ModelPicker.interaction.test.ts`,
   `src/lib/activity-runs.test.ts`, C5 in `server/org-admin-console.e2e.test.ts`.
 
+## First engine at an organization sign-in (2026-10-18)
+
+JC: "Si aucun LLM/moteur fonctionnel n'est présent lors de la première
+connexion en organisation, il faut que le setup de ton premier compte soit
+dans le setup initial, comme on fait en mode sans serveur."
+`shared/org-engine-readiness.ts` (`orgEngineReadiness`, on top of
+`offeredEngines`) answers, per person on an organization server:
+
+- `ready`: an engine offered to pick, admitted (`withholdsHostTools`),
+  installed and paid by something (`myTurns` not `none`). The
+  organization's xAI key alone does not count (voice only, JC 2026-10-16).
+  Nothing changes.
+- `connect`: none, but an allowed engine the person can connect with their
+  own account (subscription sign-in or a Perspicax key; one row per driver).
+  A hidden engine is never listed.
+- `blocked`: nothing they can connect: "Your organization has not turned on
+  a model yet. Contact your admin: <names>" (active admins of the directory).
+- Solo: always `ready` (NoEngines and the engines beat stay as they were).
+
+UI (`src/components/OrgEngineSetup.tsx`, hook `src/lib/org-engine-readiness.ts`):
+the first-run card opens by itself once per person (preference
+`sagax.orgEngineSetupSeen.v1`, travels with the person) from `WelcomeGate`
+(members never get the welcome flow); an admin's welcome flow shows the same
+step in its engines beat. Rows are the person's own `EngineConnect`
+(`/api/me/engines/<id>/login`, their login directory; turns, approvals and
+security keys unchanged). Afterwards, while nothing answers, the chat shows
+`OrgEngineNotice` with a button back to the step (or Check again when
+blocked); the person's engines are read again when the engine list or the
+organization's list changes and on window focus. iOS has no per-person
+engine list or engine sign-in yet and is not changed. Real check:
+`scripts/verify-org-engine-onboarding.ts`. Tests:
+`shared/org-engine-readiness.test.ts`.
+
 ## Voice mode (xAI)
 
 The call button on a bot opens the voice call pill

@@ -26,6 +26,9 @@ vi.mock("react", async (original) => ({
 }));
 const store = vi.hoisted(() => ({ instances: [] as unknown[], dispatch: vi.fn(), api: vi.fn() }));
 vi.mock("@/state/store", () => ({ api: store.api, useStore: () => ({ state: { instances: store.instances }, dispatch: store.dispatch }) }));
+const readiness = vi.hoisted(() => ({ value: { organization: false, state: "ready", working: [], connectable: [], adminNames: [] } as Record<string, unknown> }));
+vi.mock("@/lib/org-engine-readiness", () => ({ usePersonEngineReadiness: () => readiness.value, markOrgEngineSetupSeen: () => {} }));
+vi.mock("@/components/OrgEngineSetup", () => ({ OrgEngineSetupBody: () => null }));
 import { EnginesBeat } from "./EnginesBeat";
 
 type Node = ReactElement<{ children?: ReactNode; onClick?: () => void; "data-server-row"?: string }>;
@@ -136,5 +139,24 @@ describe("server sign-in in the engines beat", () => {
     const html = render().html;
     expect(html).toContain("1 to set up");
     expect(html).not.toContain("Everything is ready");
+  });
+});
+
+describe("the engines beat on an organization server (2026-10-18)", () => {
+  afterEach(() => {
+    readiness.value = { organization: false, state: "ready", working: [], connectable: [], adminNames: [] };
+  });
+
+  it("nothing answers the person: the organization's step, never this computer's engines", () => {
+    readiness.value = { organization: true, state: "connect", working: [], connectable: [], adminNames: [] };
+    store.instances = [personal("claude", false)];
+    // the step (mocked to draw nothing) replaces the local list entirely
+    expect(render().html).toBe("");
+  });
+
+  it("an engine answers: the beat is as before", () => {
+    readiness.value = { organization: true, state: "ready", working: [], connectable: [], adminNames: [] };
+    store.instances = [personal("claude", true)];
+    expect(render().html).toContain("claude");
   });
 });

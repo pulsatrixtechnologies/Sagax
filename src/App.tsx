@@ -28,6 +28,7 @@ import { UpdateBanner } from "@/components/UpdateBanner";
 import { DesktopCapabilitiesProvider, useCaptionChrome, useDesktopCapabilities, WindowDragStrip } from "@/components/DesktopCapabilities";
 import { WindowCaptionButtons } from "@/components/WindowCaptionButtons";
 import { NoEngines } from "@/components/NoEngines";
+import { OrgEngineNotice } from "@/components/OrgEngineSetup";
 
 import { CommandPalette, openCommandPalette } from "@/components/CommandPalette";
 import { ArtifactsHost } from "@/components/artifacts/ArtifactsHost";
@@ -189,7 +190,9 @@ function Shell() {
     if (state.computerOpen) dispatch({ type: "toggleComputer", open: false });
   }, [advanced, state.inspectorOpen, state.computerOpen, dispatch]);
 
-  // Nothing on this machine can run a bot. A missing cloud login does not
+  // Nothing on this machine can run a bot. On an organization server the
+  // person's own engines decide instead (OrgEngineNotice and the first-run
+  // step, shared/org-engine-readiness.ts). A missing cloud login does not
   // count — that CLI can still host a local model. Wait for the first
   // /api/instances response before deciding: an empty list means "not asked
   // yet", and flashing the setup screen at every launch would be worse.
@@ -422,6 +425,9 @@ function Shell() {
         }}
       />
       <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col" data-sidebar-follower="">
+      {/* nothing answers this person on an organization server: say so above
+          the conversation, with the way back to the first-run step */}
+      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && <OrgEngineNotice />}
       {composeOpen && (group || bot) ? (
         group ? <GroupView key={`${group.id}:${uiLocale}`} group={group} /> : bot ? <ChatView key={uiLocale} bot={bot} /> : null
       ) : calendarFillsMain ? (
@@ -435,7 +441,7 @@ function Shell() {
           onClose={() => setLocalVmWorkspaceBotId(null)}
           onOpenComputer={openComputerFromWorkspace}
         />
-      ) : noEngines ? (
+      ) : noEngines && !org ? (
         <NoEngines />
       ) : group ? (
         <GroupView key={`${group.id}:${uiLocale}`} group={group} />

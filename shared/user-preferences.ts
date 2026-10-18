@@ -63,6 +63,9 @@ export const USER_PREFERENCE_KEYS = [
   "sagax.routineScope.v1",
   // the models starred in the composer's model menu (src/lib/model-favorites.ts)
   "sagax.modelFavorites.v1",
+  // the first-run step "connect your own engine" on an organization server
+  // was seen (an ISO date; src/lib/org-engine-readiness.ts)
+  "sagax.orgEngineSetupSeen.v1",
 ] as const;
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number];

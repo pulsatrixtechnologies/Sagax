@@ -21,6 +21,8 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { launchBridges } from "@/lib/launch";
 import { engineSummary, organisationSignIn } from "@/lib/onboarding";
+import { markOrgEngineSetupSeen, usePersonEngineReadiness } from "@/lib/org-engine-readiness";
+import { OrgEngineSetupBody } from "@/components/OrgEngineSetup";
 import { api, useStore, type InstanceInfo } from "@/state/store";
 import { PrimaryButton, staggerIndex, type BeatProps } from "./shared";
 
@@ -105,6 +107,17 @@ export function EnginesBeat({
   const allReady = instances !== null && summary.allReady;
   const expanded = open;
 
+  // (after the hooks above, whose order the tests rely on.) An organization server where nothing answers this person: the same step
+  // as the first-run card (OrgEngineSetup.tsx), the engines the
+  // organization allows connected with the person's own account. Kept once
+  // shown, so connecting one shows its success line rather than this list.
+  const readiness = usePersonEngineReadiness();
+  const [orgStep, setOrgStep] = useState(false);
+  const orgStepDue = readiness.organization && (readiness.state === "connect" || readiness.state === "blocked");
+  useEffect(() => {
+    if (orgStepDue) setOrgStep(true);
+  }, [orgStepDue]);
+
   // The guide searches while the harness answers, then looks proud or
   // curious depending on whether there is work left for the user.
   useEffect(() => {
@@ -120,6 +133,18 @@ export function EnginesBeat({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instances === null, allReady, setup.length]);
+
+  if (orgStep || orgStepDue) {
+    return (
+      <OrgEngineSetupBody
+        readiness={readiness}
+        onContinue={() => {
+          markOrgEngineSetupSeen();
+          onNext();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-col">
