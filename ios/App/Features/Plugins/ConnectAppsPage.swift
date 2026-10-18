@@ -777,10 +777,22 @@ struct ConnectAppDetail: View {
     let push: (ConnectAppsRoute) -> Void
     @State private var toolsOpen = false
     @State private var confirmingUninstall = false
+    @State private var aliasFor: ConnectAppItem?
+    @State private var aliasDraft = ""
+
+    /// The page's item. A catalog entry ("featured:<id>") is rebuilt under
+    /// its server's key once Add installs it: follow it there.
+    private var current: ConnectAppItem? {
+        if let item = model.item(key) { return item }
+        if let folded = model.items.first(where: { $0.merged.contains(key) }) { return folded }
+        guard key.hasPrefix("featured:") else { return nil }
+        let id = String(key.dropFirst("featured:".count))
+        return model.items.first { $0.kind != .featured && $0.id == id }
+    }
 
     var body: some View {
         Group {
-            if let item = model.item(key) {
+            if let item = current {
                 content(item)
                     .navigationTitle(item.name)
             } else {
@@ -831,8 +843,10 @@ struct ConnectAppDetail: View {
             } header: {
                 Text(String(localized: "Details"))
             }
-            // room for the floating capsule
-            Color.clear.frame(height: 56).listRowBackground(Color.clear)
+            if item.action != nil || item.installed {
+                // room for the floating capsule (50 + 8 below it)
+                Color.clear.frame(height: 62).listRowBackground(Color.clear)
+            }
         }
         .overlay(alignment: .bottom) { capsule(item) }
         .toolbar {
@@ -856,6 +870,27 @@ struct ConnectAppDetail: View {
                 Task { await model.uninstall(item, session: session) }
             }
         }
+        // Connect on an app asks for the account's label, as its row does
+        .alert(String(localized: "Connect"), isPresented: Binding(get: { aliasFor != nil }, set: { if !$0 { aliasFor = nil } })) {
+            TextField(String(localized: "work, personal..."), text: $aliasDraft)
+            Button(String(localized: "Cancel"), role: .cancel) {}
+            Button(String(localized: "Connect")) {
+                guard let item = aliasFor else { return }
+                let alias = aliasDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                Task { await model.act(item, alias: alias.isEmpty ? nil : String(alias.prefix(64)), session: session) }
+            }
+        } message: {
+            Text(String(localized: "A label for the account, such as work or personal."))
+        }
+    }
+
+    private func act(_ item: ConnectAppItem) {
+        if item.kind == .app, item.action == .connect {
+            aliasDraft = ""
+            aliasFor = item
+        } else {
+            Task { await model.act(item, alias: nil, session: session) }
+        }
     }
 
     private func canUninstall(_ item: ConnectAppItem) -> Bool {
@@ -868,7 +903,7 @@ struct ConnectAppDetail: View {
         if let action = item.action {
             Button {
                 Haptics.selection()
-                Task { await model.act(item, alias: nil, session: session) }
+                act(item)
             } label: {
                 Group {
                     if model.busy == item.key {
@@ -899,6 +934,8 @@ struct ConnectAppDetail: View {
                 .padding(.bottom, 8)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("connect-apps-detail-added")
+                // a status, not a button: taps reach the row under it
+                .allowsHitTesting(false)
         }
     }
 

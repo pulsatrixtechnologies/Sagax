@@ -186,6 +186,7 @@ final class SettingsUITests: XCTestCase {
     func testAddingANoSignInPluginInstallsItOnTheServer() {
         // Start clean: an earlier run may have left it added.
         _ = api("DELETE", "/api/mcp/servers/deepwiki")
+        addTeardownBlock { _ = self.api("DELETE", "/api/mcp/servers/deepwiki") }
         let app = launch()
         app.element("settings-plugins").tap()
         // Settings > Connect apps (#203, #218): search across apps and skills
@@ -227,7 +228,35 @@ final class SettingsUITests: XCTestCase {
             let plugins = self.api("GET", "/api/plugins/installed").1["plugins"] as? [[String: Any]] ?? []
             return !plugins.contains { ($0["url"] as? String)?.contains("deepwiki") == true }
         })
+    }
+
+    /// Add from a catalog entry's own page: the blue capsule installs it and
+    /// the page follows the installed server (Added, no dead end).
+    @MainActor
+    func testAddFromThePluginPageFollowsTheInstalledItem() {
         _ = api("DELETE", "/api/mcp/servers/deepwiki")
+        addTeardownBlock { _ = self.api("DELETE", "/api/mcp/servers/deepwiki") }
+        let app = launch()
+        app.element("settings-plugins").tap()
+        XCTAssertTrue(app.element("connect-apps-manage").waitForExistence(timeout: 10))
+        let search = app.searchFields.firstMatch
+        if !search.exists { app.swipeDown() }
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("deepwiki\n")
+        let row = app.element("connect-apps-row.featured:deepwiki")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription)
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        let action = app.element("connect-apps-detail-action")
+        XCTAssertTrue(action.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.element("connect-apps-detail-more").exists, "nothing to uninstall yet")
+        action.tap()
+        XCTAssertTrue(eventually(30) {
+            let plugins = self.api("GET", "/api/plugins/installed").1["plugins"] as? [[String: Any]] ?? []
+            return plugins.contains { ($0["url"] as? String)?.contains("deepwiki") == true }
+        })
+        XCTAssertTrue(app.element("connect-apps-detail-added").waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.element("connect-apps-detail-header").exists)
     }
 
     // MARK: Account
