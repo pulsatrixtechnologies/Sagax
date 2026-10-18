@@ -93,10 +93,14 @@ float fbm3(vec2 p) {
   }
   return s / 0.875;
 }
+// smoothstep with edges in either order (reversed edges are undefined in
+// GLSL ES), and a square that never takes pow() of a negative base
+float sstep(float a, float b, float x) { return a < b ? smoothstep(a, b, x) : 1.0 - smoothstep(b, a, x); }
+float sq(float x) { return x * x; }
 mat2 rot(float a) { float c = cos(a); float s = sin(a); return mat2(c, s, -s, c); }
 // a click's envelope: quick attack, exponential decay, nothing at CLICK_LIFE
 float clickAmp(float age) {
-  return smoothstep(0.0, 0.05, age) * exp(-age * 1.15) * (1.0 - smoothstep(CLICK_LIFE - 0.7, CLICK_LIFE, age));
+  return sstep(0.0, 0.05, age) * exp(-age * 1.15) * (1.0 - sstep(CLICK_LIFE - 0.7, CLICK_LIFE, age));
 }
 // a front that starts fast and slows down, reaching about reach px
 float clickFront(float age, float reach, float k) { return reach * (1.0 - exp(-age * k)); }
@@ -143,7 +147,7 @@ vec4 effect(vec2 p) {
   float isHead = k < 1.0 ? 1.0 : 0.0;
   float k2 = mod(uTime * speed * 0.61 + hash12(vec2(col, 4.4)) * period - row, period);
   float len2 = len * 0.55;
-  float trail2 = k2 < len2 ? 0.5 * pow(1.0 - k2 / len2, 2.0) : 0.0;
+  float trail2 = k2 < len2 ? 0.5 * sq(1.0 - k2 / len2) : 0.0;
   float tr = max(trail, trail2);
   vec2 dp = cellC - uPointer.xy;
   float near = uPointer.z * exp(-(dp.x * dp.x) / (80.0 * 80.0)) * exp(-(dp.y * dp.y) / (240.0 * 240.0));
@@ -155,7 +159,7 @@ vec4 effect(vec2 p) {
     float R = clickFront(c.z, 620.0, 1.5);
     float x = (d - R) / 30.0;
     float amp = clickAmp(c.z);
-    shock += amp * (exp(-x * x) + 0.4 * (1.0 - smoothstep(-1.0, 0.4, x)) * exp(-c.z * 1.6));
+    shock += amp * (exp(-x * x) + 0.4 * (1.0 - sstep(-1.0, 0.4, x)) * exp(-c.z * 1.6));
   }
   shock = min(shock, 1.6);
   vec2 local = (p - vec2(col * CW, row * CH)) / vec2(CW, CH);
@@ -166,10 +170,10 @@ vec4 effect(vec2 p) {
   float gx = min(g.x, 4.0 - g.x);
   float bit = step(0.56, hash12(vec2(col * 7.0 + gx + tick * 13.0, row * 11.0 + g.y + tick * 3.0)));
   vec2 pix = fract((local - vec2(0.16, 0.12)) / vec2(0.68, 0.76) * vec2(5.0, 7.0)) - 0.5;
-  float dot5 = smoothstep(0.5, 0.25, length(pix));
+  float dot5 = sstep(0.5, 0.25, length(pix));
   float on = inside * bit * dot5;
   float headLit = isHead * step(0.001, trail);
-  vec3 color = mix(uB, uA, smoothstep(0.0, 0.55, tr));
+  vec3 color = mix(uB, uA, sstep(0.0, 0.55, tr));
   color = mix(color, uC, clamp(headLit * 0.9 + shock * 0.8 + near * 0.35, 0.0, 1.0));
   float a = on * (0.03 + 0.34 * tr + 0.3 * headLit + 0.6 * shock + 0.25 * near * (0.3 + tr));
   return vec4(color, a * mix(0.7, 1.0, uLive));
@@ -192,7 +196,7 @@ float starLayer(vec2 q, float L, float z) {
   float size = (0.012 + 0.026 * h.y) * mix(0.7, 1.6, z);
   float r2 = dot(d, d) / (size * size);
   float tw = 0.7 + 0.3 * sin(uTime * (1.5 + 4.0 * h.x) + h.y * 40.0);
-  float fade = smoothstep(0.0, 0.3, z) * (1.0 - smoothstep(0.85, 1.0, z));
+  float fade = sstep(0.0, 0.3, z) * (1.0 - sstep(0.85, 1.0, z));
   return present * fade * tw * (exp(-r2) + 0.25 * exp(-r2 * 0.25));
 }
 vec4 effect(vec2 p) {
@@ -235,7 +239,7 @@ vec4 effect(vec2 p) {
     hot += s * z;
   }
   float neb = fbm3(q * 1.6 + vec2(uTime * 0.01, 3.0) + uDrift * 0.2);
-  float cloud = smoothstep(0.5, 0.95, neb) * 0.35;
+  float cloud = sstep(0.5, 0.95, neb) * 0.35;
   lum *= 1.0 + 1.6 * lens + 1.2 * ring;
   vec3 color = mix(uA, uC, clamp(hot / max(lum, 1e-3) + ring * 0.5, 0.0, 1.0));
   vec3 outc = (color * lum + uB * cloud) / max(lum + cloud, 1e-3);
@@ -252,7 +256,7 @@ vec4 effect(vec2 p) {
   float t = uTime;
   vec3 col = vec3(0.0);
   float acc = 0.0;
-  float pullX = uPointer.z * exp(-pow((p.x - uPointer.x) / 240.0, 2.0));
+  float pullX = uPointer.z * exp(-sq((p.x - uPointer.x) / 240.0));
   for (int L = 0; L < 3; L++) {
     float fl = float(L);
     float fold = fbm3(vec2(p.x * 0.0021 + fl * 3.7, t * 0.07 + fl * 1.9)) - 0.5;
@@ -274,7 +278,7 @@ vec4 effect(vec2 p) {
     rays *= 0.55 + 0.45 * vnoise(vec2(p.x * 0.011 - t * 0.25, fl * 4.0));
     float h = dy > 0.0 ? exp(-dy / (70.0 + 110.0 * rays)) : exp(-(dy * dy) / (22.0 * 22.0));
     float shimmer = 0.82 + 0.18 * sin(p.x * 0.07 - t * 3.2 + fl * 2.0);
-    float I = h * rays * shimmer * (0.45 + 0.55 * smoothstep(-0.2, 0.3, fold));
+    float I = h * rays * shimmer * (0.45 + 0.55 * sstep(-0.2, 0.3, fold));
     I *= 1.0 + 1.8 * pulse + 1.1 * near;
     vec3 cc = mix(uA, uB, clamp(dy / 170.0, 0.0, 1.0));
     cc = mix(cc, uC, clamp(clamp(-dy / 36.0, 0.0, 1.0) * 0.7 + 0.45 * pulse, 0.0, 1.0));
@@ -306,7 +310,7 @@ vec2 bfield(vec2 x) {
     vec2 r = x - c.xy;
     float d = length(r);
     float R = clickFront(c.z, 600.0, 1.4);
-    float fr = exp(-pow((d - R) / 46.0, 2.0)) * clickAmp(c.z);
+    float fr = exp(-sq((d - R) / 46.0)) * clickAmp(c.z);
     B += (vec2(-r.y, r.x) / max(d, 1.0)) * fr * 0.03 + r / (dot(r, r) + 900.0) * clickAmp(c.z) * 3.0;
   }
   return B;
@@ -324,7 +328,7 @@ vec4 effect(vec2 p) {
   float across = dot(local, vec2(-dir.y, dir.x));
   float L = 3.5 + 3.0 * clamp(m, 0.0, 1.4);
   float sd = length(vec2(max(abs(along) - L, 0.0), across));
-  float line = smoothstep(1.35, 0.25, sd);
+  float line = sstep(1.35, 0.25, sd);
   float tw = 0.75 + 0.25 * sin(uTime * 2.6 + hash12(id + 7.0) * 6.283);
   float hotP = pointerGlow(cc, 120.0);
   float ring = 0.0;
@@ -333,7 +337,7 @@ vec4 effect(vec2 p) {
     vec4 c = uClicks[i];
     float d = length(cc - c.xy);
     float R = clickFront(c.z, 600.0, 1.4);
-    ring += exp(-pow((d - R) / 40.0, 2.0)) * clickAmp(c.z);
+    ring += exp(-sq((d - R) / 40.0)) * clickAmp(c.z);
   }
   float strength = clamp(m, 0.0, 1.0);
   float I = line * tw * (0.22 + 0.6 * strength + 0.9 * hotP + 1.1 * ring);
@@ -364,7 +368,7 @@ vec4 effect(vec2 p) {
     vec4 c = uClicks[i];
     float d = length(p - c.xy);
     float R = clickFront(c.z, 700.0, 1.5);
-    pulseSky += clickAmp(c.z) * exp(-pow((d - R) / 30.0, 2.0)) * 0.6;
+    pulseSky += clickAmp(c.z) * exp(-sq((d - R) / 30.0)) * 0.6;
   }
   if (p.y > hz) {
     float y = p.y - hz;
@@ -372,9 +376,9 @@ vec4 effect(vec2 p) {
     vec2 fw = max(fwidth(g), vec2(1e-4));
     vec2 dl = abs(fract(g - 0.5) - 0.5) / fw;
     float px = min(dl.x, dl.y);
-    float line = 1.0 - smoothstep(0.0, 1.2, px);
+    float line = 1.0 - sstep(0.0, 1.2, px);
     float glow = exp(-px * 0.28) * 0.45;
-    float fade = smoothstep(0.0, 70.0, y);
+    float fade = sstep(0.0, 70.0, y);
     float pulse = 0.0;
     for (int i = 0; i < MAXC; i++) {
       if (i >= uCount) break;
@@ -387,7 +391,7 @@ vec4 effect(vec2 p) {
     }
     float under = pointerGlow(p, 170.0);
     float I = (line + glow) * fade * (1.0 + 2.2 * under + 3.0 * pulse) + 0.25 * pulse * fade;
-    color = mix(uA, uB, smoothstep(0.0, uView.y * 0.42, y));
+    color = mix(uA, uB, sstep(0.0, uView.y * 0.42, y));
     color = mix(color, uC, clamp(pulse * 1.2 + under * 0.4, 0.0, 1.0));
     a = 0.3 * I;
   } else {
@@ -395,14 +399,14 @@ vec4 effect(vec2 p) {
     float r = uView.y * 0.17;
     float d = length(p - sc);
     float s = (p.y - sc.y) / r;
-    float disc = smoothstep(r, r - 1.5, d);
+    float disc = sstep(r, r - 1.5, d);
     float gap = clamp(s, 0.0, 1.0) * 0.6;
     float stripe = s > 0.05 ? step(gap, fract(s * 6.5 + uTime * 0.3)) : 1.0;
     float sun = disc * stripe;
     float halo = exp(-max(d - r, 0.0) / (r * 0.45)) * 0.35 * (1.0 + 1.5 * pointerGlow(sc, r * 2.0));
     float horizon = exp(-(hz - p.y) / 26.0) * 0.6;
     vec2 sid = floor(p / 3.0);
-    float star = step(0.9965, hash12(sid)) * (1.0 - smoothstep(hz * 0.3, hz, p.y)) * (0.5 + 0.5 * sin(uTime * 3.0 + hash12(sid + 2.0) * 20.0));
+    float star = step(0.9965, hash12(sid)) * (1.0 - sstep(hz * 0.3, hz, p.y)) * (0.5 + 0.5 * sin(uTime * 3.0 + hash12(sid + 2.0) * 20.0));
     vec3 sunCol = mix(uC, uA, clamp(s * 0.5 + 0.5, 0.0, 1.0));
     float I = sun * 0.5 + halo * 0.7 + horizon + star * 0.8 + pulseSky;
     color = (sunCol * (sun * 0.5 + halo * 0.7) + uB * horizon + uC * (star * 0.8 + pulseSky)) / max(I, 1e-3);
@@ -432,7 +436,7 @@ vec4 effect(vec2 p) {
     float d = length(r) + 1e-3;
     float amp = clickAmp(c.z);
     float R = clickFront(c.z, 460.0, 1.3);
-    float front = exp(-pow((d - R) / 80.0, 2.0));
+    float front = exp(-sq((d - R) / 80.0));
     q -= (r / d) * front * amp * 0.28;
     vec2 cq = c.xy / S;
     q = cq + rot(amp * 1.6 * exp(-d / 260.0)) * (q - cq);
@@ -442,7 +446,7 @@ vec4 effect(vec2 p) {
   vec2 w1 = vec2(fbm3(q + vec2(0.0, t)), fbm3(q + vec2(5.2, 1.3) - t));
   vec2 w2 = vec2(fbm3(q + 3.0 * w1 + vec2(1.7, 9.2) + t * 1.3), fbm3(q + 3.0 * w1 + vec2(8.3, 2.8) - t));
   float f = fbm(q + 2.6 * w2);
-  float density = smoothstep(0.38, 0.95, f + 0.28 * drop);
+  float density = sstep(0.38, 0.95, f + 0.28 * drop);
   vec3 color = mix(uB, uA, clamp(length(w1) * 0.95, 0.0, 1.0));
   color = mix(color, uC, clamp(w2.x * w2.x * 1.1 + drop * 0.55 + g * 0.3, 0.0, 1.0));
   float a = density * (0.16 + 0.26 * min(drop, 1.2) + 0.12 * g);
@@ -456,8 +460,8 @@ vec4 effect(vec2 p) {
 const BUBBLES = `
 float bubbleRing(vec2 d, float R) {
   float r = length(d);
-  float rim = smoothstep(1.6, 0.0, abs(r - R));
-  float film = smoothstep(R, R * 0.15, r) * pow(clamp(r / R, 0.0, 1.0), 3.0);
+  float rim = sstep(1.6, 0.0, abs(r - R));
+  float film = sstep(R, R * 0.15, r) * pow(clamp(r / R, 0.0, 1.0), 3.0);
   vec2 l = d + vec2(R * 0.38, R * 0.38);
   float spec = exp(-dot(l, l) / (R * R * 0.025));
   return rim * 0.9 + film * 0.45 + spec * 0.8 * step(r, R);
@@ -487,13 +491,13 @@ vec4 effect(vec2 p) {
     vec4 k = uClicks[i];
     float dist = length(center - k.xy);
     float Rf = clickFront(k.z, 520.0, 1.6);
-    float passed = smoothstep(Rf - 6.0, Rf - 40.0, dist);
-    popped = max(popped, passed * (1.0 - smoothstep(1.4, CLICK_LIFE, k.z)));
-    flash += clickAmp(k.z) * exp(-pow((dist - Rf) / 24.0, 2.0));
+    float passed = sstep(Rf - 6.0, Rf - 40.0, dist);
+    popped = max(popped, passed * (1.0 - sstep(1.4, CLICK_LIFE, k.z)));
+    flash += clickAmp(k.z) * exp(-sq((dist - Rf) / 24.0));
   }
   float body = present * bubbleRing(d, R);
   float spread = R + 10.0 * clamp(flash, 0.0, 1.0);
-  float burst = present * flash * smoothstep(2.0, 0.0, abs(length(d) - spread)) * step(0.0, sin(atan(d.y, d.x) * 10.0));
+  float burst = present * flash * sstep(2.0, 0.0, abs(length(d) - spread)) * step(0.0, sin(atan(d.y, d.x) * 10.0));
   float I = body * (1.0 - popped) + burst;
   float ang = atan(d.y, d.x);
   vec3 color = mix(uA, uB, 0.5 + 0.5 * sin(ang * 2.0 + uTime * 1.2 + h.x * 6.0 + length(d) * 0.08));
@@ -507,7 +511,7 @@ vec4 effect(vec2 p) {
       vec2 pos = k.xy + vec2((hk.x - 0.5) * 140.0 * sqrt(k.z), -k.z * (50.0 + 110.0 * hk.y));
       pos.x += sin(k.z * 3.0 + hk.y * 6.283) * 6.0;
       float rr = 4.0 + 9.0 * hk.x;
-      spark += bubbleRing(p - pos, rr) * (1.0 - smoothstep(1.6, CLICK_LIFE, k.z)) * smoothstep(0.0, 0.15, k.z);
+      spark += bubbleRing(p - pos, rr) * (1.0 - sstep(1.6, CLICK_LIFE, k.z)) * sstep(0.0, 0.15, k.z);
     }
   }
   I += spark;
@@ -534,7 +538,7 @@ vec2 starAt(vec2 id) {
     vec2 rc = pos - c.xy;
     float dc = length(rc) + 1e-3;
     float R = clickFront(c.z, 640.0, 1.5);
-    pos += (rc / dc) * clickAmp(c.z) * 16.0 * exp(-pow((dc - R) / 60.0, 2.0));
+    pos += (rc / dc) * clickAmp(c.z) * 16.0 * exp(-sq((dc - R) / 60.0));
   }
   return pos;
 }
@@ -544,7 +548,7 @@ float frontAt(vec2 x) {
     if (i >= uCount) break;
     vec4 c = uClicks[i];
     float R = clickFront(c.z, 640.0, 1.5);
-    f += clickAmp(c.z) * exp(-pow((length(x - c.xy) - R) / 46.0, 2.0));
+    f += clickAmp(c.z) * exp(-sq((length(x - c.xy) - R) / 46.0));
   }
   return f;
 }
@@ -570,7 +574,7 @@ vec4 effect(vec2 p) {
         int ib = k == 0 ? ia + 1 : k == 1 ? ia + 4 : ia + 5;
         vec2 pb = pts[ib];
         float len = length(pb - pa);
-        float w = smoothstep(CSZ * 1.45, CSZ * 0.7, len);
+        float w = sstep(CSZ * 1.45, CSZ * 0.7, len);
         if (w <= 0.0) continue;
         float sd = segDist(p, pa, pb);
         links += w * exp(-sd * sd / 0.9);
@@ -585,7 +589,7 @@ vec4 effect(vec2 p) {
       for (int i = -1; i <= 1; i++) {
         vec2 pa = starAt(pid + vec2(float(i), float(j)));
         float len = length(pa - uPointer.xy);
-        float w = smoothstep(170.0, 60.0, len);
+        float w = sstep(170.0, 60.0, len);
         if (w <= 0.0) continue;
         float sd = segDist(p, uPointer.xy, pa);
         tether += w * exp(-sd * sd / 0.8);
@@ -613,13 +617,13 @@ vec4 effect(vec2 p) {
   float fw = max(fwidth(v), 1e-4);
   float fv = fract(v);
   float dl = min(fv, 1.0 - fv) / fw;
-  float iso = 1.0 - smoothstep(0.4, 1.4, dl);
+  float iso = 1.0 - sstep(0.4, 1.4, dl);
   float major = step(2.5, mod(floor(v + 0.5), 3.0)) * 0.6 + 1.0;
   float reveal = 0.1;
   float lamp = pointerGlow(p, 150.0);
   float dpp = length(p - uPointer.xy);
   float kp = fract(uTime * 0.7 - dpp / 240.0);
-  float pings = uPointer.z * smoothstep(0.86, 0.995, kp) * exp(-dpp / 170.0);
+  float pings = uPointer.z * sstep(0.86, 0.995, kp) * exp(-dpp / 170.0);
   reveal += 0.75 * lamp + 0.6 * pings;
   float ringI = 0.0;
   float blips = 0.0;
@@ -637,11 +641,11 @@ vec4 effect(vec2 p) {
     float amp = clickAmp(c.z);
     float behind = d < R ? exp(-(R - d) / 200.0) : 0.0;
     reveal += amp * behind * 1.3;
-    ringI += amp * (exp(-pow((d - R) / 10.0, 2.0)) + 0.35 * exp(-pow((d - R) / 46.0, 2.0)));
+    ringI += amp * (exp(-sq((d - R) / 10.0)) + 0.35 * exp(-sq((d - R) / 46.0)));
     float since = c.z - length(bpos - c.xy) / 420.0;
     if (since > 0.0) {
-      float fl = exp(-since * 1.1) * smoothstep(0.0, 0.04, since) * (1.0 - smoothstep(CLICK_LIFE - 0.6, CLICK_LIFE, c.z));
-      blips += isBlip * fl * (exp(-db * db / 9.0) * 1.6 + exp(-pow(db - 9.0 - since * 10.0, 2.0) / 1.6) * 0.8);
+      float fl = exp(-since * 1.1) * sstep(0.0, 0.04, since) * (1.0 - sstep(CLICK_LIFE - 0.6, CLICK_LIFE, c.z));
+      blips += isBlip * fl * (exp(-db * db / 9.0) * 1.6 + exp(-sq(db - 9.0 - since * 10.0) / 1.6) * 0.8);
     }
   }
   float I = iso * major * reveal + ringI * 0.8 + blips;
@@ -696,7 +700,7 @@ vec4 effect(vec2 p) {
         if (k >= uCount) break;
         vec4 c = uClicks[k];
         float R = clickFront(c.z, 560.0, 1.6);
-        flash += clickAmp(c.z) * exp(-pow((length(pos - c.xy) - R) / 70.0, 2.0));
+        flash += clickAmp(c.z) * exp(-sq((length(pos - c.xy) - R) / 70.0));
       }
       float glow = exp(-r2 / (3.2 * 3.2)) + 0.55 * exp(-r2 / (13.0 * 13.0)) + 0.1 * exp(-sqrt(r2) / 22.0);
       float e = glow * (0.18 + 0.82 * blink + 1.6 * flash);
@@ -730,7 +734,7 @@ vec4 effect(vec2 p) {
   vec2 center = hid * vec2(1.0, 1.7320508) * HS;
   vec2 ah = abs(h);
   float edge = 0.5 - max(dot(ah, vec2(0.5, 0.8660254)), ah.x);
-  float edgeLine = 1.0 - smoothstep(0.0, 1.3 / HS, edge);
+  float edgeLine = 1.0 - sstep(0.0, 1.3 / HS, edge);
   float facet = floor((atan(h.y, h.x) + PI) / (PI / 3.0));
   float fa = (facet + 0.5) * (PI / 3.0) - PI;
   vec2 fn = vec2(cos(fa), sin(fa));
@@ -739,7 +743,7 @@ vec4 effect(vec2 p) {
   float near = pointerGlow(center, 150.0);
   if (uPointer.z > 0.01) lightDir = normalize(mix(lightDir, normalize(uPointer.xy - center + 1e-3), clamp(near * 3.0, 0.0, 1.0)));
   float shade = clamp(0.5 + 0.5 * dot(normalize(fn + tilt), lightDir), 0.0, 1.0);
-  float depth = smoothstep(0.0, 0.5, edge);
+  float depth = sstep(0.0, 0.5, edge);
   float band = 0.0;
   float after = 0.0;
   for (int i = 0; i < MAXC; i++) {
@@ -748,7 +752,7 @@ vec4 effect(vec2 p) {
     float dc = length(center - c.xy);
     float R = clickFront(c.z, 600.0, 1.5);
     float amp = clickAmp(c.z);
-    band += amp * exp(-pow((dc - R) / 34.0, 2.0));
+    band += amp * exp(-sq((dc - R) / 34.0));
     after += amp * (dc < R ? exp(-(R - dc) / 110.0) : 0.0) * 0.45;
   }
   float sparkle = step(0.82, hash12(hid + floor(uTime * 6.0))) * band;

@@ -4,7 +4,7 @@
 // effect: one WebGL2 shader (src/lib/background-engine.ts), with the glyph
 // field's 2D ring in the effect's colour when WebGL2 is missing. Desktop only
 // (a fine pointer); the main conversation only, never a side chat.
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { backgroundEffect, effectPalette, INTENSITY_GAIN, paletteSwatch, type BackgroundEffectId, type Intensity, type PaletteId } from "@/lib/background-effects";
 import { useBackgroundEffectPrefs } from "@/lib/background-effect-preferences";
 import { mountShaderEffect } from "@/lib/background-engine";
@@ -32,19 +32,24 @@ export function paletteTintCss(palette: PaletteId, scheme: "light" | "dark"): st
 export function ShaderEffectCanvas({ paneRef, effect, palette, intensity }: { paneRef: RefObject<HTMLElement | null>; effect: BackgroundEffectId; palette: PaletteId; intensity: Intensity }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scheme = useColorScheme();
+  // the shader could not run here: a NEW canvas (one that holds a WebGL
+  // context can never give a 2D one) for the glyph field's 2D ring
+  const [fallback, setFallback] = useState(false);
   useEffect(() => {
     const canvas = canvasRef.current;
     const pane = paneRef.current;
     if (!canvas || !pane) return;
+    if (fallback) return mountGlyphField(canvas, pane).unmount;
     const mounted = mountShaderEffect(canvas, pane, effect);
     if (mounted) return mounted.unmount;
-    // no WebGL2: the glyph field's 2D ring, in the effect's colour
-    canvas.dataset.fallback = "2d";
-    return mountGlyphField(canvas, pane).unmount;
-  }, [paneRef, effect]);
+    setFallback(true);
+    return undefined;
+  }, [paneRef, effect, fallback]);
   return (
     <canvas
+      key={fallback ? "2d" : "webgl"}
       ref={canvasRef}
+      data-fallback={fallback ? "2d" : undefined}
       aria-hidden="true"
       data-background-effect={effect}
       data-palette={palette}

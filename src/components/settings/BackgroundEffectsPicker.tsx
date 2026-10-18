@@ -31,12 +31,42 @@ function swatchBackground(id: PaletteId, scheme: "light" | "dark"): string {
 /** A tile's miniature: a still frame, animated while hovered (never with
  * reduced motion). The skin shows through: the app's background, two
  * message bars over the effect. */
+/** The active skin, following the picker (it stamps data-skin on the root):
+ * a miniature redraws in the new skin's colours. */
+function useSkinId(): string {
+  const read = () => (typeof document === "undefined" ? "" : document.documentElement.dataset.skin ?? "");
+  const [skin, setSkin] = useState(read);
+  useEffect(() => {
+    if (typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver(() => setSkin(read()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-skin"] });
+    return () => observer.disconnect();
+  }, []);
+  return skin;
+}
+
 function Thumb({ effect, palette, hovered, index, onUnavailable }: { effect: BackgroundEffectId; palette: PaletteId; hovered: boolean; index: number; onUnavailable: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scheme = useColorScheme();
+  const skin = useSkinId();
+  const [drawn, setDrawn] = useState(false);
+  // the first frame of each tile waits its turn: the shaders compile one
+  // per idle slot, not eleven at once when Settings opens
   useEffect(() => {
+    if (drawn) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const draw = () => {
+      if (!drawPreview(canvas, effect, palette, readGlyphColors(canvas), stillScene(index))) onUnavailable();
+      setDrawn(true);
+    };
+    const idle = (globalThis as { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
+    const timer = setTimeout(() => (idle ? idle(draw, { timeout: 400 }) : draw()), index * 45);
+    return () => clearTimeout(timer);
+  }, [drawn, effect, palette, index, onUnavailable]);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !drawn) return;
     const colors = readGlyphColors(canvas);
     if (!drawPreview(canvas, effect, palette, colors, stillScene(index))) {
       onUnavailable();
@@ -57,7 +87,7 @@ function Thumb({ effect, palette, hovered, index, onUnavailable }: { effect: Bac
       cancelAnimationFrame(frame);
       drawPreview(canvas, effect, palette, colors, stillScene(index));
     };
-  }, [effect, palette, hovered, index, scheme, onUnavailable]);
+  }, [drawn, effect, palette, hovered, index, scheme, skin, onUnavailable]);
   return (
     <canvas
       ref={canvasRef}

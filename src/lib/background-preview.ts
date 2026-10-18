@@ -71,6 +71,10 @@ function getShared(): Shared | null {
     canvas.height = PREVIEW_HEIGHT;
     const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true, powerPreference: "low-power" });
     shared = isWebGL2(gl) ? { canvas, gl, shaders: new Map(), glyphs: undefined } : null;
+    // a lost context (too many open, a GPU reset): start over on the next draw
+    canvas.addEventListener("webglcontextlost", () => {
+      shared = undefined;
+    });
   } catch {
     shared = null;
   }
@@ -172,7 +176,7 @@ export function drawPreview(target: HTMLCanvasElement, effect: BackgroundEffectI
   ctx.clearRect(0, 0, target.width, target.height);
   if (effect === "none") return true;
   const s = getShared();
-  if (!s) return false;
+  if (!s || s.gl.isContextLost()) return false;
   s.gl.viewport(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
   s.gl.clearColor(0, 0, 0, 0);
   s.gl.bindFramebuffer(s.gl.FRAMEBUFFER, null);

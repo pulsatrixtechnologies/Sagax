@@ -676,6 +676,17 @@ function texture(gl: WebGL2RenderingContext): WebGLTexture {
   return tex;
 }
 
+/** Gives a canvas's WebGL context back once the canvas has left the page
+ * (switching effects would otherwise pile up contexts until the browser drops
+ * the oldest). A canvas still in the page keeps it: React mounts an effect
+ * twice on the same canvas in development, and a lost context never compiles
+ * again. */
+export function releaseContextWhenGone(canvas: HTMLCanvasElement, context: WebGL2RenderingContext): void {
+  setTimeout(() => {
+    if (!canvas.isConnected) context.getExtension("WEBGL_lose_context")?.loseContext();
+  }, 0);
+}
+
 /** Whether `context` is a real WebGL2 context (the DOM tests hand out a fake
  * 2D context for every getContext call). */
 export function isWebGL2(context: unknown): context is WebGL2RenderingContext {
@@ -879,6 +890,7 @@ export function createEnergyEngine(canvas: HTMLCanvasElement, pane: HTMLElement)
     gl = null;
   }
   if (!isWebGL2(gl)) return null;
+  const context: WebGL2RenderingContext = gl;
   const renderer = createWebGLRenderer(gl);
   if (!renderer) return null;
   const field = new EnergyField({ renderer, rect: () => canvas.getBoundingClientRect(), quietRects: () => visibleTextRects(pane, canvas) });
@@ -894,7 +906,10 @@ export function createEnergyEngine(canvas: HTMLCanvasElement, pane: HTMLElement)
     hover: (x, y) => field.hover(x, y),
     leave: () => field.leave(),
     settle: () => field.settle(),
-    destroy: () => field.destroy(),
+    destroy: () => {
+      field.destroy();
+      releaseContextWhenGone(canvas, context);
+    },
   };
   return { engine, field };
 }

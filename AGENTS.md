@@ -1339,11 +1339,21 @@ only; the iOS app (native) has none. Keep these rules, covered by
   1.4 s, then eases to a stop; the last frame stays, nothing runs at rest.
   Readability: while it runs, the quiet map of the glyph field dims the
   effect to 40% under text; alpha capped per scheme (`MAX_ALPHA`).
-- No WebGL2: a shader effect falls back to the glyph field's 2D ring in the
-  effect's colour (`data-fallback="2d"`); the picker says so.
+- No WebGL2, or a shader that does not compile: a shader effect falls back
+  to the glyph field's 2D ring in the effect's colour, on a NEW canvas (one
+  that holds a WebGL context never gives a 2D one; `data-fallback="2d"`);
+  the picker says so. Unmounting an effect gives its context back
+  (`WEBGL_lose_context`), so switching effects never piles contexts up; the
+  miniatures' shared context starts over if it is lost.
+- Focus loss (`blur`) settles the field, the glyph field included: a wave in
+  flight stops when focus leaves the window (devtools, another app).
+- Shaders: no `pow()` of a possibly negative base (`sq`), no `smoothstep`
+  with reversed edges (`sstep`): both are undefined in GLSL ES and break on
+  ANGLE/D3D.
 - Miniatures (`background-preview.ts`): ONE shared hidden WebGL2 canvas for
-  the whole gallery, copied to each tile's 2D canvas; a still frame, animated
-  at 30 fps only while hovered, never with reduced motion.
+  the whole gallery, copied to each tile's 2D canvas; first frames staggered
+  (one shader compile per idle slot); a still frame, animated at 30 fps only
+  while hovered, never with reduced motion; redrawn on a skin change.
 - A click fence that contains the whole pane (the Settings dialog around the
   live preview) does not fence it (`startsRipple` with `pane`).
 - Gallery: `src/gallery/background-effects.html`

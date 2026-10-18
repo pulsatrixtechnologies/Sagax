@@ -5,7 +5,7 @@
  * scroller (positioned, over the canvas) and a composer pill in a dock. */
 import { StrictMode, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { GlyphRippleLayer } from "../components/GlyphRippleLayer";
+import { GlyphRippleCanvas } from "../components/GlyphRippleLayer";
 import { setLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
@@ -29,7 +29,7 @@ function Gallery() {
     <main className="app-glow relative isolate flex h-screen min-w-0 flex-col bg-app text-ink">
       <div className="content-card-body flex min-h-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1" data-gallery-pane="">
-          <GlyphRippleLayer paneRef={pane} shown={on} />
+          {on && <GlyphRippleCanvas paneRef={pane} />}
           <div ref={pane} className="relative h-full overflow-y-auto px-5" data-gallery-scroller="">
             <div className="mx-auto flex w-full max-w-[960px] flex-col gap-3 pb-40 pt-14">
               {turns.map((turn, k) => turn.user

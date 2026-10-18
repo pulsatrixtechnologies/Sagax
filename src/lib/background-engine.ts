@@ -22,7 +22,7 @@
 
 import { CLICK_BOOST, CLICK_LIFE, MAX_CLICKS, VERTEX_SHADER, fragmentShader } from "./background-shaders";
 import { isPaletteId, resolvePalette, type BackgroundEffectId, type PaletteColors, type PaletteId, type RGB } from "./background-effects";
-import { QUIET_REFRESH_MS, quietMap, resolveRgb, visibleTextRects } from "./glyph-energy";
+import { QUIET_REFRESH_MS, quietMap, releaseContextWhenGone, resolveRgb, visibleTextRects } from "./glyph-energy";
 import { mountGlyphField, sameGlyphColors, type GlyphColors, type GlyphEngine } from "./glyph-ripple";
 
 /** The most pixels a frame draws (about 1600 x 900). */
@@ -40,13 +40,22 @@ export const BATTERY_PIXEL_SHARE = 0.5;
 // to date by the battery's own event.
 let onBattery = false;
 let batteryWatched = false;
+const batteryListeners = new Set<() => void>();
+/** Called when the machine goes on or off battery (the pixel budget changes). */
+export function onBatteryChange(listener: () => void): () => void {
+  batteryListeners.add(listener);
+  return () => batteryListeners.delete(listener);
+}
 export function watchBattery(): void {
   if (batteryWatched || typeof navigator === "undefined") return;
   batteryWatched = true;
   const nav = navigator as Navigator & { getBattery?: () => Promise<{ charging: boolean; addEventListener(type: string, listener: () => void): void }> };
   nav.getBattery?.().then((battery) => {
     const update = () => {
-      onBattery = !battery.charging;
+      const next = !battery.charging;
+      if (next === onBattery) return;
+      onBattery = next;
+      for (const listener of batteryListeners) listener();
     };
     update();
     battery.addEventListener("chargingchange", update);
@@ -555,6 +564,7 @@ export function mountShaderEffect(canvas: HTMLCanvasElement, pane: HTMLElement, 
     gl = null;
   }
   if (!isWebGL2(gl)) return null;
+  const context: WebGL2RenderingContext = gl;
   watchBattery();
   const renderer = createShaderRenderer(gl, effect, (grid) => {
     if (canvas.width !== grid.width) canvas.width = grid.width;
@@ -581,8 +591,20 @@ export function mountShaderEffect(canvas: HTMLCanvasElement, pane: HTMLElement, 
     hover: (x, y) => field.hover(x, y),
     leave: () => field.leave(),
     settle: () => field.settle(),
-    destroy: () => field.destroy(),
+    destroy: () => {
+      field.destroy();
+      releaseContextWhenGone(canvas, context);
+    },
   };
-  const { unmount } = mountGlyphField(canvas, pane, engine);
+  const { unmount: unmountField } = mountGlyphField(canvas, pane, engine);
+  // on or off battery: the pixel budget changes, draw at the new size
+  const stopBattery = onBatteryChange(() => {
+    const grid = field.size;
+    if (grid) field.resize(grid.cssWidth, grid.cssHeight);
+  });
+  const unmount = () => {
+    stopBattery();
+    unmountField();
+  };
   return { field, unmount };
 }

@@ -54,6 +54,8 @@ describe("BackgroundEffectsPicker", () => {
     act(() => tile("aurora").click());
     expect(tile("aurora").getAttribute("aria-pressed")).toBe("true");
     expect(host.querySelector("[data-background-preview] canvas")?.getAttribute("data-background-effect")).toBe("aurora");
+    // no WebGL2 here: a new canvas carries the 2D ring
+    expect(host.querySelector("[data-background-preview] canvas")?.getAttribute("data-fallback")).toBe("2d");
     const swatches = host.querySelectorAll<HTMLButtonElement>("[data-palette-swatch]");
     expect(swatches.length).toBeGreaterThanOrEqual(4);
     expect(host.querySelector("[data-palette-swatch='aurora']")!.getAttribute("aria-checked")).toBe("true");
