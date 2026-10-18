@@ -18,7 +18,8 @@ const tray = () => host.querySelector<HTMLElement>('[data-testid="message-action
 const shown = () => tray().dataset.shown === "true";
 const more = () => tray().querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
 // a closing menu stays drawn for its 200ms exit, inert and aria-hidden
-const items = () => [...host.querySelectorAll<HTMLButtonElement>('[role=menu]:not([aria-hidden="true"]) [role=menuitem]')];
+// the menu is drawn in a portal on document.body
+const items = () => [...document.querySelectorAll<HTMLButtonElement>('[role=menu]:not([aria-hidden="true"]) [role=menuitem]')];
 
 const pointer = (type: string, target: Element, pointerType: string) =>
   act(async () => {

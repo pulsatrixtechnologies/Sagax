@@ -150,7 +150,8 @@ describe.each(SEND_KEYS)("in %s mode", (mode) => {
     // Edit lives in the row's more menu (#2574); the reaction button before it
     // also opens a menu, so aim at the more button itself.
     flushSync(() => host.querySelector<HTMLButtonElement>('[data-mid="ask"] button[data-more-button]')!.click());
-    const edit = [...host.querySelectorAll<HTMLButtonElement>('[data-mid="ask"] [role=menuitem]')].find((item) => (item.textContent ?? "").startsWith("Edit"))!;
+    // the menu is drawn in a portal on document.body
+    const edit = [...document.querySelectorAll<HTMLButtonElement>('[data-message-menu]:not([aria-hidden="true"]) [role=menuitem]')].find((item) => (item.textContent ?? "").startsWith("Edit"))!;
     flushSync(() => edit.click());
     const editor = () => host.querySelector<HTMLTextAreaElement>("textarea:not([aria-label])")!;
     expect(editor().value).toBe("Try the new model");

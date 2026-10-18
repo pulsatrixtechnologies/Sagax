@@ -212,9 +212,15 @@ describe("chat transcript rows", () => {
 
   it("offers Regenerate on the last answer only, and not during a turn", async () => {
     await openMenus();
+    // the menus are drawn in a portal: a menu's message is its opener's
+    const ownerMid = (item: Element) => {
+      const menu = item.closest('[role="menu"]');
+      const opener = menu?.id ? document.querySelector(`[aria-controls="${CSS.escape(menu.id)}"]`) : null;
+      return (opener ?? item).closest("[data-mid]")?.getAttribute("data-mid");
+    };
     const regenerate = () => [...document.querySelectorAll(`[role="menuitem"]`)]
       .filter((item) => item.textContent === t("chat.regenerate"))
-      .map((button) => button.closest("[data-mid]")?.getAttribute("data-mid"));
+      .map(ownerMid);
     expect(regenerate()).toEqual(["m5"]);
     const busy = (value: boolean) => (current: AppState) => {
       const { messages: _transcript, ...frame } = current.bots.find((bot) => bot.id === "pepper")!;
