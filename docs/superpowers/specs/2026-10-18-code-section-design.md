@@ -1,6 +1,6 @@
 # Section « Code » : les agents cloud de Perspicax dans Sagax
 
-Date : 2026-10-18. Statut : ébauche, résumé côté Sagax. La spec complète (modèle, sécurité, API, phases, décisions) vit dans le dépôt Perspicax : `docs/superpowers/specs/2026-10-18-cloud-agents-design.md`.
+Date : 2026-10-18. Statut : décisions tranchées le 2026-10-18, résumé côté Sagax. La spec complète (modèle, sécurité, API, phases, décisions) vit dans le dépôt Perspicax : `docs/superpowers/specs/2026-10-18-cloud-agents-design.md`.
 
 ## 0. Orientation
 
@@ -28,6 +28,17 @@ Perspicax devient le plan de contrôle d'agents de code cloud : environnements (
 ### 1.3 iOS (phase 2)
 
 Onglet **Code** : même liste ; vue de run plein écran avec segments Conversation / Changements / Terminal / Fichiers ; suite ; push à la fin et sur approbation. Bureau en lecture plus tard.
+
+### 1.4 Décisions qui touchent Sagax
+
+- **Source des jetons** : clé de l'organisation (défaut) ou abonnement personnel de la personne qui lance, réglé par environnement dans la console (`org`, `personnel`, `au_choix`). Avec `personnel`, Sagax remet la connexion du moteur de la personne au runner, en transit par Perspicax, au démarrage du Pod seulement (tmpfs, effacée avec le Pod) ; jamais pour une automatisation ni pour un run lancé au nom de quelqu'un d'autre. Les conditions du fournisseur s'appliquent à l'abonné ; un refus du fournisseur fait échouer le run avec un message clair, sans bascule vers la clé de l'organisation.
+- **Quotas par défaut** : 4 runs simultanés par personne, 12 par organisation, 4 h max (prolongation jusqu'à 12 h), Pod 4 vCPU / 8 Gi. Plafond mensuel du pool de runs réglable par l'organisation (alerte à 80 %, refus des nouveaux runs au plafond). Sagax affiche ces refus tels quels.
+- **Rétention** : conversation et logs 30 jours, audit 1 an, Pod supprimé 15 min après la fin, disque après 24 h. Une suite après 24 h repart d'un clone de la branche du run.
+- **Portée par défaut** : Personnelle.
+
+### 1.5 Composants
+
+`src/components/code/` reprend le contrat des composants de la console Perspicax (même nom, mêmes props, même rendu) : `RunCard` (rangée et version compacte des cartes en conversation), `DiffView` (unifié ou côte à côte, contexte replié, Aperçu, virtualisé, texte seulement), `RunTimeline`, `StatCard`, `MiniBars`. Le contrat est dans la spec Perspicax, section 8.0.
 
 ## 2. Phases qui touchent Sagax
 
