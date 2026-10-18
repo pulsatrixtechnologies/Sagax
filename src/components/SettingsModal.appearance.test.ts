@@ -136,8 +136,8 @@ describe("Settings → Appearance", () => {
   it("is laid out as Grok Bot's pages: grey headings, compact rows, pill menus, no help text", () => {
     const html = render();
     const groups = [...html.matchAll(/data-settings-group="([^"]+)"/g)].map((match) => match[1]);
-    expect(groups).toEqual(["interface", "skin", "conversation", "sidebar", "desktop"]);
-    for (const heading of ["Interface", "Skin", "Conversations", "Sidebar", "Desktop"]) expect(html).toContain(`>${heading}</h3>`);
+    expect(groups).toEqual(["interface", "skin", "backgroundEffects", "conversation", "sidebar", "desktop"]);
+    for (const heading of ["Interface", "Skin", "Background effects", "Conversations", "Sidebar", "Desktop"]) expect(html).toContain(`>${heading}</h3>`);
     // no native select on the page itself, only the narrow-window section menu
     const page = html.slice(html.indexOf('data-settings-group="interface"'));
     expect(page).not.toContain("<select");
@@ -152,6 +152,10 @@ describe("Settings → Appearance", () => {
     // the Theme menu is General's (#573): the miniatures only here
     expect(html).not.toContain('aria-label="Theme"');
     expect(html).toContain('data-skin-grid=""');
+    // the effects behind the conversation, chosen as the skins are (the old
+    // glyph ripple switch is one of them now)
+    expect(html).toContain('data-effect-grid=""');
+    expect(html).not.toContain('data-settings-row="glyphRipple"');
     expect(html).not.toMatch(/[–—]/);
   });
 

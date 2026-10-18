@@ -22,11 +22,11 @@ import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
-import { setGlyphRippleEnabled, useGlyphRipple } from "@/lib/glyph-ripple-preferences";
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { SidebarHiddenSettings } from "../SidebarHiddenSettings";
 import { SkinPicker } from "../SkinPicker";
 import { AppIconPicker, appIconAvailable } from "./AppIconPicker";
+import { BackgroundEffectsPicker } from "./BackgroundEffectsPicker";
 
 /** Grok Bot's "1 ⌄" pill (Computer > Other computers, #576): what a row
  * folds, opened in place. `children` is the pill's text (a count, a word). */
@@ -111,17 +111,6 @@ function SidebarDensityRow() {
         }))}
       />
     </CompactRow>
-  );
-}
-
-/** The character field behind the conversation (GlyphRippleLayer.tsx). The
- * grey line says what it is and that reduced motion keeps it still. */
-export function GlyphRippleRow() {
-  const enabled = useGlyphRipple();
-  return (
-    <DescribedRow label={t("settings.glyphRipple.title")} description={t("settings.glyphRipple.description")} rowId="glyphRipple">
-      <Switch checked={enabled} aria-label={t("settings.glyphRipple.title")} onClick={() => setGlyphRippleEnabled(!enabled)} />
-    </DescribedRow>
   );
 }
 
@@ -284,10 +273,16 @@ export function AppearanceSettings() {
           <SkinPicker />
         </SettingsGroup>
       </div>
+      {/* the effect behind the conversation, chosen as the skins are (the
+          "Glyph ripple on click" switch of 0.5.15 became one of them) */}
+      <div data-settings-card="appearance.backgroundEffects">
+        <SettingsGroup title={t("settings.backgroundEffects.title")} groupId="backgroundEffects">
+          <BackgroundEffectsPicker />
+        </SettingsGroup>
+      </div>
       <SettingsGroup title={t("settings.group.conversation")} groupId="conversation">
         <ThreadsViewRow />
         <SendKeyRow />
-        <GlyphRippleRow />
         {advanced && !remoteActive && editConfig && <ToolCallsRow />}
         {advanced && <SwitchLine label={t("settings.runCard.title")} ariaLabel={t("settings.runCard.show")} checked={runCard} onChange={setShowRunCard} rowId="runCard" />}
         {advanced && <SwitchLine label={t("settings.inspectorButton.title")} ariaLabel={t("settings.inspectorButton.show")} checked={inspector} onChange={setShowInspectorButton} rowId="inspectorButton" />}

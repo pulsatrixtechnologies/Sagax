@@ -25,7 +25,7 @@
 //   afterglow is alive; at rest nothing runs and the last frame stays;
 // - no React in the loop, no allocation per frame, no fillText per frame.
 
-import { CELL, FONT, GLYPHS, LEVELS, mountGlyphField, restCell, type GlyphColors, type GlyphEngine } from "./glyph-ripple";
+import { CELL, FONT, GLYPHS, LEVELS, mountGlyphField, restCell, sameGlyphColors, type GlyphColors, type GlyphEngine } from "./glyph-ripple";
 
 /** Waves alive at once (a seventh replaces the oldest). */
 export const MAX_WAVES = 6;
@@ -293,6 +293,8 @@ export interface EnergyColors {
   tint: RGB;
   hot: RGB;
   scheme: "light" | "dark";
+  /** The intensity's multiplier of the opacities (1 by default). */
+  gain?: number;
 }
 
 /** The frame the renderer draws: waves in CSS px relative to the canvas. */
@@ -613,7 +615,7 @@ export function energyColors(colors: GlyphColors): EnergyColors {
   const hot = colors.scheme === "dark"
     ? { r: tint.r + (1 - tint.r) * 0.38, g: tint.g + (1 - tint.g) * 0.38, b: tint.b + (1 - tint.b) * 0.38 }
     : { r: tint.r * 0.72, g: tint.g * 0.72, b: tint.b * 0.72 };
-  return { ink, tint, hot, scheme: colors.scheme };
+  return { ink, tint, hot, scheme: colors.scheme, gain: colors.gain ?? 1 };
 }
 
 const FONT_STACK = '"SF Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace';
@@ -820,7 +822,8 @@ export function createWebGLRenderer(gl: WebGL2RenderingContext): EnergyRenderer 
       gl.uniform3f(C.ink, colors.ink.r, colors.ink.g, colors.ink.b);
       gl.uniform3f(C.tint, colors.tint.r, colors.tint.g, colors.tint.b);
       gl.uniform3f(C.hot, colors.hot.r, colors.hot.g, colors.hot.b);
-      gl.uniform3f(C.levels, level.rest, lit.lit, lit.water);
+      const gain = colors.gain ?? 1;
+      gl.uniform3f(C.levels, level.rest * gain, Math.min(1, lit.lit * gain), Math.min(1, lit.water * gain));
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
     destroy() {
@@ -882,7 +885,7 @@ export function createEnergyEngine(canvas: HTMLCanvasElement, pane: HTMLElement)
   let last: GlyphColors | null = null;
   const engine: GlyphEngine = {
     setColors: (colors) => {
-      if (last && last.ink === colors.ink && last.tint === colors.tint && last.scheme === colors.scheme) return;
+      if (sameGlyphColors(last, colors)) return;
       last = colors;
       field.setColors(energyColors(colors));
     },

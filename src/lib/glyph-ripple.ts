@@ -42,6 +42,14 @@ export interface GlyphColors {
   ink: string;
   tint: string;
   scheme: "light" | "dark";
+  /** The intensity (Settings > Appearance > Background effects): a
+   * multiplier of the opacities, 1 by default. */
+  gain?: number;
+}
+
+/** The same colours (gain included): nothing to redraw. */
+export function sameGlyphColors(a: GlyphColors | null, b: GlyphColors): boolean {
+  return Boolean(a) && a!.ink === b.ink && a!.tint === b.tint && a!.scheme === b.scheme && (a!.gain ?? 1) === (b.gain ?? 1);
 }
 
 /** The subset of the 2D context the field uses (a fake in the tests). */
@@ -142,12 +150,15 @@ export interface RippleClick {
  * setting or the app's own switch) and never in a hidden window. The listener
  * sits on the transcript's scroller, so the composer and the menus (siblings
  * or portals) never reach it in the first place; this is the second fence. */
-export function startsRipple(event: RippleClick, env: { reducedMotion: boolean; hidden: boolean }): boolean {
+export function startsRipple(event: RippleClick, env: { reducedMotion: boolean; hidden: boolean; pane?: Element | null }): boolean {
   if (env.reducedMotion || env.hidden) return false;
   if (event.button !== 0 || event.isPrimary === false) return false;
   if (event.pointerType === "touch") return false;
   const target = event.target as Element | null;
-  if (target && typeof target.closest === "function" && target.closest(NO_RIPPLE)) return false;
+  const fence = target && typeof target.closest === "function" ? target.closest(NO_RIPPLE) : null;
+  // a fence around the whole pane (the Settings dialog around the live
+  // preview of Background effects) is not a fence inside it
+  if (fence && !(env.pane && fence.contains(env.pane))) return false;
   return true;
 }
 
@@ -260,7 +271,7 @@ export class GlyphField {
    * false when nothing changed (no repaint). */
   setColors(colors: GlyphColors): boolean {
     const old = this.colors;
-    if (old && old.ink === colors.ink && old.tint === colors.tint && old.scheme === colors.scheme) return false;
+    if (sameGlyphColors(old, colors)) return false;
     this.colors = colors;
     if (this.cols > 0) {
       this.atlas = this.makeAtlas(this.cell, FONT * this.dpr, colors);
@@ -308,7 +319,7 @@ export class GlyphField {
     ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, width, height);
     if (!this.atlas || !this.colors) return;
-    const rest = LEVELS[this.colors.scheme].rest;
+    const rest = LEVELS[this.colors.scheme].rest * (this.colors.gain ?? 1);
     const c = this.cell;
     for (let i = 0; i < this.restAlpha.length; i += 1) {
       const alpha = this.restAlpha[i];
@@ -330,7 +341,7 @@ export class GlyphField {
     ctx.clearRect(col * c, row * c, c, c);
     const alpha = this.restAlpha[i];
     if (alpha <= 0 || !this.atlas || !this.colors) return;
-    ctx.globalAlpha = alpha * LEVELS[this.colors.scheme].rest;
+    ctx.globalAlpha = alpha * LEVELS[this.colors.scheme].rest * (this.colors.gain ?? 1);
     ctx.drawImage(this.atlas, this.restGlyph[i] * c, 0, c, c, col * c, row * c, c, c);
   }
 
@@ -405,7 +416,9 @@ export class GlyphField {
     }
 
     const ctx = this.ctx;
-    const level = LEVELS[this.colors.scheme];
+    const base = LEVELS[this.colors.scheme];
+    const gain = this.colors.gain ?? 1;
+    const level = { rest: base.rest * gain, ink: base.ink * gain, tint: Math.min(1, base.tint * gain) };
     const atlas = this.atlas;
     for (let k = 0; k < count; k += 1) {
       const i = this.current[k];
@@ -465,7 +478,8 @@ export function canvasAtlas(cell: number, fontPx: number, colors: GlyphColors): 
  * the skin wrote (a hex, color-mix, a var). */
 export function readGlyphColors(canvas: HTMLElement): GlyphColors {
   const style = getComputedStyle(canvas);
-  return { ink: style.color || "#888", tint: style.borderTopColor || style.color || "#888", scheme: readColorScheme() };
+  const gain = Number(canvas.dataset.gain);
+  return { ink: style.color || "#888", tint: style.borderTopColor || style.color || "#888", scheme: readColorScheme(), gain: Number.isFinite(gain) && gain > 0 ? gain : 1 };
 }
 
 /** What mountGlyphField drives: the 2D ring here, or the WebGL energy weave
@@ -556,9 +570,11 @@ export function mountGlyphField(
     queueSize();
   };
   watchDensity();
-  // skin or scheme change: the picker stamps data-skin on the root
+  // skin or scheme change: the picker stamps data-skin on the root; a new
+  // colour or intensity of the effect: the layer restyles the canvas
   const themeObserver = typeof MutationObserver === "function" ? new MutationObserver(recolor) : null;
   themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ["data-skin", "class", "style", "data-theme"] });
+  themeObserver?.observe(canvas, { attributes: true, attributeFilter: ["style", "data-gain", "data-palette"] });
   const schemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
   schemeQuery?.addEventListener("change", recolor);
 
@@ -567,9 +583,12 @@ export function mountGlyphField(
     else queueSize();
   };
   document.addEventListener("visibilitychange", onVisibility);
+  // another app in front: nothing keeps running behind it
+  const onBlur = () => active.settle();
+  window.addEventListener("blur", onBlur);
 
   const onPointerDown = (event: PointerEvent) => {
-    if (!startsRipple(event, { reducedMotion: prefersReducedMotion(), hidden: document.hidden })) return;
+    if (!startsRipple(event, { reducedMotion: prefersReducedMotion(), hidden: document.hidden, pane })) return;
     active.ripple(event.clientX, event.clientY);
   };
   pane.addEventListener("pointerdown", onPointerDown, { passive: true });
@@ -594,6 +613,7 @@ export function mountGlyphField(
       pane.removeEventListener("pointermove", onPointerMove);
       pane.removeEventListener("pointerleave", onPointerLeave);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
       schemeQuery?.removeEventListener("change", recolor);
       themeObserver?.disconnect();
       densityQuery?.removeEventListener("change", onDensity);

@@ -1,15 +1,16 @@
 // @vitest-environment happy-dom
-// The glyph field behind the conversation (Settings > Appearance > Glyph
-// ripple on click): off by default, a canvas that never takes a click, and
-// no ring with reduced motion.
+// The glyph field behind the conversation (Settings > Appearance >
+// Background effects > Glyph ripple): off by default, a canvas that never
+// takes a click, and no ring with reduced motion.
 import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GLYPH_RIPPLE_KEY, setGlyphRippleEnabled } from "@/lib/glyph-ripple-preferences";
+import { BACKGROUND_EFFECT_KEY, resetBackgroundEffectPrefsForTests, setBackgroundEffect } from "@/lib/background-effect-preferences";
 import { mountGlyphField, type GlyphContext, type GlyphEngine } from "@/lib/glyph-ripple";
 import { mountGlyphEnergy } from "@/lib/glyph-energy";
-import { GlyphRippleLayer, useGlyphRippleShown } from "./GlyphRippleLayer";
-import { GlyphRippleRow } from "./settings/AppearanceSettings";
+import { BackgroundEffectLayer, useBackgroundEffectShown } from "./BackgroundEffectLayer";
+
+const setGlyphRippleEnabled = (on: boolean) => setBackgroundEffect(on ? "glyphs" : "none");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -24,7 +25,7 @@ function fakeContext(): GlyphContext {
 beforeEach(() => {
   fine = true;
   localStorage.clear();
-  setGlyphRippleEnabled(false);
+  resetBackgroundEffectPrefsForTests();
   vi.stubGlobal("matchMedia", (query: string) => ({
     matches: query === "(pointer: fine)" ? fine : false,
     media: query,
@@ -47,9 +48,9 @@ afterEach(() => {
 
 function Pane() {
   const pane = createRef<HTMLDivElement>();
-  const shown = useGlyphRippleShown();
+  const effect = useBackgroundEffectShown();
   return createElement("div", { className: "relative" },
-    createElement(GlyphRippleLayer, { paneRef: pane, shown }),
+    createElement(BackgroundEffectLayer, { paneRef: pane, effect }),
     createElement("div", { ref: pane, "data-pane": "" }, createElement("p", null, "hello")),
   );
 }
@@ -57,7 +58,7 @@ function Pane() {
 describe("GlyphRippleLayer", () => {
   it("is off by default: no canvas, nothing mounted", () => {
     act(() => root.render(createElement(Pane)));
-    expect(localStorage.getItem(GLYPH_RIPPLE_KEY)).toBe("0");
+    expect(localStorage.getItem(BACKGROUND_EFFECT_KEY)).toBeNull();
     expect(host.querySelector("canvas")).toBeNull();
   });
 
@@ -182,19 +183,5 @@ describe("mountGlyphField with an engine that has a pointer glow", () => {
     unmount();
     canvas.remove();
     pane.remove();
-  });
-});
-
-describe("Settings > Appearance row", () => {
-  it("turns the field on and off for this person, persisted", () => {
-    act(() => root.render(createElement(GlyphRippleRow)));
-    const toggle = host.querySelector<HTMLButtonElement>("[role='switch'], button[aria-checked]");
-    expect(toggle).not.toBeNull();
-    expect(toggle!.getAttribute("aria-checked")).toBe("false");
-    act(() => toggle!.click());
-    expect(localStorage.getItem(GLYPH_RIPPLE_KEY)).toBe("1");
-    expect(toggle!.getAttribute("aria-checked")).toBe("true");
-    act(() => toggle!.click());
-    expect(localStorage.getItem(GLYPH_RIPPLE_KEY)).toBe("0");
   });
 });

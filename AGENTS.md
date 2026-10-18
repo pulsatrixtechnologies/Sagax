@@ -1304,15 +1304,52 @@ carries as `resources/ui` (outside the asar) and serves from there. Tests: `src/
 `src/components/GroupView.test.ts`. The server image must be installed
 before an organization server accepts `{ groupId }`.
 
-## Glyph ripple behind the conversation (2026-10-16)
+## Background effects behind the conversation (2026-10-18)
 
-Settings > Appearance > Conversation > "Glyph ripple on click" ("Effet de
-caractères au clic"; `sagax-glyph-ripple`, per person and computer, off
-unless `"1"`, `src/lib/glyph-ripple-preferences.ts`). Desktop only: a coarse
-pointer gets nothing, and the iOS app (native) has no such setting. Keep
-these rules, covered by `src/lib/glyph-ripple.test.ts`,
-`src/lib/glyph-ripple-preferences.test.ts` and
-`src/components/GlyphRippleLayer.dom.test.ts`:
+Settings > Appearance > Background effects ("Effets d'arrière-plan"), shown
+as the skins are: a live preview (move the pointer and click in it), a
+gallery of miniatures, the effect's colour (swatches) and the intensity
+(low / medium / high). Per person and computer, nothing goes to the server:
+`sagax-background-effect` (JSON `{effect, palettes, intensity}`,
+`src/lib/background-effect-preferences.ts`), other windows follow through the
+storage event. Default None: no canvas, no listener. Migration: the old
+switch `sagax-glyph-ripple` "1" reads as Glyph ripple, anything else as None;
+the first write removes it. Desktop only (a fine pointer), main conversation
+only; the iOS app (native) has none. Keep these rules, covered by
+`src/lib/background-effects.test.ts`,
+`src/lib/background-effect-preferences.test.ts`,
+`src/lib/background-engine.test.ts` and
+`src/components/settings/BackgroundEffectsPicker.dom.test.ts`:
+
+- Registry `src/lib/background-effects.ts`: id, kind (`none`, `glyphs` = the
+  field below, `shader`), palettes offered (first = default), names and
+  descriptions in i18n (`settings.backgroundEffects.effect.<id>.*`). Palettes
+  `theme` (the skin's `--glyph-ripple-tint`, a hue shift, a hot core) and
+  `mono` (the ink) follow the skin; the others have a light and a dark
+  variant. Effects: glyphs, matrix, starfield, aurora, magnetic, synthwave,
+  ink, bubbles, constellation, sonar, fireflies, crystal.
+- Shader effects: one WebGL2 fragment shader each (`background-shaders.ts`,
+  `vec4 effect(vec2 p)` over a shared prelude and footer), engine
+  `background-engine.ts` (`ShaderField`), mounted through the glyph field's
+  `mountGlyphField` wiring (size, density, skin, visibility, focus loss,
+  reduced motion, click fences). Every effect reacts to the pointer and to
+  clicks. Drawn at CSS resolution at most and under 1.44 Mpx; on battery
+  (Battery Status API) half that and 30 fps; otherwise 60 fps at most. The
+  clock runs only while a click lives or the pointer moved in the last
+  1.4 s, then eases to a stop; the last frame stays, nothing runs at rest.
+  Readability: while it runs, the quiet map of the glyph field dims the
+  effect to 40% under text; alpha capped per scheme (`MAX_ALPHA`).
+- No WebGL2: a shader effect falls back to the glyph field's 2D ring in the
+  effect's colour (`data-fallback="2d"`); the picker says so.
+- Miniatures (`background-preview.ts`): ONE shared hidden WebGL2 canvas for
+  the whole gallery, copied to each tile's 2D canvas; a still frame, animated
+  at 30 fps only while hovered, never with reduced motion.
+- A click fence that contains the whole pane (the Settings dialog around the
+  live preview) does not fence it (`startsRipple` with `pane`).
+- Gallery: `src/gallery/background-effects.html`
+  (`?effect=&palette=&intensity=&skin=`, `?view=settings`).
+
+### Glyph ripple (the `glyphs` effect, 2026-10-16)
 
 - One `<canvas>` (`GlyphRippleLayer.tsx`), first child of the main chat
   pane, `pointer-events: none`, `aria-hidden`; the transcript scroller is
@@ -1350,6 +1387,8 @@ these rules, covered by `src/lib/glyph-ripple.test.ts`,
   or delayed (passive listener).
 - Reduced motion (the system setting or the app's `data-reduced-motion`,
   `prefersReducedMotion()`): the still field stays, no wave and no glow.
+- Colour and intensity: the layer sets the canvas's border colour to the
+  palette's tint and `data-gain` to the intensity (a multiplier of `LEVELS`).
 - Gallery: `src/gallery/glyph-ripple.html` (`?skin=<id>&off=1`).
 
 ## Seen by: read receipts (2026-10-08)
