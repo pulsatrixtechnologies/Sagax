@@ -84,9 +84,9 @@ describe("thread control placement", () => {
     expect(markup).toMatch(/<textarea[^>]*disabled=""[^>]*aria-busy="true"/);
     expect(markup).not.toContain("Finish group setup");
   });
-  // JC, 2026-10-08: one chat bar for both modes, Advanced's. JC, 2026-10-14:
-  // except the place chip, which Simple hides like the bot's Works on.
-  it("renders the same composer row in Simple and Advanced mode, the place chip Advanced only", () => {
+  // JC, 2026-10-08: one chat bar for both modes, Advanced's. JC, 2026-10-18:
+  // no place row at all, the bot picks where each task runs.
+  it("renders the same composer row in Simple and Advanced mode, with no place row", () => {
     const composerOf = (advanced: boolean) => {
       setAdvancedMode(advanced);
       fixture.approval = null;
@@ -102,9 +102,8 @@ describe("thread control placement", () => {
       const simple = composerOf(false);
       const advanced = composerOf(true);
       expect(simple.row).not.toContain('data-testid="place-chip"');
-      expect(advanced.row).toContain('data-testid="place-chip"');
-      const withoutPlace = (row: string) => row.replace(/<div class="relative flex items-center w-full"><button[^>]*data-testid="place-chip"[\s\S]*?<\/button><\/div>/, "");
-      expect(withoutPlace(advanced.row)).toBe(simple.row);
+      expect(advanced.row).not.toContain('data-testid="place-chip"');
+      expect(advanced.row).toBe(simple.row);
       expect(simple.props).toMatchObject({ align: "left", variant: "row" });
       expect(Object.keys(simple.props ?? {})).toEqual(Object.keys(advanced.props ?? {}));
       // one + (attach files, then the approval row), the message field, then the model chip
@@ -120,11 +119,14 @@ describe("thread control placement", () => {
     }
   });
 
-  it("keeps the place chip in Simple while this conversation has a pinned place to take back", () => {
-    setAdvancedMode(false);
-    const pinned: Bot = { ...bot, busy: false, tasks: [{ ...bot.tasks![0]!, surface: "local" }] };
-    expect(renderToStaticMarkup(createElement(ChatView, { bot: pinned }))).toContain('data-testid="place-chip"');
-    expect(renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false } }))).not.toContain('data-testid="place-chip"');
+  it("shows no place row even for a conversation an older build pinned", () => {
+    setAdvancedMode(true);
+    try {
+      const pinned: Bot = { ...bot, busy: false, tasks: [{ ...bot.tasks![0]!, surface: "local" }] };
+      expect(renderToStaticMarkup(createElement(ChatView, { bot: pinned }))).not.toContain('data-testid="place-chip"');
+    } finally {
+      setAdvancedMode(false);
+    }
   });
 
   it("offers trusted modes in the composer without requiring a Full bot default", () => {
