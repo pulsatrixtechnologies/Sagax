@@ -675,8 +675,8 @@ export function ModelPicker({
    * that opens this menu through `menuControl` (JC, 2026-10-18). */
   headless?: boolean;
   menuControl?: { current: ComposerModelMenuControl | null };
-  /** The chip's label and state, for the + menu's Model row. */
-  onChip?: (chip: ComposerModelChip) => void;
+  /** The chip's label and state, for the + menu's Model row (null once unmounted). */
+  onChip?: (chip: ComposerModelChip | null) => void;
   /** Headless: what the menu opens above when no row asked (the mascot). */
   fallbackAnchor?: () => HTMLElement | null;
 }) {
@@ -775,7 +775,7 @@ export function ModelPicker({
   };
   const closeMenu = (refocus = false) => {
     setMenu(false);
-    if (refocus) (anchorRef.current?.isConnected ? anchorRef.current : triggerRef.current)?.focus();
+    if (refocus) (anchorRef.current?.isConnected ? anchorRef.current : triggerRef.current ?? (headless ? fallbackAnchor?.() : null))?.focus();
   };
   /** A pick or Edit…: the + menu around the row closes too. */
   const menuDone = () => {
@@ -1303,7 +1303,7 @@ export function ModelPicker({
     const rect = (anchor ?? (headless ? fallbackAnchor?.() : triggerRef.current))?.getBoundingClientRect();
     if (rect && typeof window.innerWidth === "number") {
       if (anchor && box) {
-        // a submenu of the + menu: beside it, its bottom on the row's
+        // a submenu of the + menu: beside it, its bottom just below the row's
         const left = Math.max(8, Math.min(box.getBoundingClientRect().right + 6, window.innerWidth - MENU_WIDTH - 8));
         setMenuAt({ left, bottom: Math.max(8, window.innerHeight - rect.bottom - 6) });
       } else if (headless) {
@@ -1336,6 +1336,21 @@ export function ModelPicker({
   useEffect(() => {
     onChip?.({ label: composerLabel, title: composerTitle, busy: Boolean(bot.busy), ultracode: ultracodeChip, open: menuShownOpen });
   }, [onChip, composerLabel, composerTitle, bot.busy, ultracodeChip, menuShownOpen]);
+  // another thread or a group: the + menu's row never shows the last bot's model
+  useEffect(() => () => onChip?.(null), [onChip]);
+  // headless: an Escape with the focus outside the open menu (tabbed away)
+  // still closes it first; the + menu's own Escape waits for its row
+  useEffect(() => {
+    if (!headless || !menu) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (menuRef.current?.contains(document.activeElement)) return;
+      event.preventDefault();
+      closeMenu(true);
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  });
 
   const trigger = windowOnly ? null : inComposer && headless ? (
     // no chip: the + menu's Model row reads it; the Retro 98 status bar reads this
@@ -1696,6 +1711,13 @@ export function ModelPicker({
       onKeyDown={(event) => {
         // a submenu of the + menu: its keys stay here (the + menu moves its own focus)
         if (headless) event.stopPropagation();
+        // the left arrow from an empty search steps back to the + menu's row
+        if (headless && event.key === "ArrowLeft" && !event.defaultPrevented
+          && event.target instanceof HTMLInputElement && event.target.value === "") {
+          event.preventDefault();
+          closeMenu(true);
+          return;
+        }
         if (event.key !== "Escape" || event.defaultPrevented) return;
         event.preventDefault();
         closeMenu(true);
