@@ -56,10 +56,11 @@ for a bot or a conversation any more:
   stored). The engine-removal move writes no place.
 - At start, `Store.retireFixedWorkspaces` moves a saved fixed Works on and
   every conversation pin back to Auto, Off kept, idempotent (log line
-  "Workspace: N bot(s) and M conversation(s) back on Auto"). A bot that was
-  kept off this computer (Cloud, Local VM, Browser) may reach it on Auto, so
-  it and each of its conversations go back to Ask (allow list cleared),
-  until a person raises the level again.
+  "Workspace: N bot(s) and M conversation(s) back on Auto"). A bot or a
+  conversation that was kept off this computer (Cloud, Local VM, Browser,
+  by Works on or by a person's or legacy pin) may reach it on Auto, so it
+  goes back to Ask (allow list cleared, a prepared grant dropped), until a
+  person raises the level again. An auto pin changes no level.
 - A creation request that names This computer keeps its guards: the
   Approve for me warning (`acknowledgeLocalAuto`) and Ask to start.
 - Other guards are unchanged: organization policy

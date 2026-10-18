@@ -36,7 +36,9 @@ describe("the start sweep", () => {
     store.patchTask(auto.id, auto.threadId, { surface: "browser" });
     store.patchTask(off.id, off.threadId, { surface: "local", surfaceSource: "auto" });
 
-    expect(store.retireFixedWorkspaces()).toEqual({ bots: 2, pins: 3, asked: 0 });
+    // the two conversations pinned to a Local VM and to the browser held the
+    // Auto bot off this computer, so they ask now
+    expect(store.retireFixedWorkspaces()).toEqual({ bots: 2, pins: 3, asked: 2 });
 
     const reloaded = new Store(newBotDefault);
     expect(reloaded.bot(cloud.id)?.computer).toBeUndefined();
@@ -86,5 +88,29 @@ describe("the start sweep", () => {
     expect(reloaded.bot(cloudAsk.id)?.approvalMode).toBe("ask");
     expect(reloaded.taskByThread(cloudAsk.id, cloudAsk.threadId)?.approvalMode).toBe("ask");
     expect(reloaded.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 0, asked: 0 });
+  });
+
+  it("puts a conversation a pin held off this computer back on Ask, legacy levels too, and leaves an auto pin's level", () => {
+    const store = new Store(newBotDefault);
+    const bot = store.createBot({}, { seedMessages: false });
+    store.patchBot(bot.id, { approvalMode: "auto", autoApprove: true });
+    const pinned = store.createTask(bot.id, "Pinned to the browser", false)!;
+    const legacy = store.createTask(bot.id, "Legacy level", false)!;
+    const following = store.createTask(bot.id, "Follows the bot", false)!;
+    const autoPin = store.createTask(bot.id, "Auto pin", false)!;
+    store.patchTask(bot.id, pinned.threadId, { surface: "browser", surfaceSource: "user", approvalMode: "full" });
+    store.patchTask(bot.id, legacy.threadId, { surface: "vm", approvalMode: undefined, autoApprove: true });
+    store.patchTask(bot.id, following.threadId, { surface: "cloud", surfaceSource: "user", approvalMode: undefined, autoApprove: undefined });
+    store.patchTask(bot.id, autoPin.threadId, { surface: "cloud", surfaceSource: "auto", approvalMode: "auto" });
+
+    expect(store.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 4, asked: 3 });
+
+    const reloaded = new Store(newBotDefault);
+    for (const threadId of [pinned.threadId, legacy.threadId, following.threadId]) {
+      expect(reloaded.taskByThread(bot.id, threadId), threadId).toMatchObject({ approvalMode: "ask", autoApprove: false });
+    }
+    expect(reloaded.taskByThread(bot.id, autoPin.threadId)?.approvalMode).toBe("auto");
+    // a pin alone held those back: the bot keeps its own level
+    expect(reloaded.bot(bot.id)?.approvalMode).toBe("auto");
   });
 });

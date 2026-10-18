@@ -3295,10 +3295,12 @@ export class Store {
    * place (Cloud, Local VM, This computer, Browser) goes back to Auto, and
    * every conversation pin goes, whoever set it. Off stays: it withholds
    * every screen, and lifting it would widen what the bot may reach.
-   * A bot that was kept off this computer (Cloud, Local VM or Browser) may
-   * reach it on Auto, so it starts again on Ask, it and each of its
-   * conversations, as on an engine switch: nothing it may now do on this
-   * computer runs without asking until a person raises the level again.
+   * A bot or a conversation that was kept off this computer (Cloud, Local
+   * VM or Browser, by Works on or by a person's or a legacy pin) may reach
+   * it on Auto, so it starts again on Ask, as on an engine switch, and a
+   * prepared grant is dropped: nothing it may now do on this computer runs
+   * without asking until a person raises the level again. An auto pin
+   * recorded where Auto had landed held nothing back, so it changes no level.
    * Idempotent; one save when anything changed. */
   retireFixedWorkspaces(): { bots: number; pins: number; asked: number } {
     let bots = 0;
@@ -3306,31 +3308,42 @@ export class Store {
     let asked = 0;
     const touched = new Set<string>();
     const askNow = { approvalMode: "ask" as const, autoApprove: false, alwaysAllow: [] as string[] };
+    const narrower = (place: unknown) => place === "cloud" || place === "vm" || place === "browser";
     for (const bot of this.bots) {
-      if (bot.computer !== undefined && autoOnlyDestination(bot.computer) === undefined) {
-        const keptOffThisComputer = bot.computer !== "local";
-        if (keptOffThisComputer) {
-          for (const task of bot.tasks ?? []) {
-            if (task.approvalMode !== undefined && task.approvalMode !== "ask") {
-              Object.assign(task, structuredClone(askNow));
-              asked++;
-            }
-          }
-          if (approvalModeFor(bot) !== "ask") {
-            Object.assign(bot, structuredClone(askNow));
-            delete bot.approvalGrant;
-            asked++;
-          }
-        }
-        delete bot.computer;
-        bots++;
-        touched.add(bot.id);
-      }
+      const botKeptOff = narrower(bot.computer);
       for (const task of bot.tasks ?? []) {
+        // A conversation held off this computer, by the bot's Works on or by
+        // its own pin, may reach it on Auto: back to Ask.
+        const keptOff = botKeptOff || (narrower(task.surface) && task.surfaceSource !== "auto");
+        // its own level, else the bot's that it follows (a pin alone held it
+        // off, so the bot keeps its own level and this conversation asks)
+        const ownLevel = task.approvalMode !== undefined || task.autoApprove !== undefined;
+        const level = ownLevel || botKeptOff ? approvalModeFor(task) : approvalModeFor(bot);
+        if (keptOff && level !== "ask") {
+          Object.assign(task, structuredClone(askNow));
+          asked++;
+          touched.add(bot.id);
+        }
+        if (keptOff && bot.approvalGrant) {
+          delete bot.approvalGrant;
+          touched.add(bot.id);
+        }
         if (task.surface === undefined && task.surfaceSource === undefined) continue;
         if (task.surface !== undefined) pins++;
         delete task.surface;
         delete task.surfaceSource;
+        touched.add(bot.id);
+      }
+      if (bot.computer !== undefined && autoOnlyDestination(bot.computer) === undefined) {
+        if (botKeptOff) {
+          if (approvalModeFor(bot) !== "ask") {
+            Object.assign(bot, structuredClone(askNow));
+            asked++;
+          }
+          delete bot.approvalGrant;
+        }
+        delete bot.computer;
+        bots++;
         touched.add(bot.id);
       }
     }
