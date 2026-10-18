@@ -56,8 +56,8 @@ export interface PlusMenuItem {
 /** The + at the start of the composer and its menu, in groups (Grok Bot's
  * composer actions, Cursor's grouped menus): add (Attach files, Teach a
  * task), modes (Goal, Setup), then the conversation's own settings as rows
- * that open beside it (`rows`, rendered by their owners: the model, the
- * approval level, the workspace). */
+ * that open beside it (`rows`, rendered by their owners: the model and the
+ * approval level). */
 export function ComposerPlusMenu({
   items,
   rows,

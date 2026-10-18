@@ -1354,9 +1354,9 @@ export function Composer({
           {!locked && (
             <div className="composer-band flex flex-wrap items-center gap-2">
               {/* One + (Grok Bot's): attach and teach a task, the modes
-                  (goal, setup), then this conversation's model, approval
-                  level and workspace as rows that open beside it (JC,
-                  2026-10-15/16; the model since 2026-10-18). */}
+                  (goal, setup), then this conversation's model and approval
+                  level as rows that open beside it (JC, 2026-10-15/16; the
+                  model since 2026-10-18, no workspace row since #743). */}
               <ComposerPlusMenu items={plusItems} rows={plusRows} onOpenChange={(open) => { if (!open) modelMenu.current?.close(); }} />
               {teachChooser && bot && <TeachChooserDialog botName={bot.name} onShow={showInBrowser} onDescribe={() => startDraftWith("/learn ")} onClose={() => setTeachChooser(false)} />}
               {/* /goal or the + menu's Goal mode starts it; the chip appears
