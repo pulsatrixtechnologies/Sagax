@@ -309,7 +309,7 @@ describe("react_to_message and remove_reaction", () => {
     const reacted = await callTool("react_to_message", { emoji: " 👍 " }, context({ client }));
     expect(reacted.isError).toBeFalsy();
     expect(reacted.text).toContain("Reacted 👍");
-    expect(reacted.text).toContain("end your turn without text");
+    expect(reacted.text).toContain("end your turn now with an empty reply");
     expect(calls[0]).toEqual({ path: "/api/internal/reaction", body: { fromBotId: "bot-voice", fromThreadId: "thread-voice", emoji: "👍", remove: false } });
 
     const removed = await callTool("remove_reaction", { message_id: "m1" }, context({ client }));
