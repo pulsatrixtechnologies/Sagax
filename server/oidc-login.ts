@@ -515,7 +515,11 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     const client = outcome.client;
     const refuse = (code: string, why: string) => {
       log(`oidc sign-in again refused (${code}): ${why}`);
+      // Its refresh token when Perspicax gave one (ends its access token
+      // too), else the access token itself: nothing of it stays live.
+      const accessToken = outcome.grant.accessToken;
       if (refreshToken) revocations.enqueue(refreshToken, "refresh_token", `a refused sign-in again (${code})`);
+      else if (accessToken) revocations.enqueue(accessToken, "access_token", `a refused sign-in again (${code})`);
       redirect(res, reauthReturn(client, { error: code }), [clearBinding]);
     };
     if (!expect) return refuse("reauth_session", "the flow did not remember who started it");

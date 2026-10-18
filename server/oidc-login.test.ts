@@ -465,7 +465,7 @@ describe("the sign-in routes (in process)", () => {
 
   describe("the sign-in again of an account deletion (2026-10-18)", () => {
     /** A web sign-in, then its session asks to sign in again (`as` signs in at Perspicax instead). */
-    async function again(options: { as?: typeof USER; client?: "web" | "phone"; sessionGone?: boolean; noMarker?: boolean; claims?: (c: Record<string, unknown>) => Record<string, unknown> } = {}) {
+    async function again(options: { as?: typeof USER; client?: "web" | "phone"; sessionGone?: boolean; noMarker?: boolean; noRefresh?: boolean; claims?: (c: Record<string, unknown>) => Record<string, unknown> } = {}) {
       const { callback } = await walk();
       const cookie = callback!.headers.getSetCookie().find((c) => c.startsWith("omb_session_test="))!;
       const record = sessions.authenticate(decodeURIComponent(cookie.split(";")[0]!.split("=")[1]!))!;
@@ -482,6 +482,7 @@ describe("the sign-in routes (in process)", () => {
       const binding = start.headers.getSetCookie().find((c) => c.includes("_oidc="))!.split(";")[0]!;
       if (options.claims) provider.tamper = { claims: options.claims };
       if (options.noMarker) provider.tamper = { ...provider.tamper, omitEraseMarker: true };
+      if (options.noRefresh) provider.tamper = { ...provider.tamper, noRefreshToken: true };
       try {
         const authorize = await fetch(to, { redirect: "manual" });
         const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
@@ -547,6 +548,14 @@ describe("the sign-in routes (in process)", () => {
       expect(unmarked.location).toBe("/#account-reauth-error=reauth_scope");
       expect(reauth.has(unmarked.record.id)).toBe(false);
       await revokedSince(revokedBefore);
+
+      // Without a refresh token, the refused sign-in's access token itself goes.
+      revokedBefore = provider.revoked.length;
+      const bare = await again({ sessionGone: true, noRefresh: true });
+      expect(bare.location).toBe("/#account-reauth-error=reauth_session");
+      // (the gone session's own grant is revoked too: look for the access token)
+      for (let i = 0; i < 50 && !provider.revoked.slice(revokedBefore).some((r) => r.token_type_hint === "access_token"); i++) await new Promise((r) => setTimeout(r, 20));
+      expect(provider.revoked.slice(revokedBefore).some((r) => r.token_type_hint === "access_token")).toBe(true);
     }, 30_000);
 
     it("answers 405 to another method", async () => {

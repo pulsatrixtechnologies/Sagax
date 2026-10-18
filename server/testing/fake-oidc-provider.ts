@@ -46,6 +46,8 @@ export interface FakeOidcTamper {
   omitRoutinesMarker?: boolean;
   /** 2026-10-18: answer a sign-in again without the account erasure marker (an older Perspicax). */
   omitEraseMarker?: boolean;
+  /** 2026-10-18: answer the code exchange without a refresh token. */
+  noRefreshToken?: boolean;
   /** 2026-10-08: refuse to issue a routine delegation by token exchange (a
    * Perspicax up to 1.8.13: only an access token may be requested). */
   noDelegationExchange?: boolean;
@@ -601,7 +603,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         }
         return send(res, 200, {
           access_token: newAccess(grant.user.sub),
-          refresh_token: issueRefresh(family, grant.user, grant.resource),
+          ...(provider.tamper.noRefreshToken ? {} : { refresh_token: issueRefresh(family, grant.user, grant.resource) }),
           token_type: "Bearer",
           expires_in: 3600,
           scope: !provider.tamper.omitEraseMarker && asked.includes(ERASE_MARKER) && asked.includes("openid") && Boolean(grant.resource)

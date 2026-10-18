@@ -27,7 +27,9 @@
 //      revoked at Perspicax (its refresh token, else its access token), so
 //      the extra sign-in leaves nothing live.
 //
-// Nothing here is written to disk or to a log.
+// Nothing here is written to disk or to a log; a token to revoke goes to
+// the durable revocation queue (server/idp-revocations.ts, sealed with the
+// vault key).
 import { randomBytes } from "node:crypto";
 
 /** Where the browser starts the sign-in again (public, before the auth gate:
