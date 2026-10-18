@@ -40,6 +40,8 @@ describe("a failed turn on a call", () => {
     expect(callFailureKind("the certificate expired")).toBe("generic");
     expect(callFailureKind("context window capacity exceeded")).toBe("generic");
     expect(callFailureKind("line 540: unexpected token")).toBe("generic");
+    expect(callFailureKind("500 tokens left in the window")).toBe("generic");
+    expect(callFailureKind("Rate limit reached for requests")).toBe("busy");
   });
 
   it("is a failed row only for an error or access row, never a stop", () => {

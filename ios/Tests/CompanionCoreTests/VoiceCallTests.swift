@@ -1201,6 +1201,8 @@ final class CallFailureTests: XCTestCase {
         XCTAssertEqual(CallFailure.kind(cause: "claude exited 3 before result"), .generic)
         XCTAssertEqual(CallFailure.kind(cause: "Claude AI usage limit reached|1760000000"), .limit)
         XCTAssertEqual(CallFailure.kind(cause: "HTTP 502 Bad Gateway"), .connection)
+        XCTAssertEqual(CallFailure.kind(cause: "Rate limit reached for requests"), .busy)
+        XCTAssertEqual(CallFailure.kind(cause: "500 tokens left in the window"), .generic)
         for cause in ["max_tokens 512 is above the model limit", "code signing failed for the bundle", "logging in debug mode crashed", "the certificate expired", "context window capacity exceeded"] {
             XCTAssertEqual(CallFailure.kind(cause: cause), .generic, cause)
         }

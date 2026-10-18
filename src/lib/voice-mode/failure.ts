@@ -42,11 +42,11 @@ export function callFailureKey(kind: CallFailureKind): `voiceMode.failure.${Call
 /** Narrow on purpose: a cause that only mentions "signing", "512 tokens"
  * or a "capacity" is no such kind. The same list is in CallFailure.swift. */
 const KINDS: Array<[RegExp, CallFailureKind]> = [
-  [/usage limit|limit reached|limit will reset|rate limit window/i, "limit"],
+  [/usage limit|(?<!rate )limit reached|limit will reset|rate limit window/i, "limit"],
   [/insufficient.?quota|\bquota\b|credit balance|out of (?:tokens|credits)|\bbilling\b|payment required|\b402\b/i, "quota"],
   [/\b429\b|rate.?limit|too many requests|overloaded|\b529\b|\b503\b|\bat capacity\b|over capacity|service unavailable/i, "busy"],
   [/\b40[13]\b|unauthori[sz]ed|forbidden|\bsign(?:ed)?[ -]?in\b|\blog(?:ged)?[ -]?in\b|\/login|authenticat|api key|invalid.{0,20}\bkey\b|(?:token|session|credential|key|oauth)\S*\s+(?:has\s+)?expired/i, "signIn"],
-  [/failed to fetch|network|ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|socket hang up|connection (?:reset|refused|closed|lost|error)|timed? ?out|ETIMEDOUT|\b(?:HTTP|status)\s*5\d\d\b|\b50[0234]\b|bad gateway|internal server error/i, "connection"],
+  [/failed to fetch|network|ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|socket hang up|connection (?:reset|refused|closed|lost|error)|timed? ?out|ETIMEDOUT|\b(?:HTTP|status)\s*5\d\d\b|\b50[0234]\b(?!\s*(?:tokens|items|ms|bytes|lines|rows))|bad gateway|internal server error/i, "connection"],
 ];
 
 /** The kind of a failed turn's cause; `setup` (the row asks for an

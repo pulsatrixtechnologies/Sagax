@@ -23,11 +23,11 @@ public struct CallFailure: Sendable {
 
     /// Narrow on purpose, the same list as the desktop's failure.ts.
     private static let kinds: [(String, CallFailureKind)] = [
-        (#"usage limit|limit reached|limit will reset|rate limit window"#, .limit),
+        (#"usage limit|(?<!rate )limit reached|limit will reset|rate limit window"#, .limit),
         (#"insufficient.?quota|\bquota\b|credit balance|out of (tokens|credits)|\bbilling\b|payment required|\b402\b"#, .quota),
         (#"\b429\b|rate.?limit|too many requests|overloaded|\b529\b|\b503\b|\bat capacity\b|over capacity|service unavailable"#, .busy),
         (#"\b40[13]\b|unauthori[sz]ed|forbidden|\bsign(ed)?[ -]?in\b|\blog(ged)?[ -]?in\b|/login|authenticat|api key|invalid.{0,20}\bkey\b|(token|session|credential|key|oauth)\S*\s+(has\s+)?expired"#, .signIn),
-        (#"failed to fetch|network|ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|socket hang up|connection (reset|refused|closed|lost|error)|timed? ?out|ETIMEDOUT|\b(HTTP|status)\s*5\d\d\b|\b50[0234]\b|bad gateway|internal server error"#, .connection),
+        (#"failed to fetch|network|ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|socket hang up|connection (reset|refused|closed|lost|error)|timed? ?out|ETIMEDOUT|\b(HTTP|status)\s*5\d\d\b|\b50[0234]\b(?!\s*(tokens|items|ms|bytes|lines|rows))|bad gateway|internal server error"#, .connection),
     ]
 
     /// A client abort, the whole message (shared/client-cancel.ts): a stop, no failure.
