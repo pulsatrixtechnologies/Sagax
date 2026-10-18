@@ -85,9 +85,20 @@ public struct CallConversation: Sendable {
     /// milliseconds, injectable for tests
     public var clock: @Sendable () -> Double = { Date().timeIntervalSince1970 * 1000 }
 
+    /// a failed turn: one sentence with what to do, then silence (CallFailure)
+    private var failure: CallFailure
+
     public init(existing: [Message], room: Bool = false) {
         spoken = Set(existing.map(\.id))
         self.room = room
+        failure = CallFailure(existing: existing)
+    }
+
+    /// The failure to say now, if any (CallFailure). Asked on the same tick
+    /// as the progress lines, before them.
+    public mutating func failureKind(messages: [Message], botBusy: Bool, playerBusy: Bool) -> CallFailureKind? {
+        let awaiting = (askedApproval.map { !$0.submitted } ?? false) || askedQuestion != nil
+        return failure.next(now: clock(), messages: messages, botBusy: botBusy, botSpeaking: playerBusy, awaitingAnswer: awaiting)
     }
 
     /// A sibling parallel card: barge-in drops speech, not that work. The

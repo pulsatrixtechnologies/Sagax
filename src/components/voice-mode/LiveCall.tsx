@@ -41,6 +41,7 @@ import { noteVoiceCallEnded, noteVoiceCallRunning } from "@/lib/voice-call-clock
 import { callBarLines } from "@/lib/voice-call-transcript";
 import { activeLocale, t, tIn } from "@/lib/i18n";
 import { CallProgress, progressLocale, progressText, turnTools } from "@/lib/voice-mode/progress";
+import { CallFailure, callFailureKey } from "@/lib/voice-mode/failure";
 import { looksFrench } from "@/lib/voice-mode/turns";
 import { announceTopic, callHasBackgroundWork, howToSpeakTopicResult, sourceUserId, topicLabel } from "@/lib/voice-mode/voice-topics";
 import { nextSpeakSlot, type SpeakItem, type SpeakPriority } from "@/lib/voice-mode/voice-speak-queue";
@@ -106,9 +107,12 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   // Everything on screen when the call starts has been read or ignored.
   const spokenIds = useRef<Set<string>>(new Set());
   const started = useRef(false);
+  /** A failed turn: one sentence with what to do, then silence (failure.ts). */
+  const failure = useRef<CallFailure | null>(null);
   if (!started.current) {
     started.current = true;
     for (const m of messages) spokenIds.current.add(m.id);
+    failure.current = new CallFailure(messages);
   }
   const askedApproval = useRef<{ requestId: string; skill: boolean; routine: boolean; submitted: boolean } | null>(null);
   const askedQuestion = useRef<{ requestId: string; messageId: string } | null>(null);
@@ -470,9 +474,24 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   useEffect(() => {
     if (!call) return;
     const timer = setInterval(() => {
+      const asked = askedApproval.current;
+      // a failed turn is said once, in one sentence, never its cause
+      const failed = failure.current?.next({
+        now: Date.now(),
+        messages: messagesRef.current,
+        botBusy: Boolean(botRef.current.busy),
+        // the person talking counts too: never a line over them
+        botSpeaking: call.player.busy || call.current.botAudible || pendingSpeak.current.length > 0 || call.current.phase === "hearing",
+        awaitingAnswer: Boolean((asked && !asked.submitted) || askedQuestion.current),
+      });
+      if (failed) {
+        const lastUserText = [...messagesRef.current].reverse().find((message) => message.role === "user" && !message.parallelTask)?.text;
+        const locale = progressLocale({ callLanguage: readVoiceModeSettings().language, lastUserText, pageLocale: activeLocale(), looksFrench });
+        void call.say(tIn(locale, callFailureKey(failed)) ?? t(callFailureKey(failed)));
+        return;
+      }
       const planner = progress.current;
       if (!planner.active) return;
-      const asked = askedApproval.current;
       const line = planner.next({
         now: Date.now(),
         thinking: call.current.phase === "thinking",

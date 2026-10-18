@@ -748,6 +748,14 @@ final class CallController: ObservableObject {
     /// change then, so a short tick asks.
     private func tickProgress() {
         guard let engine, let player, case .bot? = target else { return }
+        // a failed turn is said once, in one sentence, never its cause
+        // never over the person: hearing them, or just cut by them
+        let personTalking = engine.state.phase == .hearing || engine.state.phase == .interrupted
+        if let kind = conversation.failureKind(messages: lastMessages, botBusy: lastBusy ?? false, playerBusy: player.busy || personTalking) {
+            player.speaker = speaker(nil)
+            engine.speakNow(failureWords(kind, messages: lastMessages))
+            return
+        }
         guard let line = conversation.progressLine(
             messages: lastMessages, thinking: engine.state.phase == .thinking,
             botBusy: lastBusy ?? false, playerBusy: player.busy
@@ -812,6 +820,36 @@ final class CallController: ObservableObject {
         }
         let lower = language.lowercased()
         return lower == "en" || lower.hasPrefix("en-") ? english : nil
+    }
+
+    /// The sentence a failed turn is said with (CallFailure), in the call's
+    /// language like the progress lines; English when that language has no
+    /// words for it (never silence after a failure).
+    func failureWords(_ kind: CallFailureKind, messages: [Message]) -> String {
+        let language = CallProgress.language(
+            callLanguage: voiceSettings.language,
+            lastUserText: CallProgress.lastUserText(messages),
+            appLanguage: Bundle.main.preferredLocalizations.first ?? "en"
+        )
+        let english: String
+        switch kind {
+        case .busy: english = "The model is overloaded right now. Try again in a minute."
+        case .limit: english = "My engine has reached its usage limit. Try again later."
+        case .quota: english = "My engine has run out of credits. Check its plan in the app."
+        case .signIn: english = "I can't reach my engine: it needs a new sign-in. Open the app to sign in again."
+        case .connection: english = "I lost the connection on that one. Say it again in a moment."
+        case .generic: english = "That didn't work on my side. The details are in the chat."
+        }
+        guard let bundle = Self.wordsBundle(language), Self.hasWords(english, in: bundle) else { return english }
+        let locale = Locale(identifier: language)
+        switch kind {
+        case .busy: return String(localized: "The model is overloaded right now. Try again in a minute.", bundle: bundle, locale: locale)
+        case .limit: return String(localized: "My engine has reached its usage limit. Try again later.", bundle: bundle, locale: locale)
+        case .quota: return String(localized: "My engine has run out of credits. Check its plan in the app.", bundle: bundle, locale: locale)
+        case .signIn: return String(localized: "I can't reach my engine: it needs a new sign-in. Open the app to sign in again.", bundle: bundle, locale: locale)
+        case .connection: return String(localized: "I lost the connection on that one. Say it again in a moment.", bundle: bundle, locale: locale)
+        case .generic: return String(localized: "That didn't work on my side. The details are in the chat.", bundle: bundle, locale: locale)
+        }
     }
 
     /// The app's own words in one language: that language's .lproj (exact,

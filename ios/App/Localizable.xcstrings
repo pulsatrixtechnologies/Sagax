@@ -59,6 +59,102 @@
         }
       }
     },
+    "I can't reach my engine: it needs a new sign-in. Open the app to sign in again.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je n'ai plus accès à mon moteur : il faut se reconnecter. Ouvrez l'application pour vous reconnecter."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não consigo acessar meu mecanismo: é preciso entrar de novo. Abra o app para entrar novamente."
+          }
+        }
+      }
+    },
+    "I lost the connection on that one. Say it again in a moment.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "J'ai perdu la connexion là-dessus. Redites-le dans un instant."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A conexão caiu nessa. Diga de novo daqui a pouco."
+          }
+        }
+      }
+    },
+    "My engine has reached its usage limit. Try again later.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mon moteur a atteint sa limite d'utilisation. Réessayez plus tard."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meu mecanismo atingiu o limite de uso. Tente de novo mais tarde."
+          }
+        }
+      }
+    },
+    "My engine has run out of credits. Check its plan in the app.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mon moteur n'a plus de crédits. Vérifiez son forfait dans l'application."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meu mecanismo ficou sem créditos. Verifique o plano no app."
+          }
+        }
+      }
+    },
+    "That didn't work on my side. The details are in the chat.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ça n'a pas fonctionné de mon côté. Les détails sont dans la conversation."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Isso não funcionou do meu lado. Os detalhes estão no chat."
+          }
+        }
+      }
+    },
+    "The model is overloaded right now. Try again in a minute.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le modèle est surchargé en ce moment. Réessayez dans une minute."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O modelo está sobrecarregado agora. Tente de novo em um minuto."
+          }
+        }
+      }
+    },
     "The rest is written in the chat.": {
       "localizations": {
         "fr": {
@@ -68818,6 +68914,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tirar uma foto com a câmera"
+          }
+        }
+      }
+    },
+    "Allow notifications": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow notifications"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser les notifications"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir notificações"
           }
         }
       }

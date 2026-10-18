@@ -42,6 +42,7 @@ import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
 import { nativeSpeechEngine, type SpeechEngine } from "@/lib/voice-mode/engine";
 import { activeLocale, t, tIn } from "@/lib/i18n";
 import { CallProgress, progressLocale, progressText, turnTools } from "@/lib/voice-mode/progress";
+import { CallFailure, callFailureKey } from "@/lib/voice-mode/failure";
 import { looksFrench } from "@/lib/voice-mode/turns";
 import type { VoiceModeStatus } from "../../shared/voice-mode";
 import { LiveCall, LiveCallEngine } from "./voice-mode/LiveCall";
@@ -337,6 +338,9 @@ function Call({ bot }: { bot: Bot }) {
   const initialPhase: Phase = bot.busy ? "working" : "listening";
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [heard, setHeard] = useState("");
+  /** the words the person is saying now: a failure line never cuts them */
+  const heardRef = useRef("");
+  heardRef.current = heard;
   const [note, setNote] = useState<string | null>(null);
   const engine: SpeechEngine = nativeSpeechEngine;
   // Every turn said on this call is a call turn (Message.voiceCall), like the
@@ -363,10 +367,13 @@ function Call({ bot }: { bot: Bot }) {
   // Everything already on screen when the call starts has been read or
   // ignored — a call must not open by reciting the backlog.
   const spokenIds = useRef<Set<string>>(new Set());
+  /** A failed turn: one sentence with what to do, then silence (failure.ts). */
+  const failure = useRef<CallFailure | null>(null);
   const started = useRef(false);
   if (!started.current) {
     started.current = true;
     for (const m of messages) spokenIds.current.add(m.id);
+    failure.current = new CallFailure(messages);
   }
 
   // the approval we last asked about aloud, so a card that stays open
@@ -643,8 +650,27 @@ function Call({ bot }: { bot: Bot }) {
   // ── progress while the bot works in silence (progress.ts) ─────────────
   useEffect(() => {
     const timer = setInterval(() => {
+      if (!alive.current || currentCall() !== bot.id || ending.current) return;
+      // a failed turn is said once, in one sentence, never its cause
+      const failed = failure.current?.next({
+        now: Date.now(),
+        messages: messagesRef.current,
+        botBusy: busyRef.current,
+        // the bot talking, or the person (words coming in, or being sent)
+        botSpeaking: phaseRef.current === "speaking" || phaseRef.current === "sending" || Boolean(heardRef.current) || speaker.isSpeaking(),
+        awaitingAnswer: Boolean(askedApproval.current || askedQuestion.current),
+      });
+      if (failed) {
+        const lastUserText = [...messagesRef.current].reverse().find((m) => m.role === "user" && !m.parallelTask)?.text;
+        const locale = progressLocale({ lastUserText, pageLocale: activeLocale(), looksFrench });
+        void say(tIn(locale, callFailureKey(failed)) ?? t(callFailureKey(failed))).then((stillMine) => {
+          // then silence: the microphone is open for what they say next
+          if (stillMine && phaseRef.current === "speaking") listen();
+        });
+        return;
+      }
       const planner = progress.current;
-      if (!planner.active || !alive.current || currentCall() !== bot.id || ending.current) return;
+      if (!planner.active) return;
       const line = planner.next({
         now: Date.now(),
         thinking: phaseRef.current === "working",

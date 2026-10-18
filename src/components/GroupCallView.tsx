@@ -32,6 +32,7 @@ import { spokenDecision } from "@/lib/voice-mode/answers";
 import { spokenAnswer, spokenReply } from "@/lib/voice-mode/answer-budget";
 import { activeLocale, t, tIn } from "@/lib/i18n";
 import { CallProgress, progressLocale, progressText, turnToolAuthor, turnTools } from "@/lib/voice-mode/progress";
+import { CallFailure, callFailureKey } from "@/lib/voice-mode/failure";
 import { looksFrench } from "@/lib/voice-mode/turns";
 
 const CALL_ENDPOINT_MS = 850;
@@ -87,6 +88,9 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
   const initialPhase: Phase = group.working || group.busyBotId ? "working" : "listening";
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [heard, setHeard] = useState("");
+  /** the words the person is saying now: a failure line never cuts them */
+  const heardRef = useRef("");
+  heardRef.current = heard;
   const [note, setNote] = useState<string | null>(null);
   const [speakingMemberId, setSpeakingMemberId] = useState<string | null>(null);
   const pushToTalk = usePushToTalk(group.id, phase === "listening", () => {
@@ -104,10 +108,13 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
   defaultResponderRef.current = group.defaultResponder;
 
   const spokenIds = useRef<Set<string>>(new Set());
+  /** A failed turn: one sentence with what to do, then silence (failure.ts). */
+  const failure = useRef<CallFailure | null>(null);
   const started = useRef(false);
   if (!started.current) {
     started.current = true;
     for (const message of messages) spokenIds.current.add(message.id);
+    failure.current = new CallFailure(messages);
   }
 
   const askedApproval = useRef<{
@@ -438,8 +445,25 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
   // ── progress while the room works in silence (progress.ts) ────────────
   useEffect(() => {
     const timer = setInterval(() => {
+      if (!alive.current || currentCall() !== group.id) return;
+      // a failed turn is said once, in one sentence, never its cause
+      const failed = failure.current?.next({
+        now: Date.now(),
+        messages: messagesRef.current,
+        botBusy: busyRef.current,
+        // the bot talking, or the person (words coming in, or being sent)
+        botSpeaking: phaseRef.current === "speaking" || phaseRef.current === "sending" || Boolean(heardRef.current) || speaker.isSpeaking() || queuedJobs.current.size > 0,
+        awaitingAnswer: Boolean(askedApproval.current || askedQuestion.current),
+      });
+      if (failed) {
+        const lastUserText = [...messagesRef.current].reverse().find((message) => message.role === "user" && !message.parallelTask)?.text;
+        const locale = progressLocale({ lastUserText, pageLocale: activeLocale(), looksFrench });
+        // in the call's voice, then the room listens again
+        enqueueSpeech(tIn(locale, callFailureKey(failed)) ?? t(callFailureKey(failed)), undefined, true);
+        return;
+      }
       const planner = progress.current;
-      if (!planner.active || !alive.current || currentCall() !== group.id) return;
+      if (!planner.active) return;
       const line = planner.next({
         now: Date.now(),
         thinking: phaseRef.current === "working",

@@ -662,6 +662,27 @@ fail recovers on its own:
   when every try failed. Retry opens a microphone whose stream died. Five
   frames in a row that fail (a model that broke mid-call) switch the call to
   the level detector instead of leaving it deaf.
+- **A failed turn.** A turn that fails is stored as an "error: <cause>"
+  activity row (or an "access" row); the call used to say nothing. Now it
+  says one sentence with what to do, then stays silent
+  (`src/lib/voice-mode/failure.ts`, the iPhone's `CallFailure.swift`): the
+  cause is never read aloud, only sorted into a kind, each with its line in
+  the call's language (`voiceMode.failure.busy`: overloaded or rate
+  limited, try again in a minute; `limit`: a usage window is used up, try
+  later; `quota`: out of credits, check the plan;
+  `signIn`: a new sign-in is needed, a row marked `setup` included;
+  `connection`: network, timeout or a 5xx, say it again; `generic`: the
+  details are in the chat). A stop the person asked for is no failure. The
+  call waits 6 s (`CALL_FAILURE_GRACE_MS`) with the bot idle after it first
+  saw the row, past the harness's one retry 2.5 s after the turn settles
+  (`server/voice-call-watchdog.ts`): a retry that answers says nothing of
+  the failure, a retry that fails too is said once. Once per person's
+  words; never while the bot works or speaks, the person talks, or a
+  question or approval waits. Words another bot asked (`peerAsk`) are
+  skipped, as the harness does. The cause is sorted by narrow patterns
+  ("signing", "512 tokens" or a "capacity" alone stay `generic`). A
+  language without the words says them in English. The live call, the
+  older macOS call, a room call and the iPhone apply it.
 - **The call's record on the server.** Besides the heartbeat every 5
   minutes, the page says `alive` the moment it is visible again or the
   network comes back (`src/lib/voice-mode/call-alive.ts`), so a laptop that

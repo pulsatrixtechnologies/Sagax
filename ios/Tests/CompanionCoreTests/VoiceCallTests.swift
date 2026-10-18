@@ -1174,3 +1174,73 @@ final class AnswerBudgetTests: XCTestCase {
         XCTAssertEqual(SpokenText.spokenAnswer("Done, bye.\n---\nOne. Two. Three. Four. Five.").text, "Done, bye.\n")
     }
 }
+
+final class CallFailureTests: XCTestCase {
+    private func said(_ id: String) -> Message {
+        var m = Message(id: id, role: .user, kind: .text, at: 0)
+        m.text = "Is the backup done?"
+        return m
+    }
+    private func failed(_ id: String, _ cause: String, setup: Bool = false) -> Message {
+        var m = Message(id: id, role: .bot, kind: .activity, at: 0)
+        m.tool = ToolActivity(name: "error: \(cause)", ok: false, setup: setup ? true : nil)
+        return m
+    }
+    private func reply(_ id: String) -> Message {
+        var m = Message(id: id, role: .bot, kind: .text, at: 0)
+        m.text = "Yes, it finished."
+        return m
+    }
+
+    func testSortsTheCauseIntoAKind() {
+        XCTAssertEqual(CallFailure.kind(cause: "API Error: 529 {\"type\":\"overloaded_error\"}"), .busy)
+        XCTAssertEqual(CallFailure.kind(cause: "insufficient_quota: You exceeded your current quota"), .quota)
+        XCTAssertEqual(CallFailure.kind(cause: "Invalid API key · Please run /login"), .signIn)
+        XCTAssertEqual(CallFailure.kind(cause: "anything", setup: true), .signIn)
+        XCTAssertEqual(CallFailure.kind(cause: "fetch failed: ECONNRESET"), .connection)
+        XCTAssertEqual(CallFailure.kind(cause: "claude exited 3 before result"), .generic)
+        XCTAssertEqual(CallFailure.kind(cause: "Claude AI usage limit reached|1760000000"), .limit)
+        XCTAssertEqual(CallFailure.kind(cause: "HTTP 502 Bad Gateway"), .connection)
+        for cause in ["max_tokens 512 is above the model limit", "code signing failed for the bundle", "logging in debug mode crashed", "the certificate expired", "context window capacity exceeded"] {
+            XCTAssertEqual(CallFailure.kind(cause: cause), .generic, cause)
+        }
+        XCTAssertNil(CallFailure.rowKind(failed("a", "Request was aborted.")))
+        XCTAssertNil(CallFailure.rowKind(reply("r")))
+        XCTAssertEqual(CallFailure.rowKind(Message(id: "x", role: .bot, kind: .access, at: 0)), .generic)
+    }
+
+    func testWaitsOutTheRetryThenSaysItOnce() {
+        var watch = CallFailure()
+        let messages = [said("u1"), failed("f1", "API Error: 529 overloaded")]
+        XCTAssertNil(watch.next(now: 0, messages: messages, botBusy: false, botSpeaking: false, awaitingAnswer: false))
+        XCTAssertNil(watch.next(now: CallFailure.graceMs - 1, messages: messages, botBusy: false, botSpeaking: false, awaitingAnswer: false))
+        XCTAssertEqual(watch.next(now: CallFailure.graceMs, messages: messages, botBusy: false, botSpeaking: false, awaitingAnswer: false), .busy)
+        XCTAssertNil(watch.next(now: 60_000, messages: messages + [failed("f2", "ECONNRESET")], botBusy: false, botSpeaking: false, awaitingAnswer: false))
+    }
+
+    func testSaysNothingWhenTheRetryAnswersOrTheBotWorks() {
+        var watch = CallFailure()
+        let messages = [said("u1"), failed("f1", "ECONNRESET")]
+        _ = watch.next(now: 0, messages: messages, botBusy: false, botSpeaking: false, awaitingAnswer: false)
+        XCTAssertNil(watch.next(now: 9_000, messages: messages, botBusy: true, botSpeaking: false, awaitingAnswer: false))
+        XCTAssertNil(watch.next(now: 9_000, messages: messages, botBusy: false, botSpeaking: true, awaitingAnswer: false))
+        XCTAssertNil(watch.next(now: 9_000, messages: messages + [reply("r1")], botBusy: false, botSpeaking: false, awaitingAnswer: false))
+    }
+
+    func testIgnoresWhatWasOnScreenAtTheStart() {
+        let before = [said("u0"), failed("f0", "ECONNRESET")]
+        var watch = CallFailure(existing: before)
+        XCTAssertNil(watch.next(now: 0, messages: before, botBusy: false, botSpeaking: false, awaitingAnswer: false))
+        XCTAssertNil(watch.next(now: 60_000, messages: before, botBusy: false, botSpeaking: false, awaitingAnswer: false))
+    }
+
+    func testTheConversationAsksIt() {
+        var conversation = CallConversation(existing: [])
+        var now = 0.0
+        conversation.clock = { now }
+        let messages = [said("u1"), failed("f1", "socket hang up")]
+        XCTAssertNil(conversation.failureKind(messages: messages, botBusy: false, playerBusy: false))
+        now = CallFailure.graceMs
+        XCTAssertEqual(conversation.failureKind(messages: messages, botBusy: false, playerBusy: false), .connection)
+    }
+}
