@@ -41,6 +41,7 @@ function runsConfig(extra: Record<string, string> = {}): RunsConfig {
     SAGAX_RUNS_GITHUB_CIDRS: "140.82.112.0/20",
     SAGAX_RUNS_CONTROL_URL: "wss://control.example.com/api/v1/agents/runner",
     SAGAX_RUNS_TLS_CLIENT_CA: "/tls-runs/client-ca.pem",
+    SAGAX_RUNS_TLS_CLIENT_CN: "perspicax",
     ...extra,
   };
   const sandbox = sandboxdConfigFromEnv(env);
@@ -180,7 +181,10 @@ describe("RunService", () => {
     const stopped = await service.remove("run00003", { keepWorkspace: true });
     expect(stopped).toMatchObject({ phase: "stopped", pod: false, workspace: true, workspaceExpiresAt: "2026-10-19T13:00:00.000Z" });
     expect(cluster.objects.has(secretPath("run00003"))).toBe(false);
+    // the collector has not removed the old token yet: the create must
+    cluster.objects.set(secretPath("run00003"), { metadata: { name: "run-run00003-token", labels: {} }, data: { token: "b2xk" } });
     const follow = await service.create(body("run00003", OWNER_A, { egress: "aucun" }));
+    expect(Buffer.from(String((cluster.objects.get(secretPath("run00003"))!.data as Obj).token), "base64").toString()).toBe(TOKEN);
     expect(follow.created).toBe(true);
     const claim = cluster.objects.get(pvcPath("run00003"))!;
     expect(((claim.metadata as Obj).annotations as Obj)[RUN_ENDED_ANNOTATION]).toBeUndefined();

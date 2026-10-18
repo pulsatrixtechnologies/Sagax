@@ -104,7 +104,7 @@ export interface RunsConfig {
   listenPort: number;
   keyFile: string;
   clientCaPath: string;
-  clientSubject?: string;
+  clientSubject: string;
 }
 
 const DNS_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -143,7 +143,7 @@ function cidrList(raw: string | undefined, name: string, options: { minBits: num
  * this file is served. Any malformed value refuses the start. */
 export function runsConfigFromEnv(
   env: NodeJS.ProcessEnv,
-  base: { k8s: K8sSandboxConfig; guards: Pick<K8sGuards, "tlsInsecure">; sandbox: Pick<SandboxdConfig, "instance" | "listenPort" | "egressDeny" | "keyFile"> },
+  base: { k8s: K8sSandboxConfig; guards: Pick<K8sGuards, "tlsInsecure">; sandbox: Pick<SandboxdConfig, "instance" | "listenPort" | "egressDeny" | "keyFile" | "subnetPool"> },
 ): RunsConfig | null {
   if (!enabled(env.SAGAX_RUNS_ENABLED, "SAGAX_RUNS_ENABLED")) return null;
   if (base.guards.tlsInsecure) throw new Error("runs require mutual TLS: SAGAX_SANDBOXD_TLS_INSECURE cannot be set with SAGAX_RUNS_ENABLED");
@@ -166,11 +166,17 @@ export function runsConfigFromEnv(
   if (!nodeSelector) throw new Error("SAGAX_RUNS_K8S_NODE_SELECTOR cannot be empty: runs go to their own node pool");
   const tolerations = parseTolerations(env.SAGAX_RUNS_K8S_TOLERATION ?? RUNS_DEFAULT_TOLERATIONS) ?? [];
 
-  const perspicaxCidrs = cidrList(env.SAGAX_RUNS_PERSPICAX_CIDRS, "SAGAX_RUNS_PERSPICAX_CIDRS", { minBits: 24, deny: ALWAYS_DENIED });
-  if (perspicaxCidrs.length === 0) throw new Error("SAGAX_RUNS_PERSPICAX_CIDRS is required (the address of Perspicax, a /24 or narrower)");
+  // Perspicax by its exact addresses: a wider block could cover the pod
+  // network, the services or the API server. Cluster ranges an operator
+  // names in SAGAX_RUNS_K8S_INTERNAL_CIDRS are refused outright.
+  const internal = cidrList(env.SAGAX_RUNS_K8S_INTERNAL_CIDRS, "SAGAX_RUNS_K8S_INTERNAL_CIDRS", { minBits: 0, deny: [] });
+  const perspicaxCidrs = cidrList(env.SAGAX_RUNS_PERSPICAX_CIDRS, "SAGAX_RUNS_PERSPICAX_CIDRS", { minBits: 32, deny: [...ALWAYS_DENIED, base.sandbox.subnetPool, ...internal] });
+  if (perspicaxCidrs.length === 0) throw new Error("SAGAX_RUNS_PERSPICAX_CIDRS is required (the addresses of Perspicax, each a /32)");
+  // The git, api and web ranges of GitHub's meta list are /20 or narrower;
+  // its actions and codespaces entries are wide cloud blocks and do not belong here.
   const githubCidrs = cidrList(env.SAGAX_RUNS_GITHUB_CIDRS, "SAGAX_RUNS_GITHUB_CIDRS", {
-    minBits: 16,
-    deny: [...new Set([...ALWAYS_DENIED, ...DEFAULT_EGRESS_DENY, ...base.sandbox.egressDeny])],
+    minBits: 20,
+    deny: [...new Set([...ALWAYS_DENIED, ...DEFAULT_EGRESS_DENY, ...base.sandbox.egressDeny, ...internal])],
   });
   const egressPort = boundedInt(env.SAGAX_RUNS_EGRESS_PORT, 443, "SAGAX_RUNS_EGRESS_PORT", 1, 65535);
 
@@ -204,8 +210,9 @@ export function runsConfigFromEnv(
   if (keyFile === base.sandbox.keyFile) throw new Error("SAGAX_RUNS_KEY_FILE must not be the sandbox key file");
   const clientCaPath = env.SAGAX_RUNS_TLS_CLIENT_CA?.trim() ?? "";
   if (!clientCaPath || !isAbsolute(clientCaPath)) throw new Error("SAGAX_RUNS_TLS_CLIENT_CA is required (the CA that signs the Perspicax client certificate)");
-  const clientSubject = env.SAGAX_RUNS_TLS_CLIENT_CN?.trim() || undefined;
-  if (clientSubject && !/^[A-Za-z0-9 ._-]{1,64}$/.test(clientSubject)) throw new Error("SAGAX_RUNS_TLS_CLIENT_CN is not a plain common name");
+  // Required: the CA may sign other certificates; only this name may call.
+  const clientSubject = env.SAGAX_RUNS_TLS_CLIENT_CN?.trim() ?? "";
+  if (!/^[A-Za-z0-9 ._-]{1,64}$/.test(clientSubject)) throw new Error("SAGAX_RUNS_TLS_CLIENT_CN is required (the common name of the Perspicax client certificate)");
 
   return {
     namespace,
@@ -233,7 +240,7 @@ export function runsConfigFromEnv(
     listenPort,
     keyFile,
     clientCaPath,
-    ...(clientSubject ? { clientSubject } : {}),
+    clientSubject,
   };
 }
 

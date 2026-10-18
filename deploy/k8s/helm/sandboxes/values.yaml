@@ -94,9 +94,11 @@ runs:
     name: sagax-sandboxd
     namespace: ""
   # Labels of the provisioner Pod, for the run port's ingress policy.
+  # deploy/k8s/provisioner labels its Pod app=sagax-sandboxd.
   provisionerPodLabels:
-    app.kubernetes.io/name: sagax-sandboxd
-  # Who may call the run port (Perspicax only). Required when enabled.
+    app: sagax-sandboxd
+  # Who may call the run port (Perspicax only, its real source address:
+  # keep the Service on externalTrafficPolicy Local). Required when enabled.
   callerCidrs: []
   port: 8792
   # Decision D3: 12 runs per organization, 4 vCPU / 8 Gi by default,

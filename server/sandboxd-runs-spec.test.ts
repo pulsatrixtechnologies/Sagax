@@ -47,6 +47,7 @@ function baseEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
     SAGAX_RUNS_GITHUB_CIDRS: "140.82.112.0/20,192.30.252.0/22",
     SAGAX_RUNS_CONTROL_URL: "wss://control.example.com/api/v1/agents/runner",
     SAGAX_RUNS_TLS_CLIENT_CA: "/tls-runs/client-ca.pem",
+    SAGAX_RUNS_TLS_CLIENT_CN: "perspicax",
     ...extra,
   };
 }
@@ -96,6 +97,7 @@ describe("runsConfigFromEnv", () => {
     expect(() => configFrom(baseEnv({ SAGAX_RUNS_LISTEN: "0.0.0.0:8791" }))).toThrow(/own port/);
     expect(() => configFrom(baseEnv({ SAGAX_RUNS_KEY_FILE: "/run/sagax-sandboxd/key" }))).toThrow(/sandbox key/);
     expect(() => configFrom(baseEnv({ SAGAX_RUNS_TLS_CLIENT_CA: "" }))).toThrow(/CLIENT_CA/);
+    expect(() => configFrom(baseEnv({ SAGAX_RUNS_TLS_CLIENT_CN: "" }))).toThrow(/CLIENT_CN/);
   });
 
   it("admits run images by digest from the controlled registry only", () => {
@@ -111,8 +113,12 @@ describe("runsConfigFromEnv", () => {
   it("refuses egress ranges that are too wide, private for GitHub, or metadata", () => {
     expect(() => configFrom(baseEnv({ SAGAX_RUNS_PERSPICAX_CIDRS: "" }))).toThrow(/required/);
     expect(() => configFrom(baseEnv({ SAGAX_RUNS_PERSPICAX_CIDRS: "10.0.0.0/8" }))).toThrow(/wider/);
+    expect(() => configFrom(baseEnv({ SAGAX_RUNS_PERSPICAX_CIDRS: "10.20.30.0/24" }))).toThrow(/wider/);
+    expect(() => configFrom(baseEnv({ SAGAX_RUNS_PERSPICAX_CIDRS: "10.213.0.5/32" }))).toThrow(/overlaps/);
+    expect(() => configFrom(baseEnv({ SAGAX_RUNS_K8S_INTERNAL_CIDRS: "10.20.0.0/16" }))).toThrow(/overlaps/);
+    expect(() => configFrom(baseEnv({ SAGAX_RUNS_GITHUB_CIDRS: "20.0.0.0/16" }))).toThrow(/wider/);
     expect(() => configFrom(baseEnv({ SAGAX_RUNS_PERSPICAX_CIDRS: "169.254.169.254/32" }))).toThrow(/overlaps/);
-    expect(() => configFrom(baseEnv({ SAGAX_RUNS_GITHUB_CIDRS: "10.1.0.0/16" }))).toThrow(/overlaps/);
+    expect(() => configFrom(baseEnv({ SAGAX_RUNS_GITHUB_CIDRS: "10.1.0.0/20" }))).toThrow(/overlaps/);
     expect(() => configFrom(baseEnv({ SAGAX_RUNS_GITHUB_CIDRS: "0.0.0.0/0" }))).toThrow(/wider/);
   });
 

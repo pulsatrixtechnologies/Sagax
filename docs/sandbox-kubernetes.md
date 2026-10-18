@@ -190,7 +190,8 @@ Who may call it: Perspicax only. Three locks, all required:
 
 1. **Mutual TLS.** The run listener requests a client certificate and
    refuses the handshake unless `SAGAX_RUNS_TLS_CLIENT_CA` signed it
-   (optionally pinned to a common name, `SAGAX_RUNS_TLS_CLIENT_CN`). The
+   and its common name is `SAGAX_RUNS_TLS_CLIENT_CN` (required). Session
+   tickets are off, so every connection shows its certificate. The
    server certificate is the provisioner's. There is no insecure mode:
    `SAGAX_SANDBOXD_TLS_INSECURE` refuses the start when runs are on.
 2. **Its own key.** `sagax-sandboxd-runs-key` (`SAGAX_RUNS_KEY_FILE`, a
@@ -239,8 +240,11 @@ What a run Pod is:
 - Placement: `nodeSelector px.pool=runs`, tolerations `px.run=true:NoSchedule`
   and the AKS Spot taint (pool of lot P0.3).
 - Network: no ingress. Egress to the cluster DNS, to Perspicax
-  (`SAGAX_RUNS_PERSPICAX_CIDRS`, /24 or narrower) and, for the `restreint`
-  profile, to GitHub (`SAGAX_RUNS_GITHUB_CIDRS`, public ranges only), on
+  (`SAGAX_RUNS_PERSPICAX_CIDRS`, each a /32, never inside the sandbox
+  subnet pool or `SAGAX_RUNS_K8S_INTERNAL_CIDRS`) and, for the `restreint`
+  profile, to GitHub (`SAGAX_RUNS_GITHUB_CIDRS`: the git, api and web
+  ranges of GitHub's meta list, public, /20 or narrower; never its actions
+  or codespaces blocks), on
   TCP 443. `aucun` is Perspicax only. `defaut` (open internet) is refused
   until the egress proxy exists. Metadata, link-local and WireServer
   ranges are refused in any list.
@@ -257,14 +261,15 @@ starts its clock when the sweep first sees it.
 | `SAGAX_RUNS_LISTEN` | `0.0.0.0:8792` | run listener (its own port) |
 | `SAGAX_RUNS_KEY_FILE` | `/run/sagax-sandboxd-runs/key` | run key, 64 hex |
 | `SAGAX_RUNS_TLS_CLIENT_CA` | required | CA of the Perspicax client certificate |
-| `SAGAX_RUNS_TLS_CLIENT_CN` | none | pin the client common name |
+| `SAGAX_RUNS_TLS_CLIENT_CN` | required | common name of the client certificate |
 | `SAGAX_RUNS_K8S_NAMESPACE` | `sandbox-runs` | must differ from the sandbox namespace |
 | `SAGAX_RUNS_K8S_STORAGE_CLASS` | the sandbox class | encrypted class for run disks |
 | `SAGAX_RUNS_K8S_QUOTA_NAME` | `sagax-run-quota` | readiness requires its caps |
 | `SAGAX_RUNS_ALLOWED_IMAGES` | required | run images by digest |
 | `SAGAX_RUNS_K8S_NODE_SELECTOR` | `px.pool=runs` | never empty |
 | `SAGAX_RUNS_K8S_TOLERATION` | `px.run=true:NoSchedule,kubernetes.azure.com/scalesetpriority=spot:NoSchedule` | |
-| `SAGAX_RUNS_PERSPICAX_CIDRS` | required | Perspicax address |
+| `SAGAX_RUNS_PERSPICAX_CIDRS` | required | Perspicax addresses, /32 each |
+| `SAGAX_RUNS_K8S_INTERNAL_CIDRS` | none | pod, service and API ranges no egress list may overlap |
 | `SAGAX_RUNS_GITHUB_CIDRS` | none | GitHub ranges (`restreint`) |
 | `SAGAX_RUNS_CONTROL_URL` | required | `https` or `wss` runner endpoint, passed as `PX_CONTROL_URL` |
 | `SAGAX_RUNS_MAX_CPU_MILLIS`, `_MAX_MEMORY_MIB`, `_MAX_DISK_GIB`, `_MAX_DURATION_MIN` | 8000, 16384, 20, 720 | ceilings, never above these |
@@ -279,6 +284,11 @@ run port from `runs.callerCidrs`, and the admission policy
 entrypoint, no port, read-only root, no token, a deadline, the runs pool).
 The chart refuses to render without an image allowlist pinned by digest
 or without `runs.callerCidrs`.
+
+The provisioner Deployment uses `strategy: Recreate`: the run quotas are
+counted in one process. The ingress policy of the run port matches the
+caller's real address, so its Service keeps `externalTrafficPolicy: Local`.
+The admission policy also covers `pods/ephemeralcontainers`.
 
 The idle signal of the cluster stop must also count run Pods: label
 `com.pulsatrix.sagax.run=1` in the run namespace. A stopped cluster is

@@ -595,7 +595,7 @@ export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = proces
       cert: readFileSync(guards.tlsCertPath!),
       key: readFileSync(guards.tlsKeyPath!),
       clientCa: readFileSync(runs.clientCaPath),
-    }, runs.clientSubject ? { clientSubject: runs.clientSubject } : {});
+    }, { clientSubject: runs.clientSubject });
     listener.listen(runs.listenPort, runs.listenHost);
     runsServer = listener;
     audit.record({ action: "runs.start", outcome: "ok", detail: { namespace: runs.namespace, mtls: true, maxPods: runs.maxPods } });

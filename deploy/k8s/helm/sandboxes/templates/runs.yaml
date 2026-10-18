@@ -50,7 +50,6 @@ rules:
     verbs: ["create", "delete"]
   - apiGroups: [""]
     resources: ["resourcequotas"]
-    resourceNames: ["sagax-run-quota"]
     verbs: ["get"]
   - apiGroups: [""]
     resources: ["events"]
@@ -163,7 +162,7 @@ spec:
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
-        resources: ["pods"]
+        resources: ["pods", "pods/ephemeralcontainers"]
   variables:
     - name: containers
       expression: |

@@ -14,6 +14,7 @@
 // the hard cap, and disks 24 h after their run ended (decision D4).
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createHttpsServer, type Server } from "node:https";
+import { constants as tlsConstants } from "node:crypto";
 import type { TLSSocket } from "node:tls";
 
 import type { SandboxAudit } from "./sandbox-audit.ts";
@@ -119,7 +120,7 @@ export class RunService {
     if (!wait) return;
     const deadline = this.now() + DELETE_WAIT_MS;
     while (await this.read(path)) {
-      if (this.now() > deadline) throw new RunsError(503, "deleting", "the run Pod is still terminating");
+      if (this.now() > deadline) throw new RunsError(503, "deleting", "a run object is still being removed");
       await this.sleep(250);
     }
   }
@@ -248,6 +249,10 @@ export class RunService {
         await this.createObject(this.path("persistentvolumeclaims"), runPvc(this.config, request));
       }
 
+      // A stopped run's token goes with its Pod, but by the garbage
+      // collector, later. Remove it now so the new Pod never mounts the
+      // old token and the new Secret does not collide with it.
+      await this.deleteObject(this.path("secrets", names.token), true, 0);
       const createdPod = await this.createObject(this.path("pods"), pod);
       let uid = String(asObj(createdPod.metadata).uid ?? "");
       if (!uid) uid = String(asObj((await this.read(this.path("pods", names.pod)))?.metadata).uid ?? "");
@@ -341,7 +346,7 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
 
 /** The client certificate the TLS layer verified, or null. A plain HTTP
  * socket, or a certificate the CA did not sign, has none. */
-function verifiedPeer(req: IncomingMessage, subject: string | undefined): boolean {
+function verifiedPeer(req: IncomingMessage, subject: string): boolean {
   const socket = req.socket as Partial<TLSSocket>;
   if (socket.encrypted !== true || socket.authorized !== true || typeof socket.getPeerCertificate !== "function") return false;
   const cert = socket.getPeerCertificate();
@@ -350,7 +355,7 @@ function verifiedPeer(req: IncomingMessage, subject: string | undefined): boolea
   return true;
 }
 
-export function createRunsHandler(service: RunService, verifier: SandboxdVerifier, options: { clientSubject?: string } = {}) {
+export function createRunsHandler(service: RunService, verifier: SandboxdVerifier, options: { clientSubject: string }) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const method = req.method ?? "GET";
     const rawPath = req.url ?? "/";
@@ -403,7 +408,7 @@ export interface RunsServerTls {
 
 /** The run listener: TLS with a required, CA-verified client certificate.
  * There is no plain HTTP mode. */
-export function createRunsServer(service: RunService, verifier: SandboxdVerifier, tls: RunsServerTls, options: { clientSubject?: string } = {}): Server {
+export function createRunsServer(service: RunService, verifier: SandboxdVerifier, tls: RunsServerTls, options: { clientSubject: string }): Server {
   const server = createHttpsServer({
     cert: tls.cert,
     key: tls.key,
@@ -411,6 +416,9 @@ export function createRunsServer(service: RunService, verifier: SandboxdVerifier
     requestCert: true,
     rejectUnauthorized: true,
     minVersion: "TLSv1.2",
+    // No session tickets: every connection presents its certificate, so the
+    // name check never meets a resumed session without one.
+    secureOptions: tlsConstants.SSL_OP_NO_TICKET,
   }, createRunsHandler(service, verifier, options));
   server.requestTimeout = 2 * 60_000;
   return server;

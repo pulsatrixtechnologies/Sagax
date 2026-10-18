@@ -11,6 +11,9 @@ metadata:
     app: sagax-sandboxd
 spec:
   replicas: 1
+  # One provisioner at a time: run quotas are counted in one process.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: sagax-sandboxd
