@@ -905,8 +905,8 @@ import { MaintenanceScheduler, MaintenanceStore, oldCheckpointRepos, type DiskSa
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
 import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
 import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedServerEntry } from "./plugin-marketplaces.ts";
-import { createAccountRoutes } from "./routes/account.ts";
-import { ACCOUNT_REAUTH_PATH, AccountReauth } from "./account-reauth.ts";
+import { createAccountRoutes, type PerspicaxDeletion } from "./routes/account.ts";
+import { ACCOUNT_REAUTH_PATH, AccountReauth, perspicaxDeletion } from "./account-reauth.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
@@ -25796,26 +25796,17 @@ ROUTES.push(createAccountRoutes({
   // own token, which this server refreshes: Perspicax refuses a refreshed
   // one (`reauth_required`), so a server that only holds refresh tokens
   // erases nobody.
-  perspicaxDeletion: async (principalId, sessionId) => {
-    const person = principals.byId(principalId.trim().toLowerCase());
-    if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory || !person?.subject || person.subject.iss !== IDENTITY.issuer) return { ok: false, error: "link" };
-    const fresh = accountReauth?.take(sessionId, person.id);
-    if (!fresh || fresh.sub !== person.subject.sub) return { ok: false, error: "reauth_required" };
-    const erased = await perspicaxDirectory.eraseOwnAccount(fresh.accessToken);
-    if (!erased.ok) {
-      // Not erased: the extra sign-in's grant goes (one sign-in, one try).
-      if (fresh.refreshToken) idpRevocations?.enqueue(fresh.refreshToken, "refresh_token", "a sign-in again whose account deletion was refused");
-      console.warn(`account deletion: Perspicax refused (${erased.error}${erased.status ? ` ${erased.status}` : ""})`);
-      return { ok: false, error: erased.error, ...(erased.status ? { status: erased.status } : {}) };
-    }
-    if (erased.sub !== person.subject.sub) {
-      // Never delete this person's data on an answer about someone else:
-      // the account purged push names the right subject.
-      console.warn("account deletion: Perspicax erased an account under another subject than this person's");
-      return { ok: false, error: "unreachable" };
-    }
-    return { ok: true };
-  },
+  perspicaxDeletion: (principalId, sessionId) => perspicaxDeletion({
+    subjectOf: (id) => {
+      const person = principals.byId(id.trim().toLowerCase());
+      if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory || !person?.subject || person.subject.iss !== IDENTITY.issuer) return null;
+      return { id: person.id, sub: person.subject.sub };
+    },
+    reauth: accountReauth,
+    erase: (token) => perspicaxDirectory ? perspicaxDirectory.eraseOwnAccount(token) : Promise.resolve({ ok: false, error: "link" }),
+    revoke: (token, why) => idpRevocations?.enqueue(token, "refresh_token", why),
+    log: (line) => console.warn(line),
+  })(principalId, sessionId) as Promise<PerspicaxDeletion>,
   reauthStart: ({ principalId, sessionId, client }) => {
     const person = principals.byId(principalId.trim().toLowerCase());
     if (IDENTITY.kind !== "perspicax" || !accountReauth || !person?.subject || person.subject.iss !== IDENTITY.issuer) return { error: "unavailable" };

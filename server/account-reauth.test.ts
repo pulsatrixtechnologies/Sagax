@@ -2,7 +2,7 @@
 // kept access token, its expiry, and the revocation of what goes unused.
 import { describe, expect, it } from "vitest";
 
-import { ACCOUNT_REAUTH_MAX_AGE_MS, ACCOUNT_REAUTH_TICKET_TTL_MS, AccountReauth, phoneReauthReturn, recentSignIn, webReauthReturn } from "./account-reauth.ts";
+import { ACCOUNT_REAUTH_MAX_AGE_MS, ACCOUNT_REAUTH_TICKET_TTL_MS, AccountReauth, perspicaxDeletion, phoneReauthReturn, recentSignIn, webReauthReturn } from "./account-reauth.ts";
 
 const ADA = { principalId: "pr_ada", subject: { iss: "https://px.example.test", sub: "ada-sub" }, sessionId: "s-ada" };
 const T0 = 1_800_000_000_000;
@@ -40,6 +40,16 @@ describe("AccountReauth", () => {
     expect(reauth.takeTicket(late)).toBeNull();
     expect(reauth.takeTicket("not-a-ticket")).toBeNull();
     expect(reauth.takeTicket(null)).toBeNull();
+  });
+
+  it("keeps one live ticket per session: a new one replaces it", () => {
+    const { reauth } = setup();
+    const first = reauth.openTicket(ADA, "web").ticket;
+    const second = reauth.openTicket(ADA, "web").ticket;
+    const other = reauth.openTicket({ ...ADA, sessionId: "s-other" }, "web").ticket;
+    expect(reauth.takeTicket(first)).toBeNull();
+    expect(reauth.takeTicket(second)).not.toBeNull();
+    expect(reauth.takeTicket(other)).not.toBeNull();
   });
 
   it("keeps a recent sign-in for its session and person only, once", () => {
@@ -90,5 +100,51 @@ describe("AccountReauth", () => {
     expect(webReauthReturn({ error: "reauth_subject" })).toBe("/#account-reauth-error=reauth_subject");
     expect(phoneReauthReturn("https://sagax.example.test", { ok: true })).toBe("sagax://account-reauth?address=https%3A%2F%2Fsagax.example.test&status=ok");
     expect(phoneReauthReturn("https://sagax.example.test", { error: "reauth_stale" })).toBe("sagax://account-reauth?address=https%3A%2F%2Fsagax.example.test&error=reauth_stale");
+  });
+});
+
+describe("perspicaxDeletion (the wiring of DELETE /api/me)", () => {
+  const person = { id: "pr_ada", sub: "ada-sub" };
+  function wired(answer: { ok: true; sub: string } | { ok: false; error: string; status?: number }) {
+    const { reauth, revoked } = setup();
+    const erased: string[] = [];
+    const revokedHere: string[] = [];
+    const run = perspicaxDeletion({
+      subjectOf: (id) => id === "pr_ada" ? person : null,
+      reauth,
+      erase: async (token) => { erased.push(token); return answer; },
+      revoke: (token) => revokedHere.push(token),
+    });
+    return { reauth, revoked, erased, revokedHere, run };
+  }
+
+  it("never erases without a sign-in made again for this session: the session's own token is never asked", async () => {
+    const { run, erased } = wired({ ok: true, sub: "ada-sub" });
+    expect(await run("pr_ada", "s-ada")).toEqual({ ok: false, error: "reauth_required" });
+    expect(erased).toEqual([]);
+    expect(await run("pr_nobody", "s-ada")).toEqual({ ok: false, error: "link" });
+  });
+
+  it("erases with the fresh access token once, then asks again", async () => {
+    const { reauth, run, erased, revokedHere } = wired({ ok: true, sub: "ada-sub" });
+    reauth.keep({ expect: ADA, accessToken: "fresh-at", refreshToken: "fresh-rt", authTimeSeconds: T0 / 1000 });
+    expect(await run("pr_ada", "s-other")).toEqual({ ok: false, error: "reauth_required" });
+    expect(await run("pr_ada", "s-ada")).toEqual({ ok: true });
+    expect(erased).toEqual(["fresh-at"]);
+    expect(revokedHere).toEqual([]);
+    expect(await run("pr_ada", "s-ada")).toEqual({ ok: false, error: "reauth_required" });
+  });
+
+  it("revokes the sign-in's grant when Perspicax refuses (a refresh it found too old included)", async () => {
+    const { reauth, run, revokedHere } = wired({ ok: false, error: "reauth_required", status: 403 });
+    reauth.keep({ expect: ADA, accessToken: "fresh-at", refreshToken: "fresh-rt", authTimeSeconds: T0 / 1000 });
+    expect(await run("pr_ada", "s-ada")).toEqual({ ok: false, error: "reauth_required", status: 403 });
+    expect(revokedHere).toEqual(["fresh-rt"]);
+  });
+
+  it("deletes nothing on an answer about another subject", async () => {
+    const { reauth, run } = wired({ ok: true, sub: "someone-else" });
+    reauth.keep({ expect: ADA, accessToken: "fresh-at", authTimeSeconds: T0 / 1000 });
+    expect(await run("pr_ada", "s-ada")).toEqual({ ok: false, error: "unreachable" });
   });
 });

@@ -465,7 +465,7 @@ describe("the sign-in routes (in process)", () => {
 
   describe("the sign-in again of an account deletion (2026-10-18)", () => {
     /** A web sign-in, then its session asks to sign in again (`as` signs in at Perspicax instead). */
-    async function again(options: { as?: typeof USER; client?: "web" | "phone"; sessionGone?: boolean; claims?: (c: Record<string, unknown>) => Record<string, unknown> } = {}) {
+    async function again(options: { as?: typeof USER; client?: "web" | "phone"; sessionGone?: boolean; noMarker?: boolean; claims?: (c: Record<string, unknown>) => Record<string, unknown> } = {}) {
       const { callback } = await walk();
       const cookie = callback!.headers.getSetCookie().find((c) => c.startsWith("omb_session_test="))!;
       const record = sessions.authenticate(decodeURIComponent(cookie.split(";")[0]!.split("=")[1]!))!;
@@ -481,6 +481,7 @@ describe("the sign-in routes (in process)", () => {
       if (!to.startsWith(provider.issuer)) return { start, location: to, record, ticket, authorize: null as Record<string, string> | null };
       const binding = start.headers.getSetCookie().find((c) => c.includes("_oidc="))!.split(";")[0]!;
       if (options.claims) provider.tamper = { claims: options.claims };
+      if (options.noMarker) provider.tamper = { ...provider.tamper, omitEraseMarker: true };
       try {
         const authorize = await fetch(to, { redirect: "manual" });
         const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
@@ -491,10 +492,16 @@ describe("the sign-in routes (in process)", () => {
       }
     }
 
+    /** The provider saw a revocation since `before` (the queue is async). */
+    async function revokedSince(before: number) {
+      for (let i = 0; i < 50 && provider.revoked.length <= before; i++) await new Promise((r) => setTimeout(r, 20));
+      expect(provider.revoked.length).toBeGreaterThan(before);
+    }
+
     it("asks Perspicax for a new sign-in (prompt=login, max_age=0, the person's login_hint) and keeps its access token for that session", async () => {
       const { location, record, authorize } = await again();
       expect(location).toBe("/#account-reauth=ok");
-      expect(authorize).toMatchObject({ prompt: "login", max_age: "0", login_hint: USER.sub });
+      expect(authorize).toMatchObject({ prompt: "login", max_age: "0", login_hint: USER.sub, scope: "openid pulsabot:erase" });
       const fresh = reauth.take(record.id, record.principalId!);
       expect(fresh?.sub).toBe(USER.sub);
       expect(fresh?.accessToken).toBeTruthy();
@@ -517,26 +524,30 @@ describe("the sign-in routes (in process)", () => {
       const wrong = await again({ as: other });
       expect(wrong.location).toBe("/#account-reauth-error=reauth_subject");
       expect(reauth.has(wrong.record.id)).toBe(false);
-      await new Promise((r) => setTimeout(r, 100));
-      expect(provider.revoked.length).toBeGreaterThan(revokedBefore);
+      await revokedSince(revokedBefore);
 
       revokedBefore = provider.revoked.length;
       const gone = await again({ sessionGone: true });
       expect(gone.location).toBe("/#account-reauth-error=reauth_session");
-      await new Promise((r) => setTimeout(r, 100));
-      expect(provider.revoked.length).toBeGreaterThan(revokedBefore);
+      await revokedSince(revokedBefore);
 
       // Perspicax answered with an old sign-in (it ignored max_age): refused.
       revokedBefore = provider.revoked.length;
       const stale = await again({ claims: (c) => ({ ...c, auth_time: Math.floor(Date.now() / 1000) - 600 }) });
       expect(stale.location).toBe("/#account-reauth-error=reauth_stale");
       expect(reauth.has(stale.record.id)).toBe(false);
-      await new Promise((r) => setTimeout(r, 100));
-      expect(provider.revoked.length).toBeGreaterThan(revokedBefore);
+      await revokedSince(revokedBefore);
 
       const none = await again({ claims: (c) => { const { auth_time: _drop, ...rest } = c; return rest; } });
       expect(none.location).toBe("/#account-reauth-error=reauth_stale");
-    });
+
+      // Perspicax did not keep the erasure marker (an older one): refused.
+      revokedBefore = provider.revoked.length;
+      const unmarked = await again({ noMarker: true });
+      expect(unmarked.location).toBe("/#account-reauth-error=reauth_scope");
+      expect(reauth.has(unmarked.record.id)).toBe(false);
+      await revokedSince(revokedBefore);
+    }, 30_000);
 
     it("answers 405 to another method", async () => {
       expect((await fetch(`${base}/auth/oidc/reauth`, { method: "POST" })).status).toBe(405);

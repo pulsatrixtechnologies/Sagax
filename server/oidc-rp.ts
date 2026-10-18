@@ -145,6 +145,13 @@ export const ROUTINE_DELEGATION_SCOPE = "pulsabot:routines";
  * name and address on each refresh (principals drop claims a token lacks). */
 export const ROUTINE_DELEGATION_SCOPES = `openid profile email offline_access ${ROUTINE_DELEGATION_SCOPE}`;
 
+/** 2026-10-18: Perspicax's account erasure marker: only a sign-in that
+ * carried it opens the erasure there (an ordinary sign-in never does), and
+ * its authorize page warns the person. No offline_access: it proves one
+ * sign-in, it is not kept. */
+export const ACCOUNT_ERASURE_SCOPE = "pulsabot:erase";
+export const ACCOUNT_ERASURE_SCOPES = `openid ${ACCOUNT_ERASURE_SCOPE}`;
+
 /** What a flow is for: a sign-in, a routine delegation (slice 6), or the
  * person signing in again right before deleting their account (2026-10-18,
  * server/account-reauth.ts: `prompt=login`, `max_age=0`, a recent
@@ -795,7 +802,7 @@ export class OidcRelyingParty {
     url.searchParams.set("response_type", "code");
     url.searchParams.set("client_id", this.clientId);
     url.searchParams.set("redirect_uri", this.redirectUri);
-    url.searchParams.set("scope", purpose === "routines" ? ROUTINE_DELEGATION_SCOPES : this.scope);
+    url.searchParams.set("scope", purpose === "routines" ? ROUTINE_DELEGATION_SCOPES : purpose === "reauth" ? ACCOUNT_ERASURE_SCOPES : this.scope);
     url.searchParams.set("state", state);
     url.searchParams.set("nonce", nonce);
     url.searchParams.set("code_challenge", challenge);

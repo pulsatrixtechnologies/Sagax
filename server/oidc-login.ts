@@ -52,7 +52,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { ACCOUNT_REAUTH_PATH, phoneReauthReturn, webReauthReturn, type AccountReauth, type AccountReauthClient } from "./account-reauth.ts";
 import { immediateRevocations, type RevocationSink } from "./idp-revocations.ts";
-import { OidcRelyingParty, ROUTINE_DELEGATION_SCOPE, validInternalBase, validIssuer, type OidcClientKind, type OidcIdentity } from "./oidc-rp.ts";
+import { ACCOUNT_ERASURE_SCOPE, OidcRelyingParty, ROUTINE_DELEGATION_SCOPE, validInternalBase, validIssuer, type OidcClientKind, type OidcIdentity } from "./oidc-rp.ts";
 import type { Principal } from "./principals.ts";
 import { cookieMaxAgeSeconds, type PublicSession, type Scope, type SessionRecord } from "./sessions.ts";
 import { labelFromUserAgent, parseCookies, serializeSessionCookie } from "./request-auth.ts";
@@ -525,6 +525,11 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     if (!deps.grants.sessionPrincipal || deps.grants.sessionPrincipal(expect.sessionId) !== expect.principalId) {
       return refuse("reauth_session", "the session that asked is gone");
     }
+    // Perspicax dates only a sign-in that kept the marker (it drops it for
+    // another account, or an older Perspicax that does not know it).
+    if (!(outcome.grantedScope ?? "").split(" ").includes(ACCOUNT_ERASURE_SCOPE)) {
+      return refuse("reauth_scope", "Perspicax did not grant the account erasure scope");
+    }
     const accessToken = outcome.grant.accessToken;
     if (!accessToken) return refuse("grant", "the identity provider returned no access token");
     if (!deps.reauth) return refuse("unavailable", "this server keeps no sign-in for account deletion");
@@ -613,7 +618,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     const binding = parseCookies(req.headers.cookie).get(bindingCookie);
     const outcome = await rp.callback(url.searchParams, binding);
     if (!outcome.ok) {
-      log(`oidc ${outcome.purpose === "routines" ? "routine delegation" : "sign-in"} refused (${outcome.code}): ${outcome.error}`);
+      log(`oidc ${outcome.purpose === "routines" ? "routine delegation" : outcome.purpose === "reauth" ? "sign-in again" : "sign-in"} refused (${outcome.code}): ${outcome.error}`);
       if (outcome.purpose === "routines") redirect(res, routineDelegationReturn({ error: outcome.code }), [clearBinding]);
       else if (outcome.purpose === "reauth") redirect(res, reauthReturn(outcome.client, { error: outcome.code }), [clearBinding]);
       else fail(res, outcome.code, [clearBinding], outcome.client, outcome.returnTo);

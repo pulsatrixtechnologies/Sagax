@@ -44,6 +44,8 @@ export interface FakeOidcTamper {
   /** Slice 6: drop the `pulsabot:routines` marker from token answers (an
    * older Perspicax), so a delegation code answer lacks it. */
   omitRoutinesMarker?: boolean;
+  /** 2026-10-18: answer a sign-in again without the account erasure marker (an older Perspicax). */
+  omitEraseMarker?: boolean;
   /** 2026-10-08: refuse to issue a routine delegation by token exchange (a
    * Perspicax up to 1.8.13: only an access token may be requested). */
   noDelegationExchange?: boolean;
@@ -217,6 +219,8 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     return ended;
   };
   const MARKER = "pulsabot:routines";
+  /** 2026-10-18: Perspicax's account erasure marker (ACCOUNT_ERASURE_SCOPE). */
+  const ERASE_MARKER = "pulsabot:erase";
   const disabled = new Set<string>();
   const roles = new Map<string, string | undefined>();
   const teamsBySub = new Map<string, FakeOidcUser["teams"]>();
@@ -470,8 +474,10 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         // delegation request names its person in login_hint; another account
         // signing in gets no marker, so its own delegation is never replaced.
         const hint = (q.login_hint ?? "").trim();
-        const scope = hint && hint !== provider.user.sub
-          ? (q.scope ?? "").split(" ").filter((name) => name && name !== MARKER).join(" ")
+        // The erasure marker needs the hint, and the hint's person.
+        const asksErase = (q.scope ?? "").split(" ").includes(ERASE_MARKER);
+        const scope = (hint && hint !== provider.user.sub) || (asksErase && !hint)
+          ? (q.scope ?? "").split(" ").filter((name) => name && name !== MARKER && name !== ERASE_MARKER).join(" ")
           : q.scope ?? "";
         codes.set(code, { clientId: q.client_id, redirectUri: q.redirect_uri, challenge: q.code_challenge, nonce: q.nonce ?? "", user: { ...provider.user }, ...(q.resource ? { resource: q.resource } : {}), scope });
         back.searchParams.set("code", code);
@@ -598,7 +604,9 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
           refresh_token: issueRefresh(family, grant.user, grant.resource),
           token_type: "Bearer",
           expires_in: 3600,
-          scope: marked ? `openid profile email offline_access ${MARKER}` : "openid profile email offline_access",
+          scope: !provider.tamper.omitEraseMarker && asked.includes(ERASE_MARKER) && asked.includes("openid") && Boolean(grant.resource)
+            ? `openid ${ERASE_MARKER}`
+            : marked ? `openid profile email offline_access ${MARKER}` : "openid profile email offline_access",
           ...(provider.tamper.noIdToken ? {} : { id_token: idToken(withTeams(grant.user), grant.nonce) }),
         });
       });

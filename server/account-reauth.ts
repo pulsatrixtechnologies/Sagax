@@ -15,10 +15,12 @@
 //      browser (the web app itself, or the phone's authentication sheet).
 //   2. GET ACCOUNT_REAUTH_PATH takes the ticket and starts an OpenID Connect
 //      flow of purpose `reauth` (server/oidc-rp.ts): `prompt=login`,
-//      `max_age=0`, `login_hint` the person's subject, the browser binding
-//      cookie as for a sign-in.
-//   3. The callback checks the same subject, the same live session, an
-//      `auth_time` of the last five minutes, and keeps the access token here
+//      `max_age=0`, `login_hint` the person's subject, scope
+//      `openid pulsabot:erase` (Perspicax dates only a sign-in with that
+//      marker and warns on its page), the browser binding cookie as for a
+//      sign-in.
+//   3. The callback checks the same subject, the same live session, the
+//      marker granted, an `auth_time` of the last five minutes, and keeps the access token here
 //      (keep) until five minutes after that sign-in.
 //   4. DELETE /api/me takes it (take: single use, that session and person
 //      only). An unused one is dropped at expiry and its refresh token
@@ -103,6 +105,9 @@ export class AccountReauth {
       if (oldest === undefined) break;
       this.tickets.delete(oldest);
     }
+    // One live ticket per session: a new one replaces it, so a session
+    // looping on POST /api/me/reauth never pushes out other people's.
+    for (const [old, entry] of this.tickets) if (entry.expect.sessionId === expect.sessionId) this.tickets.delete(old);
     const ticket = randomBytes(32).toString("base64url");
     const expiresAt = this.now() + ACCOUNT_REAUTH_TICKET_TTL_MS;
     this.tickets.set(ticket, { expect: { principalId: expect.principalId, subject: { ...expect.subject }, sessionId: expect.sessionId }, client, expiresAt });
@@ -184,4 +189,45 @@ export class AccountReauth {
     for (const [ticket, entry] of this.tickets) if (entry.expiresAt <= at) this.tickets.delete(ticket);
     for (const [sessionId, entry] of this.fresh) if (entry.validUntil <= at) this.drop(sessionId, "an unused sign-in for account deletion expired");
   }
+}
+
+/** What DELETE /api/me needs to erase at Perspicax (server/index.ts wires it). */
+export interface PerspicaxDeletionWiring {
+  /** The person's Perspicax subject when this server signs in with that issuer, else null. */
+  subjectOf: (principalId: string) => { id: string; sub: string } | null;
+  reauth: AccountReauth | null;
+  /** PerspicaxDirectory.eraseOwnAccount. */
+  erase: (accessToken: string) => Promise<{ ok: true; sub: string } | { ok: false; error: string; status?: number }>;
+  revoke: (refreshToken: string, why: string) => void;
+  log?: (line: string) => void;
+}
+
+/** The deletion at Perspicax with the sign-in made again for it, never the
+ * session's own (refreshed) token. A refused erasure revokes that sign-in's
+ * grant; an answer about another subject deletes nothing here. */
+export function perspicaxDeletion(wiring: PerspicaxDeletionWiring) {
+  return async (principalId: string, sessionId: string): Promise<{ ok: true } | { ok: false; error: string; status?: number }> => {
+    const person = wiring.subjectOf(principalId);
+    if (!person) return { ok: false, error: "link" };
+    const fresh = wiring.reauth?.take(sessionId, person.id) ?? null;
+    if (!fresh) return { ok: false, error: "reauth_required" };
+    if (fresh.sub !== person.sub) {
+      if (fresh.refreshToken) wiring.revoke(fresh.refreshToken, "a sign-in again for another subject");
+      return { ok: false, error: "reauth_required" };
+    }
+    const erased = await wiring.erase(fresh.accessToken);
+    if (!erased.ok) {
+      // Not erased: the extra sign-in's grant goes (one sign-in, one try).
+      if (fresh.refreshToken) wiring.revoke(fresh.refreshToken, "a sign-in again whose account deletion was refused");
+      wiring.log?.(`account deletion: Perspicax refused (${erased.error}${erased.status ? ` ${erased.status}` : ""})`);
+      return { ok: false, error: erased.error, ...(erased.status ? { status: erased.status } : {}) };
+    }
+    if (erased.sub !== person.sub) {
+      // Never delete this person's data on an answer about someone else:
+      // the account purged push names the right subject.
+      wiring.log?.("account deletion: Perspicax erased an account under another subject than this person's");
+      return { ok: false, error: "unreachable" };
+    }
+    return { ok: true };
+  };
 }

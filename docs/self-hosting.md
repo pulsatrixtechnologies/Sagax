@@ -661,8 +661,11 @@ What changes:
   `POST /api/me/reauth` and opens the address it answers
   (`/auth/oidc/reauth?ticket=`, a two-minute, single-use ticket for that
   session), which asks Perspicax for a new sign-in (`prompt=login`,
-  `max_age=0`); the callback checks the same person, the same live session
-  and an `auth_time` of the last five minutes, and keeps that access token in
+  `max_age=0`, `login_hint`, scope `openid pulsabot:erase`: Perspicax dates
+  only a sign-in that carried that marker, so an ordinary sign-in never opens
+  the erasure, and its page warns the person); the callback checks the same
+  person, the same live session, the marker granted and an `auth_time` of
+  the last five minutes, and keeps that access token in
   memory for this one deletion (an unused one is revoked when it expires).
   The session's own token, which this server refreshes, is never used:
   Perspicax refuses a refreshed token (`403 reauth_required`), so a server
