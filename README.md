@@ -92,8 +92,8 @@ chat, and you decide how much each bot may do on its own.
 <p align="center"><sub>Every bot has a computer you can watch and take over.</sub></p>
 </td>
 <td width="50%" valign="top">
-<img src="docs/images/readme/settings-model-providers.webp" alt="Settings, Model providers: connectors of your own account and the engines that are ready" width="100%">
-<p align="center"><sub>Connect the engines and accounts your bots use.</sub></p>
+<img src="docs/images/readme/voice-mode.webp" alt="Voice call with a bot: a floating call bar with a live waveform and buttons for settings, transcript, hold, mute and hang up" width="100%">
+<p align="center"><sub>Call a bot and talk, the chat stays in view.</sub></p>
 </td>
 </tr>
 </table>
@@ -119,7 +119,7 @@ Get the latest build from the
   [Codex](https://github.com/openai/codex). Settings > Model providers shows
   what is ready and helps with the rest.
 - Updates come only from this repository's releases. Pre-releases are opt in,
-  in Settings > General.
+  in Settings > Updates.
 
 ## Solo or organization
 
