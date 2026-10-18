@@ -19,8 +19,9 @@ const { MessageHoverActions, MessageMenuItem } = await import("./MessageHoverAct
 
 let host: HTMLDivElement;
 let root: Root;
-const q = <T extends Element = HTMLElement>(selector: string) => host.querySelector<T & HTMLElement>(selector);
-const all = (selector: string) => [...host.querySelectorAll<HTMLElement>(selector)];
+// the popups are drawn in a portal on document.body
+const q = <T extends Element = HTMLElement>(selector: string) => document.querySelector<T & HTMLElement>(selector);
+const all = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)];
 const rowLabels = () => all("[data-hover-actions] > button").map((button) => button.getAttribute("aria-label"));
 const key = (target: Element, name: string) =>
   act(async () => {
@@ -213,5 +214,74 @@ describe("MessageHoverActions: the … menu", () => {
     await act(async () => q("[data-more-button]")!.click());
     expect(q("[data-menu-extra]")!.className).toContain("has-[>[role=menuitem]:not(.hidden)]:flex");
     expect(q("[data-react-button]")).toBeNull();
+  });
+});
+
+describe("MessageHoverActions: placement (JC, 2026-10-18)", () => {
+  // A transcript row has content-visibility: auto, which paints nothing
+  // outside the row: the popups live on document.body and are placed there.
+  const atRow = (box: { left: number; top: number; width: number; height: number }) => {
+    const row = q("[data-hover-actions]")!;
+    row.getBoundingClientRect = () => ({ ...box, right: box.left + box.width, bottom: box.top + box.height, x: box.left, y: box.top, toJSON: () => box }) as DOMRect;
+  };
+  const sized = (width: number, height: number) => {
+    const spies = [
+      vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(width),
+      vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(height),
+    ];
+    return () => spies.forEach((spy) => spy.mockRestore());
+  };
+
+  it("draws the pill outside the message, below a row with room", async () => {
+    await render("bot");
+    atRow({ left: 300, top: 200, width: 80, height: 24 });
+    const restore = sized(225, 45);
+    await act(async () => q("[data-react-button]")!.click());
+    const bar = q("[data-reaction-bar]")!;
+    expect(bar.parentElement).toBe(document.body);
+    expect(host.contains(bar)).toBe(false);
+    expect(bar.dataset.side).toBe("below");
+    expect(bar.style.top).toBe("228px");
+    expect(bar.style.left).toBe("300px");
+    restore();
+  });
+
+  it("opens above the last message at the bottom, on the person's side", async () => {
+    await render("user");
+    atRow({ left: 600, top: window.innerHeight - 40, width: 80, height: 24 });
+    const restore = sized(225, 45);
+    await act(async () => q("[data-react-button]")!.click());
+    const bar = q("[data-reaction-bar]")!;
+    expect(bar.dataset.side).toBe("above");
+    expect(bar.style.top).toBe(`${window.innerHeight - 40 - 4 - 45}px`);
+    expect(bar.style.left).toBe(`${680 - 225}px`);
+    restore();
+  });
+
+  it("opens the full picker below the first message at the top", async () => {
+    await render("bot");
+    atRow({ left: 300, top: 40, width: 80, height: 24 });
+    const restore = sized(272, 309);
+    await act(async () => q("[data-react-button]")!.click());
+    await act(async () => q("[data-reaction-bar] [data-more-reactions]")!.click());
+    const picker = q("[data-reaction-picker]")!;
+    expect(picker.parentElement).toBe(document.body);
+    expect(picker.dataset.side).toBe("below");
+    expect(picker.style.top).toBe("68px");
+    restore();
+  });
+
+  it("stays open when a press lands inside the portal popup", async () => {
+    await render("bot");
+    await act(async () => q("[data-more-button]")!.click());
+    const menu = q("[data-message-menu]")!;
+    await act(async () => {
+      menu.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    expect(q("[data-more-button]")!.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => {
+      document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    expect(q("[data-more-button]")!.getAttribute("aria-expanded")).toBe("false");
   });
 });

@@ -18,20 +18,27 @@
 //
 // Keyboard: every popup takes focus on open, the arrows and Home/End move in
 // it, Escape closes it and gives focus back to the button that opened it.
+//
+// Placement (JC, 2026-10-18): the pill, the menu and the full picker are
+// drawn in a portal on document.body, fixed beside the row, so neither the
+// transcript's scroller nor any other container cuts them. They open below
+// the row (the picker above), on the other side when there is no room, and
+// slide back inside the window at its borders (src/lib/popover-placement.ts).
 import {
   createContext,
   useContext,
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { Copy, Ellipsis, Reply, Smile, SmilePlus } from "lucide-react";
 
+import { useAnchoredPopover } from "@/hooks/use-anchored-popover";
 import { popoverClosesOnKey, usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { cn } from "@/lib/cn";
 import { copyText } from "@/lib/copy-text";
@@ -48,8 +55,8 @@ export const HOVER_ACTION_BUTTON =
   "inline-flex size-6 shrink-0 items-center justify-center rounded-[6px] border-0 bg-transparent p-0 text-ink-secondary transition-colors duration-[120ms] hover:bg-ink/[0.06] active:bg-ink/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus aria-expanded:bg-ink/[0.06] disabled:cursor-not-allowed disabled:opacity-50";
 
 /** The floating surface both popups sit on: elevated, a half-pixel edge and
- * the skin's popover shadow. */
-const POPUP_SURFACE = "absolute z-40 border-[0.5px] border-border bg-elevated popover-surface";
+ * the skin's popover shadow. Fixed in a portal, placed by useAnchoredPopover. */
+const POPUP_SURFACE = "fixed left-0 top-0 z-50 border-[0.5px] border-border bg-elevated popover-surface";
 
 const EMOJI_CELL =
   "inline-flex size-8 shrink-0 items-center justify-center rounded-full border-0 p-0 text-[20px] leading-none text-ink transition-colors duration-[120ms] hover:bg-ink/[0.06] active:bg-ink/10 focus-visible:bg-ink/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
@@ -175,18 +182,8 @@ function moveFocus(event: KeyboardEvent<HTMLElement>, popup: HTMLElement | null)
   items[next]?.focus();
 }
 
-/** Below the trigger unless that runs off the window; then above. */
-function usePlacement(open: boolean, trigger: RefObject<HTMLElement | null>, popup: RefObject<HTMLElement | null>) {
-  const [above, setAbove] = useState(false);
-  useLayoutEffect(() => {
-    if (!open) return;
-    const box = popup.current?.getBoundingClientRect();
-    const anchor = trigger.current?.getBoundingClientRect();
-    if (!box || !anchor) return;
-    setAbove(anchor.bottom + 4 + box.height > window.innerHeight - 8 && anchor.top - 4 - box.height > 8);
-  }, [open, trigger, popup]);
-  return above;
-}
+/** On document.body, out of every container that could cut it. */
+const portal = (node: ReactNode) => (typeof document === "undefined" ? node : createPortal(node, document.body));
 
 type Popup = "reactions" | "picker" | "menu" | null;
 
@@ -239,8 +236,15 @@ export function MessageHoverActions({
   const mirrored = side === "user";
   const barMotion = useMenuMotion(popup === "reactions");
   const menuMotion = useMenuMotion(popup === "menu");
-  const barAbove = usePlacement(popup === "reactions", reactRef, barRef);
-  const menuAbove = usePlacement(popup === "menu", moreRef, menuRef);
+  // Grok Bot's placement: under the row, from the bubble's side
+  const align = mirrored ? "end" : "start";
+  useAnchoredPopover(Boolean(react) && barMotion.shown, rootRef, barRef, { prefer: "below", align });
+  useAnchoredPopover(menuMotion.shown, rootRef, menuRef, { prefer: "below", align });
+  // The popups live in a portal: a press in one is still a press inside.
+  const inside = useRef({
+    contains: (target: unknown) =>
+      target instanceof Node && [rootRef, barRef, menuRef].some((ref) => Boolean(ref.current?.contains(target))),
+  });
 
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
@@ -253,7 +257,7 @@ export function MessageHoverActions({
     focus.current?.focus();
   };
 
-  usePopoverDismiss(popup === "reactions" || popup === "menu", rootRef, () => setPopup(null));
+  usePopoverDismiss(popup === "reactions" || popup === "menu", inside, () => setPopup(null));
 
   useEffect(() => {
     if (popup === "reactions") entries(barRef.current)[0]?.focus();
@@ -273,7 +277,9 @@ export function MessageHoverActions({
       return;
     }
     if (event.key === "Tab") {
-      setPopup(null);
+      // the popup sits at the end of the page (a portal): put focus back on
+      // its button first, so Tab carries on from the row, not from there
+      close(from);
       return;
     }
     // a letter chooses the menu entry that carries it
@@ -289,8 +295,6 @@ export function MessageHoverActions({
   };
 
   const copied = (key: "chat.copyMessageDone" | "chat.copyRequestIdDone") => setAnnounce(t(key));
-  // Grok Bot's placement: under the row, from the bubble's side
-  const edge = mirrored ? "end-0" : "start-0";
   const replyIcon = <Reply {...HOVER_ICON} aria-hidden="true" className={cn(mirrored && "-scale-x-100")} />;
 
   return (
@@ -351,7 +355,7 @@ export function MessageHoverActions({
       {persistent}
       <span className="sr-only" aria-live="polite">{announce}</span>
 
-      {react && barMotion.shown && (
+      {react && barMotion.shown && portal(
         <div
           ref={barRef}
           id={barId}
@@ -360,23 +364,24 @@ export function MessageHoverActions({
           aria-orientation="horizontal"
           data-reaction-bar
           onKeyDown={(event) => onPopupKey(event, barRef, reactRef)}
-          className={cn(POPUP_SURFACE, "w-max rounded-full p-1.5", barAbove ? "bottom-full mb-1" : "top-full mt-1", edge, barMotion.className)}
+          className={cn(POPUP_SURFACE, "w-max max-w-[calc(100vw-1rem)] rounded-full p-1.5", barMotion.className)}
           {...barMotion.exitProps}
         >
           <QuickReactionRow mine={react.mine} onPick={(emoji) => pick(emoji, reactRef)} onMore={() => setPopup("picker")} />
-        </div>
+        </div>,
       )}
 
       {react && popup === "picker" && (
         <ReactionPicker
-          align={mirrored ? "end" : "start"}
+          anchorRef={rootRef}
+          align={align}
           mine={react.mine}
           onPick={react.onPick}
           onClose={() => close(reactRef)}
         />
       )}
 
-      {menuMotion.shown && (
+      {menuMotion.shown && portal(
         <CloseMenu.Provider value={() => close(moreRef)}>
           <div
             ref={menuRef}
@@ -387,9 +392,7 @@ export function MessageHoverActions({
             onKeyDown={(event) => onPopupKey(event, menuRef, moreRef)}
             className={cn(
               POPUP_SURFACE,
-              "flex w-max min-w-[200px] max-w-[min(18rem,calc(100vw-2rem))] flex-col gap-0.5 rounded-[12px] p-1.5",
-              menuAbove ? "bottom-full mb-1" : "top-full mt-1",
-              edge,
+              "flex w-max min-w-[200px] max-w-[min(18rem,calc(100vw-2rem))] flex-col gap-0.5 overflow-y-auto rounded-[12px] p-1.5",
               menuMotion.className,
             )}
             {...menuMotion.exitProps}
@@ -422,7 +425,7 @@ export function MessageHoverActions({
             {children && <MenuSection extra>{children}</MenuSection>}
             {view && <MenuSection>{view}</MenuSection>}
           </div>
-        </CloseMenu.Provider>
+        </CloseMenu.Provider>,
       )}
     </div>
   );

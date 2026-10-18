@@ -86,7 +86,7 @@ describe("room message actions", () => {
       group: { ...room, messages }, members: [lead], locale: "en", messages, transcript: messages, onReply: () => {},
     })));
     flushSync(() => host.querySelector<HTMLButtonElement>("[data-more-button]")!.click());
-    const items = [...host.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
+    const items = [...document.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
     expect(items.map((item) => item.textContent)).toEqual(expect.arrayContaining(["Read this aloud", "Show raw markdown", "Pin message", "Reply", "Copy", "Copy request ID"]));
     const speak = items.find((item) => item.textContent === "Read this aloud");
     expect(speak?.title).toBe("Add an ElevenLabs key in an agent profile to read messages aloud");

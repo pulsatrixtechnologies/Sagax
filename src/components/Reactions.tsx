@@ -8,9 +8,11 @@
 //   highlighted when the viewer is among the reactors; a click toggles the
 //   viewer's own; hovering or focusing it lists who reacted, a bot with its
 //   mascot (from `bots`).
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { SmilePlus } from "lucide-react";
 
+import { useAnchoredPopover } from "@/hooks/use-anchored-popover";
 import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -40,21 +42,27 @@ export function ReactButton({ open, onToggle, className }: { open: boolean; onTo
   );
 }
 
-/** The picker, absolutely placed above whatever holds it (`relative`).
- * `align` keeps it on the message's side. `mine` marks the quick reactions
- * the viewer already put there (choosing one again takes it back). */
+/** The picker. With `anchorRef` (a message's action row) it is drawn in a
+ * portal, fixed above the anchor, below it when there is no room above,
+ * and kept inside the window (src/lib/popover-placement.ts), so no
+ * scrolling container cuts it; without, it is absolutely placed above
+ * whatever holds it (`relative`). `align` keeps it on the message's side.
+ * `mine` marks the quick reactions the viewer already put there (choosing
+ * one again takes it back). */
 export function ReactionPicker({
   onPick,
   onClose,
   align,
   mine = [],
   className,
+  anchorRef,
 }: {
   onPick: (emoji: string) => void;
   onClose: () => void;
   align: "start" | "end";
   mine?: readonly string[];
   className?: string;
+  anchorRef?: RefObject<HTMLElement | null>;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,10 +74,14 @@ export function ReactionPicker({
       if (!root || !(target instanceof Node)) return false;
       if (root.contains(target)) return true;
       const button = target instanceof Element ? target.closest("[data-react-button]") : null;
-      return Boolean(button && root.parentElement?.contains(button));
+      const holder = anchorRef ? anchorRef.current : root.parentElement;
+      return Boolean(button && holder?.contains(button));
     },
   });
   usePopoverDismiss(true, inside, onClose);
+  const anchored = Boolean(anchorRef);
+  const noAnchor = useRef<HTMLElement | null>(null);
+  useAnchoredPopover(anchored, anchorRef ?? noAnchor, rootRef, { prefer: "above", align });
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -106,15 +118,15 @@ export function ReactionPicker({
       {emoji}
     </button>
   );
-  return (
+  const picker = (
     <div
       ref={rootRef}
       role="dialog"
       aria-label={t("reactions.add")}
       data-reaction-picker
       className={cn(
-        "absolute bottom-full z-40 mb-1 flex w-[17rem] max-w-[calc(100vw-2rem)] flex-col gap-1.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5",
-        align === "end" ? "right-0" : "left-0",
+        "flex w-[17rem] max-w-[calc(100vw-1rem)] flex-col gap-1.5 overflow-y-auto rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5",
+        anchored ? "fixed left-0 top-0 z-50" : cn("absolute bottom-full z-40 mb-1", align === "end" ? "right-0" : "left-0"),
         className,
       )}
     >
@@ -134,6 +146,7 @@ export function ReactionPicker({
       <EmojiCatalogGrid state={catalog} onPick={pick} mine={mine} labelFor={(entry) => t("reactions.reactWith", { emoji: entry.emoji })} />
     </div>
   );
+  return anchored && typeof document !== "undefined" ? createPortal(picker, document.body) : picker;
 }
 
 function ActorFace({ actor, bots }: { actor: ReactionActor; bots: readonly Bot[] }) {

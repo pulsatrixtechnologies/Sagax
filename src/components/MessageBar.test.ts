@@ -13,7 +13,7 @@ let root: Root;
 const bar = () => host.querySelector<HTMLElement>("[data-message-bar]")!;
 const handle = () => bar().querySelector<HTMLButtonElement>("[data-more-button]")!;
 const items = () =>
-  [...host.querySelectorAll<HTMLElement>('[data-message-menu]:not([aria-hidden="true"]) [role="menuitem"]:not([data-more-reactions])')]
+  [...document.querySelectorAll<HTMLElement>('[data-message-menu]:not([aria-hidden="true"]) [role="menuitem"]:not([data-more-reactions])')]
     .filter((item) => !item.classList.contains("hidden"))
     .map((item) => item.textContent);
 
@@ -73,7 +73,7 @@ describe("MessageBar", () => {
   it("runs an entry and closes the menu", async () => {
     const { onSelect } = await render();
     await act(async () => handle().click());
-    const raw = [...host.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === "Show raw markdown")!;
+    const raw = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === "Show raw markdown")!;
     await act(async () => raw.click());
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(handle().getAttribute("aria-expanded")).toBe("false");
@@ -88,13 +88,16 @@ describe("MessageBar", () => {
     expect(handle().getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("opens under the row from the bubble's side", async () => {
+  it("opens under the row, in a portal out of the transcript's rows", async () => {
     for (const side of ["bot", "user"] as const) {
       await render(side);
       await act(async () => handle().click());
-      const menu = host.querySelector<HTMLElement>("[data-message-menu]")!;
-      expect(menu.className).toContain(side === "bot" ? "start-0" : "end-0");
-      expect(menu.className).toContain("top-full");
+      const menu = document.querySelector<HTMLElement>('[data-message-menu]:not([aria-hidden="true"])')!;
+      // a row with content-visibility: auto paints only inside itself
+      expect(menu.parentElement).toBe(document.body);
+      expect(host.contains(menu)).toBe(false);
+      expect(menu.className).toContain("fixed");
+      expect(menu.dataset.side).toBe("below");
       await act(async () => handle().click());
     }
   });
@@ -103,7 +106,7 @@ describe("MessageBar", () => {
     const { onPick } = await render("bot", vi.fn(), true);
     await act(async () => bar().querySelector<HTMLButtonElement>("[data-react-button]")!.click());
     expect(bar().className).toContain("opacity-100");
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-reaction-bar] [data-quick-reaction="🎉"]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-reaction-bar] [data-quick-reaction="🎉"]')!.click());
     expect(onPick).toHaveBeenCalledWith("🎉");
   });
 });
