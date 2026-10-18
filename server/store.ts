@@ -3295,13 +3295,33 @@ export class Store {
    * place (Cloud, Local VM, This computer, Browser) goes back to Auto, and
    * every conversation pin goes, whoever set it. Off stays: it withholds
    * every screen, and lifting it would widen what the bot may reach.
+   * A bot that was kept off this computer (Cloud, Local VM or Browser) may
+   * reach it on Auto, so it starts again on Ask, it and each of its
+   * conversations, as on an engine switch: nothing it may now do on this
+   * computer runs without asking until a person raises the level again.
    * Idempotent; one save when anything changed. */
-  retireFixedWorkspaces(): { bots: number; pins: number } {
+  retireFixedWorkspaces(): { bots: number; pins: number; asked: number } {
     let bots = 0;
     let pins = 0;
+    let asked = 0;
     const touched = new Set<string>();
+    const askNow = { approvalMode: "ask" as const, autoApprove: false, alwaysAllow: [] as string[] };
     for (const bot of this.bots) {
       if (bot.computer !== undefined && autoOnlyDestination(bot.computer) === undefined) {
+        const keptOffThisComputer = bot.computer !== "local";
+        if (keptOffThisComputer) {
+          for (const task of bot.tasks ?? []) {
+            if (task.approvalMode !== undefined && task.approvalMode !== "ask") {
+              Object.assign(task, structuredClone(askNow));
+              asked++;
+            }
+          }
+          if (approvalModeFor(bot) !== "ask") {
+            Object.assign(bot, structuredClone(askNow));
+            delete bot.approvalGrant;
+            asked++;
+          }
+        }
         delete bot.computer;
         bots++;
         touched.add(bot.id);
@@ -3314,10 +3334,10 @@ export class Store {
         touched.add(bot.id);
       }
     }
-    if (!touched.size) return { bots, pins };
+    if (!touched.size) return { bots, pins, asked };
     this.saveBots();
     for (const botId of touched) this.emit({ type: "bot", botId });
-    return { bots, pins };
+    return { bots, pins, asked };
   }
 
   /** A Works on change is the newest explicit choice, so this bot's

@@ -56,10 +56,22 @@ for a bot or a conversation any more:
   stored). The engine-removal move writes no place.
 - At start, `Store.retireFixedWorkspaces` moves a saved fixed Works on and
   every conversation pin back to Auto, Off kept, idempotent (log line
-  "Workspace: N bot(s) and M conversation(s) back on Auto").
-- Guards are unchanged: organization policy (`managedPolicy.computers`),
-  Deny/Ask rules, security keys, approvals, the person's app connected for
-  their computer, routines on the owner's computer only when allowed.
+  "Workspace: N bot(s) and M conversation(s) back on Auto"). A bot that was
+  kept off this computer (Cloud, Local VM, Browser) may reach it on Auto, so
+  it and each of its conversations go back to Ask (allow list cleared),
+  until a person raises the level again.
+- A creation request that names This computer keeps its guards: the
+  Approve for me warning (`acknowledgeLocalAuto`) and Ask to start.
+- Other guards are unchanged: organization policy
+  (`managedPolicy.computers`), Deny/Ask rules, security keys, approvals,
+  the person's app connected for their computer, routines on the owner's
+  computer only when allowed. Known gap, as before for every Auto bot: the
+  Approve for me warning is keyed on Works on This computer, so it does not
+  show for an Auto bot (a decision for JC whether Auto should show it).
+- Linux: Auto never takes this computer (`server/local-routing.ts`), so a
+  Linux bot that worked on This computer loses it (narrower, not wider).
+- The Perspicax console lists an Auto bot under both the server
+  environment and the desktop (`server/org-admin-computers.ts`).
 - Test seam `SAGAX_TEST_FIXED_WORKSPACE=1` (with VITEST or
   `SAGAX_TEST_SEAMS=1`, never production): the suites that drive fixed
   places through the API keep them. Tests:

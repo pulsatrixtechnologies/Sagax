@@ -1654,8 +1654,7 @@ const mailResolved = () => resolveMailSettings({ file: cfg.mail, env: process.en
 // reads as Auto and the start sweep moves saved ones back to Auto. The
 // dispatch still knows fixed places (Off, team-backup's quarantine), and the
 // suites that drive it through the HTTP API keep them with this seam. Same
-// markers as the mail seam; a fixed place is narrower than Auto, so the seam
-// never widens what a bot may reach.
+// markers as the mail seam, and never in production.
 const FIXED_WORKSPACE_SEAM = process.env.SAGAX_TEST_FIXED_WORKSPACE === "1" &&
   process.env.NODE_ENV !== "production" && Boolean(process.env.VITEST || process.env.SAGAX_TEST_SEAMS === "1");
 if (process.env.SAGAX_TEST_FIXED_WORKSPACE === "1" && !FIXED_WORKSPACE_SEAM) {
@@ -38506,12 +38505,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.preset !== undefined && !preset) return json(res, 404, { error: PRESET_UNAVAILABLE_MESSAGE });
       // Workspace is always Auto (JC 2026-10-18): New bot defaults or a
       // request naming a place create an Auto bot. Off stays.
+      // A request that named This computer keeps its guards: the Approve
+      // for me warning, and Ask as the starting level.
+      const namedThisComputer = settings.computer === "local";
       if (Object.hasOwn(settings, "computer")) settings.computer = requestedWorksOn(settings.computer) ?? undefined;
       body = { ...body, ...settings, name: settings.name };
       if (settings.approvalMode === "full" || settings.approvalMode === "custom") {
         return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation." });
       }
-      if (settings.computer === "local" && settings.approvalMode === "auto" && body.acknowledgeLocalAuto !== true) {
+      if (namedThisComputer && settings.approvalMode === "auto" && body.acknowledgeLocalAuto !== true) {
         return json(res, 400, { error: "Auto mode on this computer requires confirming the warning first (acknowledgeLocalAuto)" });
       }
       // 2026-10-17 (re-review of #688): a member's new bot is never saved on
@@ -38588,7 +38590,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // The server's new bot level (Approve for me, or the organization's
         // policy) unless the request chose another level, or the bot works
         // on this computer (that warning is its own confirmation).
-        const defaultMode = ordinary.computer === "local" ? "ask" : newBotApprovalMode();
+        const defaultMode = namedThisComputer ? "ask" : newBotApprovalMode();
         const approvalMode = ordinary.approvalMode ?? (memberAutoRefused(bot, ["ask"], defaultMode) ? "ask" : defaultMode);
         store.patchBot(bot.id, {
           // Store creation completes workspace defaults (including effort).
@@ -44071,8 +44073,9 @@ restoreChannelMessages();
   if (movedAutoPins) console.log(`Auto: cleared ${movedAutoPins} auto-pinned thread(s); Auto picks where to work on each turn`);
   // Workspace is always Auto (JC 2026-10-18): a fixed Works on and every
   // conversation pin an older build saved go back to Auto. Off stays.
-  const retired = FIXED_WORKSPACE_SEAM ? { bots: 0, pins: 0 } : store.retireFixedWorkspaces();
+  const retired = FIXED_WORKSPACE_SEAM ? { bots: 0, pins: 0, asked: 0 } : store.retireFixedWorkspaces();
   if (retired.bots || retired.pins) console.log(`Workspace: ${retired.bots} bot(s) and ${retired.pins} conversation(s) back on Auto; the bot picks where each task runs`);
+  if (retired.asked) console.log(`Workspace: ${retired.asked} approval level(s) of bots kept off this computer back on Ask`);
 }
 // A saved MCP server whose name is now reserved is never mounted: say so at
 // start, not only at its first turn (#695 follow-up).

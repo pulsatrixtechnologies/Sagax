@@ -27,7 +27,8 @@ describe("the start sweep", () => {
     const local = store.createBot({}, { seedMessages: false });
     const off = store.createBot({}, { seedMessages: false });
     const auto = store.createBot({}, { seedMessages: false });
-    store.patchBot(cloud.id, { computer: "cloud" });
+    store.patchBot(cloud.id, { computer: "cloud", approvalMode: "ask" });
+    store.patchTask(cloud.id, cloud.threadId, { approvalMode: "ask" });
     store.patchBot(local.id, { computer: "local" });
     store.patchBot(off.id, { computer: "off" });
     const second = store.createTask(auto.id, "Pinned by a person", false)!;
@@ -35,7 +36,7 @@ describe("the start sweep", () => {
     store.patchTask(auto.id, auto.threadId, { surface: "browser" });
     store.patchTask(off.id, off.threadId, { surface: "local", surfaceSource: "auto" });
 
-    expect(store.retireFixedWorkspaces()).toEqual({ bots: 2, pins: 3 });
+    expect(store.retireFixedWorkspaces()).toEqual({ bots: 2, pins: 3, asked: 0 });
 
     const reloaded = new Store(newBotDefault);
     expect(reloaded.bot(cloud.id)?.computer).toBeUndefined();
@@ -48,15 +49,42 @@ describe("the start sweep", () => {
       expect(task.surfaceSource).toBeUndefined();
     }
     // Nothing left to move: no error, no write.
-    expect(reloaded.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 0 });
-    expect(store.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 0 });
+    expect(reloaded.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 0, asked: 0 });
+    expect(store.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 0, asked: 0 });
   });
 
   it("drops a stray pin origin without a place", () => {
     const store = new Store(newBotDefault);
     const bot = store.createBot({}, { seedMessages: false });
     store.patchTask(bot.id, bot.threadId, { surfaceSource: "user" });
-    expect(store.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 0 });
+    expect(store.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 0, asked: 0 });
     expect(new Store(newBotDefault).taskByThread(bot.id, bot.threadId)?.surfaceSource).toBeUndefined();
+  });
+
+  it("puts a bot that was kept off this computer back on Ask, it and its conversations; a This computer bot keeps its level", () => {
+    const store = new Store(newBotDefault);
+    const browser = store.createBot({}, { seedMessages: false });
+    const local = store.createBot({}, { seedMessages: false });
+    const cloudAsk = store.createBot({}, { seedMessages: false });
+    store.patchBot(browser.id, { computer: "browser", approvalMode: "auto", autoApprove: true, alwaysAllow: ["Bash"] });
+    const thread = store.createTask(browser.id, "Its own level", false)!;
+    store.patchTask(browser.id, thread.threadId, { approvalMode: "full" });
+    store.patchBot(local.id, { computer: "local", approvalMode: "auto", autoApprove: true });
+    store.patchBot(cloudAsk.id, { computer: "cloud", approvalMode: "ask" });
+    // a conversation keeps a level of its own (here the new-bot default)
+    store.patchTask(cloudAsk.id, cloudAsk.threadId, { approvalMode: "auto" });
+
+    // the Browser bot, its two conversations, and the Cloud bot's conversation
+    expect(store.retireFixedWorkspaces()).toEqual({ bots: 3, pins: 0, asked: 4 });
+
+    const reloaded = new Store(newBotDefault);
+    expect(reloaded.bot(browser.id)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
+    expect(reloaded.bot(browser.id)?.computer).toBeUndefined();
+    expect(reloaded.taskByThread(browser.id, thread.threadId)?.approvalMode).toBe("ask");
+    // This computer was already in reach, under the warning it confirmed.
+    expect(reloaded.bot(local.id)).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    expect(reloaded.bot(cloudAsk.id)?.approvalMode).toBe("ask");
+    expect(reloaded.taskByThread(cloudAsk.id, cloudAsk.threadId)?.approvalMode).toBe("ask");
+    expect(reloaded.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 0, asked: 0 });
   });
 });

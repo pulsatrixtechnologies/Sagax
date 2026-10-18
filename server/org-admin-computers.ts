@@ -138,12 +138,15 @@ const envId = (principalId: string) => `env:${principalId}`;
 export const desktopComputerId = (principalId: string, desktopId: string) =>
   `desktop:${createHash("sha256").update(`${principalId}\n${desktopId}`).digest("hex").slice(0, 16)}`;
 
-/** Where a bot's Works on sends its tools: Auto and Cloud to the person's
- * server environment, This computer and Local VM to their desktop. */
-function worksOn(computer: string | null): ComputerKind | null {
-  if (computer === null || computer === "cloud") return "server-environment";
-  if (computer === "local" || computer === "vm") return "desktop";
-  return null;
+/** Where a bot's Works on may send its tools: Cloud to the person's server
+ * environment, This computer and Local VM to their desktop, and Auto to
+ * either, since the bot picks per task (Workspace is always Auto,
+ * JC 2026-10-18). Off reaches neither. */
+function worksOn(computer: string | null, kind: ComputerKind): boolean {
+  if (computer === null) return true;
+  if (computer === "cloud") return kind === "server-environment";
+  if (computer === "local" || computer === "vm") return kind === "desktop";
+  return false;
 }
 
 function envState(view: UserSandboxView): ComputerState | null {
@@ -224,7 +227,7 @@ function desktopItem(desktop: DesktopFacts, deps: ComputersDeps, botsOf: (princi
 async function inventory(deps: ComputersDeps, only?: { principalId: string }): Promise<{ items: ComputerItem[]; environments: { configured: boolean; reachable: boolean; maxRunning: number | null; idleMinutes: number | null } }> {
   const bots = deps.bots();
   const botsOf = (principalId: string, kind: ComputerKind) => bots
-    .filter((bot) => bot.ownerPrincipalId === principalId && worksOn(bot.computer) === kind)
+    .filter((bot) => bot.ownerPrincipalId === principalId && worksOn(bot.computer, kind))
     .map((bot) => ({ id: bot.id, name: bot.name }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   const items: ComputerItem[] = [];
