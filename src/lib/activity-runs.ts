@@ -13,7 +13,7 @@ import { failedTurnCause } from "../../shared/failed-turn";
 import { isStoppedTurnName } from "../../shared/client-cancel";
 import { localDay } from "@/lib/transcript-derivations";
 import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/sandbox-wake";
-import { parseWorkspaceLine, type WorkspaceLine } from "../../shared/workspace-line";
+import { isQuietWorkspaceLine, parseWorkspaceLine, type WorkspaceLine } from "../../shared/workspace-line";
 import type { SelectedComputer } from "../../shared/execution-target";
 import type { LocaleKey } from "@/locales";
 
@@ -63,6 +63,12 @@ export function workspaceLineText(line: WorkspaceLine): string {
   if (line.fallback.reason === "offline") return t("workspaceLine.fallbackOffline", { place });
   if (line.fallback.reason === "routine-not-allowed") return t("workspaceLine.fallbackRoutine", { place });
   return t("workspaceLine.fallbackUnavailable", { place, wanted: t(WORKSPACE_PLACE[line.fallback.wanted]) });
+}
+
+/** A status row the thread keeps but never draws: the "On your computer"
+ * Workspace line (shared/workspace-line.ts isQuietWorkspaceLine). */
+export function isHiddenStatusActivity(message: Message): boolean {
+  return message.kind === "activity" && isQuietWorkspaceLine(message.tool?.name);
 }
 
 /** Recovery changes this conversation's engine and must remain visible. */
@@ -190,6 +196,8 @@ function group(messages: Message[], foldAssistantTurns: boolean): TranscriptItem
     run.push(message);
   };
   for (const message of messages) {
+    // "On your computer" is stored for the server, never drawn.
+    if (isHiddenStatusActivity(message)) continue;
     if (folds.hiddenIds.has(message.id)) {
       join(message);
       narrated = true;

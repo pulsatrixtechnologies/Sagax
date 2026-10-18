@@ -111,14 +111,15 @@ extension CompanionState {
         if let live = streaming[threadId], !live.isEmpty {
             return String(live.suffix(120)).replacingOccurrences(of: "\n", with: " ")
         }
-        if let last = visibleTranscript(forThread: threadId).last, last.kind == .activity, let tool = last.tool {
+        // The hidden "On your computer" line is never the working line either.
+        if let last = visibleTranscript(forThread: threadId).last(where: { !isHiddenStatusNotice($0) }), last.kind == .activity, let tool = last.tool {
             return tool.name
         }
         return "Working…"
     }
 
     private func lastLine(threadId: String) -> String {
-        guard let last = visibleTranscript(forThread: threadId).last(where: { $0.kind != .digest }) else { return "" }
+        guard let last = visibleTranscript(forThread: threadId).last(where: { $0.kind != .digest && !isHiddenStatusNotice($0) }) else { return "" }
         switch last.kind {
         // The new card kinds read as their text until their cards land
         // (WP2), exactly as they did while they decoded as `unknown`.

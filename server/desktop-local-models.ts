@@ -24,7 +24,11 @@ import {
 
 export const DESKTOP_MODEL_UNAVAILABLE = "This local model is unavailable. The computer is offline, or it is not shared with you.";
 export const DESKTOP_MODEL_WRONG_ENGINE = "This engine cannot run a model from your computer. Pick it on pi, Codex, Grok or another engine that takes an OpenAI-compatible endpoint.";
-export const DESKTOP_MODEL_NO_ANTHROPIC = "This local server does not speak the Anthropic protocol.";
+export const DESKTOP_MODEL_NO_ANTHROPIC = "This local server did not answer the Anthropic protocol (/v1/messages) at its last check, so Claude Code cannot use it. If it is busy, try again in a moment; otherwise pick this model on an engine that takes an OpenAI-compatible endpoint.";
+/** The proxy's answer to a request outside its allowlist. The engine shows it
+ * as is ("API Error: 400 ..."), so it says what happened and what to do. */
+export const DESKTOP_MODEL_TOO_LARGE = "This request is too large to send to the local model on your computer (1 MB at most). Start a new conversation or compact this one, then try again.";
+export const DESKTOP_MODEL_REFUSED = "Sagax did not forward this request to the local model on your computer: the engine asked for an address Sagax does not allow. Update Sagax on your computer and on the organization server, then try again.";
 const INVALID_BASE = "Use http://127.0.0.1 or http://localhost, and a path ending in /v1.";
 const REQUEST_CAP = 1_000_000;
 const RESPONSE_CAP = 1_500_000;
@@ -411,28 +415,31 @@ export class DesktopLocalModels {
     const method = req.method ?? "GET";
     if (method !== "GET" && method !== "POST") {
       res.writeHead(405, textHeaders);
-      res.end("This local model request was refused.");
+      res.end(DESKTOP_MODEL_REFUSED);
       return;
     }
     let url: URL;
     try { url = new URL(req.url ?? "/", "http://127.0.0.1"); } catch {
       res.writeHead(400, textHeaders);
-      res.end("This local model request was refused.");
+      res.end(DESKTOP_MODEL_REFUSED);
       return;
     }
     const match = /^\/d\/(desk[a-z0-9]{3,24})\/v1(\/models|\/chat\/completions|\/messages)$/.exec(url.pathname);
+    // A path outside the allowlist is 404 whatever its query, so an SDK call
+    // the proxy does not carry (count_tokens?beta=true, HEAD /api/hello) gets
+    // the "not here" an engine falls back on, not a refusal.
+    if (!match) {
+      res.writeHead(404, textHeaders);
+      res.end(DESKTOP_MODEL_REFUSED);
+      return;
+    }
     // Claude Code (the Anthropic SDK beta client) always posts to
     // /v1/messages?beta=true. That exact query is accepted on /messages and
     // dropped (the bridge forwards the bare allowlisted path); any other query
     // is refused.
-    if (url.search && !(match?.[2] === "/messages" && url.search === "?beta=true")) {
+    if (url.search && !(match[2] === "/messages" && url.search === "?beta=true")) {
       res.writeHead(400, textHeaders);
-      res.end("This local model request was refused.");
-      return;
-    }
-    if (!match) {
-      res.writeHead(404, textHeaders);
-      res.end("This local model request was refused.");
+      res.end(DESKTOP_MODEL_REFUSED);
       return;
     }
     const hostId = match[1]!;
@@ -440,7 +447,7 @@ export class DesktopLocalModels {
     // /messages is POST only, and only for a server the desktop probed as speaking it.
     if (httpPath === "/messages" && method !== "POST") {
       res.writeHead(405, textHeaders);
-      res.end("This local model request was refused.");
+      res.end(DESKTOP_MODEL_REFUSED);
       return;
     }
     const meta = this.hostMeta.get(hostId);
@@ -475,7 +482,7 @@ export class DesktopLocalModels {
     const json = method === "POST" ? await readLimited(req, REQUEST_CAP) : "";
     if (json === null) {
       res.writeHead(413, textHeaders);
-      res.end("This local model request was refused.");
+      res.end(DESKTOP_MODEL_TOO_LARGE);
       return;
     }
     // The bridge returns one complete() result, so a chat completion (or a

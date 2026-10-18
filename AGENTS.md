@@ -54,6 +54,14 @@ lui-même." On every server (solo and organization):
   request, a person's pin or a failure there.
 - At start, the auto pins an older build recorded are cleared, whatever the
   bot's Works on (log line "auto-pinned thread(s)").
+- The thread's Workspace lines (`shared/workspace-line.ts`): the server still
+  writes "On your computer" (`lastAutoPlace` reads it), but no client draws
+  it (JC 2026-10-18: "No need to specify 'On your computer'"): desktop
+  `isHiddenStatusActivity` (`src/lib/activity-runs.ts`: the transcript,
+  bot exchanges, rooms; `lastNonReceipt` for the sidebar), iOS and Android
+  `isHiddenStatusNotice` (transcript rows and the Updates lines). The cloud,
+  browser and Local VM lines and every "moved to" line stay, so a return to
+  the computer after the cloud now leaves no line.
 - Tests: `server/surface.test.ts`, `server/surface-pins.e2e.test.ts`,
   `server/host-lazy-claim.e2e.test.ts`, `server/group-local-vm.e2e.test.ts`,
   `server/place-view.e2e.test.ts`, `server/desktop-bridge.e2e.test.ts`.
@@ -1517,9 +1525,19 @@ they share no stem) and `context_length` becomes `contextWindow`.
   a loopback endpoint (127.0.0.1 or localhost, the allowlisted ports) that
   the desktop itself probed and published as speaking the Anthropic protocol
   (`probeAnthropicMessages` in `electron/local-models.mjs`: one POST with no
-  messages, 404/405/501/5xx means no, cached 5 s). The desktop re-checks that
+  messages, 8 s timeout; 404/405/501 means no, cached 5 s; 2xx/4xx means
+  yes, cached 10 minutes; a timeout or another 5xx is no answer and keeps the
+  last definite one for another window, and a server that stops answering
+  `/models` forgets it. The bridge probes all endpoints at once.
+  A one-slot server such as DwarfStar queues the probe behind a real turn, so
+  a short timeout read "busy" as "does not speak it" and refused the next
+  Claude Code turn, 2026-10-18). The desktop re-checks that
   flag before it fetches (`executeLocalModel` `allowMessages`), and the server
-  route refuses `/messages` for an unpublished endpoint or a GET. Own bots
+  route refuses `/messages` for an unpublished endpoint or a GET. A path
+  outside the allowlist is 404 whatever its query (`count_tokens?beta=true`);
+  a refusal body is `DESKTOP_MODEL_REFUSED` (413: `DESKTOP_MODEL_TOO_LARGE`),
+  a sentence that says what to do, since Claude Code prints it as
+  "API Error: 400 ...". Own bots
   only, by the same rule as chat completions: another person needs `share`,
   which stays off by default. The injected key is the server's desktop grant
   token (`desktopModelApiKey`), never a real key; the base URL is the

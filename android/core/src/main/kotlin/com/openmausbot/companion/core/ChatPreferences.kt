@@ -164,6 +164,16 @@ internal fun previewText(message: Message): String = when (message.kind) {
 fun isStatusNotice(message: Message): Boolean =
     message.kind == Message.Kind.ACTIVITY && message.tool?.name?.startsWith("notice:") == true
 
+/**
+ * The Workspace line Auto leaves when a turn starts on, or comes back to, the person's own
+ * computer. The server keeps
+ * writing it, no client draws it. Port of `isHiddenStatusNotice` in `ChatPreferences.swift`.
+ */
+const val QUIET_WORKSPACE_LINE = "notice: Workspace: On your computer"
+
+fun isHiddenStatusNotice(message: Message): Boolean =
+    message.kind == Message.Kind.ACTIVITY && message.tool?.name == QUIET_WORKSPACE_LINE
+
 fun isActivityReceipt(message: Message): Boolean = when (message.kind) {
     Message.Kind.ACTIVITY, Message.Kind.DIGEST, Message.Kind.COMPACTION -> true
     else -> false
@@ -211,6 +221,7 @@ fun transcriptRows(messages: List<Message>, detail: ActivityDetail): List<Transc
             // Match iOS: a receipt with no recorded work should not leave a
             // chip or an empty row after every ordinary conversational reply.
             if (message.kind == Message.Kind.DIGEST && TurnDigest.parse(message.text).sections.isEmpty()) return@forEach
+            if (isHiddenStatusNotice(message)) return@forEach
             val turn = folds[message.id]
             if (turn != null) {
                 flush()

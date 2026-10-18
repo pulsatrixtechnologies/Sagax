@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeRun, groupActivityRuns, groupTranscript, isRecoveryActivity, isToolStep, statusActivity } from "./activity-runs";
+import { describeRun, groupActivityRuns, groupTranscript, isHiddenStatusActivity, isRecoveryActivity, isToolStep, statusActivity } from "./activity-runs";
 import type { Message } from "@/state/store";
 import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/sandbox-wake";
 import { workspaceLineName } from "../../shared/workspace-line";
@@ -106,6 +106,23 @@ describe("groupActivityRuns", () => {
     expect(statusActivity(tool(workspaceLineName({ target: "this_computer", fallback: { wanted: "browser", reason: "unavailable" } }))))
       .toEqual({ kind: "notice", text: "Moved to This computer: Browser is not available" });
     expect(isToolStep(tool(workspaceLineName({ target: "cloud" })))).toBe(false);
+  });
+
+  it("never draws the On your computer line, and keeps every other Workspace line", () => {
+    const here = tool(workspaceLineName({ target: "this_computer" }));
+    const cloud = tool(workspaceLineName({ target: "cloud" }));
+    const moved = tool(workspaceLineName({ target: "cloud", fallback: { wanted: "this_computer", reason: "offline" } }));
+    const back = tool(workspaceLineName({ target: "this_computer", fallback: { wanted: "browser", reason: "unavailable" } }));
+    expect(isHiddenStatusActivity(here)).toBe(true);
+    for (const kept of [cloud, moved, back]) expect(isHiddenStatusActivity(kept)).toBe(false);
+    const answer = text("ok");
+    for (const group of [groupTranscript, groupActivityRuns]) {
+      expect(group([here, answer])).toEqual([{ kind: "message", message: answer }]);
+      // nor does it split a stretch of work in two
+      const steps = group([tool("Read"), here, tool("Edit")]);
+      expect(steps.map(item => item.kind)).toEqual(["run"]);
+      expect(group([moved, answer]).map(item => item.kind === "message" ? item.message.id : item.id)).toEqual([moved.id, answer.id]);
+    }
   });
 
   it("keeps a model notice visible between successful tool runs", () => {

@@ -138,7 +138,7 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
 import { viewerActorId } from "@/lib/viewer";
 import { isViewersPrimaryBot } from "@/lib/primary-bot";
-import { groupTranscript, isStatusActivity, isTurnStoppedNotice, type TranscriptItem } from "@/lib/activity-runs";
+import { groupTranscript, isHiddenStatusActivity, isStatusActivity, isTurnStoppedNotice, type TranscriptItem } from "@/lib/activity-runs";
 import { collapseBotExchanges, exchangeJumpStays, startsNewStretch, visibleEdge, type ExchangeRun } from "@/lib/bot-exchange";
 import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
 import { VoiceCallCard } from "./VoiceCallCard";
@@ -1031,7 +1031,8 @@ const MessagesList = memo(function MessagesList({
     const plan = voiceCallPlan(transcript);
     const seen = new Set<string>();
     // A stop the person asked for leaves no row, stored ones included.
-    const shown = withoutDeadThreadChips(messages, owners).filter((message) => !isTurnStoppedNotice(message));
+    // Nor does the "On your computer" line, so it never splits a bot exchange.
+    const shown = withoutDeadThreadChips(messages, owners).filter((message) => !isTurnStoppedNotice(message) && !isHiddenStatusActivity(message));
     const collapsed = collapseBotExchanges(shown, {
       selfBotId: botId,
       self: { id: botId, name: botName, color: selfColor },

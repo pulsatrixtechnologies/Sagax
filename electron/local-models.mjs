@@ -92,34 +92,59 @@ export async function probeLoopbackModels(base, fetchImpl = globalThis.fetch) {
 }
 
 const ANTHROPIC_FRESH_MS = 5000;
+// A "yes" stays fresh for 10 minutes: the probe is a request the server
+// queues like any other, and a one-slot server (DwarfStar, llama-server)
+// would otherwise get one every 15 s while it works on a real turn.
+const ANTHROPIC_YES_FRESH_MS = 10 * 60_000;
+const ANTHROPIC_PROBE_TIMEOUT_MS = 8000;
 const anthropicCache = new Map();
 
 /**
  * Does this loopback server answer the Anthropic protocol at /v1/messages?
  * One tiny request that no server runs a model for (no messages): a server
  * that speaks it answers 200 or 4xx, one that does not answers 404, 405 or
- * 501. A definite answer is cached for 5 s; a request that failed is not.
+ * 501. A "no" is cached for 5 s and a "yes" for 10 minutes. A probe that
+ * gets no answer (timeout, the server busy with a long generation) or a 5xx
+ * is not an answer: it keeps the last definite one, so a busy server is not
+ * reported as one that does not speak the protocol (2026-10-18).
  */
 export async function probeAnthropicMessages(base, fetchImpl = globalThis.fetch, now = Date.now) {
   const normalized = normalizeLoopbackBase(base);
   if (!normalized) return false;
   const hit = anthropicCache.get(normalized);
-  if (hit && now() - hit.at < ANTHROPIC_FRESH_MS) return hit.ok;
+  if (hit && now() - hit.at < (hit.ok ? ANTHROPIC_YES_FRESH_MS : ANTHROPIC_FRESH_MS)) return hit.ok;
   try {
     const response = await fetchImpl(`${normalized}/messages`, {
       method: "POST",
       redirect: "error",
       headers: { Authorization: "Bearer local", "x-api-key": "local", "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({ model: "probe", max_tokens: 1, messages: [] }),
-      signal: AbortSignal.timeout(1200),
+      // DwarfStar runs a one-token generation for it: 0.3 s idle, past 1.2 s
+      // on a loaded Mac (2026-10-18), which read as "does not speak it".
+      signal: AbortSignal.timeout(ANTHROPIC_PROBE_TIMEOUT_MS),
     });
     await response.body?.cancel?.().catch(() => {});
-    const ok = response.status !== 404 && response.status !== 405 && response.status !== 501 && response.status < 500;
+    if (response.status >= 500 && response.status !== 501) return keepLast(normalized, hit, now);
+    const ok = response.status !== 404 && response.status !== 405 && response.status !== 501;
     anthropicCache.set(normalized, { ok, at: now() });
     return ok;
   } catch {
-    return false;
+    return keepLast(normalized, hit, now);
   }
+}
+
+/** No answer: the last definite one holds for another fresh window, so a
+ * server busy for minutes gets one probe per window, not one per 15 s tick
+ * piling up behind its generation. Never answered: no, not cached. */
+function keepLast(base, hit, now) {
+  if (!hit) return false;
+  anthropicCache.set(base, { ok: hit.ok, at: now() });
+  return hit.ok;
+}
+
+/** The server stopped answering /models: what it said about /messages no longer holds. */
+function forgetAnthropic(base) {
+  anthropicCache.delete(base);
 }
 
 /** Test hook. */
@@ -138,11 +163,12 @@ export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
       headers: { Authorization: "Bearer local" },
       signal: AbortSignal.timeout(1200),
     });
-    if (!response.ok) return null;
+    if (!response.ok) { forgetAnthropic(normalized); return null; }
     const payload = await response.json();
     const models = modelIdsFromPayload(payload);
     return { models, details: modelDetailsFromPayload(payload), anthropic: models.length ? await probeAnthropicMessages(normalized, fetchImpl) : false };
   } catch {
+    forgetAnthropic(normalized);
     return null;
   }
 }

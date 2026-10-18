@@ -241,6 +241,18 @@ public func isStatusNotice(_ message: Message) -> Bool {
     message.kind == .activity && (message.tool?.name.hasPrefix("notice:") ?? false)
 }
 
+/// The Workspace line Auto leaves when a turn starts on, or comes back to,
+/// the person's own computer. The
+/// server keeps writing it (it is how the thread knows where it last was),
+/// but no client draws it: the computer is where a bot works by default
+/// (desktop `isHiddenStatusActivity`, shared/workspace-line.ts). The cloud,
+/// browser and Local VM lines and every "moved to" line stay.
+public let quietWorkspaceLine = "notice: Workspace: On your computer"
+
+public func isHiddenStatusNotice(_ message: Message) -> Bool {
+    message.kind == .activity && message.tool?.name == quietWorkspaceLine
+}
+
 /// A tool step, running, done or failed, such as
 /// `mcp_sagax-environment__run_command`. It never shows as a chip of its
 /// own: a turn's steps fold into one step line (`StepRun`, desktop #488 and
@@ -347,6 +359,7 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [Tr
         case .keep:
             break
         }
+        if isHiddenStatusNotice(message) { continue }
         if hiddenIDs.contains(message.id) {
             join(message)
             if let fold = folds[message.id] {

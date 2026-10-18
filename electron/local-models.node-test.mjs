@@ -143,6 +143,53 @@ test("the bridge publishes names, falls back for an older server, and probes aga
   }
 });
 
+test("the bridge probes its endpoints at once, so a slow one never holds back the others", async () => {
+  const slowServer = () => http.createServer((req, res) => {
+    setTimeout(() => {
+      if (req.url !== "/v1/models") { res.statusCode = 404; return res.end("no"); }
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(DS4_MODELS));
+    }, 600);
+  });
+  const servers = [slowServer(), slowServer(), slowServer()];
+  for (const server of servers) await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const endpoints = servers.map((server, index) => ({ id: `desk900${index}`, label: `S${index}`, baseUrl: `http://127.0.0.1:${server.address().port}/v1` }));
+  const publishes = [];
+  const org = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const send = (value, status = 200) => { res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(value)); };
+    if (req.url === "/api/auth/session") return send({ kind: "session", identity: "perspicax" });
+    if (req.url === "/api/me/preferences") return send({ preferences: {} });
+    if (req.url === "/api/desktop-bridge/connect") return send({ ok: true });
+    if (req.url === "/api/me/local-models") return send({ expose: true, share: false, endpoints });
+    if (req.url.endsWith("/local-models")) { publishes.push({ at: Date.now(), ...JSON.parse(body) }); return send({ ok: true }); }
+    if (req.url.endsWith("/poll")) { await new Promise(resolve => setTimeout(resolve, 200)); return send({ job: null }); }
+    res.statusCode = 404; send({});
+  });
+  await new Promise(resolve => org.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${org.address().port}`;
+  resetAnthropicProbeCache();
+  const started = Date.now();
+  const bridge = createDesktopBridge({
+    environment: () => ({ id: "org", name: "Example", origin }), fetch: globalThis.fetch, cookieHeader: async () => "",
+    home: os.tmpdir(), attachmentsDir: path.join(os.tmpdir(), "omb-bridge-models-par"), activityFile: path.join(os.tmpdir(), `omb-bridge-models-par-${process.pid}.jsonl`),
+    WebSocketImpl: null, retryMs: 50, localModelFreshMs: 300,
+  });
+  try {
+    bridge.sync();
+    for (let tries = 0; tries < 200 && publishes.length === 0; tries++) await new Promise(resolve => setTimeout(resolve, 20));
+    // Three servers that each take 0.6 s for /models and 0.6 s for /messages:
+    // in turn that is 3.6 s, at once about 1.2 s.
+    assert.deepEqual(publishes[0].endpoints.map(row => row.id), ["desk9000", "desk9001", "desk9002"]);
+    assert.ok(publishes[0].at - started < 3000, `published after ${publishes[0].at - started} ms`);
+  } finally {
+    bridge.close();
+    org.close();
+    for (const server of servers) server.close();
+  }
+});
+
 test("the bridge forwards /v1/messages to an allowed loopback base and nothing else", async () => {
   const seen = [];
   const fetchImpl = async (url, init) => {
@@ -166,7 +213,7 @@ test("the bridge forwards /v1/messages to an allowed loopback base and nothing e
   assert.equal(seen.length, 2);
 });
 
-test("the Anthropic probe is one body-less POST, cached for 5 s, and failures are not cached", async () => {
+test("the Anthropic probe is one body-less POST, a yes cached for 10 minutes, a no for 5 s, and failures are not cached", async () => {
   resetAnthropicProbeCache();
   const base = "http://127.0.0.1:8002/v1";
   let clock = 1000;
@@ -175,13 +222,20 @@ test("the Anthropic probe is one body-less POST, cached for 5 s, and failures ar
   const answer = status => async (url, init) => { calls.push({ url, method: init.method, body: init.body }); return new Response("{}", { status }); };
   assert.equal(await probeAnthropicMessages(base, answer(400), now), true);
   assert.deepEqual(calls[0], { url: `${base}/messages`, method: "POST", body: '{"model":"probe","max_tokens":1,"messages":[]}' });
-  // Inside 5 s the answer is reused, whatever the server says now.
-  clock += 4000;
+  // A yes is reused for 10 minutes, whatever the server says now.
+  clock += 9 * 60_000;
   assert.equal(await probeAnthropicMessages(base, answer(404), now), true);
   assert.equal(calls.length, 1);
-  clock += 1500;
+  clock += 61_000;
   assert.equal(await probeAnthropicMessages(base, answer(404), now), false);
   assert.equal(calls.length, 2);
+  // A no is reused for 5 s only.
+  clock += 4000;
+  assert.equal(await probeAnthropicMessages(base, answer(400), now), false);
+  assert.equal(calls.length, 2);
+  clock += 1500;
+  assert.equal(await probeAnthropicMessages(base, answer(400), now), true);
+  assert.equal(calls.length, 3);
   for (const status of [405, 501, 503]) {
     resetAnthropicProbeCache();
     assert.equal(await probeAnthropicMessages(base, answer(status), now), false, `status ${status}`);
@@ -197,6 +251,54 @@ test("the Anthropic probe is one body-less POST, cached for 5 s, and failures ar
   const before = calls.length;
   assert.equal(await probeAnthropicMessages("http://10.0.0.8:8002/v1", answer(200), now), false);
   assert.equal(calls.length, before);
+});
+
+test("a busy server keeps its last Anthropic answer: a timeout or a 5xx is not a no", async () => {
+  resetAnthropicProbeCache();
+  const base = "http://127.0.0.1:8002/v1";
+  let clock = 1000;
+  const now = () => clock;
+  const timeout = async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); };
+  const answer = status => async () => new Response("{}", { status });
+  // Never answered yet: no is the safe default.
+  assert.equal(await probeAnthropicMessages(base, timeout, now), false);
+  assert.equal(await probeAnthropicMessages(base, answer(200), now), true);
+  // Past the fresh window, while a long generation holds the only slot.
+  clock += 11 * 60_000;
+  assert.equal(await probeAnthropicMessages(base, timeout, now), true);
+  assert.equal(await probeAnthropicMessages(base, answer(503), now), true);
+  // No answer renews the window: the next tick does not probe again.
+  let probes = 0;
+  const counted = async () => { probes += 1; throw new DOMException("timeout", "TimeoutError"); };
+  clock += 9 * 60_000;
+  assert.equal(await probeAnthropicMessages(base, counted, now), true);
+  assert.equal(probes, 0);
+  clock += 2 * 60_000;
+  assert.equal(await probeAnthropicMessages(base, answer(404), now), false);
+  assert.equal(await probeAnthropicMessages(base, timeout, now), false);
+  resetAnthropicProbeCache();
+});
+
+test("a server that stops answering /models forgets its Anthropic answer", async () => {
+  resetAnthropicProbeCache();
+  const base = "http://127.0.0.1:8002/v1";
+  const models = { data: [{ id: "qwen3" }] };
+  let up = true;
+  let messages = 200;
+  const server = async url => {
+    if (!up) throw new Error("ECONNREFUSED");
+    return String(url).endsWith("/messages")
+      ? (messages === 0 ? Promise.reject(new Error("timeout")) : new Response("{}", { status: messages }))
+      : new Response(JSON.stringify(models), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  assert.equal((await probeLoopbackCatalog(base, server)).anthropic, true);
+  up = false;
+  assert.equal(await probeLoopbackCatalog(base, server), null);
+  // Another server on the same port, busy at its first probe: not taken as the old one.
+  up = true;
+  messages = 0;
+  assert.equal((await probeLoopbackCatalog(base, server)).anthropic, false);
+  resetAnthropicProbeCache();
 });
 
 test("the catalog probe reports whether the server speaks the Anthropic protocol", async () => {

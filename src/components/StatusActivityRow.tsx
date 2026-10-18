@@ -1,5 +1,5 @@
 import { Info, RefreshCw } from "lucide-react";
-import { statusActivity } from "@/lib/activity-runs";
+import { isHiddenStatusActivity, statusActivity } from "@/lib/activity-runs";
 import type { Message } from "@/state/store";
 import { CancelledTurnRow } from "./CancelledTurnRow";
 
@@ -8,6 +8,7 @@ import { CancelledTurnRow } from "./CancelledTurnRow";
  * Always shown, whatever Settings → Tool calls says. A stopped turn is the
  * quiet line, not this bordered notice. */
 export function StatusActivityRow({ message }: { message: Message }) {
+  if (isHiddenStatusActivity(message)) return null;
   const status = statusActivity(message);
   if (!status) return null;
   if (status.kind === "stopped") return <CancelledTurnRow />;

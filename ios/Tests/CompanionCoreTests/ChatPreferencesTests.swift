@@ -150,6 +150,21 @@ final class ChatPreferencesTests: XCTestCase {
         XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["run.a", "n", "run.c"])
     }
 
+    func testOnYourComputerLineIsNeverDrawnAndOtherWorkspaceLinesStay() {
+        var here = Message(id: "w", role: .bot, kind: .activity, at: 1)
+        here.tool = ToolActivity(name: "notice: Workspace: On your computer", ok: true)
+        var cloud = Message(id: "c", role: .bot, kind: .activity, at: 2)
+        cloud.tool = ToolActivity(name: "notice: Workspace: In the cloud", ok: true)
+        let messages = [activity("a"), here, activity("b"), cloud]
+        for detail in [ActivityDetail.full, .reduced, .hidden] {
+            let ids = transcriptRows(messages, detail: detail).map(\.id)
+            XCTAssertFalse(ids.contains("w"), "\(detail)")
+            XCTAssertTrue(ids.contains("c"), "\(detail)")
+        }
+        // nor does it split the stretch of work in two
+        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["run.a", "c"])
+    }
+
     func testAFailedToolCallFoldsWithTheOtherSteps() {
         // A failed tool step is counted in the line ("1 failed"). A failed
         // turn, whose name starts with "error:", is a different row and stays.

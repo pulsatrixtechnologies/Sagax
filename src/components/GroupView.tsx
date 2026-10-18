@@ -96,7 +96,7 @@ import { ManageMembersPanel } from "./ManageMembersPanel";
 import { GroupAvatarStack, GroupPanel } from "./GroupPanel";
 import { NudgeLine } from "./NudgeLine";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
-import { groupActivityRuns, isStatusActivity, type ActivityTranscriptItem } from "@/lib/activity-runs";
+import { groupActivityRuns, isHiddenStatusActivity, isStatusActivity, type ActivityTranscriptItem } from "@/lib/activity-runs";
 import { collapseBotExchanges, commIsBotDm, startsNewStretch, visibleEdge, type ExchangeRun } from "@/lib/bot-exchange";
 import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
 import { VoiceCallCard } from "./VoiceCallCard";
@@ -487,7 +487,7 @@ export const Transcript = memo(function Transcript({
     const plan = voiceCallPlan(transcript);
     const seen = new Set<string>();
     const visible = withoutDeadThreadChips(messages, owners).filter((message) =>
-      message.kind !== "activity" || roomActivityVisible(message, showToolCalls));
+      message.kind !== "activity" || (!isHiddenStatusActivity(message) && roomActivityVisible(message, showToolCalls)));
     const collapsed = collapseBotExchanges(visible, {
       pairChannel,
       members: members.map((member) => ({ id: member.id, name: member.name, color: member.color })),

@@ -1,3 +1,5 @@
+import { isQuietWorkspaceLine } from "../../shared/workspace-line";
+
 // The harness's receipts about a turn (Phase 0): the work digest written
 // after every settled turn, and a compaction record. A finished Live call's
 // record row is one too: it is appended when the call ends, wherever the
@@ -20,11 +22,17 @@ function isStoppedNotice(message: { kind: string }): boolean {
   return typeof name === "string" && name.replace(/^error:\s*/, "").trim() === "turn stopped";
 }
 
+/** The "On your computer" line: stored, never drawn, so never the preview
+ * (isHiddenStatusActivity in activity-runs.ts). */
+function isHiddenWorkspaceLine(message: { kind: string }): boolean {
+  return message.kind === "activity" && isQuietWorkspaceLine((message as { tool?: { name?: string } }).tool?.name);
+}
+
 /** The newest message that is not a receipt, or undefined. */
 export function lastNonReceipt<T extends { kind: string }>(messages: readonly T[] | undefined): T | undefined {
   if (!messages) return undefined;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (!isReceipt(messages[i]!) && !isStoppedNotice(messages[i]!)) return messages[i];
+    if (!isReceipt(messages[i]!) && !isStoppedNotice(messages[i]!) && !isHiddenWorkspaceLine(messages[i]!)) return messages[i];
   }
   return undefined;
 }

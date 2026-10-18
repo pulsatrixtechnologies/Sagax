@@ -8,6 +8,7 @@ import com.openmausbot.companion.core.Message
 import com.openmausbot.companion.core.OptionCard
 import com.openmausbot.companion.core.PendingApproval
 import com.openmausbot.companion.core.forTask
+import com.openmausbot.companion.core.isHiddenStatusNotice
 import com.openmausbot.companion.core.isStatusNotice
 import com.openmausbot.companion.core.rosterPreview
 import com.openmausbot.companion.core.takeLastCharacters
@@ -124,7 +125,8 @@ private fun CompanionState.workingLine(threadId: String, detail: ActivityDetail)
     if (!live.isNullOrEmpty()) return live.takeLastCharacters(STREAM_TAIL).replace('\n', ' ')
     // A tool's name is often its raw command line. Only a reader who wants tool
     // calls sees it; a status notice is for everyone.
-    val last = visibleTranscript(threadId).lastOrNull()
+    // The hidden "On your computer" line is never the working line either.
+    val last = visibleTranscript(threadId).lastOrNull { !isHiddenStatusNotice(it) }
     if (last?.kind == Message.Kind.ACTIVITY && (detail != ActivityDetail.HIDDEN || isStatusNotice(last))) {
         last.tool?.let { return it.name }
     }

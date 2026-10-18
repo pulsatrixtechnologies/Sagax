@@ -60,3 +60,15 @@ for (const target of TARGETS) {
 export function parseWorkspaceLine(name: string | undefined | null): WorkspaceLine | null {
   return name ? BY_NAME.get(name) ?? null : null;
 }
+
+/** The line Auto leaves when a turn starts on the person's own computer
+ * ("On your computer"), and when it comes back there from elsewhere. The server still writes it (lastAutoPlace in server/index.ts
+ * reads it to know where the thread last was), but no client shows it: the
+ * computer is where a bot works by default, so saying so is noise (JC,
+ * 2026-10-18). The cloud, browser and Local VM lines and every "moved to"
+ * line stay. iOS and Android keep the same name in ChatPreferences. */
+export const QUIET_WORKSPACE_LINE = workspaceLineName({ target: "this_computer" });
+
+export function isQuietWorkspaceLine(name: string | undefined | null): boolean {
+  return name === QUIET_WORKSPACE_LINE;
+}

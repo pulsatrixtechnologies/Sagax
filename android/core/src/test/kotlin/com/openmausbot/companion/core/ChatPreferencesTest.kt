@@ -55,6 +55,17 @@ class ChatPreferencesTest {
     }
 
     @Test
+    fun onYourComputerLineIsNeverDrawn() {
+        val here = activity("w").copy(tool = ToolActivity(name = QUIET_WORKSPACE_LINE, ok = true))
+        val cloud = activity("c").copy(tool = ToolActivity(name = "notice: Workspace: In the cloud", ok = true))
+        for (detail in ActivityDetail.values()) {
+            val ids = transcriptRows(listOf(here, text("t"), cloud), detail).map { it.id }
+            assertEquals(false, "w" in ids, "$detail")
+            assertEquals(true, "c" in ids, "$detail")
+        }
+    }
+
+    @Test
     fun hiddenDropsDigestAndCompactionReceiptsToo() {
         val messages = listOf(text("a"), activity("b"), digest("c"), text("d"), compaction("e"))
         assertEquals(listOf("a", "d"), transcriptRows(messages, ActivityDetail.HIDDEN).map { it.id })

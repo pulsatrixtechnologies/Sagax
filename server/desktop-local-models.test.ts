@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { desktopModelApiKey, withDesktopModelPerson } from "./desktop-model-grant.ts";
-import { DESKTOP_MODEL_NO_ANTHROPIC, DESKTOP_MODEL_UNAVAILABLE, DESKTOP_MODEL_WRONG_ENGINE, DesktopLocalModels, injectHostId } from "./desktop-local-models.ts";
+import { DESKTOP_MODEL_NO_ANTHROPIC, DESKTOP_MODEL_REFUSED, DESKTOP_MODEL_TOO_LARGE, DESKTOP_MODEL_UNAVAILABLE, DESKTOP_MODEL_WRONG_ENGINE, DesktopLocalModels, injectHostId } from "./desktop-local-models.ts";
 import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
 import {
   applyClaudeInject,
@@ -175,7 +175,10 @@ describe("desktop local models", () => {
       headers: { authorization: `Bearer ${grant(owner)}`, "content-type": "application/json" },
       body: "x".repeat(1_000_001),
     }).catch(() => null);
-    if (big) expect(big.status).toBe(413);
+    if (big) {
+      expect(big.status).toBe(413);
+      expect(await big.text()).toBe(DESKTOP_MODEL_TOO_LARGE);
+    }
     expect(bridge.calls).toHaveLength(0);
     // A re-publish that no longer reports the protocol closes the path again.
     service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"], anthropic: false }] });
@@ -235,6 +238,18 @@ describe("desktop local models", () => {
         body: "{}",
       });
       expect(refused.status, path).toBe(400);
+      // Claude Code prints the body as is: it says what to do, not a bare refusal.
+      expect(await refused.text(), path).toBe(DESKTOP_MODEL_REFUSED);
+    }
+    // A path the proxy does not carry is "not here" whatever its query, so the
+    // SDK's side calls (count_tokens?beta=true) fall back instead of failing the turn.
+    for (const path of ["/messages/count_tokens?beta=true", "/models/qwen3?beta=true"]) {
+      const missing = await fetch(`${env.ANTHROPIC_BASE_URL}/v1${path}`, {
+        method: "POST",
+        headers: { "x-api-key": env.ANTHROPIC_API_KEY!, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(missing.status, path).toBe(404);
     }
     expect(bridge.calls.length).toBe(before);
   });

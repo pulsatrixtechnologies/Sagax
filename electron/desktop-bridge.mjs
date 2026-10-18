@@ -469,14 +469,18 @@ export function createDesktopBridge({
             if (!record?.expose) { localCatalog.clear(); localAnthropic.clear(); return; }
             const next = new Map();
             const published = [];
-            for (const endpoint of Array.isArray(record.endpoints) ? record.endpoints : []) {
-              const base = normalizeLoopbackBase(endpoint?.baseUrl);
-              if (!base || typeof endpoint?.id !== "string") continue;
-              const probed = await probeLoopbackCatalog(base, fetchUrl);
-              if (!probed?.models.length) continue;
+            // All endpoints at once: one slow server (the Anthropic probe
+            // waits up to 8 s) never holds back the others or the next tick.
+            const candidates = (Array.isArray(record.endpoints) ? record.endpoints : [])
+              .map(endpoint => ({ endpoint, base: normalizeLoopbackBase(endpoint?.baseUrl) }))
+              .filter(({ endpoint, base }) => base && typeof endpoint?.id === "string");
+            const results = await Promise.all(candidates.map(({ base }) => probeLoopbackCatalog(base, fetchUrl)));
+            candidates.forEach(({ endpoint, base }, index) => {
+              const probed = results[index];
+              if (!probed?.models.length) return;
               next.set(endpoint.id, base);
               published.push({ id: endpoint.id, label: String(endpoint.label ?? "").slice(0, 80), models: probed.models, details: probed.details, anthropic: probed.anthropic === true });
-            }
+            });
             localCatalog.clear();
             localAnthropic.clear();
             for (const [endpointId, base] of next) localCatalog.set(endpointId, base);
