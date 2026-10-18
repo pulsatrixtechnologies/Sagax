@@ -268,6 +268,14 @@ struct ConnectAppsPage: View {
 // MARK: - Shared row parts
 
 enum ConnectAppsWords {
+    /// "1 connector · 3 skills": what a marketplace plugin brought.
+    static func includes(_ children: [ConnectAppItem]) -> String {
+        let servers = children.filter { $0.kind == .mcp }.count
+        let skills = children.filter { $0.kind == .skill }.count
+        return [servers == 1 ? String(localized: "1 connector") : String(localized: "\(servers) connectors"),
+                skills == 1 ? String(localized: "1 skill") : String(localized: "\(skills) skills")].joined(separator: " · ")
+    }
+
     static func category(_ category: ConnectAppCategory) -> String {
         switch category {
         case .passwords: String(localized: "Password managers")
@@ -726,11 +734,7 @@ struct ConnectAppsManage: View {
     private func countLine(_ item: ConnectAppItem) -> String {
         switch item.kind {
         case .plugin:
-            let children = model.items.filter { $0.parent == item.key }
-            let servers = children.filter { $0.kind == .mcp }.count
-            let skills = children.filter { $0.kind == .skill }.count
-            return [servers == 1 ? String(localized: "1 connector") : String(localized: "\(servers) connectors"),
-                    skills == 1 ? String(localized: "1 skill") : String(localized: "\(skills) skills")].joined(separator: " · ")
+            return ConnectAppsWords.includes(model.items.filter { $0.parent == item.key })
         default:
             return String(localized: "1 connector")
         }
@@ -786,21 +790,30 @@ struct ConnectAppDetail: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    /// Grok Bot iOS 1.14's plugin sheet, on our pushed page: the icon, name
+    /// and description centred on top, the cards under it, Added or Add in a
+    /// floating capsule at the bottom and Uninstall in the "..." menu.
     private func content(_ item: ConnectAppItem) -> some View {
         ThemedList {
             Section {
-                HStack(spacing: 12) {
-                    ConnectAppIcon(item: item, size: 44)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: item.name).font(.headline)
-                        Text(verbatim: item.description).font(.footnote).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                VStack(spacing: 8) {
+                    ConnectAppIcon(item: item, size: 64)
+                    Text(verbatim: item.name)
+                        .font(.title3.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                    if !item.description.isEmpty {
+                        Text(verbatim: item.description)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(4)
                     }
                 }
-                if let action = item.action {
-                    Button(action == .add ? String(localized: "Add") : String(localized: "Connect")) {
-                        Task { await model.act(item, alias: nil, session: session) }
-                    }
-                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .listRowBackground(Color.clear)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("connect-apps-detail-header")
             }
             switch item.kind {
             case .mcp: mcpSections(item)
@@ -818,10 +831,23 @@ struct ConnectAppDetail: View {
             } header: {
                 Text(String(localized: "Details"))
             }
-            if item.installed, item.kind != .featured, session.canAdminister || item.kind == .app {
-                Section {
-                    Button(String(localized: "Uninstall"), role: .destructive) { confirmingUninstall = true }
+            // room for the floating capsule
+            Color.clear.frame(height: 56).listRowBackground(Color.clear)
+        }
+        .overlay(alignment: .bottom) { capsule(item) }
+        .toolbar {
+            if canUninstall(item) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button(role: .destructive) { confirmingUninstall = true } label: {
+                            Label(String(localized: "Uninstall"), systemImage: "trash")
+                        }
                         .accessibilityIdentifier("connect-apps-uninstall")
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .accessibilityLabel(Text("More"))
+                    }
+                    .accessibilityIdentifier("connect-apps-detail-more")
                 }
             }
         }
@@ -829,6 +855,50 @@ struct ConnectAppDetail: View {
             Button(String(localized: "Uninstall"), role: .destructive) {
                 Task { await model.uninstall(item, session: session) }
             }
+        }
+    }
+
+    private func canUninstall(_ item: ConnectAppItem) -> Bool {
+        item.installed && item.kind != .featured && (session.canAdminister || item.kind == .app)
+    }
+
+    /// Added (installed, nothing to do) or the blue Add / Connect.
+    @ViewBuilder
+    private func capsule(_ item: ConnectAppItem) -> some View {
+        if let action = item.action {
+            Button {
+                Haptics.selection()
+                Task { await model.act(item, alias: nil, session: session) }
+            } label: {
+                Group {
+                    if model.busy == item.key {
+                        ProgressView().controlSize(.small).tint(Theme.accentInk)
+                    } else {
+                        Text(action == .add ? String(localized: "Add") : String(localized: "Connect"))
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.accentInk)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(Theme.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.busy == item.key)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
+            .accessibilityIdentifier("connect-apps-detail-action")
+        } else if item.installed {
+            Label(String(localized: "Added"), systemImage: "checkmark")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .themeGlass(Capsule())
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("connect-apps-detail-added")
         }
     }
 
@@ -964,6 +1034,12 @@ struct ConnectAppDetail: View {
     private func pluginSections(_ item: ConnectAppItem) -> some View {
         let children = model.items.filter { $0.parent == item.key }
         Section {
+            if !children.isEmpty {
+                Text(verbatim: ConnectAppsWords.includes(children))
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("connect-apps-includes-count")
+            }
             if children.isEmpty {
                 Text(String(localized: "This plugin added no MCP server and no skill that Sagax can use.")).foregroundStyle(Theme.textSecondary)
             }
@@ -976,7 +1052,7 @@ struct ConnectAppDetail: View {
                 .buttonStyle(.plain)
             }
         } header: {
-            Text(String(localized: "What it adds"))
+            Text(String(localized: "Includes"))
         } footer: {
             Text(String(localized: "Its MCP servers and skills are available to every bot. A server that runs a command starts off: test it, then turn it on. Skills start off until you read them."))
         }

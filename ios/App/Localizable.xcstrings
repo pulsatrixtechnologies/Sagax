@@ -68939,6 +68939,28 @@
           }
         }
       }
+    },
+    "Includes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Includes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprend"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inclui"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

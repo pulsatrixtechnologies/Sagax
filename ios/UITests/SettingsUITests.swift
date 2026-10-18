@@ -205,6 +205,28 @@ final class SettingsUITests: XCTestCase {
         })
         // added: the row shows its status, no button
         XCTAssertTrue(eventually(15) { !app.element("connect-apps-action.featured:deepwiki").exists })
+        // its page, as Grok Bot iOS 1.14 draws the plugin sheet: the header,
+        // Added in the floating capsule, Uninstall in the "..." menu
+        let row = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH 'connect-apps-row.' AND identifier CONTAINS 'deepwiki'"
+        )).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription)
+        row.tap()
+        XCTAssertTrue(app.element("connect-apps-detail-header").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.element("connect-apps-detail-added").waitForExistence(timeout: 5))
+        XCTAssertFalse(app.element("connect-apps-detail-action").exists)
+        let more = app.element("connect-apps-detail-more")
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        more.tap()
+        let uninstall = app.element("connect-apps-uninstall")
+        XCTAssertTrue(uninstall.waitForExistence(timeout: 5))
+        uninstall.tap()
+        let confirm = app.sheets.buttons["Uninstall"].firstMatch
+        if confirm.waitForExistence(timeout: 5) { confirm.tap() } else { app.buttons["Uninstall"].firstMatch.tap() }
+        XCTAssertTrue(eventually(30) {
+            let plugins = self.api("GET", "/api/plugins/installed").1["plugins"] as? [[String: Any]] ?? []
+            return !plugins.contains { ($0["url"] as? String)?.contains("deepwiki") == true }
+        })
         _ = api("DELETE", "/api/mcp/servers/deepwiki")
     }
 
