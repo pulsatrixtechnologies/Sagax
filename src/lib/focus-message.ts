@@ -3,7 +3,8 @@
 // so the wrapper carries data-mid and its last child — the bubble/chip,
 // after any day separator — is what gets scrolled and highlighted.
 import { useEffect } from "react";
-import { api, useStore, type Action, type AppState } from "@/state/store";
+import { api, openBot, useStore, type Action, type AppState } from "@/state/store";
+import { isEarlierSegment } from "@/lib/single-stream";
 import type { SearchHit } from "@/lib/search-hit";
 
 const FLASH_CLASSES = ["ring-2", "ring-accent/70", "rounded-2xl", "transition-shadow"];
@@ -24,9 +25,13 @@ export async function landOnSearchHit(
   // one does (openBotThread): by the switch alone, so the thread the bot was
   // on keeps its unread mark. Last, so it loads the hit's version of the
   // thread, and whole: the hit can be older than a page.
-  const switchAlone = bot && bot.threadId !== hit.threadId && !threadsShown ? bot : undefined;
-  if (!switchAlone) dispatch({ type: "select", id: ownerId });
-  if (bot && bot.threadId !== hit.threadId && !switchAlone) {
+  // The single stream: a hit in an older segment opens the stream at its
+  // newest segment, which loads back to the hit (StreamEarlierTopics).
+  const inStream = bot && !threadsShown && isEarlierSegment(bot.tasks, hit.threadId, bot.threadId) ? bot : undefined;
+  const switchAlone = bot && !inStream && bot.threadId !== hit.threadId && !threadsShown ? bot : undefined;
+  if (inStream) openBot(dispatch, inStream, false);
+  else if (!switchAlone) dispatch({ type: "select", id: ownerId });
+  if (bot && bot.threadId !== hit.threadId && !switchAlone && !inStream) {
     const result = await api(`/api/bots/${bot.id}/tasks/${hit.threadId}`, { method: "POST" });
     if (result?.bot) dispatch({ type: "taskSwitched", bot: result.bot });
   }

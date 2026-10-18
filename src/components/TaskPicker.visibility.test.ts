@@ -146,7 +146,9 @@ describe("way back to the conversation while threads are hidden", () => {
     ...bot, busy: false, threadId: "extra",
     tasks: [
       { threadId: "main", title: "Weekly report", createdAt: 1, updatedAt: 50 },
-      { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60 },
+      // outside the single stream: an empty New topic is the live topic and
+      // needs no way back (the topics before it are drawn above)
+      { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60, confidential: true },
     ],
   };
 

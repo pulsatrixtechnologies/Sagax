@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Bot, Task } from "@/state/store";
 import { isUntouchedThread, latestConversation, openBotConversationActions, threadsOffOpenTarget, threadsOffReturnTarget } from "./thread-home";
 
-const main: Task = { threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 };
-const older: Task = { threadId: "older", title: "Older", createdAt: 2, updatedAt: 10 };
+const main: Task = { threadId: "main", title: "Main", createdAt: 2, updatedAt: 50 };
+const older: Task = { threadId: "older", title: "Older", createdAt: 1, updatedAt: 10 };
 const extra: Task = { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60 };
 const bot = (threadId: string, tasks: Task[], messages: Bot["messages"] = []) => ({ id: "vega", threadId, tasks, messages });
 
@@ -23,20 +23,27 @@ describe("thread home while threads are hidden", () => {
     expect(latestConversation(bot("extra", [extra]))).toBeUndefined();
   });
 
-  it("keeps the last selected conversation when it has content", () => {
-    expect(threadsOffOpenTarget(bot("older", [older, main]))).toBeUndefined();
-    expect(openBotConversationActions(bot("older", [older, main]), false)).toEqual([{ type: "select", id: "vega" }]);
-    // the header still offers the newer one
-    expect(threadsOffReturnTarget(bot("older", [older, main]))).toBe("main");
-  });
-
-  it("recovers from an untouched extra thread created while threads were off", () => {
-    const trapped = bot("extra", [main, older, extra]);
-    expect(threadsOffOpenTarget(trapped)).toBe("main");
-    expect(openBotConversationActions(trapped, false)).toEqual([
+  it("opens the newest topic of the single stream from an earlier one", () => {
+    expect(threadsOffOpenTarget(bot("older", [older, main]))).toBe("main");
+    expect(openBotConversationActions(bot("older", [older, main]), false)).toEqual([
       { type: "select", id: "vega" },
       { type: "switchTask", botId: "vega", threadId: "main" },
     ]);
+    expect(threadsOffReturnTarget(bot("older", [older, main]))).toBe("main");
+  });
+
+  it("keeps a New topic just started here, and never strands the person in an empty one left elsewhere", () => {
+    // selected: the fresh topic is the end of the stream
+    expect(threadsOffOpenTarget(bot("extra", [main, older, extra]))).toBeUndefined();
+    // another device left it: the newest topic with content is home
+    expect(threadsOffOpenTarget(bot("older", [main, older, extra]))).toBe("main");
+    expect(threadsOffReturnTarget(bot("older", [main, older, extra]))).toBe("main");
+  });
+
+  it("keeps the older rule for threads outside the stream", () => {
+    const job: Task = { threadId: "job", title: "Job", createdAt: 3, updatedAt: 40, openedBy: { botId: "x", name: "X", at: 3 } };
+    expect(threadsOffOpenTarget(bot("job", [job]))).toBeUndefined();
+    expect(threadsOffReturnTarget(bot("job", [main, job]))).toBe("main");
   });
 
   it("leaves the threads-on row alone and never offers a return when already home", () => {

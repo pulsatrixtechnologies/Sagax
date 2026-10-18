@@ -228,7 +228,11 @@ describe("openChatLink", () => {
   // Threads hidden: a bot is one conversation, its main thread, wherever a
   // notification or an activity row last left it.
   it("opens a bot-only link at the bot's main thread while threads are hidden, as its row would", async () => {
-    const left = { ...(await state()), bots: [{ ...scout, threadId: "qa-245", mainThreadId: "scout-main" }, ada] };
+    // "qa-245" is a job the bot opened: outside the single stream, whose
+    // only topic is the main thread.
+    const job = { botId: "scout", name: "Scout", at: 2 };
+    const left = { ...(await state()), bots: [{ ...scout, threadId: "qa-245", mainThreadId: "scout-main",
+      tasks: scout.tasks!.map((task) => task.threadId === "qa-245" ? { ...task, openedBy: job } : task) }, ada] };
     const dispatch = vi.fn();
     expect(openChatLink(dispatch, "openmausbot://bot/scout", left, false)).toBe(true);
     expect(actions(dispatch)).toEqual([

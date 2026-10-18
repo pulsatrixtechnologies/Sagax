@@ -6,11 +6,14 @@ export const SHOW_THREADS_KEY = "omb-show-threads";
 // here. Keep a session choice even if private/blocked storage rejects reads or
 // writes; another window's storage event can supersede that choice.
 //
-// On by default: a person who never chose (no stored value, or storage that
-// cannot be read) sees threads. Any stored value other than "1" (the switch writes "0") is a recorded off, so the
-// person's own "off" is kept. On an organization server the value travels as
-// the synced key `omb-show-threads` (shared/user-preferences.ts); an absent
-// key means unset, so the server holds no default of its own.
+// Off by default since 2026-10-17 (JC: the single stream is the default
+// mode, docs/single-stream-orchestration.md): a person who never chose (no
+// stored value, or storage that cannot be read) sees one continuous
+// conversation per bot. "1" is a recorded on, so whoever turned threads on
+// keeps them; any other stored value (the switch writes "0") is a recorded
+// off. On an organization server the value travels as the synced key
+// `omb-show-threads` (shared/user-preferences.ts); an absent key means unset,
+// so the server holds no default of its own.
 let sessionChoice: boolean | undefined;
 const listeners = new Set<() => void>();
 
@@ -22,7 +25,7 @@ function storage(): Storage | undefined {
   }
 }
 
-export const SHOW_THREADS_DEFAULT = true;
+export const SHOW_THREADS_DEFAULT = false;
 
 function showThreads(): boolean {
   if (sessionChoice !== undefined) return sessionChoice;
@@ -84,9 +87,8 @@ export function useShowThreadsChoice(): boolean {
 }
 
 /** Whether the sidebar shows threads: the person's choice, in Simple and
- * Advanced mode alike. Thread mode is on by default for everyone (AGENTS.md,
- * "Thread mode is on by default"), so Simple mode does not hide it the way
- * the upstream project does. */
+ * Advanced mode alike. Off by default (AGENTS.md, "Single stream is the
+ * default"): one conversation per bot until the person turns threads on. */
 export function useShowThreads(): boolean {
   return useShowThreadsChoice();
 }

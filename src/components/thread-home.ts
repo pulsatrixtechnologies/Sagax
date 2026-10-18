@@ -6,6 +6,7 @@
 // a teammate) must never strand the person: the sidebar row, the New picker
 // and the chat header all lead back to the latest conversation with content.
 import type { Bot, Task } from "@/state/store";
+import { isEarlierSegment, streamHomeThread } from "@/lib/single-stream";
 import { threadRecency } from "./SidebarThreadRow";
 
 type HomeBot = Pick<Bot, "threadId" | "tasks"> & { messages?: Bot["messages"] };
@@ -32,6 +33,9 @@ export function latestConversation(bot: HomeBot): string | undefined {
 /** With threads off: the conversation the header's "back" link offers when
  * the open thread is not the latest one with content. */
 export function threadsOffReturnTarget(bot: HomeBot): string | undefined {
+  // The single stream: its newest segment is where the conversation is.
+  const home = streamHomeThread(bot.tasks, bot.threadId);
+  if (home) return home !== bot.threadId ? home : undefined;
   const latest = latestConversation(bot);
   return latest && latest !== bot.threadId ? latest : undefined;
 }
@@ -40,6 +44,8 @@ export function threadsOffReturnTarget(bot: HomeBot): string | undefined {
  * Undefined keeps the last selected conversation; a thread id means the
  * open one is an untouched extra and the person goes back to their chat. */
 export function threadsOffOpenTarget(bot: HomeBot): string | undefined {
+  // An older segment of the stream is drawn above the newest one: open there.
+  if (isEarlierSegment(bot.tasks, bot.threadId, bot.threadId)) return streamHomeThread(bot.tasks, bot.threadId);
   const current = bot.tasks?.find((task) => task.threadId === bot.threadId);
   if (current && !isUntouchedThread(current, bot)) return undefined;
   return threadsOffReturnTarget(bot);

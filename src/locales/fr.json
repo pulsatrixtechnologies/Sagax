@@ -8716,5 +8716,13 @@
   "artifacts.status.error": "Échec du rafraîchissement {when} ; il réessaie.",
   "artifacts.refreshNow": "Rafraîchir maintenant",
   "artifacts.popOut": "Détacher",
-  "artifacts.dock": "Rattacher"
+  "artifacts.dock": "Rattacher",
+  "stream.newTopic": "Nouveau sujet",
+  "stream.newTopicAria": "Commencer un nouveau sujet avec {name}",
+  "stream.divider": "Nouveau sujet : {title}",
+  "stream.showEarlierTopic": "Afficher le sujet précédent : {title}",
+  "stream.showEarlierInTopic": "Afficher les messages plus anciens de ce sujet",
+  "stream.topicFailed": "Ce sujet n'a pas pu être chargé.",
+  "stream.newActivity": "Nouvelle activité dans un sujet précédent : {title}",
+  "settings.threadsView.single": "Une seule conversation"
 }

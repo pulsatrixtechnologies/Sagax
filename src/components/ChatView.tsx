@@ -3,6 +3,10 @@ import { downloadBotZip, showBotZipExport } from "@/lib/bot-zip";
 import { TeammatesWorkingChip } from "./TeammatesWorkingChip";
 import { ThreadLinkContext } from "@/components/ThreadLinkMenu";
 import { useShowThreads } from "@/lib/thread-preferences";
+import { isStreamSegment, segmentsAbove, segmentsToReach } from "@/lib/single-stream";
+import { useSegmentTranscript } from "@/lib/use-segment-transcript";
+import { useFocusMessage } from "@/lib/focus-message";
+import { citationAttachment } from "@/lib/citations";
 import { useCopyFeedback } from "@/lib/copy-text";
 import { botSeenCaption, messageParticipant } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
@@ -20,6 +24,7 @@ import {
   Code,
   Eye,
   Pencil,
+  SquarePen,
   Pin,
   PinOff,
   RefreshCw,
@@ -52,6 +57,7 @@ import {
   type ConfigStatus,
   type InstanceInfo,
   type Message,
+  type Task,
 } from "@/state/store";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { EngineSetup } from "./EngineSetup";
@@ -148,7 +154,7 @@ import { webhookMessageView } from "@/lib/webhook-message";
 import { splitTranscriptAttachments } from "@/lib/composer-attachments";
 import { useComposerDockPad } from "@/lib/composer-dock";
 import { useTranscriptViewport } from "@/hooks/use-transcript-viewport";
-import { useOffscreenRowAnchor } from "@/hooks/use-offscreen-row-anchor";
+import { offscreenAnchorShift, useOffscreenRowAnchor } from "@/hooks/use-offscreen-row-anchor";
 import { claimMessageEntrance } from "@/lib/message-entrance";
 import { useStoreDispatch, useStoreGetter, useStoreSelector } from "@/state/store-selector";
 import { useUnreadDivider } from "@/hooks/use-unread-divider";
@@ -1394,6 +1400,278 @@ function PinnedBanner({
  * main chat. */
 export type SideChat = { header: ReactNode; label: string };
 
+// ── single stream (Show threads off, docs/single-stream-orchestration.md) ──
+
+const noop = () => {};
+
+/** The line that opens a topic of the single stream. */
+function TopicDivider({ task }: { task: Pick<Task, "threadId" | "title" | "createdAt"> }) {
+  return (
+    <div className="my-2 flex items-center gap-3 text-[11.5px] text-ink-tertiary" role="separator" data-topic-divider={task.threadId}>
+      <span className="h-px flex-1 bg-hairline/60" />
+      <span className="max-w-[70%] truncate" title={task.title}>{t("stream.divider", { title: task.title })} · {formatTime(task.createdAt)}</span>
+      <span className="h-px flex-1 bg-hairline/60" />
+    </div>
+  );
+}
+
+/** "New topic" in the chat header while threads are off: a fresh context in
+ * the same conversation; the topic it closes stays on screen above. */
+function NewTopicButton({ bot }: { bot: Pick<Bot, "id" | "name"> }) {
+  const dispatch = useStoreDispatch();
+  return (
+    <button
+      type="button"
+      data-new-topic={bot.id}
+      onClick={() => dispatch({ type: "newTask", botId: bot.id, stream: true })}
+      title={t("stream.newTopic")}
+      aria-label={t("stream.newTopicAria", { name: bot.name })}
+      className="flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] border-hairline-weak bg-elevated text-ink-secondary transition-colors hover:bg-elevated-hover hover:text-ink"
+    >
+      <SquarePen size={15} />
+    </button>
+  );
+}
+
+/** One earlier topic, read in place: its own copy of the thread and its own
+ * rows context, so reactions, pins, attachments and cards act on that
+ * thread. It is drawn as busy so edit, regenerate and version switches stay
+ * with the live topic; Reply quotes the message into the live composer. */
+function StreamSegment({ task, first, rows, place, engine, aroundId, onQuote, onLoaded }: {
+  task: Task;
+  first: boolean;
+  rows: ChatRows;
+  place: EffectivePlace;
+  engine: InstanceInfo | undefined;
+  aroundId?: string;
+  onQuote: (message: Message, threadId: string) => void;
+  onLoaded: (threadId: string) => void;
+}) {
+  "use memo";
+  const transcript = useSegmentTranscript(task.threadId, aroundId);
+  const messages = useMemo(() => visibleMessages({ messages: transcript.messages, activeLeafId: transcript.activeLeafId }), [transcript.messages, transcript.activeLeafId]);
+  const lookups = useMemo(() => transcriptLookups(transcript.messages, messages), [transcript.messages, messages]);
+  const focusAll = useStoreSelector((current) => current.focusMessage);
+  const focus = focusAll?.threadId === task.threadId ? focusAll : null;
+  const ids = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
+  const segmentRows = useMemo<ChatRows>(() => ({
+    ...rows, threadId: task.threadId, busy: true, hasMore: transcript.hasMore, focus, onBranch: (messageId: string) => ids.has(messageId),
+  }), [rows, task.threadId, transcript.hasMore, focus, ids]);
+  const reply = useCallback((message: Message) => onQuote(message, task.threadId), [onQuote, task.threadId]);
+  useFocusMessage(task.threadId, transcript.reached);
+  useEffect(() => {
+    if (transcript.loaded || transcript.failed) onLoaded(task.threadId);
+  }, [transcript.loaded, transcript.failed, task.threadId, onLoaded]);
+  return (
+    <section data-stream-segment={task.threadId} aria-label={task.title} className="flex flex-col gap-3">
+      {!first && <TopicDivider task={task} />}
+      {transcript.hasMore && (
+        <div className="flex justify-center">
+          <button type="button" onClick={transcript.loadOlder} className="ui-pill">{t("stream.showEarlierInTopic")}</button>
+        </div>
+      )}
+      {transcript.failed && <p className="text-center text-[12px] text-ink-tertiary">{t("stream.topicFailed")}</p>}
+      <ChatRowsContext.Provider value={segmentRows}>
+        <MessagesList
+          messages={messages}
+          transcript={messages}
+          lookups={lookups}
+          place={place}
+          editingId={null}
+          lastBotTextId={undefined}
+          canRetryLast={false}
+          engine={engine}
+          unreadDividerId={null}
+          unreadDividerFading={false}
+          onStartEdit={noop}
+          onCancelEdit={noop}
+          onSubmitEdit={noop}
+          onRegenerate={noop}
+          onReply={reply}
+          seen={null}
+        />
+      </ChatRowsContext.Provider>
+    </section>
+  );
+}
+
+/** The topics before the live one, loaded back one at a time: the previous
+ * one at once (a new topic never hides what came before), older ones as the
+ * person scrolls up or asks, and as far back as a link or a search hit needs. */
+function StreamEarlierTopics({ bot, rows, place, engine, scrollRef, followRef, reach, onReached, onQuote }: {
+  bot: Bot;
+  rows: ChatRows;
+  place: EffectivePlace;
+  engine: InstanceInfo | undefined;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  /** Whether the reader follows the bottom (useTranscriptViewport). */
+  followRef: React.RefObject<boolean>;
+  /** An earlier topic to bring on screen (the activity pill). */
+  reach: { threadId: string; nonce: number } | null;
+  /** The reach is taken: a remount never replays it. */
+  onReached: () => void;
+  onQuote: (message: Message, threadId: string) => void;
+}) {
+  "use memo";
+  const above = useMemo(() => segmentsAbove(bot.tasks, bot.threadId), [bot.tasks, bot.threadId]);
+  const first = above.at(-1)?.threadId;
+  const [count, setCount] = useState(1);
+  // A link or a search hit in an earlier topic loads that topic around its
+  // message, and keeps that page once the focus is consumed.
+  const [around, setAround] = useState<Readonly<Record<string, string>>>({});
+  // Topics whose first page is in (or failed): the next one loads on scroll
+  // only after the oldest shown one did, so the top sentinel never loads
+  // every topic at once while they are still empty.
+  const [loaded, setLoaded] = useState<ReadonlySet<string>>(() => new Set());
+  const markLoaded = useCallback((threadId: string) => {
+    setLoaded((current) => current.has(threadId) ? current : new Set(current).add(threadId));
+  }, []);
+  // The topic the activity pill asked for, scrolled to once it is drawn.
+  const [pendingReach, setPendingReach] = useState<string | null>(null);
+  useEffect(() => {
+    setCount(1);
+    setAround({});
+    setPendingReach(null);
+  }, [bot.id, bot.threadId]);
+  const focus = useStoreSelector((current) => current.focusMessage);
+  const focusSegment = focus && !focus.consumed ? focus.threadId : undefined;
+  useEffect(() => {
+    if (!focusSegment || !focus) return;
+    const needed = segmentsToReach(bot.tasks, bot.threadId, focusSegment);
+    if (needed <= 0) return;
+    setCount((current) => Math.max(current, needed));
+    setAround((current) => current[focusSegment] === focus.messageId ? current : { ...current, [focusSegment]: focus.messageId });
+  }, [focusSegment, focus?.nonce, focus?.messageId, bot.tasks, bot.threadId]);
+  useEffect(() => {
+    if (!reach) return;
+    const needed = segmentsToReach(bot.tasks, bot.threadId, reach.threadId);
+    if (needed > 0) setCount((current) => Math.max(current, needed));
+    setPendingReach(reach.threadId);
+    onReached();
+  }, [reach?.nonce, reach?.threadId, bot.tasks, bot.threadId, onReached]);
+  useEffect(() => {
+    if (!pendingReach || !loaded.has(pendingReach)) return;
+    const frame = requestAnimationFrame(() => {
+      document.querySelector(`[data-stream-segment="${CSS.escape(pendingReach)}"]`)?.scrollIntoView({ block: "start" });
+      setPendingReach(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingReach, loaded]);
+  const next = above[count];
+  const oldestShown = above[Math.min(count, above.length) - 1]?.threadId;
+  const oldestReady = !oldestShown || loaded.has(oldestShown);
+  const sentinel = useRef<HTMLDivElement>(null);
+  // Scrolling up to the top of an overflowing stream loads the topic before.
+  useEffect(() => {
+    const node = sentinel.current;
+    const root = scrollRef.current;
+    if (!node || !root || !oldestReady || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting) && root.scrollHeight > root.clientHeight + 8) setCount((current) => current + 1);
+    }, { root, rootMargin: "200px 0px 0px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [next?.threadId, oldestReady, scrollRef]);
+  const wrapper = useRef<HTMLDivElement>(null);
+  useStreamAnchor(scrollRef, wrapper, followRef, above.length > 0);
+  if (!above.length) return null;
+  const shown = above.slice(0, count).reverse();
+  return (
+    <div ref={wrapper} className="flex flex-col gap-3" data-stream-earlier-topics>
+      {next && (
+        <div ref={sentinel} className="flex justify-center" data-stream-earlier={next.threadId}>
+          <button type="button" onClick={() => setCount((current) => current + 1)} className="ui-pill max-w-full truncate">
+            {t("stream.showEarlierTopic", { title: next.title })}
+          </button>
+        </div>
+      )}
+      {shown.map((task) => (
+        <StreamSegment
+          key={task.threadId}
+          task={task}
+          first={task.threadId === first}
+          rows={rows}
+          place={place}
+          engine={engine}
+          {...(around[task.threadId] ? { aroundId: around[task.threadId] } : {})}
+          onQuote={onQuote}
+          onLoaded={markLoaded}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** How far above its end a topic may grow and still move the reader with
+ * it: a reader whose view starts within this band of the topic's end (the
+ * top of the live topic, or a topic's last lines) reads below the growth. */
+export const STREAM_ANCHOR_BAND = 120;
+
+/** The earlier topics load and grow above the live one, and the scroller
+ * has the browser's scroll anchoring off (the transcript anchors its own
+ * prepends): a topic that grows (its first page, an older page, a late
+ * answer) while the reader is below it moves scrollTop by the growth, so the
+ * rows being read stay still. The reader following the bottom is pinned by
+ * bottom-follow already. */
+function useStreamAnchor(
+  scrollRef: React.RefObject<HTMLElement | null>,
+  wrapperRef: React.RefObject<HTMLElement | null>,
+  followRef: React.RefObject<boolean>,
+  active: boolean,
+) {
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    const wrapper = wrapperRef.current;
+    if (!active) return;
+    if (!scroller || !wrapper || typeof ResizeObserver === "undefined") return;
+    const heights = new WeakMap<Element, number>();
+    const resize = new ResizeObserver((entries) => {
+      const changes: Array<{ top: number; previousHeight: number; height: number }> = [];
+      const origin = scroller.getBoundingClientRect().top - scroller.scrollTop;
+      for (const entry of entries) {
+        const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+        const previousHeight = heights.get(entry.target);
+        heights.set(entry.target, height);
+        if (previousHeight === undefined || previousHeight === height) continue;
+        changes.push({ top: entry.target.getBoundingClientRect().top - origin, previousHeight, height });
+      }
+      if (!changes.length || followRef.current) return;
+      const shift = offscreenAnchorShift(changes, scroller.scrollTop + STREAM_ANCHOR_BAND);
+      if (shift) scroller.scrollTop += shift;
+    });
+    const watch = (node: Node) => {
+      if (node instanceof Element && node.matches("[data-stream-segment], [data-stream-earlier]")) resize.observe(node);
+    };
+    wrapper.childNodes.forEach(watch);
+    const mutations = new MutationObserver((records) => {
+      for (const record of records) {
+        record.addedNodes.forEach(watch);
+        record.removedNodes.forEach((node) => { if (node instanceof Element) resize.unobserve(node); });
+      }
+    });
+    mutations.observe(wrapper, { childList: true });
+    return () => {
+      mutations.disconnect();
+      resize.disconnect();
+    };
+  }, [scrollRef, wrapperRef, followRef, active]);
+}
+
+/** An earlier topic of the stream has something new (a late answer, a card):
+ * one pill that brings it on screen and reads it. */
+function EarlierTopicActivity({ bot, onReach }: { bot: Bot; onReach: (threadId: string) => void }) {
+  const above = segmentsAbove(bot.tasks, bot.threadId);
+  const active = above.find((task) => task.unread || task.activity === "waiting-on-you");
+  if (!active) return null;
+  return (
+    <div className="mx-5 mb-2 flex justify-center" data-earlier-topic-activity={active.threadId}>
+      <button type="button" onClick={() => onReach(active.threadId)} className="ui-pill max-w-full truncate">
+        {t("stream.newActivity", { title: active.title })}
+      </button>
+    </div>
+  );
+}
+
 export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   "use memo";
   const showInspector = useShowInspectorButton();
@@ -1522,6 +1800,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     transcriptKey,
     following,
     followRef,
+    stopFollowing,
     windowedMessages,
     hiddenCount,
     laterCount,
@@ -1576,6 +1855,55 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   );
   // Where this conversation works, for the place icon on screen and page tools.
   const place = effectivePlace(bot, bot.tasks?.find((task) => task.threadId === bot.threadId));
+  // The single stream (Show threads off): the live topic is this thread; the
+  // topics before it are drawn above, under their dividers, once this one is
+  // read back to its start (docs/single-stream-orchestration.md).
+  const currentTask = bot.tasks?.find((task) => task.threadId === bot.threadId);
+  const streamOn = !side && !showThreads && Boolean(currentTask && isStreamSegment(currentTask));
+  const streamHasEarlier = streamOn && segmentsAbove(bot.tasks, bot.threadId).length > 0;
+  const [streamReach, setStreamReach] = useState<{ threadId: string; nonce: number } | null>(null);
+  const clearStreamReach = useCallback(() => setStreamReach((current) => current && null), []);
+  // Earlier topics stay drawn once shown for this live topic: a new message
+  // that slides the live window, or an older live page loading, never drops
+  // what was loaded above it. A link or a search hit into an earlier topic
+  // draws them at once, above whatever of the live topic is loaded (its top
+  // sentinel, between the divider and the live rows, fills the rest).
+  const streamFocus = useStoreSelector((current) => current.focusMessage);
+  const streamFocusEarlier = streamHasEarlier && Boolean(streamFocus && !streamFocus.consumed && segmentsAbove(bot.tasks, bot.threadId).some((task) => task.threadId === streamFocus.threadId));
+  const [streamShownFor, setStreamShownFor] = useState<string | null>(null);
+  const reachEarlierTopic = useCallback((threadId: string) => {
+    setStreamReach((current) => ({ threadId, nonce: (current?.nonce ?? 0) + 1 }));
+    api(`/api/bots/${bot.id}/read`, { method: "POST", body: JSON.stringify({ threadId }) }).catch(() => {});
+  }, [bot.id]);
+  // Reply on an earlier topic's message quotes it into the live composer.
+  const quoteEarlier = useCallback((message: Message, threadId: string) => {
+    const text = (message.text ?? "").trim();
+    if (!text) return;
+    try {
+      const quote = text.slice(0, 2_000);
+      appendDraftAttachments(`bot:${bot.id}:${bot.threadId}`, [citationAttachment(
+        { ownerType: "bot", ownerId: bot.id, threadId, messageId: message.id },
+        { text: quote, start: 0, end: quote.length, prefix: "", suffix: "" },
+      )]);
+    } catch {
+      return;
+    }
+    composerDockRef.current?.querySelector("textarea")?.focus();
+  }, [bot.id, bot.threadId]);
+  const streamEngine = state.instances.find((i) => i.instanceId === bot.modelSelection.instanceId);
+  const streamReadBack = streamHasEarlier && !olderPending && hiddenCount === 0 && !bot.hasMore;
+  const streamDrawn = streamHasEarlier && (streamReadBack || streamFocusEarlier || streamReach !== null || streamShownFor === bot.threadId);
+  // A link, a search hit or the activity pill into an earlier topic is a
+  // jump up: bottom-follow would pull the pane back at the next growth.
+  useEffect(() => {
+    if (streamFocusEarlier || streamReach) stopFollowing();
+  }, [streamFocusEarlier, streamReach, stopFollowing]);
+  useEffect(() => {
+    if (streamDrawn) setStreamShownFor(bot.threadId);
+  }, [streamDrawn, bot.threadId]);
+  // Leaving the topic (another bot, another thread) forgets it: coming back
+  // waits for the live topic to be read back again.
+  useEffect(() => () => setStreamShownFor(null), [bot.id, bot.threadId]);
 
   // one message at a time may be in edit mode
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1750,6 +2078,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
             {...(dataItem ? { data: dataItem } : {})}
           />}
           <DevPodsToggle bot={bot} />
+          {!showThreads && <NewTopicButton bot={bot} />}
           <TaskPicker bot={bot} />
         </div>
       </div>}
@@ -1766,6 +2095,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       {!side && <>
       <BotActivityPicker bot={bot} />
       <ThreadsOffReturnLink bot={bot} />
+      {streamOn && <EarlierTopicActivity bot={bot} onReach={reachEarlierTopic} />}
       <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />
       </>}
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
@@ -1774,7 +2104,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
         {canOpenResults && resultsThreadId && <button type="button" onClick={() => openNotificationTarget(dispatch, { botId: bot.id, threadId: resultsThreadId }, state, showThreads)} className="rounded px-2 py-1 text-accent hover:bg-raised">{t("routines.results.back")}</button>}
         <button type="button" onClick={() => dispatch({ type: "showRoutines", section: "logs", routineId: routineExecution.routineId, botId: bot.id })} className="rounded px-2 py-1 hover:bg-raised hover:text-ink">{t("routines.logs")}</button>
       </div>}
-      {findOpen && <ChatFindBar threadId={bot.threadId} onClose={() => setFindOpen(false)} />}
+      {findOpen && <ChatFindBar threadId={bot.threadId} {...(streamOn ? { threadIds: [bot.threadId, ...segmentsAbove(bot.tasks, bot.threadId).map((task) => task.threadId)] } : {})} onClose={() => setFindOpen(false)} />}
 
       {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
       {!side && <ChatNotice notice={state.notice} />}
@@ -1817,6 +2147,14 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           aria-live="off"
           aria-label={t("chat.conversationWith", { name: bot.name })}
         >
+          {/* The single stream: earlier topics above the live one, once the
+              live one is read back to its first message. */}
+          {streamDrawn && (
+            <>
+              <StreamEarlierTopics bot={bot} rows={rows} place={place} engine={streamEngine} scrollRef={scrollRef} followRef={followRef} reach={streamReach} onReached={clearStreamReach} onQuote={quoteEarlier} />
+              {currentTask && <TopicDivider task={currentTask} />}
+            </>
+          )}
           {/* Reverse infinite scroll sentinel and smooth loading indicator */}
           {olderPending ? (
             <div className="flex items-center justify-center gap-2 py-3 text-xs text-ink-tertiary">
@@ -1826,7 +2164,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           ) : hiddenCount > 0 || bot.hasMore ? (
             <div ref={topSentinelRef} className="h-2 w-full pointer-events-none" aria-hidden="true" />
           ) : null}
-          {windowedMessages.length === 0 && !bot.busy && <EmptyChat bot={bot} />}
+          {windowedMessages.length === 0 && !bot.busy && !streamHasEarlier && <EmptyChat bot={bot} />}
           <ChatRowsContext.Provider value={rows}>
             <ConversationGalleryProvider>
             <MessagesList

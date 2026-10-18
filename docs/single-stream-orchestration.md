@@ -1,11 +1,12 @@
 # Single stream orchestration (thread mode off)
 
-Status: server and data model shipped (this PR); desktop stream UI and the
-default flip follow in the next PR (see "Plan" below). Requested by JC on
-2026-10-17: with threads hidden, one conversation per bot like Grok Bot; the
-person never has to look for where a chat went; the bot runs each topic in a
-fresh context but still knows everything that happened before, cheaply. JC
-then set it as the default mode.
+Status: the default mode since 2026-10-17. Server and data model in #719;
+desktop stream UI and the default flip in the follow-up PR. iOS keeps thread
+mode for now (see "Clients"). Requested by JC on 2026-10-17: with threads
+hidden, one conversation per bot like Grok Bot; the person never has to look
+for where a chat went; the bot runs each topic in a fresh context but still
+knows everything that happened before, cheaply. JC then set it as the default
+mode.
 
 ## What exists today (investigation, 2026-10-17)
 
@@ -112,35 +113,71 @@ topic") in the same stream, never a new place.
   which predates this work.)
 - Digest text goes through `redactSecretsInText` before it is stored or sent.
 
-### Clients (next PR)
+### Clients
 
-Desktop, threads off:
+Desktop, threads off (`src/lib/single-stream.ts`, `ChatView`):
 
-- The chat draws the bot's segments as one transcript: the current (newest)
-  segment is the live one with its composer; scrolling back past its first
-  message loads the previous segment (`GET /api/threads/:id/messages`, the
-  route scrollback and the side thread use) above a divider "Nouveau sujet ·
-  <title> · <date>", and so on to the first.
-- "New topic" (header button where the thread picker sits with threads on,
-  ⌘N while a bot chat is focused, and the bot's row menu) creates the
-  segment with `stream: true`.
-- Search hits, notifications and deep links to a segment open the stream at
-  that segment's message (`focusMessage` after loading the segment) instead
-  of switching threads; `ThreadsOffReturnLink` goes away. Threads that are
-  not segments (confidential, bot-opened, hidden) open alone, as today.
-- Older segments are full rows: reactions, attachments and approvals act on
-  their own thread ids; Reply on an older message quotes it into the
-  current composer as a citation (cross-thread replies are not a thing on the
-  server), edit and regenerate stay with the live segment.
+- The bot opens at its newest segment (`botOpensTo`). The chat draws the
+  segments as one transcript: the newest one is live, with its composer;
+  once it is read back to its first message, the previous segment is drawn
+  above it at once (a new topic never hides what came before) and older ones
+  load on scroll-up or with "Show the previous topic", each under a divider
+  "Nouveau sujet : <title>" / "New topic: <title>". An earlier segment keeps
+  its own copy of the thread (`useSegmentTranscript`: the newest page, older
+  pages on demand or, for a linked message, up to 10 pages back to it, live
+  frames; a reload after missed frames replaces the copy), so a late
+  answer shows where it belongs; a pill above the chat ("New activity in an
+  earlier topic") brings an unread or waiting one on screen and reads it.
+  Once drawn for a live topic, the earlier topics stay mounted (a new
+  message or an older live page never drops them) until the person leaves
+  that topic. The scroller has the browser's scroll anchoring off, so
+  `useStreamAnchor` moves scrollTop by a topic's growth when the reader's
+  view starts below it or within 120 px of its end; an older page loaded
+  inside the topic being read appears where its button was.
+  A link, a search hit or the pill into an earlier topic draws the earlier
+  topics at once and stops bottom-follow (`stopFollowing`), so the jump
+  holds.
+- "New topic": the header button (`data-new-topic`, where the thread picker
+  sits with threads on) and the bot row menu create the segment with
+  `stream: true`. ⌘N still opens the compose picker; with threads off it
+  opens the bot's conversation, never a hidden thread.
+- Thread links and search hits in an earlier segment open the stream at its
+  newest segment and load back to the message (`isEarlierSegment`,
+  `focusMessage`), instead of switching threads: the earlier topics are drawn
+  at once, above whatever of the live topic is loaded (the live topic's own
+  top sentinel, under its divider, loads the rest). A notification about an
+  earlier segment opens the stream at its newest segment; the activity pill
+  then brings that topic on screen. ⌘F searches the live topic and the
+  newest earlier ones (`STREAM_FIND_TOPICS`, 20: one request per topic). Threads outside the stream
+  (confidential, bot-opened, hidden) open alone, with "Back to conversation"
+  to the stream.
+- Earlier segments are full rows: reactions, pins, attachments and cards act
+  on their own thread ids. They are drawn as busy, so edit, regenerate and
+  version switches stay with the live segment; Reply quotes the message into
+  the live composer as a citation (a reply is per thread on the server).
 - Default flip: `SHOW_THREADS_DEFAULT = false`. Unset (never chosen) moves to
-  the single stream; an explicit "1" keeps threads. Settings > Appearance
-  keeps the one-click switch back, and the release notes of that version say
-  so.
+  the single stream; a stored "1" (threads turned on) keeps threads. Settings
+  > Appearance > Conversation threads offers "One conversation", "In the
+  header", "In the sidebar": the one-click way back.
 
-iOS: keeps thread mode as today (its own fallback) and works unchanged
-against the server (a send without `singleStream` changes nothing). The
-same data model applies when its UI follows (`shared/single-stream.ts`
-rules ported to `CompanionCore`).
+Release note text for the version that ships it (the release session adds it
+to `docs/releases/<version>.md`):
+
+- FR: « Une seule conversation par bot, par défaut. Quand les fils sont
+  masqués (le nouveau réglage par défaut), « Nouveau sujet » démarre un
+  contexte neuf sans rien cacher : les sujets précédents restent au-dessus,
+  et le bot en garde un résumé compact. Pour revenir aux fils : Réglages >
+  Apparence > Fils de conversation. »
+- EN: "One conversation per bot, by default. With threads hidden (the new
+  default), New topic starts a fresh context without hiding anything: earlier
+  topics stay above, and the bot keeps a compact digest of them. To get
+  threads back: Settings > Appearance > Conversation threads."
+
+iOS: keeps thread mode as today (its own fallback, still on) and works
+unchanged against the server: a send without `singleStream` changes nothing,
+and a thread made a segment on the desktop shows as a thread there. Next
+step: port `shared/single-stream.ts` to `CompanionCore`, send
+`singleStream`, draw earlier segments with the same dividers.
 
 ## Tests
 
@@ -155,3 +192,9 @@ rules ported to `CompanionCore`).
   unchanged, a topic made confidential later.
 - `server/org-private-threads.e2e.test.ts` PT-5: per-person streams on a
   shared bot.
+- `src/lib/single-stream.test.ts`, `src/lib/use-segment-transcript.test.ts`,
+  `src/components/ChatView.stream.test.ts` (earlier topic above the live one,
+  dividers, New topic, confidential alone, threads on unchanged, default),
+  `src/state/notification-open.test.ts` (notification and search hit into an
+  earlier topic), `src/lib/thread-preferences.test.ts` (default off, "1"
+  kept).

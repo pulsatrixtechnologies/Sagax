@@ -73,7 +73,7 @@ describe("useExternalChatLinks", () => {
     fixture.showThreads = false;
     const dispatch = vi.fn();
     const left = { ...scout, threadId: "scout-report", mainThreadId: "scout-main",
-      tasks: [...scout.tasks!, { threadId: "scout-report", title: "Report", createdAt: 2, unread: true }] };
+      tasks: [...scout.tasks!, { threadId: "scout-report", title: "Report", createdAt: 2, unread: true, routineRunId: "run-1" }] };
     render({ ...loaded, bots: [left] }, dispatch);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: "switchTask", botId: "scout", threadId: "scout-main" },

@@ -8716,5 +8716,13 @@
   "artifacts.status.error": "Refresh failed {when}; it tries again.",
   "artifacts.refreshNow": "Refresh now",
   "artifacts.popOut": "Pop out",
-  "artifacts.dock": "Dock back"
+  "artifacts.dock": "Dock back",
+  "stream.newTopic": "New topic",
+  "stream.newTopicAria": "Start a new topic with {name}",
+  "stream.divider": "New topic: {title}",
+  "stream.showEarlierTopic": "Show the previous topic: {title}",
+  "stream.showEarlierInTopic": "Show earlier messages of this topic",
+  "stream.topicFailed": "This topic could not be loaded.",
+  "stream.newActivity": "New activity in an earlier topic: {title}",
+  "settings.threadsView.single": "One conversation"
 }

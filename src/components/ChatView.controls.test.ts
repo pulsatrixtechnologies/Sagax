@@ -486,7 +486,8 @@ describe("the way back to the bot's own conversation", () => {
     ...bot, threadId: "side", mainThreadId: "main",
     tasks: [
       { threadId: "main", title: "Our chat", createdAt: 1, busy: false, activity: "idle" },
-      { threadId: "side", title: "Routine report", createdAt: 2, busy: false, activity: "idle" },
+      // a thread the bot opened: outside the single stream, a visit
+      { threadId: "side", title: "Routine report", createdAt: 2, busy: false, activity: "idle", openedBy: { botId: bot.id, name: bot.name, at: 2 } },
     ],
   };
 

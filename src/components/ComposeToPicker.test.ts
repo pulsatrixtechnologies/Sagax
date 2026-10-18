@@ -113,7 +113,8 @@ describe("ComposeToPicker", () => {
       fixture.showThreads = false;
       const { html, close, rendered } = pick(person("vega", "Vega", {
         threadId: "main",
-        tasks: [{ threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 }, { threadId: "older", title: "Older", createdAt: 2, updatedAt: 10 }],
+        // "main" is the newest topic of the single stream, where the bot opens
+        tasks: [{ threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 }, { threadId: "older", title: "Older", createdAt: 0, updatedAt: 10 }],
       }));
       expect(html).toContain("Open chat");
       expect(html).not.toContain("New thread");
@@ -126,7 +127,9 @@ describe("ComposeToPicker", () => {
       fixture.showThreads = false;
       const { rendered } = pick(person("vega", "Vega", {
         threadId: "extra",
-        tasks: [{ threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 }, { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60 }],
+        // an untouched thread outside the single stream (a New topic there is
+        // the live topic and stays: src/lib/single-stream.test.ts)
+        tasks: [{ threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 }, { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60, confidential: true }],
       }));
       rendered.find((node) => node.props["data-compose-bot"] === "vega")?.props.onClick?.();
       expect(fixture.dispatch.mock.calls).toEqual([[{ type: "select", id: "vega" }], [{ type: "switchTask", botId: "vega", threadId: "main" }]]);

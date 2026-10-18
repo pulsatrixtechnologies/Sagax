@@ -21,13 +21,16 @@ const bot: Bot = {
   notifications: true, color: "green", unread: true,
   modelSelection: { instanceId: "fake", model: "test" }, messages: [],
   projects: [{ id: "private-folder", name: "Quiet folder" }],
+  // Threads hidden (the single stream): "idle-history" and "last-selected"
+  // are its topics, the newest last; the jobs the bot opened stay apart and
+  // show as activity rows.
   tasks: [
     { threadId: "last-selected", title: "Last selected conversation", createdAt: 1 },
-    { threadId: "idle-history", title: "Idle history", createdAt: 2, projectId: "private-folder" },
-    { threadId: "approval", title: "Review permission", createdAt: 3, busy: false, activity: "waiting-on-you", projectId: "private-folder" },
-    { threadId: "working", title: "Running job", createdAt: 4, busy: true, activity: "working" },
-    { threadId: "queued", title: "Next job", createdAt: 5 },
-    { threadId: "unread", title: "Finished reply", createdAt: 6, unread: true },
+    { threadId: "idle-history", title: "Idle history", createdAt: 0, projectId: "private-folder" },
+    { threadId: "approval", title: "Review permission", createdAt: 3, busy: false, activity: "waiting-on-you", projectId: "private-folder", openedBy: { botId: "atlas", name: "Atlas", at: 3 } },
+    { threadId: "working", title: "Running job", createdAt: 4, busy: true, activity: "working", openedBy: { botId: "atlas", name: "Atlas", at: 4 } },
+    { threadId: "queued", title: "Next job", createdAt: 5, openedBy: { botId: "atlas", name: "Atlas", at: 5 } },
+    { threadId: "unread", title: "Finished reply", createdAt: 6, unread: true, openedBy: { botId: "atlas", name: "Atlas", at: 6 } },
   ],
 };
 const densities: SidebarDensity[] = ["comfortable", "compact", "icons"];
@@ -97,7 +100,7 @@ describe("bot-first sidebar", () => {
     });
   }
 
-  it.each(densities)("leads back to the latest conversation from an untouched extra thread, %s density, threads off", (density) => {
+  it.each(densities)("stays in a New topic it is on, %s density, threads off", (density) => {
     const trapped: Bot = { ...bot, threadId: "extra", tasks: [
       { threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 },
       { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60 },
@@ -109,21 +112,21 @@ describe("bot-first sidebar", () => {
       function Capture() { tree = BotListItem({ ...rowProps(density), bot: trapped }); return tree; }
       renderToStaticMarkup(createElement(Capture));
       findElement(tree, "data-sidebar-bot-row", bot.id)!.props.onClick!({ type: "click", target: {} } as MouseEvent);
-      expect(fixture.dispatch.mock.calls).toEqual(enabled
-        ? [[{ type: "select", id: bot.id }]]
-        : [[{ type: "select", id: bot.id }], [{ type: "switchTask", botId: bot.id, threadId: "main" }]]);
+      // The single stream keeps a New topic it is on: the topic before is
+      // drawn above it, so nothing is stranded.
+      expect(fixture.dispatch.mock.calls).toEqual([[{ type: "select", id: bot.id }]]);
     }
   });
 
-  it.each(densities)("opens the bot's main thread when threads are hidden, %s density", (density) => {
-    // Threads were on once: this window still sits on an older thread, and
-    // the person last wrote in another one, the bot's main thread
-    // (server/main-thread.ts). With the tree hidden, that is the
-    // conversation the bot opens to.
-    const used = { ...bot, mainThreadId: "idle-history" };
+  it.each(densities)("opens the newest topic of the stream when threads are hidden, %s density", (density) => {
+    // Threads were on once: this window still sits on an older topic and the
+    // person last wrote in it (the main thread, server/main-thread.ts). With
+    // the tree hidden, the stream opens at its newest topic, the older one
+    // drawn above it.
+    const used = { ...bot, threadId: "idle-history", mainThreadId: "idle-history" };
     for (const enabled of [false, true]) {
       fixture.showThreads = enabled;
-      const opened = enabled ? { type: "select", id: bot.id } : { type: "switchTask", botId: bot.id, threadId: "idle-history" };
+      const opened = enabled ? { type: "select", id: bot.id } : { type: "switchTask", botId: bot.id, threadId: "last-selected" };
       let tree: ReactNode;
       function Capture() { tree = BotListItem({ ...rowProps(density), bot: used }); return tree; }
       renderToStaticMarkup(createElement(Capture));

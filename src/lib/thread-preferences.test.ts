@@ -47,15 +47,22 @@ afterEach(() => {
 });
 
 describe("local thread visibility", () => {
-  it("unset means on, without writing anything", async () => {
+  it("sends say whether this client shows one stream", async () => {
+    const preference = await import("./thread-preferences");
+    expect(preference.singleStreamTurnField()).toEqual({ singleStream: true });
+    preference.setShowThreads(true);
+    expect(preference.singleStreamTurnField()).toEqual({ singleStream: false });
+  });
+
+  it("unset means off (the single stream, 2026-10-17), without writing anything", async () => {
     const preference = await import("./thread-preferences");
     expect(local.getItem(preference.SHOW_THREADS_KEY)).toBeNull();
-    expect(preference.useShowThreads()).toBe(true);
-    expect(hook.serverSnapshot!()).toBe(true);
+    expect(preference.useShowThreads()).toBe(false);
+    expect(hook.serverSnapshot!()).toBe(false);
     expect(local.setItem).not.toHaveBeenCalled();
   });
 
-  it("an explicit off stays off, and any stored value other than 1 is a recorded off", async () => {
+  it("an explicit on stays on, and any stored value other than 1 is a recorded off", async () => {
     const preference = await import("./thread-preferences");
     for (const value of ["", "false", "broken", "0"]) {
       local.setItem(preference.SHOW_THREADS_KEY, value);
@@ -64,7 +71,7 @@ describe("local thread visibility", () => {
     local.setItem(preference.SHOW_THREADS_KEY, "1");
     expect(preference.useShowThreads()).toBe(true);
     local.removeItem(preference.SHOW_THREADS_KEY);
-    expect(preference.useShowThreads()).toBe(true);
+    expect(preference.useShowThreads()).toBe(false);
     local.setItem.mockClear();
     preference.useShowThreadsChoice();
     expect(local.setItem).not.toHaveBeenCalled();
@@ -72,7 +79,7 @@ describe("local thread visibility", () => {
 
   it("persists both choices through a renderer reload", async () => {
     let preference = await import("./thread-preferences");
-    expect(preference.useShowThreads()).toBe(true);
+    expect(preference.useShowThreads()).toBe(false);
     preference.setShowThreads(false);
     expect(local.getItem(preference.SHOW_THREADS_KEY)).toBe("0");
     expect(preference.useShowThreadsChoice()).toBe(false);
@@ -122,13 +129,16 @@ describe("local thread visibility", () => {
     storageEvent(preference.SHOW_THREADS_KEY, memoryStorage());
     expect(listener).toHaveBeenCalledOnce();
 
+    local.setItem(preference.SHOW_THREADS_KEY, "1");
+    storageEvent(preference.SHOW_THREADS_KEY);
+    expect(hook.snapshot!()).toBe(true);
     local.clear();
     storageEvent(null);
-    expect(listener).toHaveBeenCalledTimes(2);
-    expect(hook.snapshot!()).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(3);
+    expect(hook.snapshot!()).toBe(false);
     unsubscribe();
     storageEvent(null);
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledTimes(3);
   });
 
   it.each(["getter", "read", "write", "missing"])("keeps the choice usable when storage fails at %s", async (failure) => {
@@ -141,6 +151,8 @@ describe("local thread visibility", () => {
       if (failure === "read") local.getItem.mockImplementation(() => { throw new Error("blocked"); });
     }
     const preference = await import("./thread-preferences");
+    expect(preference.useShowThreadsChoice()).toBe(false);
+    preference.setShowThreads(true);
     expect(preference.useShowThreadsChoice()).toBe(true);
     preference.setShowThreads(false);
     expect(preference.useShowThreadsChoice()).toBe(false);
@@ -150,8 +162,8 @@ describe("local thread visibility", () => {
 });
 
 describe("threads in Simple mode", () => {
-  // Sagax keeps thread mode on by default for everyone (AGENTS.md, "Thread
-  // mode is on by default"): Simple mode never hides threads the person chose.
+  // Simple mode never hides threads the person chose; unset is the single
+  // stream in both modes (AGENTS.md, "Single stream is the default").
   it.each([
     [true, true, true],
     [true, false, true],
@@ -165,12 +177,12 @@ describe("threads in Simple mode", () => {
     vi.doUnmock("./interface-mode");
   });
 
-  it("leaves the stored choice alone and keeps an unset choice on in Simple mode", async () => {
+  it("leaves the stored choice alone and keeps an unset choice off in Simple mode", async () => {
     vi.doMock("./interface-mode", () => ({ useAdvancedMode: () => false }));
     const preference = await import("./thread-preferences");
     local.setItem.mockClear();
-    expect(preference.useShowThreads()).toBe(true);
-    expect(preference.useShowThreadsChoice()).toBe(true);
+    expect(preference.useShowThreads()).toBe(false);
+    expect(preference.useShowThreadsChoice()).toBe(false);
     expect(local.setItem).not.toHaveBeenCalled();
     vi.doUnmock("./interface-mode");
   });

@@ -31,9 +31,10 @@ function click(edge: Parameters<typeof EdgeRow>[0]["edge"]) {
 beforeEach(() => {
   fixture.dispatch.mockClear();
   fixture.showThreads = true;
-  // Ada was left on an older thread; the person last wrote in her main one.
+  // Ada was left on the thread Clive handed her (outside her single stream);
+  // the person last wrote in her main one.
   fixture.bots = [bot("clive"), bot("ada", { threadId: "ada-old", mainThreadId: "ada-chat",
-    tasks: [{ threadId: "ada-chat", title: "Chat", createdAt: 1 }, { threadId: "ada-old", title: "Report", createdAt: 2, unread: true }] })];
+    tasks: [{ threadId: "ada-chat", title: "Chat", createdAt: 1 }, { threadId: "ada-old", title: "Report", createdAt: 2, unread: true, openedBy: { botId: "clive", name: "Clive", at: 2 } }] })];
 });
 
 describe("a team map hand-off", () => {

@@ -974,7 +974,10 @@ describe("notification routing", () => {
       expect(opened({ ...bot, threadId: "later-chat" }, false)).toEqual([{ type: "select", id: "bot-1" }]);
       // A main thread this window has no row for yet, or none at all.
       expect(opened({ ...bot, tasks: undefined }, false)).toEqual([{ type: "select", id: "bot-1" }]);
-      expect(opened({ ...bot, mainThreadId: undefined }, false)).toEqual([{ type: "select", id: "bot-1" }]);
+      // The single stream opens at its newest topic even without a main thread.
+      expect(opened({ ...bot, mainThreadId: undefined }, false)).toEqual([{ type: "switchTask", botId: "bot-1", threadId: "later-chat" }]);
+      // Without stream facts (a room-like record) and no main thread: where it is.
+      expect(opened({ ...bot, mainThreadId: undefined, tasks: [{ threadId: "routine-report", title: "Reports" } as never] }, false)).toEqual([{ type: "select", id: "bot-1" }]);
       // The switch selects the bot and leaves the thread it came from unread.
       const switched = reducer({ ...initialState, bots: [bot], selectedId: "other", activeView: "routines" }, opened(bot, false)[0] as Action);
       expect(switched).toMatchObject({ selectedId: "bot-1", activeView: "chat" });
@@ -996,11 +999,9 @@ describe("notification routing", () => {
       const opened = actions.reduce(reducer, { ...initialState, bots: [bot], selectedId: "other", activeView: "chat" });
       expect(opened).toMatchObject({ selectedId: "bot-1", activeView: "chat" });
       expect(opened.bots[0]!.tasks!.find((task) => task.threadId === "routine-report")!.unread).toBe(true);
-      // The thread it is on opens as it always did.
-      expect(followed("routine-report", false)).toEqual([
-        { type: "select", id: "bot-1" },
-        { type: "switchTask", botId: "bot-1", threadId: "routine-report" },
-      ]);
+      // An earlier topic of the single stream opens the stream at its newest
+      // topic, where the earlier one is drawn above.
+      expect(followed("routine-report", false)).toEqual([{ type: "switchTask", botId: "bot-1", threadId: "later-chat" }]);
     });
 
     it("opens a thread a notification names as before while threads are shown", () => {

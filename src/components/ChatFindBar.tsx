@@ -7,7 +7,19 @@ import type { SearchHit } from "@/lib/search-hit";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { api, useStore } from "@/state/store";
 
-export function ChatFindBar({ threadId, onClose }: { threadId: string; onClose: () => void }) {
+/** Topics of the single stream searched at once, the live one and the
+ * newest earlier ones: one request per topic, so a long stream stays cheap. */
+export const STREAM_FIND_TOPICS = 20;
+
+/** The newest hits first across several threads (the single stream's topics). */
+export function mergeStreamHits(pages: ReadonlyArray<ReadonlyArray<SearchHit>>, limit = 100): SearchHit[] {
+  return pages.flat().sort((a, b) => b.at - a.at).slice(0, limit);
+}
+
+/** Find in this conversation. In the single stream it is its topics
+ * (`threadIds`, the live one first, the newest STREAM_FIND_TOPICS): each thread is searched on its own, as
+ * the server scopes it, and the hits merge newest first. */
+export function ChatFindBar({ threadId, threadIds, onClose }: { threadId: string; threadIds?: readonly string[]; onClose: () => void }) {
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -33,10 +45,12 @@ export function ChatFindBar({ threadId, onClose }: { threadId: string; onClose: 
     }
     setLoading(true);
     const timer = window.setTimeout(() => {
-      void api(`/api/search?q=${encodeURIComponent(trimmed)}&limit=100&threadId=${encodeURIComponent(threadId)}`)
-        .then((body) => {
+      const scope = threadIds?.length ? threadIds.slice(0, STREAM_FIND_TOPICS) : [threadId];
+      void Promise.all(scope.map((id) => api(`/api/search?q=${encodeURIComponent(trimmed)}&limit=100&threadId=${encodeURIComponent(id)}`)))
+        .then((bodies) => {
           if (request !== requestRef.current) return;
-          setHits(Array.isArray(body?.hits) ? body.hits : []);
+          const pages = bodies.map((body) => (Array.isArray(body?.hits) ? body.hits as SearchHit[] : []));
+          setHits(scope.length > 1 ? mergeStreamHits(pages) : pages[0] ?? []);
           setIndex(0);
         })
         .catch((error) => {
@@ -49,7 +63,7 @@ export function ChatFindBar({ threadId, onClose }: { threadId: string; onClose: 
         });
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [dispatch, query, threadId]);
+  }, [dispatch, query, threadId, threadIds?.join("\n")]);
 
   const land = (next: number) => {
     const hit = hits[next];

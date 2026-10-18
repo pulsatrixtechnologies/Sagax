@@ -23,7 +23,7 @@ vi.mock("@/lib/cloud-guest", () => ({ useCanWriteIn: () => true }));
 const { Sidebar } = await import("./Sidebar");
 const { BotEditorStore, initialState } = await import("@/state/store");
 const { setLocale } = await import("@/lib/i18n");
-const { setThreadsLocation } = await import("@/lib/thread-preferences");
+const { setShowThreads, setThreadsLocation } = await import("@/lib/thread-preferences");
 const bot: Bot = {
   id: "pepper", name: "Pepper", threadId: "current", title: "", description: "", color: "green", unread: false,
   notifications: true, messages: [], modelSelection: { instanceId: "test", model: "test" }, cwd: "/projects/default",
@@ -55,6 +55,9 @@ beforeEach(() => {
   setLocale("en");
   // whatever the location, the bot's menu holds the working-folder item
   setThreadsLocation("sidebar");
+  // New thread lives in that menu with threads shown (off is the single
+  // stream, whose menu says New topic)
+  setShowThreads(true);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);

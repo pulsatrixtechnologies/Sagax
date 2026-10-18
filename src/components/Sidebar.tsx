@@ -1361,10 +1361,13 @@ export function BotContextMenu({
 
   // New thread comes first (JC, 2026-10-15): #518 had left the sidebar with
   // no way to start a conversation with a bot. newTask selects the bot too.
-  // Threads turned off: no thread to start, as before.
+  // Threads turned off (the single stream): New topic, a fresh context in
+  // the same conversation (docs/single-stream-orchestration.md).
   const newThreadItem = showThreads ? item(<Plus size={16} className="text-ink" />, t("task.newShort"), () => {
     dispatch({ type: "newTask", botId: bot.id });
-  }, { id: "new-thread" }) : null;
+  }, { id: "new-thread" }) : item(<Plus size={16} className="text-ink" />, t("stream.newTopic"), () => {
+    dispatch({ type: "newTask", botId: bot.id, stream: true });
+  }, { id: "new-topic" });
 
   // One flat menu, no More (JC, 2026-10-15): New thread | Pin, Move to › |
   // Rename, Edit bot, Make primary bot, Put on the desktop | Hide from

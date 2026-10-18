@@ -159,7 +159,7 @@ describe("Settings → Appearance", () => {
     fixture.showThreads = enabled;
     const html = render();
     const pill = /aria-label="Conversation threads"[^>]*>[\s\S]*?<\/button>/.exec(html)?.[0] ?? "";
-    expect(pill).toContain(enabled ? ">In the chat header<" : ">Hidden<");
+    expect(pill).toContain(enabled ? ">In the chat header<" : ">One conversation<");
   });
 
   it("only updates the local preferences when a thread choice is made", () => {

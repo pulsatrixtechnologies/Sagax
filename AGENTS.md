@@ -2989,10 +2989,26 @@ none optional:
 - Digests are extractive and free by default; the bot's `generateText`
   writes at most one model digest per stream turn, in the background, and
   one when a new topic starts. Both are redacted.
+- Desktop (`src/lib/single-stream.ts`, `ChatView` `StreamEarlierTopics`):
+  the bot opens at its newest segment (`botOpensTo`); earlier topics load
+  above it once the live one is read back to its start, the previous one at
+  once, older ones on scroll or click, each under a "New topic" divider; a
+  link or search hit in an earlier topic opens the stream and loads back to
+  it at once (`isEarlierSegment`, `useSegmentTranscript` with `around`), a
+  notification opens the stream and the activity pill points at the topic;
+  once drawn, earlier topics stay mounted for that live topic
+  (`useStreamAnchor` keeps the reader still as they grow); ⌘F searches the
+  newest 20 topics. An earlier topic is read in place (its own rows context, drawn
+  busy: no edit, regenerate or version switch); Reply quotes it into the
+  live composer as a citation. New topic: the header button
+  (`data-new-topic`) and the bot row menu. Threads outside the stream
+  (confidential, bot-opened, hidden) open alone with the way back.
 - Tests: `shared/single-stream.test.ts`, `server/single-stream.test.ts`,
   `server/single-stream.e2e.test.ts`, PT-5 in
   `server/org-private-threads.e2e.test.ts`,
-  `server/drivers/agents-catalog-single-stream.test.ts`.
+  `server/drivers/agents-catalog-single-stream.test.ts`,
+  `src/lib/single-stream.test.ts`, `src/components/ChatView.stream.test.ts`,
+  `src/lib/use-segment-transcript.test.ts`.
 
 ## Person panel and hidden sidebar entries
 
@@ -3133,21 +3149,23 @@ rules, covered by `shared/presence.test.ts`, `server/presence.test.ts`,
 - The phone apps neither send heartbeats nor show the dot yet; a phone's
   open stream counts as connected (online for 5 minutes, then away).
 
-## Thread mode is on by default
+## Single stream is the default (thread mode off, 2026-10-17)
 
-Thread mode (Settings > Appearance > Show threads: the thread picker in the
-chat header, thread lists and "new thread" controls, and nothing under a bot
-row when it is off) is ON for a person who never set it (JC, 2026-10-08).
-The preference is the renderer's `omb-show-threads` in localStorage
-(`src/lib/thread-preferences.ts`, `SHOW_THREADS_DEFAULT`, covered by
-`src/lib/thread-preferences.test.ts`); on an organization server it travels
-as a synced key (`shared/user-preferences.ts`, `/api/me/preferences`), where
-an absent key means unset. The server holds no default of its own, so the
-renderer fallback is the single source of truth. The switch writes "1" or "0";
-unset (key missing, storage unreadable, no storage) is on, any stored value
-other than "1" keeps reading as off, so nobody who turned it off is moved. Do
-not seed the key at first run or in onboarding; leave it unset. The phone
-apps keep their own fallback (`ios/`).
+Thread mode (Settings > Appearance > Conversation threads: One conversation,
+in the header, or in the sidebar) is OFF for a person who never set it (JC,
+2026-10-17: "this will be the default mode"; before that it was on). Off is
+the single stream: one conversation per bot (section "Single stream when
+threads are off" below). The preference is the renderer's `omb-show-threads`
+in localStorage (`src/lib/thread-preferences.ts`, `SHOW_THREADS_DEFAULT =
+false`, covered by `src/lib/thread-preferences.test.ts`); on an organization
+server it travels as a synced key (`shared/user-preferences.ts`,
+`/api/me/preferences`), where an absent key means unset. The server holds no
+default of its own, so the renderer fallback is the single source of truth.
+The switch writes "1" or "0"; unset (key missing, storage unreadable, no
+storage) is off, "1" is on, any other stored value is off, so whoever turned
+threads on keeps them. Do not seed the key at first run or in onboarding;
+leave it unset. The phone apps keep their own fallback (`ios/`, still on until
+their stream UI lands).
 
 ## Sidebar sections are personal
 

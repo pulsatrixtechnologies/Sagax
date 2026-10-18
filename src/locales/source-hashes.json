@@ -12573,7 +12573,15 @@
       "voiceMode.progress.teammate": "c0966d38d1b980f28ffe36f17f6b7ceca34abc99e4428758732ee949278a1831",
       "voiceMode.progress.work": "bcc039e853101b71db491d69ddfe164212faf18ccbfcf793f559ebb2560b8448",
       "voiceMode.progress.still": "3b0da9b06237ee47d63c7170edb7cd8d8ee10c4ff38a7b6763e3a048868aac09",
-      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51"
+      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51",
+      "stream.newTopic": "ed7c2b116cadd98ad5c992e49af50554d6dffc11925222bf376c9e0e551d54c4",
+      "stream.newTopicAria": "73d7b09a25eaa1c1e5da34259cf23212377785b1c60bf4e04ea1d63b1cae52bc",
+      "stream.divider": "0af5583c42f506445ff89661157dfe9157df1f3ed8315d7451a355fd0d7b9ccd",
+      "stream.showEarlierTopic": "62dc2a471d4e58b54d4621edc7b9526d027f905aa94cfd5f51cac8885cb9ef1d",
+      "stream.showEarlierInTopic": "828781f193d25f71bdd81cb105b1cea246ad98a9bfe23bdf651883be14b0fba5",
+      "stream.topicFailed": "e8715760c11fba2a5e3e3f049c4fd98d1dab271f54cca446400187909b23fe93",
+      "stream.newActivity": "015074b7ce8b77784b980ad331df4ee579fd876c7b0d4622a25cdbe16024f7a4",
+      "settings.threadsView.single": "5fc383ada2db8a98fcee570486fb9a69616af5811fc227eeec2f3d57b1b40b5d"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

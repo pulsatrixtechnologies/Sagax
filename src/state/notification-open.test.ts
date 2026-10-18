@@ -36,7 +36,9 @@ class FixtureNotification {
 
 // The person is in another bot's chat. Scout was left on "left-behind",
 // where a routine's reply landed unread; the person last wrote in
-// "main-chat"; "finished" is the side job the notification is about.
+// "main-chat"; "finished" is the side job the notification is about. With
+// threads hidden, "left-behind" and "main-chat" are the topics of Scout's
+// single stream, "main-chat" the newest; the side job opens alone.
 const elsewhere: BotAnnouncement = {
   id: "other", threadId: "other-chat", name: "Other", title: "", description: "", notifications: true, unread: false,
   color: "blue", modelSelection: { instanceId: "fake", model: "m" }, tasks: [{ threadId: "other-chat", title: "Chat", createdAt: 1 }],
@@ -47,7 +49,8 @@ const scout: BotAnnouncement = {
   tasks: [
     { threadId: "left-behind", title: "Routine report", createdAt: 1, unread: true },
     { threadId: "main-chat", title: "Main chat", createdAt: 2 },
-    { threadId: "finished", title: "Side job", createdAt: 3, unread: true },
+    // a job the bot opened on itself: outside the single stream
+    { threadId: "finished", title: "Side job", createdAt: 3, unread: true, openedBy: { botId: "scout", name: "Scout", at: 3 } },
   ],
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
@@ -223,6 +226,31 @@ describe("opening a bot with threads hidden", () => {
     expect(reads()).toEqual(["finished"]);
     expect(unread("left-behind")).toBe(true);
     expect(state.focusMessage).toMatchObject({ threadId: "finished", messageId: "hit" });
+  });
+});
+
+describe("the single stream (threads hidden, the default)", () => {
+  it("opens a notification about an earlier topic at the newest topic, never by a switch to it", async () => {
+    await threadsShown(false);
+    const frame: ServerFrame = { kind: "notify", notification: { kind: "done", botId: "scout", botName: "Scout", threadId: "left-behind", title: "Scout", body: "Report ready." } };
+    stream().send(frame, "run:2");
+    await settle();
+    FixtureNotification.shown.at(-1)!.onclick!();
+    await settle();
+    expect(sent().filter((request) => request.startsWith("/api/bots/scout/tasks/left-behind"))).toHaveLength(0);
+    expect(scoutNow().threadId).toBe("main-chat");
+  });
+
+  it("lands on a search hit in an earlier topic in the stream: the newest topic, focused on the hit", async () => {
+    await threadsShown(false);
+    await landOnSearchHit({
+      botId: "scout", name: "Scout", threadId: "left-behind", messageId: "old-hit", role: "bot", kind: "text", at: 1,
+      snippet: "the routine report", matchStart: 4, matchLength: 7, onActivePath: true,
+    }, state, dispatch, false);
+    await settle();
+    expect(sent().filter((request) => request.startsWith("/api/bots/scout/tasks/left-behind"))).toHaveLength(0);
+    expect(scoutNow().threadId).toBe("main-chat");
+    expect(state.focusMessage).toMatchObject({ threadId: "left-behind", messageId: "old-hit" });
   });
 });
 

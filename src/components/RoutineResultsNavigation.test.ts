@@ -147,7 +147,9 @@ describe("routine results navigation", () => {
     fixture.showThreads = false;
     const { buttons } = details();
     buttons.get("Open results thread")!.onClick!();
-    expect(fixture.dispatch.mock.calls).toEqual([[{ type: "switchTask", botId: bot.id, threadId: "original-source" }]]);
+    // "original-source" is an earlier topic of the single stream: the stream
+    // opens at its newest topic, the earlier one drawn above.
+    expect(fixture.dispatch.mock.calls).toEqual([[{ type: "switchTask", botId: bot.id, threadId: "new-results" }]]);
     fixture.dispatch.mockClear();
     // Open thread, from a run whose bot is on its results thread.
     fixture.state!.bots = [{ ...bot, threadId: "new-results" }];

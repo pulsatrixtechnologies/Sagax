@@ -70,6 +70,7 @@ import { hiddenKeySet, readSidebarHidden, useSidebarHidden } from "@/lib/sidebar
 import { readLastBotSection, rememberBotSection } from "@/lib/last-bot-section";
 import { approvalWithdrawKey, showNotification, withdrawNotification, type NotificationTarget } from "@/lib/notify";
 import { singleStreamTurnField, useShowThreads } from "@/lib/thread-preferences";
+import { isEarlierSegment, streamHomeThread } from "@/lib/single-stream";
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
 import { t } from "@/lib/i18n";
@@ -1653,7 +1654,7 @@ export type Action =
       /** Local UI recovery hook for voice flows. Never sent to the server. */
       onError?: (message: string) => void;
     }
-  | { type: "newTask"; botId: string; projectId?: string; cwd?: string; confidential?: boolean; onCreated?: () => void; onError?: (message: string) => void }
+  | { type: "newTask"; botId: string; projectId?: string; cwd?: string; confidential?: boolean; /** "New topic" in the single stream */ stream?: boolean; onCreated?: () => void; onError?: (message: string) => void }
   /** One way only (src/lib/confidential-thread.ts): the server refuses any
    * change back, so the client has no action for it. */
   | { type: "makeTaskConfidential"; botId: string; threadId: string; onDone?: () => void; onError?: (message: string) => void }
@@ -1769,7 +1770,9 @@ interface NotificationThreadOwner {
   threadId: string;
   /** A bot's main thread (WireBot.mainThreadId); a room has none. */
   mainThreadId?: string;
-  tasks?: Array<{ threadId: string }>;
+  /** The fields the single stream reads (src/lib/single-stream.ts) ride along
+   * when the caller has them; a room's tasks need only their ids. */
+  tasks?: Array<{ threadId: string; createdAt?: number; routineRunId?: unknown; hidden?: unknown; confidential?: unknown; openedBy?: unknown; parallelOf?: unknown }>;
 }
 
 interface NotificationRoutingState {
@@ -1830,7 +1833,10 @@ export function openNotificationTarget(
   const known =
     bot.threadId === target.threadId ||
     (bot.tasks ?? []).some((task) => task.threadId === target.threadId);
-  if (known && target.threadId) openBotThread(dispatch, bot, target.threadId, threadsShown);
+  // The single stream: an older segment is part of the one conversation, so
+  // the bot opens at its newest segment and the stream scrolls back to it.
+  if (known && target.threadId && !threadsShown && isEarlierSegment(bot.tasks, target.threadId, bot.threadId)) openBot(dispatch, bot, threadsShown);
+  else if (known && target.threadId) openBotThread(dispatch, bot, target.threadId, threadsShown);
   else openBot(dispatch, bot, threadsShown);
 }
 
@@ -1840,6 +1846,9 @@ export function openNotificationTarget(
  * opened is left on the next open; one this window has no row for yet
  * keeps the selection. */
 export function botOpensTo(bot: Pick<NotificationThreadOwner, "threadId" | "mainThreadId" | "tasks">, threadsShown: boolean): string {
+  // The single stream opens at its newest segment (src/lib/single-stream.ts).
+  const home = threadsShown ? undefined : streamHomeThread(bot.tasks, bot.threadId);
+  if (home) return home;
   return !threadsShown && bot.mainThreadId && bot.tasks?.some((task) => task.threadId === bot.mainThreadId)
     ? bot.mainThreadId : bot.threadId;
 }
@@ -4745,7 +4754,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // A new task's thread is empty, so only the switch needs a page.
           void ready.then(() => api<{ bot: Bot }>(action.type === "newTask"
             ? `/api/bots/${action.botId}/tasks`
-            : `/api/bots/${action.botId}/tasks/${action.threadId}${action.whole ? "" : `?messages=${MESSAGE_PAGE_SIZE}`}`, { method: "POST", body: JSON.stringify(action.type === "newTask" ? { projectId: action.projectId, cwd: action.cwd, ...(action.confidential !== undefined ? { confidential: action.confidential } : {}) } : {}) }))
+            : `/api/bots/${action.botId}/tasks/${action.threadId}${action.whole ? "" : `?messages=${MESSAGE_PAGE_SIZE}`}`, { method: "POST", body: JSON.stringify(action.type === "newTask" ? { projectId: action.projectId, cwd: action.cwd, ...(action.confidential !== undefined ? { confidential: action.confidential } : {}), ...(action.stream ? { stream: true } : {}) } : {}) }))
             .then((r) => {
               if (action.type === "newTask") action.onCreated?.();
               if (!r?.bot || navigation.get(action.botId) !== revision) return;

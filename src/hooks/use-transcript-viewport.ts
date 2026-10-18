@@ -325,6 +325,9 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
     following: follow,
     /** Read outside render (an observer callback): whether the pane follows the bottom. */
     followRef,
+    /** Stop following the bottom: a jump the caller makes itself (the single
+     * stream's earlier topics) must not be pulled back by the next growth. */
+    stopFollowing: () => setBottomFollow(false),
     windowedMessages,
     hiddenCount,
     laterCount,

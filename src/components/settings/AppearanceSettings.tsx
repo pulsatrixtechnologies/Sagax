@@ -150,7 +150,7 @@ function ThreadsViewRow() {
         ariaLabel={t("settings.threadsView.title")}
         onChange={chooseThreadsView}
         options={[
-          { value: "hidden", label: t("settings.threadsView.hidden") },
+          { value: "hidden", label: t("settings.threadsView.single") },
           { value: "header", label: t("settings.threadsLocation.header") },
           { value: "sidebar", label: t("settings.threadsLocation.sidebar") },
         ]}
