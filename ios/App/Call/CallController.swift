@@ -707,6 +707,7 @@ final class CallController: ObservableObject {
         let actions = conversation.settle(messages: messages, botName: name, thinking: engine.state.phase == .thinking, playerBusy: player.busy, duplex: callSettings.fullDuplex, botBusy: busy)
         interrupted = conversation.interrupted
         unheard = conversation.unheard
+        var restSaid = false
         for action in actions {
             switch action {
             case let .say(prompt, speakerId):
@@ -716,12 +717,18 @@ final class CallController: ObservableObject {
                 player.speaker = speaker(speakerId)
                 engine.replyDoneNow(text)
                 // cut at the sentence cap: say once where the rest is
-                if SpokenText.spokenAnswer(text).cut == .length, let rest = restInChatWords(messages: messages) {
+                if !restSaid, SpokenText.spokenAnswer(text).cut == .length, let rest = restInChatWords(messages: messages) {
+                    restSaid = true
                     engine.speakNow(rest)
                 }
             case let .reply(text, speakerId):
                 player.speaker = speaker(speakerId)
-                engine.speakNow(SpokenText.spokenAnswer(text).text)
+                let answer = SpokenText.spokenAnswer(text)
+                engine.speakNow(answer.text)
+                if !restSaid, answer.cut == .length, let rest = restInChatWords(messages: messages) {
+                    restSaid = true
+                    engine.speakNow(rest)
+                }
             case let .narrate(text, speakerId):
                 player.speaker = speaker(speakerId)
                 engine.speakNow(text)

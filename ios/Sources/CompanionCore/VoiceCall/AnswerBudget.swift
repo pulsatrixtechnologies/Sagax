@@ -22,39 +22,85 @@ extension SpokenText {
     /// The most sentences a call says of one answer.
     public static let spokenSentencesMax = 4
 
+    /// The text with its code (a fenced block, even unfinished, and inline
+    /// code) blanked out, same length: code counts for nothing.
+    static func withoutCode(_ text: [Character]) -> [Character] {
+        var out = text
+        var i = 0
+        func fence(at j: Int) -> Character? {
+            guard j + 2 < text.count else { return nil }
+            for mark in ["`", "~"] as [Character] where text[j] == mark && text[j + 1] == mark && text[j + 2] == mark { return mark }
+            return nil
+        }
+        while i < text.count {
+            if let mark = fence(at: i) {
+                var j = i + 3
+                while j < text.count && fence(at: j) != mark { j += 1 }
+                let stop = min(text.count, j + 3)
+                for k in i..<stop { out[k] = " " }
+                i = stop
+                continue
+            }
+            if text[i] == "`" {
+                var j = i + 1
+                while j < text.count && text[j] != "`" && !text[j].isNewline { j += 1 }
+                if j < text.count && text[j] == "`" {
+                    for k in i...j { out[k] = " " }
+                    i = j + 1
+                    continue
+                }
+            }
+            i += 1
+        }
+        return out
+    }
+
     /// The part of an answer a call says aloud, and why it stops early
-    /// (nil: said whole).
+    /// (nil: said whole). A quoted question, or a rhetorical one of one or
+    /// two words, does not end it.
     public static func spokenAnswer(_ text: String, max: Int = spokenSentencesMax) -> (text: String, cut: SpokenAnswerCut?) {
         let spoken = Array(spokenPart(text))
+        let scan = withoutCode(spoken)
+        let closing: Set<Character> = ["\"", "'", "»", "”", ")", "]"]
+        let quotes: Set<Character> = ["\"", "'", "»", "”"]
         var count = 0
         var from = 0
         var i = 0
         func hasLetter(_ slice: ArraySlice<Character>) -> Bool { slice.contains { $0.isLetter } }
-        while i < spoken.count {
-            let ch = spoken[i]
+        func words(_ slice: ArraySlice<Character>) -> Int {
+            String(slice).split { !($0.isLetter || $0.isNumber || $0 == "'" || $0 == "’" || $0 == "-") }.count
+        }
+        while i < scan.count {
+            let ch = scan[i]
             var marks = ""
             var end = i
-            if ch == "\n" {
+            var quotedAfter = false
+            if ch.isNewline {
                 end = i + 1
             } else if ".!?…".contains(ch) {
                 var j = i
-                while j < spoken.count, ".!?…".contains(spoken[j]) { marks.append(spoken[j]); j += 1 }
-                while j < spoken.count, "\"'»)]".contains(spoken[j]) { j += 1 }
+                while j < scan.count, ".!?…".contains(scan[j]) { marks.append(scan[j]); j += 1 }
+                var lastQuote = false
+                while j < scan.count, closing.contains(scan[j]) { lastQuote = quotes.contains(scan[j]); j += 1 }
                 // a boundary only before a space or the end
-                if j < spoken.count && !spoken[j].isWhitespace { i = j; continue }
+                if j < scan.count && !scan[j].isWhitespace { i = j; continue }
                 end = j
-                if marks == "." && SentenceStream.isAbbreviationDot(spoken, dot: i) { i = j; continue }
+                if marks == "." && SentenceStream.isAbbreviationDot(scan, dot: i) { i = j; continue }
+                var k = j
+                while k < scan.count, scan[k].isWhitespace, !scan[k].isNewline { k += 1 }
+                quotedAfter = lastQuote || (k > j && k < scan.count && (scan[k] == "»" || scan[k] == "”"))
             } else {
                 i += 1
                 continue
             }
             let start = i
             i = end
+            let sentence = scan[from..<start]
             // a sentence needs words: a lone "1." or an empty line is not one
-            if !hasLetter(spoken[from..<start]) { from = end; continue }
+            if !hasLetter(sentence) { from = end; continue }
             from = end
             count += 1
-            let question = marks.contains("?")
+            let question = marks.contains("?") && !quotedAfter && words(sentence) > 2
             if !question && count < max { continue }
             var keep = end
             while keep < spoken.count, spoken[keep].isWhitespace { keep += 1 }

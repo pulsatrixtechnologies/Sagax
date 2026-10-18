@@ -30,6 +30,29 @@ describe("how much of an answer a call says", () => {
     expect(spokenAnswer("It is down. Should I restart it?")).toEqual({ text: "It is down. Should I restart it?", cut: null });
   });
 
+  it("a quoted or a short rhetorical question does not end it", () => {
+    expect(spokenAnswer('You asked "is it done?" Yes, it is done.').cut).toBeNull();
+    expect(spokenAnswer("Tu demandes « est-ce fait ? » Oui, c'est fait.").cut).toBeNull();
+    expect(spokenAnswer("Pourquoi? Parce que le disque est plein.").cut).toBeNull();
+    expect(spokenAnswer("Pourquoi? Parce que le disque est plein.").text).toBe("Pourquoi? Parce que le disque est plein.");
+  });
+
+  it("code counts for nothing: its lines and marks are never spoken", () => {
+    const answer = "Run this:\n```\nnpm ci\nnpm test\n```\nThen it works. Done.";
+    expect(spokenAnswer(answer)).toEqual({ text: answer, cut: null });
+    expect(spokenAnswer("Use `a ? b : c` here. It is fine.").cut).toBeNull();
+  });
+
+  it("a CRLF line ends a sentence like a line break", () => {
+    expect(spokenAnswer("One\r\nTwo\r\nThree\r\nFour\r\nFive").cut).toBe("length");
+  });
+
+  it("a long run of dots is one linear pass", () => {
+    const started = performance.now();
+    spokenAnswer(`${".".repeat(50_000)}x`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("counts a line of a list as a sentence, never a list number or an abbreviation", () => {
     const list = "Three things:\n1. the printer\n2. the badge reader\n3. the camera\n4. the door";
     expect(spokenAnswer(list).text).toBe("Three things:\n1. the printer\n2. the badge reader\n3. the camera\n");

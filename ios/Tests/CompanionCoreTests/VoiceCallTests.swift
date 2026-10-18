@@ -1142,6 +1142,23 @@ final class AnswerBudgetTests: XCTestCase {
         XCTAssertEqual(SpokenText.spokenAnswer("The rate is 3.5 percent. Two. Three. Four. Five.").text, "The rate is 3.5 percent. Two. Three. Four. ")
     }
 
+    func testQuotedOrShortRhetoricalQuestionsDoNotEndIt() {
+        XCTAssertNil(SpokenText.spokenAnswer("You asked \"is it done?\" Yes, it is done.").cut)
+        XCTAssertNil(SpokenText.spokenAnswer("Tu demandes « est-ce fait ? » Oui, c'est fait.").cut)
+        XCTAssertEqual(SpokenText.spokenAnswer("Pourquoi? Parce que le disque est plein.").text, "Pourquoi? Parce que le disque est plein.")
+    }
+
+    func testCodeCountsForNothing() {
+        let answer = "Run this:\n```\nnpm ci\nnpm test\n```\nThen it works. Done."
+        XCTAssertEqual(SpokenText.spokenAnswer(answer).text, answer)
+        XCTAssertNil(SpokenText.spokenAnswer(answer).cut)
+        XCTAssertNil(SpokenText.spokenAnswer("Use `a ? b : c` here. It is fine.").cut)
+    }
+
+    func testCrlfEndsALineLikeTheDesktop() {
+        XCTAssertEqual(SpokenText.spokenAnswer("One\r\nTwo\r\nThree\r\nFour\r\nFive").cut, .length)
+    }
+
     func testTheCutOnlyGrowsAsTheAnswerIsWritten() {
         let full = Array("One. Two. Three. Four. Five. Six? Seven.")
         var previous = ""

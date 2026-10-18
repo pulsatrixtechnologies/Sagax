@@ -29,7 +29,7 @@ import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "./PendingApproval";
 import { spokenDecision } from "@/lib/voice-mode/answers";
-import { spokenReply } from "@/lib/voice-mode/answer-budget";
+import { spokenAnswer, spokenReply } from "@/lib/voice-mode/answer-budget";
 import { activeLocale, t, tIn } from "@/lib/i18n";
 import { CallProgress, progressLocale, progressText, turnToolAuthor, turnTools } from "@/lib/voice-mode/progress";
 import { looksFrench } from "@/lib/voice-mode/turns";
@@ -424,11 +424,13 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
     // (answer-budget.ts), the follow-up below --- never said
     const lastUserText = [...messages].reverse().find((message) => message.role === "user" && !message.parallelTask)?.text;
     const restInChat = tIn(progressLocale({ lastUserText, pageLocale: activeLocale(), looksFrench }), "voiceMode.restInChat");
-    for (const reply of replies) {
+    // the "rest is in the chat" line once, after the last answer that was cut
+    const lastCut = replies.map((reply) => spokenAnswer(reply.text!).cut).lastIndexOf("length");
+    replies.forEach((reply, index) => {
       const member = members.find((candidate) => candidate.id === reply.from?.botId);
-      const said = spokenReply(reply.text!, restInChat);
+      const said = spokenReply(reply.text!, index === lastCut ? restInChat : null);
       if (said) enqueueSpeech(said, member);
-    }
+    });
     if (replies.length) progress.current.heard(Date.now());
     // No tool-chip narration: the progress tick below says the turn's lines.
   }, [approval, enqueueSpeech, group.busyBotId, group.working, members, messages, question, scheduleListen]);

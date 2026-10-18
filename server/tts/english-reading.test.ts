@@ -20,6 +20,7 @@ describe("English reading for the voice", () => {
     expect(readEnglish("Version 1.8.35 and ratio 16:9.")).toBe("Version 1.8.35 and ratio 16:9.");
     expect(readEnglish("Not a date 2026-13-45 nor 25:99.")).toBe("Not a date 2026-13-45 nor 25:99.");
     expect(readEnglish("Hello there")).toBe("Hello there");
+    expect(readEnglish("Uptime 00:45:12, it took 03:12, elapsed 13:05.")).toBe("Uptime 00:45:12, it took 03:12, elapsed 13:05.");
   });
 
   it("an automatic call reads English only when the text looks English", () => {

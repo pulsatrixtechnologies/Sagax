@@ -5,7 +5,7 @@
 // language is English, or automatic and the text looks English (more
 // English function words than French ones, at least two), on the streaming
 // speech paths (server/tts/voice-reading.ts).
-import { CLOCK, ISO_DATE } from "./french-reading.ts";
+import { CLOCK, ISO_DATE, isTimeOfDay } from "./french-reading.ts";
 
 const ENGLISH_WORDS = new Set([
   "the", "and", "is", "are", "was", "you", "your", "we", "it", "this", "that", "with", "for", "from", "have", "has",
@@ -66,9 +66,9 @@ export function readEnglish(input: string): string {
   });
   // a 24 hour time: past noon, midnight's hour, or written with a leading
   // zero; "3:30" (morning or afternoon?) and "3:30 PM" stay
-  text = text.replace(CLOCK, (whole, pre: string, hour: string, minutes: string, offset: number, all: string) => {
-    const after = all.slice(offset + whole.length);
-    if (/^\s*[ap]\.?m\b/i.test(after)) return whole;
+  text = text.replace(CLOCK, (whole, pre: string, hour: string, minutes: string, seconds: string | undefined, offset: number, all: string) => {
+    // a duration ("uptime 00:45:12", "took 03:12") or an AM/PM time stays
+    if (!isTimeOfDay(all, offset, whole, pre, hour, seconds)) return whole;
     const h = Number(hour);
     if (!(h >= 13 || h === 0 || (hour.length === 2 && hour.startsWith("0")) || (h === 12 && minutes === "00"))) return whole;
     const time = clock(hour, minutes);

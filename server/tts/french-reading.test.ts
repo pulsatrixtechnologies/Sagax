@@ -32,6 +32,15 @@ describe("French reading for the voice", () => {
     expect(readFrench("Prochaine le 2026-11-01T08:15:00Z.")).toBe("Prochaine le premier novembre 2026 à 8 heures 15 UTC.");
     expect(readFrench("Le disque est plein à 85 %, soit 3.5 To.")).toBe("Le disque est plein à 85 pour cent, soit 3,5 To.");
     expect(readFrench("Version 1.8.35, adresse 10.0.0.1, format 16:9.")).toBe("Version 1.8.35, adresse 10.0.0.1, format 16:9.");
+    expect(readFrench("Python 3.12, iOS 18.2, Sagax 0.5, la v1.2 et la version 2.1.")).toBe("Python 3.12, iOS 18.2, Sagax 0.5, la v1.2 et la version 2.1.");
+  });
+
+  it("never reads a duration, a score or a verse as a time of day", () => {
+    expect(readFrench("Durée 00:02:13.")).toBe("Durée 00:02:13.");
+    expect(readFrench("Le temps : 01:30, en 03:12.")).toBe("Le temps : 01:30, en 03:12.");
+    expect(readFrench("Jean 3:16 et le score 2:10.")).toBe("Jean 3:16 et le score 2:10.");
+    expect(readFrench("Rendez-vous à 3:30, vers 9:15.")).toBe("Rendez-vous à 3 heures 30, vers 9 heures 15.");
+    expect(readFrench("Il est 3:30 PM.")).toBe("Il est 3:30 PM.");
     expect(readFrench("Pas une date 2026-13-45 ni 25:99.")).toBe("Pas une date 2026-13-45 ni 25:99.");
   });
 

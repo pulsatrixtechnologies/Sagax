@@ -11,7 +11,9 @@
 //   line per item). The words after the cap stay in the chat, and the call
 //   says once that the rest is there (`voiceMode.restInChat`).
 // - A question ends what is said: the person answers it. A second
-//   question, or anything after the first one, stays in the chat.
+//   question, or anything after the first one, stays in the chat. A quoted
+//   question or a rhetorical one of one or two words ("Why? Because...")
+//   is no such question. Code (fenced or inline) counts for nothing.
 //
 // The cap applies to the whole text so far and keeps a prefix of it: once
 // the cut is reached nothing after it is ever kept, so an answer still being
@@ -30,28 +32,48 @@ export const SPOKEN_SENTENCES_MAX = 4;
 export type SpokenAnswerCut = "length" | "question" | null;
 
 /** A sentence end: ., !, ?, … (closing quotes kept) before a space or the
- * end, or a line break. */
-const END = /([.!?…]+)["'»)\]]*(?=\s|$)|\n/g;
+ * end, or a line break. A match starts only at the first mark of a run, so
+ * a long run of dots costs one pass. */
+const END = /(?<![.!?…])([.!?…]+)["'»”)\]]*(?=\s|$)|\n/g;
+/** A closing quote right after a question mark: a quoted question. */
+const QUOTED = /^["'»”]|^[ \t\u00a0]+[»”]/;
+
+/** The text with its code (a fenced block, even unfinished, and inline
+ * code) blanked out, same length: code is never spoken, so its lines and
+ * marks count for nothing. */
+function withoutCode(text: string): string {
+  const blank = (code: string) => code.replace(/[^\n]/g, " ").replace(/\n/g, " ");
+  return text
+    .replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, blank)
+    .replace(/`[^`\n]*`/g, blank);
+}
 
 /** The part of an answer a call says aloud, and why it stops early. */
 export function spokenAnswer(text: string, max = SPOKEN_SENTENCES_MAX): { text: string; cut: SpokenAnswerCut } {
   const spoken = spokenPart(text);
+  const scan = withoutCode(spoken);
   let count = 0;
   let from = 0;
   END.lastIndex = 0;
-  for (let match = END.exec(spoken); match; match = END.exec(spoken)) {
+  for (let match = END.exec(scan); match; match = END.exec(scan)) {
     const marks = match[1];
     const end = match.index + match[0].length;
     // an abbreviation, an initial or a list number ("1.") ends nothing
-    if (marks === "." && isAbbreviationDot(spoken, match.index)) continue;
+    if (marks === "." && isAbbreviationDot(scan, match.index)) continue;
     // a sentence needs words: a lone "1." or an empty line is not one
-    if (!/\p{L}/u.test(spoken.slice(from, match.index))) {
+    const sentence = scan.slice(from, match.index);
+    if (!/\p{L}/u.test(sentence)) {
       from = end;
       continue;
     }
     from = end;
     count += 1;
-    const question = Boolean(marks?.includes("?"));
+    // a real question ends what is said; a quoted one ("is it done?") or a
+    // short rhetorical one ("Pourquoi? Parce que…") does not
+    const question = Boolean(marks?.includes("?"))
+      && !/["'»”]$/.test(match[0])
+      && !QUOTED.test(scan.slice(end))
+      && (sentence.match(/[\p{L}\p{N}'’-]+/gu)?.length ?? 0) > 2;
     if (!question && count < max) continue;
     // the cut keeps the space after it: the text so far only ever grows,
     // so a sentence stream fed with it never starts over
