@@ -460,25 +460,38 @@ describe("encrypted full workspace backups", () => {
     const dir = (path: string) => ({ path, type: "directory", size: 0, mode: 0o700 });
     const confidential = "data-scopes/bot/t-0123456789abcdef";
     const person = "data-scopes/bot/p-0123456789abcdef";
+    // another spelling of the same folder, and an empty thread folder alone
+    const cased = "data-scopes/other/T-fedcba9876543210";
+    const empty = "data-scopes/bot/t-00000000000000ff";
     const manifest = {
       ...base,
-      entries: [dir("data-scopes"), dir("data-scopes/bot"), dir(confidential), file(`${confidential}/sheet.json`, sheet), dir(person), file(`${person}/sheet.json`, other)],
-      summary: { ...base.summary, directories: 4, files: 2, bytes: Buffer.byteLength(sheet) + Buffer.byteLength(other) },
+      entries: [dir("data-scopes"), dir("data-scopes/bot"), dir(confidential), file(`${confidential}/sheet.json`, sheet), dir(person), file(`${person}/sheet.json`, other),
+        dir("data-scopes/other"), dir(cased), file(`${cased}/sheet.json`, sheet), dir(empty)],
+      summary: { ...base.summary, directories: 7, files: 3, bytes: 2 * Buffer.byteLength(sheet) + Buffer.byteLength(other) },
     };
     const archive = encryptedPayload(source, Buffer.concat([
       tarEntry("manifest.json", "File", JSON.stringify(manifest)), tarEntry("data", "Directory"), tarEntry("data/data-scopes", "Directory"),
       tarEntry("data/data-scopes/bot", "Directory"), tarEntry(`data/${confidential}`, "Directory"), tarEntry(`data/${confidential}/sheet.json`, "File", sheet),
-      tarEntry(`data/${person}`, "Directory"), tarEntry(`data/${person}/sheet.json`, "File", other), Buffer.alloc(1024),
+      tarEntry(`data/${person}`, "Directory"), tarEntry(`data/${person}/sheet.json`, "File", other),
+      tarEntry("data/data-scopes/other", "Directory"), tarEntry(`data/${cased}`, "Directory"), tarEntry(`data/${cased}/sheet.json`, "File", sheet),
+      tarEntry(`data/${empty}`, "Directory"), Buffer.alloc(1024),
     ]));
     const target = directory();
     // the destination's own confidential Data is not carried into the restored workspace either
     mkdirSync(join(target, confidential), { recursive: true });
     writeFileSync(join(target, confidential, "sheet.json"), "DESTINATION_SHEET");
     const staged = await stageWorkspaceBackup(target, archive, { password: PASSWORD });
+    // the staged copy keeps nothing of it, and the preview counts nothing of it
+    expect(staged.summary).toMatchObject({ files: 1, directories: 4, bytes: Buffer.byteLength(other) });
+    const staging = join(target, ".backups", staged.id, "staged");
+    const stagedPaths: string[] = readJson(join(staging, "manifest.json")).entries.map((entry: { path: string }) => entry.path);
+    expect(stagedPaths.filter((path) => /\/t-/i.test(path))).toEqual([]);
+    for (const path of [confidential, cased, empty]) expect(existsSync(join(staging, "data", path))).toBe(false);
+    expect(readStagedWorkspaceBackup(target, staged.id).summary).toMatchObject({ files: 1 });
     commitPendingWorkspaceRestore(target, staged.id);
     expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
     expect(readFileSync(join(target, person, "sheet.json"), "utf8")).toBe(other);
-    expect(existsSync(join(target, confidential))).toBe(false);
+    for (const path of [confidential, cased, empty]) expect(existsSync(join(target, path))).toBe(false);
   });
 
   it("still restores an archive from a release that exported hook tokens, without installing them", async () => {

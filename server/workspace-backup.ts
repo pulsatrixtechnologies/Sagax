@@ -730,7 +730,7 @@ export async function stageWorkspaceBackup(dataDir: string, archivePath: string,
     const staged = join(job.directory, "staged");
     folder(staged);
     await tar.x({ file: plaintext, cwd: staged, strict: true, preservePaths: false, umask: 0o077, noChmod: true, brotli: false, zstd: false });
-    const manifest = validateStaged(staged, expected);
+    const manifest = withoutConfidentialDataScopes(staged, validateStaged(staged, expected));
     const versions = [manifest.summary.appVersion, options.currentAppVersion ?? ""].map((version) => /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version)?.slice(1).map(Number));
     if (versions[0] && versions[1]) {
       for (let i = 0; i < 3; i++) {
@@ -745,6 +745,28 @@ export async function stageWorkspaceBackup(dataDir: string, archivePath: string,
     rmSync(job.directory, { recursive: true, force: true });
     throw error;
   }
+}
+
+/** An archive from a release that exported a confidential thread's Data
+ * folder (its sheet) passed its checks whole; the folder now leaves the
+ * staged copy at once, with its manifest entries and summary counts, so
+ * the restore preview counts nothing of it and no staged file keeps it on
+ * disk while a restore receipt holds the job (prepareRestore filters it
+ * too). */
+function withoutConfidentialDataScopes(staged: string, manifest: Manifest): Manifest {
+  const dropped = manifest.entries.filter((entry) => confidentialDataScopePath(entry.path));
+  if (!dropped.length) return manifest;
+  for (const entry of dropped) rmSync(join(staged, "data", entry.path), { recursive: true, force: true });
+  const entries = manifest.entries.filter((entry) => !confidentialDataScopePath(entry.path));
+  const summary = {
+    ...manifest.summary,
+    files: entries.filter((entry) => entry.type === "file").length,
+    directories: entries.filter((entry) => entry.type === "directory").length,
+    bytes: entries.reduce((total, entry) => total + (entry.type === "file" ? entry.size : 0), 0),
+  };
+  const next = { ...manifest, entries, summary };
+  writeJson(join(staged, "manifest.json"), next);
+  return validateStaged(staged);
 }
 
 export function readStagedWorkspaceBackup(dataDir: string, id: string): WorkspaceBackupPrivateMetadata & { id: string } {

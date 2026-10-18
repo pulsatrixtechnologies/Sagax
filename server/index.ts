@@ -174,7 +174,7 @@ import { createDataRoutes } from "./data/routes.ts";
 import { DataSheetRegistry } from "./data/sheet.ts";
 import { erasePersonData } from "./data/erase.ts";
 import { erasePersonThreadFiles, planPersonThreadErasure } from "./person-thread-erase.ts";
-import { dataFrameAllowed, dataScopeAudience, dataScopeBotId, dataScopeFolder, dataScopeKey, dataScopeKind, dataScopeThread, forgetDataScopes, organizationExportRoots, setConfidentialThreadResolver, threadScopeKeyFor, type DataScopeKind } from "./data/scope.ts";
+import { dataFrameAllowed, dataScopeAudience, dataScopeBotId, dataScopeFolder, dataScopeKey, dataScopeKind, dataScopeThread, forgetDataScopes, dataExportRootsFor, setConfidentialThreadResolver, threadScopeKeyFor, type DataScopeKind } from "./data/scope.ts";
 import { DataFailure } from "./data/types.ts";
 import { DATA_DOWNLOADS_DIR } from "./data/engine.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
@@ -4585,24 +4585,25 @@ function dataSelfAnswerRoots(bot: BotRecord, threadId: string): string[] {
 /** Where a bot's exports may land, most preferred first: the person's
  * Downloads when it exists, the bot's working folder, its workspace. On an
  * organization server the bot's workspace for its owner, a person's own
- * scope folder for anyone else (data/scope.ts organizationExportRoots), or
- * a confidential thread's own folder. */
+ * scope folder for anyone else (data/scope.ts dataExportRootsFor), and on
+ * any server a confidential thread's own folder only. */
 function dataExportRoots(bot: { id: string; cwd?: string }, scopeKey: string = bot.id): string[] {
-  if (IDENTITY.kind === "perspicax") {
-    // 2026-10-17 (follow-up of #696): a person's export lands in their own
-    // scope folder only, never the shared workspace nor a thread folder the
-    // bot's owner may reach
-    const kind = dataScopeKind(scopeKey);
-    const thread = kind === "thread" ? dataScopeThread(scopeKey) : undefined;
-    return organizationExportRoots({
-      kind,
-      workspace: workspaceDir(bot.id),
-      scopeFolder: dataScopeFolder(scopeKey),
-      threadFolder: thread ? join(TASK_WORKSPACES_DIR, bot.id, thread) : null,
-    });
-  }
+  // 2026-10-17 (follow-up of #696): on an organization server a person's
+  // export lands in their own scope folder only; a confidential thread's,
+  // on any server, in its own folder only (2026-10-18, never the bot's
+  // workspace, which every workspace backup holds)
+  const kind = dataScopeKind(scopeKey);
+  const thread = kind === "thread" ? dataScopeThread(scopeKey) : undefined;
   const downloads = join(homedir(), "Downloads");
-  return [...(existsSync(downloads) ? [downloads] : []), ...(bot.cwd ? [bot.cwd] : []), workspaceDir(bot.id)];
+  return dataExportRootsFor({
+    organization: IDENTITY.kind === "perspicax",
+    kind,
+    workspace: workspaceDir(bot.id),
+    scopeFolder: dataScopeFolder(scopeKey),
+    threadFolder: thread ? join(TASK_WORKSPACES_DIR, bot.id, thread) : null,
+    downloads: existsSync(downloads) ? downloads : null,
+    ...(bot.cwd ? { cwd: bot.cwd } : {}),
+  });
 }
 let dataUnavailableLogged = false;
 /** The Data tools for a turn: the harness proxy with a turn-scoped

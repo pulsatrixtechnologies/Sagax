@@ -37,7 +37,7 @@
 //         sheet of its own (?thread=), its owner's only, kept outside the
 //         bot's folder and wiped with the thread
 //   CT-14 (follow-up of #689) the workspace backup an admin downloads holds
-//         nothing of a confidential thread's Data (its sheet), and restoring
+//         nothing of a confidential thread's Data (its sheet, its export), and restoring
 //         that archive brings none of it back
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -303,6 +303,10 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     const thread = mine.body.task.threadId as string;
     const run = await api("POST", `/api/bots/${botId}/data/run?thread=${thread}`, bob, { sql: `SELECT '${SECRET}-SHEET' AS s` });
     expect(run.status, run.text).toBe(200);
+    // an export of it lands in the thread's own folder, which no backup holds
+    const exported = await api("POST", `/api/bots/${botId}/data/export?thread=${thread}`, bob, { cardId: run.body.card.id, format: "csv" });
+    expect(exported.status, exported.text).toBe(200);
+    expect(readFileSync(exported.body.path, "utf8")).toContain(`${SECRET}-SHEET`);
     // the bot's own sheet (an ordinary card) is still backed up
     const ordinary = await api("POST", `/api/bots/${botId}/data/run`, bob, { sql: "SELECT 'ORDINARY-SHEET' AS s" });
     expect(ordinary.status, ordinary.text).toBe(200);

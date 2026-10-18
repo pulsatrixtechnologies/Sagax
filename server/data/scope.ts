@@ -183,6 +183,25 @@ export function organizationExportRoots(input: {
   return [join(input.scopeFolder, DATA_EXPORTS_DIR)];
 }
 
+/** Where an export may land on any server, most preferred first. An
+ * organization server: organizationExportRoots. A solo server: the
+ * person's Downloads when it exists, the bot's working folder, its
+ * workspace; except a confidential thread, solo too, whose exports go to
+ * its own folder only (2026-10-18, follow-up of #689): the bot's workspace
+ * is in every workspace backup, the thread's folder never is. */
+export function dataExportRootsFor(input: {
+  organization: boolean;
+  kind: DataScopeKind;
+  workspace: string;
+  scopeFolder: string;
+  threadFolder?: string | null;
+  downloads?: string | null;
+  cwd?: string;
+}): string[] {
+  if (input.organization || input.kind === "thread") return organizationExportRoots(input);
+  return [...(input.downloads ? [input.downloads] : []), ...(input.cwd ? [input.cwd] : []), input.workspace];
+}
+
 /** Forgets one derived key (its scope was erased). */
 export function forgetDataScope(key: string): void {
   members.delete(key);

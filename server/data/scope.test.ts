@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  dataExportRootsFor,
   dataFrameAllowed,
   dataScopeAudience,
   dataScopeBotId,
@@ -187,5 +188,23 @@ describe("organizationExportRoots (2026-10-17, follow-up of #696)", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("where a Data export may land", () => {
+  const base = { workspace: "/data/workspaces/b1", scopeFolder: "/data/data-scopes/b1/x", threadFolder: "/data/task-workspaces/b1/th1", downloads: "/home/me/Downloads", cwd: "/home/me/project" };
+  it("a solo server keeps Downloads, the working folder and the workspace for the bot", () => {
+    expect(dataExportRootsFor({ ...base, organization: false, kind: "bot" })).toEqual(["/home/me/Downloads", "/home/me/project", "/data/workspaces/b1"]);
+    expect(dataExportRootsFor({ ...base, organization: false, kind: "bot", downloads: null, cwd: undefined })).toEqual(["/data/workspaces/b1"]);
+  });
+  it("a confidential thread exports to its own folder only, solo or organization, never the backed-up workspace", () => {
+    for (const organization of [false, true]) {
+      expect(dataExportRootsFor({ ...base, organization, kind: "thread" })).toEqual(["/data/task-workspaces/b1/th1"]);
+      expect(dataExportRootsFor({ ...base, organization, kind: "thread", threadFolder: null })).toEqual([]);
+    }
+  });
+  it("an organization server follows organizationExportRoots", () => {
+    expect(dataExportRootsFor({ ...base, organization: true, kind: "bot" })).toEqual(["/data/workspaces/b1"]);
+    expect(dataExportRootsFor({ ...base, organization: true, kind: "person" })).toEqual([join("/data/data-scopes/b1/x", "data-exports")]);
   });
 });
