@@ -1,0 +1,227 @@
+{{- if .Values.runs.enabled }}
+{{- $ns := .Values.runs.namespace }}
+{{- $saNs := .Values.runs.provisionerServiceAccount.namespace | default .Values.systemNamespace }}
+# Cloud agent runs: one Pod per run, in a namespace of their own. Nothing
+# here mounts a token, opens an ingress or reaches a person's sandbox.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+    sagax.io/runs: "true"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Run Pods run as this account. No Role, no token.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sagax-run-workload
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+# The provisioner in the run namespace only. No exec, no logs, no read of
+# Secrets: it writes a run token and lets the garbage collector remove it
+# with its Pod.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sagax-sandboxd-runs
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "create", "delete", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "delete"]
+  - apiGroups: [""]
+    resources: ["resourcequotas"]
+    resourceNames: ["sagax-run-quota"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sagax-sandboxd-runs
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sagax-sandboxd-runs
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.runs.provisionerServiceAccount.name | quote }}
+    namespace: {{ $saNs | quote }}
+---
+# Separate from the sandbox quota, so runs cannot starve a person's sandbox.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sagax-run-quota
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  hard:
+    pods: {{ .Values.runs.quota.pods | quote }}
+    requests.cpu: {{ .Values.runs.quota.requestsCpu | quote }}
+    limits.cpu: {{ .Values.runs.quota.limitsCpu | quote }}
+    requests.memory: {{ .Values.runs.quota.requestsMemory | quote }}
+    limits.memory: {{ .Values.runs.quota.limitsMemory | quote }}
+    requests.storage: {{ .Values.runs.quota.requestsStorage | quote }}
+    persistentvolumeclaims: {{ .Values.runs.quota.persistentVolumeClaims | quote }}
+    secrets: {{ .Values.runs.quota.secrets | quote }}
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: sagax-run-limits
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      max:
+        cpu: {{ .Values.runs.limits.maxCpu | quote }}
+        memory: {{ .Values.runs.limits.maxMemory | quote }}
+    - type: PersistentVolumeClaim
+      max:
+        storage: {{ .Values.runs.limits.maxDisk | quote }}
+---
+# Backstop: a run Pod that lost its own policy has no ingress and no egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# The run port of the provisioner, from Perspicax only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: provisioner-runs
+  namespace: {{ $saNs | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml .Values.runs.provisionerPodLabels | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range .Values.runs.callerCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.runs.port }}
+          protocol: TCP
+{{- if .Values.admission.validating }}
+---
+# What a run Pod must look like, whoever sends it: an allowlisted image by
+# digest, the image's own entrypoint, no token, no port, a read-only root,
+# a hard deadline, and the runs node pool.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sandboxes-runs
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  variables:
+    - name: containers
+      expression: |
+        object.spec.containers +
+        (has(object.spec.initContainers) ? object.spec.initContainers : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
+    - name: allowed
+      expression: {{ .Values.runs.allowedImages | toJson | quote }}
+  validations:
+    - expression: |
+        size(variables.containers) == 1 &&
+        variables.containers.all(c, variables.allowed.exists(a, a == c.image))
+      message: "A run Pod has one container whose image is on runs.allowedImages (name:tag@sha256)."
+    - expression: |
+        variables.containers.all(c,
+          !has(c.command) && !has(c.args) &&
+          (!has(c.ports) || size(c.ports) == 0) &&
+          !has(c.envFrom) &&
+          has(c.securityContext) &&
+          has(c.securityContext.readOnlyRootFilesystem) && c.securityContext.readOnlyRootFilesystem == true &&
+          has(c.securityContext.allowPrivilegeEscalation) && c.securityContext.allowPrivilegeEscalation == false &&
+          (!has(c.securityContext.privileged) || c.securityContext.privileged == false)
+        )
+      message: "A run Pod keeps its image entrypoint, publishes no port, and runs read-only without escalation."
+    - expression: |
+        has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false &&
+        object.spec.serviceAccountName == 'sagax-run-workload' &&
+        (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
+        (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
+        (!has(object.spec.hostIPC) || object.spec.hostIPC == false) &&
+        (!has(object.spec.volumes) || !object.spec.volumes.exists(v, has(v.hostPath) || has(v.projected)))
+      message: "A run Pod mounts no service account token, no host path and no host namespace."
+    - expression: |
+        has(object.spec.activeDeadlineSeconds) &&
+        object.spec.activeDeadlineSeconds > 0 &&
+        object.spec.activeDeadlineSeconds <= {{ .Values.runs.limits.maxDeadlineSeconds }}
+      message: "A run Pod has a hard deadline (activeDeadlineSeconds) within the maximum duration."
+    - expression: |
+        has(object.spec.nodeSelector) &&
+        {{- range $key, $value := .Values.runs.nodeSelector }}
+        object.spec.nodeSelector[{{ $key | squote }}] == {{ $value | toString | squote }} &&
+        {{- end }}
+        has(object.spec.tolerations) &&
+        object.spec.tolerations.exists(t, t.key == {{ .Values.runs.tolerationKey | squote }} && t.effect == 'NoSchedule')
+      message: "A run Pod runs on the runs node pool."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sandboxes-runs
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  policyName: sandboxes-runs
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ $ns | quote }}
+{{- end }}
+{{- end }}

@@ -178,6 +178,112 @@ of a person signed out by Perspicax do not wake the cluster: they fail
 while it is stopped and the pending deletion is tried again every 5
 minutes.
 
+## Cloud agent runs
+
+A cloud agent run (Perspicax spec `2026-10-18-cloud-agents-design.md`, lot
+P1.3) gets its own Pod, never a person's sandbox. The same provisioner
+serves it, on a second listener that only knows `/v1/runs`
+(`server/sandboxd-runs.ts`, pure objects in `server/sandboxd-runs-spec.ts`).
+Off unless `SAGAX_RUNS_ENABLED=1`; nothing else changes when it is off.
+
+Who may call it: Perspicax only. Three locks, all required:
+
+1. **Mutual TLS.** The run listener requests a client certificate and
+   refuses the handshake unless `SAGAX_RUNS_TLS_CLIENT_CA` signed it
+   (optionally pinned to a common name, `SAGAX_RUNS_TLS_CLIENT_CN`). The
+   server certificate is the provisioner's. There is no insecure mode:
+   `SAGAX_SANDBOXD_TLS_INSECURE` refuses the start when runs are on.
+2. **Its own key.** `sagax-sandboxd-runs-key` (`SAGAX_RUNS_KEY_FILE`, a
+   mounted Secret, never generated) signs every call with the same HMAC
+   scheme as the sandbox routes, under its own context
+   (`sagax-sandboxd-runs-v1`). The start refuses a run key equal to the
+   sandbox key. A sandbox signature never verifies on the run listener,
+   and the sandbox listener serves no `/v1/runs`.
+3. **Its own namespace** (`sandbox-runs`). The provisioner's Role there
+   covers Pods, PVCs, NetworkPolicies, `create` and `delete` on Secrets
+   (the run token) and nothing else: no exec, no logs, no read of a
+   Secret. The sandbox namespace is never touched by a run call.
+
+| Method and path | Job |
+|---|---|
+| `POST /v1/runs` | Create the run: NetworkPolicy, PVC, Pod, then the token Secret owned by the Pod. A retry for a live Pod returns it (`created: false`). |
+| `GET /v1/runs` | Every run, with `active`, `maxPods`, `maxPerOwner`. |
+| `GET /v1/runs/<id>` | `phase` (`pending`, `running`, `succeeded`, `failed`, `stopped`), `reason` (`expired`, `evicted`, `Unschedulable`...), `workspaceExpiresAt`. |
+| `DELETE /v1/runs/<id>?keepWorkspace=1` | Stop: the Pod goes (its token with it), the disk stays for a follow-up. Without the flag the disk and the policy go too. |
+
+The create body is closed: `id`, `envId`, `ownerKey` (opaque, 32 hex),
+`image`, `token`, `egress`, and optional `cpuMillis`, `memoryMiB`,
+`diskGiB`, `maxDurationSec`. Any other field is refused, so no command,
+variable, volume, node or network can ride along. The image's own
+entrypoint runs (the runner of lot P1.4).
+
+What a run Pod is:
+
+- `run-<id>`, PVC `run-<id>-ws`, NetworkPolicy `run-<id>-net`, Secret
+  `run-<id>-token` (mounted read-only at `/var/run/px-run/token`; the only
+  credential in the Pod; never in the Pod spec, the audit line or an
+  answer). Labels `px.run`, `px.env`, `px.owner`,
+  `com.pulsatrix.sagax.run=1`; never a person-sandbox label.
+- uid 1000, `runAsNonRoot`, read-only root (writable: `/workspace`, `/tmp`,
+  `/dev/shm`), no capability, seccomp `RuntimeDefault`, no service account
+  token (`sagax-run-workload`), no port, `restartPolicy: Never`.
+- Image: exactly one of `SAGAX_RUNS_ALLOWED_IMAGES`, each
+  `name:tag@sha256:<digest>` under `SAGAX_SANDBOX_K8S_REGISTRY`.
+- Limits (decision D3): 4 vCPU and 8 Gi by default, at most 8 vCPU, 16 Gi,
+  a 20 Gi disk (10 Gi by default) and 12 h (4 h by default). At most 12
+  live run Pods and 4 per person (`SAGAX_RUNS_MAX_PODS`,
+  `SAGAX_RUNS_MAX_PER_OWNER`); Perspicax enforces its own quotas first, this
+  is the backstop, and the namespace ResourceQuota `sagax-run-quota` is the
+  last one.
+- Hard deadline: `activeDeadlineSeconds` = the run's maximum + 20 min.
+- Placement: `nodeSelector px.pool=runs`, tolerations `px.run=true:NoSchedule`
+  and the AKS Spot taint (pool of lot P0.3).
+- Network: no ingress. Egress to the cluster DNS, to Perspicax
+  (`SAGAX_RUNS_PERSPICAX_CIDRS`, /24 or narrower) and, for the `restreint`
+  profile, to GitHub (`SAGAX_RUNS_GITHUB_CIDRS`, public ranges only), on
+  TCP 443. `aucun` is Perspicax only. `defaut` (open internet) is refused
+  until the egress proxy exists. Metadata, link-local and WireServer
+  ranges are refused in any list.
+
+Retention (decision D4), by a sweep every minute: an ended Pod is deleted
+15 min after it ended, a Pod still Pending after 15 min is deleted, any Pod
+past the hard cap is deleted; a disk is deleted 24 h after its run ended
+(`sagax.pulsatrix.com/run-ended-at`), with its policy. An orphan disk
+starts its clock when the sweep first sees it.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SAGAX_RUNS_ENABLED` | off | serve runs |
+| `SAGAX_RUNS_LISTEN` | `0.0.0.0:8792` | run listener (its own port) |
+| `SAGAX_RUNS_KEY_FILE` | `/run/sagax-sandboxd-runs/key` | run key, 64 hex |
+| `SAGAX_RUNS_TLS_CLIENT_CA` | required | CA of the Perspicax client certificate |
+| `SAGAX_RUNS_TLS_CLIENT_CN` | none | pin the client common name |
+| `SAGAX_RUNS_K8S_NAMESPACE` | `sandbox-runs` | must differ from the sandbox namespace |
+| `SAGAX_RUNS_K8S_STORAGE_CLASS` | the sandbox class | encrypted class for run disks |
+| `SAGAX_RUNS_K8S_QUOTA_NAME` | `sagax-run-quota` | readiness requires its caps |
+| `SAGAX_RUNS_ALLOWED_IMAGES` | required | run images by digest |
+| `SAGAX_RUNS_K8S_NODE_SELECTOR` | `px.pool=runs` | never empty |
+| `SAGAX_RUNS_K8S_TOLERATION` | `px.run=true:NoSchedule,kubernetes.azure.com/scalesetpriority=spot:NoSchedule` | |
+| `SAGAX_RUNS_PERSPICAX_CIDRS` | required | Perspicax address |
+| `SAGAX_RUNS_GITHUB_CIDRS` | none | GitHub ranges (`restreint`) |
+| `SAGAX_RUNS_CONTROL_URL` | required | `https` or `wss` runner endpoint, passed as `PX_CONTROL_URL` |
+| `SAGAX_RUNS_MAX_CPU_MILLIS`, `_MAX_MEMORY_MIB`, `_MAX_DISK_GIB`, `_MAX_DURATION_MIN` | 8000, 16384, 20, 720 | ceilings, never above these |
+| `SAGAX_RUNS_MAX_PODS`, `SAGAX_RUNS_MAX_PER_OWNER` | 12, 4 | live run Pods |
+| `SAGAX_RUNS_POD_RETENTION_MIN`, `SAGAX_RUNS_DISK_RETENTION_HOURS` | 15, 24 | retention |
+
+The chart renders the run namespace when `runs.enabled` (namespace with
+Pod Security `restricted`, `sagax-run-workload`, the Role and binding,
+`sagax-run-quota`, a LimitRange, default deny, the ingress policy of the
+run port from `runs.callerCidrs`, and the admission policy
+`sandboxes-runs`: one container from `runs.allowedImages`, its own
+entrypoint, no port, read-only root, no token, a deadline, the runs pool).
+The chart refuses to render without an image allowlist pinned by digest
+or without `runs.callerCidrs`.
+
+The idle signal of the cluster stop must also count run Pods: label
+`com.pulsatrix.sagax.run=1` in the run namespace. A stopped cluster is
+woken by Perspicax before it calls `POST /v1/runs`.
+
 ## Images
 
 `scripts/build-sandbox-image.sh` builds `linux/amd64` and `linux/arm64` to a
@@ -251,8 +357,9 @@ workflow are not evidence.
 
 ## Tests
 
-Unit tests do not need a cluster: `server/sandboxd-k8s-spec.test.ts` and
-`server/sandboxd-k8s.test.ts`. The kind script
+Unit tests do not need a cluster: `server/sandboxd-k8s-spec.test.ts`,
+`server/sandboxd-k8s.test.ts`, `server/sandboxd-runs-spec.test.ts` and
+`server/sandboxd-runs.test.ts` (the run listener over real mutual TLS). The kind script
 `scripts/sandbox-k8s-kind.sh` runs `server/sandboxd-k8s.integration.test.ts`
 only when `SAGAX_SANDBOX_K8S_INTEGRATION=1`, then deletes the cluster. It is
 not part of `pnpm test:unit`.

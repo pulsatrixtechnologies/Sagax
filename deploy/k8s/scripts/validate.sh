@@ -83,6 +83,44 @@ if ! grep -A3 'resources: \["deployments"\]' "$tmp/default.yaml" | grep -q 'saga
   exit 1
 fi
 
+# Cloud agent runs (off by default). Rendered with a sample digest: the
+# run Role has no exec, no log and no read of Secrets; the namespace has its
+# own quota, default deny and admission policy.
+run_image="registry.example.com/agents/sagax-run:0.1.0@sha256:$(printf 'ab%.0s' $(seq 1 32))"
+helm template sandboxes "$chart" --set runs.enabled=true --set "runs.allowedImages[0]=$run_image" --set "runs.callerCidrs[0]=10.20.30.40/32" > "$tmp/runs.yaml"
+if helm template sandboxes "$chart" --set runs.enabled=true --set "runs.callerCidrs[0]=10.20.30.40/32" > /dev/null 2>&1; then
+  echo "runs rendered without an image allowlist" >&2
+  exit 1
+fi
+if helm template sandboxes "$chart" --set runs.enabled=true --set "runs.allowedImages[0]=registry.example.com/agents/sagax-run:0.1.0" --set "runs.callerCidrs[0]=10.20.30.40/32" > /dev/null 2>&1; then
+  echo "runs admitted an image without a digest" >&2
+  exit 1
+fi
+if grep -q "sagax-run-quota" "$tmp/default.yaml"; then
+  echo "runs rendered while runs.enabled is false" >&2
+  exit 1
+fi
+run_role=$(awk '
+  $0 == "kind: Role" { inrole = 1; buf = "" }
+  inrole { buf = buf $0 "\n" }
+  inrole && $0 == "---" { if (buf ~ /name: sagax-sandboxd-runs/) { printf "%s", buf; exit } inrole = 0 }
+' "$tmp/runs.yaml")
+printf '%s\n' "$run_role" | grep -q 'resources: \["secrets"\]'
+if printf '%s\n' "$run_role" | grep -Eq 'pods/exec|pods/log|nodes|"\*"'; then
+  echo "sagax-sandboxd-runs Role is wider than run objects" >&2
+  exit 1
+fi
+if printf '%s\n' "$run_role" | grep -A2 'resources: \["secrets"\]' | grep -Eq '"get"|"list"|"watch"'; then
+  echo "sagax-sandboxd-runs Role can read Secrets" >&2
+  exit 1
+fi
+for want in "name: sagax-run-quota" "name: sagax-run-workload" "name: sandboxes-runs" "name: provisioner-runs" "automountServiceAccountToken: false"; do
+  if ! grep -q "$want" "$tmp/runs.yaml"; then
+    echo "runs render is missing $want" >&2
+    exit 1
+  fi
+done
+
 check_stack() {
   stack="$1"
   echo "tofu validate $stack"

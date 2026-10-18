@@ -52,3 +52,28 @@ app.kubernetes.io/part-of: sagax
 {{- fail "admin.group must be a named group, not a shared or built-in admin" -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "sandboxes.runs.assert" -}}
+{{- if .Values.runs.enabled -}}
+{{- if eq .Values.runs.namespace .Values.sandboxNamespace -}}
+{{- fail "runs.namespace must differ from sandboxNamespace (separate quota and policies)" -}}
+{{- end -}}
+{{- if not .Values.runs.allowedImages -}}
+{{- fail "runs.allowedImages must list the run images when runs.enabled" -}}
+{{- end -}}
+{{- range .Values.runs.allowedImages -}}
+{{- if not (regexMatch "^[a-z0-9][a-z0-9.-]*(:[0-9]+)?(/[a-z0-9][a-z0-9._-]*)+:[A-Za-z0-9_][A-Za-z0-9_.-]*@sha256:[a-f0-9]{64}$" .) -}}
+{{- fail (printf "run image %s must be registry/name:tag@sha256:<digest>" .) -}}
+{{- end -}}
+{{- if contains ":latest@" . -}}
+{{- fail (printf "run image %s must not use the latest tag" .) -}}
+{{- end -}}
+{{- end -}}
+{{- if not .Values.runs.callerCidrs -}}
+{{- fail "runs.callerCidrs must name who may call the run port (Perspicax)" -}}
+{{- end -}}
+{{- if not .Values.runs.nodeSelector -}}
+{{- fail "runs.nodeSelector must name the runs node pool" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

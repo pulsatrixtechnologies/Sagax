@@ -80,6 +80,51 @@ provisioner:
   image: ghcr.io/pulsatrixtechnologies/sagax:0.1.0
   port: 8791
 
+# Cloud agent runs (lot P1.3). One Pod per run, never a person's sandbox,
+# in their own namespace with their own quota and node pool. Off by
+# default; the provisioner serves runs only with SAGAX_RUNS_ENABLED=1
+# (docs/sandbox-kubernetes.md, section "Cloud agent runs").
+runs:
+  enabled: false
+  namespace: sandbox-runs
+  # The ServiceAccount the provisioner runs as. The chart's own is
+  # sagax-sandboxd in systemNamespace; a provisioner deployed from
+  # deploy/k8s/provisioner runs as sagax-sandboxd in the sandbox namespace.
+  provisionerServiceAccount:
+    name: sagax-sandboxd
+    namespace: ""
+  # Labels of the provisioner Pod, for the run port's ingress policy.
+  provisionerPodLabels:
+    app.kubernetes.io/name: sagax-sandboxd
+  # Who may call the run port (Perspicax only). Required when enabled.
+  callerCidrs: []
+  port: 8792
+  # Decision D3: 12 runs per organization, 4 vCPU / 8 Gi by default,
+  # at most 8 vCPU / 16 Gi and a 20 Gi disk per run.
+  quota:
+    pods: "12"
+    requestsCpu: "48"
+    limitsCpu: "48"
+    requestsMemory: 96Gi
+    limitsMemory: 96Gi
+    requestsStorage: 240Gi
+    persistentVolumeClaims: "24"
+    secrets: "24"
+  limits:
+    maxCpu: "8"
+    maxMemory: 16Gi
+    maxDisk: 20Gi
+    # max duration 12 h plus the 20 min margin (RUN_DEADLINE_MARGIN_SEC)
+    maxDeadlineSeconds: 44400
+  # The runs pool (P0.3): label px.pool=runs, taint px.run=true:NoSchedule,
+  # Spot. AKS adds its own Spot taint, which the run Pods tolerate.
+  nodeSelector:
+    px.pool: runs
+  tolerationKey: px.run
+  # Run images, exactly as `registry/name:tag@sha256:<digest>`. Nothing else
+  # is admitted in the run namespace, not even another Pulsatrix image.
+  allowedImages: []
+
 # One warm worker from 07:00 to 19:00 America/Toronto, none at night.
 # The sandbox pool's autoscaler min is 0; this pod is what holds a node.
 warmNode:

@@ -10,21 +10,26 @@ import { dirname } from "node:path";
 export const SANDBOXD_AUTH_HEADER = "x-sagax-sandboxd-auth";
 export const SANDBOXD_AUTH_WINDOW_MS = 30_000;
 const KEY_RE = /^[a-f0-9]{64}$/;
+/** Domain of a signature. The person-sandbox routes sign under the first;
+ * the run routes (server/sandboxd-runs.ts) under the second, with their own
+ * key, so a signature made for one surface never verifies on the other. */
+export const SANDBOXD_AUTH_CONTEXT = "sagax-sandboxd-v1";
+export const SANDBOXD_RUNS_AUTH_CONTEXT = "sagax-sandboxd-runs-v1";
 
 function bodyDigest(body: string | Buffer): string {
   return createHash("sha256").update(body).digest("hex");
 }
 
-function mac(key: string, method: string, path: string, ts: number, nonce: string, body: string | Buffer): string {
+function mac(key: string, method: string, path: string, ts: number, nonce: string, body: string | Buffer, context: string): string {
   return createHmac("sha256", Buffer.from(key, "hex"))
-    .update(`sagax-sandboxd-v1\n${method.toUpperCase()}\n${path}\n${ts}\n${nonce}\n${bodyDigest(body)}`)
+    .update(`${context}\n${method.toUpperCase()}\n${path}\n${ts}\n${nonce}\n${bodyDigest(body)}`)
     .digest("hex");
 }
 
-export function signSandboxdRequest(key: string, method: string, path: string, body: string | Buffer, now = Date.now()): string {
+export function signSandboxdRequest(key: string, method: string, path: string, body: string | Buffer, now = Date.now(), context: string = SANDBOXD_AUTH_CONTEXT): string {
   if (!KEY_RE.test(key)) throw new Error("invalid sandboxd key");
   const nonce = randomBytes(16).toString("hex");
-  return `v1 ts=${now},nonce=${nonce},sig=${mac(key, method, path, now, nonce, body)}`;
+  return `v1 ts=${now},nonce=${nonce},sig=${mac(key, method, path, now, nonce, body, context)}`;
 }
 
 /** Verifies signatures and remembers nonces for the window, so a captured
@@ -33,9 +38,11 @@ export class SandboxdVerifier {
   private readonly seen = new Map<string, number>();
   private readonly key: string;
   private readonly now: () => number;
-  constructor(key: string, now: () => number = Date.now) {
+  private readonly context: string;
+  constructor(key: string, now: () => number = Date.now, context: string = SANDBOXD_AUTH_CONTEXT) {
     this.key = key;
     this.now = now;
+    this.context = context;
     if (!KEY_RE.test(key)) throw new Error("invalid sandboxd key");
   }
 
@@ -47,7 +54,7 @@ export class SandboxdVerifier {
     const nonce = match[2]!;
     const now = this.now();
     if (Math.abs(now - ts) > SANDBOXD_AUTH_WINDOW_MS) return false;
-    const expected = Buffer.from(mac(this.key, method, path, ts, nonce, body), "hex");
+    const expected = Buffer.from(mac(this.key, method, path, ts, nonce, body, this.context), "hex");
     const given = Buffer.from(match[3]!, "hex");
     if (expected.length !== given.length || !timingSafeEqual(expected, given)) return false;
     for (const [seenNonce, at] of this.seen) if (now - at > SANDBOXD_AUTH_WINDOW_MS * 2) this.seen.delete(seenNonce);

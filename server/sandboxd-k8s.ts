@@ -10,7 +10,7 @@ import { dirname } from "node:path";
 import type { Duplex } from "node:stream";
 
 import { createSandboxAudit, type SandboxAudit } from "./sandbox-audit.ts";
-import { ensureSandboxdKey, SandboxdVerifier } from "./sandboxd-auth.ts";
+import { ensureSandboxdKey, readSandboxdKey, SANDBOXD_RUNS_AUTH_CONTEXT, SandboxdVerifier } from "./sandboxd-auth.ts";
 import type { K8sClient } from "./sandboxd-k8s-client.ts";
 import {
   IMAGE_ANNOTATION,
@@ -32,6 +32,7 @@ import {
   type K8sSandboxConfig,
 } from "./sandboxd-k8s-spec.ts";
 import { SandboxService } from "./sandboxd-core.ts";
+import { runsConfigFromEnv } from "./sandboxd-runs-spec.ts";
 import type { ContainerStats, ContainerSummary, DockerApi, ExecRequest, ExecResult, TtyExec, TtySize } from "./sandboxd-docker.ts";
 import { createSandboxdHandler, createSandboxdUpgradeHandler } from "./sandboxd.ts";
 import {
@@ -523,6 +524,9 @@ function fileReadable(path: string | undefined): boolean {
 export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const sandbox = sandboxdConfigFromEnv(env);
   const { k8s, guards } = kubernetesSandboxConfigFromEnv(env, sandbox);
+  // Cloud agent runs: off unless SAGAX_RUNS_ENABLED. Parsed before anything
+  // serves, so a bad run setting refuses the whole start.
+  const runs = runsConfigFromEnv(env, { k8s, guards, sandbox });
   let auditWritable = false;
   try { accessSync(dirname(guards.auditFile), fsConstants.W_OK); auditWritable = true; } catch { auditWritable = false; }
   if (!auditWritable) throw new Error(`sandboxd: audit directory is not writable: ${dirname(guards.auditFile)}`);
@@ -572,7 +576,39 @@ export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = proces
     }, (error: unknown) => console.error(`sandboxd: idle sweep failed: ${error instanceof Error ? error.message : String(error)}`));
   }, 60_000);
   sweep.unref();
-  const shutdown = () => server.close(() => process.exit(0));
+  let runsServer: { close(callback?: () => void): unknown } | null = null;
+  if (runs) {
+    const { RunService, createRunsServer } = await import("./sandboxd-runs.ts");
+    const runsKey = readSandboxdKey(runs.keyFile);
+    if (runsKey === key) {
+      audit.record({ action: "runs.start", outcome: "denied", detail: { reason: "shared_key" } });
+      throw new Error("sandboxd: the run key must differ from the sandbox key");
+    }
+    if (!fileReadable(runs.clientCaPath)) throw new Error("sandboxd: SAGAX_RUNS_TLS_CLIENT_CA is not readable");
+    const runService = new RunService(runs, client, audit);
+    const runProblems = await runService.readinessProblems();
+    if (runProblems.length) {
+      audit.record({ action: "runs.start", outcome: "denied", detail: { problems: runProblems.length } });
+      throw new Error(`sandboxd: run namespace is not ready: ${runProblems.join("; ")}`);
+    }
+    const listener = createRunsServer(runService, new SandboxdVerifier(runsKey, Date.now, SANDBOXD_RUNS_AUTH_CONTEXT), {
+      cert: readFileSync(guards.tlsCertPath!),
+      key: readFileSync(guards.tlsKeyPath!),
+      clientCa: readFileSync(runs.clientCaPath),
+    }, runs.clientSubject ? { clientSubject: runs.clientSubject } : {});
+    listener.listen(runs.listenPort, runs.listenHost);
+    runsServer = listener;
+    audit.record({ action: "runs.start", outcome: "ok", detail: { namespace: runs.namespace, mtls: true, maxPods: runs.maxPods } });
+    console.log(`sandboxd: cloud agent runs on port ${runs.listenPort}, namespace ${runs.namespace}, at most ${runs.maxPods} (${runs.maxPerOwner} per person)`);
+    const runSweep = setInterval(() => {
+      void runService.sweep().catch((error: unknown) => console.error(`sandboxd: run sweep failed: ${error instanceof Error ? error.message : String(error)}`));
+    }, 60_000);
+    runSweep.unref();
+  }
+  const shutdown = () => {
+    runsServer?.close();
+    server.close(() => process.exit(0));
+  };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 }
