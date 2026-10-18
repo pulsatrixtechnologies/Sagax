@@ -193,12 +193,13 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
     expect(items().some((entry) => entry.key === "team-map" || entry.label === "Team map")).toBe(false);
   });
 
-  it("opens Automations from the menu, keeps the tour anchor and the failed-run dot (JC, 2026-10-16)", () => {
+  it("opens Automations from the menu and keeps the tour anchor, with no dot (JC, 2026-10-18)", () => {
     let opened = 0;
-    const entry = items({ automationsAttention: true, handlers: { ...handlers, onAutomations: () => { opened += 1; } } }).find((item) => item.key === "routines")!;
+    const entry = items({ handlers: { ...handlers, onAutomations: () => { opened += 1; } } }).find((item) => item.key === "routines")!;
     expect(entry.label).toBe("Automations");
     expect(entry.tourId).toBe("nav-automations");
-    expect(entry.attention).toBe(true);
+    expect(entry.attention).toBeFalsy();
+    expect(entry.attentionTone).toBeUndefined();
     entry.onSelect();
     expect(opened).toBe(1);
   });

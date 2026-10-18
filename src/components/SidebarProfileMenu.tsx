@@ -22,9 +22,10 @@
 // downloaded, a round cloud button sits at the right of the row; it widens
 // into a pill on hover or focus (and for a few seconds when the update
 // lands) while the name folds away to the avatar, and it opens the
-// "Update ready" dialog (UpdateBanner, openUpdatePrompt). A failed automation
-// adds a tiny accent dot to the routines count (never red) while the menu is closed, and keeps its dot
-// on the Automations item inside the menu.
+// "Update ready" dialog (UpdateBanner, openUpdatePrompt). The Automations
+// item in the menu carries no dot (JC, 2026-10-18): a failed run not seen
+// yet shows on the Automations page (the problem runs pill in its header,
+// a dot on the run in Logs) and in the routines count's label.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDownToLine,
@@ -298,8 +299,6 @@ export function profileMenuItems(input: {
   mobile: boolean;
   achievementsLabel: string | null;
   automationsActive: boolean;
-  /** a failed routine run not seen yet: a dot on Automations */
-  automationsAttention?: boolean;
   shortcutsTrailing?: ReactNode;
   /** Check for updates, where the desktop app answers */
   updateItem: SidebarMenuItem | null;
@@ -398,8 +397,6 @@ export function profileMenuItems(input: {
       label: t("sidebar.nav.automations"),
       icon: <CalendarDays size={18} />,
       active: input.automationsActive,
-      attention: input.automationsAttention,
-      attentionTone: "accent" as const,
       onSelect: input.handlers.onAutomations,
     },
     ...(input.achievementsLabel
@@ -513,7 +510,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     email: profile?.email?.trim() || viewer?.email?.trim(),
   });
 
-  const routineAttention = state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt);
   const account = useAccountMenuData(menuOpened);
   const serverMode = useServerMode();
   const lockedServer = serverMode?.active === true;
@@ -524,7 +520,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     mobile: SAGAX_MOBILE_URL !== null,
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
     automationsActive: state.activeView === "routines",
-    automationsAttention: routineAttention,
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
     updateItem: update ? { ...update.item, label: t("sidebar.update.check") } : null,
     switchTargets: lockedServer ? [] : account.targets,
@@ -558,7 +553,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   // stays for the other phases
   const noteworthy = update && updateNoteworthy(update.phase, update.pending) && !updateButton ? update : null;
   // a place in the menu asking for attention while the menu is folded away
-  // (a failed automation adds an accent dot to the routines count instead)
   const placeAttention = places.some((item) => item.attention);
 
   const avatar = (size: number) => (
