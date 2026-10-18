@@ -120,6 +120,26 @@ chat, and you decide how much each bot may do on its own.
 </tr>
 </table>
 
+### iPhone and iPad
+
+<table>
+<tr>
+<td width="20%" valign="top"><img src="docs/images/readme/ios-iphone-01-home.png" alt="iPhone home: favorite bots at the top, then the bot list by section with each bot's last message" width="100%"></td>
+<td width="20%" valign="top"><img src="docs/images/readme/ios-iphone-02-chat.png" alt="iPhone conversation: the team lead bot Atlas posts a day by day launch plan" width="100%"></td>
+<td width="20%" valign="top"><img src="docs/images/readme/ios-iphone-03-approval.png" alt="iPhone approval card: allow the DevOps bot Forge to run a staging deploy command, with Deny, Allow once and Always allow this command" width="100%"></td>
+<td width="20%" valign="top"><img src="docs/images/readme/ios-iphone-04-routines.png" alt="iPhone bot profile: Atlas's routines, a weekday morning summary and a weekly status report" width="100%"></td>
+<td width="20%" valign="top"><img src="docs/images/readme/ios-iphone-05-settings.png" alt="iPhone settings: account, Connect apps, auto review of risky actions, time zone, notifications and appearance" width="100%"></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="33%" valign="top"><img src="docs/images/readme/ios-ipad-01-chat.png" alt="iPad: the bot list beside a conversation with Atlas" width="100%"></td>
+<td width="33%" valign="top"><img src="docs/images/readme/ios-ipad-02-routines.png" alt="iPad: a conversation with Atlas and its profile panel with active routines" width="100%"></td>
+<td width="33%" valign="top"><img src="docs/images/readme/ios-ipad-03-approval.png" alt="iPad: Forge waits for approval to run a deploy command, and its panel shows the activity in progress" width="100%"></td>
+</tr>
+</table>
+
 ## Download
 
 Get the latest build from the
