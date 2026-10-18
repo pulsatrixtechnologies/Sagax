@@ -17,7 +17,7 @@ import { writeFileAtomic } from "./atomic.ts";
 import { mergePrincipalFiles } from "./principals.ts";
 import { escapeAttribute, splitTranscriptAttachments } from "../src/lib/composer-attachments.ts";
 import { WORKSPACE_BACKUP_CLIENT_KEYS } from "../shared/workspace-backup-client.ts";
-import { ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
+import { confidentialDataScopePath, ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
 import type { WorkspaceBackupClientState, WorkspaceBackupPrivateMetadata, WorkspaceBackupSummary } from "../shared/workspace-backup.ts";
 
 export type { WorkspaceBackupSummary, WorkspaceBackupPrivateMetadata } from "../shared/workspace-backup.ts";
@@ -459,7 +459,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       for (const name of readdirSync(directory).sort()) {
         if (!prefix && excluded(name)) continue;
         const path = prefix ? `${prefix}/${name}` : name;
-        if (excludedWorkspaceAuthPath(path) || ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path)) continue;
+        if (excludedWorkspaceAuthPath(path) || ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path) || confidentialDataScopePath(path)) continue;
         // Do not silently skip noncanonical source spellings: reject them so
         // a case-sensitive host cannot export auth paths active on Windows/Mac.
         if (forbiddenArchivePath(path)) throw new Error("A workspace filename conflicts with a protected authentication or runtime path.");
@@ -871,8 +871,10 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
   // Keep the authenticated original staging tree intact for reinspection and
   // recovery. Only this installation copy has paths/scheduling adapted.
   // An archive from a release that exported per-turn hook tokens still
-  // restores; the dead tokens themselves are never installed.
-  const installed = manifest.entries.filter((entry) => !ephemeralWorkspaceTokenPath(entry.path));
+  // restores; the dead tokens themselves are never installed. Nor is a
+  // confidential thread's Data folder an older release exported (its sheet):
+  // whoever the restored roster lets in, it never comes back.
+  const installed = manifest.entries.filter((entry) => !ephemeralWorkspaceTokenPath(entry.path) && !confidentialDataScopePath(entry.path));
   for (const entry of installed.filter((entry) => entry.type === "directory")) folder(join(prepared, entry.path));
   for (const entry of installed) {
     const destination = join(prepared, entry.path);
@@ -1152,5 +1154,5 @@ export function removeWorkspaceBackupJob(dataDir: string, id: string): void {
  * rules as the export walk (cloud-move.ts sizes a move with it). Symbolic
  * links are the caller's to skip. */
 export function omittedFromWorkspaceBackup(path: string): boolean {
-  return excluded(path.split("/")[0]) || excludedWorkspaceAuthPath(path) || ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path);
+  return excluded(path.split("/")[0]) || excludedWorkspaceAuthPath(path) || ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path) || confidentialDataScopePath(path);
 }

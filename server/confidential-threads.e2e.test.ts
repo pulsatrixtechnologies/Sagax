@@ -36,6 +36,9 @@
 //   CT-13 (review of #689) Data: a confidential thread has a database and
 //         sheet of its own (?thread=), its owner's only, kept outside the
 //         bot's folder and wiped with the thread
+//   CT-14 (follow-up of #689) the workspace backup an admin downloads holds
+//         nothing of a confidential thread's Data (its sheet), and restoring
+//         that archive brings none of it back
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -46,6 +49,7 @@ import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { CONFIDENTIAL_INCIDENT_TEXT } from "./confidential-threads.ts";
+import { applyPendingWorkspaceRestore, commitPendingWorkspaceRestore, stageWorkspaceBackup } from "./workspace-backup.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 import { freePortBlock } from "./testing/ports.ts";
@@ -290,6 +294,49 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     // the owner of the bot cannot touch it either
     expect([403, 404]).toContain((await api("PATCH", `/api/bots/${botId}/tasks/${secretThread}`, bob, { confidential: false })).status);
   }, 60_000);
+
+  // CT-14 runs here, before the cards of CT-7 and later keep turns open: a
+  // workspace backup waits for every turn and approval to settle.
+  it("CT-14: the workspace backup leaves a confidential thread's Data sheet out, and its restore brings none back", async () => {
+    const mine = await api("POST", `/api/bots/${botId}/tasks`, bob, { title: "Feuille", confidential: true });
+    expect(mine.status, mine.text).toBe(201);
+    const thread = mine.body.task.threadId as string;
+    const run = await api("POST", `/api/bots/${botId}/data/run?thread=${thread}`, bob, { sql: `SELECT '${SECRET}-SHEET' AS s` });
+    expect(run.status, run.text).toBe(200);
+    // the bot's own sheet (an ordinary card) is still backed up
+    const ordinary = await api("POST", `/api/bots/${botId}/data/run`, bob, { sql: "SELECT 'ORDINARY-SHEET' AS s" });
+    expect(ordinary.status, ordinary.text).toBe(200);
+    const suffix = `t-${createHash("sha256").update(thread, "utf8").digest("hex").slice(0, 16)}`;
+    const sheet = join(data, "data-scopes", botId, suffix, "sheet.json");
+    await waitFor(async () => existsSync(sheet) && readFileSync(sheet, "utf8").includes(`${SECRET}-SHEET`));
+    await waitFor(async () => existsSync(join(data, "bots", botId, "sheet.json")) && readFileSync(join(data, "bots", botId, "sheet.json"), "utf8").includes("ORDINARY-SHEET"));
+    const password = "confidential-backup-password";
+    let last = "";
+    const created = await waitFor(async () => {
+      const attempt = await api("POST", "/api/workspace-backup/export", bob, { password });
+      last = `${attempt.status} ${attempt.text.slice(0, 300)}`;
+      if (attempt.status !== 200 && attempt.status !== 409) throw new Error(last);
+      return attempt.status === 200 ? attempt : null;
+    }, 60_000).catch((error) => { throw new Error(`export: ${last} (${error instanceof Error ? error.message.slice(0, 200) : ""})`); });
+    const download = await fetch(`${BASE}/api/workspace-backup/download/${created.body.id}`, { headers: { cookie: bob.cookie! } });
+    expect(download.status).toBe(200);
+    const bytes = Buffer.from(await download.arrayBuffer());
+    const target = join(home, "restore-target");
+    mkdirSync(target, { recursive: true, mode: 0o700 });
+    const archive = join(home, "workspace.sagaxbackup");
+    writeFileSync(archive, bytes);
+    const staged = await stageWorkspaceBackup(target, archive, { password });
+    const staging = join(target, ".backups", staged.id, "staged");
+    const paths: string[] = JSON.parse(readFileSync(join(staging, "manifest.json"), "utf8")).entries.map((entry: { path: string }) => entry.path);
+    expect(paths).toContain(`bots/${botId}/sheet.json`);
+    expect(paths.filter((path) => path.includes(suffix))).toEqual([]);
+    expect(filesText(join(staging, "data"))).not.toContain(`${SECRET}-SHEET`);
+    commitPendingWorkspaceRestore(target, staged.id);
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
+    expect(existsSync(join(target, "data-scopes", botId, suffix))).toBe(false);
+    expect(readFileSync(join(target, "bots", botId, "sheet.json"), "utf8")).toContain("ORDINARY-SHEET");
+    for (const root of ["bots", "data-scopes", "task-workspaces"]) expect(filesText(join(target, root))).not.toContain(`${SECRET}-SHEET`);
+  }, 180_000);
 
   it("CT-2: nothing is remembered, logged, scheduled or found elsewhere", async () => {
     const before = (await messagesOf(ana, secretThread)).length;
@@ -657,4 +704,5 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     await waitFor(async () => !existsSync(join(data, "data-scopes", botId, suffix)));
     expect(existsSync(exported.body.path)).toBe(false);
   }, 60_000);
+
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
+import { confidentialDataScopePath, ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
 
 describe("workspace backup data boundary", () => {
   it("exports ordinary settings only and retains destination connection sections unchanged", () => {
@@ -108,6 +108,19 @@ describe("workspace backup data boundary", () => {
     for (const path of ["bots/b1/SOUL.md", "bots/b1/sheet.json", "bots/b1/data.duckdb.bak", "bots/b1/data-tmp.zip", "bots/data.duckdb", "data.duckdb",
       "workspaces/bot/data.duckdb", "bots/b1/exports/data.duckdb", "attachments/data-tmp/x", "data-scopes/b1/p-0123456789abcdef/sheet.json", "data-scopes/b1/data.duckdb"]) {
       expect(liveDataEnginePath(path)).toBe(false);
+    }
+  });
+
+  it("leaves out a confidential thread's whole Data folder (its sheet too), and only that", () => {
+    for (const path of ["data-scopes/b1/t-0123456789abcdef", "data-scopes/b1/t-0123456789abcdef/sheet.json",
+      "data-scopes/b1/t-0123456789abcdef/sheet.json.1234.tmp", "data-scopes/b1/t-0123456789abcdef/data-exports/x.csv",
+      "data-scopes/b1/t-0123456789abcdef/anything/else.bin", "Data-Scopes/b1/T-0123456789abcdef/sheet.json", "data-scopes/b1/t-"]) {
+      expect(confidentialDataScopePath(path), path).toBe(true);
+    }
+    for (const path of ["data-scopes", "data-scopes/b1", "data-scopes/b1/p-0123456789abcdef/sheet.json", "bots/b1/sheet.json",
+      "bots/b1/data-scopes/b1/t-0123456789abcdef/sheet.json", "workspaces/data-scopes/b1/t-0123456789abcdef/sheet.json",
+      "data-scopes/t-0123456789abcdef", "data-scopes/b1/xt-0123456789abcdef/sheet.json"]) {
+      expect(confidentialDataScopePath(path), path).toBe(false);
     }
   });
 

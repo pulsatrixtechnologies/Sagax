@@ -234,8 +234,9 @@ remembered, exported, logged or shared beyond its owner
 - Exports and admin views: left out of the bot zip, the console file
   browser (`BotFileRoot.hidden`, attachments), the console's organization
   approvals queue, the workspace backup (`confidentialRoster`,
-  `stripConfidentialMessages`, `confidentialBackupPath`) and the Perspicax
-  work log. Decision rows are metadata only (`bindConfidentialDecisions`,
+  `stripConfidentialMessages`, `confidentialBackupPath`, and its whole Data
+  folder `data-scopes/<bot>/t-<hash>` by `confidentialDataScopePath`, never
+  installed by a restore either) and the Perspicax work log. Decision rows are metadata only (`bindConfidentialDecisions`,
   `scrubThreadDecisions`).
 - Nothing leaves to another bot, room or channel: `ask-bot`, `delegate-bot`,
   `coordinate-bots`, `post-to-room`, `create-room`, `manage-room`, `act`,

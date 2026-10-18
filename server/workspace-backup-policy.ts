@@ -87,7 +87,23 @@ export function ephemeralWorkspaceTokenPath(path: string): boolean {
  * transient folder a confined https load downloads into. Copying the file
  * while the engine holds it open is not a consistent snapshot (an unflushed
  * WAL), it can run to gigabytes, and every table in it came from a source
- * the bot can load again. The sheet beside it (sheet.json) is backed up. */
+ * the bot can load again. The sheet beside it (sheet.json) is backed up,
+ * except a confidential thread's (confidentialDataScopePath below). */
 export function liveDataEnginePath(path: string): boolean {
   return /^(?:bots\/[^/]+|data-scopes\/[^/]+\/[^/]+)\/(?:data\.duckdb(?:\.wal)?$|data-tmp(?:\/|$)|data-downloads(?:\/|$))/.test(path);
+}
+
+/** A confidential thread's own Data scope (`data-scopes/<botId>/t-<hash>/`,
+ * server/data/scope.ts): its sheet, its database, its downloads and anything
+ * else that lands in that folder. A confidential thread leaves no trace in a
+ * workspace backup (docs/confidential-threads.md), and only a confidential
+ * thread ever gets a thread scope, so the whole folder is left out whether
+ * or not the roster still names the thread (a deleted thread not yet wiped,
+ * a thread made confidential later). The match ignores case, so a
+ * differently cased archive path cannot slip through on a case-insensitive
+ * disk. Like the hook tokens above, an archive from a release that did
+ * export it still restores, without it: the folder is never installed, so a
+ * restored thread id never hands its sheet to another person. */
+export function confidentialDataScopePath(path: string): boolean {
+  return /^data-scopes\/[^/]+\/t-[^/]*(?:\/|$)/i.test(path);
 }
