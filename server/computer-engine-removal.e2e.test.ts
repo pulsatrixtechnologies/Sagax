@@ -88,7 +88,7 @@ function install(home: string, boatPort: () => number) {
     base = `http://127.0.0.1:${port}`;
     output = "";
     const proc = spawn(process.execPath, [join(ROOT, "server/index.ts")], {
-      cwd: ROOT, env: {
+      cwd: ROOT, env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         PATH: dirname(process.execPath), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home, USERPROFILE: home, SAGAX_DATA_DIR: data,
         APPDATA: join(home, "appdata"), LOCALAPPDATA: join(home, "localappdata"),
@@ -251,10 +251,11 @@ describe("removing the Computer engine", () => {
     expect(await server.moveLines(other)).toEqual([otherLine]);
 
     // Atlas was on Auto, which on the engine meant its own cloud computer:
-    // it keeps that place, and its line says so truthfully.
+    // it stays on Auto (no place is written, JC 2026-10-18), which reaches
+    // that computer by itself, and its line says so truthfully.
     const movedAuto = await server.bot(auto.id);
     expect(movedAuto.modelSelection).toEqual(replacement);
-    expect(movedAuto.computer).toBe("cloud");
+    expect(movedAuto.computer).toBeUndefined();
     expect(await server.moveLines(auto.threadId)).toEqual([`Atlas now uses ${ENGINE_NAME}. ${REMOVED} Atlas still works on its cloud computer.`]);
 
     // Iris keeps its own engine and Auto. Only the conversation that was on
@@ -267,8 +268,8 @@ describe("removing the Computer engine", () => {
       .toEqual([`This conversation now uses ${ENGINE_NAME}. ${REMOVED} It still works on Iris's cloud computer.`]);
     const mixedTask = movedMixed.tasks.find((task: any) => task.threadId === mixedConversation.threadId);
     expect(mixedTask.modelSelection).toEqual(replacement);
-    expect(mixedTask).toMatchObject({ surface: "cloud" });
-    expect(mixedTask).not.toHaveProperty("surfaceAuto");
+    // no pin is written for it (Workspace is always Auto, JC 2026-10-18)
+    expect(mixedTask.surface).toBeUndefined();
 
     // New bots get the replacement at once, not after another restart.
     const defaults = await server.api("GET", "/api/bot-defaults");
@@ -297,11 +298,13 @@ describe("removing the Computer engine", () => {
     expect(boxesCreated).toBe(1);
     expect(agentCalls).toEqual([]);
 
-    // Atlas's new conversation reaches its own cloud computer the same way.
+    // Atlas stays on Auto (no place written, JC 2026-10-18): a new
+    // conversation creates no cloud computer up front; the bot picks one
+    // with select_computer when a task needs it. Boat's agent is never asked.
     const { task: atlasNew } = await server.api("POST", `/api/bots/${auto.id}/tasks`, {});
     const autoMovedTurn = await server.turn(auto.id, atlasNew.threadId, "Take a screenshot of the cloud computer.");
-    expect(autoMovedTurn.mcpConfig.mcpServers.computer.args).toEqual([expect.stringMatching(/harness-mcp-proxy\.(?:ts|js)$/), "computer"]);
-    expect(boxesCreated).toBe(2);
+    expect(autoMovedTurn.mcpConfig?.mcpServers?.computer?.args?.[1]).not.toBe("computer");
+    expect(boxesCreated).toBe(1);
     expect(agentCalls).toEqual([]);
 
     // Auto, with this bot's cloud computer running: zero Boat calls of any
@@ -373,7 +376,8 @@ describe("removing the Computer engine", () => {
     rmSync(teams);
     await server.send(starter.id, starter.threadId, "hello");
     await expect.poll(async () => (await server.bot(starter.id)).modelSelection.instanceId, { timeout: 15_000 }).toBe("claude");
-    expect((await server.bot(starter.id)).computer).toBe("cloud");
+    // the move writes no place: Workspace is always Auto (JC 2026-10-18)
+    expect((await server.bot(starter.id)).computer).toBeUndefined();
     expect(await server.moveLines(starter.threadId)).toEqual([
       `${starter.name} now uses ${ENGINE_NAME}. ${REMOVED} ${starter.name} still works on its cloud computer.`,
     ]);
