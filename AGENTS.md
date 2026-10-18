@@ -4116,6 +4116,42 @@ happy-dom page behind a fake engine), `server/routes/credential-vault.test.ts`,
 `server/onepassword.test.ts`, `server/totp.test.ts`,
 `src/components/VaultRequestCard.test.ts`.
 
+Import and Export (2026-10-18), two buttons in the vault's card
+(`src/components/settings/CredentialsTransfer.tsx`, parsers and writers in
+`shared/credential-vault-transfer.ts`, fake files per format in
+`shared/fixtures/credential-vault-import/`). Import reads Bitwarden
+(unencrypted JSON, CSV), LastPass, Apple Passwords, 1Password (CSV, 1PUX),
+Chrome/Edge/Brave, Firefox and a generic CSV, detected from the bytes and
+the header, in memory only: the file is never copied nor sent; only the
+parsed items go to `POST /api/me/credentials/import`, which plans again
+against the saved items (`planVaultImport`: a login matches by site and user
+name, an API key by site and name, a note by name; merge or leave as is; a
+1Password item is never merged, and an item a bot is allowed to use never
+gains a site from a file) and writes once. Sites come from the URLs (host
+and port; http becomes the https site, except localhost; `*.host` its exact
+host; an IP, an app link or a URL with a user name gives none, and a login
+with no site is left out). What the vault cannot keep (cards, identities, attachments,
+custom fields, passkeys, a seed it cannot read) is counted in the preview,
+never invented. Export writes Chrome CSV (logins only, first site, no
+codes; the server sends nothing else for it), Bitwarden CSV or Bitwarden
+JSON (both round-trip notes, API keys as a login with `sagax_kind: apiKey`,
+and seeds); 1Password references are left out; a name or a note that would
+run as a spreadsheet formula gets a leading apostrophe. `POST
+/api/me/credentials/export` needs `acknowledge: "plaintext"` and
+`exportGate`: a person (`credentialVaultPersonRefusal`: no ephemeral, act or
+actAs session, no chat-only device without a person, no local service),
+their security key whenever they have one (`credentials.export` step-up,
+class-free; off an organization server the vault owner's key), else a
+sign-in younger than 15 minutes; the desktop's own person counts, a
+headless server's loopback never does. Import refuses the same callers. The
+1PUX reader inflates chunk by chunk and stops past the limit or a ratio of
+200. Both routes write an admin-activity row (category security)
+with counts only. No organization policy blocks an export yet; iOS has no
+vault. Tests: `shared/credential-vault-transfer.test.ts`, the import and
+export blocks of `server/credential-vault.test.ts` and
+`server/routes/credential-vault.test.ts`,
+`src/components/settings/CredentialsTransfer.test.ts`.
+
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 
 A bot shows a card, list, form, table or chart with the agents tool

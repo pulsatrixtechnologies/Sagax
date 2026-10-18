@@ -5,7 +5,9 @@
 // allowed always or revoked. Optional 1Password: a read-only picker when the
 // op CLI or 1Password Connect is present (server/onepassword.ts).
 // 2026-10-18 (JC): drawn as the other pages (grey headings over cards of
-// rows, the page's intro level with its title, SettingsPrimitives).
+// rows, the page's intro level with its title, SettingsPrimitives). Import
+// and Export move items from and to other password managers
+// (CredentialsTransfer.tsx).
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { allowBotAlways, createCredential, deleteCredential, importOnePasswordItem, loadCredentials, loadOnePasswordItems, parseDomains, revealCredentialNotes, revokeBot, updateCredential, type CredentialVaultState, type OnePasswordItem, type VaultItemDraft, type VaultItemListing } from "@/lib/credential-vault";
@@ -13,6 +15,7 @@ import { t } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 import type { VaultItemKind } from "../../../shared/credential-vault";
 import { FIELD, PILL, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow } from "../SettingsPrimitives";
+import { ExportPanel, ImportPanel, importOutcomeText } from "./CredentialsTransfer";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const inputClass = FIELD;
@@ -45,6 +48,8 @@ export function CredentialsSettings() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [transfer, setTransfer] = useState<"import" | "export" | null>(null);
+  const [imported, setImported] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     try {
       setData(await loadCredentials());
@@ -73,9 +78,23 @@ export function CredentialsSettings() {
           {data.items.map((item) => editing === item.id
             ? <ItemForm key={item.id} item={item} onDone={async () => { setEditing(null); await refresh(); }} />
             : <ItemRow key={item.id} item={item} botName={botName} bots={state.bots} onEdit={() => setEditing(item.id)} onChanged={refresh} onError={setError} />)}
-          {adding
-            ? <ItemForm onDone={async () => { setAdding(false); await refresh(); }} />
-            : <div className="flex justify-end px-3.5 py-2.5"><button type="button" className={PRIMARY_PILL} onClick={() => setAdding(true)}>{t("vault.settings.add")}</button></div>}
+          {adding && <ItemForm onDone={async () => { setAdding(false); await refresh(); }} />}
+          {transfer === "import" && (
+            <ImportPanel
+              existing={data.items}
+              onCancel={() => setTransfer(null)}
+              onDone={async (outcome) => { setTransfer(null); setImported(importOutcomeText(outcome)); await refresh(); }}
+            />
+          )}
+          {transfer === "export" && <ExportPanel onCancel={() => setTransfer(null)} />}
+          {imported && !transfer && <SettingsTextRow live><span data-credential-import-result>{imported}</span></SettingsTextRow>}
+          {!adding && !transfer && (
+            <div className="flex flex-wrap justify-end gap-2 px-3.5 py-2.5" data-credentials-actions>
+              <button type="button" className={PILL} disabled={Boolean(data.unavailable)} onClick={() => { setImported(null); setTransfer("import"); }} data-credentials-import="">{t("vault.transfer.import")}</button>
+              <button type="button" className={PILL} disabled={Boolean(data.unavailable) || data.items.length === 0} onClick={() => { setImported(null); setTransfer("export"); }} data-credentials-export="">{t("vault.transfer.export")}</button>
+              <button type="button" className={PRIMARY_PILL} onClick={() => setAdding(true)}>{t("vault.settings.add")}</button>
+            </div>
+          )}
         </SettingsGroup>
       </div>
       <OnePasswordCard data={data} onImported={refresh} />

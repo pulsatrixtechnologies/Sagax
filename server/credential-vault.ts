@@ -36,6 +36,7 @@ import {
   type VaultItemKind,
   type VaultItemListing,
 } from "../shared/credential-vault.ts";
+import { mergePatch, planVaultImport, type VaultDuplicateMode, type VaultExportFormat, type VaultTransferItem } from "../shared/credential-vault-transfer.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
 import { principalDir } from "./person-connections.ts";
@@ -115,6 +116,19 @@ export interface VaultItemInput {
 
 /** Reads a 1Password item's field at fill time (server/onepassword.ts). */
 export type OnePasswordFieldReader = (ref: OnePasswordRef, field: VaultFillField) => Promise<string | null>;
+
+export interface VaultImportOutcome {
+  created: number;
+  merged: number;
+  /** Matched a saved item and left as it was. */
+  duplicates: number;
+  /** Repeated an earlier item of the file. */
+  inFile: number;
+  /** Over the vault's item limit. */
+  overLimit: number;
+  /** Refused by the vault's rules (a seed it cannot read, a site it refuses). */
+  refused: number;
+}
 
 export type FillResolution =
   | { ok: true; value: string; item: VaultItemListing; field: VaultFillField }
@@ -446,6 +460,82 @@ export class CredentialVault {
       // the fill still happens; only "last used" is not recorded
     }
     return { ok: true, value, item: listingOf(item, now), field: request.field };
+  }
+
+  /** Items read from another manager's file (Settings > Credentials,
+   * Import), in one write: new ones created, ones that match a saved item
+   * merged or left out (shared/credential-vault-transfer.ts
+   * planVaultImport). An item the vault refuses is counted by its
+   * position, never echoed. */
+  importItems(principalId: string, input: readonly VaultTransferItem[], mode: VaultDuplicateMode): VaultImportOutcome {
+    const now = this.now();
+    return this.mutate(principalId, (items) => {
+      const existing = Object.values(items).map((item) => ({ id: item.id, kind: item.kind, name: item.name, ...(item.username ? { username: item.username } : {}), domains: item.domains, source: item.source }));
+      const plan = planVaultImport(input, existing, mode, MAX_VAULT_ITEMS - Object.keys(items).length);
+      const outcome: VaultImportOutcome = { created: 0, merged: 0, duplicates: plan.duplicates, inFile: plan.inFile, overLimit: plan.overLimit, refused: 0 };
+      for (const entry of plan.create) {
+        const item: StoredVaultItem = { id: newItemId(), kind: entry.kind, name: "", domains: [], source: "local", grants: [], createdAt: now, updatedAt: now };
+        try {
+          applyInput(item, { name: entry.name, domains: entry.domains, username: entry.username, password: entry.password, totpSeed: entry.totpSeed, apiKey: entry.apiKey, notes: entry.notes }, true);
+        } catch {
+          outcome.refused++;
+          continue;
+        }
+        items[item.id] = item;
+        outcome.created++;
+      }
+      for (const { id, item: entry } of plan.merge) {
+        const current = items[id];
+        if (!current) continue;
+        const next = structuredClone(current);
+        try {
+          // a bot allowed on this item never gains a site from a file
+          applyInput(next, mergePatch(current, entry, { keepSites: activeGrants(current, now).length > 0 }), false);
+        } catch {
+          outcome.refused++;
+          continue;
+        }
+        next.updatedAt = now;
+        items[id] = next;
+        outcome.merged++;
+      }
+      return outcome;
+    });
+  }
+
+  /** The person's own items with their values, for an export file the
+   * person asked for (the route checks a fresh sign-in or their security
+   * key first). A 1Password item holds no value here and is left out.
+   * Only what the format holds leaves the vault: Chrome CSV takes logins
+   * without their one-time code seed. */
+  exportItems(principalId: string, format: VaultExportFormat): { items: VaultTransferItem[]; onePassword: number; notInFormat: number; totpNotInFormat: number } {
+    const all = Object.values(this.load(principalId).items).sort((left, right) => left.name.localeCompare(right.name));
+    const items: VaultTransferItem[] = [];
+    let onePassword = 0;
+    let notInFormat = 0;
+    let totpNotInFormat = 0;
+    for (const item of all) {
+      if (item.source !== "local") {
+        onePassword++;
+        continue;
+      }
+      if (format === "chrome-csv" && item.kind !== "login") {
+        notInFormat++;
+        continue;
+      }
+      if (format === "chrome-csv" && item.totpSeed) totpNotInFormat++;
+      items.push({
+        kind: item.kind,
+        name: item.name,
+        domains: [...item.domains],
+        ...(item.username ? { username: item.username } : {}),
+        ...(item.password ? { password: item.password } : {}),
+        ...(item.totpSeed && format !== "chrome-csv" ? { totpSeed: item.totpSeed } : {}),
+        ...(item.apiKey ? { apiKey: item.apiKey } : {}),
+        ...(item.notes ? { notes: item.notes } : {}),
+      });
+    }
+    return { items, onePassword, notInFormat, totpNotInFormat };
   }
 
   /** Forget a person's whole vault (their account is deleted). */

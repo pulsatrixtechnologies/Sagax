@@ -9,6 +9,8 @@
 //   DELETE /api/me/credentials/:id/grants/:botId     revoke
 //   POST   /api/me/credentials/onepassword/items     the 1Password picker (names and sites)
 //   POST   /api/me/credentials/onepassword/import { via, vaultId, itemId, name?, domains? }
+//   POST   /api/me/credentials/import   { format, duplicates: merge|skip, items }  items the app read from a file
+//   POST   /api/me/credentials/export   { format, acknowledge: "plaintext", stepUp? } -> { items, onePassword }
 //   POST   /api/bots/:botId/vault-cards/:messageId/grant   { threadId, itemId | item, mode }
 //   POST   /api/bots/:botId/vault-cards/:messageId/dismiss { threadId }
 //
@@ -24,7 +26,8 @@
 // only answered to the person's own app.
 import { randomUUID } from "node:crypto";
 
-import { isVaultGrantMode, VAULT_LOGIN_TARGET, vaultHandle, type VaultGrantMode, type VaultItemListing } from "../../shared/credential-vault.ts";
+import { isVaultGrantMode, normalizeVaultDomain, VAULT_ITEM_KINDS, VAULT_LOGIN_TARGET, vaultHandle, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault.ts";
+import { isVaultDuplicateMode, isVaultExportFormat, isVaultImportFormat, type VaultExportFormat, type VaultTransferItem } from "../../shared/credential-vault-transfer.ts";
 import type { SecretRequestCardData } from "../../shared/wire.ts";
 import { CredentialVaultError, type CredentialVault, type VaultItemInput } from "../credential-vault.ts";
 import type { OnePassword } from "../onepassword.ts";
@@ -45,7 +48,39 @@ export interface CredentialVaultRouteDeps {
     /** Settle the card and wake the bot with this note. */
     resume(botId: string, threadId: string, messageId: string, outcome: "provided" | "dismissed", prompt: string): boolean;
   };
-  audit?(action: "credentials.create" | "credentials.delete" | "credentials.grant" | "credentials.revoke", auth: RequestAuth, detail: Record<string, unknown>): void;
+  audit?(action: "credentials.create" | "credentials.delete" | "credentials.grant" | "credentials.revoke" | "credentials.import" | "credentials.export", auth: RequestAuth, detail: Record<string, unknown>): void;
+  /** Whether this caller may take the vault's values out in a file now:
+   * null to go on, else the refusal (a security key step-up, a sign-in
+   * that is too old, a bot acting for its person). Absent refuses. */
+  exportGate?(auth: RequestAuth, input: { format: VaultExportFormat; stepUp: unknown }): { status: number; body: unknown } | null;
+  /** Whether this caller may import: null to go on (absent allows, as for
+   * creating an item). */
+  importGate?(auth: RequestAuth): { status: number; body: unknown } | null;
+}
+
+/** The most items one import request may carry (the vault keeps 500). */
+const MAX_IMPORT_ITEMS = 5_000;
+/** An import body: up to 500 items of long notes. */
+const IMPORT_BODY_LIMIT = 16 * 1024 * 1024;
+
+const optionalText = (value: unknown): string | undefined => (typeof value === "string" && value ? value : undefined);
+
+/** One item of an import body, as the vault's import takes it: unknown
+ * fields dropped, sites normalized, nothing else trusted. Null when it is
+ * not an item at all. */
+function importItem(raw: unknown): VaultTransferItem | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  if (!(VAULT_ITEM_KINDS as readonly unknown[]).includes(row.kind) || typeof row.name !== "string") return null;
+  const domains = Array.isArray(row.domains)
+    ? [...new Set(row.domains.map((domain) => normalizeVaultDomain(domain)).filter((domain): domain is string => Boolean(domain)))]
+    : [];
+  const item: VaultTransferItem = { kind: row.kind as VaultItemKind, name: row.name, domains };
+  for (const field of ["username", "password", "totpSeed", "apiKey", "notes"] as const) {
+    const value = optionalText(row[field]);
+    if (value !== undefined) item[field] = value;
+  }
+  return item;
 }
 
 const ITEM = /^\/api\/me\/credentials\/([a-z0-9]{8,40})(?:\/(notes|grants)(?:\/([\w-]{1,128}))?)?$/;
@@ -157,6 +192,34 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         }, { source: "1password", onePassword: { via: status.via, vaultId, itemId } });
         deps.audit?.("credentials.create", auth, { id: item.id, kind: item.kind, via: "1password" });
         return json(res, 201, { item });
+      }
+      if (path === "/api/me/credentials/import") {
+        if (method !== "POST") return json(res, 405, { error: "POST only" });
+        const gated = deps.importGate?.(auth);
+        if (gated) return json(res, gated.status, gated.body);
+        if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return json(res, 415, { error: "content-type must be application/json" });
+        const input = await readBody(req, IMPORT_BODY_LIMIT);
+        if (!input || typeof input !== "object" || Array.isArray(input)) return json(res, 400, { error: "send format, duplicates and items" });
+        if (!isVaultImportFormat(input.format)) return json(res, 400, { error: "unknown import format", code: "invalid_format" });
+        if (!isVaultDuplicateMode(input.duplicates)) return json(res, 400, { error: "duplicates must be merge or skip" });
+        if (!Array.isArray(input.items) || input.items.length > MAX_IMPORT_ITEMS) return json(res, 400, { error: `items must be a list of at most ${MAX_IMPORT_ITEMS}` });
+        const items = (input.items as unknown[]).map(importItem);
+        if (items.some((item) => item === null)) return json(res, 400, { error: "every item needs a kind and a name", code: "invalid_item" });
+        const outcome = deps.vault.importItems(principalId, items as VaultTransferItem[], input.duplicates);
+        // counts only: never a name, a site or a value
+        deps.audit?.("credentials.import", auth, { format: input.format, mode: input.duplicates, received: items.length, ...outcome });
+        return json(res, 200, outcome);
+      }
+      if (path === "/api/me/credentials/export") {
+        if (method !== "POST") return json(res, 405, { error: "POST only" });
+        const input = await body();
+        if (!isVaultExportFormat(input.format)) return json(res, 400, { error: "unknown export format", code: "invalid_format" });
+        if (input.acknowledge !== "plaintext") return json(res, 400, { error: "Confirm that the file holds your passwords in clear.", code: "acknowledge_required" });
+        const refused = deps.exportGate ? deps.exportGate(auth, { format: input.format, stepUp: input.stepUp }) : { status: 403, body: { error: "Export is not available here.", code: "export_unavailable" } };
+        if (refused) return json(res, refused.status, refused.body);
+        const exported = deps.vault.exportItems(principalId, input.format);
+        deps.audit?.("credentials.export", auth, { format: input.format, count: exported.items.length, referencesLeftOut: exported.onePassword, notInFormat: exported.notInFormat });
+        return json(res, 200, exported);
       }
       const match = ITEM.exec(path);
       if (!match) return json(res, 404, { error: "not found" });

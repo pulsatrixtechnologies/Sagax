@@ -178,3 +178,49 @@ describe("grants", () => {
     expect(store.find(LOCAL_VAULT_PRINCIPAL, { domain: "other.test" })).toEqual([]);
   });
 });
+
+describe("credential vault import and export", () => {
+  it("imports in one write, merges into a match, and exports back the values", () => {
+    const { dir, vault: store } = vault();
+    const saved = store.create(LOCAL_VAULT_PRINCIPAL, login);
+    const outcome = store.importItems(LOCAL_VAULT_PRINCIPAL, [
+      { kind: "login", name: "Same login", username: "ADA@example.test", password: "fake-merged-pass", domains: ["example.test", "www.example.test"] },
+      { kind: "login", name: "New", username: "kim", password: "fake-new", domains: ["new.example.test"] },
+      { kind: "apiKey", name: "Key", apiKey: "fake-key-value", domains: ["api.example.test"] },
+      { kind: "login", name: "Bad", username: "x", totpSeed: "!!", domains: ["bad.example.test"] },
+    ], "merge");
+    expect(outcome).toEqual({ created: 2, merged: 1, duplicates: 0, inFile: 0, overLimit: 0, refused: 1 });
+    const raw = readFileSync(join(dir, "credential-vault.enc"), "utf8");
+    for (const value of ["fake-merged-pass", "fake-new", "fake-key-value"]) expect(raw).not.toContain(value);
+    const listed = store.list(LOCAL_VAULT_PRINCIPAL);
+    expect(listed.find((item) => item.id === saved.id)).toMatchObject({ name: "Example portal", domains: ["example.test", "www.example.test"], hasTotp: true });
+    expect(JSON.stringify(listed)).not.toContain("fake-merged-pass");
+    const exported = store.exportItems(LOCAL_VAULT_PRINCIPAL, "bitwarden-json");
+    expect(exported.onePassword).toBe(0);
+    expect(exported.items.find((item) => item.name === "Example portal")).toMatchObject({ password: "fake-merged-pass", totpSeed: FAKE_SEED });
+    expect(exported.items.find((item) => item.name === "Key")).toMatchObject({ kind: "apiKey", apiKey: "fake-key-value" });
+    // Chrome CSV: only logins leave the vault, without their seed
+    const chrome = store.exportItems(LOCAL_VAULT_PRINCIPAL, "chrome-csv");
+    expect(chrome.items.map((item) => item.kind)).toEqual(["login", "login"]);
+    expect(chrome.items.some((item) => item.totpSeed)).toBe(false);
+    expect(chrome).toMatchObject({ notInFormat: 1, totpNotInFormat: 1 });
+  });
+
+  it("never adds a file's sites to an item a bot is allowed to use", () => {
+    const { vault: store } = vault();
+    const saved = store.create(LOCAL_VAULT_PRINCIPAL, login);
+    store.grant(LOCAL_VAULT_PRINCIPAL, saved.id, { botId: "bot-a", mode: "always" });
+    const outcome = store.importItems(LOCAL_VAULT_PRINCIPAL, [{ kind: "login", name: "x", username: "ada@example.test", password: "fake-widen", domains: ["example.test", "other.example.test"] }], "merge");
+    expect(outcome).toMatchObject({ merged: 1 });
+    expect(store.item(LOCAL_VAULT_PRINCIPAL, saved.id)!.domains).toEqual(["example.test"]);
+  });
+
+  it("leaves duplicates as they are in skip mode and stops at the item limit", () => {
+    const { vault: store } = vault();
+    store.create(LOCAL_VAULT_PRINCIPAL, login);
+    const again = store.importItems(LOCAL_VAULT_PRINCIPAL, [{ kind: "login", name: "x", username: "ada@example.test", password: "fake-other", domains: ["example.test"] }], "skip");
+    expect(again).toMatchObject({ created: 0, merged: 0, duplicates: 1 });
+    const many = Array.from({ length: 501 }, (_, index) => ({ kind: "note" as const, name: `Note ${index}`, notes: "fake", domains: [] }));
+    expect(store.importItems(LOCAL_VAULT_PRINCIPAL, many, "skip")).toMatchObject({ created: 499, overLimit: 2 });
+  });
+});

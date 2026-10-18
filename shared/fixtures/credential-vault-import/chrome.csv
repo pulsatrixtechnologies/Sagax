@@ -1,0 +1,4 @@
+name,url,username,password,note
+example.com,https://accounts.example.com/signin,robin@example.com,fake-pass-chrome-1,
+port.example.net,https://port.example.net:8443/,robin,fake-pass-chrome-2,Port spécial
+Sans mot de passe,https://blank.example.org/,,,

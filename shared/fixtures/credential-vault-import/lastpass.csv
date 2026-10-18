@@ -1,0 +1,6 @@
+url,username,password,totp,extra,name,grouping,fav
+https://mail.example.com/,sam@example.com,fake-pass-lp-1,,Note libre,Courriel démo,Perso,0
+http://sn,,,,"NoteType:Generic
+Contenu factice",Note sécurisée,Perso,0
+https://shop.example.org,sam,fake-pass-lp-2,steam://FAKE,,Boutique démo,,1
+https://mail.example.com/,sam@example.com,fake-pass-lp-3,,,Courriel démo (copie),,0

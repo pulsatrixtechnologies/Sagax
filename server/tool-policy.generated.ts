@@ -172,6 +172,8 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"exact","route":"/api/me/credentials","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"POST","kind":"exact","route":"/api/me/credentials","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"prefix","route":"/api/me/credentials/","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
+  {"method":"ANY","kind":"exact","route":"/api/me/credentials/export","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
+  {"method":"ANY","kind":"exact","route":"/api/me/credentials/import","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/credentials/list","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/credentials/onepassword/import","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/credentials/onepassword/items","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},

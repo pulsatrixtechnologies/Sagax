@@ -24,14 +24,22 @@ const FAKE_SEED = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 
-async function serve(options: { principal?: string | null } = {}) {
+async function serve(options: {
+  principal?: string | null;
+  exportGate?: Parameters<typeof createCredentialVaultRoutes>[0]["exportGate"];
+  importGate?: Parameters<typeof createCredentialVaultRoutes>[0]["importGate"];
+} = {}) {
   const dir = mkdtempSync(join(tmpdir(), "sagax-vault-routes-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const vault = new CredentialVault(dir, () => ({ kind: "key", key: Buffer.alloc(32, 5) }));
   const cards = new Map<string, SecretRequestCardData>();
   const resumed: Array<{ messageId: string; outcome: string; prompt: string }> = [];
+  const audits: Array<{ action: string; detail: Record<string, unknown> }> = [];
   const routes = [createCredentialVaultRoutes({
     vault,
+    audit: (action, _auth, detail) => { audits.push({ action, detail }); },
+    ...(options.exportGate ? { exportGate: options.exportGate } : {}),
+    ...(options.importGate ? { importGate: options.importGate } : {}),
     onePassword: new OnePassword({ env: {}, exec: async () => { throw new Error("absent"); }, organization: () => false }),
     principal: () => options.principal === undefined ? LOCAL_VAULT_PRINCIPAL : options.principal,
     botExists: (id) => id === "bot-a",
@@ -60,7 +68,7 @@ async function serve(options: { principal?: string | null } = {}) {
     const text = await response.text();
     return { status: response.status, text, body: text ? JSON.parse(text) : null };
   };
-  return { vault, cards, resumed, call };
+  return { vault, cards, resumed, audits, call };
 }
 
 const login = { kind: "login", name: "Example", username: "ada.fake@example.test", password: FAKE_PASSWORD, totpSeed: FAKE_SEED, domains: ["example.test"], notes: "fake private note" };
@@ -199,5 +207,84 @@ describe("request_login internal route", () => {
     expect(second).toMatchObject({ status: 200, body: { granted: [{ handle: vaultHandle(item.id), name: "Example", domains: ["example.test"], fields: ["username", "password", "totp"] }] } });
     expect(JSON.stringify(second)).not.toContain(FAKE_PASSWORD);
     expect(posted).toHaveLength(1);
+  });
+});
+
+describe("import and export routes", () => {
+  const items = [
+    { kind: "login", name: "Imported", username: "kim.fake@example.test", password: FAKE_PASSWORD, totpSeed: FAKE_SEED, domains: ["https://Imported.example.test/login"], extra: "dropped" },
+    { kind: "note", name: "Imported note", notes: "fake imported note", domains: [] },
+  ];
+
+  it("imports parsed items, merges or leaves duplicates, and audits counts only", async () => {
+    const { call, audits, vault } = await serve();
+    const first = await call("POST", "/api/me/credentials/import", { format: "chrome-csv", duplicates: "skip", items });
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({ created: 2, merged: 0, duplicates: 0, inFile: 0, overLimit: 0, refused: 0 });
+    expect(vault.list(LOCAL_VAULT_PRINCIPAL).map((item) => item.domains)).toEqual([["imported.example.test"], []]);
+    const again = await call("POST", "/api/me/credentials/import", { format: "chrome-csv", duplicates: "skip", items });
+    expect(again.body).toMatchObject({ created: 0, merged: 0, duplicates: 2 });
+    const merged = await call("POST", "/api/me/credentials/import", { format: "bitwarden-json", duplicates: "merge", items: [{ ...items[0], password: "fake-new-pass", domains: ["imported.example.test", "www.imported.example.test"] }] });
+    expect(merged.body).toMatchObject({ created: 0, merged: 1 });
+    expect(vault.list(LOCAL_VAULT_PRINCIPAL)[0]!.domains).toEqual(["imported.example.test", "www.imported.example.test"]);
+    const bad = await call("POST", "/api/me/credentials/import", { format: "chrome-csv", duplicates: "skip", items: [{ kind: "login", name: "Bad seed", username: "u", totpSeed: "not base32 !", domains: ["bad.example.test"] }] });
+    expect(bad.body).toMatchObject({ created: 0, refused: 1 });
+    for (const answer of [first, again, merged, bad]) expect(answer.text).not.toContain(FAKE_PASSWORD);
+    expect(audits.filter((row) => row.action === "credentials.import")).toHaveLength(4);
+    const auditText = JSON.stringify(audits);
+    for (const value of [FAKE_PASSWORD, FAKE_SEED, "fake-new-pass", "kim.fake@example.test", "Imported", "imported.example.test", "fake imported note"]) expect(auditText).not.toContain(value);
+  });
+
+  it("refuses an import the gate refuses (a bot acting for its person)", async () => {
+    const { call, vault } = await serve({ importGate: () => ({ status: 403, body: { code: "not_person" } }) });
+    expect((await call("POST", "/api/me/credentials/import", { format: "chrome-csv", duplicates: "skip", items })).body).toEqual({ code: "not_person" });
+    expect(vault.list(LOCAL_VAULT_PRINCIPAL)).toEqual([]);
+  });
+
+  it("refuses a malformed import", async () => {
+    const { call } = await serve();
+    expect((await call("POST", "/api/me/credentials/import", { format: "word", duplicates: "skip", items: [] })).status).toBe(400);
+    expect((await call("POST", "/api/me/credentials/import", { format: "chrome-csv", duplicates: "all", items: [] })).status).toBe(400);
+    expect((await call("POST", "/api/me/credentials/import", { format: "chrome-csv", duplicates: "skip", items: [{ kind: "card", name: "x" }] })).status).toBe(400);
+    expect((await call("GET", "/api/me/credentials/import")).status).toBe(405);
+  });
+
+  it("exports only past the gate, with a plaintext acknowledgement, and audits without content", async () => {
+    let refuse = true;
+    const asked: unknown[] = [];
+    const { call, audits, vault } = await serve({
+      exportGate: (_auth, input) => {
+        asked.push(input);
+        return refuse ? { status: 403, body: { error: "Confirm this change with your security key.", code: "step_up_required", target: { kind: "settings", action: "credentials.export", detail: { format: input.format } } } } : null;
+      },
+    });
+    vault.create(LOCAL_VAULT_PRINCIPAL, login);
+    expect((await call("POST", "/api/me/credentials/export", { format: "chrome-csv" })).body).toMatchObject({ code: "acknowledge_required" });
+    expect((await call("POST", "/api/me/credentials/export", { format: "pdf", acknowledge: "plaintext" })).status).toBe(400);
+    const refused = await call("POST", "/api/me/credentials/export", { format: "bitwarden-json", acknowledge: "plaintext" });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ code: "step_up_required", target: { action: "credentials.export" } });
+    expect(refused.text).not.toContain(FAKE_PASSWORD);
+    refuse = false;
+    const answered = await call("POST", "/api/me/credentials/export", { format: "bitwarden-json", acknowledge: "plaintext", stepUp: "ceremony-id" });
+    expect(answered.status).toBe(200);
+    expect(answered.body.items).toEqual([{ kind: "login", name: "Example", username: "ada.fake@example.test", password: FAKE_PASSWORD, totpSeed: FAKE_SEED, notes: "fake private note", domains: ["example.test"] }]);
+    expect(answered.body.onePassword).toBe(0);
+    expect(asked.at(-1)).toEqual({ format: "bitwarden-json", stepUp: "ceremony-id" });
+    const exports = audits.filter((row) => row.action === "credentials.export");
+    expect(exports).toEqual([{ action: "credentials.export", detail: { format: "bitwarden-json", count: 1, referencesLeftOut: 0, notInFormat: 0 } }]);
+  });
+
+  it("refuses an export where no gate is wired, and keeps both routes member scope and off for agents", async () => {
+    const { call, vault } = await serve();
+    vault.create(LOCAL_VAULT_PRINCIPAL, login);
+    const answer = await call("POST", "/api/me/credentials/export", { format: "chrome-csv", acknowledge: "plaintext" });
+    expect(answer.status).toBe(403);
+    expect(answer.text).not.toContain(FAKE_PASSWORD);
+    for (const path of ["/api/me/credentials/import", "/api/me/credentials/export"]) {
+      expect(requiredScope("POST", path)).toBe("client");
+      expect(requiredScope("GET", path)).toBe("admin");
+      for (const row of TOOL_POLICY_ROWS.filter((entry) => entry.route === path)) expect(row).toMatchObject({ tier: "admin", defaultEnabled: false });
+    }
   });
 });

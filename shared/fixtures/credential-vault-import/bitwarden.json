@@ -1,0 +1,21 @@
+{
+  "encrypted": false,
+  "folders": [{ "id": "f-1", "name": "Travail" }],
+  "items": [
+    {
+      "id": "i-1", "folderId": "f-1", "type": 1, "name": "Portail démo", "notes": "Compte de test", "favorite": false,
+      "fields": [{ "name": "Question", "value": "fake-answer", "type": 1 }],
+      "login": {
+        "username": "alex@example.com", "password": "fake-pass-bw-1", "totp": "otpauth://totp/Demo:alex?secret=JBSWY3DPEHPK3PXP&issuer=Demo",
+        "uris": [{ "match": null, "uri": "https://portal.example.com/login?next=/" }, { "match": null, "uri": "https://www.example.com" }, { "match": null, "uri": "androidapp://com.example.app" }],
+        "fido2Credentials": [{ "credentialId": "fake-credential" }]
+      },
+      "attachments": [{ "id": "a-1", "fileName": "fake.pdf" }]
+    },
+    { "id": "i-2", "type": 2, "name": "Note Wi-Fi", "notes": "Réseau invité : fake-wifi-pass", "secureNote": { "type": 0 } },
+    { "id": "i-3", "type": 3, "name": "Carte démo", "card": { "number": "0000000000000000" } },
+    { "id": "i-4", "type": 1, "name": "Routeur", "login": { "username": "admin", "password": "fake-router", "uris": [{ "uri": "http://192.168.0.1" }] } },
+    { "id": "i-5", "type": 1, "name": "Clé API démo", "notes": null, "fields": [{ "name": "sagax_kind", "value": "apiKey", "type": 0 }], "login": { "username": null, "password": "fake-api-key-0001", "totp": null, "uris": [{ "uri": "https://api.example.net" }] } },
+    { "id": "i-6", "type": 1, "name": "Ancien compte", "deletedDate": "2026-01-01T00:00:00.000Z", "login": { "username": "old", "password": "fake-old", "uris": [{ "uri": "https://old.example.org" }] } }
+  ]
+}

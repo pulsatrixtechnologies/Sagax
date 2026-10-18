@@ -65,6 +65,9 @@ export const STEP_UP_SETTINGS_ACTIONS = [
   /** A deny or ask rule removed, turned off or made to allow less; an owner
    * rule removed or widened to every bot. */
   "rules.remove",
+  /** The credential vault's values taken out in a file (Settings >
+   * Credentials, Export): the key whenever the person has one. */
+  "credentials.export",
 ] as const;
 export type StepUpSettingsAction = (typeof STEP_UP_SETTINGS_ACTIONS)[number];
 
@@ -85,6 +88,7 @@ export const SETTINGS_ACTION_CLASS: Readonly<Record<StepUpSettingsAction, StepUp
   "approval-mode": "rule-change",
   "command-allowlist": "always-grant",
   "rules.remove": "rule-change",
+  "credentials.export": null,
 };
 
 /** Approval levels by how much runs without asking. Custom is a provider

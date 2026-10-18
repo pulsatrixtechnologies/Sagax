@@ -1,0 +1,3 @@
+"url","username","password","httpRealm","formActionOrigin","guid","timeCreated","timeLastUsed","timePasswordChanged"
+"https://forum.example.org","kim","fake-pass-ff-1",,"https://forum.example.org","{00000000-0000-0000-0000-000000000001}","1700000000000","1700000000000","1700000000000"
+"https://sub.forum.example.org","kim","fake-pass-ff-2",,"","{00000000-0000-0000-0000-000000000002}","1700000000000","1700000000000","1700000000000"

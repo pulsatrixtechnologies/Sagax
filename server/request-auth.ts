@@ -636,7 +636,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The person's own credential vault (server/routes/credential-vault.ts):
   // the session's own vault only. Reads are POSTs (a loopback GET needs no
   // desktop capability); no answer carries a value.
-  { methods: ["POST"], path: /^\/api\/me\/credentials(?:\/(?:list|onepassword\/(?:items|import)))?$/ },
+  { methods: ["POST"], path: /^\/api\/me\/credentials(?:\/(?:list|import|export|onepassword\/(?:items|import)))?$/ },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}$/ },
   { methods: ["POST"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/(?:notes|grants)$/ },
   { methods: ["DELETE"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/grants\/[\w-]{1,128}$/ },

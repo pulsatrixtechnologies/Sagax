@@ -4,6 +4,7 @@
 // booleans that say one is saved. Values typed here go to the server once.
 import { api } from "@/state/store";
 import { bindingUrl, vaultDomainMatches, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault";
+import type { VaultDuplicateMode, VaultExportFormat, VaultImportFormat, VaultTransferItem } from "../../shared/credential-vault-transfer";
 
 export type { VaultItemListing } from "../../shared/credential-vault";
 
@@ -93,4 +94,47 @@ export function createCredentialDraft(input: { name: string; domains: string[]; 
     ...(input.password ? { password: input.password } : {}),
     ...(input.totpSeed?.trim() ? { totpSeed: input.totpSeed.trim() } : {}),
   };
+}
+
+// ── import and export (shared/credential-vault-transfer.ts) ────────────
+
+/** What the server did with an import. Counts only. */
+export interface VaultImportOutcome {
+  created: number;
+  merged: number;
+  duplicates: number;
+  inFile: number;
+  overLimit: number;
+  refused: number;
+}
+
+/** Items read from a file in memory: only these parsed items reach the
+ * server (as typed ones do), never the file itself. */
+export const importCredentials = (format: VaultImportFormat, duplicates: VaultDuplicateMode, items: readonly VaultTransferItem[]) =>
+  api<VaultImportOutcome>("/api/me/credentials/import", { method: "POST", body: JSON.stringify({ format, duplicates, items }) });
+
+/** The vault's values for an export file. The server asks a fresh sign-in
+ * or the person's security key first (the store's `api` runs the key and
+ * sends the request again). */
+export const exportCredentials = (format: VaultExportFormat) =>
+  api<{ items: VaultTransferItem[]; onePassword: number; notInFormat?: number; totpNotInFormat?: number }>("/api/me/credentials/export", { method: "POST", body: JSON.stringify({ format, acknowledge: "plaintext" }) });
+
+/** The export file's name: sagax-identifiants-2026-10-18.csv. */
+export function exportFileName(extension: "csv" | "json", at: Date = new Date()): string {
+  const day = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+  return `sagax-credentials-${day}.${extension}`;
+}
+
+/** Hand the file to the browser's download (the desktop saves it in
+ * Downloads and shows it). The blob URL is revoked right after. */
+export function downloadText(text: string, mime: string, name: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }

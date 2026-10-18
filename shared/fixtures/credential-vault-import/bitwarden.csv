@@ -1,0 +1,6 @@
+folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp
+Travail,1,login,Portail démo,"Ligne 1
+Ligne 2","Question: fake-answer",0,"https://portal.example.com,https://www.example.com",alex@example.com,"fake,pass""bw-2",JBSWY3DPEHPK3PXP
+,,note,Note Wi-Fi,Réseau invité : fake-wifi-pass,,0,,,,
+,,login,Clé API démo,,sagax_kind: apiKey,0,https://api.example.net,,fake-api-key-0002,
+,,login,Sans site,,,0,,someone,fake-nosite,

@@ -6094,20 +6094,58 @@ function vaultPrincipalForThread(threadId: string): string | null {
   if (turnRoutineLineage.has(threadId)) return turnRoutinePayers.get(threadId)?.trim().toLowerCase() || null;
   return turnSpeakerPrincipals.get(threadId)?.trim().toLowerCase() || null;
 }
+// A loopback caller is the owner only on the desktop (its mutations need
+// Electron's per-launch capability). On a headless server a bot's shell is
+// a loopback caller too, so the vault answers a paired session only,
+// unless the operator opts in (SAGAX_CREDENTIAL_VAULT_LOOPBACK=1).
+const credentialVaultPrincipal = (auth: RequestAuth) => vaultPrincipalFor(auth, {
+  organization: IDENTITY.kind === "perspicax",
+  desktop: DESKTOP_MANAGED,
+  loopbackOptIn: process.env.SAGAX_CREDENTIAL_VAULT_LOOPBACK === "1",
+  localPrincipal: LOCAL_VAULT_PRINCIPAL,
+});
+/** Who may import into or export the vault: a person, never a bot acting
+ * for them (an act or actAs session is ephemeral), a chat-only paired
+ * device with no person, or a local service. Null to go on. */
+function credentialVaultPersonRefusal(auth: RequestAuth): { status: number; body: unknown } | null {
+  const refusal = { status: 403, body: { error: "Only the person can move their vault in or out.", code: "not_person" } };
+  if (auth.kind === "loopback") return auth.trust === "service" ? refusal : null;
+  if (auth.session.ephemeral || isBotActSession(auth.session)) return refusal;
+  const principalId = auth.session.principalId?.trim();
+  if (!principalId || principalId.startsWith("anon:")) return refusal;
+  return null;
+}
 ROUTES.push(createCredentialVaultRoutes({
   vault: credentialVault,
   onePassword,
-  // A loopback caller is the owner only on the desktop (its mutations need
-  // Electron's per-launch capability). On a headless server a bot's shell is
-  // a loopback caller too, so the vault answers a paired session only,
-  // unless the operator opts in (SAGAX_CREDENTIAL_VAULT_LOOPBACK=1).
-  principal: (auth) => vaultPrincipalFor(auth, {
-    organization: IDENTITY.kind === "perspicax",
-    desktop: DESKTOP_MANAGED,
-    loopbackOptIn: process.env.SAGAX_CREDENTIAL_VAULT_LOOPBACK === "1",
-    localPrincipal: LOCAL_VAULT_PRINCIPAL,
-  }),
+  principal: credentialVaultPrincipal,
   botExists: (id) => Boolean(store.bot(id)),
+  // Counts and ids only (server/routes/credential-vault.ts): never a name,
+  // a site or a value.
+  // On the desktop and on a server alike (admin-activity, category security).
+  audit: (action, auth, detail) => appendAdminAction(DATA_DIR, {
+    category: "security", action, target: { kind: "person", id: credentialVaultPrincipal(auth) ?? "unknown" },
+    after: detail,
+    actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+  }),
+  // 2026-10-18: an export file holds the values in clear. Only the person
+  // (credentialVaultPersonRefusal), with their security key when they have
+  // one (whatever classes they chose; off an organization server the
+  // vault's owner's key), else a sign-in younger than 15 minutes, as for a
+  // first key. The desktop's own person counts as present; a headless
+  // server's loopback never does (a bot's shell is a loopback caller there).
+  exportGate: (auth, input) => {
+    const refused = credentialVaultPersonRefusal(auth);
+    if (refused) return refused;
+    if (auth.kind === "loopback" && !DESKTOP_MANAGED) return { status: 403, body: { error: "Export your vault from the app, signed in.", code: "reauth_required" } };
+    const person = IDENTITY.kind === "perspicax" ? ruleManager(auth) : localPrincipalId();
+    if (person && securityKeys.hasKey(person)) {
+      return settingsStepUp(securityKeys, person, "credentials.export", { format: input.format }, input.stepUp, []);
+    }
+    const fresh = auth.kind === "loopback" ? true : Date.now() - auth.session.createdAt <= 15 * 60_000;
+    return fresh ? null : { status: 403, body: { error: "Sign in again, then export your vault.", code: "reauth_required" } };
+  },
+  importGate: (auth) => credentialVaultPersonRefusal(auth),
   cards: {
     find: (botId, threadId, messageId) => secretMessage(botId, threadId, messageId)?.secret ?? null,
     patch: (_botId, threadId, messageId, secret) => { store.patchMessage(threadId, messageId, { secret }); },
