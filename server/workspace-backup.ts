@@ -32,6 +32,10 @@ const TAG_BYTES = 16;
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const EXCLUDED = new Set([
   ".backups", "tools", "cache", ".cache", "tmp", ".tmp", "dist-native", "tunnel-runtime",
+  // a note to the next backup (CONFIDENTIAL_FORGOTTEN_MARKER), and the
+  // room-handoff file the job runtime imported once (runtime/import-legacy.ts):
+  // dead data whose briefs and results may be a confidential thread's
+  "confidential-forgotten", "room-handoffs.json.migrated",
   ".openmausbot-server-child", "environment-id", "sessions.json", "tunnel-account.json",
   "team-computers.json",
   // Identity provider grants (server/idp-session.ts): bound to this server's
@@ -267,6 +271,10 @@ function hashFile(path: string): string {
 // other thread points at are left out.
 
 export const CONFIDENTIAL_BACKUP_TITLE = "Confidential thread";
+/** Left in the data folder when a confidential thread is deleted (or one
+ * turns confidential): the next backup rebuilds and vacuums its database
+ * copies, then removes it. */
+export const CONFIDENTIAL_FORGOTTEN_MARKER = "confidential-forgotten";
 
 /** The confidential threads named in a bots.json roster (by thread id, with their bot). */
 export function confidentialRoster(value: unknown): Map<string, string> {
@@ -302,9 +310,9 @@ export function rosterWithoutConfidentialContent(value: unknown): unknown {
 /** Remove the threads' rows from a snapshot of the message database, then
  * vacuum it. Returns the attachment names those messages pointed at that no
  * remaining message points at. */
-export function stripConfidentialMessages(databasePath: string, threads: ReadonlySet<string>): Set<string> {
+export function stripConfidentialMessages(databasePath: string, threads: ReadonlySet<string>, forgotten = false): Set<string> {
   const unreferenced = new Set<string>();
-  if (!existsSync(databasePath)) return unreferenced;
+  if ((!threads.size && !forgotten) || !existsSync(databasePath)) return unreferenced;
   const db = new DatabaseSync(databasePath);
   try {
     const candidates = new Set<string>();
@@ -332,13 +340,13 @@ export function stripConfidentialMessages(databasePath: string, threads: Readonl
     }
     // the idempotency receipts of its turns ("<thread>:<turn>..."): copies of its digest rows
     if (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='command_receipts'").get()) {
-      const remove = db.prepare("DELETE FROM command_receipts WHERE substr(key, 1, ?) = ?");
-      for (const threadId of threads) remove.run(threadId.length + 1, `${threadId}:`);
+      const remove = db.prepare("DELETE FROM command_receipts WHERE key >= ? AND key < ?");
+      for (const threadId of threads) remove.run(`${threadId}:`, `${threadId};`);
     }
     // A delete only marks a row gone in the full-text index: its terms stay
     // in the index segments until a merge. Rebuilt from the rows that stay,
-    // and vacuumed, the copy keeps nothing of a deleted or stripped thread,
-    // even one deleted live before this backup (no confidential thread left).
+    // and vacuumed, the copy keeps nothing of a stripped thread, nor of a
+    // confidential one deleted live since the last backup (`forgotten`).
     if (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='messages_fts'").get()) {
       db.exec("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')");
     }
@@ -356,10 +364,9 @@ export function stripConfidentialMessages(databasePath: string, threads: Readonl
 /** Remove from a snapshot of the job runtime's database (server/runtime/store.ts)
  * every teammate-work tree a confidential thread requested or ran work in:
  * its briefs, results, questions and answers are the thread's words. A
- * restore ends live work anyway, so whole trees go; then it is vacuumed,
- * always, so no free page keeps a tree forgotten live before. */
-export function stripConfidentialRuntime(databasePath: string, threads: ReadonlySet<string>): number {
-  if (!existsSync(databasePath)) return 0;
+ * restore ends live work anyway, so whole trees go; then it is vacuumed. */
+export function stripConfidentialRuntime(databasePath: string, threads: ReadonlySet<string>, forgotten = false): number {
+  if ((!threads.size && !forgotten) || !existsSync(databasePath)) return 0;
   const db = new DatabaseSync(databasePath);
   try {
     db.exec("BEGIN");
@@ -470,6 +477,9 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
     const root = realpathSync(dataDir);
     const confidential = existsSync(join(root, "bots.json")) ? confidentialRoster(privateJson(join(root, "bots.json"))) : new Map<string, string>();
     let confidentialAttachments = new Set<string>();
+    // A confidential thread deleted since the last backup left its words in
+    // free pages and index segments of the live databases: clean the copies.
+    const forgotten = existsSync(join(root, CONFIDENTIAL_FORGOTTEN_MARKER));
     // The caller closes its message handle after flushing, while maintenance
     // remains held. The native snapshot includes any committed WAL records.
     // The runtime's database is snapshotted the same way.
@@ -491,8 +501,8 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       finally { clearInterval(completionPulse); db.close(); }
       const snapshotDb = new DatabaseSync(join(snapshot, snapshotName));
       try { snapshotDb.exec("PRAGMA journal_mode = DELETE"); } finally { snapshotDb.close(); }
-      if (name === "messages.db") confidentialAttachments = stripConfidentialMessages(join(snapshot, snapshotName), new Set(confidential.keys()));
-      if (name === "runtime.db") stripConfidentialRuntime(join(snapshot, snapshotName), new Set(confidential.keys()));
+      if (name === "messages.db") confidentialAttachments = stripConfidentialMessages(join(snapshot, snapshotName), new Set(confidential.keys()), forgotten);
+      if (name === "runtime.db") stripConfidentialRuntime(join(snapshot, snapshotName), new Set(confidential.keys()), forgotten);
     }
     const walk = (directory: string, prefix = "") => {
       for (const name of readdirSync(directory).sort()) {
@@ -601,6 +611,8 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
     const fd = openSync(path, "a");
     try { writeSync(fd, cipher.getAuthTag()); fsyncSync(fd); } finally { closeSync(fd); }
     rmSync(snapshot, { recursive: true, force: true });
+    // this archive holds clean copies; a later delete marks it again
+    if (forgotten) rmSync(join(root, CONFIDENTIAL_FORGOTTEN_MARKER), { force: true });
     return { id: job.id, path, summary };
   } catch (error) {
     rmSync(job.directory, { recursive: true, force: true });

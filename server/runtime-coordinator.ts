@@ -116,6 +116,7 @@ export class RuntimeCoordinator implements Coordinator {
   private readonly legacyFile: string | undefined;
   private readonly now: () => number;
   private readonly log: (line: string) => void;
+  private readonly confidentialThreads: (() => Iterable<string>) | undefined;
   private opened = false;
 
   constructor(options: CoordinatorOptions) {
@@ -123,6 +124,7 @@ export class RuntimeCoordinator implements Coordinator {
     this.legacyFile = options.dataDir === ":memory:" ? undefined : join(options.dataDir, "room-handoffs.json");
     this.now = options.now ?? Date.now;
     this.log = options.log ?? ((line) => console.error("coordinator:", line));
+    this.confidentialThreads = options.confidentialThreads;
     this.store = openRuntimeStore(options.dataDir === ":memory:" ? ":memory:" : join(options.dataDir, "runtime.db"));
     this.runtime = new Runtime(this.store, this.runner(), {
       clock: { now: () => this.now(), monotonic: () => performance.now() },
@@ -146,6 +148,20 @@ export class RuntimeCoordinator implements Coordinator {
         if (imported) this.log(`imported ${imported} room-handoff rows from ${this.legacyFile}`);
       } catch (error) {
         this.log(`room-handoffs.json not imported: ${String(error)}`);
+      }
+    }
+    // A thread that turned confidential under an older release kept its
+    // teammate work: forgotten before the runtime reads anything.
+    if (this.confidentialThreads) {
+      try {
+        let forgotten = 0;
+        for (const threadId of this.confidentialThreads()) {
+          const { removed, scrubbed } = this.store.forgetThread(threadId);
+          forgotten += removed + scrubbed;
+        }
+        if (forgotten) this.log(`forgot ${forgotten} teammate-work row(s) of confidential threads`);
+      } catch (error) {
+        this.log(`confidential threads' teammate work not forgotten: ${String(error)}`);
       }
     }
     this.runtime.open();

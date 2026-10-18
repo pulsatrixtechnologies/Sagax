@@ -375,18 +375,38 @@ export function openRuntimeStore(path: string): RuntimeStore {
       });
     },
     forgetThread(threadId) {
+      let changed = 0;
       const forgotten = transaction(() => {
         let removed = 0;
         let scrubbed = 0;
         for (const row of db.prepare(TOUCHING).all(threadId, threadId) as Row[]) {
           const rootId = String(row.root_id);
-          const tree = (db.prepare("SELECT id, json FROM assignments WHERE root_id = ?").all(rootId) as Row[]).map(readAssignment);
-          if (tree.every(a => TERMINAL.includes(a.status))) {
+          // Decided on the columns, so a row this build cannot read never
+          // stops the forget. A settled tree the thread asked goes whole; in
+          // any other (another conversation's, or still live) only its own
+          // rows lose their words: the asker keeps its other teammates.
+          const live = db.prepare(`SELECT 1 FROM assignments WHERE root_id = ? AND status NOT IN (${terminalList}) LIMIT 1`).get(rootId);
+          const root = db.prepare("SELECT assignee_thread_id FROM assignments WHERE id = ?").get(rootId) as Row | undefined;
+          if (!live && root?.assignee_thread_id === threadId) {
             removed += removeTree(db, rootId);
             continue;
           }
-          for (const a of tree) {
-            const own = a.requester.threadId === threadId || a.assignee.destination.threadId === threadId;
+          for (const raw of db.prepare("SELECT id, json, requester_thread_id, assignee_thread_id FROM assignments WHERE root_id = ?").all(rootId) as Row[]) {
+            const own = raw.requester_thread_id === threadId || raw.assignee_thread_id === threadId;
+            let a: Assignment;
+            try {
+              a = readAssignment(raw);
+            } catch {
+              // unreadable: an own row goes rather than keep its words
+              if (own) {
+                db.prepare("DELETE FROM assignment_events WHERE assignment_id = ?").run(String(raw.id));
+                db.prepare("DELETE FROM inbox WHERE assignment_id = ?").run(String(raw.id));
+                db.prepare("DELETE FROM assignments WHERE id = ?").run(String(raw.id));
+                removed += 1;
+                changed += 1;
+              }
+              continue;
+            }
             const quoted = a.origin.ref === threadId && a.origin.quote !== undefined;
             if (!own && !quoted) continue;
             const before = toJson(a);
@@ -399,18 +419,21 @@ export function openRuntimeStore(path: string): RuntimeStore {
               delete a.outcomeDetail;
               delete a.evidence;
               delete a.doneWhen;
-              db.prepare("UPDATE assignment_events SET detail = NULL WHERE assignment_id = ?").run(a.id);
+              const details = db.prepare("UPDATE assignment_events SET detail = NULL WHERE assignment_id = ? AND detail IS NOT NULL").run(a.id);
+              changed += Number(details.changes);
             }
             if (toJson(a) === before) continue;
             if (own) scrubbed += 1;
+            changed += 1;
             statements.update.run(...columns(a), a.id);
           }
         }
         return { removed, scrubbed };
       });
-      // and out of the write-ahead log, which still holds the old pages
-      if (!memory && (forgotten.removed || forgotten.scrubbed)) {
-        try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* a reader holds it: the next checkpoint does it */ }
+      // and out of the write-ahead log, which still holds the old pages (a
+      // reader holding it leaves them to the next checkpoint)
+      if (!memory && (forgotten.removed || changed)) {
+        try { db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get(); } catch { /* the next checkpoint does it */ }
       }
       return forgotten;
     },

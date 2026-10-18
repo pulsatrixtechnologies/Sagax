@@ -513,15 +513,38 @@ describe("encrypted full workspace backups", () => {
       expect(after.prepare("SELECT key FROM command_receipts").all()).toEqual([{ key: "plain:turn" }]);
       expect(after.prepare("SELECT rowid FROM messages_fts WHERE messages_fts MATCH 'ordinaryterm'").all()).toHaveLength(1);
     } finally { after.close(); }
-    // with no confidential thread left at all, the copy is still cleaned
+    // with no confidential thread left, a deletion since the last backup still cleans the copy
     const second = join(root, "second.db");
     const db2 = new DatabaseSync(second);
     db2.exec("CREATE TABLE messages(thread_id TEXT, id TEXT, text TEXT, json TEXT, PRIMARY KEY(thread_id,id));");
     db2.prepare("INSERT INTO messages VALUES ('gone', 'm1', ?, '{}')").run(`freepageterm ${"x".repeat(8_000)}`);
     db2.prepare("DELETE FROM messages").run();
     db2.close();
+    // nothing to do without a confidential thread or a deletion since the last backup
     stripConfidentialMessages(second, new Set());
+    expect(readFileSync(second).includes("freepageterm")).toBe(true);
+    stripConfidentialMessages(second, new Set(), true);
     expect(readFileSync(second).includes("freepageterm")).toBe(false);
+  });
+
+  it("cleans the database copies after a confidential thread was deleted, then clears the note", async () => {
+    const source = directory();
+    json(join(source, "bots.json"), [{ id: "bot", threadId: "plain", tasks: [{ threadId: "plain" }] }]);
+    const db = new DatabaseSync(join(source, "messages.db"));
+    db.exec("CREATE TABLE messages(thread_id TEXT, id TEXT, text TEXT, json TEXT, PRIMARY KEY(thread_id,id)); CREATE TABLE thread_state(thread_id TEXT PRIMARY KEY, active_leaf_id TEXT);");
+    db.prepare("INSERT INTO messages VALUES ('gone', 'm1', ?, '{}')").run(`deletedconfidential ${"x".repeat(8_000)}`);
+    db.prepare("INSERT INTO messages VALUES ('plain', 'm1', 'kept', '{}')").run();
+    db.prepare("DELETE FROM messages WHERE thread_id = 'gone'").run();
+    db.close();
+    writeFileSync(join(source, "confidential-forgotten"), "");
+    writeFileSync(join(source, "room-handoffs.json.migrated"), "[]");
+    const exported = await createWorkspaceBackup(source, { password: PASSWORD });
+    expect(existsSync(join(source, "confidential-forgotten"))).toBe(false);
+    const target = directory();
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    const data = join(target, ".backups", staged.id, "staged", "data");
+    expect(readFileSync(join(data, "messages.db")).includes("deletedconfidential")).toBe(false);
+    for (const name of ["confidential-forgotten", "room-handoffs.json.migrated"]) expect(existsSync(join(data, name))).toBe(false);
   });
 
   it("restores an archive that holds a confidential thread's sheet without ever installing it", async () => {

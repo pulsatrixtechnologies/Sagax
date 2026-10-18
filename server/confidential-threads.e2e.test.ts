@@ -718,8 +718,9 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
   it("CT-15: teammate work keeps no words of a thread made confidential, and none after its deletion", async () => {
     const bots = (await api("GET", "/api/bots", bob)).body.bots as Array<{ id: string; name: string }>;
     const messengerId = bots.find((bot) => bot.name === "Messager")!.id;
-    const settled = (threadId: string) => waitFor(async () => {
-      const rows = readHandoffs(data).filter((row) => row.threadId === threadId || readHandoffs(data).some((p) => p.id === row.parentId && p.threadId === threadId));
+    const settled = (threadId: string, since = 0) => waitFor(async () => {
+      const all = readHandoffs(data).filter((row) => row.createdAt >= since);
+      const rows = all.filter((row) => row.threadId === threadId || all.some((p) => p.id === row.parentId && p.threadId === threadId));
       return rows.length >= 2 && rows.every((row) => ["completed", "failed", "cancelled"].includes(row.status)) ? rows : null;
     }, 60_000);
     const opened = await api("POST", `/api/bots/${botId}/tasks`, bob, { title: "Coordination" });
@@ -730,15 +731,19 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     const work = first.find((row) => row.botId === messengerId)!.threadId;
     // the record holds the request and the brief while the threads are ordinary
     expect(JSON.stringify(readHandoffs(data))).toContain(`${SECRET}-RTBRIEF`);
-    // the teammate's work thread turns confidential: the tree it did work in goes
+    // the teammate's work thread turns confidential: its rows keep no words
+    // (the asking conversation keeps its own request)
     const madeWork = await api("PATCH", `/api/bots/${messengerId}/tasks/${work}`, bob, { confidential: true, confirmConfidential: true });
     expect(madeWork.status, madeWork.text).toBe(200);
-    expect(readHandoffs(data).filter((row) => row.threadId === work)).toEqual([]);
-    expect(JSON.stringify(readHandoffs(data))).not.toContain(`${SECRET}-RT`);
+    const workRows = readHandoffs(data).filter((row) => row.threadId === work);
+    expect(workRows.length).toBeGreaterThan(0);
+    for (const row of workRows) expect([row.text, row.result]).toEqual(["", ""]);
+    expect(JSON.stringify(readHandoffs(data))).not.toContain(`${SECRET}-RTBRIEF`);
     // the next request opens a new work thread, never the confidential one
     const before = (await messagesOf(bob, work)).length;
+    const since = Date.now();
     expect((await api("POST", `/api/bots/${botId}/messages`, bob, { text: `${SECRET}-RTUSER2 RT-GO`, threadId: asker })).status).toBe(202);
-    const second = await settled(asker);
+    const second = await settled(asker, since);
     const next = second.find((row) => row.botId === messengerId)!.threadId;
     expect(next).not.toBe(work);
     expect((await messagesOf(bob, work)).length).toBe(before);
@@ -752,6 +757,8 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     }
     expect(JSON.stringify(readHandoffs(data))).not.toContain(SECRET);
     expect(readHandoffs(data).filter((row) => [asker, work].includes(row.threadId))).toEqual([]);
+    // the next workspace backup cleans its database copies
+    expect(existsSync(join(data, "confidential-forgotten"))).toBe(true);
   }, 180_000);
 
 });

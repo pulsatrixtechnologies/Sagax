@@ -150,11 +150,20 @@ describe("runtime store", () => {
       assignee: { botId: "builder", destination: { kind: "work_thread", threadId: "secret-chat" } } });
     store.insert(done, { kind: "parked", detail: "needs_input: SECRET q" });
     store.insert(child("still", other, { status: "running", brief: "ordinary brief" }), { kind: "enqueued", detail: "queued" });
+    // a settled tree another conversation asked, in which the thread did work:
+    // the asker keeps its other teammate, the thread's row loses its words
+    const theirs = assignment("theirs", { status: "completed", outcome: "done", finishedAt: 70, brief: "their ask" });
+    store.insert(theirs, { kind: "enqueued" });
+    store.insert(child("mine", theirs, { status: "completed", outcome: "done", finishedAt: 60, result: "SECRET result 3",
+      assignee: { botId: "builder", destination: { kind: "work_thread", threadId: "secret-chat" } } }), { kind: "enqueued" });
+    store.insert(child("peer", theirs, { status: "completed", outcome: "done", finishedAt: 60, result: "peer result" }), { kind: "enqueued" });
     // an unrelated settled tree stays as it is
     store.insert(assignment("unrelated", { status: "completed", outcome: "done", finishedAt: 50 }), { kind: "enqueued", detail: "queued" });
 
-    expect(store.forgetThread("secret-chat")).toEqual({ removed: 2, scrubbed: 1 });
-    expect(store.all().map(x => x.id).sort()).toEqual(["done", "other", "still", "unrelated"]);
+    expect(store.forgetThread("secret-chat")).toEqual({ removed: 2, scrubbed: 2 });
+    expect(store.all().map(x => x.id).sort()).toEqual(["done", "mine", "other", "peer", "still", "theirs", "unrelated"]);
+    expect(store.get("mine")).toMatchObject({ brief: "", result: "" });
+    expect(store.get("peer")?.result).toBe("peer result");
     expect(store.events("asked1")).toEqual([]);
     expect(store.inbox({ threadId: "secret-chat" })).toEqual([]);
     const scrubbed = store.get("done")!;
@@ -165,6 +174,11 @@ describe("runtime store", () => {
     expect(store.events("still").map(e => e.detail)).toEqual(["queued"]);
     expect(JSON.stringify([...store.all(), ...store.all().flatMap(a => store.events(a.id))])).not.toContain("SECRET");
     expect(store.forgetThread("secret-chat")).toEqual({ removed: 0, scrubbed: 0 });
+    // a row this build cannot read never stops the forget: an own one goes
+    const broken = { ...child("broken", other, { assignee: { botId: "builder", destination: { kind: "work_thread", threadId: "late-chat" } } }), status: "sleeping" } as unknown as Assignment;
+    store.insert(broken, { kind: "enqueued", detail: "SECRET" });
+    expect(store.forgetThread("late-chat")).toEqual({ removed: 1, scrubbed: 0 });
+    expect(store.events("broken")).toEqual([]);
   });
 
   it("refuses a row that no longer matches the record schema", () => {

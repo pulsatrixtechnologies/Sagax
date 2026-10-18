@@ -717,7 +717,7 @@ import { deployFacts, hostFacts, overviewRoutes, readBackupStatus, selfCheckEngi
 import { appendProblem, problemReason, pruneProblemLog, readProblems } from "./org-problem-log.ts";
 import { WorkspaceBackupMaintenance } from "./workspace-backup-maintenance.ts";
 import { createWorkspaceBackupRoutes, isWorkspaceBackupSessionControl } from "./workspace-backup-http.ts";
-import { applyPendingWorkspaceRestore, readLastWorkspaceRestore, type WorkspaceRestoreResult } from "./workspace-backup.ts";
+import { applyPendingWorkspaceRestore, CONFIDENTIAL_FORGOTTEN_MARKER, readLastWorkspaceRestore, type WorkspaceRestoreResult } from "./workspace-backup.ts";
 import { createCustomDomainVerifier, customDomainIpv4, normalizeCustomDomain } from "./custom-domain.ts";
 import { allowedScopes, createServerEmailSignIn, parseAllowList } from "./account-signin.ts";
 import { EmailOtpStore } from "./email-otp.ts";
@@ -8156,6 +8156,9 @@ function noteQueuedBehindPerson(node: HandoffView): void {
 // admission, turns, chips, names, parking and the level a thread runs with.
 const coordinator: Coordinator = createCoordinator({
   dataDir: DATA_DIR,
+  // threads that turned confidential before their teammate work was
+  // forgotten (an older release): forgotten once the runtime opens
+  confidentialThreads: () => store.bots.flatMap(bot => store.tasks(bot.id).filter(task => task.confidential === true).map(task => task.threadId)),
   now: Date.now,
   log: line => console.error("coordinator:", line),
   host: {
@@ -9544,6 +9547,9 @@ function wipeConfidentialThread(botId: string, threadId: string, attachmentNames
   memoryUpkeep.dropThread(threadId);
   confidentialMemoryPasses.forget(threadId);
   forgetConfidentialCoordination(threadId);
+  // the next workspace backup rebuilds and vacuums its database copies:
+  // this thread's words may still sit in free pages and index segments
+  try { writeFileSync(join(DATA_DIR, CONFIDENTIAL_FORGOTTEN_MARKER), "", { mode: 0o600 }); } catch { /* the backup then strips by the roster only */ }
   void forgetConfidentialBrowser(threadId).catch(() => undefined);
   void scrubThreadDecisions(DATA_DIR, threadId);
   // its own Data database and sheet (data/scope.ts)

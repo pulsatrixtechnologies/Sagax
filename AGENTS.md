@@ -275,13 +275,16 @@ remembered, exported, logged or shared beyond its owner
 - Teammate work (`runtime.db`, 2026-10-18): a thread turns confidential only
   when no work it takes part in is live (409 `confidential_live_work`,
   `liveCoordination`); then and at delete `coordinator.forgetThread` removes
-  every settled tree it asked or did work in and strips its words from a live
-  one (`RuntimeStore.forgetThread`, `secure_delete`, WAL truncated).
+  every settled tree it asked and strips its words from its rows in any other
+  tree (`RuntimeStore.forgetThread`, decided on columns, `secure_delete`, WAL
+  truncated); at start `confidentialThreads` forgets older ones once.
   `roomHandoffProblem` refuses any edge to or from a confidential thread and
   `store.workThread` never reuses a confidential work thread. The workspace
   backup drops those trees (`stripConfidentialRuntime`) and, from the message
-  snapshot, its `command_receipts` (`<thread>:` keys), then rebuilds the
-  search index and vacuums both copies, always. `deleteThread` drops the
+  snapshot, its `command_receipts` (`<thread>:` key range), then rebuilds the
+  search index and vacuums both copies, also when a deletion left the
+  `CONFIDENTIAL_FORGOTTEN_MARKER` note (cleared by that backup).
+  `room-handoffs.json.migrated` is never backed up. `deleteThread` drops the
   thread's `command_receipts` too.
 - Clients: a classification banner top and above the composer (not
   dismissible, height reserved, `role="note"`), lock and « Confidentiel » on

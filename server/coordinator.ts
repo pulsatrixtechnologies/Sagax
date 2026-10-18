@@ -124,6 +124,9 @@ export interface CoordinatorOptions {
   now?: () => number;
   runtimeLimits?: Partial<Limits>;
   log?: (line: string) => void;
+  /** The confidential threads, read once when the runtime opens: their
+   * teammate work is forgotten (docs/confidential-threads.md). */
+  confidentialThreads?: () => Iterable<string>;
 }
 
 export function createCoordinator(options: CoordinatorOptions): Coordinator {
