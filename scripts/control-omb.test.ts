@@ -27,3 +27,13 @@ describe("the fixture's Live call environment", () => {
     expect(childEnv({ SAGAX_OPENAI_LIVE_KEY: "sk-real" })).not.toHaveProperty("SAGAX_OPENAI_LIVE_KEY");
   });
 });
+
+describe("the fixture's Code section environment", () => {
+  it("passes the fake Perspicax switch and a long capability key, nothing looser", () => {
+    expect(childEnv({ SAGAX_CODE_FIXTURE: "1" }).SAGAX_CODE_FIXTURE).toBe("1");
+    expect(childEnv({ SAGAX_CODE_FIXTURE: "yes" })).not.toHaveProperty("SAGAX_CODE_FIXTURE");
+    expect(childEnv({ SAGAX_TEST_INTERNAL_CAPABILITY_KEY: "short" })).not.toHaveProperty("SAGAX_TEST_INTERNAL_CAPABILITY_KEY");
+    const key = "k".repeat(40);
+    expect(childEnv({ SAGAX_TEST_INTERNAL_CAPABILITY_KEY: key }).SAGAX_TEST_INTERNAL_CAPABILITY_KEY).toBe(key);
+  });
+});

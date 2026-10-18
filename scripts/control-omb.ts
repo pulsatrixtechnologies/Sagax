@@ -390,6 +390,14 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   // A test's key for relaying an organization library into the fixture
   // (POST /api/testing/org-library); the route does not exist without it.
   if (parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY) childEnv.SAGAX_TEST_ORG_LIBRARY_KEY = parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY;
+  // The Code section's fake Perspicax (server/testing/fake-perspicax-agents.ts),
+  // started inside the fixture; a solo server only, never real Perspicax.
+  if (parentEnv.SAGAX_CODE_FIXTURE === "1") childEnv.SAGAX_CODE_FIXTURE = "1";
+  // A test's key for minting a turn capability (POST /api/testing/internal-capability),
+  // so a recipe can call a bot's own tools (launch_cloud_agent) the way a turn does.
+  if (parentEnv.SAGAX_TEST_INTERNAL_CAPABILITY_KEY && parentEnv.SAGAX_TEST_INTERNAL_CAPABILITY_KEY.length >= 32) {
+    childEnv.SAGAX_TEST_INTERNAL_CAPABILITY_KEY = parentEnv.SAGAX_TEST_INTERNAL_CAPABILITY_KEY;
+  }
   // The credential vault answers loopback on a headless server only when
   // the operator opts in (server/routes/credential-vault.ts vaultPrincipalFor).
   if (parentEnv.SAGAX_CREDENTIAL_VAULT_LOOPBACK === "1") childEnv.SAGAX_CREDENTIAL_VAULT_LOOPBACK = "1";

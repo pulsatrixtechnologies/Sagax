@@ -1282,11 +1282,14 @@ export interface AppState {
   /** The person's sidebar hidden keys (src/lib/sidebar-hidden.ts): a
    * restored or fallback selection never lands on one of them. */
   sidebarHiddenKeys: ReadonlySet<string>;
-  activeView: "chat" | "team-map" | "routines";
+  activeView: "chat" | "team-map" | "routines" | "code";
   routines: Routine[];
   routineRuns: RoutineRun[];
   routinesLoadState: "loading" | "ready" | "error";
   routinesFocus: { section?: "schedule" | "logs"; view?: "calendar" | "list"; botId?: string; routineId?: string; runStatus?: RoutineRunStatusFilter; nonce: number };
+  /** The Code section (src/components/code/CodePage.tsx): the run it opens,
+   * or the list when none. */
+  codeFocus: { runId?: string; nonce: number };
   webhooks: WebhookTrigger[];
   webhookAttempts: WebhookAttempt[];
   webhookIngress: WebhookIngressStatus | null;
@@ -1535,6 +1538,8 @@ export type Action =
   | { type: "sectionDeleted"; section: string; sections: string[] }
   | { type: "showRoutines"; section?: "schedule" | "logs"; view?: "calendar" | "list"; botId?: string; routineId?: string; runStatus?: RoutineRunStatusFilter }
   | { type: "showTeamMap" }
+  /** The Code section: the list, or one run when `runId` is set. */
+  | { type: "showCode"; runId?: string }
   | { type: "showChat" }
   | { type: "routinesHydrated"; routines: Routine[]; runs: RoutineRun[] }
   | { type: "routinesLoadFailed" }
@@ -2305,6 +2310,20 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     case "showChat":
       return state.activeView === "chat" ? state : { ...state, activeView: "chat" };
+    case "showCode":
+      return {
+        ...state,
+        activeView: "code",
+        codeFocus: { ...(action.runId ? { runId: action.runId } : {}), nonce: state.codeFocus.nonce + 1 },
+        settingsOpen: false,
+        computerOpen: false,
+        inspectorOpen: false,
+        activityOpen: false,
+        appSettingsOpen: false,
+        achievementsOpen: false,
+        pluginsOpen: false,
+        triggersOpen: false,
+      };
     case "showTeamMap":
       return {
         ...state,
@@ -3443,6 +3462,7 @@ export const initialState: AppState = {
   routineRuns: [],
   routinesLoadState: "loading",
   routinesFocus: { nonce: 0 },
+  codeFocus: { nonce: 0 },
   webhooks: [],
   webhookAttempts: [],
   webhookIngress: null,
@@ -4133,7 +4153,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const wrapped: React.Dispatch<Action> = (action) => {
       // Deferred folder creation may select its bot only while it is still
       // the latest navigation intent, even if the person went away and back.
-      if (["select", "newTask", "switchTask", "newGroupTask", "switchGroupTask", "showChat", "showRoutines", "showTeamMap"].includes(action.type)) selectionRevision++;
+      if (["select", "newTask", "switchTask", "newGroupTask", "switchGroupTask", "showChat", "showRoutines", "showTeamMap", "showCode"].includes(action.type)) selectionRevision++;
       // Pin before any await or optimistic state change, including legacy
       // callers such as keyboard shortcuts and voice controls.
       action = pinBotThreadAction(action, stateRef.current.bots);

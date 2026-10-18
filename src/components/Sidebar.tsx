@@ -66,7 +66,7 @@ import { peopleDmPeer } from "@/lib/people-dm";
 import { BotRoleTag, PersonLabelTag } from "./LabelTag";
 import { SidebarUnreadThreads, sidebarUnreadThreads } from "./SidebarUnreadThreads";
 import { nudgeLineText } from "@/lib/nudge-line";
-import { ChevronsRight, Eye, UserRound } from "lucide-react";
+import { ChevronsRight, Code2, Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
 import { PersonAvatar } from "./MessageAuthor";
@@ -3120,6 +3120,15 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             })}
           </div>
         )}
+        {/* Code: every Perspicax run of the person, at the conversations'
+            level (src/components/code/CodePage.tsx). */}
+        <div className={cn("mb-2", density === "icons" && "flex justify-center")}>
+          <SidebarPlaces
+            iconOnly={density === "icons"}
+            places={[{ key: "code", label: t("code.title"), icon: Code2, active: state.activeView === "code", onSelect: () => dispatch({ type: "showCode" }) }]}
+            divider={false}
+          />
+        </div>
         <div className="flex flex-col gap-1">
           {matchingBots.length === 0 && visibleGroups.length === 0 && q && q.length < MIN_QUERY && (
             <div className="px-3 py-6 text-center text-[13px] text-sidebar-ink-secondary">{t("sidebar.noMatch", { query: q })}</div>

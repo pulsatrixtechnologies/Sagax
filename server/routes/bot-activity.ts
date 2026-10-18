@@ -319,7 +319,7 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
   function cloudVisible(record: CloudAgentRecord, viewerId: string | undefined): boolean {
     if (!viewerId) return true;
     if (record.principalId === viewerId) return true;
-    return deps.threadReadable(record.botId, record.threadId, viewerId);
+    return Boolean(record.botId && record.threadId) && deps.threadReadable(record.botId!, record.threadId!, viewerId);
   }
 
   function cloudItems(bot: ActivityBot, viewerId: string | undefined): BotActivityItem[] {

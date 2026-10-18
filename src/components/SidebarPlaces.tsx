@@ -50,11 +50,13 @@ export const PLACE_ROW = "h-9 py-0";
 /** The hairline between the places and the account row, in both layouts. */
 export const PLACES_DIVIDER = "mx-2 my-2 h-px shrink-0 bg-sidebar-hairline";
 
-export function SidebarPlaces({ places, iconOnly = false }: { places: SidebarPlace[]; iconOnly?: boolean }) {
+/** `divider: false` draws the rows alone: no hairline and no tour anchor
+ * (the Code row at the top of the list). */
+export function SidebarPlaces({ places, iconOnly = false, divider = true }: { places: SidebarPlace[]; iconOnly?: boolean; divider?: boolean }) {
   if (places.length === 0) return null;
   return (
     <>
-      <div data-tour="tools" data-sidebar-places className={PLACES_STACK}>
+      <div data-tour={divider ? "tools" : undefined} data-sidebar-places={divider ? "" : undefined} className={cn(PLACES_STACK, !divider && "w-full")}>
         {places.map((place) => {
           const Icon = place.icon;
           return (
@@ -96,7 +98,7 @@ export function SidebarPlaces({ places, iconOnly = false }: { places: SidebarPla
           );
         })}
       </div>
-      <div aria-hidden="true" data-sidebar-foot-divider className={PLACES_DIVIDER} />
+      {divider && <div aria-hidden="true" data-sidebar-foot-divider className={PLACES_DIVIDER} />}
     </>
   );
 }

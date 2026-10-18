@@ -1,4 +1,5 @@
-import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
+import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
+import { CloudAgentsCard, cloudAgentAnchors, useThreadCloudAgents } from "./code/CloudAgentsCard";
 import { downloadBotZip, showBotZipExport } from "@/lib/bot-zip";
 import { TeammatesWorkingChip } from "./TeammatesWorkingChip";
 import { ThreadLinkContext } from "@/components/ThreadLinkMenu";
@@ -984,6 +985,7 @@ const MessagesList = memo(function MessagesList({
   onRegenerate,
   onReply,
   seen,
+  confidential = false,
 }: {
   messages: Message[];
   /** Active-branch messages, including ones outside the mounted window. */
@@ -1008,6 +1010,8 @@ const MessagesList = memo(function MessagesList({
   onReply: (message: Message) => void;
   /** The bot's "Seen" caption, under the last message it consumed. */
   seen?: { messageId: string; faces: SeenFace[] } | null;
+  /** A confidential thread: the cloud agent card says its run is not. */
+  confidential?: boolean;
 }) {
   "use memo";
   // Sagax's extras below (access cards, bot-to-bot exchange chips, who is
@@ -1083,9 +1087,25 @@ const MessagesList = memo(function MessagesList({
     ? items.findIndex((item) => listedItemMessages(item).some((row) => unreadIds.has(row.id)))
     : -1, [items, unreadIds]);
   const dividerAbove = (index: number) => index === dividerIndex ? <NewMessagesDivider fading={unreadDividerFading} /> : null;
+  // "Cloud agents (N)" under the row that launched them (code/CloudAgentsCard.tsx).
+  const cloudAgents = useThreadCloudAgents(botId, threadId);
+  const cloudAnchors = useMemo(
+    () => cloudAgentAnchors(items.map((item) => listedItemMessages(item)[0]?.at ?? 0), cloudAgents),
+    [items, cloudAgents],
+  );
+  const withCloudAgents = (index: number, node: ReactNode): ReactNode => {
+    const group = cloudAnchors.get(index);
+    if (!group) return node;
+    return (
+      <Fragment key={`cloud-agents:${group[0]!.id}`}>
+        {node}
+        <div className="flex justify-start"><CloudAgentsCard records={group} botId={botId} confidential={confidential} /></div>
+      </Fragment>
+    );
+  };
   return (
     <>
-      {items.map((item, i) => {
+      {items.map((item, i) => withCloudAgents(i, (() => {
         const edgeOf = (entry: ListedItem) =>
           entry.kind === "voiceCall"
             ? voiceCallVisibleSpan(entry.messages, windowIds)
@@ -1346,7 +1366,7 @@ const MessagesList = memo(function MessagesList({
             </div>
           </div>
         );
-      })}
+      })()))}
     </>
   );
 });
@@ -2254,6 +2274,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           <ChatRowsContext.Provider value={rows}>
             <ConversationGalleryProvider>
             <MessagesList
+              confidential={confidential}
               messages={windowedMessages}
               transcript={messages}
               lookups={lookups}

@@ -964,6 +964,8 @@ import { CloudAgentCredentialStore } from "./cloud-agents/credentials.ts";
 import { CloudAgentManager, type CloudAgentCompletionEvent } from "./cloud-agents/manager.ts";
 import { createProviderRegistry } from "./cloud-agents/providers/registry.ts";
 import { createCloudAgentRoutes } from "./routes/cloud-agents.ts";
+import { createCodeRoutes } from "./routes/code.ts";
+import { PerspicaxAgentsClient } from "./cloud-agents/perspicax-client.ts";
 import { cloudAgentInternalAction, handleCloudAgentInternal } from "./routes/cloud-agents-internal.ts";
 import { cloudAgentWakePrompt } from "./cloud-agents/wake.ts";
 import { cloudAgentWireItem } from "./cloud-agents/activity.ts";
@@ -25937,31 +25939,59 @@ ROUTES.push(createAccountRoutes({
 }));
 function wakeFromCloudAgentCompletion(event: CloudAgentCompletionEvent): void {
   const { record } = event;
-  const bot = store.bot(record.botId);
-  if (!bot || !store.taskByThread(record.botId, record.threadId)) return;
-  const principalId = turnSpeakerPrincipals.get(record.threadId);
+  const { botId, threadId } = record;
+  // a run started outside Sagax has no thread to wake
+  if (!botId || !threadId) return;
+  const bot = store.bot(botId);
+  if (!bot || !store.taskByThread(botId, threadId)) return;
+  const principalId = turnSpeakerPrincipals.get(threadId);
   const prompt = cloudAgentWakePrompt(event);
   const speaker: TurnSpeaker | undefined = principalId
     ? { origin: "person", principalId }
     : undefined;
-  void startTurn(record.botId, prompt, {
-    threadId: record.threadId,
+  void startTurn(botId, prompt, {
+    threadId,
     cardContinuation: true,
-    unattended: isUnattended(record.botId, record.threadId),
+    unattended: isUnattended(botId, threadId),
     ...(speaker ? { speaker } : {}),
   }).catch((error) => {
     console.warn(`[cloud-agents] wake failed: ${error instanceof Error ? error.message : String(error)}`);
   });
 }
 
-const cloudAgentProviders = createProviderRegistry();
+// Perspicax runs (the desktop's Code section, lot P1.7). On an organization
+// server Sagax calls Perspicax with the person's own sign-in token. The
+// built-in fake Perspicax (server/testing/fake-perspicax-agents.ts) answers
+// instead only when a verification launcher sets SAGAX_CODE_FIXTURE=1 on a
+// solo server; an organization server never starts it.
+const codeFixture = process.env.SAGAX_CODE_FIXTURE === "1" && IDENTITY.kind !== "perspicax"
+  ? await (await import("./testing/fake-perspicax-agents.ts")).startFakePerspicaxAgents()
+  : null;
+if (codeFixture) console.log(`[code] fake Perspicax agents API on ${codeFixture.url} (SAGAX_CODE_FIXTURE)`);
+const perspicaxBase = (): string | null => codeFixture?.url ?? (IDENTITY.kind === "perspicax" ? IDENTITY.issuer : null);
+async function perspicaxAccessToken(principalId: string): Promise<string | null> {
+  if (codeFixture) return codeFixture.token;
+  if (IDENTITY.kind !== "perspicax" || !idpSessions) return null;
+  const person = principals.byId(principalId);
+  if (!person?.subject || person.subject.iss !== IDENTITY.issuer || person.disabledAt !== undefined) return null;
+  const outcome = await idpSessions.subjectToken({ iss: person.subject.iss, sub: person.subject.sub });
+  return outcome.ok ? outcome.token : null;
+}
+/** The person a cloud agent request acts for: the signed-in person, or on a
+ * solo server its operator (as the agents' internal route does). */
+function cloudAgentPrincipal(auth: RequestAuth): string | null {
+  return sessionPrincipal(auth) ?? (IDENTITY.kind !== "perspicax" ? localPrincipalId() : null);
+}
+
+const cloudAgentProviders = createProviderRegistry({ perspicaxBaseUrl: perspicaxBase });
 cloudAgentManager = new CloudAgentManager({
   store: cloudAgentStore,
   credentials: cloudAgentCredentials,
   providers: cloudAgentProviders,
+  accessToken: (principalId, provider) => provider === "perspicax" ? perspicaxAccessToken(principalId) : Promise.resolve(null),
   onComplete: (event) => { wakeFromCloudAgentCompletion(event); },
   onChange: (record) => {
-    broadcast({ kind: "cloud.agent", botId: record.botId, item: cloudAgentWireItem(record) });
+    if (record.botId) broadcast({ kind: "cloud.agent", botId: record.botId, item: cloudAgentWireItem(record) });
   },
 });
 
@@ -25977,8 +26007,34 @@ ROUTES.push(createCloudAgentRoutes({
     if (!bot) return false;
     return listedBotVisible(bot, channelFilterViewerId(auth));
   },
-  principalId: (auth) => sessionPrincipal(auth),
+  principalId: (auth) => cloudAgentPrincipal(auth),
   botName: (botId) => store.bot(botId)?.name,
+}));
+
+ROUTES.push(createCodeRoutes({
+  client: new PerspicaxAgentsClient(),
+  manager: cloudAgentManager,
+  fixture: codeFixture !== null,
+  reachable: (auth) => {
+    if (!perspicaxBase()) return { ok: false, reason: "solo" };
+    return cloudAgentPrincipal(auth) ? { ok: true } : { ok: false, reason: "no_session" };
+  },
+  access: async (auth) => {
+    const base = perspicaxBase();
+    if (!base) return { ok: false, reason: "solo" };
+    const principalId = cloudAgentPrincipal(auth);
+    if (!principalId) return { ok: false, reason: "no_session" };
+    const token = await perspicaxAccessToken(principalId);
+    return token ? { ok: true, principalId, access: { baseUrl: base, token } } : { ok: false, reason: "no_session" };
+  },
+  consoleUrl: () => {
+    const base = perspicaxBase();
+    return base ? new URL("/console/agents", base).toString() : undefined;
+  },
+  botVisible: (auth, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && listedBotVisible(bot!, channelFilterViewerId(auth));
+  },
 }));
 
 // What a bot is doing (server/routes/bot-activity.ts): its threads, the

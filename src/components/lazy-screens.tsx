@@ -95,6 +95,7 @@ export const BotCatalogModal = lazyScreen("BotCatalogModal", async () => (await 
 export const BotCatalogPane = lazyScreen("BotCatalogPane", async () => (await import("./bot-catalog/BotCatalogModal")).BotCatalogPane);
 export const ActivityPanel = lazyScreen("ActivityPanel", async () => (await import("./ActivityPanel")).ActivityPanel);
 export const BotSettingsDialog = lazyScreen("BotSettingsDialog", async () => (await import("./BotSettingsDialog")).BotSettingsDialog);
+export const CodePage = lazyScreen("CodePage", async () => (await import("./code/CodePage")).CodePage);
 export const ComputerPanel = lazyScreen("ComputerPanel", async () => (await import("./ComputerPanel")).ComputerPanel);
 export const InspectorPanel = lazyScreen("InspectorPanel", async () => (await import("./InspectorPanel")).InspectorPanel);
 export const KeyboardShortcutsModal = lazyScreen("KeyboardShortcutsModal", async () => (await import("./KeyboardShortcutsModal")).KeyboardShortcutsModal);
@@ -109,7 +110,7 @@ export const TeamMapPage = lazyScreen("TeamMapPage", async () => (await import("
 export const TriggersPanel = lazyScreen("TriggersPanel", async () => (await import("./TriggersPanel")).TriggersPanel);
 
 const SCREENS = [
-  AchievementsModal, ActivityPanel, BotCatalogModal, BotCatalogPane, BotSettingsDialog, ComputerPanel, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
+  AchievementsModal, ActivityPanel, BotCatalogModal, BotCatalogPane, BotSettingsDialog, CodePage, ComputerPanel, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
   PersonaEditorModal, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 ];
 

@@ -3,7 +3,7 @@ import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 import type { CloudAgentManager } from "../cloud-agents/manager.ts";
 import type { CloudAgentCredentialStore } from "../cloud-agents/credentials.ts";
-import { CLOUD_AGENT_PROVIDERS, type CloudAgentFollowUpMode, type CloudAgentProviderId } from "../../shared/cloud-agents.ts";
+import { CLOUD_AGENT_PROVIDERS, type CloudAgentFollowUpMode, type CloudAgentKeyProviderId, type CloudAgentProviderId } from "../../shared/cloud-agents.ts";
 import { ProviderHttpError } from "../cloud-agents/providers/http.ts";
 
 export interface CloudAgentRouteDeps {
@@ -31,7 +31,7 @@ export function createCloudAgentRoutes(deps: CloudAgentRouteDeps): RouteHandler 
     if (credMatch) {
       const principalId = deps.principalId(auth);
       if (!principalId) return json(res, 401, { error: "Unauthorized" });
-      const provider = credMatch[1] as CloudAgentProviderId | undefined;
+      const provider = credMatch[1] as CloudAgentKeyProviderId | undefined;
       const testing = path.endsWith("/test");
       if (!provider) {
         if (method !== "GET") return PASS;
@@ -93,7 +93,7 @@ export function createCloudAgentRoutes(deps: CloudAgentRouteDeps): RouteHandler 
         const launch = body as Record<string, unknown>;
         const provider = launch.provider;
         if (typeof provider !== "string" || !CLOUD_AGENT_PROVIDERS.includes(provider as CloudAgentProviderId)) {
-          return json(res, 400, { error: "provider must be cursor, claude, or codex" });
+          return json(res, 400, { error: "provider must be cursor, claude, codex or perspicax" });
         }
         const prompt = typeof launch.prompt === "string" ? launch.prompt.trim() : "";
         if (!prompt) return json(res, 400, { error: "prompt is required" });
@@ -112,6 +112,8 @@ export function createCloudAgentRoutes(deps: CloudAgentRouteDeps): RouteHandler 
               name: typeof launch.name === "string" ? launch.name : undefined,
               workOnCurrentBranch: launch.workOnCurrentBranch === true,
               autoCreatePr: launch.autoCreatePr === true,
+              ...(typeof launch.envId === "string" && launch.envId ? { envId: launch.envId } : {}),
+              ...(typeof launch.engine === "string" && launch.engine ? { engine: launch.engine } : {}),
             },
           });
           return json(res, 201, { item: record });

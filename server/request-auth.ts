@@ -429,6 +429,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // the viewer may see; writes use the session person's encrypted provider keys.
   { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/cloud-agents(?:\/[\w-]+(?:\/(?:follow-up|cancel|archive|artifacts|transcript))?)?$/ },
   { methods: ["GET", "PUT", "DELETE", "POST"], path: /^\/api\/me\/cloud-agent-providers(?:\/(?:cursor|claude|codex)(?:\/test)?)?$/ },
+  // The Code section (server/routes/code.ts): the person's own Perspicax
+  // runs, called with their own sign-in token; Perspicax decides the rest.
+  { methods: ["GET", "POST"], path: /^\/api\/code\/(?:status|environments|runs(?:\/[A-Za-z0-9_-]{1,80}(?:\/(?:events|stream|read|followup|approve|stop|archive|diff|commits|files))?)?)$/ },
   // chat, one to one
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages\/[\w-]+\/edit$/ },

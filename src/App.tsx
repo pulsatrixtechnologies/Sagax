@@ -19,7 +19,7 @@ import { SideThreadPanel } from "@/components/SideThreadPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
 import {
-  AchievementsModal, ActivityPanel, BotCatalogModal, BotSettingsDialog, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
+  AchievementsModal, ActivityPanel, BotCatalogModal, BotSettingsDialog, CodePage, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
   PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 } from "@/components/lazy-screens";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
@@ -309,6 +309,7 @@ function Shell() {
     previousViewRef.current = state.activeView;
   }
   const mainIsTeamMap = state.activeView === "team-map";
+  const mainIsCode = state.activeView === "code";
   const calendarFillsMain = calendarOpen;
 
   useEffect(() => {
@@ -427,13 +428,15 @@ function Shell() {
       <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col" data-sidebar-follower="">
       {/* nothing answers this person on an organization server: say so above
           the conversation, with the way back to the first-run step */}
-      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && <OrgEngineNotice />}
+      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && <OrgEngineNotice />}
       {composeOpen && (group || bot) ? (
         group ? <GroupView key={`${group.id}:${uiLocale}`} group={group} /> : bot ? <ChatView key={uiLocale} bot={bot} /> : null
       ) : calendarFillsMain ? (
         <RoutinesPage fill onBack={closeCalendar} onOpenRoom={openCalendarRoom} />
       ) : mainIsTeamMap ? (
         <TeamMapPage />
+      ) : mainIsCode ? (
+        <CodePage />
       ) : !remoteClient && localVmWorkspaceBotId ? (
         <LocalVmWorkspace
           primaryBotId={localVmWorkspaceBotId}

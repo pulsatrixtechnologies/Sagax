@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { writeFileAtomic } from "../atomic.ts";
-import type { CloudAgentRecord, CloudAgentRepoRef, CloudAgentProviderId, CloudAgentStatus } from "../../shared/cloud-agents.ts";
+import { CLOUD_AGENT_PROVIDERS, type CloudAgentRecord, type CloudAgentRepoRef, type CloudAgentProviderId, type CloudAgentStatus } from "../../shared/cloud-agents.ts";
 
 const repoSchema = z.object({
   url: z.string().min(1).max(2_048),
@@ -19,15 +19,28 @@ const gitBranchSchema = z.object({
   prUrl: z.string().max(2_048).optional(),
 }).strict();
 
+const statsSchema = z.object({
+  files: z.number().int().min(0),
+  added: z.number().int().min(0),
+  removed: z.number().int().min(0),
+  commits: z.number().int().min(0),
+}).strict();
+
+const prSchema = z.object({
+  number: z.number().int().min(1),
+  url: z.string().max(2_048),
+  state: z.enum(["draft", "open", "merged", "closed"]),
+}).strict();
+
 const recordSchema = z.object({
   id: z.string().regex(/^ca_[0-9a-f-]{36}$/),
-  botId: z.string().min(1).max(80),
-  threadId: z.string().min(1).max(80),
+  botId: z.string().min(1).max(80).optional(),
+  threadId: z.string().min(1).max(80).optional(),
   principalId: z.string().min(1).max(120),
-  provider: z.enum(["cursor", "claude", "codex"]),
+  provider: z.enum(CLOUD_AGENT_PROVIDERS),
   externalId: z.string().min(1).max(200),
   name: z.string().max(200),
-  status: z.enum(["creating", "running", "idle", "finished", "failed", "cancelled", "archived"]),
+  status: z.enum(["queued", "creating", "running", "waiting_for_approval", "idle", "finished", "failed", "cancelled", "expired", "archived"]),
   createdAt: z.number(),
   updatedAt: z.number(),
   startedAt: z.number(),
@@ -42,6 +55,11 @@ const recordSchema = z.object({
   archived: z.boolean(),
   completionNotified: z.boolean(),
   pendingFollowUp: z.object({ text: z.string().max(50_000), at: z.number() }).strict().optional(),
+  stats: statsSchema.optional(),
+  pr: prSchema.optional(),
+  unread: z.boolean().optional(),
+  envId: z.string().max(80).optional(),
+  origin: z.enum(["console", "sagax", "mcp", "automation"]).optional(),
 }).strict();
 
 const fileSchema = z.object({
@@ -109,6 +127,8 @@ export class CloudAgentStore {
     url?: string;
     latestRunId?: string;
     status?: CloudAgentStatus;
+    envId?: string;
+    origin?: CloudAgentRecord["origin"];
   }): CloudAgentRecord {
     const now = Date.now();
     const record: CloudAgentRecord = {
@@ -130,6 +150,8 @@ export class CloudAgentStore {
       ...(input.model ? { model: input.model } : {}),
       ...(input.url ? { url: input.url } : {}),
       ...(input.latestRunId ? { latestRunId: input.latestRunId } : {}),
+      ...(input.envId ? { envId: input.envId } : {}),
+      ...(input.origin ? { origin: input.origin } : {}),
     };
     const doc = this.load();
     doc.agents.push(record);
