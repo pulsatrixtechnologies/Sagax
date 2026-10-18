@@ -42,12 +42,11 @@ final class SettingsUITests: XCTestCase {
         return app
     }
 
-    /// Settings > General: the phone's own settings (the bot's auto-review
-    /// and time zone, notifications).
+    /// The root's Bot card (auto-review, time zone), as Grok Bot iOS 1.14
+    /// groups it.
     @MainActor
     private func launchGeneral() -> XCUIApplication {
         let app = launch()
-        app.element("settings-general").tap()
         XCTAssertTrue(app.element("settings-auto-review.toggle").waitForExistence(timeout: 20))
         return app
     }
@@ -245,8 +244,10 @@ final class SettingsUITests: XCTestCase {
     /// simulator; afterwards the switch simply reads On).
     @MainActor
     func testNotificationsSwitchAsksTheSystem() {
-        let app = launchGeneral()
-        let toggle = app.element("settings-notifications.toggle")
+        let app = launch()
+        // the root says On or Off; the switch is the first row of its page
+        app.element("settings-notifications").tap()
+        let toggle = app.element("settings-notifications-system.toggle")
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         if toggle.value as? String == "1" { return }
         toggle.tap()

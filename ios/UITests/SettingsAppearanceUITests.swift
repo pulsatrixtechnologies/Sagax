@@ -160,22 +160,16 @@ final class SettingsAppearanceUITests: XCTestCase {
 
     // MARK: ST10
 
+    /// Usage (#518): the signed-in person's own cost, by bot and by model.
+    /// The per-bot table and the installation's history left for Sagax
+    /// Business, so the page is the personal section only.
     @MainActor
-    func testUsageListsEachBotAndTheHistory() {
+    func testUsageShowsThePersonalCost() {
         let app = launch()
         let usage = app.element("settings-usage")
         XCTAssertTrue(usage.waitForExistence(timeout: 15))
         usage.tap()
-        XCTAssertTrue(app.element("usage-bots-total").waitForExistence(timeout: 10) || app.element("usage-bots-empty").exists)
-        // History: an admin pairing reads GET /api/usage grouped.
-        let (status, _) = api("GET", "/api/usage?groupBy=bot")
-        if status == 200 {
-            let total = app.element("usage-history-total")
-            for _ in 0..<6 where !total.exists && !app.element("usage-history-empty").exists { app.swipeUp() }
-            XCTAssertTrue(total.waitForExistence(timeout: 10) || app.element("usage-history-empty").exists)
-        } else {
-            XCTAssertFalse(app.element("usage-history-period").exists, "hidden where the server refuses it")
-        }
+        XCTAssertTrue(app.element("usage-personal-cost").waitForExistence(timeout: 15))
     }
 
     // MARK: ST9

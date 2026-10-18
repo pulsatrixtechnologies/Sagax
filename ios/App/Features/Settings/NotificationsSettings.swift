@@ -147,6 +147,9 @@ struct NotificationsSettingsView: View {
 
     var body: some View {
         SettingsPage(title: "Notifications") {
+            // the system's permission first (the root's row says On or Off)
+            SettingsCard { SystemNotificationsRow() }
+            SettingsSpacer(SettingsMetrics.cardGap)
             SettingsCard {
                 SettingsRow(
                     title: "Notification sounds",

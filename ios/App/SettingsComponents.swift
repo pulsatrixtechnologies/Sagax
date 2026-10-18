@@ -180,6 +180,8 @@ struct SettingsRow: View {
         case toggle(Binding<Bool>)
         case check
         case progress
+        /// Opens outside the app: the north-east arrow.
+        case external
     }
 
     enum Style { case normal, destructive, action }
@@ -311,7 +313,7 @@ struct SettingsRow: View {
 
     private var trailingPadding: CGFloat {
         switch accessory {
-        case .chevron, .valueChevron: SettingsMetrics.chevronTrailing - 4
+        case .chevron, .valueChevron, .external: SettingsMetrics.chevronTrailing - 4
         case .check: 16.5
         case .value: 17.83
         case .none: 16
@@ -344,6 +346,12 @@ struct SettingsRow: View {
                 .foregroundStyle(Theme.textPrimary)
         case .progress:
             ProgressView().controlSize(.small).tint(Theme.textSecondary)
+        case .external:
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(Theme.chevron)
+                .padding(.trailing, 1)
+                .accessibilityHidden(true)
         }
     }
 }

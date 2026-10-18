@@ -1,6 +1,6 @@
-// Settings > General (the phone's own settings, which the desktop keeps
-// nowhere: notifications, language, haptics, the bot's time zone and
-// auto-review, quick replies, the call voice, the links and feedback) and
+// The Settings root's own cards (the bot's computer settings, the links,
+// feedback, the system notification switch), Settings > General (quick
+// replies and the call voice) and
 // Settings > Experimental (SettingsModal.tsx "experimental": the
 // installation's early features, an admin pairing only), plus the picker
 // rows Appearance gains (list density, activity, home chrome).
@@ -9,75 +9,34 @@ import MessageUI
 import SwiftUI
 import UIKit
 
+/// Settings > General: what the root does not carry (#518 folded the
+/// phone's settings here; the root now holds them again, Grok Bot iOS 1.14).
 struct GeneralSettingsView: View {
     @Environment(\.themePalette) var themePalette
-    @Environment(\.locale) private var locale
-    @EnvironmentObject private var session: Session
-    @EnvironmentObject private var model: SettingsModel
     @EnvironmentObject private var navigator: SettingsNavigator
-    @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
-    @AppStorage(PrefKey.haptics) private var haptics = true
-    @State private var link: URL?
-    @State private var composingMail = false
-    @State private var enablingNotifications = false
-
-    private var french: Bool {
-        (AppLanguage.resolved(language).locale ?? locale).language.languageCode?.identifier == "fr"
-    }
 
     var body: some View {
         SettingsPage(title: "General") {
-            SettingsCard {
-                SettingsRow(
-                    title: "Notifications",
-                    accessory: .toggle(Binding(get: { notificationsOn }, set: { setNotifications($0) })),
-                    height: 53.67,
-                    identifier: "settings-notifications"
-                )
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Language", accessory: .valueChevron(AppLanguage.resolved(language).shortLabel), height: 43.33, identifier: "settings-language") { navigator.push(.language) }
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Haptics", accessory: .valueChevron(haptics ? String(localized: "On") : String(localized: "Off")), height: 43.67, identifier: "settings-haptics") { navigator.push(.haptics) }
-            }
-            if session.connection != nil {
-                SettingsSectionLabel(text: "Bot")
-                botCard
-            }
             SettingsSectionLabel(text: "Chat")
             SettingsCard {
                 SettingsRow(title: "Quick Replies", accessory: .chevron, height: 43.67, identifier: "settings-quick-replies") { navigator.sheet = .quickReplies }
                 CardHairline(leadingInset: SettingsMetrics.rowInset)
                 SettingsRow(title: "Call voice", accessory: .chevron, height: 43.67, identifier: "settings-walkie-voice") { navigator.sheet = .walkieVoice }
             }
-            SettingsSpacer(SettingsMetrics.cardGap)
-            SettingsCard {
-                SettingsRow(title: "Help Center", accessory: .chevron, height: 44.33, identifier: "settings-help") { link = SettingsLinks.helpCenter(french: french) }
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Privacy Policy", accessory: .chevron, height: 43.33, identifier: "settings-privacy") { link = SettingsLinks.privacy(french: french) }
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Terms of Service", accessory: .chevron, height: 43.67, identifier: "settings-terms") { link = SettingsLinks.terms(french: french) }
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Sagax Terms", accessory: .chevron, height: 43.33, identifier: "settings-sagax-terms") { link = SettingsLinks.sagaxTerms }
-            }
-            SettingsSpacer(SettingsMetrics.cardGap)
-            SettingsCard {
-                SettingsRow(title: "Send Feedback", accessory: .chevron, height: 44.67, identifier: "settings-feedback") { sendFeedback() }
-            }
             SettingsSpacer(40)
         }
-        .task { await session.refreshNotificationAuthorization() }
-        .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
-            SafariSheet(url: item.url).ignoresSafeArea()
-        }
-        .sheet(isPresented: $composingMail) {
-            MailComposeSheet(recipient: SettingsLinks.supportEmail, subject: feedbackSubject, body: feedbackBody) {
-                composingMail = false
-            }
-            .ignoresSafeArea()
-        }
     }
+}
 
-    private var botCard: some View {
+/// The bot's computer settings on the Settings root: auto-review and its
+/// rules, the time zone, then the computer itself.
+struct SettingsBotCard: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var model: SettingsModel
+    @EnvironmentObject private var navigator: SettingsNavigator
+    var showsComputer = true
+
+    var body: some View {
         SettingsCard {
             SettingsRow(
                 title: "Auto-review",
@@ -107,27 +66,57 @@ struct GeneralSettingsView: View {
                     navigator.push(.timeZone)
                 }
             }
-        }
-    }
-
-    private var notificationsOn: Bool {
-        switch session.notificationAuthorization {
-        case .authorized, .provisional, .ephemeral: true
-        default: false
-        }
-    }
-
-    private func setNotifications(_ on: Bool) {
-        if on {
-            guard !enablingNotifications else { return }
-            enablingNotifications = true
-            Task {
-                await session.enableNotifications()
-                enablingNotifications = false
+            if showsComputer {
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(title: "Bot Computer", accessory: .chevron, height: 43.67, identifier: "settings-bot-computer") {
+                    navigator.push(.botComputer)
+                }
             }
-        } else if let url = URL(string: UIApplication.openSettingsURLString) {
-            // iOS lets only the person turn an app's notifications off.
-            UIApplication.shared.open(url)
+        }
+    }
+}
+
+/// Help Center, Privacy Policy, Terms: pages outside the app, in Safari.
+struct SettingsLinksCard: View {
+    @Environment(\.themePalette) var themePalette
+    @Environment(\.locale) private var locale
+    @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
+    @State private var link: URL?
+
+    private var french: Bool {
+        (AppLanguage.resolved(language).locale ?? locale).language.languageCode?.identifier == "fr"
+    }
+
+    var body: some View {
+        SettingsCard {
+            SettingsRow(title: "Help Center", accessory: .external, height: 44.33, identifier: "settings-help") { link = SettingsLinks.helpCenter(french: french) }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Privacy Policy", accessory: .external, height: 43.33, identifier: "settings-privacy") { link = SettingsLinks.privacy(french: french) }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Terms of Service", accessory: .external, height: 43.67, identifier: "settings-terms") { link = SettingsLinks.terms(french: french) }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Sagax Terms", accessory: .external, height: 43.33, identifier: "settings-sagax-terms") { link = SettingsLinks.sagaxTerms }
+        }
+        .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
+            SafariSheet(url: item.url).ignoresSafeArea()
+        }
+    }
+}
+
+/// Send Feedback: a mail to Pulsatrix with the app and iOS versions.
+struct SettingsFeedbackCard: View {
+    @Environment(\.themePalette) var themePalette
+    @State private var composingMail = false
+
+    var body: some View {
+        SettingsCard {
+            SettingsRow(title: "Send Feedback", accessory: .chevron, height: 44.67, identifier: "settings-feedback") { sendFeedback() }
+        }
+        .sheet(isPresented: $composingMail) {
+            MailComposeSheet(recipient: SettingsLinks.supportEmail, subject: feedbackSubject, body: feedbackBody) {
+                composingMail = false
+            }
+            .ignoresSafeArea()
         }
     }
 
@@ -149,6 +138,44 @@ struct GeneralSettingsView: View {
         components.path = SettingsLinks.supportEmail
         components.queryItems = [URLQueryItem(name: "subject", value: feedbackSubject), URLQueryItem(name: "body", value: feedbackBody)]
         if let url = components.url { UIApplication.shared.open(url) }
+    }
+}
+
+/// The system's notification permission as a switch: on asks iOS, off
+/// opens the iOS Settings app (only the person can turn it off).
+struct SystemNotificationsRow: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    @State private var enabling = false
+
+    var body: some View {
+        SettingsRow(
+            title: "Allow notifications",
+            accessory: .toggle(Binding(get: { Self.isOn(session) }, set: { setNotifications($0) })),
+            height: 53.67,
+            identifier: "settings-notifications-system"
+        )
+        .task { await session.refreshNotificationAuthorization() }
+    }
+
+    static func isOn(_ session: Session) -> Bool {
+        switch session.notificationAuthorization {
+        case .authorized, .provisional, .ephemeral: true
+        default: false
+        }
+    }
+
+    private func setNotifications(_ on: Bool) {
+        if on {
+            guard !enabling else { return }
+            enabling = true
+            Task {
+                await session.enableNotifications()
+                enabling = false
+            }
+        } else if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
     }
 }
 
