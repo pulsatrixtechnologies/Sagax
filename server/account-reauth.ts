@@ -24,7 +24,8 @@
 //      (keep) until five minutes after that sign-in.
 //   4. DELETE /api/me takes it (take: single use, that session and person
 //      only). An unused one is dropped at expiry and its refresh token
-//      revoked at Perspicax, so the extra sign-in leaves no live grant.
+//      revoked at Perspicax (its refresh token, else its access token), so
+//      the extra sign-in leaves nothing live.
 //
 // Nothing here is written to disk or to a log.
 import { randomBytes } from "node:crypto";
@@ -90,9 +91,9 @@ export class AccountReauth {
   /** sessionId -> the fresh sign-in kept for it. */
   private readonly fresh = new Map<string, Fresh>();
   private readonly now: () => number;
-  private readonly revoke: (refreshToken: string, why: string) => void;
+  private readonly revoke: (token: string, hint: "refresh_token" | "access_token", why: string) => void;
 
-  constructor(options: { now?: () => number; revoke?: (refreshToken: string, why: string) => void } = {}) {
+  constructor(options: { now?: () => number; revoke?: (token: string, hint: "refresh_token" | "access_token", why: string) => void } = {}) {
     this.now = options.now ?? Date.now;
     this.revoke = options.revoke ?? (() => {});
   }
@@ -176,10 +177,10 @@ export class AccountReauth {
     const found = this.fresh.get(sessionId);
     if (!found) return;
     this.fresh.delete(sessionId);
-    if (found.refreshToken) this.revoke(found.refreshToken, why);
+    revokeFresh(this.revoke, found, why);
   }
 
-  /** Drop what expired (and revoke its refresh token); index.ts runs it every minute. */
+  /** Drop what expired (and revoke it at Perspicax); index.ts runs it every minute. */
   sweep(): void {
     this.prune();
   }
@@ -191,6 +192,14 @@ export class AccountReauth {
   }
 }
 
+/** End an unused or refused sign-in again at Perspicax: its refresh token
+ * when it has one (which ends its access token too), else the access token
+ * itself (review MR-3: the reauth scope asks no offline_access). */
+function revokeFresh(revoke: (token: string, hint: "refresh_token" | "access_token", why: string) => void, fresh: { accessToken: string; refreshToken?: string }, why: string): void {
+  if (fresh.refreshToken) revoke(fresh.refreshToken, "refresh_token", why);
+  else revoke(fresh.accessToken, "access_token", why);
+}
+
 /** What DELETE /api/me needs to erase at Perspicax (server/index.ts wires it). */
 export interface PerspicaxDeletionWiring {
   /** The person's Perspicax subject when this server signs in with that issuer, else null. */
@@ -198,7 +207,7 @@ export interface PerspicaxDeletionWiring {
   reauth: AccountReauth | null;
   /** PerspicaxDirectory.eraseOwnAccount. */
   erase: (accessToken: string) => Promise<{ ok: true; sub: string } | { ok: false; error: string; status?: number }>;
-  revoke: (refreshToken: string, why: string) => void;
+  revoke: (token: string, hint: "refresh_token" | "access_token", why: string) => void;
   log?: (line: string) => void;
 }
 
@@ -212,13 +221,13 @@ export function perspicaxDeletion(wiring: PerspicaxDeletionWiring) {
     const fresh = wiring.reauth?.take(sessionId, person.id) ?? null;
     if (!fresh) return { ok: false, error: "reauth_required" };
     if (fresh.sub !== person.sub) {
-      if (fresh.refreshToken) wiring.revoke(fresh.refreshToken, "a sign-in again for another subject");
+      revokeFresh(wiring.revoke, fresh, "a sign-in again for another subject");
       return { ok: false, error: "reauth_required" };
     }
     const erased = await wiring.erase(fresh.accessToken);
     if (!erased.ok) {
       // Not erased: the extra sign-in's grant goes (one sign-in, one try).
-      if (fresh.refreshToken) wiring.revoke(fresh.refreshToken, "a sign-in again whose account deletion was refused");
+      revokeFresh(wiring.revoke, fresh, "a sign-in again whose account deletion was refused");
       wiring.log?.(`account deletion: Perspicax refused (${erased.error}${erased.status ? ` ${erased.status}` : ""})`);
       return { ok: false, error: erased.error, ...(erased.status ? { status: erased.status } : {}) };
     }

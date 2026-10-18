@@ -25804,7 +25804,7 @@ ROUTES.push(createAccountRoutes({
     },
     reauth: accountReauth,
     erase: (token) => perspicaxDirectory ? perspicaxDirectory.eraseOwnAccount(token) : Promise.resolve({ ok: false, error: "link" }),
-    revoke: (token, why) => idpRevocations?.enqueue(token, "refresh_token", why),
+    revoke: (token, hint, why) => idpRevocations?.enqueue(token, hint, why),
     log: (line) => console.warn(line),
   })(principalId, sessionId) as Promise<PerspicaxDeletion>,
   reauthStart: ({ principalId, sessionId, client }) => {
@@ -29617,7 +29617,7 @@ if (oidcRp && idpRevocations) {
 // 2026-10-18: the sign-in again an account deletion needs (memory only); an
 // unused one is revoked at Perspicax when it expires.
 const accountReauth = oidcRp
-  ? new AccountReauth({ revoke: (token, why) => idpRevocations?.enqueue(token, "refresh_token", why) })
+  ? new AccountReauth({ revoke: (token, hint, why) => idpRevocations?.enqueue(token, hint, why) })
   : null;
 if (accountReauth) {
   setInterval(() => accountReauth.sweep(), 60_000).unref();

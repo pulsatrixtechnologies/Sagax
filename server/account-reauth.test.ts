@@ -10,7 +10,7 @@ const T0 = 1_800_000_000_000;
 function setup() {
   let clock = T0;
   const revoked: string[] = [];
-  const reauth = new AccountReauth({ now: () => clock, revoke: (token) => revoked.push(token) });
+  const reauth = new AccountReauth({ now: () => clock, revoke: (token, hint) => revoked.push(hint === "access_token" ? `access:${token}` : token) });
   return { reauth, revoked, tick: (ms: number) => { clock += ms; }, now: () => clock };
 }
 
@@ -84,6 +84,14 @@ describe("AccountReauth", () => {
     expect(reauth.take("s-ada", "pr_ada")).toBeNull();
   });
 
+  it("revokes an unused access token itself at expiry when there is no refresh token", () => {
+    const { reauth, revoked, tick } = setup();
+    reauth.keep({ expect: ADA, accessToken: "at-only", authTimeSeconds: T0 / 1000 });
+    tick(ACCOUNT_REAUTH_MAX_AGE_MS);
+    reauth.sweep();
+    expect(revoked).toEqual(["access:at-only"]);
+  });
+
   it("replaces an earlier sign-in of the session, and forgets a session that ends, revoking both", () => {
     const { reauth, revoked } = setup();
     reauth.keep({ expect: ADA, accessToken: "at-1", refreshToken: "rt-1", authTimeSeconds: T0 / 1000 });
@@ -113,7 +121,7 @@ describe("perspicaxDeletion (the wiring of DELETE /api/me)", () => {
       subjectOf: (id) => id === "pr_ada" ? person : null,
       reauth,
       erase: async (token) => { erased.push(token); return answer; },
-      revoke: (token) => revokedHere.push(token),
+      revoke: (token, hint) => revokedHere.push(hint === "access_token" ? `access:${token}` : token),
     });
     return { reauth, revoked, erased, revokedHere, run };
   }
@@ -140,6 +148,14 @@ describe("perspicaxDeletion (the wiring of DELETE /api/me)", () => {
     reauth.keep({ expect: ADA, accessToken: "fresh-at", refreshToken: "fresh-rt", authTimeSeconds: T0 / 1000 });
     expect(await run("pr_ada", "s-ada")).toEqual({ ok: false, error: "reauth_required", status: 403 });
     expect(revokedHere).toEqual(["fresh-rt"]);
+  });
+
+  it("revokes the access token itself when the sign-in again has no refresh token (no offline_access)", async () => {
+    const { reauth, run, revokedHere, revoked } = wired({ ok: false, error: "last_admin", status: 409 });
+    reauth.keep({ expect: ADA, accessToken: "only-at", authTimeSeconds: T0 / 1000 });
+    expect(await run("pr_ada", "s-ada")).toMatchObject({ ok: false, error: "last_admin" });
+    expect(revokedHere).toEqual(["access:only-at"]);
+    expect(revoked).toEqual([]);
   });
 
   it("deletes nothing on an answer about another subject", async () => {
