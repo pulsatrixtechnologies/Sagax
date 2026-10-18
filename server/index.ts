@@ -9549,7 +9549,8 @@ function purgeConfidentialEngineKeys(keys: readonly string[], why: string, optio
   const result = purgeEngineSessions(homes, seed);
   const live = new Set(options.live ?? []);
   const kept = [...result.keys].filter((key) => !live.has(key));
-  const attempts = Math.max(0, ...pending.map((entry) => entry.attempts)) + 1;
+  // a new purge starts its own count; retries alone add to the earlier one
+  const attempts = keys.length ? 1 : Math.max(0, ...pending.map((entry) => entry.attempts)) + 1;
   const vacuum = [...new Set([...vacuumLeft, ...result.vacuum])];
   const unfinished = result.failed.length > 0 || vacuum.length > 0;
   const next = (unfinished && attempts <= ENGINE_PURGE_ATTEMPTS) || options.recheck
