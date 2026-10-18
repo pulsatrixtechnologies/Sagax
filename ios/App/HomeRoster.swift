@@ -30,7 +30,9 @@ enum HomeMetrics {
     // measured places.
     static let pinnedSoloMascot: CGFloat = 102
     /// How far that mascot rises above the 85 pt slot. The cell makes room
-    /// for it (the pin swipe clips each cell) and the grid is lifted as much.
+    /// for it (the pin swipe clips each cell) and the pinned block is lifted
+    /// as much. The large mascot is the Primary Bot (alone on its centred
+    /// row, other pins under it) or the one pinned chat.
     static var pinnedSoloOverflow: CGFloat { (pinnedSoloMascot - pinnedMascot) / 2 }
     /// The Primary Bot's star, on the avatar's lower right corner: an orange
     /// disc of 20.7 pt in a 2.7 pt ring of the background, centred 34.4 pt
@@ -103,7 +105,6 @@ struct HomeAccountButton: View {
     @Environment(\.themePalette) var themePalette
     let select: (AccountMenuItem) -> Void
     @EnvironmentObject private var session: Session
-    @ObservedObject private var routines = AccountRowModel.shared
     @ObservedObject private var people = PeopleDirectory.shared
     @ObservedObject private var approvals = OrgApprovalsCenter.shared
 
@@ -159,17 +160,9 @@ struct HomeAccountButton: View {
                 .accessibilityIdentifier("admin-approvals-badge")
             }
         }
-        // the desktop row's routines badge (#215): opens Automations
-        .overlay(alignment: .topTrailing) {
-            if routines.activeRoutines > 0 {
-                Button { select(.automations) } label: {
-                    AccountRoutinesBadge(count: routines.activeRoutines, attention: routines.routineAttention)
-                }
-                .buttonStyle(.plain)
-                // on the ring's corner rather than floating beside it
-                .offset(x: 8, y: -1)
-            }
-        }
+        // No routines badge on the photo (JC, 2026-10-18: Grok Bot puts
+        // nothing there). The account menu's Automations entry keeps the
+        // count (HomeAccountMenuItems).
     }
 
     /// Without a photo or a name, the paired computer's own mascot: its
@@ -186,15 +179,16 @@ struct HomeAccountButton: View {
 
 // MARK: - Pinned
 
-/// A pinned bot or group: an 85 pt mascot (102 pt alone), its name centred
+/// A pinned bot or group: an 85 pt mascot (102 pt for the lead: the Primary
+/// Bot, or a lone pinned chat), its name centred
 /// beneath with the unread dot after it. The Primary Bot's star sits on the
 /// mascot's corner, as in Grok Bot iOS 1.14, not after the name.
 struct HomePinnedCell: View {
     @Environment(\.themePalette) var themePalette
     let chat: Chat
     var state: MausState = .idle
-    /// The drawn mascot: 85 pt in the grid, `pinnedSoloMascot` when the
-    /// pinned row holds one chat (Grok Bot's lone primary bot).
+    /// The drawn mascot: 85 pt in the grid, `pinnedSoloMascot` for the lead
+    /// on its own centred row (Grok Bot's primary bot).
     var mascot: CGFloat = HomeMetrics.pinnedMascot
 
     private var overflow: CGFloat { max(0, (mascot - HomeMetrics.pinnedMascot) / 2) }

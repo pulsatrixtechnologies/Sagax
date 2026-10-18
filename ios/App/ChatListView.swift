@@ -1394,12 +1394,12 @@ extension ChatListView {
                     if pinnedChats.isEmpty {
                         Color.clear.frame(height: 12)
                     } else {
-                        // a lone pinned chat's larger mascot grows its cell
-                        // upward by its overflow: lifted by as much, so the
-                        // mascot's centre and its name keep their places
+                        // the lead's larger mascot (see `pinnedLead`) grows
+                        // its cell upward by its overflow: lifted by as much,
+                        // so the mascot's centre and its name keep their places
                         AnyView(pinnedGrid)
                             .padding(.top, HomeMetrics.pinnedTop - HomeMetrics.headerTop - HomeMetrics.headerHeight - 8
-                                - (pinnedChats.count == 1 ? HomeMetrics.pinnedSoloOverflow : 0))
+                                - (pinnedLead != nil ? HomeMetrics.pinnedSoloOverflow : 0))
                     }
                     AnyView(standardSections)
                 }
@@ -1496,37 +1496,51 @@ extension ChatListView {
         return chats
     }
 
-    /// Rows of three 134 pt columns (reference 01). Grok Bot iOS 1.14 shows
-    /// one primary bot, centred and larger: a lone pinned chat does the
-    /// same. Sagax also pins several bots and groups (Grok Bot cannot):
-    /// those keep the measured 85 pt grid, and a short last row is centred
-    /// like the lone one rather than left in the first columns.
-    private var pinnedGrid: some View {
+    /// The chat drawn large and centred on its own row at the top, as Grok
+    /// Bot iOS 1.14 shows its one primary bot: the Primary Bot when it is
+    /// pinned, else a lone pinned chat. Nil when several chats are pinned and
+    /// none is the Primary Bot.
+    private var pinnedLead: Chat? {
         let chats = pinnedChats
-        let solo = chats.count == 1
-        let rows = stride(from: 0, to: chats.count, by: 3).map { Array(chats[$0..<min($0 + 3, chats.count)]) }
+        if let primary = chats.first(where: { if case let .bot(bot) = $0 { return bot.chiefOfStaff == true }; return false }) {
+            return primary
+        }
+        return chats.count == 1 ? chats.first : nil
+    }
+
+    /// The lead (see `pinnedLead`) alone on a centred row, then the other
+    /// pins (Sagax pins several bots and groups; Grok Bot cannot) in rows of
+    /// three 134 pt columns at the measured 85 pt (reference 01), each row
+    /// centred. The rows span the whole width at every size and orientation.
+    private var pinnedGrid: some View {
+        let lead = pinnedLead
+        let rest = pinnedChats.filter { $0.id != lead?.id }
+        let rows = stride(from: 0, to: rest.count, by: 3).map { Array(rest[$0..<min($0 + 3, rest.count)]) }
         return VStack(spacing: 0) {
+            if let lead {
+                pinnedButton(lead, mascot: HomeMetrics.pinnedSoloMascot)
+                    .frame(maxWidth: .infinity)
+            }
             ForEach(rows.indices, id: \.self) { index in
-                let row = rows[index]
                 HStack(spacing: 0) {
-                    ForEach(row, id: \.id) { chat in
-                        Button { openChat(chat) } label: {
-                            HomePinnedCell(
-                                chat: chat,
-                                state: MausState.forChat(chat, in: session.state),
-                                mascot: solo ? HomeMetrics.pinnedSoloMascot : HomeMetrics.pinnedMascot
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu { chatMenu(chat) }
-                        .sidebarBotPinSwipe(chat, session: session)
-                        .accessibilityIdentifier("pinned.\(chat.id)")
+                    ForEach(rows[index], id: \.id) { chat in
+                        pinnedButton(chat, mascot: HomeMetrics.pinnedMascot)
                     }
                 }
                 .frame(maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func pinnedButton(_ chat: Chat, mascot: CGFloat) -> some View {
+        Button { openChat(chat) } label: {
+            HomePinnedCell(chat: chat, state: MausState.forChat(chat, in: session.state), mascot: mascot)
+        }
+        .buttonStyle(.plain)
+        .contextMenu { chatMenu(chat) }
+        .sidebarBotPinSwipe(chat, session: session)
+        .accessibilityIdentifier("pinned.\(chat.id)")
     }
 
     // MARK: Sections

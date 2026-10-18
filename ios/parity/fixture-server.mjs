@@ -250,7 +250,12 @@ const GROUP = { name: "Peer Managers", members: ["ara", "helios", "liora"] };
 // no section and nothing else is pinned, the way Grok Bot shows its one
 // primary bot centred; "Transformation Numérique" is named "My team", the
 // default team name an import gives. "none": nothing pinned, no Primary Bot.
+// "mixed": the reference pins (Helios and the group) plus Ara as the
+// Primary Bot with no section, so the primary leads above the other pins.
 const HOME = process.env.PARITY_HOME ?? "";
+if (HOME === "mixed") {
+  for (const spec of BOTS) if (spec.key === "ara") delete spec.pinned;
+}
 if (HOME === "primary" || HOME === "none") {
   for (const spec of BOTS) {
     delete spec.pinned;
@@ -445,8 +450,8 @@ async function seedThroughAPI(base) {
   const group = room.group ?? room.room ?? room;
   // Pinned on the home row, as in the reference, where the server has group
   // pins; an older server ignores or refuses it and the group stays listed.
-  if (!HOME) await api(base, "PATCH", `/api/groups/${group.id}`, { pinned: true }).catch(() => {});
-  if (HOME === "primary") await api(base, "POST", `/api/bots/${ids.ara.id}/primary`, {});
+  if (!HOME || HOME === "mixed") await api(base, "PATCH", `/api/groups/${group.id}`, { pinned: true }).catch(() => {});
+  if (HOME === "primary" || HOME === "mixed") await api(base, "POST", `/api/bots/${ids.ara.id}/primary`, {});
   // Ara carries the unread dot in the reference.
   await api(base, "PATCH", `/api/bots/${ids.ara.id}`, { unread: true }).catch(() => {});
 

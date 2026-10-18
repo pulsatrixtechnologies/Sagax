@@ -1,8 +1,8 @@
 // The desktop sidebar's account row on the phone (#194, #215; matrix DC14,
-// DC15). The phone has no account row: the account button carries the
-// routines badge (active routines, accent, never red; a small accent dot for
-// a failed run nobody has seen), and the account menu opens on a line with
-// the person's own title and points, each while its switch is on.
+// DC15). The phone has no account row. The active routines count rides on
+// the account menu's Automations entry, not on the photo (JC, 2026-10-18),
+// and the menu opens on a line with the person's own title and points, each
+// while its switch is on.
 import CompanionCore
 import SwiftUI
 
@@ -23,43 +23,6 @@ final class AccountRowModel: ObservableObject {
         let viewer = SidebarPrefsModel.shared.viewerID(session)
         activeRoutines = AccountRow.activeRoutines(routines, bots: session.state.bots, viewerId: viewer)
         routineAttention = AccountRow.routineAttention(runs)
-    }
-}
-
-/// The routines badge on the account button (Sagax only, #215: it opens
-/// Automations). Grok Bot iOS 1.14 puts nothing on the person's photo, so
-/// the badge stays quiet: the home's secondary grey on the glass fill, no
-/// accent ring, never red; only a failed unseen run adds an accent dot.
-struct AccountRoutinesBadge: View {
-    @Environment(\.themePalette) var themePalette
-    let count: Int
-    let attention: Bool
-
-    var body: some View {
-        HStack(spacing: 2) {
-            Image(systemName: "calendar")
-                .font(.system(size: 8, weight: .medium))
-            Text(verbatim: "\(count)")
-                .font(.system(size: 10, weight: .medium))
-                .monospacedDigit()
-            if attention {
-                Circle().fill(Theme.accentText).frame(width: 4, height: 4)
-                    .accessibilityIdentifier("routines-attention-dot")
-            }
-        }
-        .foregroundStyle(Theme.textSecondaryHome)
-        .padding(.horizontal, 4)
-        .frame(height: 15)
-        .background(Theme.card, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.bg, lineWidth: 1.5))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(Self.words(count: count, attention: attention)))
-        .accessibilityIdentifier("routines-badge")
-    }
-
-    static func words(count: Int, attention: Bool) -> String {
-        let base = count == 1 ? String(localized: "1 active routine") : String(localized: "\(count) active routines")
-        return attention ? String(localized: "\(base), one needs a look") : base
     }
 }
 

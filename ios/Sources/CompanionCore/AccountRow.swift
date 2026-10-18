@@ -1,11 +1,12 @@
 // The account row of the desktop sidebar (SidebarProfileMenu.tsx, #194,
 // #215; matrix DC14, DC15). The phone has no account row: its account
-// button carries the routines badge and its menu's header line shows the
-// person's title and points.
+// menu's Automations entry carries the routines count (no badge on the
+// photo since 2026-10-18) and its header line shows the person's title and
+// points.
 //
-// - The routines badge: the viewer's active routines (`activeRoutineCount`,
-//   src/lib/active-routines.ts), in the accent, never red; a failed run
-//   nobody has seen adds a small accent dot.
+// - The routines count: the viewer's active routines (`activeRoutineCount`,
+//   src/lib/active-routines.ts). `routineAttention` (a failed run nobody has
+//   seen) is still computed for the desktop's rule but not drawn.
 // - Title and points: the viewer's own only, each while its switch is on
 //   ("Show my title", "Show my points"). Other people's rows never show them.
 import Foundation

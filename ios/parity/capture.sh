@@ -11,7 +11,7 @@
 #   PARITY_OUT=/tmp/shots ios/parity/capture.sh  where the PNGs go
 #   PARITY_EXTRA_ARGS="-companion.prefs.rosterChromeAtTop YES" ...  more launch arguments
 #   PARITY_HOME=primary ios/parity/capture.sh 01-home  one centred Primary Bot,
-#                                                nothing else pinned ("none": no pin)
+#                                                nothing else pinned ("none": no pin, "mixed": primary + pins)
 #   ios/parity/capture.sh cards cards-top 22-appearance  extra screens: a chat with
 #                                                every card type (store preview; its end
 #                                                and its first cards), and
