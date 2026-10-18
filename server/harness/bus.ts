@@ -15,6 +15,7 @@ import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { EVENTS_DIR } from "../config.ts";
+import { threadLogsForgotten } from "../forgotten-threads.ts";
 import { redactSecrets } from "../redact.ts";
 import { capThreadLog, currentThreadLogCap } from "../thread-log-rotation.ts";
 import { newId, type ProviderInstance, type RuntimeEvent, type RuntimeEventListener } from "../contracts.ts";
@@ -247,6 +248,8 @@ export class EventBus {
   }
 
   private async appendGroup(threadId: string, events: RuntimeEvent[]): Promise<void> {
+    // a deleted confidential thread's log is never written again
+    if (threadLogsForgotten(threadId)) { this.pendingLogWarnings.delete(threadId); return; }
     const warning = this.pendingLogWarnings.get(threadId);
     // A widget's whole ConnectWise result never reaches the log.
     const redacted = events.map((event) => redactSecrets(withoutPrivateFields(event)));

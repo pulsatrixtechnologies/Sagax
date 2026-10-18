@@ -10,7 +10,8 @@ Code: `server/confidential-threads.ts` (the rules), with the enforcement in
 `server/index.ts`, `server/bot-zip.ts`, `server/org-admin-files.ts`,
 `server/decision-log.ts`, `server/workspace-backup.ts`,
 `server/turn-log.ts`, `server/user-sandbox-routing.ts`,
-`server/runtime/store.ts` (`forgetThread`), `server/message-db.ts` and
+`server/runtime/store.ts` (`forgetThread`), `server/message-db.ts`,
+`server/engine-transcripts.ts` (the engines' own session files) and
 `server/routes/perspicax-tool-internal.ts`. Clients:
 `src/components/ConfidentialBanner.tsx`, `src/lib/confidential-thread.ts`,
 `ios/Sources/CompanionCore/ConfidentialThread.swift`,
@@ -75,7 +76,8 @@ title; a stamp on a Markdown export the person makes of their own thread.
 | Recall: auto-recall, recent-work brief, `session_search`, `session_read`, `list_threads` from any other thread | narrowed per person | the thread never feeds another thread, its owner's included |
 | Bot zip (owner route and console package), team backup (`POST /api/teams/export` `backup`), organization copy (`POST /api/org/export`) | included with conversations | left out: messages, files, task record, id; an import that ever carries the flag restores it confidential |
 | Console file browser (`tasks`, `attachments` roots) | listed | left out of listings, reads as 404 |
-| Workspace backup (an admin export) | full | task record kept as an empty "Confidential thread" (id, dates, flag); messages, read marks, follow-ups and its turns' idempotency receipts (copies of its digest rows) removed from the message database snapshot (search index rebuilt, vacuumed); every teammate-work tree it asked or did work in removed from the runtime database snapshot (vacuumed); after a confidential thread was deleted (a `confidential-forgotten` note in the data folder, cleared by the next backup) both snapshots are rebuilt and vacuumed even when no confidential thread is left, so it leaves nothing in a free page or the search index; the legacy `room-handoffs.json.migrated` is never backed up; event and native logs, legacy transcript, work folder, its own attachments and its whole Data folder (`data-scopes/<bot>/t-<hash>`: sheet, database, downloads) left out; a restore never installs that Data folder, even from an archive an older release made with it (`confidentialDataScopePath`, `server/workspace-backup-policy.ts`) |
+| Workspace backup (an admin export) | full | task record kept as an empty "Confidential thread" (id, dates, flag); messages, read marks, follow-ups and its turns' idempotency receipts (copies of its digest rows) removed from the message database snapshot (search index rebuilt, vacuumed); every teammate-work tree it asked or did work in removed from the runtime database snapshot (vacuumed); after a confidential thread was deleted (a `confidential-forgotten` note in the data folder, cleared by the next backup) both snapshots are rebuilt and vacuumed even when no confidential thread is left, so it leaves nothing in a free page or the search index; the legacy `room-handoffs.json.migrated` is never backed up; event and native logs, legacy transcript, work folder, its own attachments and its whole Data folder (`data-scopes/<bot>/t-<hash>`: sheet, database, downloads) left out; a restore never installs that Data folder, even from an archive an older release made with it (`confidentialDataScopePath`, `server/workspace-backup-policy.ts`); the engines' own transcripts of it in the engine homes of the data folder (`principals/<person>/<engine>`, `org/<engine>-key`, `engine-policies/*`) left out, prompt histories and logs without its lines, engine databases copied as a snapshot without its rows (`confidentialEngineKeys`, `server/engine-transcripts.ts`), and a restore never installs any of them, even from an archive an older release made with them |
+| Engine transcripts (each engine's own copy of the conversation: Claude Code `projects/*.jsonl` and `history.jsonl`, Codex rollouts and `state_*.sqlite`, Hermes `state.db`, Grok, pi, Cursor, Gemini, Qwen, OpenCode session files) | kept by the engine in its home, backed up when that home is in the data folder | resumed across turns as for any thread; left out of the workspace backup and never installed by a restore; purged when the thread is deleted, when a thread turns confidential (its sessions so far: the next turn starts a new session with the thread's own transcript replayed), and once at start for the threads already confidential (see « Engine transcripts » below) |
 | Approval cards and their notifications | bot owner | the thread owner only; a card they could not answer (an organization admin card, another person's machine) is refused instead of shown to anyone else; never in the console's organization queue |
 | Incidents and refused turns | Primary Bot report with 300 characters of the request and reply; problem log row with title and notice | no text: the console's problem log and the owner's notification say only « un tour d'un fil confidentiel a échoué »; no Primary Bot report |
 | Notifications (in app, push relay, iOS banners, Live Activities, widgets, share sheet) | the reply's first words | « Fil confidentiel » only; widgets leave the thread out |
@@ -108,7 +110,72 @@ thread loses (messages, event and native logs):
   goes whole (rows, events, inbox); in any other tree its rows keep only ids
   and status;
 - its turns' idempotency receipts in the message database (any deleted
-  thread loses those).
+  thread loses those);
+- the engines' own transcripts of it (below), once its idle engine process
+  is closed, and again a few seconds later; its event and native logs are
+  never written again after the deletion (an engine announcing its exit
+  would otherwise recreate them). Deleting a bot does the same for each of
+  its confidential threads.
+
+## Engine transcripts
+
+Every engine that resumes a conversation keeps its own copy of it on disk,
+in its home: under the data folder on a server (a person's subscription
+`principals/<person>/<engine>`, a key home `principals/<person>/<engine>-key`
+or `org/<engine>-key`, Hermes's `engine-policies/hermes-*`, the managed
+`providers/`) and in the server user's home (`~/.claude`, `~/.codex`,
+`~/.grok`, …, or the folder an engine's variable names: `CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`, `HERMES_HOME`, …). `server/engine-transcripts.ts` finds a
+thread's files by keys, never by guessing:
+
+- the thread id: an engine that files sessions by working folder writes it
+  in the folder's name, since a confidential thread always works in
+  `task-workspaces/<bot>/<thread>` (Claude Code `projects/<folder>/`, Grok
+  `sessions/<folder>/`, pi `sessions/--<folder>--/`, Cursor `projects/`);
+- the md5 and sha256 of that folder (engines that hash it: Gemini and Qwen
+  `tmp/<hash>/`, Cursor `chats/<hash>/`);
+- every session id an engine announced for the thread (`session.started`),
+  kept on the task as `engineSessions` (ids only, never on the wire), with
+  its resume cursors and its event log for older threads.
+
+The keys are widened from what the homes say: the session ids filed under a
+folder named by a key, the rows of an engine database whose folder column
+holds one (Codex's `threads.cwd`), the prompt-history lines that name one.
+Then, in each home, an entry whose name holds a key goes whole; prompt
+histories (`history.jsonl`) and engine logs (`logs/*.jsonl`) lose the lines
+that name a key; Gemini's `logs.json` loses its entries; a chat record
+whose `sessionId` is a key goes; an engine database (`*.sqlite`, `*.db`)
+loses the rows whose id or folder column holds a key (full-text indexes
+rebuilt or merged, then VACUUM with `secure_delete`). Nothing else is read
+or changed: another thread's transcript that mentions a key (a
+`list_threads` result) stays whole, so its own session still resumes. A
+folder named after another session or thread (a UUID in its name) is not
+entered, which keeps a purge to about a second on a home with thousands of
+sessions. A purge a held database stops is kept (`confidential-engine-purge.json`,
+ids only) and retried at start and after the next purge.
+
+When a thread turns confidential, and once at start for every thread
+already confidential (`confidential-engine-sessions-v1` marks it done), its
+cursors and kept ids are forgotten (`store.forgetEngineSessions`) and the
+task is marked `rewound`: its next turn starts a new session with the
+thread's own transcript replayed, never a resume of a session whose files
+are gone.
+
+By engine, what is matched (verified on disk against Claude Code 2.1.302,
+Codex 0.153, Grok Build, Cursor Agent and pi; the others follow their
+documented layouts and are covered by the same rules, not verified against
+a real CLI here):
+
+| Engine | Session files | Found by |
+|---|---|---|
+| Claude Code | `projects/<folder>/<session>.jsonl` and `<session>/`, `todos/<session>-*`, `file-history/<session>/`, `session-env/<session>/`, `debug/<session>.txt`, `history.jsonl` lines, the folder's `memory/` | folder name (thread id), session ids |
+| Codex | `sessions/YYYY/MM/DD/rollout-…-<id>.jsonl`, `archived_sessions/`, `history.jsonl` lines, rows of `state_*.sqlite`, `logs_*.sqlite`, `memories_*.sqlite`, `goals_*.sqlite`, `queue_*.sqlite` | session ids, `threads.cwd` holding the thread id |
+| Hermes | `sessions/` files, rows of `state.db` (sessions, messages, full-text index) | session ids |
+| Grok Build | `sessions/<folder>/<session>/`, `memory-v2/workspaces/<folder>-…`, `logs/*.jsonl` lines | folder name, session ids |
+| pi | `sessions/--<folder>--/…_<session>.jsonl` | folder name |
+| Cursor Agent | `acp-sessions/<session>/`, `chats/<hash>/<session>/`, `projects/<folder>/` | session ids, folder name and hash |
+| Gemini, Qwen | `tmp/<hash>/chats/*.json` by its `sessionId`, `tmp/<hash>/logs.json` entries | folder hash, session ids |
+| Kimi, Droid, Cline, OpenCode, Antigravity | files and folders named by the session id (OpenCode `storage/session/…/<ses_…>.json`, `storage/message/<ses_…>/`) | session ids |
 
 ## Honest limits
 
@@ -150,6 +217,19 @@ end-to-end encryption, and it does not hide the thread from:
   memory captured or daily log lines written from it before the change stay
   in the bot's memory until edited. Its decision rows are stripped at the
   change.
+- **Engine memories that mix sessions.** An engine's own memory, when its
+  operator turned it on, consolidates several sessions into one file:
+  Codex's `memories/` (its memory feature, off by default; its per-thread
+  rows are purged), Grok's `memory-v2/global`, Hermes's `memories/` on a
+  solo server (its memory tools are withheld on an organization server).
+  Those files cannot be split by thread and stay until edited.
+- **Engine transcripts Sagax cannot tie to the thread.** A session id an
+  engine never announced, a file an engine names only by a hash of something
+  else than the thread's folder, or a session kept outside the homes above
+  (a custom location in an engine's own settings) is not found. A thread
+  deleted by a release before this one left its transcripts on disk: their
+  ids are gone with the thread. An archive restored from an older release
+  carries no event log, so a session only that log named stays in it.
 - **Its owner.** The person can still copy, export or forward what they
   wrote; push notifications of their own thread go to their own devices.
 

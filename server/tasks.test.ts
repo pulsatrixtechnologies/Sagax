@@ -83,6 +83,31 @@ describe("tasks", () => {
     expect(store.activeTask(bot.id)!.resumeCursors.claude).toBe("session-two");
   });
 
+  it("keeps every engine session id a task had, and forgets them all at once", async () => {
+    const { store } = await freshStore();
+    const bot = store.createBot();
+    const thread = bot.threadId;
+    const other = store.createTask(bot.id)!.threadId;
+    store.setResumeCursor(bot.id, "claude", "aaaaaaaa-0000-4000-8000-000000000001", thread);
+    store.setResumeCursor(bot.id, "claude", "aaaaaaaa-0000-4000-8000-000000000002", thread);
+    store.setResumeCursor(bot.id, "codex", "aaaaaaaa-0000-4000-8000-000000000002", thread);
+    store.setResumeCursor(bot.id, "claude", "bbbbbbbb-0000-4000-8000-000000000001", other);
+    expect(store.taskByThread(bot.id, thread)!.engineSessions).toEqual(["aaaaaaaa-0000-4000-8000-000000000001", "aaaaaaaa-0000-4000-8000-000000000002"]);
+    // ids only, and never on the wire
+    const { toWireTask } = await import("./store.ts");
+    expect(toWireTask(store.taskByThread(bot.id, thread)!, bot.modelSelection)).not.toHaveProperty("engineSessions");
+    for (let i = 0; i < 80; i++) store.setResumeCursor(bot.id, "claude", `cccccccc-0000-4000-8000-${String(i).padStart(12, "0")}`, other);
+    expect(store.taskByThread(bot.id, other)!.engineSessions).toHaveLength(64);
+    expect(store.forgetEngineSessions(bot.id, thread).sort()).toEqual(["aaaaaaaa-0000-4000-8000-000000000001", "aaaaaaaa-0000-4000-8000-000000000002"]);
+    const forgotten = store.taskByThread(bot.id, thread)!;
+    expect(forgotten.resumeCursors).toEqual({});
+    expect(forgotten.engineSessions).toBeUndefined();
+    // the next turn starts a new session with the thread's transcript replayed
+    expect(forgotten.rewound).toBe(true);
+    expect(store.taskByThread(bot.id, other)!.resumeCursors.claude).toBe("cccccccc-0000-4000-8000-000000000079");
+    expect(store.forgetEngineSessions(bot.id, "missing")).toEqual([]);
+  });
+
   it("names a task after the first thing you asked it", async () => {
     const { store, UNTITLED_THREAD, titleFromMessage } = await freshStore();
     const bot = store.createBot();

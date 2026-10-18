@@ -7,9 +7,12 @@ import { join } from "node:path";
 
 import { NATIVE_DIR } from "../config.ts";
 import { redactSecrets } from "../redact.ts";
+import { threadLogsForgotten } from "../forgotten-threads.ts";
 import { capThreadLog, currentThreadLogCap } from "../thread-log-rotation.ts";
 
 export function appendNative(threadId: string, entry: { dir: "in" | "out"; source: string; msg: unknown }) {
+  // a deleted confidential thread's log is never written again
+  if (threadLogsForgotten(threadId)) return;
   const file = join(NATIVE_DIR, `${threadId}.ndjson`);
   try {
     // The session-setup messages carry the credentials the agent is handed —

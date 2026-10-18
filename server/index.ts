@@ -719,6 +719,8 @@ import { appendProblem, problemReason, pruneProblemLog, readProblems } from "./o
 import { WorkspaceBackupMaintenance } from "./workspace-backup-maintenance.ts";
 import { createWorkspaceBackupRoutes, isWorkspaceBackupSessionControl } from "./workspace-backup-http.ts";
 import { applyPendingWorkspaceRestore, CONFIDENTIAL_FORGOTTEN_MARKER, readLastWorkspaceRestore, type WorkspaceRestoreResult } from "./workspace-backup.ts";
+import { forgetThreadLogs } from "./forgotten-threads.ts";
+import { dataEngineHomes, describePurge, distinctHomes, ENGINE_PURGE_DONE, environmentEngineHomes, eventLogSessionIds, purgeEngineSessions, readPendingPurges, taskEngineKeys, threadKeys, writePendingPurges } from "./engine-transcripts.ts";
 import { createCustomDomainVerifier, customDomainIpv4, normalizeCustomDomain } from "./custom-domain.ts";
 import { allowedScopes, createServerEmailSignIn, parseAllowList } from "./account-signin.ts";
 import { EmailOtpStore } from "./email-otp.ts";
@@ -9487,6 +9489,76 @@ function makeThreadConfidential(botId: string, threadId: string): void {
   void scrubThreadDecisions(DATA_DIR, threadId);
   // its settled teammate work (runtime.db) keeps no words of it
   forgetConfidentialCoordination(threadId);
+  // the engines' own transcripts of it so far (server/engine-transcripts.ts):
+  // the next turn starts a new session, its own transcript replayed
+  forgetThreadEngineSessions(botId, threadId, "made confidential");
+}
+
+// ── engine transcripts of confidential threads (server/engine-transcripts.ts)
+// The engines keep their own copy of a conversation (Claude Code's
+// projects/*.jsonl, Codex's rollouts and state database, Hermes's state.db
+// …) in their homes. A confidential thread's leave no workspace backup and
+// go when it is deleted, when a thread turns confidential (its sessions so
+// far), and once at start for the threads already confidential.
+
+/** Every engine home of this server: under the data folder, and the homes
+ * the process and each engine's own environment point at. */
+function engineHomes(): string[] {
+  const entries = Object.values(instanceConfigs(cfg));
+  const envs: Array<Record<string, string | undefined>> = [process.env, ...entries.map((entry) => ({ ...process.env, ...entry.environment }))];
+  const configDirs: string[] = [];
+  for (const entry of entries) {
+    const configDir = (entry.config as { configDir?: unknown } | undefined)?.configDir;
+    if (entry.driver !== "claudeAgent" || typeof configDir !== "string" || !configDir.trim()) continue;
+    try { configDirs.push(resolveClaudeConfigDir(configDir, { ...process.env, ...entry.environment })); } catch { /* not a usable folder */ }
+  }
+  return distinctHomes([...dataEngineHomes(DATA_DIR), ...envs.flatMap((env) => environmentEngineHomes(env)), ...configDirs]);
+}
+/** The keys that find a thread's engine files: its id, its own folder's
+ * hashes, and every session id it had (its cursors, the ids it kept, its
+ * event log). Read before the thread's record and logs go. */
+function threadEngineKeys(botId: string, threadId: string): string[] {
+  const folder = join(TASK_WORKSPACES_DIR, botId, threadId);
+  const task = store.taskByThread(botId, threadId);
+  const logged = eventLogSessionIds(join(EVENTS_DIR, `${threadId}.ndjson`));
+  return task ? taskEngineKeys(task, [folder], logged) : [...threadKeys(threadId, [folder]), ...logged];
+}
+/** Close the thread's idle engine processes before its files go. */
+function releaseThreadEngines(threadId: string): void {
+  for (const instance of registry.instances()) {
+    try { instance.adapter.releaseWarmSession?.(threadId); } catch { /* already closed */ }
+  }
+}
+/** Purge the keys' engine files now; what could not be done (a database an
+ * engine holds) is kept and retried at start and after the next purge. */
+function purgeConfidentialEngineKeys(keys: readonly string[], why: string): void {
+  const pending = readPendingPurges(DATA_DIR);
+  if (!keys.length && !pending.length) return;
+  const started = Date.now();
+  const homes = engineHomes();
+  const retry: string[][] = [];
+  for (const keysLeft of pending) {
+    const again = purgeEngineSessions(homes, keysLeft);
+    if (again.failed.length) retry.push([...again.keys]);
+  }
+  const result = keys.length ? purgeEngineSessions(homes, keys) : { removed: 0, rewritten: 0, rows: 0, failed: [], keys: new Set<string>() };
+  if (result.failed.length) retry.push([...result.keys]);
+  try { writePendingPurges(DATA_DIR, retry); } catch { /* retried from the roster at the next start */ }
+  if (result.removed || result.rewritten || result.rows || result.failed.length || pending.length) {
+    console.log(`confidential thread (${why}): engine transcripts purged, ${describePurge(result)}${pending.length ? `, ${pending.length} earlier purge(s) retried` : ""} in ${Date.now() - started} ms`);
+  }
+}
+/** A thread that stays (made confidential, or confidential from an older
+ * release): its engine sessions are forgotten and their files purged. */
+function forgetThreadEngineSessions(botId: string, threadId: string, why: string): void {
+  releaseThreadEngines(threadId);
+  const keys = threadEngineKeys(botId, threadId);
+  store.forgetEngineSessions(botId, threadId);
+  try {
+    purgeConfidentialEngineKeys(keys, why);
+  } catch (error) {
+    console.warn(`confidential thread: could not purge its engine transcripts (${error instanceof Error ? error.message : "unknown"})`);
+  }
 }
 /** Teammate work a thread takes part in that has not settled: a thread
  * cannot turn confidential under it (its words would still travel). */
@@ -9524,9 +9596,21 @@ function confidentialThreadAttachments(botId: string, threadId: string): string[
 /** After a confidential thread's record is gone (messages, event and native
  * logs: store.deleteTask): its folder, the attachments no other thread
  * points at, its pending capture, its browser and its decision summaries. */
-function wipeConfidentialThread(botId: string, threadId: string, attachmentNames: readonly string[]): void {
+function wipeConfidentialThread(botId: string, threadId: string, attachmentNames: readonly string[], engineKeys: readonly string[]): void {
   if (deletedConfidentialThreads.size >= 10_000) deletedConfidentialThreads.clear();
   deletedConfidentialThreads.add(threadId);
+  // the engines' own transcripts of it: now, and again once its engine
+  // process has closed (a last write on exit). Its exit is never logged.
+  forgetThreadLogs(threadId);
+  releaseThreadEngines(threadId);
+  try {
+    purgeConfidentialEngineKeys(engineKeys, "deleted");
+  } catch (error) {
+    console.warn(`confidential thread: could not purge its engine transcripts (${error instanceof Error ? error.message : "unknown"})`);
+  }
+  setTimeout(() => {
+    try { purgeConfidentialEngineKeys(engineKeys, "deleted"); } catch { /* retried at start */ }
+  }, 3_000).unref();
   if (/^[A-Za-z0-9_-]{1,128}$/.test(botId) && /^[A-Za-z0-9_-]{1,128}$/.test(threadId)) {
     try {
       rmSync(join(TASK_WORKSPACES_DIR, botId, threadId), { recursive: true, force: true });
@@ -18931,7 +19015,12 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           // the final durable mutation boundary so a concurrent profile edit
           // cannot be erased under a stale approval.
           revalidate();
+          // its confidential threads' engine transcripts, keyed before they go
+          const confidentialEngineKeys = store.tasks(bot.id).filter((task) => task.confidential === true).map((task) => threadEngineKeys(bot.id, task.threadId));
           store.deleteBot(bot.id, setupRequest);
+          for (const keys of confidentialEngineKeys) {
+            try { purgeConfidentialEngineKeys(keys, "bot deleted"); } catch { /* retried at start */ }
+          }
           // Removing schedules is not a security revocation. Keep them intact
           // if the bot/receipt write fails, so a failed deletion is retryable.
           routines!.disableForBot(bot.id);
@@ -25497,10 +25586,11 @@ ROUTES.push(createAccountRoutes({
         const confidential = store.isConfidentialThread(task.threadId);
         // the stored files its messages point at, read before they go
         const files = confidentialThreadAttachments(bot.id, task.threadId);
+        const engineKeys = confidential ? threadEngineKeys(bot.id, task.threadId) : [];
         if (!store.deleteTask(bot.id, task.threadId)) continue;
         threads++;
         if (confidential) {
-          wipeConfidentialThread(bot.id, task.threadId, files);
+          wipeConfidentialThread(bot.id, task.threadId, files, engineKeys);
           confidentialThreads.push({ botId: bot.id, threadId: task.threadId });
         } else {
           ordinaryThreads.push({ botId: bot.id, threadId: task.threadId, attachments: files });
@@ -41210,9 +41300,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A confidential thread leaves nothing behind (server/confidential-threads.ts):
       // its files are listed before its messages go.
       const confidentialFiles = store.isConfidentialThread(m[2]) ? confidentialThreadAttachments(m[1], m[2]) : null;
+      // and the keys of its engine transcripts, before its record and logs go
+      const confidentialEngineKeys = confidentialFiles ? threadEngineKeys(m[1], m[2]) : [];
       const updated = store.deleteTask(m[1], m[2]);
       if (!updated) return json(res, 404, { error: "no such task" });
-      if (confidentialFiles) wipeConfidentialThread(m[1], m[2], confidentialFiles);
+      if (confidentialFiles) wipeConfidentialThread(m[1], m[2], confidentialFiles, confidentialEngineKeys);
       clearTurnDigestState(m[2]);
       revokeInternalCapabilitiesForThread(m[2]);
       handoffs.forget(m[2]);
@@ -43818,6 +43910,35 @@ restoreChannelMessages();
 // A saved MCP server whose name is now reserved is never mounted: say so at
 // start, not only at its first turn (#695 follow-up).
 warnReservedMcpServers(cfg);
+// Once, before any turn: the engine transcripts of threads that were
+// already confidential (an older release kept them, the words from before a
+// thread turned confidential included). Their next turn starts a new session
+// with the thread's own transcript replayed. Then every start retries the
+// purges a held database left (server/engine-transcripts.ts).
+{
+  const done = join(DATA_DIR, ENGINE_PURGE_DONE);
+  if (!existsSync(done)) {
+    const keys = new Set<string>();
+    let threads = 0;
+    for (const bot of store.bots) {
+      for (const task of store.tasks(bot.id)) {
+        if (task.confidential !== true) continue;
+        for (const key of threadEngineKeys(bot.id, task.threadId)) keys.add(key);
+        store.forgetEngineSessions(bot.id, task.threadId);
+        threads++;
+      }
+    }
+    try {
+      purgeConfidentialEngineKeys([...keys], "already confidential");
+      writeFileSync(done, "", { mode: 0o600 });
+    } catch (error) {
+      console.warn(`Confidential threads: could not purge their engine transcripts (${error instanceof Error ? error.message : "unknown"}); retried at the next start`);
+    }
+    if (threads) console.log(`Confidential threads: engine transcripts of ${threads} thread(s) purged once; their next turn starts a new session`);
+  } else if (readPendingPurges(DATA_DIR).length) {
+    try { purgeConfidentialEngineKeys([], "retry"); } catch { /* retried at the next start */ }
+  }
+}
 // Organization server, once: every bot thread from before private threads
 // gets its owner (server/thread-privacy.ts), before anyone can read one.
 migrateThreadOwners();

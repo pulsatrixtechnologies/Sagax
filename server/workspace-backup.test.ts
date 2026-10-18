@@ -527,6 +527,117 @@ describe("encrypted full workspace backups", () => {
     expect(readFileSync(second).includes("freepageterm")).toBe(false);
   });
 
+  // The engines' own transcripts of a confidential thread (server/engine-transcripts.ts).
+  const SECRET_T = "5ec5ec5e-1111-4111-8111-111111111111";
+  const SECRET_SID = "aaaaaaaa-3333-4333-8333-333333333333";
+  const OLD_SID = "abababab-3333-4333-8333-444444444444";
+  const LOGGED_SID = "acacacac-3333-4333-8333-555555555555";
+  const PLAIN_SID = "bbbbbbbb-4444-4444-8444-444444444444";
+  const CODEX_SECRET = "019a0000-5555-7555-8555-555555555555";
+  const CODEX_PLAIN = "019a0000-6666-7666-8666-666666666666";
+  const put = (path: string, content: string | Buffer) => { mkdirSync(join(path, ".."), { recursive: true }); writeFileSync(path, content); };
+  function engineHomes(root: string, logged = true): void {
+    const claude = join(root, "principals", "pr_ana", "claude");
+    put(join(claude, "projects", `-x-task-workspaces-bot-${SECRET_T}`, `${SECRET_SID}.jsonl`), "CONFIDENTIAL_ENGINE transcript\n");
+    put(join(claude, "projects", "-x-task-workspaces-bot-plain", `${PLAIN_SID}.jsonl`), `ORDINARY transcript that lists ${SECRET_T}\n`);
+    put(join(claude, "todos", `${OLD_SID}-agent-${OLD_SID}.json`), "CONFIDENTIAL_ENGINE todo");
+    put(join(claude, "history.jsonl"), `${JSON.stringify({ display: "CONFIDENTIAL_ENGINE prompt", project: `/x/task-workspaces/bot/${SECRET_T}`, sessionId: SECRET_SID })}\n${JSON.stringify({ display: "ORDINARY prompt", project: "/x/task-workspaces/bot/plain", sessionId: PLAIN_SID })}\n`);
+    const codex = join(root, "principals", "pr_ana", "codex");
+    put(join(codex, "sessions", "2026", "10", "18", `rollout-2026-10-18T10-00-00-${CODEX_SECRET}.jsonl`), "CONFIDENTIAL_ENGINE rollout\n");
+    put(join(codex, "sessions", "2026", "10", "18", `rollout-2026-10-18T11-00-00-${CODEX_PLAIN}.jsonl`), "ORDINARY rollout\n");
+    const state = new DatabaseSync(join(codex, "state_5.sqlite"));
+    state.exec("PRAGMA journal_mode = WAL; CREATE TABLE threads (id TEXT PRIMARY KEY, cwd TEXT NOT NULL, title TEXT NOT NULL)");
+    state.prepare("INSERT INTO threads VALUES (?, ?, 'CONFIDENTIAL_ENGINE title')").run(CODEX_SECRET, `/x/task-workspaces/bot/${SECRET_T}`);
+    state.prepare("INSERT INTO threads VALUES (?, ?, 'ORDINARY title')").run(CODEX_PLAIN, "/x/task-workspaces/bot/plain");
+    state.close();
+    put(join(root, "engine-policies", "hermes-org", "sessions", `session_${SECRET_SID}.json`), "CONFIDENTIAL_ENGINE hermes");
+    // a session only the thread's event log names (no archive carries that log)
+    if (logged) put(join(root, "principals", "pr_ana", "grok", ".grok", "sessions", "shared", LOGGED_SID, "chat_history.jsonl"), "CONFIDENTIAL_ENGINE grok");
+  }
+  const roster = [{ id: "bot", threadId: "plain", tasks: [
+    { threadId: "plain", resumeCursors: { claude: PLAIN_SID } },
+    { threadId: SECRET_T, confidential: true, resumeCursors: { claude: SECRET_SID }, engineSessions: [OLD_SID, SECRET_SID] },
+  ] }];
+  function expectNoEngineTranscript(data: string, paths: string[]): void {
+    for (const path of paths) {
+      const at = join(data, path);
+      if (!statSync(at).isFile()) continue;
+      expect(readFileSync(at).includes("CONFIDENTIAL_ENGINE"), path).toBe(false);
+    }
+    for (const path of [`principals/pr_ana/claude/projects/-x-task-workspaces-bot-plain/${PLAIN_SID}.jsonl`, `principals/pr_ana/codex/sessions/2026/10/18/rollout-2026-10-18T11-00-00-${CODEX_PLAIN}.jsonl`]) expect(paths).toContain(path);
+    expect(readFileSync(join(data, "principals/pr_ana/claude/history.jsonl"), "utf8")).toContain("ORDINARY prompt");
+    // read from a copy: opening the staged file would leave journal files beside it
+    const copy = join(directory(), "state.sqlite");
+    cpSync(join(data, "principals/pr_ana/codex/state_5.sqlite"), copy);
+    const state = new DatabaseSync(copy, { readOnly: true });
+    try { expect(state.prepare("SELECT id FROM threads").all()).toEqual([{ id: CODEX_PLAIN }]); } finally { state.close(); }
+  }
+
+  it("leaves the engines' own transcripts of a confidential thread out of the backup, and every other thread's in", async () => {
+    const source = directory();
+    json(join(source, "bots.json"), roster);
+    engineHomes(source);
+    // a session only its event log still names
+    put(join(source, "events", `${SECRET_T}.ndjson`), `${JSON.stringify({ type: "session.started", sessionId: LOGGED_SID })}\n`);
+    const exported = await createWorkspaceBackup(source, { password: PASSWORD });
+    const staged = await stageWorkspaceBackup(source, exported.path, { password: PASSWORD });
+    const data = join(source, ".backups", staged.id, "staged", "data");
+    const paths: string[] = readJson(join(source, ".backups", staged.id, "staged", "manifest.json")).entries.map((entry: { path: string }) => entry.path);
+    expect(paths.filter((path) => [SECRET_T, SECRET_SID, OLD_SID, LOGGED_SID, CODEX_SECRET].some((key) => path.includes(key)))).toEqual([]);
+    expect(paths.filter((path) => /state_5\.sqlite-(?:wal|shm)$/.test(path))).toEqual([]);
+    expectNoEngineTranscript(data, paths);
+    // the live homes are untouched: a backup only copies
+    expect(existsSync(join(source, "principals", "pr_ana", "claude", "projects", `-x-task-workspaces-bot-${SECRET_T}`, `${SECRET_SID}.jsonl`))).toBe(true);
+  });
+
+  it("restores an archive that holds a confidential thread's engine transcripts without installing them", async () => {
+    // an archive from a release that copied the engine homes whole
+    const forged = directory();
+    json(join(forged, "bots.json"), roster);
+    engineHomes(forged, false);
+    const probeSource = directory();
+    const probeArchive = await createWorkspaceBackup(probeSource, { password: PASSWORD });
+    const probe = await stageWorkspaceBackup(probeSource, probeArchive.path, { password: PASSWORD });
+    const base = readJson(join(probeSource, ".backups", probe.id, "staged", "manifest.json"));
+    const entries: Array<{ path: string; type: "file" | "directory"; size: number; mode: number; sha256?: string }> = [];
+    const blocks: Buffer[] = [];
+    const add = (dir: string, prefix = "") => {
+      for (const name of readdirSync(dir).sort()) {
+        const path = prefix ? `${prefix}/${name}` : name;
+        const at = join(dir, name);
+        if (statSync(at).isDirectory()) {
+          entries.push({ path, type: "directory", size: 0, mode: 0o700 });
+          blocks.push(tarEntry(`data/${path}`, "Directory"));
+          add(at, path);
+        } else {
+          const content = readFileSync(at);
+          entries.push({ path, type: "file", size: content.length, mode: 0o600, sha256: createHash("sha256").update(content).digest("hex") });
+          const header = new Header({ path: `data/${path}`, type: "File", size: content.length, mode: 0o600 });
+          const block = Buffer.alloc(512);
+          header.encode(block);
+          blocks.push(block, content, Buffer.alloc((512 - content.length % 512) % 512));
+        }
+      }
+    };
+    add(forged);
+    const manifest = { ...base, sourceDataDir: "/x", entries, summary: { ...base.summary, bots: 1,
+      files: entries.filter((entry) => entry.type === "file").length, directories: entries.filter((entry) => entry.type === "directory").length,
+      bytes: entries.reduce((total, entry) => total + entry.size, 0) } };
+    const archive = encryptedPayload(forged, Buffer.concat([tarEntry("manifest.json", "File", JSON.stringify(manifest)), tarEntry("data", "Directory"), ...blocks, Buffer.alloc(1024)]));
+    const target = directory();
+    const staged = await stageWorkspaceBackup(target, archive, { password: PASSWORD });
+    const staging = join(target, ".backups", staged.id, "staged");
+    const stagedPaths: string[] = readJson(join(staging, "manifest.json")).entries.map((entry: { path: string }) => entry.path);
+    expect(stagedPaths.filter((path) => [SECRET_SID, OLD_SID, CODEX_SECRET].some((key) => path.includes(key)) || path.includes(SECRET_T) && path.startsWith("principals/"))).toEqual([]);
+    expectNoEngineTranscript(join(staging, "data"), stagedPaths);
+    commitPendingWorkspaceRestore(target, staged.id);
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
+    expect(existsSync(join(target, "principals", "pr_ana", "claude", "projects", `-x-task-workspaces-bot-${SECRET_T}`))).toBe(false);
+    expect(existsSync(join(target, "principals", "pr_ana", "claude", "todos", `${OLD_SID}-agent-${OLD_SID}.json`))).toBe(false);
+    expect(readFileSync(join(target, "principals", "pr_ana", "claude", "projects", "-x-task-workspaces-bot-plain", `${PLAIN_SID}.jsonl`), "utf8")).toContain("ORDINARY");
+    expect(readFileSync(join(target, "principals", "pr_ana", "claude", "history.jsonl"), "utf8")).not.toContain("CONFIDENTIAL_ENGINE");
+  });
+
   it("cleans the database copies after a confidential thread was deleted, then clears the note", async () => {
     const source = directory();
     json(join(source, "bots.json"), [{ id: "bot", threadId: "plain", tasks: [{ threadId: "plain" }] }]);

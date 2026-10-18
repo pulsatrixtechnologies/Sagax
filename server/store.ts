@@ -146,12 +146,21 @@ export interface TaskRecord extends Omit<WireTask, TaskWireDerivedKeys> {
    * newest message it saw. Server-private, dropped when the thread turns
    * confidential. */
   segmentDigest?: SegmentDigest;
+  /** Every native session id an engine announced on this thread
+   * (session.started), newest last, at most ENGINE_SESSIONS_KEPT: what
+   * finds the engine's own files of the thread again when it turns
+   * confidential or a confidential one is deleted, after a reset replaced
+   * the cursor (server/engine-transcripts.ts). Ids only. */
+  engineSessions?: string[];
 }
+
+/** How many native session ids a task keeps (TaskRecord.engineSessions). */
+export const ENGINE_SESSIONS_KEPT = 64;
 
 /** TaskRecord fields no client may see. Everything else must be on WireTask:
  * the exactness assertion below fails to compile when either side drifts,
  * so a new server field forces a decision — wire-visible or private here. */
-export type TaskWirePrivateKeys = "resumeCursors" | "lastInstanceId" | "handedMessages" | "appliedCompactionId" | "contextSummaries" | "contextFloor" | "lastContextModel" | "surfaceSource" | "askedAt" | "autoWorkspace" | "streamSegment" | "segmentDigest";
+export type TaskWirePrivateKeys = "resumeCursors" | "lastInstanceId" | "handedMessages" | "appliedCompactionId" | "contextSummaries" | "contextFloor" | "lastContextModel" | "surfaceSource" | "askedAt" | "autoWorkspace" | "streamSegment" | "segmentDigest" | "engineSessions";
 /** WireTask fields computed by toWireTask and never stored on a TaskRecord. */
 export type TaskWireDerivedKeys = "surfaceAuto" | "followsBotModel";
 export type TaskWireProjection = Pick<TaskRecord, Exclude<keyof TaskRecord, TaskWirePrivateKeys>> & Pick<WireTask, TaskWireDerivedKeys>;
@@ -169,7 +178,8 @@ export const taskWireProjectionIsExact: TaskWireProjectionIsExact = true;
 export function toWireTask(task: TaskRecord, botModel: ModelSelection): WireTask {
   const { resumeCursors: _resumeCursors, lastInstanceId: _lastInstanceId, handedMessages: _handedMessages,
     appliedCompactionId: _appliedCompactionId, contextSummaries: _contextSummaries, contextFloor: _contextFloor, lastContextModel: _lastContextModel,
-    surfaceSource, askedAt: _askedAt, autoWorkspace: _autoWorkspace, streamSegment: _streamSegment, segmentDigest: _segmentDigest, ...stored } = task;
+    surfaceSource, askedAt: _askedAt, autoWorkspace: _autoWorkspace, streamSegment: _streamSegment, segmentDigest: _segmentDigest,
+    engineSessions: _engineSessions, ...stored } = task;
   const wire: WireTask = { ...stored, modelSelection: structuredClone(task.modelSelection ?? botModel), followsBotModel: task.modelSelection === undefined };
   // Who pinned stays private. A client learns only whether the pin is the
   // machine's own record, so it never presents one as the person's choice.
@@ -2125,6 +2135,29 @@ export class Store {
     return task;
   }
 
+  /** Forget a thread's native engine sessions (server/engine-transcripts.ts):
+   * its cursors, the bot's mirror of them and the ids it kept go, and the
+   * next turn starts a new session with the thread's own transcript
+   * replayed (`rewound`), never a resume of a session whose files are gone.
+   * Returns the session ids it held. */
+  forgetEngineSessions(botId: string, threadId: string): string[] {
+    const bot = this.bot(botId);
+    const task = this.taskByThread(botId, threadId);
+    if (!bot || !task) return [];
+    const held = [...new Set([...Object.values(task.resumeCursors ?? {}), ...(task.engineSessions ?? [])].filter((value): value is string => typeof value === "string" && value.length > 0))];
+    const hadAny = held.length > 0 || Object.keys(task.resumeCursors ?? {}).length > 0;
+    task.resumeCursors = {};
+    delete task.handedMessages;
+    delete task.engineSessions;
+    if (hadAny) task.rewound = true;
+    for (const [instanceId, cursor] of Object.entries(bot.resumeCursors ?? {})) {
+      if (bot.threadId === threadId || (typeof cursor === "string" && held.includes(cursor))) delete bot.resumeCursors[instanceId];
+    }
+    this.saveBots();
+    this.emit({ type: "bot", botId });
+    return held;
+  }
+
   /** The one place a new bot's selection is decided: the caller's choice, or
    * the workspace default, completed with the workspace's new-bot defaults. */
   private newBotSelection(requested?: ModelSelection): ModelSelection {
@@ -2912,7 +2945,12 @@ export class Store {
     if (!bot) return;
     // the cursor belongs to the task that produced it, not to the bot
     const task = threadId ? this.taskByThread(botId, threadId) : this.activeTask(botId);
-    if (task) task.resumeCursors[instanceId] = cursor;
+    if (task) {
+      task.resumeCursors[instanceId] = cursor;
+      if (typeof cursor === "string" && cursor && !task.engineSessions?.includes(cursor)) {
+        task.engineSessions = [...(task.engineSessions ?? []), cursor].slice(-ENGINE_SESSIONS_KEPT);
+      }
+    }
     // The legacy mirror follows the task visible in chat, never a detached
     // routine task working in the background.
     if (!threadId || bot.threadId === threadId) bot.resumeCursors[instanceId] = cursor;

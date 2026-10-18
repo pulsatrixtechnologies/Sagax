@@ -43,8 +43,17 @@
 //         confidential keeps no brief or result of the work it asked or did,
 //         a confidential work thread takes no more work, and nothing of it is
 //         left after its deletion
+//   CT-16 (follow-up of #729) the engines' own transcripts (Claude Code's
+//         projects/*.jsonl and history.jsonl, a Codex home's rollouts and
+//         state database): none of a confidential thread in the workspace
+//         backup; a thread made confidential loses its transcripts so far and
+//         its next turn starts a new session without an error; deleting a
+//         confidential thread removes its transcripts, never another's
+//   CT-17 (follow-up of #729) a server that starts with threads already
+//         confidential (an older release) purges their engine transcripts
+//         once, and their next turn starts a new session
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -141,6 +150,29 @@ const messagesOf = async (auth: Auth, threadId: string): Promise<Message[]> => {
   return (got.body.messages ?? []) as Message[];
 };
 const replied = (messages: Message[], after: number) => messages.slice(after).some((m) => m.role === "bot" && m.kind === "text" && m.text);
+
+/** The Claude Code project folders (one per working folder) that name a thread. */
+const claudeProjects = (threadId: string): string[] => {
+  const root = join(home, ".claude", "projects");
+  return existsSync(root) ? readdirSync(root).filter((name) => name.includes(threadId)).map((name) => join(root, name)) : [];
+};
+const claudeHistory = (): string => {
+  const path = join(home, ".claude", "history.jsonl");
+  return existsSync(path) ? readFileSync(path, "utf8") : "";
+};
+/** A turn in the thread that must end with a reply, never an error. */
+async function turnWithoutError(auth: Auth, threadId: string, text: string): Promise<void> {
+  const before = (await messagesOf(auth, threadId)).length;
+  const sent = await api("POST", `/api/bots/${encodeURIComponent(currentBot)}/messages`, auth, { text, threadId });
+  expect(sent.status, sent.text).toBe(202);
+  const after = await waitFor(async () => {
+    const messages = await messagesOf(auth, threadId);
+    return replied(messages, before) ? messages : null;
+  });
+  const fresh = after.slice(before);
+  expect(fresh.filter((m) => m.kind === "error" || /No conversation found/i.test(m.text ?? "") || m.tool?.ok === false), JSON.stringify(fresh)).toEqual([]);
+}
+let currentBot = "";
 
 /** Every text file under a folder, joined: what an operator with the disk
  * would read, here only to prove what the server wrote there. */
@@ -243,6 +275,8 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
               { server: "data", tool: "data_sql", arguments: { sql: "CREATE TABLE confidential_probe AS SELECT 1 AS x" }, when: "make exactly the call" },
               { server: "agents", tool: "act", arguments: { method: "GET", path: "/api/search", query: { q: `${SECRET}-ALPHA` } }, when: "ACT-SEARCH" },
             ]),
+            // the session on disk, as the real CLI keeps it (CT-16, CT-17)
+            FAKE_CLAUDE_TRANSCRIPTS: "1",
           },
           config: { cli: FAKE_CLAUDE, fullAuto: true },
         },
@@ -347,6 +381,85 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     expect(readFileSync(join(target, "bots", botId, "sheet.json"), "utf8")).toContain("ORDINARY-SHEET");
     for (const root of ["bots", "data-scopes", "task-workspaces"]) expect(filesText(join(target, root))).not.toContain(`${SECRET}-SHEET`);
   }, 180_000);
+
+  it("CT-16: no engine transcript of a confidential thread in the backup, after it turns confidential, or after its deletion", async () => {
+    currentBot = botId;
+    // a confidential thread and an ordinary one, each with a turn of its own
+    const secret = (await api("POST", `/api/bots/${botId}/tasks`, ana, { title: "Moteur", confidential: true })).body.task.threadId as string;
+    const plain = (await api("POST", `/api/bots/${botId}/tasks`, ana, { title: "Moteur ordinaire" })).body.task.threadId as string;
+    await turnWithoutError(ana, secret, `${SECRET}-ENGINE first`);
+    await turnWithoutError(ana, plain, "ENGINE-ORDINARY first");
+    await waitFor(async () => claudeProjects(secret).length === 1 && claudeProjects(plain).length === 1);
+    expect(filesText(claudeProjects(secret)[0]!)).toContain(`${SECRET}-ENGINE`);
+    expect(claudeHistory()).toContain(`${SECRET}-ENGINE`);
+
+    // a Codex home of Ana's on the server: a rollout and a state row of the
+    // confidential thread, found by its folder, beside an ordinary one
+    const codex = join(data, "principals", ids.ana, "codex");
+    const codexSecret = "019a0000-5555-7555-8555-5555555555c5";
+    const codexPlain = "019a0000-6666-7666-8666-6666666666c6";
+    const rollout = (id: string) => join(codex, "sessions", "2026", "10", "18", `rollout-2026-10-18T10-00-00-${id}.jsonl`);
+    mkdirSync(join(codex, "sessions", "2026", "10", "18"), { recursive: true });
+    writeFileSync(rollout(codexSecret), `${SECRET}-ENGINE rollout\n`);
+    writeFileSync(rollout(codexPlain), "ENGINE-ORDINARY rollout\n");
+    const { DatabaseSync } = await import("node:sqlite");
+    const state = new DatabaseSync(join(codex, "state_5.sqlite"));
+    state.exec("CREATE TABLE threads (id TEXT PRIMARY KEY, cwd TEXT NOT NULL, title TEXT NOT NULL)");
+    state.prepare("INSERT INTO threads VALUES (?, ?, ?)").run(codexSecret, join(data, "task-workspaces", botId, secret), `${SECRET}-ENGINE title`);
+    state.prepare("INSERT INTO threads VALUES (?, ?, 'ENGINE-ORDINARY title')").run(codexPlain, join(data, "task-workspaces", botId, plain));
+    state.close();
+
+    // the workspace backup an admin downloads holds none of it
+    const password = "confidential-backup-password";
+    const created = await waitFor(async () => {
+      const attempt = await api("POST", "/api/workspace-backup/export", bob, { password });
+      if (attempt.status !== 200 && attempt.status !== 409) throw new Error(`${attempt.status} ${attempt.text.slice(0, 300)}`);
+      return attempt.status === 200 ? attempt : null;
+    }, 60_000);
+    const download = await fetch(`${BASE}/api/workspace-backup/download/${created.body.id}`, { headers: { cookie: bob.cookie! } });
+    expect(download.status).toBe(200);
+    const target = join(home, "restore-engine");
+    mkdirSync(target, { recursive: true, mode: 0o700 });
+    const archive = join(home, "engine.sagaxbackup");
+    writeFileSync(archive, Buffer.from(await download.arrayBuffer()));
+    const staged = await stageWorkspaceBackup(target, archive, { password });
+    const stagedData = join(target, ".backups", staged.id, "staged", "data");
+    const paths: string[] = JSON.parse(readFileSync(join(target, ".backups", staged.id, "staged", "manifest.json"), "utf8")).entries.map((entry: { path: string }) => entry.path);
+    expect(paths).toContain(`principals/${ids.ana}/codex/sessions/2026/10/18/rollout-2026-10-18T10-00-00-${codexPlain}.jsonl`);
+    expect(paths.filter((path) => path.includes(codexSecret))).toEqual([]);
+    expect(filesText(join(stagedData, "principals"))).not.toContain(`${SECRET}-ENGINE`);
+    expect(filesText(join(stagedData, "principals"))).toContain("ENGINE-ORDINARY");
+
+    // the ordinary thread turns confidential: its transcripts so far go, and
+    // its next turn starts a new session (a resume of the old one would fail)
+    const oldProject = claudeProjects(plain)[0]!;
+    const oldSessions = readdirSync(oldProject);
+    expect(claudeHistory()).toContain("ENGINE-ORDINARY first");
+    const made = await api("PATCH", `/api/bots/${botId}/tasks/${plain}`, ana, { confidential: true, confirmConfidential: true });
+    expect(made.status, made.text).toBe(200);
+    expect(claudeProjects(plain)).toEqual([]);
+    expect(claudeHistory()).not.toContain("ENGINE-ORDINARY first");
+    expect(existsSync(rollout(codexPlain))).toBe(false);
+    await turnWithoutError(ana, plain, "ENGINE-CONFIDENTIAL second");
+    // the new session has the thread's transcript replayed, under a new id
+    await waitFor(async () => claudeProjects(plain).length === 1);
+    const newSessions = readdirSync(claudeProjects(plain)[0]!);
+    expect(newSessions.filter((name) => oldSessions.includes(name))).toEqual([]);
+    expect(filesText(claudeProjects(plain)[0]!)).toContain("ENGINE-ORDINARY first");
+    await turnWithoutError(ana, plain, "ENGINE-CONFIDENTIAL third");
+
+    // deleting the confidential thread removes its transcripts and nothing else's
+    expect(claudeProjects(secret)).toHaveLength(1);
+    expect(existsSync(rollout(codexSecret))).toBe(true);
+    expect((await api("DELETE", `/api/bots/${botId}/tasks/${secret}`, ana)).status).toBe(200);
+    expect(claudeProjects(secret)).toEqual([]);
+    expect(claudeHistory()).not.toContain(`${SECRET}-ENGINE`);
+    expect(existsSync(rollout(codexSecret))).toBe(false);
+    const after = new DatabaseSync(join(codex, "state_5.sqlite"), { readOnly: true });
+    try { expect(after.prepare("SELECT COUNT(*) AS n FROM threads").get()).toEqual({ n: 0 }); } finally { after.close(); }
+    expect(claudeProjects(plain)).toHaveLength(1);
+    expect(existsSync(join(data, "confidential-engine-purge.json"))).toBe(false);
+  }, 240_000);
 
   it("CT-2: nothing is remembered, logged, scheduled or found elsewhere", async () => {
     const before = (await messagesOf(ana, secretThread)).length;
@@ -760,5 +873,30 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     // the next workspace backup cleans its database copies
     expect(existsSync(join(data, "confidential-forgotten"))).toBe(true);
   }, 180_000);
+
+  it("CT-17: a server that starts with threads already confidential purges their engine transcripts once", async () => {
+    currentBot = botId;
+    const older = (await api("POST", `/api/bots/${botId}/tasks`, ana, { title: "Ancien", confidential: true })).body.task.threadId as string;
+    await turnWithoutError(ana, older, `${SECRET}-OLDER first`);
+    await waitFor(async () => claudeProjects(older).length === 1);
+    // an older release left a transcript and a history line of Ana's
+    // confidential thread, and never marked the one-time purge done
+    const folder = join(home, ".claude", "projects", `-older-release-task-workspaces-${botId}-${older}`);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "0123abcd-0000-4000-8000-00000000c017.jsonl"), `${SECRET}-OLDER\n`);
+    writeFileSync(join(home, ".claude", "history.jsonl"), `${claudeHistory()}${JSON.stringify({ display: `${SECRET}-OLDER prompt`, project: `/older/${older}` })}\n`);
+    rmSync(join(data, "confidential-engine-sessions-v1"), { force: true });
+    child.kill("SIGTERM");
+    await waitForExit(child);
+    await start();
+    await waitFor(async () => existsSync(join(data, "confidential-engine-sessions-v1")));
+    expect(existsSync(folder)).toBe(false);
+    expect(claudeProjects(older)).toEqual([]);
+    expect(claudeHistory()).not.toContain(`${SECRET}-OLDER`);
+    expect(log).toMatch(/engine transcripts of \d+ thread\(s\) purged once/);
+    // the thread's next turn starts a new session, without an error
+    ana = await signIn(ANA);
+    await turnWithoutError(ana, older, `${SECRET}-AFTER restart`);
+  }, 120_000);
 
 });

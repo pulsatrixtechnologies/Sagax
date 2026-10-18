@@ -40,6 +40,13 @@
 //                      private temp dir and deletes it when that turn
 //                      settles, so a test cannot open them after the fact.
 //                      A process kept warm for later turns still has them.
+//   FAKE_CLAUDE_TRANSCRIPTS 1: keep the session on disk as the real CLI
+//                      does: each prompt is a line of
+//                      <CLAUDE_CONFIG_DIR or ~/.claude>/projects/<cwd with
+//                      every non-alphanumeric as "-">/<session>.jsonl and of
+//                      its history.jsonl ({display, project, sessionId}); a
+//                      --resume of a session whose file is gone answers like
+//                      stale-session ("No conversation found").
 //   FAKE_CLAUDE_EXIT_AFTER_TURN 1: the process exits once its turn is
 //                      answered, like a CLI that ended between turns, so
 //                      every later turn launches again (with --resume).
@@ -194,7 +201,7 @@
 //
 // Keep this file dependency-free — it runs as a bare `node` subprocess.
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runRoomHandoffAgent } from "./room-handoff-agent.ts";
 
@@ -639,7 +646,25 @@ const useCloudComputer = () => {
     is_error: Boolean(reply.error || reply.result?.isError), content: reply.result?.content ?? reply.error?.message ?? "" }] } });
 };
 
+/** FAKE_CLAUDE_TRANSCRIPTS: where the real CLI keeps this session. */
+function claudeConfigDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR || join(process.env.HOME || process.env.USERPROFILE || ".", ".claude");
+}
+function transcriptPath(): string {
+  return join(claudeConfigDir(), "projects", process.cwd().replace(/[^a-zA-Z0-9]/g, "-"), `${sessionId}.jsonl`);
+}
+function recordTranscript(prompt: JsonValue): void {
+  if (process.env.FAKE_CLAUDE_TRANSCRIPTS !== "1") return;
+  const file = transcriptPath();
+  if (argv.includes("--resume") && !existsSync(file)) return;
+  mkdirSync(join(file, ".."), { recursive: true });
+  appendFileSync(file, `${JSON.stringify({ type: "user", sessionId, cwd: process.cwd(), message: prompt })}\n`);
+  const text = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
+  appendFileSync(join(claudeConfigDir(), "history.jsonl"), `${JSON.stringify({ display: text.slice(0, 20_000), project: process.cwd(), sessionId })}\n`);
+}
+
 const playTurn = (prompt: JsonValue, late = false) => {
+  recordTranscript(prompt);
   turnRunning = true;
   lateContinuation = late;
   steered = [];
@@ -678,7 +703,8 @@ const playTurn = (prompt: JsonValue, late = false) => {
   }
   // The same, as 2.1.295 says it after a long idle: an error result for the
   // message, no `init`, and the process stays up for the next one.
-  if ((mode === "stale-session" && argv.includes("--resume")) || mode === "error-result") {
+  const transcriptGone = process.env.FAKE_CLAUDE_TRANSCRIPTS === "1" && argv.includes("--resume") && !existsSync(transcriptPath());
+  if ((mode === "stale-session" && argv.includes("--resume")) || mode === "error-result" || transcriptGone) {
     out({
       type: "result", subtype: "error_during_execution", duration_ms: 0, is_error: true, num_turns: 0, stop_reason: null,
       session_id: sessionId, total_cost_usd: 0, errors: [`No conversation found with session ID: ${sessionId}`],

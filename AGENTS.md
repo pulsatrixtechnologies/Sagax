@@ -294,6 +294,25 @@ remembered, exported, logged or shared beyond its owner
   `CONFIDENTIAL_FORGOTTEN_MARKER` note (cleared by that backup).
   `room-handoffs.json.migrated` is never backed up. `deleteThread` drops the
   thread's `command_receipts` too.
+- Engine transcripts (2026-10-18, `server/engine-transcripts.ts`): the
+  engines' own session files (Claude Code `projects/*.jsonl` and
+  `history.jsonl`, Codex rollouts and `state_*.sqlite`, Hermes `state.db`,
+  Grok, pi, Cursor, Gemini, Qwen, OpenCode) are found by keys only: the
+  thread id (folder-named buckets), its folder's md5/sha256, every session id
+  (`TaskRecord.engineSessions`, cursors, event log), widened from the homes
+  (`widenKeys`). The workspace backup leaves them out
+  (`confidentialEngineKeys`, `confidentialEngineSessionPath`, filtered
+  histories, scrubbed database snapshots) and a restore never installs them
+  (`withoutConfidentialEngineSessions`). Deletion (`wipeConfidentialThread`,
+  bot deletion, Loi 25 erase) and conversion (`forgetThreadEngineSessions`)
+  purge them (`purgeEngineSessions`), the latter with
+  `store.forgetEngineSessions` (cursors gone, `rewound`: next turn is a new
+  session with the transcript replayed); once at start for threads already
+  confidential (`confidential-engine-sessions-v1`); held databases retried
+  (`confidential-engine-purge.json`). A deleted thread's event and native
+  logs are never written again (`forgetThreadLogs`). Never line-filter or
+  scrub another session's transcript: only names, prompt histories, logs,
+  `logs.json`, chat records by `sessionId` and database id/folder columns.
 - Clients: a classification banner top and above the composer (not
   dismissible, height reserved, `role="note"`), lock and « Confidentiel » on
   the row and window title, no off control anywhere (desktop, remote client,
@@ -303,7 +322,8 @@ remembered, exported, logged or shared beyond its owner
   the content; a local (solo) Sagax is the recommendation for the most
   sensitive work.
 - Tests: `server/confidential-threads.test.ts`,
-  `server/confidential-threads.e2e.test.ts` (CT-1 to CT-15),
+  `server/confidential-threads.e2e.test.ts` (CT-1 to CT-17),
+  `server/engine-transcripts.test.ts`,
   `server/runtime/store.test.ts`, `server/workspace-backup.test.ts`,
   `server/message-db.test.ts`,
   `server/bot-zip.test.ts`, `src/components/ConfidentialBanner.test.ts`,
