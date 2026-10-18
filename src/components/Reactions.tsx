@@ -162,6 +162,14 @@ function ActorFace({ actor, bots }: { actor: ReactionActor; bots: readonly Bot[]
   );
 }
 
+function focusVisible(target: EventTarget): boolean {
+  try {
+    return target instanceof Element && target.matches(":focus-visible");
+  } catch {
+    return false;
+  }
+}
+
 /** One chip: the emoji and its count; who reacted in the tooltip. The
  * tooltip shows while the chip is hovered or focused, drawn in a portal on
  * document.body above the chip (below it when there is no room), because a
@@ -196,7 +204,9 @@ function Chip({ chip, selfIds, onToggle, end, bots }: { chip: ReactionChip; self
       className="relative inline-flex"
       onPointerEnter={(event) => { if (event.pointerType !== "touch") setHovered(true); }}
       onPointerLeave={() => setHovered(false)}
-      onFocus={() => setFocused(true)}
+      // keyboard focus only: a click or a tap also focuses the chip, and the
+      // tooltip would then stay up after the pointer left
+      onFocus={(event) => setFocused(focusVisible(event.target))}
       onBlur={() => setFocused(false)}
     >
       <button

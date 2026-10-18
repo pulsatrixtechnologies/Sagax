@@ -105,7 +105,7 @@ describe("ReactionChips", () => {
   const chip = (emoji: string) => host.querySelector<HTMLButtonElement>(`[data-reaction-chip="${emoji}"]`)!;
   // the tooltip shows on hover or focus, in a portal on document.body
   const tipOf = async (emoji: string) => {
-    await act(async () => chip(emoji).focus());
+    await act(async () => chip(emoji).parentElement!.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" })));
     return document.querySelector<HTMLElement>(`[data-reaction-tip-for="${emoji}"]`)!;
   };
 
