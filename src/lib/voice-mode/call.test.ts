@@ -535,6 +535,27 @@ describe("VoiceCall", () => {
     await heard;
   });
 
+  it("says at most four sentences of an answer, and stops at its question", async () => {
+    const t = await setup();
+    const long = "One is done. Two is done. Three is done. Four is done. Five stays in the chat. Six too.";
+    t.call.replyProgress(long.slice(0, 40));
+    t.call.replyProgress(long);
+    const heard = t.call.replyDone(long);
+    const said = t.speech.mock.calls.map((c) => c[1]).join(" ");
+    expect(said).toContain("Four is done.");
+    expect(said).not.toMatch(/Five|Six/);
+    t.player.drain();
+    await heard;
+
+    const q = await setup();
+    const asked = q.call.replyDone("The printer is offline. Should I restart it? Or should I open a ticket?");
+    const words = q.speech.mock.calls.map((c) => c[1]).join(" ");
+    expect(words).toContain("Should I restart it?");
+    expect(words).not.toContain("ticket");
+    q.player.drain();
+    await asked;
+  });
+
   it("a cough over the bot: ducked, then back, nothing cancelled", async () => {
     const t = await setup();
     void t.call.say("Here is a long answer that keeps going.");

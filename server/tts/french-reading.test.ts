@@ -24,6 +24,17 @@ describe("French reading for the voice", () => {
     );
   });
 
+  it("reads a clock time, an ISO date, a percentage and a decimal the Québec way", () => {
+    expect(readFrench("Le billet est fermé à 15:30.")).toBe("Le billet est fermé à 15 heures 30.");
+    expect(readFrench("Rendez-vous à 09:00, puis 14 h 00 et 0:05.")).toBe("Rendez-vous à 9 heures, puis 14 heures et minuit 5.");
+    expect(readFrench("Fini à 17:45:12.")).toBe("Fini à 17 heures 45.");
+    expect(readFrench("Sauvegarde du 2026-10-18.")).toBe("Sauvegarde du 18 octobre 2026.");
+    expect(readFrench("Prochaine le 2026-11-01T08:15:00Z.")).toBe("Prochaine le premier novembre 2026 à 8 heures 15 UTC.");
+    expect(readFrench("Le disque est plein à 85 %, soit 3.5 To.")).toBe("Le disque est plein à 85 pour cent, soit 3,5 To.");
+    expect(readFrench("Version 1.8.35, adresse 10.0.0.1, format 16:9.")).toBe("Version 1.8.35, adresse 10.0.0.1, format 16:9.");
+    expect(readFrench("Pas une date 2026-13-45 ni 25:99.")).toBe("Pas une date 2026-13-45 ni 25:99.");
+  });
+
   it("applies only to a French language", () => {
     expect(readsFrench("fr")).toBe(true);
     expect(readsFrench("fr-CA")).toBe(true);

@@ -329,7 +329,8 @@ public final class LiveCallEngine {
         if state.phase == .held || state.phase == .ended { return }
         let stream = reply ?? SentenceStream()
         reply = stream
-        replyText = SpokenText.spokenPart(text)
+        // at most four sentences, up to a question (AnswerBudget.swift)
+        replyText = SpokenText.spokenAnswer(text).text
         for sentence in stream.feed(replyText) { enqueue(sentence) }
     }
 
@@ -338,7 +339,7 @@ public final class LiveCallEngine {
     public func replyDone(_ text: String) async -> Bool {
         let stream = reply ?? SentenceStream()
         reply = nil
-        for sentence in stream.finish(SpokenText.spokenPart(text)) { enqueue(sentence) }
+        for sentence in stream.finish(SpokenText.spokenAnswer(text).text) { enqueue(sentence) }
         if !player.busy { return true }
         return await withCheckedContinuation { speechWaiters.append($0) }
     }
@@ -354,7 +355,7 @@ public final class LiveCallEngine {
     public func replyDoneNow(_ text: String) {
         let stream = reply ?? SentenceStream()
         reply = nil
-        for sentence in stream.finish(SpokenText.spokenPart(text)) { enqueue(sentence) }
+        for sentence in stream.finish(SpokenText.spokenAnswer(text).text) { enqueue(sentence) }
     }
 
     private func enqueue(_ text: String) {

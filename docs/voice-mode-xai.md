@@ -48,6 +48,30 @@ follows or the utterance finishes (`splitHeldDelta`, at most 400
 characters), then cleans it whole. The opening `say` of an answer is not
 held: its first words are the call's first audio.
 
+The contract is also held on the call's side, whatever the model wrote
+(`src/lib/voice-mode/answer-budget.ts`, the iPhone's `AnswerBudget.swift`):
+a call says at most four sentences of one answer (a line break after words
+ends one too; a list number, an abbreviation or a decimal does not), and a
+question ends what is said, so the person answers it. The cut keeps a
+prefix of the text so far that only grows, so the answer still being
+written is cut at the same place. The words after the cut stay in the
+chat; after the sentence cap the call says once "The rest is written in
+the chat." (`voiceMode.restInChat`, in the call's language), never after a
+question or a barge-in. The live call, the older macOS call, a room call
+and the iPhone apply it.
+
+Numbers, times and dates are read the way a person says them, in the
+language of the text (`server/tts/voice-reading.ts`, on every streaming
+speech path): French text (`french-reading.ts`) reads "15:30" and "15 h 30"
+as "15 heures 30", "09:00" as "9 heures", an ISO date "2026-10-18" as "18
+octobre 2026" (a time and a Z zone after it as "à 8 heures 15 UTC"), "85 %"
+as "85 pour cent" and "3.5" as "3,5"; English text (`english-reading.ts`,
+an English call or an automatic one whose text has more English function
+words than French ones) reads "2026-10-18" as "October 18, 2026" and a 24
+hour time as "3:30 PM", "noon" or "midnight", leaving "3:30" and "3:30 PM"
+as written. Versions, addresses and ratios ("1.8.35", "10.0.0.1", "16:9")
+stay. Another language is left as written.
+
 An approval on a call is spoken as a question with its two options ("Allow
 once, or deny?", `approval.voice.commandAsk`). The answer must pick one
 (`spokenConsent(said, "voice")`, `shared/call-consent.ts`; the iPhone's

@@ -225,6 +225,12 @@ public final class SentenceStream {
     }
 
     private func abbreviation(_ text: [Character], dot: Int) -> Bool {
+        Self.isAbbreviationDot(text, dot: dot)
+    }
+
+    /// The "." at `dot` belongs to an abbreviation ("e.g.", "M."), an
+    /// initial ("J. Smith") or a decimal ("3.5"): it ends no sentence.
+    static func isAbbreviationDot(_ text: [Character], dot: Int) -> Bool {
         let window = String(text[max(0, dot - 8)..<dot])
         var word = ""
         for ch in window.reversed() {

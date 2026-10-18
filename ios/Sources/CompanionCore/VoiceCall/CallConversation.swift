@@ -284,7 +284,7 @@ public struct CallConversation: Sendable {
             if let sourceId, let lastUserId, sourceId != lastUserId {
                 let source = messages.first { $0.id == sourceId }
                 let label = Self.topicLabel(source?.text ?? reply.parallelTask?.title ?? "the other thing")
-                out.append(.announce(Self.announceTopic(label: label, result: reply.text ?? ""), speakerId: reply.from?.botId))
+                out.append(.announce(Self.announceTopic(label: label, result: SpokenText.spokenAnswer(reply.text ?? "").text), speakerId: reply.from?.botId))
             } else {
                 out.append(.replyDone(reply.text ?? "", speakerId: reply.from?.botId))
             }

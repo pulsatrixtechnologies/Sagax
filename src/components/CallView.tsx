@@ -49,7 +49,7 @@ import { LiveCall, LiveCallEngine } from "./voice-mode/LiveCall";
 import { spokenDecision } from "@/lib/voice-mode/answers";
 import { useVoiceCallMark } from "@/lib/voice-mode/call-mark";
 import { decideBotHangup, VOICE_CALL_ENDED_EVENT, type VoiceCallEndedDetail } from "@/lib/voice-mode/call-end";
-import { spokenPart } from "@/lib/voice-mode/spoken";
+import { spokenReply } from "@/lib/voice-mode/answer-budget";
 
 type Phase = "listening" | "sending" | "working" | "speaking";
 const CALL_ENDPOINT_MS = 850;
@@ -627,8 +627,11 @@ function Call({ bot }: { bot: Bot }) {
     const reply = [...fresh].reverse().find((m) => m.role === "bot" && m.kind === "text" && m.text?.trim());
     for (const m of fresh) spokenIds.current.add(m.id);
 
-    // a written follow-up below a --- line is for the chat, never said
-    const spoken = reply?.text ? spokenPart(reply.text).trim() : "";
+    // a written follow-up below a --- line is for the chat, never said; at
+    // most four sentences, up to a question (answer-budget.ts)
+    const lastUserText = [...messages].reverse().find((m) => m.role === "user" && !m.parallelTask)?.text;
+    const locale = progressLocale({ lastUserText, pageLocale: activeLocale(), looksFrench });
+    const spoken = reply?.text ? spokenReply(reply.text, tIn(locale, "voiceMode.restInChat")) : "";
     if (spoken) {
       progress.current.heard(Date.now());
       void sayThenListen(spoken);

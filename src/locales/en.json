@@ -1575,6 +1575,7 @@
   "video.untitled": "Untitled video",
   "video.viewers": "{count} watching",
   "video.volume": "Volume",
+  "voiceMode.restInChat": "The rest is written in the chat.",
   "youtube.fetchTranscript": "Get full transcript",
   "youtube.handoffPrompt": "Here is the full transcript of YouTube video {videoId}:\n\n{transcript}\n\nPlease summarize it for me.",
   "youtube.playerTitle": "YouTube video",

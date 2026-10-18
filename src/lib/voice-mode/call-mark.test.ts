@@ -59,7 +59,7 @@ describe("the call views", () => {
     expect(older).toMatch(/dispatch\(\{ type: "send", botId: bot\.id, text: said, threadId: bot\.threadId, voiceCall: \{ callId \} \}\)/);
     // the bot's end_call hangs it up, and a written follow-up is never said
     expect(older).toContain("VOICE_CALL_ENDED_EVENT");
-    expect(older).toContain("spokenPart(reply.text)");
+    expect(older).toContain("spokenReply(reply.text");
     expect(read("../../components/voice-mode/LiveCall.tsx")).toContain("useVoiceCallMark(bot.id, bot.threadId)");
   });
 });

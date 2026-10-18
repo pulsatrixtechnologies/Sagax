@@ -159,10 +159,16 @@ export class SentenceStream {
   }
 
   private abbreviation(text: string, dot: number): boolean {
-    const word = /([\p{L}.]+)$/u.exec(text.slice(Math.max(0, dot - 8), dot))?.[1]?.toLowerCase() ?? "";
-    if (!word) return /\d$/.test(text.slice(0, dot)) && /\d/.test(text[dot + 1] ?? "");
-    if (ABBREVIATIONS.has(word)) return true;
-    // a single capital letter: an initial ("J. Smith")
-    return /^\p{Lu}$/u.test(text.slice(dot - 1, dot)) && word.length === 1;
+    return isAbbreviationDot(text, dot);
   }
+}
+
+/** The "." at `dot` belongs to an abbreviation ("e.g.", "M."), an initial
+ * ("J. Smith") or a decimal ("3.5"): it ends no sentence. */
+export function isAbbreviationDot(text: string, dot: number): boolean {
+  const word = /([\p{L}.]+)$/u.exec(text.slice(Math.max(0, dot - 8), dot))?.[1]?.toLowerCase() ?? "";
+  if (!word) return /\d$/.test(text.slice(0, dot)) && /\d/.test(text[dot + 1] ?? "");
+  if (ABBREVIATIONS.has(word)) return true;
+  // a single capital letter: an initial ("J. Smith")
+  return /^\p{Lu}$/u.test(text.slice(dot - 1, dot)) && word.length === 1;
 }

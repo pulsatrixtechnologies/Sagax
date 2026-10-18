@@ -60,7 +60,7 @@ import { accessCardVisibleTo } from "./engine-access.ts";
 import { isSameOrigin } from "./request-auth.ts";
 import { websocketAccept } from "./ws-bridge.ts";
 import { webSocketSession } from "./ws-session.ts";
-import { readFrench, readsFrenchText } from "./tts/french-reading.ts";
+import { readForVoice } from "./tts/voice-reading.ts";
 import { speakableDelta } from "./tts/speech-text.ts";
 import { createListenSession } from "./voice-listen-session.ts";
 import type { SpeechStream, SpeechStreamHandlers, SynthesizeOptions, TranscriptionHandlers, TranscriptionStream } from "./tts/grok.ts";
@@ -296,14 +296,14 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       speakable: (text) => {
         if (text.length > VOICE_MODE_MAX_TEXT * 4) return "";
         const joined = deps.utterances(text).join(" ").trim();
-        const read = readsFrenchText(language, joined) ? readFrench(joined) : joined;
+        const read = readForVoice(language, joined);
         return read.slice(0, VOICE_MODE_MAX_TEXT);
       },
       // words appended to an open utterance: their edges kept, read as
-      // French when the utterance so far is
+      // French or English when the utterance so far is (voice-reading.ts)
       speakableDelta: (text, before) => {
         const clean = speakableDelta(text);
-        return clean && readsFrenchText(language, `${before}${clean}`) ? readFrench(clean) : clean;
+        return clean ? readForVoice(language, clean, before) : clean;
       },
       usage: (characters) => usage("grok-tts", characters),
       sendText: (frame) => page?.sendText(JSON.stringify(frame)),
@@ -526,8 +526,8 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       }
       const language = record.language === undefined ? "auto" : record.language;
       if (!isVoiceModeLanguage(language)) return json(res, 400, { error: "unknown language" });
-      if (action === "stream" && readsFrenchText(language, text)) {
-        text = readFrench(text);
+      if (action === "stream") {
+        text = readForVoice(language, text);
         if (text.length > VOICE_MODE_MAX_TEXT) return json(res, 413, { error: `voice utterances are limited to ${VOICE_MODE_MAX_TEXT} characters` });
       }
       if (action === "stream") {

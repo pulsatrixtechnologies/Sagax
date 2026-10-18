@@ -59,6 +59,16 @@
         }
       }
     },
+    "The rest is written in the chat.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le reste est écrit dans la conversation."
+          }
+        }
+      }
+    },
     "approval.outcome.alwaysAllowed": {
       "localizations": {
         "en": {
