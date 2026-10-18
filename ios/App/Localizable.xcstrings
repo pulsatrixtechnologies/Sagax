@@ -68961,6 +68961,28 @@
           }
         }
       }
+    },
+    "Filter by type": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter by type"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filtrer par type"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filtrar por tipo"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

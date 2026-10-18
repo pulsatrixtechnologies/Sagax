@@ -515,7 +515,7 @@ struct ConnectAppsMain: View {
                         }
                     }
                 }
-                Section(String(localized: "Type")) {
+                Section(String(localized: "Filter by type")) {
                     let types: [ConnectAppTypeFilter] = [.any, .apps, .mcp, .skills] + model.marketplaces.map { .source($0.name) }
                     ForEach(types, id: \.self) { type in
                         filterButton(ConnectAppsWords.type(type), selected: model.type == type) { model.type = type }

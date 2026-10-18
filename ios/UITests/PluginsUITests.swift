@@ -137,7 +137,7 @@ final class PluginsUITests: XCTestCase {
         let filter = app.element("connect-apps-filter")
         XCTAssertTrue(filter.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(filter.label.contains("All"), filter.label)
-        // the capsule sits at the row's leading edge
+        // the list row reports the whole width; the capsule is at its leading edge
         let capsule = filter.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.5))
         capsule.tap()
         let mcp = app.buttons["MCP servers"].firstMatch
