@@ -121,12 +121,34 @@ final class PluginsUITests: XCTestCase {
     @MainActor
     func testTheMainViewListsAppsAndCountsWhatIsConnected() {
         let app = launch()
-        XCTAssertTrue(app.element("connect-apps-chips").exists)
+        XCTAssertTrue(app.element("connect-apps-filter").exists)
         let manage = app.element("connect-apps-manage")
         XCTAssertTrue(manage.label.contains("connected"), manage.label)
         XCTAssertTrue(app.element("connect-apps-action.app:notion").waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertEqual(app.element("connect-apps-action.app:notion").label, "Connect")
         XCTAssertFalse(app.element("connect-apps-action.app:gmail").exists, "a connected app shows its status, no button")
+    }
+
+    /// One filter button (Grok Bot iOS 1.14's marketplace): the menu picks a
+    /// type, the button names it, All goes back.
+    @MainActor
+    func testTheFilterMenuPicksATypeAndClears() {
+        let app = launch()
+        let filter = app.element("connect-apps-filter")
+        XCTAssertTrue(filter.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(filter.label.contains("All"), filter.label)
+        // the capsule sits at the row's leading edge
+        let capsule = filter.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.5))
+        capsule.tap()
+        let mcp = app.buttons["MCP servers"].firstMatch
+        XCTAssertTrue(mcp.waitForExistence(timeout: 5), app.debugDescription)
+        mcp.tap()
+        XCTAssertTrue(eventually(5) { filter.label.contains("MCP servers") }, filter.label)
+        filter.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.5)).tap()
+        let all = app.buttons["All"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 5), app.debugDescription)
+        all.tap()
+        XCTAssertTrue(eventually(5) { filter.label.contains("All") && !filter.label.contains("MCP") }, filter.label)
     }
 
     /// Manage > Installed > the app's page: Disconnect revokes exactly one

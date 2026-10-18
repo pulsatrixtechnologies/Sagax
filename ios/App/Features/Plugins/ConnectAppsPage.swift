@@ -2,10 +2,11 @@
 // the desktop's Plugins panel in its three views, with the same routes and
 // the same rows (`ConnectApps` in CompanionCore, a port of plugins-model.ts):
 //
-// - Connect apps (main): search across apps and skills, the category chips
-//   (All, Password managers, Productivity, Communication, Design, Code,
-//   More), a section per category with View all, one row per app with Add
-//   or Connect, and "N connected >" to Manage.
+// - Connect apps (main): search across apps and skills, one filter button
+//   (Grok Bot iOS 1.14's marketplace) whose menu holds All, the desktop's
+//   categories in its order and the type filter, a section per category
+//   with View all, one row per app with Add or Connect, and "N connected >"
+//   to Manage.
 // - Manage: Plugins and skills (Installed, Private skills, Your connections
 //   on an organization server, Advanced with the marketplaces) | Providers.
 // - A plugin's page: its accounts, its tools with a switch each (applied to
@@ -411,7 +412,7 @@ struct ConnectAppsMain: View {
         ThemedList {
             Section {
                 connectedLink
-                chips
+                filterBar
                 if let botTemplates {
                     // the desktop's button beside the search field: the
                     // phone's search sits in the bar, so it heads the list
@@ -496,52 +497,54 @@ struct ConnectAppsMain: View {
         .accessibilityIdentifier("connect-apps-manage")
     }
 
-    /// All, the main categories, More (the rest), then the type filter.
-    private var chips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip(String(localized: "All"), selected: model.filter == .all && model.type == .any) {
+    /// One filter button, as Grok Bot iOS 1.14's marketplace has it: a menu
+    /// with All, every category in the desktop's order (main, then the
+    /// rest), then the type filter. The label names what is picked; All
+    /// clears both.
+    private var filterBar: some View {
+        HStack(spacing: 8) {
+            Menu {
+                filterButton(String(localized: "All"), selected: model.filter == .all && model.type == .any) {
                     model.filter = .all
                     model.type = .any
                 }
-                ForEach(ConnectAppCategory.main, id: \.self) { category in
-                    chip(ConnectAppsWords.category(category), selected: model.filter == .category(category)) {
-                        model.filter = model.filter == .category(category) ? .all : .category(category)
+                Section {
+                    ForEach(ConnectAppCategory.order, id: \.self) { category in
+                        filterButton(ConnectAppsWords.category(category), selected: model.filter == .category(category)) {
+                            model.filter = model.filter == .category(category) ? .all : .category(category)
+                        }
                     }
                 }
-                Menu {
-                    ForEach(ConnectAppCategory.more, id: \.self) { category in
-                        Button(ConnectAppsWords.category(category)) { model.filter = .category(category) }
-                    }
-                } label: {
-                    chipLabel(moreTitle, selected: ConnectAppCategory.more.contains { model.filter == .category($0) })
-                }
-                Menu {
+                Section(String(localized: "Type")) {
                     let types: [ConnectAppTypeFilter] = [.any, .apps, .mcp, .skills] + model.marketplaces.map { .source($0.name) }
                     ForEach(types, id: \.self) { type in
-                        Button(ConnectAppsWords.type(type)) { model.type = type }
+                        filterButton(ConnectAppsWords.type(type), selected: model.type == type) { model.type = type }
                     }
-                } label: {
-                    chipLabel(ConnectAppsWords.type(model.type), selected: model.type != .any, systemImage: "line.3.horizontal.decrease")
                 }
-                .accessibilityIdentifier("connect-apps-type")
+            } label: {
+                chipLabel(filterTitle, selected: model.filter != .all || model.type != .any, systemImage: "line.3.horizontal.decrease")
             }
-            .padding(.vertical, 2)
+            .accessibilityIdentifier("connect-apps-filter")
+            Spacer(minLength: 0)
         }
-        .accessibilityIdentifier("connect-apps-chips")
+        .padding(.vertical, 2)
     }
 
-    private var moreTitle: String {
-        if case let .category(category) = model.filter, ConnectAppCategory.more.contains(category) { return ConnectAppsWords.category(category) }
-        return String(localized: "More")
+    /// "All", the category, the type, or both ("Design · MCP servers").
+    private var filterTitle: String {
+        var parts: [String] = []
+        if case let .category(category) = model.filter { parts.append(ConnectAppsWords.category(category)) }
+        if model.type != .any { parts.append(ConnectAppsWords.type(model.type)) }
+        return parts.isEmpty ? String(localized: "All") : parts.joined(separator: " · ")
     }
 
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func filterButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.selection()
             action()
-        } label: { chipLabel(title, selected: selected) }
-        .buttonStyle(.plain)
+        } label: {
+            if selected { Label(title, systemImage: "checkmark") } else { Text(verbatim: title) }
+        }
     }
 
     private func chipLabel(_ title: String, selected: Bool, systemImage: String? = nil) -> some View {
