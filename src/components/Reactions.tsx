@@ -7,7 +7,7 @@
 // - ReactionChips: one chip per emoji under the message (emoji + count),
 //   highlighted when the viewer is among the reactors; a click toggles the
 //   viewer's own; hovering or focusing it lists who reacted, a bot with its
-//   mascot (from `bots`).
+//   mascot (from `bots`), in a tooltip drawn in a portal (src/lib/popover-placement.ts).
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { SmilePlus } from "lucide-react";
@@ -162,12 +162,45 @@ function ActorFace({ actor, bots }: { actor: ReactionActor; bots: readonly Bot[]
   );
 }
 
-/** One chip: the emoji and its count; who reacted in the tooltip. */
+/** One chip: the emoji and its count; who reacted in the tooltip. The
+ * tooltip shows while the chip is hovered or focused, drawn in a portal on
+ * document.body above the chip (below it when there is no room), because a
+ * transcript row (content-visibility: auto) paints nothing outside itself. */
 function Chip({ chip, selfIds, onToggle, end, bots }: { chip: ReactionChip; selfIds: readonly string[]; onToggle: (emoji: string) => void; end: boolean; bots: readonly Bot[] }) {
   const label = reactionTooltip(chip, selfIds);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const tipRef = useRef<HTMLSpanElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const open = hovered || focused;
+  useAnchoredPopover(open, buttonRef, tipRef, { prefer: "above", align: end ? "end" : "start" });
+  const tip = (
+    <span
+      ref={tipRef}
+      aria-hidden="true"
+      data-reaction-tip
+      data-reaction-tip-for={chip.emoji}
+      className="pointer-events-none fixed left-0 top-0 z-50 flex w-max max-w-[16rem] flex-col gap-1 rounded-md border-[0.5px] border-border bg-elevated px-2 py-1.5 text-[11px] leading-4 text-ink shadow-sm animate-pop-in"
+    >
+      {chip.actors.map((actor) => (
+        <span key={actor.id} data-reaction-actor={actor.id} className="flex items-center gap-1.5">
+          <ActorFace actor={actor} bots={bots} />
+          <span className="truncate">{reactionActorName(actor, selfIds)}</span>
+        </span>
+      ))}
+      <span className="text-ink-tertiary">{t("reactions.reactedWith", { emoji: chip.emoji })}</span>
+    </span>
+  );
   return (
-    <span className="group/chip relative inline-flex">
+    <span
+      className="relative inline-flex"
+      onPointerEnter={(event) => { if (event.pointerType !== "touch") setHovered(true); }}
+      onPointerLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
       <button
+        ref={buttonRef}
         type="button"
         data-reaction-chip={chip.emoji}
         data-mine={chip.mine ? "true" : undefined}
@@ -184,22 +217,7 @@ function Chip({ chip, selfIds, onToggle, end, bots }: { chip: ReactionChip; self
         <span aria-hidden="true" className="text-[14px] leading-none">{chip.emoji}</span>
         <span aria-hidden="true">{chip.count}</span>
       </button>
-      <span
-        aria-hidden="true"
-        data-reaction-tip
-        className={cn(
-          "pointer-events-none absolute bottom-full z-30 mb-1 flex w-max max-w-[16rem] flex-col gap-1 rounded-md border-[0.5px] border-border bg-elevated px-2 py-1.5 text-[11px] leading-4 text-ink opacity-0 shadow-sm transition-opacity group-hover/chip:opacity-100 group-focus-within/chip:opacity-100",
-          end ? "right-0" : "left-0",
-        )}
-      >
-        {chip.actors.map((actor) => (
-          <span key={actor.id} data-reaction-actor={actor.id} className="flex items-center gap-1.5">
-            <ActorFace actor={actor} bots={bots} />
-            <span className="truncate">{reactionActorName(actor, selfIds)}</span>
-          </span>
-        ))}
-        <span className="text-ink-tertiary">{t("reactions.reactedWith", { emoji: chip.emoji })}</span>
-      </span>
+      {open && (typeof document === "undefined" ? tip : createPortal(tip, document.body))}
     </span>
   );
 }

@@ -103,6 +103,11 @@ describe("ReactionChips", () => {
     return onToggle;
   }
   const chip = (emoji: string) => host.querySelector<HTMLButtonElement>(`[data-reaction-chip="${emoji}"]`)!;
+  // the tooltip shows on hover or focus, in a portal on document.body
+  const tipOf = async (emoji: string) => {
+    await act(async () => chip(emoji).focus());
+    return document.querySelector<HTMLElement>(`[data-reaction-tip-for="${emoji}"]`)!;
+  };
 
   it("draws one chip per emoji with its count, highlighted when I reacted", async () => {
     await renderChips();
@@ -122,18 +127,42 @@ describe("ReactionChips", () => {
   it("names who reacted, me as You, in the label and the tooltip", async () => {
     await renderChips();
     expect(chip("👍").getAttribute("aria-label")).toBe("Zachary Sellam and You reacted with 👍");
-    const tip = chip("👍").parentElement!.querySelector("[data-reaction-tip]")!;
+    const tip = await tipOf("👍");
     expect([...tip.querySelectorAll("[data-reaction-actor]")].map((row) => row.textContent)).toEqual(["ZSZachary Sellam", "MYou"]);
   });
 
   it("shows a bot's reaction like anyone's, with its mascot in the tooltip", async () => {
     await renderChips(vi.fn(), true);
     expect(chip("✅").getAttribute("aria-label")).toBe("Cryptic reacted with ✅");
-    const row = chip("✅").parentElement!.querySelector('[data-reaction-actor="bot:cryptic"]')!;
+    const row = (await tipOf("✅")).querySelector('[data-reaction-actor="bot:cryptic"]')!;
     expect(row.textContent).toContain("Cryptic");
     // the mascot, not initials
     expect(row.querySelector("svg, img, canvas")).not.toBeNull();
     expect(host.querySelector('[data-testid="reaction-chips"]')!.className).toContain("justify-end");
+  });
+
+  it("draws the tooltip outside the row, above the chip, only while hovered or focused (JC, 2026-10-18)", async () => {
+    await renderChips();
+    expect(document.querySelector("[data-reaction-tip]")).toBeNull();
+    const button = chip("👍");
+    button.getBoundingClientRect = () => ({ left: 300, top: 400, right: 340, bottom: 424, width: 40, height: 24, x: 300, y: 400, toJSON: () => ({}) }) as DOMRect;
+    const spies = [
+      vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(120),
+      vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(60),
+    ];
+    try {
+      await act(async () => button.parentElement!.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" })));
+      const tip = document.querySelector<HTMLElement>('[data-reaction-tip-for="👍"]')!;
+      expect(tip.parentElement).toBe(document.body);
+      expect(host.contains(tip)).toBe(false);
+      expect(tip.dataset.side).toBe("above");
+      expect(tip.style.top).toBe(`${400 - 4 - 60}px`);
+      expect(tip.style.left).toBe("300px");
+      await act(async () => button.parentElement!.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, pointerType: "mouse" })));
+      expect(document.querySelector("[data-reaction-tip]")).toBeNull();
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
   });
 
   it("draws nothing without reactions, and reads a legacy list", async () => {
