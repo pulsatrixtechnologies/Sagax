@@ -95,7 +95,7 @@ export const ISO_DATE = /(^|[^\p{L}\p{N}_-])(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}
 export const CLOCK = /(^|[^\p{L}\p{N}_:.])(\d{1,2}):(\d{2})(:\d{2})?(?![\p{N}_:]|\.\d)/gu;
 
 /** A word before a number that makes it a duration, not a time of day. */
-const DURATION_BEFORE = /(?:^|[^\p{L}])(?:dur[ée]e|duration|uptime|elapsed|took|temps|chrono|timer|minuteur|en|in|for|pendant|depuis|since)\s*:?\s*$/iu;
+const DURATION_BEFORE = /(?:^|[^\p{L}])(?:dur[ée]e|duration|uptime|elapsed|took|temps|chrono|timer|minuteur|en|for|pendant)\s*:?\s*$/iu;
 /** A French preposition before a time of day: "à 3:30", "vers 9:15". */
 const TIME_BEFORE_FR = /(?:(?:^|[^\p{L}'])(?:à|a|vers|dès|de|des|jusqu'à|avant|après|entre|et|ou|pour|midi)|^)\s*$/iu;
 

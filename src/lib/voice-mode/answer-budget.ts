@@ -36,13 +36,15 @@ export type SpokenAnswerCut = "length" | "question" | null;
  * a long run of dots costs one pass. */
 const END = /(?<![.!?…])([.!?…]+)["'»”)\]]*(?=\s|$)|\n/g;
 /** A closing quote right after a question mark: a quoted question. */
-const QUOTED = /^["'»”]|^[ \t\u00a0]+[»”]/;
+const QUOTED = /^["'»”]|^[ \t\u00a0\u202f]+[»”]/;
 
 /** The text with its code (a fenced block, even unfinished, and inline
- * code) blanked out, same length: code is never spoken, so its lines and
- * marks count for nothing. */
+ * code) blanked out, same length: code is never spoken, so its marks count
+ * for nothing and its lines carry no words. */
 function withoutCode(text: string): string {
-  const blank = (code: string) => code.replace(/[^\n]/g, " ").replace(/\n/g, " ");
+  // "_" (not a space, not a letter): a mark next to code never becomes a
+  // sentence end when the code closes later; line breaks stay
+  const blank = (code: string) => code.replace(/[^\n]/g, "_");
   return text
     .replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, blank)
     .replace(/`[^`\n]*`/g, blank);

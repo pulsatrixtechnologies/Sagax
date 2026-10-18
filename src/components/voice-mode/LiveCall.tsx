@@ -122,7 +122,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   messagesRef.current = messages;
   const pendingSpeak = useRef<Array<SpeakItem & { text: string; kind: "say" | "done" }>>([]);
   /** the person's words the "rest is in the chat" line was said for */
-  const restSaidFor = useRef<string | undefined>(undefined);
+  const restSaidFor = useRef<string | null | undefined>(null);
   /** a send's retry belongs to this call: it never fires after the hang-up */
   const timers = useRef(callTimers());
   useEffect(() => {

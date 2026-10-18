@@ -554,8 +554,10 @@ export class VoiceCall {
     if (this.state.phase === "held" || this.state.phase === "ended") return;
     if (this.turn && this.turn.sentAt !== undefined && this.turn.firstTokenAt === undefined && text.trim()) this.turn.firstTokenAt = this.now();
     this.reply ??= this.sentences();
-    // the call says at most four sentences, and stops at a question
-    this.replyText = spokenAnswer(text).text;
+    // the call says at most four sentences, and stops at a question; what
+    // was already kept is never taken back (a stream fed less starts over)
+    const kept = spokenAnswer(text).text;
+    this.replyText = this.replyText.startsWith(kept) && this.reply?.position ? this.replyText : kept;
     this.applyTtsLead(this.reply.feed(this.replyText), this.replyText.slice(this.reply.position));
   }
 
@@ -564,7 +566,8 @@ export class VoiceCall {
     if (this.turn && this.turn.sentAt !== undefined && this.turn.firstTokenAt === undefined && text.trim()) this.turn.firstTokenAt = this.now();
     const stream = this.reply ?? this.sentences();
     this.reply = null;
-    const rest = stream.finish(spokenAnswer(text).text);
+    const kept = spokenAnswer(text).text;
+    const rest = stream.finish(this.replyText.startsWith(kept) && stream.position ? this.replyText : kept);
     // the answer is done: its utterance ends (text.done)
     this.applyTtsLead(rest, "", true);
     this.leadSent = null;

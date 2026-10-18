@@ -33,6 +33,7 @@ describe("how much of an answer a call says", () => {
   it("a quoted or a short rhetorical question does not end it", () => {
     expect(spokenAnswer('You asked "is it done?" Yes, it is done.').cut).toBeNull();
     expect(spokenAnswer("Tu demandes « est-ce fait ? » Oui, c'est fait.").cut).toBeNull();
+    expect(spokenAnswer("Tu demandes « est-ce fait\u202f? » Oui, c'est fait.").cut).toBeNull();
     expect(spokenAnswer("Pourquoi? Parce que le disque est plein.").cut).toBeNull();
     expect(spokenAnswer("Pourquoi? Parce que le disque est plein.").text).toBe("Pourquoi? Parce que le disque est plein.");
   });
@@ -72,6 +73,15 @@ describe("how much of an answer a call says", () => {
       previous = said;
     }
     expect(previous).toBe("One. Two. Three. Four. ");
+    // code that closes later never moves the cut earlier
+    for (const sample of ["Ok? `x` One. Two. Three. Four. Five.", "One 3 One?` »1. 3One.5 is it`"]) {
+      let kept = "";
+      for (let end = 1; end <= sample.length; end += 1) {
+        const said = spokenAnswer(sample.slice(0, end)).text;
+        expect(said.startsWith(kept)).toBe(true);
+        kept = said;
+      }
+    }
   });
 
   it("does not count words that are never spoken, and never says the follow-up", () => {

@@ -330,7 +330,9 @@ public final class LiveCallEngine {
         let stream = reply ?? SentenceStream()
         reply = stream
         // at most four sentences, up to a question (AnswerBudget.swift)
-        replyText = SpokenText.spokenAnswer(text).text
+        let kept = SpokenText.spokenAnswer(text).text
+        // what was already kept is never taken back (a stream fed less starts over)
+        replyText = replyText.hasPrefix(kept) && stream.position > 0 ? replyText : kept
         for sentence in stream.feed(replyText) { enqueue(sentence) }
     }
 
@@ -339,7 +341,8 @@ public final class LiveCallEngine {
     public func replyDone(_ text: String) async -> Bool {
         let stream = reply ?? SentenceStream()
         reply = nil
-        for sentence in stream.finish(SpokenText.spokenAnswer(text).text) { enqueue(sentence) }
+        let kept = SpokenText.spokenAnswer(text).text
+        for sentence in stream.finish(replyText.hasPrefix(kept) && stream.position > 0 ? replyText : kept) { enqueue(sentence) }
         if !player.busy { return true }
         return await withCheckedContinuation { speechWaiters.append($0) }
     }
@@ -355,7 +358,8 @@ public final class LiveCallEngine {
     public func replyDoneNow(_ text: String) {
         let stream = reply ?? SentenceStream()
         reply = nil
-        for sentence in stream.finish(SpokenText.spokenAnswer(text).text) { enqueue(sentence) }
+        let kept = SpokenText.spokenAnswer(text).text
+        for sentence in stream.finish(replyText.hasPrefix(kept) && stream.position > 0 ? replyText : kept) { enqueue(sentence) }
     }
 
     private func enqueue(_ text: String) {

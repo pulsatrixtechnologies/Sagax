@@ -23,7 +23,8 @@ extension SpokenText {
     public static let spokenSentencesMax = 4
 
     /// The text with its code (a fenced block, even unfinished, and inline
-    /// code) blanked out, same length: code counts for nothing.
+    /// code) blanked out with "_", line breaks kept: code counts for nothing,
+    /// and a mark next to it never becomes a sentence end later.
     static func withoutCode(_ text: [Character]) -> [Character] {
         var out = text
         var i = 0
@@ -37,7 +38,7 @@ extension SpokenText {
                 var j = i + 3
                 while j < text.count && fence(at: j) != mark { j += 1 }
                 let stop = min(text.count, j + 3)
-                for k in i..<stop { out[k] = " " }
+                for k in i..<stop where !text[k].isNewline { out[k] = "_" }
                 i = stop
                 continue
             }
@@ -45,7 +46,7 @@ extension SpokenText {
                 var j = i + 1
                 while j < text.count && text[j] != "`" && !text[j].isNewline { j += 1 }
                 if j < text.count && text[j] == "`" {
-                    for k in i...j { out[k] = " " }
+                    for k in i...j { out[k] = "_" }
                     i = j + 1
                     continue
                 }

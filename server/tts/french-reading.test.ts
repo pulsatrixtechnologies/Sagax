@@ -41,6 +41,7 @@ describe("French reading for the voice", () => {
     expect(readFrench("Jean 3:16 et le score 2:10.")).toBe("Jean 3:16 et le score 2:10.");
     expect(readFrench("Rendez-vous à 3:30, vers 9:15.")).toBe("Rendez-vous à 3 heures 30, vers 9 heures 15.");
     expect(readFrench("Il est 3:30 PM.")).toBe("Il est 3:30 PM.");
+    expect(readFrench("En panne depuis 15:30.")).toBe("En panne depuis 15 heures 30.");
     expect(readFrench("Pas une date 2026-13-45 ni 25:99.")).toBe("Pas une date 2026-13-45 ni 25:99.");
   });
 
