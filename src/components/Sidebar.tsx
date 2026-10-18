@@ -2949,8 +2949,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
   // Grok Bot's foot (JC, 2026-10-15): the avatar and the Connect apps pill,
-  // nothing else. Archived bots, when there are any, join Achievements and
-  // Team map in the account menu; Browse bots is in Connect apps' header
+  // nothing else. Archived bots, when there are any, join Achievements
+  // in the account menu; Browse bots is in Connect apps' header
   // (2026-10-16).
   const accountPlaces: SidebarMenuItem[] = !remoteClient && archivedBots.length > 0 ? [{
     key: "archived",

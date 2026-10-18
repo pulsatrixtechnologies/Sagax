@@ -4,7 +4,7 @@
 //   Get Sagax on mobile    (only once there is a public link to send)
 //   Help ›                 (Keyboard shortcuts, Release notes, Check for updates, About)
 //   Settings
-//   Achievements, Team map
+//   Automations, Achievements (Team map: the Automations header and ⌘K)
 //   ──────────
 //   Switch organization ›  (this computer and the saved organization servers)
 //   Sign out               (an organization server only)

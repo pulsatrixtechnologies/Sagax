@@ -12,7 +12,7 @@ import { t } from "@/lib/i18n";
 import { useUpdaterState, type UpdaterState } from "@/lib/updater";
 import { useUpdatePromptRequests } from "@/lib/update-prompt";
 import { ReleaseNotesBody } from "./ReleaseNotesMarkdown";
-import { CountPill, DIALOG, DialogFrame, GROUP_CARD, PILL, PRIMARY_PILL } from "./SettingsPrimitives";
+import { CountPill, DialogFrame, DialogLayer, GROUP_CARD, PILL, PRIMARY_PILL } from "./SettingsPrimitives";
 
 const NOTES_STATUS = new Set<UpdaterState["status"]>(["preparing", "downloaded", "installing"]);
 
@@ -134,10 +134,7 @@ function UpdateNotesDialog({
   // 2026-10-16 (JC): drawn like Settings: the title, one grey line, the
   // notes folded in a row of one card behind a pill, the pills at the right.
   return (
-    <div
-      className={cn(DIALOG.backdrop, "z-[60]")}
-      onMouseDown={(event) => event.target === event.currentTarget && !busy && onDismiss()}
-    >
+    <DialogLayer className="z-[60]" onBackdropMouseDown={() => { if (!busy) onDismiss(); }}>
       <DialogFrame
         titleId="update-notes-title"
         title={notesTitle(s)}
@@ -209,7 +206,7 @@ function UpdateNotesDialog({
           )}
         </div>
       </DialogFrame>
-    </div>
+    </DialogLayer>
   );
 }
 

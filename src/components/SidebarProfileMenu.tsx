@@ -8,8 +8,9 @@
 // person panel still show both. The routines badge
 // (icon and count of active routines) sits at the right edge of the row and
 // opens Automations. Other people's rows never show title or points: those
-// live in a person's detail and on Settings > Achievements. The menu leads with Team map and
-// Automations, then a hairline, then settings. Archived bots, when there
+// live in a person's detail and on Settings > Achievements. The menu leads with
+// Automations, then a hairline, then settings (Team map opens from the
+// Automations header and the command palette, 2026-10-18). Archived bots, when there
 // are any, sit above that pair with their own hairline. Your phone and
 // Help Center are not in this menu: the phone stays in Settings and on
 // the collapsed rail, and docs stay on About. Connected apps and Browse Bots
@@ -40,7 +41,6 @@ import {
   Laptop,
   Loader2,
   LogOut,
-  Network,
   Plus,
   RefreshCw,
   ScrollText,
@@ -260,7 +260,7 @@ function useUpdateButtonWide(version: string | null): [boolean, (on: boolean) =>
 }
 
 /** The footer menu: the profile items with the account-level places
- * (Archived bots) added to the group of Achievements and Team map, just
+ * (Archived bots) added to the group of Achievements, just
  * above the hairline. Without places it is the profile menu alone. */
 export function footerMenuItems(places: SidebarMenuItem[], profileItems: SidebarMenuItem[]): SidebarMenuItem[] {
   if (places.length === 0) return profileItems;
@@ -270,7 +270,6 @@ export function footerMenuItems(places: SidebarMenuItem[], profileItems: Sidebar
 }
 
 export interface ProfileMenuHandlers {
-  onTeamMap: () => void;
   onAutomations: () => void;
   onSettings: () => void;
   onAchievements: () => void;
@@ -285,9 +284,11 @@ export interface ProfileMenuHandlers {
 }
 
 /** Grok Bot's account menu (JC, 2026-10-16; src/lib/account-menu.ts):
- * Usage ›, Get Sagax on mobile, Help ›, Settings, Automations, Achievements
- * and Team map, a hairline, Switch organization ›, Sign out. Automations came
- * back here from the settings nav (JC, 2026-10-16). */
+ * Usage ›, Get Sagax on mobile, Help ›, Settings, Automations, Achievements,
+ * a hairline, Switch organization ›, Sign out. Automations came back here
+ * from the settings nav (JC, 2026-10-16). Team map left the menu (JC,
+ * 2026-10-18: one option, one place): it opens from the Automations header
+ * and the command palette. */
 export function profileMenuItems(input: {
   /** null: no plan reports a window, so Usage carries no percent */
   usagePercent: number | null;
@@ -296,7 +297,6 @@ export function profileMenuItems(input: {
   monthCost: string | null;
   mobile: boolean;
   achievementsLabel: string | null;
-  teamMapActive: boolean;
   automationsActive: boolean;
   /** a failed routine run not seen yet: a dot on Automations */
   automationsAttention?: boolean;
@@ -410,13 +410,6 @@ export function profileMenuItems(input: {
           onSelect: input.handlers.onAchievements,
         }]
       : []),
-    {
-      key: "team-map",
-      label: t("sidebar.nav.teamMap"),
-      icon: <Network size={18} />,
-      active: input.teamMapActive,
-      onSelect: input.handlers.onTeamMap,
-    },
     ...lower,
   ];
 }
@@ -530,7 +523,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     monthCost: account.monthCost,
     mobile: SAGAX_MOBILE_URL !== null,
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
-    teamMapActive: state.activeView === "team-map",
     automationsActive: state.activeView === "routines",
     automationsAttention: routineAttention,
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
@@ -539,7 +531,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     canAddOrganization: !lockedServer && Boolean(window.ogb?.environments),
     signOut: lockedServer,
     handlers: {
-      onTeamMap: () => dispatch({ type: "showTeamMap" }),
       onAutomations: () => dispatch({ type: "showRoutines" }),
       onSettings: () => dispatch({ type: "toggleAppSettings" }),
       onAchievements: openAchievements,

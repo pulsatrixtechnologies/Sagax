@@ -17,7 +17,7 @@ import {
 import { subscribeReleaseNotes, type ReleaseNotesMode } from "@/lib/release-notes-ui";
 import { useStore } from "@/state/store";
 import { ReleaseNotesBody, ReleaseNotesMarkdown, ReleaseVersionHeading } from "./ReleaseNotesMarkdown";
-import { DIALOG, DialogFrame, PILL, PillSelect } from "./SettingsPrimitives";
+import { DialogFrame, DialogLayer, PILL, PillSelect } from "./SettingsPrimitives";
 import { cn } from "@/lib/cn";
 
 function readSeen(): string | null {
@@ -118,10 +118,7 @@ export function ReleaseNotesPrompt() {
   // version" as pills, then the version's title and date and its sections
   // under grey headings.
   return (
-    <div
-      className={cn(DIALOG.backdrop, "z-[70]")}
-      onMouseDown={(event) => event.target === event.currentTarget && close()}
-    >
+    <DialogLayer className="z-[70]" onBackdropMouseDown={close}>
       <DialogFrame
         titleId="release-notes-title"
         title={browse ? t("releaseNotes.browseTitle") : t("releaseNotes.whatsNewTitle")}
@@ -177,6 +174,6 @@ export function ReleaseNotesPrompt() {
           </div>
         )}
       </DialogFrame>
-    </div>
+    </DialogLayer>
   );
 }

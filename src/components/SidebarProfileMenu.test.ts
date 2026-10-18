@@ -167,7 +167,7 @@ describe("outward links", () => {
 describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
   const noop = () => {};
   const handlers = {
-    onTeamMap: noop, onAutomations: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
+    onAutomations: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
     onViewUsage: noop, onSwitch: noop, onAddOrganization: noop, onSignOut: noop, onMobile: noop,
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
@@ -176,7 +176,6 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
     monthCost: "$3.10",
     mobile: false,
     achievementsLabel: "Achievements",
-    teamMapActive: false,
     automationsActive: false,
     updateItem: null,
     switchTargets: [],
@@ -186,8 +185,12 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
     ...patch,
   });
 
-  it("is Usage, Help, Settings, Automations, Achievements and Team map, in that order", () => {
-    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "achievements", "team-map"]);
+  it("is Usage, Help, Settings, Automations and Achievements, in that order", () => {
+    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "achievements"]);
+  });
+
+  it("has no Team map: it opens from the Automations header and the palette (JC, 2026-10-18)", () => {
+    expect(items().some((entry) => entry.key === "team-map" || entry.label === "Team map")).toBe(false);
   });
 
   it("opens Automations from the menu, keeps the tour anchor and the failed-run dot (JC, 2026-10-16)", () => {

@@ -1,4 +1,5 @@
 import { Fragment, useId, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, ChevronRight, CircleHelp, Copy, ExternalLink, X } from "lucide-react";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
@@ -788,6 +789,32 @@ export function DialogCloseButton({ label, onClick, buttonRef, disabled }: {
       <X size={18} aria-hidden="true" />
     </button>
   );
+}
+
+/** A window's backdrop, portalled to the end of <body> (2026-10-18, JC:
+ * the release notes' X only closed when clicked below it). Electron
+ * resolves -webkit-app-region in DOM order: a dialog mounted inside the
+ * shell before the chat header (`.content-topbar`, 56 px of drag) has its
+ * no-drag cut back out by that later drag region, so a close button in
+ * that band swallowed clicks on its upper part. After every header, the
+ * dialog's own no-drag (styles.css) wins over the whole button. */
+export function DialogLayer({ className, onBackdropMouseDown, children }: {
+  className?: string;
+  /** a mouse-down on the backdrop itself, not on the window */
+  onBackdropMouseDown?: () => void;
+  children: React.ReactNode;
+}) {
+  const layer = (
+    <div
+      data-dialog-layer=""
+      className={cn(DIALOG.backdrop, className)}
+      onMouseDown={(event) => event.target === event.currentTarget && onBackdropMouseDown?.()}
+    >
+      {children}
+    </div>
+  );
+  // Server rendering (the static-markup tests) has no body to portal into.
+  return typeof document === "undefined" ? layer : createPortal(layer, document.body);
 }
 
 /** A window's frame drawn like Settings, without its backdrop (each caller

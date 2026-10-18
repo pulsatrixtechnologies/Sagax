@@ -117,7 +117,9 @@ export async function openNewBotDialog(flow: NewBotFlow): Promise<void> {
 
   const onTeamMap = async () => Boolean(await flow.evaluate(`Boolean(document.querySelector("[data-team-key]"))`));
   if (!(await onTeamMap())) {
+    // Team map opens from the Automations header (left the avatar menu 2026-10-18)
     await click("You");
+    await click("Automations");
     await click("Team map");
     await until(onTeamMap, 12_000, "Team map");
   }

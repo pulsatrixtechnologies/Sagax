@@ -21,7 +21,7 @@ import { t } from "@/lib/i18n";
 import { requestReleaseNotes } from "@/lib/release-notes-ui";
 import { useCategoryModalKeyboard } from "./category-modal";
 import { PulsatrixOwlMark } from "./PulsatrixOwlMark";
-import { DIALOG, DialogCloseButton, GROUP_CARD, LinkRow } from "./SettingsPrimitives";
+import { DIALOG, DialogCloseButton, DialogLayer, GROUP_CARD, LinkRow } from "./SettingsPrimitives";
 
 export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
@@ -35,7 +35,7 @@ function AboutWindow({ onClose }: { onClose: () => void }) {
   const platform = platformLabel(window.ogb?.platform);
 
   return (
-    <div className={DIALOG.backdrop} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <DialogLayer onBackdropMouseDown={onClose}>
       <div
         ref={dialogRef}
         role="dialog"
@@ -78,7 +78,7 @@ function AboutWindow({ onClose }: { onClose: () => void }) {
           </p>
         </div>
       </div>
-    </div>
+    </DialogLayer>
   );
 }
 
