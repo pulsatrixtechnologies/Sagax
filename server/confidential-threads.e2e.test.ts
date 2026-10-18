@@ -39,6 +39,10 @@
 //   CT-14 (follow-up of #689) the workspace backup an admin downloads holds
 //         nothing of a confidential thread's Data (its sheet, its export), and restoring
 //         that archive brings none of it back
+//   CT-15 (follow-up of #727) teammate work (runtime.db): a thread made
+//         confidential keeps no brief or result of the work it asked or did,
+//         a confidential work thread takes no more work, and nothing of it is
+//         left after its deletion
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -53,6 +57,7 @@ import { applyPendingWorkspaceRestore, commitPendingWorkspaceRestore, stageWorks
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 import { freePortBlock } from "./testing/ports.ts";
+import { readHandoffs } from "./testing/handoff-rows.ts";
 import { ZipReader } from "./zip.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
@@ -231,6 +236,7 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
               { server: "agents", tool: "ask_bot", arguments: { bot_id: "Equipe", message: "PEER-HELLO from a teammate" }, when: "ASK-EQUIPE" },
               { server: "agents", tool: "start_thread", arguments: { title: "Enfant", message: "child work" }, when: "OPEN-CHILD" },
               { server: "agents", tool: "coordinate_bots", arguments: { bot_ids: ["Messager"], message: "COORD leak", request_key: "leak-1" }, when: "COORD-OUT" },
+              { server: "agents", tool: "coordinate_bots", arguments: { bot_ids: ["Messager"], message: `${SECRET}-RTBRIEF`, request_key: "rt-1" }, when: "RT-GO" },
               { server: "agents", tool: "act", arguments: { method: "GET", path: "/api/bots" }, when: "ACT-LIST" },
               // an outbound tool of another MCP server: the bot's data tools
               { server: "data", tool: "data_sql", arguments: { sql: "CREATE TABLE confidential_probe AS SELECT 1 AS x" }, when: "DATA-WRITE" },
@@ -708,5 +714,44 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     await waitFor(async () => !existsSync(join(data, "data-scopes", botId, suffix)));
     expect(existsSync(exported.body.path)).toBe(false);
   }, 60_000);
+
+  it("CT-15: teammate work keeps no words of a thread made confidential, and none after its deletion", async () => {
+    const bots = (await api("GET", "/api/bots", bob)).body.bots as Array<{ id: string; name: string }>;
+    const messengerId = bots.find((bot) => bot.name === "Messager")!.id;
+    const settled = (threadId: string) => waitFor(async () => {
+      const rows = readHandoffs(data).filter((row) => row.threadId === threadId || readHandoffs(data).some((p) => p.id === row.parentId && p.threadId === threadId));
+      return rows.length >= 2 && rows.every((row) => ["completed", "failed", "cancelled"].includes(row.status)) ? rows : null;
+    }, 60_000);
+    const opened = await api("POST", `/api/bots/${botId}/tasks`, bob, { title: "Coordination" });
+    expect(opened.status, opened.text).toBe(201);
+    const asker = opened.body.task.threadId as string;
+    expect((await api("POST", `/api/bots/${botId}/messages`, bob, { text: `${SECRET}-RTUSER RT-GO`, threadId: asker })).status).toBe(202);
+    const first = await settled(asker);
+    const work = first.find((row) => row.botId === messengerId)!.threadId;
+    // the record holds the request and the brief while the threads are ordinary
+    expect(JSON.stringify(readHandoffs(data))).toContain(`${SECRET}-RTBRIEF`);
+    // the teammate's work thread turns confidential: the tree it did work in goes
+    const madeWork = await api("PATCH", `/api/bots/${messengerId}/tasks/${work}`, bob, { confidential: true, confirmConfidential: true });
+    expect(madeWork.status, madeWork.text).toBe(200);
+    expect(readHandoffs(data).filter((row) => row.threadId === work)).toEqual([]);
+    expect(JSON.stringify(readHandoffs(data))).not.toContain(`${SECRET}-RT`);
+    // the next request opens a new work thread, never the confidential one
+    const before = (await messagesOf(bob, work)).length;
+    expect((await api("POST", `/api/bots/${botId}/messages`, bob, { text: `${SECRET}-RTUSER2 RT-GO`, threadId: asker })).status).toBe(202);
+    const second = await settled(asker);
+    const next = second.find((row) => row.botId === messengerId)!.threadId;
+    expect(next).not.toBe(work);
+    expect((await messagesOf(bob, work)).length).toBe(before);
+    // the asking thread turns confidential: its trees go too
+    const madeAsker = await api("PATCH", `/api/bots/${botId}/tasks/${asker}`, bob, { confidential: true, confirmConfidential: true });
+    expect(madeAsker.status, madeAsker.text).toBe(200);
+    expect(readHandoffs(data).filter((row) => row.threadId === asker || row.threadId === next)).toEqual([]);
+    expect(JSON.stringify(readHandoffs(data))).not.toContain(SECRET);
+    for (const [bot, thread] of [[messengerId, work], [botId, asker]] as const) {
+      expect((await api("DELETE", `/api/bots/${bot}/tasks/${thread}`, bob)).status).toBe(200);
+    }
+    expect(JSON.stringify(readHandoffs(data))).not.toContain(SECRET);
+    expect(readHandoffs(data).filter((row) => [asker, work].includes(row.threadId))).toEqual([]);
+  }, 180_000);
 
 });

@@ -9,7 +9,8 @@ land in a shared bot's memory, an export or an admin console.
 Code: `server/confidential-threads.ts` (the rules), with the enforcement in
 `server/index.ts`, `server/bot-zip.ts`, `server/org-admin-files.ts`,
 `server/decision-log.ts`, `server/workspace-backup.ts`,
-`server/turn-log.ts`, `server/user-sandbox-routing.ts` and
+`server/turn-log.ts`, `server/user-sandbox-routing.ts`,
+`server/runtime/store.ts` (`forgetThread`), `server/message-db.ts` and
 `server/routes/perspicax-tool-internal.ts`. Clients:
 `src/components/ConfidentialBanner.tsx`, `src/lib/confidential-thread.ts`,
 `ios/Sources/CompanionCore/ConfidentialThread.swift`,
@@ -74,7 +75,7 @@ title; a stamp on a Markdown export the person makes of their own thread.
 | Recall: auto-recall, recent-work brief, `session_search`, `session_read`, `list_threads` from any other thread | narrowed per person | the thread never feeds another thread, its owner's included |
 | Bot zip (owner route and console package), team backup (`POST /api/teams/export` `backup`), organization copy (`POST /api/org/export`) | included with conversations | left out: messages, files, task record, id; an import that ever carries the flag restores it confidential |
 | Console file browser (`tasks`, `attachments` roots) | listed | left out of listings, reads as 404 |
-| Workspace backup (an admin export) | full | task record kept as an empty "Confidential thread" (id, dates, flag); messages, read marks and follow-ups removed from the message database snapshot (vacuumed), event and native logs, legacy transcript, work folder, its own attachments and its whole Data folder (`data-scopes/<bot>/t-<hash>`: sheet, database, downloads) left out; a restore never installs that Data folder, even from an archive an older release made with it (`confidentialDataScopePath`, `server/workspace-backup-policy.ts`) |
+| Workspace backup (an admin export) | full | task record kept as an empty "Confidential thread" (id, dates, flag); messages, read marks, follow-ups and its turns' idempotency receipts (copies of its digest rows) removed from the message database snapshot (search index rebuilt, vacuumed); every teammate-work tree it asked or did work in removed from the runtime database snapshot (vacuumed); both snapshots are rebuilt and vacuumed even when no confidential thread is left, so a thread deleted before the backup leaves nothing in a free page or the search index; event and native logs, legacy transcript, work folder, its own attachments and its whole Data folder (`data-scopes/<bot>/t-<hash>`: sheet, database, downloads) left out; a restore never installs that Data folder, even from an archive an older release made with it (`confidentialDataScopePath`, `server/workspace-backup-policy.ts`) |
 | Approval cards and their notifications | bot owner | the thread owner only; a card they could not answer (an organization admin card, another person's machine) is refused instead of shown to anyone else; never in the console's organization queue |
 | Incidents and refused turns | Primary Bot report with 300 characters of the request and reply; problem log row with title and notice | no text: the console's problem log and the owner's notification say only « un tour d'un fil confidentiel a échoué »; no Primary Bot report |
 | Notifications (in app, push relay, iOS banners, Live Activities, widgets, share sheet) | the reply's first words | « Fil confidentiel » only; widgets leave the thread out |
@@ -86,6 +87,7 @@ title; a stamp on a Markdown export the person makes of their own thread.
 | Data (DuckDB tables and the Data tab's sheet) | the bot's database, or on an organization server the speaker's own on a shared bot | a database and sheet of that thread only (`<data>/data-scopes/<bot>/t-<hash>`, `server/data/scope.ts`), its owner's alone (the Data tab names it with `?thread=`); no other scope of the bot reaches the thread's folder or this database; its exports and chart files land in the thread's own folder only, on solo servers too (`dataExportRootsFor`), never the bot's workspace |
 | Routines | can be proposed or created with results in the thread | refused (`propose_routine` and `POST /api/routines` with that `resultsThreadId`) |
 | Artifacts (`save_artifact`, ...) | saved | refused: an artifact outlives the thread and an admin may open it |
+| Teammate work record (`runtime.db`: briefs, results, questions, answers of `coordinate_bots` work) | kept, pruned only with its tree | none written from it (peers refused); a thread turns confidential only when no work it asks or does is under way (409 `confidential_live_work`), and then every settled tree it asked or did work in is removed, and its rows in a tree still live keep ids and status only; a confidential work thread takes no more work (the next request opens a new one) and no result of it reaches the asker |
 | Decision log | rows with the call's summary | rows with ids, time, tool name, decision and who answered only; rows written before the thread turned confidential are stripped the same way, and so are rows that land after it was deleted |
 
 ## Deleting a confidential thread
@@ -102,6 +104,11 @@ thread loses (messages, event and native logs):
   passes;
 - the summaries of its decision-log rows (ids, times, tool names and
   decisions stay, for the audit).
+- the teammate work it asked or did (`runtime.db`): a settled tree goes
+  whole (rows, events, inbox), a live one keeps only ids and status of its
+  rows;
+- its turns' idempotency receipts in the message database (any deleted
+  thread loses those).
 
 ## Honest limits
 

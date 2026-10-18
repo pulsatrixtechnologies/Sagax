@@ -8044,6 +8044,12 @@ function roomHandoffProblem(node: Pick<HandoffView, "groupId" | "threadId" | "bo
   if (!bot || bot.hidden) return "The addressed agent no longer exists";
   if (node.groupId && (!group || group.dm || !store.groupTaskByThread(group.id, node.threadId))) return "Destination room task no longer exists";
   if (!node.groupId && !store.taskByThread(bot.id, node.threadId)) return "Destination bot task no longer exists";
+  // A confidential thread takes no part in teammate work: nothing of it goes
+  // to another conversation, nothing of another lands in it
+  // (docs/confidential-threads.md).
+  if (parent && parent.threadId !== node.threadId && (store.isConfidentialThread(node.threadId) || store.isConfidentialThread(parent.threadId))) {
+    return "A confidential thread takes no part in teammate work";
+  }
   if (group && !group.memberIds.includes(bot.id)) return "The addressed agent is no longer a member of this room";
   // Every reader matters, including members not addressed to speak. The
   // recipient must be allowed to read its destination; the sender's grant
@@ -9475,6 +9481,20 @@ function makeThreadConfidential(botId: string, threadId: string): void {
   store.makeTaskConfidential(botId, threadId);
   memoryUpkeep.dropThread(threadId);
   void scrubThreadDecisions(DATA_DIR, threadId);
+  // its settled teammate work (runtime.db) keeps no words of it
+  forgetConfidentialCoordination(threadId);
+}
+/** Teammate work a thread takes part in that has not settled: a thread
+ * cannot turn confidential under it (its words would still travel). */
+function liveCoordination(threadId: string): boolean {
+  return coordinator.activeDirect(threadId) || coordinator.outstandingDirect(threadId).length > 0;
+}
+function forgetConfidentialCoordination(threadId: string): void {
+  try {
+    coordinator.forgetThread(threadId);
+  } catch (error) {
+    console.warn(`confidential thread: could not clear its teammate work (${error instanceof Error ? error.message : "unknown"})`);
+  }
 }
 /** The stored uploads and attach_file outputs a confidential thread's
  * messages point at, every branch included: names inside the attachment store. */
@@ -9523,6 +9543,7 @@ function wipeConfidentialThread(botId: string, threadId: string, attachmentNames
   }
   memoryUpkeep.dropThread(threadId);
   confidentialMemoryPasses.forget(threadId);
+  forgetConfidentialCoordination(threadId);
   void forgetConfidentialBrowser(threadId).catch(() => undefined);
   void scrubThreadDecisions(DATA_DIR, threadId);
   // its own Data database and sheet (data/scope.ts)
@@ -40978,6 +40999,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (confidentialChange.kind === "make") {
         if (CLOUD_HOME && !cloudOwnerSession(auth)) return json(res, 403, { error: CLOUD_GUEST_CONFIDENTIAL, code: "confidential_thread" });
         if (threadBusy(current.id, current.threadId)) return json(res, 409, { error: "Stop this thread before making it confidential." });
+        if (liveCoordination(current.threadId)) {
+          return json(res, 409, { error: "Teammate work this thread is part of is still under way. Let it finish or stop it, then make the thread confidential.", code: "confidential_live_work" });
+        }
         // A thread that already works in a shared folder (the bot's project
         // folder, a chosen one) cannot take its files back from there, and
         // its checkpoints live with that folder: it stays ordinary.

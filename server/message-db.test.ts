@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { commandReceipt, runCommand } from "./commands.ts";
 import { DATA_DIR } from "./config.ts";
 import { closeMessageDb,
   deleteThread,
@@ -118,6 +119,16 @@ describe("message-db", () => {
     const thread = readThread("t4", legacy("t4"));
     expect(thread.messages).toEqual([]);
     expect(thread.activeLeafId).toBeNull();
+  });
+
+  it("deleteThread drops the thread's command receipts (copies of its digest rows) and no other's", () => {
+    runCommand({ kind: "digest.append", key: "t5:turn-1" }, () => ({ text: "SECRET digest" }));
+    runCommand({ kind: "hook.ingest", key: "t5:turn-1:tool-1" }, () => ({ text: "SECRET tool" }));
+    runCommand({ kind: "digest.append", key: "t50:turn-1" }, () => ({ text: "other thread" }));
+    deleteThread("t5");
+    expect(commandReceipt("digest.append", "t5:turn-1")).toBeNull();
+    expect(commandReceipt("hook.ingest", "t5:turn-1:tool-1")).toBeNull();
+    expect(commandReceipt("digest.append", "t50:turn-1")?.result).toEqual({ text: "other thread" });
   });
 
   it("recall ranks by relevance, scopes to the given threads, and survives updates and deletes", () => {

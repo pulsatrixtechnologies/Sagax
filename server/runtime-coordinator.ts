@@ -353,6 +353,11 @@ export class RuntimeCoordinator implements Coordinator {
     return parked ? this.runtime.answer(parked.id, text) : false;
   }
 
+  forgetThread(threadId: string): { removed: number; scrubbed: number } {
+    this.ready();
+    return this.store.forgetThread(threadId);
+  }
+
   // ── the TurnRunner the Runtime drives ────────────────────────────────
 
   private runner(): TurnRunner {

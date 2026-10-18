@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   applyPendingWorkspaceRestore, commitPendingWorkspaceRestore, createWorkspaceBackup,
   readLastWorkspaceRestore, readPendingWorkspaceRestoreMetadata, readStagedWorkspaceBackup,
-  removeWorkspaceBackupJob, stageWorkspaceBackup,
+  removeWorkspaceBackupJob, stageWorkspaceBackup, stripConfidentialMessages,
 } from "./workspace-backup.ts";
 import { PrincipalRegistry } from "./principals.ts";
 
@@ -447,6 +447,81 @@ describe("encrypted full workspace backups", () => {
     for (const path of paths) {
       if (statSync(join(staging, "data", path)).isFile()) expect(readFileSync(join(staging, "data", path), "utf8")).not.toContain("CONFIDENTIAL_SHEET");
     }
+  });
+
+  it("leaves a confidential thread's teammate work out of the runtime database it backs up", async () => {
+    const source = directory();
+    json(join(source, "bots.json"), [{ id: "bot", threadId: "plain", tasks: [{ threadId: "plain" }, { threadId: "secret", confidential: true }] }]);
+    const runtime = openRuntimeStore(join(source, "runtime.db"));
+    try {
+      // the confidential thread asked a teammate (root and child), and did work for another tree
+      runtime.insert({ ...RUNTIME_ROW, id: "asked", rootId: "asked", brief: "CONFIDENTIAL_BRIEF", result: "CONFIDENTIAL_RESULT",
+        requester: { kind: "person", threadId: "secret" }, assignee: { botId: "bot", destination: { kind: "standing_thread", threadId: "secret" } } },
+      { kind: "enqueued", detail: "needs_input: CONFIDENTIAL_QUESTION" });
+      runtime.insert({ ...RUNTIME_ROW, id: "asked1", rootId: "asked", parentId: "asked", depth: 1, brief: "CONFIDENTIAL_CHILD",
+        requester: { kind: "bot_turn", botId: "bot", threadId: "secret" }, assignee: { botId: "peer", destination: { kind: "work_thread", threadId: "w" } } },
+      { kind: "enqueued" });
+      runtime.addInbox({ id: "inbox", ownerThreadId: "secret", assignmentId: "asked1", kind: "settled", createdAt: 2_000 });
+      runtime.insert({ ...RUNTIME_ROW, id: "theirs", rootId: "theirs", brief: "ORDINARY_BRIEF" }, { kind: "enqueued" });
+      runtime.insert({ ...RUNTIME_ROW, id: "theirs1", rootId: "theirs", parentId: "theirs", depth: 1, brief: "CONFIDENTIAL_WORK",
+        result: "CONFIDENTIAL_WORK_RESULT", requester: { kind: "bot_turn", botId: "bot", threadId: "thread" },
+        assignee: { botId: "bot", destination: { kind: "work_thread", threadId: "secret" } } }, { kind: "enqueued" });
+      runtime.insert({ ...RUNTIME_ROW, id: "plain", rootId: "plain", brief: "PLAIN_BRIEF",
+        requester: { kind: "person", threadId: "plain" }, assignee: { botId: "bot", destination: { kind: "standing_thread", threadId: "plain" } } },
+      { kind: "enqueued" });
+    } finally { runtime.close(); }
+    const exported = await createWorkspaceBackup(source, { password: PASSWORD });
+    const target = directory();
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    const snapshot = join(target, ".backups", staged.id, "staged", "data", "runtime.db");
+    expect(readFileSync(snapshot).includes("CONFIDENTIAL")).toBe(false);
+    const db = new DatabaseSync(snapshot, { readOnly: true });
+    try {
+      expect((db.prepare("SELECT id FROM assignments ORDER BY id").all() as Array<{ id: string }>).map((row) => row.id)).toEqual(["plain"]);
+      expect(db.prepare("SELECT count(*) AS n FROM inbox").get()).toEqual({ n: 0 });
+      expect(db.prepare("SELECT count(*) AS n FROM assignment_events WHERE assignment_id <> 'plain'").get()).toEqual({ n: 0 });
+    } finally { db.close(); }
+    // the live database itself is untouched by the backup
+    const live = openRuntimeStore(join(source, "runtime.db"));
+    try { expect(live.all().map((row) => row.id).sort()).toEqual(["asked", "asked1", "plain", "theirs", "theirs1"]); } finally { live.close(); }
+  });
+
+  it("strips a confidential thread's receipts and search terms from the message snapshot, and the terms of a thread deleted live", () => {
+    const root = directory();
+    const path = join(root, "messages-snapshot.db");
+    const db = new DatabaseSync(path);
+    db.exec(`CREATE TABLE messages(thread_id TEXT, id TEXT, text TEXT, json TEXT, PRIMARY KEY(thread_id,id));
+      CREATE VIRTUAL TABLE messages_fts USING fts5(text, content='messages', content_rowid='rowid', tokenize='unicode61');
+      CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text); END;
+      CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.rowid, old.text); END;
+      CREATE TABLE command_receipts(kind TEXT NOT NULL, key TEXT NOT NULL, at INTEGER NOT NULL, result TEXT NOT NULL, PRIMARY KEY (kind, key));`);
+    const insert = db.prepare("INSERT INTO messages VALUES (?, ?, ?, ?)");
+    insert.run("secret", "m1", "confidentialterm alpha", "{}");
+    insert.run("gone", "m1", "deletedterm beta", "{}");
+    insert.run("plain", "m1", "ordinaryterm gamma", "{}");
+    const receipt = db.prepare("INSERT INTO command_receipts VALUES ('digest.append', ?, 1, ?)");
+    receipt.run("secret:turn", JSON.stringify({ text: "confidentialreceipt" }));
+    receipt.run("plain:turn", JSON.stringify({ text: "ordinaryreceipt" }));
+    // a thread deleted live before the backup: only a delete marker in the index
+    db.prepare("DELETE FROM messages WHERE thread_id = 'gone'").run();
+    db.close();
+    stripConfidentialMessages(path, new Set(["secret"]));
+    const bytes = readFileSync(path);
+    for (const term of ["confidentialterm", "confidentialreceipt", "deletedterm"]) expect(bytes.includes(term)).toBe(false);
+    const after = new DatabaseSync(path, { readOnly: true });
+    try {
+      expect(after.prepare("SELECT key FROM command_receipts").all()).toEqual([{ key: "plain:turn" }]);
+      expect(after.prepare("SELECT rowid FROM messages_fts WHERE messages_fts MATCH 'ordinaryterm'").all()).toHaveLength(1);
+    } finally { after.close(); }
+    // with no confidential thread left at all, the copy is still cleaned
+    const second = join(root, "second.db");
+    const db2 = new DatabaseSync(second);
+    db2.exec("CREATE TABLE messages(thread_id TEXT, id TEXT, text TEXT, json TEXT, PRIMARY KEY(thread_id,id));");
+    db2.prepare("INSERT INTO messages VALUES ('gone', 'm1', ?, '{}')").run(`freepageterm ${"x".repeat(8_000)}`);
+    db2.prepare("DELETE FROM messages").run();
+    db2.close();
+    stripConfidentialMessages(second, new Set());
+    expect(readFileSync(second).includes("freepageterm")).toBe(false);
   });
 
   it("restores an archive that holds a confidential thread's sheet without ever installing it", async () => {

@@ -3199,8 +3199,10 @@ export class Store {
    * so whatever that conversation sends later continues it. A thread the
    * person archived is left alone. */
   workThread(botId: string, fromBotId: string, fromThreadId: string): TaskRecord | undefined {
+    // A work thread its person made confidential takes no more work: the
+    // next request opens a new one (docs/confidential-threads.md).
     return this.tasks(botId).find((t) => t.openedBy?.kind === "work" && t.openedBy.botId === fromBotId &&
-      t.openedBy.threadId === fromThreadId && t.archivedAt === undefined);
+      t.openedBy.threadId === fromThreadId && t.archivedAt === undefined && t.confidential !== true);
   }
 
   /** A turn gets an independent snapshot without changing the selected task

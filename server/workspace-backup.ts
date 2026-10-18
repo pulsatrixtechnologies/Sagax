@@ -15,6 +15,7 @@ import * as tar from "tar";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { writeFileAtomic } from "./atomic.ts";
 import { mergePrincipalFiles } from "./principals.ts";
+import { removeThreadTrees } from "./runtime/store.ts";
 import { escapeAttribute, splitTranscriptAttachments } from "../src/lib/composer-attachments.ts";
 import { WORKSPACE_BACKUP_CLIENT_KEYS } from "../shared/workspace-backup-client.ts";
 import { confidentialDataScopePath, ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
@@ -303,7 +304,7 @@ export function rosterWithoutConfidentialContent(value: unknown): unknown {
  * remaining message points at. */
 export function stripConfidentialMessages(databasePath: string, threads: ReadonlySet<string>): Set<string> {
   const unreferenced = new Set<string>();
-  if (!threads.size || !existsSync(databasePath)) return unreferenced;
+  if (!existsSync(databasePath)) return unreferenced;
   const db = new DatabaseSync(databasePath);
   try {
     const candidates = new Set<string>();
@@ -329,6 +330,18 @@ export function stripConfidentialMessages(databasePath: string, threads: Readonl
       const remove = db.prepare(`DELETE FROM ${table} WHERE thread_id = ?`);
       for (const threadId of threads) remove.run(threadId);
     }
+    // the idempotency receipts of its turns ("<thread>:<turn>..."): copies of its digest rows
+    if (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='command_receipts'").get()) {
+      const remove = db.prepare("DELETE FROM command_receipts WHERE substr(key, 1, ?) = ?");
+      for (const threadId of threads) remove.run(threadId.length + 1, `${threadId}:`);
+    }
+    // A delete only marks a row gone in the full-text index: its terms stay
+    // in the index segments until a merge. Rebuilt from the rows that stay,
+    // and vacuumed, the copy keeps nothing of a deleted or stripped thread,
+    // even one deleted live before this backup (no confidential thread left).
+    if (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='messages_fts'").get()) {
+      db.exec("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')");
+    }
     if (hasMessages) {
       const used = db.prepare("SELECT 1 FROM messages WHERE instr(json, ?) > 0 LIMIT 1");
       for (const name of candidates) if (!used.get(name)) unreferenced.add(name);
@@ -338,6 +351,31 @@ export function stripConfidentialMessages(databasePath: string, threads: Readonl
     db.close();
   }
   return unreferenced;
+}
+
+/** Remove from a snapshot of the job runtime's database (server/runtime/store.ts)
+ * every teammate-work tree a confidential thread requested or ran work in:
+ * its briefs, results, questions and answers are the thread's words. A
+ * restore ends live work anyway, so whole trees go; then it is vacuumed,
+ * always, so no free page keeps a tree forgotten live before. */
+export function stripConfidentialRuntime(databasePath: string, threads: ReadonlySet<string>): number {
+  if (!existsSync(databasePath)) return 0;
+  const db = new DatabaseSync(databasePath);
+  try {
+    db.exec("BEGIN");
+    let removed = 0;
+    try {
+      removed = removeThreadTrees(db, threads);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    db.exec("VACUUM");
+    return removed;
+  } finally {
+    db.close();
+  }
 }
 
 /** Whether a data-relative path belongs to a confidential thread. */
@@ -454,6 +492,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       const snapshotDb = new DatabaseSync(join(snapshot, snapshotName));
       try { snapshotDb.exec("PRAGMA journal_mode = DELETE"); } finally { snapshotDb.close(); }
       if (name === "messages.db") confidentialAttachments = stripConfidentialMessages(join(snapshot, snapshotName), new Set(confidential.keys()));
+      if (name === "runtime.db") stripConfidentialRuntime(join(snapshot, snapshotName), new Set(confidential.keys()));
     }
     const walk = (directory: string, prefix = "") => {
       for (const name of readdirSync(directory).sort()) {

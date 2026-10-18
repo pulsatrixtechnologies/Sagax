@@ -101,6 +101,12 @@ export interface RuntimeStore {
   /** Remove terminal trees whose root finished before `before`; never a tree
    * with a non-terminal node. Returns assignment rows removed. */
   prune(before: number): number;
+  /** Forget a confidential thread (docs/confidential-threads.md): every tree
+   * it requested or ran work in goes whole when settled (rows, events, inbox);
+   * in a tree still live, its own rows keep their ids and status but lose
+   * their words (brief, result, question, answer, detail, evidence, quote)
+   * and their events' details. */
+  forgetThread(threadId: string): { removed: number; scrubbed: number };
   close(): void;
 }
 
@@ -148,6 +154,29 @@ const SCHEMA = `
 `;
 
 const terminalList = TERMINAL.map(s => `'${s}'`).join(", ");
+
+const TOUCHING = "SELECT DISTINCT root_id FROM assignments WHERE requester_thread_id = ? OR assignee_thread_id = ?";
+
+function removeTree(db: DatabaseSync, rootId: string): number {
+  db.prepare("DELETE FROM assignment_events WHERE assignment_id IN (SELECT id FROM assignments WHERE root_id = ?)").run(rootId);
+  db.prepare("DELETE FROM inbox WHERE assignment_id IN (SELECT id FROM assignments WHERE root_id = ?)").run(rootId);
+  return Number(db.prepare("DELETE FROM assignments WHERE root_id = ?").run(rootId).changes);
+}
+
+/** A copy of the runtime database without any tree one of these threads
+ * requested or ran work in, live or settled: what a workspace backup keeps
+ * when the threads are confidential (server/workspace-backup.ts). The caller
+ * owns the transaction and the vacuum. Returns assignment rows removed. */
+export function removeThreadTrees(db: DatabaseSync, threads: Iterable<string>): number {
+  const hasTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='assignments'").get();
+  if (!hasTable) return 0;
+  const touching = db.prepare(TOUCHING);
+  let removed = 0;
+  for (const threadId of threads) {
+    for (const row of touching.all(threadId, threadId) as Row[]) removed += removeTree(db, String(row.root_id));
+  }
+  return removed;
+}
 
 type Row = Record<string, unknown>;
 
@@ -203,6 +232,9 @@ export function openRuntimeStore(path: string): RuntimeStore {
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA synchronous = NORMAL");
   }
+  // A forgotten thread's words are overwritten on disk, not left in a free
+  // page (forgetThread, docs/confidential-threads.md).
+  db.exec("PRAGMA secure_delete = ON");
   db.exec(SCHEMA);
 
   const statements = {
@@ -341,6 +373,46 @@ export function openRuntimeStore(path: string): RuntimeStore {
         }
         return removed;
       });
+    },
+    forgetThread(threadId) {
+      const forgotten = transaction(() => {
+        let removed = 0;
+        let scrubbed = 0;
+        for (const row of db.prepare(TOUCHING).all(threadId, threadId) as Row[]) {
+          const rootId = String(row.root_id);
+          const tree = (db.prepare("SELECT id, json FROM assignments WHERE root_id = ?").all(rootId) as Row[]).map(readAssignment);
+          if (tree.every(a => TERMINAL.includes(a.status))) {
+            removed += removeTree(db, rootId);
+            continue;
+          }
+          for (const a of tree) {
+            const own = a.requester.threadId === threadId || a.assignee.destination.threadId === threadId;
+            const quoted = a.origin.ref === threadId && a.origin.quote !== undefined;
+            if (!own && !quoted) continue;
+            const before = toJson(a);
+            if (quoted) delete a.origin.quote;
+            if (own) {
+              a.brief = "";
+              a.result = "";
+              delete a.question;
+              delete a.answer;
+              delete a.outcomeDetail;
+              delete a.evidence;
+              delete a.doneWhen;
+              db.prepare("UPDATE assignment_events SET detail = NULL WHERE assignment_id = ?").run(a.id);
+            }
+            if (toJson(a) === before) continue;
+            if (own) scrubbed += 1;
+            statements.update.run(...columns(a), a.id);
+          }
+        }
+        return { removed, scrubbed };
+      });
+      // and out of the write-ahead log, which still holds the old pages
+      if (!memory && (forgotten.removed || forgotten.scrubbed)) {
+        try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* a reader holds it: the next checkpoint does it */ }
+      }
+      return forgotten;
     },
     close() {
       db.close();

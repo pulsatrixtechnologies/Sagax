@@ -131,6 +131,42 @@ describe("runtime store", () => {
     expect(store.prune(500)).toBe(0);
   });
 
+  it("forgets a confidential thread: its settled trees go whole, a live tree keeps no words of it", () => {
+    const store = open();
+    // a settled tree the thread requested (root) with a teammate's work under it
+    const asked = assignment("asked", { status: "completed", outcome: "done", finishedAt: 100, brief: "SECRET ask",
+      origin: { kind: "person", source: "chat", ref: "secret-chat", quote: "SECRET quote" },
+      requester: { kind: "person", threadId: "secret-chat" },
+      assignee: { botId: "chief", destination: { kind: "standing_thread", threadId: "secret-chat" } } });
+    store.insert(asked, { kind: "enqueued" });
+    store.insert(child("asked1", asked, { status: "completed", outcome: "done", finishedAt: 90, brief: "SECRET brief", result: "SECRET result" }),
+      { kind: "parked", detail: "needs_input: SECRET question" });
+    store.addInbox({ id: "i-asked", ownerThreadId: "secret-chat", assignmentId: "asked1", kind: "settled", createdAt: 95 });
+    // a live tree of someone else in which the thread did settled work
+    const other = assignment("other", { status: "waiting", brief: "ordinary ask" });
+    store.insert(other, { kind: "enqueued" });
+    const done = child("done", other, { status: "completed", outcome: "done", finishedAt: 80, brief: "SECRET brief 2", result: "SECRET result 2",
+      question: "SECRET q", answer: "SECRET a", outcomeDetail: "SECRET detail", evidence: { summary: "SECRET evidence" },
+      assignee: { botId: "builder", destination: { kind: "work_thread", threadId: "secret-chat" } } });
+    store.insert(done, { kind: "parked", detail: "needs_input: SECRET q" });
+    store.insert(child("still", other, { status: "running", brief: "ordinary brief" }), { kind: "enqueued", detail: "queued" });
+    // an unrelated settled tree stays as it is
+    store.insert(assignment("unrelated", { status: "completed", outcome: "done", finishedAt: 50 }), { kind: "enqueued", detail: "queued" });
+
+    expect(store.forgetThread("secret-chat")).toEqual({ removed: 2, scrubbed: 1 });
+    expect(store.all().map(x => x.id).sort()).toEqual(["done", "other", "still", "unrelated"]);
+    expect(store.events("asked1")).toEqual([]);
+    expect(store.inbox({ threadId: "secret-chat" })).toEqual([]);
+    const scrubbed = store.get("done")!;
+    expect(scrubbed).toMatchObject({ status: "completed", brief: "", result: "" });
+    for (const key of ["question", "answer", "outcomeDetail", "evidence"] as const) expect(scrubbed[key]).toBeUndefined();
+    expect(store.events("done").map(e => e.detail)).toEqual([undefined]);
+    expect(store.get("still")?.brief).toBe("ordinary brief");
+    expect(store.events("still").map(e => e.detail)).toEqual(["queued"]);
+    expect(JSON.stringify([...store.all(), ...store.all().flatMap(a => store.events(a.id))])).not.toContain("SECRET");
+    expect(store.forgetThread("secret-chat")).toEqual({ removed: 0, scrubbed: 0 });
+  });
+
   it("refuses a row that no longer matches the record schema", () => {
     const store = open();
     store.insert(assignment("ok"), { kind: "enqueued" });
