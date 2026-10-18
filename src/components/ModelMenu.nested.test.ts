@@ -209,19 +209,20 @@ describe("the nested model menu", () => {
   });
 });
 
-// Simple mode (JC, 2026-10-14): one "All models ›" row under Auto, the
-// bot's model and the favorites; the provider submenus stay inside it.
-describe("the nested model menu in Simple (providers grouped)", () => {
-  it("shows Auto, the bot's model and one All models row instead of the providers", () => {
+// Providers grouped (Simple since JC 2026-10-14, every mode since JC
+// 2026-10-18): one "Provider ›" row under Auto, the bot's model and the
+// favorites; the provider submenus stay inside it.
+describe("the nested model menu with the providers grouped", () => {
+  it("shows Auto, the bot's model and one Provider row instead of the providers", () => {
     render(true);
     expect($$("[data-model-list] [role=menuitemradio]").map((row) => row.dataset.modelRowKey)).toEqual(["auto", "follow"]);
     expect($$("[data-model-provider]")).toEqual([]);
     const all = $("[data-model-all]")!;
-    expect(all.textContent).toBe("All models");
+    expect(all.textContent).toBe("Provider");
     expect(all.getAttribute("aria-haspopup")).toBe("menu");
   });
 
-  it("keeps the favorites above All models", () => {
+  it("keeps the favorites above Provider", () => {
     toggleModelFavorite(favoriteKey("grok", "grok-4.5"));
     render(true);
     expect($("[data-model-favorites]")).not.toBeNull();
@@ -244,9 +245,9 @@ describe("the nested model menu in Simple (providers grouped)", () => {
     expect($$("[data-model-provider]")).toEqual([]);
   });
 
-  it("opens All models with the keyboard and goes back with Escape before closing the menu", () => {
+  it("opens Provider with the keyboard and goes back with Escape before closing the menu", () => {
     render(true);
-    // the bot's model is checked, so the next row down is All models
+    // the bot's model is checked, so the next row down is Provider
     key(input(), "ArrowDown");
     expect(input().getAttribute("aria-activedescendant")).toBe($("[data-model-all]")!.id);
     key(input(), "ArrowRight");

@@ -57,6 +57,23 @@ function modelLabel(instance: InstanceInfo | undefined, model: string): string {
 /** Asked by the desktop mascot's balloon (FloatingBots.tsx): `detail.botId`'s composer chip opens its picker. */
 export const COMPOSER_MODEL_EVENT = "omb:composer-model";
 
+/** What the composer's + menu shows on its Model row (2026-10-18): the
+ * label the chip read, its tooltip, and whether the menu is open. */
+export interface ComposerModelChip {
+  label: string;
+  title: string;
+  busy: boolean;
+  ultracode: boolean;
+  open: boolean;
+}
+
+/** How the + menu's Model row opens the model menu of a `headless` picker:
+ * beside `anchor` (the row), and `onDone` once a pick or Edit… closes it. */
+export interface ComposerModelMenuControl {
+  toggle: (anchor: HTMLElement | null, onDone?: () => void) => void;
+  close: () => void;
+}
+
 /**
  * What the composer's model chip reads for a bot (its model, and its effort
  * when set), for the desktop mascot's balloon, which shows the same chip.
@@ -633,6 +650,10 @@ export function ModelPicker({
   label,
   windowOnly = false,
   onWindowClose,
+  headless = false,
+  menuControl,
+  onChip,
+  fallbackAnchor,
 }: {
   bot: Bot;
   threadId?: string;
@@ -650,6 +671,14 @@ export function ModelPicker({
    * menu opens it through ModelWindowHost). */
   windowOnly?: boolean;
   onWindowClose?: () => void;
+  /** With `inComposer`: no chip. The composer's + menu has a Model row
+   * that opens this menu through `menuControl` (JC, 2026-10-18). */
+  headless?: boolean;
+  menuControl?: { current: ComposerModelMenuControl | null };
+  /** The chip's label and state, for the + menu's Model row. */
+  onChip?: (chip: ComposerModelChip) => void;
+  /** Headless: what the menu opens above when no row asked (the mascot). */
+  fallbackAnchor?: () => HTMLElement | null;
 }) {
   const { state, dispatch, refreshInstances, refreshModels: refreshInstanceModels } = useStore();
   // The model window (a modal like Settings) and the composer's model menu.
@@ -659,7 +688,10 @@ export function ModelPicker({
   const menuMotion = useMenuMotion(menu && !bot.busy);
   const [railId, setRailId] = useState<string | null>(null);
   const [autoInfo, setAutoInfo] = useState(false);
-  const [menuAt, setMenuAt] = useState<{ right: number; bottom: number } | null>(null);
+  const [menuAt, setMenuAt] = useState<{ left?: number; right?: number; bottom: number } | null>(null);
+  // headless: the + menu's row the menu opened beside, and what closes it
+  const anchorRef = useRef<HTMLElement | null>(null);
+  const [menuDoneCall, setMenuDoneCall] = useState<{ call: () => void } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // A provider row's action under way (its instance id), and the key whose
   // removal waits for a yes.
@@ -743,7 +775,12 @@ export function ModelPicker({
   };
   const closeMenu = (refocus = false) => {
     setMenu(false);
-    if (refocus) triggerRef.current?.focus();
+    if (refocus) (anchorRef.current?.isConnected ? anchorRef.current : triggerRef.current)?.focus();
+  };
+  /** A pick or Edit…: the + menu around the row closes too. */
+  const menuDone = () => {
+    setMenuDoneCall(null);
+    menuDoneCall?.call();
   };
 
   const refreshLocalInstances = useCallback(() => {
@@ -844,10 +881,11 @@ export function ModelPicker({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // The window takes focus when it opens and gives it back to the chip.
+  // The window takes focus when it opens and gives it back to the chip (the
+  // composer's + when headless: its menu closed when the window opened).
   useEffect(() => {
     if (!open) return;
-    const trigger = triggerRef.current;
+    const trigger = triggerRef.current ?? (headless ? fallbackAnchor?.() as HTMLButtonElement | null | undefined : null);
     const dialog = dialogRef.current;
     const start = dialog?.querySelector<HTMLElement>('[data-model-provider-column] [aria-pressed="true"]') ?? dialog;
     start?.focus();
@@ -862,7 +900,7 @@ export function ModelPicker({
     if (!menu) return;
     const outside = (event: MouseEvent) => {
       const target = event.target instanceof Node ? event.target : null;
-      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
       setMenu(false);
     };
     const resize = () => setMenu(false);
@@ -944,6 +982,7 @@ export function ModelPicker({
   const closeAll = () => {
     setMenu(false);
     closeWindow();
+    menuDone();
   };
 
   /** Back onto the bot's model: the server keeps no model of the thread's
@@ -1245,10 +1284,11 @@ export function ModelPicker({
     setChangedBotModel(false);
     setMenu(false);
     setOpen(true);
+    menuDone();
   };
   const toggleWindow = () => (open ? closeWindow() : openWindow());
 
-  const toggleMenu = () => {
+  const toggleMenu = (anchor: HTMLElement | null = null, onDone?: () => void) => {
     if (bot.busy) return;
     if (menu) {
       setMenu(false);
@@ -1257,13 +1297,26 @@ export function ModelPicker({
     rememberActiveAccount();
     setRailId(null);
     setChangedBotModel(false);
-    const rect = triggerRef.current?.getBoundingClientRect();
+    anchorRef.current = anchor;
+    setMenuDoneCall(onDone ? { call: onDone } : null);
+    const box = anchor ? (anchor.closest<HTMLElement>('[role="menu"]') ?? anchor) : null;
+    const rect = (anchor ?? (headless ? fallbackAnchor?.() : triggerRef.current))?.getBoundingClientRect();
     if (rect && typeof window.innerWidth === "number") {
-      const right = Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - MENU_WIDTH - 8));
-      setMenuAt({ right, bottom: window.innerHeight - rect.top + 6 });
+      if (anchor && box) {
+        // a submenu of the + menu: beside it, its bottom on the row's
+        const left = Math.max(8, Math.min(box.getBoundingClientRect().right + 6, window.innerWidth - MENU_WIDTH - 8));
+        setMenuAt({ left, bottom: Math.max(8, window.innerHeight - rect.bottom - 6) });
+      } else if (headless) {
+        // the mascot asked: above the composer's +, on its start edge
+        setMenuAt({ left: Math.max(8, Math.min(rect.left, window.innerWidth - MENU_WIDTH - 8)), bottom: window.innerHeight - rect.top + 6 });
+      } else {
+        const right = Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - MENU_WIDTH - 8));
+        setMenuAt({ right, bottom: window.innerHeight - rect.top + 6 });
+      }
     } else setMenuAt(null);
     setMenu(true);
   };
+  if (menuControl) menuControl.current = { toggle: (anchor, onDone) => toggleMenu(anchor, onDone), close: () => setMenu(false) };
 
   // the desktop mascot's model chip: the app comes forward and this chip's menu opens
   const toggleRef = useRef(toggleMenu);
@@ -1271,18 +1324,28 @@ export function ModelPicker({
   useEffect(() => {
     if (!inComposer) return;
     const onModel = (event: Event) => {
-      if ((event as CustomEvent<{ botId?: string }>).detail?.botId === bot.id) toggleRef.current();
+      if ((event as CustomEvent<{ botId?: string }>).detail?.botId === bot.id) toggleRef.current(null);
     };
     window.addEventListener(COMPOSER_MODEL_EVENT, onModel);
     return () => window.removeEventListener(COMPOSER_MODEL_EVENT, onModel);
   }, [inComposer, bot.id]);
 
-  const trigger = windowOnly ? null : inComposer ? (
+  const composerTitle = bot.busy ? `${composerLabel}${followLine}\n${t(threadId ? "model.threadBusy" : "model.busy")}` : `${composerLabel}${followLine}`;
+  const ultracodeChip = isUltracodeEffort(selection.effort);
+  const menuShownOpen = menu && !bot.busy;
+  useEffect(() => {
+    onChip?.({ label: composerLabel, title: composerTitle, busy: Boolean(bot.busy), ultracode: ultracodeChip, open: menuShownOpen });
+  }, [onChip, composerLabel, composerTitle, bot.busy, ultracodeChip, menuShownOpen]);
+
+  const trigger = windowOnly ? null : inComposer && headless ? (
+    // no chip: the + menu's Model row reads it; the Retro 98 status bar reads this
+    <span hidden data-composer-model={composerLabel} />
+  ) : inComposer ? (
     <button data-tour="model"
       ref={triggerRef}
       type="button"
       disabled={Boolean(bot.busy)}
-      onClick={toggleMenu}
+      onClick={() => toggleMenu()}
       aria-expanded={menu && !bot.busy}
       aria-haspopup="listbox"
       title={bot.busy ? `${composerLabel}${followLine}\n${t(threadId ? "model.threadBusy" : "model.busy")}` : `${composerLabel}${followLine}`}
@@ -1618,17 +1681,21 @@ export function ModelPicker({
   );
 
   // The composer's menu (2026-10-12, JC: like Cursor's): search, Auto, every
-  // engine's models, the effort, and Edit… for the whole window. In Simple
-  // (JC, 2026-10-14) the providers sit behind one "All models ›" row under
-  // Auto, the bot's model and the favorites; the effort stays Advanced.
+  // engine's models, the effort, and Edit… for the whole window. The
+  // providers sit behind one "Provider ›" row under Auto, the bot's model
+  // and the favorites (Simple since 2026-10-14, every mode since JC
+  // 2026-10-18); the search still lists every provider's models flat. The
+  // effort stays Advanced.
   const menuPanel = (
     <div
       ref={menuRef}
       data-model-menu
       role="dialog"
       aria-label={t("model.menu")}
-      style={menuAt ? { right: menuAt.right, bottom: menuAt.bottom, width: MENU_WIDTH } : { width: MENU_WIDTH }}
+      style={menuAt ? { left: menuAt.left, right: menuAt.right, bottom: menuAt.bottom, width: MENU_WIDTH } : { width: MENU_WIDTH }}
       onKeyDown={(event) => {
+        // a submenu of the + menu: its keys stay here (the + menu moves its own focus)
+        if (headless) event.stopPropagation();
         if (event.key !== "Escape" || event.defaultPrevented) return;
         event.preventDefault();
         closeMenu(true);
@@ -1640,7 +1707,7 @@ export function ModelPicker({
         menuMotion.className,
       )}
     >
-      <ModelSearchList variant="popover" autoFocus submenus groupProviders={!advanced} sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)}
+      <ModelSearchList variant="popover" autoFocus submenus groupProviders sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)}
         favorites={{ keys: favoriteKeys, onToggle: (row) => toggleModelFavorite(row.key) }} />
       {advanced && settingsPanel}
       <div className="border-t border-popover-hairline px-1.5 pt-1">

@@ -8,9 +8,8 @@ import { StrictMode, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AudioLines, ChevronDown, Globe, Hand, Mic, Paperclip } from "lucide-react";
 import { ApprovalModeSelector } from "../components/ApprovalModeSelector";
-import { ComposerEmojiButton } from "../components/ComposerEmojiButton";
 import { MentionTextarea } from "../components/MentionTextarea";
-import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark } from "../components/ComposerControls";
+import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerModelRow, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark } from "../components/ComposerControls";
 import { cn } from "../lib/cn";
 import { setLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
@@ -67,20 +66,9 @@ function RealField({ value }: { value: string }) {
   );
 }
 
-/** ModelPicker's composer trigger, same classes. */
-function RealModelChip() {
-  return (
-    <button type="button" data-gallery-model="" className="flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink">
-      <span className="truncate">claude-sonnet-5</span>
-      <ChevronDown size={14} className="shrink-0" />
-    </button>
-  );
-}
-
 function After() {
   const tone = botCtaColors(color);
   const [seconds] = useState(4);
-  const emojiRef = useRef<HTMLTextAreaElement>(null);
   const dictating = state === "dictation";
   // CallButton's markup: a relative wrapper, the round button, the dot
   const voice = (
@@ -102,14 +90,16 @@ function After() {
               { id: "teach", label: t("composer.plus.teach"), icon: <RecordMark />, onSelect: () => {} },
             ]}
             rows={(close) => (
-              <ApprovalModeSelector variant="row" onDone={close} approvalMode="ask" providerName="Claude" driverKind="claude" onSelect={() => {}} />
+              <>
+                {/* the model moved here from the bar's end (2026-10-18) */}
+                <ComposerModelRow chip={{ label: "claude-sonnet-5", title: "claude-sonnet-5", busy: false, ultracode: false, open: false }} onOpen={() => {}} />
+                <ApprovalModeSelector variant="row" onDone={close} approvalMode="ask" providerName="Claude" driverKind="claude" onSelect={() => {}} />
+              </>
             )}
           />
         </div>
         <RealField value={typedText} />
         <div data-composer-actions className="composer-band flex items-center gap-1 @max-[30rem]/composer:ml-auto">
-          <RealModelChip />
-          {!dictating && <ComposerEmojiButton inputRef={emojiRef} text={typedText} onInsert={() => {}} />}
           <ComposerMicButton onClick={() => {}} hidden={dictating} shortcut="⌘D" />
           {dictating ? (
             <DictationChip seconds={seconds} levels={[0.25, 0.6, 0.95, 0.5, 0.35]} processing={false} onStop={() => {}} onCancel={() => {}} onSend={() => {}} sendTone={tone} />

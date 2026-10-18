@@ -286,12 +286,17 @@ describe("control-omb ui drives the real renderer", () => {
     const models = await runControlOmb(["models", "--url", info.url]) as any;
     const options = models.instances.find((instance: any) => instance.instanceId === originalBot.modelSelection.instanceId).models.options;
     const nextModel = options.find((option: any) => option.id !== originalModel);
-    await ui("eval", info.ui, "--js", "document.querySelector('[data-tour=\"model\"][aria-haspopup=\"listbox\"]').click(); true");
+    // The model menu sits in the composer's + menu (2026-10-18): + then Model.
+    await ui("eval", info.ui, "--js", "document.querySelector('[data-composer-plus]').click(); true");
+    await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(Boolean(document.querySelector('[data-composer-plus-row=\"model\"]')))")).result, { timeout: 10_000 }).toBe("true");
+    await ui("eval", info.ui, "--js", "document.querySelector('[data-composer-plus-row=\"model\"]').click(); true");
     await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(document.querySelector('[aria-label=\"Apply model changes to\"]') === null && Boolean(document.querySelector('[data-model-menu]')))")).result, { timeout: 10_000 }).toBe("true");
     const scopeShot = join(evidenceDir, "model-dropdown.png");
     mkdirSync(evidenceDir, { recursive: true });
     await ui("screenshot", info.ui, "--out", scopeShot);
-    // Models sit in a submenu per provider (#477): open the bot's provider first.
+    // Models sit in a submenu per provider (#477), behind Provider (2026-10-18): open the bot's provider first.
+    await ui("eval", info.ui, "--js", "document.querySelector('[data-model-menu] [data-model-all]').click(); true");
+    await expect.poll(async () => (await ui("eval", info.ui, "--js", `String(Boolean(document.querySelector('[data-model-menu] [data-model-provider="${originalBot.modelSelection.instanceId}"]')))`)).result, { timeout: 10_000 }).toBe("true");
     await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-provider="${originalBot.modelSelection.instanceId}"]').click(); true`);
     await expect.poll(async () => (await ui("eval", info.ui, "--js", `Boolean(document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]'))`)).result, { timeout: 10_000 }).toBe(true);
     await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]').click(); true`);

@@ -335,10 +335,11 @@ export function RetroStatusBar() {
   const usage = bot?.tasks?.find((task) => task.threadId === bot.threadId)?.usage;
   const cost = usage ? usageChip(usage) : "";
   const [model, setModel] = useState("");
-  // The composer's model button already knows the friendly name; read it
+  // The composer's model picker already knows the friendly name (a hidden
+  // data-composer-model since the chip moved into the + menu); read it
   // rather than re-deriving the engine catalog here.
   useEffect(() => {
-    const read = () => setModel(document.querySelector('[data-app-shell] main [data-tour="model"]')?.textContent?.trim() ?? "");
+    const read = () => setModel(document.querySelector('[data-app-shell] main [data-composer-model]')?.getAttribute("data-composer-model")?.trim() ?? "");
     read();
     const tick = setInterval(read, 1500);
     return () => clearInterval(tick);

@@ -1,6 +1,7 @@
-// The full emoji catalogue as a grid (src/lib/emoji-catalog.ts), shared by
-// the reaction picker (Reactions.tsx) and the composer's emoji button
-// (ComposerEmojiButton.tsx). With a query: the matches, en or fr words.
+// The full emoji catalogue as a grid (src/lib/emoji-catalog.ts), for the
+// reaction picker (Reactions.tsx). The composer has no emoji button since
+// 2026-10-18 (the system's picker, Ctrl+Cmd+Space, inserts one). With a
+// query: the matches, en or fr words.
 // Without: one category at a time, chosen by the tabs on top, so a picker
 // never draws two thousand buttons at once. While the data loads (the first
 // opening only), the small built-in set answers the search.

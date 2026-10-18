@@ -43,7 +43,7 @@ import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { effectivePlace } from "@/lib/place";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
-import { ModelPicker } from "./ModelPicker";
+import { ModelPicker, type ComposerModelChip, type ComposerModelMenuControl } from "./ModelPicker";
 import { CallButton } from "./CallView";
 import { GroupCallButton } from "./GroupCallView";
 import { NudgeButton } from "./NudgeButton";
@@ -115,8 +115,7 @@ import {
 import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerNoticeBand, WorkplaceNotice } from "./WorkplaceNotice";
-import { ComposerEmojiButton } from "./ComposerEmojiButton";
-import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, VOICE_NOTE_ICON, VoiceNoteChip, type PlusMenuItem } from "./ComposerControls";
+import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerModelRow, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, VOICE_NOTE_ICON, VoiceNoteChip, type PlusMenuItem } from "./ComposerControls";
 import { useComposerDictation } from "./useComposerDictation";
 import { useVoiceNoteRecorder } from "./useVoiceNoteRecorder";
 import { dictationEngine, joinDictated } from "@/lib/composer-dictation";
@@ -699,6 +698,11 @@ export function Composer({
     return () => window.clearTimeout(timeout);
   }, [busy, pendingCount, steering]);
   const fileInput = useRef<HTMLInputElement>(null);
+  // The model menu lives in the + menu (JC, 2026-10-18): a headless picker
+  // stays mounted here and its Model row opens it beside the + menu.
+  const modelMenu = useRef<ComposerModelMenuControl | null>(null);
+  const [modelChip, setModelChip] = useState<ComposerModelChip | null>(null);
+  const composerRowRef = useRef<HTMLDivElement>(null);
   // the desktop mascot's clip (its balloon's composer row): the app comes forward and this composer picks files
   const attachBotId = bot?.id;
   useEffect(() => {
@@ -1154,7 +1158,15 @@ export function Composer({
   ];
   // No Workspace row (JC 2026-10-18): the bot always works on Auto and
   // picks where each task runs, so nobody chooses a place here.
-  const plusRows = (close: () => void) => approvalControlRow(close) || null;
+  const showModelRow = Boolean(bot && !group && !remoteClient && modelChip);
+  const plusRows = (close: () => void) => (showModelRow || approvalControlRow(close)) ? (
+    <>
+      {showModelRow && modelChip && (
+        <ComposerModelRow chip={modelChip} onOpen={(row) => modelMenu.current?.toggle(row, close)} />
+      )}
+      {approvalControlRow(close)}
+    </>
+  ) : null;
 
   return (
     <div className="pointer-events-none relative overflow-x-clip px-[max(16px,calc((100%-960px)/2))] pb-4">
@@ -1327,7 +1339,7 @@ export function Composer({
           )}
         >
         {replyTo && <ComposerReplyStrip message={replyTo} fallbackName={bot?.name} onClear={onClearReply} />}
-        <div data-composer-row className="flex items-end gap-1 @max-[30rem]/composer:flex-wrap">
+        <div ref={composerRowRef} data-composer-row className="flex items-end gap-1 @max-[30rem]/composer:flex-wrap">
           <input
             ref={fileInput}
             type="file"
@@ -1342,9 +1354,10 @@ export function Composer({
           {!locked && (
             <div className="composer-band flex flex-wrap items-center gap-2">
               {/* One + (Grok Bot's): attach and teach a task, the modes
-                  (goal, setup), then this conversation's approval level and
-                  workspace as rows that open beside it (JC, 2026-10-15/16). */}
-              <ComposerPlusMenu items={plusItems} rows={plusRows} />
+                  (goal, setup), then this conversation's model, approval
+                  level and workspace as rows that open beside it (JC,
+                  2026-10-15/16; the model since 2026-10-18). */}
+              <ComposerPlusMenu items={plusItems} rows={plusRows} onOpenChange={(open) => { if (!open) modelMenu.current?.close(); }} />
               {teachChooser && bot && <TeachChooserDialog botName={bot.name} onShow={showInBrowser} onDescribe={() => startDraftWith("/learn ")} onClose={() => setTeachChooser(false)} />}
               {/* /goal or the + menu's Goal mode starts it; the chip appears
                   only while it is on, says so, and turns it off (JC,
@@ -1499,7 +1512,10 @@ export function Composer({
           />
           <div data-composer-actions className="composer-band flex items-center gap-1 @max-[30rem]/composer:ml-auto">
           {bot && !group && !remoteClient && (
-            <ModelPicker inComposer key={bot.threadId} bot={bot} threadId={threadId} />
+            // no chip (JC, 2026-10-18): the + menu's Model row opens its menu
+            <ModelPicker inComposer headless key={bot.threadId} bot={bot} threadId={threadId}
+              menuControl={modelMenu} onChip={setModelChip}
+              fallbackAnchor={() => composerRowRef.current?.querySelector<HTMLElement>("[data-composer-plus]") ?? null} />
           )}
           {/* Stop stays a stop. Stop-then-steer is named beside the queued
               message above, where its effect is visible before activation. */}
@@ -1512,9 +1528,6 @@ export function Composer({
           >
             <Square size={14} className="fill-current" />
           </button>
-        )}
-        {!locked && !dictating && (
-          <ComposerEmojiButton inputRef={inputRef} text={text} onInsert={(next, at) => { editText(next); setCaret(at); }} />
         )}
         {!locked && (
           <ComposerMicButton

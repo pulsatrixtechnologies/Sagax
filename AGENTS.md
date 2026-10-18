@@ -1591,10 +1591,13 @@ the same composer row in Simple and Advanced mode"),
 `src/components/ApprovalModeSelector.simple.test.ts` and
 `src/components/ModelPicker.simple.test.ts`:
 
-- One row: paperclip, the approval icon and its full menu (a warning sign for
-  Full access, the command allowlist for an owner or admin), the message
-  field (no "where the bot works" chip since 2026-10-18), the model chip (effort included), voice
-  and send. No approval chip or cards in Simple.
+- One row: the + menu, the message field, voice and send. The + menu holds
+  attach, teach, voice note, the modes, then this conversation's rows: Model
+  (the model in use, effort included, at the row's end), the approval level
+  and its full menu (a warning sign for Full access, the command allowlist
+  for an owner or admin). No "where the bot works" chip, no model chip and
+  no emoji button in the bar (JC, 2026-10-18); no approval chip or cards in
+  Simple.
 - The slash menu lists the same commands in both modes.
 - Guards stay where they are, whatever the mode: the Full access and local
   Auto warnings, the packaged-desktop rule for Full and Custom, the
@@ -1608,15 +1611,23 @@ the same composer row in Simple and Advanced mode"),
 
 Two surfaces, one list (JC, 2026-10-12, after Cursor's composer menu):
 
-- The composer's model chip (`src/components/ModelPicker.tsx`, `inComposer`)
-  opens a compact menu above it, never the window: a search field on top
-  (filters as one types, accents folded; arrow keys and Enter, Escape
-  closes and gives the focus back to the chip), Auto first with its check,
-  the bot's model when the thread can follow it ("<bot>'s model", one row),
-  then the models of every engine the bot can use grouped by engine (its own
-  first, then the others the server allows; an engine to install, blocked by
-  a policy, or on an organization server paid by nothing yet unless it is
-  the bot's, stays in the window). Each row is the model's name, then muted
+- The composer's model menu lives in its + menu (JC, 2026-10-18): the
+  row "Model › <model in use>" (`ComposerModelRow` in `ComposerControls.tsx`)
+  opens it beside the + menu. The picker stays mounted in the composer
+  without a chip (`ModelPicker` `inComposer headless`, driven through
+  `menuControl`, reporting its label through `onChip`; a hidden
+  `data-composer-model` carries the label for the Retro 98 status bar). A
+  pick or Edit… closes both menus; Escape closes the model menu and gives
+  the focus back to the row. The mascot's model chip opens it above the +.
+  It is a compact menu, never the window: a search field on top
+  (filters as one types, accents folded; arrow keys and Enter), Auto first
+  with its check, the bot's model when the thread can follow it ("<bot>'s
+  model", one row), the favorites, then one "Provider ›" row ("Fournisseur")
+  whose list of engines replaces the root (Back returns), each engine
+  opening its models beside it; a search lists every engine's matches flat
+  (its own first, then the others the server allows; an engine to install,
+  blocked by a policy, or on an organization server paid by nothing yet
+  unless it is the bot's, stays in the window). Each row is the model's name, then muted
   what a pick runs it with (the effort kept on the same engine, the
   variant, Local). A pick applies at once and closes. Below: the effort as
   one compact line (Advanced), then "Edit…" ("Modifier…"), which opens the
@@ -4362,9 +4373,11 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
   page's beat (`POST /api/routines/away/beat`, `src/lib/routine-away-beat.ts`).
   No signal is "unknown" and the routine runs.
 - Emoji: the full catalogue (`src/lib/emoji-catalog.ts`, emojibase-data,
-  English and French words, lazy chunks) in reactions and the composer
-  (`EmojiCatalogGrid`, `ComposerEmojiButton`); stored in the bare form
-  (`canonicalEmoji`) so both pickers make one chip.
+  English and French words, lazy chunks) in reactions (`EmojiCatalogGrid`);
+  stored in the bare form (`canonicalEmoji`) so a reaction makes one chip
+  whatever form it was typed in. The composer has no emoji button (JC,
+  2026-10-18): the system's picker (Ctrl+Cmd+Space) inserts one in the
+  field.
 
 ## Published pages (2026-10-16, Grok Bot canvases)
 

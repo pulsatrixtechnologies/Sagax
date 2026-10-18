@@ -14,7 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot, InstanceInfo } from "@/state/store";
 import type { ModelPicker } from "./ModelPicker";
 
-const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), instances: [] as unknown[], dictation: false }));
+const fixture = vi.hoisted(() => ({
+  dispatch: vi.fn(), instances: [] as unknown[], dictation: false,
+  // the headless model picker: what it was given, and its menu's control
+  picker: null as null | Record<string, unknown>,
+  toggleModel: vi.fn(), closeModel: vi.fn(),
+}));
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
   return { ...original, api: vi.fn(async () => ({})), useStore: () => ({
@@ -28,7 +33,18 @@ vi.mock("./DesktopCapabilities", async (importOriginal) => ({
 }));
 vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: vi.fn() }));
-vi.mock("./ModelPicker", () => ({ ModelPicker: (_props: ComponentProps<typeof ModelPicker>) => createElement("span") }));
+vi.mock("./ModelPicker", async () => {
+  const { useEffect } = await import("react");
+  return { ModelPicker: (props: ComponentProps<typeof ModelPicker>) => {
+    fixture.picker = props as unknown as Record<string, unknown>;
+    if (props.menuControl) props.menuControl.current = { toggle: fixture.toggleModel, close: fixture.closeModel };
+    const { onChip } = props;
+    useEffect(() => {
+      onChip?.({ label: "Opus 5.5 High", title: "Claude · Opus 5.5", busy: false, ultracode: false, open: false });
+    }, [onChip]);
+    return createElement("span", { "data-model-picker-mock": "" });
+  } };
+});
 vi.mock("./settings/ProviderKeys", async (importOriginal) => ({
   ...await importOriginal<typeof import("./settings/ProviderKeys")>(),
   openProviderKeyDialog: vi.fn(),
@@ -66,6 +82,9 @@ function type(value: string) {
 beforeEach(() => {
   setLocale("en");
   fixture.dispatch.mockClear();
+  fixture.toggleModel.mockClear();
+  fixture.closeModel.mockClear();
+  fixture.picker = null;
   fixture.instances = [];
   fixture.dictation = false;
   forgetVoiceModeStatus();
@@ -124,6 +143,48 @@ describe("composer controls (Grok Bot's prompt bar)", () => {
     click(menu.querySelector('[data-composer-plus-item="teach"]'));
     expect(textarea().value).toBe("/learn ");
     expect($("[data-composer-plus]")!.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  // JC, 2026-10-18: the model moved into the + menu; no chip, no emoji button
+  it("has no model chip and no emoji button in the bar; the + menu's Model row names the model and opens its menu", () => {
+    render(createElement(Composer, { bot: bot("teal") }));
+    expect(fixture.picker?.headless).toBe(true);
+    expect(fixture.picker?.inComposer).toBe(true);
+    expect($('[data-tour="model"]')).toBeNull();
+    expect($('[aria-label="Insert an emoji"]')).toBeNull();
+    expect($("[data-composer-emoji]")).toBeNull();
+    click($("[data-composer-plus]"));
+    const menu = $("[data-composer-plus-menu]")!;
+    const row = menu.querySelector<HTMLElement>('[data-composer-plus-row="model"]')!;
+    expect(row.querySelector(".truncate")?.textContent).toBe("Model");
+    expect(row.querySelector("[data-composer-model-value]")?.textContent).toBe("Opus 5.5 High");
+    expect(row.getAttribute("title")).toBe("Claude · Opus 5.5");
+    // the model row comes first among the conversation's rows, before the approval level
+    const rows = [...menu.querySelectorAll<HTMLElement>("[data-composer-plus-row]")].map((each) => each.dataset.composerPlusRow);
+    expect(rows[0]).toBe("model");
+    click(row);
+    expect(fixture.toggleModel).toHaveBeenCalledWith(row, expect.any(Function));
+    // a click inside the model menu (portalled to <body>) keeps the + menu open
+    const modelMenu = document.createElement("div");
+    modelMenu.setAttribute("data-model-menu", "");
+    const inside = document.createElement("button");
+    modelMenu.append(inside);
+    document.body.append(modelMenu);
+    flushSync(() => inside.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    expect($("[data-composer-plus]")!.getAttribute("aria-expanded")).toBe("true");
+    // an Escape the model menu handled does not close the + menu
+    flushSync(() => {
+      const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+      escape.preventDefault();
+      document.dispatchEvent(escape);
+    });
+    expect($("[data-composer-plus]")!.getAttribute("aria-expanded")).toBe("true");
+    // a pick calls back: the + menu closes, and the model menu with it
+    const done = fixture.toggleModel.mock.calls[0]![1] as () => void;
+    flushSync(() => done());
+    expect($("[data-composer-plus]")!.getAttribute("aria-expanded")).toBe("false");
+    expect(fixture.closeModel).toHaveBeenCalled();
+    modelMenu.remove();
   });
 
   it("leaves Teach a task out when the bot cannot draft a skill", () => {

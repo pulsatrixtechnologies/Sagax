@@ -1579,7 +1579,7 @@
   "onboarding.tour.finish": "完成",
   "onboarding.tour.next": "下一步",
   "onboarding.tour.composer": "这里是你与机器人对话的地方。输入任何内容并按 {key}。每一段对话都是在你机器上实际运作的代理。",
-  "onboarding.tour.model": "每个机器人都有自己的大脑。这个芯片显示其模型；点一下即可切换，即使在对话途中也一样。",
+  "onboarding.tour.model": "每个机器人都有自己的大脑。打开 + 菜单，再点“模型”即可切换，即使在对话途中也一样。",
   "onboarding.tour.computer": "机器人有手。这个按钮会打开“电脑”面板，让你观看机器人工作。我们来打开它。",
   "onboarding.tour.computer-browser": "机器人的电脑。在这里切换它的桌面与专属浏览器；“浏览器”是它阅读网页、替你填写表单的地方。",
   "onboarding.tour.apps-panel": "应用程序市集。登录一次即可连接应用程序；每个机器人都有自己的“设置 → 访问权 → 已连接的应用程序”访问权设置。我们会关掉这个，继续往下。",

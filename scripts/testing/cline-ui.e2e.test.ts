@@ -29,7 +29,12 @@ const enabled = process.env.SAGAX_UI_E2E === "1";
     for (const advanced of [false, true]) {
       await evaluate(`localStorage.setItem('omb-advanced-mode', '${advanced ? "1" : "0"}'); location.reload(); true`);
       await expect.poll(() => evaluate("document.querySelector('textarea[aria-label=\"Message Cline specialist\"]') !== null"), { timeout: 15_000 }).toBe(true);
-      await evaluate("document.querySelector('button[data-tour=\"model\"]').click(); true");
+      // the model window: + menu, Model, then Edit… (2026-10-18)
+      await evaluate("document.querySelector('[data-composer-plus]').click(); true");
+      await expect.poll(() => evaluate("document.querySelector('[data-composer-plus-row=\"model\"]') !== null")).toBe(true);
+      await evaluate("document.querySelector('[data-composer-plus-row=\"model\"]').click(); true");
+      await expect.poll(() => evaluate("document.querySelector('[data-model-edit]') !== null")).toBe(true);
+      await evaluate("document.querySelector('[data-model-edit]').click(); true");
       await expect.poll(() => evaluate("document.querySelector('[data-model-picker-content]') !== null")).toBe(true);
       const provider = `[...document.querySelectorAll('[data-model-picker-content] button')].find(button => button.getAttribute('aria-label') === ${JSON.stringify(clineName)} || button.textContent.trim().endsWith(${JSON.stringify(clineName)}))`;
       await expect.poll(() => evaluate(`${provider} !== undefined`), { timeout: 15_000, message: `Cline provider in ${advanced ? "Advanced" : "Simple"} picker` }).toBe(true);

@@ -144,17 +144,18 @@ export function modelMenuRootEntries(root: ModelMenuRoot): Array<{ key: string; 
   ];
 }
 
-// Simple mode (JC, 2026-10-14): the providers sit behind one "All models ›"
-// row under Auto, the bot's model and the favorites. Opening it lists the
-// providers in place of the root, each still opening its own submenu.
+// The providers sit behind one "Provider ›" row (Simple since JC
+// 2026-10-14, every mode since JC 2026-10-18) under Auto, the bot's model
+// and the favorites. Opening it lists the providers in place of the root,
+// each still opening its own submenu.
 
-/** The "All models" row's key in the root. */
+/** The "Provider" row's key in the root (named "all models" first). */
 export const ALL_MODELS_KEY = "all-models";
 
 export type ModelMenuEntry = { key: string; current: boolean; row?: ModelMenuRow; provider?: ModelMenuProvider; all?: true };
 
 /** The root's entries with the providers grouped: the root rows then one
- * "All models" entry (when there is any provider), or, once it is open,
+ * "Provider" entry (when there is any provider), or, once it is open,
  * the providers alone. */
 export function groupedModelMenuEntries(root: ModelMenuRoot, allOpen: boolean): ModelMenuEntry[] {
   const entries: ModelMenuEntry[] = modelMenuRootEntries(root);

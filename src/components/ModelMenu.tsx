@@ -15,10 +15,10 @@
 // lists every provider's matches flat, as before; clearing the search
 // brings the submenus back. Every model row carries a star.
 //
-// Simple mode (`groupProviders`, JC 2026-10-14): one "All models ›" row
-// under Auto, the bot's model and the favorites. It lists the providers in
-// place of the root, with a Back row; each provider opens its submenu as
-// above.
+// `groupProviders` (Simple since JC 2026-10-14, the composer's menu in
+// every mode since JC 2026-10-18): one "Provider ›" row under Auto, the
+// bot's model and the favorites. It lists the providers in place of the
+// root, with a Back row; each provider opens its submenu as above.
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { TriangleAlert, Check, ChevronLeft, ChevronRight, Search, Star } from "lucide-react";
 
@@ -119,7 +119,7 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
   favorites?: ModelMenuFavorites;
   /** A short root with one submenu per provider while the search is empty. */
   submenus?: boolean;
-  /** With `submenus`: the providers behind one "All models ›" row (Simple). */
+  /** With `submenus`: the providers behind one "Provider ›" row. */
   groupProviders?: boolean;
 }) {
   const style = STYLE[variant];
@@ -189,7 +189,7 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
     clearTimer();
     timer.current = setTimeout(fn, HOVER_MS);
   };
-  // "All models ›" (Simple): the providers in place of the root, and back
+  // "Provider ›": the providers in place of the root, and back
   const openAll = () => {
     clearTimer();
     setOpenSub(null);
@@ -316,11 +316,11 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
         <div ref={listRef} id={listboxId} role="menu" aria-label={label ?? t("model.models")} data-model-list className={style.list}>
           {showingAll && (
             <button type="button" data-model-all-back onMouseDown={(event) => event.preventDefault()} onClick={closeAll}
-              aria-label={t("model.settings.back", { title: t("model.allModels") })}
+              aria-label={t("model.settings.back", { title: t("model.providerRow") })}
               className="mb-1 flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left text-[12.5px] font-medium text-popover-ink-secondary outline-none hover:bg-popover-hover hover:text-popover-ink focus-visible:ring-2 focus-visible:ring-focus">
               <ChevronLeft size={14} aria-hidden="true" />
               <span>{t("model.back")}</span>
-              <span aria-hidden="true" className="truncate font-normal">· {t("model.allModels")}</span>
+              <span aria-hidden="true" className="truncate font-normal">· {t("model.providerRow")}</span>
             </button>
           )}
           {!showingAll && root.top.length + (root.current ? 1 : 0) > 0 && (
@@ -403,7 +403,7 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
   );
 }
 
-/** Simple's "All models ›": the providers, listed in place of the root. */
+/** "Provider ›": the providers, listed in place of the root. */
 function AllModelsRow({ id, style, active, current, onHover, onOpen }: {
   id: string;
   style: Style;
@@ -430,7 +430,7 @@ function AllModelsRow({ id, style, active, current, onHover, onOpen }: {
         active && style.active,
       )}
     >
-      <span className="truncate">{t("model.allModels")}</span>
+      <span className="truncate">{t("model.providerRow")}</span>
       <span className="flex shrink-0 items-center gap-1">
         {current && <span data-model-provider-current aria-hidden="true" className={cn("size-1.5 rounded-full bg-current", style.check)} />}
         <ChevronRight size={14} aria-hidden="true" className={style.detail} />

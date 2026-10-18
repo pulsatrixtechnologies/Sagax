@@ -635,7 +635,7 @@
   "onboarding.tour.finish": "完成",
   "onboarding.tour.next": "下一步",
   "onboarding.tour.composer": "這裡是你與機器人對話的地方。輸入任何內容並按 {key}。每一段對話都是在你機器上實際運作的機器人。",
-  "onboarding.tour.model": "每個機器人都有自己的大腦。這個晶片顯示其模型；點一下即可切換，即使在對話途中也一樣。",
+  "onboarding.tour.model": "每個機器人都有自己的大腦。打開 + 選單，再點「模型」即可切換，即使在對話途中也一樣。",
   "onboarding.tour.computer": "機器人有手。這個按鈕會開啟「電腦」面板，讓你觀看機器人工作。我們來打開它。",
   "onboarding.tour.apps-panel": "應用程式市集。登入一次即可連線應用程式；每個機器人都有自己的「設定 → 存取權 → 已連線的應用程式」存取權設定。我們會關掉這個，繼續往下。",
   "onboarding.tour.automations": "自動化。依排程執行，或被 webhook 呼叫時啟動的機器人。我們來打開它。",

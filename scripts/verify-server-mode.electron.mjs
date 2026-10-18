@@ -252,10 +252,17 @@ app.whenReady().then(async () => {
     check(`the floating window draws the ${look.character}${look.shape ? ` (${look.shape})` : ""}`, Boolean(seen) && drawn);
   }
 
-  // 9. The composer's model chip opens the model picker, a modal, on the
-  // server: the person's minimal engine card (what pays, Connect or
-  // Disconnect, no payer chain), no local model from the server.
-  await until("the composer model chip", async () => win.webContents.executeJavaScript(`Boolean(document.querySelector('[data-tour=model]'))`), 15_000).catch(() => null);
+  // 9. The composer's + menu, Model, then Edit… opens the model picker, a
+  // modal, on the server: the person's minimal engine card (what pays,
+  // Connect or Disconnect, no payer chain), no local model from the server.
+  await until("the composer + menu", async () => win.webContents.executeJavaScript(`Boolean(document.querySelector('[data-composer-plus]'))`), 15_000).catch(() => null);
+  const openModelWindow = async () => {
+    await win.webContents.executeJavaScript(`document.querySelector('[data-composer-plus]').click(); true`);
+    await until("the + menu's Model row", async () => win.webContents.executeJavaScript(`Boolean(document.querySelector('[data-composer-plus-row="model"]'))`), 5_000).catch(() => null);
+    await win.webContents.executeJavaScript(`document.querySelector('[data-composer-plus-row="model"]').click(); true`);
+    await until("the model menu's Edit…", async () => win.webContents.executeJavaScript(`Boolean(document.querySelector('[data-model-edit]'))`), 5_000).catch(() => null);
+    await win.webContents.executeJavaScript(`document.querySelector('[data-model-edit]').click(); true`);
+  };
   const shoot = async (name) => {
     if (!process.env.VERIFY_SHOT_DIR) return;
     const { mkdirSync, writeFileSync } = await import("node:fs");
@@ -276,14 +283,14 @@ app.whenReady().then(async () => {
       providers: panel.querySelectorAll('[data-model-provider-column] [data-rail-provider]').length };
   })()`);
   win.show();
-  await win.webContents.executeJavaScript(`document.querySelector('[data-tour=model]').click(); true`);
+  await openModelWindow();
   const picker = await until("the model picker", async () => {
     const value = await measure();
     return value.found && value.paysWith ? value : null;
   }, 10_000).catch(measure);
   await wait(600);
   Object.assign(picker, await measure());
-  check("the composer's model chip opens a model picker modal inside the window", picker.found && picker.modal === "true" && picker.height > 300 && picker.top >= 0 && picker.bottom <= picker.innerHeight && picker.left >= 0 && picker.right <= picker.innerWidth, JSON.stringify(picker));
+  check("the composer's + menu (Model, Edit…) opens a model picker modal inside the window", picker.found && picker.modal === "true" && picker.height > 300 && picker.top >= 0 && picker.bottom <= picker.innerHeight && picker.left >= 0 && picker.right <= picker.innerWidth, JSON.stringify(picker));
   check("the modal takes focus", picker.focusInside === true);
   check("the modal shows one line on what pays and Connect or Disconnect, no payer chain (no server sign-in, even for an admin)", Boolean(picker.paysWith) && picker.connect && picker.payerRows === 0, JSON.stringify({ paysWith: picker.paysWith, connect: picker.connect, payerRows: picker.payerRows }));
   check("no local model from the server's machine", !picker.localEntry && !picker.localGroup);
@@ -292,14 +299,14 @@ app.whenReady().then(async () => {
   win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
   win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
   const closed = await until("the picker to close", async () => {
-    const state = await win.webContents.executeJavaScript(`({ open: Boolean(document.querySelector('[data-model-picker-content]')), chip: document.activeElement?.dataset?.tour === 'model' })`);
+    const state = await win.webContents.executeJavaScript(`({ open: Boolean(document.querySelector('[data-model-picker-content]')), chip: document.activeElement?.hasAttribute?.('data-composer-plus') === true })`);
     return state.open ? null : state;
   }, 5_000).catch(() => null);
-  check("Escape closes the modal and gives focus back to the chip", Boolean(closed) && closed.chip, JSON.stringify(closed));
+  check("Escape closes the modal and gives focus back to the composer's +", Boolean(closed) && closed.chip, JSON.stringify(closed));
   // A narrow window: a bottom sheet.
   win.setSize(390, 760);
   await until("a narrow window", async () => win.webContents.executeJavaScript("innerWidth <= 400"));
-  await win.webContents.executeJavaScript(`document.querySelector('[data-tour=model]').click(); true`);
+  await openModelWindow();
   await wait(600); // the opening animation scales the panel
   const sheet = await until("the sheet", async () => {
     const value = await measure();

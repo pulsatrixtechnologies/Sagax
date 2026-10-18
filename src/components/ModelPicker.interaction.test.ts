@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Bot, InstanceInfo } from "@/state/store";
+import type { ComposerModelMenuControl } from "./ModelPicker";
 
 // Opens the real picker and clicks through it without a DOM: useState is
 // held here by call order (the picker's own hooks run first, children after),
@@ -127,7 +128,8 @@ function bot(instanceId: string, model: string): Bot {
   };
 }
 
-type RenderOptions = { contained?: boolean; threadId?: string; label?: string; inComposer?: boolean; windowOnly?: boolean; onWindowClose?: () => void };
+type RenderOptions = { contained?: boolean; threadId?: string; label?: string; inComposer?: boolean; windowOnly?: boolean; onWindowClose?: () => void;
+  headless?: boolean; menuControl?: { current: ComposerModelMenuControl | null } };
 
 /** Render the picker once; the picker's own state survives, children start fresh. */
 function render(forBot: Bot, options?: RenderOptions) {
@@ -143,6 +145,8 @@ function render(forBot: Bot, options?: RenderOptions) {
       inComposer: options?.inComposer,
       windowOnly: options?.windowOnly,
       onWindowClose: options?.onWindowClose,
+      headless: options?.headless,
+      menuControl: options?.menuControl,
     });
     fixture.own = fixture.index;
     return tree;
@@ -802,6 +806,26 @@ describe("the model list in the window", () => {
 describe("the composer's model menu (2026-10-12)", () => {
   const composer = { inComposer: true };
 
+  // JC, 2026-10-18: no chip; the + menu's Model row opens the same menu
+  it("headless: draws no chip, carries the label, opens from the + menu's row and calls back on a pick", () => {
+    fixture.instances = [codex, signedIn()];
+    const forBot = bot("claude", "claude-opus-5-5");
+    const menuControl: { current: ComposerModelMenuControl | null } = { current: null };
+    const options = { inComposer: true, headless: true, menuControl };
+    const shown = render(forBot, options);
+    expect(shown.nodes.some((node) => node.props["data-tour"] === "model")).toBe(false);
+    expect(shown.html).toMatch(/<span hidden="" data-composer-model="[^"]+"><\/span>/);
+    expect(shown.html).not.toContain("data-model-menu");
+    const done = vi.fn();
+    menuControl.current!.toggle(null, done);
+    const opened = render(forBot, options);
+    expect(opened.html).toContain("data-model-menu");
+    expect(lists(opened)[0]!.props.variant).toBe("popover");
+    row(opened, "auto").props.onPick();
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(render(forBot, options).html).not.toContain("data-model-menu");
+  });
+
   it("opens a menu, not the window, with the search, Auto, the bot's engine first and Edit", () => {
     fixture.instances = [codex, signedIn()];
     const forBot = bot("claude", "claude-opus-5-5");
@@ -820,16 +844,19 @@ describe("the composer's model menu (2026-10-12)", () => {
 
   // JC, 2026-10-14: too many models shown. The root lists the providers,
   // each opening its models in a submenu, and the stars.
-  it("nests the providers in submenus with stars, the window keeps its flat list", () => {
+  it("nests the providers behind Provider, in submenus with stars, the window keeps its flat list", () => {
     fixture.instances = [codex, signedIn()];
     const forBot = bot("claude", "claude-opus-5-5");
     const opened = open(forBot, composer);
-    const list = lists(opened)[0]! as unknown as ReactElement<{ submenus?: boolean; favorites?: { keys: readonly string[] } }>;
+    const list = lists(opened)[0]! as unknown as ReactElement<{ submenus?: boolean; groupProviders?: boolean; favorites?: { keys: readonly string[] } }>;
     expect(list.props.submenus).toBe(true);
+    // JC, 2026-10-18: one "Provider ›" row in every mode
+    expect(list.props.groupProviders).toBe(true);
     expect(list.props.favorites!.keys).toEqual([]);
-    // only the model in use, checked, sits in the root; the rest wait in submenus
+    // only the model in use, checked, sits in the root; the rest wait behind Provider
     expect([...opened.html.slice(opened.html.indexOf("data-model-menu")).matchAll(/data-model-option="([^"]+)"/g)].map((match) => match[1])).toEqual(["claude-opus-5-5"]);
-    expect(opened.html).toContain('data-model-provider="claude"');
+    expect(opened.html).toContain("data-model-all");
+    expect(opened.html).not.toContain('data-model-provider="claude"');
     expect(opened.html).toContain('aria-haspopup="menu"');
     fixture.values = [];
     const window = open(forBot) as ReturnType<typeof render>;

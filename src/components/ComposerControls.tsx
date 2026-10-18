@@ -8,13 +8,14 @@
 // A voice note (+ > Record a voice note) takes the same seat: cancel, a red
 // dot, the timer and a 24 bar waveform, then Send.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, AudioLines, Check, Clock, Loader2, Mic, Paperclip, Plus, X } from "lucide-react";
+import { ArrowUp, AudioLines, Brain, Check, ChevronRight, Clock, Loader2, Mic, Paperclip, Plus, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { formatDictationTime } from "@/lib/composer-dictation";
 import { focusFirstMenuItem, moveMenuFocus } from "@/lib/menu-keys";
 import { CTA_CIRCLE, CTA_DEFAULT, CTA_TONED, ctaStyle, type BotCtaColors } from "@/lib/voice-cta";
 import { useMenuMotion } from "./MenuMotion";
+import type { ComposerModelChip } from "./ModelPicker";
 
 /** The quiet circle: a translucent ink wash, a 0.5 px inner hairline, tertiary ink brightening on hover. */
 export const SECONDARY_CIRCLE = cn(
@@ -55,13 +56,14 @@ export interface PlusMenuItem {
 /** The + at the start of the composer and its menu, in groups (Grok Bot's
  * composer actions, Cursor's grouped menus): add (Attach files, Teach a
  * task), modes (Goal, Setup), then the conversation's own settings as rows
- * that open beside it (`rows`, rendered by their owners: approval level,
- * workspace). */
+ * that open beside it (`rows`, rendered by their owners: the model, the
+ * approval level, the workspace). */
 export function ComposerPlusMenu({
   items,
   rows,
   disabled = false,
   initialOpen = false,
+  onOpenChange,
 }: {
   items: PlusMenuItem[];
   /** Rows that own a menu of their own; each gets `close` to call once picked. */
@@ -69,8 +71,15 @@ export function ComposerPlusMenu({
   disabled?: boolean;
   /** Tests and the gallery: render with the menu open. */
   initialOpen?: boolean;
+  /** The menu opened or closed (the model menu beside it closes with it). */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(initialOpen);
+  const openChange = useRef(onOpenChange);
+  openChange.current = onOpenChange;
+  useEffect(() => {
+    openChange.current?.(open);
+  }, [open]);
   const motion = useMenuMotion(open);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -83,10 +92,12 @@ export function ComposerPlusMenu({
   useEffect(() => {
     if (!open) return;
     const outside = (event: MouseEvent) => {
+      // the model menu is portalled beside this one: a click in it stays in
+      if (event.target instanceof Element && event.target.closest("[data-model-menu]")) return;
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) setOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       // a row's own menu is open: its Escape closes it first
       if (menuRef.current?.querySelector('[aria-expanded="true"]')) return;
       setOpen(false);
@@ -117,6 +128,7 @@ export function ComposerPlusMenu({
         title={t("composer.plus.aria")}
         disabled={disabled}
         data-composer-plus=""
+        data-tour="composer-plus"
         onClick={() => setOpen((value) => !value)}
         onKeyDown={(event) => {
           if (event.key === "ArrowUp" && !open) {
@@ -184,6 +196,43 @@ export function ComposerPlusMenu({
         </div>
       )}
     </div>
+  );
+}
+
+/** The + menu's Model row (JC, 2026-10-18): the model in use at its end,
+ * the model menu (search, Auto, the bot's model, favorites, Provider ›,
+ * Effort, Edit…) beside it. The composer has no model chip any more. */
+export function ComposerModelRow({ chip, onOpen }: {
+  chip: ComposerModelChip;
+  /** Opens (or closes) the model menu beside this row. */
+  onOpen: (row: HTMLElement) => void;
+}) {
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const toggle = () => {
+    if (rowRef.current && !chip.busy) onOpen(rowRef.current);
+  };
+  return (
+    <button
+      ref={rowRef}
+      type="button"
+      role="menuitem"
+      aria-haspopup="dialog"
+      aria-expanded={chip.open}
+      aria-label={t("composer.plus.modelAria", { model: chip.label })}
+      title={chip.title}
+      disabled={chip.busy}
+      data-composer-plus-row="model"
+      onClick={toggle}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowRight" && !chip.open) { event.preventDefault(); toggle(); }
+      }}
+      className="flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left text-[13px] leading-[18px] text-ink hover:bg-hover focus-visible:bg-hover focus-visible:outline-none aria-expanded:bg-hover disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
+    >
+      <Brain size={16} className="shrink-0" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate">{t("composer.plus.model")}</span>
+      <span data-composer-model-value className={cn("max-w-[140px] shrink truncate text-ink-tertiary", chip.ultracode && "ultracode-effort-chip")}>{chip.label}</span>
+      <ChevronRight size={14} className="shrink-0 text-ink-tertiary" aria-hidden="true" />
+    </button>
   );
 }
 
