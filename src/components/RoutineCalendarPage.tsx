@@ -13,6 +13,7 @@ import {
 } from "react";
 import {
   Menu,
+  CalendarClock,
   CalendarDays,
   CheckCheck,
   CheckCircle2,
@@ -59,7 +60,7 @@ import { RoutineAwayBanner } from "@/components/routines/RoutineAwayBanner";
 import { canRunRoutineNow, routineRunInFlight } from "@/components/routines/RunNowButton";
 import { CronScheduleFields, CronSchedulePreview } from "@/components/routines/CronScheduleFields";
 import { cronChoiceFor, cronDraftFor, cronEditorValue, isCronChoice, type CronChoice } from "@/components/routines/cron-editor";
-import { routineRunError, routineRunLabel } from "@/lib/routine-display";
+import { routineRunError, routineRunLabel, upcomingRoutines } from "@/lib/routine-display";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { t } from "@/lib/i18n";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
@@ -111,6 +112,7 @@ import {
 import { api, openBotThread, openNotificationTarget, useStore, type Bot, type Group } from "@/state/store";
 import { viewerCanCreateBots } from "@/lib/viewer";
 import { RoutineScheduleNote } from "./RoutineScheduleNote";
+import { BOT_CALENDAR_DRAG_TYPE } from "@/lib/bot-drag";
 
 const HOUR_HEIGHT = 64;
 const DAY_CHIP_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -118,7 +120,7 @@ const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const WEEKDAYS = [1, 2, 3, 4, 5];
 const INTERVAL_PRESETS = [5, 10, 15, 30, 60];
 const EVENT_DURATION_OPTIONS = Array.from({ length: 240 / CALENDAR_SLOT_MINUTES }, (_, index) => (index + 1) * CALENDAR_SLOT_MINUTES);
-const BOT_DRAG_TYPE = "application/x-openmaus-bot";
+const BOT_DRAG_TYPE = BOT_CALENDAR_DRAG_TYPE;
 const EVENT_DRAG_TYPE = "application/x-openmaus-calendar-event";
 
 type EventKind = "routine" | "call";
@@ -1123,7 +1125,7 @@ export function QuickComposer({
         )}
         <div className="flex items-start gap-3 text-[12.5px] text-ink">
           <Clock3 size={16} className="mt-0.5 shrink-0 text-ink-secondary" />
-          <div><div>{niceDate(seed.at)}</div><div className="mt-0.5 text-ink-secondary">{niceTime(seed.at)}{kind === "call" ? ` – ${niceTime(seed.at + durationMinutes * 60_000)}` : ""}</div></div>
+          <div><div>{niceDate(seed.at)}</div><div className="mt-0.5 text-ink-secondary">{niceTime(seed.at)}{kind === "call" ? ` - ${niceTime(seed.at + durationMinutes * 60_000)}` : ""}</div></div>
         </div>
         <div className="flex items-start gap-3">
           <UserRoundPlus size={16} className="mt-2.5 shrink-0 text-ink-secondary" />
@@ -1283,6 +1285,9 @@ function CalendarGrid({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{ day: number; start: number; end: number } | null>(null);
   const [dragPreview, setDragPreview] = useState<{ day: number; at: number } | null>(null);
+  // A bot dragged from anywhere (the left sidebar): the whole grid shows it
+  // takes the drop before the pointer reaches it.
+  const [botDrag, setBotDrag] = useState<{ name: string } | null>(null);
   const today = startOfDay(Date.now());
   const starts = Array.from({ length: days }, (_, index) => addDays(anchor, index));
   const minDayWidth = days === 7 ? 88 : days === 3 ? 180 : 340;
@@ -1296,6 +1301,24 @@ function CalendarGrid({
     const hour = starts.includes(today) ? Math.max(0, now.getHours() - 2) : 7;
     viewport.scrollTo({ top: hour * HOUR_HEIGHT });
   }, [days]);
+
+  useEffect(() => {
+    const start = (event: DragEvent) => {
+      const transfer = event.dataTransfer;
+      if (!transfer?.types.includes(BOT_DRAG_TYPE)) return;
+      const botId = transfer.getData(BOT_DRAG_TYPE);
+      setBotDrag({ name: bots.find((bot) => bot.id === botId)?.name ?? "" });
+    };
+    const stop = () => { setBotDrag(null); setDragPreview(null); };
+    document.addEventListener("dragstart", start);
+    document.addEventListener("dragend", stop);
+    document.addEventListener("drop", stop);
+    return () => {
+      document.removeEventListener("dragstart", start);
+      document.removeEventListener("dragend", stop);
+      document.removeEventListener("drop", stop);
+    };
+  }, [bots]);
 
   const beginSelection = (event: ReactPointerEvent<HTMLDivElement>, day: number) => {
     if (event.button !== 0 || (event.target as HTMLElement).closest("[data-event-card]")) return;
@@ -1345,7 +1368,15 @@ function CalendarGrid({
   };
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto border-l border-t border-hairline/40 bg-app">
+    <div className="relative flex min-h-0 min-w-0 flex-1">
+    {botDrag && (
+      <div data-calendar-drop-target className="pointer-events-none absolute inset-1 z-40 rounded-lg border-2 border-dashed border-accent/70">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-accent px-3 py-1 text-[11.5px] font-medium text-accent-ink shadow-md">
+          {botDrag.name ? t("routines.upcoming.dropBot", { name: botDrag.name }) : t("routines.upcoming.drop")}
+        </div>
+      </div>
+    )}
+    <div ref={scrollRef} className={cn("min-h-0 flex-1 overflow-auto border-l border-t border-hairline/40 bg-app", botDrag && "bg-accent/[0.03]")}>
       <div className="sticky top-0 z-30 grid bg-app/95 backdrop-blur" style={{ gridTemplateColumns, minWidth }}>
         <div className="border-b border-r border-hairline/40 px-2 py-3 text-center text-[9px] uppercase tracking-wider text-ink-secondary">{formatGmtOffset(-new Date(anchor).getTimezoneOffset())}</div>
         {starts.map((start) => {
@@ -1376,6 +1407,7 @@ function CalendarGrid({
           );
         })}
       </div>
+    </div>
     </div>
   );
 }
@@ -1536,7 +1568,7 @@ export function EventDetails({
         <div data-event-details-side className={cn("space-y-4 px-5 py-4", wide && "min-[720px]:min-h-0 min-[720px]:overflow-y-auto min-[720px]:border-r min-[720px]:border-hairline/40")}>
           <div>
             <div className="text-[12.5px] text-ink-secondary">
-              {niceDate(item.at)} · {niceTime(item.at)}{isCall ? ` – ${niceTime(item.at + item.durationMinutes * 60_000)}` : ""}
+              {niceDate(item.at)} · {niceTime(item.at)}{isCall ? ` - ${niceTime(item.at + item.durationMinutes * 60_000)}` : ""}
             </div>
             {(routine || call) && <div className="mt-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>}
             {routine?.schedule.type === "cron" && <div className="mt-3"><CronSchedulePreview schedule={routine.schedule} paused={!routine.enabled} /></div>}
@@ -1755,6 +1787,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   const running = scopedRuns.filter((run) => ["queued", "running", "waiting"].includes(run.status)).length;
   const unseenFailures = scopedRuns.filter((run) => isRoutineProblemRun(run) && !run.seenAt).length;
   const filteredRoutines = scopedRoutines.filter((routine) => botFilter === "all" || routine.botId === botFilter);
+  const upcoming = upcomingRoutines(filteredRoutines);
   const filteredRuns = scopedRuns.filter((run) => botFilter === "all" || run.botId === botFilter);
   const routineOwnerOf = (run: RoutineRun) => scopedRoutines.find((routine) => routine.id === run.routineId);
   const clearLogs = () => {
@@ -1771,6 +1804,11 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
       .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   };
   const openRoutine = (routine: Routine) => setSelected({ kind: "routine", id: routine.id, at: routine.nextRunAt ?? (routine.schedule.type === "once" ? routine.schedule.at : routine.schedule.type === "interval" ? routine.schedule.anchorAt : routine.schedule.type === "cron" ? nextHour() : atLocalTime(Date.now(), routine.schedule.time)), durationMinutes: routine.durationMinutes, routine, run: null });
+  // An upcoming row: the calendar moves to its next run, and its details open.
+  const showUpcoming = (routine: Routine) => {
+    if (routine.nextRunAt != null) setAnchor(startOfDay(routine.nextRunAt));
+    openRoutine(routine);
+  };
   const openLogs = (routine: Routine) => { setRoutineFilter(routine.id); setSection("logs"); };
   const openRun = (run: RoutineRun) => {
     setSelected({ kind: "routine", id: run.id, at: run.scheduledFor, durationMinutes: run.durationMinutes ?? 30, routine: scopedRoutines.find((routine) => routine.id === run.routineId) ?? null, run });
@@ -1966,12 +2004,12 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
           <CalendarGrid anchor={rangeStart} days={viewDays} items={items} bots={state.bots} groups={state.groups} onOpen={(item) => { setSelected(item); if (item.kind === "routine" && item.run && ["failed", "missed"].includes(item.run.status) && !item.run.seenAt && !item.run.redacted) dispatch({ type: "markRoutineRunSeen", runId: item.run.id }); }} onCreate={openCreate} onMove={(item, at) => void moveEvent(item, at)} onResize={(item, duration) => void resizeEvent(item, duration)} />
           {botsOpen ? (
             <div className="hidden shrink-0 lg:block">
-              <CalendarSidebar bots={visibleBots} anchor={anchor} onSelectDate={(at) => setAnchor(startOfDay(at))} onCollapse={() => setBotsOpen(false)} />
+              <CalendarSidebar anchor={anchor} onSelectDate={(at) => setAnchor(startOfDay(at))} routines={upcoming} runs={scopedRuns} bots={state.bots} viewerPrincipalId={state.config?.viewer?.principalId ?? null} loading={(scoped.live ? state.routinesLoadState === "loading" : scoped.loading) && upcoming.length === 0} error={scoped.live ? state.routinesLoadState === "error" : scoped.error} onOpenRoutine={showUpcoming} onCollapse={() => setBotsOpen(false)} />
             </div>
           ) : (
-            <button type="button" onClick={() => setBotsOpen(true)} aria-label="Show my bots" title="My bots" className="hidden w-10 shrink-0 flex-col items-center gap-2 border-l border-hairline/40 bg-panel px-1 py-4 text-[11px] text-ink-secondary hover:text-ink lg:flex">
-              <UsersRound size={16} />
-              <span className="[writing-mode:vertical-rl]">My bots</span>
+            <button type="button" onClick={() => setBotsOpen(true)} aria-label={t("routines.upcoming.show")} title={t("routines.upcoming.title")} className="hidden w-10 shrink-0 flex-col items-center gap-2 border-l border-hairline/40 bg-panel px-1 py-4 text-[11px] text-ink-secondary hover:text-ink lg:flex">
+              <CalendarClock size={16} />
+              <span className="[writing-mode:vertical-rl]">{t("routines.upcoming.title")}</span>
             </button>
           )}
         </div>
@@ -2004,7 +2042,7 @@ function RoutineWakeBar() {
   }, [bridge]);
   if (!bridge || !state) return null;
   const status = !state.keepAwake
-    ? "Off — this computer may sleep through a scheduled routine."
+    ? "Off: this computer may sleep through a scheduled routine."
     : state.onBattery
       ? "On battery, so not holding; plug in to keep it awake."
       : state.hold

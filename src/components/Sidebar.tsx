@@ -108,6 +108,7 @@ import { NewTaskFolderDialog } from "./NewTaskFolderDialog";
 import { newThreadChoices, type NewThreadChoice } from "@/lib/confidential-thread";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { draggedFolder, draggedThread, FOLDER_DRAG_TYPE, THREAD_DRAG_TYPE, moveFolder, placeFolder } from "@/lib/folder-order";
+import { addBotCalendarDrag } from "@/lib/bot-drag";
 import { folderUnreadThreadIds, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
 import { personPickerThreads } from "@/lib/person-threads";
 import { approvalModeFor } from "../../shared/approval-mode";
@@ -2892,13 +2893,18 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // Dragging a bot or a group onto a section files it there (Unassigned: in
   // none). Bot-to-bot chats are a view, not something to file.
   const [itemDropId, setItemDropId] = useState<string | null>(null);
-  const itemDragProps = (kind: SectionItemKind, itemId: string) => layoutInteractive ? {
+  // A bot row also carries the calendar's payload (2026-10-18): dropped on a
+  // time of Automations it schedules that bot, the same routine and dialog
+  // as the calendar's own drag. That one works in every density and while
+  // searching; filing into a section keeps its own rule.
+  const itemDragProps = (kind: SectionItemKind, itemId: string) => layoutInteractive || kind === "bot" ? {
     draggable: true,
     "data-sidebar-item-drag": kind,
     onDragStart: (event: React.DragEvent<HTMLDivElement>) => {
       if (event.target instanceof Element && event.target.closest("[data-sidebar-folder-row],[data-sidebar-folder-label],[data-sidebar-thread-row],[data-sidebar-thread-drag]")) return;
       event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData(ITEM_DRAG_TYPE, JSON.stringify({ kind, id: itemId }));
+      if (layoutInteractive) event.dataTransfer.setData(ITEM_DRAG_TYPE, JSON.stringify({ kind, id: itemId }));
+      if (kind === "bot") addBotCalendarDrag(event.dataTransfer, itemId);
     },
     onDragEnd: () => setItemDropId(null),
   } : {};

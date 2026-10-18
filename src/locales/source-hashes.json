@@ -12612,7 +12612,20 @@
       "security.keys.addedNow": "bcf2fdff7903fb981f26334af68cbdb4052808a271d30dd320aad793f8d72ee9",
       "security.stepUp.browser": "7bbb1263c2d9a8b81865a0f777918c6e8490728db4e960c73dc37504c18d61df",
       "security.stepUp.reauth": "93ee85ef2635cf1d0adfcf0e8a2baba337a6cac98da60c7190d533257b342b0f",
-      "pages.yours": "a14fbf2a09e342e17172f023034e906f9370a8375077ae5c1aa48afd57e0cff8"
+      "pages.yours": "a14fbf2a09e342e17172f023034e906f9370a8375077ae5c1aa48afd57e0cff8",
+      "routines.upcoming.date": "f5f22909cdb42fcc1590b2d68805cde1369786048de11ffa7e465e0255dc3a59",
+      "routines.upcoming.dragHint": "208e10b2fd4181a17e29f117fb085c423306b434847fa4c42bcafd24c19721b7",
+      "routines.upcoming.drop": "6db8f3fe27089d3bae77ecaf7ba2ebff4e71d041d3df998d1ef1347bfefa16fc",
+      "routines.upcoming.dropBot": "dd0fd5fa42d7e59efaff6103bc36d64792d5073c8d9811bcbff192c4a3bec415",
+      "routines.upcoming.empty": "a2edc0d9d50b0635c089b96d85ba4a574c8bb95e91c9597441ad1512ad738996",
+      "routines.upcoming.hide": "7add906a533e216ba2d4ff5987a2e7104fa7d91c89d096dd828b9309d4bd0402",
+      "routines.upcoming.list": "273750c2818be2affa0f3d13f679b4144000099fd7bf73c53282fbd441bbe913",
+      "routines.upcoming.show": "b4b75107834cb2f5242cb42cd02a7d50a52bf1fd861191979440dbc8709ca9a4",
+      "routines.upcoming.sidebar": "a43db0342a11ef166f989382d6f859c4d686e46f222c695154eac5c45dc990f8",
+      "routines.upcoming.title": "5f1a2542e4e4ca5ed784e15fb756dbfc32f4b68ae08bc1d44f957761566c8c41",
+      "routines.upcoming.today": "f87b7a9affe6e24768ab9db9d048fdfc7b734b899ff3e7f950d906d24f0578ae",
+      "routines.upcoming.tomorrow": "64ff486fd80b80ccf7cd589571b428ca8195edb4cbbde136734f52851edbd560",
+      "routines.upcoming.weekday": "d10a2288d770c6b990c074fee684b3f8656bdad127c8652b64dd41c853bd02e4"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

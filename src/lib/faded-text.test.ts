@@ -63,7 +63,6 @@ const DECORATIVE: Record<string, string> = {
   // aria-hidden arrow between the chiefs and members columns of a team map
   "components/TeamCanvas.tsx text-ink-secondary/35": "decorative connector",
   // aria-hidden drag grip; the row itself is labelled "Drag <bot> onto the schedule"
-  "components/routines/CalendarSidebar.tsx text-ink-secondary/35": "decorative drag grip",
   // film glyph on an unplayed video tile; the tile's own name is the file chip under it
   "components/AttachmentGallery.tsx text-ink-secondary/50": "decorative placeholder glyph",
 };

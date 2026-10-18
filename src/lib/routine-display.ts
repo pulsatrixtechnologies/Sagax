@@ -79,3 +79,42 @@ export function routineRunsOn({ roomGoal, runOn, computer, cloudHome }: {
   if (computer === "vm" && !cloudHome) return { label: t("routines.runsOn.botVm"), hint };
   return { label: t(cloudHome ? "routines.runsOn.cloudHome" : "routines.runsOn.local"), hint };
 }
+
+/** The calendar's "Upcoming" panel: the routines that will run, soonest
+ * first (2026-10-18, JC). A paused, suspended or finished routine has no
+ * next run and is left to the list view. */
+export function upcomingRoutines(routines: readonly Routine[]): Routine[] {
+  return routines
+    .filter((routine) => routine.enabled && !routine.suspended && routine.nextRunAt != null)
+    .sort((a, b) => (a.nextRunAt ?? 0) - (b.nextRunAt ?? 0) || a.name.localeCompare(b.name));
+}
+
+function localDayIndex(at: number): number {
+  const date = new Date(at);
+  return Math.round(new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() / 86_400_000);
+}
+
+/** A next run as a person says it: "Today at 9:00 AM", "Tomorrow at…",
+ * "Tuesday at…" within the week, else "October 25 at…". */
+export function routineNextRunPhrase(at: number, now = Date.now()): string {
+  const locale = activeLocale();
+  const time = new Date(at).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+  const days = localDayIndex(at) - localDayIndex(now);
+  if (days === 0) return t("routines.upcoming.today", { time });
+  if (days === 1) return t("routines.upcoming.tomorrow", { time });
+  if (days > 1 && days < 7) return t("routines.upcoming.weekday", { day: new Date(at).toLocaleDateString(locale, { weekday: "long" }), time });
+  const sameYear = new Date(at).getFullYear() === new Date(now).getFullYear();
+  const date = new Date(at).toLocaleDateString(locale, sameYear ? { month: "long", day: "numeric" } : { month: "long", day: "numeric", year: "numeric" });
+  return t("routines.upcoming.date", { date, time });
+}
+
+const UPCOMING_IN_FLIGHT = ["running", "waiting", "queued"] as const;
+
+/** The state pill of an upcoming row: a run in flight says so, a routine
+ * whose last runs failed says Failing, otherwise Active. */
+export function routineUpcomingState(routine: Routine, runs: readonly Pick<RoutineRun, "routineId" | "status">[]): { label: string; tone: "info" | "warning" | "neutral" } {
+  const live = UPCOMING_IN_FLIGHT.find((status) => runs.some((run) => run.routineId === routine.id && run.status === status));
+  if (live) return { label: t(`routines.status.${live}`), tone: "info" };
+  if ((routine.failureStreak ?? 0) > 0) return { label: t("routines.scope.status.failing"), tone: "warning" };
+  return { label: t("routines.activeSchedule"), tone: "neutral" };
+}

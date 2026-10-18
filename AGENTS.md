@@ -902,6 +902,23 @@ routines (JC). `server/routine-scope.ts` (rules), `shared/routine-scope.ts`
   `ios/App/TasksRoutinesView.swift`, `RoutineScopeTests`). The choice is
   not kept between launches yet. Not built in Xcode when it landed.
 
+## Automations calendar: upcoming panel, bots dragged from the sidebar (2026-10-18)
+
+The calendar's right panel is the month, then **Upcoming** (JC): the
+routines that will run, soonest first (`upcomingRoutines` in
+`src/lib/routine-display.ts`: enabled, not suspended, with a `nextRunAt`),
+narrowed by the same scope, status and bot filters as the page. The rows are
+`RoutineList` with `variant="upcoming"`: the name and a state pill (a run in
+flight, Failing or Active), then the bot and the next run in words
+(`routineNextRunPhrase`: today, tomorrow, a weekday within the week, else the
+date), no switch. A click moves the calendar to that run and opens its
+details. The old "My bots" list is gone: every bot row of the left sidebar
+carries `BOT_CALENDAR_DRAG_TYPE` (`src/lib/bot-drag.ts`) beside the section
+payload, in every density and while searching, so dropping it on a time
+opens the same new-routine dialog. While such a drag is in flight the grid
+shows a dashed outline and a "Drop <bot> on a time" chip. The list view is
+unchanged. Tests: `src/components/routines/UpcomingPanel.test.ts`.
+
 ## Full access (organization mode, 2026-10-01)
 
 On a solo server Full access is granted only through the packaged desktop
