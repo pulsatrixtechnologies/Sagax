@@ -11,6 +11,7 @@
 // agents-catalog-wire.test.ts: change a description or a schema on purpose,
 // then update the goldens there.
 import { CREDENTIAL_TARGETS } from "../../shared/credential-request.ts";
+import { BOT_REACTIONS } from "../../shared/reactions.ts";
 import { OPTIONS_CARD_LIMITS, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
 import { agentToolAnnotations } from "../agent-tool-policy.ts";
 import { PAGE_TOOL_DEFINITIONS } from "./agents-page-tools.ts";
@@ -478,13 +479,13 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "react_to_message",
     description:
-      "Put one emoji reaction on a message in this conversation, like in Slack, when a short acknowledgement is better than a message: 👍 to acknowledge, ✅ when a small thing you were asked is done, 👀 when you start looking into something. Answer in words whenever the person needs information. One reaction per message at most, never on your own messages. Omit message_id for the message you are answering. If the reaction says it all, end the turn without text: no empty reply is shown.",
+      "React with one emoji to a message in this conversation, like a colleague in a chat, when a short acknowledgement says it: 👍 noted, ✅ a small thing you were asked is done, 👀 you are starting on something that takes a while, ❤️ or 🙏 for a thank-you, 🎉 for good news. Sparingly: most messages get none, one per message at most, never on your own messages. Never instead of an answer the person needs, and never together with a sentence that says the same thing: if the reaction says it all, end the turn without text (no empty reply is shown). Omit message_id for the message you are answering.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         message_id: { type: "string", description: "Optional: the message's id, from session_search or session_read. Omit for the message you are answering." },
-        emoji: { type: "string", description: "One emoji, for example 👍, ✅, 👀, ❤️, 🎉 or 🙏." },
+        emoji: { type: "string", enum: [...BOT_REACTIONS], description: "One emoji: 👍 noted, ✅ done, 👀 looking into it, ❤️ or 🙏 thanks, 🎉 good news, 😂 a joke." },
       },
       required: ["emoji"],
     },
@@ -1497,6 +1498,9 @@ export const SHARED_COMPUTER_TOOL_NAMES = new Set(["list_shared_computers", "sha
 // refuses regardless; this keeps the catalog honest about what can work.
 const VOICE_TOOL_NAMES = new Set(["send_voice_note"]);
 const CALL_TOOL_NAMES = new Set(["end_call"]);
+// On a live call the bot answers by voice: a reaction would land silently in
+// the transcript while the person is listening (JC, 2026-10-18).
+const NOT_ON_CALL_TOOL_NAMES = new Set(["react_to_message", "remove_reaction"]);
 // The meeting notetaker is experimental and off by default: join_meeting is
 // shown only while it is on (SAGAX_MEETINGS); its routes refuse otherwise.
 const MEETING_TOOL_NAMES = new Set(["join_meeting"]);
@@ -1612,7 +1616,7 @@ function coreCatalogTools(profile: CatalogProfile) {
     ? SHAREABLE_TOOLS
     : SHAREABLE_TOOLS.filter((tool) => !VOICE_TOOL_NAMES.has(tool.name));
   const CALL_TOOLS = (profile.voiceCall
-    ? VOICE_READY_TOOLS
+    ? VOICE_READY_TOOLS.filter((tool) => !NOT_ON_CALL_TOOL_NAMES.has(tool.name))
     : VOICE_READY_TOOLS.filter((tool) => !CALL_TOOL_NAMES.has(tool.name)))
     .filter((tool) => profile.meetings === true || !MEETING_TOOL_NAMES.has(tool.name))
     .filter((tool) => profile.singleStream === true || !STREAM_TOOL_NAMES.has(tool.name));

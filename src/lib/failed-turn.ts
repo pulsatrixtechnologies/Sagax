@@ -6,6 +6,7 @@
 import { offersSignIn } from "@/components/EngineSetup";
 import { t } from "@/lib/i18n";
 import { plainErrorLine } from "@/lib/plain-error";
+import { stepLabel } from "@/lib/step-label";
 import type { Bot, InstanceInfo, Message } from "@/state/store";
 import { failedTurnCause } from "../../shared/failed-turn";
 import { isClientCancellation, isStoppedTurnName } from "../../shared/client-cancel";
@@ -39,13 +40,25 @@ export function botEngine(bot: Bot | undefined, instances: InstanceInfo[]): Inst
 /** One line for a list preview: a Data receipt its result's title, a
  * failed turn what its row says, minus the "below" a list has no room for;
  * any other activity row its name. */
+/** A turn that only reacted ends on its react_to_message row: the sidebar
+ * reads "Reacted to a message ✅", never the tool's id. */
+function reactionPreview(tool: ActivityTool): string | undefined {
+  if (tool.ok === false || !/(?:^|_)react_to_message$/.test(tool.name.trim())) return undefined;
+  let emoji = "";
+  try {
+    const args = JSON.parse(tool.input ?? "{}") as { emoji?: unknown };
+    if (typeof args.emoji === "string") emoji = args.emoji.trim().slice(0, 16);
+  } catch { /* the label alone */ }
+  return emoji ? `${stepLabel(tool)} ${emoji}` : stepLabel(tool);
+}
+
 export function activityPreview(tool: ActivityTool, engine: InstanceInfo | undefined, dataResult?: Message["dataResult"]): string {
   if (dataResult) return dataResult.title;
   if (tool.engineMove) return t("model.org.engineMoved", { from: tool.engineMove.from, to: tool.engineMove.to });
   if (isStoppedTurnName(tool.name)) return t("chat.turnStopped");
   const cause = failedTurnCause(tool.name);
   if (cause !== null && isClientCancellation(cause)) return t("chat.turnStopped");
-  if (cause === null) return tool.name;
+  if (cause === null) return reactionPreview(tool) ?? tool.name;
   const signedOut = signedOutEngine(tool, engine);
   return signedOut ? t("sidebar.preview.signedOut", { name: signedOut.displayName }) : plainErrorLine(cause) ?? cause;
 }

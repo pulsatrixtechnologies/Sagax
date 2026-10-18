@@ -78,3 +78,11 @@ describe("failed turn text", () => {
     expect(botEngine(undefined, [claude])).toBeUndefined();
   });
 });
+
+describe("a turn that only reacted", () => {
+  it("previews the reaction, never the tool's id", () => {
+    expect(activityPreview({ name: "mcp__agents__react_to_message", ok: true, input: "{\"emoji\":\"✅\"}" }, engine())).toBe("Reacted to a message ✅");
+    expect(activityPreview({ name: "agents_react_to_message", ok: true }, engine())).toBe("Reacted to a message");
+    expect(activityPreview({ name: "Bash", ok: true }, engine())).toBe("Bash");
+  });
+});

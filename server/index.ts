@@ -878,7 +878,7 @@ import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
-import { botReactionActorId, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
+import { BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -1831,8 +1831,8 @@ function botReaction(input: { bot: { id: string; name: string }; threadId: strin
     for (const held of removing) store.reactToMessage(input.threadId, target.id, held, actor, { mode: "remove", legacyUser: legacyReactionUser() });
     return { ok: true, messageId: target.id, emoji: emoji ?? removing[0] ?? "", changed: removing.length > 0, removed: removing };
   }
-  const emoji = reactionEmoji(input.emoji);
-  if (!emoji) return { ok: false, status: 400, code: "reaction_emoji", error: "emoji must be one emoji, such as 👍, ✅ or 👀." };
+  const emoji = botReactionEmoji(input.emoji);
+  if (!emoji) return { ok: false, status: 400, code: "reaction_emoji", error: `emoji must be one of ${BOT_REACTIONS.join(" ")}.` };
   if (mine.includes(emoji)) return { ok: true, messageId: target.id, emoji, changed: false };
   if (mine.length) {
     return { ok: false, status: 409, code: "reaction_one", error: `You already reacted ${mine.join(" ")} to this message: one reaction per message. Use remove_reaction first only if it no longer fits.` };
@@ -1844,6 +1844,32 @@ function botReaction(input: { bot: { id: string; name: string }; threadId: strin
   if (!result) return { ok: false, status: 404, code: "reaction_message", error: "That message is gone." };
   if (result.full) return { ok: false, status: 409, code: "reaction_full", error: "This message has too many different reactions." };
   return { ok: true, messageId: target.id, emoji, changed: result.changed };
+}
+
+/** A reply that only repeats the reaction the bot just put on the message
+ * it answers: nothing but those emoji ("👍" after 👍), or a bare aside such
+ * as "*(no further text needed)*" that some models write when told to end
+ * with no text. The reaction says it, so the text is not written (JC,
+ * 2026-10-18: never a reaction and a message that say the same thing). Any
+ * real sentence keeps the reply. */
+function echoesOwnReaction(threadId: string, botId: string, text: string): boolean {
+  const reply = text.trim();
+  if (!reply || reply.length > 80) return false;
+  const actorId = botReactionActorId(botId);
+  const messages = store.messagesFor(threadId);
+  const soloBot = store.groupByThread(threadId) ? null : store.botByThread(threadId)?.id ?? null;
+  // the message the bot is answering: the newest chat line it did not write
+  const answered = messages.findLast((message) => message.kind === "text" && (message.role === "user" ? null : message.from?.botId ?? soloBot) !== botId);
+  if (!answered) return false;
+  const mine = reactionsBy(normalizeReactions(answered.reactions, legacyReactionUser()), actorId);
+  if (!mine.length) return false;
+  if (/^[*_]*\([^()]{0,70}\)[*_]*$/u.test(reply)) return true;
+  const bare = (value: string) => value.replace(/\uFE0F/g, "");
+  const said = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(reply)]
+    .map((part) => part.segment).filter((part) => part.trim());
+  if (!said.length || said.some((part) => !reactionEmoji(part))) return false;
+  const held = new Set(mine.map(bare));
+  return said.every((part) => held.has(bare(part)));
 }
 
 /** Who a request's turn speaks for (slice 3 engine access): the signed-in
@@ -12632,6 +12658,10 @@ bus.subscribe((event: RuntimeEvent) => {
       pushStoppedTurn(turnId);
       return;
     }
+    // "👍" written after reacting 👍 says the same thing twice: the
+    // reaction stands alone and no bubble is written.
+    const reactor = bot?.id ?? speaker?.botId;
+    if (reactor && echoesOwnReaction(event.threadId, reactor, spoken.text)) return;
     const ran = bot ? turnRunByThread.get(event.threadId) : undefined;
     pushMessage({ role: "bot", kind: "text", text: spoken.text, turnId, ...(ran ? { turnRun: ran } : {}) });
     lastReply.set(event.threadId, spoken.text);
@@ -17621,7 +17651,7 @@ async function startTurn(
           // model mostly did not think to make.
           ? peerRosterSystemPrompt(sectionPeers, boundedCoordination, botCreationOffered(bot, ownerBotsReadOnly(bot)))
           : "";
-      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + REACTION_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) + WIDGET_PROMPT + WIDGET_APPROVAL_PROMPT : "";
+      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) + WIDGET_PROMPT + WIDGET_APPROVAL_PROMPT : "";
       const routinePrompt = integrations.agents ? ROUTINE_PROMPT : "";
       const profilePrompt = integrations.agents ? botProfilePrompt(bot) : "";
       const recallPrompt = integrations.agents && bot.memoryEnabled !== false ? SESSION_SEARCH_SYSTEM_PROMPT : "";
@@ -17756,6 +17786,9 @@ async function startTurn(
         { id: "assignment", label: "Teammate task", text: coordinationNode?.parentId ? `\n${coordinationSystemInstructions()}` : "" },
         { id: "outstanding", label: "Outstanding teammate work", text: outstandingAssignmentsPrompt(threadId) },
         { id: "credential", label: "Credentials", text: credentialPrompt },
+        // its own paragraph, so a smaller model reads it as a rule of its
+        // own; never on a call (the tools are not shown there either)
+        { id: "reactions", label: "Reactions", text: integrations.agents && !onCall ? REACTION_PROMPT : "" },
         { id: "recall", label: "Recall", text: recallPrompt },
         { id: "routine", label: "Routines", text: routinePrompt },
         { id: "routine-execution", label: "Routine execution", text: opts?.automationSource === "schedule" || opts?.automationSource === "manual" ? ROUTINE_EXECUTION_PROMPT : "" },
@@ -32967,6 +33000,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (method === "POST" && path === "/api/internal/reaction") {
         const body = await readInternalBody();
         requireActiveInternalCapability();
+        // On a live call the bot answers by voice (the tools are not shown
+        // there either); taking one back stays possible.
+        if (body.remove !== true && voiceCalls.active(internalCapability.threadId)) {
+          return json(res, 409, { error: "You are on a voice call: answer by voice, without reactions.", code: "reaction_call" });
+        }
         const outcome = botReaction({
           bot: internalSender,
           threadId: internalCapability.threadId,

@@ -61,3 +61,80 @@ it("a bot reacts and still answers in words when it has something to say", async
   const after = messages.slice(messages.indexOf(asked) + 1);
   expect(after.filter((m: any) => m.role === "bot" && m.kind === "text").map((m: any) => m.text)).toEqual(["Found it: the cache key was stale."]);
 }), 60_000);
+
+it("a bot's reaction is idempotent, one per message, from the short list, and can be taken back", async () => withScriptedServer(async (f) => {
+  const bot = (await f.cli("new-bot", "--name", "Tidy bot")).bot;
+  f.savePlan({ [bot.id]: { steps: [
+    { tool: "react_to_message", arguments: { emoji: "❤" } },
+    { tool: "react_to_message", arguments: { emoji: "❤️" } },
+    { tool: "react_to_message", arguments: { emoji: "👍" }, expectError: true },
+    { tool: "remove_reaction", arguments: {} },
+    { tool: "react_to_message", arguments: { emoji: "🚀" }, expectError: true },
+    { tool: "react_to_message", arguments: { emoji: "👍" } },
+  ], reply: "" } });
+  await f.cli("send", "--bot", bot.id, "--task", bot.activeTaskId, "--text", "Merci !");
+  expect((await f.cli("wait", "--bot", bot.id, "--task", bot.activeTaskId, "--timeout", "30")).status).toBe("settled");
+
+  const turn = f.evidence().find((entry: any) => entry.botId === bot.id);
+  // the guidance rides the turn's instructions
+  expect(turn.system).toContain("A reaction never replaces an answer");
+  const texts = turn.evidence.filter((entry: any) => entry.step).map((entry: any) => entry.response.result.content[0].text);
+  expect(texts[0]).toContain("Reacted ❤️");
+  expect(texts[1]).toContain("already reacted ❤️");
+  expect(texts[2]).toContain("one reaction per message");
+  expect(texts[3]).toContain("Removed your ❤️");
+  expect(texts[4]).toContain("emoji must be one of 👍 ✅ 👀 ❤️ 🙏 🎉 😂");
+  expect(texts[5]).toContain("Reacted 👍");
+
+  const messages = await f.messages(bot.activeTaskId);
+  const asked = messages.find((m: any) => m.role === "user" && m.text === "Merci !");
+  expect(asked.reactions).toEqual([{ emoji: "👍", actors: [{ id: `bot:${bot.id}`, kind: "bot", name: "Tidy bot" }], at: expect.any(Number) }]);
+}), 60_000);
+
+it("a bot reacts inside a confidential thread, on that thread only", async () => withScriptedServer(async (f) => {
+  const bot = (await f.cli("new-bot", "--name", "Discreet bot")).bot;
+  const secret = await f.api(`/api/bots/${bot.id}/tasks`, { title: "Dossier privé", confidential: true });
+  const threadId = secret.task?.threadId ?? secret.task?.id;
+  expect(threadId).toBeTruthy();
+  f.savePlan({ [bot.id]: { steps: [{ tool: "react_to_message", arguments: { emoji: "✅" } }], reply: "" } });
+  await f.cli("send", "--bot", bot.id, "--task", threadId, "--text", "Archive ce dossier.");
+  expect((await f.cli("wait", "--bot", bot.id, "--task", threadId, "--timeout", "30")).status).toBe("settled");
+
+  const messages = await f.messages(threadId);
+  const asked = messages.find((m: any) => m.role === "user" && m.text === "Archive ce dossier.");
+  expect(asked.reactions).toEqual([{ emoji: "✅", actors: [{ id: `bot:${bot.id}`, kind: "bot", name: "Discreet bot" }], at: expect.any(Number) }]);
+  // nothing landed on the bot's other conversation
+  const other = await f.messages(bot.activeTaskId);
+  expect(other.some((m: any) => Array.isArray(m.reactions) && m.reactions.length)).toBe(false);
+}), 60_000);
+
+it("a reply that only repeats the bot's reaction is not written", async () => withScriptedServer(async (f) => {
+  const bot = (await f.cli("new-bot", "--name", "Echo bot")).bot;
+  f.savePlan({ [bot.id]: { steps: [{ tool: "react_to_message", arguments: { emoji: "👍" } }], reply: "👍" } });
+  await f.cli("send", "--bot", bot.id, "--task", bot.activeTaskId, "--text", "Ok, merci.");
+  expect((await f.cli("wait", "--bot", bot.id, "--task", bot.activeTaskId, "--timeout", "30")).status).toBe("settled");
+  const messages = await f.messages(bot.activeTaskId);
+  const asked = messages.find((m: any) => m.role === "user" && m.text === "Ok, merci.");
+  expect(asked.reactions[0]).toMatchObject({ emoji: "👍", actors: [{ kind: "bot", name: "Echo bot" }] });
+  const after = messages.slice(messages.indexOf(asked) + 1);
+  expect(after.filter((m: any) => m.role === "bot" && m.kind === "text")).toEqual([]);
+}), 60_000);
+
+it("a bare aside after a reaction is not written, a real sentence is", async () => withScriptedServer(async (f) => {
+  const bot = (await f.cli("new-bot", "--name", "Aside bot")).bot;
+  f.savePlan({ [bot.id]: { steps: [{ tool: "react_to_message", arguments: { emoji: "❤️" } }], reply: "*(no further text needed)*" } });
+  await f.cli("send", "--bot", bot.id, "--task", bot.activeTaskId, "--text", "Merci !");
+  expect((await f.cli("wait", "--bot", bot.id, "--task", bot.activeTaskId, "--timeout", "30")).status).toBe("settled");
+  let messages = await f.messages(bot.activeTaskId);
+  let asked = messages.find((m: any) => m.role === "user" && m.text === "Merci !");
+  expect(asked.reactions[0]).toMatchObject({ emoji: "❤️" });
+  expect(messages.slice(messages.indexOf(asked) + 1).filter((m: any) => m.role === "bot" && m.kind === "text")).toEqual([]);
+
+  // without a reaction the same aside is an ordinary reply
+  f.savePlan({ [bot.id]: { steps: [], reply: "(see the attached file)" } });
+  await f.cli("send", "--bot", bot.id, "--task", bot.activeTaskId, "--text", "Where is it?");
+  expect((await f.cli("wait", "--bot", bot.id, "--task", bot.activeTaskId, "--timeout", "30")).status).toBe("settled");
+  messages = await f.messages(bot.activeTaskId);
+  asked = messages.find((m: any) => m.role === "user" && m.text === "Where is it?");
+  expect(messages.slice(messages.indexOf(asked) + 1).filter((m: any) => m.role === "bot" && m.kind === "text").map((m: any) => m.text)).toEqual(["(see the attached file)"]);
+}), 60_000);

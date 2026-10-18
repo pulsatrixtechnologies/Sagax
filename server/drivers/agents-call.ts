@@ -640,7 +640,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const remove = name === "remove_reaction";
     const messageId = String(args.message_id ?? args.messageId ?? "").trim();
     const emoji = typeof args.emoji === "string" ? args.emoji.trim() : "";
-    if (!remove && !emoji) return { text: "react_to_message needs emoji: one emoji such as 👍, ✅ or 👀.", isError: true };
+    if (!remove && !emoji) return { text: "react_to_message needs emoji: one of 👍 ✅ 👀 ❤️ 🙏 🎉 😂.", isError: true };
     const r = await api("/api/internal/reaction", {
       method: "POST",
       body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, ...(messageId ? { messageId } : {}), ...(emoji ? { emoji } : {}), remove }),
@@ -650,7 +650,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       return { text: r.changed ? `Removed your ${Array.isArray(r.removed) ? r.removed.join(" ") : "reaction"}.` : "You had no reaction there; nothing changed." };
     }
     return { text: r.changed
-      ? `Reacted ${String(r.emoji)}. Nothing else was posted: if the reaction says it all, end your turn without text.`
+      ? `Reacted ${String(r.emoji)}. Nothing else was posted. If the reaction says it all, end your turn now with an empty reply (no emoji, no placeholder, no note that nothing more is needed); never add a sentence that says the same thing, but still answer in words anything the person asked.`
       : `You had already reacted ${String(r.emoji)}; nothing changed.` };
   }
   if (name === "ask_bot") {

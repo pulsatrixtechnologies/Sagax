@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyReaction, botReactionActorId, normalizeReactions, QUICK_REACTIONS, reactionEmoji, reactionsBy, type ReactionActor } from "./reactions.ts";
+import { applyReaction, BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions, QUICK_REACTIONS, reactionEmoji, reactionsBy, type ReactionActor } from "./reactions.ts";
 
 const ALICE: ReactionActor = { id: "pr_alice", kind: "person", name: "Alice" };
 const BOB: ReactionActor = { id: "pr_bob", kind: "person", name: "Bob" };
@@ -70,5 +70,16 @@ describe("normalizeReactions", () => {
     ]);
     expect(normalizeReactions(legacy, ALICE)[0]!.actors[0]).toEqual(ALICE);
     expect(reactionsBy(normalizeReactions(legacy, ALICE), ALICE.id)).toEqual(["👍", "❤️"]);
+  });
+});
+
+describe("botReactionEmoji", () => {
+  it("takes the short list, with or without the variation selector", () => {
+    for (const emoji of BOT_REACTIONS) expect(botReactionEmoji(emoji)).toBe(emoji);
+    expect(botReactionEmoji("❤")).toBe("❤️");
+    expect(botReactionEmoji(" 👍️ ")).toBe("👍");
+  });
+  it("refuses anything else", () => {
+    for (const bad of ["🚀", "👎", "💩", "👍🏽", "ok", "", null, 3]) expect(botReactionEmoji(bad)).toBeNull();
   });
 });

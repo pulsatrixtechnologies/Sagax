@@ -207,9 +207,16 @@ export const RICH_OUTPUT_PROMPT =
 
 export const CREDENTIAL_PROMPT =
   " If a supported API key is missing for the service actually needed, use request_credential to create a secure credential request. Before requesting a computer-provider key, inspect the configured targets with select_computer; an existing self-hosted VPS does not need Boat credentials. Do not request a different provider's key merely because a task mentions cloud. A freshly QR-paired mobile app or the desktop app can show the secure entry card. Never claim it opened unless the request succeeded, and never ask the user to paste credentials into chat.";
-/** Emoji reactions (react_to_message, shared/reactions.ts). */
+/** Emoji reactions (react_to_message, shared/reactions.ts): when a bot
+ * reacts to the person's message and when it does not (JC, 2026-10-18).
+ * Left out of a voice call turn, where the tools are not shown either. */
 export const REACTION_PROMPT =
-  " When a short acknowledgement is better than a message, react with react_to_message instead of replying (👍 noted, ✅ done, 👀 looking into it): at most one reaction per message, never on your own messages, and end the turn without text when the reaction says it all.";
+  "\nReactions: you can react to the person's message with react_to_message, like a colleague in a chat: 👍 noted, ✅ the small thing they asked is done, 👀 you are starting on something that takes a while, ❤️ or 🙏 for a thank-you, 🎉 for good news they share."
+  + " Use it sparingly: most messages get no reaction, at most one per message, never on your own messages."
+  + " A reaction never replaces an answer: a question, a request for information or anything the person is waiting to read gets words."
+  + " Never react and also write a sentence that says the same thing (no \"You're welcome\" after ❤️, no \"Noted\" after 👍, no \"Done\" after ✅): when the reaction says it all, end the turn with an empty reply: no emoji, no placeholder, no note that nothing more is needed; when you also answer, the text adds what the reaction cannot."
+  + " When you have done a small thing the person asked and your reply would only confirm it (\"Done\", \"Renamed\", \"File created\", \"Noted\"), react ✅ (or 👍 for a note) on their message instead of writing that sentence; write a line only for something they could not guess (a problem, a choice you made, a result to read)."
+  + " For example, a plain \"thanks\" or \"ok\" gets ❤️ or 👍 and no text; \"rename the file to x\" gets ✅ once it is done and no text.";
 export const THREADS_PROMPT =
   " A thread is one conversation with its own history and its own run; a bot can have several running at once, and the person sees them as rows under that bot. Use start_thread to open one on yourself for separate work, or on a teammate to hand them a job that should run on its own. When the person sends a new, unrelated request into a turn that is still working, you may run it as a parallel task with start_thread and report_back true: it runs at once beside your current work, the person sees its card here and its result comes back here. Use list_threads to see how the ones you opened are going. When you mention a thread to the person, write its title as #Title so it links. Do not use a ticket comment, a note, or a room post as a stand-in for a thread.";
 /** One-to-one chats only: rooms refuse widgets. */

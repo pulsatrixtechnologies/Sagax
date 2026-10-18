@@ -33,6 +33,21 @@ export const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "👀", "🙏"
  * QUICK_REACTIONS first. */
 export const BAR_REACTIONS = ["👍", "👎", "❤️", "😂", "🎉"] as const;
 
+/** The emojis a bot may react with (react_to_message): a short set whose
+ * meaning a reader gets at a glance (JC, 2026-10-18): 👍 noted, ✅ done,
+ * 👀 looking into it, ❤️ or 🙏 for a thanks, 🎉 for good news, 😂 for a
+ * joke. A person's own picker is not limited. */
+export const BOT_REACTIONS = ["👍", "✅", "👀", "❤️", "🙏", "🎉", "😂"] as const;
+
+/** The emoji of BOT_REACTIONS a bot's call names, in its stored form, or
+ * null. The variation selector is ignored, so "❤" and "👍️" match. */
+export function botReactionEmoji(raw: unknown): string | null {
+  const emoji = reactionEmoji(raw);
+  if (!emoji) return null;
+  const bare = (value: string) => value.replace(/\uFE0F/g, "");
+  return BOT_REACTIONS.find((allowed) => bare(allowed) === bare(emoji)) ?? null;
+}
+
 /** Distinct emojis one message can carry; past that a new one is refused. */
 export const MAX_REACTION_EMOJIS = 24;
 /** UTF-16 length of one emoji sequence (a family or a flag with modifiers

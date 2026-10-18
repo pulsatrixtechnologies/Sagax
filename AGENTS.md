@@ -4537,3 +4537,20 @@ A bot saves a widget as an artifact (`save_artifact`, `update_artifact`,
   on the bot's own Local VM in Full access. Anything else is `blocked`,
   makes no call and counts no failure. Never widen this list without the
   same review as `PERSPICAX_READ_ONLY_TOOLS`.
+
+## Bot reactions to the person's message (2026-10-18)
+
+JC: "make sure the bots use, when needed, reactions to the user message".
+`react_to_message` and `remove_reaction` (docs/messages-reactions.md) are in
+every engine's agents catalogue and in rooms. Keep:
+
+- The emoji is one of `BOT_REACTIONS` (`shared/reactions.ts`, schema `enum`,
+  route refusal `reaction_emoji`); a person's picker is not limited.
+- `REACTION_PROMPT` is its own system prompt part: sparingly, never instead
+  of an answer, never a reaction plus a sentence that says the same thing.
+- A reply that only repeats the reaction (same emoji, or a bare aside such
+  as "*(no further text needed)*") is not written (`echoesOwnReaction`).
+- On a live voice call: no tools, no guidance, route `reaction_call`.
+- Tests: `shared/reactions.test.ts`, `server/drivers/agents-catalog-reactions.test.ts`,
+  `server/bot-reactions.e2e.test.ts` (idempotence, list, confidential thread,
+  echo).
