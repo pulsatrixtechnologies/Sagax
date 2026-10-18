@@ -30,7 +30,7 @@
 ---
 
 <p align="center">
-  <img src="docs/images/readme/hero.webp" alt="Sagax main window: a sidebar of bots, and a group chat where two people and three bots coordinate a website launch" width="900">
+  <img src="docs/images/readme/desktop-dark-chat-approval.png" alt="Sagax on the desktop: a sidebar of bots, and a conversation where the bot Pixel fixed a layout bug with four tools and now waits for approval to push its branch" width="900">
 </p>
 
 ## What it is
@@ -85,15 +85,37 @@ chat, and you decide how much each bot may do on its own.
 
 ## Screenshots
 
+### Desktop
+
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/images/readme/bot-computer.webp" alt="A bot's panel on the Computer tab: the live screen of its Local VM shows a browser on a website preview, with a Take control button" width="100%">
-<p align="center"><sub>Every bot has a computer you can watch and take over.</sub></p>
+<img src="docs/images/readme/desktop-dark-group.png" alt="A group chat: you, the team lead bot Atlas and the QA bot Scout plan a website launch; each bot answers when mentioned" width="100%">
+<p align="center"><sub>Groups: mention a bot and it joins in.</sub></p>
 </td>
 <td width="50%" valign="top">
-<img src="docs/images/readme/voice-mode.webp" alt="Voice call with a bot: a floating call bar with a live waveform and buttons for settings, transcript, hold, mute and hang up" width="100%">
-<p align="center"><sub>Call a bot and talk, the chat stays in view.</sub></p>
+<img src="docs/images/readme/desktop-dark-automations.png" alt="Automations calendar: a week of routines from six bots, such as a morning briefing, a docs link check and a weekly spend report" width="100%">
+<p align="center"><sub>Automations: every routine on one calendar.</sub></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/desktop-dark-connect-apps.png" alt="Connect apps: apps, MCP servers and skills your bots can use, by category, each with a Connect button" width="100%">
+<p align="center"><sub>Connect the apps your bots work with.</sub></p>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/desktop-dark-settings-models.png" alt="Settings, Models and voice: Auto model, Claude Code and Codex ready, and keys to add for other providers" width="100%">
+<p align="center"><sub>Bring your own engines and keys.</sub></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/desktop-light-chat-approval.png" alt="The same conversation in the light theme, with the approval card asking to allow a git push" width="100%">
+<p align="center"><sub>Light theme.</sub></p>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/desktop-light-automations.png" alt="The Automations calendar in the light theme" width="100%">
+<p align="center"><sub>Light theme, Automations.</sub></p>
 </td>
 </tr>
 </table>
