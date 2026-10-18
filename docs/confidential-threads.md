@@ -111,11 +111,14 @@ thread loses (messages, event and native logs):
   and status;
 - its turns' idempotency receipts in the message database (any deleted
   thread loses those);
-- the engines' own transcripts of it (below), once its idle engine process
-  is closed, and again a few seconds later; its event and native logs are
-  never written again after the deletion (an engine announcing its exit
-  would otherwise recreate them). Deleting a bot does the same for each of
-  its confidential threads.
+- the engines' own transcripts of it (below): its idle engine processes are
+  asked to close (an engine whose driver keeps no warm process, or a turn
+  still running elsewhere, is not waited for), the purge runs right after
+  the response, again a few seconds later and once more at the next start,
+  for what an engine still wrote on exit; its event and native logs are
+  never written again after the deletion. Deleting a bot, or a person's
+  data (Loi 25), does the same for each of their confidential threads, in
+  one pass.
 
 ## Engine transcripts
 
@@ -138,21 +141,32 @@ thread's files by keys, never by guessing:
   kept on the task as `engineSessions` (ids only, never on the wire), with
   its resume cursors and its event log for older threads.
 
-The keys are widened from what the homes say: the session ids filed under a
-folder named by a key, the rows of an engine database whose folder column
-holds one (Codex's `threads.cwd`), the prompt-history lines that name one.
-Then, in each home, an entry whose name holds a key goes whole; prompt
-histories (`history.jsonl`) and engine logs (`logs/*.jsonl`) lose the lines
-that name a key; Gemini's `logs.json` loses its entries; a chat record
+The keys are widened from what the homes say, by structure only: the
+session ids filed under a folder named by a key, the rows of an engine
+database whose folder column holds one (Codex's `threads.cwd`), the
+prompt-history lines whose folder (`project`, `cwd`) holds one or whose
+session field is one. A prompt's text is never read for this: a person who
+pasted a thread's id in another conversation keeps that conversation.
+Then, in each home, an entry whose name holds a key (whatever its case)
+goes whole; prompt histories (`history.jsonl`) lose the lines whose folder
+or session field names a key, engine logs (`logs/*.jsonl`) the lines that
+name one; Claude Code's `.claude.json` loses the `projects` entries of the
+thread's folder; Gemini's `logs.json` loses its entries; a chat record
 whose `sessionId` is a key goes; an engine database (`*.sqlite`, `*.db`)
-loses the rows whose id or folder column holds a key (full-text indexes
-rebuilt or merged, then VACUUM with `secure_delete`). Nothing else is read
-or changed: another thread's transcript that mentions a key (a
-`list_threads` result) stays whole, so its own session still resumes. A
-folder named after another session or thread (a UUID in its name) is not
-entered, which keeps a purge to about a second on a home with thousands of
-sessions. A purge a held database stops is kept (`confidential-engine-purge.json`,
-ids only) and retried at start and after the next purge.
+loses the rows whose id column is a key or whose folder column holds one
+(foreign keys not enforced while it does, full-text indexes rebuilt or
+merged, then VACUUM with `secure_delete` and the WAL truncated). A
+database whose bytes hold no key is never opened. Another thread's
+transcript that mentions a key (a `list_threads` result) stays whole, so
+its own session still resumes. A folder named after another session or
+thread (a UUID in its name) is not entered, and the homes are walked once
+per purge; a purge costs from a few milliseconds on a server to a second or
+two on a computer whose engine homes hold tens of thousands of entries. A
+variable that names a whole user home or the data folder is never taken for
+an engine home. What a purge cannot finish (a database an engine holds, a
+file that keeps changing) is kept (`confidential-engine-purge.json`, ids
+and paths only) and retried with the next purge and at start, at most five
+times, then logged for the operator.
 
 When a thread turns confidential, and once at start for every thread
 already confidential (`confidential-engine-sessions-v1` marks it done), its
@@ -175,7 +189,8 @@ a real CLI here):
 | pi | `sessions/--<folder>--/…_<session>.jsonl` | folder name |
 | Cursor Agent | `acp-sessions/<session>/`, `chats/<hash>/<session>/`, `projects/<folder>/` | session ids, folder name and hash |
 | Gemini, Qwen | `tmp/<hash>/chats/*.json` by its `sessionId`, `tmp/<hash>/logs.json` entries | folder hash, session ids |
-| Kimi, Droid, Cline, OpenCode, Antigravity | files and folders named by the session id (OpenCode `storage/session/…/<ses_…>.json`, `storage/message/<ses_…>/`) | session ids |
+| Kimi, Droid, Cline, Antigravity | files and folders named by the session id | session ids |
+| OpenCode | `storage/session/…/<ses_…>.json`, `storage/message/<ses_…>/`, and `storage/part/<msg_…>/` of the messages found there | session ids, then message ids |
 
 ## Honest limits
 
@@ -225,11 +240,17 @@ end-to-end encryption, and it does not hide the thread from:
   Those files cannot be split by thread and stay until edited.
 - **Engine transcripts Sagax cannot tie to the thread.** A session id an
   engine never announced, a file an engine names only by a hash of something
-  else than the thread's folder, or a session kept outside the homes above
-  (a custom location in an engine's own settings) is not found. A thread
-  deleted by a release before this one left its transcripts on disk: their
-  ids are gone with the thread. An archive restored from an older release
-  carries no event log, so a session only that log named stays in it.
+  else than the thread's folder, a row an engine database files under no
+  session (Codex `logs_*.sqlite` rows without a `thread_id`), a session kept
+  outside the homes above (a custom location in an engine's own settings, a
+  home inside a container computer such as `vm-home/`), or a history or log
+  file over 64 MB (a backup then leaves it out, a purge retries it) is not
+  found or cleaned. A thread deleted by a release before this one left its
+  transcripts on disk: their ids are gone with the thread. An archive made
+  by an older release carries no event log and no resume cursor of a
+  confidential thread, so a restore removes what its folder name, its
+  folder's hashes and the archive's engine databases tie to it, not a
+  session only those would have named (Hermes, a key home's sessions).
 - **Its owner.** The person can still copy, export or forward what they
   wrote; push notifications of their own thread go to their own devices.
 

@@ -17,8 +17,8 @@ import { writeFileAtomic } from "./atomic.ts";
 import { mergePrincipalFiles } from "./principals.ts";
 import { removeThreadTrees } from "./runtime/store.ts";
 import {
-  arrayWithoutKeys, chatOfKeys, confidentialEngineSessionPath, dataEngineHomes, databaseSidecarOf, ENGINE_PURGE_DONE, ENGINE_PURGE_FILE,
-  engineHomeOf, engineStoreKind, eventLogSessionIds, linesWithoutKeys, readPendingPurges, scrubEngineDatabase, taskEngineKeys, widenKeys,
+  chatOfKeys, confidentialEngineSessionPath, dataEngineHomes, databaseSidecarOf, ENGINE_PURGE_DONE, ENGINE_PURGE_FILE,
+  engineHomeOf, engineStoreFiltered, engineStoreKind, eventLogSessionIds, readPendingPurges, scrubEngineDatabase, taskEngineKeys, widenKeys,
 } from "./engine-transcripts.ts";
 import { escapeAttribute, splitTranscriptAttachments } from "../src/lib/composer-attachments.ts";
 import { WORKSPACE_BACKUP_CLIENT_KEYS } from "../shared/workspace-backup-client.ts";
@@ -420,7 +420,7 @@ export function confidentialEngineKeys(root: string, roster: unknown, sourceData
       }
     }
   }
-  for (const keys of readPendingPurges(root)) for (const key of keys) seed.add(key);
+  for (const pending of readPendingPurges(root)) for (const key of pending.keys) seed.add(key);
   return seed.size && widen ? widenKeys(dataEngineHomes(root), seed) : seed;
 }
 
@@ -512,6 +512,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
   let skippedLinks = 0;
   let skippedDependencies = 0;
   let skippedWorkLinks = 0;
+  let skippedEngineStores = 0;
   try {
     const root = realpathSync(dataDir);
     const roster = existsSync(join(root, "bots.json")) ? privateJson(join(root, "bots.json")) : [];
@@ -562,7 +563,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
         const stat = lstatSync(source);
         // an engine database is copied as a scrubbed snapshot (below), which
         // already holds what its journal committed
-        const sidecarOf = engineKeys.size ? databaseSidecarOf(path) : null;
+        const sidecarOf = engineKeys.size || forgotten ? databaseSidecarOf(path) : null;
         if (sidecarOf && engineStoreKind(sidecarOf, join(root, sidecarOf)) === "database") continue;
         // Installed dependencies come back from the project's lockfile, can
         // hold more files than this format allows, and are often a link an
@@ -603,21 +604,35 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
           walk(source, path);
         } else if (stat.isFile()) {
           let copied: { size: number; mode: number; sha256: string };
-          const engineKind = engineKeys.size && engineHomeOf(path) ? engineStoreKind(path, source) : null;
-          const engineText = engineKind === "lines" || engineKind === "array" || engineKind === "chat" ? smallText(source) : null;
-          // a Gemini-style chat record of a confidential thread's session
+          // an engine home's own stores (server/engine-transcripts.ts): its
+          // databases are copied as compacted snapshots whenever a confidential
+          // thread exists or one was deleted (no free page or WAL frame of it),
+          // its histories, logs and chat records without the threads' entries
+          const engineKind = (engineKeys.size || forgotten) && engineHomeOf(path) ? engineStoreKind(path, source) : null;
+          const engineText = engineKind && engineKind !== "database" && engineKeys.size ? smallText(source) : null;
+          if (engineKind && engineKind !== "database" && engineKeys.size && engineText === null) {
+            // too large to filter here: left out rather than copied whole
+            skippedEngineStores++;
+            continue;
+          }
           if (engineKind === "chat" && engineText !== null && chatOfKeys(engineText, engineKeys)) continue;
-          const filtered = engineText === null ? null : engineKind === "lines" ? linesWithoutKeys(engineText, engineKeys) : engineKind === "array" ? arrayWithoutKeys(engineText, engineKeys) : null;
+          const filtered = engineText === null || engineKind === "chat" || !engineKind || engineKind === "database" ? null : engineStoreFiltered(engineKind, engineText, engineKeys);
           if (filtered !== null) {
-            // a prompt history or log without the confidential threads' lines
             writeFileSync(destination, filtered, { mode: 0o600, flag: "wx" });
             copied = { size: lstatSync(destination).size, mode: 0o600, sha256: hashFile(destination) };
           } else if (engineKind === "database") {
-            // a consistent copy (its WAL included), then without their rows
-            const live = new DatabaseSync(source, { readOnly: true, timeout: 5_000 });
-            try { live.prepare("VACUUM INTO ?").run(destination); } finally { live.close(); }
-            scrubEngineDatabase(destination, engineKeys);
-            chmodSync(destination, 0o600);
+            try {
+              // a consistent copy (its WAL included), then without their rows
+              const live = new DatabaseSync(source, { readOnly: true, timeout: 5_000, enableForeignKeyConstraints: false });
+              try { live.prepare("VACUUM INTO ?").run(destination); } finally { live.close(); }
+              scrubEngineDatabase(destination, engineKeys);
+              chmodSync(destination, 0o600);
+            } catch {
+              // a database that cannot be copied clean is left out
+              rmSync(destination, { force: true });
+              skippedEngineStores++;
+              continue;
+            }
             copied = { size: lstatSync(destination).size, mode: 0o600, sha256: hashFile(destination) };
           } else if (path === "config.json" || path === "webhooks.json" || (path === "bots.json" && confidential.size)) {
             const value = privateJson(source);
@@ -647,6 +662,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
     walk(root);
     if (skippedLinks) warnings.push(`${skippedLinks} managed skill discovery link(s) were omitted and are recreated by the app.`);
     if (skippedDependencies) warnings.push(`${skippedDependencies} installed dependency folder(s) (node_modules) were omitted; reinstall them in the project after restoring.`);
+    if (skippedEngineStores) warnings.push(`${skippedEngineStores} engine history, log or database file(s) could not be copied without a confidential thread's entries and were omitted.`);
     if (skippedWorkLinks) warnings.push(`${skippedWorkLinks} symbolic link(s) in conversation work folders were omitted; what they point to is outside this backup.`);
     const summary: WorkspaceBackupSummary = {
       format: "openmaus.workspace-backup", version: 1, id: job.id, createdAt: new Date().toISOString(),
@@ -907,7 +923,13 @@ function withoutConfidentialEngineSessions(staged: string, manifest: Manifest): 
     if (entry.type !== "file" || !engineHomeOf(entry.path)) continue;
     const kind = engineStoreKind(entry.path, path);
     if (kind === "database") {
-      if (scrubEngineDatabase(path, keys)) touched.add(entry.path);
+      try {
+        if (scrubEngineDatabase(path, keys)) touched.add(entry.path);
+      } catch {
+        // a database that cannot be cleaned is not restored
+        rmSync(path, { force: true });
+        dropped.add(entry.path);
+      }
       // opening it (to widen the keys, to scrub it) may have folded or left
       // its journal files: they are recounted, or removed when undeclared
       for (const suffix of ["-wal", "-shm", "-journal"]) {
@@ -917,13 +939,16 @@ function withoutConfidentialEngineSessions(staged: string, manifest: Manifest): 
       }
       continue;
     }
-    const text = kind === "lines" || kind === "array" || kind === "chat" ? smallText(path) : null;
-    if (text === null) continue;
-    if (kind === "chat") {
-      if (chatOfKeys(text, keys)) { rmSync(path, { force: true }); dropped.add(entry.path); }
+    if (!kind) continue;
+    const text = smallText(path);
+    if (text === null || (kind === "chat" && chatOfKeys(text, keys))) {
+      // too large to filter, or a chat record of their session: not restored
+      rmSync(path, { force: true });
+      dropped.add(entry.path);
       continue;
     }
-    const filtered = kind === "lines" ? linesWithoutKeys(text, keys) : arrayWithoutKeys(text, keys);
+    if (kind === "chat") continue;
+    const filtered = engineStoreFiltered(kind, text, keys);
     if (filtered !== null) { writeFileSync(path, filtered, { mode: 0o600 }); touched.add(entry.path); }
   }
   if (!touched.size && !dropped.size) return manifest;

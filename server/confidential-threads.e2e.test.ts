@@ -452,13 +452,16 @@ posixOnly("confidential thread of a person on a team bot someone else owns", () 
     expect(claudeProjects(secret)).toHaveLength(1);
     expect(existsSync(rollout(codexSecret))).toBe(true);
     expect((await api("DELETE", `/api/bots/${botId}/tasks/${secret}`, ana)).status).toBe(200);
-    expect(claudeProjects(secret)).toEqual([]);
+    // the purge runs right after the response
+    await waitFor(async () => claudeProjects(secret).length === 0 && !existsSync(rollout(codexSecret)));
     expect(claudeHistory()).not.toContain(`${SECRET}-ENGINE`);
     expect(existsSync(rollout(codexSecret))).toBe(false);
     const after = new DatabaseSync(join(codex, "state_5.sqlite"), { readOnly: true });
     try { expect(after.prepare("SELECT COUNT(*) AS n FROM threads").get()).toEqual({ n: 0 }); } finally { after.close(); }
     expect(claudeProjects(plain)).toHaveLength(1);
-    expect(existsSync(join(data, "confidential-engine-purge.json"))).toBe(false);
+    // kept for one more pass at the next start (an engine that outlived the deletion), ids only
+    const pending = JSON.parse(readFileSync(join(data, "confidential-engine-purge.json"), "utf8"));
+    expect(JSON.stringify(pending)).not.toContain(SECRET);
   }, 240_000);
 
   it("CT-2: nothing is remembered, logged, scheduled or found elsewhere", async () => {

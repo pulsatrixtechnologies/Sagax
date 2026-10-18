@@ -69,17 +69,20 @@ export function sessionKey(value: unknown): string | null {
 
 /** The session ids a value carries: a resume cursor is usually the id
  * itself, sometimes an object holding it. */
-export function sessionKeysOf(value: unknown, out: Set<string> = new Set()): Set<string> {
+export function sessionKeysOf(value: unknown, out: Set<string> = new Set(), depth = 0): Set<string> {
   const direct = sessionKey(value);
   if (direct) out.add(direct);
-  else if (value && typeof value === "object") {
-    for (const item of Array.isArray(value) ? value : Object.values(value)) {
-      if (typeof item === "string") { const key = sessionKey(item); if (key) out.add(key); }
-      else if (item && typeof item === "object") sessionKeysOf(item, out);
+  else if (value && typeof value === "object" && depth < 3) {
+    if (Array.isArray(value)) { for (const item of value) sessionKeysOf(item, out, depth + 1); return out; }
+    for (const [field, item] of Object.entries(value)) {
+      // a cursor object's id fields only, never a model name or a path
+      if (typeof item === "string") { if (SESSION_FIELD.test(field)) { const key = sessionKey(item); if (key) out.add(key); } }
+      else if (item && typeof item === "object") sessionKeysOf(item, out, depth + 1);
     }
   }
   return out;
 }
+const SESSION_FIELD = /^(?:id|(?:session|thread|conversation|chat)_?id)$/i;
 
 /** The keys of a thread's own folder: its id, and the md5 and sha256 of the
  * folder (as given and resolved) that engines bucketing by a hash use. */
@@ -101,7 +104,8 @@ export function threadKeys(threadId: string, folders: readonly string[] = []): s
 /** A thread's keys from its record: thread keys plus its session ids. */
 export function taskEngineKeys(task: { threadId: string; resumeCursors?: Record<string, unknown>; engineSessions?: readonly string[] }, folders: readonly string[] = [], more: Iterable<string> = []): string[] {
   const keys = new Set(threadKeys(task.threadId, folders));
-  sessionKeysOf(task.resumeCursors ?? {}, keys);
+  // one cursor per engine instance: each is a session id, or an object holding one
+  for (const cursor of Object.values(task.resumeCursors ?? {})) sessionKeysOf(cursor, keys);
   for (const id of task.engineSessions ?? []) { const key = sessionKey(id); if (key) keys.add(key); }
   for (const id of more) { const key = sessionKey(id); if (key) keys.add(key); }
   return [...keys];
@@ -168,12 +172,24 @@ export function environmentEngineHomes(env: Env, configDirs: readonly string[] =
     at(undefined, ".cline"),
     env.XDG_DATA_HOME?.trim() ? join(env.XDG_DATA_HOME.trim(), "opencode") : at(undefined, ".local", "share", "opencode"),
   ];
-  return candidates.map((path) => directory(path)).filter((path): path is string => path !== null);
+  const homes = candidates.map((path) => directory(path)).filter((path): path is string => path !== null);
+  // Claude Code keeps its settings (`projects` per folder) beside its
+  // folder, in the user's home, unless CLAUDE_CONFIG_DIR moves both
+  if (!env.CLAUDE_CONFIG_DIR?.trim() && home) {
+    const settings = join(home, ".claude.json");
+    try { if (lstatSync(settings).isFile()) homes.push(resolve(settings)); } catch { /* none */ }
+  }
+  return homes;
 }
 
-/** Homes in a stable order, none inside another (it is walked already). */
-export function distinctHomes(homes: Iterable<string>): string[] {
-  const sorted = [...new Set([...homes].map((home) => resolve(home)))].sort((a, b) => a.length - b.length || a.localeCompare(b));
+/** Homes in a stable order, none inside another (it is walked already).
+ * A folder that is no engine's own (a filesystem root, a user's home, the
+ * data folder itself: a variable set to it by mistake) is never a home. */
+export function distinctHomes(homes: Iterable<string>, notHomes: readonly string[] = []): string[] {
+  const refused = new Set(notHomes.filter(Boolean).map((path) => resolve(path)));
+  const sorted = [...new Set([...homes].map((home) => resolve(home)))]
+    .filter((home) => home !== resolve(home, "/") && !refused.has(home))
+    .sort((a, b) => a.length - b.length || a.localeCompare(b));
   const out: string[] = [];
   for (const home of sorted) if (!out.some((parent) => home === parent || home.startsWith(parent + sep))) out.push(home);
   return out;
@@ -185,14 +201,38 @@ function holdsKey(text: string, keys: ReadonlySet<string>): boolean {
   for (const key of keys) if (text.includes(key)) return true;
   return false;
 }
+/** Names are matched whatever their case: a case-insensitive disk (APFS,
+ * NTFS) or an archive may spell the same id in capitals. */
+function nameHoldsKey(name: string, keys: ReadonlySet<string>): boolean {
+  const folded = name.toLowerCase();
+  for (const key of keys) if (folded.includes(key.toLowerCase())) return true;
+  return false;
+}
 /** A prompt history or an engine log, filed line by line: Claude's and
  * Codex's `history.jsonl`, the `*.jsonl` and `*.log` of a `logs` folder.
  * A line that names a key is that thread's, whatever else it says. */
-function lineIndexFile(relativePath: string): boolean {
+function lineIndexFile(relativePath: string): "history" | "logs" | null {
   const parts = relativePath.split(/[\\/]/);
   const name = parts.at(-1) ?? "";
-  if (/^(?:history|prompt[-_]?history)\.jsonl$/i.test(name) && parts.length <= 3) return true;
-  return parts.length >= 2 && parts.length <= 4 && parts.at(-2)!.toLowerCase() === "logs" && /\.(?:jsonl|ndjson|log)$/i.test(name);
+  if (/^(?:history|prompt[-_]?history)\.jsonl$/i.test(name) && parts.length <= 3) return "history";
+  return parts.length >= 2 && parts.length <= 4 && parts.at(-2)!.toLowerCase() === "logs" && /\.(?:jsonl|ndjson|log)$/i.test(name) ? "logs" : null;
+}
+type StoreKind = "history" | "logs" | "array" | "chat" | "settings" | "database";
+/** What a purge or a backup may look inside a home's file (by its path in
+ * the home), or null when only its name counts. */
+function storeKind(relativePath: string, absolute: string): StoreKind | null {
+  return lineIndexFile(relativePath) ?? (claudeSettingsFile(relativePath) ? "settings" : arrayIndexFile(relativePath) ? "array"
+    : chatFile(relativePath) ? "chat" : /\.(?:sqlite3?|db)$/i.test(relativePath) && sqliteFile(absolute) ? "database" : null);
+}
+/** A text store without what belongs to the keys' threads, or null. */
+function filterStore(kind: StoreKind, text: string, keys: ReadonlySet<string>): string | null {
+  return kind === "history" || kind === "logs" ? linesWithoutKeys(text, keys, kind === "logs")
+    : kind === "array" ? arrayWithoutKeys(text, keys) : kind === "settings" ? claudeSettingsWithoutKeys(text, keys) : null;
+}
+/** Claude Code's settings file (`.claude.json`): its `projects` map keeps,
+ * per working folder, that folder's state (older releases: its prompts). */
+function claudeSettingsFile(relativePath: string): boolean {
+  return /^\.claude\.json$/i.test(relativePath);
 }
 /** Gemini's and Qwen's prompt log: a JSON array of entries with a sessionId. */
 function arrayIndexFile(relativePath: string): boolean {
@@ -208,14 +248,27 @@ function chatFile(relativePath: string): boolean {
  * all: SQLite keeps text as it is, so a database without a key's bytes
  * holds no row of it and is never opened. A very large one is opened. */
 function databaseBytesHoldKey(path: string, keys: ReadonlySet<string>): boolean {
+  if (!keys.size) return false;
+  const needles = [...keys].map((key) => Buffer.from(key));
+  const overlap = Math.max(...needles.map((needle) => needle.length)) - 1;
+  const chunk = Buffer.allocUnsafe(4 * 1024 ** 2 + overlap);
   for (const file of [path, `${path}-wal`, `${path}-journal`]) {
-    let stat;
-    try { stat = lstatSync(file); } catch { continue; }
-    if (!stat.isFile()) continue;
-    if (stat.size > 512 * 1024 ** 2) return true;
-    let bytes: Buffer;
-    try { bytes = readFileSync(file); } catch { return true; }
-    for (const key of keys) if (bytes.includes(key)) return true;
+    let fd: number | undefined;
+    try {
+      try { if (!lstatSync(file).isFile()) continue; } catch { continue; }
+      fd = openSync(file, "r");
+      // read in chunks that overlap by a key's length, never the whole file
+      let carried = 0;
+      for (;;) {
+        const count = readSync(fd, chunk, carried, chunk.length - carried, null);
+        const filled = carried + count;
+        const window = chunk.subarray(0, filled);
+        if (needles.some((needle) => window.includes(needle))) return true;
+        if (!count) break;
+        carried = Math.min(overlap, filled);
+        chunk.copy(chunk, 0, filled - carried, filled);
+      }
+    } catch { return true; } finally { if (fd !== undefined) closeSync(fd); }
   }
   return false;
 }
@@ -231,7 +284,7 @@ function sqliteFile(path: string): boolean {
 
 /** Whether an entry of a home belongs to a key's thread by its name. */
 export function namedByKey(name: string, keys: ReadonlySet<string>): boolean {
-  return holdsKey(name, keys);
+  return nameHoldsKey(name, keys);
 }
 
 /** Session ids in the names under a folder named by a key: Claude's
@@ -242,7 +295,7 @@ function idsInNames(path: string, into: Set<string>): void {
   for (const name of names) {
     const stem = name.replace(/\.(?:jsonl|json|ndjson|txt|db)$/i, "");
     const whole = sessionKey(stem);
-    if (whole && /[0-9a-f]{8}/i.test(stem)) into.add(whole);
+    if (whole && (/[0-9a-f]{8}/i.test(stem) || /^(?:ses|msg|prt)_/i.test(stem))) into.add(whole);
     for (const match of stem.matchAll(UUID)) into.add(match[0]);
   }
 }
@@ -266,19 +319,30 @@ function tablesOf(db: DatabaseSync): TableShape[] {
   return out;
 }
 
+/** How a column is matched: a folder column holds a key somewhere in its
+ * path, an id column is a key exactly. */
+function matchColumn(column: string): string {
+  return PATH_COLUMN.test(column) ? `instr(CAST(${quote(column)} AS TEXT), ?) > 0` : `CAST(${quote(column)} AS TEXT) = ?`;
+}
+/** An engine database, opened without foreign key enforcement: rows of a
+ * session go table by table, in whatever order the schema has them. */
+function openEngineDatabase(path: string, readOnly: boolean): DatabaseSync {
+  return new DatabaseSync(path, { readOnly, timeout: 3_000, enableForeignKeyConstraints: false });
+}
+
 /** Ids of rows whose folder column holds a key (Codex's `threads.cwd`). */
 function idsInDatabase(path: string, keys: ReadonlySet<string>, into: Set<string>): void {
   if (!databaseBytesHoldKey(path, keys)) return;
   let db: DatabaseSync | undefined;
   try {
-    db = new DatabaseSync(path, { readOnly: true, timeout: 2_000 });
+    db = openEngineDatabase(path, true);
     for (const table of tablesOf(db)) {
       if (table.external) continue;
       const ids = table.columns.filter((column) => SESSION_COLUMN.test(column));
       const paths = table.columns.filter((column) => PATH_COLUMN.test(column));
       if (!ids.length || !paths.length) continue;
       for (const column of paths) {
-        const read = db.prepare(`SELECT ${ids.map(quote).join(", ")} FROM ${quote(table.name)} WHERE instr(CAST(${quote(column)} AS TEXT), ?) > 0 LIMIT 10000`);
+        const read = db.prepare(`SELECT ${ids.map(quote).join(", ")} FROM ${quote(table.name)} WHERE ${matchColumn(column)} LIMIT 10000`);
         for (const key of keys) {
           for (const row of read.all(key) as Array<Record<string, unknown>>) for (const value of Object.values(row)) { const id = sessionKey(value); if (id) into.add(id); }
         }
@@ -290,12 +354,12 @@ function idsInDatabase(path: string, keys: ReadonlySet<string>, into: Set<string
 /** Whether a row of the database names a key (read only: no write lock is
  * taken on a database that holds nothing of the keys). */
 function databaseNamesKey(path: string, keys: ReadonlySet<string>): boolean {
-  const db = new DatabaseSync(path, { readOnly: true, timeout: 3_000 });
+  const db = openEngineDatabase(path, true);
   try {
     for (const table of tablesOf(db)) {
       if (table.external) continue;
       for (const column of table.columns.filter((name) => ID_COLUMN.test(name))) {
-        const read = db.prepare(`SELECT 1 FROM ${quote(table.name)} WHERE instr(CAST(${quote(column)} AS TEXT), ?) > 0 LIMIT 1`);
+        const read = db.prepare(`SELECT 1 FROM ${quote(table.name)} WHERE ${matchColumn(column)} LIMIT 1`);
         for (const key of keys) if (read.get(key)) return true;
       }
     }
@@ -305,24 +369,51 @@ function databaseNamesKey(path: string, keys: ReadonlySet<string>): boolean {
   }
 }
 
+/** Rows were deleted but the database could not be compacted yet (an
+ * engine held it): its free pages may still hold them. Kept to retry. */
+export class VacuumPending extends Error {}
+
+/** Merge full-text indexes, VACUUM and truncate the WAL of an engine
+ * database. Throws VacuumPending when a reader holds it. */
+export function compactEngineDatabase(path: string): void {
+  const db = openEngineDatabase(path, false);
+  try {
+    db.exec("PRAGMA secure_delete = ON");
+    for (const table of tablesOf(db).filter((shape) => shape.fts)) {
+      // an external-content index is rebuilt from what stays; an index of its
+      // own content merges its segments, which drops deleted terms
+      try { db.exec(`INSERT INTO ${quote(table.name)}(${quote(table.name)}) VALUES ('${table.external ? "rebuild" : "optimize"}')`); } catch { /* a contentless index: nothing kept to rebuild */ }
+    }
+    try { db.exec("VACUUM"); } catch (error) { throw new VacuumPending(error instanceof Error ? error.message : "busy"); }
+    const mode = (db.prepare("PRAGMA journal_mode").get() as { journal_mode?: string } | undefined)?.journal_mode;
+    if (mode === "wal") {
+      const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy?: number } | undefined;
+      if (checkpoint?.busy) throw new VacuumPending("WAL still held");
+    }
+  } finally {
+    db.close();
+  }
+}
+
 /** Delete the rows of a key's threads from an engine database: rows whose
- * id or folder column holds a key, in every table but full-text shadow
- * tables; full-text indexes rebuilt or merged; then VACUUM with
- * secure_delete so no free page keeps them. Returns the rows deleted.
- * Throws when the database is held (the purge is then kept to retry). */
+ * id column is a key or whose folder column holds one, in every table but
+ * full-text shadow tables; then compactEngineDatabase so no free page,
+ * index segment or WAL frame keeps them. Returns the rows deleted. Throws
+ * when the database is held (VacuumPending once the rows are gone): the
+ * purge is then kept to retry. */
 export function scrubEngineDatabase(path: string, keys: ReadonlySet<string>): number {
   if (!keys.size || !databaseBytesHoldKey(path, keys) || !databaseNamesKey(path, keys)) return 0;
-  const db = new DatabaseSync(path, { timeout: 3_000 });
+  const db = openEngineDatabase(path, false);
+  let deleted = 0;
   try {
     db.exec("PRAGMA secure_delete = ON");
     const tables = tablesOf(db);
-    let deleted = 0;
     db.exec("BEGIN IMMEDIATE");
     try {
       for (const table of tables) {
         if (table.external) continue;
         for (const column of table.columns.filter((name) => ID_COLUMN.test(name))) {
-          const remove = db.prepare(`DELETE FROM ${quote(table.name)} WHERE instr(CAST(${quote(column)} AS TEXT), ?) > 0`);
+          const remove = db.prepare(`DELETE FROM ${quote(table.name)} WHERE ${matchColumn(column)}`);
           for (const key of keys) deleted += Number(remove.run(key).changes);
         }
       }
@@ -331,18 +422,11 @@ export function scrubEngineDatabase(path: string, keys: ReadonlySet<string>): nu
       db.exec("ROLLBACK");
       throw error;
     }
-    if (!deleted) return 0;
-    for (const table of tables.filter((shape) => shape.fts)) {
-      // an external-content index is rebuilt from what stays; an index of its
-      // own content merges its segments, which drops deleted terms
-      try { db.exec(`INSERT INTO ${quote(table.name)}(${quote(table.name)}) VALUES ('${table.external ? "rebuild" : "optimize"}')`); } catch { /* a contentless index: nothing kept to rebuild */ }
-    }
-    db.exec("VACUUM");
-    try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* not in WAL mode */ }
-    return deleted;
   } finally {
     db.close();
   }
+  if (deleted) compactEngineDatabase(path);
+  return deleted;
 }
 
 // ── text stores ──────────────────────────────────────────────────────────
@@ -354,19 +438,58 @@ function readSmall(path: string, limit: number): string | null {
     return readFileSync(path, "utf8");
   } catch { return null; }
 }
-/** A line file without the lines that name a key, or null when none does. */
-export function linesWithoutKeys(text: string, keys: ReadonlySet<string>): string | null {
-  if (!holdsKey(text, keys)) return null;
-  return text.split("\n").filter((line) => !holdsKey(line, keys)).join("\n");
+const ID_FIELD = /^(?:session_?id|thread_?id|conversation_?id|chat_?id|parent_?session_?id)$/i;
+const FOLDER_FIELD = /^(?:project|project_?(?:path|dir|root)|cwd|work_?dir|workspace|directory|path)$/i;
+/** Whether a record (a history line, a log entry) is a key's thread's by its
+ * structure: a session field that is a key, or a folder field that holds
+ * one. Its prompt text is never read: a person who pasted a thread's id in
+ * another conversation does not lose that conversation. */
+function recordNamesKey(value: unknown, keys: ReadonlySet<string>, depth = 0): boolean {
+  if (!value || typeof value !== "object" || depth > 3) return false;
+  for (const [field, item] of Object.entries(value)) {
+    if (typeof item === "string") {
+      if (ID_FIELD.test(field) && keys.has(item)) return true;
+      if (FOLDER_FIELD.test(field) && holdsKey(item, keys)) return true;
+    } else if (item && typeof item === "object" && !Array.isArray(item) && recordNamesKey(item, keys, depth + 1)) return true;
+  }
+  return false;
 }
-/** A JSON array without the entries that name a key, or null. */
+function lineNamesKey(line: string, keys: ReadonlySet<string>, logs: boolean): boolean {
+  if (!holdsKey(line, keys)) return false;
+  let value: unknown;
+  try { value = JSON.parse(line); } catch { return logs; }
+  // a plain-text log line is a log line: it goes when it names a key
+  return value && typeof value === "object" ? recordNamesKey(value, keys) : logs;
+}
+/** A line file without the lines of a key's thread, or null when none is.
+ * `logs`: an engine log, whose plain-text lines go when they name a key. */
+export function linesWithoutKeys(text: string, keys: ReadonlySet<string>, logs = false): string | null {
+  if (!holdsKey(text, keys)) return null;
+  const lines = text.split("\n");
+  const kept = lines.filter((line) => !lineNamesKey(line, keys, logs));
+  return kept.length === lines.length ? null : kept.join("\n");
+}
+/** A JSON array without the entries of a key's thread, or null. */
 export function arrayWithoutKeys(text: string, keys: ReadonlySet<string>): string | null {
   if (!holdsKey(text, keys)) return null;
   let value: unknown;
   try { value = JSON.parse(text); } catch { return null; }
   if (!Array.isArray(value)) return null;
-  const kept = value.filter((item) => !holdsKey(JSON.stringify(item), keys));
+  const kept = value.filter((item) => !recordNamesKey(item, keys));
   return kept.length === value.length ? null : JSON.stringify(kept, null, 2);
+}
+/** Claude Code's `.claude.json` without the `projects` entries of a key's
+ * folder, or null. */
+export function claudeSettingsWithoutKeys(text: string, keys: ReadonlySet<string>): string | null {
+  if (!holdsKey(text, keys)) return null;
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return null; }
+  const projects = value && typeof value === "object" ? (value as { projects?: unknown }).projects : undefined;
+  if (!projects || typeof projects !== "object" || Array.isArray(projects)) return null;
+  const names = Object.keys(projects).filter((folder) => holdsKey(folder, keys));
+  if (!names.length) return null;
+  for (const folder of names) delete (projects as Record<string, unknown>)[folder];
+  return JSON.stringify(value, null, 2);
 }
 function chatSession(text: string): string | null {
   try {
@@ -375,25 +498,38 @@ function chatSession(text: string): string | null {
   } catch { return null; }
 }
 function sessionIdsInLines(text: string, keys: ReadonlySet<string>, into: Set<string>): void {
+  if (!holdsKey(text, keys)) return;
   for (const line of text.split("\n")) {
     if (!holdsKey(line, keys)) continue;
-    try {
-      const value = JSON.parse(line) as Record<string, unknown>;
-      for (const field of ["sessionId", "session_id", "conversationId", "conversation_id", "thread_id", "threadId"]) { const id = sessionKey(value[field]); if (id) into.add(id); }
-    } catch { /* not JSON */ }
+    let value: unknown;
+    try { value = JSON.parse(line); } catch { continue; }
+    if (!value || typeof value !== "object" || !recordNamesKey(value, keys)) continue;
+    for (const [field, item] of Object.entries(value)) if (ID_FIELD.test(field)) { const id = sessionKey(item); if (id) into.add(id); }
   }
 }
-function rewrite(path: string, text: string): void {
-  const mode = lstatSync(path).mode & 0o777;
-  writeFileAtomic(path, text, { mode: mode || 0o600 });
+/** Rewrite a shared file (a prompt history other sessions append to)
+ * without what `filter` removes. Read again when it changed meanwhile, so
+ * a line appended during the filter is kept; throws when it keeps changing. */
+function rewriteFiltered(path: string, limit: number, filter: (text: string) => string | null): boolean {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const before = lstatSync(path);
+    if (!before.isFile()) return false;
+    if (before.size > limit) throw new Error("too large to filter");
+    const next = filter(readFileSync(path, "utf8"));
+    if (next === null) return false;
+    const now = lstatSync(path);
+    if (now.size !== before.size || now.mtimeMs !== before.mtimeMs) continue;
+    writeFileAtomic(path, next, { mode: (before.mode & 0o777) || 0o600 });
+    return true;
+  }
+  throw new Error("changed while filtered");
 }
 
 // ── the walk ─────────────────────────────────────────────────────────────
 
 /** One entry of a home, as the walk found it. `kind` says what a purge may
- * look inside: a prompt history or log, a JSON prompt log, a chat record,
- * a database, or nothing (only its name counts). */
-interface Indexed { path: string; name: string; dir: boolean; kind: "lines" | "array" | "chat" | "database" | null }
+ * look inside (storeKind), or null when only its name counts. */
+interface Indexed { path: string; name: string; dir: boolean; kind: StoreKind | null }
 
 /** Every entry of the homes, depth first, links never followed, folders
  * named after another session or thread not entered (ANOTHER_ONES), read
@@ -402,6 +538,11 @@ export function indexEngineHomes(homes: readonly string[]): { entries: Indexed[]
   const entries: Indexed[] = [];
   let left = MAX_ENTRIES;
   for (const home of homes) {
+    // a home that is one file (the user's `.claude.json`)
+    try {
+      const stat = lstatSync(home);
+      if (stat.isFile()) { entries.push({ path: home, name: "", dir: false, kind: storeKind(home.split(/[\\/]/).pop()!, home) }); continue; }
+    } catch { continue; }
     const go = (dir: string, rel: string, depth: number) => {
       if (depth > MAX_DEPTH || left <= 0) return;
       let found: Dirent[];
@@ -414,10 +555,7 @@ export function indexEngineHomes(homes: readonly string[]): { entries: Indexed[]
         const childRel = rel ? `${rel}/${name}` : name;
         // a link is never followed, nor taken for a folder
         const isDir = entry.isDirectory();
-        const kind = isDir || !entry.isFile() ? null
-          : lineIndexFile(childRel) ? "lines" : arrayIndexFile(childRel) ? "array" : chatFile(childRel) ? "chat"
-            : /\.(?:sqlite3?|db)$/i.test(name) && sqliteFile(path) ? "database" : null;
-        entries.push({ path, name, dir: isDir, kind });
+        entries.push({ path, name, dir: isDir, kind: isDir || !entry.isFile() ? null : storeKind(childRel, path) });
         if (isDir && !SKIPPED_DIRS.has(name) && !ANOTHER_ONES.test(name)) go(path, childRel, depth + 1);
       }
     };
@@ -428,7 +566,7 @@ export function indexEngineHomes(homes: readonly string[]): { entries: Indexed[]
 
 /** The keys a set of homes adds to a thread's: the session ids filed under a
  * folder its keys name, in database rows whose folder holds one, and on
- * the history lines that name one. Read only. */
+ * the history lines whose folder or session is one. Read only. */
 export function widenKeys(homes: readonly string[], seed: Iterable<string>, index = indexEngineHomes(homes)): Set<string> {
   const keys = new Set(seed);
   if (!keys.size) return keys;
@@ -442,7 +580,7 @@ export function widenKeys(homes: readonly string[], seed: Iterable<string>, inde
         if (entry.dir && !listed.has(entry.path)) { listed.add(entry.path); idsInNames(entry.path, keys); }
         continue;
       }
-      if (entry.kind === "lines") { const body = text(entry.path); if (body) sessionIdsInLines(body, keys, keys); }
+      if (entry.kind === "history" || entry.kind === "logs") { const body = text(entry.path); if (body) sessionIdsInLines(body, keys, keys); }
       else if (entry.kind === "database") idsInDatabase(entry.path, keys, keys);
     }
     if (keys.size === before) break;
@@ -453,21 +591,25 @@ export function widenKeys(homes: readonly string[], seed: Iterable<string>, inde
 export interface EnginePurgeResult {
   /** entries removed whole (files and folders) */
   removed: number;
-  /** history and log files rewritten without a line */
+  /** history, log and settings files rewritten */
   rewritten: number;
   /** database rows deleted */
   rows: number;
-  /** homes' paths a purge could not finish (held, unreadable): retried */
+  /** paths a purge could not finish (held, unreadable, too large): retried */
   failed: string[];
+  /** databases whose rows went but that could not be compacted yet */
+  vacuum: string[];
+  /** the walk stopped at its entry budget: some entries were not seen */
+  incomplete: boolean;
 }
 
 /** Remove everything of the keys' threads from the homes (see the header).
  * Keys are widened first (widenKeys). Never throws: what it could not do is
- * listed in `failed`, for the caller to keep and retry. */
+ * listed in `failed` and `vacuum`, for the caller to keep and retry. */
 export function purgeEngineSessions(homes: readonly string[], seed: Iterable<string>): EnginePurgeResult & { keys: Set<string> } {
   const index = indexEngineHomes(homes);
   const keys = widenKeys(homes, seed, index);
-  const result: EnginePurgeResult = { removed: 0, rewritten: 0, rows: 0, failed: [] };
+  const result: EnginePurgeResult = { removed: 0, rewritten: 0, rows: 0, failed: [], vacuum: [], incomplete: !index.complete };
   if (!keys.size) return { ...result, keys };
   const removed: string[] = [];
   for (const entry of index.entries) {
@@ -479,34 +621,43 @@ export function purgeEngineSessions(homes: readonly string[], seed: Iterable<str
         if (entry.dir) removed.push(entry.path);
         continue;
       }
-      if (entry.kind === "lines" || entry.kind === "array") {
-        const text = readSmall(entry.path, MAX_TEXT_BYTES);
-        const next = text === null ? null : entry.kind === "lines" ? linesWithoutKeys(text, keys) : arrayWithoutKeys(text, keys);
-        if (next !== null) { rewrite(entry.path, next); result.rewritten++; }
-      } else if (entry.kind === "chat") {
+      if (entry.kind === "chat") {
         const text = readSmall(entry.path, MAX_CHAT_BYTES);
+        if (text === null && lstatSync(entry.path).size > MAX_CHAT_BYTES) throw new Error("too large to read");
         const session = text === null ? null : chatSession(text);
         if (session && keys.has(session)) { rmSync(entry.path, { force: true }); result.removed++; }
       } else if (entry.kind === "database") {
         result.rows += scrubEngineDatabase(entry.path, keys);
+      } else if (entry.kind) {
+        const kind = entry.kind;
+        if (rewriteFiltered(entry.path, MAX_TEXT_BYTES, (text) => filterStore(kind, text, keys))) result.rewritten++;
       }
-    } catch {
-      result.failed.push(entry.path);
+    } catch (error) {
+      if (error instanceof VacuumPending) { result.rows++; result.vacuum.push(entry.path); } else result.failed.push(entry.path);
     }
   }
-  if (!index.complete) result.failed.push("(entry budget reached)");
   return { ...result, keys };
+}
+
+/** Compact databases a purge left uncompacted; returns those still held. */
+export function compactPending(paths: readonly string[]): string[] {
+  const left: string[] = [];
+  for (const path of paths) {
+    try { if (sqliteFile(path)) compactEngineDatabase(path); } catch { left.push(path); }
+  }
+  return left;
 }
 
 // ── the workspace backup (server/workspace-backup.ts) ────────────────────
 
 /** The part of a data-relative path that names an engine home, or null:
  * `principals/<person>/<engine>`, `org/<engine>`, `engine-policies/<name>`
- * (`providers/` never leaves in a backup). */
+ * (`providers/` never leaves in a backup), whatever the case of the root. */
 export function engineHomeOf(path: string): string | null {
   const parts = path.split("/");
-  if (parts[0] === "principals" && parts.length >= 3) return parts.slice(0, 3).join("/");
-  if ((parts[0] === "org" || parts[0] === "engine-policies") && parts.length >= 2) return parts.slice(0, 2).join("/");
+  const root = parts[0]?.toLowerCase();
+  if (root === "principals" && parts.length >= 3) return parts.slice(0, 3).join("/");
+  if ((root === "org" || root === "engine-policies") && parts.length >= 2) return parts.slice(0, 2).join("/");
   return null;
 }
 
@@ -521,19 +672,18 @@ export function confidentialEngineSessionPath(path: string, keys: ReadonlySet<st
 }
 
 /** How a backup copies a file of an engine home that may name a key inside
- * it: "lines" (a prompt history or log, without the key's lines), "array"
- * (Gemini's logs.json), "chat" (left out when its session is a key),
- * "database" (snapshotted, then scrubbed), or null (copied as it is). */
-export function engineStoreKind(path: string, absolute: string): "lines" | "array" | "chat" | "database" | null {
+ * it (storeKind): a text store filtered (engineStoreFiltered), a chat
+ * record left out when its session is a key, a database snapshotted then
+ * scrubbed; null: copied as it is. */
+export function engineStoreKind(path: string, absolute: string): StoreKind | null {
   const home = engineHomeOf(path);
   if (!home || home === path) return null;
-  const rel = path.slice(home.length + 1);
-  if (lineIndexFile(rel)) return "lines";
-  if (arrayIndexFile(rel)) return "array";
-  if (chatFile(rel)) return "chat";
-  if (sqliteFile(absolute)) return "database";
-  return null;
+  return storeKind(path.slice(home.length + 1), absolute);
 }
+export function engineStoreFiltered(kind: StoreKind, text: string, keys: ReadonlySet<string>): string | null {
+  return filterStore(kind, text, keys);
+}
+export const MAX_FILTERED_BYTES = MAX_TEXT_BYTES;
 
 /** A database's sidecars (`-wal`, `-shm`, `-journal`): a snapshot of the
  * database already holds what they committed. */
@@ -550,25 +700,37 @@ export function chatOfKeys(text: string, keys: ReadonlySet<string>): boolean {
 
 export const ENGINE_PURGE_FILE = "confidential-engine-purge.json";
 export const ENGINE_PURGE_DONE = "confidential-engine-sessions-v1";
+/** How many times a purge is tried again before it is given up (logged). */
+export const ENGINE_PURGE_ATTEMPTS = 5;
 
-/** The keys of purges not finished yet (a held database, an engine that
- * still ran): retried at start and after every purge. Ids only. */
-export function readPendingPurges(dataDir: string): string[][] {
+/** A purge not finished yet: its keys (ids only), the databases left to
+ * compact, and how often it was tried. */
+export interface PendingPurge { keys: string[]; vacuum: string[]; attempts: number }
+const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
+/** The purges not finished yet (a held database, an engine that still
+ * ran): retried at start and with the next purge. */
+export function readPendingPurges(dataDir: string): PendingPurge[] {
   const text = readSmall(join(dataDir, ENGINE_PURGE_FILE), MAX_TEXT_BYTES);
   if (!text) return [];
   try {
     const value = JSON.parse(text) as { pending?: unknown };
-    return Array.isArray(value.pending) ? value.pending.filter((keys): keys is string[] => Array.isArray(keys) && keys.every((key) => typeof key === "string")).slice(-500) : [];
+    if (!Array.isArray(value.pending)) return [];
+    return value.pending.flatMap((item): PendingPurge[] => {
+      if (!item || typeof item !== "object") return [];
+      const entry = item as Record<string, unknown>;
+      return [{ keys: strings(entry.keys), vacuum: strings(entry.vacuum), attempts: typeof entry.attempts === "number" ? entry.attempts : 0 }];
+    }).slice(-500);
   } catch { return []; }
 }
-export function writePendingPurges(dataDir: string, pending: readonly string[][]): void {
+export function writePendingPurges(dataDir: string, pending: readonly PendingPurge[]): void {
   const path = join(dataDir, ENGINE_PURGE_FILE);
   if (!pending.length) { rmSync(path, { force: true }); return; }
   writeFileAtomic(path, JSON.stringify({ pending: pending.slice(-500) }), { mode: 0o600 });
 }
 
-/** For a log line: how many homes and keys, never a path or a key. */
+/** For a log line: counts only, never a path or a key. */
 export function describePurge(result: EnginePurgeResult): string {
-  return `${result.removed} entr${result.removed === 1 ? "y" : "ies"}, ${result.rewritten} file(s) rewritten, ${result.rows} row(s)${result.failed.length ? `, ${result.failed.length} left to retry` : ""}`;
+  return `${result.removed} entr${result.removed === 1 ? "y" : "ies"}, ${result.rewritten} file(s) rewritten, ${result.rows} row(s)` +
+    `${result.failed.length + result.vacuum.length ? `, ${result.failed.length + result.vacuum.length} left to retry` : ""}${result.incomplete ? ", walk stopped at its entry budget" : ""}`;
 }
-

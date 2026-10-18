@@ -45,7 +45,9 @@ describe("engine session keys", () => {
   it("keys a thread by its id, its folder's hashes and every session it had", () => {
     const data = temp();
     const { secret } = folders(data);
-    const keys = taskEngineKeys({ threadId: SECRET_THREAD, resumeCursors: { claude: SECRET_SESSION, codex: { threadId: CODEX_SECRET } }, engineSessions: [OLD_SECRET_SESSION, "fake-session"] }, [secret]);
+    const keys = taskEngineKeys({ threadId: SECRET_THREAD, resumeCursors: { claude: SECRET_SESSION, codex: { threadId: CODEX_SECRET, model: "gpt-5.5-codex-2026" } }, engineSessions: [OLD_SECRET_SESSION, "fake-session"] }, [secret]);
+    // a cursor object gives its id fields only, never a model name
+    expect(keys).not.toContain("gpt-5.5-codex-2026");
     expect(keys).toEqual(expect.arrayContaining([SECRET_THREAD, SECRET_SESSION, CODEX_SECRET, OLD_SECRET_SESSION,
       createHash("md5").update(secret).digest("hex"), createHash("sha256").update(secret).digest("hex")]));
     expect(keys).not.toContain("fake-session");
@@ -100,11 +102,17 @@ describe("purgeEngineSessions", () => {
     put(join(claude, "session-env", SECRET_SESSION, "env"), "x");
     put(join(claude, "debug", `${SECRET_SESSION}.txt`), "ULTRASECRET");
     put(join(claude, "todos", `${OTHER_SESSION}-agent-${OTHER_SESSION}.json`), "[]");
+    // the person pasted the secret thread's id in another conversation: that
+    // one is kept whole, its history line too
+    const pasted = "dddddddd-5555-4555-8555-555555555555";
+    put(join(claude, "projects", "-Users-person-elsewhere", `${pasted}.jsonl`), `{"message":"look at ${SECRET_THREAD}"}\n`);
     put(join(claude, "history.jsonl"), [
       JSON.stringify({ display: "ULTRASECRET one", project: secret, sessionId: SECRET_SESSION }),
       JSON.stringify({ display: "hello", project: other, sessionId: OTHER_SESSION }),
       JSON.stringify({ display: "ULTRASECRET two", project: secret }),
+      JSON.stringify({ display: `look at ${SECRET_THREAD}`, project: "/Users/person/elsewhere", sessionId: pasted }),
     ].join("\n") + "\n");
+    put(join(claude, ".claude.json"), JSON.stringify({ projects: { [secret]: { history: [{ display: "ULTRASECRET" }] }, [other]: { history: [] } }, numStartups: 3 }));
     // only the thread id is known (an older release kept no session ids): the
     // folder named after it gives its sessions
     const result = purgeEngineSessions(dataEngineHomes(data), threadKeys(SECRET_THREAD, [secret]));
@@ -116,6 +124,12 @@ describe("purgeEngineSessions", () => {
     const history = readFileSync(join(claude, "history.jsonl"), "utf8");
     expect(history).not.toContain("ULTRASECRET");
     expect(history).toContain(OTHER_SESSION);
+    expect(history).toContain(pasted);
+    expect(existsSync(join(claude, "projects", "-Users-person-elsewhere", `${pasted}.jsonl`))).toBe(true);
+    expect(result.keys.has(pasted)).toBe(false);
+    const settings = JSON.parse(readFileSync(join(claude, ".claude.json"), "utf8"));
+    expect(Object.keys(settings.projects)).toEqual([other]);
+    expect(settings.numStartups).toBe(3);
     expect(result.keys.has(SECRET_SESSION) && result.keys.has(OLD_SECRET_SESSION)).toBe(true);
   });
 
@@ -210,7 +224,9 @@ describe("purgeEngineSessions", () => {
     put(join(bucket, "logs.json"), JSON.stringify([{ sessionId: SECRET_SESSION, message: "ULTRASECRET" }, { sessionId: OTHER_SESSION, message: "hello" }]));
     const opencodeSession = "ses_01JZZZZZZZ0123456789";
     put(join(home, ".local", "share", "opencode", "storage", "session", "global", `${opencodeSession}.json`), "ULTRASECRET");
-    put(join(home, ".local", "share", "opencode", "storage", "message", opencodeSession, "msg_1.json"), "ULTRASECRET");
+    put(join(home, ".local", "share", "opencode", "storage", "message", opencodeSession, "msg_01JQ8ZK2X3.json"), "ULTRASECRET");
+    put(join(home, ".local", "share", "opencode", "storage", "part", "msg_01JQ8ZK2X3", "prt_01JQ8ZK2X4.json"), "ULTRASECRET words");
+    put(join(home, ".local", "share", "opencode", "storage", "part", "msg_01JQ9OTHER5", "prt_01JQ9OTHER6.json"), "hello");
     for (const path of [grokSecret, grokOther, piSecret, cursorSecret, cursorOther, cursorChat]) put(path, "x");
     const homes = distinctHomes([...dataEngineHomes(data), ...environmentEngineHomes({ HOME: home })]);
     const result = purgeEngineSessions(homes, taskEngineKeys({ threadId: SECRET_THREAD, resumeCursors: { gemini: SECRET_SESSION, opencode: opencodeSession } }, [secret]));
@@ -222,6 +238,8 @@ describe("purgeEngineSessions", () => {
     expect(JSON.parse(readFileSync(join(bucket, "logs.json"), "utf8"))).toEqual([{ sessionId: OTHER_SESSION, message: "hello" }]);
     expect(existsSync(join(home, ".local", "share", "opencode", "storage", "session", "global", `${opencodeSession}.json`))).toBe(false);
     expect(existsSync(join(home, ".local", "share", "opencode", "storage", "message", opencodeSession))).toBe(false);
+    expect(existsSync(join(home, ".local", "share", "opencode", "storage", "part", "msg_01JQ8ZK2X3"))).toBe(false);
+    expect(existsSync(join(home, ".local", "share", "opencode", "storage", "part", "msg_01JQ9OTHER5"))).toBe(true);
   });
 
   it("is idempotent and never follows a symbolic link out of a home", async () => {
@@ -236,6 +254,41 @@ describe("purgeEngineSessions", () => {
     expect(first.removed).toBe(0);
     expect(existsSync(join(outside, `${SECRET_SESSION}.jsonl`))).toBe(true);
     expect(purgeEngineSessions(dataEngineHomes(data), [SECRET_SESSION]).removed).toBe(0);
+  });
+
+  it("scrubs a database whose foreign keys tie a session's rows together", () => {
+    const data = temp();
+    const path = join(data, "engine-policies", "hermes-org", "state.db");
+    mkdirSync(dirname(path), { recursive: true });
+    const db = new DatabaseSync(path);
+    db.exec("PRAGMA foreign_keys = ON; CREATE TABLE sessions (id TEXT PRIMARY KEY); CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT REFERENCES sessions(id), content TEXT)");
+    db.prepare("INSERT INTO sessions VALUES (?)").run(SECRET_SESSION);
+    db.prepare("INSERT INTO messages (session_id, content) VALUES (?, 'ULTRASECRET')").run(SECRET_SESSION);
+    db.close();
+    const result = purgeEngineSessions(dataEngineHomes(data), [SECRET_SESSION]);
+    expect(result.failed).toEqual([]);
+    expect(result.rows).toBe(2);
+    expect(readFileSync(path).includes("ULTRASECRET")).toBe(false);
+  });
+
+  it("matches ids exactly in id columns and names whatever their case", () => {
+    const data = temp();
+    const path = join(data, "engine-policies", "hermes-org", "state.db");
+    mkdirSync(dirname(path), { recursive: true });
+    const db = new DatabaseSync(path);
+    db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY)");
+    db.prepare("INSERT INTO sessions VALUES (?)").run(`${SECRET_SESSION}-child`);
+    db.close();
+    put(join(data, "engine-policies", "hermes-org", "sessions", `session_${SECRET_SESSION.toUpperCase()}.json`), "x");
+    const result = purgeEngineSessions(dataEngineHomes(data), [SECRET_SESSION]);
+    expect(result.rows).toBe(0);
+    expect(existsSync(join(data, "engine-policies", "hermes-org", "sessions", `session_${SECRET_SESSION.toUpperCase()}.json`))).toBe(false);
+    expect(confidentialEngineSessionPath(`Principals/p/claude/projects/x-${SECRET_THREAD.toUpperCase()}/a.jsonl`, new Set([SECRET_THREAD]))).toBe(true);
+  });
+
+  it("never takes a whole user home or the data folder for an engine home", () => {
+    const home = temp();
+    expect(distinctHomes([home, join(home, ".claude"), "/"], [home])).toEqual([join(home, ".claude")]);
   });
 
   it("leaves a database that names no key untouched, and scrubs one that does", () => {
@@ -278,8 +331,9 @@ describe("the backup's view of engine homes", () => {
     const data = temp();
     const db = join(data, "state_5.sqlite");
     new DatabaseSync(db).exec("CREATE TABLE t (id TEXT)");
-    expect(engineStoreKind("principals/p/claude/history.jsonl", join(data, "none"))).toBe("lines");
-    expect(engineStoreKind("principals/p/grok/.grok/logs/unified.jsonl", join(data, "none"))).toBe("lines");
+    expect(engineStoreKind("principals/p/claude/history.jsonl", join(data, "none"))).toBe("history");
+    expect(engineStoreKind("principals/p/grok/.grok/logs/unified.jsonl", join(data, "none"))).toBe("logs");
+    expect(engineStoreKind("principals/p/claude/.claude.json", join(data, "none"))).toBe("settings");
     expect(engineStoreKind("principals/p/gemini-key/.gemini/tmp/abc/logs.json", join(data, "none"))).toBe("array");
     expect(engineStoreKind("principals/p/gemini-key/.gemini/tmp/abc/chats/session-1.json", join(data, "none"))).toBe("chat");
     expect(engineStoreKind("principals/p/codex/state_5.sqlite", db)).toBe("database");
@@ -292,8 +346,8 @@ describe("the backup's view of engine homes", () => {
   it("keeps the purges left to retry", () => {
     const data = temp();
     expect(readPendingPurges(data)).toEqual([]);
-    writePendingPurges(data, [[SECRET_THREAD, SECRET_SESSION]]);
-    expect(readPendingPurges(data)).toEqual([[SECRET_THREAD, SECRET_SESSION]]);
+    writePendingPurges(data, [{ keys: [SECRET_THREAD, SECRET_SESSION], vacuum: ["/x.db"], attempts: 2 }]);
+    expect(readPendingPurges(data)).toEqual([{ keys: [SECRET_THREAD, SECRET_SESSION], vacuum: ["/x.db"], attempts: 2 }]);
     writePendingPurges(data, []);
     expect(readPendingPurges(data)).toEqual([]);
   });
