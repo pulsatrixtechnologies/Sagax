@@ -3,7 +3,7 @@ import { Bot as BotIcon, Loader2, Menu, Plus } from "lucide-react";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOrgMemoryAuto } from "@/lib/org-memory";
-import { openBot, openNotificationTarget, StoreProvider, useStore } from "@/state/store";
+import { openBot, openNotificationTarget, StoreProvider, useStore, type AppSettingsSection } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
 import { mainConversation } from "@/lib/main-view";
@@ -45,6 +45,7 @@ import { focusComposer } from "@/lib/composer-focus";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { normalizeInboxDeepLink } from "@/lib/inbox-deep-link";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
+import { takeSettingsReturn } from "@/lib/settings-return";
 import { saveSidebarAttentionPinned, toggleSidebarCollapsed } from "@/lib/sidebar-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { badgeCount } from "@/lib/attention";
@@ -106,6 +107,12 @@ function Shell() {
     openThreadTarget.current = null;
     openNotificationTarget(dispatch, target, state, showThreads);
   }, [state.bots, state.groups, dispatch]);
+  // Back from a sign-in a Settings page asked for (Settings > Security: the
+  // first key needs a fresh one): that page opens again.
+  useEffect(() => {
+    const section = takeSettingsReturn();
+    if (section) dispatch({ type: "toggleAppSettings", open: true, section: section as AppSettingsSection });
+  }, [dispatch]);
   // "Use your Cloud on your phone" opens the Cloud in this window at
   // /?desktop-settings=phone: its own phone pairing, in any window, on any
   // server. It only opens Settings there; no code is made until a click.

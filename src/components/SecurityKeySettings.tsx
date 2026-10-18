@@ -3,15 +3,26 @@
 // own, on an organization server too. Taking a protection away (a class, a
 // key) asks the key itself: the server refuses it otherwise, and the store's
 // `api` runs that step-up and sends the change again.
-import { useCallback, useEffect, useState } from "react";
+//
+// 2026-10-18 (JC): the first key needs a fresh sign-in; the page says so
+// before the person tries and offers it (Sign in again, then back here,
+// src/lib/settings-return.ts). In the desktop app the key is asked in the
+// system browser (electron/security-key-browser.mjs): the page waits for it
+// and can stop waiting. Laid out as the other pages (grey headings over
+// cards of rows, SettingsPrimitives).
+import { useCallback, useEffect, useRef, useState } from "react";
 import { KeyRound, Trash2 } from "lucide-react";
 
 import { activeLocale, t } from "@/lib/i18n";
-import { registerSecurityKey, securityKeysUsable } from "@/lib/step-up-client";
+import { fetchEnvironmentDescriptor } from "@/lib/environment-descriptor";
+import { pulsatrixLoginPath, type EnvironmentDescriptor } from "@/lib/session";
+import { rememberSettingsReturn } from "@/lib/settings-return";
+import { StepUpError, registerSecurityKey, securityKeyInBrowser, securityKeysUsable } from "@/lib/step-up-client";
 import { api } from "@/state/store";
 import type { LocaleKey } from "@/locales";
 import { STEP_UP_CLASSES, type SecurityKeysState, type StepUpClass } from "../../shared/step-up";
-import { DescribedRow, FIELD, PILL, PRIMARY_PILL, SettingsGroup, SwitchRow } from "./SettingsPrimitives";
+import { cn } from "@/lib/cn";
+import { DescribedRow, FIELD, PILL, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow, Switch } from "./SettingsPrimitives";
 
 const CLASS_LABEL: Record<StepUpClass, LocaleKey> = {
   destructive: "security.class.destructive",
@@ -37,11 +48,36 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function code(error: unknown): string | undefined {
+  if (error instanceof StepUpError) return error.code;
+  const body = (error as { body?: { code?: unknown } } | null)?.body;
+  return typeof body?.code === "string" ? body.code : undefined;
+}
+
+/** Where "Sign in again" goes: this server's Pulsatrix sign-in, else its
+ * sign-in page. The desktop app opens the Pulsatrix one in the system
+ * browser (electron/main.mjs guardNavigation) and keeps this page. */
+export async function signInAgainPath(load: () => Promise<Response> = () => fetchEnvironmentDescriptor()): Promise<string> {
+  try {
+    const response = await load();
+    if (response.ok) return pulsatrixLoginPath(await response.json() as EnvironmentDescriptor) ?? "/pair";
+  } catch {
+    /* unreachable: the sign-in page says why */
+  }
+  return "/pair";
+}
+
 export function SecurityKeySettings() {
   const [state, setState] = useState<SecurityKeysState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
+  /** The key is being asked in the system browser. */
+  const [inBrowser, setInBrowser] = useState(false);
+  /** The sign-in this page asked for is under way (desktop: in the browser). */
+  const [signingIn, setSigningIn] = useState(false);
+  const waiting = useRef<AbortController | null>(null);
   const usable = securityKeysUsable();
 
   const load = useCallback(async () => {
@@ -53,43 +89,70 @@ export function SecurityKeySettings() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => () => waiting.current?.abort(), []);
 
   const run = async (work: () => Promise<SecurityKeysState | void>) => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const next = await work();
       if (next) setState(next);
       else await load();
+      return true;
     } catch (err) {
-      setError(message(err));
+      if (code(err) === "reauth_required") {
+        // the server's own word: show the sign-in row, not a red line
+        setState((current) => (current ? { ...current, needsSignIn: true } : current));
+      } else if (code(err) !== "cancelled" || !waiting.current?.signal.aborted) {
+        setError(message(err));
+      }
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
-  const toggle = (name: StepUpClass, on: boolean) => {
+  const toggle = (value: StepUpClass, on: boolean) => {
     if (!state) return;
-    const classes = on ? [...state.classes, name] : state.classes.filter((value) => value !== name);
+    const classes = on ? [...state.classes, value] : state.classes.filter((entry) => entry !== value);
     void run(() => api<SecurityKeysState>("/api/security-keys/classes", { method: "PUT", body: JSON.stringify({ classes }) }));
   };
 
-  const add = () => void run(async () => {
-    await registerSecurityKey(name.trim() || t("security.keys.defaultName"));
-    setName("");
-  });
+  const add = () => void (async () => {
+    const controller = new AbortController();
+    waiting.current = controller;
+    setInBrowser(securityKeyInBrowser());
+    const ok = await run(async () => {
+      await registerSecurityKey(name.trim() || t("security.keys.defaultName"), controller.signal);
+      setName("");
+    });
+    waiting.current = null;
+    setInBrowser(false);
+    if (ok) setNotice(t("security.keys.addedNow"));
+  })();
+
+  const stopWaiting = () => waiting.current?.abort();
+
+  const signInAgain = () => void (async () => {
+    setSigningIn(true);
+    rememberSettingsReturn("security");
+    location.assign(await signInAgainPath());
+  })();
 
   const remove = (id: string) => void run(() => api<SecurityKeysState>(`/api/security-keys/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({}) }));
 
   const hasKey = Boolean(state?.keys.length);
   const date = (at: number) => new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium" }).format(new Date(at));
   const keyHere = state?.rpId ? state.keys.some((key) => key.rpId === state.rpId) : hasKey;
+  const noAddress = !usable || (!state?.rpId && !securityKeyInBrowser());
 
   return (
-    <div className="flex min-w-0 flex-col gap-6" data-settings-card="security">
-      <p className="px-1 text-[12px] leading-relaxed text-ink-secondary">{t("security.intro")}</p>
-      {error && <p role="alert" className="px-1 text-[12px] text-danger">{error}</p>}
-      {state?.unreadable && <p role="alert" className="px-1 text-[12px] text-danger">{t("security.unreadable")}</p>}
+    <div className="flex min-w-0 flex-col gap-3" data-settings-card="security">
+      <SettingsIntro>{t("security.intro")}</SettingsIntro>
+      {error && <SettingsNotice tone="danger">{error}</SettingsNotice>}
+      {state?.unreadable && <SettingsNotice tone="danger">{t("security.unreadable")}</SettingsNotice>}
+      {notice && <SettingsNotice tone="success">{notice}</SettingsNotice>}
 
       <SettingsGroup title={t("security.keys.title")} groupId="security.keys">
         {state?.keys.map((key) => (
@@ -111,40 +174,54 @@ export function SecurityKeySettings() {
           </DescribedRow>
         ))}
         {state && !state.keys.length && <DescribedRow label={t("security.keys.none")} rowId="security-keys-none" />}
-        <DescribedRow
-          label={t("security.keys.add")}
-          rowId="security-keys-add"
-          description={!usable || !state?.rpId && !window.ogb?.securityKey ? t("security.stepUp.noAddress") : t("security.keys.addHint")}
-        >
-          <input
-            className={`${FIELD} w-[180px]`}
-            value={name}
-            maxLength={80}
-            placeholder={t("security.keys.namePlaceholder")}
-            aria-label={t("security.keys.name")}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <button type="button" className={PRIMARY_PILL} disabled={busy || !usable} onClick={add}>
-            {t("security.keys.addButton")}
-          </button>
-        </DescribedRow>
+        {inBrowser ? (
+          <DescribedRow label={t("security.browser.title")} description={t("security.browser.hint")} rowId="security-keys-browser">
+            <button type="button" className={PILL} onClick={stopWaiting}>{t("security.browser.cancel")}</button>
+          </DescribedRow>
+        ) : state?.needsSignIn ? (
+          <DescribedRow
+            label={t("security.reauth.title")}
+            description={signingIn ? t("security.reauth.waiting") : t("security.reauth.hint")}
+            rowId="security-keys-reauth"
+          >
+            <button type="button" className={PRIMARY_PILL} disabled={signingIn} onClick={signInAgain}>{t("security.reauth.button")}</button>
+          </DescribedRow>
+        ) : (
+          <DescribedRow
+            label={t("security.keys.add")}
+            rowId="security-keys-add"
+            description={noAddress ? t("security.stepUp.noAddress") : t("security.keys.addHint")}
+          >
+            <input
+              className={cn(FIELD, "w-[160px]")}
+              value={name}
+              maxLength={80}
+              placeholder={t("security.keys.namePlaceholder")}
+              aria-label={t("security.keys.name")}
+              disabled={busy || !state}
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter" && !busy && usable && state) add(); }}
+            />
+            <button type="button" className={PRIMARY_PILL} disabled={busy || !usable || !state} onClick={add}>
+              {t("security.keys.addButton")}
+            </button>
+          </DescribedRow>
+        )}
       </SettingsGroup>
 
       <SettingsGroup title={t("security.classes.title")} groupId="security.classes">
-        <div className="flex flex-col gap-3 px-3.5 py-2.5">
-          <p className="text-[12px] leading-relaxed text-ink-secondary">{hasKey ? t("security.classes.intro") : t("security.classes.needKey")}</p>
-          {hasKey && !keyHere && <p role="alert" className="text-[12px] text-warning">{t("security.classes.noKeyHere")}</p>}
-          {STEP_UP_CLASSES.map((value) => (
-            <SwitchRow
-              key={value}
-              label={t(CLASS_LABEL[value])}
-              description={t(CLASS_HINT[value])}
+        <SettingsTextRow>{hasKey ? t("security.classes.intro") : t("security.classes.needKey")}</SettingsTextRow>
+        {hasKey && !keyHere && <SettingsTextRow tone="warning">{t("security.classes.noKeyHere")}</SettingsTextRow>}
+        {STEP_UP_CLASSES.map((value) => (
+          <DescribedRow key={value} label={t(CLASS_LABEL[value])} description={t(CLASS_HINT[value])} rowId={`security-class-${value}`}>
+            <Switch
               checked={Boolean(state?.classes.includes(value))}
+              aria-label={t(CLASS_LABEL[value])}
               disabled={busy || !state || (!hasKey && !state.classes.includes(value))}
-              onChange={(on) => toggle(value, on)}
+              onClick={() => toggle(value, !state?.classes.includes(value))}
             />
-          ))}
-        </div>
+          </DescribedRow>
+        ))}
       </SettingsGroup>
     </div>
   );

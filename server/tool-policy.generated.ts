@@ -510,7 +510,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"pattern","route":"^\\/api\\/routines\\/([\\w-]+)\\/run$","tier":"write","readOnly":false,"scope":"routines:write","defaultEnabled":true},
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/routines\\/([\\w-]+)$","tier":"write","readOnly":false,"scope":"routines:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/security-keys\\/([A-Za-z0-9_-]{1,1400})$","tier":"admin","readOnly":false,"scope":"security-keys:admin","defaultEnabled":false},
-  {"method":"ANY","kind":"pattern","route":"^\\/api\\/security-keys\\/ceremony\\/([^/]+)(\\/page)?$","tier":"admin","readOnly":false,"scope":"security-keys:admin","defaultEnabled":false},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/security-keys\\/ceremony\\/([^/]+)(\\/page|\\/status)?$","tier":"admin","readOnly":false,"scope":"security-keys:admin","defaultEnabled":false},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/shared-computers\\/([\\w-]+)\\/(poll|lease|result|disconnect)$","tier":"write","readOnly":false,"scope":"shared-computers:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/skills-library\\/([a-z0-9-]+)$","tier":"read","readOnly":true,"scope":"skills-library:read","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/skills-library$","tier":"read","readOnly":true,"scope":"skills-library:read","defaultEnabled":true},

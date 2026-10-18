@@ -110,7 +110,7 @@ import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDes
 import { createOrgLibrary } from "./org-library.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
 import { createOrgMemoryCache } from "./org-memory-cache.mjs";
-import { createSecurityKeyWindow } from "./security-key-window.mjs";
+import { createSecurityKeyBrowser } from "./security-key-browser.mjs";
 import { openFolderInObsidian } from "./obsidian-vault.mjs";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
 import { keepUserDataInPlace, RUNTIME_NAME } from "./user-data-location.mjs";
@@ -3825,14 +3825,27 @@ const orgMemoryCache = () => (orgMemoryCacheInstance ??= createOrgMemoryCache({
   orgServer: orgMemoryServerCall,
   source: () => currentBundledOrigin,
 }));
-// Security keys for the local page (electron/security-key-window.mjs).
-let securityKeyCeremony = null;
-ipcMain.handle("security-key:ceremony", localOnly("security-key:ceremony", (_event, pageUrl) => {
-  securityKeyCeremony ??= createSecurityKeyWindow({
-    BrowserWindow, session, port: () => SERVER_PORT, parent: () => mainWindow, french: /^fr\b/i.test(app.getLocale()),
-  });
-  return securityKeyCeremony(pageUrl);
-}));
+// Security keys (electron/security-key-browser.mjs): the ceremony runs in
+// the system browser, on localhost for the local page or on the
+// organization server for its bundled page, then this app comes back.
+const securityKeyBrowser = createSecurityKeyBrowser({
+  openExternal: (url) => shell.openExternal(url),
+  port: () => SERVER_PORT,
+  isLocal: (event) => senderIsLocal(event),
+  bundledOrigin: (event) => {
+    try {
+      const origin = new URL(event.senderFrame.url).origin;
+      return origin === currentBundledOrigin ? origin : null;
+    } catch {
+      return null;
+    }
+  },
+  focusApp: () => {
+    if (mainWindow && !mainWindow.isDestroyed()) bringMainWindowForward(mainWindow);
+  },
+});
+ipcMain.handle("security-key:open", desktopUiOnly("security-key:open", (event, pageUrl) => securityKeyBrowser.open(event, pageUrl)));
+ipcMain.handle("security-key:returned", desktopUiOnly("security-key:returned", () => securityKeyBrowser.returned()));
 ipcMain.handle("org-memory:state", desktopUiOnly("org-memory:state", () => orgMemoryCache().state()));
 ipcMain.handle("org-memory:auto", desktopUiOnly("org-memory:auto", () => orgMemoryCache().auto()));
 ipcMain.handle("org-memory:sync", desktopUiOnly("org-memory:sync", () => orgMemoryCache().sync()));

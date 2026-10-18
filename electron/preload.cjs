@@ -64,7 +64,7 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "onChatLink", "desktopLanguage", "openPdf"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -514,12 +514,14 @@ const bridge = {
     openInObsidian: () => ipcRenderer.invoke("org-memory:open-obsidian"),
     showFolder: () => ipcRenderer.invoke("org-memory:show-folder"),
   },
-  /** Settings > Security and approvals that need a security key: the
-   * desktop's own page is on 127.0.0.1, which WebAuthn never accepts as an
-   * address, so the key runs in a small window on localhost
-   * (electron/security-key-window.mjs). Local page only. */
+  /** Settings > Security and approvals that need a security key: Electron
+   * cannot ask Touch ID, a passkey or a key's PIN, so the ceremony page
+   * opens in the system browser (electron/security-key-browser.mjs) and
+   * the page asks the server how it ended. The local page and this app's
+   * bundle on an organization server. */
   securityKey: {
-    ceremony: pageUrl => ipcRenderer.invoke("security-key:ceremony", pageUrl),
+    open: pageUrl => ipcRenderer.invoke("security-key:open", pageUrl),
+    returned: () => ipcRenderer.invoke("security-key:returned"),
   },
   computerSharing: {
     state: id => ipcRenderer.invoke("sharing:state", id),

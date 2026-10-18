@@ -5,7 +5,8 @@ import { Server, Trash2 } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { loadLocalModels, normalizeLoopbackBase, saveLocalModels, type LocalModelSettings } from "@/lib/desktop-local-models";
-import { Card, SwitchRow, cardCount } from "../SettingsPrimitives";
+import { cn } from "@/lib/cn";
+import { DescribedRow, FIELD, FoldRow, PILL, SettingsGroup, SettingsTextRow, Switch, cardCount } from "../SettingsPrimitives";
 
 type Endpoint = LocalModelSettings["endpoints"][number];
 
@@ -59,26 +60,32 @@ export function LocalModelsSettings() {
     save({ endpoints: [...settings.endpoints.filter((row) => row.baseUrl !== baseUrl), { id: "", label: "", baseUrl }] });
   };
 
+  // 2026-10-18 (JC): a group of rows, as the other pages draw them
+  // (SettingsPrimitives); the loopback servers fold under their row.
   return (
-    <Card cardId="computer.localModels" title={t("localModels.title")} summary={settings.expose ? t("localModels.expose") : t("localModels.title")}>
-      <div className="flex flex-col gap-3 text-[13px]" data-local-models={settings.expose ? "on" : "off"} data-local-models-share={settings.share ? "on" : "off"}>
-        <p className="text-[12px] leading-relaxed text-ink-secondary">{t("localModels.help")}</p>
-        <SwitchRow label={t("localModels.expose")} description={t("localModels.exposeHelp")} checked={settings.expose} onChange={(next) => save({ expose: next })} />
-        <SwitchRow label={t("localModels.share")} description={t("localModels.shareHelp")} checked={settings.share} onChange={(next) => save({ share: next })} />
-        <Card collapsible cardId="computer.localModels.endpoints" defaultOpen={false} title={t("localModels.endpoints")}
-          summary={loaded ? endpointsSummary(settings.endpoints) : undefined}>
+    <div data-settings-card="computer.localModels" data-local-models={settings.expose ? "on" : "off"} data-local-models-share={settings.share ? "on" : "off"}>
+      <SettingsGroup title={t("localModels.title")} groupId="localModels">
+        <SettingsTextRow>{t("localModels.help")}</SettingsTextRow>
+        <DescribedRow label={t("localModels.expose")} description={t("localModels.exposeHelp")} rowId="localModels.expose">
+          <Switch checked={settings.expose} aria-label={t("localModels.expose")} onClick={() => save({ expose: !settings.expose })} />
+        </DescribedRow>
+        <DescribedRow label={t("localModels.share")} description={t("localModels.shareHelp")} rowId="localModels.share">
+          <Switch checked={settings.share} aria-label={t("localModels.share")} onClick={() => save({ share: !settings.share })} />
+        </DescribedRow>
+        <FoldRow cardId="computer.localModels.endpoints" label={t("localModels.endpoints")}
+          description={loaded ? endpointsSummary(settings.endpoints) : undefined} count={loaded ? settings.endpoints.length : undefined}>
           <div className="flex flex-col gap-2" data-loopback-servers={settings.endpoints.length}>
-            <p className="text-[12px] leading-relaxed text-ink-secondary">{t("localModels.endpointsHelp")} {t("localModels.suggestions")}</p>
+            <p className="text-[12px] leading-4 text-ink-secondary">{t("localModels.endpointsHelp")} {t("localModels.suggestions")}</p>
             {loaded && settings.endpoints.length > 0 && (
-              <ul className="divide-y divide-hairline/40 overflow-hidden rounded-xl border border-hairline/40">
+              <ul className="flex flex-col">
                 {settings.endpoints.map((endpoint) => {
                   const name = endpointName(endpoint);
                   return (
-                    <li key={endpoint.id || endpoint.baseUrl} className="group flex items-center gap-3 px-3 py-2" data-loopback-server={endpoint.baseUrl}>
-                      <Server size={15} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+                    <li key={endpoint.id || endpoint.baseUrl} className="group flex min-h-[44px] items-center gap-3 py-1" data-loopback-server={endpoint.baseUrl}>
+                      <Server size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] text-ink">{name}</span>
-                        <span className="block truncate font-mono text-[11.5px] text-ink-secondary">{endpoint.baseUrl}</span>
+                        <span className="block truncate text-[13px] leading-[18px] text-ink">{name}</span>
+                        <span className="block truncate font-mono text-[12px] leading-4 text-ink-secondary">{endpoint.baseUrl}</span>
                       </span>
                       <button type="button"
                         className="flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-secondary opacity-0 transition-opacity hover:bg-control hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100 motion-reduce:transition-none md:size-7"
@@ -94,16 +101,16 @@ export function LocalModelsSettings() {
             <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); add(); }}>
               <input value={draft} onChange={(event) => { setDraft(event.target.value); setInvalid(false); }}
                 placeholder={t("localModels.placeholder")} aria-label={t("localModels.endpoints")}
-                className="min-h-[44px] min-w-0 flex-1 rounded-lg border border-hairline/40 bg-inset px-2 font-mono text-[12px] md:min-h-0 md:py-1" />
-              <button type="submit" disabled={!loaded} className="min-h-[44px] shrink-0 rounded-lg bg-control px-3 text-[12.5px] text-ink hover:bg-raised-hover disabled:opacity-40 md:min-h-0 md:py-1">{t("localModels.add")}</button>
+                className={cn(FIELD, "flex-1 font-mono text-[12px]")} />
+              <button type="submit" disabled={!loaded} className={cn(PILL, "shrink-0")}>{t("localModels.add")}</button>
             </form>
             {invalid && <p role="alert" className="text-[12px] text-danger">{t("localModels.invalid")}</p>}
           </div>
-        </Card>
-        {loaded && settings.expose && !settings.connected && <p role="status" className="text-[12px] text-ink-secondary">{t("localModels.offline")}</p>}
-        {loaded && settings.expose && settings.connected && settings.published.length === 0 && <p role="status" className="text-[12px] text-ink-secondary">{t("localModels.none")}</p>}
-        {error && <p role="alert" className="text-[12px] text-danger">{t("localModels.error")}</p>}
-      </div>
-    </Card>
+        </FoldRow>
+        {loaded && settings.expose && !settings.connected && <SettingsTextRow>{t("localModels.offline")}</SettingsTextRow>}
+        {loaded && settings.expose && settings.connected && settings.published.length === 0 && <SettingsTextRow>{t("localModels.none")}</SettingsTextRow>}
+        {error && <SettingsTextRow tone="danger">{t("localModels.error")}</SettingsTextRow>}
+      </SettingsGroup>
+    </div>
   );
 }

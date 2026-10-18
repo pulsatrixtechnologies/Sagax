@@ -198,6 +198,9 @@ export interface SecurityKeysState {
   rpId: string | null;
   /** The saved keys could not be read: every chosen class refuses. */
   unreadable?: boolean;
+  /** No key yet and this sign-in is too old to add the first one: sign in
+   * again first (the register route answers `reauth_required`). */
+  needsSignIn?: boolean;
 }
 
 /** JSON with keys in a fixed order, so the same content always hashes the

@@ -19,6 +19,9 @@
 //
 //   GET    /api/security-keys/ceremony/:id       -> { kind, options, label }
 //   GET    /api/security-keys/ceremony/:id/page  -> the page that runs it
+//   GET    /api/security-keys/ceremony/:id/status -> { status }: waiting,
+//          done, failed or expired (the desktop app runs the page in the
+//          system browser and asks here how it ended)
 //   POST   /api/security-keys/ceremony/:id       { response }
 //
 // Every route is the caller's own: their keys and classes. A local service
@@ -131,13 +134,15 @@ export function settingsStepUp(
   return { status: 403, body: refusal({ error: "Your security key did not confirm this change. Try again.", code: "step_up_failed", classes: [...classes], reason: used.reason, target }) };
 }
 
-function state(deps: SecurityKeyRouteDeps, person: string, req: IncomingMessage): SecurityKeysState {
+function state(deps: SecurityKeyRouteDeps, person: string, req: IncomingMessage, auth: RequestAuth): SecurityKeysState {
   const rp = relyingParty(req, undefined, deps.env);
   return {
     keys: deps.keys.keys(person),
     classes: deps.keys.store.classes(person),
     rpId: rp?.rpId ?? null,
     ...(deps.keys.store.unreadable ? { unreadable: true } : {}),
+    // the first key asks for a fresh sign-in: say so before the person tries
+    ...(!deps.keys.hasKey(person) && !deps.recentSignIn(auth) ? { needsSignIn: true } : {}),
   };
 }
 
@@ -162,7 +167,7 @@ export function createSecurityKeyRoutes(deps: SecurityKeyRouteDeps): RouteHandle
 
     if (path === "/api/security-keys") {
       if (method !== "GET") return json(res, 405, { error: "GET only" });
-      return json(res, 200, state(deps, me, req));
+      return json(res, 200, state(deps, me, req, auth));
     }
 
     if (path === "/api/security-keys/classes") {
@@ -184,7 +189,7 @@ export function createSecurityKeyRoutes(deps: SecurityKeyRouteDeps): RouteHandle
       }
       deps.keys.setClasses(me, next);
       deps.audit({ action: "security_keys.classes", personId: me, before: { classes: before }, after: { classes: next } }, auth);
-      return json(res, 200, state(deps, me, req));
+      return json(res, 200, state(deps, me, req, auth));
     }
 
     if (path === "/api/security-keys/register") {
@@ -254,7 +259,7 @@ export function createSecurityKeyRoutes(deps: SecurityKeyRouteDeps): RouteHandle
       if (refused) return json(res, refused.status, refused.body);
       deps.keys.store.removeCredential(me, id);
       deps.audit({ action: "security_keys.remove", personId: me, before: { key: id.slice(0, 16) } }, auth);
-      return json(res, 200, state(deps, me, req));
+      return json(res, 200, state(deps, me, req, auth));
     }
     return json(res, 404, { error: "not found" });
   };
@@ -286,7 +291,7 @@ const PAGE_WORDS = {
     register: "Touch your security key, or use your passkey, to add it to Sagax.",
     assert: "Touch your security key, or use your passkey, to confirm.",
     start: "Continue",
-    ok: "Done. You can close this window.",
+    ok: "Done. You can close this window and go back to Sagax.",
     failed: "The security key did not answer. Close this window and try again.",
     expired: "This request has expired. Close this window and start again.",
     unsupported: "This browser cannot use security keys.",
@@ -297,7 +302,7 @@ const PAGE_WORDS = {
     register: "Touchez votre clé de sécurité, ou utilisez votre clé d'accès, pour l'ajouter à Sagax.",
     assert: "Touchez votre clé de sécurité, ou utilisez votre clé d'accès, pour confirmer.",
     start: "Continuer",
-    ok: "C'est fait. Vous pouvez fermer cette fenêtre.",
+    ok: "C'est fait. Vous pouvez fermer cette fenêtre et revenir à Sagax.",
     failed: "La clé de sécurité n'a pas répondu. Fermez cette fenêtre et réessayez.",
     expired: "Cette demande a expiré. Fermez cette fenêtre et recommencez.",
     unsupported: "Ce navigateur ne peut pas utiliser de clé de sécurité.",
@@ -374,13 +379,17 @@ button.addEventListener("click", run);
 /** The public ceremony routes. Returns true when it answered. */
 export function securityKeyCeremonyRoutes(deps: { keys: SecurityKeys }) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> => {
-    const match = /^\/api\/security-keys\/ceremony\/([^/]+)(\/page)?$/.exec(url.pathname);
+    const match = /^\/api\/security-keys\/ceremony\/([^/]+)(\/page|\/status)?$/.exec(url.pathname);
     if (!match) return false;
     const method = req.method ?? "GET";
     const id = match[1]!;
     if (!CEREMONY_ID.test(id)) return send(res, 404, { error: "This security key request has expired. Start again." });
+    if (match[2] === "/status") {
+      if (method !== "GET") return send(res, 405, { error: "GET only" });
+      return send(res, 200, { status: deps.keys.status(id) });
+    }
     const pending = deps.keys.pending(id);
-    if (match[2]) {
+    if (match[2] === "/page") {
       if (method !== "GET") return send(res, 405, { error: "GET only" });
       if (!pending) return send(res, 404, { error: "This security key request has expired. Start again." });
       const page = ceremonyPage({

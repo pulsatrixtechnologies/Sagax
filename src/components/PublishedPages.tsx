@@ -13,6 +13,7 @@ import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow } from "./SettingsPrimitives";
 import { api, useStore, type Message } from "@/state/store";
 import {
   PAGE_ACCESS,
@@ -272,7 +273,7 @@ function PageRow({ page, onChange, onRemoved }: { page: PublishedPageSummary; on
   const published = page.status === "published";
   const status = published ? (page.expired ? t("pages.status.expired") : t("pages.status.published")) : page.status === "revoked" ? t("pages.status.revoked") : t("pages.status.draft");
   return (
-    <li data-published-page={page.id} className="space-y-2 rounded-lg border border-hairline/40 px-3 py-2.5">
+    <li data-published-page={page.id} className="space-y-2 px-3.5 py-2.5">
       <div className="flex items-center gap-2">
         <FileText size={14} aria-hidden="true" className="text-ink-secondary" />
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{page.title}</span>
@@ -367,24 +368,25 @@ function OrganizationPages() {
   };
   const live = (pages ?? []).filter((page) => page.status === "published");
   return (
-    <section data-settings-card="pages.organization" className="space-y-2 border-t border-hairline/40 pt-3">
-      <h3 className="text-[13px] font-medium text-ink">{t("pages.admin.title")}</h3>
-      <p className="text-[12px] text-ink-secondary">{t("pages.admin.intro")}</p>
-      {pages !== null && live.length === 0 && <p className="text-[12px] text-ink-tertiary">{t("pages.admin.empty")}</p>}
-      <ul className="space-y-1.5">
-        {live.map((page) => (
-          <li key={page.id} data-admin-page={page.id} className="flex items-center gap-2 rounded-lg bg-raised/45 px-2.5 py-1.5 text-[12px]">
-            <span className="min-w-0 flex-1 truncate text-ink">{page.title}</span>
-            <span className="text-ink-tertiary">{t(ACCESS_LABEL[page.access])}</span>
-            <button type="button" disabled={busy === page.id} onClick={() => void revoke(page.id)}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-danger hover:bg-danger/10 disabled:opacity-40">
-              <XCircle size={13} />{t("pages.revoke")}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
-    </section>
+    <div data-settings-card="pages.organization">
+      <SettingsGroup title={t("pages.admin.title")} groupId="pages.organization">
+        <SettingsTextRow>{t("pages.admin.intro")}</SettingsTextRow>
+        {pages !== null && live.length === 0 && <SettingsTextRow>{t("pages.admin.empty")}</SettingsTextRow>}
+        {live.length > 0 && <ul className="flex flex-col">
+          {live.map((page) => (
+            <li key={page.id} data-admin-page={page.id} className="flex min-h-[44px] items-center gap-2 px-3.5 py-2 text-[13px] leading-[18px]">
+              <span className="min-w-0 flex-1 truncate text-ink">{page.title}</span>
+              <span className="text-ink-tertiary">{t(ACCESS_LABEL[page.access])}</span>
+              <button type="button" disabled={busy === page.id} onClick={() => void revoke(page.id)}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-danger hover:bg-danger/10 disabled:opacity-40">
+                <XCircle size={13} />{t("pages.revoke")}
+              </button>
+            </li>
+          ))}
+        </ul>}
+        {error && <SettingsTextRow tone="danger">{error}</SettingsTextRow>}
+      </SettingsGroup>
+    </div>
   );
 }
 
@@ -401,20 +403,22 @@ export function PublishedPagesSettings() {
       .catch((cause) => { setPages([]); setError(cause instanceof Error ? cause.message : String(cause)); });
   }, []);
   return (
-    <section data-settings-card="pages" className="space-y-3">
-      <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("pages.settingsIntro")}</p>
-      {pages === null && <Loader2 size={14} className="animate-spin text-ink-secondary" />}
-      {pages?.length === 0 && !error && <p className="text-[12.5px] text-ink-tertiary">{t("pages.empty")}</p>}
-      {pages && pages.length > 0 && (
-        <ul className="space-y-2">
-          {pages.map((page) => (
-            <PageRow key={page.id} page={page}
-              onChange={(next) => setPages((current) => (current ?? []).map((entry) => (entry.id === next.id ? next : entry)))}
-              onRemoved={(id) => setPages((current) => (current ?? []).filter((entry) => entry.id !== id))} />
-          ))}
-        </ul>
-      )}
-      {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+    <section data-settings-card="pages" className="flex min-w-0 flex-col gap-3">
+      <SettingsIntro>{t("pages.settingsIntro")}</SettingsIntro>
+      {error && <SettingsNotice tone="danger">{error}</SettingsNotice>}
+      <SettingsGroup title={t("pages.yours")} groupId="pages.yours">
+        {pages === null && <div className="px-3.5 py-2.5"><Loader2 size={14} className="animate-spin text-ink-secondary" /></div>}
+        {pages?.length === 0 && !error && <SettingsTextRow>{t("pages.empty")}</SettingsTextRow>}
+        {pages && pages.length > 0 && (
+          <ul className="flex flex-col">
+            {pages.map((page) => (
+              <PageRow key={page.id} page={page}
+                onChange={(next) => setPages((current) => (current ?? []).map((entry) => (entry.id === next.id ? next : entry)))}
+                onRemoved={(id) => setPages((current) => (current ?? []).filter((entry) => entry.id !== id))} />
+            ))}
+          </ul>
+        )}
+      </SettingsGroup>
       {admin && <OrganizationPages />}
     </section>
   );

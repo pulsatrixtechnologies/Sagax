@@ -8732,5 +8732,16 @@
   "stream.showEarlierInTopic": "Afficher les messages plus anciens de ce sujet",
   "stream.topicFailed": "Ce sujet n'a pas pu être chargé.",
   "stream.newActivity": "Nouvelle activité dans un sujet précédent : {title}",
-  "settings.threadsView.single": "Une seule conversation"
+  "settings.threadsView.single": "Une seule conversation",
+  "security.reauth.title": "Reconnectez-vous pour ajouter votre première clé",
+  "security.reauth.hint": "Par sécurité, la première clé demande une connexion de moins de 15 minutes. Vous revenez ensuite à cette page.",
+  "security.reauth.button": "Me reconnecter",
+  "security.reauth.waiting": "Terminez la connexion. Sagax vous ramène ensuite à cette page.",
+  "security.browser.title": "Terminez dans votre navigateur",
+  "security.browser.hint": "Votre navigateur demande Touch ID, votre clé d'accès ou votre clé de sécurité. Sagax revient ici une fois terminé.",
+  "security.browser.cancel": "Annuler",
+  "security.keys.addedNow": "Clé ajoutée.",
+  "security.stepUp.browser": "Le navigateur n'a pas pu s'ouvrir. Réessayez.",
+  "security.stepUp.reauth": "Reconnectez-vous, puis ajoutez votre première clé.",
+  "pages.yours": "Vos pages"
 }

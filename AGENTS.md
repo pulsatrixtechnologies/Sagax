@@ -433,9 +433,22 @@ in `server/routes/security-keys.ts`. Rules, covered by
   the bot owner's combined with them.
 - RP ID: the https host the request came through (`x-forwarded-proto`), or
   `SAGAX_WEBAUTHN_RP_ID` (with `SAGAX_WEBAUTHN_ORIGINS`); never an IP address.
-  The desktop's own page (127.0.0.1) runs the ceremony in a small window on
-  `http://localhost:<port>` (`electron/security-key-window.mjs`, RP ID
-  `localhost`). The phone opens the same ceremony page in an
+  The desktop app runs every ceremony in the system browser
+  (`electron/security-key-browser.mjs`, 2026-10-18): Electron has no
+  WebAuthn interface (no Touch ID, no iCloud Keychain passkey, no PIN for a
+  hardware key; `isUserVerifyingPlatformAuthenticatorAvailable` is false),
+  so a ceremony needing user verification never ended in an app window. The
+  local page (127.0.0.1) opens it on `http://localhost:<port>` (RP ID
+  `localhost`), this app's bundle on an organization server on that
+  server's origin. The page polls `GET /api/security-keys/ceremony/:id/status`
+  (waiting, done, failed, expired; the id is the authorization) and main
+  brings the app back (`security-key:open`, `security-key:returned`,
+  `desktopUiOnly`).
+- The first key's fresh sign-in is said before the person tries:
+  `GET /api/security-keys` carries `needsSignIn`, and Settings > Security
+  shows a "Sign in again" row (the server's Pulsatrix sign-in, else `/pair`;
+  the desktop opens it in the system browser) and comes back to that page
+  after it (`src/lib/settings-return.ts`, sessionStorage, 15 minutes). The phone opens the same ceremony page in an
   AuthenticationServices sheet (`ios/App/SecurityKeyStepUp.swift`), https
   servers only. Keys are per RP ID: a key made on one address does not
   answer on another.
@@ -1171,6 +1184,12 @@ onboarding tests:
 
 ## Settings layout: one card level, sub-pages for long settings
 
+Every page uses the shared pieces of `SettingsPrimitives.tsx` (2026-10-18,
+JC): `SettingsIntro` for the page's opening sentence (level with the
+title), `SettingsNotice` for its errors and messages (a one-row card),
+`SettingsGroup` (grey heading, one card of rows), rows with the row insets
+(`DescribedRow`, `CompactRow`, `SettingsTextRow`, `FieldRow`), `FIELD`,
+`PILL` and `PRIMARY_PILL`. No page-made cards, inputs or buttons.
 Settings draws one level of card: what sits inside a card is flat (no
 bordered box in a bordered box; `ManagedProfileIdentity flat` in General).
 A setting too long for a card gets a sub-page instead of a growing card

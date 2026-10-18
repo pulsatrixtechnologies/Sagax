@@ -368,6 +368,50 @@ export function SettingsGroup({
   );
 }
 
+/** A page's opening sentence, under its title and level with it (no
+ * inset: the grey group headings sit inset over their cards, the title
+ * and this line do not). One per page at most. */
+export function SettingsIntro({ children }: { children: React.ReactNode }) {
+  return <p data-settings-intro="" className="pb-1 text-[13px] leading-[18px] text-ink-secondary">{children}</p>;
+}
+
+const NOTICE_TONE = {
+  danger: "text-danger",
+  warning: "text-warning",
+  success: "text-success",
+  neutral: "text-ink-secondary",
+} as const;
+
+/** A page's message (an error, a warning, a done): a card of its own,
+ * one row, the words at the left and at most one action at the right, as
+ * the rows of the groups. Errors and warnings are announced. */
+export function SettingsNotice({ tone = "neutral", children, action }: {
+  tone?: keyof typeof NOTICE_TONE;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div
+      role={tone === "danger" || tone === "warning" ? "alert" : "status"}
+      data-settings-notice={tone}
+      className={cn(GROUP_CARD, "flex-row flex-wrap items-center justify-between gap-x-5 gap-y-2 px-3.5 py-2.5")}
+    >
+      <p className={cn("min-w-0 flex-1 basis-[240px] text-[13px] leading-[18px]", NOTICE_TONE[tone])}>{children}</p>
+      {action && <div className="ml-auto flex shrink-0 items-center gap-2">{action}</div>}
+    </div>
+  );
+}
+
+/** A line of explanation inside a group's card, with a row's insets (the
+ * sentence that heads a list of switches). */
+export function SettingsTextRow({ tone = "neutral", children }: { tone?: keyof typeof NOTICE_TONE; children: React.ReactNode }) {
+  return (
+    <p role={tone === "warning" || tone === "danger" ? "alert" : undefined} className={cn("px-3.5 py-2.5 text-[12px] leading-4", NOTICE_TONE[tone])}>
+      {children}
+    </p>
+  );
+}
+
 /** Grok Bot's count pill ("2 ⌄"): how many items a row holds, and the
  * button that unfolds them under the row. */
 export function CountPill({ count, open, onToggle, label, controls }: {

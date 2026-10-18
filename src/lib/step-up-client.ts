@@ -1,8 +1,10 @@
 // The app's side of security keys (shared/step-up.ts, server/routes/security-keys.ts):
 // start a ceremony, ask the browser for the key (WebAuthn), and post its
-// answer. Where this page cannot use WebAuthn (the desktop's own page on
-// 127.0.0.1), the desktop runs the same ceremony in a small window on
-// localhost. Nothing here decides anything: the server verifies.
+// answer. In the desktop app the ceremony page opens in the system browser
+// instead (electron/security-key-browser.mjs): Electron cannot ask Touch ID,
+// a passkey or a key's PIN. That page posts the answer itself; this side
+// asks the ceremony's status until it ends. Nothing here decides anything:
+// the server verifies.
 //
 // No import of the store: the store's `api` calls `stepUpForRefusal` when
 // a route refuses with `step_up_required`, then sends the request again.
@@ -37,6 +39,8 @@ export function stepUpMessage(code: string): string {
     case "no_rp": return t("security.stepUp.noAddress");
     case "unsupported": return t("security.stepUp.unsupported");
     case "busy": return t("security.stepUp.busy");
+    case "browser": return t("security.stepUp.browser");
+    case "reauth_required": return t("security.stepUp.reauth");
     default: return t("security.stepUp.failed");
   }
 }
@@ -56,19 +60,56 @@ const unb64 = (text: string): Uint8Array<ArrayBuffer> => {
   return out;
 };
 
-/** Whether this page runs WebAuthn itself; otherwise the desktop's window. */
+/** Whether this page may run WebAuthn itself (its address can be an RP ID). */
 function pageCanAsk(): boolean {
   if (typeof window === "undefined" || !window.PublicKeyCredential || !navigator.credentials) return false;
   return usableRpId(location.hostname, location.protocol) !== null && window.isSecureContext;
 }
 
+/** The desktop app's bridge, when this page is the desktop's own UI. */
+function desktopKeys(): NonNullable<NonNullable<Window["ogb"]>["securityKey"]> | null {
+  return typeof window !== "undefined" && window.ogb?.securityKey?.open ? window.ogb.securityKey : null;
+}
+
+/** Which address the server makes the key for: this page's own, or, for
+ * the desktop's local page on 127.0.0.1, localhost. */
 function via(): "page" | "desktop-window" {
-  return !pageCanAsk() && typeof window !== "undefined" && window.ogb?.securityKey ? "desktop-window" : "page";
+  return !pageCanAsk() && desktopKeys() ? "desktop-window" : "page";
 }
 
 /** Whether this app can use a security key here at all. */
 export function securityKeysUsable(): boolean {
-  return pageCanAsk() || Boolean(typeof window !== "undefined" && window.ogb?.securityKey);
+  return pageCanAsk() || Boolean(desktopKeys());
+}
+
+/** Whether the key is asked in the system browser (the desktop app). */
+export function securityKeyInBrowser(): boolean {
+  return Boolean(desktopKeys());
+}
+
+const STATUS_EVERY_MS = 1_000;
+
+/** Ask the server how a ceremony run elsewhere (the system browser) ended,
+ * until it does, it expires, or `signal` stops the wait. */
+export async function waitForCeremony(ceremonyId: string, expiresAt: number, signal?: AbortSignal, every = STATUS_EVERY_MS): Promise<"done" | "failed" | "expired" | "cancelled"> {
+  // a little past the server's own end, so its answer decides
+  const until = expiresAt + 5_000;
+  for (;;) {
+    if (signal?.aborted) return "cancelled";
+    try {
+      const response = await fetch(`/api/security-keys/ceremony/${encodeURIComponent(ceremonyId)}/status`, { headers: { accept: "application/json" }, cache: "no-store", ...(signal ? { signal } : {}) });
+      const body = await response.json().catch(() => ({})) as { status?: string };
+      if (body.status === "done" || body.status === "failed" || body.status === "expired") return body.status;
+    } catch {
+      if (signal?.aborted) return "cancelled";
+      // the server did not answer this time: ask again
+    }
+    if (Date.now() > until) return "expired";
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, every);
+      signal?.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+    });
+  }
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -80,7 +121,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
     const code = typeof json?.code === "string" ? json.code : "failed";
-    const known = ["no_key", "no_rp"].includes(code);
+    const known = ["no_key", "no_rp", "reauth_required"].includes(code);
     throw Object.assign(new StepUpError(code, known ? undefined : typeof json?.error === "string" ? json.error : undefined), { body: json, status: response.status });
   }
   return json as T;
@@ -119,10 +160,14 @@ function credentialJson(credential: PublicKeyCredential, kind: "register" | "ass
 
 /** Run a started ceremony to its end: the key's answer is verified by the
  * server, or this throws. */
-async function runCeremony(start: CeremonyStart): Promise<void> {
-  if (via() === "desktop-window") {
-    const outcome = await window.ogb!.securityKey!.ceremony(start.pageUrl);
-    if (!outcome.ok) throw new StepUpError(outcome.error ?? "failed");
+async function runCeremony(start: CeremonyStart, signal?: AbortSignal): Promise<void> {
+  const desktop = desktopKeys();
+  if (desktop) {
+    const opened = await desktop.open(start.pageUrl);
+    if (!opened.ok) throw new StepUpError(opened.error ?? "failed");
+    const status = await waitForCeremony(start.ceremonyId, start.expiresAt, signal);
+    void desktop.returned().catch(() => {});
+    if (status !== "done") throw new StepUpError(status);
     return;
   }
   const options = start.options;
@@ -155,7 +200,7 @@ async function runCeremony(start: CeremonyStart): Promise<void> {
 /** Add a key. A person who already has one confirms with it first (the
  * server says so; the store's `api` is not used here, so it is handled in
  * place). */
-export async function registerSecurityKey(name: string): Promise<void> {
+export async function registerSecurityKey(name: string, signal?: AbortSignal): Promise<void> {
   let start: CeremonyStart;
   try {
     start = await post<CeremonyStart>("/api/security-keys/register", { name, via: via() });
@@ -165,7 +210,7 @@ export async function registerSecurityKey(name: string): Promise<void> {
     const confirmed = await stepUp(body.target);
     start = await post<CeremonyStart>("/api/security-keys/register", { name, via: via(), stepUp: confirmed });
   }
-  await runCeremony(start);
+  await runCeremony(start, signal);
 }
 
 /** Recent step-ups by target: one ceremony may authorize two requests

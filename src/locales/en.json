@@ -8732,5 +8732,16 @@
   "stream.showEarlierInTopic": "Show earlier messages of this topic",
   "stream.topicFailed": "This topic could not be loaded.",
   "stream.newActivity": "New activity in an earlier topic: {title}",
-  "settings.threadsView.single": "One conversation"
+  "settings.threadsView.single": "One conversation",
+  "security.reauth.title": "Sign in again to add your first key",
+  "security.reauth.hint": "For your safety, the first key needs a sign-in from the last 15 minutes. You come back to this page afterwards.",
+  "security.reauth.button": "Sign in again",
+  "security.reauth.waiting": "Finish signing in. Sagax brings you back to this page afterwards.",
+  "security.browser.title": "Finish in your browser",
+  "security.browser.hint": "Your browser asks for Touch ID, your passkey or your security key. Sagax comes back here once it is done.",
+  "security.browser.cancel": "Cancel",
+  "security.keys.addedNow": "Key added.",
+  "security.stepUp.browser": "The browser could not open. Try again.",
+  "security.stepUp.reauth": "Sign in again, then add your first key.",
+  "pages.yours": "Your pages"
 }

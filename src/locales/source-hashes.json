@@ -12601,7 +12601,18 @@
       "stream.showEarlierInTopic": "828781f193d25f71bdd81cb105b1cea246ad98a9bfe23bdf651883be14b0fba5",
       "stream.topicFailed": "e8715760c11fba2a5e3e3f049c4fd98d1dab271f54cca446400187909b23fe93",
       "stream.newActivity": "015074b7ce8b77784b980ad331df4ee579fd876c7b0d4622a25cdbe16024f7a4",
-      "settings.threadsView.single": "5fc383ada2db8a98fcee570486fb9a69616af5811fc227eeec2f3d57b1b40b5d"
+      "settings.threadsView.single": "5fc383ada2db8a98fcee570486fb9a69616af5811fc227eeec2f3d57b1b40b5d",
+      "security.reauth.title": "2899c12ba1a6dccf5592972e18a87eabc21169c56a56e9dddcdf4fb9e86413cc",
+      "security.reauth.hint": "c2528f3215b68ff57f79c15fc7c078af9b944f2ebb553a6c15fc0cc1b35aca5a",
+      "security.reauth.button": "51fbe1dc8a7319b7974fb540f157a3ea3edaa985b8f1d970cec9406a20122dc2",
+      "security.reauth.waiting": "8c152b2896050cd6c70b52f3fc12465aca148dca1ac56ad1bd773ee6f9960ba2",
+      "security.browser.title": "ea9b49f3100ef4d82ab3addc3780a25435b087dfa2b227223a55552449c997bc",
+      "security.browser.hint": "47becfac8477814c25ac8f0924d85dd770f7a4df57fc7ea8f9965ea5ee659cdd",
+      "security.browser.cancel": "19766ed6ccb2f4a32778eed80d1928d2c87a18d7c275ccb163ec6709d3eb2e27",
+      "security.keys.addedNow": "bcf2fdff7903fb981f26334af68cbdb4052808a271d30dd320aad793f8d72ee9",
+      "security.stepUp.browser": "7bbb1263c2d9a8b81865a0f777918c6e8490728db4e960c73dc37504c18d61df",
+      "security.stepUp.reauth": "93ee85ef2635cf1d0adfcf0e8a2baba337a6cac98da60c7190d533257b342b0f",
+      "pages.yours": "a14fbf2a09e342e17172f023034e906f9370a8375077ae5c1aa48afd57e0cff8"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

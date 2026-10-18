@@ -18,7 +18,9 @@
 //   - a verified step-up authorizes each of its grants once
 //     (`consume`), for the same person, within a short time. Any mismatch
 //     (another person, another card, a changed card) burns the ceremony.
-// Expired ceremonies are dropped. A restart drops them all.
+// Expired ceremonies are dropped. A restart drops them all. How a ceremony
+// ended is kept a short while (`status`), for the desktop app, whose key
+// runs in the system browser and which only learns the end by asking.
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -299,6 +301,9 @@ export class SecurityKeys {
   private readonly now: () => number;
   private readonly onRegistered?: (person: string, key: SecurityKeyView) => void;
   private readonly ceremonies = new Map<string, Ceremony>();
+  /** How spent ceremonies ended, by id, until CEREMONY_TTL_MS after their
+   * end: what `status` answers once the ceremony itself is gone. */
+  private readonly outcomes = new Map<string, { ok: boolean; at: number }>();
   /** Changes a verified step-up already authorized for a path that cannot
    * carry one (the desktop's trusted approval channel), by person and key.
    * Each used once, within STEP_UP_USE_MS. */
@@ -357,6 +362,19 @@ export class SecurityKeys {
       const end = ceremony.verifiedAt !== undefined ? ceremony.verifiedAt + STEP_UP_USE_MS : ceremony.createdAt + CEREMONY_TTL_MS;
       if (now > end) this.ceremonies.delete(id);
     }
+    for (const [id, outcome] of this.outcomes) if (now > outcome.at + CEREMONY_TTL_MS) this.outcomes.delete(id);
+  }
+
+  /** Where a ceremony is: still waiting for its key, done (a key added or a
+   * step-up verified), failed, or unknown (expired, never started, or a
+   * restart). The id is the only authorization, as for its page. */
+  status(id: string): "waiting" | "done" | "failed" | "expired" {
+    this.prune();
+    const ceremony = this.ceremonies.get(id);
+    if (ceremony) return ceremony.verifiedAt !== undefined ? "done" : "waiting";
+    const outcome = this.outcomes.get(id);
+    if (outcome) return outcome.ok ? "done" : "failed";
+    return "expired";
   }
 
   private admit(person: string): void {
@@ -439,6 +457,16 @@ export class SecurityKeys {
   /** Verify the browser's answer once. The ceremony is spent whatever the
    * outcome: a failed answer starts over. */
   async complete(id: string, response: unknown): Promise<{ ok: true; kind: CeremonyKind } | { ok: false; status: number; error: string }> {
+    const held = this.ceremonies.has(id) && this.ceremonies.get(id)!.verifiedAt === undefined;
+    const result = await this.completeOnce(id, response);
+    if (held) {
+      if (this.outcomes.size >= MAX_CEREMONIES) this.outcomes.delete(this.outcomes.keys().next().value!);
+      this.outcomes.set(id, { ok: result.ok, at: this.now() });
+    }
+    return result;
+  }
+
+  private async completeOnce(id: string, response: unknown): Promise<{ ok: true; kind: CeremonyKind } | { ok: false; status: number; error: string }> {
     this.prune();
     const ceremony = this.ceremonies.get(id);
     if (!ceremony || ceremony.verifiedAt !== undefined) return { ok: false, status: 404, error: "This security key request has expired. Start again." };

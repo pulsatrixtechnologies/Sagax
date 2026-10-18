@@ -307,10 +307,12 @@ const __BASE_VERSION__: string;
       /** Settings > Memory: the organization memory cached for Obsidian
        * (electron/org-memory-cache.mjs). */
       orgMemory?: import("../lib/org-memory").OrgMemoryBridge;
-      /** A security key ceremony in a small window on localhost (local page
-       * only: an address like 127.0.0.1 cannot use WebAuthn). */
+      /** A security key ceremony in the system browser (Electron cannot
+       * ask Touch ID, a passkey or a key's PIN): `open` opens the
+       * ceremony page there, `returned` brings this app back to the front. */
       securityKey?: {
-        ceremony(pageUrl: string): Promise<{ ok: boolean; error?: string }>;
+        open(pageUrl: string): Promise<{ ok: boolean; error?: string }>;
+        returned(): Promise<boolean>;
       };
       /** The language last chosen in this app on any of its pages (local
        * page or an organization server's page from this bundle), kept by

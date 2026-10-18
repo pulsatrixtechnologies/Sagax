@@ -177,6 +177,33 @@ describe("security key routes, hardening", () => {
     expect(fresh.audits).toContain("security_keys.add-started");
   });
 
+  it("says before the first key that this sign-in is too old (2026-10-18)", async () => {
+    const stale = await serve("pr_alice", { recent: false });
+    expect((await stale.call("/api/security-keys")).body).toMatchObject({ keys: [], needsSignIn: true });
+    const fresh = await serve();
+    expect((await fresh.call("/api/security-keys")).body.needsSignIn).toBeUndefined();
+  });
+
+  it("answers a ceremony's status by its id only: waiting, done, failed, expired (2026-10-18)", async () => {
+    const { call, ceremony } = await serve();
+    const key = fakeAuthenticator();
+    expect((await call(`/api/security-keys/ceremony/${"a".repeat(43)}/status`)).body).toEqual({ status: "expired" });
+    expect((await call("/api/security-keys/ceremony/short/status")).status).toBe(404);
+    const start = (await call("/api/security-keys/register", "POST", { name: "Mac", via: "desktop-window" })).body;
+    const status = () => call(`/api/security-keys/ceremony/${start.ceremonyId}/status`);
+    expect((await status()).body).toEqual({ status: "waiting" });
+    expect((await call(`/api/security-keys/ceremony/${start.ceremonyId}/status`, "POST", {})).status).toBe(405);
+    expect((await ceremony(start, key)).status).toBe(200);
+    expect((await status()).body).toEqual({ status: "done" });
+    expect((await status()).headers.get("cache-control")).toBe("no-store");
+    // a bad answer spends the ceremony: failed
+    const second = await call("/api/security-keys/register", "POST", { name: "Other", via: "desktop-window" });
+    expect(second.body.code).toBe("step_up_required");
+    const begin = (await call("/api/security-keys/begin", "POST", { target: second.body.target, via: "desktop-window" })).body;
+    expect((await call(`/api/security-keys/ceremony/${begin.ceremonyId}`, "POST", { response: { id: "nope" } })).status).toBe(400);
+    expect((await call(`/api/security-keys/ceremony/${begin.ceremonyId}/status`)).body).toEqual({ status: "failed" });
+  });
+
   it("a second key's step-up is bound to that key's name", async () => {
     const { call, ceremony } = await serve();
     const key = fakeAuthenticator();
