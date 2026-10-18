@@ -4150,7 +4150,10 @@ with counts only. No organization policy blocks an export yet; iOS has no
 vault. Tests: `shared/credential-vault-transfer.test.ts`, the import and
 export blocks of `server/credential-vault.test.ts` and
 `server/routes/credential-vault.test.ts`,
-`src/components/settings/CredentialsTransfer.test.ts`.
+`src/components/settings/CredentialsTransfer.test.ts`, and
+`server/credential-vault-transfer.e2e.test.ts` (a real desktop-mode server:
+the launcher forwards a throwaway `SAGAX_MCP_OAUTH_KEY` and sends the owner
+capability on its own starter rename).
 
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 

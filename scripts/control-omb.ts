@@ -424,6 +424,10 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   if (parentEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN) {
     childEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN = parentEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN;
     childEnv.SAGAX_DESKTOP_PARENT = "1";
+    // The vault key the desktop shell hands over from the OS keychain: a
+    // test chooses a throwaway one, or the vault is unavailable, as on a
+    // desktop whose keychain did not answer.
+    if (/^[0-9a-f]{64}$/i.test(parentEnv.SAGAX_MCP_OAUTH_KEY ?? "")) childEnv.SAGAX_MCP_OAUTH_KEY = parentEnv.SAGAX_MCP_OAUTH_KEY;
   }
   return childEnv;
 }
@@ -579,7 +583,13 @@ export async function launchVerificationServer(
     const renameTimeout = AbortSignal.timeout(Math.max(1, deadline - Date.now()));
     const rename = await fetch(`${url}/api/bots/${seeded[0].id}/profile`, {
       method: "PATCH",
-      headers: { "content-type": "application/json", origin: url },
+      // desktop mode: a loopback mutation carries the owner capability, as
+      // the desktop app's own requests do
+      headers: {
+        "content-type": "application/json",
+        origin: url,
+        ...(parentEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN ? { "x-openmausbot-desktop-owner": parentEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN } : {}),
+      },
       body: JSON.stringify({ name: FIXTURE_STARTER_BOT_NAME }),
       signal: signal ? AbortSignal.any([signal, renameTimeout]) : renameTimeout,
     });
