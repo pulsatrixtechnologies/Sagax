@@ -62,6 +62,14 @@ describe("footer update button", () => {
     expect(html.match(/lucide-arrow-down-to-line/g)).toBeNull();
   });
 
+  it("leaves the avatar's dot to a failed update beside Connect apps", () => {
+    const dot = (html: string) => /<span[^>]*class="absolute -right-0\.5 -top-0\.5[^"]*"/.exec(html)?.[0] ?? "";
+    // the foot's own update button (SidebarUpdatePill) shows these
+    expect(dot(render({ status: "downloaded", version: "0.5.21" }, true))).toBe("");
+    expect(dot(render({ status: "downloading", version: "0.5.21", percent: 40 }, true))).toBe("");
+    expect(dot(render({ status: "error", message: "offline" }, true))).toContain("bg-danger");
+  });
+
   it("is absent while an update downloads, and on the collapsed rail", () => {
     expect(button(render({ status: "downloading", version: "0.4.19", percent: 40 }))).toBe("");
     expect(button(render({ status: "idle" }))).toBe("");

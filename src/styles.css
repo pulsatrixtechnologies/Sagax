@@ -3207,6 +3207,38 @@ button:disabled.bg-danger {
 :root[data-reduced-motion="true"] .connect-apps-pill [data-pill-tiles] {
   transition-property: background-color;
 }
+/* The foot's update button (SidebarUpdatePill): round, the avatar's size;
+   hovered, focused or just landed, it widens to show its word and the
+   Connect apps pill beside it gives way. Reduced motion: no animation, the
+   word simply shows. */
+.sidebar-update-pill [data-update-text] {
+  max-width: 0;
+  opacity: 0;
+  padding-inline-end: 0;
+  margin-inline-start: -4px;
+  overflow: hidden;
+}
+.sidebar-update-pill:is(:hover, :focus-visible, [data-wide]) [data-update-text] {
+  max-width: 11rem;
+  opacity: 1;
+  padding-inline-end: 14px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion="true"]) .sidebar-update-pill [data-update-text] {
+    transition: max-width 240ms var(--ease-out-quint), opacity 200ms var(--ease-out-quint), padding-inline-end 240ms var(--ease-out-quint);
+  }
+  :root:not([data-reduced-motion="true"]) .sidebar-update-pill {
+    transition: filter 150ms ease-out;
+  }
+  :root:not([data-reduced-motion="true"]) .sidebar-update-pill[data-sidebar-update-pill="ready"]:is(:hover, :focus-visible) [data-update-icon] svg {
+    animation: sidebar-update-nudge 0.6s cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+}
+@keyframes sidebar-update-nudge {
+  0% { transform: none; }
+  40% { transform: translateY(2px); }
+  100% { transform: none; }
+}
 @keyframes connect-apps-tile-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }

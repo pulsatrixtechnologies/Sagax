@@ -3,12 +3,19 @@
  * or points under the name) and off (the account row alone, title and
  * points under the name). Not shipped in the app.
  * The capture script answers /api itself (an empty roster).
+ * ?view=grok shows Grok Bot's foot instead (the avatar, Connect apps and
+ * the update button), with a stand-in updater bridge:
+ * &update=none|ready|downloading (percent 40)|preparing; &pill=0 leaves the
+ * update button out (the foot as it was before it).
  * ?skin=<id>&lang=<code> */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { LayoutGrid, Puzzle } from "lucide-react";
 import { SidebarPlaces, type SidebarPlace } from "../components/SidebarPlaces";
 import { SidebarProfileMenu } from "../components/SidebarProfileMenu";
+import { SidebarConnectApps } from "../components/ConnectAppsPill";
+import { SidebarUpdatePill } from "../components/SidebarUpdatePill";
+import type { UpdaterState } from "../lib/updater";
 import { resetAchievementsForTests } from "../lib/achievements";
 import { setLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
@@ -19,6 +26,22 @@ const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
 setLocale(params.get("lang") ?? "fr");
+
+const UPDATER: Record<string, UpdaterState> = {
+  none: { status: "idle" },
+  ready: { status: "downloaded", version: "0.5.21" },
+  downloading: { status: "downloading", version: "0.5.21", percent: 40 },
+  preparing: { status: "preparing", version: "0.5.21" },
+};
+const updaterState = UPDATER[params.get("update") ?? ""];
+if (updaterState) {
+  const ogb = ((window as unknown as { ogb?: Record<string, unknown> }).ogb ??= {});
+  ogb.updater = {
+    check: async () => updaterState,
+    install: async () => {},
+    onState: (cb: (state: UpdaterState) => void) => { cb(updaterState); return () => {}; },
+  };
+}
 resetAchievementsForTests({
   status: "ready",
   snapshot: {
@@ -53,7 +76,32 @@ function Foot({ on }: { on: boolean }) {
   );
 }
 
+/** Grok Bot's foot, as Sidebar.tsx lays it out. */
+function GrokFoot() {
+  return (
+    <div className="flex w-[280px] flex-col rounded-xl border-[0.5px] border-hairline-weak bg-sidebar" data-gallery="grok">
+      <div className="h-24" />
+      <div className="px-4 pb-4">
+        <div data-sidebar-account-row className="flex items-center gap-2">
+          <SidebarProfileMenu avatarOnly />
+          <SidebarConnectApps onOpen={() => {}} />
+          {params.get("pill") !== "0" && <SidebarUpdatePill />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Gallery() {
+  if (params.get("view") === "grok") {
+    return (
+      <StoreProvider>
+        <div className="flex min-h-screen items-end bg-app p-8 text-ink">
+          <GrokFoot />
+        </div>
+      </StoreProvider>
+    );
+  }
   return (
     <StoreProvider>
       <div className="flex min-h-screen items-end gap-8 bg-app p-8 text-ink">

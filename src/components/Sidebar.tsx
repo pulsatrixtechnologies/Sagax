@@ -164,6 +164,7 @@ import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 
 import { profileInitials, SidebarProfileMenu, SidebarRoutinesBadge } from "./SidebarProfileMenu";
 import { SidebarConnectApps } from "./ConnectAppsPill";
+import { SidebarUpdatePill } from "./SidebarUpdatePill";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
@@ -3342,10 +3343,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </>
         ) : (
           // Grok Bot's foot: your avatar (it opens the account menu, Browse
-          // bots included), 8px, then the wide Connect apps pill.
+          // bots included), 8px, then the wide Connect apps pill, then the
+          // update button while an update downloads or waits.
           <div data-sidebar-account-row className="flex items-center gap-2">
             <SidebarProfileMenu avatarOnly places={accountPlaces} />
             <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
+            {/* a waiting update, right of the pill, which gives way when it
+                widens (JC, 2026-10-18) */}
+            <SidebarUpdatePill />
             {/* the active routines count, right of the pill, while Settings
                 shows it on the account row (JC, 2026-10-16) */}
             <SidebarRoutinesBadge />

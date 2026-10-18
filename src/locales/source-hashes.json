@@ -12723,7 +12723,9 @@
       "organization.vaultExport.short": "9e77c07b89b529311b197c491b6149acd72298a1dee1a69bd715d5d4b15806a7",
       "composer.plus.model": "5e2c614c23f02239bc03c6c04fcb681950f9e72bf8fdff6be79c79841cbb10c0",
       "composer.plus.modelAria": "b0ab6c0e435dc2efb0fd29589f9f7d6e82d37286c933f9466c2378b5b377fd4e",
-      "model.providerRow": "472590ae974d4c1f44b3780df0b152d9119f076c61bfb3e8cb6affd7889ac0a8"
+      "model.providerRow": "472590ae974d4c1f44b3780df0b152d9119f076c61bfb3e8cb6affd7889ac0a8",
+      "sidebar.update.pill": "c1c1009d3f37ec058070a62e22caf9ac9dae2169d452487c5c271a8bcf57a291",
+      "sidebar.update.pillAria": "babb60854fdc1ba8aa02a8237d714b1666252133c201076beaa2dd1c7da43359"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -22,7 +22,9 @@
 // downloaded, a round cloud button sits at the right of the row; it widens
 // into a pill on hover or focus (and for a few seconds when the update
 // lands) while the name folds away to the avatar, and it opens the
-// "Update ready" dialog (UpdateBanner, openUpdatePrompt). The Automations
+// "Update ready" dialog (UpdateBanner, openUpdatePrompt). That button needs
+// the name beside it, so Grok Bot's foot (avatar only, then Connect apps)
+// carries its own instead, SidebarUpdatePill. The Automations
 // item in the menu carries no dot (JC, 2026-10-18): a failed run not seen
 // yet shows on the Automations page (the problem runs pill in its header,
 // a dot on the run in Logs) and in the routines count's label.
@@ -229,6 +231,12 @@ export function useUpdateItem(): UpdateEntry | null {
       },
     },
   };
+}
+
+/** The phases the foot's update button (SidebarUpdatePill, beside Connect
+ * apps) shows itself, so the avatar adds no dot for them. */
+export function footPillCovers(phase: UpdatePhase): boolean {
+  return phase === "downloading" || phase === "preparing" || phase === "downloaded" || phase === "installing";
 }
 
 /** How long the update button stays wide after an update lands. */
@@ -551,7 +559,11 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   const [wide, setWide] = useUpdateButtonWide(updateButton ? (update?.label ?? "") : null);
   // the round button speaks for a downloaded update, so the row's badge
   // stays for the other phases
-  const noteworthy = update && updateNoteworthy(update.phase, update.pending) && !updateButton ? update : null;
+  // Beside Connect apps (avatarOnly, Grok Bot's foot) the foot's own update
+  // button (SidebarUpdatePill) shows a download, a ready update and its
+  // install, so the avatar's dot is left for a failed one.
+  const footPill = avatarOnly && update !== null && footPillCovers(update.phase);
+  const noteworthy = update && updateNoteworthy(update.phase, update.pending) && !updateButton && !footPill ? update : null;
   // a place in the menu asking for attention while the menu is folded away
   const placeAttention = places.some((item) => item.attention);
 
