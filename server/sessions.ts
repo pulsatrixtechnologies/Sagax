@@ -113,6 +113,13 @@ const sessionSchema = z.object({
   /** A bot-act copy. Memory only: persist and load drop it, and renew never
    * extends it. A file that still contains one is ignored. */
   ephemeral: z.literal(true).optional(),
+  /** When the person last proved themselves interactively for this session:
+   * an OpenID Connect sign-in or an email code they typed (2026-10-18).
+   * Never set by a pairing code, an invite link, a bot-act copy, an act-as
+   * session or a renewal: those prove a credential, not the person at the
+   * keyboard. The "sign-in younger than 15 minutes" gates read this, never
+   * `createdAt` (server/recent-sign-in.ts). */
+  authAt: z.number().optional(),
 });
 
 const fileSchema = z.object({ version: z.literal(1), sessions: z.array(sessionSchema) });
@@ -157,6 +164,11 @@ export interface PairingCode {
   /** A browser sign-in's owner, the OMB Cloud account's email, which the
    * sign-in page shows before anything is redeemed. */
   owner?: string;
+  /** The interactive sign-in this window hands over (a "Sign in with
+   * Pulsatrix" for the desktop or a phone): the session it creates carries
+   * it as `authAt`. Never set from a pairing request (server/index.ts
+   * /api/auth/pairing), so a code a bot made gives no recent sign-in. */
+  authAt?: number;
 }
 
 export interface PublicPairing {
@@ -177,6 +189,12 @@ const sha256 = (value: string) => createHash("sha256").update(value).digest("hex
  * control and bidirectional-formatting characters. */
 function deviceLabel(value: string | undefined): string {
   return (value ?? "").replace(/[\p{Cc}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, "").trim();
+}
+
+/** An interactive sign-in time a caller may stamp: a finite time that is not
+ * in the future. Anything else stamps nothing (fails closed). */
+function validAuthAt(value: unknown, now: number): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= now;
 }
 
 function sameDigest(a: string, b: string): boolean {
@@ -390,7 +408,7 @@ export class SessionRegistry {
 
   // ── pairing ────────────────────────────────────────────────────────────
 
-  openPairing(input: { scopes?: Scope[]; label?: string; ttlMs?: number; principalId?: string; idp?: SessionRecord["idp"]; browser?: boolean; owner?: string } = {}): { id: string; code: string; credential: string; expiresAt: number } {
+  openPairing(input: { scopes?: Scope[]; label?: string; ttlMs?: number; principalId?: string; idp?: SessionRecord["idp"]; browser?: boolean; owner?: string; authAt?: number } = {}): { id: string; code: string; credential: string; expiresAt: number } {
     this.prune();
     const now = this.now();
     const code = generatePairingCode();
@@ -408,6 +426,7 @@ export class SessionRegistry {
       ...(input.principalId ? { principalId: input.principalId } : {}),
       ...(input.idp ? { idp: { ...input.idp } } : {}),
       ...(input.browser ? { browser: true as const, ...(input.owner ? { owner: input.owner } : {}) } : {}),
+      ...(validAuthAt(input.authAt, now) ? { authAt: input.authAt } : {}),
     };
     this.pairings.push(pairing);
     return { id: pairing.id, code, credential, expiresAt: pairing.expiresAt };
@@ -533,6 +552,9 @@ export class SessionRegistry {
       ...(pairing.principalId ? { principalId: pairing.principalId } : {}),
       ...(pairing.idp ? { idp: { ...pairing.idp } } : {}),
       ...(pairing.browser ? { cookieOnly: true as const, ...(pairing.owner ? { owner: pairing.owner } : {}) } : {}),
+      // Only a window that carries an interactive sign-in passes it on; an
+      // ordinary pairing code proves nothing about who is at the keyboard.
+      ...(pairing.authAt !== undefined ? { authAt: pairing.authAt } : {}),
     };
     this.sessions.push(record);
     this.lastSeenWrites.set(record.id, now); // the exchange itself was the first sighting
@@ -545,7 +567,7 @@ export class SessionRegistry {
 
   /** A session from a verified account sign-in (a hosted portal sign-in)
    * rather than a pairing code: same token, same term, same gates. */
-  issue(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string; idp?: SessionRecord["idp"] }): { token: string; session: PublicSession } {
+  issue(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string; idp?: SessionRecord["idp"]; authAt?: number }): { token: string; session: PublicSession } {
     return this.issueAccount(input);
   }
 
@@ -556,7 +578,7 @@ export class SessionRegistry {
     return this.issueAccount({ label: "Hosted workspace", email: input.email, userId: `portal:${input.grant}`, scopes: input.scopes }, "portal");
   }
 
-  private issueAccount(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string; idp?: SessionRecord["idp"] }, membershipAuthority?: "portal"): { token: string; session: PublicSession } {
+  private issueAccount(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string; idp?: SessionRecord["idp"]; authAt?: number }, membershipAuthority?: "portal"): { token: string; session: PublicSession } {
     this.refusePersonal(input.scopes);
     this.prune();
     const now = this.now();
@@ -575,6 +597,7 @@ export class SessionRegistry {
     if (input.principalId) record.principalId = input.principalId;
     if (input.idp) record.idp = { ...input.idp };
     if (membershipAuthority) record.membershipAuthority = membershipAuthority;
+    if (validAuthAt(input.authAt, now)) record.authAt = input.authAt;
     this.sessions.push(record);
     this.lastSeenWrites.set(record.id, now);
     this.persist();
@@ -753,6 +776,8 @@ export class SessionRegistry {
     if (source.principalId) record.principalId = source.principalId;
     if (source.idp) record.idp = { ...source.idp };
     if (source.owner) record.owner = source.owner;
+    // never authAt: a bot acting for its person is not the person signing in
+    // (server/recent-sign-in.ts)
     this.sessions.push(record);
     return { token, session: publicSession(record) };
   }

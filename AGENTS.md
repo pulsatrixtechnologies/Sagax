@@ -426,7 +426,25 @@ in `server/routes/security-keys.ts`. Rules, covered by
   `security-keys.json` (0600): refused. Removing a key, removing a class or
   adding a second key (bound to its name and address) needs an existing
   key; the first key needs a sign-in younger than 15 minutes (or this
-  computer's own person); every addition is audited. The last key removed
+  computer's own person in the desktop app); every addition is audited.
+- "A sign-in younger than 15 minutes" (`server/recent-sign-in.ts`,
+  2026-10-18) is the session's `authAt`, never its `createdAt`: a bot that
+  can create a pairing code (`manage_pairing`, act on
+  `POST /api/auth/pairing`) redeems it into a brand new session. Only an
+  interactive sign-in stamps `authAt`: "Sign in with Pulsatrix" (web, or
+  handed to the desktop or a phone through its one-time pairing window) and
+  an email code the person typed. A pairing code, the phone's `/api/pair`,
+  an invite link, a renewal, a bot-act copy and an act-as session stamp
+  nothing, and a session stored before this change has none (sign in
+  again). A headless server's loopback never counts (a bot's shell is a
+  loopback caller there); the desktop app's own person does. The same rule
+  gates the vault export for a person without a key. Not covered yet: the
+  provider's `auth_time` and `max_age` (a silent single sign-on at
+  Perspicax still counts), and a headless solo server with no email
+  sign-in has no way to a recent sign-in (a first key there needs the
+  desktop app). Tests: `server/recent-sign-in.test.ts`,
+  `server/recent-sign-in.e2e.test.ts`, C5 in
+  `server/org-admin-console.e2e.test.ts`. The last key removed
   clears the classes.
 - Recovery when every key is lost: stop the server, remove the person's
   entry from `security-keys.json`, start it again. The file's digest
@@ -822,6 +840,19 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   the bot's name): admin scope, `orgAdminCaller`, audited
   (`bot.force_stop`, `bot.force_delete`), the owner notified (`admin-action`,
   `audience` the owner). A solo server answers 403 `identity_perspicax`.
+- Vault export (2026-10-18, `organization.allowVaultExport`, on by
+  default; a solo server always allows): an admin turns it off in Settings >
+  Organization (`OrgVaultExportPolicy`, `PATCH /api/org/settings`
+  `{ allowVaultExport }`) or in the Perspicax console
+  (`POST /api/org/admin/settings`, read back in `org.allowVaultExport`).
+  Off: `POST /api/me/credentials/export` answers 403
+  `export_blocked_by_org` before any other check, for everyone (admins
+  too), the vault list carries `exportBlocked` and Settings > Credentials
+  shows Export disabled with the reason. Imports are not affected. Each
+  change is an `org.settings` audit row. Tests:
+  `server/routes/credential-vault.test.ts`,
+  `server/perspicax-org-routes.test.ts`, `server/org-admin-ops.test.ts`, C5
+  in `server/org-admin-console.e2e.test.ts`.
 - Sharing in the organization is one compact row per bot (avatar, owner,
   sharing count, running or idle from `/api/org/bots` `look`/`running`);
   the grants open inline, the force actions sit in an admin-only row menu

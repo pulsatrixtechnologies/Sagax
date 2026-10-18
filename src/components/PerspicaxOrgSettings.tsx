@@ -29,6 +29,7 @@ import { InterimPeople } from "./settings/InterimPeople";
 
 import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
 import { OrgMemberAutoApprovalPolicy } from "./settings/OrgMemberAutoApprovalPolicy";
+import { OrgVaultExportPolicy } from "./settings/OrgVaultExportPolicy";
 import { OrgMemberEnvironmentPolicy } from "./settings/OrgMemberEnvironmentPolicy";
 import { OrgConfidentialThreadsDefault } from "./settings/OrgConfidentialThreadsDefault";
 
@@ -181,6 +182,7 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
         {admin && <OrgMemberEnvironmentPolicy initial={org.settings.memberEnvironmentAutonomy !== false} onChanged={onChanged} />}
         {admin && <OrgConfidentialThreadsDefault initial={org.settings.confidentialThreadsByDefault === true} onChanged={onChanged} />}
         {admin && <OrgMemberAutoApprovalPolicy initial={org.settings.memberAutoApproval !== false} onChanged={onChanged} />}
+        {admin && <OrgVaultExportPolicy initial={org.settings.allowVaultExport !== false} onChanged={onChanged} />}
         {botRows}
       </SettingsGroup>
       {after}

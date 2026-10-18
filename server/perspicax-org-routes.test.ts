@@ -367,3 +367,43 @@ describe("/api/org/settings memberAutoApproval", () => {
     expect(await patch("admin", { memberAutoApproval: true }, false)).toMatchObject({ status: 400 });
   });
 });
+
+describe("/api/org/settings allowVaultExport (2026-10-18)", () => {
+  async function patch(role: "admin" | "member", body: unknown, withSaver = true) {
+    const out: { status?: number; body?: unknown } = {};
+    let current = true;
+    const saved: boolean[] = [];
+    const routes = createPerspicaxOrgRoutes({
+      issuer: "https://px.example.test",
+      orgName: "Acme",
+      directory: () => null,
+      bySubject: () => null,
+      viewerRole: () => role,
+      settings: () => ({ orgKeyConfigured: false, allowFullAccess: false, memberEnvironmentAutonomy: true, memberAutoApproval: true, allowVaultExport: current }),
+      pendingAdminApprovals: () => [],
+      ...(withSaver ? { saveAllowVaultExport: (allowed: boolean) => { saved.push(allowed); current = allowed; } } : {}),
+    });
+    const ctx = {
+      req: {}, res: { setHeader: () => {}, headersSent: false, writableEnded: false },
+      url: new URL("http://127.0.0.1/api/org/settings"), path: "/api/org/settings", method: "PATCH",
+      auth: session({ principalId: "pr_admin" }),
+      json: (_res: unknown, status: number, answer: unknown) => { out.status = status; out.body = answer; },
+      readBody: async () => body,
+    } as unknown as RouteContext;
+    await routes(ctx);
+    return { ...out, saved };
+  }
+
+  it("lets an admin turn it on and off, and answers the saved settings", async () => {
+    const off = await patch("admin", { allowVaultExport: false });
+    expect(off).toMatchObject({ status: 200, body: { settings: { allowVaultExport: false } }, saved: [false] });
+    const on = await patch("admin", { allowVaultExport: true });
+    expect(on).toMatchObject({ status: 200, body: { settings: { allowVaultExport: true } }, saved: [true] });
+  });
+
+  it("refuses a member, a value that is not a boolean, and a server without the setter", async () => {
+    expect(await patch("member", { allowVaultExport: false })).toMatchObject({ status: 403, saved: [] });
+    for (const value of ["yes", 1, null]) expect(await patch("admin", { allowVaultExport: value })).toMatchObject({ status: 400, saved: [] });
+    expect(await patch("admin", { allowVaultExport: true }, false)).toMatchObject({ status: 400 });
+  });
+});

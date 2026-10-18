@@ -580,6 +580,47 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(audit.filter((row) => row.action === "org.settings" && row.actor.via === "console").map((row) => row.changed[0])).toEqual(expect.arrayContaining(["allowFullAccess", "allowedEngines", "pluginMarketplaces", "defaults"]));
   }, 60_000);
 
+  it("C5: the vault export policy (2026-10-18), and a pairing code is no recent sign-in", async () => {
+    // on by default; the console and Settings > Organization both carry it
+    expect((await admin("GET", "settings", ALICE)).body.org).toMatchObject({ allowVaultExport: true });
+    expect((await api("POST", "/api/me/credentials/list", alice, {})).body).not.toHaveProperty("exportBlocked");
+    const off = await admin("POST", "settings", ALICE, { allowVaultExport: false });
+    expect(off.status, off.text).toBe(200);
+    expect(off.body.settings.org).toMatchObject({ allowVaultExport: false });
+    expect((await api("GET", "/api/org", alice)).body.settings).toMatchObject({ allowVaultExport: false });
+    expect((await api("POST", "/api/me/credentials/list", alice, {})).body.exportBlocked).toBe(true);
+    const refused = await api("POST", "/api/me/credentials/export", alice, { format: "chrome-csv", acknowledge: "plaintext" });
+    expect(refused.status, refused.text).toBe(403);
+    expect(refused.body.code).toBe("export_blocked_by_org");
+    // a member cannot turn it back on; an admin can, in Settings > Organization
+    expect((await api("PATCH", "/api/org/settings", bob, { allowVaultExport: true })).status).toBe(403);
+    const on = await api("PATCH", "/api/org/settings", alice, { allowVaultExport: true });
+    expect(on.status, on.text).toBe(200);
+    expect(on.body.settings).toMatchObject({ allowVaultExport: true });
+    expect((await api("POST", "/api/me/credentials/list", alice, {})).body).not.toHaveProperty("exportBlocked");
+    // the audit is written after the answer
+    await expect.poll(async () => ((await admin("GET", "audit?category=org&limit=50", ALICE)).body.rows as Array<any>)
+      .filter((row) => row.action === "org.settings" && row.changed?.[0] === "allowVaultExport").length, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+
+    // Alice just signed in with Pulsatrix: a recent sign-in. A code made with
+    // her session (what a bot's manage_pairing does) redeems into a session
+    // of hers that is not one.
+    expect((await api("GET", "/api/security-keys", await signIn(ALICE))).body).not.toHaveProperty("needsSignIn");
+    const pairing = await api("POST", "/api/auth/pairing", alice, {});
+    expect(pairing.status, pairing.text).toBe(200);
+    const paired = await api("POST", "/api/auth/pair", undefined, { code: pairing.body.code, label: "bot" });
+    expect(paired.status, paired.text).toBe(200);
+    const bearer = { bearer: paired.body.token as string };
+    expect((await api("GET", "/api/security-keys", bearer)).body.needsSignIn).toBe(true);
+    // nor does it pass the vault export's recent sign-in, while a fresh
+    // Pulsatrix sign-in of hers does
+    const viaCode = await api("POST", "/api/me/credentials/export", bearer, { format: "chrome-csv", acknowledge: "plaintext" });
+    expect(viaCode.status, viaCode.text).toBe(403);
+    expect(viaCode.body.code).toBe("reauth_required");
+    const fresh = await api("POST", "/api/me/credentials/export", await signIn(ALICE), { format: "chrome-csv", acknowledge: "plaintext" });
+    expect(fresh.status, fresh.text).toBe(200);
+  }, 60_000);
+
   it("C6: a bot's look and persona, its picture behind a strong ETag", async () => {
     const pixel = await createBot(alice, "Pixel", "claude");
     const plain = await admin("GET", `bots/${pixel.id}`, ALICE);

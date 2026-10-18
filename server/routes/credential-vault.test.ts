@@ -28,6 +28,7 @@ async function serve(options: {
   principal?: string | null;
   exportGate?: Parameters<typeof createCredentialVaultRoutes>[0]["exportGate"];
   importGate?: Parameters<typeof createCredentialVaultRoutes>[0]["importGate"];
+  exportBlocked?: () => boolean;
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "sagax-vault-routes-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
@@ -40,6 +41,7 @@ async function serve(options: {
     audit: (action, _auth, detail) => { audits.push({ action, detail }); },
     ...(options.exportGate ? { exportGate: options.exportGate } : {}),
     ...(options.importGate ? { importGate: options.importGate } : {}),
+    ...(options.exportBlocked ? { exportBlocked: options.exportBlocked } : {}),
     onePassword: new OnePassword({ env: {}, exec: async () => { throw new Error("absent"); }, organization: () => false }),
     principal: () => options.principal === undefined ? LOCAL_VAULT_PRINCIPAL : options.principal,
     botExists: (id) => id === "bot-a",
@@ -273,6 +275,27 @@ describe("import and export routes", () => {
     expect(asked.at(-1)).toEqual({ format: "bitwarden-json", stepUp: "ceremony-id" });
     const exports = audits.filter((row) => row.action === "credentials.export");
     expect(exports).toEqual([{ action: "credentials.export", detail: { format: "bitwarden-json", count: 1, referencesLeftOut: 0, notInFormat: 0 } }]);
+  });
+
+  it("refuses every export when the organization turned exports off, before the gate, and says so in the list (2026-10-18)", async () => {
+    let blocked = true;
+    let gateAsked = 0;
+    const { call, vault, audits } = await serve({ exportBlocked: () => blocked, exportGate: () => { gateAsked += 1; return null; } });
+    vault.create(LOCAL_VAULT_PRINCIPAL, login);
+    expect((await call("POST", "/api/me/credentials/list", {})).body.exportBlocked).toBe(true);
+    for (const format of ["chrome-csv", "bitwarden-csv", "bitwarden-json"]) {
+      const refused = await call("POST", "/api/me/credentials/export", { format, acknowledge: "plaintext", stepUp: "ceremony-id" });
+      expect(refused.status).toBe(403);
+      expect(refused.body).toMatchObject({ code: "export_blocked_by_org" });
+      expect(refused.text).not.toContain(FAKE_PASSWORD);
+    }
+    expect(gateAsked).toBe(0);
+    expect(audits.filter((row) => row.action === "credentials.export")).toEqual([]);
+    // imports are not affected
+    expect((await call("POST", "/api/me/credentials/import", { format: "chrome-csv", duplicates: "skip", items: [] })).status).toBe(200);
+    blocked = false;
+    expect((await call("POST", "/api/me/credentials/list", {})).body).not.toHaveProperty("exportBlocked");
+    expect((await call("POST", "/api/me/credentials/export", { format: "chrome-csv", acknowledge: "plaintext" })).status).toBe(200);
   });
 
   it("refuses an export where no gate is wired, and keeps both routes member scope and off for agents", async () => {

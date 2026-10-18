@@ -805,6 +805,7 @@ import {
   secureTokenMatch,
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, isBotActSession, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
+import { recentPersonSignIn } from "./recent-sign-in.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
@@ -6134,6 +6135,9 @@ ROUTES.push(createCredentialVaultRoutes({
   // vault's owner's key), else a sign-in younger than 15 minutes, as for a
   // first key. The desktop's own person counts as present; a headless
   // server's loopback never does (a bot's shell is a loopback caller there).
+  // 2026-10-18: an organization admin may turn exports off for everyone
+  // (organization.allowVaultExport); the list says so to the app.
+  exportBlocked: () => !vaultExportAllowed(),
   exportGate: (auth, input) => {
     const refused = credentialVaultPersonRefusal(auth);
     if (refused) return refused;
@@ -6142,7 +6146,9 @@ ROUTES.push(createCredentialVaultRoutes({
     if (person && securityKeys.hasKey(person)) {
       return settingsStepUp(securityKeys, person, "credentials.export", { format: input.format }, input.stepUp, []);
     }
-    const fresh = auth.kind === "loopback" ? true : Date.now() - auth.session.createdAt <= 15 * 60_000;
+    // an interactive sign-in, never a session's age: a bot can redeem a
+    // pairing code into a new session (server/recent-sign-in.ts)
+    const fresh = recentPersonSignIn(auth, { desktopManaged: DESKTOP_MANAGED });
     return fresh ? null : { status: 403, body: { error: "Sign in again, then export your vault.", code: "reauth_required" } };
   },
   importGate: (auth) => credentialVaultPersonRefusal(auth),
@@ -9498,6 +9504,12 @@ function approvalOwnerId(bot: BotRecord, threadId?: string): string {
 const CLOUD_GUEST_CONFIDENTIAL = "This Cloud belongs to its owner, who can read everything on it: a confidential thread here could not be kept from them. Use your own Sagax for confidential work.";
 /** Organization setting: new threads start confidential unless the person
  * says otherwise (Settings > Organisation). Never on a solo server. */
+/** 2026-10-18: whether this person may export their credential vault in
+ * clear. A solo server always allows; an organization server allows unless
+ * an admin turned it off (organization.allowVaultExport). */
+function vaultExportAllowed(): boolean {
+  return IDENTITY.kind !== "perspicax" || cfg.organization?.allowVaultExport !== false;
+}
 function confidentialThreadsByDefault(): boolean {
   return IDENTITY.kind === "perspicax" && cfg.organization?.confidentialThreadsByDefault === true;
 }
@@ -25112,9 +25124,11 @@ ROUTES.push(createOwnerApprovalRoutes({
 ROUTES.push(createSecurityKeyRoutes({
   keys: securityKeys,
   person: ruleManager,
-  // The first key needs a fresh sign-in (15 minutes), or this computer's
-  // own person at the desktop: a stolen old session cannot enroll one.
-  recentSignIn: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : Date.now() - auth.session.createdAt <= 15 * 60_000,
+  // The first key needs a fresh interactive sign-in (15 minutes), or this
+  // computer's own person at the desktop: a stolen old session cannot enroll
+  // one, nor can a session a bot redeemed from a pairing code, nor a
+  // headless server's loopback (a bot's shell there). server/recent-sign-in.ts
+  recentSignIn: (auth) => recentPersonSignIn(auth, { desktopManaged: DESKTOP_MANAGED }),
   authorizeApprovalMode: (_auth, person, input) => {
     const bot = store.bot(input.botId);
     if (!bot) return { status: 404, body: { error: "no such bot" } };
@@ -27310,6 +27324,7 @@ function orgSettings(): OrgSettings {
     memberEnvironmentAutonomy: memberEnvironmentAutonomyAllowed(cfg.organization),
     confidentialThreadsByDefault: confidentialThreadsByDefault(),
     memberAutoApproval: memberAutoApprovalAllowed(cfg.organization),
+    allowVaultExport: vaultExportAllowed(),
     pluginMarketplaces: pluginMarketplacePolicy() ?? { mode: "any" },
     github: { clientId: githubClientId() ?? null, fromEnvironment: !cfg.organization?.githubClientId && Boolean(process.env.SAGAX_GITHUB_CLIENT_ID?.trim()) },
     ...(IDENTITY.kind === "perspicax"
@@ -28967,6 +28982,9 @@ if (IDENTITY.kind === "perspicax") {
     // (member-auto-approval.ts). Allowed by default; the first time it is
     // turned off, saved member Auto levels go back to Ask once.
     saveMemberAutoApproval: (allowed, auth) => saveOrgMemberAutoApproval(allowed, orgAuditActor(auth)),
+    // 2026-10-18: people may export their credential vault in clear
+    // (Settings > Credentials). Allowed by default.
+    saveAllowVaultExport: (allowed, auth) => saveOrgAllowVaultExport(allowed, orgAuditActor(auth)),
     // Where bots' plugins may come from (server/bot-plugins.ts): any
     // marketplace, or the admin's list of owner/repo, owner/* or URLs.
     savePluginMarketplaces: (raw, auth) => saveOrgPluginMarketplaces(raw, orgAuditActor(auth)),
@@ -30599,6 +30617,7 @@ const orgOpsDeps: OpsDeps = {
     if (changes.allowFullAccess !== undefined) saveOrgAllowFullAccess(changes.allowFullAccess, actor);
     if (changes.memberEnvironmentAutonomy !== undefined) saveOrgMemberEnvironmentAutonomy(changes.memberEnvironmentAutonomy, actor);
     if (changes.memberAutoApproval !== undefined) saveOrgMemberAutoApproval(changes.memberAutoApproval, actor);
+    if (changes.allowVaultExport !== undefined) saveOrgAllowVaultExport(changes.allowVaultExport, actor);
     if (changes.interimAttachDays !== undefined) saveOrgInterimAttachDays(changes.interimAttachDays, actor);
     if (changes.allowedEngines !== undefined) {
       const before = cfg.organization?.allowedEngines ?? null;
@@ -30743,6 +30762,15 @@ function saveOrgMemberAutoApproval(allowed: boolean, actor: AdminActor): void {
   });
   // the first time it is turned off: saved member Auto levels go to Ask once
   resetMemberAutoLevelsOnce();
+}
+function saveOrgAllowVaultExport(allowed: boolean, actor: AdminActor): void {
+  const before = vaultExportAllowed();
+  saveConfig({ organization: { ...cfg.organization, allowVaultExport: allowed } });
+  cfg.organization = { ...cfg.organization, allowVaultExport: allowed };
+  orgAudit({
+    category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowVaultExport"],
+    before: { allowVaultExport: before }, after: { allowVaultExport: allowed }, actor,
+  });
 }
 function saveOrgPluginMarketplaces(raw: unknown, actor: AdminActor): void {
   const parsed = marketplacePolicySchema.safeParse(raw);
@@ -31980,7 +32008,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
       }
       const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId || undefined });
-      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id });
+      // the person typed the code they received: an interactive sign-in
+      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id, authAt: Date.now() });
       const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: true, sharedComputers: lendingEnabled() });
       const secure = requestOrigin(req)?.startsWith("https://") === true;
       res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));

@@ -1,7 +1,7 @@
 // Real isolated server + native Claude permission broker + a software
 // security key (server/testing/fake-authenticator.ts). No real model calls,
 // user profiles, shell commands or live application data are used.
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { join } from "node:path";
@@ -10,13 +10,17 @@ import { launchVerificationServer } from "../scripts/control-omb.ts";
 import { fakeAuthenticator } from "./testing/fake-authenticator.ts";
 
 it("an Allow in a chosen class needs the person's key, bound to that card, once", async () => {
-  const fixture = await launchVerificationServer({ FAKE_CLAUDE_MODE: "hang" });
+  // Desktop mode: the first key needs this computer's own person or a
+  // recent interactive sign-in; a headless server's loopback is neither
+  // (server/recent-sign-in.ts, 2026-10-18).
+  const owner = randomBytes(32).toString("base64url");
+  const fixture = await launchVerificationServer({ ...process.env, FAKE_CLAUDE_MODE: "hang", SAGAX_TEST_DESKTOP_OWNER_TOKEN: owner });
   const { url, dataDir } = fixture.info;
   const port = new URL(url).port;
   const localhost = `http://localhost:${port}`;
   const sockets: Socket[] = [];
   const call = async (method: string, path: string, body?: unknown) => {
-    const response = await fetch(url + path, { method, headers: { origin: url, "content-type": "application/json" },
+    const response = await fetch(url + path, { method, headers: { origin: url, "content-type": "application/json", "x-openmausbot-desktop-owner": owner },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(10_000) });
     return { status: response.status, body: await response.json() as any };
   };

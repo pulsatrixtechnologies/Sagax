@@ -31,6 +31,9 @@ export interface PerspicaxOrg {
     /** Whether members' bots run Auto and Auto-accept edits as such
      * (absent: on; false: they run as Ask). */
     memberAutoApproval?: boolean;
+    /** Whether people may export their credential vault in clear (absent:
+     * allowed; false: Settings > Credentials > Export is refused). */
+    allowVaultExport?: boolean;
     /** Where bots' Claude Code plugins may come from (any by default). */
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     /** The organization's GitHub OAuth App for "Connecter GitHub". */

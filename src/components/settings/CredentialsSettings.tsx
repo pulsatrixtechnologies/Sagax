@@ -88,10 +88,20 @@ export function CredentialsSettings() {
           )}
           {transfer === "export" && <ExportPanel onCancel={() => setTransfer(null)} />}
           {imported && !transfer && <SettingsTextRow live><span data-credential-import-result>{imported}</span></SettingsTextRow>}
+          {!adding && !transfer && data.exportBlocked && (
+            <SettingsTextRow><span data-credentials-export-blocked="">{t("vault.transfer.exportBlocked")}</span></SettingsTextRow>
+          )}
           {!adding && !transfer && (
             <div className="flex flex-wrap justify-end gap-2 px-3.5 py-2.5" data-credentials-actions>
               <button type="button" className={PILL} disabled={Boolean(data.unavailable)} onClick={() => { setImported(null); setTransfer("import"); }} data-credentials-import="">{t("vault.transfer.import")}</button>
-              <button type="button" className={PILL} disabled={Boolean(data.unavailable) || data.items.length === 0} onClick={() => { setImported(null); setTransfer("export"); }} data-credentials-export="">{t("vault.transfer.export")}</button>
+              <button
+                type="button"
+                className={PILL}
+                disabled={Boolean(data.unavailable) || data.items.length === 0 || data.exportBlocked === true}
+                title={data.exportBlocked ? t("vault.transfer.exportBlocked") : undefined}
+                onClick={() => { setImported(null); setTransfer("export"); }}
+                data-credentials-export=""
+              >{t("vault.transfer.export")}</button>
               <button type="button" className={PRIMARY_PILL} onClick={() => setAdding(true)}>{t("vault.settings.add")}</button>
             </div>
           )}

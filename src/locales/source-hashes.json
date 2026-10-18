@@ -12750,7 +12750,11 @@
       "orgEngines.notice.connect": "efeac437f9897cf977016fed79d1aa4856fdfc17d08e28da89f16b3cc944b8b3",
       "orgEngines.notice.title": "75894d99463ac64f586d250e8908c38cfce7b971f2b2f83018117557526f9d2f",
       "orgEngines.ready": "002f7c1b43c1b585fa9eb8f41b12cb3237888038f49840bbfa79e15d165f718c",
-      "orgEngines.yourOrganization": "8fd3f0c72de92ece0ab9ba8b3358ea6b33915584f9996de3eafe65541a796560"
+      "orgEngines.yourOrganization": "8fd3f0c72de92ece0ab9ba8b3358ea6b33915584f9996de3eafe65541a796560",
+      "vault.transfer.exportBlocked": "4b8d9412910aa9fa671584baec82534dc0c3800b70525f19a6671ff37f749dbf",
+      "organization.vaultExport.title": "4a7a28d9054fd72f06858b8be7ffc88a563cbdccad07527accd4b2e132c812e1",
+      "organization.vaultExport.label": "241bc1f29c6868bc9ca1d20ea3e9d6b5b0c6bd843b77cbbdce787c943d6a8268",
+      "organization.vaultExport.short": "9e77c07b89b529311b197c491b6149acd72298a1dee1a69bd715d5d4b15806a7"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

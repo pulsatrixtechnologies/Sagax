@@ -28,6 +28,8 @@ export interface CredentialVaultState {
   onePassword: OnePasswordStatus;
   /** The vault could not be opened on this launch (the keychain was busy). */
   unavailable?: string;
+  /** The organization turned vault exports off (2026-10-18). */
+  exportBlocked?: boolean;
 }
 
 export interface VaultItemDraft {

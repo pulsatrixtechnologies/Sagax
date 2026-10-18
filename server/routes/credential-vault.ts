@@ -1,6 +1,6 @@
 // Settings > Credentials and the vault request card (server/credential-vault.ts).
 //
-//   POST   /api/me/credentials/list                 { items, onePassword, unavailable? }
+//   POST   /api/me/credentials/list                 { items, onePassword, unavailable?, exportBlocked? }
 //   POST   /api/me/credentials        {kind,name,username?,password?,totpSeed?,apiKey?,notes?,domains}
 //   PATCH  /api/me/credentials/:id    same fields; a secret left out is kept, "" clears it
 //   DELETE /api/me/credentials/:id
@@ -53,6 +53,11 @@ export interface CredentialVaultRouteDeps {
    * null to go on, else the refusal (a security key step-up, a sign-in
    * that is too old, a bot acting for its person). Absent refuses. */
   exportGate?(auth: RequestAuth, input: { format: VaultExportFormat; stepUp: unknown }): { status: number; body: unknown } | null;
+  /** Whether the organization turned vault exports off (2026-10-18): the
+   * export is refused 403 `export_blocked_by_org` before any other check,
+   * and the list carries `exportBlocked` so the app can say why. Absent
+   * allows. */
+  exportBlocked?(auth: RequestAuth): boolean;
   /** Whether this caller may import: null to go on (absent allows, as for
    * creating an item). */
   importGate?(auth: RequestAuth): { status: number; body: unknown } | null;
@@ -160,6 +165,7 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
           items: unavailable ? [] : deps.vault.list(principalId),
           onePassword: await deps.onePassword.status(),
           ...(unavailable ? { unavailable } : {}),
+          ...(deps.exportBlocked?.(auth) ? { exportBlocked: true } : {}),
         });
       }
       if (path === "/api/me/credentials") {
@@ -212,6 +218,7 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
       }
       if (path === "/api/me/credentials/export") {
         if (method !== "POST") return json(res, 405, { error: "POST only" });
+        if (deps.exportBlocked?.(auth)) return json(res, 403, { error: "Your organization does not allow exporting the vault.", code: "export_blocked_by_org" });
         const input = await body();
         if (!isVaultExportFormat(input.format)) return json(res, 400, { error: "unknown export format", code: "invalid_format" });
         if (input.acknowledge !== "plaintext") return json(res, 400, { error: "Confirm that the file holds your passwords in clear.", code: "acknowledge_required" });

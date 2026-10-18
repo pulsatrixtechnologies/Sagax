@@ -13,6 +13,7 @@ import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIR
 import { RoutineConsents } from "./org-routine-consent.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { PrincipalRegistry } from "./principals.ts";
+import { recentInteractiveSignIn } from "./recent-sign-in.ts";
 import { SessionRegistry } from "./sessions.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
@@ -267,6 +268,9 @@ describe("the sign-in routes (in process)", () => {
     const person = principals.bySubject(provider.issuer, USER.sub)!;
     expect(record).toMatchObject({ principalId: person.id, scopes: ["client"], idp: { iss: provider.issuer, sub: USER.sub, role: "employee", grantRef: expect.any(String) } });
     expect(manager.mustRefuse(record)).toBeNull();
+    // 2026-10-18: the desktop's session carries the provider sign-in as its
+    // recent sign-in (server/recent-sign-in.ts), not the pairing's moment
+    expect(recentInteractiveSignIn(record)).toBe(true);
     expect(sessions.exchange({ code: match![2]!, label: "again", source: "10.0.0.1" }).ok).toBe(false);
   });
 
@@ -463,6 +467,9 @@ describe("the sign-in routes (in process)", () => {
     expect(record.idp?.grantRef).toBeTruthy();
     expect(manager.mustRefuse(record)).toBeNull();
     expect(manager.sweep()).toBe(0);
+    // a web sign-in is an interactive sign-in (server/recent-sign-in.ts)
+    expect(typeof record.authAt).toBe("number");
+    expect(recentInteractiveSignIn(record)).toBe(true);
   });
 
   it("passes a rate-limited code exchange back as rate_limited, for a sign-in and a delegation (fix 2)", async () => {

@@ -257,11 +257,13 @@ export interface OidcLoginDeps {
   /** The Sagax session cookie name (server/request-auth.ts). */
   sessionCookie: string;
   forSubject: (input: { iss: string; sub: string; claims: { email?: string; name?: string; login?: string; avatar?: string }; orgRole: "admin" | "member"; teams?: { id: string; name: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }) => Principal;
-  issueSession: (input: { label: string; scopes: Scope[]; email?: string; principalId: string; idp: NonNullable<SessionRecord["idp"]> }) => { token: string; session: PublicSession };
+  /** `authAt`: the moment this interactive sign-in completed
+   * (server/recent-sign-in.ts). */
+  issueSession: (input: { label: string; scopes: Scope[]; email?: string; principalId: string; idp: NonNullable<SessionRecord["idp"]>; authAt: number }) => { token: string; session: PublicSession };
   /** Where each sign-in's refresh token is kept. */
   grants: OidcGrantKeeper;
   /** A principal-bound pairing credential for a desktop or phone sign-in. */
-  openPairing: (input: { principalId: string; scopes: Scope[]; ttlMs: number; label: string; idp: NonNullable<SessionRecord["idp"]> }) => { credential: string; expiresAt: number };
+  openPairing: (input: { principalId: string; scopes: Scope[]; ttlMs: number; label: string; idp: NonNullable<SessionRecord["idp"]>; authAt: number }) => { credential: string; expiresAt: number };
   /** This server's name, for the phone's saved server. */
   serverName: () => string;
   now?: () => number;
@@ -582,6 +584,10 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
       return true;
     }
     const idp = { iss: identity.iss, sub: identity.sub, ...(identity.role ? { role: identity.role } : {}), grantRef };
+    // The person just went through the provider's sign-in in their browser:
+    // the only kind of moment that counts as a recent sign-in (a pairing
+    // code a bot made never does; server/recent-sign-in.ts).
+    const authAt = now();
     try {
       deps.grants.signedIn?.({
         principalId: principal.id,
@@ -599,6 +605,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
         ttlMs: OIDC_NATIVE_PAIRING_TTL_MS,
         label: client === "desktop" ? "Sagax desktop" : "Sagax phone",
         idp,
+        authAt,
       });
       redirect(res, client === "desktop"
         ? desktopReturnLink(origin, { code: pairing.credential }, returnTo)
@@ -614,6 +621,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
         ...(principal.email ? { email: principal.email } : {}),
         principalId: principal.id,
         idp,
+        authAt,
       });
     } catch (error) {
       deps.grants.discard(grantRef);

@@ -465,6 +465,11 @@ const appConfigSchema = z.object({
      * Absent means allowed; an admin turns it off in Settings >
      * Organization. */
     memberAutoApproval: z.boolean().optional(),
+    /** 2026-10-18: whether people may export their credential vault in clear
+     * (Settings > Credentials > Export, server/routes/credential-vault.ts).
+     * Absent means allowed; an admin turns it off in Settings >
+     * Organization. Organization servers only; a solo server always allows. */
+    allowVaultExport: z.boolean().optional(),
     /** When the one-time pass, the first time the setting above was off,
      * set members' saved Auto and Auto-accept edits levels back to Ask
      * (server/member-auto-approval.ts). */
@@ -727,6 +732,7 @@ export interface AppConfig {
     memberEnvironmentAutonomy?: boolean;
     confidentialThreadsByDefault?: boolean;
     memberAutoApproval?: boolean;
+    allowVaultExport?: boolean;
     memberAutoResetAt?: number;
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     githubClientId?: string;
