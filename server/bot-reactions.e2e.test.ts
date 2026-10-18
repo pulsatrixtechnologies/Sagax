@@ -138,3 +138,23 @@ it("a bare aside after a reaction is not written, a real sentence is", async () 
   asked = messages.find((m: any) => m.role === "user" && m.text === "Where is it?");
   expect(messages.slice(messages.indexOf(asked) + 1).filter((m: any) => m.role === "bot" && m.kind === "text").map((m: any) => m.text)).toEqual(["(see the attached file)"]);
 }), 60_000);
+
+it("a short reply is kept when the reaction says something else or came in an earlier turn", async () => withScriptedServer(async (f) => {
+  const bot = (await f.cli("new-bot", "--name", "Careful bot")).bot;
+  const textsAfter = async (text: string) => {
+    const messages = await f.messages(bot.activeTaskId);
+    const asked = messages.find((m: any) => m.role === "user" && m.text === text);
+    return messages.slice(messages.indexOf(asked) + 1).filter((m: any) => m.role === "bot" && m.kind === "text").map((m: any) => m.text);
+  };
+  // 👀 then a real one-line answer in parentheses: an answer, kept
+  f.savePlan({ [bot.id]: { steps: [{ tool: "react_to_message", arguments: { emoji: "👀" } }], reply: "(build failed on step 3)" } });
+  await f.cli("send", "--bot", bot.id, "--task", bot.activeTaskId, "--text", "How did the build go?");
+  expect((await f.cli("wait", "--bot", bot.id, "--task", bot.activeTaskId, "--timeout", "30")).status).toBe("settled");
+  expect(await textsAfter("How did the build go?")).toEqual(["(build failed on step 3)"]);
+
+  // an emoji other than the one placed: kept
+  f.savePlan({ [bot.id]: { steps: [{ tool: "react_to_message", arguments: { emoji: "👍" } }], reply: "🎉" } });
+  await f.cli("send", "--bot", bot.id, "--task", bot.activeTaskId, "--text", "We shipped it.");
+  expect((await f.cli("wait", "--bot", bot.id, "--task", bot.activeTaskId, "--timeout", "30")).status).toBe("settled");
+  expect(await textsAfter("We shipped it.")).toEqual(["🎉"]);
+}), 60_000);

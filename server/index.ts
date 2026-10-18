@@ -1846,30 +1846,36 @@ function botReaction(input: { bot: { id: string; name: string }; threadId: strin
   return { ok: true, messageId: target.id, emoji, changed: result.changed };
 }
 
-/** A reply that only repeats the reaction the bot just put on the message
- * it answers: nothing but those emoji ("👍" after 👍), or a bare aside such
- * as "*(no further text needed)*" that some models write when told to end
- * with no text. The reaction says it, so the text is not written (JC,
- * 2026-10-18: never a reaction and a message that say the same thing). Any
- * real sentence keeps the reply. */
+/** The reaction a bot added last in a thread (react_to_message), so a reply
+ * that only repeats it can be told from one that answers something. Keyed
+ * by `${threadId}:${botId}`. */
+const placedBotReactions = new Map<string, { messageId: string; emoji: string; at: number }>();
+
+/** Words of an aside that only says there is nothing to say. */
+const NOTHING_TO_ADD = /\b(?:no (?:further|more|other) (?:text|reply|response|words?)|nothing (?:more|else|further) (?:to add|needed)|no (?:reply|response|text) needed|reaction only|aucun texte|rien (?:d'autre|de plus) à (?:ajouter|dire)|pas besoin de (?:texte|réponse))\b/iu;
+
+/** A reply that only repeats the reaction the bot put, in this turn, on the
+ * message it answers: nothing but that emoji ("👍" after 👍), or an aside
+ * such as "*(no further text needed)*" that some models write when told
+ * to end with no text. The reaction says it, so the text is not written
+ * (JC, 2026-10-18: never a reaction and a message that say the same
+ * thing). A real sentence, or a reaction from an earlier turn, keeps it. */
 function echoesOwnReaction(threadId: string, botId: string, text: string): boolean {
   const reply = text.trim();
   if (!reply || reply.length > 80) return false;
-  const actorId = botReactionActorId(botId);
-  const messages = store.messagesFor(threadId);
+  const placed = placedBotReactions.get(`${threadId}:${botId}`);
+  if (!placed || placed.at < (turnStartedAt.get(threadId) ?? Number.POSITIVE_INFINITY)) return false;
   const soloBot = store.groupByThread(threadId) ? null : store.botByThread(threadId)?.id ?? null;
   // the message the bot is answering: the newest chat line it did not write
-  const answered = messages.findLast((message) => message.kind === "text" && (message.role === "user" ? null : message.from?.botId ?? soloBot) !== botId);
-  if (!answered) return false;
-  const mine = reactionsBy(normalizeReactions(answered.reactions, legacyReactionUser()), actorId);
-  if (!mine.length) return false;
-  if (/^[*_]*\([^()]{0,70}\)[*_]*$/u.test(reply)) return true;
+  const answered = store.activePath(threadId).findLast((message) => message.kind === "text" && (message.role === "user" ? null : message.from?.botId ?? soloBot) !== botId);
+  if (!answered || answered.id !== placed.messageId) return false;
+  const mine = reactionsBy(normalizeReactions(answered.reactions, legacyReactionUser()), botReactionActorId(botId));
+  if (!mine.includes(placed.emoji)) return false;
+  if (/^[*_]*\([^()]{0,70}\)[*_]*$/u.test(reply) && NOTHING_TO_ADD.test(reply)) return true;
   const bare = (value: string) => value.replace(/\uFE0F/g, "");
   const said = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(reply)]
     .map((part) => part.segment).filter((part) => part.trim());
-  if (!said.length || said.some((part) => !reactionEmoji(part))) return false;
-  const held = new Set(mine.map(bare));
-  return said.every((part) => held.has(bare(part)));
+  return said.length > 0 && said.every((part) => bare(part) === bare(placed.emoji));
 }
 
 /** Who a request's turn speaks for (slice 3 engine access): the signed-in
@@ -33013,7 +33019,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           remove: body.remove === true,
           spent: internalCapability.reactions ?? 0,
         });
-        if (outcome.ok && outcome.changed && !body.remove) internalCapability.reactions = (internalCapability.reactions ?? 0) + 1;
+        if (outcome.ok && outcome.changed && !body.remove) {
+          internalCapability.reactions = (internalCapability.reactions ?? 0) + 1;
+          placedBotReactions.set(`${internalCapability.threadId}:${internalSender.id}`, { messageId: outcome.messageId, emoji: outcome.emoji, at: Date.now() });
+        }
         return json(res, outcome.ok ? 200 : outcome.status, outcome.ok ? outcome : { error: outcome.error, code: outcome.code });
       }
       // Notes written from a room fewer people can see than this bot would

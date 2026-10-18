@@ -85,8 +85,10 @@ the person needs (a question gets words); never a reaction and a sentence
 that says the same thing. A plain "thanks" or "ok" gets ❤️ or 👍 and no
 text; a small task done gets ✅ instead of a "Done" sentence. A turn that
 only reacts writes no reply bubble, and a reply that only repeats the
-reaction (the same emoji, or a bare aside such as "*(no further text
-needed)*") is not written either (`echoesOwnReaction`, `server/index.ts`).
+reaction placed in the same turn on the message it answers (that emoji
+alone, or an aside such as "*(no further text needed)*") is not written
+either (`echoesOwnReaction`, `server/index.ts`); a real sentence, even in
+parentheses, or a reaction from an earlier turn keeps the reply.
 
 The chip looks like a person's: emoji and count, the bot's mascot and name
 in the tooltip (desktop) or the "who reacted" sheet (iOS). Like every
