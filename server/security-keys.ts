@@ -461,7 +461,8 @@ export class SecurityKeys {
     const result = await this.completeOnce(id, response);
     if (held) {
       if (this.outcomes.size >= MAX_CEREMONIES) this.outcomes.delete(this.outcomes.keys().next().value!);
-      this.outcomes.set(id, { ok: result.ok, at: this.now() });
+      // a verified answer is never undone by a second one that lost the race
+      if (!this.outcomes.get(id)?.ok) this.outcomes.set(id, { ok: result.ok, at: this.now() });
     }
     return result;
   }

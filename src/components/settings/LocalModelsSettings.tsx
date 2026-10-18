@@ -107,8 +107,8 @@ export function LocalModelsSettings() {
             {invalid && <p role="alert" className="text-[12px] text-danger">{t("localModels.invalid")}</p>}
           </div>
         </FoldRow>
-        {loaded && settings.expose && !settings.connected && <SettingsTextRow>{t("localModels.offline")}</SettingsTextRow>}
-        {loaded && settings.expose && settings.connected && settings.published.length === 0 && <SettingsTextRow>{t("localModels.none")}</SettingsTextRow>}
+        {loaded && settings.expose && !settings.connected && <SettingsTextRow live>{t("localModels.offline")}</SettingsTextRow>}
+        {loaded && settings.expose && settings.connected && settings.published.length === 0 && <SettingsTextRow live>{t("localModels.none")}</SettingsTextRow>}
         {error && <SettingsTextRow tone="danger">{t("localModels.error")}</SettingsTextRow>}
       </SettingsGroup>
     </div>

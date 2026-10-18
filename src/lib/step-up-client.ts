@@ -207,7 +207,7 @@ export async function registerSecurityKey(name: string, signal?: AbortSignal): P
   } catch (error) {
     const body = (error as { body?: { code?: string; target?: StepUpTarget } }).body;
     if (body?.code !== "step_up_required" || !body.target) throw error;
-    const confirmed = await stepUp(body.target);
+    const confirmed = await stepUp(body.target, signal);
     start = await post<CeremonyStart>("/api/security-keys/register", { name, via: via(), stepUp: confirmed });
   }
   await runCeremony(start, signal);
@@ -224,10 +224,10 @@ function targetKey(target: StepUpTarget): string | null {
 
 /** Ask the person's key for this target; the ceremony id to send as
  * `stepUp`. */
-export async function stepUp(target: StepUpTarget): Promise<string> {
+export async function stepUp(target: StepUpTarget, signal?: AbortSignal): Promise<string> {
   if (!securityKeysUsable()) throw new StepUpError("unsupported");
   const start = await post<CeremonyStart>("/api/security-keys/begin", { target, via: via() });
-  await runCeremony(start);
+  await runCeremony(start, signal);
   const key = targetKey(target);
   if (key) recent.set(key, { id: start.ceremonyId, at: Date.now() });
   return start.ceremonyId;

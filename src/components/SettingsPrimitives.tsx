@@ -404,9 +404,9 @@ export function SettingsNotice({ tone = "neutral", children, action }: {
 
 /** A line of explanation inside a group's card, with a row's insets (the
  * sentence that heads a list of switches). */
-export function SettingsTextRow({ tone = "neutral", children }: { tone?: keyof typeof NOTICE_TONE; children: React.ReactNode }) {
+export function SettingsTextRow({ tone = "neutral", live, children }: { tone?: keyof typeof NOTICE_TONE; /** announce it (a state that changes) */ live?: boolean; children: React.ReactNode }) {
   return (
-    <p role={tone === "warning" || tone === "danger" ? "alert" : undefined} className={cn("px-3.5 py-2.5 text-[12px] leading-4", NOTICE_TONE[tone])}>
+    <p role={tone === "warning" || tone === "danger" ? "alert" : live ? "status" : undefined} className={cn("px-3.5 py-2.5 text-[12px] leading-4", NOTICE_TONE[tone])}>
       {children}
     </p>
   );

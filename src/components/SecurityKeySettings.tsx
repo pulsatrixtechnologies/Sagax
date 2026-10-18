@@ -130,6 +130,8 @@ export function SecurityKeySettings() {
     waiting.current = null;
     setInBrowser(false);
     if (ok) setNotice(t("security.keys.addedNow"));
+    // stopped waiting: the browser may still have added it
+    else if (controller.signal.aborted) void load();
   })();
 
   const stopWaiting = () => waiting.current?.abort();
