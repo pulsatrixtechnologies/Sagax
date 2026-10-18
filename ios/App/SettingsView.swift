@@ -1,10 +1,12 @@
 // Settings (iOS parity 12 and 14): the card sheet the account menu opens.
 //
-// One flat list in the desktop's order (SettingsModal.tsx `SECTIONS`, the
-// sections a phone pairing can use: NavigationMenus.settings) under the
-// account card, which is Pair devices (switch, add, sign out, delete). The
-// phone's own settings sit in General; list density and home chrome in
-// Appearance. The search at the top finds any page.
+// The root groups its cards as Grok Bot iOS 1.14 does: the account card
+// (Pair devices: switch, add, sign out, delete) with Usage, Connect apps,
+// the bot's settings, the phone's own (Notifications, Appearance, Language,
+// Haptics), then Sagax's extra pages (General, Organization, Experimental),
+// the links, feedback and Sign Out. Which rows show still comes from
+// NavigationMenus.settings. List density and home chrome sit in Appearance.
+// The search at the top finds any page.
 // Geometry: measure-settings.md §1 to §4.
 import CompanionCore
 import SwiftUI
@@ -150,7 +152,7 @@ private struct SettingsRootPage: View {
             }
 #if DEBUG
             if ParityLaunch.current?.screen == .settingsBottom {
-                ScrollOffsetSetter(offset: 400).frame(width: 0, height: 0)
+                ScrollOffsetSetter(offset: 100_000)  // clamped to the end.frame(width: 0, height: 0)
             }
 #endif
         }
@@ -250,6 +252,8 @@ private struct SettingsRootPage: View {
 
     // MARK: Rows
 
+    /// The rows of the "more" card: the Sagax pages Grok Bot has no row for.
+    /// The other sections have their own cards above.
     @ViewBuilder
     private func row(_ section: PhoneSettingsSection) -> some View {
         switch section {
@@ -257,24 +261,10 @@ private struct SettingsRootPage: View {
             SettingsRow(title: "General", accessory: .chevron, height: 44.33, identifier: "settings-general") { navigator.push(.general) }
         case .organization:
             SettingsRow(title: "Organization", accessory: .chevron, height: 44.33, identifier: "settings-organization") { navigator.sheet = .organization }
-        case .appearance:
-            SettingsRow(title: "Appearance", accessory: .valueChevron(appearanceValue), height: 44.33, identifier: "settings-appearance") { navigator.push(.appearance) }
-        case .achievements:
-            SettingsRow(title: "Achievements", accessory: .chevron, height: 44.33, identifier: "settings-achievements") { navigator.sheet = .achievements }
-        case .notifications:
-            SettingsRow(title: "Notifications", accessory: .chevron, height: 44.33, identifier: "settings-notifications") { navigator.push(.notifications) }
-        case .privacy:
-            SettingsRow(title: "Privacy", accessory: .chevron, height: 44.33, identifier: "settings-privacy") { navigator.push(.privacy) }
         case .experimental:
             SettingsRow(title: "Experimental", accessory: .chevron, height: 44.33, identifier: "settings-experimental") { navigator.push(.experimental) }
-        case .plugins:
-            SettingsRow(title: "Connect apps", accessory: .chevron, height: 44.33, identifier: "settings-plugins") { navigator.push(.plugins) }
-        case .pairDevices:
-            SettingsRow(title: "Pair devices", accessory: .chevron, height: 44.33, identifier: "settings-account") { navigator.push(.account) }
-        case .computer:
-            SettingsRow(title: "Computer", accessory: .chevron, height: 44.33, identifier: "settings-bot-computer") { navigator.push(.botComputer) }
-        case .usage:
-            SettingsRow(title: "Usage", accessory: .chevron, height: 44.33, identifier: "settings-usage") { navigator.push(.usage) }
+        default:
+            EmptyView()
         }
     }
 

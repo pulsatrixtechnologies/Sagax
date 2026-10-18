@@ -45,7 +45,7 @@ final class SettingsUITests: XCTestCase {
     /// The root's Bot card (auto-review, time zone), as Grok Bot iOS 1.14
     /// groups it.
     @MainActor
-    private func launchGeneral() -> XCUIApplication {
+    private func launchBotCard() -> XCUIApplication {
         let app = launch()
         XCTAssertTrue(app.element("settings-auto-review.toggle").waitForExistence(timeout: 20))
         return app
@@ -91,12 +91,12 @@ final class SettingsUITests: XCTestCase {
 
     @MainActor
     func testAutoReviewTogglePersistsOnTheServer() {
-        let app = launchGeneral()
+        let app = launchBotCard()
         let before = botSettings()["autoReviewDefault"] as? Bool ?? false
         app.element("settings-auto-review.toggle").tap()
         XCTAssertTrue(eventually { (self.botSettings()["autoReviewDefault"] as? Bool) == !before })
         // Shown the same after a relaunch, then put back.
-        let again = launchGeneral()
+        let again = launchBotCard()
         XCTAssertEqual(again.element("settings-auto-review.toggle").value as? String, before ? "0" : "1")
         again.element("settings-auto-review.toggle").tap()
         XCTAssertTrue(eventually { (self.botSettings()["autoReviewDefault"] as? Bool) == before })
@@ -104,7 +104,7 @@ final class SettingsUITests: XCTestCase {
 
     @MainActor
     func testTimeZoneIsSetFromThePickerAndAutomatically() {
-        let app = launchGeneral()
+        let app = launchBotCard()
         if botSettings()["timeZoneAuto"] as? Bool == true {
             app.element("settings-time-zone-auto.toggle").tap()
             XCTAssertTrue(eventually { (self.botSettings()["timeZoneAuto"] as? Bool) == false })
@@ -133,7 +133,7 @@ final class SettingsUITests: XCTestCase {
 
     @MainActor
     func testRulesListAndSwipeToDelete() {
-        let app = launchGeneral()
+        let app = launchBotCard()
         let before = api("GET", "/api/auto-review/rules").1["total"] as? Int ?? 0
         XCTAssertGreaterThan(before, 0, "the fixture seeds saved command rules")
         app.element("settings-rules").tap()
@@ -146,7 +146,7 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         delete.tap()
         XCTAssertTrue(eventually { (self.api("GET", "/api/auto-review/rules").1["total"] as? Int) == before - 1 })
-        // Back on General, the count follows.
+        // Back on the root, the count follows.
         app.element("settings-back").firstMatch.tap()
         XCTAssertTrue(app.element("settings-rules").waitForExistence(timeout: 5))
         XCTAssertTrue(app.element("settings-rules").label.contains("\(before - 1)"))
