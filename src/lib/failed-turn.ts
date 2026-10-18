@@ -41,6 +41,7 @@ export function botEngine(bot: Bot | undefined, instances: InstanceInfo[]): Inst
  * any other activity row its name. */
 export function activityPreview(tool: ActivityTool, engine: InstanceInfo | undefined, dataResult?: Message["dataResult"]): string {
   if (dataResult) return dataResult.title;
+  if (tool.engineMove) return t("model.org.engineMoved", { from: tool.engineMove.from, to: tool.engineMove.to });
   if (isStoppedTurnName(tool.name)) return t("chat.turnStopped");
   const cause = failedTurnCause(tool.name);
   if (cause !== null && isClientCancellation(cause)) return t("chat.turnStopped");

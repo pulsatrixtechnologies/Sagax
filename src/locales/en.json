@@ -3649,6 +3649,7 @@
   "model.noProviders": "No model providers are available.",
   "model.notAllowed": "Not allowed by your organization",
   "model.org.hostTools": "{name} cannot hold back its own tools on this server.",
+  "model.org.engineMoved": "Your organization no longer offers {from}. This bot now uses Auto, starting on {to}.",
   "model.org.hostToolsWhy.acpIgnoresSelection": "Its ACP mode ignores the tool selection, so its shell and file tools would run there.",
   "model.org.hostToolsWhy.serviceChosenTools": "Its service chooses the tools it offers, and no setting removes its shell and file tools.",
   "model.org.hostToolsWhy.unverified": "No setting that removes its shell and file tools has been verified.",

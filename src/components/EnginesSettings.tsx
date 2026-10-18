@@ -33,6 +33,7 @@ import { MicrophoneSettings } from "./settings/MicrophoneSettings";
 import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
 import { LiveCallInstallationSettings } from "./LiveCallSettings";
 import { ApiKeyRow, VpsConnection } from "./ApiKeys";
+import { useOfferedInstances } from "@/lib/offered-instances";
 
 interface ProbeResult {
   ok: boolean;
@@ -439,7 +440,10 @@ export function EnginesSettings() {
   // 2026-10-09: a member whose profile includes engines.manage manages the
   // server's engines as an admin does (the server sends them the full rows).
   const member = viewerIsOrgMember(state.config) && !viewerCan(state.config, "engines.manage");
-  const rows = state.instances.filter((i) => member || i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable" || isApiKeyEngine(i));
+  // an engine the organization does not offer is not listed
+  // (src/lib/offered-instances.ts; the server leaves it out too)
+  const offered = useOfferedInstances("settings");
+  const rows = offered.filter((i) => member || i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable" || isApiKeyEngine(i));
   // On an organization server each person signs in their own subscription
   // here, on each engine's row (it was a separate "My subscriptions and
   // keys" card until 2026-10-02), never the server's.

@@ -8,6 +8,7 @@ import { useState } from "react";
 import { t } from "@/lib/i18n";
 import { botRecovery, type BotRecovery } from "@/lib/bot-runtime-settings";
 import { useStore, type Bot } from "@/state/store";
+import { useOfferedInstances } from "@/lib/offered-instances";
 import { CompactRow, DescribedRow, HelpTip, PillSelect, PRIMARY_PILL, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { useBotRuntimeSettings } from "./useBotRuntimeSettings";
 
@@ -16,7 +17,8 @@ export function BotRecoverySettings({ bot }: { bot: Bot }) {
   const { shown, save, saving, error } = useBotRuntimeSettings(bot);
   const [draft, setDraft] = useState<BotRecovery | null>(null);
   const value = draft ?? botRecovery(shown, state.config);
-  const engines = state.instances.filter((instance) => instance.snapshot.state === "available" && !instance.policy);
+  // only engines offered to this person (src/lib/offered-instances.ts)
+  const engines = useOfferedInstances().filter((instance) => instance.snapshot.state === "available" && !instance.policy);
   const engine = engines.find((instance) => instance.instanceId === value.backup?.instanceId);
   const models = engine?.models.options.filter((model) => engine.snapshot.authenticated !== false || model.custom) ?? [];
   const ready = models.some((model) => model.id === value.backup?.model);

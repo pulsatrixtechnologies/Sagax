@@ -11,8 +11,11 @@ import type { Bot, InstanceInfo } from "@/state/store";
 // the same flows in a browser.
 const fixture = vi.hoisted(() => {
   vi.stubGlobal("window", {});
-  vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
+  // localStorage: the favorites (src/lib/model-favorites.ts) a case sets
+  const storage: Record<string, string> = {};
+  vi.stubGlobal("localStorage", { getItem: (key: string) => storage[key] ?? null, setItem: () => {} });
   return {
+    storage,
     values: [] as unknown[],
     index: 0,
     own: 0,
@@ -1085,30 +1088,56 @@ describe("the organization's allowed model providers", () => {
     fixture.myEngines = [mine("claude", "claudeAgent", true), mine("codex", "codex", true)];
     fixture.values = [];
     fixture.config = { allowedEngines: [] };
-    const column = rail(open(bot("claude", "claude-opus-5-5")))?.props as { instances: InstanceInfo[]; notAllowed?: (instance: InstanceInfo) => boolean } | undefined;
-    for (const instance of column?.instances ?? []) expect(column!.notAllowed!(instance)).toBe(true);
+    const opened = open(bot("claude", "claude-opus-5-5"));
+    expect(rail(opened)?.props.instances ?? []).toEqual([]);
+    expect(row(opened, "claude-opus-5-5")).toBeUndefined();
   });
 
-  it("shows a provider the person connected but no longer allowed once, disabled, and nothing from it can be picked", () => {
+  // 2026-10-18 (JC): "hidden from the Perspicax menu, still visible in a lot
+  // of menus": a provider the admin hid is listed nowhere, even connected.
+  it("never lists a provider the person connected once the organization hid it", () => {
     fixture.org = orgFixture;
     fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", true)];
     fixture.config = { allowedEngines: ["claude"] };
     fixture.instances = [signedIn(), codex];
     const forBot = bot("claude", "claude-opus-5-5");
     const opened = open(forBot);
-    const column = rail(opened)!.props as { instances: InstanceInfo[]; notAllowed?: (instance: InstanceInfo) => boolean; onSelect: (instance: InstanceInfo) => void };
-    expect(column.instances.map((instance) => instance.instanceId)).toEqual(["claude", "codex"]);
-    expect(column.notAllowed!(codex)).toBe(true);
-    expect(column.notAllowed!(fixture.instances[0]!)).toBe(false);
-    const html = renderToStaticMarkup(createElement(ModelEngineRail, { ...column, wide: true } as Parameters<typeof ModelEngineRail>[0]));
-    expect(html.match(/data-rail-not-allowed/g)).toHaveLength(1);
-    expect(html).toContain("Not allowed by your organization");
-    // Choosing it does nothing: the pane stays on Claude, no model from Codex.
-    column.onSelect(codex);
-    const after = render(forBot);
-    expect(menu(after.html)).not.toContain("GPT-5.6");
-    expect(row(after, "gpt-5.6")).toBeUndefined();
-    expect(fixture.dispatch).not.toHaveBeenCalled();
+    expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude"]);
+    const html = renderToStaticMarkup(createElement(ModelEngineRail, { ...rail(opened)!.props, wide: true } as Parameters<typeof ModelEngineRail>[0]));
+    expect(html).not.toContain("data-rail-not-allowed");
+    expect(html).not.toContain('data-rail-provider="codex"');
+    expect(menu(opened.html)).not.toContain("GPT-5.6");
+    expect(row(opened, "gpt-5.6")).toBeUndefined();
+    // nor in the composer's menu, its search or its providers
+    fixture.values = [];
+    const composer = open(forBot, { inComposer: true });
+    const sections = lists(composer)[0]!.props.sections;
+    expect(sections.map((section) => section.label ?? section.key)).toEqual(["top", "Claude"]);
+    expect(composer.html).not.toContain('data-model-provider="codex"');
+  });
+
+  it("drops a favorite whose provider the organization hid; it comes back with the provider", () => {
+    fixture.storage["sagax.modelFavorites.v1"] = JSON.stringify([["codex", "gpt-5.6"], ["claude", "claude-opus-5-5"]]);
+    try {
+      fixture.org = orgFixture;
+      fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", true)];
+      fixture.instances = [signedIn(), codex];
+      const forBot = bot("claude", "claude-sonnet-5");
+      const favoritesShown = () => {
+        fixture.values = [];
+        const html = open(forBot, { inComposer: true }).html;
+        const at = html.indexOf("data-model-favorites");
+        if (at < 0) return [];
+        const group = html.slice(at, html.indexOf('role="group"', at + 1) >= 0 ? html.indexOf('role="group"', at + 1) : undefined);
+        return [...group.matchAll(/data-model-option="([^"]+)"/g)].map((match) => match[1]);
+      };
+      fixture.config = { allowedEngines: null };
+      expect(favoritesShown()).toEqual(["gpt-5.6", "claude-opus-5-5"]);
+      fixture.config = { allowedEngines: ["claude"] };
+      expect(favoritesShown()).toEqual(["claude-opus-5-5"]);
+    } finally {
+      delete fixture.storage["sagax.modelFavorites.v1"];
+    }
   });
 
   it("lists only the allowed providers under Cloud and Local, in the composer and in the bot's default picker", () => {

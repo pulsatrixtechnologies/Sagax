@@ -4,10 +4,8 @@
 // means every engine, as before the setting existed. An empty list means
 // none (2026-10-17, Perspicax 1.8.34 saves "none" as []): no engine runs. The server
 // refuses a model on another engine, moves a bot whose engine left the list
-// onto Auto on an allowed engine, and Auto never picks outside the list. The
-// model picker lists only these providers, under Cloud, API keys and Local,
-// in the composer and in the bot's default model alike (one component,
-// src/components/ModelPicker.tsx; ModelPicker.interaction.test.ts).
+// onto Auto on an allowed engine, and Auto never picks outside the list. No
+// menu lists another provider (2026-10-18): shared/offered-engines.ts.
 import type { ModelSelection } from "./wire.ts";
 
 export type AllowedEngines = readonly string[] | null | undefined;

@@ -38,6 +38,7 @@ import { showBotZipImport } from "@/lib/bot-zip";
 import { BotZipImportDialog } from "./BotZipImport";
 import { refreshModelHealth, startingModel, type StartingModel } from "@/lib/model-health";
 import { useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
+import { useOfferedInstances } from "@/lib/offered-instances";
 import { openModelKeysSettings } from "@/lib/settings-link";
 
 // New bot is one page (JC 2026-10-14): where to start from, the avatar, the
@@ -220,7 +221,8 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
     if (!defaultsMode && parent.refreshInstances) void refreshModelHealth(() => parent.refreshInstances());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultsMode]);
-  const instances = parent.state.instances;
+  // the engines offered to this person (src/lib/offered-instances.ts)
+  const instances = useOfferedInstances();
   useEffect(() => {
     const configured = configuredModel.current;
     if (defaultsMode || !ready || !configured || instances.length === 0) return;

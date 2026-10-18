@@ -31,6 +31,10 @@ export type TranscriptItem = ActivityTranscriptItem;
  * the turn. All three must remain visible and are never folded. */
 export function statusActivity(message: Message): { kind: "recovery" | "notice" | "stopped"; text: string } | null {
   const name = message.kind === "activity" ? message.tool?.name : undefined;
+  // 2026-10-18: the bot left a provider the organization no longer offers
+  // (shared/offered-engines.ts), in the reader's language.
+  const move = message.kind === "activity" ? message.tool?.engineMove : undefined;
+  if (move) return { kind: "notice", text: t("model.org.engineMoved", { from: move.from, to: move.to }) };
   if (name?.startsWith("recovery:")) return { kind: "recovery", text: name.slice("recovery:".length).trim() };
   // The Kubernetes cluster of the server environments is starting
   // (server/sandbox-k8s-wake.ts): the server's fixed rows, in the person's language.

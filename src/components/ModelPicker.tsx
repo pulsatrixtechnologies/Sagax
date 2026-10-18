@@ -13,7 +13,8 @@ import { ChevronDown, ChevronRight, Info, KeyRound, Loader2, LogOut, Plus, Refre
 import { api, useStore, type Bot, type ConfigStatus, type InstanceInfo, type ModelSelection } from "@/state/store";
 import type { ModelVariantOption } from "../../shared/runtime-events";
 import { isDesktopModelId, localModelRows, localRowUnavailable, refreshLocalModelsOnOpen, runsLoopbackModels } from "@/lib/local-models";
-import { engineAllowed } from "../../shared/org-allowed-engines";
+import { engineOffer } from "../../shared/offered-engines";
+import { engineOfferContext } from "@/lib/offered-instances";
 import { configuredModelInstances, isClaudeAccount, SIGN_IN_FAMILY_LABEL, signInFamily, splitEngineRail, type SignInFamily } from "@/lib/engine-rail";
 import { useShowUnreadyProviders } from "@/lib/unready-providers-preference";
 import { InstanceProviderMark } from "./ProviderIcons";
@@ -697,23 +698,20 @@ export function ModelPicker({
   const active = state.instances.find((instance) => instance.instanceId === selection.instanceId);
   const autoInstance = autoRecord ? state.instances.find((instance) => instance.instanceId === autoRecord.instanceId) ?? active : active;
   const configured = configuredModelInstances(state.instances, selection.instanceId);
-  // Organization server: only the providers its admin allows in Perspicax
-  // (allowedEngines; none set means every one). A provider the person
-  // connected before it left the list shows once, disabled.
-  const allowedEngines = orgMode ? state.config?.allowedEngines ?? null : null;
-  const notAllowed = (instance: InstanceInfo) => orgMode && !engineAllowed(allowedEngines, instance.instanceId);
-  const connectedByMe = (instance: InstanceInfo) => Boolean(myEngines?.some((engine) =>
-    engine.instanceId === instance.instanceId && engine.subscription.signedIn));
-  // 2026-10-16 (JC): an engine the organization pays for but has not given
-  // this person, and that nothing of their own serves, is not offered.
-  const notGiven = (instance: InstanceInfo) => Boolean(orgMode && myEngines?.some((engine) =>
-    engine.instanceId === instance.instanceId && engine.orgKeyNotGiven === true && engine.myTurns === "none"));
+  // Organization server: only the providers offered to this person
+  // (shared/offered-engines.ts, the server's answer too): one the admin hid
+  // in Perspicax (allowedEngines) is listed nowhere, even once connected
+  // (2026-10-18, JC); one the organization pays for but has not given them,
+  // that nothing of their own serves, is not offered (2026-10-16).
+  const offerContext = engineOfferContext(state.config, orgMode, myEngines);
+  const notAllowed = (instance: InstanceInfo) => engineOffer(offerContext, instance.instanceId) === "notAllowed";
+  const notGiven = (instance: InstanceInfo) => engineOffer(offerContext, instance.instanceId) === "notGiven";
   // An organization server offers an engine only when that engine's own
   // shell, file and web tools stay off the Sagax server. The bot's current
-  // engine stays so its state is explained.
-  const pickerInstances = orgMode
-    ? configured.filter((instance) => (instance.instanceId === selection.instanceId || (!orgRefusesEngine(instance) && !notGiven(instance))) &&
-      (!notAllowed(instance) || connectedByMe(instance)))
+  // engine stays so its state is explained, unless it is not allowed.
+  const pickerInstances = offerContext.organization
+    ? configured.filter((instance) => !notAllowed(instance) &&
+      (instance.instanceId === selection.instanceId || (!orgRefusesEngine(instance) && !notGiven(instance))))
     : configured;
   const selectable = pickerInstances.filter((instance) => !notAllowed(instance));
   const selectedVariantLabel = selection.variant === undefined ? undefined : variantLabel(

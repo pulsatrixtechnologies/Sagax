@@ -15,6 +15,7 @@ import type { ApprovalMode } from "./approval-mode.ts";
 import type { ToolScope } from "./tool-scope.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { CustomRuleCandidate, CustomRuleNotice } from "./custom-rules.ts";
+import type { OrgEngineMove } from "./offered-engines.ts";
 import type { EmailSendRequestCard } from "./email-draft-send.ts";
 import type { TurnDigest } from "./digest.ts";
 import type { BotAvatarCrop } from "./bot-avatar.ts";
@@ -644,6 +645,9 @@ export interface WireMessage {
     /** 2026-10-16: the person's custom rule that approved or refused this
      * call with no card (the rule notice, with a link to edit it). */
     ruleNotice?: CustomRuleNotice;
+    /** 2026-10-18: the bot left an engine the organization no longer
+     * offers and now runs on Auto (shared/offered-engines.ts). */
+    engineMove?: OrgEngineMove;
   };
   /** A bot line a "post" webhook wrote: whoever called the webhook chose
    * its words. On a Cloud home a conversation holding one is someone else's

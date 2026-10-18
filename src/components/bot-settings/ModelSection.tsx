@@ -9,6 +9,9 @@ import { canEditBotField } from "@/lib/bot-capabilities";
 import { CompactRow, HelpTip, PillSelect, SettingsGroup } from "../SettingsPrimitives";
 import { t } from "@/lib/i18n";
 import { useStore, type Bot } from "@/state/store";
+import { engineOfferContext, useOfferedInstances } from "@/lib/offered-instances";
+import { engineOffer } from "../../../shared/offered-engines";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { botWithViewerSettings, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { useBotEditor } from "./BotEditorContext";
 import { ThreadModelsLine } from "../ThreadModelsLine";
@@ -83,8 +86,14 @@ export function ModelSection({ bot }: { bot: Bot }) {
  * the workspace backup. They change only the failed thread's model. */
 function FallbackChain({ bot, onChange }: { bot: Bot; onChange: (fallback: Bot["fallback"]) => void }) {
   const { state } = useStore();
-  const chain = bot.fallback ?? [];
-  const available = state.instances.filter(
+  const offered = useOfferedInstances();
+  const org = usePerspicaxOrg();
+  const offerContext = engineOfferContext(state.config, org !== null, null);
+  // a backup on an engine the organization no longer offers is not shown
+  // (the server skips it too) and leaves the chain at the next change
+  const chain = (bot.fallback ?? []).filter((entry) => engineOffer(offerContext, entry.instanceId) !== "notAllowed");
+  // only engines offered to this person (src/lib/offered-instances.ts)
+  const available = offered.filter(
     (instance) =>
       instance.snapshot.state === "available" &&
       Boolean(instance.models.default.trim()) &&

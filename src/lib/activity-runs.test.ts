@@ -93,6 +93,11 @@ describe("groupActivityRuns", () => {
     }
   });
 
+  it("2026-10-18: a bot moved off a provider the organization hid is a notice, never folded", () => {
+    const moved = { ...tool("notice: Your organization no longer offers Grok. This bot now uses Auto, starting on Claude."), tool: { name: "notice: x", ok: true, engineMove: { from: "Grok", to: "Claude" } } } as Message;
+    expect(statusActivity(moved)).toEqual({ kind: "notice", text: "Your organization no longer offers Grok. This bot now uses Auto, starting on Claude." });
+  });
+
   it("shows the cluster wake rows as notices in the person's language", () => {
     expect(statusActivity(tool(SANDBOX_WAKE_NOTICE))).toEqual({ kind: "notice", text: "The environment was asleep outside office hours. Starting can take a few minutes." });
     expect(statusActivity(tool(SANDBOX_WAKE_TIMEOUT_NOTICE))).toEqual({ kind: "notice", text: "The server environment did not start in time. Send the message again in a few minutes." });

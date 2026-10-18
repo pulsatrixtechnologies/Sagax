@@ -460,6 +460,7 @@ import { readyToRun, selectDefaultModelSelection, withNewBotEffort, type Selecta
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { allowedFallbackSelection, engineAllowed } from "../shared/org-allowed-engines.ts";
+import { offeredEngines, orgEngineMoveLine } from "../shared/offered-engines.ts";
 import { computerEngineMoveText, removedComputerInstanceIds, writeComputerEngineMoveLines } from "./computer-engine-removal.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
@@ -17965,7 +17966,7 @@ async function startTurn(
       // The bot's own recovery setting (server/bot-runtime-settings.ts).
       const backups = botRecoveryBackups(current, cfg);
       const nextIndex = backups.findIndex((candidate, index) => index >= (opts?.automaticRecoveryIndex ?? 0) &&
-        registry.get(candidate.instanceId)?.enabled &&
+        registry.get(candidate.instanceId)?.enabled && !orgEngineAllowRefusal(candidate.instanceId) &&
         (candidate.instanceId !== instanceId || candidate.model !== model));
       const backup = backups[nextIndex];
       if (mayRecover && backup && current && (!opts?.cardContinuation || opts.coordination) &&
@@ -23902,11 +23903,18 @@ async function describeInstances() {
   });
 }
 
-/** Picker catalogs. On an organization server, desktop models are this viewer's rows only. */
+/** Picker catalogs. On an organization server, desktop models are this
+ * viewer's rows only, and an engine the organization does not allow is not
+ * listed at all (2026-10-18, shared/offered-engines.ts): no menu, search,
+ * favorite or Settings card of any app can offer it. */
 async function instancesForViewer(person: string | null) {
   const instances = await describeInstances();
   if (IDENTITY.kind !== "perspicax") return instances;
-  return desktopLocalModels.overlay(instances, person);
+  return desktopLocalModels.overlay(orgOfferedEngines(instances), person);
+}
+/** Organization server: the engines its list allows, in order (solo: all). */
+function orgOfferedEngines<T extends { instanceId: string }>(instances: readonly T[]): T[] {
+  return offeredEngines(instances, { organization: IDENTITY.kind === "perspicax", allowedEngines: orgAllowedEngines() }, "settings");
 }
 
 /** An organization member's copy of one engine (GET /api/instances on a
@@ -28277,7 +28285,7 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
     const person = principals.byId(principalId);
     const sub = person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
     if (method === "GET" && path === "/api/me/engines") {
-      const engines = registry.entries().map((entry) => {
+      const engines = orgOfferedEngines(registry.entries()).map((entry) => {
         const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
         const installed = engineInstalled(entry.instanceId);
         const supported = isLoginDriver(driver);
@@ -30640,6 +30648,11 @@ function orgAdminEngines(): AdminEngine[] {
   if (cfg.xai?.key) engines.push({ id: IMAGE_SERVER_ENGINE, name: "Grok images (xAI)", kind: "cloud", installed: true, auth: "apiKey", orgKey: true, image: true });
   return engines;
 }
+/** An engine's name for a person (its id when the registry no longer has it). */
+function orgEngineName(instanceId: string): string {
+  const live = registry.get(instanceId);
+  return live ? engineDisplayName(live) : instanceId;
+}
 /** A bot whose engine left the organization's list falls back to Auto on an
  * allowed engine (the New bot default when allowed, else the first allowed
  * engine here), and a thread's own model on such an engine follows its bot
@@ -30660,6 +30673,11 @@ function applyOrgEngineAllowList(): void {
     if (next) {
       store.applyModelDefault(id, next);
       console.log(`[org] bot=${id} engine ${bot.modelSelection.instanceId} is not allowed by the organization; now on Auto (${next.instanceId})`);
+      // 2026-10-18 (JC): the bot's conversation says so in one plain line
+      // (a status notice, drawn in the reader's language from tool.engineMove,
+      // src/lib/activity-runs.ts), never a raw error.
+      const move = { from: orgEngineName(bot.modelSelection.instanceId), to: orgEngineName(next.instanceId) };
+      if (bot.threadId) store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
     }
     const stray = (store.bot(id)?.tasks ?? [])
       .filter((task) => task.modelSelection && !engineAllowed(allowed, task.modelSelection.instanceId))
@@ -33725,7 +33743,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           teams: teamSetupTeams().filter((name) => canAccessTeam(chief, name)),
           bots: store.bots.filter((bot) => !bot.hidden && canAccessTeam(chief, bot.section) && (bot.id === chief.id || (peerAllowed(chief, bot) && peerInScope(chief, bot))))
             .map((bot) => ({ id: bot.id, name: bot.name, title: bot.title, section: bot.section ?? "", modelSelection: bot.modelSelection, chiefOfStaff: Boolean(bot.chiefOfStaff) })),
-          instances: instances.map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
+          instances: orgOfferedEngines(instances).map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
             state: instance.snapshot.state, models: instance.models, effortLevels: instance.capabilities?.effortLevels ?? [] })),
           scope: "Bot model defaults apply to groups and new threads; existing threads retain their models. Full Access applies requested team setup immediately; other modes return a review card. Existing unauthorized teams remain outside this Primary Bot's scope.",
         });

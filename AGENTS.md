@@ -1851,6 +1851,34 @@ or `src/components/ModelPicker.interaction.test.ts`:
   requests did not act, the Sagax MCP fixture still answers. Re-run it on
   every bump of `engines.lock.json`; a renamed tool fails the check.
 
+## Providers the organization hides (2026-10-18)
+
+JC: "I have hidden providers from the Perspicax menu, but they are still
+visible in a lot of menus through Sagax." One function answers which
+engines are offered to a person: `shared/offered-engines.ts`
+(`engineOffer`, `offeredEngines`). Solo: every engine, unchanged. On an
+organization server an engine outside `allowedEngines` (null or absent is
+every engine, `[]` is none) is `notAllowed`; an engine the organization
+pays for but has not given the person (`sagax_server_engines`,
+`orgKeyNotGiven`) and that nothing of their own serves is `notGiven`.
+
+- Server: `GET /api/instances` (`instancesForViewer`), `GET /api/me/engines`
+  and the Primary Bot's team setup catalog leave out `notAllowed` engines,
+  so no app (desktop, web, iOS) can list them, even once connected.
+  Automatic recovery skips a backup on such an engine.
+- App: `useOfferedInstances` (`src/lib/offered-instances.ts`) feeds the
+  model menu and window (search and favorites follow: a favorite whose
+  engine is hidden is not shown and comes back with it), New bot, a bot's
+  backups and recovery; Settings > Models and voice keeps `notGiven` rows
+  so the person can connect their own account.
+- A bot moved off a hidden engine (`applyOrgEngineAllowList`) gets one
+  status notice in its conversation (`tool.engineMove`, drawn in the
+  reader's language by `statusActivity`; the sidebar preview too).
+- Keys rows (Settings > Models and voice) stay: a key can serve voice or
+  another engine. Real check: `scripts/verify-org-hidden-providers.ts`.
+  Tests: `shared/offered-engines.test.ts`, `ModelPicker.interaction.test.ts`,
+  `src/lib/activity-runs.test.ts`, C5 in `server/org-admin-console.e2e.test.ts`.
+
 ## Voice mode (xAI)
 
 The call button on a bot opens the voice call pill

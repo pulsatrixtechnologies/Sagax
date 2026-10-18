@@ -2808,6 +2808,7 @@
   "model.noProviders": "Aucun fournisseur de modèles n’est disponible.",
   "model.notAllowed": "Non autorisé par votre organisation",
   "model.org.hostTools": "{name} ne peut pas retenir ses propres outils sur ce serveur.",
+  "model.org.engineMoved": "Votre organisation n'offre plus {from}. Ce bot utilise maintenant Auto, en commençant par {to}.",
   "model.org.hostToolsWhy.acpIgnoresSelection": "Son mode ACP ignore la sélection d’outils : son terminal et ses outils de fichiers s’exécuteraient sur ce serveur.",
   "model.org.hostToolsWhy.serviceChosenTools": "Son service choisit les outils qu’il offre, et aucun réglage ne retire son terminal ni ses outils de fichiers.",
   "model.org.hostToolsWhy.unverified": "Aucun réglage qui retire son terminal et ses outils de fichiers n’a été vérifié.",

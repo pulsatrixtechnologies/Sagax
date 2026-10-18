@@ -549,6 +549,17 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     const listed = (await api("GET", "/api/bots", alice)).body.bots as Array<any>;
     expect(listed.find((bot) => bot.id === bots.brittle!.id)?.modelSelection).toMatchObject({ instanceId: expect.stringMatching(/^(claude|hold)$/), auto: true });
     expect(listed.find((bot) => bot.id === bots.atlas!.id)?.modelSelection).toMatchObject({ instanceId: "claude", model: "fake-model" });
+    // 2026-10-18 (JC): an engine the organization does not offer is listed
+    // nowhere (shared/offered-engines.ts), and the moved bot says so in one line
+    const offered = ((await api("GET", "/api/instances", alice)).body.instances as Array<{ instanceId: string }>).map((row) => row.instanceId);
+    expect(offered).not.toContain("broken");
+    expect(offered).toEqual(expect.arrayContaining(["claude", "hold"]));
+    const mine = await api("GET", "/api/me/engines", alice);
+    if (mine.status === 200) expect((mine.body.engines as Array<{ instanceId: string }>).map((row) => row.instanceId)).not.toContain("broken");
+    const moved = (await api("GET", `/api/threads/${bots.brittle!.threadId}/messages?limit=100`, alice)).body.messages as Array<{ kind?: string; tool?: { name: string; engineMove?: { from: string; to: string } } }>;
+    const line = moved.find((message) => message.tool?.engineMove);
+    expect(line?.tool?.engineMove).toEqual({ from: expect.any(String), to: expect.any(String) });
+    expect(line?.tool?.name).toMatch(/^notice: Your organization no longer offers .+\. This bot now uses Auto, starting on .+\.$/);
     const refused = await api("PATCH", `/api/bots/${bots.atlas!.id}/tasks/${bots.atlas!.threadId}`, alice, { modelSelection: { instanceId: "broken", model: "fake-model" }, updateBotDefault: true });
     expect(refused.status, refused.text).toBe(403);
     // the engine policy holds for the console's model change
@@ -564,6 +575,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect((await admin("POST", "settings", ALICE, { nope: true })).body.code).toBe("bad_request");
     const reset = await admin("POST", "settings", ALICE, { allowFullAccess: true, allowedEngines: null, pluginMarketplaces: { mode: "any" } });
     expect(reset.body.settings.policies).toMatchObject({ allowedEngines: null, allowedMarketplaces: null });
+    expect(((await api("GET", "/api/instances", alice)).body.instances as Array<{ instanceId: string }>).map((row) => row.instanceId)).toContain("broken");
     const audit = (await admin("GET", "audit?category=org&limit=50", ALICE)).body.rows as Array<any>;
     expect(audit.filter((row) => row.action === "org.settings" && row.actor.via === "console").map((row) => row.changed[0])).toEqual(expect.arrayContaining(["allowFullAccess", "allowedEngines", "pluginMarketplaces", "defaults"]));
   }, 60_000);
