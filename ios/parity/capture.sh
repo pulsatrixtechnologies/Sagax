@@ -9,6 +9,9 @@
 #                                                "system" follows the simulator)
 #   PARITY_APPEARANCE=light ios/parity/capture.sh  the simulator's appearance
 #   PARITY_OUT=/tmp/shots ios/parity/capture.sh  where the PNGs go
+#   PARITY_EXTRA_ARGS="-companion.prefs.rosterChromeAtTop YES" ...  more launch arguments
+#   PARITY_HOME=primary ios/parity/capture.sh 01-home  one centred Primary Bot,
+#                                                nothing else pinned ("none": no pin)
 #   ios/parity/capture.sh cards cards-top 22-appearance  extra screens: a chat with
 #                                                every card type (store preview; its end
 #                                                and its first cards), and
@@ -42,7 +45,7 @@ SCREENS=()
 for arg in "$@"; do
   case "$arg" in
     --skip-build) SKIP_BUILD=1 ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
     *) SCREENS+=("$arg") ;;
   esac
 done
@@ -138,6 +141,9 @@ for screen in "${SCREENS[@]}"; do
   [ "$screen" = "cards" ] && ARGS=(-store-preview -cards-preview -open-first -companion.prefs.rosterDensity standard)
   [ "$screen" = "cards-top" ] && ARGS=(-store-preview -cards-preview -cards-top -open-first -companion.prefs.rosterDensity standard)
   [ -n "$SKIN" ] && ARGS+=(-paritySkin "$SKIN")
+  # PARITY_EXTRA_ARGS="-companion.prefs.rosterChromeAtTop YES": launch
+  # arguments added as they are (space-separated)
+  [ -n "${PARITY_EXTRA_ARGS:-}" ] && read -r -a EXTRA <<< "$PARITY_EXTRA_ARGS" && ARGS+=(${EXTRA[@]+"${EXTRA[@]}"})
   xcrun simctl launch "$UDID" "$BUNDLE_ID" "${ARGS[@]}" >/dev/null
   sleep "$WAIT"
   xcrun simctl io "$UDID" screenshot --type=png "$OUT/$screen.png" >/dev/null 2>&1

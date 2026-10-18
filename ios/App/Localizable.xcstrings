@@ -9397,6 +9397,28 @@
         }
       }
     },
+    "My Team": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My Team"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mon équipe"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minha equipe"
+          }
+        }
+      }
+    },
     "Bot threads": {
       "localizations": {
         "en": {

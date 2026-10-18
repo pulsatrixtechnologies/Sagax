@@ -19,6 +19,26 @@ enum HomeMetrics {
     /// One pinned row, mascot top to the next block (149.3 to 281.7).
     static let pinnedRowHeight: CGFloat = 132.4
     static let pinnedLabelGap: CGFloat = 12
+    // Grok Bot iOS 1.14 (an iPhone capture of 2026-10-18, 602x1308 px for
+    // 402x874 pt, 1.4975 px/pt). A lone Primary Bot is centred on the screen
+    // (shape centre x 200.3, y 191.7) and its shape spans 92x89 pt; the name
+    // and the next header did not move (cap top 248.4, header cap 303.8).
+    // Sagax shapes fill about 0.9 of their frame (the hexagon shape is 76 pt
+    // wide in an 85 pt frame), so the frame is 102 pt for the same ink
+    // (measured after: the fixture's owl spans 92 pt tall). It
+    // is drawn over the 85 pt slot, so the label and sections keep their
+    // measured places.
+    static let pinnedSoloMascot: CGFloat = 102
+    /// How far that mascot rises above the 85 pt slot. The cell makes room
+    /// for it (the pin swipe clips each cell) and the grid is lifted as much.
+    static var pinnedSoloOverflow: CGFloat { (pinnedSoloMascot - pinnedMascot) / 2 }
+    /// The Primary Bot's star, on the avatar's lower right corner: an orange
+    /// disc of 20.7 pt in a 2.7 pt ring of the background, centred 34.4 pt
+    /// right of and below the shape's centre (measured on the 102 pt frame;
+    /// every other size scales from it).
+    static let primaryBadge: CGFloat = 20.7
+    static let primaryBadgeRing: CGFloat = 2.7
+    static let primaryBadgeOffset: CGFloat = 34.4
     static let unreadDot: CGFloat = 10
     /// 7.7 pt of ink between the label and the dot.
     static let unreadGap: CGFloat = 5.4
@@ -29,7 +49,14 @@ enum HomeMetrics {
     static let sectionLeading: CGFloat = 20.5
 
     static let rowHeight: CGFloat = 80
+    /// The row's layout slot (x 23-65, measured on reference 01): the text
+    /// column and the vertical centre hang on it.
     static let rowMascot: CGFloat = 42
+    /// What the row draws in that slot. Grok Bot iOS 1.14 draws its row
+    /// shapes 46.5 pt on average (40.7 to 49.4, centre x 44, unchanged); our
+    /// shapes fill about 0.83 of their frame, hence 56 pt, centred on the
+    /// same point so the name, chip and preview stay where they were.
+    static let rowMascotDrawn: CGFloat = 56
     static let rowLeading: CGFloat = 23
     static let textColumn: CGFloat = 81.8
     static let rowTrailing: CGFloat = 21.7
@@ -139,7 +166,8 @@ struct HomeAccountButton: View {
                     AccountRoutinesBadge(count: routines.activeRoutines, attention: routines.routineAttention)
                 }
                 .buttonStyle(.plain)
-                .offset(x: 14, y: -4)
+                // on the ring's corner rather than floating beside it
+                .offset(x: 8, y: -1)
             }
         }
     }
@@ -158,12 +186,18 @@ struct HomeAccountButton: View {
 
 // MARK: - Pinned
 
-/// A pinned bot or group: an 85 pt mascot, its name centred beneath with
-/// the unread dot after it.
+/// A pinned bot or group: an 85 pt mascot (102 pt alone), its name centred
+/// beneath with the unread dot after it. The Primary Bot's star sits on the
+/// mascot's corner, as in Grok Bot iOS 1.14, not after the name.
 struct HomePinnedCell: View {
     @Environment(\.themePalette) var themePalette
     let chat: Chat
     var state: MausState = .idle
+    /// The drawn mascot: 85 pt in the grid, `pinnedSoloMascot` when the
+    /// pinned row holds one chat (Grok Bot's lone primary bot).
+    var mascot: CGFloat = HomeMetrics.pinnedMascot
+
+    private var overflow: CGFloat { max(0, (mascot - HomeMetrics.pinnedMascot) / 2) }
 
     @EnvironmentObject private var session: Session
     @ObservedObject private var people = PeopleDirectory.shared
@@ -173,19 +207,27 @@ struct HomePinnedCell: View {
             ZStack {
                 switch chat {
                 case let .bot(bot):
-                    BotMascotView(bot: bot, size: HomeMetrics.pinnedMascot, state: state, animated: state.showsActivity)
+                    BotMascotView(bot: bot, size: mascot, state: state, animated: state.showsActivity)
                 case let .room(room):
                     if let peer = people.peer(room, session: session) {
-                        PersonAvatar(initials: peer.initials, size: HomeMetrics.pinnedMascot, presenceId: peer.id)
+                        PersonAvatar(initials: peer.initials, size: mascot, presenceId: peer.id)
                     } else {
                         GroupMascotView(
                             members: room.memberIds.compactMap { session.state.bot($0) },
-                            size: HomeMetrics.pinnedMascot,
+                            size: mascot,
                             background: Theme.bg
                         )
                     }
                 }
             }
+            .frame(width: mascot, height: mascot)
+            .overlay {
+                if case let .bot(bot) = chat, bot.chiefOfStaff == true {
+                    HomePrimaryBadge(mascot: mascot)
+                }
+            }
+            // drawn larger than the slot, centred on it: the label below
+            // keeps its measured place
             .frame(width: HomeMetrics.pinnedMascot, height: HomeMetrics.pinnedMascot)
 
             HStack(spacing: HomeMetrics.unreadGap) {
@@ -193,10 +235,6 @@ struct HomePinnedCell: View {
                     .font(.system(size: 11.65))
                     .foregroundStyle(Theme.textSecondaryHome)
                     .lineLimit(1)
-                if case let .bot(bot) = chat, bot.chiefOfStaff == true {
-                    PrimaryBotBadge(size: 10)
-                        .padding(.leading, -4)
-                }
                 if chat.unread && !chat.busy {
                     Circle()
                         .fill(Theme.unreadDot)
@@ -208,8 +246,47 @@ struct HomePinnedCell: View {
             .padding(.horizontal, 6)
             Spacer(minLength: 0)
         }
-        .frame(width: HomeMetrics.pinnedColumn, height: HomeMetrics.pinnedRowHeight, alignment: .top)
+        .padding(.top, overflow)
+        .frame(width: HomeMetrics.pinnedColumn, height: HomeMetrics.pinnedRowHeight + overflow, alignment: .top)
         .contentShape(Rectangle())
+    }
+}
+
+/// The Primary Bot's star on a home mascot's lower right corner (Grok Bot
+/// iOS 1.14): an orange disc ringed with the background, scaled from the
+/// lone pinned mascot's measures. Same orange and star as `PrimaryBotBadge`.
+struct HomePrimaryBadge: View {
+    @Environment(\.themePalette) var themePalette
+    let mascot: CGFloat
+
+    var body: some View {
+        let scale = mascot / HomeMetrics.pinnedSoloMascot
+        let disc = HomeMetrics.primaryBadge * scale
+        let offset = HomeMetrics.primaryBadgeOffset * scale
+        ZStack {
+            Circle().fill(Theme.bg)
+                .frame(width: disc + 2 * HomeMetrics.primaryBadgeRing * scale, height: disc + 2 * HomeMetrics.primaryBadgeRing * scale)
+            Circle().fill(Color.orange)
+                .frame(width: disc, height: disc)
+            Image(systemName: "star.fill")
+                .font(.system(size: disc * 0.4, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .offset(x: offset, y: offset)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Primary Bot"))
+        .accessibilityIdentifier("primary-bot-badge")
+    }
+}
+
+/// A home section's title. "My team" is the name Grok Bot and earlier
+/// imports give the person's default team: it reads in the app's language
+/// ("My Team", as Grok Bot and our "Group Chats" write it; "Mon équipe"),
+/// as on the desktop (`isMyTeamSectionName`, src/lib/sidebar-layout.ts).
+/// Any other name stays exactly as typed.
+enum HomeSectionTitle {
+    static func display(_ name: String) -> String {
+        isMyTeamSectionName(name) ? String(localized: "My Team") : name
     }
 }
 
@@ -260,8 +337,8 @@ struct HomeRowStatus: Equatable {
     var unread = false
 }
 
-/// One bot or group on two lines: 42 pt mascot, name, role chip and time,
-/// then the preview with its leading icon.
+/// One bot or group on two lines: the mascot (56 pt drawn on the 42 pt
+/// slot), name, role chip and time, then the preview with its leading icon.
 struct HomeChatRow: View {
     @Environment(\.themePalette) var themePalette
     let chat: Chat
@@ -278,22 +355,29 @@ struct HomeChatRow: View {
             Group {
                 switch chat {
                 case let .bot(bot):
-                    BotMascotView(bot: bot, size: HomeMetrics.rowMascot, state: state, animated: state.showsActivity)
+                    BotMascotView(bot: bot, size: HomeMetrics.rowMascotDrawn, state: state, animated: state.showsActivity)
                 case let .room(room):
                     if let peer = people.peer(room, session: session) {
-                        PersonAvatar(initials: peer.initials, size: HomeMetrics.rowMascot, presenceId: peer.id)
+                        PersonAvatar(initials: peer.initials, size: HomeMetrics.rowMascotDrawn, presenceId: peer.id)
                     } else {
                         GroupMascotView(
                             members: room.memberIds.compactMap { session.state.bot($0) },
-                            size: HomeMetrics.rowMascot,
+                            size: HomeMetrics.rowMascotDrawn,
                             background: Theme.bg
                         )
                     }
                 }
             }
+            .frame(width: HomeMetrics.rowMascotDrawn, height: HomeMetrics.rowMascotDrawn)
+            .accessibilityHidden(true)
+            // the star stays announced in the row ("Primary Bot")
+            .overlay {
+                if case let .bot(bot) = chat, bot.chiefOfStaff == true {
+                    HomePrimaryBadge(mascot: HomeMetrics.rowMascotDrawn)
+                }
+            }
             .frame(width: HomeMetrics.rowMascot, height: HomeMetrics.rowMascot)
             .padding(.top, (HomeMetrics.rowHeight - HomeMetrics.rowMascot) / 2)
-            .accessibilityHidden(true)
             .padding(.leading, HomeMetrics.rowLeading)
 
             VStack(alignment: .leading, spacing: HomeMetrics.previewGap) {
@@ -316,16 +400,11 @@ struct HomeChatRow: View {
 
     private var nameLine: some View {
         HStack(spacing: 7.5) {
-            HStack(spacing: 5) {
-                Text(verbatim: people.name(chat, session: session))
-                    .font(HomeMetrics.name)
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                if case let .bot(bot) = chat, bot.chiefOfStaff == true {
-                    PrimaryBotBadge(size: 12)
-                }
-            }
-            .layoutPriority(2)
+            Text(verbatim: people.name(chat, session: session))
+                .font(HomeMetrics.name)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .layoutPriority(2)
             if !role.isEmpty {
                 RoleChip(text: role, font: .system(size: 11.65, weight: .medium), horizontalPadding: 6)
                     .frame(maxWidth: HomeMetrics.chipMaxWidth, alignment: .leading)
@@ -343,17 +422,6 @@ struct HomeChatRow: View {
 
     private var trailing: some View {
         HStack(spacing: 6) {
-            if status.threadCount >= 2 {
-                HStack(spacing: 2) {
-                    Image(systemName: "square.stack")
-                        .font(.system(size: 10))
-                    Text(verbatim: "\(status.threadCount)")
-                        .font(Theme.Font.time)
-                        .monospacedDigit()
-                }
-                .foregroundStyle(Theme.textTertiary)
-                .accessibilityLabel(Text("\(status.threadCount) threads"))
-            }
             if status.waiting {
                 Image(systemName: "hand.raised.fill")
                     .font(.system(size: 11))
@@ -387,6 +455,23 @@ struct HomeChatRow: View {
                 .foregroundStyle(Theme.textSecondaryHome)
                 .lineLimit(1)
             Spacer(minLength: 8)
+            // Sagax only (threads listed in the sidebar): the thread count.
+            // Grok Bot's name line holds the time alone, so the count waits
+            // at the end of the preview line, in the time's colour, and the
+            // role chip keeps Grok Bot's room on the line above.
+            if status.threadCount >= 2 {
+                HStack(spacing: 2) {
+                    Image(systemName: "square.stack")
+                        .font(.system(size: 10))
+                    Text(verbatim: "\(status.threadCount)")
+                        .font(Theme.Font.time)
+                        .monospacedDigit()
+                }
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.trailing, status.unread ? 6 : 0)
+                .fixedSize()
+                .accessibilityLabel(Text("\(status.threadCount) threads"))
+            }
             if status.unread {
                 Circle()
                     .fill(Theme.unreadDot)

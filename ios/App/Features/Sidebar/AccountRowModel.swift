@@ -26,30 +26,32 @@ final class AccountRowModel: ObservableObject {
     }
 }
 
-/// The routines badge on the account button: a small accent capsule with
-/// the count, never red; a failed unseen run adds an accent dot.
+/// The routines badge on the account button (Sagax only, #215: it opens
+/// Automations). Grok Bot iOS 1.14 puts nothing on the person's photo, so
+/// the badge stays quiet: the home's secondary grey on the glass fill, no
+/// accent ring, never red; only a failed unseen run adds an accent dot.
 struct AccountRoutinesBadge: View {
     @Environment(\.themePalette) var themePalette
     let count: Int
     let attention: Bool
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 2) {
             Image(systemName: "calendar")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 8, weight: .medium))
             Text(verbatim: "\(count)")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .medium))
                 .monospacedDigit()
             if attention {
                 Circle().fill(Theme.accentText).frame(width: 4, height: 4)
                     .accessibilityIdentifier("routines-attention-dot")
             }
         }
-        .foregroundStyle(Theme.accentText)
-        .padding(.horizontal, 5)
-        .frame(height: 17)
+        .foregroundStyle(Theme.textSecondaryHome)
+        .padding(.horizontal, 4)
+        .frame(height: 15)
         .background(Theme.card, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.55), lineWidth: 1))
+        .overlay(Capsule().strokeBorder(Theme.bg, lineWidth: 1.5))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(Self.words(count: count, attention: attention)))
         .accessibilityIdentifier("routines-badge")

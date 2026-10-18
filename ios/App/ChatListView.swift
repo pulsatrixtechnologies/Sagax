@@ -479,7 +479,7 @@ struct ChatListView: View {
             VStack(alignment: .leading, spacing: 0) {
                 switch density {
                 case .comfortable:
-                    sectionLabel(Text(verbatim: section.name))
+                    sectionLabel(Text(verbatim: HomeSectionTitle.display(section.name)))
                         .padding(.top, 18)
                         .padding(.bottom, section.chiefs.isEmpty && !section.channels.isEmpty ? 10 : 4)
                     if !section.chiefs.isEmpty {
@@ -491,7 +491,7 @@ struct ChatListView: View {
                             .padding(.bottom, section.bots.isEmpty ? 4 : 8)
                     }
                 case .compact, .standard:
-                    sectionLabel(Text(verbatim: section.name))
+                    sectionLabel(Text(verbatim: HomeSectionTitle.display(section.name)))
                         .padding(.top, sectionSpacing)
                         .padding(.bottom, 4)
                     if !section.chiefs.isEmpty {
@@ -1394,8 +1394,12 @@ extension ChatListView {
                     if pinnedChats.isEmpty {
                         Color.clear.frame(height: 12)
                     } else {
+                        // a lone pinned chat's larger mascot grows its cell
+                        // upward by its overflow: lifted by as much, so the
+                        // mascot's centre and its name keep their places
                         AnyView(pinnedGrid)
-                            .padding(.top, HomeMetrics.pinnedTop - HomeMetrics.headerTop - HomeMetrics.headerHeight - 8)
+                            .padding(.top, HomeMetrics.pinnedTop - HomeMetrics.headerTop - HomeMetrics.headerHeight - 8
+                                - (pinnedChats.count == 1 ? HomeMetrics.pinnedSoloOverflow : 0))
                     }
                     AnyView(standardSections)
                 }
@@ -1492,17 +1496,34 @@ extension ChatListView {
         return chats
     }
 
+    /// Rows of three 134 pt columns (reference 01). Grok Bot iOS 1.14 shows
+    /// one primary bot, centred and larger: a lone pinned chat does the
+    /// same. Sagax also pins several bots and groups (Grok Bot cannot):
+    /// those keep the measured 85 pt grid, and a short last row is centred
+    /// like the lone one rather than left in the first columns.
     private var pinnedGrid: some View {
-        let columns = Array(repeating: GridItem(.fixed(HomeMetrics.pinnedColumn), spacing: 0), count: 3)
-        return LazyVGrid(columns: columns, spacing: 0) {
-            ForEach(pinnedChats, id: \.id) { chat in
-                Button { openChat(chat) } label: {
-                    HomePinnedCell(chat: chat, state: MausState.forChat(chat, in: session.state))
+        let chats = pinnedChats
+        let solo = chats.count == 1
+        let rows = stride(from: 0, to: chats.count, by: 3).map { Array(chats[$0..<min($0 + 3, chats.count)]) }
+        return VStack(spacing: 0) {
+            ForEach(rows.indices, id: \.self) { index in
+                let row = rows[index]
+                HStack(spacing: 0) {
+                    ForEach(row, id: \.id) { chat in
+                        Button { openChat(chat) } label: {
+                            HomePinnedCell(
+                                chat: chat,
+                                state: MausState.forChat(chat, in: session.state),
+                                mascot: solo ? HomeMetrics.pinnedSoloMascot : HomeMetrics.pinnedMascot
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu { chatMenu(chat) }
+                        .sidebarBotPinSwipe(chat, session: session)
+                        .accessibilityIdentifier("pinned.\(chat.id)")
+                    }
                 }
-                .buttonStyle(.plain)
-                .contextMenu { chatMenu(chat) }
-                .sidebarBotPinSwipe(chat, session: session)
-                .accessibilityIdentifier("pinned.\(chat.id)")
+                .frame(maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity)
@@ -1532,7 +1553,7 @@ extension ChatListView {
         }
 
         ForEach(layout.sections) { sidebar in
-            section(key: sidebar.name, title: sidebar.name, named: sidebar.name, layout: layout) {
+            section(key: sidebar.name, title: HomeSectionTitle.display(sidebar.name), named: sidebar.name, layout: layout) {
                 homeRows(chats: sidebar.chiefs.map(Chat.bot)
                     + sidebar.channels.filter { $0.pinned != true }.map(Chat.room)
                     + sidebar.bots.map(Chat.bot))

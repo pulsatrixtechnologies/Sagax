@@ -782,3 +782,11 @@ extension CompanionClient {
         return request
     }
 }
+
+/// "My team" is the name Grok Bot and earlier imports give the person's
+/// default team; the apps show it in the interface's language, any other
+/// name exactly as typed (desktop: `isMyTeamSectionName`,
+/// src/lib/sidebar-layout.ts).
+public func isMyTeamSectionName(_ name: String) -> Bool {
+    name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "my team"
+}

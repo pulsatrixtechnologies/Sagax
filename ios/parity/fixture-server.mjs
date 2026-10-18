@@ -244,6 +244,20 @@ const BOTS = [
 
 const GROUP = { name: "Peer Managers", members: ["ara", "helios", "liora"] };
 
+// PARITY_HOME picks what the home's top shows, for the home parity captures
+// (Grok Bot iOS 1.14, 2026-10-18). Unset: the reference set above (two
+// pinned bots and a pinned group). "primary": Ara is the Primary Bot with
+// no section and nothing else is pinned, the way Grok Bot shows its one
+// primary bot centred; "Transformation Numérique" is named "My team", the
+// default team name an import gives. "none": nothing pinned, no Primary Bot.
+const HOME = process.env.PARITY_HOME ?? "";
+if (HOME === "primary" || HOME === "none") {
+  for (const spec of BOTS) {
+    delete spec.pinned;
+    if (HOME === "primary" && spec.section === "Transformation Numérique") spec.section = "My team";
+  }
+}
+
 const SOUL_ARA = [
   "# Ara",
   "",
@@ -431,7 +445,8 @@ async function seedThroughAPI(base) {
   const group = room.group ?? room.room ?? room;
   // Pinned on the home row, as in the reference, where the server has group
   // pins; an older server ignores or refuses it and the group stays listed.
-  await api(base, "PATCH", `/api/groups/${group.id}`, { pinned: true }).catch(() => {});
+  if (!HOME) await api(base, "PATCH", `/api/groups/${group.id}`, { pinned: true }).catch(() => {});
+  if (HOME === "primary") await api(base, "POST", `/api/bots/${ids.ara.id}/primary`, {});
   // Ara carries the unread dot in the reference.
   await api(base, "PATCH", `/api/bots/${ids.ara.id}`, { unread: true }).catch(() => {});
 
