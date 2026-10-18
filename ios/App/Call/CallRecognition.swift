@@ -34,6 +34,8 @@ final class CallRecognizer: CallTranscribing {
     enum Engine: String { case analyzer, legacy, server, scripted, none }
 
     private(set) var engine: Engine = .none
+    /// Speech Recognition was allowed (set by `prepare`).
+    private(set) var speechAuthorized = false
     var onPartial: (String) -> Void = { _ in }
     /// A turn uploaded whole could not be heard (two failed uploads): the
     /// call tells the person instead of dropping the turn silently.
@@ -53,21 +55,24 @@ final class CallRecognizer: CallTranscribing {
     }
 
     /// Pick the best recognizer for these languages. False: nothing can hear.
-    func prepare(locales: [Locale], upload: (([Float]) async throws -> String)?) async -> Bool {
-        self.upload = upload
+    /// `onDeviceOnly` (the demo): only a recognizer that runs on this phone,
+    /// and no model download, so the call never reaches a network.
+    func prepare(locales: [Locale], upload: (([Float]) async throws -> String)?, onDeviceOnly: Bool = false) async -> Bool {
+        self.upload = onDeviceOnly ? nil : upload
         let authorized = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
         }
-        if #available(iOS 26.0, *), await prepareAnalyzer(locales) {
+        speechAuthorized = authorized
+        if #available(iOS 26.0, *), await prepareAnalyzer(locales, download: !onDeviceOnly) {
             engine = .analyzer
             return true
         }
-        if authorized, let recognizer = locales.lazy.compactMap({ SFSpeechRecognizer(locale: $0) }).first(where: { $0.isAvailable }) {
+        if authorized, let recognizer = locales.lazy.compactMap({ SFSpeechRecognizer(locale: $0) }).first(where: { $0.isAvailable && (!onDeviceOnly || $0.supportsOnDeviceRecognition) }) {
             legacy = recognizer
             engine = .legacy
             return true
         }
-        if upload != nil {
+        if self.upload != nil {
             engine = .server
             return true
         }
@@ -81,7 +86,7 @@ final class CallRecognizer: CallTranscribing {
     }
 
     @available(iOS 26.0, *)
-    private func prepareAnalyzer(_ locales: [Locale]) async -> Bool {
+    private func prepareAnalyzer(_ locales: [Locale], download: Bool) async -> Bool {
         guard SpeechTranscriber.isAvailable else { return false }
         for candidate in locales {
             guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: candidate) else { continue }
@@ -89,7 +94,7 @@ final class CallRecognizer: CallTranscribing {
             let status = await AssetInventory.status(forModules: [module])
             guard status == .installed else {
                 // the model downloads for next time; this call uses the older recognizer
-                if status == .supported || status == .downloading {
+                if download, status == .supported || status == .downloading {
                     Task.detached {
                         if let request = try? await AssetInventory.assetInstallationRequest(supporting: [module]) {
                             try? await request.downloadAndInstall()

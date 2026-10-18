@@ -215,6 +215,9 @@ struct DesktopMessageHoverStrip: View {
             if let pin = a.togglePin {
                 DesktopActionButton(systemImage: a.pinned ? "pin.slash" : "pin", label: a.pinned ? "Unpin" : "Pin message", action: pin)
             }
+            if let report = a.report {
+                DesktopActionButton(systemImage: "flag", label: "Report", action: report)
+            }
         }
     }
 }

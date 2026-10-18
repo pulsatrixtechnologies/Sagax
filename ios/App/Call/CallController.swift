@@ -105,6 +105,17 @@ final class CallController: ObservableObject {
     /// `.shouldResume`: the call stays on hold until the app is active again
     /// or the person taps Resume.
     private var interruptionPending = false
+    /// The demo's language ("en" or "fr") while a demo call runs: with the
+    /// call language on Auto, the demo's French replies are heard and read
+    /// in French even when the system language is not.
+    private var demoLanguage: String?
+
+    /// The voice settings this call uses.
+    private var callVoiceSettings: VoiceModeSettings {
+        var settings = voiceSettings
+        if let demoLanguage, settings.language == "auto" { settings.language = demoLanguage }
+        return settings
+    }
 
     private init() {
         voiceSettings = VoiceModeSettings.decode(UserDefaults.standard.string(forKey: VoiceModeSettings.storageKey))
@@ -147,16 +158,21 @@ final class CallController: ObservableObject {
         self.session = session
         let isRoom: Bool
         if case .room = chat { isRoom = true } else { isRoom = false }
+        // The demo's call stays on this phone: recognition on device (or
+        // typed lines), the demo's prepared replies, the phone's own voice.
+        // No voice mode, no voice provider, no CallKit, no call session.
+        let demo = session.isDemo
+        demoLanguage = demo ? DemoLaunch.language.rawValue : nil
 
         // the server decides, every time (desktop VoiceModeCallButton)
         var status: VoiceModeStatus?
-        if case let .bot(bot) = chat { status = try? await client.voiceModeStatus(botId: bot.id) }
+        if !demo, case let .bot(bot) = chat { status = try? await client.voiceModeStatus(botId: bot.id) }
         organization = status?.organization == true
         if case let .bot(bot) = chat, status?.organization == true, status?.available != true {
             unavailable = Self.refusal(status?.refusal, botName: bot.name)
             return
         }
-        if isRoom, session.connection?.pairedWithServer == true, await roomOnOrganization(session: session, client: client) {
+        if !demo, isRoom, session.connection?.pairedWithServer == true, await roomOnOrganization(session: session, client: client) {
             unavailable = Unavailable(
                 title: String(localized: "Voice mode unavailable"),
                 lines: [String(localized: "On an organization server, voice mode talks with one bot at a time: open a bot's conversation to call it.")],
@@ -165,7 +181,7 @@ final class CallController: ObservableObject {
             return
         }
         voiceModeAvailable = status?.available == true
-        let config = await session.configStatus()
+        let config = demo ? nil : await session.configStatus()
         if organization { await seedVoiceSettings(client) }
 
         target = chat
@@ -205,7 +221,9 @@ final class CallController: ObservableObject {
         #endif
         if !injecting {
             guard await MicrophonePermission.request() else {
-                unavailable = Unavailable(title: String(localized: "Call unavailable"), lines: [String(localized: "Allow microphone access for Sagax in Settings, then try again.")], keysUrl: nil)
+                var lines = [String(localized: "Allow microphone access for Sagax in Settings, then try again.")]
+                if demo { lines.append(String(localized: "You can still type to \(chat.name) in the demo.")) }
+                unavailable = Unavailable(title: String(localized: "Call unavailable"), lines: lines, keysUrl: nil)
                 CallQuiet.shared.set(threadId, live: false)
                 noteCallClockEnded()
                 target = nil
@@ -220,9 +238,15 @@ final class CallController: ObservableObject {
             self.notice = String(localized: "That did not get through. Could you say it again?")
             Task { await self.engine?.say(String(localized: "That did not get through. Could you say it again?")) }
         }
-        let ready = await recognizer.prepare(locales: voiceSettings.recognitionLocales(), upload: upload)
+        let ready = await recognizer.prepare(locales: callVoiceSettings.recognitionLocales(), upload: upload, onDeviceOnly: demo)
             guard target?.id == chat.id else { return }
-            if !ready { note = String(localized: "Speech recognition isn't available for this language. Allow Speech Recognition in Settings, then try again.") }
+            if !ready, demo, !recognizer.speechAuthorized {
+                note = String(localized: "Allow Speech Recognition for Sagax in Settings to talk. Meanwhile, type your message: \(chat.name) answers out loud.")
+            } else if !ready, demo {
+                note = String(localized: "This phone can't recognize speech offline in this language. Type your message: \(chat.name) answers out loud.")
+            } else if !ready {
+                note = String(localized: "Speech recognition isn't available for this language. Allow Speech Recognition in Settings, then try again.")
+            }
         }
         recognizerName = recognizer.engine.rawValue
 
@@ -230,7 +254,9 @@ final class CallController: ObservableObject {
         let io = CallAudioIO()
         let botVoice: String? = if case let .bot(bot) = chat { bot.voice } else { nil }
         let route: (CallSpeaker?) -> [CallVoiceSource] = { speaker in
-            CallVoiceSource.route(
+            // the demo speaks with the phone's voice only: nothing to fetch
+            if demo { return [.device] }
+            return CallVoiceSource.route(
                 voiceMode: isRoom ? nil : status,
                 config: config,
                 agentVoice: speaker?.voice ?? botVoice,
@@ -289,15 +315,20 @@ final class CallController: ObservableObject {
             let call = (callId: callId, threadId: threadId, language: voiceSettings.language)
             // the reply carries the words to expect (names, the thread's proper
             // nouns): recognition starts now and uses them from the next turn
-            Task { [weak self, weak recognizer] in
-                guard let terms = await client.voiceCallStart(botId: bot.id, callId: call.callId, threadId: call.threadId, language: call.language),
-                      !terms.isEmpty, self?.recognizer === recognizer else { return }
-                recognizer?.useContextualStrings(terms)
+            if !demo {
+                Task { [weak self, weak recognizer] in
+                    guard let terms = await client.voiceCallStart(botId: bot.id, callId: call.callId, threadId: call.threadId, language: call.language),
+                          !terms.isEmpty, self?.recognizer === recognizer else { return }
+                    recognizer?.useContextualStrings(terms)
+                }
             }
             progressTick?.invalidate()
             progressTick = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 DispatchQueue.main.async { self?.tickProgress() }
             }
+        }
+        if !demo, case let .bot(bot) = chat {
+            let call = (callId: callId, threadId: threadId, language: voiceSettings.language)
             callAlive = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { _ in
                 Task { await client.voiceCallSession(botId: bot.id, state: .alive, callId: call.callId, threadId: call.threadId, language: call.language) }
             }
@@ -311,7 +342,7 @@ final class CallController: ObservableObject {
         bridge.onMute = { [weak self] muted in self?.engine?.setMuted(muted) }
         bridge.onHold = { [weak self] held in held ? self?.engine?.hold() : self?.engine?.resume() }
         callKit = bridge
-        let placed = injecting ? false : await bridge.start(name: chat.name)
+        let placed = injecting || demo ? false : await bridge.start(name: chat.name)
         guard target?.id == chat.id else { return }
         if placed {
             // the system activates the session for the call; if it never says
@@ -344,7 +375,7 @@ final class CallController: ObservableObject {
             routes: route,
             settings: { [weak self] in
                 guard let self else { return .default }
-                var settings = self.voiceSettings
+                var settings = self.callVoiceSettings
                 if let preview = self.previewVoice { settings.voice = preview }
                 return settings
             }
@@ -771,7 +802,7 @@ final class CallController: ObservableObject {
     /// the app has no words in that language (silence beats the wrong one).
     func progressWords(_ line: CallProgressLine, messages: [Message]) -> String? {
         let language = CallProgress.language(
-            callLanguage: voiceSettings.language,
+            callLanguage: callVoiceSettings.language,
             lastUserText: CallProgress.lastUserText(messages),
             appLanguage: Bundle.main.preferredLocalizations.first ?? "en"
         )
@@ -810,7 +841,7 @@ final class CallController: ObservableObject {
     /// choice as the progress lines); nil for a language without the words.
     func restInChatWords(messages: [Message]) -> String? {
         let language = CallProgress.language(
-            callLanguage: voiceSettings.language,
+            callLanguage: callVoiceSettings.language,
             lastUserText: CallProgress.lastUserText(messages),
             appLanguage: Bundle.main.preferredLocalizations.first ?? "en"
         )
@@ -827,7 +858,7 @@ final class CallController: ObservableObject {
     /// words for it (never silence after a failure).
     func failureWords(_ kind: CallFailureKind, messages: [Message]) -> String {
         let language = CallProgress.language(
-            callLanguage: voiceSettings.language,
+            callLanguage: callVoiceSettings.language,
             lastUserText: CallProgress.lastUserText(messages),
             appLanguage: Bundle.main.preferredLocalizations.first ?? "en"
         )

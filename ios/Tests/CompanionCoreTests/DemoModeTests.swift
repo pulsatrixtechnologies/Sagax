@@ -34,7 +34,7 @@ final class DemoModeTests: XCTestCase {
         let fleet = try await client.fleet()
         XCTAssertEqual(fleet.bots.count, 4)
         let routines = try await client.routines()
-        XCTAssertEqual(routines.routines.map(\.name), ["Morning digest"])
+        XCTAssertEqual(routines.routines.map(\.name), ["Morning digest", "Inbox triage", "Design inspiration", "Weekly plan", "Nightly build"])
         let page = try await client.messages(threadId: "demo-thread-scout")
         XCTAssertEqual(page.messages.last?.id, "scout-approval")
         XCTAssertTrue(server.handledRequests.allSatisfy { $0.contains("/api/") })
@@ -104,6 +104,87 @@ final class DemoModeTests: XCTestCase {
             XCTAssertEqual(error.code, .notConnectedToInternet)
         }
         XCTAssertTrue(DemoURLProtocol.refusedHosts.contains("example.com"))
+    }
+
+    // MARK: Beta App Review (2026-10-18)
+
+    private var eastern: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        calendar.firstWeekday = 1
+        return calendar
+    }
+
+    func testTheDataFollowsTheInterfaceLanguage() async throws {
+        XCTAssertEqual(DemoLanguage(identifier: "fr"), .french)
+        XCTAssertEqual(DemoLanguage(identifier: "fr-CA"), .french)
+        XCTAssertEqual(DemoLanguage(identifier: "fr_FR"), .french)
+        XCTAssertEqual(DemoLanguage(identifier: "en"), .english)
+        XCTAssertEqual(DemoLanguage(identifier: "pt-BR"), .english)
+        XCTAssertEqual(DemoLanguage(identifier: nil), .english)
+
+        let server = DemoServer(now: clock, language: .french, chunkDelay: 0)
+        defer { server.stop() }
+        let fleet = server.fleet
+        XCTAssertEqual(fleet.bots.map(\.name), ["Atlas", "Scout", "Pixel", "Forge"], "names stay")
+        XCTAssertEqual(fleet.groups.map(\.name), ["Salon de lancement"])
+        XCTAssertEqual(fleet.sections, ["Lancement", "Ingénierie"])
+        XCTAssertTrue(fleet.bots.allSatisfy { ["Lancement", "Ingénierie"].contains($0.section ?? "") })
+        XCTAssertTrue(fleet.bots.first { $0.name == "Pixel" }?.messages?.last?.text?.hasPrefix("C'est fait.") == true)
+        XCTAssertEqual(fleet.bots.first { $0.name == "Scout" }?.messages?.last?.card?.title, "Approbation requise")
+        let client = server.makeClient()
+        let routines = try await client.routines()
+        XCTAssertTrue(routines.routines.contains { $0.name == "Résumé du matin" })
+        XCTAssertTrue(routines.runs.allSatisfy { $0.output?.isEmpty == false })
+        // a reply in French, whatever the words typed
+        XCTAssertTrue(DemoFixture.reply(to: "status?", from: "Pixel", language: .french).hasPrefix("Voici où on en est"))
+        XCTAssertTrue(DemoFixture.reply(to: "anything", from: "Pixel", language: .french).hasPrefix("Bien reçu."))
+        XCTAssertTrue(DemoFixture.reply(to: "hello", from: "Pixel", language: .french).hasPrefix("Avec plaisir"))
+        XCTAssertTrue(DemoFixture.reply(to: "this one", from: "Pixel").hasPrefix("Got it."), "not a greeting")
+        // nothing English left in what the home shows
+        let english = DemoServer(now: clock, chunkDelay: 0).fleet
+        for (fr, en) in zip(fleet.bots, english.bots) {
+            XCTAssertNotEqual(fr.description, en.description)
+            XCTAssertNotEqual(fr.messages?.first?.text, en.messages?.first?.text)
+            XCTAssertNotNil(fr.messages?.first?.text)
+        }
+    }
+
+    func testEveryDayOfTheWeekHasRoutinesWhateverTheDay() {
+        let calendar = eastern
+        // Sunday 2026-10-18, and each day of the week around it
+        let sunday = calendar.date(from: DateComponents(year: 2026, month: 10, day: 18, hour: 11))!
+        for offset in -3...3 {
+            let now = calendar.date(byAdding: .day, value: offset, to: sunday)!
+            let fixture = DemoFixture(now: now, language: .english, calendar: calendar)
+            let week = calendar.dateInterval(of: .weekOfYear, for: now)!
+            for dayIndex in 0..<7 {
+                let day = calendar.date(byAdding: .day, value: dayIndex, to: week.start)!
+                let items = RoutineCalendar.day(day, routines: fixture.routines, runs: fixture.runs, calendar: calendar)
+                XCTAssertGreaterThanOrEqual(items.count, 2, "\(now) day \(dayIndex)")
+            }
+            // the run log covers what already ran, nothing in the future
+            XCTAssertFalse(fixture.runs.isEmpty)
+            XCTAssertTrue(fixture.runs.allSatisfy { $0.scheduledFor < now.timeIntervalSince1970 * 1000 })
+            XCTAssertEqual(Set(fixture.runs.map(\.id)).count, fixture.runs.count)
+            // every routine's next run is ahead
+            XCTAssertTrue(fixture.routines.allSatisfy { ($0.nextRunAt ?? 0) > now.timeIntervalSince1970 * 1000 })
+        }
+    }
+
+    func testACallTurnGetsASpokenReply() async throws {
+        let server = DemoServer(now: clock, language: .english, chunkDelay: 0)
+        defer { server.stop() }
+        let frames = FrameLog()
+        server.onFrame = { frames.append($0) }
+        let client = server.makeClient()
+        let meta = VoiceCallMeta(callId: "call-1", language: "en", utteranceId: "u-1")
+        _ = try await client.send(text: "can you hear me", toBot: "demo-pixel", threadId: "demo-thread-pixel", voiceCall: meta)
+        guard case let .message(_, reply) = frames.all.last(where: { if case .message = $0 { return true }; return false }) else { return XCTFail() }
+        XCTAssertEqual(reply.text, DemoFixture.reply(to: "can you hear me", from: "Pixel", onCall: true))
+        XCTAssertTrue(reply.text?.contains("demo call") == true)
+        // the call's other routes are refused here, never sent anywhere
+        XCTAssertTrue(server.handledRequests.allSatisfy { $0.contains("/api/") })
     }
 
     func testStoppingSilencesReplies() async throws {

@@ -17,13 +17,21 @@ enum DemoLaunch {
               let seconds = TimeInterval(arguments[index + 1]) else { return nil }
         return Date(timeIntervalSince1970: seconds)
     }
+
+    /// The demo's words follow the interface: the language chosen in
+    /// Settings, or the one the system picked for the app.
+    static var language: DemoLanguage {
+        let stored = UserDefaults.standard.string(forKey: PrefKey.language) ?? AppLanguage.system.rawValue
+        let chosen = AppLanguage.resolved(stored)
+        return DemoLanguage(identifier: chosen == .system ? Bundle.main.preferredLocalizations.first : chosen.rawValue)
+    }
 }
 
 /// Forge's computer in the demo: a drawn desktop with a terminal running the
 /// release checks. Drawn on the phone, so no image ships and nothing is
 /// fetched.
 enum DemoScreen {
-    static func pngBase64() -> String? {
+    static func pngBase64(language: DemoLanguage = .english) -> String? {
         let size = CGSize(width: 1280, height: 800)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -37,7 +45,7 @@ enum DemoScreen {
             // menu bar
             UIColor(white: 0, alpha: 0.35).setFill()
             cg.fill(CGRect(x: 0, y: 0, width: size.width, height: 28))
-            draw("Forge's computer", at: CGPoint(x: 16, y: 6), size: 14, color: .white, weight: .semibold)
+            draw(language.pick("Forge's computer", "Ordinateur de Forge"), at: CGPoint(x: 16, y: 6), size: 14, color: .white, weight: .semibold)
             // terminal window
             let window = CGRect(x: 120, y: 90, width: 1040, height: 600)
             UIColor(hex: 0x141414).setFill()
@@ -57,7 +65,7 @@ enum DemoScreen {
                 ("Checking privacy manifest ... ok", 0x68CE67),
                 ("Uploading symbols ... 62%", 0xFEBC2E),
                 ("", 0xE6E6E6),
-                ("Waiting on approval: TestFlight upload (Scout)", 0x9C9BA1),
+                (language.pick("Waiting on approval: TestFlight upload (Scout)", "En attente d'approbation : téléversement TestFlight (Scout)"), 0x9C9BA1),
             ]
             for (index, line) in lines.enumerated() {
                 draw(line.0, at: CGPoint(x: window.minX + 28, y: window.minY + 64 + CGFloat(index) * 34), size: 20, color: UIColor(hex: line.1), weight: .regular, mono: true)

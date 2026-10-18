@@ -24,6 +24,8 @@ struct MessageRow: View {
     @State private var digest: DigestSummary?
     /// View Source: this bot reply drawn as its markdown source.
     @State private var showingSource = false
+    /// Report: the report sheet for this bot reply.
+    @State private var reporting = false
     @Environment(\.messageActions) private var context
     /// Cite in the Select Text sheet (CO8); nil where nothing can be sent.
     @Environment(\.citeIntoComposer) private var citeIntoComposer
@@ -141,6 +143,14 @@ struct MessageRow: View {
         .sheet(item: $digest) {
             DigestSheet(summary: $0)
         }
+        .sheet(isPresented: $reporting) {
+            ReportMessageSheet(
+                message: message,
+                visibleText: Citations.split(attachedContent.text).display,
+                botName: message.from?.name ?? chat.name,
+                demo: session.isDemo
+            )
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("message-\(message.id)")
     }
@@ -181,6 +191,9 @@ struct MessageRow: View {
             set.togglePin = { Task { await session.setPinnedMessage(pinned ? nil : message.id, in: target) } }
         }
         if message.role == .bot, case .room = chat { set.routedBy = message.routedBy }
+        if MessageReport.canReport(message, isBot: { session.state.bot($0) != nil }) {
+            set.report = { reporting = true }
+        }
         return set
     }
 

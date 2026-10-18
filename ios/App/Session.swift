@@ -650,7 +650,8 @@ final class Session: ObservableObject {
     /// Nothing reaches the Keychain, the saved connections or the network.
     func enterDemo() {
         stopActiveRuntime()
-        let server = DemoServer(now: DemoLaunch.clock ?? Date())
+        let language = DemoLaunch.language
+        let server = DemoServer(now: DemoLaunch.clock ?? Date(), language: language)
         server.onFrame = { [weak self] frame in
             // One serial queue keeps the server's order.
             DispatchQueue.main.async {
@@ -665,7 +666,7 @@ final class Session: ObservableObject {
         client = server.makeClient()
         var demoState = CompanionState()
         demoState.hydrate(server.fleet)
-        if let png = DemoScreen.pngBase64() {
+        if let png = DemoScreen.pngBase64(language: language) {
             demoState.apply(.screen(botId: "demo-forge", png: png, mime: "image/png"))
         }
         state = demoState

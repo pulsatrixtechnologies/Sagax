@@ -59,6 +59,72 @@
         }
       }
     },
+    "Allow Speech Recognition for Sagax in Settings to talk. Meanwhile, type your message: %@ answers out loud.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow Speech Recognition for Sagax in Settings to talk. Meanwhile, type your message: %@ answers out loud."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorise la reconnaissance vocale pour Sagax dans Réglages pour parler. En attendant, écris ton message : %@ répond à voix haute."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permita o Reconhecimento de Fala para o Sagax nos Ajustes para falar. Enquanto isso, digite sua mensagem: %@ responde em voz alta."
+          }
+        }
+      }
+    },
+    "Details (optional)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Details (optional)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Précisions (facultatif)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detalhes (opcional)"
+          }
+        }
+      }
+    },
+    "Harmful or dangerous": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Harmful or dangerous"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuisible ou dangereux"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prejudicial ou perigoso"
+          }
+        }
+      }
+    },
     "I can't reach my engine: it needs a new sign-in. Open the app to sign in again.": {
       "localizations": {
         "fr": {
@@ -91,6 +157,28 @@
         }
       }
     },
+    "Include the reply's text": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Include the reply's text"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inclure le texte de la réponse"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incluir o texto da resposta"
+          }
+        }
+      }
+    },
     "My engine has reached its usage limit. Try again later.": {
       "localizations": {
         "fr": {
@@ -119,6 +207,270 @@
           "stringUnit": {
             "state": "translated",
             "value": "Meu mecanismo ficou sem créditos. Verifique o plano no app."
+          }
+        }
+      }
+    },
+    "No mail app is set up. The report was copied: paste it in an email to %@.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No mail app is set up. The report was copied: paste it in an email to %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune app de courriel n'est configurée. Le signalement a été copié : colle-le dans un courriel à %@."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum app de e-mail configurado. A denúncia foi copiada: cole-a em um e-mail para %@."
+          }
+        }
+      }
+    },
+    "Offensive or hateful": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offensive or hateful"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offensant ou haineux"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ofensivo ou de ódio"
+          }
+        }
+      }
+    },
+    "Reason": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reason"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Raison"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motivo"
+          }
+        }
+      }
+    },
+    "Report": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signaler"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denunciar"
+          }
+        }
+      }
+    },
+    "Report reply": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report reply"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signaler la réponse"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denunciar resposta"
+          }
+        }
+      }
+    },
+    "Reveals private information": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reveals private information"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Révèle des renseignements privés"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revela informações privadas"
+          }
+        }
+      }
+    },
+    "Send report": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send report"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer le signalement"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar denúncia"
+          }
+        }
+      }
+    },
+    "Sent: the reason, the message id (%@) and the app version. The reply's text is not included.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent: the reason, the message id (%@) and the app version. The reply's text is not included."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé : la raison, l'id du message (%@) et la version de l'app. Le texte de la réponse n'est pas inclus."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviado: o motivo, o id da mensagem (%@) e a versão do app. O texto da resposta não é incluído."
+          }
+        }
+      }
+    },
+    "Sent: the reason, the message id (%@), the app version and the reply's text.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent: the reason, the message id (%@), the app version and the reply's text."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé : la raison, l'id du message (%@), la version de l'app et le texte de la réponse."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviado: o motivo, o id da mensagem (%@), a versão do app e o texto da resposta."
+          }
+        }
+      }
+    },
+    "Sexual content": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sexual content"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contenu sexuel"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conteúdo sexual"
+          }
+        }
+      }
+    },
+    "Something else": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Something else"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autre chose"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outra coisa"
+          }
+        }
+      }
+    },
+    "Tell Pulsatrix if this AI-generated reply from %@ is harmful, offensive or wrong. The report is an email you send from your mail app, with only what you choose below.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tell Pulsatrix if this AI-generated reply from %@ is harmful, offensive or wrong. The report is an email you send from your mail app, with only what you choose below."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dis à Pulsatrix si cette réponse générée par IA de %@ est nuisible, offensante ou fausse. Le signalement est un courriel que tu envoies de ton app de courriel, avec seulement ce que tu choisis ci-dessous."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diga à Pulsatrix se esta resposta gerada por IA de %@ é prejudicial, ofensiva ou errada. A denúncia é um e-mail que você envia do seu app de e-mail, só com o que você escolher abaixo."
           }
         }
       }
@@ -1007,6 +1359,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pausar nota de voz"
+          }
+        }
+      }
+    },
+    "This phone can't recognize speech offline in this language. Type your message: %@ answers out loud.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This phone can't recognize speech offline in this language. Type your message: %@ answers out loud."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce téléphone ne peut pas reconnaître la parole hors ligne dans cette langue. Écris ton message : %@ répond à voix haute."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este telefone não reconhece fala offline neste idioma. Digite sua mensagem: %@ responde em voz alta."
           }
         }
       }
@@ -9155,6 +9529,28 @@
         }
       }
     },
+    "Wrong or misleading": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wrong or misleading"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faux ou trompeur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Errado ou enganoso"
+          }
+        }
+      }
+    },
     "Yesterday": {
       "localizations": {
         "en": {
@@ -9173,6 +9569,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ontem"
+          }
+        }
+      }
+    },
+    "You can still type to %@ in the demo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can still type to %@ in the demo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu peux quand même écrire à %@ dans la démo."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você ainda pode escrever para %@ na demonstração."
           }
         }
       }

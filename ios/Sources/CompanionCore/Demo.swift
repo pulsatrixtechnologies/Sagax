@@ -8,9 +8,10 @@
 // in memory and dies with it: nothing is written to the Keychain, the saved
 // connections, the widgets or the App Group.
 //
-// The data is generic (Atlas, Pixel, Scout, Forge, Sam Rivera) and every
-// timestamp derives from the `now` it was made with, so a fixed clock gives
-// the same screens every time (App Review, screenshots).
+// The data is generic (Atlas, Pixel, Scout, Forge, Sam Rivera), written in
+// the interface's language (`DemoLanguage`), and every timestamp derives
+// from the `now` it was made with, so a fixed clock gives the same screens
+// every time (App Review, screenshots).
 import Foundation
 
 public final class DemoServer: @unchecked Sendable {
@@ -20,6 +21,8 @@ public final class DemoServer: @unchecked Sendable {
     public static let connectionID = "sagax-demo"
 
     public let connection: Connection
+    /// The language of the made-up data and the prepared replies.
+    public let language: DemoLanguage
     /// Replies and card updates, in order. Called on an arbitrary queue.
     public var onFrame: (@Sendable (Frame) -> Void)?
     /// Delay between streamed chunks; tests use zero.
@@ -30,27 +33,30 @@ public final class DemoServer: @unchecked Sendable {
     private var bots: [Bot]
     private var rooms: [Room]
     private var routines: [Routine]
+    private let sections: [String]
     private var runs: [RoutineRun]
     private var counter = 0
     private var stopped = false
     /// Every request the demo answered, for tests.
     private var handled: [String] = []
 
-    public init(now: Date = Date(), chunkDelay: TimeInterval = 0.06) {
+    public init(now: Date = Date(), language: DemoLanguage = .english, chunkDelay: TimeInterval = 0.06, calendar: Calendar = .current) {
         self.now = now
+        self.language = language
         self.chunkDelay = chunkDelay
-        let fixture = DemoFixture(now: now)
+        let fixture = DemoFixture(now: now, language: language, calendar: calendar)
+        sections = fixture.sections
         bots = fixture.bots
         rooms = fixture.rooms
         routines = fixture.routines
         runs = fixture.runs
-        connection = Connection(id: Self.connectionID, name: "Sagax demo", host: Self.host, port: 443, serverScopes: ["client"])
+        connection = Connection(id: Self.connectionID, name: language.pick("Sagax demo", "Démo Sagax"), host: Self.host, port: 443, serverScopes: ["client"])
     }
 
     /// The fleet the app hydrates from on entering the demo.
     public var fleet: Fleet {
         lock.lock(); defer { lock.unlock() }
-        return Fleet(bots: bots, groups: rooms, botQueuedMessages: [:], sections: ["Launch", "Engineering"])
+        return Fleet(bots: bots, groups: rooms, botQueuedMessages: [:], sections: sections)
     }
 
     /// A client whose every request is answered here.
@@ -83,6 +89,7 @@ public final class DemoServer: @unchecked Sendable {
     }
 
     static let unavailable = "Not available in the demo. Connect a computer or sign in to an organization to use this."
+    static let unavailableFrench = "Pas disponible dans la démo. Connecte un ordinateur ou connecte-toi à une organisation pour l'utiliser."
 
     /// Answer one request. Public for tests.
     public func respond(method: String, path: String, body: Data?) -> Response {
@@ -104,9 +111,9 @@ public final class DemoServer: @unchecked Sendable {
         case ("GET", ["api", "threads"]) where parts.count == 4 && parts[3] == "messages":
             return encode(page(threadId: parts[2]))
         case ("POST", ["api", "bots"]) where parts.count == 4 && parts[3] == "messages":
-            return send(text: json["text"] as? String ?? "", botId: parts[2], groupId: nil, threadId: json["threadId"] as? String)
+            return send(text: json["text"] as? String ?? "", botId: parts[2], groupId: nil, threadId: json["threadId"] as? String, onCall: json["voiceCall"] != nil)
         case ("POST", ["api", "groups"]) where parts.count == 4 && parts[3] == "messages":
-            return send(text: json["text"] as? String ?? "", botId: nil, groupId: parts[2], threadId: json["threadId"] as? String)
+            return send(text: json["text"] as? String ?? "", botId: nil, groupId: parts[2], threadId: json["threadId"] as? String, onCall: json["voiceCall"] != nil)
         case ("POST", ["api", "threads"]) where parts.count == 4 && parts[3] == "respond":
             return answer(threadId: parts[2], requestId: json["requestId"] as? String, behavior: json["behavior"] as? String ?? "deny", message: json["message"] as? String)
         case ("POST", ["api", "bots"]) where parts.count == 4 && (parts[3] == "read" || parts[3] == "always-allow"),
@@ -118,7 +125,7 @@ public final class DemoServer: @unchecked Sendable {
     }
 
     private func refusal(status: Int) -> Response {
-        let body = (try? JSONSerialization.data(withJSONObject: ["error": Self.unavailable, "code": "demo"])) ?? Data()
+        let body = (try? JSONSerialization.data(withJSONObject: ["error": language.pick(Self.unavailable, Self.unavailableFrench), "code": "demo"])) ?? Data()
         return .init(status: status, body: body)
     }
 
@@ -165,7 +172,7 @@ public final class DemoServer: @unchecked Sendable {
         return now.timeIntervalSince1970 * 1000 + Double(counter) * 1000
     }
 
-    private func send(text: String, botId: String?, groupId: String?, threadId: String?) -> Response {
+    private func send(text: String, botId: String?, groupId: String?, threadId: String?, onCall: Bool) -> Response {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return refusal(status: 400) }
         lock.lock()
@@ -179,7 +186,7 @@ public final class DemoServer: @unchecked Sendable {
         record(user, thread: thread)
         emit(.message(threadId: thread, message: user))
         let speaker = bot ?? bots.first(where: { room!.memberIds.contains($0.id) })!
-        let reply = DemoFixture.reply(to: trimmed, from: speaker.name)
+        let reply = DemoFixture.reply(to: trimmed, from: speaker.name, language: language, onCall: onCall)
         stream(reply, from: speaker, inRoom: room != nil, thread: thread, parent: user.id)
         return .init(status: 200, body: Data(#"{"threadId":"\#(thread)"}"#.utf8))
     }
@@ -192,7 +199,9 @@ public final class DemoServer: @unchecked Sendable {
         }.first
         guard let found else {
             lock.unlock()
-            return .init(status: 409, body: Data(#"{"error":"This request was already answered."}"#.utf8))
+            let error = language.pick("This request was already answered.", "Cette demande a déjà reçu une réponse.")
+            let body = (try? JSONSerialization.data(withJSONObject: ["error": error])) ?? Data()
+            return .init(status: 409, body: body)
         }
         var card = bots[found.botIndex].messages![found.messageIndex]
         card.card?.answered = behavior
@@ -203,8 +212,14 @@ public final class DemoServer: @unchecked Sendable {
         lock.unlock()
         emit(.messagePatch(threadId: threadId, message: card))
         let text = behavior == "allow"
-            ? "Approved, thank you. The internal TestFlight upload is done; the build shows up in App Store Connect in a few minutes."
-            : "Understood, I won't upload it. The build stays on the computer until you say so."
+            ? language.pick(
+                "Approved, thank you. The internal TestFlight upload is done; the build shows up in App Store Connect in a few minutes.",
+                "Approuvé, merci. Le téléversement TestFlight interne est fait ; le build paraîtra dans App Store Connect d'ici quelques minutes."
+            )
+            : language.pick(
+                "Understood, I won't upload it. The build stays on the computer until you say so.",
+                "Compris, je ne le téléverse pas. Le build reste sur l'ordinateur jusqu'à nouvel ordre."
+            )
         stream(text, from: bot, inRoom: false, thread: threadId, parent: card.id)
         return .init(status: 200, body: Data(#"{"outcome":"\#(behavior == "allow" ? "allowed" : "denied")"}"#.utf8))
     }

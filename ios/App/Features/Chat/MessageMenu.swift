@@ -1,6 +1,7 @@
 // The long-press menu on a transcript message: reactions, Copy, Select Text,
 // then the desktop's message actions (WP1: View Source, Reply, Read Aloud,
-// Regenerate, Pin), Edit and retry, and the routed-by line of an Auto room.
+// Regenerate, Pin), Edit and retry, Report on a bot's reply, and the
+// routed-by line of an Auto room.
 // One seam shared by the iPhone's context menu and the iPad's hover row: it
 // takes what each action does as closures and decides nothing about layout.
 // An action is passed as nil when this message or this pairing cannot do it
@@ -21,6 +22,8 @@ struct MessageActionSet {
     var pinned = false
     /// An Auto room picked this speaker (RM10).
     var routedBy: RoutedBy?
+    /// Report a bot's reply (App Store guideline 1.2): opens the report sheet.
+    var report: (() -> Void)?
 }
 
 struct MessageMenu: View {
@@ -103,6 +106,10 @@ struct MessageMenu: View {
             Divider()
             Button("Edit and retry", systemImage: "pencil") { edit() }
                 .disabled(bot.busy == true || editDisabled)
+        }
+        if let report = actions.report {
+            Divider()
+            Button("Report", systemImage: "flag", action: report)
         }
         if let routedBy = actions.routedBy {
             Section {
