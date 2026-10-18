@@ -243,14 +243,16 @@ export const ACCOUNT_ERASURE_HEADER = "x-perspicax-erasure";
 export const OWN_ACCOUNT_ERASE_TIMEOUT_MS = 10_000;
 const OWN_ACCOUNT_ERASE_ANSWER_MAX_BYTES = 8 * 1024;
 /** What the erasure of the person's own account did. `subject`: Perspicax
- * refused the person's sign-in token; `last_admin`: the last active admin
+ * refused the person's sign-in token; `reauth_required` (2026-10-18): the
+ * token proves no interactive sign-in of the last five minutes (a refreshed
+ * one never does); `last_admin`: the last active admin
  * cannot be erased; `bound`: a product an administrator configured still
  * uses one of the person's keys; `unsupported`: an older Perspicax without the route;
  * `refused`: another 4xx (its status kept); `link`: no link or the link
  * token was refused; `unreachable`: no answer, a 5xx or an unreadable one. */
 export type OwnAccountErasure =
   | { ok: true; sub: string; auditId?: string }
-  | { ok: false; error: "link" | "subject" | "last_admin" | "bound" | "unsupported" | "refused" | "unreachable"; status?: number };
+  | { ok: false; error: "link" | "subject" | "reauth_required" | "last_admin" | "bound" | "unsupported" | "refused" | "unreachable"; status?: number };
 
 /** What an image's first bytes say it is; only a PNG or a JPEG is served. */
 export function avatarContentType(bytes: Uint8Array): AvatarImage["contentType"] | null {
@@ -970,7 +972,9 @@ export class PerspicaxDirectory {
     return { ok: true, avatar: null };
   }
 
-  /** 2026-10-17: the signed-in person erases their own Perspicax account:
+  /** 2026-10-17: the signed-in person erases their own Perspicax account
+   * (2026-10-18: `subjectToken` is the access token of the sign-in they made
+   * again for it, server/account-reauth.ts, never a refreshed one):
    * `POST` OWN_ACCOUNT_ERASE_PATH `{ "confirm": true }` with the link token
    * (`Authorization: Bearer`, which server calls) and the person's live
    * sign-in access token (SUBJECT_TOKEN_HEADER, who), as writeOwnAvatar
@@ -1036,6 +1040,7 @@ export class PerspicaxDirectory {
       return { ok: true, sub, ...(typeof parsed.audit_id === "string" ? { auditId: parsed.audit_id.slice(0, 128) } : {}) };
     }
     if (status === 403 && parsed.code === "subject") return { ok: false, error: "subject", status };
+    if (status === 403 && parsed.code === "reauth_required") return { ok: false, error: "reauth_required", status };
     if (status === 409 && parsed.code === "last_admin") return { ok: false, error: "last_admin", status };
     if (status === 409 && parsed.code === "bound") return { ok: false, error: "bound", status };
     if (status >= 400 && status < 500) return { ok: false, error: "refused", status };

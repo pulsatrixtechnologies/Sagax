@@ -906,6 +906,7 @@ import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./ro
 import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
 import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedServerEntry } from "./plugin-marketplaces.ts";
 import { createAccountRoutes } from "./routes/account.ts";
+import { ACCOUNT_REAUTH_PATH, AccountReauth } from "./account-reauth.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
@@ -25790,14 +25791,20 @@ ROUTES.push(createAccountRoutes({
   // Perspicax erases the account first (POST /api/v1/pulsabot/people/me/erase
   // with the link token and the person's live sign-in access token); nothing
   // is deleted here unless it did.
-  perspicaxDeletion: async (principalId) => {
+  // 2026-10-18: with the access token of the sign-in the person just made
+  // again for it (accountReauth, POST /api/me/reauth), never the session's
+  // own token, which this server refreshes: Perspicax refuses a refreshed
+  // one (`reauth_required`), so a server that only holds refresh tokens
+  // erases nobody.
+  perspicaxDeletion: async (principalId, sessionId) => {
     const person = principals.byId(principalId.trim().toLowerCase());
     if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory || !person?.subject || person.subject.iss !== IDENTITY.issuer) return { ok: false, error: "link" };
-    if (!idpSessions) return { ok: false, error: "subject" };
-    const subject = await idpSessions.subjectToken({ iss: person.subject.iss, sub: person.subject.sub });
-    if (!subject.ok) return { ok: false, error: subject.error === "no_session" || subject.error === "ended" ? "subject" : "unreachable" };
-    const erased = await perspicaxDirectory.eraseOwnAccount(subject.token);
+    const fresh = accountReauth?.take(sessionId, person.id);
+    if (!fresh || fresh.sub !== person.subject.sub) return { ok: false, error: "reauth_required" };
+    const erased = await perspicaxDirectory.eraseOwnAccount(fresh.accessToken);
     if (!erased.ok) {
+      // Not erased: the extra sign-in's grant goes (one sign-in, one try).
+      if (fresh.refreshToken) idpRevocations?.enqueue(fresh.refreshToken, "refresh_token", "a sign-in again whose account deletion was refused");
       console.warn(`account deletion: Perspicax refused (${erased.error}${erased.status ? ` ${erased.status}` : ""})`);
       return { ok: false, error: erased.error, ...(erased.status ? { status: erased.status } : {}) };
     }
@@ -25808,6 +25815,13 @@ ROUTES.push(createAccountRoutes({
       return { ok: false, error: "unreachable" };
     }
     return { ok: true };
+  },
+  reauthStart: ({ principalId, sessionId, client }) => {
+    const person = principals.byId(principalId.trim().toLowerCase());
+    if (IDENTITY.kind !== "perspicax" || !accountReauth || !person?.subject || person.subject.iss !== IDENTITY.issuer) return { error: "unavailable" };
+    const opened = accountReauth.openTicket({ principalId: person.id, subject: { ...person.subject }, sessionId }, client);
+    const url = `${IDENTITY.publicOrigin.replace(/\/+$/, "")}${ACCOUNT_REAUTH_PATH}?ticket=${encodeURIComponent(opened.ticket)}${client === "phone" ? "&client=phone" : ""}`;
+    return { url, expiresAt: opened.expiresAt };
   },
   deletePersonData,
 }));
@@ -29609,6 +29623,15 @@ if (oidcRp && idpRevocations) {
   oidcRp.setRevocations(idpRevocations);
   idpRevocations.start();
 }
+// 2026-10-18: the sign-in again an account deletion needs (memory only); an
+// unused one is revoked at Perspicax when it expires.
+const accountReauth = oidcRp
+  ? new AccountReauth({ revoke: (token, why) => idpRevocations?.enqueue(token, "refresh_token", why) })
+  : null;
+if (accountReauth) {
+  setInterval(() => accountReauth.sweep(), 60_000).unref();
+  sessions.onSessionRevoked((sessionId) => accountReauth.forgetSession(sessionId));
+}
 const idpSessions = oidcRp && idpVault
   ? new IdpSessionManager({
     vault: idpVault,
@@ -29770,6 +29793,7 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
   ? createOidcLoginRoutes({
     config: IDENTITY,
     rp: oidcRp,
+    ...(accountReauth ? { reauth: accountReauth } : {}),
     ...(idpRevocations ? { revocations: idpRevocations } : {}),
     sessionCookie: SESSION_COOKIE,
     // A successful sign-in also refreshes the directory (fire and forget):

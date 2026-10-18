@@ -23,6 +23,12 @@
 //     invite on sagax://pair instead, and a refused sign-in on
 //     sagax://pair?error=<code> (the app's authentication sheet only ever
 //     sees its own scheme, never the web /pair page);
+//   - answers GET /auth/oidc/reauth?ticket= (2026-10-18, account deletion,
+//     server/account-reauth.ts): the person signs in again (`prompt=login`,
+//     `max_age=0`) and the callback keeps that sign-in's access token for
+//     their DELETE /api/me; it ends on /#account-reauth=ok (web) or
+//     sagax://account-reauth?status=ok (phone), refusals on
+//     /#account-reauth-error=<code> or sagax://account-reauth?error=<code>;
 //   - or, for the desktop app, on its loopback listener (RFC 8252 7.3):
 //     /auth/oidc/start?client=desktop&return=http://127.0.0.1:<port>/<state>
 //     ends on that address with the credential in the fragment, which a
@@ -44,6 +50,7 @@
 // sections 2, 3 and 10 (slice 1).
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { ACCOUNT_REAUTH_PATH, phoneReauthReturn, webReauthReturn, type AccountReauth, type AccountReauthClient } from "./account-reauth.ts";
 import { immediateRevocations, type RevocationSink } from "./idp-revocations.ts";
 import { OidcRelyingParty, ROUTINE_DELEGATION_SCOPE, validInternalBase, validIssuer, type OidcClientKind, type OidcIdentity } from "./oidc-rp.ts";
 import type { Principal } from "./principals.ts";
@@ -281,6 +288,9 @@ export interface OidcLoginDeps {
    * (the durable queue, server/idp-revocations.ts); a single call now
    * without one. */
   revocations?: RevocationSink;
+  /** 2026-10-18: the tickets and fresh sign-ins of account deletion. Absent:
+   * GET /auth/oidc/reauth answers `unavailable`. */
+  reauth?: AccountReauth;
 }
 
 function redirect(res: ServerResponse, location: string, cookies: string[]): void {
@@ -492,6 +502,37 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     redirect(res, routineDelegationReturn({ ok: true }), [clearBinding]);
   };
 
+  const reauthReturn = (client: AccountReauthClient | OidcClientKind | undefined, outcome: { ok: true } | { error: string }) =>
+    client === "phone" ? phoneReauthReturn(origin, outcome) : webReauthReturn(outcome);
+
+  /** 2026-10-18: the person signed in again for their account deletion. Same
+   * subject, same live session, a recent auth_time (checked by the relying
+   * party), an access token; any refusal revokes what the provider gave. */
+  const reauthCallback = (res: ServerResponse, outcome: Extract<Awaited<ReturnType<OidcRelyingParty["callback"]>>, { ok: true }>): void => {
+    const identity = outcome.identity;
+    const refreshToken = outcome.grant.refreshToken;
+    const expect = outcome.expect;
+    const client = outcome.client;
+    const refuse = (code: string, why: string) => {
+      log(`oidc sign-in again refused (${code}): ${why}`);
+      if (refreshToken) revocations.enqueue(refreshToken, "refresh_token", `a refused sign-in again (${code})`);
+      redirect(res, reauthReturn(client, { error: code }), [clearBinding]);
+    };
+    if (!expect) return refuse("reauth_session", "the flow did not remember who started it");
+    if (identity.iss !== expect.subject.iss || identity.sub !== expect.subject.sub) {
+      return refuse("reauth_subject", "another account signed in at Perspicax");
+    }
+    if (!deps.grants.sessionPrincipal || deps.grants.sessionPrincipal(expect.sessionId) !== expect.principalId) {
+      return refuse("reauth_session", "the session that asked is gone");
+    }
+    const accessToken = outcome.grant.accessToken;
+    if (!accessToken) return refuse("grant", "the identity provider returned no access token");
+    if (!deps.reauth) return refuse("unavailable", "this server keeps no sign-in for account deletion");
+    const kept = deps.reauth.keep({ expect, accessToken, ...(refreshToken ? { refreshToken } : {}), authTimeSeconds: identity.authTime });
+    if (!kept) return refuse("reauth_stale", "the sign-in is not recent");
+    redirect(res, reauthReturn(client, { ok: true }), [clearBinding]);
+  };
+
   return async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> => {
     const path = url.pathname;
     if (path === OIDC_BACKCHANNEL_LOGOUT_PATH) {
@@ -501,6 +542,30 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
         return true;
       }
       await backchannel(req, res);
+      return true;
+    }
+    if (path === ACCOUNT_REAUTH_PATH) {
+      if (req.method !== "GET") {
+        res.writeHead(405, { allow: "GET", "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "method_not_allowed" }));
+        return true;
+      }
+      const taken = deps.reauth?.takeTicket(url.searchParams.get("ticket"));
+      if (!taken) {
+        log("oidc sign-in again refused: an unknown, used or expired ticket");
+        // Which app asked is unknown without the ticket: the phone names it.
+        redirect(res, reauthReturn(url.searchParams.get("client") === "phone" ? "phone" : "web", { error: "reauth_ticket" }), []);
+        return true;
+      }
+      let started;
+      try {
+        started = await rp.start({ purpose: "reauth", client: taken.client, principalId: taken.expect.principalId, subject: taken.expect.subject, sessionId: taken.expect.sessionId });
+      } catch (error) {
+        log(`oidc sign-in again could not start: ${error instanceof Error ? error.message : String(error)}`);
+        redirect(res, reauthReturn(taken.client, { error: "unavailable" }), []);
+        return true;
+      }
+      redirect(res, started.authorizationUrl, [oidcBindingCookie(deps.sessionCookie, deps.config.redirectUri, started.binding)]);
       return true;
     }
     if (path !== OIDC_START_PATH && path !== OIDC_CALLBACK_PATH) return false;
@@ -550,11 +615,16 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     if (!outcome.ok) {
       log(`oidc ${outcome.purpose === "routines" ? "routine delegation" : "sign-in"} refused (${outcome.code}): ${outcome.error}`);
       if (outcome.purpose === "routines") redirect(res, routineDelegationReturn({ error: outcome.code }), [clearBinding]);
+      else if (outcome.purpose === "reauth") redirect(res, reauthReturn(outcome.client, { error: outcome.code }), [clearBinding]);
       else fail(res, outcome.code, [clearBinding], outcome.client, outcome.returnTo);
       return true;
     }
     if (outcome.purpose === "routines") {
       delegationCallback(res, outcome);
+      return true;
+    }
+    if (outcome.purpose === "reauth") {
+      reauthCallback(res, outcome);
       return true;
     }
     const identity: OidcIdentity = outcome.identity;

@@ -26,6 +26,17 @@
 //   - another refusal: its 4xx with `perspicax_deletion_failed`; no link, no
 //     answer or a 5xx: 502 `perspicax_deletion_failed`.
 //
+// 2026-10-18: Perspicax erases only with a sign-in of the last five minutes
+// (its `403 reauth_required`), never with a token this server refreshed. So
+// the deletion uses the access token of a fresh sign-in the person made for
+// it (server/account-reauth.ts), never the session's own token:
+//   - POST /api/me/reauth `{ client: "web" | "phone" }` answers
+//     `{ url, expiresAt }`: the address the client opens in a browser to sign
+//     in again at Perspicax (a two-minute, single-use ticket for this session);
+//   - DELETE /api/me without such a sign-in, or when Perspicax finds it too
+//     old: 409 `reauth_required` (nothing deleted; the client signs in again
+//     and retries), never 401.
+//
 // Personal server: there is no account here; 400 `personal_server`, and the
 // phone forgets its pairing and erases its own data.
 import { PASS, type RouteHandler } from "./table.ts";
@@ -33,13 +44,18 @@ import { PASS, type RouteHandler } from "./table.ts";
 /** What Perspicax answered the erasure of the person's account. */
 export type PerspicaxDeletion =
   | { ok: true }
-  | { ok: false; error: "unsupported" | "subject" | "last_admin" | "bound" | "refused" | "link" | "unreachable"; status?: number };
+  | { ok: false; error: "unsupported" | "subject" | "reauth_required" | "last_admin" | "bound" | "refused" | "link" | "unreachable"; status?: number };
 
 export interface AccountRouteDeps {
   organization: () => boolean;
-  /** Erases the person's Perspicax account (their sign-in token and the
-   * link, PerspicaxDirectory.eraseOwnAccount). Never throws for a refusal. */
-  perspicaxDeletion: (principalId: string) => Promise<PerspicaxDeletion>;
+  /** Erases the person's Perspicax account with the fresh sign-in kept for
+   * this session (AccountReauth.take) and the link
+   * (PerspicaxDirectory.eraseOwnAccount); `reauth_required` without one.
+   * Never throws for a refusal. */
+  perspicaxDeletion: (principalId: string, sessionId: string) => Promise<PerspicaxDeletion>;
+  /** Opens the sign-in again for this session (POST /api/me/reauth): the
+   * absolute address to open, or why not. */
+  reauthStart?: (input: { principalId: string; sessionId: string; client: "web" | "phone" }) => { url: string; expiresAt: number } | { error: string };
   /** Deletes the person's data on this server (see the header). */
   deletePersonData: (principalId: string) => Promise<{ bots: number; threads: number }>;
 }
@@ -50,6 +66,27 @@ const FINISHING = "Your account is deleted in Perspicax. Deleting your data here
 
 export function createAccountRoutes(deps: AccountRouteDeps): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
+    if (path === "/api/me/reauth") {
+      if (method !== "POST") return json(res, 405, { error: "POST only" });
+      res.setHeader("cache-control", "no-store");
+      if (!deps.organization()) {
+        return json(res, 400, { error: "This is a personal computer: there is no account on it to delete.", code: "personal_server" });
+      }
+      const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : undefined;
+      const sessionId = auth.kind === "session" ? auth.session.id : undefined;
+      if (!principalId || !sessionId) return json(res, 403, { error: "Sign in with Pulsatrix to delete your account.", code: "identity_perspicax" });
+      if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      const body = await readBody(req) as Record<string, unknown> | null;
+      const client = body?.client === "phone" ? "phone" : body?.client === undefined || body?.client === "web" ? "web" : null;
+      if (!client) return json(res, 400, { error: "client is web or phone", code: "client" });
+      const started = deps.reauthStart?.({ principalId, sessionId, client }) ?? { error: "unavailable" };
+      if ("error" in started) {
+        return json(res, 503, { error: "Signing in again is not available on this server right now.", code: "reauth_unavailable" });
+      }
+      return json(res, 200, { url: started.url, expiresAt: started.expiresAt });
+    }
     if (path !== "/api/me") return PASS;
     if (method !== "DELETE") return json(res, 405, { error: "DELETE only" });
     res.setHeader("cache-control", "no-store");
@@ -57,7 +94,8 @@ export function createAccountRoutes(deps: AccountRouteDeps): RouteHandler {
       return json(res, 400, { error: "This is a personal computer: there is no account on it to delete. Forget this computer on the phone instead.", code: "personal_server" });
     }
     const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : undefined;
-    if (!principalId) return json(res, 403, { error: "Sign in with Pulsatrix to delete your account.", code: "identity_perspicax" });
+    const sessionId = auth.kind === "session" ? auth.session.id : undefined;
+    if (!principalId || !sessionId) return json(res, 403, { error: "Sign in with Pulsatrix to delete your account.", code: "identity_perspicax" });
     if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
       return json(res, 415, { error: "content-type must be application/json" });
     }
@@ -65,7 +103,7 @@ export function createAccountRoutes(deps: AccountRouteDeps): RouteHandler {
     if (body?.confirm !== true) return json(res, 400, { error: "Confirm the deletion ({ confirm: true }): it cannot be undone.", code: "confirm" });
     let erased: PerspicaxDeletion;
     try {
-      erased = await deps.perspicaxDeletion(principalId);
+      erased = await deps.perspicaxDeletion(principalId, sessionId);
     } catch {
       erased = { ok: false, error: "unreachable" };
     }
@@ -78,6 +116,12 @@ export function createAccountRoutes(deps: AccountRouteDeps): RouteHandler {
           });
         case "subject":
           return json(res, 409, { error: "Your Pulsatrix sign-in has expired. Sign in again, then retry.", code: "account_sign_in_again" });
+        case "reauth_required":
+          return json(res, 409, {
+            error: "To delete your account, sign in again with Pulsatrix first (less than five minutes before). Nothing was deleted.",
+            code: "reauth_required",
+            reauthPath: "/api/me/reauth",
+          });
         case "last_admin":
           return json(res, 409, {
             error: "You are your organization's last active administrator in Pulsatrix Perspicax: make someone else an administrator first, then delete your account.",

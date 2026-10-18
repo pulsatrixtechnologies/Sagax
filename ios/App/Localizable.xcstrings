@@ -68741,6 +68741,94 @@
           }
         }
       }
+    },
+    "You did not sign in again. Nothing was deleted.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You did not sign in again. Nothing was deleted."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous ne vous êtes pas reconnecté. Rien n'a été supprimé."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você não entrou novamente. Nada foi excluído."
+          }
+        }
+      }
+    },
+    "Another account signed in at Pulsatrix. Sign in with your own account to delete it. Nothing was deleted.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another account signed in at Pulsatrix. Sign in with your own account to delete it. Nothing was deleted."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un autre compte s'est connecté à Pulsatrix. Connectez-vous avec votre propre compte pour le supprimer. Rien n'a été supprimé."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outra conta entrou na Pulsatrix. Entre com a sua própria conta para excluí-la. Nada foi excluído."
+          }
+        }
+      }
+    },
+    "Signing in again did not work. Nothing was deleted; try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signing in again did not work. Nothing was deleted; try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La reconnexion n'a pas fonctionné. Rien n'a été supprimé; réessayez."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrar novamente não funcionou. Nada foi excluído; tente de novo."
+          }
+        }
+      }
+    },
+    "Sign in again with Pulsatrix, then delete your account. Nothing was deleted.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in again with Pulsatrix, then delete your account. Nothing was deleted."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnectez-vous avec Pulsatrix, puis supprimez votre compte. Rien n'a été supprimé."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entre novamente com a Pulsatrix e depois exclua sua conta. Nada foi excluído."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

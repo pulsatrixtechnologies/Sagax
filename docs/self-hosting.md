@@ -656,9 +656,18 @@ What changes:
   own account from Sagax (`DELETE /api/me`, iPhone Account > Delete
   Account): the server calls Perspicax `POST
   /api/v1/pulsabot/people/me/erase` with `{ "confirm": true }`, the link
-  token as Bearer and the person's live sign-in access token in
-  `X-Perspicax-Subject-Token`, so it can only erase the person whose token it
-  holds. Only once Perspicax answers `{ "erased": true }` does the server
+  token as Bearer and, in `X-Perspicax-Subject-Token`, the access token of
+  a sign-in the person made again just before (2026-10-18): the client calls
+  `POST /api/me/reauth` and opens the address it answers
+  (`/auth/oidc/reauth?ticket=`, a two-minute, single-use ticket for that
+  session), which asks Perspicax for a new sign-in (`prompt=login`,
+  `max_age=0`); the callback checks the same person, the same live session
+  and an `auth_time` of the last five minutes, and keeps that access token in
+  memory for this one deletion (an unused one is revoked when it expires).
+  The session's own token, which this server refreshes, is never used:
+  Perspicax refuses a refreshed token (`403 reauth_required`), so a server
+  that only holds refresh tokens erases nobody. Without such a sign-in,
+  `DELETE /api/me` answers 409 `reauth_required` and deletes nothing. Only once Perspicax answers `{ "erased": true }` does the server
   delete that person's data here. An older Perspicax (404 or 405 without the
   `X-Perspicax-Erasure` header) leaves everything as it was: 501
   `perspicax_deletion_unavailable`.

@@ -29,10 +29,13 @@ async function serve(auth: RequestAuth, deps: Partial<AccountRouteDeps>) {
   });
   servers.push(server);
   await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+  const reauth = (body: unknown = { client: "phone" }) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/me/reauth`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
   const remove = (body: unknown = { confirm: true }) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/me`, {
     method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   });
-  return { remove, deleted };
+  return { remove, reauth, deleted };
 }
 
 describe("DELETE /api/me", () => {
@@ -58,7 +61,7 @@ describe("DELETE /api/me", () => {
 
   it("erases the Perspicax account first, then the person's data, only when confirmed", async () => {
     const calls: string[] = [];
-    const { remove, deleted } = await serve(person(ADA), { perspicaxDeletion: async (id) => { calls.push(id); return { ok: true }; } });
+    const { remove, deleted } = await serve(person(ADA), { perspicaxDeletion: async (id, sessionId) => { calls.push(id); expect(sessionId).toBe("s"); return { ok: true }; } });
     expect((await remove({})).status).toBe(400);
     expect(calls).toEqual([]);
     const res = await remove();
@@ -71,6 +74,7 @@ describe("DELETE /api/me", () => {
 
   it.each([
     ["a refused sign-in token", { ok: false, error: "subject", status: 403 }, 409, "account_sign_in_again"],
+    ["no recent sign-in (2026-10-18)", { ok: false, error: "reauth_required", status: 403 }, 409, "reauth_required"],
     ["the last active admin", { ok: false, error: "last_admin", status: 409 }, 409, "last_admin"],
     ["a key a product still uses", { ok: false, error: "bound", status: 409 }, 409, "perspicax_key_in_use"],
     ["another refusal (its 4xx)", { ok: false, error: "refused", status: 404 }, 404, "perspicax_deletion_failed"],
@@ -108,6 +112,48 @@ describe("DELETE /api/me", () => {
   it("answers 502 and deletes nothing when the Perspicax call throws", async () => {
     const { remove, deleted } = await serve(person(ADA), { perspicaxDeletion: async () => { throw new Error("down"); } });
     expect((await remove()).status).toBe(502);
+    expect(deleted).toEqual([]);
+  });
+});
+
+describe("POST /api/me/reauth (2026-10-18)", () => {
+  it("is member scope, like the deletion it opens", () => {
+    expect(requiredScope("POST", "/api/me/reauth")).toBe("client");
+    expect(requiredScope("GET", "/api/me/reauth")).toBe("admin");
+  });
+
+  it("opens the sign-in again for this session's own person and answers the address, no-store", async () => {
+    const asked: unknown[] = [];
+    const { reauth } = await serve(person(ADA), {
+      reauthStart: (input) => { asked.push(input); return { url: "https://sagax.example.test/auth/oidc/reauth?ticket=t&client=phone", expiresAt: 42 }; },
+    });
+    const res = await reauth();
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({ url: "https://sagax.example.test/auth/oidc/reauth?ticket=t&client=phone", expiresAt: 42 });
+    expect(asked).toEqual([{ principalId: ADA, sessionId: "s", client: "phone" }]);
+    expect((await reauth({})).status).toBe(200);
+    expect(asked[1]).toMatchObject({ client: "web" });
+  });
+
+  it("refuses another client, no person, a personal server, a server that cannot sign in again, and GET", async () => {
+    const opened = { reauthStart: () => ({ url: "u", expiresAt: 1 }) };
+    expect((await (await serve(person(ADA), opened)).reauth({ client: "desktop" })).status).toBe(400);
+    expect((await (await serve(person(), opened)).reauth()).status).toBe(403);
+    const personal = await (await serve(person(ADA), { ...opened, organization: () => false })).reauth();
+    expect((await personal.json() as { code: string }).code).toBe("personal_server");
+    const none = await (await serve(person(ADA), {})).reauth();
+    expect(none.status).toBe(503);
+    expect((await none.json() as { code: string }).code).toBe("reauth_unavailable");
+    const failing = await (await serve(person(ADA), { reauthStart: () => ({ error: "unavailable" }) })).reauth();
+    expect(failing.status).toBe(503);
+  });
+
+  it("answers reauth_required with where to sign in again, and deletes nothing", async () => {
+    const { remove, deleted } = await serve(person(ADA), { perspicaxDeletion: async () => ({ ok: false, error: "reauth_required" }) });
+    const res = await remove();
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "reauth_required", reauthPath: "/api/me/reauth" });
     expect(deleted).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { AccountReauth } from "./account-reauth.ts";
 import { IDP_SWEEP_SLACK_MS, IdpGrantVault, IdpSessionManager } from "./idp-session.ts";
 import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, type OidcGrantKeeper, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneErrorLink, phoneReturnLink, profileManagement, sagaxReturnLink, scopesForRole, validLoopbackReturn, writesManagedProfile } from "./oidc-login.ts";
 import { RoutineConsents } from "./org-routine-consent.ts";
@@ -166,6 +167,7 @@ describe("the sign-in routes (in process)", () => {
   let rp: OidcRelyingParty;
   let consents: RoutineConsents;
   let grantKeeper: OidcGrantKeeper;
+  const reauth = new AccountReauth();
 
   beforeAll(async () => {
     provider = await startFakeOidcProvider({ user: USER });
@@ -199,6 +201,7 @@ describe("the sign-in routes (in process)", () => {
       openPairing: (input) => sessions.openPairing(input),
       serverName: () => "Acme & Co bots",
       log: () => {},
+      reauth,
     });
     server.on("request", (req, res) => {
       void routes(req, res, new URL(req.url ?? "/", base)).then((handled) => {
@@ -458,6 +461,86 @@ describe("the sign-in routes (in process)", () => {
       provider.user = { ...USER };
       consents.endForSubject(provider.issuer, bob.sub);
     }
+  });
+
+  describe("the sign-in again of an account deletion (2026-10-18)", () => {
+    /** A web sign-in, then its session asks to sign in again (`as` signs in at Perspicax instead). */
+    async function again(options: { as?: typeof USER; client?: "web" | "phone"; sessionGone?: boolean; claims?: (c: Record<string, unknown>) => Record<string, unknown> } = {}) {
+      const { callback } = await walk();
+      const cookie = callback!.headers.getSetCookie().find((c) => c.startsWith("omb_session_test="))!;
+      const record = sessions.authenticate(decodeURIComponent(cookie.split(";")[0]!.split("=")[1]!))!;
+      const expect = { principalId: record.principalId!, subject: { iss: provider.issuer, sub: record.idp!.sub }, sessionId: record.id };
+      const { ticket } = reauth.openTicket(expect, options.client ?? "web");
+      if (options.as) provider.user = { ...options.as };
+      if (options.sessionGone) {
+        sessions.revokeWhere((session) => session.id === record.id);
+        manager.release(record.id, { revokeAtIdp: true });
+      }
+      const start = await fetch(`${base}/auth/oidc/reauth?ticket=${ticket}`, { redirect: "manual" });
+      const to = start.headers.get("location") ?? "";
+      if (!to.startsWith(provider.issuer)) return { start, location: to, record, ticket, authorize: null as Record<string, string> | null };
+      const binding = start.headers.getSetCookie().find((c) => c.includes("_oidc="))!.split(";")[0]!;
+      if (options.claims) provider.tamper = { claims: options.claims };
+      try {
+        const authorize = await fetch(to, { redirect: "manual" });
+        const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+        return { start, location: back.headers.get("location") ?? "", record, ticket, authorize: provider.lastAuthorize };
+      } finally {
+        provider.tamper = {};
+        provider.user = { ...USER };
+      }
+    }
+
+    it("asks Perspicax for a new sign-in (prompt=login, max_age=0, the person's login_hint) and keeps its access token for that session", async () => {
+      const { location, record, authorize } = await again();
+      expect(location).toBe("/#account-reauth=ok");
+      expect(authorize).toMatchObject({ prompt: "login", max_age: "0", login_hint: USER.sub });
+      const fresh = reauth.take(record.id, record.principalId!);
+      expect(fresh?.sub).toBe(USER.sub);
+      expect(fresh?.accessToken).toBeTruthy();
+      // the session's own sign-in (and its refreshes) never sits here
+      expect(reauth.take(record.id, record.principalId!)).toBeNull();
+    });
+
+    it("ends a phone's on sagax://account-reauth, and takes a ticket once", async () => {
+      const { location, ticket } = await again({ client: "phone" });
+      expect(location).toBe(`sagax://account-reauth?address=${encodeURIComponent(base)}&status=ok`);
+      const replay = await fetch(`${base}/auth/oidc/reauth?ticket=${ticket}&client=phone`, { redirect: "manual" });
+      expect(replay.headers.get("location")).toBe(`sagax://account-reauth?address=${encodeURIComponent(base)}&error=reauth_ticket`);
+      const unknown = await fetch(`${base}/auth/oidc/reauth?ticket=nope`, { redirect: "manual" });
+      expect(unknown.headers.get("location")).toBe("/#account-reauth-error=reauth_ticket");
+    });
+
+    it("refuses another account, a gone session and a sign-in that is not recent, keeps nothing and revokes", async () => {
+      const other = { ...USER, sub: "01J9OTHER00000000000000000", email: "eve@example.test" };
+      let revokedBefore = provider.revoked.length;
+      const wrong = await again({ as: other });
+      expect(wrong.location).toBe("/#account-reauth-error=reauth_subject");
+      expect(reauth.has(wrong.record.id)).toBe(false);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(provider.revoked.length).toBeGreaterThan(revokedBefore);
+
+      revokedBefore = provider.revoked.length;
+      const gone = await again({ sessionGone: true });
+      expect(gone.location).toBe("/#account-reauth-error=reauth_session");
+      await new Promise((r) => setTimeout(r, 100));
+      expect(provider.revoked.length).toBeGreaterThan(revokedBefore);
+
+      // Perspicax answered with an old sign-in (it ignored max_age): refused.
+      revokedBefore = provider.revoked.length;
+      const stale = await again({ claims: (c) => ({ ...c, auth_time: Math.floor(Date.now() / 1000) - 600 }) });
+      expect(stale.location).toBe("/#account-reauth-error=reauth_stale");
+      expect(reauth.has(stale.record.id)).toBe(false);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(provider.revoked.length).toBeGreaterThan(revokedBefore);
+
+      const none = await again({ claims: (c) => { const { auth_time: _drop, ...rest } = c; return rest; } });
+      expect(none.location).toBe("/#account-reauth-error=reauth_stale");
+    });
+
+    it("answers 405 to another method", async () => {
+      expect((await fetch(`${base}/auth/oidc/reauth`, { method: "POST" })).status).toBe(405);
+    });
   });
 
   it("binds a web sign-in's grant to its session at once", async () => {

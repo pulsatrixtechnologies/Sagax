@@ -15,7 +15,9 @@ public extension CompanionClient {
 
     /// `DELETE /api/me` with the confirmation. A personal computer answers
     /// 400 `personal_server`; an organization server whose Perspicax cannot
-    /// delete accounts yet answers 501 `perspicax_deletion_unavailable`.
+    /// delete accounts yet answers 501 `perspicax_deletion_unavailable`; one
+    /// that needs the person to sign in again first (2026-10-18) answers 409
+    /// `reauth_required`: `beginAccountReauth()`, the sheet, then again.
     func deleteAccount() async throws -> AccountDeletionOutcome {
         let (data, response) = try await perform(deleteAccountRequest())
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -23,10 +25,42 @@ public extension CompanionClient {
             switch (http.statusCode, body?.code) {
             case (400, "personal_server"): return .personalServer
             case (501, _), (_, "perspicax_deletion_unavailable"): return .unavailable(body?.error)
+            case (409, "reauth_required"): return .reauthRequired(body?.error)
             default: throw APIError.status(code: http.statusCode, message: body?.error)
             }
         }
         return .deleted
+    }
+
+    /// `POST /api/me/reauth` `{ "client": "phone" }` (2026-10-18): the
+    /// address the authentication sheet opens so the person signs in again
+    /// at Perspicax right before deleting their account. Only that one path,
+    /// on https or on this connection's own host.
+    func beginAccountReauth() async throws -> URL {
+        struct Started: Decodable { var url: String? }
+        let started = try await send(accountReauthRequest(), as: Started.self)
+        guard let url = started.url.flatMap(URL.init(string:)), Self.isAccountReauthURL(url, base: connection.baseURL) else {
+            throw APIError.transport("The server did not start the sign-in again.")
+        }
+        return url
+    }
+
+    /// The start the server may hand out: its sign-in again path, on https,
+    /// or on the paired address itself.
+    static func isAccountReauthURL(_ url: URL, base: URL?) -> Bool {
+        guard url.path == "/auth/oidc/reauth", url.user == nil, url.password == nil, url.fragment == nil else { return false }
+        if url.scheme == "https" { return true }
+        return url.scheme == "http" && base?.scheme == "http" && url.host == base?.host && url.port == base?.port
+    }
+
+    /// Whether the sheet's return address says the person signed in again
+    /// (`sagax://account-reauth?status=ok`), or the refusal code.
+    static func accountReauthOutcome(_ callback: URL?) -> AccountReauthOutcome {
+        guard let callback, callback.scheme == "sagax", callback.host == "account-reauth",
+              let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems
+        else { return .failed(nil) }
+        if items.first(where: { $0.name == "status" })?.value == "ok" { return .signedIn }
+        return .failed(items.first(where: { $0.name == "error" })?.value)
     }
 
     // MARK: Bot settings
@@ -98,6 +132,10 @@ public extension CompanionClient {
 
     func deleteAccountRequest() throws -> URLRequest {
         try makeRequest("DELETE", "/api/me", encodedBody: ConfirmBody())
+    }
+
+    func accountReauthRequest() throws -> URLRequest {
+        try makeRequest("POST", "/api/me/reauth", encodedBody: AccountReauthBody())
     }
 
     func updateBotSettingsRequest(_ patch: BotSettingsPatch) throws -> URLRequest {

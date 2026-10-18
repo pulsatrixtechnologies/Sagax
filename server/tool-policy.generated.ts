@@ -186,6 +186,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"exact","route":"/api/me/github/token","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/mcp/servers","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"prefix","route":"/api/me/mcp/servers/","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
+  {"method":"ANY","kind":"exact","route":"/api/me/reauth","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/server-environment","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/me/server-environment/power","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/me/server-environment/stats","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},

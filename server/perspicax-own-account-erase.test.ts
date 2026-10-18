@@ -96,6 +96,7 @@ describe("erasing the person's own Perspicax account", () => {
   it.each([
     ["a 401 for the link token, even without the header", () => new Response(null, { status: 401 }), { error: "link", status: 401 }],
     ["a refused sign-in token", () => refusal(403, "subject"), { error: "subject", status: 403 }],
+    ["no recent sign-in on the token (2026-10-18)", () => refusal(403, "reauth_required"), { error: "reauth_required", status: 403 }],
     ["the last active admin", () => refusal(409, "last_admin"), { error: "last_admin", status: 409 }],
     ["a key a product still uses", () => refusal(409, "bound"), { error: "bound", status: 409 }],
     ["a link or service account", () => refusal(409, "conflict"), { error: "refused", status: 409 }],

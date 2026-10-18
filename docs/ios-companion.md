@@ -612,8 +612,14 @@ deletes their Sagax data (owned bots, own threads, server environment, saved
 settings, sign-in grants and routine delegation, sessions, and their name,
 address and photo on this server). Nothing is deleted unless Perspicax erased
 the account first. An older Perspicax answers 501
-`perspicax_deletion_unavailable` (the phone says to ask the organization); an
-expired Perspicax sign-in is 409 `account_sign_in_again`; the organization's
+`perspicax_deletion_unavailable` (the phone says to ask the organization);
+Perspicax erases only after a sign-in of the last five minutes (2026-10-18),
+so the first answer is 409 `reauth_required`: the phone calls `POST
+/api/me/reauth` `{ "client": "phone" }`, opens the address it answers in the
+authentication sheet (`ios/App/AccountReauthSheet.swift`; Perspicax asks for
+the sign-in again), which ends on `sagax://account-reauth?status=ok` (a
+refusal on `?error=<code>`), and sends the deletion again; an expired
+Perspicax sign-in is 409 `account_sign_in_again`; the organization's
 last active admin is 409 `last_admin`; a key a product the administrator
 configured still uses is 409 `perspicax_key_in_use`; any other refusal is
 `perspicax_deletion_failed` (on 502 the message says the deletion may have

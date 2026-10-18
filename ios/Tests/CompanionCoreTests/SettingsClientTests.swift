@@ -116,6 +116,35 @@ final class SettingsClientTests: XCTestCase {
         }
     }
 
+    func testDeleteAccountAsksToSignInAgainAndTheSheetStartIsTheServersOwn() async throws {
+        respond(#"{"error":"Sign in again first.","code":"reauth_required","reauthPath":"/api/me/reauth"}"#, status: 409)
+        let outcome = try await client().deleteAccount()
+        XCTAssertEqual(outcome, .reauthRequired("Sign in again first."))
+
+        respond(#"{"url":"https://sagax.example.test/auth/oidc/reauth?ticket=abc&client=phone","expiresAt":1}"#)
+        let url = try await client().beginAccountReauth()
+        XCTAssertEqual(url.absoluteString, "https://sagax.example.test/auth/oidc/reauth?ticket=abc&client=phone")
+        XCTAssertEqual(SettingsStub.captured?.httpMethod, "POST")
+        XCTAssertEqual(SettingsStub.captured?.url?.path, "/api/me/reauth")
+        XCTAssertEqual(try body()["client"] as? String, "phone")
+
+        // Never another page, nor plain http to another host.
+        for bad in ["https://sagax.example.test/elsewhere", "http://evil.example.test/auth/oidc/reauth?ticket=a", "https://u:p@sagax.example.test/auth/oidc/reauth"] {
+            respond(#"{"url":"\#(bad)"}"#)
+            do {
+                _ = try await client().beginAccountReauth()
+                XCTFail("\(bad) is refused")
+            } catch {}
+        }
+        let lan = URL(string: "http://127.0.0.1:8810/auth/oidc/reauth?ticket=a")!
+        XCTAssertTrue(CompanionClient.isAccountReauthURL(lan, base: URL(string: "http://127.0.0.1:8810")))
+
+        XCTAssertEqual(CompanionClient.accountReauthOutcome(URL(string: "sagax://account-reauth?address=x&status=ok")), .signedIn)
+        XCTAssertEqual(CompanionClient.accountReauthOutcome(URL(string: "sagax://account-reauth?address=x&error=reauth_stale")), .failed("reauth_stale"))
+        XCTAssertEqual(CompanionClient.accountReauthOutcome(URL(string: "sagax://pair?status=ok")), .failed(nil))
+        XCTAssertEqual(CompanionClient.accountReauthOutcome(nil), .failed(nil))
+    }
+
     // MARK: Bot settings
 
     func testBotSettingsDecodeAndShowTheEffectiveZone() async throws {

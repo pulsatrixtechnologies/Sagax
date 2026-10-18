@@ -124,7 +124,13 @@ struct AccountSettingsView: View {
         deleting = true
         defer { deleting = false }
         do {
-            switch try await client.deleteAccount() {
+            var outcome = try await client.deleteAccount()
+            // 2026-10-18: Perspicax needs a sign-in of the last five minutes.
+            if case .reauthRequired = outcome {
+                try await AccountReauthSheet.shared.signInAgain(with: client)
+                outcome = try await client.deleteAccount()
+            }
+            switch outcome {
             case .deleted:
                 closeSheet?()
                 session.forgetConnection(id: connection.id)
@@ -143,6 +149,12 @@ struct AccountSettingsView: View {
                 notice = Notice(
                     title: "Ask your organization",
                     message: message ?? String(localized: "Your organization must delete your account in Pulsatrix Perspicax. Nothing was deleted.")
+                )
+            case let .reauthRequired(message):
+                // Signed in again, yet still too old (a slow sheet): retry.
+                notice = Notice(
+                    title: "Sign in again",
+                    message: message ?? String(localized: "Sign in again with Pulsatrix, then delete your account. Nothing was deleted.")
                 )
             }
         } catch {

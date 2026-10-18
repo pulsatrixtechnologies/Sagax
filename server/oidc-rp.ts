@@ -16,6 +16,7 @@
 // section 2 ("Flux de connexion", "Vérification de l'id_token") and T10.
 import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify as verifySignature, type JsonWebKeyInput, type KeyObject } from "node:crypto";
 
+import { recentSignIn } from "./account-reauth.ts";
 import type { RevocationSink } from "./idp-revocations.ts";
 import { TokenCallPacer, tokenBudget } from "./idp-token-pacer.ts";
 import { authorizationServerMetadataUrls, pkcePair, readBounded, safeEndpoint } from "./mcp-oauth.ts";
@@ -144,8 +145,11 @@ export const ROUTINE_DELEGATION_SCOPE = "pulsabot:routines";
  * name and address on each refresh (principals drop claims a token lacks). */
 export const ROUTINE_DELEGATION_SCOPES = `openid profile email offline_access ${ROUTINE_DELEGATION_SCOPE}`;
 
-/** What a flow is for: a sign-in, or a routine delegation (slice 6). */
-export type OidcFlowPurpose = "signin" | "routines";
+/** What a flow is for: a sign-in, a routine delegation (slice 6), or the
+ * person signing in again right before deleting their account (2026-10-18,
+ * server/account-reauth.ts: `prompt=login`, `max_age=0`, a recent
+ * `auth_time` checked at the callback). */
+export type OidcFlowPurpose = "signin" | "routines" | "reauth";
 
 /** Who started a routine delegation flow, checked at the callback (D10). */
 export interface RoutineDelegationExpectation {
@@ -756,8 +760,10 @@ export class OidcRelyingParty {
   async start(options: { client?: OidcClientKind; returnTo?: string; purpose?: OidcFlowPurpose; principalId?: string; subject?: { iss: string; sub: string }; sessionId?: string } = {}): Promise<StartedFlow> {
     const purpose = options.purpose ?? "signin";
     let expect: RoutineDelegationExpectation | undefined;
-    if (purpose === "routines") {
-      if (!options.principalId || !options.subject || !options.sessionId) throw new OidcError("routines_session", "A routine delegation starts from a signed-in session.");
+    if (purpose === "routines" || purpose === "reauth") {
+      if (!options.principalId || !options.subject || !options.sessionId) {
+        throw new OidcError(purpose === "routines" ? "routines_session" : "reauth_session", purpose === "routines" ? "A routine delegation starts from a signed-in session." : "Signing in again starts from a signed-in session.");
+      }
       expect = { principalId: options.principalId, subject: { ...options.subject }, sessionId: options.sessionId };
     }
     const discovery = await this.discover();
@@ -799,6 +805,12 @@ export class OidcRelyingParty {
     // one for another account that signs in there (it would replace that
     // account's own delegation).
     if (expect) url.searchParams.set("login_hint", expect.subject.sub);
+    // 2026-10-18: a sign-in again, never an existing session at the
+    // provider (OIDC Core 3.1.2.1); the callback checks auth_time.
+    if (purpose === "reauth") {
+      url.searchParams.set("prompt", "login");
+      url.searchParams.set("max_age", "0");
+    }
     return { authorizationUrl: url.toString(), binding, state };
   }
 
@@ -892,6 +904,10 @@ export class OidcRelyingParty {
         keyFor: (kid) => this.keyFor(kid),
         nowSeconds: Math.floor(this.now() / 1000),
       });
+      // max_age was asked: the sign-in must be recent (OIDC Core 3.1.2.1).
+      if (flow.purpose === "reauth" && !recentSignIn(identity.authTime, this.now())) {
+        throw new OidcError("reauth_stale", "Perspicax did not sign you in again just now. Start again.");
+      }
       const grantedScope = typeof got.body.scope === "string" ? got.body.scope.slice(0, 1024) : undefined;
       return {
         identity,

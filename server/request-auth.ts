@@ -356,6 +356,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // Delete my account (organization server: the handler deletes only the
   // session's own person; a solo server answers 400 personal_server).
   { methods: ["DELETE"], path: /^\/api\/me$/ },
+  // Sign in again right before that deletion (2026-10-18): the handler opens
+  // a ticket for the session's own person only.
+  { methods: ["POST"], path: /^\/api\/me\/reauth$/ },
   // The phone's Bot Computer screen: one route for the person's own
   // computer (their server environment, or this computer's local container,
   // which the handler keeps to the owner).

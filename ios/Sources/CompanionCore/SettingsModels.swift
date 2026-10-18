@@ -455,6 +455,20 @@ public enum AccountDeletionOutcome: Equatable, Sendable {
     case personalServer
     /// 501 `perspicax_deletion_unavailable`: the organization must do it.
     case unavailable(String?)
+    /// 409 `reauth_required` (2026-10-18): sign in again at Perspicax
+    /// (`beginAccountReauth()`), then delete again. Nothing was deleted.
+    case reauthRequired(String?)
+}
+
+/// How the sign-in again of an account deletion ended in the sheet.
+public enum AccountReauthOutcome: Equatable, Sendable {
+    case signedIn
+    /// The server's refusal code (`reauth_subject`, `reauth_stale`, ...), if any.
+    case failed(String?)
+}
+
+struct AccountReauthBody: Encodable {
+    let client = "phone"
 }
 
 struct APIErrorWithCode: Decodable {
