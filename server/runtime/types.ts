@@ -133,6 +133,10 @@ export interface Assignment {
   /** The same brief to the same assignee under one parent is one request;
    * a repeat lands on it unless rework is set. */
   rework: boolean;
+  /** Another tree's live request this one joined (same brief, same
+   * assignee, same person, sent at the same time): it runs no turn of its
+   * own and settles with that request's result. */
+  joins?: string;
   /** While parked: the exact question for the person. */
   question?: string;
   /** The person's answer, harness-quoted, carried into the next turn. */

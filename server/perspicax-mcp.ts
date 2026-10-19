@@ -28,6 +28,7 @@ import { guardToolCall, type GuardOptions } from "./mcp-permissions.ts";
 import type { SubjectTokenOutcome } from "./idp-session.ts";
 import type { DirectoryProfile, ExchangeResult } from "./perspicax-link.ts";
 import { PERSPICAX_READ_ONLY_TOOLS } from "./drivers/acp/grok-read-only-tools.ts";
+import { executionKey, WriteOnce } from "./write-once.ts";
 
 export type PerspicaxUnavailableReason = "not_held" | "no_session" | "unreachable" | "rate_limited" | "no_delegation" | "unknown_speaker" | "unknown_profile";
 
@@ -95,6 +96,11 @@ export interface PerspicaxMcpOptions {
   /** Permission check for tools/call frames (server/mcp-permissions.ts). Null
    * or absent: no check. The audit hook never carries arguments or results. */
   permissionGuard?(input: { botId: string; principalId: string }): GuardOptions | null;
+  /** The scope a write of this turn is made once in (server/write-once.ts),
+   * or null for no guard: two unattended runs (routine passes, coordinated
+   * bots) of one person that send the same write with the same arguments
+   * at the same time make one call, the other gets its answer. */
+  writeOnceScope?(turn: { threadId: string; botId: string; principalId: string }): string | null;
   fetch?: typeof fetch;
   now?: () => number;
   log?: (line: string) => void;
@@ -108,6 +114,11 @@ export const PERSPICAX_ACCESS_ENDED = "Perspicax access for this turn ended";
 /** A call Sagax did not replay after Perspicax dropped the MCP session: it can
  * change data, so the bot decides (the call never reached Perspicax's tool). */
 export const PERSPICAX_SESSION_RESET = "Perspicax had dropped this MCP session (idle or restarted). Sagax opened a new one, but did not replay this call because it can change data: it did not run. Call it again if it is still wanted.";
+
+/** The answer a write that was not sent again carries in front of the first one's. */
+export const PERSPICAX_WRITE_REPLAYED = "Not sent again: another run made this same write with the same arguments moments ago (one write per execution key). Its answer follows; the record already exists.";
+/** Leases are per holder and renewals must reach Perspicax: never write-once. */
+const NEVER_WRITE_ONCE = new Set(["claim", "claim_renew", "claim_release", "claim_list"]);
 
 /** Requests that only read, safe to send again on a new session. */
 const READ_ONLY_METHODS = new Set(["tools/list", "resources/list", "resources/templates/list", "resources/read", "prompts/list", "prompts/get", "ping", "completion/complete"]);
@@ -242,6 +253,7 @@ export class PerspicaxMcp {
   private readonly initParams = new Map<string, Json>();
   private reopens = 0;
   private nativeCalls = 0;
+  private readonly writes = new WriteOnce<PerspicaxRelayAnswer>();
 
   constructor(options: PerspicaxMcpOptions) {
     this.options = options;
@@ -374,6 +386,33 @@ export class PerspicaxMcp {
    * the call comes from callTool, whose native tool the agents proxy already
    * put through the permission check, so it is not judged (nor audited) twice. */
   async relay(input: { threadId: string; generation: string; botId: string; profileId: string; frame: unknown; judged?: boolean }): Promise<PerspicaxRelayAnswer> {
+    const once = this.writeOnceKey(input);
+    if (!once) return this.relayFrame(input);
+    const kept = (answer: PerspicaxRelayAnswer) => answer.status === 200 && isObject(answer.body) && isObject(answer.body.result) && answer.body.result.isError !== true;
+    const { value, replayed } = await this.writes.run(once, () => this.relayFrame(input), kept);
+    if (!replayed || !isObject(value.body) || !isObject(value.body.result)) return value;
+    this.log(`perspicax mcp: profile ${input.profileId} write not sent again (same execution key)`);
+    const result = value.body.result;
+    const content = Array.isArray(result.content) ? result.content : [];
+    return { status: 200, body: { ...value.body, id: (input.frame as Json).id, result: { ...result, content: [{ type: "text", text: PERSPICAX_WRITE_REPLAYED }, ...content] } } };
+  }
+
+  /** The execution key of a write this turn makes once, or null. */
+  private writeOnceKey(input: { threadId: string; generation: string; botId: string; profileId: string; frame: unknown }): string | null {
+    if (!this.options.writeOnceScope || !isObject(input.frame)) return null;
+    const frame = input.frame;
+    if (frame.method !== "tools/call" || frame.id === undefined || perspicaxReplayable(frame)) return null;
+    const params = isObject(frame.params) ? frame.params : {};
+    const name = typeof params.name === "string" ? params.name : "";
+    if (!name || NEVER_WRITE_ONCE.has(name)) return null;
+    const entry = this.entries.get(key(input.threadId, input.generation, input.profileId));
+    if (!entry || entry.botId !== input.botId) return null;
+    const scope = this.options.writeOnceScope({ threadId: input.threadId, botId: input.botId, principalId: entry.principalId });
+    if (!scope) return null;
+    return executionKey([scope, entry.principalId, input.profileId, name, params.arguments ?? {}]);
+  }
+
+  private async relayFrame(input: { threadId: string; generation: string; botId: string; profileId: string; frame: unknown; judged?: boolean }): Promise<PerspicaxRelayAnswer> {
     const entry = this.entries.get(key(input.threadId, input.generation, input.profileId));
     if (!entry || entry.botId !== input.botId) return { status: 403, body: { error: "this Perspicax profile is not mounted in this turn", code: "profile_not_mounted" } };
     if (!isObject(input.frame)) return { status: 400, body: rpcError(null, -32600, "Invalid Request") };

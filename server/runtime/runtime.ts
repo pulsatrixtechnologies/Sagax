@@ -47,6 +47,9 @@ export interface BeginRequest {
 }
 
 const BRIEF_MAX = 12_000;
+/** Two trees that send the same brief to the same teammate within this
+ * window send one request: the later one joins the live one. */
+const JOIN_WINDOW_MS = 15 * 60_000;
 const RESULT_MAX = 12_000;
 const DETAIL_MAX = 400;
 
@@ -194,8 +197,11 @@ export class Runtime {
     const lineage = parent ? path(this.store, parent) : [];
     const root = lineage[0];
     const target = req.assignee;
-    // Work cannot go back up its own tree: results return by themselves.
-    if (lineage.some(a => a.assignee.botId === target.botId &&
+    const mode = req.mode ?? "work";
+    // Work cannot go back up its own tree: results return by themselves. A
+    // consultation can: the teammate asks the bot that sent it the work a
+    // question and gets the answer, nothing is handed back.
+    if (mode !== "consult" && lineage.some(a => a.assignee.botId === target.botId &&
       (!a.assignee.destination.groupId || !target.destination.groupId || a.assignee.destination.groupId === target.destination.groupId))) {
       return refuse("Cannot assign work back to an ancestor; results return automatically");
     }
@@ -214,7 +220,6 @@ export class Runtime {
     const chiefLineage = Boolean(req.requester.chief) || lineage.some(a => a.requester.chief === true);
     const { level, source } = this.level({ own: req.levels.own, chief: req.levels.chief, origin: (root ?? req).origin.kind, chiefLineage,
       driverKind: req.driverKind });
-    const mode = req.mode ?? "work";
     const node: Assignment = {
       id: randomUUID(), rootId: parent ? parent.rootId : "", ...(parent ? { parentId: parent.id } : {}), depth: parent ? parent.depth + 1 : 0,
       // The origin is written once at the root and copied down.
@@ -228,12 +233,45 @@ export class Runtime {
     const problem = this.safe("validate", () => this.runner.validate(node, parent));
     if (this.lastThrew) return refuse("The host could not validate the request now");
     if (problem) return refuse(problem);
+    const leader = parent && !req.rework ? this.joinable(node, parent) : undefined;
+    if (leader) node.joins = leader.id;
     this.store.transaction(() => {
-      this.store.insert(node, { kind: "enqueued", at: now, detail: "queued" });
+      this.store.insert(node, { kind: "enqueued", at: now, detail: leader ? `queued: joined ${leader.id}` : "queued" });
       if (root?.budgets) { root.budgets.requests += 1; this.store.update(root); }
     });
     this.touch(node, ...root ? [root] : []);
     return { ok: true, assignment: node, duplicate: false };
+  }
+
+  /** The live request of another tree this one can join: same mode, brief,
+   * teammate and room, for the same person, at the same level, sent within
+   * JOIN_WINDOW_MS, itself running its own turn. Never one in this tree. */
+  private joinable(node: Assignment, parent: Assignment): Assignment | undefined {
+    const now = this.clock.now();
+    const person = (a: Assignment) => a.origin.onBehalfOf ?? "";
+    return this.store.all({ nonTerminal: true }).find(c =>
+      c.id !== node.id && c.joins === undefined && c.parentId !== undefined && c.rootId !== parent.rootId &&
+      c.mode === node.mode && c.brief === node.brief && c.assignee.botId === node.assignee.botId &&
+      c.assignee.destination.groupId === node.assignee.destination.groupId && c.level === node.level &&
+      person(c) === person(node) && now - c.createdAt <= JOIN_WINDOW_MS);
+  }
+
+  /** A joined request settles with its leader's result; a leader that is
+   * gone leaves it to run on its own. True while it still waits. */
+  private followLeader(n: Assignment): boolean {
+    if (n.joins === undefined) return false;
+    const leader = this.store.get(n.joins);
+    if (!leader) {
+      delete n.joins;
+      this.store.update(n, { kind: "admitted", at: this.clock.now(), detail: "the joined request is gone: runs on its own" });
+      this.touch(n);
+      return false;
+    }
+    if (!isTerminal(leader)) return true;
+    n.result = leader.result;
+    if (leader.evidence) n.evidence = leader.evidence; else delete n.evidence;
+    this.settle(n, leader.status as TerminalStatus, leader.outcome ?? "done", leader.outcomeDetail);
+    return true;
   }
 
   /** Expiry and stall checks, reports, waiting→resume, admission and
@@ -258,7 +296,9 @@ export class Runtime {
     for (const snapshot of [...live].sort((a, b) => b.depth - a.depth)) {
       const n = this.store.get(snapshot.id);
       if (!n || isTerminal(n)) continue;
-      if (n.status === "queued" && now - this.since(n.lastActivityAt) > this.limits.queueMs) {
+      if (n.status === "queued" && n.joins !== undefined && this.store.get(n.joins) && !isTerminal(this.store.get(n.joins)!)) {
+        // A joined request waits on its leader, whose own windows apply.
+      } else if (n.status === "queued" && now - this.since(n.lastActivityAt) > this.limits.queueMs) {
         this.cancelTree(n, n.executions > 0 ? "not resumed" : "never started", "failed", "expired");
       } else if (n.status === "needs_input" && now - this.since(n.lastActivityAt) > this.limits.inputWaitMs) {
         this.cancelTree(n, "the person did not answer", "failed", "expired");
@@ -290,6 +330,7 @@ export class Runtime {
       if (now - anchor <= this.limits.stallMs) continue;
       const tree = this.store.all({ rootId });
       if (tree.some(n => n.status === "needs_input")) continue;
+      if (tree.some(n => n.joins !== undefined && !isTerminal(n))) continue;
       this.store.update(root, { kind: "stalled", at: now, detail: `no progress for ${duration(now - anchor)}` });
       this.cancelTree(root, `no progress for ${duration(this.limits.stallMs)}`, "failed", "stalled");
     }
@@ -323,6 +364,7 @@ export class Runtime {
       if (snapshot.status !== "queued" && snapshot.status !== "resume") continue;
       const n = this.store.get(snapshot.id);
       if (!n || (n.status !== "queued" && n.status !== "resume")) continue;
+      if (n.status === "queued" && this.followLeader(n)) continue;
       const thread = n.assignee.destination.threadId;
       // Same-conversation turns never overlap; same-room speakers take turns.
       if (busyThreads.has(thread)) continue;

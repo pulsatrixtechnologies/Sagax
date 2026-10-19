@@ -271,6 +271,38 @@ describe("RuntimeCoordinator: refusals in the legacy words", () => {
     await w.host.release(node.id, { ok: true, text: "done" });
   });
 
+  it("lets a teammate consult an ancestor: auto reads a question up the tree as a consultation, work stays refused", async () => {
+    const w = world(hold);
+    const { node } = send(w, chief, "gen-1", undefined, builder, "Build it");
+    w.coordinator.tick();
+    const ask = (mode: "work" | "consult" | "auto", threadId = "chief-consult") => w.coordinator.enqueue(builder, "gen-1", node.id,
+      { ...chief, threadId }, "chief", "Which column order?", false, false, "", undefined, userOrigin, mode);
+    expect(() => ask("work")).toThrow("Cannot assign work back to an ancestor; results return automatically");
+    const asked = ask("auto");
+    expect(w.coordinator.children(node.id).find(c => c.id === asked.node.id)).toBeDefined();
+    w.coordinator.tick(); await flush();
+    expect(w.host.runs.find(r => r.node.id === asked.node.id)?.text).toBeTruthy();
+    expect(w.coordinator.node(asked.node.id)?.status).toBe("completed");
+    expect(ask("consult")).toMatchObject({ duplicate: true, node: { id: asked.node.id } });
+    await w.host.release(node.id, { ok: true, text: "done" });
+  });
+
+  it("a request another tree already sent joins it and settles with its result, failure included", async () => {
+    const w = world(hold);
+    const other: RoomAddress = { botId: "other", threadId: "other-chat" };
+    const first = send(w, chief, "gen-1", undefined, builder, "Poll: free tomorrow?");
+    const second = send(w, other, "gen-2", undefined, { ...builder, threadId: "builder-from-other" }, "Poll: free tomorrow?");
+    expect(second.joined).toBe(true);
+    w.coordinator.tick(); await flush();
+    expect(w.host.runs.map(r => r.node.id)).toEqual([first.node.id]);
+    await w.host.release(first.node.id, { ok: false, text: "engine down" });
+    w.coordinator.tick(); await flush();
+    expect(w.coordinator.node(second.node.id)).toMatchObject({ status: "failed" });
+    // Settled: a later identical request runs on its own.
+    const third = send(w, { botId: "third", threadId: "third-chat" }, "gen-3", undefined, { ...builder, threadId: "builder-from-third" }, "Poll: free tomorrow?");
+    expect(third.joined).toBeUndefined();
+  });
+
   it("refuses a second assignment to a teammate that completed one, unless it is rework", async () => {
     const w = world();
     const { node } = send(w, chief, "gen-1", undefined, builder, "Build it");

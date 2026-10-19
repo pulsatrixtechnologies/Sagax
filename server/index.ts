@@ -614,7 +614,7 @@ import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
 import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
 import { recordRoutineToggle, routineToggleForViewer } from "./routine-chat-events.ts";
-import { nextOccurrence, ROUTINE_RESTARTED, RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineMemoryHint, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
+import { nextOccurrence, ROUTINE_RESTARTED, ROUTINE_RESUME_PROMPT, RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineMemoryHint, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
@@ -715,6 +715,7 @@ import {
   isTurnEventQuarantined,
 } from "./turn-dispatch-guard.ts";
 import { createGracefulShutdown } from "./graceful-shutdown.ts";
+import { drainTurns, saveInterruptedTurns, shutdownDrainMs, takeInterruptedTurns, TURN_RESUME_PROMPT, type InterruptedTurn } from "./interrupted-turns.ts";
 import { acquireDataDirLeaseForProcess } from "./data-dir-lease.ts";
 import { createWorkspaceAccess, describeEdition, editionStatus, hostedWorkspaceConfiguration, hostedWorkspaceConfigured, editionForMembers, LICENSE_WARN_DAYS, licenseWarning, sharedWorkspaceFullAccessConfigured, loadEnterpriseLayer, workspaceMembership, type EditionStatus, type WorkspaceAccess } from "./enterprise.ts";
 import { environmentDescriptor, environmentLabel, loadEnvironmentId, releaseVersion, serverVersion } from "./environment.ts";
@@ -14183,7 +14184,11 @@ function routineRunNowParties(routine: Routine): { botOwner?: string; runAs?: st
 }
 /** Whether a run of this routine is queued, running or waiting. */
 function routineRunInFlight(routineId: string): boolean {
-  return (routines?.listRuns() ?? []).some((run) => run.routineId === routineId && ["queued", "running", "waiting"].includes(run.status));
+  return routineInFlightRun(routineId) !== undefined;
+}
+/** That run, the newest first. */
+function routineInFlightRun(routineId: string): RoutineRun | undefined {
+  return (routines?.listRuns() ?? []).find((run) => run.routineId === routineId && ["queued", "running", "waiting"].includes(run.status));
 }
 /** A run started by hand, in the admin activity log with who clicked. */
 function auditRoutineRunNow(auth: RequestAuth, routine: Routine, run: RoutineRun): void {
@@ -18884,6 +18889,8 @@ routines = new RoutineManager({
     if (store.isConfidentialThread(source.threadId)) return null;
     return source.threadId;
   },
+  // A run joining a conversation that is working waits for it (queued).
+  threadBusy: (botId, threadId) => threadBusy(botId, threadId),
   createGoalTask: (groupId, title) => store.createGroupTask(groupId, title, false),
   // 2026-10-15: "Disabled · 5 routines" in the conversation the change came
   // from (server/routine-chat-events.ts); each viewer sees their own.
@@ -24943,6 +24950,7 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     speaker: (threadId) => safetyPrincipal(threadId).principalId,
     mayRunNow: speakerMayRunRoutineNow,
     inFlight: routineRunInFlight,
+    inFlightRun: routineInFlightRun,
     runNow: (routineId) => routines?.runNow(routineId),
     audit: (routine, run, principalId) => auditRoutineRunNowBy(principalId ? { kind: "person", principalId, via: "sagax" } : { kind: "worker" }, routine, run),
   }),
@@ -30205,6 +30213,8 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
   perspicaxMcp = new PerspicaxMcp({
     issuer,
     link: () => directory,
+    // Routine runs and teammate turns: the same write twice at once is one.
+    writeOnceScope: ({ threadId }) => activeRoutineRunForThread(threadId) || internalTurnThreads.has(threadId) ? "unattended" : null,
     // a live call keeps its Perspicax tools mounted from turn to turn
     keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
     subjectOf: (principalId) => {
@@ -35305,6 +35315,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             botIds: z.array(z.string().min(1).max(128)).min(1).max(4).refine(ids => new Set(ids).size === ids.length),
             message: z.string().trim().min(1).max(4000),
             rework: z.boolean().default(false),
+            mode: z.enum(["work", "consult"]).optional(),
           }).safeParse(await readInternalBody());
           if (!parsed.success) return json(res, 400, { error: "Provide 1-4 distinct botIds and a message of 1-4000 characters." });
           const groupId = parsed.data.groupId ?? source?.id;
@@ -35383,9 +35394,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 if (!continued) createdThread = task.threadId;
                 applyDelegatedLevel(internalSender, internalCapability.threadId, store.bot(target.botId)!, target.threadId);
               }
-              const { node, duplicate } = coordinator.enqueue(address, internalCapability.generation, internalCapability.roomHandoffId,
+              // No mode: a question to the bot that sent this work (an
+              // ancestor) is a consultation, anything else is work.
+              const { node, duplicate, joined } = coordinator.enqueue(address, internalCapability.generation, internalCapability.roomHandoffId,
                 target, target.botId, parsed.data.message, approvalGranted, parsed.data.rework, [...store.messagesFor(address.threadId)].reverse().find(m => m.role === "user" && m.kind === "text")?.text ?? "",
-                requestBatchKey, origin);
+                requestBatchKey, origin, parsed.data.mode ?? "auto");
               // A repeat lands on the request already made, possibly in a
               // thread the person archived meanwhile; a thread opened for it
               // is never used.
@@ -35406,7 +35419,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 botId: node.botId,
                 botName: store.bot(node.botId)?.name,
                 outcome: notSent ? "failed" : !duplicate || node.status === "queued" ? "queued" : "injected",
-                detail: notSent ?? (duplicate
+                detail: notSent ?? (joined
+                  ? "the same request from another conversation is already with this teammate: joined it, its result will resume you"
+                  : duplicate
                   ? `already sent: it is ${node.status === "queued" ? "queued" : "under way"} and its result will resume you`
                   : title
                     ? `sent to "${title}"; it runs after anything still running there`
@@ -44705,6 +44720,7 @@ const onListening = async () => {
   // endpoint is listening; earlier dispatch can hit uninitialized bindings.
   routines!.start();
   memoryUpkeep.start();
+  resumeTurnsCutByRestart();
   const leftover = pendingThreads();
   if (leftover.length) console.log(`delegations: ${leftover.length} thread(s) with queued handoffs from a previous run — draining`);
   for (const threadId of leftover) {
@@ -44746,23 +44762,89 @@ if (TUNNEL_SOCKET) {
   });
 }
 
-/** A quit, update or restart cuts every turn still running, and no
- * turn.completed reaches those threads. Each says so now, as a provider
- * reload's does, instead of leaving a message unanswered with no reason; the
- * line is all it adds (no unread, no push). A hand-off turn the next start
- * goes on with (the runtime's restart policy) is left to say so then:
- * a failed line with Retry there would start the job a second time. */
+/** A quit, update or restart first lets the turns in progress finish, for
+ * a bounded time (SAGAX_SHUTDOWN_DRAIN_MS, server/interrupted-turns.ts):
+ * nothing new is dispatched meanwhile (routines paused, the coordinator
+ * closed: a teammate turn that finishes keeps its result). A turn waiting
+ * on a person's approval does not hold the stop. */
+const SHUTDOWN_DRAIN_MS = shutdownDrainMs(process.env, Boolean(process.versions.electron));
+function busyDirectThreads(): Array<{ botId: string; threadId: string }> {
+  const out: Array<{ botId: string; threadId: string }> = [];
+  for (const bot of store.bots) for (const task of store.tasks(bot.id)) if (threadBusy(bot.id, task.threadId)) out.push({ botId: bot.id, threadId: task.threadId });
+  return out;
+}
+function threadWaitsOnPerson(threadId: string): boolean {
+  return store.messagesFor(threadId).slice(-40).some((message) => Boolean(message.card?.requestId && !message.card.answered && !message.card.dismissed));
+}
+async function drainTurnsBeforeShutdown(): Promise<void> {
+  routines?.pause();
+  coordinator.close();
+  const left = await drainTurns({ busy: () => busyDirectThreads().map((t) => t.threadId), waitingOnPerson: threadWaitsOnPerson, timeoutMs: SHUTDOWN_DRAIN_MS });
+  console.log(`shutdown: ${left.length ? `${left.length} turn(s) still working, resumed at the next start` : "no turn in progress"}`);
+}
+
+/** The turns the drain did not see finish are cut, and no turn.completed
+ * reaches those threads. Each says so now, instead of leaving a message
+ * unanswered with no reason; the line is all it adds (no unread, no push).
+ * A direct turn is written down and resumes once at the next start
+ * (resumeTurnsCutByRestart); a routine run resumes through its own record
+ * (RoutineManager.takeRestartResumes); a hand-off turn the next start goes
+ * on with (the runtime's restart policy) is left to say so then. */
 function noteTurnsCutByShutdown(): void {
-  for (const bot of store.bots) {
-    for (const task of store.tasks(bot.id)) {
-      if (threadBusy(bot.id, task.threadId) && !coordinator.continuesAfterRestart(task.threadId)) {
-        store.appendMessage(task.threadId, { role: "bot", kind: "activity", tool: failedTurnTool("turn interrupted — Sagax restarted") });
-      }
+  const cut: InterruptedTurn[] = [];
+  for (const { botId, threadId } of busyDirectThreads()) {
+    if (coordinator.continuesAfterRestart(threadId)) continue;
+    if (routines?.isActiveThread(threadId)) {
+      store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: "Sagax restarted during this run; it resumes when Sagax is back", ok: true } });
+      continue;
     }
+    const speaker = turnSpeakers.get(threadId);
+    cut.push({ botId, threadId, at: Date.now(), ...(speaker ? { speaker: { ...speaker } } : {}) });
+    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: "Sagax restarted during this turn; it resumes when Sagax is back", ok: true } });
+  }
+  try {
+    saveInterruptedTurns(DATA_DIR, cut);
+  } catch (error) {
+    console.error(`shutdown: the cut turns could not be written down: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** At start: each routine run and direct turn the last stop cut goes on once
+ * in its own conversation, told to check what was already done first. */
+function resumeTurnsCutByRestart(): void {
+  for (const run of routines?.takeRestartResumes() ?? []) {
+    const threadId = run.threadId!;
+    if (!store.taskByThread(run.botId, threadId)) { routines?.failThread(threadId, ROUTINE_RESTARTED); continue; }
+    // The resumed turn decides again: handoffs the cut turn left queued
+    // would start work it may no longer want.
+    discardDelegations(commsBus, threadId);
+    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: "Resuming after a restart", ok: true } });
+    void startTurn(run.botId, ROUTINE_RESUME_PROMPT, { threadId, cardContinuation: true })
+      .catch((error) => routines?.failThread(threadId, `${ROUTINE_RESTARTED}: ${error instanceof Error ? error.message : String(error)}`));
+  }
+  let cut: ReturnType<typeof takeInterruptedTurns>;
+  try {
+    cut = takeInterruptedTurns(DATA_DIR);
+  } catch (error) {
+    console.error(`startup: the turns cut by the last stop could not be read: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  const failed = (threadId: string, why: string) =>
+    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: failedTurnTool(why) });
+  for (const turn of cut.stale) if (store.taskByThread(turn.botId, turn.threadId)) failed(turn.threadId, "turn interrupted — Sagax restarted");
+  for (const turn of cut.resume) {
+    if (!store.taskByThread(turn.botId, turn.threadId) || threadBusy(turn.botId, turn.threadId)) continue;
+    store.appendMessage(turn.threadId, { role: "bot", kind: "activity", tool: { name: "Resuming after a restart", ok: true } });
+    void startTurn(turn.botId, TURN_RESUME_PROMPT, {
+      threadId: turn.threadId, cardContinuation: true,
+      ...(turn.speaker ? { speaker: turn.speaker as TurnSpeaker } : {}),
+    }).catch((error) => failed(turn.threadId, `turn interrupted — Sagax restarted; resuming failed: ${error instanceof Error ? error.message : String(error)}`));
   }
 }
 
 const gracefulShutdown = createGracefulShutdown({
+  drain: drainTurnsBeforeShutdown,
+  drainTimeoutMs: SHUTDOWN_DRAIN_MS + 1_000,
   cleanup: [
     () => {
       followupsReady = false;

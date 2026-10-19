@@ -172,11 +172,14 @@ describe("bounded scheduled overlap and run health", () => {
     expect(new RoutineManager(h.options).listRoutines()[0].overlap).toBeUndefined();
   });
 
-  it("leaves explicit manual requests independent of the scheduled queue", async () => {
+  it("queues an explicit manual request behind the routine's run in progress: one pass at a time", async () => {
     const h = harness(start);
     const routine = h.manager.create({ ...input(), overlap: "queue" });
     h.setNow(start + 5 * 60_000); await h.manager.tick();
     h.manager.runNow(routine.id); await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+    expect(h.manager.listRuns().find(run => run.triggerSource === "manual")).toMatchObject({ status: "queued", deferredAt: expect.any(Number) });
+    finish(h, h.started[0]!.threadId, true); await h.manager.tick();
     expect(h.started).toHaveLength(2);
     expect(h.manager.listRuns().map(run => run.triggerSource).sort()).toEqual(["manual", "schedule"]);
   });
@@ -243,6 +246,9 @@ describe("bounded scheduled overlap and run health", () => {
     const disk = JSON.parse(readFileSync(h.options.file!, "utf8"));
     Object.assign(disk.routines[0], { failureStreak: 99, skippedRuns: -1, lastSkippedAt: 9e15, overlap: "invalid" });
     writeFileSync(h.options.file!, JSON.stringify(disk));
+    // The first restart resumes the cut run in place; the second cut fails it.
+    const resumed = new RoutineManager(h.options);
+    expect(resumed.takeRestartResumes()).toEqual([expect.objectContaining({ status: "running", restartResumes: 1 })]);
     for (let i = 0; i < 2; i++) {
       const saved = new RoutineManager(h.options).listRoutines()[0];
       expect(saved.failureStreak).toBe(1);
@@ -1153,7 +1159,13 @@ describe("RoutineManager", () => {
       h.failed.push(run);
       failureWasPersistedBeforeCallback = readFileSync(routineFile, "utf8").includes('"status": "failed"');
     };
+    // The first reload resumes the cut run once, in its own thread.
+    const resumed = new RoutineManager(h.options);
+    expect(resumed.takeRestartResumes()).toMatchObject([{ routineId: routine.id, status: "running", threadId: "thread-1", restartResumes: 1 }]);
+    expect(h.failed).toEqual([]);
+    // Cut a second time, it fails.
     const reloaded = new RoutineManager(h.options);
+    expect(reloaded.takeRestartResumes()).toEqual([]);
     expect(reloaded.listRoutines()).toHaveLength(1);
     expect(reloaded.listRuns()).toMatchObject([
       {
@@ -2192,9 +2204,10 @@ describe("RoutineManager", () => {
     expect(runs.get(otherRoomRun.id)).toMatchObject({ status: "running", groupId: "room-2" });
     expect(runs.get(botRun.id)).toMatchObject({ status: "running", target: "bot" });
 
+    // The second Run now of that routine waited for the first (one pass at
+    // a time), so only the first had a goal thread to interrupt.
     expect(h.interruptedGoals).toEqual([
       { groupId: "room-1", threadId: "goal-thread-1" },
-      { groupId: "room-1", threadId: "goal-thread-2" },
     ]);
     expect(h.interruptedTurns).toEqual([]);
     expect(h.changed.map((run) => run.id)).toEqual([waitingRun.id, runningRun.id, queuedRun.id]);
