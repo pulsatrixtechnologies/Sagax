@@ -70,7 +70,7 @@ import { hiddenKeySet, readSidebarHidden, useSidebarHidden } from "@/lib/sidebar
 import { readLastBotSection, rememberBotSection } from "@/lib/last-bot-section";
 import { approvalWithdrawKey, showNotification, withdrawNotification, type NotificationTarget } from "@/lib/notify";
 import { singleStreamTurnField, useShowThreads } from "@/lib/thread-preferences";
-import { isEarlierSegment, streamHomeThread } from "@/lib/single-stream";
+import { isEarlierSegment, isStreamSegment, streamHomeThread } from "@/lib/single-stream";
 import { freshTopicLanding, noteBackAtBot, noteLeftBot, onScreenBot, setOnScreenBot } from "@/lib/fresh-topic";
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
@@ -1869,7 +1869,17 @@ export function sendsToFreshTopic(state: Pick<AppState, "freshTopic" | "bots">, 
   if (!draft || action.voiceCall) return false;
   const bot = state.bots.find((candidate) => candidate.id === action.botId);
   const threadId = action.threadId ?? bot?.threadId;
-  return Boolean(bot && threadId === draft.threadId && bot.threadId === draft.threadId);
+  return Boolean(bot && threadId === draft.threadId && freshTopicCovers(bot, draft.threadId));
+}
+
+/** Whether a fresh topic can cover `threadId` on this bot: threads hidden,
+ * the bot on that thread, and a stream segment (never a confidential,
+ * hidden, routine, bot-opened or parallel thread). ChatView, the send and
+ * New topic all ask this one question. */
+export function freshTopicCovers(bot: Pick<NotificationThreadOwner, "threadId" | "tasks">, threadId: string): boolean {
+  if (!singleStreamTurnField().singleStream || bot.threadId !== threadId) return false;
+  const task = bot.tasks?.find((candidate) => candidate.threadId === threadId);
+  return Boolean(task && typeof task.createdAt === "number" && isStreamSegment({ ...task, createdAt: task.createdAt }));
 }
 
 /** The thread opening a bot itself shows. With threads shown, the one it
@@ -1911,6 +1921,8 @@ export function openBot(
   // Coming back to the single stream after a while lands on a fresh topic
   // (src/lib/fresh-topic.ts). A notification or a link passes landing false.
   if (!threadsShown && options.landing !== false) landOnBot(dispatch, bot, opened);
+  // a notification or a link: what it names is shown, never a draft over it
+  else dispatch({ type: "freshTopic", botId: bot.id, threadId: null });
 }
 
 /** Coming back to `bot` at `threadId`: a fresh topic drawn over it when the
@@ -1942,7 +1954,10 @@ export function startNewTopic(
   openBot(dispatch, bot, false, { landing: false });
   const task = bot.tasks?.find((candidate) => candidate.threadId === opened);
   const empty = !task || typeof task.updatedAt !== "number" || typeof task.createdAt !== "number" || task.updatedAt <= task.createdAt;
-  if (!empty) dispatch({ type: "freshTopic", botId: bot.id, threadId: opened });
+  // only over a topic of the stream: a confidential or routine thread never
+  if (!empty && task && typeof task.createdAt === "number" && isStreamSegment({ ...task, createdAt: task.createdAt })) {
+    dispatch({ type: "freshTopic", botId: bot.id, threadId: opened });
+  }
 }
 
 /** Open one of a bot's threads, as a notification, a chip, a link or a
@@ -4005,6 +4020,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const dispatch = useMemo(() => {
     const navigation = new Map<string, number>();
+    // The fresh topics being made, per bot (the first message's send).
+    const freshTopicsCreating = new Map<string, Promise<string>>();
     let selectionRevision = 0;
     const olderPagesInFlight = new Set<string>();
     let creatingBot = false;
@@ -4355,18 +4372,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // server creates the topic now, then the message goes there. No
           // empty topic is ever made ahead of it.
           if (freshSendBefore) {
-            const revision = (navigation.get(action.botId) ?? 0) + 1;
-            navigation.set(action.botId, revision);
             const { replyToId: _reply, ...rest } = action;
-            void botPatchQueue.flush(action.botId)
-              .then(() => api<{ bot: Bot }>(`/api/bots/${action.botId}/tasks`, { method: "POST", body: JSON.stringify({ stream: true }) }))
-              .then((r) => {
-                if (!r?.bot) throw new Error(t("stream.freshFailed"));
-                if (Array.isArray(r.bot.messages)) threadPages.set(r.bot.threadId, { messages: r.bot.messages, hasMore: r.bot.hasMore, activeLeafId: r.bot.activeLeafId, at: Date.now() });
-                if (navigation.get(action.botId) === revision) dispatch({ type: "taskSwitched", bot: r.bot });
-                rawDispatch({ type: "freshTopic", botId: action.botId, threadId: null });
-                dispatch({ ...rest, threadId: r.bot.threadId });
-              })
+            // A second message typed while the topic is being made waits
+            // for it and goes there too: one topic, never two.
+            let creating = freshTopicsCreating.get(action.botId);
+            if (!creating) {
+              const revision = (navigation.get(action.botId) ?? 0) + 1;
+              navigation.set(action.botId, revision);
+              creating = botPatchQueue.flush(action.botId)
+                .then(() => api<{ bot: Bot; task?: { threadId?: string } }>(`/api/bots/${action.botId}/tasks`, { method: "POST", body: JSON.stringify({ stream: true }) }))
+                .then((r) => {
+                  const created = r?.task?.threadId ?? r?.bot?.threadId;
+                  if (!r?.bot || !created) throw new Error(t("stream.freshFailed"));
+                  if (Array.isArray(r.bot.messages)) threadPages.set(r.bot.threadId, { messages: r.bot.messages, hasMore: r.bot.hasMore, activeLeafId: r.bot.activeLeafId, at: Date.now() });
+                  if (navigation.get(action.botId) === revision) dispatch({ type: "taskSwitched", bot: r.bot });
+                  rawDispatch({ type: "freshTopic", botId: action.botId, threadId: null });
+                  return created;
+                })
+                .finally(() => freshTopicsCreating.delete(action.botId));
+              freshTopicsCreating.set(action.botId, creating);
+            }
+            creating
+              .then((threadId) => dispatch({ ...rest, threadId }))
               .catch((error) => {
                 showError(error);
                 action.onError?.();
@@ -5002,8 +5029,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setOnScreenBot(onScreenId);
       noteBackAtBot(onScreenId);
     }
-    // Hidden or minimized, or another app in front (blur): away.
+    // Hidden or minimized, or another app in front (blur): away. Focus moving
+    // into a frame of this page (the built-in browser) is not leaving.
     const onVisibility = (event?: Event) => {
+      if (event?.type === "blur" && document.hasFocus()) return;
+      if (event?.type === "blur" && document.activeElement instanceof HTMLIFrameElement) return;
       if (!visible() || event?.type === "blur") {
         setOnScreenBot(null);
         noteLeftBot(onScreenId, Date.now());
@@ -5026,9 +5056,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("blur", onVisibility);
       window.removeEventListener("focus", onVisibility);
       window.removeEventListener("pagehide", onPageHide);
-      // Another bot, another view: this one is left now.
+      // Another bot, another view: this one is left now, and a fresh topic
+      // coming back put there goes (the next return asks the rule again).
       if (visible()) noteLeftBot(onScreenId, Date.now());
       setOnScreenBot(null);
+      if (stateRef.current.freshTopic[onScreenId]?.auto) dispatch({ type: "freshTopic", botId: onScreenId, threadId: null });
     };
   }, [onScreenId, showThreads, dispatch]);
 
@@ -5278,7 +5310,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const selected = stateRef.current.bots.find((candidate) => candidate.id === bot.id);
           const shown = selected?.switchingTo ?? selected?.threadId;
           const selectedTask = bot.tasks?.find((task) => task.threadId === shown);
-          if (bot.id === stateRef.current.selectedId && stateRef.current.activeView === "chat" &&
+          // Under a fresh topic the thread is not on screen: its answer stays
+          // unread, so the topic gives way and shows it (ChatView).
+          const covered = stateRef.current.freshTopic[bot.id]?.threadId === shown;
+          if (!covered && bot.id === stateRef.current.selectedId && stateRef.current.activeView === "chat" &&
               (selectedTask?.unread || (!bot.tasks && bot.unread))) {
             if (selectedTask) selectedTask.unread = false;
             // Hidden routine runs must not put the dot back on the next frame.
@@ -5625,3 +5660,4 @@ export function formatTime(at: number) {
   // what toLocaleTimeString says, where a formatter would throw
   return Number.isNaN(date.getTime()) ? "Invalid Date" : TIME_FORMAT.format(date);
 }
+

@@ -159,6 +159,14 @@ struct ChatView: View {
         }
     }
 
+    /// The topic under a fresh one is live: it gives way.
+    var topicUnderFreshAlive: Bool {
+        guard session.isFreshTopic(current), case let .bot(bot) = current,
+              let task = bot.tasks?.first(where: { $0.threadId == bot.threadId }) else { return false }
+        return task.busy == true || task.activity == "working" || task.activity == "waiting-on-you"
+            || task.unread == true || task.waitingOnTeammate == true || session.state.queuedThreadIds.contains(bot.threadId)
+    }
+
     /// The topic a fresh draft's first message made for this bot, if any.
     var startedTopic: String? {
         guard case let .bot(bot) = chat else { return nil }
@@ -329,6 +337,11 @@ struct ChatView: View {
                     session.noteBackAtBot(bot.id)
                 }
             }
+        }
+        .onValueChange(of: topicUnderFreshAlive) { alive in
+            // the topic under a fresh one came alive (a turn, an approval, an
+            // answer): it is shown, never hidden behind the fresh topic
+            if alive, case let .bot(bot) = current { session.showTopicUnderFresh(bot.id) }
         }
         .onValueChange(of: startedTopic) { started in
             // the first message of a fresh topic made it: this chat moves there

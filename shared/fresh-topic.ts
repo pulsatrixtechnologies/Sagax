@@ -107,6 +107,9 @@ export function freshTopicOnReturn(input: FreshTopicInput): FreshTopicDecision {
   // Here a moment ago (another bot, another app for a minute): the topic
   // the person just read stays, however old it is.
   if (left !== undefined && now - left <= afterMs) return { fresh: false, reason: now - topic.updatedAt > afterMs ? "seen" : "recent" };
+  // Something happened there since they left (an answer that finished while
+  // the window was hidden is already marked read): they see it first.
+  if (left !== undefined && topic.updatedAt > left) return { fresh: false, reason: "unread" };
   if (left !== undefined) return { fresh: true, reason: "away" };
   if (now - topic.updatedAt > afterMs) return { fresh: true, reason: "idle" };
   return { fresh: false, reason: "recent" };

@@ -71,6 +71,8 @@ public enum FreshTopic {
         if let leftAt, now - leftAt <= afterMs {
             return Decision(fresh: false, reason: now - updated > afterMs ? .seen : .recent)
         }
+        // Something happened there since they left: they see it first.
+        if let leftAt, updated > leftAt { return Decision(fresh: false, reason: .unread) }
         if leftAt != nil { return Decision(fresh: true, reason: .away) }
         if now - updated > afterMs { return Decision(fresh: true, reason: .idle) }
         return Decision(fresh: false, reason: .recent)

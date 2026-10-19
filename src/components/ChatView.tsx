@@ -53,6 +53,7 @@ import {
   openNotificationTarget,
   openThread,
   startNewTopic,
+  freshTopicCovers,
   visibleMessages,
   type Action,
   type AppState,
@@ -1911,7 +1912,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   // topic, created on the server with its first message; this topic and the
   // earlier ones sit folded behind "Earlier topics".
   const freshDraft = useStoreSelector((current) => current.freshTopic[bot.id]);
-  const fresh = streamOn && !preview && freshDraft?.threadId === bot.threadId;
+  const fresh = streamOn && !preview && freshDraft?.threadId === bot.threadId && freshTopicCovers(bot, bot.threadId);
   const [previousOpenFor, setPreviousOpenFor] = useState<string | null>(null);
   const previousKey = `${bot.threadId}:${fresh ? "fresh" : "live"}`;
   const previousOpen = previousOpenFor === previousKey;
@@ -1920,7 +1921,8 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   // Coming back put the fresh topic there: it gives way the moment the topic
   // under it comes alive (another device's turn, an approval), never hiding
   // a live conversation. A New topic the person started stays.
-  const underAlive = Boolean(currentTask && (currentTask.busy || currentTask.activity === "working" || currentTask.activity === "waiting-on-you"));
+  const queuedUnder = (state.pendingQueued[bot.threadId]?.length ?? 0) > 0;
+  const underAlive = Boolean(currentTask && (currentTask.busy || currentTask.activity === "working" || currentTask.activity === "waiting-on-you" || currentTask.unread || currentTask.waitingForTeammates || queuedUnder));
   useEffect(() => {
     if (fresh && freshDraft?.auto && underAlive) dispatch({ type: "freshTopic", botId: bot.id, threadId: null });
   }, [fresh, freshDraft?.auto, underAlive, bot.id, dispatch]);

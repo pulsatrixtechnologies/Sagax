@@ -29,6 +29,8 @@ extension Session {
     /// only ever adds a draft, never clears a New topic the person started.
     func landOnBot(_ chat: Chat, force: Bool = false, now: Date = Date()) {
         guard case let .bot(bot) = chat else { return }
+        // a notification or a link being opened shows what it names
+        if force, notificationChat != nil || pendingChat != nil { return }
         guard !SidebarPrefsModel.shared.showThreads,
               let task = (state.bot(bot.id) ?? bot).tasks?.first(where: { $0.threadId == bot.threadId }),
               FreshTopic.isSegment(task)
@@ -48,7 +50,10 @@ extension Session {
     }
 
     /// The topic under the draft again ("Earlier topics").
-    func showTopicUnderFresh(_ botId: String) { freshTopics[botId] = nil }
+    func showTopicUnderFresh(_ botId: String) {
+        freshTopics[botId] = nil
+        createdFreshTopics[botId] = nil
+    }
 
     func isFreshTopic(_ chat: Chat) -> Bool {
         guard case let .bot(bot) = chat else { return false }

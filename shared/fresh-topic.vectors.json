@@ -24,7 +24,19 @@
       "reason": "recent"
     },
     {
-      "name": "away past the threshold while the topic moved",
+      "name": "away past the threshold, nothing since",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000
+      },
+      "now": 14500000,
+      "afterMs": 14400000,
+      "leftAt": 50000,
+      "fresh": true,
+      "reason": "away"
+    },
+    {
+      "name": "away past the threshold, the topic moved since: shown first",
       "topic": {
         "createdAt": 0,
         "updatedAt": 14000000
@@ -32,8 +44,8 @@
       "now": 14500000,
       "afterMs": 14400000,
       "leftAt": 50000,
-      "fresh": true,
-      "reason": "away"
+      "fresh": false,
+      "reason": "unread"
     },
     {
       "name": "away briefly",

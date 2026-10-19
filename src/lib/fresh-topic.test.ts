@@ -33,7 +33,9 @@ describe("freshTopicLanding", () => {
     noteLeftBot("b", now - 5 * H);
     resetFreshTopicMemory();
     expect(leftBotAt("b")).toBe(now - 5 * H);
-    expect(freshTopicLanding({ id: "b", tasks: [topic({ updatedAt: now - 10 * 60_000 })] }, "t-live", { now })).toEqual({ fresh: true, reason: "away" });
+    expect(freshTopicLanding({ id: "b", tasks: [topic({ updatedAt: now - 6 * H })] }, "t-live", { now })).toEqual({ fresh: true, reason: "away" });
+    // an answer that came in after they left is shown first
+    expect(freshTopicLanding({ id: "b", tasks: [topic({ updatedAt: now - 10 * 60_000 })] }, "t-live", { now }).reason).toBe("unread");
     noteBackAtBot("b");
     expect(leftBotAt("b")).toBeUndefined();
     // here a minute ago: the old topic the person just read stays

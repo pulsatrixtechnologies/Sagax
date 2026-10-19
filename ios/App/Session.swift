@@ -96,6 +96,9 @@ final class Session: ObservableObject {
     /// Per bot, the topic a fresh draft's first message just created: the
     /// chat on screen moves there.
     @Published var startedTopics: [String: String] = [:]
+    /// Per bot, a topic made for a fresh draft whose first message has not
+    /// gone through yet: a retry goes there, never into a second topic.
+    var createdFreshTopics: [String: String] = [:]
     @Published private(set) var notificationAuthorization: UNAuthorizationStatus = .notDetermined
     /// Distinguishes a real `.notDetermined` result from the in-memory value
     /// used while notification settings are still loading at launch.
@@ -112,11 +115,17 @@ final class Session: ObservableObject {
 
     /// A notification response that should be pushed by the roster's
     /// NavigationStack after the exact detached task has been activated.
-    @Published private(set) var notificationChat: Chat?
+    @Published private(set) var notificationChat: Chat? {
+        // a notification opens what it names, never a fresh topic over it
+        didSet { if case let .bot(bot)? = notificationChat { freshTopics[bot.id] = nil } }
+    }
 
     /// A chat a deep link asked for, consumed by the roster's
     /// NavigationStack the same way a notification response is.
-    @Published private(set) var pendingChat: Chat?
+    @Published private(set) var pendingChat: Chat? {
+        // a link opens what it names, never a fresh topic over it
+        didSet { if case let .bot(bot)? = pendingChat { freshTopics[bot.id] = nil } }
+    }
     @Published private(set) var pendingInbox = false
     /// Who this phone is signed in as (`GET /api/auth/session`), for the
     /// home's photo. Nil until loaded, or when the server does not say.
@@ -1382,13 +1391,20 @@ final class Session: ObservableObject {
             var destination = chat.destination
             // The first message of a fresh topic: the server makes the topic
             // now, then the message goes there (no empty topics before it).
+            var startedTopic: (botId: String, threadId: String)?
             if case let .bot(bot) = chat, freshTopics[bot.id] == bot.threadId {
-                let created = try await client.createTopic(botId: bot.id)
-                guard self.client?.connection.id == connectionID else { return false }
-                applyProfileBot(created.bot)
-                freshTopics[bot.id] = nil
-                startedTopics[bot.id] = created.threadId
-                destination = .bot(id: bot.id, threadId: created.threadId)
+                let threadId: String
+                if let made = createdFreshTopics[bot.id] {
+                    threadId = made
+                } else {
+                    let created = try await client.createTopic(botId: bot.id)
+                    guard self.client?.connection.id == connectionID else { return false }
+                    applyProfileBot(created.bot)
+                    createdFreshTopics[bot.id] = created.threadId
+                    threadId = created.threadId
+                }
+                startedTopic = (bot.id, threadId)
+                destination = .bot(id: bot.id, threadId: threadId)
             }
             let draftKey = AttachmentDraftKey(
                 destination: destination,
@@ -1440,6 +1456,12 @@ final class Session: ObservableObject {
                 attachments: uploaded
             )
             let receipt = try await client.send(text: message, to: destination, sendId: sendID, options: options)
+            // The fresh topic's first message went through: the chat moves there.
+            if let startedTopic {
+                createdFreshTopics[startedTopic.botId] = nil
+                freshTopics[startedTopic.botId] = nil
+                startedTopics[startedTopic.botId] = startedTopic.threadId
+            }
             // The send succeeded on the computer it was addressed to, so the
             // draft clears either way. Its queue row belongs to that computer,
             // and must not be drawn on one selected mid-upload.
