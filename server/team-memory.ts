@@ -84,7 +84,15 @@ export class TeamMemory {
     this.file = file;
     this.data = this.load();
     this.saved = this.snapshot();
+    // An entry stored before secrets were masked is masked now, on disk
+    // too, so it never reaches a shared prompt again.
+    if (this.maskedOnLoad) {
+      try { this.save(); }
+      catch { console.error("[team-memory] Could not rewrite team memory with its secrets masked."); }
+    }
   }
+
+  private maskedOnLoad = false;
 
   private snapshot(): TeamMemoryFile {
     return { version: 1, sections: Object.assign(Object.create(null), structuredClone(this.data.sections)) };
@@ -98,7 +106,11 @@ export class TeamMemory {
       // Like section context, team names are own keys, not inherited
       // properties; record parsers can omit ordinary names like __proto__.
       for (const [key, value] of Object.entries(input.sections)) {
-        data.sections[sectionContextKey(key)] = z.array(entrySchema).parse(value);
+        data.sections[sectionContextKey(key)] = z.array(entrySchema).parse(value).map((entry) => {
+          const masked = { ...entry, name: redactSecretsInText(entry.name), detail: redactSecretsInText(entry.detail), aliases: entry.aliases.map((alias) => redactSecretsInText(alias)) };
+          if (masked.name !== entry.name || masked.detail !== entry.detail || masked.aliases.some((alias, index) => alias !== entry.aliases[index])) this.maskedOnLoad = true;
+          return masked;
+        });
       }
       return data;
     } catch (error) {

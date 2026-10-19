@@ -77,7 +77,7 @@ const URL_USERINFO = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@'"]+:)([^\s/@'"«»]+)(@)/
 
 /** A key shape cut by a "…": what a title or a preview kept of a key once
  * it was shortened. Too short for KEY_PREFIXES, still part of the key. */
-const CUT_KEY = /\b(?:om[dg]_|sk-|xai-|gsk_|hf_|gh[pousr]_|github_pat_|xox[abposr]-|AKIA|AIza|npm_|eyJ)[A-Za-z0-9_-]*(?=…)/g;
+const CUT_KEY = /\b(?:om[dg]_|sk-|[sr]k_(?:live|test)_|xai-|gsk_|hf_|gh[pousr]_|github_pat_|xox[abposr]-|AKIA|AIza|npm_|eyJ)[A-Za-z0-9_-]*(?=…)/g;
 
 /** Mask the start of a key left in front of an ellipsis by a cut made
  * before any redaction (an older automatic task title, say). */

@@ -70,6 +70,16 @@ describe("propose", () => {
     expect(readFileSync(join(dir, "team-memory.json"), "utf8")).not.toContain(key);
   });
 
+  it("masks a secret already stored by an older release, on disk too", () => {
+    const key = "sk-ant-api03-" + "FAKEKEYNOTREAL".repeat(3);
+    memory.propose("", { kind: "place", name: "Billing API", detail: "plain", aliases: [] }, source);
+    const file = join(dir, "team-memory.json");
+    writeFileSync(file, readFileSync(file, "utf8").replace("plain", `the key is ${key}`));
+    const reloaded = new TeamMemory(file);
+    expect(reloaded.list("")[0]!.detail).not.toContain(key);
+    expect(readFileSync(file, "utf8")).not.toContain(key);
+  });
+
   it("rejects aliases that would make persisted entries unreadable", () => {
     expect(() => memory.propose("", { kind: "term", name: "OMB", detail: "app", aliases: ["x".repeat(121)] }, source)).toThrow(/aliases/);
     expect(memory.list("")).toEqual([]);

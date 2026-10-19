@@ -9009,6 +9009,11 @@ store.onChange((change) => {
     }
     case "bot.deleted":
       sentThreads.delete(change.botId);
+      // its memory upkeep state (waiting turns, deferred batches, status),
+      // whatever path deleted it (port de OpenMausBot #2856)
+      // (a deletion during startup may come before the upkeep exists)
+      try { memoryUpkeep.forgetBot(change.botId); }
+      catch { console.error("[memory-upkeep] Could not forget deleted bot's upkeep state."); }
       try { commandAllowlist.clear(change.botId); }
       catch { console.error("[command-allowlist] Could not remove deleted bot's saved rules."); }
       // Its plugins and the tokens saved for its marketplaces go with it.
@@ -19272,9 +19277,6 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
             .map((task) => ({ threadId: task.threadId, keys: threadEngineKeys(bot.id, task.threadId) }));
           store.deleteBot(bot.id, setupRequest);
           purgeDeletedThreadEngines(confidentialEngines, "bot deleted");
-          // its memory upkeep state (waiting turns, status) goes with it
-          // (port de OpenMausBot #2856)
-          memoryUpkeep.forgetBot(bot.id);
           // Removing schedules is not a security revocation. Keep them intact
           // if the bot/receipt write fails, so a failed deletion is retryable.
           routines!.disableForBot(bot.id);
