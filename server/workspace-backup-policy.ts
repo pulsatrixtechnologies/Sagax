@@ -74,15 +74,15 @@ export function redownloadedOrgLibraryPath(path: string): boolean {
  * Claude driver). They are dead once their turn settles, so they are never
  * exported. Unlike the saved auth paths above they are not refused on import:
  * v0.1.85 did export them, and such a backup must still restore, without them.
- * The same holds for the session registry's open marker: it describes the
- * process that wrote it, so it is never exported or installed, and a restore
- * leaves the destination's own marker where it is (workspace-backup.ts). */
+ * The same holds for the session registry's markers (open, unsynced): they describe the
+ * process that wrote them, so they are never exported or installed, and a restore
+ * leaves the destination's own markers where they are (workspace-backup.ts). */
 export function ephemeralWorkspaceTokenPath(path: string): boolean {
   // The server log window (server/server-log-ring.ts) belongs to the machine
   // and the process that wrote it, like the marker.
   // The internal bearers handed to a turn (`comms-tokens/<digest>.token`,
   // server/drivers/spawn-contract.ts) die with it like the hook tokens.
-  return /^(?:hook-tokens(?:\/|$)|comms-tokens(?:\/|$)|server-log(?:\/|$)|sessions\.json\.open$)/.test(path);
+  return /^(?:hook-tokens(?:\/|$)|comms-tokens(?:\/|$)|server-log(?:\/|$)|sessions\.json\.(?:open|unsynced)$)/.test(path);
 }
 
 /** A bot's DuckDB database (`bots/<id>/data.duckdb`, its WAL, its spill

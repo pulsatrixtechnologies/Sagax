@@ -9,7 +9,7 @@
 // endpoint, because EventSource cannot set headers. Failed exchanges are
 // counted per source: five in a minute lock that source out for ten.
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
 import { writeFileAtomic } from "./atomic.ts";
@@ -288,6 +288,15 @@ export class SessionRegistry {
   private readonly startedAt: number;
   private readonly options: SessionStoreOptions;
   private readonly openMarker: string;
+  /** Present while sessions.json may be behind memory: a write failed and no
+   * later write succeeded. Written with a plain create (no temp file, no
+   * rename), so it lands even when the atomic write of the registry did not;
+   * removed by the next successful write. */
+  private readonly unsyncedMarker: string;
+  /** "Sign in with Pulsatrix" sessions restored after an unclean restart:
+   * not served until the identity provider confirms them again
+   * (IdpSessionManager.recheck). Memory only. */
+  private readonly recheck = new Set<string>();
   private closed = false;
   /** Set on an OMB Cloud home (requireAdmin): only admin scope, anywhere. */
   private adminOnly: string | null = null;
@@ -299,7 +308,9 @@ export class SessionRegistry {
     this.now = options.now ?? Date.now;
     this.startedAt = this.now();
     this.openMarker = `${options.file}.open`;
+    this.unsyncedMarker = `${options.file}.unsynced`;
     const unclean = existsSync(this.openMarker);
+    const unsynced = existsSync(this.unsyncedMarker);
     try {
       mkdirSync(dirname(options.file), { recursive: true, mode: 0o700 });
       // Establish the guard before accepting any persisted bearer. Even if
@@ -309,11 +320,18 @@ export class SessionRegistry {
     } catch {
       throw new Error("Could not establish safe session storage.");
     }
-    this.load(!unclean);
+    this.load(!unclean, unclean && !unsynced);
     this.revalidateEmailSessions();
   }
 
-  private load(restoreAccounts: boolean): void {
+  /** After an unclean stop (a crash, an out-of-memory kill, a stop that
+   * outran its grace period) email and portal sessions still end: only a
+   * clean close proves their revocations reached disk. A "Sign in with
+   * Pulsatrix" session is kept when no write was lost (no unsynced marker),
+   * and only as "to recheck": the provider must refresh its grant before it
+   * is served again, so a logout or a disabled account that the crash hid is
+   * still caught (2026-10-19, JC signed out after every pulsabot restart). */
+  private load(restoreAccounts: boolean, restoreProviderSessions = false): void {
     if (!existsSync(this.options.file)) return;
     let raw: unknown;
     try {
@@ -322,7 +340,45 @@ export class SessionRegistry {
       return; // unreadable: start empty rather than refuse to boot; pairing again is cheap
     }
     const parsed = fileSchema.safeParse(raw);
-    if (parsed.success) this.sessions = parsed.data.sessions.filter(session => !session.ephemeral && (restoreAccounts || (session.email === undefined && session.userId === undefined && session.idp === undefined)));
+    if (!parsed.success) return;
+    // The email on a provider session is a label: its membership is the
+    // provider's (revalidateEmailSessions skips it too).
+    const providerOnly = (session: SessionRecord) => session.idp !== undefined && session.userId === undefined && session.membershipAuthority === undefined;
+    this.sessions = parsed.data.sessions.filter((session) => {
+      if (session.ephemeral) return false;
+      if (restoreAccounts || (session.email === undefined && session.userId === undefined && session.idp === undefined)) return true;
+      if (!restoreProviderSessions || !providerOnly(session)) return false;
+      this.recheck.add(session.id);
+      return true;
+    });
+  }
+
+  /** Whether a restored "Sign in with Pulsatrix" session still waits for its
+   * provider recheck before it may be served. */
+  needsRecheck(sessionId: string): boolean {
+    return this.recheck.has(sessionId);
+  }
+
+  /** The provider confirmed this session after a restart. */
+  recheckDone(sessionId: string): void {
+    this.recheck.delete(sessionId);
+  }
+
+  /** End every session still waiting for a recheck (a server without a
+   * provider to ask). Returns how many. */
+  dropPendingRechecks(): number {
+    const ids = [...this.recheck];
+    if (!ids.length) return 0;
+    this.revokeWhere((session) => this.recheck.has(session.id));
+    return ids.length;
+  }
+
+  private markUnsynced(): void {
+    try {
+      writeFileSync(this.unsyncedMarker, "A session write failed; account sessions end after an unclean restart.\n", { mode: 0o600 });
+    } catch {
+      /* the open marker alone still ends account sessions after a crash */
+    }
   }
 
   private syncDirectory(): void {
@@ -339,8 +395,16 @@ export class SessionRegistry {
     const dir = dirname(this.options.file);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const sessions = this.sessions.filter((session) => !session.ephemeral);
-    writeFileAtomic(this.options.file, JSON.stringify({ version: 1, sessions }, null, 2) + "\n", { mode: 0o600 });
-    this.syncDirectory();
+    try {
+      writeFileAtomic(this.options.file, JSON.stringify({ version: 1, sessions }, null, 2) + "\n", { mode: 0o600 });
+      this.syncDirectory();
+    } catch (error) {
+      this.markUnsynced();
+      throw error;
+    }
+    if (existsSync(this.unsyncedMarker)) {
+      try { unlinkSync(this.unsyncedMarker); } catch { /* stays conservative */ }
+    }
   }
 
   /** Call after HTTP/stream shutdown. A failed close leaves the open marker,
@@ -386,6 +450,7 @@ export class SessionRegistry {
   }
 
   private forget(sessionId: string): void {
+    this.recheck.delete(sessionId);
     this.lastSeenWrites.delete(sessionId);
     for (const [hash, ticket] of this.tickets) if (ticket.sessionId === sessionId) this.tickets.delete(hash);
     for (const listener of this.onRevoked) listener(sessionId);

@@ -87,7 +87,7 @@ describe("workspace backup data boundary", () => {
   });
 
   it("never exports the per-turn hook token directory, and only that directory", () => {
-    for (const path of ["hook-tokens", "hook-tokens/0123456789abcdef01234567.token", "sessions.json.open"]) expect(ephemeralWorkspaceTokenPath(path)).toBe(true);
+    for (const path of ["hook-tokens", "hook-tokens/0123456789abcdef01234567.token", "sessions.json.open", "sessions.json.unsynced"]) expect(ephemeralWorkspaceTokenPath(path)).toBe(true);
     for (const path of ["hook-tokens.md", "workspaces/bot/hook-tokens/notes.md", "attachments/api.token", "sessions.json.opened", "workspaces/bot/sessions.json.open"]) expect(ephemeralWorkspaceTokenPath(path)).toBe(false);
   });
 

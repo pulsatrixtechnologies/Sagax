@@ -127,7 +127,7 @@ const LIVE_DATABASE_SIDECARS = new Set(Object.keys(SNAPSHOT_DATABASES).flatMap((
  * machine's own (never exported or installed): a crash before the restore
  * still costs account sign-ins, as it would have without one. */
 function keptInPlace(name: string): boolean {
-  return preserved(name) || name.toLowerCase() === "sessions.json.open" || destinationSignInFile(name);
+  return preserved(name) || ["sessions.json.open", "sessions.json.unsynced"].includes(name.toLowerCase()) || destinationSignInFile(name);
 }
 /** Files a `*_FILE` variable names (a Docker secret, the Perspicax link
  * file `SAGAX_PERSPICAX_LINK_FILE`, a mail password) when they sit inside

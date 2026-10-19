@@ -741,12 +741,51 @@ describe("sessions from an OpenID Connect sign-in", () => {
     store.close();
   });
 
-  it("do not survive an unclean restart, like other account sessions", () => {
+  it("survive an unclean restart only as waiting for the provider's recheck (2026-10-19)", () => {
     const path = join(dir, "oidc-unclean.json");
     const store = new SessionRegistry({ file: path, now: () => clock });
-    const issued = store.issue({ label: "Chrome", scopes: ["client"], principalId: "pr_y", idp: { iss: "https://px.example.test", sub: "01K" } });
+    const issued = store.issue({ label: "Chrome", scopes: ["client"], email: "y@example.test", principalId: "pr_y", idp: { iss: "https://px.example.test", sub: "01K" } });
+    const email = store.issue({ label: "browser", email: "person@example.test", scopes: ["client"] });
+    expect(store.needsRecheck(issued.session.id)).toBe(false);
     // no close(): the open marker stays, as after a crash
+    const reopened = new SessionRegistry({ file: path, now: () => clock, emailScopes: () => ["client"] });
+    expect(reopened.authenticate(issued.token)?.id).toBe(issued.session.id);
+    expect(reopened.needsRecheck(issued.session.id)).toBe(true);
+    // an email session still needs a clean close to come back
+    expect(reopened.authenticate(email.token)).toBeNull();
+    reopened.recheckDone(issued.session.id);
+    expect(reopened.needsRecheck(issued.session.id)).toBe(false);
+    reopened.close();
+    const clean = new SessionRegistry({ file: path, now: () => clock });
+    expect(clean.needsRecheck(issued.session.id)).toBe(false);
+    expect(clean.authenticate(issued.token)?.id).toBe(issued.session.id);
+    clean.close();
+  });
+
+  it("do not survive an unclean restart when a session write was lost", () => {
+    const path = join(dir, "oidc-unsynced.json");
+    const store = new SessionRegistry({ file: path, now: () => clock });
+    const kept = store.issue({ label: "Chrome", scopes: ["client"], principalId: "pr_y", idp: { iss: "https://px.example.test", sub: "01K" } });
+    const revoked = store.issue({ label: "Safari", scopes: ["client"], principalId: "pr_y", idp: { iss: "https://px.example.test", sub: "01K" } });
+    const writes = vi.spyOn(atomic, "writeFileAtomic").mockImplementation(() => { throw new Error("ENOSPC"); });
+    const logger = vi.spyOn(console, "error").mockImplementation(() => {});
+    store.revokeWhere((s) => s.id === revoked.session.id);
+    writes.mockRestore(); logger.mockRestore();
+    expect(existsSync(`${path}.unsynced`)).toBe(true);
+    // crash: neither the revocation nor a clean close reached disk
     const reopened = new SessionRegistry({ file: path, now: () => clock });
+    expect(reopened.authenticate(revoked.token)).toBeNull();
+    expect(reopened.authenticate(kept.token)).toBeNull();
+    reopened.close();
+    expect(existsSync(`${path}.unsynced`)).toBe(false);
+  });
+
+  it("dropPendingRechecks ends the sessions a provider cannot confirm", () => {
+    const path = join(dir, "oidc-drop.json");
+    const store = new SessionRegistry({ file: path, now: () => clock });
+    const issued = store.issue({ label: "Chrome", scopes: ["client"], principalId: "pr_y", idp: { iss: "https://px.example.test", sub: "01K" } });
+    const reopened = new SessionRegistry({ file: path, now: () => clock });
+    expect(reopened.dropPendingRechecks()).toBe(1);
     expect(reopened.authenticate(issued.token)).toBeNull();
     reopened.close();
   });

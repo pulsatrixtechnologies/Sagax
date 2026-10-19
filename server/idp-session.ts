@@ -245,6 +245,10 @@ export interface IdpSessionStore {
   setScopes(id: string, scopes: Scope[]): boolean;
   setIdpRole(id: string, role: string | undefined): boolean;
   cancelPairingsFor(principalId: string): number;
+  /** Restored after an unclean restart and not yet confirmed (optional for
+   * stores that never restore one). */
+  needsRecheck?(sessionId: string): boolean;
+  recheckDone?(sessionId: string): void;
 }
 
 export interface IdpPrincipalStore {
@@ -316,6 +320,8 @@ export class IdpSessionManager {
   private readonly sessions: IdpSessionStore;
   private readonly principals: IdpPrincipalStore;
   private readonly now: () => number;
+  /** When this server started: a recheck needs a refresh after it. */
+  private readonly startedAt: number;
   private readonly refreshAfter: number;
   private readonly log: (line: string) => void;
   private readonly inflight = new Map<string, Promise<void>>();
@@ -341,6 +347,7 @@ export class IdpSessionManager {
     this.sessions = options.sessions;
     this.principals = options.principals;
     this.now = options.now ?? Date.now;
+    this.startedAt = this.now();
     this.refreshAfter = options.refreshAfterMs ?? DEFAULT_REFRESH_AFTER_SECONDS * 1000;
     this.log = options.log ?? ((line) => console.warn(line));
     this.schedule = options.schedule ?? ((run, delayMs) => { setTimeout(run, delayMs).unref(); });
@@ -385,6 +392,40 @@ export class IdpSessionManager {
     grant.sessionId = sessionId;
     delete grant.bindBy;
     this.vault.set(grant);
+    return true;
+  }
+
+  /** A session kept across an unclean restart is served again only once the
+   * provider refreshed its grant (or, for a device without a grant of its
+   * own, its person's freshest live grant) after the restart: a refusal ends
+   * it like any refused refresh, a transient failure leaves it waiting (the
+   * server answers 503, the device keeps its session). Resolves true when the
+   * session may be served. Never throws. */
+  async recheck(session: Readonly<SessionRecord>): Promise<boolean> {
+    if (!this.sessions.needsRecheck?.(session.id)) return true;
+    if (!session.idp) return false;
+    let ref = session.idp.grantRef;
+    let grant: IdpGrant | undefined;
+    try {
+      if (!ref) ref = this.liveGrantsFor(session.idp).sort((a, b) => b.refreshedAt - a.refreshedAt)[0]?.grantRef;
+      grant = ref ? this.vault.get(ref) : undefined;
+    } catch {
+      return false;
+    }
+    if (!ref || !grant || !isSessionGrant(grant)) return false;
+    const since = this.startedAt;
+    if (grant.lastOkAt < since) {
+      if (!this.inflight.get(ref) && this.gateOf(grant)) return false;
+      await this.startRefresh(ref);
+    }
+    let after: IdpGrant | undefined;
+    try {
+      after = this.vault.get(ref);
+    } catch {
+      return false;
+    }
+    if (!after || after.lastOkAt < since || !this.sessions.byId(session.id)) return false;
+    this.sessions.recheckDone?.(session.id);
     return true;
   }
 
