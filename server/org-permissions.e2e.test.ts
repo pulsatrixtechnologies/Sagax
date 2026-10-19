@@ -288,6 +288,11 @@ posixOnly("Perspicax organization: the permission matrix", () => {
       expect(refused.body, field).toMatchObject({ code: "admin_only_field", field, error: "Only an organization admin can change an address the server connects to." });
     }
     expect((await api("PATCH", "/api/config", alice, { tts: { baseUrl: "https://tts.example.test" } })).status).toBe(200);
+    for (const [patch, field] of [[{ vps: { sshAlias: "host-shell-box" } }, "vps"], [{ box: { token: "x" } }, "box"], [{ features: { vpsComputer: true } }, "features.vpsComputer"]] as const) {
+      const refused = await api("PATCH", "/api/config", bob, patch);
+      expect(refused.status, field).toBe(403);
+      expect(refused.body, field).toMatchObject({ code: "admin_only_field", field });
+    }
     const config = (await api("GET", "/api/config", bob)).body;
     expect(config.profile?.email ?? "").toBe("");
     const policy = await api("PATCH", "/api/org/settings", bob, { allowVaultExport: false });

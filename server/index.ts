@@ -24668,7 +24668,7 @@ const workspaceBackupAccess = {
     // 2026-10-19: a person an admin gave backup.workspace exports, never
     // restores (upload, preview, restore stay an admin's).
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
-    const restoring = /^\/api\/workspace-backup\/(?:upload|preview|restore)$/.test(path);
+    const restoring = ["upload", "preview", "restore"].some((step) => path === `/api/workspace-backup/${step}`);
     const delegate = !restoring && current?.kind === "session" && !current.scopes.includes("admin")
       && IDENTITY.kind === "perspicax" && sessionPermits(current.session, "backup.workspace");
     return Boolean(current && (current.scopes.includes("admin") || delegate) && current.kind === original.kind &&
@@ -43450,8 +43450,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // points the server at an endpoint they control.
         const record = body as Record<string, unknown>;
         const hostFeature = record.features && typeof record.features === "object"
-          ? ["sharedComputers", "claudeUserMcp"].find((key) => Object.hasOwn(record.features as object, key)) : undefined;
-        const field = ["signIn", "profile", "organization", "openaiCompat"].find((key) => Object.hasOwn(body, key))
+          ? ["sharedComputers", "claudeUserMcp", "vpsComputer", "boatComputer"].find((key) => Object.hasOwn(record.features as object, key)) : undefined;
+        // vps (an SSH alias of the server) and box (whose account runs the
+        // computers) choose where bots run: an admin's, like an address.
+        const field = ["signIn", "profile", "organization", "openaiCompat", "vps", "box"].find((key) => Object.hasOwn(body, key))
           ?? configAddressField(record) ?? (hostFeature ? `features.${hostFeature}` : undefined);
         if (field) return json(res, 403, {
           error: field.toLowerCase().endsWith("url")
