@@ -349,8 +349,8 @@ export function memberBot<T extends object>(bot: T, visible: VisibleSet): T {
   const { visibility: _visibility, ...rest } = bot as T & { visibility?: unknown; peers?: unknown };
   const peers = Array.isArray(rest.peers) ? (rest.peers as unknown[]).filter((id): id is string => typeof id === "string" && visible.bot(id)) : undefined;
   // a bot-to-bot conversation names the other bot: only one this member sees
-  const conversations = Array.isArray((rest as { botConversations?: unknown }).botConversations)
-    ? ((rest as { botConversations: Array<{ otherBotId?: unknown }> }).botConversations).filter((row) => typeof row.otherBotId === "string" && visible.bot(row.otherBotId))
+  const conversations = Array.isArray((rest as unknown as { botConversations?: unknown }).botConversations)
+    ? ((rest as unknown as { botConversations: Array<{ otherBotId?: unknown }> }).botConversations).filter((row) => typeof row.otherBotId === "string" && visible.bot(row.otherBotId))
     : undefined;
   const { botConversations: _conversations, ...base } = rest as typeof rest & { botConversations?: unknown };
   return { ...base, ...(peers ? { peers } : {}), ...(conversations?.length ? { botConversations: conversations } : {}) } as T;
