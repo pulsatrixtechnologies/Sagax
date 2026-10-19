@@ -4,7 +4,8 @@
 // and what one run did (its conversation, diff, commits, files), live.
 //
 // Sagax is a client here: each call goes to Perspicax's `/api/v1/agents`
-// with the person's own sign-in token (PerspicaxAgentsClient), and Perspicax
+// with this server's link token and the viewer's own sign-in token as the
+// subject (PerspicaxAgentsClient), and Perspicax
 // decides what they see and may do (scope, quotas, approvals). Nothing is
 // cached on this server but the local records of runs a bot launched from a
 // conversation (server/cloud-agents/store.ts), which these routes refresh so

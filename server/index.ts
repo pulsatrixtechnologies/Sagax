@@ -26290,7 +26290,7 @@ function wakeFromCloudAgentCompletion(event: CloudAgentCompletionEvent): void {
 }
 
 // Perspicax runs (the desktop's Code section, lot P1.7). On an organization
-// server Sagax calls Perspicax with the person's own sign-in token. The
+// server Sagax calls Perspicax with its link token, the person's sign-in token as the subject. The
 // built-in fake Perspicax (server/testing/fake-perspicax-agents.ts) answers
 // instead only when a verification launcher sets SAGAX_CODE_FIXTURE=1 (with
 // its sealed test PATH) on a solo server; an organization server never starts it.

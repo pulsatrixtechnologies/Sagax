@@ -30,7 +30,7 @@ afterEach(async () => {
 const access = () => ({ baseUrl: fake.url, token: fake.token, link: () => fake.linkToken });
 
 describe("PerspicaxAgentsClient", () => {
-  it("lists environments and runs with the bearer token", async () => {
+  it("lists environments and runs with the link token and the sign-in as subject", async () => {
     const client = new PerspicaxAgentsClient();
     const envs = await client.environments(access());
     expect(envs.map((env) => env.name)).toEqual(["demo/web-app", "demo/api"]);
@@ -343,5 +343,20 @@ describe("CloudAgentStore files", () => {
     const legacy = JSON.parse(readFileSync(join(dataDir, "cloud-agents", "records.json"), "utf8"));
     expect(legacy.agents[0].status).toBe("failed");
     expect(store.get(row.id)?.status).toBe("expired");
+  });
+});
+
+describe("testing the perspicax provider", () => {
+  it("never tests a token pasted in the request, only the person's own sign-in", async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "sagax-perspicax-"));
+    const tested: string[] = [];
+    const mgr = new CloudAgentManager({
+      store: new CloudAgentStore(dataDir),
+      credentials: new CloudAgentCredentialStore(dataDir, () => ({ kind: "key", key: Buffer.alloc(32, 7) })),
+      providers: new Map([["perspicax", { ...createPerspicaxProvider(fetch, () => fake.url, undefined, () => fake.linkToken), testToken: async (token: string) => { tested.push(token); } }]]),
+      accessToken: async () => fake.token,
+    });
+    await mgr.testCredential("pr_alice", "perspicax", "someone-elses-sign-in-token");
+    expect(tested).toEqual([fake.token]);
   });
 });
