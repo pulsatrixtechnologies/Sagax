@@ -1,8 +1,9 @@
 // Settings > Appearance, laid out as Grok Bot's settings pages (0.5.6, JC):
 // grey headings outside the cards, compact rows (label at the left, control
 // at the right), pill menus rather than native selects, no help text but a
-// short grey line where it avoids a mistake. The skin miniatures stay here;
-// the one-line Theme menu is General's (#573), not repeated.
+// short grey line where it avoids a mistake. The skin is chosen here only:
+// its family, variant and Light, Dark or Auto (2026-10-19; General's Theme
+// menu of #573 is gone, one option in one place).
 import { useState, useSyncExternalStore } from "react";
 import { ChevronDown } from "lucide-react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";

@@ -3890,7 +3890,48 @@ Skins are blocks of tokens in `src/styles.css` (`[data-skin="x"]`), listed
 in `src/lib/skins.ts`: Pulsatrix, Pulsatrix Light, Midnight, Atelier,
 Foundry, Lagoon, Graphite, Linen, Dusk, Daylight, Hibou 98 (`retro98`, plus
 its structural `src/styles/retro98.css`) and Meadow. Each skin is one mode
-(light or dark); there is no separate light/dark switch per skin.
+(light or dark).
+
+### Skin families (2026-10-19)
+
+JC: "chaque skin devrait avoir ses propres variantes au lieu d'avoir des
+skins très proches visuellement". Settings > Appearance > Skin shows
+FAMILIES (`src/lib/skin-families.ts`), then the chosen family's Variant
+(swatches, like Background effects' Colour) and its Mode (Light, Dark,
+Auto: follows the system; a pill like Intensity). A variant in a scheme IS
+one of the skins above, unchanged:
+
+- Pulsatrix: Blue (`pulsatrix-light` / `pulsatrix`).
+- Studio: Neutral (`daylight` / `midnight`), Slate (`linen` / `graphite`),
+  Plum (`dusk`, dark only), Meadow (`meadow`, light only).
+- Atelier: Brass (`atelier` / `foundry`), Lagoon (`lagoon`, light only).
+- Hibou 98: its own family, secret as before, no variant or mode row.
+
+Storage: `omb-skin` still holds the worn skin id (CSS, the Windows caption
+overlay, the phone's "Same as my computer" and older builds read it as
+before), so every saved skin maps to itself with no migration step.
+`omb-skin-mode` = "auto" adds Auto: the first-paint script (`index.html`,
+`src/lib/skin-bootstrap.ts`, kept equal by `skin-families.test.ts`),
+`readSkin()` and `installSkinAutoFollow()` (main.tsx, live on a system
+change) swap a paired skin for the system's scheme; a variant with one
+scheme turns Auto off. `omb-skin-variants` remembers the last variant per
+family. Both travel with the person (`shared/user-preferences.ts`), in
+backups, and `omb-skin-mode` in `/api/me/appearance`.
+
+- One option, one place: General's Theme menu (12 skin names) is gone; the
+  skin, its variant and the mode are chosen only in Appearance > Skin.
+- A new skin goes in a family (a variant's `light` or `dark`); the tests
+  fail if a skin id has no place or two. Each skin block sets
+  `--skin-swatch` (the decorative variant swatch, never text).
+- iOS mirrors the model (`ios/Sources/CompanionCore/SkinFamilies.swift`):
+  families Black (Black, Dim: the phone's own), Pulsatrix, Studio, Atelier;
+  Auto is ThemeMode `.system` with the variant's pair, Light or Dark is
+  `.fixed`; "Same as my computer" stays a source toggle. Meadow is not on
+  the phone yet, and Hibou 98 stays desktop only.
+- Tests: `src/lib/skin-families.test.ts`, `src/components/SkinPicker.dom.test.ts`,
+  `src/lib/skin-bootstrap.test.ts`, `ios/Tests/CompanionCoreTests/SkinFamiliesTests.swift`.
+  Gallery: `src/gallery/skin-families.html` (`?view=board` every family and
+  variant; `?skin=&auto=1&unlocked=1` the picker).
 
 - Never hard-code a colour in a component. Fix a failing pair in the skin
   block (or in `retro98.css` for Hibou 98), never in the `.tsx`.

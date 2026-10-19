@@ -119,7 +119,8 @@ describe("Settings → Appearance", () => {
   it("groups skins, thread visibility, and tool-call display with preservation copy", () => {
     const html = render();
     expect(html).toContain('<option value="appearance" selected="">Appearance</option>');
-    expect(html).toContain("Midnight");
+    // the skin families (2026-10-19): Midnight is Studio's Neutral variant
+    expect(html).toContain('data-skin-family="studio"');
     // one choice for whether and where threads show (2026-10-14)
     expect(html).toContain('aria-label="Conversation threads"');
     expect(html).not.toContain('aria-label="Show threads"');
@@ -299,7 +300,7 @@ describe("Settings → Appearance", () => {
     expect(html).not.toContain('aria-label="Choose sidebar density"');
     expect(html).not.toContain('aria-label="Show tool calls in chat"');
     expect(html).not.toContain('aria-label="Show unconfigured providers"');
-    expect(html).not.toContain("Midnight");
+    expect(html).not.toContain('data-skin-family="studio"');
   });
 
   it("makes local appearance available remotely without exposing server settings", () => {
@@ -312,7 +313,7 @@ describe("Settings → Appearance", () => {
     expect(html).not.toContain('<option value="connections">');
     expect(html).not.toContain('<option value="engines">');
     expect(html).not.toContain('<option value="backups">');
-    expect(html).toContain("Midnight");
+    expect(html).toContain('data-skin-family="studio"');
     expect(html).toContain('aria-label="Conversation threads"');
     // this computer's notification switches stay reachable from a remote page
     expect(html).toContain('<option value="notifications">Notifications</option>');
@@ -378,7 +379,7 @@ describe("Settings → Appearance", () => {
     const html = render();
     expect(html).toContain('<option value="organization" selected="">Organization</option>');
     fixture.section = "appearance";
-    expect(render()).toContain("Midnight");
+    expect(render()).toContain('data-skin-family="studio"');
   });
 });
 

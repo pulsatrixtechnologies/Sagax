@@ -3,7 +3,8 @@
 // app skin. Everything that draws (the retro owl assistant, its balloons and
 // dialogs, the late-90s skin layer) lives behind dynamic imports, so a device
 // that never finds the egg never downloads or runs any of it.
-import { applySkin, readSkin, type SkinId } from "./skins";
+import { applySkin, prefersDarkScheme, readSkin, resolveStoredSkin, type SkinId } from "./skins";
+import { readSkinAuto } from "./skin-families";
 
 /** Up up down down left right left right b a. */
 export const KONAMI_SEQUENCE = [
@@ -125,7 +126,8 @@ const documentSkin: RetroSkinSwap = {
     const stamped = typeof document === "undefined" ? undefined : document.documentElement.dataset.skin;
     return (stamped as SkinId | undefined) || readSkin();
   },
-  apply: applySkin,
+  // under Auto, the skin put back is the one the system's scheme asks for
+  apply: (id) => applySkin(resolveStoredSkin(id, readSkinAuto(), prefersDarkScheme())),
 };
 
 /**
