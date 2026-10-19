@@ -4253,8 +4253,8 @@ organization server serves the same bundle. Three ways in, all through
 - "What's new" opens once after an update (`whatsNewDecision`), never on a
   fresh install or a dev build. Before an update the feed's release body is
   shown by `UpdateBanner`, folded under "What's new in <version>" in the
-  small "Update ready" dialog (title, one sentence, the pills Not now and
-  Update). The dialog opens when an update has downloaded; after Not now,
+  small "Update ready" dialog (title, one sentence, the pills Later and
+  Restart to install). The dialog opens when an update has downloaded; after Later,
   the round cloud button at the right of the sidebar's account row
   (`SidebarProfileMenu`, `showsUpdateButton`, a downloaded update only)
   opens it again through `openUpdatePrompt` (`src/lib/update-prompt.ts`).
@@ -4276,6 +4276,39 @@ file with no English section is shown whole. A new release only needs its
 file in `docs/releases`; no list to edit. Tests:
 `src/lib/bundled-release-notes.test.ts`, `src/lib/release-notes.test.ts`,
 `src/components/SidebarProfileMenu.test.ts`.
+
+## Updates: confirmed, visible, never silent on Windows (2026-10-19)
+
+A Windows report: account menu > Help > "Check for updates" on an update
+already downloaded quit the app straight into a silent NSIS install, minutes
+with no window, shortcut and pin icons blank, Sagax not reopened; and a
+relaunch during that install showed a bare "Not Found". Keep these rules:
+
+- "Check for updates" (menu, Settings > Updates) never installs: it calls
+  `requestUpdateCheck` (`src/lib/update-prompt.ts`) and `UpdateBanner`
+  follows the check in its dialog: searching, "Sagax X.Y.Z is available"
+  (notes, progress, Later keeps it downloading), "Update ready" (Later,
+  Restart to install), "Sagax is up to date", or the failure with Try again.
+- Only the dialog's Restart to install installs, as
+  `updater.install({ confirmed: true })`. Main installs an unconfirmed call
+  (an older organization page) only after a native question, Later by
+  default (`electron/update-confirm.mjs`, coordinator `confirmInstall`).
+- Windows: `autoInstallOnAppQuit` is off (electron-updater would run the
+  installer silently on quit) and `quitAndInstall(false, true)` runs the
+  NSIS installer with its progress window, then reopens Sagax. macOS and
+  AppImage keep install on quit and the silent swap.
+- NSIS identity is pinned (`electron/packaging-windows.node-test.mjs`):
+  appId, productName, package name (install folder), shortcutName,
+  one-click per user, shortcuts created once and kept by updates
+  (`--keep-shortcuts`). `build/installer.nsh` only refreshes shell icons.
+- At start the packaged app waits on the loading screen while its bundle is
+  incomplete (`uiBundleState`, `waitForUiBundle`), and a main-frame load of
+  its page that answers an HTTP error or cannot connect is retried behind a
+  loading page, then shown as an error page with Try again
+  (`installLoadRecovery`, `electron/load-recovery.mjs`).
+- Tests: `electron/updater-coordinator.node-test.mjs`,
+  `electron/updater.test.mjs`, `electron/update-confirm.node-test.mjs`,
+  `electron/load-recovery.node-test.mjs`, `src/components/UpdateBanner.test.ts`.
 
 ## No phone-home
 

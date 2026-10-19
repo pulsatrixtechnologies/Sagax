@@ -8,11 +8,17 @@ import localOriginModule from "./local-origin.cjs";
 const LOCAL = "http://127.0.0.1:8799";
 const OTHER = "https://bots.example.test";
 
-const fixture = vi.hoisted(() => ({ autoUpdater: null, handlers: new Map(), fetch: null }));
+const fixture = vi.hoisted(() => ({ autoUpdater: null, handlers: new Map(), fetch: null, answer: 1, asked: [] }));
 
 vi.mock("electron", () => ({
-  app: { isPackaged: true, getPath: () => "/unused-updater-test-log" },
+  app: { isPackaged: true, getPath: () => "/unused-updater-test-log", getLocale: () => "fr-CA" },
   clipboard: { writeText: vi.fn() },
+  dialog: {
+    showMessageBox: vi.fn(async (...args) => {
+      fixture.asked.push(args.at(-1));
+      return { response: fixture.answer };
+    }),
+  },
   ipcMain: { handle: (name, handler) => fixture.handlers.set(name, handler) },
   net: { fetch: (...args) => fixture.fetch(...args) },
 }));
@@ -82,7 +88,7 @@ it("pins the feed to Sagax's GitHub releases with pre-releases off by default", 
   expect(autoUpdater.fullChangelog).toBe(true);
 });
 
-it("a downloaded update installs when the app quits, except a system package, which is the person's to install", async () => {
+it("a downloaded update installs when the app quits on macOS and AppImage only: never on Windows, never a system package", async () => {
   const platform = Object.getOwnPropertyDescriptor(process, "platform");
   const resourcesPath = process.resourcesPath;
   const appImage = process.env.APPIMAGE;
@@ -90,7 +96,8 @@ it("a downloaded update installs when the app quits, except a system package, wh
   try {
     for (const [os, marker, image, installsOnQuit] of [
       ["darwin", null, null, true],
-      ["win32", null, null, true],
+      // Windows: on quit electron-updater would run the installer silently.
+      ["win32", null, null, false],
       ["linux", null, "/home/a/Sagax.AppImage", true],
       ["linux", "deb", null, false],
       ["linux", "rpm", null, false],
@@ -104,6 +111,7 @@ it("a downloaded update installs when the app quits, except a system package, wh
       const { updater, autoUpdater } = await load(() => false);
       updater.startUpdater();
       expect(autoUpdater.autoInstallOnAppQuit, `${os} ${marker ?? image ?? ""}`).toBe(installsOnQuit);
+      expect(autoUpdater.autoRunAppAfterInstall).toBe(true);
       // Nothing is installed by itself before then: the coordinator owns the download.
       expect(autoUpdater.autoDownload).toBe(false);
     }
@@ -193,4 +201,61 @@ it("sends updater progress to a reopened window without restarting the updater",
   expect(handlers.get("update:get-state")(reopened.event)).toMatchObject({ status: "downloaded", version: "2.0.0" });
   expect(autoUpdater.eventNames().reduce((count, name) => count + autoUpdater.listenerCount(name), 0)).toBe(listenerCount);
   expect(vi.getTimerCount()).toBe(timerCount);
+});
+
+/** Runs `body` as if on `os`, with an update downloaded and the local page attached. */
+async function downloadedOn(os, body) {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { ...platform, value: os });
+  try {
+    const local = page(LOCAL);
+    const loaded = await load();
+    loaded.updater.attachUpdaterWindow({ webContents: local.webContents, isDestroyed: () => false });
+    loaded.updater.startUpdater();
+    await loaded.handlers.get("update:check")(local.event);
+    await settle();
+    expect(loaded.handlers.get("update:get-state")(local.event).status).toBe("downloaded");
+    await body({ ...loaded, local });
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+  }
+}
+
+it.each(["win32", "darwin", "linux"])("%s: an install the page did not confirm asks natively, and Later installs nothing", async (os) => {
+  fixture.asked = [];
+  fixture.answer = 1;
+  await downloadedOn(os, async ({ autoUpdater, handlers, local }) => {
+    // an older page's menu item: install() with no confirmation
+    await handlers.get("update:install")(local.event);
+    await handlers.get("update:install")(local.event, { confirmed: "true" });
+    await settle();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(fixture.asked).toHaveLength(2);
+    expect(fixture.asked[0]).toMatchObject({ buttons: ["Redémarrer pour installer", "Plus tard"], defaultId: 1, cancelId: 1 });
+    expect(fixture.asked[0].message).toBe("Sagax 2.0.0 est prête à installer");
+    expect(handlers.get("update:get-state")(local.event).status).toBe("downloaded");
+  });
+});
+
+it("Windows: a yes to the native question runs the installer with its progress window, then reopens Sagax", async () => {
+  fixture.asked = [];
+  fixture.answer = 0;
+  await downloadedOn("win32", async ({ autoUpdater, handlers, local }) => {
+    await handlers.get("update:install")(local.event);
+    await settle();
+    expect(fixture.asked).toHaveLength(1);
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true);
+  });
+});
+
+it.each([["win32", false], ["darwin", true], ["linux", true]])("%s: Restart to install in the update dialog installs without a second question", async (os, silent) => {
+  fixture.asked = [];
+  fixture.answer = 1;
+  await downloadedOn(os, async ({ autoUpdater, handlers, local }) => {
+    await handlers.get("update:install")(local.event, { confirmed: true });
+    await settle();
+    expect(fixture.asked).toHaveLength(0);
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(silent, true);
+  });
 });

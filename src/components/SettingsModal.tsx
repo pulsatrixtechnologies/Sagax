@@ -21,6 +21,7 @@ import { ApiKeyRow, credentialCopy } from "./ApiKeys";
 import { DecisionModelSettings } from "./DecisionModelSettings";
 import { GeneralAdvancedSettings, generalAdvancedShown, isSoloDesktop } from "./settings/AdvancedSettings";
 import { useUpdaterState } from "@/lib/updater";
+import { openUpdatePrompt, requestUpdateCheck } from "@/lib/update-prompt";
 import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
 import { peopleListServed, readMembership } from "../lib/membership";
@@ -273,10 +274,9 @@ export function UpdatesRow() {
   return (
     <SettingRow title={t("settings.updates.title")} subtitle={label}>
       <button
-        onClick={() => {
-          if (s.status === "downloaded") return void updater.install();
-          void updater.check();
-        }}
+        // The update dialog follows the check and asks before any restart
+        // ("Restart to install" or "Later"); this button never installs.
+        onClick={() => (s.status === "downloaded" ? openUpdatePrompt() : requestUpdateCheck())}
         disabled={
           s.status === "checking" || s.status === "downloading" || s.status === "preparing" ||
           s.status === "installing" || s.retryable === false

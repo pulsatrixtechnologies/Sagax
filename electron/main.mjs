@@ -41,6 +41,8 @@ import { createWindowNudger } from "./window-nudge.mjs";
 import { createDesktopAttention } from "./desktop-attention.mjs";
 import { createAllWindowsClosedQuit } from "./window-all-closed.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
+import { createLoadRecovery, isAppPage, loadErrorPage, loadingPage, loadOutcome, recoveryStrings, uiBundleState, waitForUiBundle } from "./load-recovery.mjs";
+import { confirmLanguage } from "./update-confirm.mjs";
 import { createSystemTray } from "./system-tray.mjs";
 let startupScreen = null;
 let desktopTray = null;
@@ -2006,6 +2008,86 @@ const androidDevice = createAndroidDeviceController({ resourcesPath: process.res
 const displayMediaGuard = createDisplayMediaGuard();
 let displayMediaRequestCount = 0;
 
+/** "fr" or "en" for the pages main draws itself. */
+function recoveryLanguage() {
+  try {
+    return confirmLanguage(readDesktopLanguage(app.getPath("userData")), app.getLocale?.() ?? "");
+  } catch {
+    return "en";
+  }
+}
+
+/** The app icon as a data URL for main's own pages, or null. */
+let recoveryIcon;
+function recoveryIconDataUrl() {
+  if (recoveryIcon !== undefined) return recoveryIcon;
+  try {
+    recoveryIcon = `data:image/png;base64,${fs.readFileSync(APP_ICON).toString("base64")}`;
+  } catch {
+    recoveryIcon = null;
+  }
+  return recoveryIcon;
+}
+
+/**
+ * The main window's own page never stays on a raw error (2026-10-19: a
+ * black window with "Not Found" after a Windows update). A main-frame load
+ * of this app's page (the local server, or an organization server's page
+ * drawn from this app's bundle) that answers an HTTP error, or that cannot
+ * connect, is retried behind a loading page with a growing delay, then
+ * replaced by an error page whose "Try again" loads it again
+ * (electron/load-recovery.mjs). A remote server that cannot be reached at
+ * all keeps its own handling (back to Local, did-fail-load below).
+ */
+function installLoadRecovery(win) {
+  const recovery = createLoadRecovery();
+  let timer = null;
+  const origins = () => {
+    const list = [rendererOrigin()];
+    const remote = activeRemote(environmentsState);
+    if (remote?.origin) list.push(remote.origin);
+    return list;
+  };
+  const handle = (url, result, { network = false } = {}) => {
+    if (win.isDestroyed()) return;
+    if (!isAppPage(url, origins())) return;
+    const outcome = loadOutcome(result);
+    if (outcome === "ok") {
+      // A good load (or the server's own reload) ends any pending retry.
+      clearTimeout(timer);
+      recovery.reset();
+      return;
+    }
+    if (outcome !== "retry") return;
+    // A remote server nobody answers for is did-fail-load's (back to Local).
+    if (network && new URL(url).origin !== rendererOrigin()) return;
+    const step = recovery.next();
+    const language = recoveryLanguage();
+    clearTimeout(timer);
+    if (step.kind === "give-up") {
+      slog(`main window: ${new URL(url).origin} still failing after ${step.attempts} attempts (${result.httpStatus ?? result.errorCode}); showing the error page`);
+      recovery.reset();
+      // The local server may come back later: its onReady reloads this window.
+      if (new URL(url).origin === rendererOrigin() && !serverReady) serverUnavailableWindows.add(win);
+      void win.loadURL(loadErrorPage({ language, iconDataUrl: recoveryIconDataUrl(), retryUrl: url })).catch(() => {});
+      return;
+    }
+    slog(`main window: ${new URL(url).origin} answered ${result.httpStatus ?? result.errorCode}; retry ${step.attempt} in ${step.delayMs} ms`);
+    void win.loadURL(loadingPage({ language, iconDataUrl: recoveryIconDataUrl() })).catch(() => {});
+    timer = setTimeout(() => {
+      // Never back to a workspace the person switched away from meanwhile.
+      if (win.isDestroyed() || !origins().includes(new URL(url).origin)) return;
+      void win.loadURL(url).catch(() => {});
+    }, step.delayMs);
+    timer.unref?.();
+  };
+  win.webContents.on("did-navigate", (_event, url, httpResponseCode) => handle(url, { httpStatus: httpResponseCode }));
+  win.webContents.on("did-fail-load", (_event, errorCode, _description, validatedURL, isMainFrame) => {
+    if (isMainFrame) handle(validatedURL, { errorCode }, { network: true });
+  });
+  win.on("closed", () => clearTimeout(timer));
+}
+
 function rendererOrigin() {
   return new URL(app.isPackaged || desktopRemoteAccess ? `http://127.0.0.1:${SERVER_PORT}` : DEV_URL).origin;
 }
@@ -3415,6 +3497,7 @@ function createWindow({ deferNavigation = false } = {}) {
       slog(`blocked subframe navigation to ${details.url}`);
     }
   });
+  if (app.isPackaged) installLoadRecovery(win);
   win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3) return; // -3: aborted by a newer navigation
     const remote = activeRemote(environmentsState);
@@ -4713,6 +4796,28 @@ app.whenReady().then(async () => {
   // a moment later, unless the workspace is already up.
   setTimeout(openStartupScreen, 150).unref?.();
   if (desktopShutdownStarted) return;
+  // Opened while an update was still copying its files (a silent Windows
+  // install, 2026-10-19): the window used to come up on a bare "Not Found".
+  // Wait on the loading screen until the bundle is whole, else say so.
+  if (app.isPackaged) {
+    const strings = recoveryStrings(recoveryLanguage());
+    const bundle = await waitForUiBundle({
+      check: () => uiBundleState({ resourcesPath: process.resourcesPath }),
+      onWaiting: (state) => {
+        slog(`startup: the app's files are not all in place (${state.missing.slice(0, 5).join(", ")}); waiting, an update may still be installing`);
+        openStartupScreen();
+        startupScreen?.setStatus(strings.installing);
+      },
+    });
+    if (!bundle.complete) {
+      slog(`startup: files still missing after the wait (${bundle.missing.slice(0, 5).join(", ")})`);
+      openStartupScreen();
+      startupScreen?.fail(`${strings.bundleTitle}. ${strings.bundleBody}`);
+      return;
+    }
+    if (bundle.waited) slog("startup: the app's files are in place; starting");
+    if (desktopShutdownStarted) return;
+  }
   session.defaultSession.on("will-download", (_event, item) => {
     item.setSavePath(collisionFreeDownloadPath(app.getPath("downloads"), item.getFilename()));
     revealDownloadWhenDone(item, (filePath) => shell.showItemInFolder(filePath));

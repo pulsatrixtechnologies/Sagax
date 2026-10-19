@@ -12858,7 +12858,15 @@
       "code.card.files.one": "41d899a98797fc628c0782c961c25c9974e0d9a146c010bd5ca530762c8d9f52",
       "code.timeline.worked.lt1": "cf11cfd2170c99c4d7cc5a306c5eb77159a6bdc6473ffcebd606c0198f8e68f5",
       "code.timeline.verify.ok": "72942a34421520d02ac1273f487efb155170bfd802b673c49617c5da22580c5f",
-      "code.timeline.verify.failed": "e187417182f3564ab8c0ef9518204108df50ba87526d412d2f923d12ed6e55a1"
+      "code.timeline.verify.failed": "e187417182f3564ab8c0ef9518204108df50ba87526d412d2f923d12ed6e55a1",
+      "releaseNotes.restartToInstall": "ccb8292286775913ce516625e0a615da2c2c1375e8eed24e80345e5148125b3e",
+      "updates.dialog.checkingBody": "36df660ca7e5202cda5d6f88879133a3d65860c1fb939fa2a17bd59bffe3637f",
+      "updates.dialog.upToDateTitle": "55e5c5704983e69f93078c600249a80ddef083e3f4a94bb92d97aeaf0584bf6d",
+      "updates.dialog.upToDateBody": "dd9af1a7a04243b0f4b8521efdedbd03935cc7694f488bedc4a44727655b3f45",
+      "updates.dialog.upToDateBodyPlain": "03c9dea7a0935c2a4b95ea7334cadbee4cde4884663dea6bafbd44dcf161471c",
+      "updates.dialog.downloadingBody": "e3cdc3669fa24580427dca9830a637f094dc0bfc5e644d295c6c879e321cf3e9",
+      "updates.dialog.windowsReadyBody": "e1e5c4e3ef019b3f642da6e7650bbcceba018cab0e27392112bcd0396373b280",
+      "updates.dialog.windowsInstallingBody": "caece0f76d41bc2ec5ea55f98f702eb48f14d9490514b676b2b1cdd5431786a3"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

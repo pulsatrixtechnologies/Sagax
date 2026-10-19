@@ -67,7 +67,18 @@ export function withReleaseNote(notes, version, body) {
 export function createUpdaterCoordinator(
   updater,
   setState,
-  { handOffInstall = null, nativeStaging = false, fetchReleaseNotes = null } = {},
+  {
+    handOffInstall = null,
+    nativeStaging = false,
+    fetchReleaseNotes = null,
+    // Windows: false, so the NSIS installer shows its progress window and
+    // relaunches the app (see electron/updater.mjs).
+    silentInstall = true,
+    // Asks the person before an install nobody confirmed in the page (an
+    // older page's button, a stray call). Resolves true to go on. Without
+    // it such a call does nothing: nothing installs unconfirmed.
+    confirmInstall = null,
+  } = {},
 ) {
   // The update the state shows, and the body the release API gave for it.
   let notesVersion = null;
@@ -299,8 +310,32 @@ export function createUpdaterCoordinator(
     }
   }
 
-  function install() {
-    if (recoveryRequired || installOperation || downloadOperation || (nativeStaging && !nativeReady)) return;
+  function installBlocked() {
+    return Boolean(recoveryRequired || installOperation || downloadOperation || (nativeStaging && !nativeReady));
+  }
+
+  /** Installs only on the person's explicit confirmation: `confirmed` from
+   * the page's "Restart to install" (the update dialog), otherwise the
+   * `confirmInstall` question must say yes first. */
+  function install({ confirmed = false } = {}) {
+    if (installBlocked()) return;
+    if (confirmed === true) {
+      installConfirmed();
+      return;
+    }
+    if (!confirmInstall) {
+      updater.logger?.warn?.("Install refused: it was not confirmed.");
+      return;
+    }
+    return Promise.resolve()
+      .then(() => confirmInstall({ version: notesVersion }))
+      .then((yes) => {
+        if (yes === true && !installBlocked()) installConfirmed();
+      })
+      .catch((error) => updater.logger?.warn?.("Install confirmation failed:", error));
+  }
+
+  function installConfirmed() {
     actionOwnsState = true;
     if (handOffInstall) {
       handOff();
@@ -310,7 +345,8 @@ export function createUpdaterCoordinator(
     installOperation = operation;
     setState({ status: "installing" });
     try {
-      updater.quitAndInstall(true, true);
+      // isForceRunAfter: Sagax opens again once the new version is in.
+      updater.quitAndInstall(silentInstall, true);
     } catch (error) {
       routeError(true, error);
       return;

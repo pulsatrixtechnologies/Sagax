@@ -1,6 +1,7 @@
 // In-app auto-updater (electron-updater). Updates download by themselves as
 // soon as a check finds one (macOS also stages the ZIP at once) and install
-// when the app quits, or at once on the person's "Restart to update". Nothing
+// on the person's confirmed "Restart to install" (macOS and AppImage also
+// when the app quits; Windows never installs on quit, see below). Nothing
 // restarts by itself in the middle of a call or a turn. One state object is
 // broadcast on every transition, to this app's own page (the local page, or
 // the bundle drawn on an organization server).
@@ -9,7 +10,7 @@
 // signing). In dev it's a no-op so the browser/dev shell is unaffected.
 // electron-updater is vendored (electron/vendor/electron-updater.cjs) because
 // the packaged app ships no node_modules.
-import { app, clipboard, ipcMain, net } from "electron";
+import { app, clipboard, dialog, ipcMain, net } from "electron";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -22,6 +23,9 @@ import {
 import { openBlankTerminal } from "./terminal-launch.mjs";
 import { createUpdaterCoordinator } from "./updater-coordinator.mjs";
 import { configureUpdateFeed, fetchReleaseNotes, readUpdatePrefs, writeUpdatePrefs } from "./update-feed.mjs";
+import { confirmLanguage, confirmedInstall, updateConfirmOptions } from "./update-confirm.mjs";
+import { readDesktopLanguage } from "./desktop-language.mjs";
+import { DISPLAY_NAME } from "./app-name.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -94,7 +98,11 @@ export function registerUpdaterIpc({ pageAllowed: allowed }) {
   // A download starts by itself after a check. An older page's Download
   // button asks for one: checking again starts it, as the person's own.
   ipcMain.handle("update:download", guarded("update:download", () => updaterCoordinator?.check(true)));
-  ipcMain.handle("update:install", guarded("update:install", () => updaterCoordinator?.install()));
+  // `confirmed`: the page's own update dialog asked the person ("Restart to
+  // install"). Without it main asks with a native question first, so an
+  // older page's menu item never installs unasked.
+  ipcMain.handle("update:install", guarded("update:install", (options) =>
+    updaterCoordinator?.install({ confirmed: options?.confirmed === true })));
   ipcMain.handle("update:set-prereleases", guarded("update:set-prereleases", (enabled) => setPrereleases(enabled)));
 }
 
@@ -110,6 +118,21 @@ function setPrereleases(enabled) {
   if (autoUpdater) autoUpdater.allowPrerelease = prefs.allowPrerelease;
   setState({ allowPrerelease: prefs.allowPrerelease });
   return state;
+}
+
+// An install the page did not confirm (an older page's menu item): ask with
+// a native question, "Later" by default, parented to the window.
+async function confirmInstallNatively({ version } = {}) {
+  let language = "en";
+  try {
+    language = confirmLanguage(readDesktopLanguage(app.getPath("userData")), app.getLocale?.() ?? "");
+  } catch {
+    /* English */
+  }
+  const options = updateConfirmOptions({ language, platform: process.platform, version, appName: DISPLAY_NAME });
+  const parent = win && !win.isDestroyed?.() ? win : null;
+  const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+  return confirmedInstall(result);
 }
 
 // macOS keeps the process (and updater) alive after its window closes.
@@ -153,17 +176,26 @@ export function startUpdater() {
   // offers a restart it cannot deliver.
   const packageType = linuxPackageType({ readMarker: (file) => (existsSync(file) ? readFileSync(file, "utf8") : null) });
   const handOff = HAND_OFF_TYPES.has(packageType);
-  // A downloaded update installs when the app quits, on every platform:
-  // Windows (per-user, one-click: silent, no admin prompt) and AppImage swap
-  // it in then. On macOS this also starts Squirrel.Mac's native staging pass
-  // at once, so "Restart to update" never has to begin that slow pass and
-  // wait. A system package (.deb, .rpm, pacman) is the person's to install
-  // in a terminal, never ours on quit.
-  autoUpdater.autoInstallOnAppQuit = !handOff;
+  // A downloaded update installs when the app quits on macOS and AppImage,
+  // where the swap takes seconds. On macOS this also starts Squirrel.Mac's
+  // native staging pass at once, so "Restart to install" never has to begin
+  // that slow pass and wait. Windows never installs on quit: electron-updater
+  // runs the NSIS installer silently then, which moved the app folder away
+  // for minutes with no window (shortcuts and taskbar pins pointing at
+  // nothing) and never reopened Sagax (2026-10-19). There the update waits
+  // for the person's "Restart to install". A system package (.deb, .rpm,
+  // pacman) is the person's to install in a terminal, never ours on quit.
+  const windows = process.platform === "win32";
+  autoUpdater.autoInstallOnAppQuit = !handOff && !windows;
+  // Sagax opens again once the installer is done.
+  autoUpdater.autoRunAppAfterInstall = true;
   setState({ installMode: handOff ? "handoff" : "restart" });
   updaterCoordinator = createUpdaterCoordinator(autoUpdater, setState, {
     handOffInstall: handOff ? handOffDownloadedPackage(packageType) : null,
     nativeStaging: process.platform === "darwin",
+    // Windows: the installer's own progress window, never a silent run.
+    silentInstall: !windows,
+    confirmInstall: confirmInstallNatively,
     fetchReleaseNotes: (version) => fetchReleaseNotes(version, { fetch: (url, init) => net.fetch(url, init) }),
   });
 

@@ -212,12 +212,33 @@ win:
   # untrusted; and once signed, keep the cert subject stable (or list both old
   # and new in publisherName) or you strand already-installed users.
 
+# The Windows install's identity: an update must find the install it
+# replaces, or its shortcuts and taskbar pins are lost. Never change these
+# without a migration (electron/packaging-windows.node-test.mjs pins them):
+# appId com.openmausbot.app (the AppUserModelId the shortcuts and pins
+# carry), productName Sagax (Sagax.exe), the per-user folder
+# %LOCALAPPDATA%\Programs\openmausbot (package.json "name"), shortcutName.
 nsis:
   oneClick: true
+  # Per-user: no admin prompt, and every update lands in the same folder.
   perMachine: false
+  # One-click has no directory page; an update reuses the folder it finds.
+  allowToChangeInstallationDirectory: false
+  # Created once, then kept as the person left them: an update passes
+  # --keep-shortcuts to the old uninstaller and never recreates a shortcut
+  # the person deleted ("always" would).
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
   # Start menu and desktop shortcut: the long name fits there.
   shortcutName: Pulsatrix Sagax
   uninstallDisplayName: Pulsatrix Sagax ${version}
+  # Sagax opens again when the installer is done (an in-app update also
+  # passes --force-run). The in-app update runs this installer with its
+  # progress window, never silently (electron/updater.mjs).
+  runAfterFinish: true
+  # Refreshes the shell's icons after an update, so shortcuts and taskbar
+  # pins that pointed at the replaced Sagax.exe draw its icon again.
+  include: build/installer.nsh
   # Versioned, like the .dmg; one installer for x64 and arm64.
   artifactName: Sagax-${version}-setup.${ext}
 
