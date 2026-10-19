@@ -85,17 +85,28 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
   };
 
   // One answer per Perspicax origin: "yes" and "no" kept PROBE_TTL_MS, a
-  // failure PROBE_RETRY_MS (Perspicax may come back sooner).
-  const probes = new Map<string, { at: number; ttl: number; answer: Promise<"yes" | "no" | "error"> }>();
-  const servesAgents = (access: PerspicaxAccess): Promise<"yes" | "no" | "error"> => {
+  // failure PROBE_RETRY_MS (Perspicax may come back sooner). A refusal (401,
+  // 403: a Perspicax that serves the API but not to this Sagax's token, such
+  // as one that wants the link token) is "denied", shown as not available
+  // and never kept, since it depends on the person's token, not the origin.
+  type Probe = "yes" | "no" | "denied" | "error";
+  const probes = new Map<string, { at: number; ttl: number; answer: Promise<Probe> }>();
+  const servesAgents = (access: PerspicaxAccess): Promise<Probe> => {
     const key = new URL(access.baseUrl).origin;
     const now = (deps.now ?? Date.now)();
     const kept = probes.get(key);
     if (kept && now - kept.at < kept.ttl) return kept.answer;
-    const entry = { at: now, ttl: PROBE_TTL_MS, answer: Promise.resolve<"yes" | "no" | "error">("error") };
+    const entry = { at: now, ttl: PROBE_TTL_MS, answer: Promise.resolve<Probe>("error") };
     entry.answer = deps.client.servesAgents(access).then(
-      (yes) => (yes ? "yes" : "no"),
-      () => { entry.ttl = PROBE_RETRY_MS; return "error"; },
+      (yes): Probe => (yes ? "yes" : "no"),
+      (e: unknown): Probe => {
+        if (e instanceof ProviderHttpError && (e.status === 401 || e.status === 403)) {
+          if (probes.get(key) === entry) probes.delete(key);
+          return "denied";
+        }
+        entry.ttl = PROBE_RETRY_MS;
+        return "error";
+      },
     );
     probes.set(key, entry);
     return entry.answer;
@@ -116,7 +127,7 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
       const access = await deps.access(auth);
       if (!access.ok) return json(res, 200, { available: false, reason: access.reason } satisfies CodeStatus);
       const served = await servesAgents(access.access);
-      if (served === "no") return json(res, 200, { available: false, reason: "not_available" } satisfies CodeStatus);
+      if (served === "no" || served === "denied") return json(res, 200, { available: false, reason: "not_available" } satisfies CodeStatus);
       if (served === "error") return json(res, 200, { available: false, reason: "unreachable" } satisfies CodeStatus);
       const status: CodeStatus = { available: true, ...(deps.consoleUrl() ? { consoleUrl: deps.consoleUrl() } : {}), ...(deps.fixture ? { fixture: true } : {}) };
       return json(res, 200, status);

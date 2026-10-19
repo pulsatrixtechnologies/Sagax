@@ -49,6 +49,7 @@ import { boundedContextText, selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BY
 import { draftSummary, foldPoint } from "./compaction-summary.ts";
 import { composeStreamDigest, draftSegmentDigest, extractSegmentDigest, recallTopicPage, streamCandidate, STREAM_FULL_ENTRIES, type SegmentDigest } from "./single-stream.ts";
 import { isStreamSegment } from "../shared/single-stream.ts";
+import { quotedIdOr } from "../shared/human-id.ts";
 import { createRecallTopicInternalRoutes } from "./routes/recall-topic-internal.ts";
 import { createRouteMessageInternalRoutes } from "./routes/route-message-internal.ts";
 import { compactBudget, contextWindowFor, defaultCompactAt, nativeCompactionPoint, shouldCompact } from "./context-budget.ts";
@@ -877,6 +878,8 @@ import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBot
 import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, levelRank, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
+import { interBotWaiting } from "./inter-bot-approvals.ts";
+import { interBotConversations } from "./inter-bot-conversations.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
@@ -1049,7 +1052,7 @@ import { createMcpAuditInternalRoutes } from "./routes/mcp-audit-internal.ts";
 import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/routine-run-internal.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
-import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTurnOrigin } from "./member-environment.ts";
+import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
@@ -1386,7 +1389,7 @@ function observePushFrame(payload: Record<string, unknown>): void {
         if (IDENTITY.kind !== "perspicax") return [localPrincipalId()];
         const bot = note.botId ? store.bot(note.botId) : note.threadId ? store.botByThread(note.threadId) : undefined;
         if (!bot) return [];
-        if (note.kind === "approval") return [approvalOwnerId(bot, typeof note.threadId === "string" ? note.threadId : undefined)];
+        if (note.kind === "approval") return [cardAnswererId(bot, typeof note.threadId === "string" ? note.threadId : undefined, noteCard(note.threadId, (note as { requestId?: unknown }).requestId))];
         const person = note.threadId ? privateThreadOwner(store.taskByThread(bot.id, note.threadId), effectiveBotOwner(bot)) : effectiveBotOwner(bot);
         return person ? [person] : [];
       },
@@ -5043,6 +5046,13 @@ async function stagePendingAttachments(threadId: string, generation: string): Pr
  * tools on the Sagax server (server/drivers/host-tools.ts). An engine that
  * cannot withhold them is refused (409 host_tools, server/org-engine-admission.ts)
  * rather than let loose in the container. */
+/** An engine in an error a person reads: `provider instance "ghost"` for a
+ * readable id, "The selected engine" for an opaque one (no GUID on screen). */
+function engineReference(instanceId: string): string {
+  const quoted = quotedIdOr(instanceId, "");
+  return quoted ? `provider instance ${quoted}` : "The selected engine";
+}
+
 function withholdHostToolsFor(instance: { adapter: { capabilities: { withholdsHostTools?: boolean } }; displayName?: string; driverKind: string }): boolean {
   return orgWithholdHostTools(instance, IDENTITY.kind === "perspicax", engineDisplayName(instance));
 }
@@ -6823,7 +6833,15 @@ const wireBot = (bot: BotRecord): WireBot => {
     ? { ...rest, approvalMode: "ask" as const, autoApprove: false }
     : rest;
   const lead = instructionsLead(visible.soul);
+  // 2026-10-19: a bot-to-bot conversation's cards wait on the person, who
+  // never sees that conversation (server/inter-bot-approvals.ts).
+  const waitingApprovals = allTasks ? interBotWaiting(bot.id, allTasks) : [];
+  // Both ends of a bot-to-bot conversation show it (inter-bot-conversations.ts);
+  // an organization viewer gets the readable ones only (botForViewer).
+  const botConversations = interBotConversations(bot.id, store.bots, undefined, (ownerId, threadId) => threadBusy(ownerId, threadId));
   return { ...visible, waitingForTeammates: activeCoordinationForThread(bot.threadId) && !threadBusy(bot.id, bot.threadId),
+    ...(waitingApprovals.length ? { waitingApprovals } : {}),
+    ...(botConversations.length ? { botConversations } : {}),
     mainThreadId: botMainThread(bot.id),
     avatarUrl: visible.avatarUrl ?? null, ...(lead ? { instructionsLead: lead } : {}), ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection)) } : {}) };
 };
@@ -9883,7 +9901,7 @@ function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: s
   if (message.card && typeof message.card === "object" && message.card.terminalRequest) return null;
   if (!isApprovalCardMessage(message)) return refusal;
   const bot = botForApproval(threadId, message);
-  const audience = bot ? approvalAudience({ ownerUserId: approvalOwnerId(bot, threadId), host: approvalHostOf(bot) }) : null;
+  const audience = bot ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, message.card), host: approvalHostOf(bot) }) : null;
   if (approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403) return refusal;
   return null;
 }
@@ -10023,7 +10041,7 @@ function pendingApprovalsFor(viewer: { principalId: string; orgAdmin: boolean },
   const out: AdminApproval[] = [];
   for (const { bot, threadId, message, card } of pendingApprovalCards()) {
     const kind = card.adminApproval ? "admin" as const : "owner" as const;
-    const ownerId = approvalOwnerId(bot, threadId);
+    const ownerId = cardAnswererId(bot, threadId, card);
     // A confidential thread's cards are its owner's alone: never in the
     // organization queue, never someone else's to decide.
     if (store.isConfidentialThread(threadId) && (kind === "admin" || ownerId !== viewer.principalId)) continue;
@@ -10066,7 +10084,7 @@ async function answerCardFromConsole(viewer: OrgAdminViewer, threadId: string, r
   if (card.answered || card.dismissed || card.expired) return { ok: false, status: 409, code: "card_not_pending", message: "This approval was already answered or has expired." };
   const kind = card.adminApproval ? "admin" : "owner";
   if (store.isConfidentialThread(threadId) && kind === "admin") return { ok: false, status: 404, code: "not_found", message: "No such approval." };
-  if (kind === "admin" ? !viewer.orgAdmin : approvalOwnerId(bot, threadId) !== viewer.principalId) {
+  if (kind === "admin" ? !viewer.orgAdmin : cardAnswererId(bot, threadId, card) !== viewer.principalId) {
     return { ok: false, status: 403, code: "forbidden", message: kind === "admin" ? "Only an organization admin can answer this approval." : "Only the bot owner can answer this approval." };
   }
   if (approvalTypeOf(card) !== "tool" || approvalHostOf(bot).kind !== "fleet") {
@@ -10129,7 +10147,7 @@ function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalV
   if (!isApprovalCardMessage(row)) return message;
   const bot = botForApproval(threadId, row);
   const audience = bot
-    ? approvalAudience({ ownerUserId: approvalOwnerId(bot, threadId), host: approvalHostOf(bot) })
+    ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, row.card as { destinationAnswerer?: unknown } | undefined), host: approvalHostOf(bot) })
     : { userId: "\0", deviceId: null as string | null };
   const ownerName = bot ? approvalOwnerName(audience.userId) : "the owner";
   return approvalDelivery({
@@ -10284,17 +10302,23 @@ function scopeChannelApproval(
     if (note.kind !== "approval") return { action: "same" };
     const bot = approvalBot(note);
     if (!bot) return { action: "drop" };
-    const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot, typeof note.threadId === "string" ? note.threadId : undefined), host: approvalHostOf(bot) });
+    const audience = approvalAudience({ ownerUserId: cardAnswererId(bot, typeof note.threadId === "string" ? note.threadId : undefined, noteCard(note.threadId, (note as { requestId?: unknown }).requestId)), host: approvalHostOf(bot) });
     return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
   }
   if (kind === "runtime") {
     const event = payload.event;
     if (!event || typeof event !== "object") return { action: "same" };
-    const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown; botId?: unknown };
+    const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown; botId?: unknown; requestId?: unknown; tool?: unknown; mcpTool?: unknown };
     if (row.type !== "request.opened" || row.requestType !== "permission") return { action: "same" };
     const bot = approvalBot(row);
     if (!bot) return { action: "drop" };
-    const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot, typeof row.threadId === "string" ? row.threadId : undefined), host: approvalHostOf(bot) });
+    // The event is broadcast before its card exists: judge the speaker's own
+    // destination from the turn itself (destinationOfCall), as the card will.
+    const threadId = typeof row.threadId === "string" ? row.threadId : undefined;
+    const tool = typeof row.mcpTool === "string" ? row.mcpTool : typeof row.tool === "string" ? row.tool : undefined;
+    const destination = threadId ? destinationOfCall(bot, threadId, tool, cloudGuestDriven(threadId)) : null;
+    const answerer = destination && !destination.byOwner ? destination.person : cardAnswererId(bot, threadId, noteCard(row.threadId, row.requestId));
+    const audience = approvalAudience({ ownerUserId: answerer, host: approvalHostOf(bot) });
     return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
   }
   return { action: "same" };
@@ -10679,6 +10703,13 @@ async function respondToCard(input: {
   }
   const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
   if (refusal) return { ok: false, status: 403, error: refusal };
+  // Security review 2026-10-19 (pre-existing): a spoken answer meets the
+  // same answerer rules as the screen: an admin's card for an admin, any
+  // other card for the person who answers it.
+  const liveAdminCheck = adminApprovalCheck(auth, threadId, requestId);
+  if (liveAdminCheck === "refused") return { ok: false, status: 403, error: ADMIN_APPROVAL_REQUIRED.error };
+  const liveOwnerRefusal = liveAdminCheck ? null : approvalAnswerRefusal(auth, threadId, requestId);
+  if (liveOwnerRefusal) return { ok: false, status: 403, error: liveOwnerRefusal };
   const bot = store.botByThread(threadId);
   if (!bot) return { ok: false, status: 404, error: "The chat is gone." };
   const cardMessage = store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId);
@@ -12937,7 +12968,25 @@ bus.subscribe((event: RuntimeEvent) => {
       // at their own level, never an admin's; and an owner who holds
       // host.commands (given in Perspicax) answers the server commands of
       // their own bots.
-      const ownDestination = Boolean(permission && asker && event.requestId && ownDestinationRequest(asker, event.threadId, event.mcpTool ?? event.tool, guestDriven));
+      const destination = permission && asker && event.requestId ? destinationOfCall(asker, event.threadId, event.mcpTool ?? event.tool, guestDriven) : null;
+      const ownDestination = Boolean(destination);
+      // 2026-10-19 (PR 3): on a bot someone else owns, the speaker's own
+      // destination is the speaker's card.
+      const destinationAnswerer = destination && !destination.byOwner ? destination.person : undefined;
+      const cardAnswerer = asker ? destinationAnswerer ?? approvalOwnerId(asker, event.threadId) : "";
+      const destinationOrigin = asker && destination ? destinationTurnOrigin(asker, event.threadId, destination.person) : "other";
+      // Security review 2026-10-19: a call on a person's environment Sagax
+      // mounted this turn that is not the card answerer's own (a peer hop
+      // that mounted the sender's person, a turn nobody wrote in someone's
+      // confidential thread): no mode, rule or session grant of the answerer
+      // answers it, and it is judged at Ask.
+      const foreignDestination = Boolean(permission && asker && event.requestId && !destination && mountedDestinationOf(asker, event.threadId, event.mcpTool ?? event.tool) !== null);
+      // 2026-10-19 (PR 3): the speaker's explicit Always allow rules answer a
+      // call in their own isolated environment (their cloud computer, their
+      // Local VM) on someone else's bot, while the organization allows it;
+      // never their mode, and never on their real computer.
+      const speakerEnvironmentRules = Boolean(destinationAnswerer && ownEnvironmentTool(event.mcpTool ?? event.tool) && memberEnvironmentAutonomyAllowed(cfg.organization));
+
       const serverLevelCard = Boolean(memberAsker && asker && memberBotAdminApproval({
         tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
@@ -12963,11 +13012,17 @@ bus.subscribe((event: RuntimeEvent) => {
       // sent, staged in their own destination) needs no card, at any level,
       // from the owner's own turn; deny and ask rules, a safety hold and a
       // security key still come first (auto-approve.ts).
-      const attachmentRead = Boolean(ownDestination && asker && !strictCard && ownEnvironmentOrigin(asker, event.threadId) === "owner" && ownAttachmentRead({
+      const attachmentRead = Boolean(ownDestination && asker && !strictCard && destinationOrigin === "owner" && ownAttachmentRead({
         tool: event.mcpTool ?? event.tool,
         input: typeof event.input === "string" ? event.input : undefined,
         roots: ownAttachmentRoots(asker, event.threadId),
       }));
+      // Security review 2026-10-19: no saved Allow key (the Sagax gate's
+      // Always allow) answers or is offered for a call no rule may answer:
+      // someone else's environment, or a destination outside an isolated
+      // environment the person's rules cover (their real computer, their
+      // cloud computer while the organization turned autonomy off).
+      const gateGrantBlocked = foreignDestination || (ownDestination && !ownEnvironment && !speakerEnvironmentRules && !attachmentRead);
       // A confidential thread's card goes to its owner only: one they could
       // not answer (an organization admin's card, another person's machine)
       // is refused rather than shown to anyone else.
@@ -13007,7 +13062,7 @@ bus.subscribe((event: RuntimeEvent) => {
         }
         : null;
       const customReview = customCall && asker
-        ? reviewCustomRules(customRules.rulesOf(approvalOwnerId(asker, event.threadId), asker.id), customCall, asker.id)
+        ? reviewCustomRules(customRules.rulesOf(cardAnswerer, asker.id), customCall, asker.id)
         : null;
       const customDecision = customReview?.decision.kind === "allow"
         && (strictCard || guestDriven || safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true)
@@ -13029,10 +13084,10 @@ bus.subscribe((event: RuntimeEvent) => {
         break;
       }
       const baseVerdict = permission && asker && event.requestId
-        ? autoVerdict(strictCard ? "ask" : effectiveApprovalMode, event.tool, {
+        ? autoVerdict(strictCard || foreignDestination ? "ask" : effectiveApprovalMode, event.tool, {
           requiresExplicitApproval: event.requiresExplicitApproval,
           sagaxGate: event.sagaxGate === true,
-          ruleAllowed: Boolean(gateAllowKey && !strictCard && !guestDriven && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
+          ruleAllowed: Boolean(gateAllowKey && !strictCard && !guestDriven && !gateGrantBlocked && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
           commandAllowed: Boolean(command && commandAllowlist.matches(asker.id, command)),
           safetyHold: safetyEffect?.kind === "hold",
           // A gate card stays a person's choice. Reads the gate already
@@ -13077,7 +13132,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const ownerLayer = Boolean(permission && asker && event.requestId && !baseVerdict?.approve && !strictCard && !guestDriven
         && !/^(?:mcp__[^_]+__)?(?:askuserquestion|ask_user)$/i.test(ownerTool) && memberOwnScopeTool(ownerTool) !== "conversation");
       const ownerCall = ownerLayer && asker
-        ? { ownerId: approvalOwnerId(asker, event.threadId), botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}) }
+        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}) }
         : null;
       // 2026-10-17 (re-review of #690): the owner's permission mode (auto,
       // bypass) and Always allow rules never answer what Sagax itself would
@@ -13106,11 +13161,12 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(typeof event.input === "string" ? { input: event.input } : {}),
           origin: ownEnvironmentOrigin(asker, event.threadId), stepUpRequired: [],
         }))
-        || (ownDestination && !ownEnvironment && !attachmentRead)
+        || (ownDestination && !ownEnvironment && !attachmentRead && !speakerEnvironmentRules)
+        || foreignDestination
       ));
       const owner = ownerCall && asker
         ? ownerDecision({
-          mode: effectivePermissionMode(asker, ownerCall.ownerId),
+          mode: destinationAnswerer ? "approval" : effectivePermissionMode(asker, ownerCall.ownerId),
           rules: ownerApprovals.rulesOf(ownerCall.ownerId, asker.id),
           call: ownerCall,
           personMustAnswer: safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true,
@@ -13273,13 +13329,14 @@ bus.subscribe((event: RuntimeEvent) => {
             ? { version: 1, questions, ...(event.origin === "output" ? { origin: "output" as const } : {}) }
             : undefined,
           commandAllowlist: command ?? undefined,
-          ...(gateAllowKey && !strictCard && !memberAsker && !guestDriven ? { allowKey: gateAllowKey } : {}),
+          ...(gateAllowKey && !strictCard && !memberAsker && !guestDriven && !gateGrantBlocked ? { allowKey: gateAllowKey } : {}),
           // Provider-owned session grants remain separate from exact commands.
           // a member's bot is approved one action at a time: a session rule
           // (Claude's own suggestion) could reach past its workspace. Never on
           // a guest's turn either: an "always" for it would outlive it.
-          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !strictCard && !memberAsker && !guestDriven && safetyEffect?.kind !== "hold" ? true : undefined,
+          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !strictCard && !memberAsker && !guestDriven && !destinationAnswerer && !foreignDestination && safetyEffect?.kind !== "hold" ? true : undefined,
           ...(adminApproval ? { adminApproval: true } : {}),
+          ...(destinationAnswerer ? { destinationAnswerer } : {}),
           ...(serverCommandHolder ? { serverCommandHolder: true } : {}),
           // who will answer it, for the member's waiting line
           ...(adminApproval && orgAdminNames().length ? { adminNames: orgAdminNames() } : {}),
@@ -13306,6 +13363,14 @@ bus.subscribe((event: RuntimeEvent) => {
         },
       });
       if (event.requestId) askMessageByRequest.set(`${event.threadId}:${event.requestId}`, message.id);
+      // 2026-10-19: a card in a bot-to-bot conversation refreshes the bot's
+      // waitingApprovals, even when the conversation already waited on an
+      // earlier card (no activity change, so no bot frame otherwise).
+      if (asker && event.threadId) {
+        const opener = store.taskByThread(asker.id, event.threadId)?.openedBy?.botId;
+        const fresh = opener && opener !== asker.id ? store.bot(asker.id) : undefined;
+        if (fresh) broadcast({ kind: "bot", bot: wireBot(fresh) });
+      }
       if (hiddenApproval && asker) scheduleApprovalExpiry({
         threadId: event.threadId, requestId: event.requestId!, messageId: message.id,
         instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId, botId: asker.id, botName: asker.name,
@@ -16633,7 +16698,7 @@ async function startTurn(
     // engine. Try it again now, so the next message runs on the new engine.
     if (removedComputerInstanceIds(cfg.instances).has(bot.modelSelection.instanceId)) void retryComputerEngineMove();
     throw Object.assign(
-      new Error(`provider instance "${bot.modelSelection.instanceId}" is unavailable — pick another model in settings`),
+      new Error(`${engineReference(bot.modelSelection.instanceId)} is unavailable — pick another model in settings`),
       { status: 409 },
     );
   }
@@ -25437,7 +25502,7 @@ ROUTES.push(createCustomRuleRoutes({
     if (!message || !card || card.requestType !== "permission" || card.answered || card.dismissed || card.expired || card.adminApproval) return null;
     const botId = message.from?.botId ?? store.botByThread(where.threadId)?.id;
     const bot = botId ? store.bot(botId) : undefined;
-    if (!bot || approvalOwnerId(bot, where.threadId).toLowerCase() !== personId.toLowerCase()) return null;
+    if (!bot || cardAnswererId(bot, where.threadId, card).toLowerCase() !== personId.toLowerCase()) return null;
     const binding = card.customRuleCandidate?.binding;
     return binding ? { ...binding, botId: bot.id } : undefined;
   },
@@ -25447,7 +25512,7 @@ ROUTES.push(createCustomRuleRoutes({
     if (!message || !card || card.requestType !== "permission" || !card.tool || card.answered || card.dismissed || card.expired || card.adminApproval) return null;
     const botId = message.from?.botId ?? store.botByThread(where.threadId)?.id;
     const bot = botId ? store.bot(botId) : undefined;
-    if (!bot || approvalOwnerId(bot, where.threadId).toLowerCase() !== personId.toLowerCase()) return null;
+    if (!bot || cardAnswererId(bot, where.threadId, card).toLowerCase() !== personId.toLowerCase()) return null;
     if (rule.botId !== null && rule.botId !== bot.id) return "not-covered";
     const binding = card.customRuleCandidate?.binding;
     const call: CustomRuleCall = {
@@ -27291,6 +27356,64 @@ function ownDestinationRequest(bot: BotRecord, threadId: string, tool: string | 
     mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
   });
 }
+/** 2026-10-19 (JC, PR 3): whose own destination a call acts on. The bot's
+ * owner (ownDestinationRequest), or, on a bot someone else owns, the person
+ * who speaks in their own conversation with it: the destination Sagax
+ * mounted is theirs, so the card is THEIRS, never an admin's and never the
+ * bot owner's. Only when that person wrote this turn themselves (no other
+ * bot's hop, routine, webhook, email or automation) and the conversation is
+ * their own (its task owner). Null: not a person's own destination. */
+function destinationOfCall(bot: BotRecord, threadId: string, tool: string | undefined, guestDriven: boolean): { person: string; byOwner: boolean } | null {
+  const owner = effectiveBotOwner(bot).trim().toLowerCase();
+  if (ownDestinationRequest(bot, threadId, tool, guestDriven)) return { person: owner, byOwner: true };
+  const speaker = turnSpeakers.get(threadId);
+  const person = speaker?.origin === "person" ? speaker.principalId?.trim().toLowerCase() ?? "" : "";
+  if (!person || person === owner) return null;
+  if ((store.taskByThread(bot.id, threadId)?.ownerPrincipalId ?? "").trim().toLowerCase() !== person) return null;
+  if (destinationTurnOrigin(bot, threadId, person) !== "owner") return null;
+  const workplace = turnWorkplaces.get(threadId);
+  const mine = workplace?.botId === bot.id;
+  return ownDestinationCall({
+    identity: IDENTITY.kind,
+    tool,
+    environmentPrincipalId: mine ? workplace.decision.principal : null,
+    ownerPrincipalId: person,
+    guestDriven,
+    mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
+  }) ? { person, byOwner: false } : null;
+}
+/** The person whose environment (sagax-environment, sagax-desktop) Sagax
+ * mounted this turn when this tool belongs to it, or null. */
+function mountedDestinationOf(bot: BotRecord, threadId: string, tool: string | undefined): string | null {
+  const workplace = turnWorkplaces.get(threadId);
+  if (workplace?.botId !== bot.id || !workplace.decision.principal) return null;
+  const match = /^(?:mcp__)?([a-z][a-z-]{0,63})__[a-z][a-z0-9_]{0,63}$/.exec(tool?.trim() ?? "");
+  if (!match || !(workplace.ownEnvironmentServers ?? new Set<string>()).has(match[1]!)) return null;
+  return workplace.decision.principal.trim().toLowerCase();
+}
+/** Whether `person` wrote this turn themselves (member-environment.ts
+ * ownEnvironmentTurnOrigin, for the person whose destination it is). */
+function destinationTurnOrigin(bot: BotRecord, threadId: string, person: string): "owner" | "other" {
+  return ownEnvironmentTurnOrigin({
+    speaker: turnSpeakers.get(threadId),
+    ownerPrincipalId: person,
+    internalTurn: isInternalTurn(threadId),
+    routineLineage: turnRoutineLineage.has(threadId),
+    automation: Boolean(directRequestOwners.get(threadId)?.automation),
+    unattended: isUnattended(bot.id, threadId),
+  });
+}
+/** Who answers this card: the person whose own destination it acts on when
+ * that is not the bot's owner (destinationOfCall), else approvalOwnerId. */
+function cardAnswererId(bot: BotRecord, threadId: string | undefined, card: { destinationAnswerer?: unknown } | null | undefined): string {
+  const answerer = typeof card?.destinationAnswerer === "string" ? card.destinationAnswerer.trim().toLowerCase() : "";
+  return answerer || approvalOwnerId(bot, threadId);
+}
+/** The card of an approval notification or row, when it names one. */
+function noteCard(threadId: unknown, requestId: unknown): { destinationAnswerer?: unknown } | undefined {
+  if (typeof threadId !== "string" || typeof requestId !== "string") return undefined;
+  return store.messagesFor(threadId).find((row) => row.card?.requestId === requestId)?.card;
+}
 /** 2026-10-19: the attachments folders of the owner's own destinations,
  * where Sagax staged the files they sent: their desktop app's folder on
  * their computer, /workspace/attachments in their server environment. */
@@ -27496,9 +27619,9 @@ function threadActionClassContext(botId: string | undefined, threadId: string): 
 
 /** Whose chosen classes apply when nobody answers as a person: the bot's
  * owner. */
-function stepUpPolicyPerson(threadId: string, message: { from?: { botId?: string } } | undefined): string | null {
+function stepUpPolicyPerson(threadId: string, message: { from?: { botId?: string }; card?: { destinationAnswerer?: unknown } } | undefined): string | null {
   const bot = botForApproval(threadId, message ?? {});
-  return bot ? approvalOwnerId(bot, threadId) || null : null;
+  return bot ? cardAnswererId(bot, threadId, message?.card) || null : null;
 }
 
 /** A bot act card holds no route of its own: its classes and content come
@@ -27606,7 +27729,7 @@ function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: s
   }
   const bot = botForApproval(threadId, message);
   if (!bot) return { status: 404, error: "No such approval." };
-  const ownerId = approvalOwnerId(bot, threadId);
+  const ownerId = cardAnswererId(bot, threadId, card);
   const caller = ruleManager(auth);
   if (!caller || caller.toLowerCase() !== ownerId.toLowerCase()) return { status: 403, error: "Only the bot owner can save a rule." };
   const candidate = card.ownerRule;
@@ -27983,7 +28106,7 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
   if (!record) return bot;
   const mine = viewerThreadOf(record, viewerId);
   const mineTask = mine ? store.taskByThread(record.id, mine) : undefined;
-  return narrowBotForViewer(bot, {
+  const narrowedBase = narrowBotForViewer(bot, {
     viewerId,
     botOwnerPrincipalId: effectiveBotOwner(record),
     activity: viewerBotActivity(record, viewerId),
@@ -27991,6 +28114,29 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
     ...(mineTask ? { mineTask: { ...wireTask(mineTask, record.modelSelection), ...store.projectBotForTask(record.id, mine!) } as unknown as Record<string, unknown> } : {}),
     ...(mineTask ? { mineWireTask: wireTask(mineTask, record.modelSelection) as unknown as Record<string, unknown> } : {}),
   });
+  // Only the bot-to-bot conversations this viewer may read, on both bots.
+  const viewerFacts = authzViewerFromId(viewerId);
+  const conversations = interBotConversations(record.id, store.bots, (owner, task, other) => {
+    const ownerRecord = store.bot(owner.id);
+    const otherRecord = other ? store.bot(other.id) : undefined;
+    return Boolean(ownerRecord && otherRecord)
+      && botThreadReadable(ownerRecord!, task.threadId, viewerId)
+      && canOnBot(viewerFacts, "bot.use", botFacts(ownerRecord!))
+      && canOnBot(viewerFacts, "bot.use", botFacts(otherRecord!));
+  }, (ownerId, threadId) => threadBusy(ownerId, threadId));
+  const narrowed: T = { ...narrowedBase };
+  if (conversations.length) (narrowed as Record<string, unknown>).botConversations = conversations;
+  else delete (narrowed as Record<string, unknown>).botConversations;
+  // Only the bot-to-bot cards this viewer answers (approvalOwnerId).
+  if (!("waitingApprovals" in narrowed)) return narrowed;
+  const viewerKey = viewerId.trim().toLowerCase();
+  // and only in conversations they may read (the card is answered from there)
+  const waiting = interBotWaiting(record.id, record.tasks, (task) =>
+    approvalOwnerId(record, task.threadId).trim().toLowerCase() === viewerKey && botThreadReadable(record, task.threadId, viewerId));
+  const out: Record<string, unknown> = { ...narrowed };
+  if (waiting.length) out.waitingApprovals = waiting;
+  else delete out.waitingApprovals;
+  return out as T;
 }
 /** A JSON response as an organization viewer receives it: every bot it
  * carries (under `bot`, or in `bots`, at the top or one level down)
@@ -32097,7 +32243,7 @@ const orgMember = createOrgMemberRoutes({
     if (!message?.card) return null;
     const card = message.card;
     const bot = botForApproval(threadId, message);
-    const ownerId = bot ? approvalOwnerId(bot, threadId) : null;
+    const ownerId = bot ? cardAnswererId(bot, threadId, card) : null;
     return {
       found: true,
       open: !card.answered && !card.dismissed && !card.expired,
@@ -39236,7 +39382,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A server command of a member's bot is approved once, by an admin.
       if (pending.card?.adminApproval || memberOwnedInOrg(bot)) return json(res, 403, ADMIN_APPROVAL_REQUIRED);
       // A standing grant is an approval: the same people who may approve
-      // the card it came from may remember it.
+      // the card it came from may remember it (security review 2026-10-19:
+      // its answerer, not only whoever started the thread).
+      const answererRefusal = approvalAnswerRefusal(auth, bot.threadId, pending.card!.requestId!);
+      if (answererRefusal) return json(res, 403, { error: answererRefusal });
       const refusal = cardAnswerRefusal(auth, bot.threadId, pending.card!.requestId!, "allow");
       if (refusal) return json(res, 403, { error: refusal });
       const stepUpRefusal = alwaysAllowStepUpGate(ruleManager(auth), bot.id, bot.threadId, pending.card!.requestId!, allowKey, body.stepUp);
@@ -41091,7 +41240,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const rerunSelection = turnSelection(bot.id, bot.threadId) ?? bot.modelSelection;
       if (!registry.get(rerunSelection.instanceId)) {
         return json(res, 409, {
-          error: `provider instance "${rerunSelection.instanceId}" is unavailable — pick another model in settings`,
+          error: `${engineReference(rerunSelection.instanceId)} is unavailable — pick another model in settings`,
         });
       }
       const rerunInstance = registry.get(rerunSelection.instanceId)!;

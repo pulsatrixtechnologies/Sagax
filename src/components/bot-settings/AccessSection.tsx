@@ -15,6 +15,7 @@ import { useBotEditor } from "./BotEditorContext";
 import { cn } from "@/lib/cn";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { t } from "@/lib/i18n";
+import { readableOr } from "../../../shared/human-id";
 import type { LocaleKey } from "@/locales";
 import { mcpAccountFor, mcpServersForBot, useMcpServers, withMcpAccount } from "@/lib/mcp-servers";
 import { cloudComputersOffered } from "@/lib/place";
@@ -181,9 +182,9 @@ function McpServersCard({ bot, patch }: {
                     disabled={!!error}
                     onChange={(account) => patch({ mcpAccounts: withMcpAccount(bot.mcpAccounts, server.name, account) })}
                     ariaLabel={t("botAccess.mcpAccountAria", { name: server.name })}
-                    options={server.accounts.map((account) => ({
+                    options={server.accounts.map((account, index) => ({
                       value: account.id,
-                      label: (account.id === "default" ? t("botAccess.mcpAccountFirst") : account.label ?? account.id)
+                      label: (account.id === "default" ? t("botAccess.mcpAccountFirst") : readableOr(account.label ?? account.id, t("ids.accountN", { n: index + 1 })))
                         + (account.connected ? "" : ` (${t("mcp.accounts.notSignedIn")})`),
                     }))}
                   />

@@ -1011,6 +1011,7 @@ import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from 
 import { readDesktopLanguage, writeDesktopLanguage } from "./desktop-language.mjs";
 import { systemIdleSnapshot } from "./system-idle.mjs";
 import { installFetchGuard, installSessionBlock } from "./upstream-hosts.mjs";
+import { isYoutubeEmbedUrl, withYoutubeEmbedReferer } from "./youtube-referer.mjs";
 
 // No request from this app reaches the original OpenMausBot services, the
 // upstream author's repositories or an analytics host: main's own fetch is
@@ -1743,12 +1744,34 @@ function syncDesktopMutationToken(proc) {
   }
 }
 
-function installDesktopMutationHeader() {
+/** The page that embeds a YouTube player whose request carries no referrer:
+ * the window that sent it, else the main window (a request passed on by
+ * bundled-ui.cjs on an organization server; every window of the default
+ * session shows that same server's origin, so the main window names it). */
+function youtubeEmbedderPage(details) {
+  try {
+    const own = details.webContents?.getURL?.();
+    if (own) return own;
+  } catch {}
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) return mainWindow.webContents.getURL();
+  } catch {}
+  return null;
+}
+
+// A session holds one onBeforeSendHeaders listener, so both rules live in
+// it: the mutation capability (packaged builds only) and the Referer of the
+// YouTube player in the chat (electron/youtube-referer.mjs, every build).
+function installRequestHeaderRules({ mutationHeader }) {
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    if (isYoutubeEmbedUrl(details.url)) {
+      callback({ requestHeaders: withYoutubeEmbedReferer(details, () => youtubeEmbedderPage(details)) });
+      return;
+    }
     let ownsTarget = false;
     try {
       const target = new URL(details.url);
-      ownsTarget = serverReady && target.protocol === "http:" &&
+      ownsTarget = mutationHeader && serverReady && target.protocol === "http:" &&
         target.hostname === "127.0.0.1" &&
         Number(target.port || 80) === SERVER_PORT;
     } catch {}
@@ -4869,11 +4892,12 @@ app.whenReady().then(async () => {
     // sagax:// is primary; openmausbot:// stays for one release (legacy-names.mjs).
     // A packaged launch smoke must not take sagax:// away from the installed app.
     if (process.env.SAGAX_SMOKE_TEST !== "1" && !PERF_BENCH) for (const scheme of URL_SCHEMES) app.setAsDefaultProtocolClient(scheme);
-    // Chromium adds this capability below JavaScript, so renderer requests
-    // can mutate the local harness while a Full-access shell using curl
-    // cannot impersonate the person operating the desktop app.
-    installDesktopMutationHeader();
   }
+  // Chromium adds the mutation capability below JavaScript (packaged
+  // builds), so renderer requests can mutate the local harness while a
+  // Full-access shell using curl cannot impersonate the person operating
+  // the desktop app. The YouTube player's Referer rule runs in every build.
+  installRequestHeaderRules({ mutationHeader: app.isPackaged });
   // A runtime Dock image overrides the bundle icon with a flat PNG, which
   // on macOS 26 discards the Liquid Glass rendering (build/icon.icon) and
   // drops the icon into the gray "squircle jail". Packaged builds keep the

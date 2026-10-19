@@ -1045,7 +1045,7 @@ struct ConnectAppDetail: View {
             ForEach(accounts) { account in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: account.alias ?? account.id)
+                        Text(verbatim: account.readableName)
                         Text(verbatim: account.isActive ? String(localized: "Connected") : account.status.capitalized)
                             .font(.footnote)
                             .foregroundStyle(account.isActive ? Theme.success : Theme.textSecondary)

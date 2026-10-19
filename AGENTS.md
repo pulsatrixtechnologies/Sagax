@@ -15,6 +15,43 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Never a UUID/GUID on screen (2026-10-19)
+
+JC: "N'affiche JAMAIS des GUID, on ne comprend rien." Jamais d'UUID/GUID
+visible ; libellé humain, identifiant seulement en info-bulle ou action
+Copier. On desktop, web, iOS and Android:
+
+- Show a name: the bot's, the person's, the engine's, the environment or
+  computer ("Cloud computer", "Local VM", the Mac's name), the repository
+  or folder. When the name is gone, show a plain word ("Deleted bot",
+  "Unknown person", "Removed engine", "Account 2"), never the id. Never cut
+  an id short as a label (`id.slice(0, 8)` reads no better).
+- The id may stay in a `title` tooltip or a Copy action for support, never
+  in the text itself.
+- Helpers: `shared/human-id.ts` (`isOpaqueId`, `containsUuid`,
+  `readableOr`, `sagaxFolder`, `quotedIdOr` for server text a person may
+  read), `src/lib/human-label.ts` (`personLabel`, `botLabel`,
+  `engineLabel`), `src/lib/short-path.ts` (`shortPath`/`humanPath`: the
+  folders Sagax names after ids, task-workspaces/<bot>/<thread>,
+  parallel-worktrees/<bot>/<thread> and workspaces/<bot>, read as "This
+  conversation's folder", "Parallel task's folder", "The bot's own
+  folder"). iOS: `HumanID` (`ios/App/HumanID.swift`).
+- Text the server returns to a bot that holds an id it needs (a cloud
+  agent's `cloud_agent_id`, an `env_id`) tells the bot to name the thing
+  to the person, never the id.
+- Guard: `src/lib/no-visible-ids.test.ts` renders key cards and labels
+  with UUID fixtures and fails when a UUID reaches visible text. Add a
+  case there for any new screen that names records.
+
+## Side cards on the chat's right edge (2026-10-19)
+
+The dev context pods (Environment, Context, Connectors, Changes) and the
+"This run" checklist above the composer are one column: same width, same
+right edge, same card. Both draw with `src/lib/side-card.ts` (`SIDE_CARD`,
+`SIDE_CARD_HEADER`, `SIDE_CARD_ICON_BUTTON`) and take their width from
+`railGeometry` (`src/components/dev-pods/DevPods.tsx`); the run card sits
+in `RailAligned`. No hard-coded width or radius on either side.
+
 ## Tests
 
 `pnpm test` runs every vitest file in one serial process (about 45 minutes),

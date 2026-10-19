@@ -79,6 +79,16 @@ describe("/api/code/status probes the agents API", () => {
     }
   });
 
+  it("401 and 403 (the API served, not to this token) are not available, never kept", async () => {
+    for (const code of [401, 403]) {
+      const px = await perspicax(code);
+      const status = await sagax(px.url, { now: 0 });
+      expect(await status()).toEqual({ status: 200, body: { available: false, reason: "not_available" } });
+      expect((await status()).body.reason).toBe("not_available");
+      expect(px.seen.length).toBe(2);
+    }
+  });
+
   it("a Perspicax that serves it is available, with its console", async () => {
     const px = await perspicax(200);
     const status = await sagax(px.url, { now: 0 });

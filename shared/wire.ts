@@ -300,8 +300,40 @@ export interface WireBotGrant {
   at: number;
 }
 
+/** A bot-to-bot conversation of this bot waiting on the person
+ * (server/inter-bot-approvals.ts): never listed, its cards are answered from
+ * the conversation the person has open. */
+export interface WireWaitingApproval {
+  threadId: string;
+  /** The bot that opened it. */
+  openedByName?: string;
+  kind?: "pair" | "work";
+  /** The conversation's last change (epoch ms): a new card refreshes it. */
+  updatedAt?: number;
+}
+
+/** A conversation between this bot and another bot, named on both ends
+ * (server/inter-bot-conversations.ts). The messages are read through
+ * GET /api/threads/:threadId/messages. */
+export interface WireBotConversation {
+  threadId: string;
+  otherBotId: string;
+  otherName: string;
+  /** "in": the other bot opened it here; "out": this bot opened it there. */
+  direction: "in" | "out";
+  kind?: "pair" | "work";
+  updatedAt?: number;
+  /** The conversation is working now (a discreet indicator and a Stop). */
+  running?: boolean;
+}
+
 export interface WireBot {
   waitingForTeammates?: boolean;
+  /** Bot-to-bot conversations this viewer may read, both ends. Absent: none. */
+  botConversations?: WireBotConversation[];
+  /** Bot-to-bot conversations waiting on this viewer's approval. Absent:
+   * none. Server-derived. */
+  waitingApprovals?: WireWaitingApproval[];
   id: string;
   /** The task selected in the UI; running turns keep their own thread id. */
   threadId: string;
@@ -837,6 +869,11 @@ export interface OptionCardData {
    * host.commands, answered by that owner by hand; the right is checked
    * again when the card is answered. */
   serverCommandHolder?: boolean;
+  /** 2026-10-19 (PR 3): the person whose own destination (cloud computer,
+   * Local VM, own computer) this call acts on, when that is not the bot's
+   * owner: the speaker in their own conversation with a shared bot. They
+   * answer it, never an admin and never the bot's owner. */
+  destinationAnswerer?: string;
   /** The organization admins who can answer an adminApproval card (at most
    * five names), so the member's waiting line can say who. */
   adminNames?: string[];

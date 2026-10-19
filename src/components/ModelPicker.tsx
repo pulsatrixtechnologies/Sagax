@@ -39,6 +39,7 @@ import type { ViewerBotOverridePatch } from "../../shared/viewer-bot-overrides";
 import { autoChipLabel, autoReasonSentence } from "@/lib/auto-model";
 import { useAutoModelPreview } from "@/lib/auto-model-preview";
 import { threadsOnOwnModel } from "../../shared/thread-model";
+import { ModelNoEngineNotice } from "./ModelNoEngineNotice";
 import { ThreadModelsLine } from "./ThreadModelsLine";
 import { effortLabel } from "@/lib/effort-label";
 import { isUltracodeEffort, ULTRACODE_EFFORT } from "../../shared/ultracode-effort";
@@ -1731,6 +1732,7 @@ export function ModelPicker({
     >
       <ModelSearchList variant="popover" autoFocus submenus groupProviders sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)}
         favorites={{ keys: favoriteKeys, onToggle: (row) => toggleModelFavorite(row.key) }} />
+      {!viewerLocal && <ModelNoEngineNotice className="border-t border-popover-hairline px-3 py-2" onConnect={() => closeMenu()} />}
       {advanced && settingsPanel}
       <div className="border-t border-popover-hairline px-1.5 pt-1">
         <ModelMenuItem variant="popover" data-model-edit onClick={openWindow}>
@@ -1753,6 +1755,7 @@ export function ModelPicker({
         <div className="flex w-full flex-wrap items-center justify-between gap-x-5 gap-y-2">
           <div className="min-w-0 flex-1 basis-[200px]">{label}</div>
           <div className="ml-auto shrink-0">{trigger}</div>
+          {!viewerLocal && <ModelNoEngineNotice className="w-full" />}
         </div>
       ) : (
         trigger

@@ -566,7 +566,7 @@ private struct RoutineRow: View {
                 }
                 // #149: an organization routine acts in its owner's name
                 if let runAs = routine.runAs {
-                    Text(String(localized: "Runs as \(runAs.name.isEmpty ? runAs.principalId : runAs.name)"))
+                    Text(String(localized: "Runs as \(HumanID.readable(runAs.name, runAs.principalId, or: String(localized: "Unknown person")))"))
                         .font(.caption2)
                         .foregroundStyle(Theme.textSecondary)
                         .accessibilityIdentifier("routines-row-run-as.\(routine.name)")

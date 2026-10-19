@@ -1975,12 +1975,18 @@ export function BotListItem({
   const waiting = bot.activity === "waiting-on-you" || activityTasks.some((task) => task.activity === "waiting-on-you");
   // Real work in a sibling still outranks an idle coordination wait.
   const working = !waiting && (Boolean(bot.busy) || activityTasks.some((task) => task.busy || task.activity === "working"));
+  // A routine run is shown in Automations, not in the sidebar: while the bot's
+  // open thread is only a run's thread, its work keeps the mascot dot but
+  // leaves the row's status line alone.
+  const routineOnlyWork = working && Boolean(bot.tasks?.some((task) => task.threadId === bot.threadId && task.routineRunId))
+    && !activityTasks.some((task) => task.busy || task.activity === "working");
+  const lineWorking = working && !routineOnlyWork;
   const teammateWait = !waiting && !working && (Boolean(bot.waitingForTeammates) || activityTasks.some((task) => Boolean(task.waitingForTeammates)));
   const queued = activityTasks.some((task) => task.queued);
   const unread = botShowsUnread(bot);
   // quiet rows drop the last-message preview but keep a line that reports
   // something happening now; an idle bot is just its name
-  const statusLine = deleting || working || waiting || teammateWait || queued;
+  const statusLine = deleting || lineWorking || waiting || teammateWait || queued;
   // The viewer's own Primary Bot wears the orange star at the avatar's
   // bottom-right corner; a status dot then sits at the top-right instead.
   const primary = isViewersPrimaryBot(bot, orgViewerId(state));
@@ -2051,7 +2057,7 @@ export function BotListItem({
             </span>
           ) : (
             <span className="flex min-h-[18px] min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">
-              {working ? (
+              {lineWorking ? (
                 // the same typing dots as the chat header; sized to the text's
                 // line box so the row does not jump when work starts or ends
                 <span className="flex h-[18px] items-center" role="status">
@@ -2059,7 +2065,7 @@ export function BotListItem({
                   <span className="sr-only">{t("sidebar.preview.working")}</span>
                 </span>
               ) : (
-                <span dir="auto" className="truncate">{waiting ? t("sidebar.preview.waiting") : teammateWait ? t("sidebar.preview.waitingOnTeammate") : queued ? t("task.queued") : preview(bot, visible, instances)}</span>
+                <span dir="auto" className="truncate">{waiting ? t("sidebar.preview.waiting") : teammateWait ? t("sidebar.preview.waitingOnTeammate") : queued ? t("task.queued") : preview(routineOnlyWork ? { ...bot, busy: false } : bot, visible, instances)}</span>
               )}
             </span>
           )}

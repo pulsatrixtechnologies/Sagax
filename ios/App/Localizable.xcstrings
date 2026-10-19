@@ -3263,6 +3263,22 @@
         }
       }
     },
+    "Connected account": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected account"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte connecté"
+          }
+        }
+      }
+    },
     "Connected Apps": {
       "localizations": {
         "en": {
@@ -69614,6 +69630,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Abre a página"
+          }
+        }
+      }
+    },
+    "Deleted bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deleted bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot supprimé"
+          }
+        }
+      }
+    },
+    "Removed engine": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removed engine"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moteur retiré"
+          }
+        }
+      }
+    },
+    "Unknown person": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown person"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne inconnue"
           }
         }
       }

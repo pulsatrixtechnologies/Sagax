@@ -418,7 +418,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/messages$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/image$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/export$/ },
-  { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/file$/ },
+  // POST downloads a file a message shares; GET ?preview=1&ref=N streams the
+  // image a bot's Markdown renders at that offset (MarkdownImagePreview). The
+  // handler grants both from the message itself, the same check for both.
+  { methods: ["POST", "GET"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/file$/ },
   // a conversation's files (the bot panel's Files tab): the list and one file by id
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },

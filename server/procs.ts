@@ -19,6 +19,7 @@ import {
   type SpawnOptions,
 } from "node:child_process";
 import { existsSync } from "node:fs";
+import { sagaxFolder } from "../shared/human-id.ts";
 import type { Readable, Writable } from "node:stream";
 import { join, posix, win32 } from "node:path";
 import { engineStartGate } from "./engine-start-gate.ts";
@@ -198,7 +199,7 @@ type SpawnFailure = { message: string; setup: boolean };
 export function describeSpawnFailure(err: NodeJS.ErrnoException, cli: string, cwd?: string): SpawnFailure {
   if (err.code === "ENOENT") {
     if (cwd && !existsSync(cwd))
-      return { message: `This chat's working folder no longer exists: ${cwd}. Choose another folder in the bot's settings, or create it again.`, setup: false };
+      return { message: `This chat's working folder no longer exists${sagaxFolder(cwd) ? "" : `: ${cwd}`}. Choose another folder in the bot's settings, or create it again.`, setup: false };
     return { message: `\`${cli}\` isn't installed, or isn't on this app's PATH`, setup: true };
   }
   if (err.code === "EACCES" || err.code === "EPERM")

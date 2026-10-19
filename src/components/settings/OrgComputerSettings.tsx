@@ -21,6 +21,7 @@ import { screenStateLabel } from "../computer/ComputerScreen";
 import { DANGER_PILL, DescribedRow, HelpTip, SettingsGroup } from "../SettingsPrimitives";
 import { BotWorkplaceSettings } from "./BotWorkplaceSettings";
 import { LocalModelsSettings } from "./LocalModelsSettings";
+import { MyApprovalRules } from "./MyApprovalRules";
 import { serverEnvironmentStateText } from "./MyServerEnvironment";
 
 export function OrgComputerSettings({ bridge, initialLocal = null, initialServer = null, confirm = (text: string) => window.confirm(text), localVmAllowed = true }: {
@@ -52,6 +53,7 @@ export function OrgComputerSettings({ bridge, initialLocal = null, initialServer
         <ServerEnvironmentCard initial={initialServer} confirm={confirm} />
         <LocalVmCard bridge={bridge} initial={initialLocal} confirm={confirm} allowed={localVmAllowed} />
       </SettingsGroup>
+      <MyApprovalRules />
     </>
   );
 }
