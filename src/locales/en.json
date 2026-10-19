@@ -8869,5 +8869,13 @@
   "security.keys.addedNow": "Key added.",
   "security.stepUp.browser": "The browser could not open. Try again.",
   "security.stepUp.reauth": "Sign in again, then add your first key.",
-  "pages.yours": "Your pages"
+  "pages.yours": "Your pages",
+  "stream.previousTopics": "Earlier topics",
+  "stream.previousTopicsHide": "Hide earlier topics",
+  "stream.resumeTopic": "Back to the previous topic",
+  "stream.freshFailed": "The new topic could not be started. Try again.",
+  "settings.freshTopic.title": "New topic on return",
+  "settings.freshTopic.subtitle": "Coming back to a bot after this long (away, or the conversation quiet) opens a new, empty topic. The bot keeps all of the history; earlier topics stay one click away.",
+  "settings.freshTopic.hours": "{count} h",
+  "settings.freshTopic.never": "Never"
 }

@@ -54,6 +54,9 @@ export const USER_PREFERENCE_KEYS = [
   "omb.voiceMode.v1",
   // what a message sent to a busy conversation does (shared/parallel-tasks.ts)
   "sagax.busySend.v1",
+  // single stream: hours away or quiet before a return opens a fresh topic
+  // (shared/fresh-topic.ts; "0" never)
+  "sagax.freshTopicAfter.v1",
   // Settings > Privacy: send read receipts in conversations between people
   // (server/read-receipts.ts). "off" turns them off both ways; absent is on.
   "sagax.readReceipts.v1",

@@ -12728,7 +12728,15 @@
       "composer.plus.modelAria": "b0ab6c0e435dc2efb0fd29589f9f7d6e82d37286c933f9466c2378b5b377fd4e",
       "model.providerRow": "472590ae974d4c1f44b3780df0b152d9119f076c61bfb3e8cb6affd7889ac0a8",
       "sidebar.update.pill": "c1c1009d3f37ec058070a62e22caf9ac9dae2169d452487c5c271a8bcf57a291",
-      "sidebar.update.pillAria": "babb60854fdc1ba8aa02a8237d714b1666252133c201076beaa2dd1c7da43359"
+      "sidebar.update.pillAria": "babb60854fdc1ba8aa02a8237d714b1666252133c201076beaa2dd1c7da43359",
+      "stream.previousTopics": "7c947f5db5fb5ad553884681764d27fc434215ff575e2190f5ac842a66cee481",
+      "stream.previousTopicsHide": "c974ae5115cdd4a16990c99b71ef1b0883a4813a5181c70c3a5b946d592a4e6d",
+      "stream.resumeTopic": "934bf85ef03a6512dddd3b6b182386cf8d7e9d6c6e88c0148b2b0688833b4329",
+      "stream.freshFailed": "360dc4a815d32adce1c15f59d28315303a141b12b700a381a77095f3b279f5db",
+      "settings.freshTopic.title": "f1c075d8b6eb584331423bbdf9ae7b8f2305226ffaaf36a776e645e922c43a04",
+      "settings.freshTopic.subtitle": "dbb590f89c13e39e30187d55ec03011af5e1c9e5dd051ab388faabf61f6f1b57",
+      "settings.freshTopic.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "settings.freshTopic.never": "6300ef800bb884295b0b4b35682b75cecd7cc550d202db56d04a0643b8fb873f"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

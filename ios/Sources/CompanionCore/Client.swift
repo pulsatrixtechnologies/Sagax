@@ -1826,6 +1826,21 @@ public struct CompanionClient: Sendable {
         return try await send(try makeRequest("POST", "/api/bots/\(botId)/tasks", body: body), as: BotResponse.self).bot
     }
 
+    /// A fresh topic of the bot's one conversation (threads hidden), made
+    /// with its first message (FreshTopic): `POST tasks { stream: true }`,
+    /// a stream segment from the start whose turns get the earlier topics'
+    /// digest. Answers the bot as it now stands and the new thread's id.
+    public func createTopic(botId: String) async throws -> (bot: Bot, threadId: String) {
+        struct Created: Decodable {
+            struct Thread: Decodable { var threadId: String }
+            var bot: Bot
+            var task: Thread?
+        }
+        let request = try makeRequest("POST", "/api/bots/\(botId)/tasks", body: ["stream": true])
+        let created = try await send(request, as: Created.self)
+        return (created.bot, created.task?.threadId ?? created.bot.threadId)
+    }
+
     public func switchTask(botId: String, threadId: String) async throws -> Bot {
         try await send(try makeRequest("POST", "/api/bots/\(botId)/tasks/\(threadId)"), as: BotResponse.self).bot
     }

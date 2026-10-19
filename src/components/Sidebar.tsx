@@ -34,7 +34,7 @@ import {
   LayoutGrid,
   UserRoundPen,
 } from "lucide-react";
-import { api, openBotCatalog, useStore, formatTime, visibleMessages, currentTaskBot, botOpensTo, openBot, type AppState, type Bot, type BotProject, type ConfigStatus, type FolderOwnerKind, type Group, type GroupTaskUpdatePatch, type InstanceInfo, type Message } from "@/state/store";
+import { api, openBotCatalog, useStore, formatTime, visibleMessages, currentTaskBot, botOpensTo, openBot, startNewTopic, type AppState, type Bot, type BotProject, type ConfigStatus, type FolderOwnerKind, type Group, type GroupTaskUpdatePatch, type InstanceInfo, type Message } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
@@ -1368,7 +1368,8 @@ export function BotContextMenu({
   const newThreadItem = showThreads ? item(<Plus size={16} className="text-ink" />, t("task.newShort"), () => {
     dispatch({ type: "newTask", botId: bot.id });
   }, { id: "new-thread" }) : item(<Plus size={16} className="text-ink" />, t("stream.newTopic"), () => {
-    dispatch({ type: "newTask", botId: bot.id, stream: true });
+    // a draft over the conversation, created with its first message
+    startNewTopic(dispatch, bot);
   }, { id: "new-topic" });
 
   // One flat menu, no More (JC, 2026-10-15): New thread | Pin, Move to › |

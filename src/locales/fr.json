@@ -8869,5 +8869,13 @@
   "orgEngines.notice.connect": "Connecter un compte",
   "orgEngines.notice.title": "Aucun modèle ne vous répond pour l'instant",
   "orgEngines.ready": "C'est prêt : {name} répond à vos messages.",
-  "orgEngines.yourOrganization": "Votre organisation"
+  "orgEngines.yourOrganization": "Votre organisation",
+  "stream.previousTopics": "Sujets précédents",
+  "stream.previousTopicsHide": "Masquer les sujets précédents",
+  "stream.resumeTopic": "Revenir au sujet précédent",
+  "stream.freshFailed": "Le nouveau sujet n'a pas pu être créé. Réessayez.",
+  "settings.freshTopic.title": "Nouveau sujet au retour",
+  "settings.freshTopic.subtitle": "Revenir à un bot après ce délai (absence ou conversation silencieuse) ouvre un nouveau sujet vide. Le bot garde tout l'historique ; les sujets précédents restent à un clic.",
+  "settings.freshTopic.hours": "{count} h",
+  "settings.freshTopic.never": "Jamais"
 }

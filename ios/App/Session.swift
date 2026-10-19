@@ -90,6 +90,12 @@ final class Session: ObservableObject {
     @Published var actionError: String?
     /// One exact message the next opened chat should reveal.
     @Published private(set) var focusedMessageId: String?
+    /// Fresh topic drafts (Session+FreshTopic.swift): per bot, the thread a
+    /// new, empty topic is drawn over until its first message creates it.
+    @Published var freshTopics: [String: String] = [:]
+    /// Per bot, the topic a fresh draft's first message just created: the
+    /// chat on screen moves there.
+    @Published var startedTopics: [String: String] = [:]
     @Published private(set) var notificationAuthorization: UNAuthorizationStatus = .notDetermined
     /// Distinguishes a real `.notDetermined` result from the in-memory value
     /// used while notification settings are still loading at launch.
@@ -1373,7 +1379,17 @@ final class Session: ObservableObject {
                 }
             }
 
-            let destination = chat.destination
+            var destination = chat.destination
+            // The first message of a fresh topic: the server makes the topic
+            // now, then the message goes there (no empty topics before it).
+            if case let .bot(bot) = chat, freshTopics[bot.id] == bot.threadId {
+                let created = try await client.createTopic(botId: bot.id)
+                guard self.client?.connection.id == connectionID else { return false }
+                applyProfileBot(created.bot)
+                freshTopics[bot.id] = nil
+                startedTopics[bot.id] = created.threadId
+                destination = .bot(id: bot.id, threadId: created.threadId)
+            }
             let draftKey = AttachmentDraftKey(
                 destination: destination,
                 text: text,

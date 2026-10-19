@@ -3276,9 +3276,11 @@ none optional:
   writes at most one model digest per stream turn, in the background, and
   one when a new topic starts. Both are redacted.
 - Desktop (`src/lib/single-stream.ts`, `ChatView` `StreamEarlierTopics`):
-  the bot opens at its newest segment (`botOpensTo`); earlier topics load
-  above it once the live one is read back to its start, the previous one at
-  once, older ones on scroll or click, each under a "New topic" divider; a
+  the bot opens at its newest segment (`botOpensTo`); earlier topics sit
+  folded behind one "Earlier topics" line once the live one is read back to
+  its start (since 2026-10-18, section "Fresh topic on return"); opened, the
+  previous one loads at once, older ones on scroll or click, each under a
+  "New topic" divider; a
   link or search hit in an earlier topic opens the stream and loads back to
   it at once (`isEarlierSegment`, `useSegmentTranscript` with `around`), a
   notification opens the stream and the activity pill points at the topic;
@@ -3295,6 +3297,47 @@ none optional:
   `server/drivers/agents-catalog-single-stream.test.ts`,
   `src/lib/single-stream.test.ts`, `src/components/ChatView.stream.test.ts`,
   `src/lib/use-segment-transcript.test.ts`.
+
+## Fresh topic on return (single stream, 2026-10-18)
+
+JC: coming back to a bot's conversation lands on a new, empty topic, with
+less on screen; the bot keeps everything (the "Earlier topics" digest and
+`recall_topic`). Rules, none optional (`shared/fresh-topic.ts`, desktop
+`src/lib/fresh-topic.ts`, iOS `ios/Sources/CompanionCore/FreshTopic.swift`
+and `ios/App/Session+FreshTopic.swift`; shared cases in
+`shared/fresh-topic.vectors.json`, run by both test suites):
+
+- Only with threads hidden and only over a stream segment. A fresh topic
+  when the topic the bot opens to has been quiet longer than the threshold
+  (Settings > Appearance > Conversation "New topic on return", synced key
+  `sagax.freshTopicAfter.v1`, default 4 h, 0 never), or the person comes
+  back after leaving the bot or the app (window hidden or blurred, app in
+  the background, app closed) for longer than that. A person who left less
+  than the threshold ago stays in the topic they just read, however old.
+- Never over a live topic: a turn running, an approval or a question
+  waiting, an unread answer, teammates working, queued messages, or a topic
+  nobody wrote in yet. An automatic draft gives way the moment the topic
+  under it comes alive (desktop ChatView effect).
+- The fresh topic is a draft on the client (`AppState.freshTopic`,
+  `Session.freshTopics`): the server creates it (`POST .../tasks { stream:
+  true }`) with the first message, then the message goes there
+  (`sendsToFreshTopic`, the store's send effect; `Session.send`). No empty
+  topics pile up. New topic (header button, bot row menu) is a draft too.
+- Only a "return" asks the rule: `openBot` and `openBotConversationActions`
+  (desktop rows, palette, ⌘1 to 9, launch, the window coming back);
+  `Session.returning(to:)` on iOS (home rows, iPad sidebar). A notification,
+  a link, a search hit or `openBotThread` opens its own thread and clears a
+  draft (`focusMessage` drops the draft of the bot that owns the thread).
+- On screen: the earlier topics are folded behind one discreet "Earlier
+  topics" line (`PreviousTopicsLine`, `data-previous-topics`); the live
+  topic draws them only on that line, a link, a search hit or the activity
+  pill (no more auto-draw on read back). Under a fresh topic the line also
+  shows the topic it covers, and "Back to the previous topic" drops the
+  draft. ⌘F still searches the covered topic and the earlier ones. iOS has
+  no stream drawing: its line shows the covered topic again.
+- Tests: `shared/fresh-topic.test.ts`, `src/lib/fresh-topic.test.ts`,
+  `src/components/ChatView.stream.test.ts`, `src/components/thread-home.test.ts`,
+  `server/fresh-topic.e2e.test.ts`, `ios/Tests/CompanionCoreTests/FreshTopicTests.swift`.
 
 ## Person panel and hidden sidebar entries
 

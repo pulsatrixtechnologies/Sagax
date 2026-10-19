@@ -55,6 +55,10 @@ struct HomeHiddenEntries: View {
 
 /// Settings > Appearance: on iPad the sidebar density, the thread switch, then the hidden entries with
 /// Show and whether a new message brings one back.
+private func freshTopicLabel(_ hours: Int) -> String {
+    hours == 0 ? String(localized: "Never") : String(localized: "\(hours) h")
+}
+
 struct SidebarAppearanceSettings: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
@@ -62,6 +66,9 @@ struct SidebarAppearanceSettings: View {
     /// iPad I2: the desktop sidebar's density, on this device.
     @AppStorage(PrefKey.desktopSidebarDensity) private var desktopDensity = DesktopSidebarDensity.comfortable.rawValue
     @AppStorage(SidebarLogoPreference.key) private var showSidebarLogo = SidebarLogoPreference.defaultEnabled
+    /// One conversation per bot: how long away (or quiet) before coming back
+    /// opens a fresh topic (CompanionCore/FreshTopic.swift).
+    @AppStorage(FreshTopic.afterKey) private var freshTopicAfter = String(FreshTopic.defaultHours)
 
     var body: some View {
         let rows = prefs.layout(session).hiddenRows
@@ -96,6 +103,24 @@ struct SidebarAppearanceSettings: View {
                 )),
                 identifier: "settings.showThreads"
             )
+            if !prefs.showThreads {
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                Menu {
+                    Picker(selection: $freshTopicAfter) {
+                        ForEach(FreshTopic.choices, id: \.self) { hours in
+                            Text(freshTopicLabel(hours)).tag(String(hours))
+                        }
+                    } label: { EmptyView() }
+                } label: {
+                    SettingsRow(
+                        title: "New topic on return",
+                        subtitle: "Coming back to a bot after this long opens a new, empty topic. The bot keeps all of the history.",
+                        accessory: .valueChevron(freshTopicLabel(FreshTopic.parseAfter(freshTopicAfter))),
+                        identifier: "settings.freshTopicAfter"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
         }
         // #210: one place at a time, this device only; off while threads are off
         SettingsSectionLabel(text: "Threads location")

@@ -1,0 +1,174 @@
+{
+  "comment": "Shared cases for freshTopicOnReturn (shared/fresh-topic.ts) and FreshTopic.onReturn (ios CompanionCore). Times in ms; H = 3600000.",
+  "cases": [
+    {
+      "name": "quiet past the threshold",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000
+      },
+      "now": 14402000,
+      "afterMs": 14400000,
+      "fresh": true,
+      "reason": "idle"
+    },
+    {
+      "name": "quiet just under the threshold",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000
+      },
+      "now": 14400500,
+      "afterMs": 14400000,
+      "fresh": false,
+      "reason": "recent"
+    },
+    {
+      "name": "away past the threshold while the topic moved",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 14000000
+      },
+      "now": 14500000,
+      "afterMs": 14400000,
+      "leftAt": 50000,
+      "fresh": true,
+      "reason": "away"
+    },
+    {
+      "name": "away briefly",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 14000000
+      },
+      "now": 14500000,
+      "afterMs": 14400000,
+      "leftAt": 14000000,
+      "fresh": false,
+      "reason": "recent"
+    },
+    {
+      "name": "quiet for long but seen a moment ago",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000
+      },
+      "now": 99000000,
+      "afterMs": 14400000,
+      "leftAt": 98000000,
+      "fresh": false,
+      "reason": "seen"
+    },
+    {
+      "name": "a turn runs",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000,
+        "busy": true
+      },
+      "now": 99000000,
+      "afterMs": 14400000,
+      "fresh": false,
+      "reason": "live"
+    },
+    {
+      "name": "working activity",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000,
+        "activity": "working"
+      },
+      "now": 99000000,
+      "afterMs": 14400000,
+      "fresh": false,
+      "reason": "live"
+    },
+    {
+      "name": "teammates still working",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000,
+        "waitingForTeammates": true
+      },
+      "now": 99000000,
+      "afterMs": 14400000,
+      "fresh": false,
+      "reason": "live"
+    },
+    {
+      "name": "messages queued",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000
+      },
+      "now": 99000000,
+      "afterMs": 14400000,
+      "queued": true,
+      "fresh": false,
+      "reason": "live"
+    },
+    {
+      "name": "an approval waits",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000,
+        "activity": "waiting-on-you"
+      },
+      "now": 99000000,
+      "afterMs": 14400000,
+      "fresh": false,
+      "reason": "waiting"
+    },
+    {
+      "name": "an unread answer",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000,
+        "unread": true
+      },
+      "now": 99000000,
+      "afterMs": 14400000,
+      "fresh": false,
+      "reason": "unread"
+    },
+    {
+      "name": "an empty topic is already new",
+      "topic": {
+        "createdAt": 1000,
+        "updatedAt": 1000
+      },
+      "now": 99000000,
+      "afterMs": 14400000,
+      "fresh": false,
+      "reason": "untouched"
+    },
+    {
+      "name": "no stamp reads as empty",
+      "topic": {
+        "createdAt": 1000
+      },
+      "now": 99000000,
+      "afterMs": 14400000,
+      "fresh": false,
+      "reason": "untouched"
+    },
+    {
+      "name": "no topic yet",
+      "now": 99000000,
+      "afterMs": 14400000,
+      "fresh": false,
+      "reason": "no-topic"
+    },
+    {
+      "name": "setting off",
+      "topic": {
+        "createdAt": 0,
+        "updatedAt": 1000
+      },
+      "now": 99000000,
+      "afterMs": 0,
+      "fresh": false,
+      "reason": "never"
+    }
+  ]
+}

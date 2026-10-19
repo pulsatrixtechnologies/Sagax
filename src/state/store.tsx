@@ -71,6 +71,7 @@ import { readLastBotSection, rememberBotSection } from "@/lib/last-bot-section";
 import { approvalWithdrawKey, showNotification, withdrawNotification, type NotificationTarget } from "@/lib/notify";
 import { singleStreamTurnField, useShowThreads } from "@/lib/thread-preferences";
 import { isEarlierSegment, streamHomeThread } from "@/lib/single-stream";
+import { freshTopicLanding, noteBackAtBot, noteLeftBot, onScreenBot, setOnScreenBot } from "@/lib/fresh-topic";
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
 import { t } from "@/lib/i18n";
@@ -1392,6 +1393,11 @@ export interface AppState {
   /** a search hit to scroll to once its thread is on screen; nonce lets the
    * same message be focused twice in a row */
   focusMessage: { threadId: string; messageId: string; matchText?: string; nonce: number; consumed: boolean } | null;
+  /** Fresh topic drafts (single stream, src/lib/fresh-topic.ts): per bot,
+   * the topic a new, empty one is drawn over until the first message
+   * creates it on the server. `auto` when coming back put it there (it
+   * gives way as soon as that topic comes alive); New topic sets it too. */
+  freshTopic: Readonly<Record<string, { threadId: string; auto: boolean }>>;
   /** The New divider: the first message of the open conversation that came
    * in while the person was away. Taken from its unread flag when it opens,
    * so it holds still while that conversation stays open. */
@@ -1726,6 +1732,8 @@ export type Action =
   | { type: "toggleInspector"; open?: boolean }
   | { type: "toggleActivity"; open?: boolean }
   | { type: "focusMessage"; threadId: string; messageId: string; matchText?: string }
+  /** Draw a fresh topic over `threadId` (null: show that topic again). */
+  | { type: "freshTopic"; botId: string; threadId: string | null; auto?: boolean }
   | { type: "focusMessageConsumed"; nonce: number }
   | { type: "unreadDividerDone"; threadId: string }
   | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; subPage?: string; phonePairing?: boolean }
@@ -1772,7 +1780,9 @@ interface NotificationThreadOwner {
   mainThreadId?: string;
   /** The fields the single stream reads (src/lib/single-stream.ts) ride along
    * when the caller has them; a room's tasks need only their ids. */
-  tasks?: Array<{ threadId: string; createdAt?: number; routineRunId?: unknown; hidden?: unknown; confidential?: unknown; openedBy?: unknown; parallelOf?: unknown }>;
+  tasks?: Array<{ threadId: string; createdAt?: number; routineRunId?: unknown; hidden?: unknown; confidential?: unknown; openedBy?: unknown; parallelOf?: unknown;
+    /** What a return reads (src/lib/fresh-topic.ts). */
+    updatedAt?: number; busy?: boolean; activity?: string; unread?: boolean; waitingForTeammates?: boolean }>;
 }
 
 interface NotificationRoutingState {
@@ -1835,9 +1845,31 @@ export function openNotificationTarget(
     (bot.tasks ?? []).some((task) => task.threadId === target.threadId);
   // The single stream: an older segment is part of the one conversation, so
   // the bot opens at its newest segment and the stream scrolls back to it.
-  if (known && target.threadId && !threadsShown && isEarlierSegment(bot.tasks, target.threadId, bot.threadId)) openBot(dispatch, bot, threadsShown);
+  // A notification always opens the topic it is about, never a fresh one.
+  if (known && target.threadId && !threadsShown && isEarlierSegment(bot.tasks, target.threadId, bot.threadId)) openBot(dispatch, bot, threadsShown, { landing: false });
   else if (known && target.threadId) openBotThread(dispatch, bot, target.threadId, threadsShown);
-  else openBot(dispatch, bot, threadsShown);
+  else openBot(dispatch, bot, threadsShown, { landing: false });
+}
+
+/** The fresh topic drafts without the one of the bot that owns `threadId`. */
+function withoutFreshTopicFor(state: Pick<AppState, "freshTopic" | "bots">, threadId: string): AppState["freshTopic"] {
+  const drafts = state.freshTopic;
+  const owner = Object.keys(drafts).find((botId) => drafts[botId]?.threadId === threadId
+    || state.bots.some((bot) => bot.id === botId && (bot.threadId === threadId || bot.tasks?.some((task) => task.threadId === threadId))));
+  if (!owner) return drafts;
+  const { [owner]: _gone, ...rest } = drafts;
+  return rest;
+}
+
+/** Whether a send is the first message of a fresh topic: typed in the
+ * bot's conversation while a fresh topic is drawn over its live topic. A
+ * voice call's words stay with the call's own thread. */
+export function sendsToFreshTopic(state: Pick<AppState, "freshTopic" | "bots">, action: { botId: string; threadId?: string; voiceCall?: unknown }): boolean {
+  const draft = state.freshTopic[action.botId];
+  if (!draft || action.voiceCall) return false;
+  const bot = state.bots.find((candidate) => candidate.id === action.botId);
+  const threadId = action.threadId ?? bot?.threadId;
+  return Boolean(bot && threadId === draft.threadId && bot.threadId === draft.threadId);
 }
 
 /** The thread opening a bot itself shows. With threads shown, the one it
@@ -1871,10 +1903,46 @@ export function openBot(
   dispatch: (action: Action) => void,
   bot: Pick<NotificationThreadOwner, "id" | "threadId" | "mainThreadId" | "tasks">,
   threadsShown: boolean,
+  options: { landing?: boolean } = {},
 ) {
   const opened = botOpensTo(bot, threadsShown);
   if (opened === bot.threadId) dispatch({ type: "select", id: bot.id });
   else openBotThread(dispatch, bot, opened, threadsShown);
+  // Coming back to the single stream after a while lands on a fresh topic
+  // (src/lib/fresh-topic.ts). A notification or a link passes landing false.
+  if (!threadsShown && options.landing !== false) landOnBot(dispatch, bot, opened);
+}
+
+/** Coming back to `bot` at `threadId`: a fresh topic drawn over it when the
+ * rule says so (shared/fresh-topic.ts), else that topic as it is. */
+export function landOnBot(
+  dispatch: (action: Action) => void,
+  bot: Pick<NotificationThreadOwner, "id" | "tasks">,
+  threadId: string,
+  options: { force?: boolean; now?: number } = {},
+) {
+  // Opening the bot already on screen is not a return: its draft stays.
+  if (!options.force && onScreenBot() === bot.id) return;
+  const decision = freshTopicLanding(bot, threadId, { now: options.now ?? Date.now(), ...(options.force ? { force: true } : {}) });
+  if (decision.fresh) dispatch({ type: "freshTopic", botId: bot.id, threadId, auto: true });
+  // Opening the bot by hand shows the topic it opens to; the window coming
+  // back (force) keeps a New topic the person started.
+  else if (!options.force) dispatch({ type: "freshTopic", botId: bot.id, threadId: null });
+}
+
+/** "New topic" (the chat header, the bot row menu): the bot's conversation
+ * with a fresh, empty topic drawn over its newest one, created on the
+ * server with the first message (src/lib/fresh-topic.ts). A topic nobody
+ * wrote in yet already is a new topic: it opens as it is. */
+export function startNewTopic(
+  dispatch: (action: Action) => void,
+  bot: Pick<NotificationThreadOwner, "id" | "threadId" | "mainThreadId" | "tasks">,
+) {
+  const opened = botOpensTo(bot, false);
+  openBot(dispatch, bot, false, { landing: false });
+  const task = bot.tasks?.find((candidate) => candidate.threadId === opened);
+  const empty = !task || typeof task.updatedAt !== "number" || typeof task.createdAt !== "number" || task.updatedAt <= task.createdAt;
+  if (!empty) dispatch({ type: "freshTopic", botId: bot.id, threadId: opened });
 }
 
 /** Open one of a bot's threads, as a notification, a chip, a link or a
@@ -1891,6 +1959,8 @@ export function openBotThread(
 ) {
   if (threadsShown || threadId === bot.threadId) dispatch({ type: "select", id: bot.id });
   dispatch({ type: "switchTask", botId: bot.id, threadId });
+  // A thread opened by name is shown, never a fresh topic over it.
+  dispatch({ type: "freshTopic", botId: bot.id, threadId: null });
 }
 
 /** A thread the person can open from a chip or a #Title link. */
@@ -2795,9 +2865,22 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, revealThread: { threadId: action.threadId, nonce: (state.revealThread?.nonce ?? 0) + 1 } };
     case "setThreadReturn":
       return { ...state, threadReturn: action.threadReturn };
+    case "freshTopic": {
+      const current = state.freshTopic[action.botId];
+      if (!action.threadId) {
+        if (!current) return state;
+        const { [action.botId]: _gone, ...rest } = state.freshTopic;
+        return { ...state, freshTopic: rest };
+      }
+      if (current?.threadId === action.threadId && current.auto === Boolean(action.auto)) return state;
+      return { ...state, freshTopic: { ...state.freshTopic, [action.botId]: { threadId: action.threadId, auto: Boolean(action.auto) } } };
+    }
     case "focusMessage":
       return {
         ...state,
+        // A link or a search hit into a topic of a bot under a fresh topic
+        // shows that topic: the fresh one gives way.
+        freshTopic: withoutFreshTopicFor(state, action.threadId),
         focusMessage: {
           threadId: action.threadId,
           messageId: action.messageId,
@@ -3064,6 +3147,9 @@ export function reducer(state: AppState, action: Action): AppState {
       const bot = animated.bots.find((candidate) => candidate.id === action.botId);
       const threadId = action.threadId ?? bot?.threadId;
       if (!bot || threadId !== bot.threadId) return animated;
+      // The first message of a fresh topic lands in that topic once the
+      // server created it (the send effect), never in the one under it.
+      if (sendsToFreshTopic(animated, action)) return animated;
       if (bot.messages.some((message) => message.sendId === action.sendId)) return animated;
       const liveCallId = voiceCallId(action.botId);
       const voiceCall = action.voiceCall ?? (liveCallId ? { callId: liveCallId } : undefined);
@@ -3385,6 +3471,7 @@ export const initialState: AppState = {
   dataTables: {},
   dataView: null,
   focusMessage: null,
+  freshTopic: {},
   unreadDivider: null,
   connected: false,
   error: null,
@@ -4082,6 +4169,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         return [];
       })();
+      // Read before the reducer runs: the send lands in a fresh topic.
+      const freshSendBefore = action.type === "send" && sendsToFreshTopic(stateRef.current, action);
       const quizBeforeSend = (() => {
         if (action.type !== "send") return undefined;
         return botBeforeSend ? openOnboardingCard(botBeforeSend) : undefined;
@@ -4262,6 +4351,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // persist through the existing card route so an older server that
           // does not auto-dismiss still hides the quiz on this client
           if (quizBeforeSend) persistCard(action.botId, quizBeforeSend.id, { dismissed: true });
+          // The first message of a fresh topic (src/lib/fresh-topic.ts): the
+          // server creates the topic now, then the message goes there. No
+          // empty topic is ever made ahead of it.
+          if (freshSendBefore) {
+            const revision = (navigation.get(action.botId) ?? 0) + 1;
+            navigation.set(action.botId, revision);
+            const { replyToId: _reply, ...rest } = action;
+            void botPatchQueue.flush(action.botId)
+              .then(() => api<{ bot: Bot }>(`/api/bots/${action.botId}/tasks`, { method: "POST", body: JSON.stringify({ stream: true }) }))
+              .then((r) => {
+                if (!r?.bot) throw new Error(t("stream.freshFailed"));
+                if (Array.isArray(r.bot.messages)) threadPages.set(r.bot.threadId, { messages: r.bot.messages, hasMore: r.bot.hasMore, activeLeafId: r.bot.activeLeafId, at: Date.now() });
+                if (navigation.get(action.botId) === revision) dispatch({ type: "taskSwitched", bot: r.bot });
+                rawDispatch({ type: "freshTopic", botId: action.botId, threadId: null });
+                dispatch({ ...rest, threadId: r.bot.threadId });
+              })
+              .catch((error) => {
+                showError(error);
+                action.onError?.();
+              });
+            break;
+          }
           const threadId =
             action.threadId ?? stateRef.current.bots.find((bot) => bot.id === action.botId)?.threadId;
           const sendId = action.sendId ?? crypto.randomUUID();
@@ -4874,7 +4985,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     launched.current = true;
     const bot = state.bots.find((candidate) => candidate.id === state.selectedId);
     if (bot && state.activeView === "chat" && botOpensTo(bot, showThreads) !== bot.threadId) openBot(dispatch, bot, showThreads);
+    // Launching the app is a return too: after the threshold (since the
+    // conversation went quiet, or since the app closed) a fresh topic.
+    else if (bot && state.activeView === "chat" && !showThreads) landOnBot(dispatch, bot, bot.threadId, { force: true });
   }, [state.hydrated, state.bots, state.selectedId, state.activeView, showThreads, dispatch]);
+
+  // Fresh topic on return (src/lib/fresh-topic.ts): which bot is on screen,
+  // when the person left it (another bot or view, the window hidden, the app
+  // closing) and, when the window comes back after the threshold, a fresh
+  // topic over the conversation at rest.
+  const onScreenId = state.hydrated && state.activeView === "chat" && state.bots.some((bot) => bot.id === state.selectedId) ? state.selectedId : null;
+  useEffect(() => {
+    if (!onScreenId) return;
+    const visible = () => typeof document === "undefined" || document.visibilityState !== "hidden";
+    if (visible()) {
+      setOnScreenBot(onScreenId);
+      noteBackAtBot(onScreenId);
+    }
+    // Hidden or minimized, or another app in front (blur): away.
+    const onVisibility = (event?: Event) => {
+      if (!visible() || event?.type === "blur") {
+        setOnScreenBot(null);
+        noteLeftBot(onScreenId, Date.now());
+        return;
+      }
+      const bot = stateRef.current.bots.find((candidate) => candidate.id === onScreenId);
+      if (bot && !showThreads && stateRef.current.freshTopic[onScreenId]?.threadId !== bot.threadId) {
+        landOnBot(dispatch, bot, bot.threadId, { force: true });
+      }
+      setOnScreenBot(onScreenId);
+      noteBackAtBot(onScreenId);
+    };
+    const onPageHide = () => noteLeftBot(onScreenId, Date.now());
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onVisibility);
+    window.addEventListener("focus", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onVisibility);
+      window.removeEventListener("focus", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      // Another bot, another view: this one is left now.
+      if (visible()) noteLeftBot(onScreenId, Date.now());
+      setOnScreenBot(null);
+    };
+  }, [onScreenId, showThreads, dispatch]);
 
   // ── initial load + SSE fold ──────────────────────────────────────────
   useEffect(() => {

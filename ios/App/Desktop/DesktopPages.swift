@@ -378,7 +378,7 @@ private struct DesktopTeamCanvas: View {
     /// A card opens the bot's panel over its chat (the desktop opens its
     /// settings); the chat button opens the chat.
     private func open(_ bot: Bot, panel: Bool) {
-        shell.open(session.threadSelection.restoringThread(.bot(bot), connectionID: session.connection?.id))
+        shell.open(session.returning(to: .bot(bot)))
         if panel { shell.showPanel(.details) }
     }
 

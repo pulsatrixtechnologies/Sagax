@@ -89,7 +89,7 @@ struct DesktopPinnedTile: View {
     var body: some View {
         let selected = model.selected?.id == chat.id
         let menu = DesktopSidebarMenus(session: session, model: model, prefs: prefs).entries(for: menuKind).0
-        Button { model.open(session.threadSelection.restoringThread(chat, connectionID: session.connection?.id)) } label: {
+        Button { model.open(session.returning(to: chat)) } label: {
             VStack(spacing: rail ? 6 : 3) {
                 ChatAvatarView(chat: chat, size: rail ? 36 : 64, state: .idle, background: theme.sidebar)
                     .frame(width: rail ? 36 : 64, height: rail ? 36 : 64)
@@ -237,7 +237,7 @@ struct DesktopSidebarRow: View {
     }
 
     private func open() {
-        model.open(session.threadSelection.restoringThread(chat, connectionID: session.connection?.id))
+        model.open(session.returning(to: chat))
     }
 
     // MARK: Content

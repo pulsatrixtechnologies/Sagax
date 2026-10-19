@@ -159,6 +159,12 @@ struct ChatView: View {
         }
     }
 
+    /// The topic a fresh draft's first message made for this bot, if any.
+    var startedTopic: String? {
+        guard case let .bot(bot) = chat else { return nil }
+        return session.startedTopics[bot.id]
+    }
+
     /// Bot selection is local to this screen; another device's navigation
     /// must not move a draft, approval, or Stop action to a different thread.
     var threadId: String { current.threadId }
@@ -292,7 +298,11 @@ struct ChatView: View {
 
     var screen: some View {
         AnyView(arrival)
+        .onAppear {
+            if case let .bot(bot) = current { session.noteBackAtBot(bot.id) }
+        }
         .onDisappear {
+            if case let .bot(bot) = current { session.noteLeftBot(bot.id) }
             if AttentionCenter.shared.viewingThreadId == current.threadId { AttentionCenter.shared.viewingThreadId = nil }
             dictation.stop()
             voiceNote.cancel()
@@ -310,6 +320,21 @@ struct ChatView: View {
                 dictation.stop()
                 voiceNote.cancel()
             }
+            // Fresh topic on return: away while the app is in the background;
+            // back after the threshold, a fresh topic over the topic at rest.
+            if case let .bot(bot) = current {
+                if phase == .background { session.noteLeftBot(bot.id) }
+                if phase == .active, session.freshTopicLeftAt(bot.id) != nil {
+                    session.landOnBot(current, force: true)
+                    session.noteBackAtBot(bot.id)
+                }
+            }
+        }
+        .onValueChange(of: startedTopic) { started in
+            // the first message of a fresh topic made it: this chat moves there
+            guard let started, case let .bot(bot) = current else { return }
+            session.consumeStartedTopic(bot.id)
+            selectedThreadId = started
         }
         .onValueChange(of: showingComputer) { shown in
             if shown { dictation.stop() }
@@ -448,7 +473,10 @@ struct ChatView: View {
         // Read the transcript once for this render. Pagination changes the
         // array as a unit; repeatedly reaching through ObservableObject for
         // every row only recomputes the same value.
-        let transcript = rows
+        // A fresh topic (Session+FreshTopic.swift): empty, the topic under it
+        // one tap away behind "Earlier topics".
+        let fresh = session.isFreshTopic(current)
+        let transcript = fresh ? [] : rows
         // A VStack with the composer as a sibling, rather than a scroll view
         // with `.safeAreaInset`. The inset version sized itself to its
         // content, so a short transcript left the composer floating in the
@@ -466,7 +494,12 @@ struct ChatView: View {
                     // A thread holds 50 messages until you ask for more, so
                     // there is nothing here worth being lazy about.
                     VStack(alignment: .leading, spacing: 0) {
-                        if session.state.hasMore[threadId] == true {
+                        if fresh, case let .bot(bot) = current {
+                            FreshTopicHeader(botName: bot.name, description: bot.description) {
+                                session.showTopicUnderFresh(bot.id)
+                            }
+                        }
+                        if !fresh, session.state.hasMore[threadId] == true {
                             Button("Load earlier messages") {
                                 // keep the reader where they were: after older
                                 // messages are prepended, sit back on the one

@@ -17,8 +17,10 @@ import {
   AlertTriangle,
   ArrowDown,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Copy,
 
   Code,
@@ -50,6 +52,7 @@ import {
   formatTime,
   openNotificationTarget,
   openThread,
+  startNewTopic,
   visibleMessages,
   type Action,
   type AppState,
@@ -1416,15 +1419,49 @@ function TopicDivider({ task }: { task: Pick<Task, "threadId" | "title" | "creat
   );
 }
 
+/** The line that opens a fresh topic not created yet (src/lib/fresh-topic.ts),
+ * under the earlier topics once they are shown. */
+function FreshTopicDivider({ onResume }: { onResume: () => void }) {
+  return (
+    <div className="my-2 flex items-center gap-3 text-[11.5px] text-ink-tertiary" role="separator" data-fresh-topic-divider>
+      <span className="h-px flex-1 bg-hairline/60" />
+      <span className="truncate">{t("stream.newTopic")}</span>
+      <button type="button" onClick={onResume} className="rounded px-1.5 py-0.5 text-ink-secondary hover:bg-raised hover:text-ink" data-fresh-topic-resume>
+        {t("stream.resumeTopic")}
+      </button>
+      <span className="h-px flex-1 bg-hairline/60" />
+    </div>
+  );
+}
+
+/** One discreet line above a topic: the earlier topics, folded until asked
+ * for (JC 2026-10-18: less on screen; ⌘F still searches them). */
+function PreviousTopicsLine({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <div className="flex justify-center" data-previous-topics={open ? "open" : "closed"}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] text-ink-tertiary transition-colors hover:bg-raised hover:text-ink-secondary"
+      >
+        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        {t(open ? "stream.previousTopicsHide" : "stream.previousTopics")}
+      </button>
+    </div>
+  );
+}
+
 /** "New topic" in the chat header while threads are off: a fresh context in
  * the same conversation; the topic it closes stays on screen above. */
-function NewTopicButton({ bot }: { bot: Pick<Bot, "id" | "name"> }) {
+function NewTopicButton({ bot }: { bot: Bot }) {
   const dispatch = useStoreDispatch();
   return (
     <button
       type="button"
       data-new-topic={bot.id}
-      onClick={() => dispatch({ type: "newTask", botId: bot.id, stream: true })}
+      // a draft: the server creates the topic with its first message
+      onClick={() => startNewTopic(dispatch, bot)}
       title={t("stream.newTopic")}
       aria-label={t("stream.newTopicAria", { name: bot.name })}
       className="flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] border-hairline-weak bg-elevated text-ink-secondary transition-colors hover:bg-elevated-hover hover:text-ink"
@@ -1499,8 +1536,10 @@ function StreamSegment({ task, first, rows, place, engine, aroundId, onQuote, on
 /** The topics before the live one, loaded back one at a time: the previous
  * one at once (a new topic never hides what came before), older ones as the
  * person scrolls up or asks, and as far back as a link or a search hit needs. */
-function StreamEarlierTopics({ bot, rows, place, engine, scrollRef, followRef, reach, onReached, onQuote }: {
+function StreamEarlierTopics({ bot, rows, place, engine, scrollRef, followRef, reach, onReached, onQuote, includeCurrent = false }: {
   bot: Bot;
+  /** Under a fresh topic: the topic it is drawn over is an earlier one too. */
+  includeCurrent?: boolean;
   rows: ChatRows;
   place: EffectivePlace;
   engine: InstanceInfo | undefined;
@@ -1514,7 +1553,11 @@ function StreamEarlierTopics({ bot, rows, place, engine, scrollRef, followRef, r
   onQuote: (message: Message, threadId: string) => void;
 }) {
   "use memo";
-  const above = useMemo(() => segmentsAbove(bot.tasks, bot.threadId), [bot.tasks, bot.threadId]);
+  const above = useMemo(() => {
+    const earlier = segmentsAbove(bot.tasks, bot.threadId);
+    const current = includeCurrent ? bot.tasks?.find((task) => task.threadId === bot.threadId) : undefined;
+    return current ? [current, ...earlier] : earlier;
+  }, [bot.tasks, bot.threadId, includeCurrent]);
   const first = above.at(-1)?.threadId;
   const [count, setCount] = useState(1);
   // A link or a search hit in an earlier topic loads that topic around its
@@ -1660,8 +1703,9 @@ function useStreamAnchor(
 
 /** An earlier topic of the stream has something new (a late answer, a card):
  * one pill that brings it on screen and reads it. */
-function EarlierTopicActivity({ bot, onReach }: { bot: Bot; onReach: (threadId: string) => void }) {
-  const above = segmentsAbove(bot.tasks, bot.threadId);
+function EarlierTopicActivity({ bot, onReach, includeCurrent = false }: { bot: Bot; onReach: (threadId: string) => void; includeCurrent?: boolean }) {
+  const current = includeCurrent ? bot.tasks?.find((task) => task.threadId === bot.threadId) : undefined;
+  const above = current ? [current, ...segmentsAbove(bot.tasks, bot.threadId)] : segmentsAbove(bot.tasks, bot.threadId);
   const active = above.find((task) => task.unread || task.activity === "waiting-on-you");
   if (!active) return null;
   return (
@@ -1863,6 +1907,23 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const currentTask = bot.tasks?.find((task) => task.threadId === bot.threadId);
   const streamOn = !side && !showThreads && Boolean(currentTask && isStreamSegment(currentTask));
   const streamHasEarlier = streamOn && segmentsAbove(bot.tasks, bot.threadId).length > 0;
+  // A fresh topic drawn over this one (src/lib/fresh-topic.ts): an empty
+  // topic, created on the server with its first message; this topic and the
+  // earlier ones sit folded behind "Earlier topics".
+  const freshDraft = useStoreSelector((current) => current.freshTopic[bot.id]);
+  const fresh = streamOn && !preview && freshDraft?.threadId === bot.threadId;
+  const [previousOpenFor, setPreviousOpenFor] = useState<string | null>(null);
+  const previousKey = `${bot.threadId}:${fresh ? "fresh" : "live"}`;
+  const previousOpen = previousOpenFor === previousKey;
+  const togglePrevious = useCallback(() => setPreviousOpenFor((current) => current === previousKey ? null : previousKey), [previousKey]);
+  const resumeTopic = useCallback(() => dispatch({ type: "freshTopic", botId: bot.id, threadId: null }), [bot.id, dispatch]);
+  // Coming back put the fresh topic there: it gives way the moment the topic
+  // under it comes alive (another device's turn, an approval), never hiding
+  // a live conversation. A New topic the person started stays.
+  const underAlive = Boolean(currentTask && (currentTask.busy || currentTask.activity === "working" || currentTask.activity === "waiting-on-you"));
+  useEffect(() => {
+    if (fresh && freshDraft?.auto && underAlive) dispatch({ type: "freshTopic", botId: bot.id, threadId: null });
+  }, [fresh, freshDraft?.auto, underAlive, bot.id, dispatch]);
   const [streamReach, setStreamReach] = useState<{ threadId: string; nonce: number } | null>(null);
   const clearStreamReach = useCallback(() => setStreamReach((current) => current && null), []);
   // Earlier topics stay drawn once shown for this live topic: a new message
@@ -1874,9 +1935,15 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const streamFocusEarlier = streamHasEarlier && Boolean(streamFocus && !streamFocus.consumed && segmentsAbove(bot.tasks, bot.threadId).some((task) => task.threadId === streamFocus.threadId));
   const [streamShownFor, setStreamShownFor] = useState<string | null>(null);
   const reachEarlierTopic = useCallback((threadId: string) => {
+    // Under a fresh topic, the activity it points at is shown as it is.
+    dispatch({ type: "freshTopic", botId: bot.id, threadId: null });
+    if (threadId === bot.threadId) {
+      api(`/api/bots/${bot.id}/read`, { method: "POST", body: JSON.stringify({ threadId }) }).catch(() => {});
+      return;
+    }
     setStreamReach((current) => ({ threadId, nonce: (current?.nonce ?? 0) + 1 }));
     api(`/api/bots/${bot.id}/read`, { method: "POST", body: JSON.stringify({ threadId }) }).catch(() => {});
-  }, [bot.id]);
+  }, [bot.id, bot.threadId, dispatch]);
   // Reply on an earlier topic's message quotes it into the live composer.
   const quoteEarlier = useCallback((message: Message, threadId: string) => {
     const text = (message.text ?? "").trim();
@@ -1894,7 +1961,11 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   }, [bot.id, bot.threadId]);
   const streamEngine = state.instances.find((i) => i.instanceId === bot.modelSelection.instanceId);
   const streamReadBack = streamHasEarlier && !olderPending && hiddenCount === 0 && !bot.hasMore;
-  const streamDrawn = streamHasEarlier && (streamReadBack || streamFocusEarlier || streamReach !== null || streamShownFor === bot.threadId);
+  // Earlier topics are folded behind one "Earlier topics" line at the top of
+  // the live topic, once it is read back to its start (JC 2026-10-18); the
+  // line, a link, a search hit or the activity pill draws them.
+  const streamDrawn = !fresh && streamHasEarlier && (previousOpen || streamFocusEarlier || streamReach !== null || streamShownFor === bot.threadId);
+  const showPreviousLine = fresh || (streamHasEarlier && (streamDrawn || streamReadBack));
   // A link, a search hit or the activity pill into an earlier topic is a
   // jump up: bottom-follow would pull the pane back at the next growth.
   useEffect(() => {
@@ -2097,7 +2168,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       {!side && <>
       <BotActivityPicker bot={bot} />
       <ThreadsOffReturnLink bot={bot} />
-      {streamOn && <EarlierTopicActivity bot={bot} onReach={reachEarlierTopic} />}
+      {streamOn && <EarlierTopicActivity bot={bot} onReach={reachEarlierTopic} includeCurrent={fresh} />}
       <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />
       </>}
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
@@ -2151,12 +2222,21 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
         >
           {/* The single stream: earlier topics above the live one, once the
               live one is read back to its first message. */}
+          {showPreviousLine && <PreviousTopicsLine open={fresh ? previousOpen : streamDrawn} onToggle={fresh || !streamDrawn ? togglePrevious : () => { setPreviousOpenFor(null); setStreamShownFor(null); clearStreamReach(); }} />}
           {streamDrawn && (
             <>
               <StreamEarlierTopics bot={bot} rows={rows} place={place} engine={streamEngine} scrollRef={scrollRef} followRef={followRef} reach={streamReach} onReached={clearStreamReach} onQuote={quoteEarlier} />
               {currentTask && <TopicDivider task={currentTask} />}
             </>
           )}
+          {fresh && previousOpen && (
+            <>
+              <StreamEarlierTopics bot={bot} rows={rows} place={place} engine={streamEngine} scrollRef={scrollRef} followRef={followRef} reach={null} onReached={clearStreamReach} onQuote={quoteEarlier} includeCurrent />
+              <FreshTopicDivider onResume={resumeTopic} />
+            </>
+          )}
+          {fresh && !previousOpen && <EmptyChat bot={bot} />}
+          {!fresh && <>
           {/* Reverse infinite scroll sentinel and smooth loading indicator */}
           {olderPending ? (
             <div className="flex items-center justify-center gap-2 py-3 text-xs text-ink-tertiary">
@@ -2166,7 +2246,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           ) : hiddenCount > 0 || bot.hasMore ? (
             <div ref={topSentinelRef} className="h-2 w-full pointer-events-none" aria-hidden="true" />
           ) : null}
-          {windowedMessages.length === 0 && !bot.busy && !streamHasEarlier && <EmptyChat bot={bot} />}
+          {windowedMessages.length === 0 && !bot.busy && (!streamHasEarlier || !streamDrawn) && <EmptyChat bot={bot} />}
           <ChatRowsContext.Provider value={rows}>
             <ConversationGalleryProvider>
             <MessagesList
@@ -2204,6 +2284,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           {/* The latest turn needed an app that is not connected
               (src/lib/connect-apps-signal.ts): Connect apps, on those apps. */}
           <ConversationConnectApps botId={bot.id} messages={messages} busy={Boolean(bot.busy)} />
+          </>}
           {computerStarting && (
             <div className="flex justify-start">
               <div className="ui-pill">

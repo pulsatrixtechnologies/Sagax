@@ -69295,6 +69295,86 @@
           }
         }
       }
+    },
+    "Earlier topics": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sujets précédents"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tópicos anteriores"
+          }
+        }
+      }
+    },
+    "Shows the previous topic of this conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affiche le sujet précédent de cette conversation"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostra o tópico anterior desta conversa"
+          }
+        }
+      }
+    },
+    "New topic on return": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau sujet au retour"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Novo tópico ao voltar"
+          }
+        }
+      }
+    },
+    "Coming back to a bot after this long opens a new, empty topic. The bot keeps all of the history.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revenir à un bot après ce délai ouvre un nouveau sujet vide. Le bot garde tout l'historique."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voltar a um bot depois desse tempo abre um tópico novo e vazio. O bot guarda todo o histórico."
+          }
+        }
+      }
+    },
+    "%lld h": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld h"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld h"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

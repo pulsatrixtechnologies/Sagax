@@ -312,7 +312,7 @@ struct DesktopComposePicker: View {
                     }
                 }
             } else {
-                model.open(session.threadSelection.restoringThread(.bot(bot), connectionID: session.connection?.id))
+                model.open(session.returning(to: .bot(bot)))
             }
         }
     }

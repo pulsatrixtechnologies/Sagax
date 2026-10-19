@@ -179,6 +179,32 @@ and a thread made a segment on the desktop shows as a thread there. Next
 step: port `shared/single-stream.ts` to `CompanionCore`, send
 `singleStream`, draw earlier segments with the same dividers.
 
+## Fresh topic on return (2026-10-18)
+
+JC's decision: coming back to a bot lands on a new, empty topic, with the
+earlier ones folded behind one "Earlier topics" line, and the bot keeps all
+of it (digest, `recall_topic`). The rule (`shared/fresh-topic.ts`, same
+cases on iOS): a fresh topic when the topic the bot opens to is quiet past
+the threshold (default 4 h, Settings > Appearance > Conversation) or the
+person was away from the bot or the app longer than that; never over a
+running turn, a waiting approval or question, an unread answer, teammates
+working or queued messages; a person who left a moment ago stays where they
+were. The topic is a client draft until its first message
+(`POST .../tasks { stream: true }`, then the send). Notifications, links and
+search hits open their own topic. Section "Fresh topic on return" in
+`AGENTS.md` has the full rules and tests.
+
+Release note text:
+
+- FR : « Retour dans un chat : un sujet neuf. Après 4 h d'absence ou de
+  silence (réglable dans Réglages > Apparence > Conversation), revenir à un
+  bot ouvre un nouveau sujet vide ; le bot garde tout l'historique et les
+  sujets précédents restent à un clic, sous « Sujets précédents ». »
+- EN: "Coming back opens a fresh topic. After 4 h away or quiet (Settings >
+  Appearance > Conversation), coming back to a bot opens a new, empty topic;
+  the bot keeps the whole history and earlier topics stay one click away,
+  under Earlier topics."
+
 ## Tests
 
 - `shared/single-stream.test.ts`: segment rule and order, exclusions.

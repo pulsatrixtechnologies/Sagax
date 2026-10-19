@@ -283,7 +283,7 @@ final class DesktopShellModel: ObservableObject {
     func jump(to index: Int, in session: Session) {
         let bots = session.state.bots.filter { $0.hidden != true }
         guard bots.indices.contains(index) else { return }
-        open(session.threadSelection.restoringThread(.bot(bots[index]), connectionID: session.connection?.id))
+        open(session.returning(to: .bot(bots[index])))
     }
 
     func step(_ direction: Int, in session: Session) {
@@ -291,7 +291,7 @@ final class DesktopShellModel: ObservableObject {
         guard !bots.isEmpty else { return }
         let current = bots.firstIndex { $0.id == selected?.id } ?? -1
         let next = bots[((current + direction) % bots.count + bots.count) % bots.count]
-        open(session.threadSelection.restoringThread(.bot(next), connectionID: session.connection?.id))
+        open(session.returning(to: .bot(next)))
     }
 }
 
@@ -532,7 +532,7 @@ private struct DesktopShellRouting: ViewModifier {
         for _ in 0..<150 where model.selected == nil {
             let bots = session.state.bots.filter { $0.hidden != true }
             if let first = bots.first(where: { $0.chiefOfStaff == true }) ?? bots.first {
-                model.open(session.threadSelection.restoringThread(.bot(first), connectionID: session.connection?.id))
+                model.open(session.returning(to: .bot(first)))
                 return
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
@@ -646,7 +646,7 @@ private struct DesktopShellPresenter: ViewModifier {
         case .search:
             SearchSheet(close: { model.modal = nil }) { chat in
                 model.modal = nil
-                model.open(session.threadSelection.restoringThread(chat, connectionID: session.connection?.id))
+                model.open(session.returning(to: chat))
             } openHit: { hit in
                 Task {
                     if let chat = await session.open(hit) {

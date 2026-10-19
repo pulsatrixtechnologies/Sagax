@@ -7,6 +7,7 @@
 // and the chat header all lead back to the latest conversation with content.
 import type { Bot, Task } from "@/state/store";
 import { isEarlierSegment, streamHomeThread } from "@/lib/single-stream";
+import { freshTopicLanding, onScreenBot } from "@/lib/fresh-topic";
 import { threadRecency } from "./SidebarThreadRow";
 
 type HomeBot = Pick<Bot, "threadId" | "tasks"> & { messages?: Bot["messages"] };
@@ -51,7 +52,10 @@ export function threadsOffOpenTarget(bot: HomeBot): string | undefined {
   return threadsOffReturnTarget(bot);
 }
 
-type OpenAction = { type: "select"; id: string } | { type: "switchTask"; botId: string; threadId: string };
+type OpenAction =
+  | { type: "select"; id: string }
+  | { type: "switchTask"; botId: string; threadId: string }
+  | { type: "freshTopic"; botId: string; threadId: string | null; auto?: boolean };
 
 /** The actions that open a bot's conversation the way its sidebar row does.
  * Threads on: the last selected thread. Threads off: the same, unless that
@@ -61,5 +65,12 @@ export function openBotConversationActions(bot: HomeBot & { id: string }, showTh
   const select: OpenAction = { type: "select", id: bot.id };
   if (showThreads) return [select];
   const target = threadsOffOpenTarget(bot);
-  return target ? [select, { type: "switchTask", botId: bot.id, threadId: target }] : [select];
+  const opened: OpenAction[] = target ? [select, { type: "switchTask", botId: bot.id, threadId: target }] : [select];
+  // Coming back after a while lands on a fresh topic (src/lib/fresh-topic.ts);
+  // opening the bot already on screen keeps what it shows.
+  if (onScreenBot() === bot.id) return opened;
+  const landing = freshTopicLanding(bot, target ?? bot.threadId, { now: Date.now() });
+  return [...opened, landing.fresh
+    ? { type: "freshTopic", botId: bot.id, threadId: target ?? bot.threadId, auto: true }
+    : { type: "freshTopic", botId: bot.id, threadId: null }];
 }

@@ -15,6 +15,7 @@ import { canEditConfig } from "@/lib/viewer";
 import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
 import { setShowThreads, setThreadsLocation, useShowThreadsChoice, useThreadsLocationChoice, type ThreadsLocation } from "@/lib/thread-preferences";
+import { FRESH_TOPIC_AFTER_CHOICES, useFreshTopicAfter, writeFreshTopicAfter, type FreshTopicAfterHours } from "@/lib/fresh-topic";
 import { setShowUnreadyProviders, useShowUnreadyProviders } from "@/lib/unready-providers-preference";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
@@ -145,6 +146,27 @@ function ThreadsViewRow() {
         ]}
       />
     </CompactRow>
+  );
+}
+
+/** One conversation only: how long away (or quiet) before coming back opens
+ * a fresh topic (src/lib/fresh-topic.ts). Hidden while threads show. */
+function FreshTopicRow() {
+  const enabled = useShowThreadsChoice();
+  const hours = useFreshTopicAfter();
+  if (enabled) return null;
+  return (
+    <DescribedRow label={t("settings.freshTopic.title")} description={t("settings.freshTopic.subtitle")} rowId="freshTopic">
+      <PillSelect<string>
+        value={String(hours)}
+        ariaLabel={t("settings.freshTopic.title")}
+        onChange={(next) => writeFreshTopicAfter(Number(next) as FreshTopicAfterHours)}
+        options={FRESH_TOPIC_AFTER_CHOICES.map((choice) => ({
+          value: String(choice),
+          label: choice === 0 ? t("settings.freshTopic.never") : t("settings.freshTopic.hours", { count: choice }),
+        }))}
+      />
+    </DescribedRow>
   );
 }
 
@@ -282,6 +304,7 @@ export function AppearanceSettings() {
       </div>
       <SettingsGroup title={t("settings.group.conversation")} groupId="conversation">
         <ThreadsViewRow />
+        <FreshTopicRow />
         <SendKeyRow />
         {advanced && !remoteActive && editConfig && <ToolCallsRow />}
         {advanced && <SwitchLine label={t("settings.runCard.title")} ariaLabel={t("settings.runCard.show")} checked={runCard} onChange={setShowRunCard} rowId="runCard" />}

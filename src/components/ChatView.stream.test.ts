@@ -12,13 +12,13 @@ const fixture = vi.hoisted(() => {
   vi.stubGlobal("window", {});
   const stored = { threads: null as string | null };
   vi.stubGlobal("localStorage", { getItem: (key: string) => (key === "omb-show-threads" ? stored.threads : null), setItem: () => {} });
-  return { stored, focus: null as unknown, dispatch: vi.fn(), canWrite: null as boolean | null, showToolCalls: false, platform: "other", localReasonCode: "cua-driver-unavailable", localMessage: "", model: null as ComponentProps<typeof ModelPicker> | null,
+  return { stored, focus: null as unknown, fresh: {} as Record<string, { threadId: string; auto: boolean }>, dispatch: vi.fn(), canWrite: null as boolean | null, showToolCalls: false, platform: "other", localReasonCode: "cua-driver-unavailable", localMessage: "", model: null as ComponentProps<typeof ModelPicker> | null,
     approval: null as ComponentProps<typeof ApprovalModeSelector> | null };
 });
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
   return { ...original, useStore: () => ({
-    state: { ...original.initialState, focusMessage: fixture.focus as typeof original.initialState.focusMessage, config: fixture.showToolCalls ? { features: { showToolCalls: true } } : null,
+    state: { ...original.initialState, focusMessage: fixture.focus as typeof original.initialState.focusMessage, freshTopic: fixture.fresh, config: fixture.showToolCalls ? { features: { showToolCalls: true } } : null,
       instances: [{ instanceId: "test", driverKind: "codex", displayName: "Test" } as InstanceInfo] },
     dispatch: fixture.dispatch,
   }) };
@@ -81,10 +81,58 @@ const bot: Bot = {
 const render = (value: Bot) => renderToStaticMarkup(createElement(ChatView, { bot: value }));
 
 describe("the single stream in the main chat", () => {
-  it("draws the earlier topic above the live one, under its divider, with New topic in the header", () => {
+  it("folds the earlier topics behind one Earlier topics line once the live one is read back", () => {
     preferences.setShowThreads(false);
     const markup = render(bot);
     expect(markup).toContain('data-new-topic="bot"');
+    expect(markup).toContain('data-previous-topics="closed"');
+    expect(markup).not.toContain("data-stream-segment");
+    expect(markup).toContain("Live answer");
+    // nothing earlier: no line
+    expect(render({ ...bot, tasks: bot.tasks!.filter((task) => task.threadId !== "first") })).not.toContain("data-previous-topics");
+  });
+
+  it("lands on a fresh, empty topic over the live one: Earlier topics folded, nothing of the old topic drawn", () => {
+    preferences.setShowThreads(false);
+    fixture.fresh = { bot: { threadId: "now", auto: true } };
+    try {
+      const markup = render(bot);
+      expect(markup).toContain('data-previous-topics="closed"');
+      expect(markup).not.toContain("Live answer");
+      expect(markup).not.toContain("data-stream-segment");
+      expect(markup).toContain("Pepper");
+      // a draft over another thread than the one on screen draws nothing
+      fixture.fresh = { bot: { threadId: "first", auto: true } };
+      expect(render(bot)).toContain("Live answer");
+      // never over a confidential thread, shown alone
+      fixture.fresh = { bot: { threadId: "conf", auto: true } };
+      expect(render({ ...bot, threadId: "conf" })).not.toContain("data-previous-topics");
+    } finally {
+      fixture.fresh = {};
+    }
+  });
+
+  it("points at activity in the topic under a fresh one", () => {
+    preferences.setShowThreads(false);
+    fixture.fresh = { bot: { threadId: "now", auto: false } };
+    try {
+      const markup = render({ ...bot, tasks: bot.tasks!.map((task) => task.threadId === "now" ? { ...task, unread: true } : task) });
+      expect(markup).toContain('data-earlier-topic-activity="now"');
+    } finally {
+      fixture.fresh = {};
+    }
+  });
+
+  it("draws the earlier topic above the live one, under its divider, for a link into it", () => {
+    preferences.setShowThreads(false);
+    fixture.focus = { threadId: "first", messageId: "old", nonce: 1, consumed: false };
+    let markup = "";
+    try {
+      markup = render(bot);
+    } finally {
+      fixture.focus = null;
+    }
+    expect(markup).toContain('data-previous-topics="open"');
     expect(markup).toContain('data-stream-segment="first"');
     expect(markup).toContain('data-topic-divider="now"');
     // the oldest topic opens the stream: no divider above it
@@ -138,7 +186,13 @@ describe("the single stream in the main chat", () => {
 
   it("loads one earlier topic at once and offers the one before it", () => {
     preferences.setShowThreads(false);
-    const markup = render({ ...bot, tasks: [{ threadId: "zero", title: "Payroll", createdAt: 0 }, ...bot.tasks!] });
+    fixture.focus = { threadId: "first", messageId: "old", nonce: 1, consumed: false };
+    let markup = "";
+    try {
+      markup = render({ ...bot, tasks: [{ threadId: "zero", title: "Payroll", createdAt: 0 }, ...bot.tasks!] });
+    } finally {
+      fixture.focus = null;
+    }
     expect(markup).toContain('data-stream-segment="first"');
     expect(markup).not.toContain('data-stream-segment="zero"');
     expect(markup).toContain('data-stream-earlier="zero"');

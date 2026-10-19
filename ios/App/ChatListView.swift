@@ -614,7 +614,7 @@ struct ChatListView: View {
                     collapsedFolders: $collapsedFolders,
                     creating: creatingBinding(bot.id),
                     openRow: {
-                        path.append(session.threadSelection.restoringThread(summary.chat, connectionID: session.connection?.id))
+                        path.append(session.returning(to: summary.chat))
                     },
                     open: { chat in path.append(chat) },
                     manage: { chat in managingThreads = chat }
@@ -654,7 +654,7 @@ struct ChatListView: View {
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, summary in
             VStack(spacing: 0) {
                 Button {
-                    path.append(session.threadSelection.restoringThread(summary.chat, connectionID: session.connection?.id))
+                    path.append(session.returning(to: summary.chat))
                 } label: {
                     ChatRow(
                         chat: summary.chat,
@@ -1665,7 +1665,7 @@ extension ChatListView {
 
     private func openChat(_ chat: Chat) {
         Haptics.selection()
-        path.append(session.threadSelection.restoringThread(chat, connectionID: session.connection?.id))
+        path.append(session.returning(to: chat))
     }
 
     // MARK: Long press
@@ -1720,7 +1720,7 @@ extension ChatListView {
             if showingSearch {
                 SearchSheet(close: { showingSearch = false }) { chat in
                     showingSearch = false
-                    path.append(session.threadSelection.restoringThread(chat, connectionID: session.connection?.id))
+                    path.append(session.returning(to: chat))
                 } openHit: { hit in
                     Task {
                         if let chat = await session.open(hit) {

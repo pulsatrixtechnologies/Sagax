@@ -28,8 +28,14 @@ describe("thread home while threads are hidden", () => {
     expect(openBotConversationActions(bot("older", [older, main]), false)).toEqual([
       { type: "select", id: "vega" },
       { type: "switchTask", botId: "vega", threadId: "main" },
+      // coming back to a topic quiet for ages (stamps from 1970): a fresh
+      // topic over it (src/lib/fresh-topic.ts)
+      { type: "freshTopic", botId: "vega", threadId: "main", auto: true },
     ]);
     expect(threadsOffReturnTarget(bot("older", [older, main]))).toBe("main");
+    // a topic written in a moment ago stays as it is
+    const recent = { ...main, updatedAt: Date.now() };
+    expect(openBotConversationActions(bot("older", [older, recent]), false).at(-1)).toEqual({ type: "freshTopic", botId: "vega", threadId: null });
   });
 
   it("keeps a New topic just started here, and never strands the person in an empty one left elsewhere", () => {
