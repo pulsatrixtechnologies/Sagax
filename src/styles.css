@@ -3281,3 +3281,33 @@ button:disabled.bg-danger {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
 }
+
+/* The Approvals screen (src/components/approvals/): a new card slides in
+   from the left edge of the list, an answered one slides out to the right
+   and its row folds away; the answer's mark settles with a small pop.
+   Reduced motion (the system setting or :root[data-reduced-motion]) shows
+   each end state at once. */
+@keyframes approval-row-in {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes approval-row-out {
+  0% { opacity: 1; transform: translateX(0); max-height: 96px; }
+  60% { opacity: 0; transform: translateX(28px); max-height: 96px; }
+  100% { opacity: 0; transform: translateX(28px); max-height: 0; padding-top: 0; padding-bottom: 0; }
+}
+@keyframes approval-mark-in {
+  0% { opacity: 0; transform: scale(0.6); }
+  70% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.approval-row-enter { animation: approval-row-in 220ms var(--ease-emphasized, cubic-bezier(0.16, 1, 0.3, 1)) both; }
+.approval-row-leave { animation: approval-row-out 320ms var(--ease-exit, cubic-bezier(0.4, 0, 1, 1)) both; overflow: hidden; pointer-events: none; }
+.approval-mark-in { animation: approval-mark-in 320ms var(--ease-emphasized, cubic-bezier(0.16, 1, 0.3, 1)) both; }
+@media (prefers-reduced-motion: reduce) {
+  .approval-row-enter, .approval-mark-in { animation: none; }
+  .approval-row-leave { animation: none; display: none; }
+}
+:root[data-reduced-motion="true"] .approval-row-enter,
+:root[data-reduced-motion="true"] .approval-mark-in { animation: none; }
+:root[data-reduced-motion="true"] .approval-row-leave { animation: none; display: none; }

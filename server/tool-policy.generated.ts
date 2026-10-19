@@ -9,6 +9,8 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"GET","kind":"exact","route":"/api/admin/pages","tier":"admin","readOnly":true,"scope":"admin:admin","defaultEnabled":false},
   {"method":"GET","kind":"prefix","route":"/api/admin/pages/","tier":"admin","readOnly":true,"scope":"admin:admin","defaultEnabled":false},
   {"method":"GET","kind":"exact","route":"/api/approval-rules","tier":"read","readOnly":true,"scope":"approval-rules:read","defaultEnabled":true},
+  {"method":"GET","kind":"exact","route":"/api/approvals","tier":"read","readOnly":true,"scope":"approvals:read","defaultEnabled":true},
+  {"method":"POST","kind":"exact","route":"/api/approvals/bulk","tier":"write","readOnly":false,"scope":"approvals:write","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/artifacts","tier":"write","readOnly":false,"scope":"artifacts:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/artifacts/watch","tier":"write","readOnly":false,"scope":"artifacts:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/attachments","tier":"write","readOnly":false,"scope":"attachments:write","defaultEnabled":true},

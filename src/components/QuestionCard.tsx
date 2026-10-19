@@ -124,6 +124,7 @@ export function QuestionCard({
   threadId,
   bot,
   message,
+  onAnswered,
 }: {
   /** answered by THREAD, so a question raised inside a room settles the
    * same way as one in a 1:1 chat */
@@ -131,6 +132,8 @@ export function QuestionCard({
   /** who is asking, for the "Name has a question" line */
   bot?: Pick<Bot, "name">;
   message: Message;
+  /** told once the answer was sent (the Approvals screen shows what follows) */
+  onAnswered?: () => void;
 }) {
   const { dispatch } = useStore();
   const card = message.card;
@@ -204,6 +207,7 @@ export function QuestionCard({
     if (!answer) return;
     setSent(answer);
     returnFocusToComposer();
+    onAnswered?.();
     dispatch({
       type: "decideRequest",
       threadId,

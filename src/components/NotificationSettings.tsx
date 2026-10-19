@@ -9,6 +9,7 @@ import { t } from "@/lib/i18n";
 import {
   dockBadge,
   nudgeShake,
+  approvalChime,
   persistentNotifications,
   setNotificationSounds,
   setNudgeSound,
@@ -29,6 +30,7 @@ export function NotificationSettings({ privacy = false }: { privacy?: boolean })
   const badge = useLocalSwitch(dockBadge);
   const nudgeSound = useNudgeSound();
   const shake = useLocalSwitch(nudgeShake);
+  const chime = useLocalSwitch(approvalChime);
   return (
     <>
       <SettingsGroup title={t("settings.group.alerts")} groupId="alerts" accessory={<ThisComputer />}>
@@ -41,6 +43,10 @@ export function NotificationSettings({ privacy = false }: { privacy?: boolean })
         </DescribedRow>
         <CompactRow label={t("settings.notifications.badge.title")} rowId="dockBadge">
           <Switch checked={badge} aria-label={t("settings.notifications.badge.title")} onClick={() => dockBadge.set(!badge)} />
+        </CompactRow>
+        {/* the Approvals screen's arrival chime: its only switch */}
+        <CompactRow label={t("settings.approvalChime.title")} rowId="approvalChime">
+          <Switch checked={chime} aria-label={t("settings.approvalChime.title")} onClick={() => approvalChime.set(!chime)} />
         </CompactRow>
       </SettingsGroup>
       <SettingsGroup title={t("settings.group.nudges")} groupId="nudges" accessory={<ThisComputer />}>

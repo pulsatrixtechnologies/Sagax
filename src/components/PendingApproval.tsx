@@ -306,12 +306,19 @@ export function PendingApprovalActions({
   threadId,
   bot,
   onCancelTurn,
+  variant = "composer",
+  onDecided,
 }: {
   pending: Pending;
   threadId: string;
   /** who asked — "always allow" is remembered against them */
   bot?: Bot;
   onCancelTurn: () => void;
+  /** "inbox": the Approvals screen's large Yes / No, the same answers and
+   * the same remembered grants as the composer's row */
+  variant?: "composer" | "inbox";
+  /** told once an answer was sent (the Approvals screen shows what follows) */
+  onDecided?: (behavior: "allow" | "deny") => void;
 }) {
   const { dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
@@ -331,7 +338,8 @@ export function PendingApprovalActions({
   // "Toujours permettre ceci": a custom rule in the person's words, saved
   // from this card, then this request allowed (2026-10-16)
   const candidate = !durableRequest && !pending.message.card?.adminApproval ? pending.message.card?.customRuleCandidate : undefined;
-  const decide = (behavior: "allow" | "deny", always = false, rememberCommand = false, rule?: "allow" | "deny") =>
+  const decide = (behavior: "allow" | "deny", always = false, rememberCommand = false, rule?: "allow" | "deny") => {
+    onDecided?.(behavior);
     dispatch({
       type: "decideRequest",
       threadId: pending.threadId ?? threadId,
@@ -346,6 +354,7 @@ export function PendingApprovalActions({
       rememberCommand: rememberCommand || undefined,
       rule,
     });
+  };
 
   const base = "rounded-full px-3.5 py-1.5 text-[13.5px] transition-colors";
   const secondary = cn(base, "border border-hairline/50 text-ink hover:bg-control");
@@ -370,6 +379,136 @@ export function PendingApprovalActions({
   const destructiveKind = ownerRule?.destructive === "delete" ? t("approval.rule.kind.delete")
     : ownerRule?.destructive === "bulk" ? t("approval.rule.kind.bulk")
       : ownerRule?.destructive === "external-message" ? t("approval.rule.kind.externalMessage") : undefined;
+  const allowLabel = isTeamSetup ? pending.message.card?.options[0] : isSkillRequest
+    ? pending.message.card?.skillRequest?.action === "update"
+      ? t("approval.action.update")
+      : t("approval.action.enable")
+    : isRoutineRequest || isProfileRequest
+      ? t("approval.action.confirm")
+      : t("approval.action.allowOnce");
+  const denyLabel = isSuggestion ? t("approval.action.notNow") : isRoutineRequest || isProfileRequest || isTeamSetup ? t("approval.action.cancel") : t("approval.action.deny");
+  const widening = (
+    <>
+      {ownerRule && (
+        <button
+          type="button"
+          onClick={() => decide("deny", false, false, "deny")}
+          title={t("approval.action.alwaysDenyRuleHint", { rule: ownerRule.description })}
+          className={secondary}
+          data-owner-rule="deny"
+        >
+          {t("approval.action.alwaysDeny")}
+        </button>
+      )}
+      {ownerRule && (
+        <button
+          type="button"
+          onClick={() => decide("allow", false, false, "allow")}
+          title={t("approval.action.alwaysAllowRuleHint", { name: bot?.name ?? t("approval.someone"), rule: ownerRule.description })}
+          className={secondary}
+          data-owner-rule="allow"
+        >
+          {t("approval.action.alwaysAllow")}
+        </button>
+      )}
+      {!ownerRule && !durableRequest && bot && pending.allowKey && (
+        <button
+          type="button"
+          onClick={() => decide("allow", true)}
+          title={t("approval.action.stopAsking", { name: bot.name, key: pending.allowKey })}
+          className={secondary}
+        >
+          {t("approval.action.alwaysAllow")}
+        </button>
+      )}
+      {!ownerRule && !durableRequest && !pending.allowKey && !canRememberCommand && pending.allowSession && (
+        <button
+          type="button"
+          onClick={() => decide("allow", true)}
+          title={t("approval.action.alwaysAllowSessionHint")}
+          className={secondary}
+        >
+          {t("approval.action.alwaysAllowSession")}
+        </button>
+      )}
+      {/* never without the bot: the rule would silently become one for all bots */}
+      {candidate && bot && (
+        <AlwaysAllowThis
+          candidate={candidate}
+          bot={bot}
+          threadId={pending.threadId ?? threadId}
+          requestId={pending.requestId}
+          className={secondary}
+          onSaved={(behavior) => {
+            if (behavior === "allow") decide("allow");
+            else if (behavior === "deny") decide("deny");
+          }}
+        />
+      )}
+      {canRememberCommand && pending.commandAllowlist && (
+        <button
+          type="button"
+          onClick={() => decide("allow", false, true)}
+          title={t("approval.action.alwaysAllowCommandHint", { cwd: pending.commandAllowlist.cwd })}
+          className={secondary}
+        >
+          {t("approval.action.alwaysAllowCommand")}
+        </button>
+      )}
+    </>
+  );
+  if (variant === "inbox") {
+    // Yes and No side by side, as large as the panel allows: green allows
+    // exactly what the card shows, red declines it. The grants that last
+    // longer stay smaller underneath, so the big buttons only ever mean once.
+    const big = "flex min-h-14 flex-1 flex-col items-center justify-center rounded-2xl px-4 py-2.5 transition-[filter,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-40";
+    return (
+      <div className="flex flex-col gap-3 px-5 pb-5 pt-3" data-approval-actions="inbox">
+        {destructiveKind && (
+          <p className="text-[12.5px] text-warning" data-destructive-note>
+            {t("approval.rule.destructive", { kind: destructiveKind })}
+          </p>
+        )}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            data-decision="deny"
+            aria-keyshortcuts="N"
+            onClick={() => decide("deny")}
+            className={cn(big, "bg-danger text-danger-ink hover:brightness-110 focus-visible:ring-danger/60")}
+          >
+            <span className="flex items-center gap-2 text-[17px] font-semibold leading-6">
+              {t("approvals.no")}
+              <kbd className="rounded-md bg-black/15 px-1.5 text-[11px] font-medium leading-5">N</kbd>
+            </span>
+            <span className="text-[12px] leading-4 opacity-90">{denyLabel}</span>
+          </button>
+          <button
+            type="button"
+            data-decision="allow"
+            aria-keyshortcuts="Y"
+            onClick={() => decide("allow")}
+            disabled={isSkillRequest && !reviewedSha256}
+            className={cn(big, "bg-success text-success-ink hover:brightness-110 focus-visible:ring-success/60")}
+          >
+            <span className="flex items-center gap-2 text-[17px] font-semibold leading-6">
+              {t("approvals.yes")}
+              <kbd className="rounded-md bg-black/15 px-1.5 text-[11px] font-medium leading-5">Y</kbd>
+            </span>
+            <span className="text-[12px] leading-4 opacity-90">{allowLabel}</span>
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {widening}
+          {!durableRequest && (
+            <button type="button" onClick={onCancelTurn} className={cn(quiet, "ml-auto")}>
+              {t("approval.action.cancelTurn")}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pt-2">
       {destructiveKind && (
@@ -389,74 +528,9 @@ export function PendingApprovalActions({
           autoFocus={isTeamSetup}
           className={cn(base, "border border-danger/40 text-danger hover:bg-danger/10")}
         >
-          {isSuggestion ? t("approval.action.notNow") : isRoutineRequest || isProfileRequest || isTeamSetup ? t("approval.action.cancel") : t("approval.action.deny")}
+          {denyLabel}
         </button>
-        {ownerRule && (
-          <button
-            type="button"
-            onClick={() => decide("deny", false, false, "deny")}
-            title={t("approval.action.alwaysDenyRuleHint", { rule: ownerRule.description })}
-            className={secondary}
-            data-owner-rule="deny"
-          >
-            {t("approval.action.alwaysDeny")}
-          </button>
-        )}
-        {ownerRule && (
-          <button
-            type="button"
-            onClick={() => decide("allow", false, false, "allow")}
-            title={t("approval.action.alwaysAllowRuleHint", { name: bot?.name ?? t("approval.someone"), rule: ownerRule.description })}
-            className={secondary}
-            data-owner-rule="allow"
-          >
-            {t("approval.action.alwaysAllow")}
-          </button>
-        )}
-        {!ownerRule && !durableRequest && bot && pending.allowKey && (
-          <button
-            type="button"
-            onClick={() => decide("allow", true)}
-            title={t("approval.action.stopAsking", { name: bot.name, key: pending.allowKey })}
-            className={secondary}
-          >
-            {t("approval.action.alwaysAllow")}
-          </button>
-        )}
-        {!ownerRule && !durableRequest && !pending.allowKey && !canRememberCommand && pending.allowSession && (
-          <button
-            type="button"
-            onClick={() => decide("allow", true)}
-            title={t("approval.action.alwaysAllowSessionHint")}
-            className={secondary}
-          >
-            {t("approval.action.alwaysAllowSession")}
-          </button>
-        )}
-        {/* never without the bot: the rule would silently become one for all bots */}
-        {candidate && bot && (
-          <AlwaysAllowThis
-            candidate={candidate}
-            bot={bot}
-            threadId={pending.threadId ?? threadId}
-            requestId={pending.requestId}
-            className={secondary}
-            onSaved={(behavior) => {
-              if (behavior === "allow") decide("allow");
-              else if (behavior === "deny") decide("deny");
-            }}
-          />
-        )}
-        {canRememberCommand && pending.commandAllowlist && (
-          <button
-            type="button"
-            onClick={() => decide("allow", false, true)}
-            title={t("approval.action.alwaysAllowCommandHint", { cwd: pending.commandAllowlist.cwd })}
-            className={secondary}
-          >
-            {t("approval.action.alwaysAllowCommand")}
-          </button>
-        )}
+        {widening}
         <button
           type="button"
           onClick={() => decide("allow")}
@@ -466,13 +540,7 @@ export function PendingApprovalActions({
             "bg-accent font-medium text-accent-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40",
           )}
         >
-          {isTeamSetup ? pending.message.card?.options[0] : isSkillRequest
-            ? pending.message.card?.skillRequest?.action === "update"
-              ? t("approval.action.update")
-              : t("approval.action.enable")
-            : isRoutineRequest || isProfileRequest
-              ? t("approval.action.confirm")
-              : t("approval.action.allowOnce")}
+          {allowLabel}
         </button>
       </div>
     </div>

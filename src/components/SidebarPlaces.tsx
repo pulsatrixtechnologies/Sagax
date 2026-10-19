@@ -33,6 +33,8 @@ export interface SidebarPlace {
   active?: boolean;
   /** something here needs the person (a failed automation run) */
   attention?: boolean;
+  /** how many things wait here (the Approvals row); 0 or absent shows none */
+  count?: number;
   /** `data-tour` id for the row */
   tourId?: string;
   /** the icon's hover animation (styles.css `.sidebar-place-icon`) */
@@ -51,7 +53,7 @@ export const PLACE_ROW = "h-9 py-0";
 export const PLACES_DIVIDER = "mx-2 my-2 h-px shrink-0 bg-sidebar-hairline";
 
 /** `divider: false` draws the rows alone: no hairline and no tour anchor
- * (the Code row at the top of the list). */
+ * (the Approvals and Code rows at the top of the list). */
 export function SidebarPlaces({ places, iconOnly = false, divider = true }: { places: SidebarPlace[]; iconOnly?: boolean; divider?: boolean }) {
   if (places.length === 0) return null;
   return (
@@ -67,7 +69,7 @@ export function SidebarPlaces({ places, iconOnly = false, divider = true }: { pl
               data-sidebar-place={place.key}
               onClick={place.onSelect}
               aria-current={place.active ? "page" : undefined}
-              aria-label={iconOnly ? place.label : undefined}
+              aria-label={iconOnly || place.count ? (place.count ? `${place.label}, ${place.count}` : place.label) : undefined}
               title={iconOnly ? place.label : undefined}
               className={cn(
                 "group relative flex w-full items-center rounded-lg text-left transition-colors",
@@ -87,6 +89,18 @@ export function SidebarPlaces({ places, iconOnly = false, divider = true }: { pl
                 className={cn("shrink-0", place.animation && "sidebar-place-icon", place.active && "text-accent")}
               />
               {!iconOnly && <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{place.label}</span>}
+              {Boolean(place.count) && (
+                <span
+                  data-place-count={place.key}
+                  aria-hidden="true"
+                  className={cn(
+                    "shrink-0 rounded-full bg-warning px-1.5 text-[10.5px] font-semibold leading-4 tabular-nums text-black/80",
+                    iconOnly && "absolute right-0.5 top-0.5 min-w-4 px-1 text-center",
+                  )}
+                >
+                  {(place.count ?? 0) > 99 ? "99+" : place.count}
+                </span>
+              )}
               {place.attention && (
                 <span
                   data-testid={`place-attention-${place.key}`}

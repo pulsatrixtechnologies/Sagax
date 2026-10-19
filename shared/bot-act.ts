@@ -313,6 +313,8 @@ function escalatesApproval(target: ActTarget): boolean {
     return recordHasEscalation(target.input);
   }
   if (target.path.endsWith("/respond")) return true;
+  // the Approvals screen's bulk answer is a person's tap, never a bot's
+  if (/^\/api\/approvals\/bulk(?:[?/]|$)/.test(target.path)) return true;
   if (ESCALATION_PATH.test(target.path.split("?")[0] ?? target.path)) return true;
   return recordHasEscalation(target.query) || recordHasEscalation(target.body);
 }
