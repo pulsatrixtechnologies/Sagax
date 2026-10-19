@@ -34,8 +34,8 @@ describe("createYoutubePlayer", () => {
       }
     }
     vi.stubGlobal("window", { YT: { Player }, location: { origin: "https://sagax.example.com" } });
-    void createYoutubePlayer({} as HTMLElement, "dQw4w9WgXcQ", { onError: (code) => codes.push(code) });
-    await Promise.resolve();
+    // An error before ready settles with no handle instead of hanging.
+    expect(await createYoutubePlayer({} as HTMLElement, "dQw4w9WgXcQ", { onError: (code) => codes.push(code) })).toBeNull();
     expect(codes).toEqual([150, 153]);
   });
 });

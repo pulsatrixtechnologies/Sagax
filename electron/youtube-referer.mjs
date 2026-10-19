@@ -16,6 +16,9 @@
 // default policy (strict-origin-when-cross-origin) sends it, with a loopback
 // address named localhost: the same page under its other name. Nothing else
 // gets a Referer it did not already have, and no path or query ever leaves.
+// Trade-off, chosen: a frame that asked for no-referrer (a bot-made widget
+// embedding YouTube) still sends the app's origin to YouTube, origin only,
+// since without it the player cannot play at all.
 // Pure, so node:test covers every rule.
 
 const EMBED_HOSTS = new Set([
@@ -27,9 +30,6 @@ const EMBED_HOSTS = new Set([
 ]);
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]"]);
-
-/** URL patterns for Electron's webRequest filter. */
-export const YOUTUBE_EMBED_PATTERNS = Object.freeze([...EMBED_HOSTS].map((host) => `https://${host}/embed/*`));
 
 /** True for YouTube's embedded player document. */
 export function isYoutubeEmbedUrl(raw) {

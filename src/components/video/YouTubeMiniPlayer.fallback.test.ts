@@ -58,4 +58,14 @@ describe("YouTubeMiniPlayer when YouTube will not play the video here", () => {
     expect(host.querySelector("iframe")).toBeNull();
     expect(host.querySelector(".vpc-footer .vpc-chip")?.textContent).toContain("Get full transcript");
   });
+
+  it("another video gets a fresh player, without the previous fallback", async () => {
+    await act(async () => root.render(createElement(YouTubeMiniPlayer, { videoId: "dQw4w9WgXcQ" })));
+    await act(async () => embed.onError?.(150));
+    expect(host.querySelector(".vpc-embed-fallback")).not.toBeNull();
+
+    await act(async () => root.render(createElement(YouTubeMiniPlayer, { videoId: "jNQXAC9IVRw" })));
+    expect(host.querySelector(".vpc-embed-fallback")).toBeNull();
+    expect(host.querySelector("iframe")).not.toBeNull();
+  });
 });

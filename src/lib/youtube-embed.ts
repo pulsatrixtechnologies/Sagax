@@ -42,7 +42,8 @@ type YtTarget = {
 
 /** YouTube's onError codes: 2 bad id, 5 HTML5 player, 100 removed or
  * private, 101 and 150 the owner refuses embedding, 152 and 153 the player
- * could not identify the embedding page (no Referer). */
+ * could not identify the embedding page (no Referer). The card offers the
+ * video on YouTube for any of them. */
 export type YoutubeEmbedErrorCode = number;
 
 export type YoutubePlayerHooks = {
@@ -104,11 +105,23 @@ export async function createYoutubePlayer(
   const Player = w.YT?.Player;
   if (!Player) return null;
   return new Promise((resolve) => {
+    let ready = false;
     const player = new Player(mount, {
       ...youtubePlayerOptions(videoId, window.location.origin),
       events: {
-        onError: (event) => hooks.onError?.(Number(event?.data)),
+        // An error before ready never readies: settle with no handle (the
+        // caller sees null) and let go of the player.
+        onError: (event) => {
+          hooks.onError?.(Number(event?.data));
+          if (!ready) {
+            ready = true;
+            try { player.destroy(); } catch { /* already gone */ }
+            resolve(null);
+          }
+        },
         onReady: (event) => {
+          if (ready) return;
+          ready = true;
           const target = event.target;
           resolve({
             seekTo: (seconds) => target.seekTo(seconds, true),

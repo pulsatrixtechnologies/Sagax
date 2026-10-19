@@ -1744,7 +1744,8 @@ function syncDesktopMutationToken(proc) {
 
 /** The page that embeds a YouTube player whose request carries no referrer:
  * the window that sent it, else the main window (a request passed on by
- * bundled-ui.cjs on an organization server). */
+ * bundled-ui.cjs on an organization server; every window of the default
+ * session shows that same server's origin, so the main window names it). */
 function youtubeEmbedderPage(details) {
   try {
     const own = details.webContents?.getURL?.();

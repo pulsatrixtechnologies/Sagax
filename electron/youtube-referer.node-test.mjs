@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { YOUTUBE_EMBED_PATTERNS, embedderReferer, isYoutubeEmbedUrl, withYoutubeEmbedReferer } from "./youtube-referer.mjs";
+import { embedderReferer, isYoutubeEmbedUrl, withYoutubeEmbedReferer } from "./youtube-referer.mjs";
 
 const EMBED = "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?controls=1&enablejsapi=1&origin=http%3A%2F%2F127.0.0.1%3A8799";
 
@@ -17,7 +17,6 @@ test("only the YouTube embed document is concerned", () => {
   assert.equal(isYoutubeEmbedUrl("https://www.youtube.com.evil.example/embed/x"), false);
   assert.equal(isYoutubeEmbedUrl("https://evil.example/embed/x?www.youtube.com"), false);
   assert.equal(isYoutubeEmbedUrl("not a url"), false);
-  assert.ok(YOUTUBE_EMBED_PATTERNS.includes("https://www.youtube-nocookie.com/embed/*"));
 });
 
 test("the embedder is an origin, a loopback address named localhost", () => {
@@ -68,6 +67,8 @@ test("main.mjs answers the embed document with this rule, in every build", () =>
   assert.match(main, /import \{ isYoutubeEmbedUrl, withYoutubeEmbedReferer \} from "\.\/youtube-referer\.mjs";/);
   assert.match(main, /if \(isYoutubeEmbedUrl\(details\.url\)\) \{\s*callback\(\{ requestHeaders: withYoutubeEmbedReferer\(details,/);
   assert.match(main, /installRequestHeaderRules\(\{ mutationHeader: app\.isPackaged \}\);/);
+  // The mutation capability stays out of unpackaged runs.
+  assert.match(main, /ownsTarget = mutationHeader && serverReady && target\.protocol === "http:"/);
   // One listener per session: no second onBeforeSendHeaders on the default session.
   assert.equal(main.match(/defaultSession\.webRequest\.onBeforeSendHeaders/g)?.length, 1);
 });
