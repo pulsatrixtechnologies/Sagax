@@ -316,6 +316,20 @@ describe("the upkeep loop", () => {
     expect(readMemoryJournal(BOT.id, 5).filter((row) => row.via === "capture").map((row) => row.path)).toEqual(["MEMORY.md", "memory/archive.md"]);
   });
 
+  it("forgets a deleted bot: its waiting turns and its status go (port de OpenMausBot #2856)", async () => {
+    ensureWorkspace(BOT.id);
+    const loop = upkeep();
+    answers.push(JSON.stringify([{ text: "The person is vegetarian", kind: "preference", aboutUser: false, confidence: 0.9 }]));
+    await loop.capture({ botId: BOT.id, threadId: "t1", turns: [{ person: "I'm vegetarian", bot: "Noted" }] });
+    expect(loop.status(BOT.id).lastCapture).toBeDefined();
+    loop.noteTurn(BOT.id, "t2", { person: "I moved to Lyon", bot: "Nice" });
+    loop.forgetBot(BOT.id);
+    loop.flushThread("t2");
+    await loop.idle();
+    expect(prompts).toHaveLength(1);
+    expect(loop.status(BOT.id).lastCapture).toBeUndefined();
+  });
+
   it("adds to About me a fact the notebook already holds, without appending it again", async () => {
     ensureWorkspace(BOT.id);
     writeMemoryFile(BOT.id, "- 2026-09-25 · The user's company is called Northwind Studio.\n");

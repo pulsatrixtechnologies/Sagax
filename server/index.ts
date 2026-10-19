@@ -19272,6 +19272,9 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
             .map((task) => ({ threadId: task.threadId, keys: threadEngineKeys(bot.id, task.threadId) }));
           store.deleteBot(bot.id, setupRequest);
           purgeDeletedThreadEngines(confidentialEngines, "bot deleted");
+          // its memory upkeep state (waiting turns, status) goes with it
+          // (port de OpenMausBot #2856)
+          memoryUpkeep.forgetBot(bot.id);
           // Removing schedules is not a security revocation. Keep them intact
           // if the bot/receipt write fails, so a failed deletion is retryable.
           routines!.disableForBot(bot.id);

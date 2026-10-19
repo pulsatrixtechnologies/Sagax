@@ -882,6 +882,9 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     // the same vocabulary codex and the ACP engines settle an unauthenticated
     // turn with — not the CLI's "stop_sequence", which says nothing
     expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "auth_required" });
+    // the pooled process is retired: a CLI left retrying its shared OAuth
+    // refresh would block other Claude bots (port de OpenMausBot #2867)
+    await expect.poll(() => instance.adapter.hasSession("t-auth"), { timeout: 7_000 }).toBe(false);
   });
 
   it("settles an outdated CLI as update_required without emitting an assistant reply", async () => {
