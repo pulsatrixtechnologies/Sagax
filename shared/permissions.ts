@@ -246,16 +246,15 @@ const definitions = [
       fr: "Lire et exporter qui a changé les réglages, les personnes, les accès et les bots, et qui a répondu aux cartes d'approbation.",
     },
   },
+  // 2026-10-19 (JC): delegable. Nobody but an admin acts on an admin
+  // (their sessions, codes, connections, bots or pages), and attaching an
+  // interim person stays an admin's (it merges identities).
   {
-    key: "people.manage", group: "people", memberDefault: false, adminOnly: true,
+    key: "people.manage", group: "people", memberDefault: false, adminOnly: false,
     label: { en: "Manage other people", fr: "Gérer les autres personnes" },
     description: {
-      en: "Disable, enable and reset people, revoke their connections, attach interim people and act on bots they own.",
-      fr: "Désactiver, réactiver et réinitialiser des personnes, révoquer leurs connexions, rattacher des personnes intérimaires et agir sur les bots qu'elles possèdent.",
-    },
-    adminOnlyReason: {
-      en: "It reaches other people's accounts and data.",
-      fr: "Elle touche aux comptes et aux données des autres personnes.",
+      en: "See and end people's sessions and pairing codes, revoke their connections, stop or delete their bots and revoke their published pages. Never an organization admin's, and attaching an interim person stays with admins.",
+      fr: "Voir et fermer les sessions et les codes de jumelage des personnes, révoquer leurs connexions, arrêter ou supprimer leurs bots et révoquer leurs pages publiées. Jamais ceux d'un admin de l'organisation, et rattacher une personne intérimaire reste aux admins.",
     },
   },
   {
@@ -266,16 +265,14 @@ const definitions = [
       fr: "Lire l'utilisation, les dépenses et le budget du serveur, et les exporter.",
     },
   },
+  // 2026-10-19 (JC): delegable for the export; a restore replaces sign-in,
+  // people and sessions, so it stays an admin's.
   {
-    key: "backup.workspace", group: "backup", memberDefault: false, adminOnly: true,
-    label: { en: "Back up and restore the server", fr: "Sauvegarder et restaurer le serveur" },
+    key: "backup.workspace", group: "backup", memberDefault: false, adminOnly: false,
+    label: { en: "Back up the server", fr: "Sauvegarder le serveur" },
     description: {
-      en: "Export, schedule and restore the server's backups.",
-      fr: "Exporter, planifier et restaurer les sauvegardes du serveur.",
-    },
-    adminOnlyReason: {
-      en: "A backup holds everyone's conversations and files; a restore replaces them.",
-      fr: "Une sauvegarde contient les conversations et les fichiers de tout le monde; une restauration les remplace.",
+      en: "Export and download the server's backups and see their status. A backup holds everyone's conversations and files. Restoring stays with admins.",
+      fr: "Exporter et télécharger les sauvegardes du serveur et voir leur état. Une sauvegarde contient les conversations et les fichiers de tout le monde. La restauration reste aux admins.",
     },
   },
   // 2026-10-19 (JC): running commands on the organization's shared host is
@@ -291,28 +288,25 @@ const definitions = [
       fr: "Ouvrir un terminal sur les hôtes du serveur de l'organisation (le serveur Sagax, ses hôtes SSH et unRAID) et approuver à la main les commandes serveur des bots qu'ils possèdent. Un terminal là-bas atteint tout le serveur, données de chacun comprises : ne la donnez qu'à des personnes à qui vous confieriez l'administration du serveur. Leur propre ordinateur infonuagique, leur VM locale et leur ordinateur n'en ont jamais besoin.",
     },
   },
+  // 2026-10-19 (JC): delegable. Equivalent to an admin on the server's
+  // machine: the label says so.
   {
-    key: "host.shell", group: "host", memberDefault: false, adminOnly: true,
+    key: "host.shell", group: "host", memberDefault: false, adminOnly: false,
     label: { en: "Change the server's own setup", fr: "Changer la configuration propre du serveur" },
     description: {
-      en: "Approve the server commands of other people's bots, save command rules, change the server's own MCP servers, an engine's program path, its computers and this computer.",
-      fr: "Approuver les commandes serveur des bots des autres, enregistrer des règles de commande, changer les serveurs MCP du serveur, le chemin du programme d'un moteur, ses ordinateurs et cet ordinateur.",
-    },
-    adminOnlyReason: {
-      en: "It runs programs on the server's own machine, outside anyone's space.",
-      fr: "Elle exécute des programmes sur la machine du serveur, hors de l'espace de chacun.",
+      en: "Approve the server commands of other people's bots, save command rules, change the server's own MCP servers, an engine's program path, its computers and this computer. It runs programs on the server's machine: give it only to people you would trust as admins of the server.",
+      fr: "Approuver les commandes serveur des bots des autres, enregistrer des règles de commande, changer les serveurs MCP du serveur, le chemin du programme d'un moteur, ses ordinateurs et cet ordinateur. Elle exécute des programmes sur la machine du serveur : ne la donnez qu'à des personnes à qui vous confieriez l'administration du serveur.",
     },
   },
+  // 2026-10-19 (JC): delegable. Who is an admin (the sign-in lists), the
+  // operator's own profile, tool grants and the interim attach window stay
+  // with admins.
   {
-    key: "server.settings", group: "server", memberDefault: false, adminOnly: true,
+    key: "server.settings", group: "server", memberDefault: false, adminOnly: false,
     label: { en: "Change the server's settings", fr: "Changer les réglages du serveur" },
     description: {
-      en: "Change the installation's settings, keys, mail, webhooks and organization policies (Full access, marketplaces, GitHub app).",
-      fr: "Changer les réglages de l'installation, les clés, le courriel, les webhooks et les politiques de l'organisation (accès complet, marchés, application GitHub).",
-    },
-    adminOnlyReason: {
-      en: "It changes security and payment settings for everyone.",
-      fr: "Elle change les réglages de sécurité et de paiement pour tout le monde.",
+      en: "Change the installation's settings, keys, webhooks, connected apps, bot defaults and organization policies (Full access, marketplaces and their tokens, GitHub app). It changes security and payment settings for everyone. Who is an admin, tool grants and the interim attach window stay with admins.",
+      fr: "Changer les réglages de l'installation, les clés, les webhooks, les applications connectées, les valeurs par défaut des bots et les politiques de l'organisation (accès complet, marchés et leurs jetons, application GitHub). Elle change les réglages de sécurité et de paiement pour tout le monde. Qui est admin, les droits d'outils et la fenêtre de rattachement intérimaire restent aux admins.",
     },
   },
   {

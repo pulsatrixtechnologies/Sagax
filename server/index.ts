@@ -2446,7 +2446,27 @@ function applyAutoReviewDefault(auth: RequestAuth, botId: string, threadId: stri
 }
 
 function canManageCommandAllowlist(auth: RequestAuth): boolean {
-  return auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin");
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  // 2026-10-19: or a person an admin gave host.shell in Perspicax
+  return auth.scopes.includes("admin") || (IDENTITY.kind === "perspicax" && callerCan(auth, "host.shell"));
+}
+/** 2026-10-19: whether this caller may act on what this person owns: an
+ * organization admin on anyone; a person an admin gave people.manage on
+ * anyone but an organization admin (or the operator's own account). An
+ * unknown owner is treated as an admin's (fail closed). */
+function mayActOnPerson(auth: RequestAuth, owner: string): boolean {
+  if (orgAdminCaller(auth)) return true;
+  const id = owner.trim().toLowerCase();
+  const person = id && isPrincipalId(id) ? principals.byId(id) : null;
+  if (!person) return false;
+  return !(person.local === true || person.orgRole === "admin");
+}
+/** 2026-10-19: an organization admin, or a person an admin gave this key in
+ * Perspicax (shared/permissions.ts). Loopback follows its trust. */
+function adminOrDelegate(auth: RequestAuth, key: PermissionKey): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  if (auth.scopes.includes("admin")) return IDENTITY.kind !== "perspicax" || orgAdminCaller(auth);
+  return IDENTITY.kind === "perspicax" && callerCan(auth, key);
 }
 
 const COMMAND_ALLOWLIST_DRIVERS = new Set([
@@ -6455,7 +6475,8 @@ ROUTES.push(createPublishedPageRoutes({
     }
   },
   // Revoke for organization admins (audited); on a one-person server its owner.
-  isAdmin: (auth) => IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : computerOwner(auth),
+  isAdmin: (auth) => IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) || callerCan(auth, "people.manage") : computerOwner(auth),
+  mayActOn: (auth, owner) => IDENTITY.kind !== "perspicax" || mayActOnPerson(auth, owner),
   audit: (auth, req, row) => appendAdminAction(DATA_DIR, { category: "security", ...row, actor: adminActorFor(auth, req) }),
 }));
 
@@ -9917,7 +9938,8 @@ function adminApprovalCheck(auth: RequestAuth, threadId: string, requestId: stri
   // again at the answer: an admin, or someone who still holds host.commands.
   if (card?.serverCommandHolder && !card.answered && !card.dismissed && !card.expired
     && !orgAdminCaller(auth) && !callerCan(auth, "host.commands")) return "refused";
-  return adminApprovalDecision({ identity: IDENTITY.kind, card, callerIsOrgAdmin: orgAdminCaller(auth) });
+  // 2026-10-19: or a person an admin gave host.shell in Perspicax
+  return adminApprovalDecision({ identity: IDENTITY.kind, card, callerIsOrgAdmin: orgAdminCaller(auth) || callerCan(auth, "host.shell") });
 }
 const MEMBER_BOT_FULL_ACCESS = {
   error: "A bot whose owner is not an organization admin cannot run with full access on this server.",
@@ -24606,8 +24628,16 @@ const workspaceBackupAccess = {
       url: new URL(req.url ?? "/", `http://localhost:${PORT}`),
       loopbackMutationToken: desktopMutationToken, companionMutationToken, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
       workerRelayToken: WORKER_RELAY_TOKEN,
+      features: { orgDirectory: IDENTITY.kind === "perspicax" },
+      permits: sessionPermits,
     }).auth;
-    return Boolean(current?.scopes.includes("admin") && current.kind === original.kind &&
+    // 2026-10-19: a person an admin gave backup.workspace exports, never
+    // restores (upload, preview, restore stay an admin's).
+    const path = new URL(req.url ?? "/", "http://localhost").pathname;
+    const restoring = /^\/api\/workspace-backup\/(?:upload|preview|restore)$/.test(path);
+    const delegate = !restoring && current?.kind === "session" && !current.scopes.includes("admin")
+      && IDENTITY.kind === "perspicax" && sessionPermits(current.session, "backup.workspace");
+    return Boolean(current && (current.scopes.includes("admin") || delegate) && current.kind === original.kind &&
       (current.kind !== "session" || (original.kind === "session" && current.session.id === original.session.id)));
   },
   exclusive: <T>(work: () => Promise<T>, keepLocked?: boolean) => workspaceMaintenance.run(async () => {
@@ -24979,6 +25009,7 @@ const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
 // The voice engine alone, for the phone's Voice engine picker (iOS parity).
 ROUTES.push(createTtsProviderRoutes({
+  delegate: (auth) => adminOrDelegate(auth, "server.settings"),
   current: () => tts.voiceProvider(cfg),
   busy: () => providerConfigBusy,
   apply: (provider, clearVoices) => {
@@ -25587,7 +25618,7 @@ ROUTES.push(createComputerStatusRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   sandbox: () => userSandbox,
   local: { status: localComputerSummary, update: () => localComputerLifecycle("update"), reset: () => localComputerLifecycle("reset") },
-  mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+  mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin") || adminOrDelegate(auth, "host.shell"),
 }));
 // Settings > Computer: scheduled update in a maintenance window and the disk
 // saver (server/computer-care.ts, server/routes/computer-care.ts), for the
@@ -25657,7 +25688,7 @@ function diskSaverTarget(key: string): DiskSaverTarget | null {
 ROUTES.push(createComputerCareRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   sandboxConfigured: () => userSandbox !== null,
-  mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+  mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin") || adminOrDelegate(auth, "host.shell"),
   store: computerCare,
   scheduler: computerCareScheduler,
   diskTarget: diskSaverTarget,
@@ -25741,7 +25772,7 @@ ROUTES.push(createMarketplaceRoutes({
   mayManage: mayManageMarketplaces,
   // the installation's token per marketplace (Everyone scope): an admin's
   workspace: botPlugins,
-  mayManageTokens: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : computerOwner(auth)),
+  mayManageTokens: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) || callerCan(auth, "server.settings") : computerOwner(auth)),
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   install: async (marketplace, plugin, { auth }) => {
     if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
@@ -28776,7 +28807,13 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
   const canCreateBots = botCreationAllowed(auth);
   const managed = profileManagedFor(auth) ? PROFILE_MANAGEMENT! : {};
   const effective = IDENTITY.kind === "perspicax" ? callerPermissions(auth) ?? effectivePermissions({ admin: true, fromDirectory: null }) : null;
-  const capabilities = capabilitiesForAuth(auth, { orgPairing: IDENTITY.kind === "perspicax", viewUsage: effective ? can(effective, "usage.view") : false });
+  const capabilities = capabilitiesForAuth(auth, {
+    orgPairing: IDENTITY.kind === "perspicax", viewUsage: effective ? can(effective, "usage.view") : false,
+    // 2026-10-19: the screens a delegated admin key opens (shared/permissions.ts)
+    editConfig: effective ? can(effective, "server.settings") : false,
+    manageComputers: effective ? can(effective, "host.shell") : false,
+    manageBackups: effective ? can(effective, "backup.workspace") : false,
+  });
   const permissionFields = effective ? { permissions: permissionList(effective), permissionsSource: effective.source } : {};
   if (viewerIsOperator(auth)) {
     return {
@@ -29299,7 +29336,8 @@ ROUTES.push(createOrgImportRoute({
 // Admin force actions on any bot (Settings > Organization > Sharing).
 ROUTES.push(createOrgBotForceRoutes({
   organization: IDENTITY.kind === "perspicax",
-  isAdmin: orgAdminCaller,
+  isAdmin: (auth) => orgAdminCaller(auth) || callerCan(auth, "people.manage"),
+  mayActOn: mayActOnPerson,
   bot: (id) => {
     const bot = store.bot(id);
     return bot ? { id: bot.id, name: bot.name, ownerPrincipalId: botFacts(bot).ownerPrincipalId } : null;
@@ -29325,7 +29363,8 @@ ROUTES.push(createOrgBotForceRoutes({
 // An organization admin lists and revokes one person's own connections.
 const orgPersonConnectionDeps: OrgPersonConnectionsDeps = {
   organization: IDENTITY.kind === "perspicax",
-  isAdmin: orgAdminCaller,
+  isAdmin: (auth) => orgAdminCaller(auth) || callerCan(auth, "people.manage"),
+  mayActOn: mayActOnPerson,
   person: (id) => {
     const found = principals.byId(id);
     return found ? { id: found.id } : null;
@@ -29524,6 +29563,7 @@ if (IDENTITY.kind === "perspicax") {
     directory: () => perspicaxDirectory,
     bySubject: (iss, sub) => principals.bySubject(iss, sub),
     viewerRole: (auth) => (orgAdminCaller(auth) ? "admin" : "member"),
+    delegated: (auth, key) => callerCan(auth, key),
     settings: orgSettings,
     // Slice 8: shorten, extend (at most 90 days from when it opened) or
     // close the window to attach people from before Perspicax.
@@ -29866,6 +29906,7 @@ ROUTES.push(createVoiceModeRoutes(voiceModeDeps));
 // account (server/harness-connectors.ts); always on, no server switch.
 const claudeAiInventory = new ClaudeAiConnectorInventory({ run: runClaudeCli });
 ROUTES.push(createHarnessConnectorRoutes({
+  settingsDelegate: (auth) => adminOrDelegate(auth, "server.settings"),
   organization: IDENTITY.kind === "perspicax",
   restrictedByPolicy: () => managedPolicy.restrictsMcp(),
   principalFor: (auth) => {
@@ -33101,6 +33142,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     m = path.match(/^\/api\/auth\/pairing\/([\w-]+)$/);
     if (m && method === "DELETE") {
+      // 2026-10-19: a person an admin gave people.manage never cancels an
+      // admin-scope code
+      if (IDENTITY.kind === "perspicax" && !orgAdminCaller(auth) && sessions.openPairings().some((pairing) => pairing.id === m![1] && pairing.scopes.includes("admin"))) {
+        return json(res, 403, { error: "Only an organization admin can cancel an admin's pairing code.", code: "target_is_admin" });
+      }
       const cancelled = sessions.cancelPairing(m[1]);
       return json(res, cancelled ? 200 : 404, cancelled ? { ok: true } : { error: "no such pairing code" });
     }
@@ -33170,6 +33216,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     m = path.match(/^\/api\/auth\/sessions\/([\w-]+)$/);
     if (m && method === "DELETE") {
+      // 2026-10-19: a person an admin gave people.manage never signs out an
+      // admin (an admin-scope session, or one of an admin's)
+      if (IDENTITY.kind === "perspicax" && !orgAdminCaller(auth) && !(auth.kind === "session" && auth.session.id === m[1])) {
+        const target = sessions.byId(m[1]);
+        if (target && (target.scopes.includes("admin") || !mayActOnPerson(auth, target.principalId ?? ""))) {
+          return json(res, 403, { error: "Only an organization admin can end an admin's session.", code: "target_is_admin" });
+        }
+      }
       const revoked = sessions.revoke(m[1]);
       if (auth.kind === "session" && auth.session.id === m[1]) res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
       return json(res, revoked ? 200 : 404, revoked ? { ok: true } : { error: "no such session" });
@@ -43039,7 +43093,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = parsed.data;
       // 2026-10-09: engines.manage opens this route to a person; an
       // engine's program and its configuration folder stay host.shell.
-      if (!auth.scopes.includes("admin") && (body.cli !== undefined || body.configDir !== undefined)) {
+      if (!auth.scopes.includes("admin") && !adminOrDelegate(auth, "host.shell") && (body.cli !== undefined || body.configDir !== undefined)) {
         return json(res, 403, { ...permissionRefusal("host.shell"), field: body.cli !== undefined ? "cli" : "configDir" });
       }
       const cliRefusal = body.cli?.trim() ? cliCommandRefusal(body.cli) : null;
@@ -43328,10 +43382,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
     // ── app config (API keys — never echoed back, booleans only) ──
     if (method === "GET" && path === "/api/config") {
-      return json(res, 200, orgXaiMediaView(configForViewer(configForAccess(configStatus(), auth.scopes.includes("admin")), viewerIdentity(auth)), viewerIdentity(auth)));
+      // 2026-10-19: a person an admin gave server.settings reads the
+      // settings they may change; the sign-in lists and the operator's
+      // email stay hidden from them.
+      const settingsDelegate = IDENTITY.kind === "perspicax" && !auth.scopes.includes("admin") && callerCan(auth, "server.settings");
+      const view = configForAccess(configStatus(), auth.scopes.includes("admin") || settingsDelegate);
+      const shown = settingsDelegate ? { ...view, ...("signIn" in view ? { signIn: { admins: [], members: [] } } : {}), profile: { ...view.profile, email: "" } } : view;
+      return json(res, 200, orgXaiMediaView(configForViewer(shown, viewerIdentity(auth)), viewerIdentity(auth)));
     }
     if ((method === "PUT" || method === "PATCH") && path === "/api/config") {
       const body = await readBody(req);
+      // 2026-10-19: a person an admin gave server.settings never changes who
+      // is an admin (the sign-in lists), the operator's own profile, or the
+      // organization block (its policies have their own route, where the
+      // interim attach window stays an admin's).
+      if (IDENTITY.kind === "perspicax" && !auth.scopes.includes("admin") && body && typeof body === "object") {
+        const field = ["signIn", "profile", "organization"].find((key) => Object.hasOwn(body, key));
+        if (field) return json(res, 403, { error: "Only an organization admin can change this part of the settings.", code: "admin_only_field", field });
+      }
       if (hostedModels && ["instances", "anthropic", "openai", "openrouter", "openaiCompat", "xai", "mistral", "cerebras", "groq", "opencodeGo"].some(key => Object.hasOwn(body, key))) return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
       if (profileManagedFor(auth) && writesManagedProfile(body)) return json(res, 403, MANAGED_PROFILE_REFUSAL);
       const patch = parseConfigPatch(body);

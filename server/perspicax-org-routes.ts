@@ -125,6 +125,10 @@ export interface PerspicaxOrgRouteDeps {
   directory(): { state(): DirectoryState; people(): DirectoryPerson[]; serverId(): string | undefined } | null;
   bySubject(iss: string, sub: string): Principal | null;
   viewerRole(auth: RequestAuth): "admin" | "member";
+  /** 2026-10-19: a delegated admin key the caller holds (shared/permissions.ts):
+   * server.settings opens the organization settings (never the interim
+   * attach window), host.shell the admin approvals queue. */
+  delegated?(auth: RequestAuth, key: "server.settings" | "host.shell"): boolean;
   settings(): OrgSettings;
   /** Slice 8: set the interim attach window (0..90 days from when it
    * opened; 0 closes it now); throws when it could not be written. */
@@ -199,7 +203,7 @@ export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], b
 export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHandler {
   const settingsFor = (auth: RequestAuth): OrgSettings => {
     const settings = deps.settings();
-    if (deps.viewerRole(auth) !== "admin" || !deps.githubTokens) return settings;
+    if ((deps.viewerRole(auth) !== "admin" && !deps.delegated?.(auth, "server.settings")) || !deps.githubTokens) return settings;
     try {
       return { ...settings, githubTokens: deps.githubTokens.list() };
     } catch {
@@ -227,9 +231,12 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       });
     }
     if (method === "PATCH" && path === "/api/org/settings") {
-      if (deps.viewerRole(auth) !== "admin") return json(res, 403, { error: "Only an organization admin can change these settings." });
+      const admin = deps.viewerRole(auth) === "admin";
+      if (!admin && !deps.delegated?.(auth, "server.settings")) return json(res, 403, { error: "Only an organization admin can change these settings." });
       const body = await readBody(req);
       const keys = body && typeof body === "object" && !Array.isArray(body) ? Object.keys(body) : null;
+      // the interim attach window feeds identity merges: an admin's alone
+      if (!admin && keys?.includes("interimAttachDays")) return json(res, 403, { error: "Only an organization admin can change the interim attach window.", code: "admin_only_field", field: "interimAttachDays" });
       // memberBotsUseOrgKey is gone (2026-10-01): the organization's key
       // serves whenever an admin set one, so it is refused like any other.
       const days = keys?.includes("interimAttachDays");
@@ -284,7 +291,7 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       return json(res, 200, { settings: settingsFor(auth) });
     }
     if (method === "GET" && path === "/api/org/approvals") {
-      if (deps.viewerRole(auth) !== "admin") return json(res, 403, { error: "Only an organization admin can answer these approvals." });
+      if (deps.viewerRole(auth) !== "admin" && !deps.delegated?.(auth, "host.shell")) return json(res, 403, { error: "Only an organization admin can answer these approvals." });
       res.setHeader("cache-control", "no-store");
       return json(res, 200, { approvals: deps.pendingAdminApprovals() });
     }

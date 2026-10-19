@@ -331,7 +331,7 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
 
   it("reads permissions per person: known keys only, null when Perspicax sends none (2026-10-09)", async () => {
     const h = harness(withTeams([
-      person("ALICE", { permissions: ["usage.view", "nope.key", "host.shell", "bots.create", "usage.view"] }),
+      person("ALICE", { permissions: ["usage.view", "nope.key", "server.link", "bots.create", "usage.view"] }),
       person("BOB", { permissions: [] }),
       person("CAROL"),
       person("DAN", { permissions: "bogus" as never }),
