@@ -305,50 +305,10 @@ struct ChatView: View {
     }
 
     var screen: some View {
-        AnyView(arrival)
-        .onAppear {
-            if case let .bot(bot) = current { session.noteBackAtBot(bot.id) }
-        }
-        .onDisappear {
-            if case let .bot(bot) = current { session.noteLeftBot(bot.id) }
-            if AttentionCenter.shared.viewingThreadId == current.threadId { AttentionCenter.shared.viewingThreadId = nil }
-            dictation.stop()
-            voiceNote.cancel()
-            resetFilePreview()
-            cancelThreadOpen()
-            // Leaving the conversation hangs up, as on the desktop; a profile
-            // or the computer pushed over it keeps the call.
-            let chat = current
-            DispatchQueue.main.async {
-                if !isPresented, call.isOnCall(chat) { call.end() }
-            }
-        }
-        .onValueChange(of: scenePhase) { phase in
-            if phase != .active {
-                dictation.stop()
-                voiceNote.cancel()
-            }
-            // Fresh topic on return: away while the app is in the background;
-            // back after the threshold, a fresh topic over the topic at rest.
-            if case let .bot(bot) = current {
-                if phase == .background { session.noteLeftBot(bot.id) }
-                if phase == .active, session.freshTopicLeftAt(bot.id) != nil {
-                    session.landOnBot(current, force: true)
-                    session.noteBackAtBot(bot.id)
-                }
-            }
-        }
-        .onValueChange(of: topicUnderFreshAlive) { alive in
-            // the topic under a fresh one came alive (a turn, an approval, an
-            // answer): it is shown, never hidden behind the fresh topic
-            if alive, case let .bot(bot) = current { session.showTopicUnderFresh(bot.id) }
-        }
-        .onValueChange(of: startedTopic) { started in
-            // the first message of a fresh topic made it: this chat moves there
-            guard let started, case let .bot(bot) = current else { return }
-            session.consumeStartedTopic(bot.id)
-            selectedThreadId = started
-        }
+        // A type-erased boundary: one long modifier chain on `body` made the
+        // Release (-O, whole module) compiler abort with "non-terminating type
+        // substitution" in ChatView.body (0.5.22, after #763).
+        AnyView(screenLifecycle)
         .onValueChange(of: showingComputer) { shown in
             if shown { dictation.stop() }
         }
@@ -394,6 +354,55 @@ struct ChatView: View {
         }
         .onValueChange(of: threadId) { _ in voiceNote.cancel() }
         .onAppear { voiceNote.onCapped = { sendVoiceNote() } }
+    }
+
+    /// The arrival plus what follows the person in and out of the chat
+    /// (visibility, scene phase, fresh topic on return).
+    var screenLifecycle: some View {
+        AnyView(arrival)
+        .onAppear {
+            if case let .bot(bot) = current { session.noteBackAtBot(bot.id) }
+        }
+        .onDisappear {
+            if case let .bot(bot) = current { session.noteLeftBot(bot.id) }
+            if AttentionCenter.shared.viewingThreadId == current.threadId { AttentionCenter.shared.viewingThreadId = nil }
+            dictation.stop()
+            voiceNote.cancel()
+            resetFilePreview()
+            cancelThreadOpen()
+            // Leaving the conversation hangs up, as on the desktop; a profile
+            // or the computer pushed over it keeps the call.
+            let chat = current
+            DispatchQueue.main.async {
+                if !isPresented, call.isOnCall(chat) { call.end() }
+            }
+        }
+        .onValueChange(of: scenePhase) { phase in
+            if phase != .active {
+                dictation.stop()
+                voiceNote.cancel()
+            }
+            // Fresh topic on return: away while the app is in the background;
+            // back after the threshold, a fresh topic over the topic at rest.
+            if case let .bot(bot) = current {
+                if phase == .background { session.noteLeftBot(bot.id) }
+                if phase == .active, session.freshTopicLeftAt(bot.id) != nil {
+                    session.landOnBot(current, force: true)
+                    session.noteBackAtBot(bot.id)
+                }
+            }
+        }
+        .onValueChange(of: topicUnderFreshAlive) { alive in
+            // the topic under a fresh one came alive (a turn, an approval, an
+            // answer): it is shown, never hidden behind the fresh topic
+            if alive, case let .bot(bot) = current { session.showTopicUnderFresh(bot.id) }
+        }
+        .onValueChange(of: startedTopic) { started in
+            // the first message of a fresh topic made it: this chat moves there
+            guard let started, case let .bot(bot) = current else { return }
+            session.consumeStartedTopic(bot.id)
+            selectedThreadId = started
+        }
     }
 
     var arrival: some View {
