@@ -200,7 +200,7 @@ export class RuntimeCoordinator implements Coordinator {
    * "auto" is a consultation when the target is an ancestor, else work. */
   enqueue(source: RoomAddress, generation: string, parentId: string | undefined, target: RoomAddress, _key: string, text: string,
     approvalGranted = false, rework = false, sourceText = "", requestBatchKey?: string, origin?: WorkOrigin,
-    mode: "work" | "consult" | "auto" = "work"): { node: HandoffView; duplicate: boolean; joined?: boolean } {
+    mode: "work" | "consult" | "auto" = "work", person?: string): { node: HandoffView; duplicate: boolean; joined?: boolean } {
     this.ready();
     let parent = parentId ? this.store.get(parentId) : this.store.get(generation);
     if (parent && parent.status !== "running") throw new Error(NOT_RUNNING);
@@ -220,6 +220,7 @@ export class RuntimeCoordinator implements Coordinator {
           ...(source.groupId ? { groupId: source.groupId } : {}) } },
         brief: sourceText.slice(0, BRIEF_MAX),
         level: this.host.levelOf(source).level,
+        ...(person ? { person } : {}),
       });
     }
     // The legacy rules, in the legacy order, with the legacy words.

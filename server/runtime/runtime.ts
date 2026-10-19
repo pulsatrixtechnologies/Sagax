@@ -44,12 +44,17 @@ export interface BeginRequest {
   level: Level;
   /** Default "resume"; external runtimes use "poll". */
   reply?: Reply;
+  /** Who the tree acts for (Assignment.person). */
+  person?: string;
 }
 
 const BRIEF_MAX = 12_000;
 /** Two trees that send the same brief to the same teammate within this
  * window send one request: the later one joins the live one. */
 const JOIN_WINDOW_MS = 15 * 60_000;
+/** A joined request waits this long at most, then runs on its own: no wait
+ * between trees can last (or loop) forever. */
+const JOIN_WAIT_MS = 30 * 60_000;
 const RESULT_MAX = 12_000;
 const DETAIL_MAX = 400;
 
@@ -156,6 +161,7 @@ export class Runtime {
       mode: "work", reply: req.reply ?? "resume", brief: clip(req.brief, BRIEF_MAX), status: "running",
       level: req.level, levelSource: "own", executions: 1, restarts: 0, createdAt: now, startedAt: now, lastActivityAt: now,
       result: "", rework: false, budgets: { since: now, requests: 0, executions: 1, wakes: 0 }, version: 1,
+      ...(req.person ? { person: req.person } : {}),
     };
     this.store.transaction(() => {
       this.store.insert(root, { kind: "enqueued", at: now, detail: "queued: root" });
@@ -229,6 +235,8 @@ export class Runtime {
       rework: Boolean(req.rework), ...(req.approved !== undefined ? { approved: req.approved } : {}),
       ...(req.batchKey !== undefined ? { batchKey: req.batchKey } : {}), version: 1,
     };
+    const person = root ? root.person : req.person;
+    if (person) node.person = person;
     if (!parent) { node.rootId = node.id; node.budgets = { since: now, requests: 0, executions: 0, wakes: 0 }; }
     const problem = this.safe("validate", () => this.runner.validate(node, parent));
     if (this.lastThrew) return refuse("The host could not validate the request now");
@@ -248,30 +256,39 @@ export class Runtime {
    * JOIN_WINDOW_MS, itself running its own turn. Never one in this tree. */
   private joinable(node: Assignment, parent: Assignment): Assignment | undefined {
     const now = this.clock.now();
-    const person = (a: Assignment) => a.origin.onBehalfOf ?? "";
+    if (!node.person) return undefined;
     return this.store.all({ nonTerminal: true }).find(c =>
       c.id !== node.id && c.joins === undefined && c.parentId !== undefined && c.rootId !== parent.rootId &&
       c.mode === node.mode && c.brief === node.brief && c.assignee.botId === node.assignee.botId &&
       c.assignee.destination.groupId === node.assignee.destination.groupId && c.level === node.level &&
-      person(c) === person(node) && now - c.createdAt <= JOIN_WINDOW_MS);
+      c.person === node.person && now - c.createdAt <= JOIN_WINDOW_MS);
   }
 
-  /** A joined request settles with its leader's result; a leader that is
-   * gone leaves it to run on its own. True while it still waits. */
+  /** A joined request settles with its leader's answer once that one
+   * completed. A leader that is gone, ended any other way (stopped, failed,
+   * expired: its own tree's fate), or still out after JOIN_WAIT_MS leaves it
+   * to run on its own. True while it still waits or once it settled. */
   private followLeader(n: Assignment): boolean {
     if (n.joins === undefined) return false;
     const leader = this.store.get(n.joins);
-    if (!leader) {
-      delete n.joins;
-      this.store.update(n, { kind: "admitted", at: this.clock.now(), detail: "the joined request is gone: runs on its own" });
-      this.touch(n);
-      return false;
+    if (leader && !isTerminal(leader) && this.clock.now() - n.createdAt <= JOIN_WAIT_MS) return true;
+    if (leader?.status === "completed") {
+      n.result = leader.result;
+      if (leader.evidence) n.evidence = leader.evidence; else delete n.evidence;
+      this.settle(n, "completed", leader.outcome ?? "done", leader.outcomeDetail);
+      return true;
     }
-    if (!isTerminal(leader)) return true;
-    n.result = leader.result;
-    if (leader.evidence) n.evidence = leader.evidence; else delete n.evidence;
-    this.settle(n, leader.status as TerminalStatus, leader.outcome ?? "done", leader.outcomeDetail);
-    return true;
+    delete n.joins;
+    this.store.update(n, { kind: "admitted", at: this.clock.now(), detail: "the joined request did not answer: runs on its own" });
+    this.touch(n);
+    return false;
+  }
+
+  /** Whether a joined request still waits on a live leader (its windows are the leader's). */
+  private waitsOnLeader(n: Assignment): boolean {
+    if (n.joins === undefined || isTerminal(n)) return false;
+    const leader = this.store.get(n.joins);
+    return Boolean(leader && !isTerminal(leader) && this.clock.now() - n.createdAt <= JOIN_WAIT_MS);
   }
 
   /** Expiry and stall checks, reports, waiting→resume, admission and
@@ -296,7 +313,7 @@ export class Runtime {
     for (const snapshot of [...live].sort((a, b) => b.depth - a.depth)) {
       const n = this.store.get(snapshot.id);
       if (!n || isTerminal(n)) continue;
-      if (n.status === "queued" && n.joins !== undefined && this.store.get(n.joins) && !isTerminal(this.store.get(n.joins)!)) {
+      if (n.status === "queued" && this.waitsOnLeader(n)) {
         // A joined request waits on its leader, whose own windows apply.
       } else if (n.status === "queued" && now - this.since(n.lastActivityAt) > this.limits.queueMs) {
         this.cancelTree(n, n.executions > 0 ? "not resumed" : "never started", "failed", "expired");
@@ -330,7 +347,7 @@ export class Runtime {
       if (now - anchor <= this.limits.stallMs) continue;
       const tree = this.store.all({ rootId });
       if (tree.some(n => n.status === "needs_input")) continue;
-      if (tree.some(n => n.joins !== undefined && !isTerminal(n))) continue;
+      if (tree.some(n => this.waitsOnLeader(n))) continue;
       this.store.update(root, { kind: "stalled", at: now, detail: `no progress for ${duration(now - anchor)}` });
       this.cancelTree(root, `no progress for ${duration(this.limits.stallMs)}`, "failed", "stalled");
     }

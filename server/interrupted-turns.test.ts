@@ -39,8 +39,8 @@ describe("interrupted turns", () => {
     expect(await drainTurns({ busy: () => [], waitingOnPerson: () => false, timeoutMs: 1_000 })).toEqual([]);
   });
 
-  it("drains 20 s by default on a server, not under the desktop app", () => {
-    expect(shutdownDrainMs({}, false)).toBe(20_000);
+  it("drains 5 s by default on a server, not under the desktop app", () => {
+    expect(shutdownDrainMs({}, false)).toBe(5_000);
     expect(shutdownDrainMs({}, true)).toBe(0);
     expect(shutdownDrainMs({ SAGAX_SHUTDOWN_DRAIN_MS: "5000" }, true)).toBe(5_000);
     expect(shutdownDrainMs({ SAGAX_SHUTDOWN_DRAIN_MS: "999999" }, false)).toBe(120_000);

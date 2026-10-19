@@ -97,7 +97,7 @@ function coordination(dataDir = ":memory:", holdBots: string[] = []) {
 const origin = { kind: "user" as const, request: "Who is free tomorrow?" };
 type Origin = typeof origin;
 type Enqueue = (source: RoomAddress, generation: string, parentId: string | undefined, target: RoomAddress, key: string, text: string,
-  approvalGranted?: boolean, rework?: boolean, sourceText?: string, requestBatchKey?: string, workOrigin?: Origin, mode?: string) => { node: HandoffView; duplicate: boolean };
+  approvalGranted?: boolean, rework?: boolean, sourceText?: string, requestBatchKey?: string, workOrigin?: Origin, mode?: string, person?: string) => { node: HandoffView; duplicate: boolean };
 
 // ── Perspicax ──────────────────────────────────────────────────────────
 
@@ -256,7 +256,7 @@ describe("orchestration bench (cause C)", () => {
         const source: RoomAddress = { botId: coordinator, threadId: `${coordinator}-chat` };
         for (const botId of bots) {
           enqueue(source, `gen-${coordinator}`, undefined, { botId, threadId: `${botId}-from-${coordinator}` }, botId,
-            "Poll: are you free tomorrow 9-12? Answer yes or no.", false, false, "Who is free tomorrow?", undefined, origin);
+            "Poll: are you free tomorrow 9-12? Answer yes or no.", false, false, "Who is free tomorrow?", undefined, origin, "work", "pr_alex");
         }
       }
       w.coordinator.tick(); await flush(); await flush();

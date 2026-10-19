@@ -137,6 +137,9 @@ export interface Assignment {
    * assignee, same person, sent at the same time): it runs no turn of its
    * own and settles with that request's result. */
   joins?: string;
+  /** Who the tree acts for (a principal id, or the solo owner), harness-set
+   * and never shown: two trees join only when it is the same, known person. */
+  person?: string;
   /** While parked: the exact question for the person. */
   question?: string;
   /** The person's answer, harness-quoted, carried into the next turn. */
@@ -210,6 +213,8 @@ export interface EnqueueRequest {
   approved?: boolean;
   /** A room brief shown once per call. */
   batchKey?: string;
+  /** Who a new root acts for (Assignment.person); a child inherits its root's. */
+  person?: string;
 }
 
 export type EnqueueResult =

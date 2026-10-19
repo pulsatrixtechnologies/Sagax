@@ -45,3 +45,15 @@ describe("WriteOnce", () => {
     expect(executionKey(["s", { a: 1 }])).not.toBe(executionKey(["s", { a: 2 }]));
   });
 });
+
+describe("perspicaxWriteOnceTool", () => {
+  it("guards writes only, never reads, polls or leases", async () => {
+    const { perspicaxWriteOnceTool } = await import("./perspicax-mcp.ts");
+    for (const name of ["cw_psa__write", "cw_psa__action", "cw_psa__log_time", "cw_psa__book_schedule_entry", "cw_psa__update_ticket", "twilio_lookups__Bucket_write", "memory_write", "send_prompt"]) {
+      expect(perspicaxWriteOnceTool(name), name).toBe(true);
+    }
+    for (const name of ["cw_psa__query", "cw_psa__get_ticket", "cw_psa__find_tickets", "await_turn", "claim", "claim_renew", "identity", "api_plan", "read_transcript"]) {
+      expect(perspicaxWriteOnceTool(name), name).toBe(false);
+    }
+  });
+});

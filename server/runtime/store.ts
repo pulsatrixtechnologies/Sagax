@@ -72,6 +72,7 @@ const assignmentSchema = z.object({
   reportedAt: z.number().optional(),
   rework: z.boolean(),
   joins: z.string().optional(),
+  person: z.string().optional(),
   question: z.string().optional(),
   answer: z.string().optional(),
   budgets: z.object({ since: z.number(), requests: z.number(), executions: z.number(), wakes: z.number() }).optional(),

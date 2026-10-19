@@ -287,20 +287,22 @@ describe("RuntimeCoordinator: refusals in the legacy words", () => {
     await w.host.release(node.id, { ok: true, text: "done" });
   });
 
-  it("a request another tree already sent joins it and settles with its result, failure included", async () => {
+  it("a request another tree of the same person already sent joins it; only a completed answer is shared", async () => {
     const w = world(hold);
-    const other: RoomAddress = { botId: "other", threadId: "other-chat" };
-    const first = send(w, chief, "gen-1", undefined, builder, "Poll: free tomorrow?");
-    const second = send(w, other, "gen-2", undefined, { ...builder, threadId: "builder-from-other" }, "Poll: free tomorrow?");
+    const as = (source: RoomAddress, generation: string, threadId: string, person?: string) => w.coordinator.enqueue(source, generation, undefined,
+      { ...builder, threadId }, "builder", "Poll: free tomorrow?", false, false, "", undefined, userOrigin, "work", person);
+    const first = as(chief, "gen-1", "builder-work", "pr_a");
+    // Another person, or nobody known: never joined.
+    expect(as({ botId: "o1", threadId: "o1-chat" }, "gen-o1", "builder-from-o1", "pr_b").joined).toBeUndefined();
+    expect(as({ botId: "o2", threadId: "o2-chat" }, "gen-o2", "builder-from-o2").joined).toBeUndefined();
+    const second = as({ botId: "other", threadId: "other-chat" }, "gen-2", "builder-from-other", "pr_a");
     expect(second.joined).toBe(true);
     w.coordinator.tick(); await flush();
-    expect(w.host.runs.map(r => r.node.id)).toEqual([first.node.id]);
+    expect(w.host.runs.map(r => r.node.id)).not.toContain(second.node.id);
+    // The leader failed (its own tree's fate): the joined request runs on its own.
     await w.host.release(first.node.id, { ok: false, text: "engine down" });
     w.coordinator.tick(); await flush();
-    expect(w.coordinator.node(second.node.id)).toMatchObject({ status: "failed" });
-    // Settled: a later identical request runs on its own.
-    const third = send(w, { botId: "third", threadId: "third-chat" }, "gen-3", undefined, { ...builder, threadId: "builder-from-third" }, "Poll: free tomorrow?");
-    expect(third.joined).toBeUndefined();
+    expect(w.host.runs.map(r => r.node.id)).toContain(second.node.id);
   });
 
   it("refuses a second assignment to a teammate that completed one, unless it is rework", async () => {

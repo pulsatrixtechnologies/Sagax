@@ -24,13 +24,14 @@ const FILE = "interrupted-turns.json";
 export const INTERRUPTED_TURN_MAX_AGE_MS = 60 * 60_000;
 const MAX_TURNS = 200;
 
-/** The default drain: long enough for most tool calls to land, short enough
- * for a container's 30 s grace period with the cleanup after it. 0 under the
- * desktop app, whose quit must stay quick (its turns still resume). */
+/** The default drain: long enough for a tool call in flight to land, short
+ * enough that drain and cleanup fit Docker's default 10 s stop grace period
+ * (raise both together: SAGAX_SHUTDOWN_DRAIN_MS and stop_grace_period). 0
+ * under the desktop app, whose quit must stay quick (its turns still resume). */
 export function shutdownDrainMs(env: NodeJS.ProcessEnv, desktop: boolean): number {
   const raw = env.SAGAX_SHUTDOWN_DRAIN_MS?.trim();
   if (raw && /^\d+$/.test(raw)) return Math.min(Number(raw), 120_000);
-  return desktop ? 0 : 20_000;
+  return desktop ? 0 : 5_000;
 }
 
 export const TURN_RESUME_PROMPT = "Sagax restarted while your previous turn in this conversation was working and cut it off; this turn continues it. First check what that turn already did (records written or sent, files, commits, messages) so nothing is done twice, then finish the request and answer as usual. A restart alone is not a blocker.";

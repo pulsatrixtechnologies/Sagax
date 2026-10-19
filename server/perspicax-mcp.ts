@@ -117,8 +117,18 @@ export const PERSPICAX_SESSION_RESET = "Perspicax had dropped this MCP session (
 
 /** The answer a write that was not sent again carries in front of the first one's. */
 export const PERSPICAX_WRITE_REPLAYED = "Not sent again: another run made this same write with the same arguments moments ago (one write per execution key). Its answer follows; the record already exists.";
-/** Leases are per holder and renewals must reach Perspicax: never write-once. */
-const NEVER_WRITE_ONCE = new Set(["claim", "claim_renew", "claim_release", "claim_list"]);
+/** The tools whose name says they change data: a connector's `<api>__write`,
+ * `__action` or `__<x>_write`, its named writes (`log_time`, `book_*`,
+ * `update_*`, `create_*`, `delete_*`), and the host's own. Reads, polls
+ * (await_turn) and leases (claim*, per holder, renewals must reach
+ * Perspicax) are never answered from a previous call. */
+const WRITE_SUFFIX = /^(write|action|log_time|(book|update|create|delete)_[a-z0-9_]+|[A-Za-z0-9_]+_write)$/;
+const HOST_WRITES = new Set(["memory_write", "memory_propose", "memory_promote", "memory_forget", "create_agent", "delete_agent",
+  "send_prompt", "sagax_send", "sagax_routine_run", "sagax_nudge"]);
+export function perspicaxWriteOnceTool(name: string): boolean {
+  const at = name.lastIndexOf("__");
+  return at > 0 ? WRITE_SUFFIX.test(name.slice(at + 2)) : HOST_WRITES.has(name);
+}
 
 /** Requests that only read, safe to send again on a new session. */
 const READ_ONLY_METHODS = new Set(["tools/list", "resources/list", "resources/templates/list", "resources/read", "prompts/list", "prompts/get", "ping", "completion/complete"]);
@@ -253,7 +263,8 @@ export class PerspicaxMcp {
   private readonly initParams = new Map<string, Json>();
   private reopens = 0;
   private nativeCalls = 0;
-  private readonly writes = new WriteOnce<PerspicaxRelayAnswer>();
+  /** "At the same time": a 5 minute window, then a write is sent again. */
+  private readonly writes = new WriteOnce<PerspicaxRelayAnswer>({ ttlMs: 5 * 60_000 });
 
   constructor(options: PerspicaxMcpOptions) {
     this.options = options;
@@ -404,7 +415,7 @@ export class PerspicaxMcp {
     if (frame.method !== "tools/call" || frame.id === undefined || perspicaxReplayable(frame)) return null;
     const params = isObject(frame.params) ? frame.params : {};
     const name = typeof params.name === "string" ? params.name : "";
-    if (!name || NEVER_WRITE_ONCE.has(name)) return null;
+    if (!perspicaxWriteOnceTool(name)) return null;
     const entry = this.entries.get(key(input.threadId, input.generation, input.profileId));
     if (!entry || entry.botId !== input.botId) return null;
     const scope = this.options.writeOnceScope({ threadId: input.threadId, botId: input.botId, principalId: entry.principalId });

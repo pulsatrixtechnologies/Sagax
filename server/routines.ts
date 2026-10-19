@@ -1150,7 +1150,9 @@ export class RoutineManager {
     const recovered: RoutineRun[] = [];
     let resumable = false;
     for (const run of this.runs) {
-      if ((run.status === "running" || run.status === "waiting") && run.target === "bot" && run.threadId &&
+      // Only a run whose turn was working: a waiting one (an approval, its
+      // teammates) fails as before, its card or the runtime owns what's next.
+      if (run.status === "running" && run.target === "bot" && run.threadId &&
         (run.restartResumes ?? 0) < ROUTINE_RESTART_RESUMES) {
         run.status = "running";
         run.restartResumes = (run.restartResumes ?? 0) + 1;
@@ -1326,9 +1328,20 @@ export class RoutineManager {
     );
   }
 
+  /** The run of this thread: the active one first (a conversation several
+   * runs joined), else the first recorded. */
   runForThread(threadId: string): RoutineRun | null {
-    const run = this.runs.find((candidate) => candidate.threadId === threadId);
+    const run = this.runs.find((candidate) => candidate.threadId === threadId && ["running", "waiting"].includes(candidate.status)) ??
+      this.runs.find((candidate) => candidate.threadId === threadId);
     return run ? cloneRun(run) : null;
+  }
+
+  /** Fail this one run, whatever its thread now runs. */
+  failRunById(id: string, message: string) {
+    const run = this.runs.find((r) => r.id === id && ["running", "waiting"].includes(r.status));
+    if (!run) return;
+    this.failRun(run, message);
+    queueMicrotask(() => void this.tick());
   }
 
   create(input: RoutineInput, request?: RoutineRequestCommitFor<"create">, meta?: RoutineWriteMeta): Routine {

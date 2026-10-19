@@ -75,7 +75,7 @@ it("recovers queued/due work and resumes an interrupted routine once, without it
       id: "interrupted-run", routineId: interrupted.id, routineName: interrupted.name,
       prompt: interrupted.prompt, target: "bot", botId: interruptedBot.id, runOn: "maus",
       scheduledFor: dueAt, createdAt: dueAt, startedAt: dueAt, manual: true,
-      status: "waiting", threadId: interruptedBot.threadId,
+      status: "running", threadId: interruptedBot.threadId,
     });
     disk.runs.push({
       id: "historical-run", routineId: "historical-routine", routineName: "Previously completed work",

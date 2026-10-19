@@ -35398,7 +35398,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // ancestor) is a consultation, anything else is work.
               const { node, duplicate, joined } = coordinator.enqueue(address, internalCapability.generation, internalCapability.roomHandoffId,
                 target, target.botId, parsed.data.message, approvalGranted, parsed.data.rework, [...store.messagesFor(address.threadId)].reverse().find(m => m.role === "user" && m.kind === "text")?.text ?? "",
-                requestBatchKey, origin, parsed.data.mode ?? "auto");
+                requestBatchKey, origin, parsed.data.mode ?? "auto", joinPerson(address.threadId));
               // A repeat lands on the request already made, possibly in a
               // thread the person archived meanwhile; a thread opened for it
               // is never used.
@@ -44718,9 +44718,11 @@ const onListening = async () => {
   // Startup work uses the same turn dispatcher and local tool endpoint as
   // ordinary chat. Start only once every registry is initialized and the
   // endpoint is listening; earlier dispatch can hit uninitialized bindings.
+  // Cut turns resume before the scheduler's first tick, so a queued run
+  // that joins the same conversation waits for the resume, not the reverse.
+  resumeTurnsCutByRestart();
   routines!.start();
   memoryUpkeep.start();
-  resumeTurnsCutByRestart();
   const leftover = pendingThreads();
   if (leftover.length) console.log(`delegations: ${leftover.length} thread(s) with queued handoffs from a previous run — draining`);
   for (const threadId of leftover) {
@@ -44762,6 +44764,17 @@ if (TUNNEL_SOCKET) {
   });
 }
 
+/** Who coordinated work from this conversation acts for, so two trees of
+ * the same person may share one request (runtime joins): the speaking
+ * principal, or the owner of a solo server. A confidential conversation, or
+ * nobody known on an organization server, never joins. */
+function joinPerson(threadId: string): string | undefined {
+  if (store.isConfidentialThread(threadId)) return undefined;
+  const principalId = safetyPrincipal(threadId).principalId;
+  if (principalId) return principalId;
+  return IDENTITY.kind === "perspicax" ? undefined : "solo-owner";
+}
+
 /** A quit, update or restart first lets the turns in progress finish, for
  * a bounded time (SAGAX_SHUTDOWN_DRAIN_MS, server/interrupted-turns.ts):
  * nothing new is dispatched meanwhile (routines paused, the coordinator
@@ -44779,6 +44792,9 @@ function threadWaitsOnPerson(threadId: string): boolean {
 async function drainTurnsBeforeShutdown(): Promise<void> {
   routines?.pause();
   coordinator.close();
+  // Written first, so a stop that kills the process during the drain (a
+  // short container grace period) still resumes them; rewritten after.
+  noteTurnsCutByShutdown(false);
   const left = await drainTurns({ busy: () => busyDirectThreads().map((t) => t.threadId), waitingOnPerson: threadWaitsOnPerson, timeoutMs: SHUTDOWN_DRAIN_MS });
   console.log(`shutdown: ${left.length ? `${left.length} turn(s) still working, resumed at the next start` : "no turn in progress"}`);
 }
@@ -44790,17 +44806,21 @@ async function drainTurnsBeforeShutdown(): Promise<void> {
  * (resumeTurnsCutByRestart); a routine run resumes through its own record
  * (RoutineManager.takeRestartResumes); a hand-off turn the next start goes
  * on with (the runtime's restart policy) is left to say so then. */
-function noteTurnsCutByShutdown(): void {
+function noteTurnsCutByShutdown(final = true): void {
   const cut: InterruptedTurn[] = [];
   for (const { botId, threadId } of busyDirectThreads()) {
     if (coordinator.continuesAfterRestart(threadId)) continue;
-    if (routines?.isActiveThread(threadId)) {
-      store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: "Sagax restarted during this run; it resumes when Sagax is back", ok: true } });
+    // A turn held on an approval card is not resumed: the card cannot answer
+    // the engine that asked; it ends here with the cut line, as before.
+    const held = threadWaitsOnPerson(threadId);
+    if (routines?.isActiveThread(threadId) || held) {
+      if (final) store.appendMessage(threadId, { role: "bot", kind: "activity", tool: held ? failedTurnTool("turn interrupted — Sagax restarted")
+        : { name: "Sagax restarted during this run; it resumes when Sagax is back", ok: true } });
       continue;
     }
     const speaker = turnSpeakers.get(threadId);
     cut.push({ botId, threadId, at: Date.now(), ...(speaker ? { speaker: { ...speaker } } : {}) });
-    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: "Sagax restarted during this turn; it resumes when Sagax is back", ok: true } });
+    if (final) store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: "Sagax restarted during this turn; it resumes when Sagax is back", ok: true } });
   }
   try {
     saveInterruptedTurns(DATA_DIR, cut);
@@ -44814,13 +44834,16 @@ function noteTurnsCutByShutdown(): void {
 function resumeTurnsCutByRestart(): void {
   for (const run of routines?.takeRestartResumes() ?? []) {
     const threadId = run.threadId!;
-    if (!store.taskByThread(run.botId, threadId)) { routines?.failThread(threadId, ROUTINE_RESTARTED); continue; }
+    if (!store.taskByThread(run.botId, threadId)) { routines?.failRunById(run.id, ROUTINE_RESTARTED); continue; }
+    // Its teammate work goes on under the runtime's restart policy, which
+    // resumes this thread itself: no second resume here.
+    if (coordinator.continuesAfterRestart(threadId)) continue;
     // The resumed turn decides again: handoffs the cut turn left queued
     // would start work it may no longer want.
     discardDelegations(commsBus, threadId);
     store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: "Resuming after a restart", ok: true } });
     void startTurn(run.botId, ROUTINE_RESUME_PROMPT, { threadId, cardContinuation: true })
-      .catch((error) => routines?.failThread(threadId, `${ROUTINE_RESTARTED}: ${error instanceof Error ? error.message : String(error)}`));
+      .catch((error) => routines?.failRunById(run.id, `${ROUTINE_RESTARTED}: ${error instanceof Error ? error.message : String(error)}`));
   }
   let cut: ReturnType<typeof takeInterruptedTurns>;
   try {
