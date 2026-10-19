@@ -32701,6 +32701,7 @@ const toolResults = new ToolResults();
 // check_widget (server/widget-check.ts): one warm headless browser for every
 // bot, never started while memory is high, the OOM killer's first pick.
 const widgetRenderer = new WidgetRenderer({
+  staticDir: STATIC_DIR,
   memoryOk: () => memoryWatch.current() !== "high" && memoryWatch.current() !== "critical",
   onSpawn: (pid) => { markOomVictim(pid, 900); },
   log: (line) => console.log(line),
@@ -45241,6 +45242,7 @@ const gracefulShutdown = createGracefulShutdown({
       // any cleanup function reaches an await.
       revokeAllInternalCapabilities();
       sharedComputers.close();
+      void widgetRenderer.close();
       desktopBridges.close();
       desktopTerminals.close();
       terminalFeature.sessions.stop();

@@ -27,6 +27,8 @@ export const WIDGET_CHECK_MAX_ATTEMPTS = 3;
  * the chat draws it as usual with a discreet "display may be imperfect". */
 export const IMPERFECT_WIDGET_FENCE = "widget-imperfect";
 export const WIDGET_CHECK_MAX_SOURCE = 200_000;
+/** Checks waiting for the one browser before new ones are turned away. */
+export const WIDGET_CHECK_MAX_QUEUE = 4;
 
 /** Where the widget is drawn: the chat column on a desktop, a phone. */
 export const WIDGET_CHECK_VIEWS = [
@@ -110,15 +112,28 @@ function playwrightShell(env: NodeJS.ProcessEnv, exists: (path: string) => boole
 }
 
 let fontFace: string | undefined;
-/** The chat's own font, so text wraps where it wraps in the app. */
-function geistFace(): string {
+/** The chat's own font, so text wraps where it wraps in the app: from the
+ * package in development, from the built UI (SAGAX_STATIC_DIR, where Vite
+ * emits geist-latin-wght-normal-<hash>.woff2) in the image and the desktop,
+ * which carry no node_modules. */
+export function geistFace(staticDir?: string | null): string {
   if (fontFace !== undefined) return fontFace;
   fontFace = "";
-  try {
-    const require = createRequire(import.meta.url);
-    const file = join(dirname(require.resolve("@fontsource-variable/geist")), "files", "geist-latin-wght-normal.woff2");
-    fontFace = widgetFontFace(`data:font/woff2;base64,${readFileSync(file).toString("base64")}`);
-  } catch { /* no font: the fallback stack measures close enough */ }
+  const candidates: Array<() => string> = [
+    () => join(dirname(createRequire(import.meta.url).resolve("@fontsource-variable/geist")), "files", "geist-latin-wght-normal.woff2"),
+    () => {
+      const assets = join(staticDir ?? "", "assets");
+      const name = staticDir ? readdirSync(assets).find((file) => /^geist-latin-wght-normal.*\.woff2$/.test(file)) : undefined;
+      if (!name) throw new Error("no font");
+      return join(assets, name);
+    },
+  ];
+  for (const candidate of candidates) {
+    try {
+      fontFace = widgetFontFace(`data:font/woff2;base64,${readFileSync(candidate()).toString("base64")}`);
+      break;
+    } catch { /* next; none: the fallback stack measures close enough */ }
+  }
   return fontFace;
 }
 
@@ -200,6 +215,10 @@ class CdpPipe {
 
 export interface WidgetRendererOptions {
   chromePath?: string | null;
+  /** The built UI, where the chat's font is found in production. */
+  staticDir?: string | null;
+  /** The whole check, all views: past it the browser is killed. */
+  deadlineMs?: number;
   /** Close the warm browser after this long without a check. */
   idleMs?: number;
   /** false while the server is short of memory: no browser is started and a
@@ -247,9 +266,29 @@ export class WidgetRenderer {
 
   /** Check one widget. Never throws: a renderer problem is "unavailable". */
   check(code: string): Promise<WidgetCheckResult> {
-    const run = this.queue.then(() => this.checkNow(code));
+    // one browser for every bot: a long line answers at once instead of waiting
+    if (this.waiting >= WIDGET_CHECK_MAX_QUEUE) return Promise.resolve({ status: "unavailable", defects: [], reason: "the checker is busy with other widgets", ms: 0 });
+    this.waiting += 1;
+    const run = this.queue.then(() => this.withDeadline(code)).finally(() => { this.waiting -= 1; });
     this.queue = run.catch(() => undefined);
     return run;
+  }
+
+  private waiting = 0;
+
+  private async withDeadline(code: string): Promise<WidgetCheckResult> {
+    const deadline = this.options.deadlineMs ?? 20_000;
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<WidgetCheckResult>((resolve) => {
+      timer = setTimeout(() => {
+        this.options.log?.("[widget-check] check passed its deadline; browser closed");
+        void this.close();
+        resolve({ status: "unavailable", defects: [], reason: "the widget took too long to draw", ms: deadline });
+      }, deadline);
+      timer.unref?.();
+    });
+    try { return await Promise.race([this.checkNow(code), late]); }
+    finally { clearTimeout(timer); }
   }
 
   private async checkNow(code: string): Promise<WidgetCheckResult> {
@@ -270,6 +309,7 @@ export class WidgetRenderer {
     try {
       const merged = new Map<string, WidgetDefect>();
       let worst: { view: View; count: number; height: number } | null = null;
+      let escaped = false;
       for (const view of WIDGET_CHECK_VIEWS) {
         const found = await this.render(session, code, view);
         const label = `${view.name} ${view.scheme}`;
@@ -279,18 +319,20 @@ export class WidgetRenderer {
           if (known) known.views.push(label);
           else merged.set(key, { ...defect, views: [label] });
         }
+        if (found.escaped) { escaped = true; continue; }
         if (found.defects.length && (!worst || found.defects.length > worst.count)) worst = { view, count: found.defects.length, height: found.height };
       }
       const defects = [...merged.values()].slice(0, 25);
       let screenshot: string | undefined;
-      if (worst) {
+      if (worst && !escaped) {
         await this.render(session, code, worst.view);
         screenshot = await this.screenshot(session, worst.view, worst.height).catch(() => undefined);
       }
       return { status: defects.length ? "failed" : "passed", defects, ...(screenshot ? { screenshot } : {}), ms: Date.now() - started };
     } catch (error) {
       this.options.log?.(`[widget-check] check failed: ${(error as Error).message}`);
-      await this.close();
+      // its own browser only: a deadline may already have replaced it
+      await this.close(session);
       return unavailable("the headless browser stopped during the check");
     } finally {
       this.armIdle(true);
@@ -325,6 +367,12 @@ export class WidgetRenderer {
       "--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication",
       "--mute-audio", "--hide-scrollbars", "--use-mock-keychain", "--password-store=basic",
       "--renderer-process-limit=1", "--js-flags=--max-old-space-size=96", "--disable-dev-shm-usage",
+      // No network at all, loopback included: a widget that navigates its
+      // frame away must not reach the server, the cluster or the LAN through
+      // the checker (the CSP does not survive a navigation). Every http(s) and
+      // ws request goes to a closed proxy port; requests are also failed in
+      // Fetch below.
+      "--proxy-server=127.0.0.1:9", "--proxy-bypass-list=<-loopback>", "--host-resolver-rules=MAP * ~NOTFOUND",
       ...(process.platform === "linux" && process.getuid?.() === 0 ? ["--no-sandbox"] : []),
       "about:blank",
     ];
@@ -334,15 +382,26 @@ export class WidgetRenderer {
       cdp.close(new Error("Chrome exited."));
       try { rmSync(profile, { recursive: true, force: true }); } catch { /* best effort */ }
     });
-    child.once("error", () => cdp.close(new Error("Chrome could not start.")));
+    child.once("error", () => {
+      cdp.close(new Error("Chrome could not start."));
+      try { rmSync(profile, { recursive: true, force: true }); } catch { /* best effort */ }
+    });
     if (child.pid) this.options.onSpawn?.(child.pid);
     try {
       const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" }, undefined, 15_000) as { targetId: string };
       const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true }) as { sessionId: string };
+      // every request but the widget's own data: and about: documents fails
+      cdp.listeners.add((event) => {
+        if (event.sessionId !== sessionId || event.method !== "Fetch.requestPaused") return;
+        const { requestId, request } = event.params as { requestId: string; request: { url: string } };
+        const local = /^(data|about|blob):/i.test(request.url);
+        void cdp.send(local ? "Fetch.continueRequest" : "Fetch.failRequest", local ? { requestId } : { requestId, errorReason: "BlockedByClient" }, sessionId).catch(() => undefined);
+      });
       await Promise.all([
         cdp.send("Page.enable", {}, sessionId),
         cdp.send("Runtime.enable", {}, sessionId),
         cdp.send("Log.enable", {}, sessionId),
+        cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*" }] }, sessionId),
       ]);
       return { child, cdp, sessionId, profile };
     } catch (error) {
@@ -351,7 +410,7 @@ export class WidgetRenderer {
     }
   }
 
-  private async render(session: Session, code: string, view: View): Promise<{ defects: Array<Omit<WidgetDefect, "views">>; height: number }> {
+  private async render(session: Session, code: string, view: View): Promise<{ defects: Array<Omit<WidgetDefect, "views">>; height: number; escaped?: boolean }> {
     const { cdp, sessionId } = session;
     const scripts: Array<Omit<WidgetDefect, "views">> = [];
     const scriptError = (detail: string) => {
@@ -373,7 +432,7 @@ export class WidgetRenderer {
     };
     await cdp.send("Emulation.setDeviceMetricsOverride", { width: view.width, height: WIDGET_MAX_HEIGHT, deviceScaleFactor: 1, mobile: false }, sessionId);
     await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: view.scheme }] }, sessionId);
-    const html = widgetHostPage(code, view.scheme);
+    const html = widgetHostPage(code, view.scheme, geistFace(this.options.staticDir));
     cdp.listeners.add(listener);
     try {
       const loaded = new Promise<void>((resolve) => {
@@ -390,9 +449,14 @@ export class WidgetRenderer {
       await loaded;
       // two frames and a beat: the widget's first paint, its height report
       await cdp.send("Runtime.evaluate", { expression: "new Promise(function(r){requestAnimationFrame(function(){requestAnimationFrame(function(){setTimeout(r,180)})})})", awaitPromise: true }, sessionId, 4_000);
-      const { frameTree } = await cdp.send("Page.getFrameTree", {}, sessionId) as { frameTree: { childFrames?: Array<{ frame: { id: string } }> } };
-      const frameId = frameTree.childFrames?.[0]?.frame.id;
-      if (!frameId) throw new Error("the widget frame did not load");
+      const { frameTree } = await cdp.send("Page.getFrameTree", {}, sessionId) as { frameTree: { childFrames?: Array<{ frame: { id: string; url?: string } }> } };
+      const frame = frameTree.childFrames?.[0]?.frame;
+      if (!frame) throw new Error("the widget frame did not load");
+      // a widget that left its frame is never audited: the chat resets it
+      if (frame.url !== "about:srcdoc") {
+        return { defects: [...scripts, { kind: "hidden", target: "document", detail: "the widget navigates its frame away (location, a link or a form); the chat resets it, so nothing would show" }], height: 0, escaped: true };
+      }
+      const frameId = frame.id;
       const { executionContextId } = await cdp.send("Page.createIsolatedWorld", { frameId, worldName: "sagax-widget-check" }, sessionId) as { executionContextId: number };
       const evaluated = await cdp.send("Runtime.evaluate", { expression: AUDIT_EXPRESSION(SURFACE[view.scheme]), contextId: executionContextId, returnByValue: true }, sessionId, 6_000) as { result?: { value?: AuditDefect[] }; exceptionDetails?: { text?: string } };
       if (evaluated.exceptionDetails) throw new Error(`audit failed: ${evaluated.exceptionDetails.text ?? "error"}`);
@@ -414,32 +478,48 @@ export class WidgetRenderer {
   }
 
   /** Close the warm browser now (idle, memory, shutdown). */
-  async close(): Promise<void> {
-    const session = this.session;
-    this.session = null;
+  async close(only?: Session): Promise<void> {
+    const session = only ?? this.session;
     if (!session) return;
+    if (this.session === session) this.session = null;
     try { await session.cdp.send("Browser.close", {}, undefined, 1_500); } catch { /* killed below */ }
     if (session.child.exitCode === null) session.child.kill("SIGKILL");
+    try { rmSync(session.profile, { recursive: true, force: true }); } catch { /* the exit handler retries */ }
   }
 }
 
 // ---------------------------------------------------------------------------
 // The loop: what the bot is told
 
+/** A turn's checks are forgotten after this long without one (a runtime
+ * with no turn generation shares one key per thread). */
+const TURN_IDLE_MS = 15 * 60_000;
+
 /** Attempts per turn (thread + turn generation), and the best one so far. */
 export class WidgetCheckAttempts {
   private readonly turns = new Map<string, { at: number; attempts: number; seen: Map<string, number>; best: { attempt: number; defects: number } | null }>();
 
+  /** The turn's attempts so far: a fourth check is refused without a render. */
+  used(turnKey: string): { attempts: number; best: { attempt: number; defects: number } | null } {
+    const turn = this.turns.get(turnKey);
+    return turn && Date.now() - turn.at <= TURN_IDLE_MS ? { attempts: turn.attempts, best: turn.best } : { attempts: 0, best: null };
+  }
+
+  seen(turnKey: string, code: string): boolean {
+    return this.turns.get(turnKey)?.seen.has(createHash("sha256").update(code).digest("hex")) ?? false;
+  }
+
   record(turnKey: string, code: string, defects: number): { attempt: number; repeated: boolean; best: { attempt: number; defects: number } | null } {
     const now = Date.now();
-    for (const [key, turn] of this.turns) if (now - turn.at > 2 * 60 * 60_000) this.turns.delete(key);
+    for (const [key, turn] of this.turns) if (now - turn.at > TURN_IDLE_MS) this.turns.delete(key);
     if (this.turns.size > 1000) this.turns.delete(this.turns.keys().next().value!);
     const turn = this.turns.get(turnKey) ?? { at: now, attempts: 0, seen: new Map(), best: null };
     this.turns.set(turnKey, turn);
     turn.at = now;
     const hash = createHash("sha256").update(code).digest("hex");
     const earlier = turn.seen.get(hash);
-    if (earlier !== undefined) return { attempt: earlier, repeated: true, best: turn.best };
+    // the same HTML again costs no attempt, and never turns the count back
+    if (earlier !== undefined) return { attempt: turn.attempts, repeated: true, best: turn.best };
     turn.attempts += 1;
     turn.seen.set(hash, turn.attempts);
     if (!turn.best || defects < turn.best.defects) turn.best = { attempt: turn.attempts, defects };
@@ -494,6 +574,10 @@ export async function checkWidgetForTurn(
   const html = (body as { html?: unknown } | null)?.html;
   if (typeof html !== "string" || !html.trim()) return { status: 400, body: { error: "html: the widget's HTML, as it goes in the ```widget fence." } };
   if (html.length > WIDGET_CHECK_MAX_SOURCE) return { status: 400, body: { error: `html: at most ${WIDGET_CHECK_MAX_SOURCE} characters; a widget this large will not fit the chat.` } };
+  const used = attempts.used(turnKey);
+  if (used.attempts >= WIDGET_CHECK_MAX_ATTEMPTS && !attempts.seen(turnKey, html)) {
+    return { status: 200, body: { text: `No check left for this turn (${WIDGET_CHECK_MAX_ATTEMPTS} used). Show your best version (attempt ${used.best?.attempt ?? used.attempts}) in a \`\`\`${IMPERFECT_WIDGET_FENCE} fence.`, isError: true } };
+  }
   const result = await renderer.check(html);
   const attempt = result.status === "unavailable" ? { attempt: 0, repeated: false, best: null } : attempts.record(turnKey, html, result.defects.length);
   const report = widgetCheckReport(result, attempt);

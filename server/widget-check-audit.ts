@@ -226,7 +226,11 @@ export function auditWidgetPage(options: AuditOptions): AuditDefect[] {
     // --- out of sight
     const all = range.getBoundingClientRect();
     if (all.right < 0 || all.left > frameWidth || all.bottom < 0) {
-      push("hidden", owner, "its text is drawn outside the frame");
+      // inside a box that scrolls sideways: say it once, for the box
+      const scroller = clippedBy(owner);
+      const scrolls = scroller && ["auto", "scroll"].includes(getComputedStyle(scroller).overflowX);
+      if (scrolls) push("hscroll", scroller, `this box scrolls sideways (${px(scroller.scrollWidth)} of content in ${px(scroller.clientWidth)}), so part of the widget is out of sight: wrap it or stack it instead`);
+      else push("hidden", owner, "its text is drawn outside the frame");
       continue;
     }
     // --- crushed: count line boxes against words
@@ -234,7 +238,13 @@ export function auditWidgetPage(options: AuditOptions): AuditDefect[] {
     const words = text.trim().split(/\s+/).length;
     const box = owner.closest("label,td,th,li,p,span,div,button,a") ?? owner;
     const boxWidth = Math.round(box.getBoundingClientRect().width);
-    if (lines >= 2 && ((words >= 3 && lines >= words * 0.8) || (words === 1 && text.trim().length > 3) || (words >= 2 && boxWidth < 40))) {
+    // scripts written without spaces (Chinese, Japanese, Thai...) wrap
+    // anywhere: their word count says nothing, only a very narrow box does
+    const spaceless = /[\u0e00-\u0e7f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/.test(text);
+    const crushed = spaceless
+      ? lines >= 3 && boxWidth < 40
+      : (words >= 3 && lines >= words * 0.8) || (words === 1 && text.trim().length > 3 && boxWidth < 80) || (words >= 2 && boxWidth < 40);
+    if (lines >= 2 && crushed) {
       push("crushed", owner, `${words} word${words > 1 ? "s" : ""} on ${lines} lines in a ${boxWidth}px wide box: its column is too narrow`);
     }
     // --- contrast (under a picture or gradient it cannot be read)
@@ -275,7 +285,10 @@ export function auditWidgetPage(options: AuditOptions): AuditDefect[] {
       continue;
     }
     if (own.right < 0 || own.left > frameWidth || own.bottom < 0) {
-      push("hidden", el, "this control sits outside the frame");
+      const scroller = clippedBy(el);
+      if (scroller && ["auto", "scroll"].includes(getComputedStyle(scroller).overflowX)) {
+        push("hscroll", scroller, `this box scrolls sideways (${px(scroller.scrollWidth)} of content in ${px(scroller.clientWidth)}), so part of the widget is out of sight: wrap it or stack it instead`);
+      } else push("hidden", el, "this control sits outside the frame");
       continue;
     }
     // inline links inside a sentence are exempt (WCAG 2.5.8 inline)
@@ -293,7 +306,13 @@ export function auditWidgetPage(options: AuditOptions): AuditDefect[] {
     // --- something else sits on top of it
     const x = own.left + Math.min(own.width / 2, Math.max(own.width - 2, 1));
     const y = own.top + own.height / 2;
-    if (x >= 0 && y >= 0 && x < frameWidth && y < root.clientHeight) {
+    // scrolled out of a box that scrolls: not covered, just out of view
+    const scroller = clippedBy(el);
+    const scrolledAway = scroller && (() => {
+      const view = scroller.getBoundingClientRect();
+      return x < view.left || x > view.right || y < view.top || y > view.bottom;
+    })();
+    if (!scrolledAway && x >= 0 && y >= 0 && x < frameWidth && y < root.clientHeight) {
       const hit = doc.elementFromPoint(own.left + own.width / 2, y);
       const label = el.closest("label");
       if (hit && !contains(hit, el) && !(label && label.contains(hit)) && !(el.id && hit.closest(`label[for="${CSS.escape(el.id)}"]`))) {

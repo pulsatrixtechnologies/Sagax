@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -47,7 +48,7 @@ describe("widget check report", () => {
     const attempts = new WidgetCheckAttempts();
     expect(attempts.record("t:1", "a", 4)).toMatchObject({ attempt: 1, repeated: false });
     expect(attempts.record("t:1", "b", 1)).toMatchObject({ attempt: 2, best: { attempt: 2, defects: 1 } });
-    expect(attempts.record("t:1", "a", 4)).toMatchObject({ attempt: 1, repeated: true });
+    expect(attempts.record("t:1", "a", 4)).toMatchObject({ attempt: 2, repeated: true });
     expect(attempts.record("t:1", "c", 2)).toMatchObject({ attempt: 3, best: { attempt: 2, defects: 1 } });
     expect(attempts.record("t:2", "c", 2)).toMatchObject({ attempt: 1 });
   });
@@ -139,6 +140,11 @@ describe.skipIf(!chrome)("widget check in a headless Chrome", () => {
     expect(result.defects.find((defect) => defect.kind === "hscroll")?.views).toEqual(["desktop light", "desktop dark", "phone light", "phone dark"]);
   }, 60_000);
 
+  it("names a box that scrolls sideways once, not every item hidden in it", async () => {
+    const result = await renderer.check('<div class="card"><div style="display:flex;gap:8px;overflow-x:auto">' + Array.from({ length: 8 }, (_, n) => `<label style="white-space:nowrap;flex-shrink:0"><input type="checkbox"> Option de rapport numéro ${n}</label>`).join("") + "</div></div>");
+    expect(result.defects.map((defect) => defect.kind)).toEqual(["hscroll"]);
+  }, 60_000);
+
   it("stops after three failed checks in a turn", async () => {
     const attempts = new WidgetCheckAttempts();
     const broken = fixture("broken-overlap");
@@ -149,6 +155,44 @@ describe.skipIf(!chrome)("widget check in a headless Chrome", () => {
     expect(last).toContain("attempt 3 of 3");
     expect(last).toContain("widget-imperfect");
   }, 90_000);
+
+  it("never reaches the network, loopback included, even when the widget leaves its frame", async () => {
+    let hits = 0;
+    const server = createServer((_req, res) => { hits += 1; res.end("secret page"); });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const result = await renderer.check(`<p>x</p><img src="http://127.0.0.1:${port}/img"><script>setTimeout(function(){location.href="http://127.0.0.1:${port}/admin"},0)</script>`);
+      expect(hits).toBe(0);
+      expect(JSON.stringify(result)).not.toContain("secret page");
+      expect(result.status).toBe("failed");
+    } finally {
+      server.close();
+    }
+  }, 60_000);
+
+  it("does not call text without spaces crushed", async () => {
+    const result = await renderer.check('<div class="card"><p>这是一个健康的段落，用于测试中文文本在正常宽度的容器中换行时不会被误报为文字被压扁的问题，因为中文没有空格。这是一个健康的段落，用于测试中文文本。</p></div>');
+    expect(result.defects).toEqual([]);
+  }, 60_000);
+
+  it("refuses a fourth check in the turn without drawing", async () => {
+    const attempts = new WidgetCheckAttempts();
+    for (let n = 0; n < 3; n += 1) attempts.record("thread:9", `v${n}`, 2);
+    const refused = await checkWidgetForTurn(new WidgetRenderer({ chromePath: "/nonexistent" }), attempts, "thread:9", { html: "<p>v4</p>" });
+    expect(refused.body.text).toContain("No check left");
+  });
+
+  it("gives up on a widget that never finishes drawing, and recovers", async () => {
+    const slow = new WidgetRenderer({ chromePath: chrome, deadlineMs: 3_000 });
+    try {
+      const stuck = await slow.check("<p>x</p><script>while(true){}</script>");
+      expect(stuck.status).toBe("unavailable");
+      expect((await slow.check(fixture("healthy-form"))).status).toBe("passed");
+    } finally {
+      await slow.close();
+    }
+  }, 60_000);
 
   it("is quick once warm", async () => {
     await renderer.check(fixture("healthy-form"));

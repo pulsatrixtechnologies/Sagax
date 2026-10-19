@@ -56,12 +56,15 @@ shows it; the system prompt says so (`WIDGET_SELF_CHECK_PROMPT`).
   horizontal scroll, overflow, clipped, overlapping or crushed text, hidden or
   covered controls, contrast below 3:1, targets under 24 px with a neighbour
   (or under 12 px). The bot gets the list plus a small JPEG as the tool result.
-- Three checks per turn (thread + generation). After the third failure the
+- Three checks per turn (thread + generation); a fourth is refused without a
+  render, and the same HTML again costs nothing. After the third failure the
   bot shows its best version in a ```widget-imperfect fence; the chat draws it
   with a discreet "Affichage imparfait".
 - One warm headless Chrome over a CDP pipe (no port, no window), closed after
   3 idle minutes, never started while `memoryWatch` is high or critical (#804),
-  OOM score 900. Chrome: `SAGAX_WIDGET_CHECK_CHROME` (`off` disables), then
+  OOM score 900, 20 s deadline per check, at most 4 checks waiting. No
+  network at all (closed proxy, loopback included, plus Fetch interception):
+  a widget that navigates its frame away is reported, never audited. Chrome: `SAGAX_WIDGET_CHECK_CHROME` (`off` disables), then
   `AGENT_BROWSER_EXECUTABLE_PATH`, the desktop bundle, a Playwright headless
   shell. Never the person's browser. No Chrome: the tool says "unavailable".
 - Tests: `server/widget-check.test.ts` (fixtures in
