@@ -93,9 +93,16 @@ under Full access, or would write lasting instructions from untrusted text.
 | `host.commands` (new) "Run commands on the organization's server" | host | did not exist | grantable, off by default; label says it is admin-equivalent on the server machine |
 | `host.shell` "Change the server's own setup" | host | admin only | **given in Perspicax** (2026-10-19): the server's own MCP servers, an engine's program path, its computers, command rules, the admin approvals queue and answering admin cards. The label says it is admin-equivalent on the server machine. |
 | `backup.workspace` "Back up the server" | org | admin only | **given in Perspicax**: status, export and download. Upload, preview and restore stay admin (a restore brings back sign-in, people and sessions). |
-| `server.settings` | org | admin only | **given in Perspicax**: settings, keys, webhooks, connected apps, bot defaults, organization policies, marketplace tokens, voice engine, claude.ai connectors switch. Never the sign-in lists, the operator's profile, the `organization` block of the config, the interim attach window or tool grants. |
+| `server.settings` | org | admin only | **given in Perspicax**: settings, keys, webhooks, connected apps, bot defaults, organization policies, marketplace tokens, voice engine, claude.ai connectors switch. Never the sign-in lists, the operator's profile, the `organization` block of the config, a provider's endpoint (`*.url`), the OpenAI-compatible engines, the maintainer switches `features.sharedComputers` and `features.claudeUserMcp`, the custom domain (pairing links), a webhook on an admin's bot or a Microsoft Graph trigger, the interim attach window or tool grants. |
 | `people.manage` | org (other people's accounts) | admin only | **given in Perspicax**: sessions, pairing codes, a person's connections, force stop or delete of a bot, published pages. Never on an organization admin (or the operator), and attaching an interim person stays admin. |
 | `server.link` | rights (who may sign in at all) | admin only | admin only, by rule |
+
+Note for JC: `host.shell` runs programs as the server (an engine's program
+path, the server's Local VM, command rules on any bot), so its holder can in
+practice make themselves admin on that machine; its label says to give it
+only to people you would trust as admins of the server. `server.settings`
+can turn on the organization's Full access policy, which members still need
+`bots.fullAccess` to use.
 
 Admin only, not delegable, because each changes admin rights themselves:
 `server.link`, a backup restore (upload, preview, restore), tool grants

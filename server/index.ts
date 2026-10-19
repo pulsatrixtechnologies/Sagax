@@ -2461,6 +2461,28 @@ function mayActOnPerson(auth: RequestAuth, owner: string): boolean {
   if (!person) return false;
   return !(person.local === true || person.orgRole === "admin");
 }
+/** Security review 2026-10-19: a person an admin gave server.settings
+ * manages webhooks of bots whose owner they may act on (never an admin's
+ * bot: a webhook runs it as its owner), and never a typed Microsoft Graph
+ * trigger (it names a mailbox sign-in that may be an admin's). Null: allowed. */
+function webhookDelegateRefusal(auth: RequestAuth, webhookIds: string[], body: unknown): { error: string; code: string } | null {
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session" || auth.scopes.includes("admin")) return null;
+  const refusal = { error: "Only an organization admin can manage a webhook on an admin's bot or a Microsoft trigger.", code: "target_is_admin" };
+  const record = body && typeof body === "object" && !Array.isArray(body) ? body as { botId?: unknown; source?: unknown } : null;
+  const botIds = [
+    ...webhookIds.map((id) => webhooks.list().find((hook) => hook.id === id)?.botId),
+    ...(record && typeof record.botId === "string" ? [record.botId] : []),
+  ];
+  if (webhookIds.some((id) => webhooks.list().find((hook) => hook.id === id)?.source?.graph)) return refusal;
+  const source = record?.source && typeof record.source === "object" ? record.source as { graph?: unknown } : null;
+  if (source?.graph) return refusal;
+  for (const botId of botIds) {
+    if (typeof botId !== "string") continue;
+    const bot = store.bot(botId);
+    if (!bot || !mayActOnPerson(auth, effectiveBotOwner(bot))) return refusal;
+  }
+  return null;
+}
 /** 2026-10-19: an organization admin, or a person an admin gave this key in
  * Perspicax (shared/permissions.ts). Loopback follows its trust. */
 function adminOrDelegate(auth: RequestAuth, key: PermissionKey): boolean {
@@ -37010,7 +37032,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       });
     }
     if (path === "/api/webhooks" && method === "POST") {
-      const taken = takePollerCredentials(await readBody(req));
+      const body = await readBody(req);
+      const webhookRefused = webhookDelegateRefusal(auth, [], body);
+      if (webhookRefused) return json(res, 403, webhookRefused);
+      const taken = takePollerCredentials(body);
       const created = webhooks.create(taken.rest as Parameters<typeof webhooks.create>[0]);
       if (taken.credentials) {
         try {
@@ -37034,6 +37059,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     let webhookMatch = path.match(/^\/api\/webhooks\/([\w-]+)\/(rotate|test|reveal)$/);
     if (webhookMatch && method === "POST") {
+      const webhookRefused = webhookDelegateRefusal(auth, [webhookMatch[1]!], null);
+      if (webhookRefused) return json(res, 403, webhookRefused);
       if (webhookMatch[2] === "reveal") {
         // The one-time copy of a token generated at start for a webhook that
         // predates the bearer rule. A second call finds nothing to reveal.
@@ -37064,13 +37091,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     webhookMatch = path.match(/^\/api\/webhooks\/([\w-]+)$/);
     if (webhookMatch && method === "PATCH") {
-      const taken = takePollerCredentials(await readBody(req));
+      const body = await readBody(req);
+      const webhookRefused = webhookDelegateRefusal(auth, [webhookMatch[1]!], body);
+      if (webhookRefused) return json(res, 403, webhookRefused);
+      const taken = takePollerCredentials(body);
       const webhook = webhooks.update(webhookMatch[1], taken.rest as Parameters<typeof webhooks.update>[1]);
       if (!webhook) return json(res, 404, { error: "no such webhook" });
       if (taken.credentials) savePollerCredentials(webhookMatch[1], taken.credentials);
       return json(res, 200, { webhook: webhooks.list().find((hook) => hook.id === webhookMatch![1]) ?? webhook });
     }
     if (webhookMatch && method === "DELETE") {
+      const webhookRefused = webhookDelegateRefusal(auth, [webhookMatch[1]!], null);
+      if (webhookRefused) return json(res, 403, webhookRefused);
       return webhooks.remove(webhookMatch[1])
         ? json(res, 200, { ok: true })
         : json(res, 404, { error: "no such webhook" });
@@ -43397,7 +43429,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // organization block (its policies have their own route, where the
       // interim attach window stays an admin's).
       if (IDENTITY.kind === "perspicax" && !auth.scopes.includes("admin") && body && typeof body === "object") {
-        const field = ["signIn", "profile", "organization"].find((key) => Object.hasOwn(body, key));
+        // Security review 2026-10-19: nor a provider's endpoint (every bot on
+        // the workspace key, admins' too, would talk to it), the OpenAI-
+        // compatible engines, or the maintainer switches that reach the host.
+        const record = body as Record<string, unknown>;
+        const providerUrl = ["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "opencodeGo"]
+          .find((key) => record[key] && typeof record[key] === "object" && Object.hasOwn(record[key] as object, "url"));
+        const hostFeature = record.features && typeof record.features === "object"
+          ? ["sharedComputers", "claudeUserMcp"].find((key) => Object.hasOwn(record.features as object, key)) : undefined;
+        const field = ["signIn", "profile", "organization", "openaiCompat"].find((key) => Object.hasOwn(body, key))
+          ?? (providerUrl ? `${providerUrl}.url` : undefined) ?? (hostFeature ? `features.${hostFeature}` : undefined);
         if (field) return json(res, 403, { error: "Only an organization admin can change this part of the settings.", code: "admin_only_field", field });
       }
       if (hostedModels && ["instances", "anthropic", "openai", "openrouter", "openaiCompat", "xai", "mistral", "cerebras", "groq", "opencodeGo"].some(key => Object.hasOwn(body, key))) return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });

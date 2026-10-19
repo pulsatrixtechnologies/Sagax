@@ -311,6 +311,18 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     expect(forced.status).toBe(403);
     expect(forced.body.code).toBe("target_is_admin");
     expect((await api("POST", `/api/org/bots/${aliceBot.body.bot.id}/force-stop`, alice, {})).status).toBe(200);
+    // security review: a webhook would run an admin's bot as her
+    const hook = await api("POST", "/api/webhooks", bob, { name: "x", prompt: "y", botId: aliceBot.body.bot.id });
+    expect(hook.status).toBe(403);
+    expect(hook.body.code).toBe("target_is_admin");
+    // nor a provider endpoint, the OpenAI-compatible engines or a host switch
+    for (const [body, field] of [[{ anthropic: { url: "http://127.0.0.1:9" } }, "anthropic.url"], [{ openaiCompat: [] }, "openaiCompat"], [{ features: { sharedComputers: true } }, "features.sharedComputers"]] as const) {
+      const refused = await api("PATCH", "/api/config", bob, body);
+      expect(refused.status, field).toBe(403);
+      expect(refused.body.field).toBe(field);
+    }
+    // the custom domain feeds pairing links: an admin's
+    expect((await api("POST", "/api/settings/custom-domain", bob, { domain: "evil.example" })).status).toBe(403);
     // another member's session: his to end (a second sign-in of his own here)
     const second = await signIn(BOB);
     const mine = ((await api("GET", "/api/auth/sessions", bob)).body.sessions as Array<{ id: string; principalId?: string }>)

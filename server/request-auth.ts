@@ -794,7 +794,7 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   { methods: ["POST"], path: /^\/api\/decider\/test$/, permission: "server.settings" },
   { methods: ["GET", "POST", "PUT", "DELETE"], path: /^\/api\/connectors(?:\/[\w.-]{1,128}(?:\/[\w.-]{1,128}){0,3})?$/, permission: "server.settings" },
   { methods: ["GET", "POST"], path: /^\/api\/bot-defaults(?:\/(?:skills\/preview|avatar))?$/, permission: "server.settings" },
-  { methods: ["GET", "POST", "DELETE"], path: /^\/api\/settings\/custom-domain$/, permission: "server.settings" },
+  // (the custom domain stays an admin's: pairing and invite links use it)
   { methods: ["PATCH"], path: /^\/api\/live\/settings$/, permission: "server.settings" },
   // people.manage: never on an admin (checked in each handler)
   { methods: ["GET"], path: /^\/api\/auth\/sessions$/, permission: "people.manage" },
