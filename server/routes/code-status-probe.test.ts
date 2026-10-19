@@ -43,7 +43,7 @@ async function sagax(perspicaxUrl: string, clock: { now: number }) {
     client: new PerspicaxAgentsClient(),
     manager: {} as CloudAgentManager,
     reachable: () => ({ ok: true }),
-    access: async () => ({ ok: true, principalId: "pr_alice", access: { baseUrl: perspicaxUrl, token: "tok" } }),
+    access: async () => ({ ok: true, principalId: "pr_alice", access: { baseUrl: perspicaxUrl, token: "tok", link: () => "link-tok" } }),
     consoleUrl: () => `${perspicaxUrl}/console/agents`,
     botVisible: () => true,
     now: () => clock.now,
