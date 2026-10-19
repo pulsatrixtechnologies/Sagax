@@ -380,6 +380,7 @@ extension IPadParityScreen {
     /// Which modal, section or tab the surface opens.
     var parityModal: (modal: DesktopShellModel.Modal, section: DesktopSettingsSection?, tab: DesktopPluginsTab?)? {
         switch self {
+        case .searchPalette, .searchPaletteQuery: (.search, nil, nil)
         case .pluginsApps: (.plugins, nil, .apps)
         case .pluginsMcp: (.plugins, nil, .mcp)
         case .settingsGeneral, .settingsGeneralScrolled: (.settings, .general, nil)

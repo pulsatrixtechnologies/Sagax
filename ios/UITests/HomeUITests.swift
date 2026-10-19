@@ -89,6 +89,78 @@ final class HomeUITests: XCTestCase {
         XCTAssertTrue(row("Aurora", in: again).waitForExistence(timeout: 5))
     }
 
+    /// The full-screen search (Grok Bot reference search-ref.png): the
+    /// field focused at once with the keyboard up, X closes it.
+    @MainActor
+    func testSearchOpensFocusedWithTheKeyboardAndXClosesIt() {
+        let app = launch()
+        app.buttons["home-search"].tap()
+        let field = app.textFields["search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "the keyboard opens with the sheet")
+        XCTAssertTrue((field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false, "the caret is in the field")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search-row.' AND value CONTAINS 'Bot'")).firstMatch.waitForExistence(timeout: 5))
+        save("search-empty")
+        app.buttons["search-close"].tap()
+        XCTAssertTrue(waitForDisappearance(app.otherElements["search-sheet"]))
+        XCTAssertTrue(app.buttons["home-search"].isHittable)
+    }
+
+    /// Typed: threads and messages join the bots, a message opens its chat,
+    /// and nothing found says so.
+    @MainActor
+    func testSearchOpensAMessageHitAndSaysWhenNothingMatches() {
+        let app = launch()
+        app.buttons["home-search"].tap()
+        let field = app.textFields["search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("zzqxw")
+        XCTAssertTrue(app.descendants(matching: .any)["search-empty"].waitForExistence(timeout: 10))
+        save("search-no-results")
+        app.buttons["search-clear"].tap()
+        field.tap()
+        field.typeText("gabarit")
+        let hit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search-hit.'")).firstMatch
+        XCTAssertTrue(hit.waitForExistence(timeout: 10))
+        XCTAssertTrue(hit.value.map { "\($0)" }?.contains("gabarit") ?? false, "the snippet is read with the hit")
+        save("search-typed")
+        hit.tap()
+        XCTAssertTrue(waitForDisappearance(app.otherElements["search-sheet"]))
+        XCTAssertTrue(app.buttons["chat-name"].waitForExistence(timeout: 10), "the hit opens its conversation")
+    }
+
+    /// The "+" opens the same sheet as New chat: the create rows, the bots,
+    /// and on this solo fixture the note that members need Sagax Business.
+    @MainActor
+    func testPlusOpensNewChatWithTheBotsAndTheSoloNote() {
+        let app = launch()
+        app.buttons["home-plus"].tap()
+        XCTAssertTrue(app.otherElements["new-chat-sheet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["plus-menu.new-bot"].exists || app.buttons["plus-menu.new-group"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["new-chat-solo-note"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        save("new-chat")
+        let field = app.textFields["search-field"]
+        field.typeText("Aur")
+        let aurora = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'plus-menu.bot.' AND label == 'Aurora'")).firstMatch
+        XCTAssertTrue(aurora.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["plus-menu.new-bot"].exists, "typing leaves the create rows")
+        aurora.tap()
+        XCTAssertTrue(app.buttons["chat-name"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["chat-name"].label.contains("Aurora"))
+    }
+
+    private func save(_ name: String) {
+        let shot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: shot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        if let dir = ProcessInfo.processInfo.environment["SAGAX_SHOTS_DIR"] {
+            try? shot.pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+        }
+    }
+
     @MainActor
     func testSearchFindsBotsGroupsAndMessagesWithTheFilter() {
         let app = launch()

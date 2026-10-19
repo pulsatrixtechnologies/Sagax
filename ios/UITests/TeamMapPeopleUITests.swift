@@ -256,6 +256,40 @@ final class TeamMapPeopleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["person-message"].waitForExistence(timeout: 5))
     }
 
+    /// Search lists the members beside the bots (type "Member" on the
+    /// right), filters them as one types, and a member opens the direct
+    /// conversation; New chat says nothing about Sagax Business here.
+    @MainActor
+    func testSearchFindsAMemberAndOpensTheirConversation() throws {
+        guard organization else { throw XCTSkip("the people tests run on the organization fixture") }
+        let sam = try principal("sam.rivera")
+        let app = launch()
+        app.buttons["home-search"].tap()
+        let field = app.textFields["search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Sam")
+        let row = app.buttons["search-person.\(sam)"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "a member is a search result")
+        XCTAssertTrue((row.value as? String)?.hasPrefix("Member") ?? false, "typed as a member: \(String(describing: row.value))")
+        if let dir = ProcessInfo.processInfo.environment["SAGAX_SHOTS_DIR"] {
+            try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("org-search-member.png"))
+        }
+        row.tap()
+        XCTAssertTrue(app.buttons["chat-name"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["chat-name"].label.contains("Sam"), "the header reads as the person")
+        try eventually("the server holds the conversation with Sam") { try peopleConversation(with: sam) != nil }
+
+        app.terminate()
+        let again = launch()
+        again.buttons["home-plus"].tap()
+        XCTAssertTrue(again.otherElements["new-chat-sheet"].waitForExistence(timeout: 5))
+        XCTAssertFalse(again.descendants(matching: .any)["new-chat-solo-note"].exists, "an organization lists its members")
+        if let dir = ProcessInfo.processInfo.environment["SAGAX_SHOTS_DIR"] {
+            sleep(1)
+            try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("org-new-chat.png"))
+        }
+    }
+
     @MainActor
     func testMessageAPersonOpensANewConversationOnTheServer() throws {
         guard organization else { throw XCTSkip("the people tests run on the organization fixture") }
@@ -271,10 +305,14 @@ final class TeamMapPeopleUITests: XCTestCase {
         let app = launch()
         // New lists the people after the bots (ComposeToPicker)
         app.buttons["home-plus"].tap()
+        // New chat (the search sheet): the people follow the bots; typing
+        // their name brings them up above the keyboard
         let person = app.buttons["plus-menu.person.\(jordan)"]
-        for _ in 0..<6 where !(person.exists && person.isHittable) { app.swipeUp() }
         XCTAssertTrue(person.waitForExistence(timeout: 10), "an organization server lists its people in New")
         XCTAssertFalse(app.buttons["plus-menu.person.\(disabled)"].exists, "a disabled person is not offered")
+        app.textFields["search-field"].typeText(jordanName)
+        XCTAssertTrue(person.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["plus-menu.person.\(disabled)"].exists)
         person.tap()
 
         try eventually("the server holds the conversation with Jordan") { try peopleConversation(with: jordan) != nil }

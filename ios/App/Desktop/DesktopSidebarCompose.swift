@@ -5,7 +5,9 @@
 // 12, 8, the list (at most 440 by 440, rounded 12, the menu colour): Create
 // new Bot, Create group chat, then the person's own bots, ⌘1 to ⌘9 on the
 // first nine rows. Create group chat turns the same list into a member
-// picker (chips in the band) and creates the group.
+// picker (chips in the band) and creates the group. On an organization
+// server the people one may write to follow the bots (`composePeople`): a
+// person row opens the direct conversation with them, as on the desktop.
 //
 // Measured in desktop-<W>x<H>-12-sidebar-new-menu and -13-new-group.
 import SwiftUI
@@ -18,6 +20,7 @@ struct DesktopComposePicker: View {
     @EnvironmentObject private var model: DesktopShellModel
     @ObservedObject private var prefs = SidebarPrefsModel.shared
     @ObservedObject private var flags = DesktopSidebarFlags.shared
+    @ObservedObject private var directory = PeopleDirectory.shared
     let width: CGFloat
     let height: CGFloat
     @State private var query = ""
@@ -31,8 +34,14 @@ struct DesktopComposePicker: View {
         DesktopComposeTo.bots(session.state.bots, viewerId: flags.viewerId, query: query)
     }
 
+    /// The people the desktop's browse mode lists under the bots.
+    private var people: [OrgDirectoryPerson] {
+        guard session.surfaceGate.allows(.people) else { return [] }
+        return directory.directory?.messageable(viewer: session.roomViewer.actorId, query: query) ?? []
+    }
+
     private var rows: [DesktopComposeTo.Row] {
-        DesktopComposeTo.rows(mode: mode, bots: bots, canCreateBots: session.surfaceGate.allows(.createBot))
+        DesktopComposeTo.rows(mode: mode, bots: bots, canCreateBots: session.surfaceGate.allows(.createBot), people: people)
     }
 
     var body: some View {
@@ -75,6 +84,8 @@ struct DesktopComposePicker: View {
             }
         }
         .onDisappear { model.composeActivate = nil }
+        // the people rows: the directory is asked once per pairing
+        .task(id: session.connection?.id) { await directory.load(session) }
         .onValueChange(of: query) { _ in cursor = 0 }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desktop-compose")
@@ -154,7 +165,7 @@ struct DesktopComposePicker: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                 AnyView(rowView(row, index: index, selected: index == active))
             }
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty, bots.isEmpty {
+            if !query.trimmingCharacters(in: .whitespaces).isEmpty, bots.isEmpty, mode == .group || people.isEmpty {
                 Text("Nothing matches “\(query.trimmingCharacters(in: .whitespaces))”")
                     .font(theme.font(13))
                     .foregroundStyle(theme.inkSecondary)
@@ -188,7 +199,34 @@ struct DesktopComposePicker: View {
                       disabled: mode == .group && picked.isEmpty, id: "create-group") { activate(row) }
         case let .bot(id):
             if let bot = session.state.bot(id) { botRow(bot, shortcut: shortcut, selected: selected) { activate(row) } }
+        case let .person(id):
+            if let person = directory.directory?.person(id) { personRow(person, shortcut: shortcut, selected: selected) { activate(row) } }
         }
+    }
+
+    private func personRow(_ person: OrgDirectoryPerson, shortcut: Int?, selected: Bool, action: @escaping () -> Void) -> some View {
+        let name = People.displayName(person)
+        return Button(action: action) {
+            HStack(spacing: 12) {
+                PersonAvatar(initials: People.initials(name), size: 28, presenceId: person.principalId)
+                    .frame(width: 28, height: 28)
+                DesktopLineText(text: name, size: 14, color: theme.ink, lineHeight: 21)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if selected {
+                    Text("Open chat").font(theme.font(13)).foregroundStyle(theme.inkSecondary)
+                } else if let shortcut {
+                    DesktopComposeKey(number: shortcut)
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .background(selected ? theme.raised.opacity(0.8) : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(DesktopComposeRowStyle())
+        .accessibilityLabel(Text(verbatim: name))
+        .accessibilityHint(Text("Opens your direct conversation"))
+        .accessibilityIdentifier("desktop-compose.person.\(person.principalId)")
     }
 
     private var groupLabel: String {
@@ -313,6 +351,17 @@ struct DesktopComposePicker: View {
                 }
             } else {
                 model.open(session.returning(to: .bot(bot)))
+            }
+        case let .person(id):
+            guard !working else { return }
+            working = true
+            Task {
+                let chat = await PeopleDirectory.shared.openConversation(with: id, session: session)
+                working = false
+                if let chat {
+                    model.menu = nil
+                    model.open(chat)
+                }
             }
         }
     }

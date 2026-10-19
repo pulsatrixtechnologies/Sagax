@@ -644,17 +644,16 @@ private struct DesktopShellPresenter: ViewModifier {
         case .settings:
             EmptyView()
         case .search:
-            SearchSheet(close: { model.modal = nil }) { chat in
+            // The phone's sheet, large: the iPad's page sheet holds it
+            // (no dim or top inset of its own).
+            SearchSheet(embedded: true, close: { model.modal = nil }) { destination in
                 model.modal = nil
-                model.open(session.returning(to: chat))
-            } openHit: { hit in
-                Task {
-                    if let chat = await session.open(hit) {
-                        model.modal = nil
-                        model.open(chat)
-                    }
+                switch destination {
+                case let .chat(chat): model.open(session.returning(to: chat))
+                case let .exact(chat): model.open(chat)
                 }
             }
+            .searchPageSheet()
         case .newBot:
             CreateBotSheet(close: { model.modal = nil }) { bot in
                 model.modal = nil

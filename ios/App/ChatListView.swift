@@ -60,6 +60,9 @@ struct ChatListView: View {
     @ObservedObject private var people = PeopleDirectory.shared
     @State private var showingPlusMenu = false
     @State private var showingSearch = false
+    /// The "+": the search sheet as New chat (bots and members).
+    @State private var showingNewChat = false
+    @AccessibilityFocusState private var chromeFocus: HomeChromeFocus?
     @State private var showingCreateBot = false
     /// The team a "New bot here" chose (NB3); nil from the + menu.
     @State private var createBotSection: String?
@@ -760,11 +763,13 @@ struct ChatListView: View {
         }
     }
 
-    /// New (the desktop's compose-to picker), the same entries as the
-    /// standard home's "+".
+    /// New (the desktop's compose-to picker): the search sheet as New
+    /// chat, with Create new Bot, Create group chat, the bots and, on an
+    /// organization server, the members (JC, 2026-10-18).
     private var newMenuButton: some View {
-        Menu {
-            NewMenuItems(select: selectNew)
+        Button {
+            Haptics.selection()
+            showingNewChat = true
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 20, weight: .medium))
@@ -775,6 +780,7 @@ struct ChatListView: View {
         .buttonStyle(.plain)
         .glassCapsule()
         .accessibilityLabel("Create")
+        .accessibilityFocused($chromeFocus, equals: .plus)
         .accessibilityIdentifier("home-plus")
     }
 
@@ -1314,6 +1320,8 @@ extension ChatListView {
             switch ParityLaunch.current?.screen {
             case .homePlusMenu?: showingPlusMenu = true
             case .search?: showingSearch = true
+            case .searchTyped?: showingSearch = true
+            case .newChat?: showingNewChat = true
             case .newGroupChat?: showingNewGroup = true
             case .createBot?: showingCreateBot = true
             case .settingsTop?, .settingsBottom?, .plugins?, .account?, .botComputer?, .appearance?: showingSettings = true
@@ -1348,7 +1356,7 @@ extension ChatListView {
     /// A home overlay (Settings, Search, New bot, New group, the + menu)
     /// covers the home: the bottom chrome steps aside under it.
     private var homeOverlayOpen: Bool {
-        showingSettings || showingSearch || showingCreateBot || showingNewGroup || showingPlusMenu
+        showingSettings || showingSearch || showingNewChat || showingCreateBot || showingNewGroup || showingPlusMenu
     }
 
     private var standardHome: some View {
@@ -1454,6 +1462,7 @@ extension ChatListView {
             GlassCircleButton(systemImage: "magnifyingglass", accessibilityLabel: "Search") {
                 showingSearch = true
             }
+            .accessibilityFocused($chromeFocus, equals: .search)
             .accessibilityIdentifier("home-search")
             newMenuButton
         }
@@ -1663,6 +1672,32 @@ extension ChatListView {
         }
     }
 
+    /// The parity capture of a typed search.
+    private static var paritySearchQuery: String {
+        #if DEBUG
+        if ParityLaunch.current?.screen == .searchTyped { return "ar" }
+        #endif
+        return ""
+    }
+
+    /// The X of search and New chat: the sheet goes and VoiceOver lands back
+    /// on the button that opened it.
+    private func closeSearch(returningFocusTo button: HomeChromeFocus) {
+        showingSearch = false
+        showingNewChat = false
+        Task {
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            chromeFocus = button
+        }
+    }
+
+    private func openSearchResult(_ destination: SearchDestination) {
+        switch destination {
+        case let .chat(chat): path.append(session.returning(to: chat))
+        case let .exact(chat): path.append(chat)
+        }
+    }
+
     private func openChat(_ chat: Chat) {
         Haptics.selection()
         path.append(session.returning(to: chat))
@@ -1718,16 +1753,24 @@ extension ChatListView {
                 .zIndex(3)
             }
             if showingSearch {
-                SearchSheet(close: { showingSearch = false }) { chat in
+                SearchSheet(initialQuery: Self.paritySearchQuery, close: { closeSearch(returningFocusTo: .search) }) { destination in
                     showingSearch = false
-                    path.append(session.returning(to: chat))
-                } openHit: { hit in
-                    Task {
-                        if let chat = await session.open(hit) {
-                            showingSearch = false
-                            path.append(chat)
-                        }
-                    }
+                    openSearchResult(destination)
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(4)
+            }
+            if showingNewChat {
+                SearchSheet(mode: .newChat, close: { closeSearch(returningFocusTo: .plus) }) { destination in
+                    showingNewChat = false
+                    openSearchResult(destination)
+                } createBot: {
+                    showingNewChat = false
+                    createBotSection = nil
+                    showingCreateBot = true
+                } createGroup: {
+                    showingNewChat = false
+                    showingNewGroup = true
                 }
                 .transition(.move(edge: .bottom))
                 .zIndex(4)
@@ -1745,8 +1788,14 @@ extension ChatListView {
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingSearch)
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingNewChat)
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingNewGroup)
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingCreateBot)
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingSettings)
     }
+}
+
+/// The home buttons VoiceOver returns to when a sheet they opened closes.
+enum HomeChromeFocus: Hashable {
+    case search, plus
 }

@@ -201,6 +201,10 @@ final class HomeMenusUITests: XCTestCase {
         XCTAssertTrue(app.buttons["plus-menu.new-group"].exists)
         let aurora = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'plus-menu.bot.' AND label == 'Aurora'")).firstMatch
         XCTAssertTrue(aurora.waitForExistence(timeout: 5))
+        // New chat is the search sheet with the keyboard up: narrow it to
+        // the one bot (the rows reorder as recent activity loads)
+        app.textFields["search-field"].typeText("Auro")
+        XCTAssertTrue(aurora.waitForExistence(timeout: 5))
         aurora.tap()
         XCTAssertTrue(app.buttons["chat-name"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["chat-name"].label.contains("Aurora"))

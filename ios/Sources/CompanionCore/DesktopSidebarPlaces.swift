@@ -114,6 +114,9 @@ public enum DesktopComposeTo {
     public enum Row: Equatable, Sendable {
         case createBot, createGroup
         case bot(String)
+        /// A person of the organization (browse mode only): the direct
+        /// conversation with them (ComposeToPicker.tsx `composePeople`).
+        case person(String)
     }
 
     /// `state.bots` without archived bots and other people's, matching the
@@ -126,10 +129,10 @@ public enum DesktopComposeTo {
         }
     }
 
-    public static func rows(mode: Mode, bots: [Bot], canCreateBots: Bool) -> [Row] {
+    public static func rows(mode: Mode, bots: [Bot], canCreateBots: Bool, people: [OrgDirectoryPerson] = []) -> [Row] {
         let botRows = bots.map { Row.bot($0.id) }
         if mode == .group { return [.createGroup] + botRows }
-        return (canCreateBots ? [.createBot] : []) + [.createGroup] + botRows
+        return (canCreateBots ? [.createBot] : []) + [.createGroup] + botRows + people.map { Row.person($0.principalId) }
     }
 
     /// Arrow keys wrap around the rows.

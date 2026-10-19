@@ -2273,6 +2273,14 @@ final class Session: ObservableObject {
         return try await client.youtubeTranscript(videoId: videoId)
     }
 
+    /// The search sheet's messages: nil when the server could not answer,
+    /// so the sheet says so instead of "No results".
+    func searchMessages(_ query: String) async -> [SearchHit]? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2, let client else { return [] }
+        do { return try await client.search(trimmed) } catch { return nil }
+    }
+
     func search(_ query: String) async -> [SearchHit] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2, let client else { return [] }

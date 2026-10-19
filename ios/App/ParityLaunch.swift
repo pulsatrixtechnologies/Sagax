@@ -36,6 +36,10 @@ enum ParityScreen: String, CaseIterable {
     case newGroupChat = "17-new-group-chat"
     case homePlusMenu = "18-home-plus-menu"
     case search = "19-search"
+    /// Not a reference: search with "ar" typed (grouped results, bold match).
+    case searchTyped = "search-typed"
+    /// Not a reference: the home's "+" as New chat (bots and members).
+    case newChat = "new-chat"
     case createBot = "20-create-bot"
     case botComputer = "21-bot-computer"
     /// Not a reference: Settings > Appearance, for the theme captures.
@@ -71,7 +75,7 @@ enum ParityScreen: String, CaseIterable {
     /// Screens the home opens itself: its "+" menu and its sheets.
     var opensFromHome: Bool {
         switch self {
-        case .home, .homePlusMenu, .search, .newGroupChat, .createBot,
+        case .home, .homePlusMenu, .search, .searchTyped, .newChat, .newGroupChat, .createBot,
              .settingsTop, .settingsBottom, .plugins, .account, .botComputer, .appearance: true
         default: false
         }

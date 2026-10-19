@@ -81,6 +81,50 @@
         }
       }
     },
+    "Bots only on this computer. With Sagax Business, the members of your organization are listed here too.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bots only on this computer. With Sagax Business, the members of your organization are listed here too."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seulement des bots sur cet ordinateur. Avec Sagax Business, les membres de votre organisation apparaissent aussi ici."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Somente bots neste computador. Com o Sagax Business, os membros da sua organização também aparecem aqui."
+          }
+        }
+      }
+    },
+    "Check the spelling or try another word.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check the spelling or try another word."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifiez l'orthographe ou essayez un autre mot."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifique a ortografia ou tente outra palavra."
+          }
+        }
+      }
+    },
     "Details (optional)": {
       "localizations": {
         "en": {
@@ -179,6 +223,50 @@
         }
       }
     },
+    "Members": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Members"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Membres"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Membros"
+          }
+        }
+      }
+    },
+    "Messages could not be searched.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages could not be searched."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La recherche dans les messages a échoué."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível buscar nas mensagens."
+          }
+        }
+      }
+    },
     "My engine has reached its usage limit. Try again later.": {
       "localizations": {
         "fr": {
@@ -233,6 +321,72 @@
         }
       }
     },
+    "No results for “%@”": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No results for “%@”"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun résultat pour « %@ »"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum resultado para “%@”"
+          }
+        }
+      }
+    },
+    "Nobody to write to yet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nobody to write to yet"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne à qui écrire pour l'instant"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguém para quem escrever ainda"
+          }
+        }
+      }
+    },
+    "Nothing to search yet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing to search yet"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien à chercher pour l'instant"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada para buscar ainda"
+          }
+        }
+      }
+    },
     "Offensive or hateful": {
       "localizations": {
         "en": {
@@ -251,6 +405,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ofensivo ou de ódio"
+          }
+        }
+      }
+    },
+    "Opens your direct conversation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens your direct conversation"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre votre conversation directe"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre sua conversa direta"
           }
         }
       }
@@ -343,6 +519,50 @@
         }
       }
     },
+    "Search bots and members": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search bots and members"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chercher des bots et des membres"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar bots e membros"
+          }
+        }
+      }
+    },
+    "Searching messages": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searching messages"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche dans les messages"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscando nas mensagens"
+          }
+        }
+      }
+    },
     "Send report": {
       "localizations": {
         "en": {
@@ -427,6 +647,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conteúdo sexual"
+          }
+        }
+      }
+    },
+    "Show everything": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show everything"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout afficher"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar tudo"
+          }
+        }
+      }
+    },
+    "Some filters are off.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some filters are off."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Certains filtres sont désactivés."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alguns filtros estão desativados."
           }
         }
       }
@@ -1381,6 +1645,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Este telefone não reconhece fala offline neste idioma. Digite sua mensagem: %@ responde em voz alta."
+          }
+        }
+      }
+    },
+    "Thread": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thread"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fil"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thread"
           }
         }
       }
