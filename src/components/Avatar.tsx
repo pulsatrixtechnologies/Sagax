@@ -237,11 +237,12 @@ export function shapeMoodFor(state: MausState | undefined): ShapeMood {
 
 /** Trombi's pose for the app's mascot states. */
 export function trombiPoseFor(state: MausState | undefined): TrombiPose {
+  // Trombi keeps his own poses: the shapes' newer moods fold back onto them
+  if (state === "listening" || state === "notifying") return "speak";
   const mood = shapeMoodFor(state);
-  if (mood === "thinking" || mood === "working") return "think";
+  if (mood === "thinking" || mood === "working" || mood === "streaming") return "think";
   if (mood === "happy") return "celebrate";
   if (mood === "sleeping") return "sleep";
-  if (state === "listening" || state === "notifying") return "speak";
   return "idle";
 }
 

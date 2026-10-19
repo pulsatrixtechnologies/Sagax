@@ -1,5 +1,6 @@
 // The clean-room Shapes engine (shape-art.ts, shape-engine.ts): geometry,
 // timings, the gaze solver's bounds, the moves and reduced motion.
+import { REST_POSE, warpPath } from "./shape-volume";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
@@ -253,7 +254,8 @@ describe("reduced motion", () => {
     const html = renderToStaticMarkup(createElement(ShapeMascot, { shape: "cloud", color: BLUE, size: 120, move: { clip: "orbit", key: 1 } }));
     expect(html).not.toContain("skin-fx-live");
     const still = stillFrame({ shape: "cloud", expression: "neutral", color: BLUE });
-    expect(html).toContain(`d="${still.body}${still.eyes}"`);
+    // the resting outline, in the resting pose (a plain body bends a little into its turn)
+    expect(html).toContain(`d="${warpPath(still.body, REST_POSE)}"`);
     expect(html).not.toContain("-ring0");
   });
 });

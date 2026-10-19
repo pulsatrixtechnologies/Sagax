@@ -259,7 +259,8 @@ export function styledEyes(eyes: string, style: EyeStyle): string {
   const gap = boxes.length > 1 ? Math.abs(boxes[1].cx - boxes[0].cx) : Infinity;
   return boxes
     .map(({ cx, cy, w, h }) => {
-      const size = Math.max(w, h);
+      // the eye's width holds through a blink (its height closes), so the size follows the width
+      const size = Math.max(w * 2.2, 0.01);
       // a blink still closes them: the box's height follows the lid
       const open = Math.min(1, h / Math.max(w * 1.6, 0.01));
       if (style === "oval") {
@@ -280,10 +281,10 @@ export function styledEyes(eyes: string, style: EyeStyle): string {
 }
 
 /** Write a pose onto a drawing of ShapeFrameSvg: the turned outline, the eyes, and the slices, the face and the eyes' matrices. */
-export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: VolumeDetail, pose: Pose, frame?: { body: string; eyes: string }, style: EyeStyle = "capsule"): void {
+export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: VolumeDetail, pose: Pose, frame?: { body: string; eyes: string }, style: EyeStyle = "capsule", bend = true): void {
   if (frame) {
-    const body = warpPath(frame.body, pose);
-    const eyes = styledEyes(warpPath(frame.eyes, pose), style);
+    const body = bend ? warpPath(frame.body, pose) : frame.body;
+    const eyes = styledEyes(bend ? warpPath(frame.eyes, pose) : frame.eyes, style);
     svg.querySelectorAll("[data-shape-outline]").forEach((node) => node.setAttribute("d", body));
     svg.querySelectorAll("[data-shape-eyes]").forEach((node) => node.setAttribute("d", eyes));
   }

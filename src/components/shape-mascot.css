@@ -2,7 +2,8 @@
    breath, blink and gaze run in shape-engine.ts; CSS only adds the bounce
    while working. */
 
-.shape-mascot-live.shape-mood-working .shape-body {
+/* (only a flat skin: a body in volume moves with its own motion, shape-motion.ts) */
+.shape-mascot-live.shape-mood-working:not(.shape-idle) svg[data-volume="flat"] .shape-body {
   transform-box: fill-box;
   transform-origin: 50% 100%;
   animation: shape-bounce 0.9s ease-in-out infinite;

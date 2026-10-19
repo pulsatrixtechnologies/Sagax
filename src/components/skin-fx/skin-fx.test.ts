@@ -56,9 +56,12 @@ describe("premium skins render at every size", () => {
     const plain = eyes("plain");
     expect(plain).toHaveLength(2);
     // every skin with a body in volume shares the same eyes; the flat Outline skin keeps its own (cut out of a flat body)
+    // every skin shows two eyes; the skins drawn on the resting outline share them exactly
+    // (only the plain body bends into its turn, and the flat Outline skin cuts them out)
+    const pastel = eyes("pastel");
     for (const skin of SHAPE_SKINS) {
-      if (skin === "outline") expect(eyes(skin), skin).toHaveLength(2);
-      else expect(eyes(skin), skin).toEqual(plain);
+      expect(eyes(skin), skin).toHaveLength(2);
+      if (skin !== "plain" && skin !== "outline") expect(eyes(skin), skin).toEqual(pastel);
     }
   });
 

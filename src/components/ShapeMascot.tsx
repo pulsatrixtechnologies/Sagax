@@ -146,8 +146,9 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
   const fill = solid ? ink.fill : layers.fill;
   const cut = frame.body + frame.eyes;
   // the turn out of the picture plane bends the outline and the eyes themselves (shape-volume.ts)
-  const turnedBody = warpPath(frame.body, pose);
-  const turnedEyes = styledEyes(warpPath(frame.eyes, pose), eyeStyle);
+  // (only a plain body bends: a skin's own art is drawn on the outline at rest)
+  const turnedBody = solid ? warpPath(frame.body, pose) : frame.body;
+  const turnedEyes = styledEyes(solid ? warpPath(frame.eyes, pose) : frame.eyes, eyeStyle);
   const settled = frame.morphed < 0.5;
   const dotFill = solid ? ink.fill : layers.fill.startsWith("url(") ? paint.fill : layers.fill;
   const volume = !FLAT_SKINS.has(skin);
@@ -169,7 +170,7 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
         strokeWidth={!layers.ownEdge && paint.stroke ? paint.strokeWidth : undefined}
         strokeLinejoin="round"
       />
-      {paint.shine && <path d={cut} fillRule="evenodd" fill={`url(#${uid}-shine)`} data-shape-cut="" />}
+      {paint.shine && (volume ? <use href={`#${uid}-outline`} fill={`url(#${uid}-shine)`} /> : <path d={cut} fillRule="evenodd" fill={`url(#${uid}-shine)`} data-shape-cut="" />)}
       {layers.inner && <g clipPath={`url(#${uid}-body)`}>{layers.inner}</g>}
       {/* the eyes in their ink (dark, or light on a dark body), so they read on any ground and any theme */}
 
@@ -191,7 +192,8 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
           </clipPath>
         )}
         <clipPath id={`${uid}-body`}>
-          <path d={cut} clipRule="evenodd" data-shape-cut="" />
+          {/* a body in volume is whole (its eyes sit on top); a flat skin's eyes are cut through it */}
+          {volume ? <use href={`#${uid}-outline`} /> : <path d={cut} clipRule="evenodd" data-shape-cut="" />}
         </clipPath>
         {paint.shine && (
           <radialGradient id={`${uid}-shine`} cx="0.32" cy="0.26" r="0.75">
@@ -356,7 +358,7 @@ export function ShapeMascot({
     const o = openNow.current;
     const f = g.x === 0 && g.y === 0 ? (o === 1 ? still : blinkFrame(sidebarState.current, o)) : gazeFrame(sidebarState.current, g.x, g.y, {}, { left: o, right: o });
     writeShapeFrame(body.current, f);
-    writePose(body.current, volumeDetail(size), grounded(REST_POSE, shapeRef.current), f, eyeStyleFor(moodRef.current));
+    writePose(body.current, volumeDetail(size), grounded(REST_POSE, shapeRef.current), f, eyeStyleFor(moodRef.current), bendRef.current);
   };
   const drawIdleRef = useRef(drawIdle);
   drawIdleRef.current = drawIdle;
@@ -395,17 +397,20 @@ export function ShapeMascot({
       gazeNow.current = { x: 0, y: 0 };
       if (body.current) {
         writeShapeFrame(body.current, still);
-        writePose(body.current, volumeDetail(size), grounded(REST_POSE, shapeRef.current), still, eyeStyleFor(moodRef.current));
+        writePose(body.current, volumeDetail(size), grounded(REST_POSE, shapeRef.current), still, eyeStyleFor(moodRef.current), bendRef.current);
       }
     };
   }, [sidebarGaze, live, sidebarGazeRef, still]);
   const engine = useRef<ShapeEngine | null>(null);
   const motion = useRef<ShapeMotion | null>(null);
   const poseRef = useRef<Pose>(grounded(REST_POSE, known));
+  const lastFrame = useRef<ShapeFrame | null>(null);
   const moodRef = useRef(mood);
   moodRef.current = mood;
   const shapeRef = useRef(known);
   shapeRef.current = known;
+  const bendRef = useRef(knownSkin === "plain");
+  bendRef.current = knownSkin === "plain";
   const [frame, setFrame] = useState<ShapeFrame | null>(null);
   if (live && engine.current) engine.current.set(state, seconds());
 
@@ -413,6 +418,7 @@ export function ShapeMascot({
   useEffect(() => {
     if (!live) {
       engine.current = null;
+      lastFrame.current = null;
       setFrame(null);
       return;
     }
@@ -437,9 +443,10 @@ export function ShapeMascot({
       const next = run.frame(at);
       const pose = grounded(sway.pose(at), shapeRef.current);
       poseRef.current = pose;
+      lastFrame.current = next;
       if (drawn && body.current && shapeFrameWritable(drawn, next)) {
         writeShapeFrame(body.current, next);
-        writePose(body.current, volumeDetail(size), pose, next, eyeStyleFor(moodRef.current));
+        writePose(body.current, volumeDetail(size), pose, next, eyeStyleFor(moodRef.current), bendRef.current);
         return;
       }
       drawn = next;
@@ -482,13 +489,15 @@ export function ShapeMascot({
     };
   }, [live, trackPointer]);
 
-  // after React draws a frame, its outline is the one on screen again
+  // after any React draw (a parent's re-render included), the last live frame and
+  // pose are the ones on screen again, never an older frame React kept in state
   useLayoutEffect(() => {
-    if (live && frame && body.current) {
-      writeShapeFrame(body.current, frame);
-      writePose(body.current, volumeDetail(size), poseRef.current, frame, eyeStyleFor(moodRef.current));
+    const f = lastFrame.current ?? frame;
+    if (live && f && body.current) {
+      writeShapeFrame(body.current, f);
+      writePose(body.current, volumeDetail(size), poseRef.current, f, eyeStyleFor(moodRef.current), bendRef.current);
     }
-  }, [live, frame, size]);
+  });
 
   const shown = live && frame ? frame : still;
   const palette = fxPalette(paint.fx, hex);
