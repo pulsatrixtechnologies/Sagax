@@ -879,6 +879,7 @@ import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModera
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import { interBotWaiting } from "./inter-bot-approvals.ts";
+import { interBotConversations } from "./inter-bot-conversations.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
@@ -6835,8 +6836,12 @@ const wireBot = (bot: BotRecord): WireBot => {
   // 2026-10-19: a bot-to-bot conversation's cards wait on the person, who
   // never sees that conversation (server/inter-bot-approvals.ts).
   const waitingApprovals = allTasks ? interBotWaiting(bot.id, allTasks) : [];
+  // Both ends of a bot-to-bot conversation show it (inter-bot-conversations.ts);
+  // an organization viewer gets the readable ones only (botForViewer).
+  const botConversations = interBotConversations(bot.id, store.bots, undefined, (ownerId, threadId) => threadBusy(ownerId, threadId));
   return { ...visible, waitingForTeammates: activeCoordinationForThread(bot.threadId) && !threadBusy(bot.id, bot.threadId),
     ...(waitingApprovals.length ? { waitingApprovals } : {}),
+    ...(botConversations.length ? { botConversations } : {}),
     mainThreadId: botMainThread(bot.id),
     avatarUrl: visible.avatarUrl ?? null, ...(lead ? { instructionsLead: lead } : {}), ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection)) } : {}) };
 };
@@ -28101,7 +28106,7 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
   if (!record) return bot;
   const mine = viewerThreadOf(record, viewerId);
   const mineTask = mine ? store.taskByThread(record.id, mine) : undefined;
-  const narrowed = narrowBotForViewer(bot, {
+  const narrowedBase = narrowBotForViewer(bot, {
     viewerId,
     botOwnerPrincipalId: effectiveBotOwner(record),
     activity: viewerBotActivity(record, viewerId),
@@ -28109,6 +28114,19 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
     ...(mineTask ? { mineTask: { ...wireTask(mineTask, record.modelSelection), ...store.projectBotForTask(record.id, mine!) } as unknown as Record<string, unknown> } : {}),
     ...(mineTask ? { mineWireTask: wireTask(mineTask, record.modelSelection) as unknown as Record<string, unknown> } : {}),
   });
+  // Only the bot-to-bot conversations this viewer may read, on both bots.
+  const viewerFacts = authzViewerFromId(viewerId);
+  const conversations = interBotConversations(record.id, store.bots, (owner, task, other) => {
+    const ownerRecord = store.bot(owner.id);
+    const otherRecord = other ? store.bot(other.id) : undefined;
+    return Boolean(ownerRecord && otherRecord)
+      && botThreadReadable(ownerRecord!, task.threadId, viewerId)
+      && canOnBot(viewerFacts, "bot.use", botFacts(ownerRecord!))
+      && canOnBot(viewerFacts, "bot.use", botFacts(otherRecord!));
+  }, (ownerId, threadId) => threadBusy(ownerId, threadId));
+  const narrowed: T = { ...narrowedBase };
+  if (conversations.length) (narrowed as Record<string, unknown>).botConversations = conversations;
+  else delete (narrowed as Record<string, unknown>).botConversations;
   // Only the bot-to-bot cards this viewer answers (approvalOwnerId).
   if (!("waitingApprovals" in narrowed)) return narrowed;
   const viewerKey = viewerId.trim().toLowerCase();

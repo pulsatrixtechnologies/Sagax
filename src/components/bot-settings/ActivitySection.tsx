@@ -24,7 +24,7 @@
 // list refetches when the bot's threads change (the store's event stream)
 // and polls while work runs.
 import { useCallback, useEffect, useState } from "react";
-import { ChevronRight, History, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Layers, Loader2, SquareTerminal } from "lucide-react";
+import { ChevronRight, History, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Loader2, SquareTerminal } from "lucide-react";
 
 import { api, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -287,24 +287,14 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
   /** Advanced mode: the Git links (pull requests, branches, commits) show. */
   advanced?: boolean;
 }) {
-  const { coding, work, launched, launchedOther, other, showCoding, showActivity } = panelSections(list, live, advanced);
+  const { coding, work, launched, showCoding } = panelSections(list, live, advanced);
   if (list === null) {
     return error ? <p role="status" data-activity-error className="px-0.5 text-[12.5px] text-ink-tertiary">{t("botPanel.coding.error")}</p> : null;
   }
   return (
     <>
-      {showActivity && (
-        <section data-bot-settings-section="activity" className="flex flex-col gap-2">
-          <SectionHeader
-            icon={<Layers size={16} aria-hidden="true" className="text-ink-secondary" />}
-            title={t("backgroundWork.title")}
-            name="other"
-            onOpenHistory={onOpenHistory}
-          />
-          {launchedOther.length > 0 && onOpenLaunched && <LaunchedAgentsList items={launchedOther} onOpen={onOpenLaunched} label={t("backgroundWork.title")} />}
-          {other.length > 0 && <ActivityList items={other} error={false} label={t("backgroundWork.title")} {...actions} />}
-        </section>
-      )}
+      {/* Work other bots do for this one is not shown here: it is seen in the
+          chat (the bot-to-bot conversation card), JC 2026-10-19. */}
       {showCoding && (
         <section data-bot-settings-section="coding" className="flex flex-col gap-2">
           <SectionHeader
@@ -320,7 +310,7 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
       )}
       {/* Only when no section title opens the history: same header as
           Routines, 28px like its row. */}
-      {!showActivity && !showCoding && (
+      {!showCoding && (
         <div className="flex min-h-7 items-center">
           <SectionHeader
             icon={<History size={16} aria-hidden="true" className="text-ink-secondary" />}

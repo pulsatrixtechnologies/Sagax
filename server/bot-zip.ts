@@ -168,6 +168,7 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   activity: { drop: "live state" },
   waitingForTeammates: { drop: "live state" },
   waitingApprovals: { drop: "derived from the bot's threads" },
+  botConversations: { drop: "derived from the bot's threads and its peers' threads" },
   rewound: { drop: "live state" },
   resumeCursors: { drop: "engine session handles of this server" },
   approvalGrant: { drop: "an approval change in flight" },
