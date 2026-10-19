@@ -167,10 +167,10 @@ export function widgetThemeFromTokens(tokens: WidgetThemeTokens): WidgetTheme {
 
 /** Read the tokens from where the widget is drawn (its skin may be a
  * subtree, like the picker's live miniatures). */
-export function readWidgetTheme(element: Element | null): WidgetTheme {
+export function readWidgetTheme(element: object | null): WidgetTheme {
   const tokens: WidgetThemeTokens = {};
   // through globalThis: the server's tests read this module without the DOM lib
-  const computed = (globalThis as { getComputedStyle?: (target: Element) => { getPropertyValue(name: string): string } }).getComputedStyle;
+  const computed = (globalThis as { getComputedStyle?: (target: object) => { getPropertyValue(name: string): string } }).getComputedStyle;
   if (element && typeof computed === "function") {
     try {
       const style = computed.call(globalThis, element);
