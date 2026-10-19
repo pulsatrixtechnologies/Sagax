@@ -193,7 +193,7 @@ export function OrgDirectory({
                 <ul hidden={!showPeople} className="mt-2 flex flex-col gap-0.5" aria-label={t("org.people")}>
                   {people.map((person) => (
                     <li key={person.id} className="flex min-w-0 items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-[13px] hover:bg-hover">
-                      <span className="min-w-0 break-all text-ink" title={person.id}>{personLabel(person)}</span>
+                      <span className="min-w-0 break-all text-ink">{personLabel(person)}</span>
                       <span className="shrink-0 text-[12px] text-ink-secondary">{roleLabel(person.role)}</span>
                     </li>
                   ))}
