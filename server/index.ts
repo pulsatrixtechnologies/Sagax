@@ -26349,6 +26349,10 @@ const subscriptionDepositor = IDENTITY.kind === "perspicax" && engineLogins && !
       return base ? perspicaxAgentsClient.runs({ baseUrl: base, token: subjectToken }, { mine: true }) : [];
     },
     signedIn: (principalId, driver) => engineLogins!.signedIn(principalId, driver),
+    vaultKey: (principalId, provider) => {
+      const person = principals.byId(principalId);
+      return Boolean(person?.subject && perspicaxDirectory?.providerKeys(person.subject.sub).includes(provider));
+    },
     read: (principalId, engine) => readSubscriptionAccess(engine, engineLogins!.loginDir(principalId, ENGINE_DRIVER[engine])),
     renew: async (principalId, engine) => {
       const cli = subscriptionCli(engine);

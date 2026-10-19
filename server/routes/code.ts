@@ -45,7 +45,7 @@ export interface CodeRouteDeps {
   botVisible: (auth: RequestAuth, botId: string) => boolean;
   /** Personal runs' subscriptions (organization server): the check before a
    * launch, the watch after it, and what the run view shows. */
-  personal?: () => (PersonalSubscriptions & { status(runId: string): CodeSubscription | undefined }) | null;
+  personal?: () => (PersonalSubscriptions & { status(runId: string, principalId?: string): CodeSubscription | undefined }) | null;
   /** The viewer may read that thread of that bot (a thread can turn
    * confidential, or a grant be withdrawn, after the launch). */
   threadReadable?: (auth: RequestAuth, botId: string, threadId: string) => boolean;
@@ -78,7 +78,7 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
   /** The run plus the bot and thread that launched it here, when the viewer may see that bot. */
   const joined = (auth: RequestAuth, principalId: string, run: PerspicaxRun): CodeRun => {
     const local = deps.manager.byExternal("perspicax", run.id);
-    const subscription = deps.personal?.()?.status(run.id);
+    const subscription = deps.personal?.()?.status(run.id, principalId);
     if (subscription) run = { ...run, subscription } as CodeRun;
     if (!local || local.principalId !== principalId || !local.botId || !deps.botVisible(auth, local.botId)) return run;
     const threadOk = local.threadId && (!deps.threadReadable || deps.threadReadable(auth, local.botId, local.threadId));

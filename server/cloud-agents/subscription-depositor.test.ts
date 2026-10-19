@@ -35,12 +35,16 @@ describe("reading a person's subscription access", () => {
     expect(jwtExpiry("a.b")).toBeNull();
   });
 
-  it("reads the person's own login directory", () => {
+  it("reads the person's own login directory, and on macOS Claude's keychain item for it", async () => {
     dir = mkdtempSync(join(tmpdir(), "sagax-subaccess-"));
     mkdirSync(join(dir, "claude"));
     writeFileSync(join(dir, "claude", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: `sk-ant-oat01-${"b".repeat(30)}`, expiresAt: NOW } }));
-    expect(readSubscriptionAccess("claude-code", join(dir, "claude"))?.accessToken).toBe(`sk-ant-oat01-${"b".repeat(30)}`);
-    expect(readSubscriptionAccess("codex", join(dir, "codex"))).toBeNull();
+    expect((await readSubscriptionAccess("claude-code", join(dir, "claude"), null))?.accessToken).toBe(`sk-ant-oat01-${"b".repeat(30)}`);
+    expect(await readSubscriptionAccess("codex", join(dir, "codex"), null)).toBeNull();
+    const services: string[] = [];
+    const keychain = async (service: string) => { services.push(service); return JSON.stringify({ claudeAiOauth: { accessToken: `sk-ant-oat01-${"k".repeat(30)}`, expiresAt: NOW } }); };
+    expect((await readSubscriptionAccess("claude-code", join(dir, "elsewhere"), keychain))?.accessToken).toBe(`sk-ant-oat01-${"k".repeat(30)}`);
+    expect(services[0]).toMatch(/^Claude Code-credentials-[0-9a-f]{8}$/);
   });
 });
 
@@ -50,7 +54,7 @@ const run = (over: Partial<PerspicaxRun>): PerspicaxRun => ({
   state: "running", pr: {}, stats: {}, error: "", unread: false, created_at: "", updated_at: "", ...over,
 });
 
-function depositor(runs: PerspicaxRun[], options: { signedIn?: boolean; access?: SubscriptionAccess | null; renewed?: SubscriptionAccess | null } = {}) {
+function depositor(runs: PerspicaxRun[], options: { signedIn?: boolean; vaultKey?: boolean; access?: SubscriptionAccess | null; renewed?: SubscriptionAccess | null } = {}) {
   let now = NOW;
   let access = options.access === undefined ? { provider: "anthropic" as const, accessToken: `sk-ant-oat01-${"a".repeat(30)}`, expiresAt: NOW + 8 * 3_600_000 } : options.access;
   const deposit = vi.fn<DepositorDeps["deposit"]>(async () => ({ ok: true }));
@@ -61,7 +65,8 @@ function depositor(runs: PerspicaxRun[], options: { signedIn?: boolean; access?:
     subjectToken: async () => "sign-in-token",
     runs: async () => runs,
     signedIn: () => options.signedIn !== false,
-    read: () => access,
+    read: async () => access,
+    vaultKey: () => options.vaultKey === true,
     renew,
     deposit,
     now: () => now,
@@ -99,6 +104,34 @@ describe("SubscriptionDepositor", () => {
     expect(deposit).not.toHaveBeenCalled();
     expect(d.status("run_1")).toMatchObject({ state: "missing", engine: "codex" });
     expect(d.ready("pr_alice", "codex")).toMatchObject({ ok: false, message: expect.stringContaining("ChatGPT") });
+  });
+
+  it("lets a run go on a key the person keeps in Perspicax, without a sign-in here", async () => {
+    const { d, deposit } = depositor([run({})], { signedIn: false, vaultKey: true });
+    expect(d.ready("pr_alice", "claude-code")).toEqual({ ok: true });
+    await d.sweep();
+    expect(deposit).not.toHaveBeenCalled();
+    expect(d.status("run_1")).toBeUndefined();
+  });
+
+  it("shows a run's status to the person it belongs to only", async () => {
+    const { d } = depositor([run({})]);
+    await d.sweep();
+    expect(d.status("run_1", "pr_alice")).toMatchObject({ state: "ok" });
+    expect(d.status("run_1", "pr_bob")).toBeUndefined();
+  });
+
+  it("handles one person at a time, and waits before running the CLI again after a renewal that gave nothing", async () => {
+    const stale = { provider: "anthropic" as const, accessToken: `sk-ant-oat01-${"s".repeat(30)}`, expiresAt: NOW + 5 * 60_000 };
+    const { d, renew, advance } = depositor([run({ id: "run_1" }), run({ id: "run_2" })], { access: stale, renewed: stale });
+    await Promise.all([d.person("pr_alice"), d.person("pr_alice"), d.sweep()]);
+    expect(renew).toHaveBeenCalledTimes(1);
+    advance(60_000);
+    await d.sweep();
+    expect(renew).toHaveBeenCalledTimes(1);
+    advance(5 * 60_000);
+    await d.sweep();
+    expect(renew).toHaveBeenCalledTimes(2);
   });
 
   it("renews through the CLI before expiry and hands over the new token", async () => {
@@ -139,7 +172,7 @@ describe("SubscriptionDepositor", () => {
     const { d, deposit } = depositor([run({})]);
     deposit.mockResolvedValueOnce({ ok: false, error: "forbidden", status: 403, message: "personal credentials are turned off" });
     await d.sweep();
-    expect(d.status("run_1")).toMatchObject({ state: "refused", message: "personal credentials are turned off" });
+    expect(d.status("run_1")).toEqual({ state: "refused", engine: "claude-code" });
   });
 });
 

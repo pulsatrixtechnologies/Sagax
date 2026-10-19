@@ -290,7 +290,6 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
                 <p className="text-[12.5px] text-ink-secondary">
                   {t(`code.subscription.${run.subscription.state}` as "code.subscription.missing", { engine: run.subscription.engine === "codex" ? "ChatGPT (Codex)" : "Claude" })}
                 </p>
-                {run.subscription.state === "refused" && run.subscription.message && <p className="mt-1 text-[12px] text-ink-tertiary">{run.subscription.message}</p>}
               </div>
             </div>
           </div>

@@ -153,7 +153,7 @@ const PLAN_USAGE_CACHE_MS = 45_000;
 const CREDENTIAL_READ_MAX_BYTES = 1_000_000;
 const KEYCHAIN_TIMEOUT_MS = 5_000;
 const KEYCHAIN_MAX_BUFFER = 1_000_000;
-const CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials";
+export const CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials";
 const CLAUDE_MODEL_FAMILIES = ["opus", "sonnet", "haiku"];
 
 const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
@@ -832,7 +832,7 @@ function claudeCredentialFromText(text: string | null, now: number): PlanCredent
 }
 
 /** macOS 26 `security -w` may print the JSON secret as hex. */
-function decodeKeychainSecret(raw: string | null): string | null {
+export function decodeKeychainSecret(raw: string | null): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -857,7 +857,7 @@ function claudeKeychainServices(account: PlanAccount, env: NodeJS.ProcessEnv, re
   return [`${CLAUDE_KEYCHAIN_SERVICE}-${suffix}`];
 }
 
-function readDarwinClaudeKeychain(service: string): Promise<string | null> {
+export function readDarwinClaudeKeychain(service: string): Promise<string | null> {
   if (process.platform !== "darwin") return Promise.resolve(null);
   return new Promise((resolve) => {
     try {

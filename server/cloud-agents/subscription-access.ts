@@ -15,9 +15,11 @@
 // through its app-server (`account/read` with `refreshToken: true`), Claude
 // Code through `claude auth status`, which loads (and renews) the sign-in.
 // Nothing here logs or returns a token outside the value it reads.
+import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
+import { CLAUDE_KEYCHAIN_SERVICE, decodeKeychainSecret, readDarwinClaudeKeychain } from "../plan-usage.ts";
 import { killCliTree, spawnCli } from "../procs.ts";
 
 /** The engines a run may use, with the subscription each one needs. */
@@ -111,12 +113,28 @@ export function codexAccessFrom(text: string | null): SubscriptionAccess | null 
   return { provider: "openai", accessToken: access, expiresAt: jwtExpiry(access), ...(accountId ? { accountId } : {}) };
 }
 
+/** The macOS keychain item Claude Code uses for a CLAUDE_CONFIG_DIR (the
+ * same naming plan-usage.ts reads). */
+export function claudeKeychainService(loginDir: string): string {
+  return `${CLAUDE_KEYCHAIN_SERVICE}-${createHash("sha256").update(resolve(loginDir)).digest("hex").slice(0, 8)}`;
+}
+
 /** The person's current access token for a run engine, from their login
- * directory, or null when they have none there. */
-export function readSubscriptionAccess(engine: RunEngine, loginDir: string): SubscriptionAccess | null {
-  return engine === "claude-code"
-    ? claudeAccessFrom(readText(join(loginDir, ".credentials.json")))
-    : codexAccessFrom(readText(join(loginDir, "auth.json")));
+ * directory (on macOS, Claude Code keeps it in the keychain item of that
+ * directory instead), or null when they have none there. */
+export async function readSubscriptionAccess(
+  engine: RunEngine,
+  loginDir: string,
+  keychain: ((service: string) => Promise<string | null>) | null = process.platform === "darwin" ? readDarwinClaudeKeychain : null,
+): Promise<SubscriptionAccess | null> {
+  if (engine === "codex") return codexAccessFrom(readText(join(loginDir, "auth.json")));
+  const file = claudeAccessFrom(readText(join(loginDir, ".credentials.json")));
+  if (file || !keychain) return file;
+  try {
+    return claudeAccessFrom(decodeKeychainSecret(await keychain(claudeKeychainService(loginDir))));
+  } catch {
+    return null;
+  }
 }
 
 export interface RenewInput {
