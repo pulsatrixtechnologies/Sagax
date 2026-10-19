@@ -4,7 +4,10 @@
 // back, and delete: refused while its work is not pushed (until confirmed
 // twice) and while it is checked out. A thread the person may not post in,
 // or a branch the thread never worked on, reads exactly like not there; on
-// an organization server, push needs the person's own GitHub connection.
+// an organization server, push needs the person's own GitHub connection,
+// a request with no person is refused and no answer carries a server path.
+// The default branch (origin's HEAD, or main/master/trunk/develop) is never
+// pushed, deleted or proposed; the person's token rides the push only.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { createServer, type Server } from "node:http";
@@ -16,7 +19,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { json, readBody } from "../harness/http.ts";
 import { requiredScope } from "../request-auth.ts";
 import { repositoryInfo } from "../activity-code-work.ts";
-import { BranchArchive, BranchPulls, hostGit, parseStatus, proposedMessage, validBranchName, type GitExec } from "../code-branches.ts";
+import { BranchArchive, BranchPulls, hostGit, parseStatus, proposedMessage, redactPaths, validBranchName, type GitExec } from "../code-branches.ts";
 import type { BotBranchInfo } from "../../shared/bot-code-branches.ts";
 import { createBotCodeBranchRoutes, type BotCodeBranchRouteDeps, type BranchCredentials } from "./bot-code-branches.ts";
 import { dispatchRoutes } from "./table.ts";
@@ -88,7 +91,7 @@ function deps(overrides: Partial<BotCodeBranchRouteDeps> = {}): BotCodeBranchRou
     messages: () => ({ messages: [bash("git worktree add -b feat/widgets ../wt", NOW - 60_000), bash("git worktree add -b feat/local ../wt2", NOW - 50_000)] }),
     repository: (cwd) => repositoryInfo(cwd, Date.now() + Math.random()),
     organization: () => false,
-    credentials: (): BranchCredentials => ({ ok: true, git: {}, gh: {} }),
+    credentials: (): BranchCredentials => ({ git: {}, publish: { push: {}, gh: {} } }),
     archive: new BranchArchive(join(dir, `archive-${Math.random()}.json`)),
     audit: (_auth, action) => { audits.push(action); },
     exec: hostGit,
@@ -136,7 +139,14 @@ describe("Coding branches: acted on where the repository is", () => {
   });
 
   it("commits the changes with the message, then pushes to the bare remote", async () => {
-    const routeDeps = deps();
+    // The token stands in as SAGAX_TEST_TOKEN: only the push (and the
+    // remote HEAD read with it) may carry it.
+    const calls: Array<{ args: string[]; token: boolean }> = [];
+    const exec: GitExec = (program, args, options) => {
+      calls.push({ args, token: options.env?.SAGAX_TEST_TOKEN === "1" });
+      return hostGit(program, args, options);
+    };
+    const routeDeps = deps({ exec, credentials: () => ({ git: {}, publish: { push: { SAGAX_TEST_TOKEN: "1" }, gh: {} } }) });
     const api = await serve(routeDeps);
     const empty = await api.post("/api/bots/pepper/code/branch/commit", { threadId: "t1", branch: "feat/widgets", message: "  " });
     expect(empty.status).toBe(400);
@@ -156,6 +166,24 @@ describe("Coding branches: acted on where the repository is", () => {
     expect(push.body.state).toMatchObject({ pushed: true, ahead: 0 });
     expect(git(remote, "rev-parse", "refs/heads/feat/widgets")).toBe(commit.body.sha);
     expect(routeDeps.audits).toEqual(["code.branch.commit", "code.branch.push"]);
+    const withToken = calls.filter((call) => call.token).map((call) => call.args.find((arg) => arg === "push" || arg === "ls-remote") ?? call.args.join(" "));
+    expect(withToken.sort()).toEqual(["ls-remote", "push"]);
+  });
+
+  it("never pushes or deletes the default branch: origin's HEAD, or a protected name when origin has no HEAD", async () => {
+    git(repo, "branch", "develop", "main");
+    const api = await serve(deps({ messages: () => ({ messages: [bash("git checkout -B main", NOW - 60_000), bash("git checkout -b develop", NOW - 50_000)] }) }));
+    expect((await api.get(`/api/bots/pepper/code/branch?${q("main")}`)).body.state).toMatchObject({ isDefault: true });
+    expect((await api.post("/api/bots/pepper/code/branch/push", { threadId: "t1", branch: "main" })).body.code).toBe("default_branch");
+    expect((await api.post("/api/bots/pepper/code/branch/delete", { threadId: "t1", branch: "main", confirmUnpushed: true })).body.code).toBe("default_branch");
+    git(repo, "remote", "set-head", "origin", "--delete");
+    try {
+      expect((await api.get(`/api/bots/pepper/code/branch?${q("develop")}`)).body.state).toMatchObject({ isDefault: true });
+      expect((await api.post("/api/bots/pepper/code/branch/push", { threadId: "t1", branch: "develop" })).body.code).toBe("default_branch");
+    } finally {
+      git(repo, "remote", "set-head", "origin", "main");
+    }
+    expect(git(remote, "branch", "--list", "develop")).toBe("");
   });
 
   it("never deletes a checked-out branch, and asks twice before deleting work that is not pushed", async () => {
@@ -191,15 +219,14 @@ describe("Coding branches: acted on where the repository is", () => {
     expect((await api.get(`/api/bots/pepper/code/branch?${q("feat/widgets", "t-bob")}`)).status).toBe(404);
     expect((await api.post("/api/bots/pepper/code/branch/push", { threadId: "t-bob", branch: "feat/widgets" })).status).toBe(404);
     expect((await api.get(`/api/bots/pepper/code/branch?${q("feat/unknown")}`)).status).toBe(404);
-    // the folder's own branch is the default one: read, never pushed or deleted from here
-    expect((await api.get(`/api/bots/pepper/code/branch?${q("main")}`)).body.state).toMatchObject({ isDefault: true });
-    expect((await api.post("/api/bots/pepper/code/branch/delete", { threadId: "t1", branch: "main", confirmUnpushed: true })).body.code).toBe("default_branch");
+    // the folder's checked-out branch is not the thread's just because it is there
+    expect((await api.get(`/api/bots/pepper/code/branch?${q("main")}`)).status).toBe(404);
     expect((await api.get(`/api/bots/pepper/code/branch?${q("--upload-pack=x")}`)).status).toBe(400);
     expect((await api.get(`/api/bots/nobody/code/branch?${q("feat/widgets")}`)).status).toBe(404);
   });
 
   it("on an organization server, pushes and opens pull requests only with the person's own GitHub", async () => {
-    const api = await serve(deps({ organization: () => true, viewerId: () => "alice", credentials: () => ({ ok: false, reason: "github_not_connected" }) }));
+    const api = await serve(deps({ organization: () => true, viewerId: () => "alice", credentials: () => ({ isolated: true, git: {}, author: { name: "Alice", email: "alice@example.com" } }) }));
     const info = await api.get(`/api/bots/pepper/code/branch?${q("feat/widgets")}`);
     expect(info.body).toMatchObject({ canPublish: false, publishBlocked: "github_not_connected" });
     // a server path means nothing to the person: its folder's name only
@@ -210,6 +237,26 @@ describe("Coding branches: acted on where the repository is", () => {
     const pr = await api.post("/api/bots/pepper/code/branch/pr", { threadId: "t1", branch: "feat/widgets" });
     expect(pr.status).toBe(409);
     expect(pr.body.code).toBe("not_github");
+  });
+
+  it("on an organization server, refuses a request with no person and answers without server paths", async () => {
+    const anonymous = await serve(deps({ organization: () => true, viewerId: () => undefined }));
+    expect((await anonymous.get(`/api/bots/pepper/code/branch?${q("feat/widgets")}`)).body.code).toBe("no_person");
+    expect((await anonymous.post("/api/bots/pepper/code/branch/push", { threadId: "t1", branch: "feat/widgets" })).status).toBe(403);
+    expect((await anonymous.get("/api/bots/pepper/code/branches/archived")).status).toBe(403);
+
+    const nameless = await serve(deps({ organization: () => true, viewerId: () => "alice", credentials: () => ({ isolated: true, git: {} }) }));
+    expect((await nameless.post("/api/bots/pepper/code/branch/commit", { threadId: "t1", branch: "feat/widgets", message: "x" })).body.code).toBe("no_author");
+
+    const api = await serve(deps({ organization: () => true, viewerId: () => "alice", credentials: () => ({ isolated: true, git: {}, author: { name: "Alice", email: "alice@example.com" } }) }));
+    writeFileSync(join(worktree, "more.ts"), "export const more = 1;\n");
+    const commit = await api.post("/api/bots/pepper/code/branch/commit", { threadId: "t1", branch: "feat/widgets", message: "More" });
+    expect(commit.status).toBe(200);
+    expect(commit.body.state.worktree).toBe("wt");
+    expect(git(worktree, "log", "-1", "--format=%an <%ae>")).toBe("Alice <alice@example.com>");
+    const removed = await api.post("/api/bots/pepper/code/branch/delete", { threadId: "t1", branch: "feat/widgets" });
+    expect(removed.body.code).toBe("checked_out");
+    expect(JSON.stringify([commit.body, removed.body])).not.toContain(dir);
   });
 
   it("says a branch whose repository is elsewhere has no actions here", async () => {
@@ -235,12 +282,18 @@ describe("Coding branches: the pieces", () => {
     for (const name of ["", "-x", "--upload-pack=sh", "HEAD", "a..b", "a b", "a~1", "a:b", "/a", "a/", "a.lock", "a/.b", "a@{1}"]) expect(validBranchName(name)).toBe(false);
   });
 
+  it("says a server path by its last folder only, and leaves URLs alone", () => {
+    expect(redactPaths("This branch is checked out in /srv/sagax/data/repos/acme/wt. Remove it.")).toBe("This branch is checked out in wt. Remove it.");
+    expect(redactPaths("fatal: '/srv/x/repo/.git/index.lock': File exists")).toBe("fatal: 'index.lock': File exists");
+    expect(redactPaths("see https://github.com/o/r/pull/7")).toBe("see https://github.com/o/r/pull/7");
+  });
+
   it("reads git status and proposes a message from the thread, else the files", () => {
     expect(parseStatus(" M src/a.ts\0?? new.ts\0D  gone.ts\0R  b.ts\0a.ts\0")).toEqual([
       { path: "src/a.ts", status: "modified" },
       { path: "new.ts", status: "untracked" },
       { path: "gone.ts", status: "deleted" },
-      { path: "b.ts", status: "renamed" },
+      { path: "b.ts", status: "renamed", from: "a.ts" },
     ]);
     expect(proposedMessage([], "  Fix   the parser ")).toBe("Fix the parser");
     expect(proposedMessage([{ path: "src/a.ts", status: "modified" }, { path: "b.ts", status: "added" }, { path: "c.ts", status: "added" }])).toBe("Update a.ts, b.ts and 1 more");

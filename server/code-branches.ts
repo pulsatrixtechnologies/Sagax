@@ -9,7 +9,8 @@
 // Every call goes through a `GitExec` (args, never a shell), so the tests
 // drive a temporary repository and a bare local remote.
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 
 import { parseUnifiedDiff } from "../shared/code-runs.ts";
@@ -21,7 +22,7 @@ export interface GitResult {
   stderr: string;
 }
 
-export type GitExec = (program: "git" | "gh", args: string[], options: { cwd: string; env?: Record<string, string>; timeoutMs?: number; maxBytes?: number }) => Promise<GitResult>;
+export type GitExec = (program: "git" | "gh", args: string[], options: { cwd: string; env?: Record<string, string>; timeoutMs?: number; maxBytes?: number; isolated?: boolean }) => Promise<GitResult>;
 
 export class BranchActionError extends Error {
   readonly code: string;
@@ -36,11 +37,13 @@ export class BranchActionError extends Error {
 /** What git and gh may read from the server's environment: where they are,
  * the home folder (the person's git config, credential helper and gh login
  * on their own computer), the ssh agent, proxies and certificates. Nothing
- * else of the server's environment reaches them. */
+ * else of the server's environment reaches them. Isolated (an organization
+ * server): no home, ssh agent or config folder of the server's either. */
+const ISOLATED_PASSTHROUGH = new Set(["PATH", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_CAINFO", "LANG", "TMPDIR"]);
 const PASSTHROUGH = ["PATH", "HOME", "USER", "LOGNAME", "SSH_AUTH_SOCK", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_CAINFO", "GIT_CONFIG_GLOBAL", "LANG", "TMPDIR", "XDG_CONFIG_HOME", "GH_CONFIG_DIR"] as const;
 
 export const hostGit: GitExec = (program, args, options) => new Promise((done) => {
-  const passthrough = Object.fromEntries(PASSTHROUGH.flatMap((key) => (process.env[key] ? [[key, process.env[key]!]] : [])));
+  const passthrough = Object.fromEntries(PASSTHROUGH.flatMap((key) => (process.env[key] && (!options.isolated || ISOLATED_PASSTHROUGH.has(key)) ? [[key, process.env[key]!]] : [])));
   execFile(program, args, {
     cwd: options.cwd,
     env: {
@@ -84,10 +87,10 @@ export function parseStatus(text: string): BotBranchChange[] {
     const y = entry[1]!;
     const path = entry.slice(3);
     // A rename or copy carries its old path in the next field.
-    if (x === "R" || x === "C") index++;
+    const from = x === "R" || x === "C" ? parts[++index] : undefined;
     const code = x === "?" ? "?" : x !== " " ? x : y;
     const status: BotBranchChange["status"] = code === "?" ? "untracked" : code === "A" ? "added" : code === "D" ? "deleted" : code === "R" || code === "C" ? "renamed" : "modified";
-    out.push({ path, status });
+    out.push({ path, status, ...(from ? { from } : {}) });
   }
   return out;
 }
@@ -109,15 +112,35 @@ export interface BranchPlace {
   branch: string;
 }
 
+/** Branch names never pushed, deleted or proposed from the panel, whatever
+ * origin's HEAD says (or when it says nothing). */
+export const PROTECTED_BRANCHES: ReadonlySet<string> = new Set(["main", "master", "trunk", "develop"]);
+
+/** What git runs with: `env` for every call; `pushEnv` (the person's
+ * token) for the push call only; `isolated` on an organization server. */
+export interface BranchGitEnv {
+  env?: Record<string, string>;
+  pushEnv?: Record<string, string>;
+  isolated?: boolean;
+}
+
+/** Local or worktree git config the push never runs under on an
+ * organization server: rewrites, proxies, TLS, extra headers, helpers. */
+const UNSAFE_PUSH_CONFIG = /^(url\..*\.(insteadof|pushinsteadof)|http\..*(proxy|sslverify|sslcainfo|sslcapath|sslcert|sslkey|extraheader|cookiefile|emptyauth|curloptresolve)|remote\.origin\.(pushurl|proxy|receivepack|uploadpack)|core\.(sshcommand|gitproxy|askpass)|credential\..*|include\..*|includeif\..*)$/i;
+
 /** The git calls for one branch of one repository. */
 export class BranchGit {
   private readonly exec: GitExec;
   private readonly place: BranchPlace;
   private readonly env: Record<string, string>;
-  constructor(exec: GitExec, place: BranchPlace, env: Record<string, string> = {}) {
+  private readonly pushEnv: Record<string, string>;
+  private readonly isolated: boolean;
+  constructor(exec: GitExec, place: BranchPlace, options: BranchGitEnv = {}) {
     this.exec = exec;
     this.place = place;
-    this.env = env;
+    this.env = options.env ?? {};
+    this.pushEnv = options.pushEnv ?? {};
+    this.isolated = options.isolated === true;
     if (!isAbsolute(place.root)) throw new BranchActionError("The repository folder is not known.", "no_folder", 404);
     if (!validBranchName(place.branch)) throw new BranchActionError("That branch name is not valid.", "invalid_branch", 400);
   }
@@ -125,7 +148,7 @@ export class BranchGit {
   private async git(args: string[], cwd = this.place.root, options: { timeoutMs?: number; maxBytes?: number; env?: Record<string, string> } = {}): Promise<GitResult> {
     // Hooks and fsmonitor of the repository never run on the person's behalf
     // from the panel (the bot may have written them).
-    return this.exec("git", ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], { cwd, env: { ...this.env, ...options.env }, timeoutMs: options.timeoutMs, maxBytes: options.maxBytes });
+    return this.exec("git", ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], { cwd, env: { ...this.env, ...options.env }, timeoutMs: options.timeoutMs, maxBytes: options.maxBytes, ...(this.isolated ? { isolated: true } : {}) });
   }
 
   private async ok(args: string[], cwd?: string): Promise<string | undefined> {
@@ -149,10 +172,22 @@ export class BranchGit {
     return undefined;
   }
 
+  /** origin's HEAD branch as this repository knows it (no network). */
+  async originHead(): Promise<string | undefined> {
+    const head = await this.ok(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+    return head ? head.replace(/^refs\/remotes\/origin\//, "") : undefined;
+  }
+
+  /** The branch is the default one: origin's HEAD, or a protected name. */
+  async isDefaultBranch(): Promise<boolean> {
+    if (PROTECTED_BRANCHES.has(this.place.branch)) return true;
+    return (await this.originHead()) === this.place.branch;
+  }
+
   /** The base the branch would merge into: origin's HEAD, else main or master. */
   async base(): Promise<string | undefined> {
-    const head = await this.ok(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
-    if (head) return head.replace(/^refs\/remotes\//, "");
+    const head = await this.originHead();
+    if (head) return `origin/${head}`;
     for (const name of ["origin/main", "origin/master", "main", "master"]) {
       if (name.endsWith(`/${this.place.branch}`) || name === this.place.branch) continue;
       if (await this.ok(["rev-parse", "--verify", "--quiet", `${name.includes("/") ? "refs/remotes/" : "refs/heads/"}${name}^{commit}`])) return name;
@@ -171,6 +206,7 @@ export class BranchGit {
     const remoteSha = await this.ok(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${this.place.branch}^{commit}`]);
     const base = await this.base();
     const defaultBranch = base?.replace(/^origin\//, "");
+    const isDefault = await this.isDefaultBranch();
     let ahead = 0;
     let behind = 0;
     const against = remoteSha ? `refs/remotes/origin/${this.place.branch}` : base;
@@ -187,7 +223,7 @@ export class BranchGit {
       sha,
       ...(worktree ? { worktree } : {}),
       ...(defaultBranch ? { base: defaultBranch } : {}),
-      isDefault: defaultBranch === this.place.branch,
+      isDefault,
       pushed: Boolean(remoteSha),
       ahead,
       behind,
@@ -207,32 +243,57 @@ export class BranchGit {
     const changes = parseStatus((await this.git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], worktree)).stdout);
     if (!changes.length) throw new BranchActionError("Nothing to commit on this branch.", "nothing_to_commit");
     const known = new Set(changes.map((change) => change.path));
-    const chosen = paths?.length ? paths.filter((path) => known.has(path)) : [...known];
-    if (paths?.length && chosen.length !== paths.length) throw new BranchActionError("Some of those files have no changes any more. Refresh and try again.", "stale_files");
+    const picked = paths?.length ? paths.filter((path) => known.has(path)) : [...known];
+    if (paths?.length && picked.length !== paths.length) throw new BranchActionError("Some of those files have no changes any more. Refresh and try again.", "stale_files");
+    // A renamed file commits with its old path, or the old one stays behind.
+    const renamedFrom = new Map(changes.flatMap((change) => (change.from ? [[change.path, change.from] as const] : [])));
+    const chosen = [...new Set(picked.flatMap((path) => (renamedFrom.has(path) ? [path, renamedFrom.get(path)!] : [path])))];
     const add = await this.git(["add", "--all", "--", ...chosen.map((path) => `:(literal)${path}`)], worktree);
     if (add.code !== 0) throw new BranchActionError(firstLine(add.stderr) || "git could not stage those files.", "add_failed", 500);
     const identity: Record<string, string> = author ? { GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email, GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email } : {};
-    // The message goes through a file in the worktree's git folder (GitExec
-    // carries no stdin, and the argv never holds what the person typed).
-    const gitDir = await this.ok(["rev-parse", "--absolute-git-dir"], worktree);
-    if (!gitDir) throw new BranchActionError("The repository could not be read.", "no_git_dir", 500);
-    const file = join(gitDir, "SAGAX_COMMIT_MSG");
-    writeFileSync(file, `${text}\n`, { mode: 0o600 });
-    const done = await this.git(["commit", "--no-verify", `--file=${file}`, "--", ...chosen.map((path) => `:(literal)${path}`)], worktree, { env: identity });
-    try { unlinkSync(file); } catch { /* already gone */ }
+    // The message goes through a file in a fresh private folder of the
+    // server (GitExec carries no stdin, the argv never holds what the person
+    // typed, and nothing the bot wrote in the repository can stand in for it).
+    const folder = mkdtempSync(join(tmpdir(), "sagax-commit-"));
+    const file = join(folder, "message");
+    let done: GitResult;
+    try {
+      writeFileSync(file, `${text}\n`, { mode: 0o600, flag: "wx" });
+      done = await this.git(["commit", "--no-verify", `--file=${file}`, "--", ...chosen.map((path) => `:(literal)${path}`)], worktree, { env: identity });
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
     if (done.code !== 0) throw new BranchActionError(firstLine(done.stderr) || firstLine(done.stdout) || "git could not commit.", "commit_failed", 500);
     const sha = await this.ok(["rev-parse", "HEAD"], worktree);
     return { sha: sha ?? "" };
   }
 
-  /** Push the branch to origin under the same name, never forced. */
-  async push(): Promise<{ remote: string }> {
+  /** Push the branch to origin under the same name, never forced, never
+   * the default branch. `githubRepo` (an organization server): origin must
+   * be exactly https://github.com/<that repo>, for fetch and push, with no
+   * local config that could reroute the push or read its token. */
+  async push(githubRepoOnly?: string): Promise<{ remote: string }> {
     const state = await this.state();
     if (!state.exists) throw new BranchActionError("This branch no longer exists here.", "gone", 404);
-    if (state.isDefault) throw new BranchActionError("The default branch is not pushed from here.", "default_branch");
+    if (state.isDefault || PROTECTED_BRANCHES.has(this.place.branch)) throw new BranchActionError("The default branch is not pushed from here.", "default_branch");
     const remote = await this.originUrl();
     if (!remote) throw new BranchActionError("This repository has no origin remote to push to.", "no_remote");
-    const result = await this.git(["push", "--porcelain", "--set-upstream", "origin", `${this.ref}:${this.ref}`], this.place.root, { timeoutMs: 120_000 });
+    if (githubRepoOnly) {
+      const expected = new Set([`https://github.com/${githubRepoOnly}`, `https://github.com/${githubRepoOnly}.git`].map((url) => url.toLowerCase()));
+      const pushUrl = await this.ok(["remote", "get-url", "--push", "origin"]);
+      if (!expected.has(remote.toLowerCase()) || !pushUrl || !expected.has(pushUrl.toLowerCase())) throw new BranchActionError("On this server, a branch is pushed only to its https GitHub remote.", "not_github");
+      const config = (await this.git(["config", "--list", "--show-scope", "--name-only"])).stdout.split("\n");
+      if (config.some((line) => /^(local|worktree)\t/.test(line) && UNSAFE_PUSH_CONFIG.test(line.split("\t")[1] ?? ""))) throw new BranchActionError("This repository's git config changes how it pushes, so it is not pushed from here.", "unsafe_config");
+    }
+    // The remote's own default branch, read with the push itself: never that one.
+    const remoteHead = await this.git(["ls-remote", "--symref", "origin", "HEAD"], this.place.root, { timeoutMs: 60_000, env: this.pushEnv });
+    if (remoteHead.code === 0) {
+      const head = /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(remoteHead.stdout)?.[1];
+      if (head === this.place.branch) throw new BranchActionError("The default branch is not pushed from here.", "default_branch");
+    } else if (githubRepoOnly) {
+      throw pushError(remoteHead.stderr || remoteHead.stdout);
+    }
+    const result = await this.git(["push", "--porcelain", "--set-upstream", "origin", `${this.ref}:${this.ref}`], this.place.root, { timeoutMs: 120_000, env: this.pushEnv });
     if (result.code !== 0) throw pushError(result.stderr || result.stdout);
     return { remote: stripCredentials(remote) };
   }
@@ -243,7 +304,7 @@ export class BranchGit {
     const base = await this.base();
     const worktree = await this.worktree();
     const mergeBase = base ? await this.ok(["merge-base", base, this.ref]) : undefined;
-    const args = ["diff", "--no-color", "--no-ext-diff", "--find-renames"];
+    const args = ["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--find-renames"];
     const result = worktree
       ? await this.git([...args, mergeBase ?? "HEAD"], worktree, { maxBytes: maxBytes * 2 })
       : await this.git([...args, mergeBase ? `${mergeBase}..${this.ref}` : `${this.ref}^..${this.ref}`], this.place.root, { maxBytes: maxBytes * 2 });
@@ -259,8 +320,8 @@ export class BranchGit {
   async deleteLocal(unpushed: boolean): Promise<void> {
     const state = await this.state();
     if (!state.exists) throw new BranchActionError("This branch no longer exists here.", "gone", 404);
-    if (state.isDefault) throw new BranchActionError("The default branch is never deleted from here.", "default_branch");
-    if (state.worktree) throw new BranchActionError(`This branch is checked out in ${state.worktree}. Remove that worktree first; the panel never deletes a folder.`, "checked_out");
+    if (state.isDefault || PROTECTED_BRANCHES.has(this.place.branch)) throw new BranchActionError("The default branch is never deleted from here.", "default_branch");
+    if (state.worktree) throw new BranchActionError(`This branch is checked out in ${this.isolated ? folderName(state.worktree) : state.worktree}. Remove that worktree first; the panel never deletes a folder.`, "checked_out");
     const unsaved = !state.pushed || state.ahead > 0;
     if (unsaved && !unpushed) throw new BranchActionError("This branch has commits that are not pushed. Confirm twice to delete it anyway.", "unpushed");
     const result = await this.git(["branch", unsaved ? "-D" : "-d", "--", this.place.branch]);
@@ -272,6 +333,17 @@ export class BranchGit {
       throw new BranchActionError(firstLine(result.stderr) || "git could not delete the branch.", "delete_failed", 500);
     }
   }
+}
+
+/** The last folder of a path: what an organization server shows of it. */
+export function folderName(path: string): string {
+  return path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ?? path;
+}
+
+/** A message without absolute server paths in it (each one becomes its
+ * last folder): what an organization server says to a person. URLs stay. */
+export function redactPaths(text: string): string {
+  return text.replace(/(?<![\w:/.~-])(?:\/[^\s/'"`:]+){2,}\/?/g, (path) => folderName(path));
 }
 
 function firstLine(text: string): string {
@@ -314,15 +386,17 @@ export class BranchPulls {
   private readonly cwd: string;
   private readonly repo: string;
   private readonly env: Record<string, string>;
-  constructor(exec: GitExec, cwd: string, repo: string, env: Record<string, string>) {
+  private readonly isolated: boolean;
+  constructor(exec: GitExec, cwd: string, repo: string, env: Record<string, string>, isolated = false) {
     this.exec = exec;
     this.cwd = cwd;
     this.repo = repo;
     this.env = env;
+    this.isolated = isolated;
   }
 
   private async gh(args: string[]): Promise<GitResult> {
-    return this.exec("gh", [...args, "--repo", this.repo], { cwd: this.cwd, env: this.env, timeoutMs: 60_000 });
+    return this.exec("gh", [...args, "--repo", this.repo], { cwd: this.cwd, env: this.env, timeoutMs: 60_000, ...(this.isolated ? { isolated: true } : {}) });
   }
 
   /** The newest pull request whose head is this branch, any state. */

@@ -9123,5 +9123,12 @@
   "botPanel.branch.unarchive": "Désarchiver",
   "botPanel.branch.viewPr": "Ouvrir la PR #{number}",
   "botPanel.branch.viewPrPlain": "Ouvrir la PR",
-  "botPanel.branch.working": "En cours…"
+  "botPanel.branch.working": "En cours…",
+  "botPanel.branch.error.staleFiles": "Certains de ces fichiers n'ont plus de changements. Actualisez puis réessayez.",
+  "botPanel.branch.error.gone": "Cette branche n'existe plus ici.",
+  "botPanel.branch.error.emptyMessage": "Écrivez d'abord un message de commit.",
+  "botPanel.branch.error.commitFailed": "git n'a pas pu faire le commit de ces changements.",
+  "botPanel.branch.error.noPerson": "Connectez-vous à votre nom pour agir sur une branche ici.",
+  "botPanel.branch.error.noAuthor": "Votre nom et votre courriel sont requis pour signer un commit ici. Ajoutez-les d'abord à votre profil.",
+  "botPanel.branch.error.unsafeConfig": "La configuration git de ce dépôt change la façon de pousser : il n'est donc pas poussé d'ici."
 }

@@ -26384,28 +26384,42 @@ ROUTES.push(createBotActivityRoutes({
 // config, no credential helper, no ssh key, an empty gh config).
 const codeBranchArchive = new BranchArchive(join(DATA_DIR, "code-branch-archive.json"));
 function codeBranchCredentials(viewerId: string | undefined): BranchCredentials {
-  if (IDENTITY.kind !== "perspicax" || !viewerId) return { ok: true, git: {}, gh: {} };
-  const connection = usablePersonGithub(viewerId);
-  if (!connection?.token) return { ok: false, reason: "github_not_connected" };
-  const header = githubGitEnvironment(connection.token);
+  if (IDENTITY.kind !== "perspicax") return { git: {}, publish: { push: {}, gh: {} } };
+  // An organization server: nothing of the server's own git or gh (no home,
+  // global or system config, credential helper or ssh key). The route
+  // refuses a request with no person before this.
+  const home = join(DATA_DIR, "code-branches", "home-empty");
   const ghConfig = join(DATA_DIR, "code-branches", "gh-empty");
+  mkdirSync(home, { recursive: true, mode: 0o700 });
   mkdirSync(ghConfig, { recursive: true, mode: 0o700 });
+  const git: Record<string, string> = {
+    HOME: home,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_SSH_COMMAND: "false",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_ASKPASS: "/bin/false",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "credential.helper",
+    GIT_CONFIG_VALUE_0: "",
+  };
+  if (!viewerId) return { isolated: true, git };
   const person = principals.byId(viewerId);
-  const name = personDisplayName(person) || connection.login;
+  const connection = usablePersonGithub(viewerId);
+  const name = personDisplayName(person) || connection?.login || "";
   const email = person?.email?.trim();
+  const author = name && email ? { author: { name, email } } : {};
+  if (!connection?.token) return { isolated: true, git, ...author };
+  // The token rides the push call only, as an extra header scoped to github.com.
+  const header = githubGitEnvironment(connection.token);
   return {
-    ok: true,
-    git: {
-      ...header,
-      GIT_CONFIG_NOSYSTEM: "1",
-      GIT_CONFIG_GLOBAL: "/dev/null",
-      GIT_SSH_COMMAND: "false",
-      GIT_CONFIG_COUNT: "2",
-      GIT_CONFIG_KEY_1: "credential.helper",
-      GIT_CONFIG_VALUE_1: "",
+    isolated: true,
+    git,
+    ...author,
+    publish: {
+      push: { GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_1: header.GIT_CONFIG_KEY_0!, GIT_CONFIG_VALUE_1: header.GIT_CONFIG_VALUE_0! },
+      gh: { HOME: home, GH_TOKEN: connection.token, GH_HOST: "github.com", GH_CONFIG_DIR: ghConfig },
     },
-    gh: { GH_TOKEN: connection.token, GH_HOST: "github.com", GH_CONFIG_DIR: ghConfig },
-    ...(email ? { author: { name, email } } : {}),
   };
 }
 ROUTES.push(createBotCodeBranchRoutes({

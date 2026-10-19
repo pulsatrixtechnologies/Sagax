@@ -22,12 +22,14 @@
 // solo server the server is their computer (their git and gh sign-in); on
 // an organization server only their own GitHub connection, never the
 // server's or the organization's (`credentials` returns none and the
-// action is refused with `github_not_connected`).
+// action is refused with `github_not_connected`). On an organization
+// server a request with no person is refused (`no_person`), never run with
+// the server's identity, and no answer carries a full server path.
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 import { CodeWorkCollector, type CodeWorkToolCall, type RepositoryInfo } from "../activity-code-work.ts";
-import { BranchActionError, BranchArchive, BranchGit, BranchPulls, githubRepo, hostGit, proposedMessage, stripCredentials, validBranchName, type GitExec } from "../code-branches.ts";
-import type { BotBranchActionBody, BotBranchInfo } from "../../shared/bot-code-branches.ts";
+import { BranchActionError, BranchArchive, BranchGit, BranchPulls, folderName, githubRepo, hostGit, proposedMessage, redactPaths, validBranchName, type GitExec } from "../code-branches.ts";
+import type { BotBranchActionBody, BotBranchInfo, BotBranchState } from "../../shared/bot-code-branches.ts";
 
 export interface BranchTask {
   threadId: string;
@@ -35,10 +37,19 @@ export interface BranchTask {
   cwd?: string | null;
 }
 
-/** The person's credentials for publishing, or why there are none. */
-export type BranchCredentials =
-  | { ok: true; git: Record<string, string>; gh: Record<string, string>; author?: { name: string; email: string } }
-  | { ok: false; reason: "github_not_connected" };
+/** What the person's git work runs with. */
+export interface BranchCredentials {
+  /** An organization server: git and gh see no home, ssh agent or config
+   * of the server's. */
+  isolated?: boolean;
+  /** Every git call (never a token). */
+  git: Record<string, string>;
+  /** The commit's author: the person. Required on an organization server. */
+  author?: { name: string; email: string };
+  /** Their GitHub token: `push` for the push call only, `gh` for gh. Absent:
+   * not connected, and push and pull requests are refused. */
+  publish?: { push: Record<string, string>; gh: Record<string, string> };
+}
 
 export interface BotCodeBranchRouteDeps {
   bot(id: string): { id: string; name: string } | null | undefined;
@@ -71,14 +82,16 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
     const collector = new CodeWorkCollector(repository?.origin);
     for (const message of deps.messages(threadId, SCAN).messages) if (message.tool) collector.add(message.tool, message.at);
     const work = collector.result();
-    const known = repository?.branch === branch
-      || work.branches.some((entry) => entry.name === branch)
+    // Only a branch the thread itself worked on (never the folder's
+    // checked-out branch just because it is there: often the default one).
+    const known = work.branches.some((entry) => entry.name === branch)
       || work.commits.some((entry) => entry.branch === branch);
     return known ? { task, repository } : null;
   }
 
-  function folderName(root: string): string {
-    return root.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ?? root;
+  /** On an organization server, a state with the worktree's folder name only. */
+  function shown(state: BotBranchState): BotBranchState {
+    return deps.organization() && state.worktree ? { ...state, worktree: folderName(state.worktree) } : state;
   }
 
   return async ({ req, res, url, path, method, auth, json, readBody }) => {
@@ -88,6 +101,8 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
     const bot = deps.bot((archived ?? single)![1]!);
     if (!bot) return json(res, 404, { error: "no such bot" });
     const viewerId = deps.viewerId(auth);
+    // An organization server acts only for a known person, never as itself.
+    if (deps.organization() && !viewerId) return json(res, 403, { error: "Sign in as yourself to act on a branch here.", code: "no_person" });
     const person = viewerId ?? "owner";
 
     if (archived) {
@@ -122,19 +137,21 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
       return json(res, 409, { error: "This branch's repository is not on this server, so its actions run where the bot worked. Ask the bot to do it there.", code: "elsewhere" });
     }
 
+    const organization = deps.organization();
     const credentials = deps.credentials(viewerId);
-    const git = new BranchGit(exec, { root: repository.root, branch }, credentials.ok ? credentials.git : {});
+    const isolated = organization || credentials.isolated === true;
+    const git = new BranchGit(exec, { root: repository.root, branch }, { env: credentials.git, pushEnv: credentials.publish?.push, isolated });
     const origin = await git.originUrl();
     const repo = githubRepo(origin);
-    const publishBlocked: BotBranchInfo["publishBlocked"] = !credentials.ok ? credentials.reason : undefined;
+    const publish = credentials.publish;
+    const publishBlocked: BotBranchInfo["publishBlocked"] = !publish ? "github_not_connected" : undefined;
     const target = { botId: bot.id, branch, ...(repository.origin?.repo ? { repo: repository.origin.repo } : {}) };
 
     try {
       if (!action) {
-        const read = await git.state();
         // On an organization server a server path means nothing to the
         // person: the folder's name only.
-        const state = deps.organization() && read.worktree ? { ...read, worktree: folderName(read.worktree) } : read;
+        const state = shown(await git.state());
         const info: BotBranchInfo = {
           branch,
           place: "server",
@@ -150,8 +167,8 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
       if (action === "diff") return json(res, 200, await git.diff());
       if (action === "pull") {
         if (!repo) return json(res, 200, { pull: null, reason: "not_github" });
-        if (!credentials.ok) return json(res, 200, { pull: null, reason: credentials.reason });
-        const pull = await new BranchPulls(exec, repository.root, repo, credentials.gh).find(branch);
+        if (!publish) return json(res, 200, { pull: null, reason: "github_not_connected" });
+        const pull = await new BranchPulls(exec, repository.root, repo, publish.gh, isolated).find(branch);
         return json(res, 200, { pull: pull ?? null });
       }
       if (!ACTIONS.has(action)) return json(res, 404, { error: "no such action" });
@@ -159,36 +176,35 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
       if (action === "commit") {
         const paths = Array.isArray(body.paths) ? body.paths.filter((entry): entry is string => typeof entry === "string").slice(0, 500) : undefined;
         const message = typeof body.message === "string" ? body.message : "";
-        const author = credentials.ok ? credentials.author : undefined;
+        const author = credentials.author;
+        if (organization && !(author?.name.trim() && author.email.trim())) return json(res, 403, { error: "Your name and email are needed to sign a commit here. Add them to your profile first.", code: "no_author" });
         const { sha } = await git.commit(message, paths, author);
         deps.audit(auth, "code.branch.commit", target, { sha: sha.slice(0, 12), files: paths?.length ?? "all" });
-        return json(res, 200, { ok: true, sha, state: await git.state() });
+        return json(res, 200, { ok: true, sha, state: shown(await git.state()) });
       }
       if (action === "push") {
-        if (!credentials.ok) return json(res, 403, { error: "Connect your own GitHub account to push from here (Connect apps, Personal). The server's credentials are never used for you.", code: credentials.reason });
-        if (deps.organization() && origin && !/^https:\/\/github\.com\//i.test(stripCredentials(origin))) {
-          return json(res, 409, { error: "On this server, a branch is pushed only to an https GitHub remote, with your own GitHub connection.", code: "not_github" });
-        }
-        const { remote } = await git.push();
+        if (!publish) return json(res, 403, { error: "Connect your own GitHub account to push from here (Connect apps, Personal). The server's credentials are never used for you.", code: "github_not_connected" });
+        if (organization && !repo) return json(res, 409, { error: "On this server, a branch is pushed only to an https GitHub remote, with your own GitHub connection.", code: "not_github" });
+        const { remote } = await git.push(organization ? repo : undefined);
         deps.audit(auth, "code.branch.push", target, { remote });
-        return json(res, 200, { ok: true, remote, state: await git.state() });
+        return json(res, 200, { ok: true, remote, state: shown(await git.state()) });
       }
       if (action === "pr") {
         if (!repo) return json(res, 409, { error: "Pull requests are opened on GitHub only, and this repository's origin is not on GitHub.", code: "not_github" });
-        if (!credentials.ok) return json(res, 403, { error: "Connect your own GitHub account to open a pull request from here (Connect apps, Personal).", code: credentials.reason });
+        if (!publish) return json(res, 403, { error: "Connect your own GitHub account to open a pull request from here (Connect apps, Personal).", code: "github_not_connected" });
         const state = await git.state();
         if (state.isDefault) return json(res, 409, { error: "The default branch is not proposed from here.", code: "default_branch" });
         if (!state.pushed) return json(res, 409, { error: "Push the branch first: GitHub has no commits for it yet.", code: "not_pushed" });
-        const pull = await new BranchPulls(exec, repository.root, repo, credentials.gh).open(branch, state.base);
+        const pull = await new BranchPulls(exec, repository.root, repo, publish.gh, isolated).open(branch, state.base);
         deps.audit(auth, "code.branch.pull_request", target, { number: pull.number, url: pull.url });
-        return json(res, 200, { ok: true, pull, state });
+        return json(res, 200, { ok: true, pull, state: shown(state) });
       }
       // delete
       await git.deleteLocal(body.confirmUnpushed === true);
       deps.audit(auth, "code.branch.delete", target, { confirmedUnpushed: body.confirmUnpushed === true });
       return json(res, 200, { ok: true });
     } catch (error) {
-      if (error instanceof BranchActionError) return json(res, error.status, { error: error.message, code: error.code });
+      if (error instanceof BranchActionError) return json(res, error.status, { error: organization ? redactPaths(error.message) : error.message, code: error.code });
       return json(res, 500, { error: "git failed on this branch." });
     }
   };

@@ -3356,7 +3356,8 @@ Rules, none optional (`server/routes/bot-code-branches.ts`, git in
 
 - Where: the coding thread's own folder (`task.cwd`) when it is a git
   repository on this server; a branch is acted on only if that thread
-  worked on it (its calls, or the folder's checked-out branch). A branch
+  worked on it (its own calls; never the folder's checked-out branch just
+  because it is there). A branch
   whose repository is elsewhere (the person's sandbox, a Local VM, their
   computer through the bridge) reads `place: "elsewhere"` and nothing runs
   (known gap: those places have exec paths, `UserSandboxManager.exec`,
@@ -3370,11 +3371,22 @@ Rules, none optional (`server/routes/bot-code-branches.ts`, git in
   or global git config, no credential helper, no ssh, and gh with
   `GH_TOKEN` and an empty config; without it the action is refused
   (`github_not_connected`), never done with the server's or the
-  organization's tokens. On an organization server only an https GitHub
-  remote is pushed, and a server path is shown as its folder name only.
+  organization's tokens. The token rides the push call only (and the
+  remote HEAD read with it), never status, add, commit or diff. On an
+  organization server: a request with no person is refused (`no_person`),
+  never run as the server; git and gh get no `HOME`, ssh agent or config
+  folder of the server's (`isolated`); a commit needs the person's name and
+  email (`no_author`); origin's fetch and push URLs must both be
+  `https://github.com/<repo>` and no local config may reroute the push
+  (`unsafe_config`: insteadOf, proxy, sslVerify, extraheader, pushurl,
+  helpers, includes); every answer (state, errors, git messages) shows a
+  server path as its folder name only (`redactPaths`).
 - What: never a force push, never the default branch (no push, delete or
-  pull request), hooks and fsmonitor off, the message through a file in
-  the git folder (never argv). Delete: refused while checked out in a
+  pull request): origin's HEAD, the remote's HEAD read at push time, and
+  main, master, trunk and develop by name whatever HEAD says (or when
+  origin has no HEAD). Hooks, fsmonitor and textconv off, the message
+  through a fresh private temp file (`mkdtemp`, `wx`; never argv, never in
+  the repository). Delete: refused while checked out in a
   worktree (no folder is ever removed); work not on origin needs
   `confirmUnpushed` (the panel asks twice). Pull requests: GitHub only,
   through `gh pr create --fill --repo`, an open one reused.

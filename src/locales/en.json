@@ -9123,5 +9123,12 @@
   "botPanel.branch.unarchive": "Unarchive",
   "botPanel.branch.viewPr": "Open pull request #{number}",
   "botPanel.branch.viewPrPlain": "Open the pull request",
-  "botPanel.branch.working": "Working…"
+  "botPanel.branch.working": "Working…",
+  "botPanel.branch.error.staleFiles": "Some of those files have no changes any more. Refresh and try again.",
+  "botPanel.branch.error.gone": "This branch no longer exists here.",
+  "botPanel.branch.error.emptyMessage": "Write a commit message first.",
+  "botPanel.branch.error.commitFailed": "git could not commit these changes.",
+  "botPanel.branch.error.noPerson": "Sign in as yourself to act on a branch here.",
+  "botPanel.branch.error.noAuthor": "Your name and email are needed to sign a commit here. Add them to your profile first.",
+  "botPanel.branch.error.unsafeConfig": "This repository's git config changes how it pushes, so it is not pushed from here."
 }

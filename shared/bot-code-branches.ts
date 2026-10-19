@@ -6,6 +6,8 @@ import type { DiffFile } from "./code-runs.ts";
 export interface BotBranchChange {
   path: string;
   status: "modified" | "added" | "deleted" | "renamed" | "untracked";
+  /** A renamed or copied file's old path. */
+  from?: string;
 }
 
 /** A branch read now in its repository (git, no network). */

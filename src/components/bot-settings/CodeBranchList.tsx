@@ -45,6 +45,13 @@ const ERROR_KEYS: Record<string, LocaleKey> = {
   unreachable: "botPanel.branch.error.unreachable",
   not_github: "botPanel.branch.hint.notGithub",
   default_branch: "botPanel.branch.hint.default",
+  stale_files: "botPanel.branch.error.staleFiles",
+  gone: "botPanel.branch.error.gone",
+  empty_message: "botPanel.branch.error.emptyMessage",
+  commit_failed: "botPanel.branch.error.commitFailed",
+  no_person: "botPanel.branch.error.noPerson",
+  no_author: "botPanel.branch.error.noAuthor",
+  unsafe_config: "botPanel.branch.error.unsafeConfig",
 };
 
 /** The words for a refused action: ours for the known codes, else the
@@ -405,7 +412,17 @@ export function CodeBranchList({ branches, archivedBranches = [], now, actions, 
     }
     setDeleting(null);
     void run(branch, async () => {
-      await branchAction(botId, "delete", { threadId: branch.threadId ?? "", branch: branch.name, confirmUnpushed: second });
+      try {
+        await branchAction(botId, "delete", { threadId: branch.threadId ?? "", branch: branch.name, confirmUnpushed: second });
+      } catch (error) {
+        // The server found work not on origin that this row did not know of:
+        // the second confirmation, not an error.
+        if (!second && error instanceof ApiError && error.body?.code === "unpushed") {
+          setDeleting({ branch, second: true });
+          return undefined;
+        }
+        throw error;
+      }
       return t("botPanel.branch.done.delete");
     });
   };
@@ -491,13 +508,19 @@ export function CommitDialog({ botId, branch, info, onClose, onCommitted }: {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const area = useRef<HTMLTextAreaElement>(null);
+  // The parent passes onClose inline: a ref, so a new render neither
+  // re-selects the message nor re-binds Escape.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
   useEffect(() => {
     area.current?.focus();
     area.current?.select();
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !pending) { event.preventDefault(); event.stopPropagation(); onClose(); } };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !pendingRef.current) { event.preventDefault(); event.stopPropagation(); closeRef.current(); } };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose, pending]);
+  }, []);
   const submit = async () => {
     if (!message.trim()) { setError(t("botPanel.branch.commit.empty")); return; }
     if (!chosen.size) { setError(t("botPanel.branch.commit.noFiles")); return; }
@@ -566,13 +589,17 @@ export function DiffDialog({ botId, branch, onClose }: { botId: string; branch: 
   const [diff, setDiff] = useState<BotBranchDiff | null>(null);
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"unified" | "split">("unified");
+  // onClose comes inline from the parent: a ref, so each render does not
+  // read the diff again.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     let live = true;
     loadBranchDiff(botId, branch.threadId ?? "", branch.name).then((next) => { if (live) setDiff(next); }).catch((cause) => { if (live) setError(branchErrorText(cause)); });
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeRef.current(); } };
     window.addEventListener("keydown", onKey, true);
     return () => { live = false; window.removeEventListener("keydown", onKey, true); };
-  }, [botId, branch.threadId, branch.name, onClose]);
+  }, [botId, branch.threadId, branch.name]);
   return (
     <DialogLayer onBackdropMouseDown={onClose}>
       <DialogFrame

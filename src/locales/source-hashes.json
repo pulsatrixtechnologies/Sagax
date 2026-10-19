@@ -12982,7 +12982,14 @@
       "botPanel.branch.unarchive": "f565318d124534cfe0a7630d518f548cd339e464f48d50eda453abd3728ac2a7",
       "botPanel.branch.viewPr": "23454f636186f2957db4cca1cdca5e1283c158ba1c9bd8e5d42532bed96ead4f",
       "botPanel.branch.viewPrPlain": "a2f39161b7501272d481a8fe65c3371e02ce591c387ade0d11190d6dc189725e",
-      "botPanel.branch.working": "5474eef8d0f179c707cf418e2bbb468c77cc24edc5e9f5f4e137e85e06a8eea0"
+      "botPanel.branch.working": "5474eef8d0f179c707cf418e2bbb468c77cc24edc5e9f5f4e137e85e06a8eea0",
+      "botPanel.branch.error.staleFiles": "52cc91f9a27e9dacfad2dd1a59ff1da0a3b2ec8735d4334c1aab33c207cf8f2d",
+      "botPanel.branch.error.gone": "f37230a5a26f747921c004adae4a0f28853c0462136e0ec8026e274c4518a315",
+      "botPanel.branch.error.emptyMessage": "f577abf1e9d6e0cc9321a50842db1bef93d645dd800b93750193e035525115e1",
+      "botPanel.branch.error.commitFailed": "4eb13e7baae3ddb99ef856bd02adc154719008de5947aefb08786c887b9e0d01",
+      "botPanel.branch.error.noPerson": "7448a1e1a2b0c88bc0d264ef386f73c421e04a071682afb64b50d5fa0649e1eb",
+      "botPanel.branch.error.noAuthor": "f38f12fd5636de61078db78a4cb5fd578b1df3a2938c0e2810a3226275017057",
+      "botPanel.branch.error.unsafeConfig": "0058782cc6d8f8d33643d46a650154e210418085e3a98c6f213778ce438ece1d"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
