@@ -9588,6 +9588,8 @@ function privateFolderThread(botId: string, threadId: string): boolean {
  * is captured, and its decision rows so far lose their summaries. */
 function makeThreadConfidential(botId: string, threadId: string): void {
   store.makeTaskConfidential(botId, threadId);
+  // words held for routing keep no copy once the thread is confidential
+  routableSteers.forgetThread(threadId);
   memoryUpkeep.dropThread(threadId);
   void scrubThreadDecisions(DATA_DIR, threadId);
   // its settled teammate work (runtime.db) keeps no words of it
@@ -15550,12 +15552,20 @@ async function routeSteeredMessage(input: { botId: string; threadId: string; han
   const row = store.messagesFor(input.threadId).find((message) => message.id === entry!.messageId);
   if (!row || !store.taskByThread(input.botId, input.threadId)) return { status: 404, body: { error: "that message is no longer in this conversation" } };
   const { context } = entry;
+  // Claimed before any await: two calls with one handle never start two tasks.
+  entry.routed = input.mode;
   if (input.mode === "parallel") {
-    const started = await startParallelTask({
-      botId: input.botId, threadId: input.threadId, text: entry.text, existingRequestId: row.id,
-      ...context, ...(input.title ? { title: input.title } : {}), ...(input.resources.length ? { resources: input.resources } : {}),
-    });
-    entry.routed = "parallel";
+    let started: Awaited<ReturnType<typeof startParallelTask>>;
+    try {
+      started = await startParallelTask({
+        botId: input.botId, threadId: input.threadId, text: entry.text, existingRequestId: row.id,
+        ...context, ...(input.title ? { title: input.title } : {}), ...(input.resources.length ? { resources: input.resources } : {}),
+      });
+    } catch (error) {
+      // refused (the per-person limit...): the bot may still route it after
+      entry.routed = undefined;
+      throw error;
+    }
     entry.target = started.parallel.threadId;
     handoffs.routedAway(input.threadId, row.id);
     console.log(`[busy-route] ${input.botId}/${input.threadId} parallel (bot) -> ${started.parallel.threadId} ${started.parallel.state}`);
@@ -15568,7 +15578,6 @@ async function routeSteeredMessage(input: { botId: string; threadId: string; han
     ...(context.replyTo ? { replyToId: context.replyTo.id } : {}),
     sender: context.sender, trigger: context.trigger, speaker: context.speaker,
   });
-  entry.routed = "after";
   entry.target = queued.id;
   handoffs.routedAway(input.threadId, row.id);
   console.log(`[busy-route] ${input.botId}/${input.threadId} after (bot) -> queue ${queued.id}`);
@@ -41683,6 +41692,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       clearTurnDigestState(m[2]);
       revokeInternalCapabilitiesForThread(m[2]);
       handoffs.forget(m[2]);
+      routableSteers.forgetThread(m[2]);
       settleDirectFollowup(directTurnGenerationByThread.get(m[2]));
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       return json(res, 200, { bot: projectBotTranscript(publicBot(updated), viewerForApproval(auth)) });

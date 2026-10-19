@@ -94,7 +94,7 @@ export class RoutableSteers<C = unknown> {
 /** The note in front of words steered in auto mode. Short: the rule itself
  * is in the system prompt (THREADS_PROMPT). */
 export function orchestratedSteerText(handle: string, words: string): string {
-  return `[Sent while you work · route ${handle}: use it now if it changes the current work; otherwise route_message with this handle, parallel when it is independent, after when it needs your result or the same files or records.]\n${words}`;
+  return `[Sent while you work · route ${handle}: use it now if it changes the current work; otherwise call your agents tool route_message (handle "${handle}"), mode parallel when it is independent, after when it needs your result or the same files or records.]\n${words}`;
 }
 
 /** The question for the bot's model when the engine cannot steer. */
