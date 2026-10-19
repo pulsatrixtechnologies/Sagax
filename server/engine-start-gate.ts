@@ -121,7 +121,10 @@ export class EngineStartGate {
     this.held += 1;
     this.peakHeld = Math.max(this.peakHeld, this.held);
     let released = false;
-    const timer = setTimeout(() => release(), this.maxHoldMs);
+    const timer = setTimeout(() => {
+      this.log(`[engines] a slot was held past ${Math.round(this.maxHoldMs / 60_000)} min and is given back; its engine may still run`);
+      release();
+    }, this.maxHoldMs);
     timer.unref?.();
     const release = () => {
       if (released) return;
@@ -166,6 +169,8 @@ export const DEFAULT_ROUTINE_ENGINE_SLOTS = process.platform === "linux" && !pro
 export const routineEngineGate = new EngineStartGate({
   limit: envNumber(process.env.SAGAX_ROUTINE_ENGINE_SLOTS, DEFAULT_ROUTINE_ENGINE_SLOTS),
   windowMs: Number.POSITIVE_INFINITY,
+  // a routine run may last its whole timeout; longer is logged and let go
+  maxHoldMs: 60 * 60_000,
   log: (line) => console.log(line),
 });
 routineEngineGate.beginBoot();

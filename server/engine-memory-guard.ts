@@ -34,7 +34,9 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 export type MemoryLevel = "ok" | "high" | "critical" | "unknown";
 
 export interface CgroupMemory {
-  /** Bytes charged to the container now (cgroup v2 memory.current). */
+  /** The working set in bytes: the charge minus inactive file cache, the
+   * figure docker stats and the kubelet use. Page cache the kernel can
+   * reclaim must not read as pressure. */
   current: number;
   /** The limit in bytes, or null when unlimited. */
   max: number | null;
@@ -66,8 +68,9 @@ function parseBytes(raw: string | null): number | null {
  * that reports it (macOS, Windows, the desktop app). A v1 limit near
  * 2^63 means unlimited. */
 export function readCgroupMemory(read: ReadText = readText, root = "/sys/fs/cgroup"): CgroupMemory | null {
-  const current = parseBytes(read(`${root}/memory.current`));
-  if (current !== null) {
+  const usage = parseBytes(read(`${root}/memory.current`));
+  if (usage !== null) {
+    const current = workingSet(usage, read(`${root}/memory.stat`), "inactive_file");
     const maxRaw = read(`${root}/memory.max`)?.trim();
     const max = maxRaw && maxRaw !== "max" ? parseBytes(maxRaw) : null;
     const events = read(`${root}/memory.events`) ?? "";
@@ -78,11 +81,17 @@ export function readCgroupMemory(read: ReadText = readText, root = "/sys/fs/cgro
   if (v1 === null) return null;
   const limit = parseBytes(read(`${root}/memory/memory.limit_in_bytes`));
   return {
-    current: v1,
+    current: workingSet(v1, read(`${root}/memory/memory.stat`), "total_inactive_file"),
     max: limit !== null && limit < 2 ** 60 ? limit : null,
     peak: parseBytes(read(`${root}/memory/memory.max_usage_in_bytes`)),
     oomKills: null,
   };
+}
+
+function workingSet(usage: number, stat: string | null, key: string): number {
+  const match = stat ? new RegExp(`^${key} (\\d+)$`, "m").exec(stat) : null;
+  const inactive = match ? Number(match[1]) : 0;
+  return Math.max(0, usage - (Number.isFinite(inactive) ? inactive : 0));
 }
 
 export function memoryLevel(memory: CgroupMemory | null, highRatio: number, criticalRatio: number): MemoryLevel {
@@ -383,7 +392,10 @@ export class MemoryWatch {
         this.waiters = this.waiters.filter((w) => w !== done);
         resolve();
       };
-      const timer = setTimeout(done, Math.max(0, maxWaitMs));
+      const timer = setTimeout(() => {
+        this.options.warn(`[memory] a routine waited ${Math.round(maxWaitMs / 60_000)} min for memory and starts anyway (${this.describe()})`);
+        done();
+      }, Math.max(0, maxWaitMs));
       timer.unref?.();
       this.waiters.push(done);
     });

@@ -11300,6 +11300,8 @@ function releaseBootEngineSlot(threadId: string, closeIdleProcess: boolean): voi
   if (closeIdleProcess) {
     // After the driver's own settle bookkeeping: an idle process only.
     setImmediate(() => {
+      // closed here: it no longer counts as a warm session (engine memory guard)
+      idleEngines.forget(threadId);
       try { held.instance.adapter.releaseWarmSession?.(threadId); } catch { /* the slot goes back regardless */ }
       held.slot.release();
     });
@@ -11314,7 +11316,10 @@ bus.subscribe((event: RuntimeEvent) => {
     const engine = runningTurnEngines.get(event.threadId);
     if (event.type === "turn.completed" && engine?.adapter.releaseWarmSession) {
       const threadId = event.threadId;
-      idleEngines.noteIdle(threadId, () => engine.adapter.releaseWarmSession?.(threadId));
+      // after the driver's own settle bookkeeping, like releaseBootEngineSlot
+      idleEngines.noteIdle(threadId, () => setImmediate(() => {
+        try { engine.adapter.releaseWarmSession?.(threadId); } catch { /* already closed */ }
+      }));
     } else idleEngines.forget(event.threadId);
     runningTurnEngines.delete(event.threadId);
     const rows = endMemoryTurn(event.threadId);
@@ -18339,7 +18344,9 @@ async function startTurn(
       // restart start two at a time instead of every engine at once.
       // After boot, routine turns keep a steady limit (SAGAX_ROUTINE_ENGINE_SLOTS)
       // and wait while memory is critical (server/engine-memory-guard.ts).
-      if (opts?.automationSource && !warmOnly && !onCall) {
+      // A card continuation of a routine is not held by the steady gate: it
+      // may be the peer a slot holder waits on (no deadlock).
+      if (opts?.automationSource && !warmOnly && !onCall && (engineStartGate.booting || !opts?.cardContinuation)) {
         await holdBootEngineSlot(threadId, `${bot.name} (${instance.driverKind})`, instance);
         if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped while waiting for an engine slot");
       }

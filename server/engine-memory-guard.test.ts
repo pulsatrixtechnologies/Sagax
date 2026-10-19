@@ -29,6 +29,18 @@ describe("readCgroupMemory", () => {
     expect(memory).toEqual({ current: 3151364096, max: 5368709120, peak: 4000000000, oomKills: 2 });
   });
 
+  it("reads the working set: reclaimable inactive file cache is not pressure", () => {
+    expect(readCgroupMemory(files({
+      "/sys/fs/cgroup/memory.current": "4000",
+      "/sys/fs/cgroup/memory.max": "5000",
+      "/sys/fs/cgroup/memory.stat": "anon 2500\nfile 1500\nactive_file 500\ninactive_file 1000\n",
+    }))?.current).toBe(3000);
+    expect(readCgroupMemory(files({
+      "/sys/fs/cgroup/memory/memory.usage_in_bytes": "4000",
+      "/sys/fs/cgroup/memory/memory.stat": "cache 1500\ntotal_inactive_file 900\n",
+    }))?.current).toBe(3100);
+  });
+
   it("reads an unlimited v2 cgroup as no limit", () => {
     const memory = readCgroupMemory(files({ "/sys/fs/cgroup/memory.current": "100", "/sys/fs/cgroup/memory.max": "max" }));
     expect(memory?.max).toBeNull();
@@ -213,11 +225,12 @@ describe("MemoryWatch", () => {
   it("never holds work forever on a stuck reading", async () => {
     vi.useFakeTimers();
     try {
-      const { w } = watch({ current: 4.9 * GiB });
+      const { w, warn } = watch({ current: 4.9 * GiB });
       w.start();
       const waiting = w.whenBelowCritical(5_000);
       vi.advanceTimersByTime(5_000);
       await expect(waiting).resolves.toBeUndefined();
+      expect(warn.mock.calls.some(([line]) => /starts anyway/.test(String(line)))).toBe(true);
       w.stop();
     } finally {
       vi.useRealTimers();

@@ -4420,7 +4420,7 @@ the kernel then killed the server itself. `server/engine-memory-guard.ts`:
   sessions stay warm (default 4 on a Linux server, unbounded on desktop);
   the oldest idle one closes through `releaseWarmSession`. A running turn or
   a live call's process is never closed.
-- `MemoryWatch` (cgroup v2/v1, every `SAGAX_MEMORY_WATCH_MS`, 15 s): at
+- `MemoryWatch` (cgroup v2/v1 working set, inactive file cache excluded, every `SAGAX_MEMORY_WATCH_MS`, 15 s): at
   `SAGAX_MEMORY_HIGH_RATIO` (0.75) closes every idle session; at
   `SAGAX_MEMORY_CRITICAL_RATIO` (0.88) logs `[memory] ALERT critical` and
   holds new routine turns (max 10 min); logs `[memory] ALERT kernel
