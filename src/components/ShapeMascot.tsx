@@ -159,7 +159,7 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
     );
   const badge = frame.badge ? <circle cx={frame.badge.x} cy={frame.badge.y} r={frame.badge.r} fill="#2a8fe8" /> : null;
   const motion = (
-    <g transform={frame.transform} mask={frame.badge ? `url(#${uid}-notch)` : undefined} data-shape-motion="">
+    <g transform={volume ? undefined : frame.transform} mask={frame.badge ? `url(#${uid}-notch)` : undefined} {...(volume ? {} : { "data-shape-motion": "" })}>
       <path
         className="shape-fill"
         d={volume ? turnedBody : cut}
@@ -220,21 +220,19 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
       {rings("back")}
       {settled && layers.under && view(layers.under)}
       <g className="shape-body">
+        {/* a move's motion (breath, drift, a move's turn) carries the whole body in volume: one write per frame */}
+        <g transform={volume ? frame.transform : undefined} {...(volume ? { "data-shape-motion": "" } : {})}>
         {/* the body behind its face: slices of the same outline, turned with it (shape-volume.ts) */}
         {volume && ink.edge &&
           [...m.slices, m.face].map((t, i) => (
             <g key={`edge${i}`} transform={t} data-pose-slice={i < m.slices.length ? i : -1}>
-              <g transform={frame.transform} data-shape-motion="">
-                <use href={`#${uid}-outline`} fill="none" stroke={ink.edge ?? undefined} strokeOpacity={0.2} strokeWidth={detail === "tiny" ? 2.4 : 1.6} strokeLinejoin="round" />
-              </g>
+              <use href={`#${uid}-outline`} fill="none" stroke={ink.edge ?? undefined} strokeOpacity={0.2} strokeWidth={detail === "tiny" ? 2.4 : 1.6} strokeLinejoin="round" />
             </g>
           ))}
         {volume &&
           m.slices.map((t, i) => (
             <g key={`slice${i}`} transform={t} data-pose-slice={i}>
-              <g transform={frame.transform} data-shape-motion="">
-                <use href={`#${uid}-outline`} fill={solid ? ink.fill : paint.fill} data-shape-slice="" />
-              </g>
+              <use href={`#${uid}-outline`} fill={solid ? ink.fill : paint.fill} data-shape-slice="" />
             </g>
           ))}
         {/* the badge and its notch share the body's turn, so the notch stays under the badge */}
@@ -248,11 +246,10 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
         {/* the eyes in their ink (dark, or light on a dark body), on the face's dome */}
         {volume && frame.eyes && (
           <g transform={m.eyes} data-pose-eyes="">
-            <g transform={frame.transform} data-shape-motion="">
-              <path d={turnedEyes} fill={ink.eyes} clipPath={`url(#${uid}-eyes-clip)`} data-shape-eyes="" />
-            </g>
+            <path d={turnedEyes} fill={ink.eyes} clipPath={`url(#${uid}-eyes-clip)`} data-shape-eyes="" />
           </g>
         )}
+        </g>
       </g>
       {frame.specks.map((speck, i) => (
         <circle key={i} cx={speck.x} cy={speck.y} r={speck.r} fill={mixHex(frame.color, "#0b0b0e", 0.62)} opacity={speck.opacity} />
@@ -288,11 +285,14 @@ export function shapeFrameWritable(drawn: ShapeFrame, next: ShapeFrame): boolean
 }
 
 /** Write a frame's outline, transform and light onto a drawing of ShapeFrameSvg. */
-export function writeShapeFrame(svg: Pick<SVGSVGElement, "querySelectorAll">, frame: ShapeFrame): void {
+export function writeShapeFrame(svg: Pick<SVGSVGElement, "querySelectorAll">, frame: ShapeFrame, posed = false): void {
   const cut = frame.body + frame.eyes;
   svg.querySelectorAll("[data-shape-cut]").forEach((path) => path.setAttribute("d", cut));
-  svg.querySelectorAll("[data-shape-outline]").forEach((path) => path.setAttribute("d", frame.body));
-  svg.querySelectorAll("[data-shape-eyes]").forEach((path) => path.setAttribute("d", frame.eyes));
+  // a posed drawing gets its turned outline and eyes from writePose right after
+  if (!posed) {
+    svg.querySelectorAll("[data-shape-outline]").forEach((path) => path.setAttribute("d", frame.body));
+    svg.querySelectorAll("[data-shape-eyes]").forEach((path) => path.setAttribute("d", frame.eyes));
+  }
   svg.querySelectorAll("[data-shape-motion]").forEach((group) => group.setAttribute("transform", frame.transform));
   svg.querySelectorAll("[data-shape-light]").forEach((light) => {
     light.setAttribute("cx", String(frame.light.x));
@@ -445,7 +445,7 @@ export function ShapeMascot({
       poseRef.current = pose;
       lastFrame.current = next;
       if (drawn && body.current && shapeFrameWritable(drawn, next)) {
-        writeShapeFrame(body.current, next);
+        writeShapeFrame(body.current, next, true);
         writePose(body.current, volumeDetail(size), pose, next, eyeStyleFor(moodRef.current), bendRef.current);
         return;
       }

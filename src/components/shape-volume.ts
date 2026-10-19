@@ -24,7 +24,7 @@ import type { MascotShape } from "../../shared/mascot-look";
 export const POSE = { yaw: 14, pitch: 10, roll: -6, scale: 0.83, lift: -4.6 } as const;
 
 /** The body's half thickness (box units) and how its edge rounds: a slice at depth z is scaled by core + (1 - core) * sqrt(1 - (z / depth)^2). */
-export const BODY_3D = { depth: 15, core: 0.86, slices: { tiny: 5, small: 8, full: 13 } } as const;
+export const BODY_3D = { depth: 15, core: 0.86, slices: { tiny: 4, small: 6, full: 9 } } as const;
 
 /** Below `small` px the hairline of a white or black body is drawn thicker. */
 export const VOLUME_SIZES = { small: 20, full: 28 } as const;
@@ -167,7 +167,6 @@ export function poseMatrices(detail: VolumeDetail, pose: Pose = REST_POSE): Pose
 /** The resting face's matrix (skins, the badge and a move's extras sit on it). */
 export const viewTransform = (pose: Pose = REST_POSE): string => poseMatrices("small", pose).face;
 
-/** Write a pose onto a drawing of ShapeFrameSvg: the slices, the face and the eyes turn together. */
 /**
  * The turn out of the picture plane, as a gentle perspective
  * on the outline itself: a shape turned to its right narrows a little and its
@@ -280,13 +279,27 @@ export function styledEyes(eyes: string, style: EyeStyle): string {
     .join("");
 }
 
+/** What writePose last wrote on each drawing (it skips unchanged outlines and eyes). */
+const written = new WeakMap<object, { key: string; body: string; eyesKey: string; eyes: string }>();
+
 /** Write a pose onto a drawing of ShapeFrameSvg: the turned outline, the eyes, and the slices, the face and the eyes' matrices. */
 export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: VolumeDetail, pose: Pose, frame?: { body: string; eyes: string }, style: EyeStyle = "capsule", bend = true): void {
   if (frame) {
-    const body = bend ? warpPath(frame.body, pose) : frame.body;
-    const eyes = styledEyes(bend ? warpPath(frame.eyes, pose) : frame.eyes, style);
-    svg.querySelectorAll("[data-shape-outline]").forEach((node) => node.setAttribute("d", body));
-    svg.querySelectorAll("[data-shape-eyes]").forEach((node) => node.setAttribute("d", eyes));
+    // at rest the turn holds still: the bent outline is kept and only rewritten when it changes
+    const memo = written.get(svg) ?? { key: "", body: "", eyesKey: "", eyes: "" };
+    const key = bend ? `${pose.yaw.toFixed(2)}|${pose.pitch.toFixed(2)}|` : "";
+    if (memo.key !== key + frame.body) {
+      memo.key = key + frame.body;
+      memo.body = bend ? warpPath(frame.body, pose) : frame.body;
+      svg.querySelectorAll("[data-shape-outline]").forEach((node) => node.setAttribute("d", memo.body));
+    }
+    const eyesKey = key + style + frame.eyes;
+    if (memo.eyesKey !== eyesKey) {
+      memo.eyesKey = eyesKey;
+      memo.eyes = styledEyes(bend ? warpPath(frame.eyes, pose) : frame.eyes, style);
+      svg.querySelectorAll("[data-shape-eyes]").forEach((node) => node.setAttribute("d", memo.eyes));
+    }
+    written.set(svg, memo);
   }
   const m = poseMatrices(detail, pose);
   svg.querySelectorAll("[data-pose-slice]").forEach((node) => {
