@@ -12876,7 +12876,12 @@
       "botPanel.model.lockedAdmin": "16879727c44b13a3c6902af906578805acbec2aa35563839652f737c6b08e34c",
       "botPanel.model.lockedWorking": "0f0baa04643bdb1a92abe0f8c4840ce0bc7c79fffb2f834fdfd0cac8f292ffd7",
       "botPanel.model.lockedOpen": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
-      "model.noEngine.body": "37554f98b8ea1974ccac55127872d3ea16d584466e1d9b2fe861ca7881530787"
+      "model.noEngine.body": "37554f98b8ea1974ccac55127872d3ea16d584466e1d9b2fe861ca7881530787",
+      "chat.botConversation.title": "1197f37163d87bca61cd93d8dc8e97ba10805316080f783a65313147752e051d",
+      "chat.botConversation.loading": "08cd9919453184389e78d9924a9dc3d4b68f2529b79bdd195dd51fb6139f927c",
+      "chat.botConversation.empty": "f0d5968f615ed7ab11fdf8f17586cfaeb2845eee5757459e804b4e9d663a3588",
+      "chat.botConversation.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "chat.botConversation.stop": "cae7d57bc067a514b8e34c9589631a95c7dc051638ddd2a190773269279a99df"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

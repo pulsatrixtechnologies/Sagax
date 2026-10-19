@@ -312,8 +312,25 @@ export interface WireWaitingApproval {
   updatedAt?: number;
 }
 
+/** A conversation between this bot and another bot, named on both ends
+ * (server/inter-bot-conversations.ts). The messages are read through
+ * GET /api/threads/:threadId/messages. */
+export interface WireBotConversation {
+  threadId: string;
+  otherBotId: string;
+  otherName: string;
+  /** "in": the other bot opened it here; "out": this bot opened it there. */
+  direction: "in" | "out";
+  kind?: "pair" | "work";
+  updatedAt?: number;
+  /** The conversation is working now (a discreet indicator and a Stop). */
+  running?: boolean;
+}
+
 export interface WireBot {
   waitingForTeammates?: boolean;
+  /** Bot-to-bot conversations this viewer may read, both ends. Absent: none. */
+  botConversations?: WireBotConversation[];
   /** Bot-to-bot conversations waiting on this viewer's approval. Absent:
    * none. Server-derived. */
   waitingApprovals?: WireWaitingApproval[];

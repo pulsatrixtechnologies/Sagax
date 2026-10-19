@@ -51,8 +51,8 @@ import {
   currentTaskBot,
   useStore,
   formatTime,
-  openNotificationTarget,
   openThread,
+  openNotificationTarget,
   startNewTopic,
   freshTopicCovers,
   visibleMessages,
@@ -129,6 +129,7 @@ import { CHAT_BUBBLE_WIDTH_CLASS, chatBubbleWidth } from "@/lib/chat-bubble-widt
 import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
+import { BotConversations } from "./BotConversations";
 import { BotActivityPicker, TaskPicker, ThreadReturnLink, ThreadsOffReturnLink } from "./TaskPicker";
 
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
@@ -2098,9 +2099,6 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     ? { link: currentLink, assign: (link: string | null) => dispatch({ type: "updateTask", botId: bot.id, threadId: bot.threadId, patch: { link } }) }
     : null, [canWrite, currentLink, bot.id, bot.threadId, dispatch]);
 
-  const routineExecution = state.routineRuns.find((run) => run.target === "bot" && run.botId === bot.id && run.threadId === bot.threadId);
-  const resultsThreadId = routineExecution?.resultsThreadId ?? routineExecution?.sourceThreadId;
-  const canOpenResults = resultsThreadId && [...state.bots, ...state.groups].some((owner) => owner.threadId === resultsThreadId || owner.tasks?.some((task) => task.threadId === resultsThreadId));
 
   const Root = side ? "section" : "main";
   return (
@@ -2196,13 +2194,9 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       <ThreadsOffReturnLink bot={bot} />
       {streamOn && <EarlierTopicActivity bot={bot} onReach={reachEarlierTopic} includeCurrent={fresh} />}
       <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />
+      <BotConversations bot={bot} bots={state.bots} />
       </>}
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
-      {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">
-        <span className="min-w-0 flex-1 truncate">{t("routines.executionDetails", { name: routineExecution.routineName })}</span>
-        {canOpenResults && resultsThreadId && <button type="button" onClick={() => openNotificationTarget(dispatch, { botId: bot.id, threadId: resultsThreadId }, state, showThreads)} className="rounded px-2 py-1 text-accent hover:bg-raised">{t("routines.results.back")}</button>}
-        <button type="button" onClick={() => dispatch({ type: "showRoutines", section: "logs", routineId: routineExecution.routineId, botId: bot.id })} className="rounded px-2 py-1 hover:bg-raised hover:text-ink">{t("routines.logs")}</button>
-      </div>}
       {findOpen && <ChatFindBar threadId={bot.threadId} {...(streamOn ? { threadIds: [bot.threadId, ...segmentsAbove(bot.tasks, bot.threadId).map((task) => task.threadId)] } : {})} onClose={() => setFindOpen(false)} />}
 
       {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
