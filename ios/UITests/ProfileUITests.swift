@@ -10,7 +10,7 @@ import XCTest
 ///   node ios/parity/fixture-server.mjs &
 ///   TEST_RUNNER_PARITY_ENDPOINT=... TEST_RUNNER_PARITY_TOKEN=... \
 ///   TEST_RUNNER_PARITY_ENVIRONMENT=... xcodebuild test \
-///     -only-testing:SagaxCompanionUITests/ProfileUITests ...
+///     -only-testing:SagaxUITests/ProfileUITests ...
 ///
 /// Without those variables the tests skip.
 final class ProfileUITests: XCTestCase {
@@ -37,6 +37,8 @@ final class ProfileUITests: XCTestCase {
         app.terminate()
         var arguments = ["-parityEndpoint", endpoint, "-parityToken", token, "-parityScreen", screen]
         if let environment { arguments += ["-parityEnvironment", environment] }
+        // PARITY_SKIN=system follows the simulator's light or dark appearance
+        if let skin = ProcessInfo.processInfo.environment["PARITY_SKIN"], !skin.isEmpty { arguments += ["-paritySkin", skin] }
         app.launchArguments = arguments
         app.launch()
         return app
@@ -365,6 +367,91 @@ final class ProfileUITests: XCTestCase {
     }
 
     // MARK: Library
+
+    /// The Links chip (JC 2026-10-18): every link once, without the code
+    /// mark a message wrapped it in (no `%60`), a computer-only address
+    /// greyed "On the computer" that copies instead of failing to open, and
+    /// a web link that opens in the in-app browser. SAGAX_SHOTS keeps the
+    /// screens (the first one also runs on builds before the fix).
+    @MainActor
+    func testLinksOpenInTheAppAndComputerLinksCopy() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPad's panel: testIPadLibraryShowsTheLinks")
+        let app = launchProfile()
+        element("panel-tab.library", in: app).tap()
+        let chip = element("thread-files-chip.links", in: app)
+        XCTAssertTrue(chip.waitForExistence(timeout: 15))
+        chip.tap()
+        XCTAssertTrue(element("profile-link.1", in: app).waitForExistence(timeout: 10))
+        element("profile-show-more", in: app).tap()
+        XCTAssertTrue(element("profile-link.5", in: app).waitForExistence(timeout: 10))
+        sleep(4) // page previews, or their fallback
+        scrollTo(element("profile-link.6", in: app), in: app)
+        ParityShots.save("links-list", app)
+
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'profile-link.'"))
+        let labels = rows.allElementsBoundByIndex.map(\.label)
+        XCTAssertFalse(labels.contains { $0.contains("%60") || $0.contains("`") }, "\(labels)")
+        XCTAssertEqual(labels.filter { $0.contains("127.0.0.1:8787") }.count, 1, "\(labels)")
+
+        // a computer-only address copies
+        let local = rows.matching(NSPredicate(format: "label CONTAINS '127.0.0.1:8787'")).firstMatch
+        XCTAssertTrue(local.label.contains("On the computer"), local.label)
+        local.tap()
+        XCTAssertTrue(element("profile-links-status", in: app).waitForExistence(timeout: 5))
+
+        // the long press: open in Safari, copy, share, go to the message
+        let web = rows.matching(NSPredicate(format: "label CONTAINS 'docs.example.com'")).firstMatch
+        scrollTo(web, in: app)
+        web.press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["link-menu.safari"].waitForExistence(timeout: 5) || app.buttons["Open in Safari"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Copy link"].exists || app.buttons["link-menu.copy"].exists)
+        XCTAssertTrue(app.buttons["Go to message"].exists || app.buttons["link-menu.message"].exists)
+        ParityShots.save("links-menu", app)
+        // choosing an item closes the menu
+        app.buttons["Copy link"].firstMatch.tap()
+        let closed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Open in Safari"].firstMatch)
+        wait(for: [closed], timeout: 5)
+
+        // a tap opens the in-app browser (SFSafariViewController)
+        XCTAssertTrue(web.waitForExistence(timeout: 5))
+        web.tap()
+        // SFSafariViewController draws out of process: what shows is that it
+        // covers the list (and its screenshot)
+        let covered = expectation(for: NSPredicate(format: "isHittable == false"), evaluatedWith: web)
+        wait(for: [covered], timeout: 10)
+        sleep(2)
+        ParityShots.save("links-browser", app)
+    }
+
+    /// The iPad's bot panel has the same Links chip and rows.
+    @MainActor
+    func testIPadLibraryShowsTheLinks() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "iPad only")
+        // Ara's chat, then her panel's Library tab
+        let app = launch(screen: "02-chat")
+        let toggle = element("desktop-panel-toggle", in: app)
+        XCTAssertTrue(toggle.waitForExistence(timeout: 30))
+        let library = element("desktop-panel-tab.library", in: app)
+        if !library.waitForExistence(timeout: 3) { toggle.tap() }
+        XCTAssertTrue(library.waitForExistence(timeout: 10))
+        library.tap()
+        let chip = element("desktop-files-chip.links", in: app)
+        XCTAssertTrue(chip.waitForExistence(timeout: 30))
+        chip.tap()
+        XCTAssertTrue(element("profile-link.1", in: app).waitForExistence(timeout: 10))
+        element("profile-show-more", in: app).tap()
+        XCTAssertTrue(element("profile-link.5", in: app).waitForExistence(timeout: 10))
+        sleep(4)
+        ParityShots.save("links-ipad", app)
+        let local = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'profile-link.' AND label CONTAINS '127.0.0.1:8787'")).firstMatch
+        XCTAssertTrue(local.label.contains("On the computer"), local.label)
+        let web = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'profile-link.' AND label CONTAINS 'docs.example.com'")).firstMatch
+        web.tap()
+        let covered = expectation(for: NSPredicate(format: "isHittable == false"), evaluatedWith: web)
+        wait(for: [covered], timeout: 10)
+        sleep(2)
+        ParityShots.save("links-ipad-browser", app)
+    }
 
     /// Library: the conversation's files by kind (Images was Media), and the
     /// bot's links behind their own chip (was Links), each paging as before.

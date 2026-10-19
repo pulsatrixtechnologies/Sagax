@@ -6,7 +6,8 @@
 // thumbnail, the name 13 and "Bot attached · 14 B · Sep 30, 2026, 11:33 AM"
 // 11, and three 28 pt actions (show in chat, download, copy path). The
 // filtering and counting are `ThreadFileRules` (CompanionCore), shared with
-// the phone's ThreadFilesView.
+// the phone's ThreadFilesView. The bot's links are one more chip, Links,
+// drawn by the phone's LinksTab (JC 2026-10-18).
 import SwiftUI
 import UIKit
 import CompanionCore
@@ -28,6 +29,9 @@ struct BotPanelFiles: View {
     @State private var sharing: IdentifiedURL?
     @State private var working: String?
     @State private var status: String?
+    /// The bot's links, one more chip (`BotLibraryChip.links`), as on the phone.
+    @State private var showingLinks = false
+    @StateObject private var links = LibraryLoader<BotLink>()
 
     private var threadId: String { bot.threadId }
     private var all: [ThreadFile] { files ?? [] }
@@ -35,6 +39,9 @@ struct BotPanelFiles: View {
     /// Only kinds that have files (or the chosen one), and only with two
     /// kinds or more to choose between (`visibleFilters`, FilesSection.tsx).
     private var chips: [ThreadFileFilter] { ThreadFileRules.visibleFilters(counts: counts, selected: query.filter) }
+    private var linkCount: Int { links.page?.total ?? links.page?.items.count ?? 0 }
+    private var selectedChip: BotLibraryChip { showingLinks ? .links : .files(query.filter) }
+    private var allChips: [BotLibraryChip] { BotLibraryChip.visible(counts: counts, selected: selectedChip, links: linkCount) }
     private var shown: [ThreadFile] {
         var effective = query
         if chips.isEmpty { effective.filter = .all }
@@ -49,20 +56,29 @@ struct BotPanelFiles: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             AnyView(searchRow)
-            if !chips.isEmpty { AnyView(chipRow) }
-            AnyView(selects)
+            if !allChips.isEmpty { AnyView(chipRow) }
+            if !showingLinks { AnyView(selects) }
             if let status {
                 Label(status, systemImage: "checkmark")
                     .font(theme.font(12))
                     .foregroundStyle(theme.success)
             }
-            AnyView(content)
+            if showingLinks {
+                AnyView(LinksTab(bot: bot, loader: links, onShowMessage: { link in jump(link) }).padding(.horizontal, -Theme.Profile.cardMargin))
+            } else {
+                AnyView(content)
+            }
         }
         .padding(.top, 8)
         .padding(.leading, 17)
         .padding(.trailing, 16)
         .padding(.bottom, 24)
-        .task(id: threadId) { await load() }
+        .task(id: threadId) {
+            await load()
+            guard let client = session.profileClient else { return }
+            let botId = bot.id
+            links.loadFirst { cursor, limit in try await client.botLinks(botId: botId, cursor: cursor, limit: limit) }
+        }
         .sheet(item: $previewing) { item in ProfileQuickLook(url: item.url).ignoresSafeArea() }
         .sheet(item: $sharing) { item in ProfileShareSheet(items: [item.url]) }
         .accessibilityElement(children: .contain)
@@ -114,13 +130,21 @@ struct BotPanelFiles: View {
 
     private var chipRow: some View {
         PanelFlow(spacing: 6, lineSpacing: 6) {
-            ForEach(chips, id: \.self) { chip in
-                let selected = query.filter == chip
-                Button { query.filter = chip } label: {
+            ForEach(allChips, id: \.self) { chip in
+                let selected = selectedChip == chip
+                Button {
+                    switch chip {
+                    case let .files(filter):
+                        showingLinks = false
+                        query.filter = filter
+                    case .links:
+                        showingLinks = true
+                    }
+                } label: {
                     HStack(spacing: 6) {
-                        Text(verbatim: ThreadFilesView.filterName(chip))
+                        Text(verbatim: chipName(chip))
                             .foregroundStyle(selected ? theme.app : theme.inkSecondary)
-                        Text(verbatim: "\(counts[chip] ?? 0)")
+                        Text(verbatim: "\(chipCount(chip))")
                             .monospacedDigit()
                             .foregroundStyle(selected ? theme.app.opacity(0.7) : theme.inkTertiary)
                     }
@@ -133,11 +157,32 @@ struct BotPanelFiles: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
-                .accessibilityIdentifier("desktop-files-chip.\(chip.rawValue)")
+                .accessibilityIdentifier("desktop-files-chip.\(chipId(chip))")
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Filter files by type"))
+    }
+
+    private func chipName(_ chip: BotLibraryChip) -> String {
+        switch chip {
+        case let .files(filter): ThreadFilesView.filterName(filter)
+        case .links: String(localized: "Links")
+        }
+    }
+
+    private func chipCount(_ chip: BotLibraryChip) -> Int {
+        switch chip {
+        case let .files(filter): counts[filter] ?? 0
+        case .links: linkCount
+        }
+    }
+
+    private func chipId(_ chip: BotLibraryChip) -> String {
+        switch chip {
+        case let .files(filter): filter.rawValue
+        case .links: "links"
+        }
     }
 
     private var selects: some View {
@@ -341,6 +386,21 @@ struct BotPanelFiles: View {
     private func jump(_ file: ThreadFile) {
         if !docked { model.togglePanel() }
         Task { await session.jump(to: file.messageId, inThread: threadId) }
+    }
+
+    /// Go to message on a link: its conversation first when it is not this one.
+    private func jump(_ link: BotLink) {
+        guard let messageId = link.messageId else { return }
+        let target = link.threadId ?? threadId
+        let botId = bot.id
+        let onScreen = threadId
+        if !docked { model.togglePanel() }
+        Task {
+            if target != onScreen {
+                _ = await session.openThread(ThreadRef(botId: botId, threadId: target, title: ""), shownBotId: nil)
+            }
+            await session.jump(to: messageId, inThread: target)
+        }
     }
 
     private func open(_ file: ThreadFile) {

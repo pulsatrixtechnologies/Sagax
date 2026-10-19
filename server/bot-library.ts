@@ -54,22 +54,42 @@ const MAX_URL_LENGTH = 2_048;
 const MAX_TITLE_LENGTH = 200;
 
 const MARKDOWN_LINK = /\[([^\]\n]{1,300})\]\((https?:\/\/[^\s()<>]+(?:\([^\s()<>]*\)[^\s()<>]*)*)\)/gi;
-const BARE_URL = /\bhttps?:\/\/[^\s<>"'`\]]+/gi;
-const TRAILING = /[.,;:!?*_~]+$/;
+// A bare URL ends at a space, a quote, a bracket, an angle bracket or a
+// Markdown code mark (French quotes too); an IPv6 host keeps its brackets.
+// An apostrophe stays inside (O'Brien) and is dropped at the end.
+const BARE_URL = /\bhttps?:\/\/(?:\[[0-9a-f:.]{2,45}\])?[^\s<>"`[\]{}|\\^\u00ab\u00bb\u201c\u201d\u2018\u2019]{0,4096}/gi;
+const TRAILING = /[.,;:!?*_~'"\u00bb\u201d\u2019>]+$/;
+/** A delimiter that was percent-encoded into the end of a link: a Markdown
+ * code mark (%60), a quote (%22, %27), an angle bracket, a
+ * French or curly closing quote. Never part of a page's address. */
+const ENCODED_TRAILING = /(?:%60|%22|%27|%3[cCeE]|%C2%BB|%E2%80%9[dD]|%E2%80%99)+$/;
+const HTML_ENTITY_CUT = /&(?:gt|lt|quot|#0*39|#x0*27);/i;
 
 /** A URL as a person would copy it: no trailing sentence punctuation, no
- * closing bracket that opened before it, http(s) only, parseable. */
+ * closing bracket that opened before it, no Markdown or quote delimiter
+ * (raw or percent-encoded, the `%60` of a code span), http(s) only,
+ * parseable. The result is the parsed form (`URL.href`), so two spellings
+ * of one address (a host's case, a missing root slash) are one link. */
 export function cleanUrl(raw: string): string | null {
-  let url = raw.replace(TRAILING, "");
-  while (url.endsWith(")") && (url.match(/\(/g)?.length ?? 0) < (url.match(/\)/g)?.length ?? 0)) {
-    url = url.slice(0, -1).replace(TRAILING, "");
+  if (raw.length > MAX_URL_LENGTH * 2) return null;
+  let url = raw.replace(/&amp;/gi, "&");
+  const tick = url.indexOf("`");
+  if (tick >= 0) url = url.slice(0, tick);
+  const entity = HTML_ENTITY_CUT.exec(url);
+  if (entity) url = url.slice(0, entity.index);
+  for (let previous = ""; previous !== url;) {
+    previous = url;
+    url = url.replace(TRAILING, "").replace(ENCODED_TRAILING, "");
+    while (url.endsWith(")") && (url.match(/\(/g)?.length ?? 0) < (url.match(/\)/g)?.length ?? 0)) {
+      url = url.slice(0, -1);
+    }
   }
   if (!url || url.length > MAX_URL_LENGTH) return null;
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
     if (!parsed.hostname || parsed.username || parsed.password) return null;
-    return url;
+    return parsed.href.length > MAX_URL_LENGTH ? null : parsed.href;
   } catch {
     return null;
   }
@@ -79,7 +99,18 @@ export function linkDomain(url: string): string {
   return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
 }
 
-/** The links of one message, in reading order. */
+/** A Markdown link's text as a title: no code marks or emphasis around it,
+ * and none when it only repeats the address. */
+function linkTitle(text: string, url: string): string | undefined {
+  const title = text.replace(/\s+/g, " ").trim().replace(/^(?:[`*_~]+)(.*?)(?:[`*_~]+)$/, "$1").trim();
+  if (!title) return undefined;
+  const bare = (value: string) => value.replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
+  const asUrl = cleanUrl(title);
+  if (bare(title) === bare(url) || (asUrl && bare(asUrl) === bare(url))) return undefined;
+  return title.slice(0, MAX_TITLE_LENGTH);
+}
+
+/** The links of one message, in reading order, each address once. */
 export function linksInText(text: string): Array<{ url: string; title?: string }> {
   const found: Array<{ url: string; title?: string; index: number }> = [];
   const covered: Array<[number, number]> = [];
@@ -88,8 +119,8 @@ export function linksInText(text: string): Array<{ url: string; title?: string }
     const start = match.index ?? 0;
     covered.push([start, start + match[0].length]);
     if (!url) continue;
-    const title = match[1]!.replace(/\s+/g, " ").trim();
-    found.push({ url, index: start, ...(title && title !== url ? { title: title.slice(0, MAX_TITLE_LENGTH) } : {}) });
+    const title = linkTitle(match[1]!, url);
+    found.push({ url, index: start, ...(title ? { title } : {}) });
   }
   for (const match of text.matchAll(BARE_URL)) {
     const start = match.index ?? 0;
@@ -97,7 +128,13 @@ export function linksInText(text: string): Array<{ url: string; title?: string }
     const url = cleanUrl(match[0]);
     if (url) found.push({ url, index: start });
   }
-  return found.sort((a, b) => a.index - b.index).slice(0, MAX_URLS_PER_MESSAGE).map(({ url, title }) => (title ? { url, title } : { url }));
+  const once = new Map<string, { url: string; title?: string }>();
+  for (const { url, title } of found.sort((a, b) => a.index - b.index)) {
+    const seen = once.get(url);
+    if (!seen) once.set(url, title ? { url, title } : { url });
+    else if (!seen.title && title) seen.title = title;
+  }
+  return [...once.values()].slice(0, MAX_URLS_PER_MESSAGE);
 }
 
 /** Every URL of these threads once, at its newest mention, newest first. */

@@ -19,6 +19,40 @@ describe("bot links", () => {
     expect(cleanUrl(`https://example.test/${"a".repeat(3000)}`)).toBeNull();
   });
 
+  it("never keeps a Markdown code mark, raw or percent-encoded (%60)", () => {
+    expect(linksInText("Open [http://127.0.0.1:8787/](http://127.0.0.1:8787/%60) on the computer.")).toEqual([{ url: "http://127.0.0.1:8787/" }]);
+    expect(linksInText("[`http://127.0.0.1:8787/`](http://127.0.0.1:8787/`)")).toEqual([{ url: "http://127.0.0.1:8787/" }]);
+    expect(linksInText("Run `curl https://api.example.test/v1/items` then `https://example.test/a`.")).toEqual([
+      { url: "https://api.example.test/v1/items" },
+      { url: "https://example.test/a" },
+    ]);
+    expect(cleanUrl("https://example.test/page%60%22")).toBe("https://example.test/page");
+    expect(cleanUrl("https://example.test/a`b")).toBe("https://example.test/a");
+    expect(cleanUrl(`https://example.test/${"%60".repeat(5_000)}`)).toBeNull();
+  });
+
+  it("drops quotes, brackets and trailing punctuation around a bare link", () => {
+    const urls = (text: string) => linksInText(text).map((link) => link.url);
+    expect(urls("See **https://example.test/a**.")).toEqual(["https://example.test/a"]);
+    expect(urls("<https://example.test/b>, \"https://example.test/c\"; 'https://example.test/d'")).toEqual([
+      "https://example.test/b", "https://example.test/c", "https://example.test/d",
+    ]);
+    expect(urls("\u00ab https://example.test/fr \u00bb et https://example.test/e]")).toEqual(["https://example.test/fr", "https://example.test/e"]);
+    expect(urls("https://example.test/q?a=1&amp;b=2. https://example.test/h&gt;")).toEqual(["https://example.test/q?a=1&b=2", "https://example.test/h"]);
+    expect(urls("http://[::1]:8787/x.")).toEqual(["http://[::1]:8787/x"]);
+    expect(urls("https://example.test/p?a=1&amp;gtin=2&amp;ltv=3 https://example.test/wiki/O'Brien' https://example.test/q?ids%5B%5D=1")).toEqual([
+      "https://example.test/p?a=1&gtin=2&ltv=3", "https://example.test/wiki/O'Brien", "https://example.test/q?ids%5B%5D=1",
+    ]);
+  });
+
+  it("reads one address once per message, with a clean title", () => {
+    expect(linksInText("[**Guide**](https://example.test/g) and https://example.test/g again, https://EXAMPLE.test")).toEqual([
+      { url: "https://example.test/g", title: "Guide" },
+      { url: "https://example.test/" },
+    ]);
+    expect(linksInText("[example.test/x](https://example.test/x)")).toEqual([{ url: "https://example.test/x" }]);
+  });
+
   it("deduplicates across threads at the newest mention, newest first, and keeps a title", () => {
     const links = collectBotLinks([
       { threadId: "t1", messages: [
@@ -32,7 +66,7 @@ describe("bot links", () => {
     ]);
     expect(links).toEqual([
       { url: "https://example.test/r", domain: "example.test", title: "Report", messageId: "m3", threadId: "t2", at: 30 },
-      { url: "https://www.Other.test/x", domain: "other.test", messageId: "m4", threadId: "t2", at: 20 },
+      { url: "https://www.other.test/x", domain: "other.test", messageId: "m4", threadId: "t2", at: 20 },
     ]);
   });
 });

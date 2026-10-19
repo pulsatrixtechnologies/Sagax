@@ -107,15 +107,25 @@ public struct BotLink: Decodable, Hashable, Identifiable, Sendable {
 
     private enum CodingKeys: String, CodingKey { case url, domain, title, messageId, threadId, at }
 
+    public init(url: String, domain: String? = nil, title: String? = nil, messageId: String? = nil, threadId: String? = nil, at: Double = 0) {
+        self.url = LinkAddress.cleaned(url)
+        self.domain = domain.flatMap { $0.isEmpty ? nil : $0 } ?? LinkAddress.host(of: self.url) ?? self.url
+        self.title = title
+        self.messageId = messageId
+        self.threadId = threadId
+        self.at = at
+    }
+
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        url = try values.decode(String.self, forKey: .url)
-        let host = URL(string: url)?.host
-        domain = (try values.decodeIfPresent(String.self, forKey: .domain)).flatMap { $0.isEmpty ? nil : $0 } ?? host ?? url
-        title = try values.decodeIfPresent(String.self, forKey: .title)
-        messageId = try values.decodeIfPresent(String.self, forKey: .messageId)
-        threadId = try values.decodeIfPresent(String.self, forKey: .threadId)
-        at = try values.decodeIfPresent(Double.self, forKey: .at) ?? 0
+        try self.init(
+            url: values.decode(String.self, forKey: .url),
+            domain: values.decodeIfPresent(String.self, forKey: .domain),
+            title: values.decodeIfPresent(String.self, forKey: .title),
+            messageId: values.decodeIfPresent(String.self, forKey: .messageId),
+            threadId: values.decodeIfPresent(String.self, forKey: .threadId),
+            at: values.decodeIfPresent(Double.self, forKey: .at) ?? 0
+        )
     }
 
     /// Only web addresses open in the in-app browser.
@@ -124,6 +134,110 @@ public struct BotLink: Decodable, Hashable, Identifiable, Sendable {
               scheme == "https" || scheme == "http", parsed.host != nil
         else { return nil }
         return parsed
+    }
+
+    /// Whether the phone can open it: an address on the computer itself
+    /// (localhost, 127.0.0.1, ::1) or its private network (10.x, 192.168.x,
+    /// a `.local` name) only answers there.
+    public var reach: LinkReach {
+        guard let host = LinkAddress.host(of: url) else { return .computer }
+        return LinkAddress.isComputerOnly(host: host) ? .computer : .web
+    }
+
+    /// The address as a person reads it: decoded, without the scheme or a
+    /// lone trailing slash.
+    public var readableAddress: String { LinkAddress.readable(url) }
+
+    /// The row's title before a page preview names it: the Markdown link's
+    /// text, else the domain.
+    public var fallbackTitle: String {
+        if let title, !title.isEmpty { return title }
+        return domain
+    }
+}
+
+/// Where a link opens.
+public enum LinkReach: Sendable, Equatable {
+    /// A public web page: the in-app browser.
+    case web
+    /// Only from the computer that wrote it: copy it, never open it here.
+    case computer
+}
+
+/// Link addresses as the Links tab reads them.
+public enum LinkAddress {
+    /// The delimiters a message wraps a link in and that are never part of
+    /// it, raw or percent-encoded (a Markdown code mark is `%60`). Older
+    /// computers sent them; the server strips them now.
+    private static let trailingRaw = CharacterSet(charactersIn: "`\"'<>.,;:!?*_~\u{00BB}\u{201D}\u{2019}")
+    private static let trailingEncoded = ["%60", "%22", "%27", "%3C", "%3E", "%5B", "%5D", "%C2%BB", "%E2%80%9D", "%E2%80%99"]
+
+    public static func cleaned(_ raw: String) -> String {
+        var url = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let tick = url.firstIndex(of: "`") { url = String(url[..<tick]) }
+        var previous = ""
+        while previous != url {
+            previous = url
+            while let last = url.unicodeScalars.last, trailingRaw.contains(last) { url.unicodeScalars.removeLast() }
+            for code in trailingEncoded where url.uppercased().hasSuffix(code) {
+                url = String(url.dropLast(code.count))
+            }
+        }
+        return url
+    }
+
+    /// The host, lowercased, an IPv6 literal without its brackets.
+    public static func host(of url: String) -> String? {
+        guard let components = URLComponents(string: url), var host = components.host, !host.isEmpty else { return nil }
+        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        return host.lowercased()
+    }
+
+    /// Loopback, unspecified, link-local and private addresses, `localhost`
+    /// and `.local` / `.localhost` / `.lan` / `.home.arpa` names, and a
+    /// single-label name (a machine on the computer's network).
+    public static func isComputerOnly(host raw: String) -> Bool {
+        let host = raw.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]."))
+        if host.isEmpty || host == "localhost" { return true }
+        for suffix in [".localhost", ".local", ".lan", ".home.arpa", ".internal"] where host.hasSuffix(suffix) { return true }
+        if host.contains(":") { return isPrivateIPv6(host) }
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        let octets = parts.compactMap { UInt8($0) }
+        if parts.count == 4, octets.count == 4 {
+            switch (octets[0], octets[1]) {
+            case (0, _), (10, _), (127, _), (169, 254), (192, 168): return true
+            case (172, 16...31): return true
+            default: return false
+            }
+        }
+        return parts.count == 1
+    }
+
+    private static func isPrivateIPv6(_ host: String) -> Bool {
+        let address = host.split(separator: "%").first.map(String.init) ?? host
+        if address == "::1" || address == "::" { return true }
+        if address.hasPrefix("::ffff:") {
+            // an IPv4-mapped address, dotted or as two hex words (URL.href
+            // writes [::ffff:127.0.0.1] as [::ffff:7f00:1])
+            let mapped = String(address.dropFirst(7))
+            if mapped.contains(".") { return isComputerOnly(host: mapped) }
+            let words = mapped.split(separator: ":").compactMap { UInt16($0, radix: 16) }
+            guard words.count == 2 else { return false }
+            return isComputerOnly(host: "\(words[0] >> 8).\(words[0] & 0xFF).\(words[1] >> 8).\(words[1] & 0xFF)")
+        }
+        guard let first = address.split(separator: ":", omittingEmptySubsequences: false).first,
+              let word = UInt16(first, radix: 16) else { return false }
+        return word & 0xFE00 == 0xFC00 || word & 0xFFC0 == 0xFE80
+    }
+
+    /// Decoded, without `https://` or a lone trailing slash.
+    public static func readable(_ url: String) -> String {
+        var text = url.removingPercentEncoding ?? url
+        for scheme in ["https://", "http://"] where text.lowercased().hasPrefix(scheme) {
+            text = String(text.dropFirst(scheme.count))
+        }
+        if text.hasSuffix("/"), text.dropLast().contains("/") == false { text.removeLast() }
+        return text
     }
 }
 

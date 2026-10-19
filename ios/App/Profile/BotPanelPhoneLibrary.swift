@@ -12,6 +12,7 @@ struct PhoneBotLibrary: View {
     let bot: Bot
     let start: BotLibraryChip
     let onShowInChat: (ThreadFile) -> Void
+    var onShowLink: ((BotLink) -> Void)? = nil
 
     @State private var view: BotLibraryView = .files
     @State private var showingPlugins = false
@@ -24,7 +25,7 @@ struct PhoneBotLibrary: View {
                 AnyView(switcher)
             }
             switch views.contains(view) ? view : .files {
-            case .files: AnyView(ThreadFilesView(bot: bot, start: start, onShowInChat: onShowInChat))
+            case .files: AnyView(ThreadFilesView(bot: bot, start: start, onShowInChat: onShowInChat, onShowLink: onShowLink))
             case .skills: AnyView(PhoneLibrarySkills(bot: bot))
             case .plugins: AnyView(PhoneBotPlugins(bot: bot))
             }

@@ -405,7 +405,7 @@ private struct PhoneBotPanelContent: View {
         switch tabs.contains(tab) ? tab : .details {
         case .details: AnyView(details)
         case .library:
-            AnyView(PhoneBotLibrary(bot: current, start: libraryStart) { file in showInChat(file) })
+            AnyView(PhoneBotLibrary(bot: current, start: libraryStart, onShowInChat: { file in showInChat(file) }, onShowLink: { link in showInChat(link) }))
         case .computer:
             AnyView(ComputerView(bot: current, embeddedWidth: width - Theme.Profile.cardMargin * 2) {
                 path.append(PanelComputerRoute())
@@ -645,6 +645,23 @@ private struct PhoneBotPanelContent: View {
         Task {
             try? await Task.sleep(nanoseconds: 600_000_000)
             await session.jump(to: file.messageId, inThread: threadId)
+        }
+    }
+
+    /// Go to message on a link: its own conversation of this bot, which
+    /// opens first when it is not the one on screen.
+    private func showInChat(_ link: BotLink) {
+        guard let messageId = link.messageId else { return }
+        let botId = bot.id
+        let threadId = link.threadId ?? bot.threadId
+        let onScreen = bot.threadId
+        dismiss()
+        Task {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            if threadId != onScreen {
+                _ = await session.openThread(ThreadRef(botId: botId, threadId: threadId, title: ""), shownBotId: nil)
+            }
+            await session.jump(to: messageId, inThread: threadId)
         }
     }
 

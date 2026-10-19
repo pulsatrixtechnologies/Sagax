@@ -154,6 +154,35 @@ final class ProfileLibraryClientTests: XCTestCase {
         XCTAssertNotNil(links[1].webURL)
     }
 
+    /// An older computer sent the code mark a message wrapped the link in,
+    /// raw or percent-encoded (`%60`): the phone drops it before opening.
+    func testAnOlderComputersCodeMarkIsDropped() throws {
+        let data = Data(#"[{"url":"https://docs.example.com/guide%60","domain":"docs.example.com","at":1},{"url":"https://example.org/a`.","at":1},{"url":"https://example.net/q?x=1%22%3E","at":1}]"#.utf8)
+        let links = try JSONDecoder().decode([BotLink].self, from: data)
+        XCTAssertEqual(links.map(\.url), ["https://docs.example.com/guide", "https://example.org/a", "https://example.net/q?x=1"])
+        XCTAssertEqual(links[1].domain, "example.org")
+        XCTAssertEqual(links[0].webURL?.absoluteString, "https://docs.example.com/guide")
+    }
+
+    func testComputerOnlyAddressesAreTold() {
+        let computer = [
+            "http://127.0.0.1:8787/", "http://localhost:3000/app", "http://[::1]:8080/", "http://0.0.0.0:5173",
+            "http://10.0.0.4/", "http://172.20.1.2/", "http://192.168.1.10:8080/", "http://169.254.1.1/",
+            "http://printer.local/", "http://app.localhost/", "http://nas/", "http://[fd12:3456::1]/", "http://[fe80::1]/",
+            "http://[::ffff:7f00:1]/", "http://[::ffff:192.168.0.2]/",
+        ]
+        for url in computer { XCTAssertEqual(BotLink(url: url).reach, .computer, url) }
+        let web = ["https://docs.example.com/x", "http://172.32.0.1/", "https://8.8.8.8/", "http://[2001:db8::1]/", "https://100.64.0.1/"]
+        for url in web { XCTAssertEqual(BotLink(url: url).reach, .web, url) }
+    }
+
+    func testTheAddressReadsDecoded() {
+        XCTAssertEqual(BotLink(url: "http://127.0.0.1:8787/").readableAddress, "127.0.0.1:8787")
+        XCTAssertEqual(BotLink(url: "https://example.com/caf%C3%A9/notes").readableAddress, "example.com/café/notes")
+        XCTAssertEqual(BotLink(url: "https://example.com/a", title: "Guide").fallbackTitle, "Guide")
+        XCTAssertEqual(BotLink(url: "https://www.example.com/a", domain: "example.com").fallbackTitle, "example.com")
+    }
+
     func testAPageCursorThatIsNotAnOffsetIsDropped() throws {
         let request = try client.botLinksRequest(botId: "bot-1", cursor: "../../etc", limit: 500)
         let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []

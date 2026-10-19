@@ -15,6 +15,8 @@ struct ThreadFilesView: View {
     let bot: Bot
     /// Show the file's message in the chat; the host closes what covers it.
     let onShowInChat: (ThreadFile) -> Void
+    /// Show a link's message in its conversation (Go to message).
+    var onShowLink: ((BotLink) -> Void)? = nil
 
     @EnvironmentObject private var session: Session
     @State private var files: [ThreadFile]?
@@ -28,9 +30,10 @@ struct ThreadFilesView: View {
     @State private var working: String?
     @State private var status: String?
 
-    init(bot: Bot, start: BotLibraryChip = .files(.all), onShowInChat: @escaping (ThreadFile) -> Void) {
+    init(bot: Bot, start: BotLibraryChip = .files(.all), onShowInChat: @escaping (ThreadFile) -> Void, onShowLink: ((BotLink) -> Void)? = nil) {
         self.bot = bot
         self.onShowInChat = onShowInChat
+        self.onShowLink = onShowLink
         _showingLinks = State(initialValue: start == .links)
         _query = State(initialValue: ThreadFileQuery(filter: start.fileFilter ?? .all))
     }
@@ -60,7 +63,7 @@ struct ThreadFilesView: View {
             AnyView(searchRow)
             AnyView(controls)
             if showingLinks {
-                AnyView(LinksTab(bot: bot, loader: links))
+                AnyView(LinksTab(bot: bot, loader: links, onShowMessage: onShowLink))
             } else {
                 AnyView(content)
             }

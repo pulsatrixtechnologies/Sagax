@@ -522,6 +522,10 @@ function seedTranscripts(dataDir, seeded) {
   const now = Date.now();
   // Ara: links, media and files earlier, then today's exchange (4:53 PM).
   write(ids.ara.threadId, [
+    // The Links tab's hard cases, older than the reference page (behind
+    // "Show more"): addresses wrapped in code marks, raw and percent-encoded
+    // (%60), and addresses that only answer on the computer.
+    { role: "bot", at: now - 7 * DAY, text: "Pour tester en local, ouvre `http://127.0.0.1:8787/` ou [http://localhost:5173/](http://localhost:5173/%60) sur l'ordinateur.\n\nLa page publique : [`https://example.com/`](https://example.com/`), et l'imprimante http://printer.local/status." },
     { role: "user", at: now - 6 * DAY, text: "Peux-tu me donner les liens utiles pour la migration ?" },
     { role: "bot", at: now - 6 * DAY + 60_000, text: "Voici les références, en texte de remplacement :\n\n- [Guide de migration](https://docs.example.com/guides/migration/etapes-detaillees-pour-la-version-deux)\n- [Notes de version](https://example.org/releases/2026/notes-de-version-completes-octobre)\n- [Tableau de bord](https://status.example.net/dashboards/equipe/vue-d-ensemble-hebdomadaire)" },
     { role: "user", at: now - 4 * DAY, text: "Et les captures de l'écran d'accueil ?" },
