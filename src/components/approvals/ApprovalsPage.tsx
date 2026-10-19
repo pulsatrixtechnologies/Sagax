@@ -21,11 +21,12 @@ import {
   type InboxFilters,
 } from "../../../shared/approvals-inbox";
 import { WindowDragStrip } from "../DesktopCapabilities";
-import { bulkAnswer, inboxThreadAction, inboxTitle, useInbox } from "@/lib/approvals-inbox";
+import { bulkAnswer, inboxTitle, useInbox } from "@/lib/approvals-inbox";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { readableErrorMessage } from "@/lib/readable-error";
-import { useStore, type Bot } from "@/state/store";
+import { openNotificationTarget, useStore, type Bot } from "@/state/store";
+import { useShowThreads } from "@/lib/thread-preferences";
 import { ApprovalDetail, OutcomePanel, type InboxOutcome } from "./ApprovalDetail";
 import { ApprovalRow, InboxAvatar } from "./ApprovalRow";
 import { ApprovalsHistory } from "./ApprovalsHistory";
@@ -264,15 +265,20 @@ export function ApprovalsPage() {
 
   const current = shown.find((entry) => entry.key === selected) ?? null;
 
-  const finishAnswer = useCallback((key: string) => {
+  // one pending timer per answered card, so a refused answer can be undone
+  const answerTimers = useRef(new Map<string, number>());
+  useEffect(() => () => { for (const timer of answerTimers.current.values()) window.clearTimeout(timer); }, []);
+  const finishAnswer = useCallback((key: string, reload = true) => {
     setLeaving((was) => new Set(was).add(key));
     setAnswered((was) => new Map(was).set(key, Date.now()));
-    window.setTimeout(() => {
+    window.clearTimeout(answerTimers.current.get(key));
+    answerTimers.current.set(key, window.setTimeout(() => {
+      answerTimers.current.delete(key);
       setLeaving((was) => { const next = new Set(was); next.delete(key); return next; });
       setOutcome((was) => (was?.key === key ? null : was));
       setSelected((was) => (was === key ? selectionAfterRemoval(keysRef.current, key) : was));
-      void refresh();
-    }, OUTCOME_MS);
+      if (reload) void refresh();
+    }, OUTCOME_MS));
   }, [refresh]);
   const keysRef = useRef(keys);
   keysRef.current = keys;
@@ -282,10 +288,25 @@ export function ApprovalsPage() {
     setOutcome({ key: current.key, botName: current.botName, decision });
     finishAnswer(current.key);
   }, [current, finishAnswer]);
+  // The server refused the answer (a key cancelled, 403, 409): the card
+  // comes back as it was, with a line saying so.
+  const onDecideFailed = useCallback((key: string) => {
+    window.clearTimeout(answerTimers.current.get(key));
+    answerTimers.current.delete(key);
+    setLeaving((was) => { if (!was.has(key)) return was; const next = new Set(was); next.delete(key); return next; });
+    setAnswered((was) => { if (!was.has(key)) return was; const next = new Map(was); next.delete(key); return next; });
+    setOutcome((was) => (was?.key === key ? null : was));
+    setSelected(key);
+    setBulkNote(t("approvals.answerFailed"));
+    void refresh();
+  }, [refresh]);
 
+  // the same routing as a notification: a room's task opens its room, then
+  // the task; a bot's topic opens where the single stream shows it
+  const showThreads = useShowThreads();
   const openThread = useCallback((entry: InboxApproval) => {
-    dispatch(inboxThreadAction(entry, state.groups));
-  }, [dispatch, state.groups]);
+    openNotificationTarget(dispatch, { botId: entry.botId, threadId: entry.threadId }, state, showThreads);
+  }, [dispatch, state, showThreads]);
   const cancelTurn = useCallback((entry: InboxApproval) => {
     const group = state.groups.find((candidate) => candidate.threadId === entry.threadId || candidate.tasks?.some((task) => task.threadId === entry.threadId));
     if (group) dispatch({ type: "interruptGroup", groupId: group.id, threadId: entry.threadId });
@@ -301,7 +322,8 @@ export function ApprovalsPage() {
       return next;
     });
   }, []);
-  const decidable = shown.filter((entry) => entry.decidable);
+  // only what a bulk answer may cover is ticked (a deny covers a needs-key card)
+  const decidable = shown.filter((entry) => entry.decidable && (entry.bulk === true || entry.bulk === "needs-key"));
   const allChecked = decidable.length > 0 && decidable.every((entry) => checked.has(entry.key));
 
   const runBulk = async () => {
@@ -310,7 +332,8 @@ export function ApprovalsPage() {
     setBulkBusy(true);
     try {
       const out = await bulkAnswer(confirm, plan.answered);
-      for (const result of out.results) if (result.ok) finishAnswer(result.key);
+      for (const result of out.results) if (result.ok) finishAnswer(result.key, false);
+      window.setTimeout(() => void refresh(), OUTCOME_MS);
       const left = checkedEntries.length - out.answered;
       setBulkNote(t(confirm === "allow" ? "approvals.bulk.doneAllow" : "approvals.bulk.doneDeny", { count: out.answered }) + (left > 0 ? ` ${t("approvals.bulk.left", { count: left })}` : ""));
       setChecked(new Set());
@@ -357,7 +380,7 @@ export function ApprovalsPage() {
         return;
       }
       if (action === "toggle") {
-        if (now.current?.decidable) { event.preventDefault(); toggle(now.current.key); }
+        if (now.current?.decidable && (now.current.bulk === true || now.current.bulk === "needs-key")) { event.preventDefault(); toggle(now.current.key); }
         return;
       }
       // Y / N: several ticked → the bulk confirmation; else the card shown
@@ -497,6 +520,7 @@ export function ApprovalsPage() {
                   bot={bots.get(current.botId)}
                   now={now}
                   onDecided={onDecided}
+                  onDecideFailed={() => onDecideFailed(current.key)}
                   onOpenThread={() => openThread(current)}
                   onCancelTurn={() => cancelTurn(current)}
                 />

@@ -8,7 +8,7 @@ import { inboxAge, inboxAgeTone, inboxRisky, type InboxApproval } from "../../..
 import { BotAvatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { inboxPreview, inboxTitle } from "@/lib/approvals-inbox";
+import { inboxPreview, inboxTitle, withoutIds } from "@/lib/approvals-inbox";
 import type { Bot } from "@/state/store";
 
 const AGE_STYLE = {
@@ -89,7 +89,9 @@ export const ApprovalRow = memo(function ApprovalRow({
 }) {
   const title = inboxTitle(entry);
   const preview = inboxPreview(entry);
-  const where = entry.roomName ?? entry.threadTitle;
+  // ticked only when a bulk answer may cover it (a Deny covers a needs-key card)
+  const bulkable = entry.decidable && (entry.bulk === true || entry.bulk === "needs-key");
+  const where = withoutIds(entry.roomName ?? entry.threadTitle ?? "");
   return (
     <div
       role="option"
@@ -110,7 +112,7 @@ export const ApprovalRow = memo(function ApprovalRow({
         role="checkbox"
         aria-checked={checked}
         aria-label={t("approvals.select", { title })}
-        disabled={!entry.decidable}
+        disabled={!bulkable}
         tabIndex={-1}
         onClick={(event) => {
           event.stopPropagation();
@@ -119,7 +121,7 @@ export const ApprovalRow = memo(function ApprovalRow({
         className={cn(
           "mt-2 flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
           checked ? "border-accent bg-accent text-accent-ink" : "border-hairline bg-transparent group-hover:border-ink-tertiary",
-          !entry.decidable && "invisible",
+          !bulkable && "invisible",
         )}
       >
         {checked && <Check size={11} strokeWidth={3} aria-hidden="true" />}

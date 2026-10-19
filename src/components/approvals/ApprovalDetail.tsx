@@ -10,6 +10,7 @@ import { useMemo } from "react";
 import type { InboxApproval, InboxDestination } from "../../../shared/approvals-inbox";
 import { PendingApprovalActions, PendingApprovalPanel, pendingApprovals } from "@/components/PendingApproval";
 import { QuestionCard } from "@/components/QuestionCard";
+import { withoutIds } from "@/lib/approvals-inbox";
 import { cn } from "@/lib/cn";
 import { activeLocale, t } from "@/lib/i18n";
 import type { Bot, Message } from "@/state/store";
@@ -54,6 +55,7 @@ export function ApprovalDetail({
   bot,
   now,
   onDecided,
+  onDecideFailed,
   onOpenThread,
   onCancelTurn,
 }: {
@@ -61,6 +63,8 @@ export function ApprovalDetail({
   bot?: Bot;
   now: number;
   onDecided: (decision: "allow" | "deny" | "answer") => void;
+  /** the server refused the answer: the card comes back */
+  onDecideFailed: () => void;
   onOpenThread: () => void;
   onCancelTurn: () => void;
 }) {
@@ -69,7 +73,7 @@ export function ApprovalDetail({
   const pending = useMemo(() => (message && entry.kind !== "question" ? pendingApprovals([message])[0] : undefined), [message, entry.kind]);
   // A meeting or a terminal is answered on its own card in the conversation.
   const ownCard = Boolean(card?.meetingRequest || card?.terminalRequest);
-  const where = entry.roomName ?? entry.threadTitle;
+  const where = withoutIds(entry.roomName ?? entry.threadTitle ?? "");
   const Destination = entry.destination ? DESTINATION_ICON[entry.destination] : undefined;
   const at = new Date(entry.at);
 
@@ -134,7 +138,7 @@ export function ApprovalDetail({
           </div>
         ) : entry.kind === "question" && message ? (
           <div className="px-5 py-4" data-inbox-question="">
-            <QuestionCard threadId={entry.threadId} bot={{ name: entry.botName }} message={message} onAnswered={() => onDecided("answer")} />
+            <QuestionCard threadId={entry.threadId} bot={{ name: entry.botName }} message={message} onAnswered={() => onDecided("answer")} onAnswerFailed={onDecideFailed} />
           </div>
         ) : pending && !ownCard ? (
           <>
@@ -149,6 +153,7 @@ export function ApprovalDetail({
               variant="inbox"
               onCancelTurn={onCancelTurn}
               onDecided={onDecided}
+              onDecideFailed={onDecideFailed}
             />
           </>
         ) : (

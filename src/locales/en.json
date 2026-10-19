@@ -8331,6 +8331,7 @@
   "approvals.tab.pending": "Waiting ({count})",
   "approvals.tab.history": "History",
   "approvals.error": "Couldn't load approvals.",
+  "approvals.answerFailed": "That answer didn't go through. The card is back so you can try again.",
   "approvals.loading": "Loading…",
   "approvals.filter.all": "All",
   "approvals.filter.mine": "Mine",

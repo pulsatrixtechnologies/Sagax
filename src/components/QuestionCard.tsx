@@ -125,6 +125,7 @@ export function QuestionCard({
   bot,
   message,
   onAnswered,
+  onAnswerFailed,
 }: {
   /** answered by THREAD, so a question raised inside a room settles the
    * same way as one in a 1:1 chat */
@@ -134,6 +135,8 @@ export function QuestionCard({
   message: Message;
   /** told once the answer was sent (the Approvals screen shows what follows) */
   onAnswered?: () => void;
+  /** the answer did not reach the bot: undo what onAnswered showed */
+  onAnswerFailed?: () => void;
 }) {
   const { dispatch } = useStore();
   const card = message.card;
@@ -216,7 +219,7 @@ export function QuestionCard({
       message: answer,
       // The answer never reached the bot, so the card must go back to
       // being answerable rather than sitting there looking settled.
-      onError: () => setSent(null),
+      onError: () => { setSent(null); onAnswerFailed?.(); },
     });
   }
 

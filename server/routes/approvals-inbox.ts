@@ -20,6 +20,9 @@ import {
   type InboxBulkRefusal,
   type InboxPayload,
 } from "../../shared/approvals-inbox.ts";
+import type { OptionCardData } from "../../shared/wire.ts";
+import { liveDecisionRefusal } from "../../shared/live-approval.ts";
+import { approvalTypeOf } from "../approval-type.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -39,6 +42,18 @@ export interface ApprovalsInboxDeps {
   scopes(auth: RequestAuth, viewer: InboxViewer): InboxPayload["scopes"];
   /** Answer one card once, allow or deny, as this person. */
   answer(auth: RequestAuth, item: { threadId: string; requestId: string }, decision: "allow" | "deny"): Promise<InboxAnswer>;
+}
+
+/** A card answered on its own only, never in a bulk answer: a send in the
+ * person's name (outboundRequest, "Send as you?"), an admin's card, a bot
+ * act, a team memory, a terminal, a meeting, anything that is not a plain
+ * tool card or that a spoken answer could not settle either
+ * (liveDecisionRefusal). */
+export function inboxSpecialCard(card: OptionCardData): boolean {
+  return Boolean(card.outboundRequest || card.adminApproval || card.botActRequest || card.cwActionRequest || card.emailSendRequest
+    || card.teamMemoryRequest || card.confidentialMemoryRequest || card.terminalRequest || card.meetingRequest
+    || card.routineRequest || card.skillRequest || (card as { tighteningRequest?: unknown }).tighteningRequest
+    || approvalTypeOf(card) !== "tool" || liveDecisionRefusal(card));
 }
 
 /** Fields a single card's answer may carry and a bulk answer never does. */

@@ -77,6 +77,8 @@ function fixtures(n: number): InboxApproval[] {
   ];
   for (let i = 0; i < n; i++) {
     if (i < base.length) { out.push(base[i]!()); continue; }
+    // a send in the person's name: answered on its own card, never in a bulk answer
+    if (i === 6) { out.push(permission(i, i, 18, "mcp__outlook__send_mail", { to: "client@example.com", subject: "Suivi de votre demande" }, { risk: "write", bulk: "special" }, { outboundRequest: { tool: "mcp__outlook__send_mail", app: "Outlook" } })); continue; }
     const kind = i % 5;
     if (kind === 0) out.push(question(i, i, i * 7));
     else if (kind === 1) out.push(permission(i, i, i * 9, "Read", { file_path: `/Users/ada/Projets/app/docs/guide-${i}.md` }, { risk: "read" }));
@@ -85,7 +87,7 @@ function fixtures(n: number): InboxApproval[] {
     else out.push(permission(i, i, i * 50, "mcp__github__list_issues", { repo: "example/app", state: "open" }, { risk: "read" }));
   }
   if (ORG && n > 0) {
-    out.push({ ...permission(900, 3, 12, "Bash", { command: "kubectl rollout restart deploy/web" }, { risk: "execute", destination: "server" }, { adminApproval: true }), scope: "org", ownerName: "Bob" });
+    out.push({ ...permission(900, 3, 12, "Bash", { command: "kubectl rollout restart deploy/web" }, { risk: "execute", destination: "server", bulk: "special" }, { adminApproval: true }), scope: "org", ownerName: "Bob" });
     out.push({ key: "t901:req-901", threadId: "t901", requestId: "req-901", botId: "b-other", botName: "Orion", scope: "team", kind: "permission", at: NOW - 140 * MIN, decidable: false, bulk: "not-yours", waitingOn: "owner", waitingOnName: "Carla", ownerName: "Carla", tool: "Bash", risk: "execute" });
   }
   return out;

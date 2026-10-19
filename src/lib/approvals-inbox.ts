@@ -28,6 +28,8 @@ export async function bulkAnswer(decision: "allow" | "deny", entries: readonly P
 }
 
 const POLL_MS = 6_000;
+/** The History reads 30 days of the decision log: polled far less often. */
+const HISTORY_POLL_MS = 60_000;
 
 /** The list while the screen is open: loaded at once, again every few
  * seconds while the window is visible, and whenever `signal` changes (the
@@ -70,9 +72,9 @@ export function useInbox(history: boolean, signal: string): {
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
-    }, POLL_MS);
+    }, history ? HISTORY_POLL_MS : POLL_MS);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, history]);
 
   return { data, error, refresh, arrived };
 }
@@ -157,18 +159,6 @@ export function inboxPreview(entry: InboxApproval): string {
   const first = (card.subtitle ?? "").split("\n").find((line) => line.trim()) ?? "";
   if (!first || /^\s*[{[]/.test(first)) return "";
   return withoutIds(first).slice(0, 240);
-}
-
-/** Where to go to see the card in its conversation. */
-export function inboxThreadAction(entry: InboxApproval, groups: ReadonlyArray<{ id: string; threadId: string; tasks?: ReadonlyArray<{ threadId: string }> }>):
-  | { type: "switchTask"; botId: string; threadId: string }
-  | { type: "switchGroupTask"; groupId: string; threadId: string }
-  | { type: "select"; id: string } {
-  const group = groups.find((candidate) => candidate.threadId === entry.threadId || candidate.tasks?.some((task) => task.threadId === entry.threadId));
-  if (group) {
-    return group.threadId === entry.threadId ? { type: "select", id: group.id } : { type: "switchGroupTask", groupId: group.id, threadId: entry.threadId };
-  }
-  return { type: "switchTask", botId: entry.botId, threadId: entry.threadId };
 }
 
 export { inboxKey };

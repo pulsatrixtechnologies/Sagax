@@ -8318,6 +8318,7 @@
   "approvals.tab.pending": "En attente ({count})",
   "approvals.tab.history": "Historique",
   "approvals.error": "Impossible de charger les approbations.",
+  "approvals.answerFailed": "Cette réponse n'est pas passée. La carte est revenue pour réessayer.",
   "approvals.loading": "Chargement…",
   "approvals.filter.all": "Toutes",
   "approvals.filter.mine": "Les miennes",

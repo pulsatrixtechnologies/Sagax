@@ -976,7 +976,7 @@ import { CloudAgentManager, type CloudAgentCompletionEvent } from "./cloud-agent
 import { createProviderRegistry } from "./cloud-agents/providers/registry.ts";
 import { createCloudAgentRoutes } from "./routes/cloud-agents.ts";
 import { createCodeRoutes } from "./routes/code.ts";
-import { createApprovalsInboxRoutes, type InboxAnswer, type InboxViewer } from "./routes/approvals-inbox.ts";
+import { createApprovalsInboxRoutes, inboxSpecialCard, type InboxAnswer, type InboxViewer } from "./routes/approvals-inbox.ts";
 import { INBOX_HISTORY_MAX, inboxKey, type InboxApproval, type InboxBulkRefusal, type InboxDestination, type InboxHistoryEntry, type InboxKind, type InboxScope } from "../shared/approvals-inbox.ts";
 import { PerspicaxAgentsClient } from "./cloud-agents/perspicax-client.ts";
 import { SubscriptionDepositor } from "./cloud-agents/subscription-depositor.ts";
@@ -10269,9 +10269,7 @@ function inboxBulkVerdict(threadId: string, card: NonNullable<Message["card"]>, 
   if (kind === "question") return "question";
   if (kind === "proposal") return "proposal";
   if (store.isConfidentialThread(threadId)) return "confidential";
-  if (card.botActRequest || card.cwActionRequest || card.emailSendRequest || card.teamMemoryRequest || card.confidentialMemoryRequest
-    || card.terminalRequest || card.meetingRequest || (card as { tighteningRequest?: unknown }).tighteningRequest
-    || approvalTypeOf(card) !== "tool") return "special";
+  if (inboxSpecialCard(card)) return "special";
   return needsKey ? "needs-key" : true;
 }
 
@@ -10306,8 +10304,10 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
       else if (ownerId === viewer.principalId) { scope = "org"; decidable = false; waitingOn = "admin"; }
       else continue;
     } else if (ownerId === viewer.principalId) {
+      // the same answerer rules as the card in the conversation
       scope = "mine";
-      decidable = true;
+      decidable = !cardAnswerRefusal(auth, threadId, card.requestId!, "allow") && !approvalAnswerRefusal(auth, threadId, card.requestId!);
+      if (!decidable && !readable) continue;
     } else {
       // a team manager sees what waits on the people of their teams, never
       // its content, and never a confidential thread
@@ -10319,7 +10319,7 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
       waitingOn = "owner";
     }
     // the card exactly as this person's conversation shows it
-    const shown = decidable ? projectMessages(threadId, [message], approvalViewer)[0] as Message | undefined : undefined;
+    const shown = decidable && readable ? projectMessages(threadId, [message], approvalViewer)[0] as Message | undefined : undefined;
     if (decidable && !question && !shown?.card?.requestId) continue;
     const type = approvalTypeOf(card);
     const kind: InboxKind = question ? "question"
@@ -10335,8 +10335,8 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
       requestId: card.requestId!,
       botId: bot.id,
       botName: bot.name,
-      ...(group ? { roomName: group.name } : {}),
-      ...(title && !confidential ? { threadTitle: String(title).slice(0, 200) } : {}),
+      ...(group && scope !== "team" ? { roomName: group.name } : {}),
+      ...(title && !confidential && scope !== "team" ? { threadTitle: String(title).slice(0, 200) } : {}),
       scope,
       kind,
       at: message.at,
@@ -10377,8 +10377,10 @@ function inboxHistory(auth: RequestAuth, viewer: InboxViewer): InboxHistoryEntry
     .map((entry) => {
       const row = entry as Extract<typeof entry, { type: "approval" }>;
       const via = row.who.endsWith("(console)") ? "console" as const : undefined;
+      // a member reads names, never someone's email address
+      const who = admin ? row.who : row.who.replace(/[^\s@()]+@[^\s@()]+\.[^\s@()]+/g, "someone");
       return {
-        at: row.at, decision: row.what, who: row.who,
+        at: row.at, decision: row.what, who,
         ...(row.source === "question" ? { question: true as const } : {}),
         ...(row.bot ? { botName: row.bot } : {}),
         ...(row.tool ? { tool: row.tool } : {}),
@@ -10401,13 +10403,14 @@ async function answerInboxCard(auth: RequestAuth, threadId: string, requestId: s
   if (card.answered || card.dismissed || card.expired) return { ok: false, status: 409, code: "gone", message: "This approval was already answered or has expired." };
   if (stepUpGate(ruleManager(auth), threadId, requestId, decision, {}, undefined)) return { ok: false, status: 403, code: "needs-key", message: "This approval needs your security key." };
   if (delegatedRequest() && store.isConfidentialThread(threadId)) return { ok: false, status: 403, code: "confidential", message: CONFIDENTIAL_CARD_DELEGATED };
-  if (isConfidentialMemoryCard(threadId, requestId) || isBotActCard(threadId, requestId)) return { ok: false, status: 400, code: "special", message: "Answer this one on its own card." };
+  if (inboxSpecialCard(card) || isConfidentialMemoryCard(threadId, requestId) || isBotActCard(threadId, requestId)) return { ok: false, status: 400, code: "special", message: "Answer this one on its own card." };
   const adminCheck = adminApprovalCheck(auth, threadId, requestId);
   if (adminCheck === "refused") return { ok: false, status: 403, code: "not-yours", message: ADMIN_APPROVAL_REQUIRED.error };
   const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, threadId, requestId);
   if (ownerRefusal) return { ok: false, status: 403, code: "not-yours", message: ownerRefusal };
   const refusal = cardAnswerRefusal(auth, threadId, requestId, decision);
   if (refusal) return { ok: false, status: 403, code: "not-yours", message: refusal };
+  let answer: InboxAnswer = { ok: true };
   await answeringCardAs(auth, threadId, requestId, async () => {
     // a safety hold (server/safety-review.ts) is settled where it waits
     if (settleSafetyHold(requestId, decision)) {
@@ -10421,10 +10424,12 @@ async function answerInboxCard(auth: RequestAuth, threadId: string, requestId: s
       ? (group.busyBotId ? store.bot(group.busyBotId) : undefined) ?? (message.from ? store.bot(message.from.botId) : undefined)
       : store.botByThread(threadId);
     const requestOwner = owner ? botForThread(owner.id, threadId) : null;
-    await answerRequest(threadId, requestOwner?.modelSelection.instanceId ?? "", requestId, decision,
+    const outcome = await answerRequest(threadId, requestOwner?.modelSelection.instanceId ?? "", requestId, decision,
       decision === "deny" ? "Denied by the user." : undefined, owner ? { id: owner.id, name: owner.name } : undefined, false, false);
+    // nothing ran: never counted as answered
+    if (outcome === "unavailable") answer = { ok: false, status: 409, code: "gone", message: "The request is no longer open." };
   });
-  return { ok: true };
+  return answer;
 }
 
 /** Slice 7: answer a plain tool card from the Perspicax console, once,

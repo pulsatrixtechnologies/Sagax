@@ -16,6 +16,9 @@ interface KeyLike {
   defaultPrevented?: boolean;
 }
 
+/** Where Enter belongs to the focused control (it presses it), not the screen. */
+const OWN_ENTER = "button, a, [role='button'], [role='tab']";
+
 /** Where a key belongs to the control, not the screen. */
 const OWN_KEYS = "input, textarea, select, [contenteditable=''], [contenteditable='true'], [data-ask-choice], [role='dialog'], [role='menu']";
 
@@ -27,7 +30,9 @@ export function inboxKeyAction(event: KeyLike): InboxKeyAction | null {
   switch (event.key) {
     case "j": case "J": case "ArrowDown": return "next";
     case "k": case "K": case "ArrowUp": return "previous";
-    case "Enter": return event.shiftKey ? null : "open";
+    case "Enter":
+      if (target && typeof target.closest === "function" && target.closest(OWN_ENTER)) return null;
+      return event.shiftKey ? null : "open";
     case "Escape": return "close";
     case "y": case "Y": return "allow";
     case "n": case "N": return "deny";

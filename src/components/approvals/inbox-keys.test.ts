@@ -23,6 +23,11 @@ describe("inboxKeyAction", () => {
     expect(inboxKeyAction({ key: "y", isComposing: true })).toBeNull();
     expect(inboxKeyAction({ key: "y", defaultPrevented: true })).toBeNull();
     expect(inboxKeyAction({ key: "Enter", shiftKey: true })).toBeNull();
+    // Enter on a focused button, link or tab presses it, never opens the card
+    for (const selector of ["button", "a", "[role='button']", "[role='tab']"]) {
+      expect(inboxKeyAction({ key: "Enter", target: at(selector) as unknown as EventTarget })).toBeNull();
+    }
+    expect(inboxKeyAction({ key: "Enter", target: at(null) as unknown as EventTarget })).toBe("open");
   });
 });
 

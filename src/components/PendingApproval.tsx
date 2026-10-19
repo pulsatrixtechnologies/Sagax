@@ -308,6 +308,7 @@ export function PendingApprovalActions({
   onCancelTurn,
   variant = "composer",
   onDecided,
+  onDecideFailed,
 }: {
   pending: Pending;
   threadId: string;
@@ -319,6 +320,8 @@ export function PendingApprovalActions({
   variant?: "composer" | "inbox";
   /** told once an answer was sent (the Approvals screen shows what follows) */
   onDecided?: (behavior: "allow" | "deny") => void;
+  /** the server refused that answer (a 403, a 409): undo what onDecided showed */
+  onDecideFailed?: () => void;
 }) {
   const { dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
@@ -353,6 +356,7 @@ export function PendingApprovalActions({
       always: always && !pending.allowKey && pending.allowSession ? true : undefined,
       rememberCommand: rememberCommand || undefined,
       rule,
+      ...(onDecideFailed ? { onError: () => onDecideFailed() } : {}),
     });
   };
 

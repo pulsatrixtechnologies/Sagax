@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { inboxKey, type InboxApproval } from "../../shared/approvals-inbox.ts";
 import { json, readBody } from "../harness/http.ts";
 import type { RequestAuth } from "../request-auth.ts";
-import { createApprovalsInboxRoutes, type ApprovalsInboxDeps } from "./approvals-inbox.ts";
+import { createApprovalsInboxRoutes, inboxSpecialCard, type ApprovalsInboxDeps } from "./approvals-inbox.ts";
 import { PASS } from "./table.ts";
 
 function entry(id: string, patch: Partial<InboxApproval> = {}): InboxApproval {
@@ -133,5 +133,17 @@ describe("POST /api/approvals/bulk", () => {
     expect(answered).toEqual([{ requestId: "r1", decision: "allow" }]);
     expect(out.body.results).toHaveLength(2);
     expect(out.body.results.find((row: any) => row.key === "t1:r2").code).toBe("not-yours");
+  });
+});
+
+describe("inboxSpecialCard", () => {
+  const plain = { requestId: "r1", tool: "Bash", options: [] } as never;
+  it("keeps a plain tool card bulk-answerable", () => {
+    expect(inboxSpecialCard({ ...(plain as object), title: "Run" } as never)).toBe(false);
+  });
+  it("never lets a send in the person's name, an admin's card or a team memory into a bulk answer", () => {
+    expect(inboxSpecialCard({ ...(plain as object), outboundRequest: { tool: "send_email", app: null } } as never)).toBe(true);
+    expect(inboxSpecialCard({ ...(plain as object), adminApproval: true } as never)).toBe(true);
+    expect(inboxSpecialCard({ ...(plain as object), teamMemoryRequest: { section: "s", entryId: "e" } } as never)).toBe(true);
   });
 });

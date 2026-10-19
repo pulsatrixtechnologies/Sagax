@@ -73,7 +73,7 @@ export function ApprovalsHistory({ rows, query, onQuery, loading }: {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13.5px] text-ink">{title.charAt(0).toLocaleUpperCase() + title.slice(1)}</div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[12px] text-ink-secondary">
-                      {row.botName && <span className="font-medium text-ink-secondary">{row.botName}</span>}
+                      {row.botName && <span className="font-medium text-ink-secondary">{withoutIds(row.botName)}</span>}
                       {row.botName && <span aria-hidden="true">·</span>}
                       <span>{t("approvals.history.by", { name: whoLabel(row.who) })}</span>
                       {row.via === "call" && <Phone size={11} aria-label={t("approvals.history.viaCall")} />}
