@@ -942,7 +942,7 @@ import { createViewerBotOverrideStore } from "./viewer-bot-overrides.ts";
 import { applyViewerModelOverride, crossOwnerSettingsRefusal, sharedBotForViewer, viewerWantsBotNotification } from "../shared/viewer-bot-overrides.ts";
 import { createDesktopAppearanceRoutes } from "./routes/desktop-appearance.ts";
 import { createDesktopAppearanceStore } from "./desktop-appearance.ts";
-import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvents, activityEvents, createAchievementStore, routineRunEvents, type AchievementEvent } from "./achievements.ts";
+import { achievementFrameAllowed, achievementRequestEvents, roomPeopleCount, achievementSendEvents, activityEvents, createAchievementStore, routineRunEvents, type AchievementEvent } from "./achievements.ts";
 import { createAchievementRoutes } from "./routes/achievements.ts";
 import { lockedLookChange, masteryDelegationFacts, masteryFrameFacts, masteryRequestFacts, masterySendFacts, modelFamily, threadCensus, type LookRefusal, type PersonFact } from "./achievements-mastery.ts";
 import { grandfatheredFromBots, migratedCrabFromBots } from "../shared/achievements.ts";
@@ -33177,7 +33177,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           recordAchievements(achiever, achievementRequestEvents({ method, path, status: res.statusCode }, {
             group: (id) => {
               const group = store.group(id);
-              return group ? { peopleDm: group.peopleDm === true, humans: (group.humanIds?.length ?? 0) || 1, bots: group.memberIds?.length ?? 0 } : null;
+              return group ? { peopleDm: group.peopleDm === true, humans: roomPeopleCount(group.humanIds), bots: group.memberIds?.length ?? 0 } : null;
             },
           }));
           try {
@@ -36281,14 +36281,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (!allowedRoster(memberIds)) {
             return json(res, 403, { error: "include yourself and only active, allowed peers from your section" });
           }
-          const group = createChannel({
+          // Organization server: a room is read through humanIds (channel.read),
+          // so the person whose Primary Bot opens it must be listed or the room
+          // shows only in search. Solo keeps the unlisted room (one viewer).
+          const roomOwnerId = IDENTITY.kind === "perspicax" ? effectiveBotOwner(chief) : "";
+          const created = createChannel({
             name: redactSecretsInText(parsed.data.name), memberIds, section: chief.section,
+            ...(roomOwnerId ? { humanIds: [roomOwnerId] } : {}),
             setup: {
               bulletin: redactSecretsInText(parsed.data.bulletin ?? ""),
               // The Primary Bot leads; on Auto it is the fallback when the decision model is unsure.
               defaultResponder: deciderReady(cfg, "roomRouting") ? { kind: "auto", fallbackBotId: chief.id } : { kind: "member", botId: chief.id },
             },
           });
+          const group = (roomOwnerId && store.patchGroup(created.id, { createdBy: roomOwnerId })) || created;
           internalCapability.createdRooms = (internalCapability.createdRooms ?? 0) + 1;
           return json(res, 201, { id: group.id, name: group.name, section: group.section || "General", memberIds: group.memberIds, memberCount: group.memberIds.length });
         }
