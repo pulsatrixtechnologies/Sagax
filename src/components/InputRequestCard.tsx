@@ -61,7 +61,7 @@ export function InputRequestCard({ message }: { message: Message }) {
             <div className="flex gap-2">
               <button
                 type="button"
-                className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+                className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-ink disabled:opacity-50"
                 disabled={!answer.trim() || sending}
                 onClick={() => void send()}
               >
