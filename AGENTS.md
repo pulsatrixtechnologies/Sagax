@@ -4404,6 +4404,30 @@ kernel OOM-killed engine children within two minutes of each start.
 - Covered by `server/engine-start-gate.test.ts`. Measured in a 5 GiB
   container with 16 overdue routines: peak 5.25 GB and 37 engine processes
   before, 1.40 GB and 3 after.
+- After boot, routine turns keep a steady limit (`routineEngineGate`,
+  `SAGAX_ROUTINE_ENGINE_SLOTS`, default 3 on a Linux server, 0 = off, off
+  on the desktop app). Same rules, no window.
+
+## Engine memory guard (2026-10-19)
+
+The GOX server (5 GiB container) was OOM-killed four times on 2026-10-19:
+the kernel's task lists showed 11 to 15 `claude` CLIs (~125 MiB each) and
+133 to 174 Node MCP proxies (~21 MiB each, ~13 per Claude session), so about
+400 MiB per live session, kept ten minutes after each turn with no bound;
+the kernel then killed the server itself. `server/engine-memory-guard.ts`:
+
+- `IdleEnginePool`: at most `SAGAX_MAX_IDLE_ENGINE_SESSIONS` finished
+  sessions stay warm (default 4 on a Linux server, unbounded on desktop);
+  the oldest idle one closes through `releaseWarmSession`. A running turn or
+  a live call's process is never closed.
+- `MemoryWatch` (cgroup v2/v1, every `SAGAX_MEMORY_WATCH_MS`, 15 s): at
+  `SAGAX_MEMORY_HIGH_RATIO` (0.75) closes every idle session; at
+  `SAGAX_MEMORY_CRITICAL_RATIO` (0.88) logs `[memory] ALERT critical` and
+  holds new routine turns (max 10 min); logs `[memory] ALERT kernel
+  OOM-killed` on a new `oom_kill` and a `[memory] used ...` line every 5 min.
+- Engines and all their descendants get `oom_score_adj`
+  `SAGAX_CHILD_OOM_SCORE_ADJ` (500; `spawnCli` plus a sweep each tick), so an
+  OOM kill takes one engine (one turn), not the server.
 
 ## App icon: the Pulsatrix logo (2026-10-14)
 

@@ -23,6 +23,7 @@ import { sagaxFolder } from "../shared/human-id.ts";
 import type { Readable, Writable } from "node:stream";
 import { join, posix, win32 } from "node:path";
 import { engineStartGate } from "./engine-start-gate.ts";
+import { markOomVictim, memoryGuardSettings } from "./engine-memory-guard.ts";
 import { resolveCliSpawn, splitCliString, type ResolvedSpawn } from "./env-path.ts";
 
 export function resolveCli(cli: string, args: string[] = [], env?: NodeJS.ProcessEnv): ResolvedSpawn {
@@ -108,6 +109,7 @@ export function assertSafeCliArgv(
 // Only spawnCli establishes a private POSIX group. A plain spawned child
 // (for example inside an MCP gate) may share our own group: never signal it.
 const cliGroups = new WeakSet<ChildProcess>();
+const CHILD_OOM_SCORE_ADJ = memoryGuardSettings().childOomScoreAdj;
 const stopping = new WeakMap<ChildProcess, Promise<boolean>>();
 
 export function spawnCli(
@@ -124,6 +126,9 @@ export function spawnCli(
     ...(process.platform === "win32" ? { windowsHide: true } : { detached: true }),
   }) as ChildProcessByStdio<Writable, Readable, Readable>; // callers always pipe all three
   if (process.platform !== "win32") cliGroups.add(child);
+  // An engine dies before the server when the container runs out of memory
+  // (server/engine-memory-guard.ts); its MCP proxies inherit the score.
+  markOomVictim(child.pid, CHILD_OOM_SCORE_ADJ);
 
   // A write to a dying child's stdin fails differently per platform, and one
   // of the ways is fatal. On POSIX the kill is synchronous, the stream is

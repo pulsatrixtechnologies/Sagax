@@ -296,7 +296,9 @@ import { ComputerControl } from "./computer-control.ts";
 import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts";
 import { registerEnginesBinDir } from "./engine-install.ts";
 import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineCheck } from "./engines-self-check.ts";
-import { engineStartGate, type EngineSlot } from "./engine-start-gate.ts";
+import { engineStartGate, routineEngineGate, type EngineSlot } from "./engine-start-gate.ts";
+import { IdleEnginePool, MemoryWatch, memoryGuardSettings } from "./engine-memory-guard.ts";
+import { sessionIdlePolicy } from "./drivers/session-idle.ts";
 import { serveStaticUi } from "./static-ui.ts";
 import { coalescedRun } from "./coalesced-run.ts";
 import type { EarlyListener } from "./early-listener.ts";
@@ -11275,7 +11277,14 @@ async function holdBootEngineSlot(threadId: string, label: string, instance: Pro
   }
   watchdog.setWaitingOnComputer(threadId, true);
   try {
-    const slot = await engineStartGate.acquire("turn", label);
+    // A container near its memory limit starts no routine engine until
+    // usage falls back (server/engine-memory-guard.ts); a person's own
+    // turn never waits here.
+    if (memoryWatch.current() === "critical") console.log(`[memory] routine ${label} waits: memory critical`);
+    await memoryWatch.whenBelowCritical(ROUTINE_MEMORY_WAIT_MS);
+    // During boot the boot gate; after it, the steady routine limit.
+    const gate = engineStartGate.booting ? engineStartGate : routineEngineGate;
+    const slot = await gate.acquire("turn", label);
     if (slot.gated) bootEngineSlots.set(threadId, { slot, instance });
   } finally {
     watchdog.setWaitingOnComputer(threadId, false);
@@ -11302,6 +11311,11 @@ bus.subscribe((event: RuntimeEvent) => {
 bus.subscribe((event: RuntimeEvent) => {
   if (shouldIgnoreProviderEvent(event)) return;
   if (event.type === "turn.completed" || event.type === "session.exited") {
+    const engine = runningTurnEngines.get(event.threadId);
+    if (event.type === "turn.completed" && engine?.adapter.releaseWarmSession) {
+      const threadId = event.threadId;
+      idleEngines.noteIdle(threadId, () => engine.adapter.releaseWarmSession?.(threadId));
+    } else idleEngines.forget(event.threadId);
     runningTurnEngines.delete(event.threadId);
     const rows = endMemoryTurn(event.threadId);
     if (rows.length && (store.botByThread(event.threadId) || store.groupByThread(event.threadId))) {
@@ -12471,6 +12485,28 @@ function continueComputerSelection(threadId: string, generation: string | undefi
 /** The engine that dispatched each live turn. A bot's settings may change
  * mid-turn; an interrupt or steer must reach the engine actually running. */
 const runningTurnEngines = new Map<string, NonNullable<ReturnType<typeof registry.get>>>();
+/** Engine memory guard (server/engine-memory-guard.ts): bounds the finished
+ * sessions kept warm, closes them under memory pressure, holds routine
+ * starts at the critical mark, and makes engines the kernel's OOM victims
+ * instead of the server. */
+const memoryGuard = memoryGuardSettings();
+const ROUTINE_MEMORY_WAIT_MS = 10 * 60_000;
+const idleEngines = new IdleEnginePool({
+  maxIdle: memoryGuard.maxIdle,
+  ttlMs: sessionIdlePolicy("CLAUDE").idleMs,
+  // a live call keeps its warm process between spoken turns
+  exempt: (threadId) => Boolean(voiceCalls.active(threadId)),
+  log: (line) => console.log(line),
+});
+const memoryWatch = new MemoryWatch({
+  pool: idleEngines,
+  intervalMs: memoryGuard.intervalMs,
+  highRatio: memoryGuard.highRatio,
+  criticalRatio: memoryGuard.criticalRatio,
+  childOomScoreAdj: memoryGuard.childOomScoreAdj,
+  liveEngines: () => runningTurnEngines.size,
+});
+memoryWatch.start();
 function runningTurnInstance(bot: BotRecord | null | undefined, threadId: string): ReturnType<typeof registry.get> {
   // A turn always runs on the bot's own engine, wherever it works.
   return runningTurnEngines.get(threadId) ?? (bot ? registry.get(bot.modelSelection.instanceId) : null);
@@ -18239,6 +18275,7 @@ async function startTurn(
         ...(onCall ? { budget: CALL_RECALL_BUDGET } : {}),
       });
       runningTurnEngines.set(threadId, instance);
+      idleEngines.noteBusy(threadId);
       // The prompt carries the soul as saved now. If it changed during setup,
       // decide again from what is actually sent — except on a continuation
       // wake inside an automation run, where a delegated result is reviving
@@ -18300,7 +18337,9 @@ async function startTurn(
       // A routine run while the server boots waits for an engine start slot
       // (server/engine-start-gate.ts): the runs that came due during a
       // restart start two at a time instead of every engine at once.
-      if (opts?.automationSource && !warmOnly && !onCall && engineStartGate.booting) {
+      // After boot, routine turns keep a steady limit (SAGAX_ROUTINE_ENGINE_SLOTS)
+      // and wait while memory is critical (server/engine-memory-guard.ts).
+      if (opts?.automationSource && !warmOnly && !onCall) {
         await holdBootEngineSlot(threadId, `${bot.name} (${instance.driverKind})`, instance);
         if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped while waiting for an engine slot");
       }
@@ -21346,6 +21385,7 @@ async function runGroupMemberTurn(
     turnPromptBytes.set(threadId, { stable: Buffer.byteLength(roomSystem.stable), volatile: Buffer.byteLength(roomSystem.volatile) });
     markWorkspaceUse(bot.id, promptSectionPaths(roomSystem.sections));
     runningTurnEngines.set(threadId, instance);
+    idleEngines.noteBusy(threadId);
     // notes only in a room: a private chat reaches a room through the
     // explicit, disclosed session_search, never automatically
     const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName });
