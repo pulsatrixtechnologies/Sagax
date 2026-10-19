@@ -391,8 +391,9 @@ decrypted archive, the staging and the restored folder).
     and the like (`engineCredentialPath`, list in the file), Sagax's
     `.pulsabot-login.json` marker and Claude's `.claude.json.backup*`;
   - anywhere, even a work folder: `.netrc`, `_netrc`, `.git-credentials`,
-    `.npmrc`, `.yarnrc.yml`, `.pypirc`, `.pgpass`, SSH private keys
-    (`credentialFileName`; reconnect category `files`);
+    `.pypirc`, `.pgpass`, SSH private keys (`credentialFileName`; reconnect
+    category `files`); `.npmrc` and `.yarnrc.yml` are copied without their
+    tokens (`withoutRegistrySecrets`);
   - every sealed store or key of a person, `principals/<id>/*.enc` and
     `*.key` (`connections.enc`, `credential-vault.enc`, `engine-api-keys.enc`,
     `mcp-oauth.enc`, `cloud-agent-credentials.enc`, any future one);
@@ -410,9 +411,11 @@ decrypted archive, the staging and the restored folder).
   `opencode.json`, the MCP files) are copied by `withoutEngineSecrets`:
   without any key whose name holds a secret word (`secretFieldName`: words
   of the name, so `openai_api_key`, `github_token`, `apiToken`, `GITHUB_PAT`,
-  `db_password`, `credentials`; not `api_key_env`, `envKey`, `max_tokens`),
+  `db_password`, `credentials`, any name ending in `key`: `key`,
+  `OPENAI_KEY`; not `api_key_env`, `envKey`, `max_tokens`, `sort_key`),
   without any value shaped like a key (`secretValue`: `sk-`, `ghp_`, JWT,
-  `Bearer`, PEM, `user:pass@` URL, also inside `args`) and without the
+  `Bearer`, PEM, `user:pass@` URL, also inside `args`), the argument after
+  a secret flag (`--token <v>`, `--api-key=<v>`) and without the
   values of every `env` and `headers` map. TOML: dotted keys, inline tables,
   `[x.env.y]` tables, multi-line arrays and strings (small reader in the
   file). YAML: parsed by `yaml` and edited in place (flow maps, block and
@@ -426,8 +429,10 @@ decrypted archive, the staging and the restored folder).
   (`destinationSignInFile`, `keptInPlace`; a missing HMAC key is made again
   at start, so old shared links change only on another machine), and
   `carryDestinationSecrets` puts the destination's own secrets back into
-  the restored tree (under `principals/`, `org/`, `engine-policies/`
-  always; in another folder only when the restored tree still has it)
+  the restored tree, only under `org/`, `engine-policies/` and
+  `principals/<id>/` when the archive's principals.json names the same
+  person behind that id (subject, else local operator, else email;
+  `samePrincipals`), never elsewhere
   (and the Claude sign-in fields into a restored `.claude.json`).
 - An older archive that holds them still restores: `withoutEngineCredentials`
   drops them at staging (manifest recounted, warnings) and `prepareRestore`
@@ -440,6 +445,10 @@ decrypted archive, the staging and the restored folder).
   preview and Settings > Backups after the restore (`GET
   /api/workspace-backup/status` `lastRestoreReconnect`) show it
   (`WorkspaceBackupReconnectList`, keys `backup.reconnect.*`).
+- A bot export (`server/bot-zip.ts` walkFiles) leaves out the same sign-in
+  files, `.enc`, `.pem`, `.p12`, `.pfx`, a `.key` that is not a Keynote zip,
+  `.env` (not its templates), `.ssh/`, `.aws/`, `.docker/` and an `.npmrc`
+  with a token (`exportedSecretFile`).
 - `comms-tokens/` and an engine home's `tmp/`, `.tmp/`, `.cache/`,
   `Library/Caches/` (`disposableEngineHomePath`) are never exported.
 - Not covered: secrets a person typed into a conversation, a note or a

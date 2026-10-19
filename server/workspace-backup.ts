@@ -24,9 +24,9 @@ import { escapeAttribute, splitTranscriptAttachments } from "../src/lib/composer
 import { WORKSPACE_BACKUP_CLIENT_KEYS } from "../shared/workspace-backup-client.ts";
 import {
   CLAUDE_AUTH_FIELDS, configSecretCounts, confidentialDataScopePath, destinationSignInFile, disposableEngineHomePath, engineSettingsPath, ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath,
-  portableWorkspaceConfig, ReconnectTally, redownloadedOrgLibraryPath, restoredWorkspaceConfig, savedSignInPath, secretCategory, withoutEngineSecrets,
+  portableWorkspaceConfig, ReconnectTally, redownloadedOrgLibraryPath, registrySettingsPath, restoredWorkspaceConfig, savedSignInPath, secretCategory, withoutEngineSecrets, withoutRegistrySecrets,
 } from "./workspace-backup-policy.ts";
-import { WORKSPACE_BACKUP_RECONNECT, type WorkspaceBackupClientState, type WorkspaceBackupPrivateMetadata, type WorkspaceBackupSummary } from "../shared/workspace-backup.ts";
+import { WORKSPACE_BACKUP_RECONNECT, type WorkspaceBackupClientState, type WorkspaceBackupPrivateMetadata, type WorkspaceBackupReconnectCategory, type WorkspaceBackupSummary } from "../shared/workspace-backup.ts";
 
 export type { WorkspaceBackupSummary, WorkspaceBackupPrivateMetadata } from "../shared/workspace-backup.ts";
 export const MAX_WORKSPACE_BACKUP_BYTES = 10 * 1024 ** 3;
@@ -490,6 +490,13 @@ function databaseCounts(path: string): { threads: number; messages: number } {
 
 /** A secret left out of a backup, counted for the reconnect list: a
  * folder of phone registrations counts each person's file. */
+/** Settings copied without their secrets: an engine's (withoutEngineSecrets)
+ * and a project's npm or Yarn settings (withoutRegistrySecrets). */
+const scrubbedSettingsPath = (path: string) => engineSettingsPath(path) || registrySettingsPath(path);
+const withoutSettingsSecrets = (path: string, text: string) => registrySettingsPath(path) && !engineSettingsPath(path) ? withoutRegistrySecrets(path, text) : withoutEngineSecrets(path, text);
+const settingsCategory = (path: string, text: string): WorkspaceBackupReconnectCategory =>
+  registrySettingsPath(path) ? "files" : claudeSignedIn(path, text) ? "engines" : "engineSettings";
+
 function tallySecret(reconnect: ReconnectTally, source: string, path: string): void {
   if (/^push-devices$/i.test(path)) {
     try {
@@ -684,7 +691,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
           }
           if (engineKind === "chat" && engineText !== null && chatOfKeys(engineText, engineKeys)) continue;
           let filtered = engineText === null || engineKind === "chat" || !engineKind || engineKind === "database" ? null : engineStoreFiltered(engineKind, engineText, engineKeys);
-          if (engineSettingsPath(path)) {
+          if (scrubbedSettingsPath(path)) {
             // an engine's settings travel without their keys, tokens and
             // env or header values (Claude Code's .claude.json without its
             // signed-in account or API key login)
@@ -692,15 +699,15 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
             let scrubbed: string | null = null;
             try {
               if (text === null) throw new Error("too large");
-              scrubbed = withoutEngineSecrets(path, text);
+              scrubbed = withoutSettingsSecrets(path, text);
             } catch {
               skippedEngineSettings++;
-              reconnect.path(path, "engineSettings");
+              reconnect.path(path, registrySettingsPath(path) ? "files" : "engineSettings");
               continue;
             }
             if (scrubbed !== null) {
               filtered = scrubbed;
-              reconnect.path(path, claudeSignedIn(path, text) ? "engines" : "engineSettings");
+              reconnect.path(path, settingsCategory(path, text));
             }
           }
           if (filtered !== null) {
@@ -997,16 +1004,16 @@ function withoutEngineCredentials(staged: string, manifest: Manifest): Manifest 
   const reconnect = new ReconnectTally(manifest.summary.reconnect);
   for (const entry of dropped) if (entry.type === "file") reconnect.path(entry.path, /^push-devices\//i.test(entry.path) ? "phones" : secretCategory(entry.path));
   for (const entry of manifest.entries) {
-    if (entry.type !== "file" || !engineSettingsPath(entry.path) || savedSignInPath(entry.path)) continue;
+    if (entry.type !== "file" || !scrubbedSettingsPath(entry.path) || savedSignInPath(entry.path)) continue;
     const path = join(data, entry.path);
     try {
       const text = smallText(path);
       if (text === null) throw new Error("too large");
-      const scrubbed = withoutEngineSecrets(entry.path, text);
+      const scrubbed = withoutSettingsSecrets(entry.path, text);
       if (scrubbed !== null) {
         writeFileSync(path, scrubbed, { mode: 0o600 });
         touched.add(entry.path);
-        reconnect.path(entry.path, claudeSignedIn(entry.path, text) ? "engines" : "engineSettings");
+        reconnect.path(entry.path, settingsCategory(entry.path, text));
       }
     } catch {
       // a settings file that cannot be read is not restored
@@ -1463,9 +1470,9 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
   return prepared;
 }
 
-/** The destination's own secrets (savedSignInPath: under its people and
- * engine homes `principals/`, `org/`, `engine-policies/`, and any sealed
- * store, key or sign-in file in another folder) never left this machine, and
+/** The destination's own secrets (savedSignInPath) under its people and
+ * engine homes (`principals/<id>/` of the same person only, `org/`,
+ * `engine-policies/`) never left this machine, and
  * a restore does not take them away: each one goes into the install copy
  * at its path (one the archive cannot hold, savedSignInPath), and a
  * restored `.claude.json` gets back this machine's Claude sign-in fields.
@@ -1480,9 +1487,6 @@ function carryDestinationSecrets(dataDir: string, prepared: string): void {
       const target = join(prepared, relativePath);
       if (entryExists(target)) return;
       const parent = relativePath.split("/").slice(0, -1);
-      // elsewhere (a bot's folder, a work folder) only into a folder the
-      // restored tree still has, never as a new orphan folder
-      if (!PEOPLE_AND_ENGINE_HOMES.has(parent[0]!.toLowerCase()) && !entryExists(join(prepared, ...parent))) return;
       for (let i = 1; i <= parent.length; i++) {
         const path = join(prepared, ...parent.slice(0, i));
         if (!entryExists(path)) folder(path);
@@ -1506,12 +1510,46 @@ function carryDestinationSecrets(dataDir: string, prepared: string): void {
       writeFileSync(target, JSON.stringify(restored, null, 2), { mode: 0o600 });
     } catch { /* absent or unreadable: the restored settings stay as they are */ }
   };
-  for (const top of readdirSync(dataDir)) {
-    if (top.startsWith(".") || keptInPlace(top) || excluded(top)) continue;
-    if (validRelative(top) && lstatSync(join(dataDir, top)).isDirectory()) visit(top);
-  }
+  visit("org");
+  visit("engine-policies");
+  // a person's only to the same person: an archive whose principal id names
+  // someone else (another account behind the same id) never receives this
+  // machine's secrets of that id; that person reconnects
+  const same = samePrincipals(dataDir, prepared);
+  const people = join(dataDir, "principals");
+  let ids: string[] = [];
+  try { ids = lstatSync(people).isDirectory() ? readdirSync(people) : []; } catch { /* none */ }
+  for (const id of ids) if (same(id) && validRelative(`principals/${id}`)) visit(`principals/${id}`);
 }
-const PEOPLE_AND_ENGINE_HOMES = new Set(["principals", "org", "engine-policies"]);
+
+/** Whether a principal id names the same person in the destination's
+ * principals.json and the archive's (by provider subject, else local
+ * operator, else email): true when the archive does not name it (its folder
+ * comes from this machine) or has no principals.json. */
+function samePrincipals(dataDir: string, prepared: string): (id: string) => boolean {
+  const read = (path: string): Map<string, Record<string, unknown>> | null => {
+    try {
+      const value = privateJson(path);
+      const list = Array.isArray(value) ? value : record(value) && Array.isArray(value.principals) ? value.principals : null;
+      if (!list) return null;
+      return new Map(list.filter(record).filter((item) => typeof item.id === "string").map((item) => [(item.id as string).toLowerCase(), item]));
+    } catch { return null; }
+  };
+  const own = read(join(dataDir, "principals.json"));
+  const archived = existsSync(join(prepared, "principals.json")) ? read(join(prepared, "principals.json")) : new Map();
+  return (id: string) => {
+    const key = id.toLowerCase();
+    const mine = own?.get(key);
+    const theirs = archived?.get(key);
+    if (!archived) return false;
+    if (!theirs) return true;
+    if (!mine) return false;
+    const subject = (item: Record<string, unknown>) => record(item.subject) ? `${String(item.subject.iss)}\n${String(item.subject.sub)}` : null;
+    if (subject(mine) || subject(theirs)) return subject(mine) === subject(theirs);
+    if (mine.local === true || theirs.local === true) return mine.local === theirs.local;
+    return typeof mine.email === "string" && mine.email.toLowerCase() === String(theirs.email ?? "").toLowerCase();
+  };
+}
 
 export function readLastWorkspaceRestore(dataDir: string): LastWorkspaceRestore | null {
   const root = backupRoot(dataDir);

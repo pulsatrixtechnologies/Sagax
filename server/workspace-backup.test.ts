@@ -926,10 +926,17 @@ describe("encrypted full workspace backups", () => {
       mcpServers: { a: { command: "a", args: ["--api-key", fake()] } } }));
     put("principals/pr_ana/grok/.grok/mcp.json", JSON.stringify({ servers: [{ url: "https://mcp.example", clientSecret: fake(), sessionKey: fake() }] }));
     // 5. the tools' own sign-in files, in an engine home and in a work folder
-    for (const name of [".netrc", ".git-credentials", ".npmrc", ".pypirc", "_netrc", ".pgpass"]) {
+    for (const name of [".netrc", ".git-credentials", ".pypirc", "_netrc", ".pgpass"]) {
       put(`principals/pr_ana/codex/${name}`, fake());
       put(`task-workspaces/bot/thread/${name}`, fake());
     }
+    // npm and Yarn settings stay, without their tokens
+    put("task-workspaces/bot/thread/.npmrc", `registry=https://registry.example/\n//registry.example/:_authToken=${fake("")}\n_auth=${fake("")}\n`);
+    put("principals/pr_ana/codex/.yarnrc.yml", `npmRegistryServer: "https://registry.example"\nnpmAuthToken: ${fake("")}\n`);
+    // names that end with key, more key shapes, the value after a secret flag
+    put("principals/pr_ana/claude/.mcp.json", JSON.stringify({ key: fake(""), OPENAI_KEY: fake(""), groqKey: fake(""), sort_key: "name",
+      mcpServers: { b: { command: "b", args: ["--token", fake(""), `--api-key=${fake("")}`, "--port", "8080"] } }, other: [fake("gsk_"), fake("hf_")] }));
+    put("principals/pr_ana/grok/.grok/config.toml", ['[mcp_servers.x]', `args = ["--token", "${fake("")}", "--port", "8080"]`, `key = "${fake("")}"`, ""].join("\n"));
     put("task-workspaces/bot/thread/.ssh/id_rsa", fake());
     put("task-workspaces/bot/thread/.ssh/id_rsa.pub", "ssh-ed25519 PUBLIC_KEY_KEPT");
     put("attachments/talk.key", "KEYNOTE_DOCUMENT_KEPT");
@@ -946,20 +953,48 @@ describe("encrypted full workspace backups", () => {
     expect(left).toEqual([]);
     // what is not a secret travels
     for (const kept of ["model_max_output_tokens = 4000", 'api_key_env = "OPENAI_API_KEY"', "http://127.0.0.1:1234/v1", '"--verbose"', 'theme = "dark"', "max_tokens: 1000",
-      "command: docs", "/usr/local/bin/key-helper", "PUBLIC_KEY_KEPT", "KEYNOTE_DOCUMENT_KEPT", "keep = 1"]) expect(plaintext, kept).toContain(kept);
+      "command: docs", "/usr/local/bin/key-helper", "PUBLIC_KEY_KEPT", "KEYNOTE_DOCUMENT_KEPT", "keep = 1", "registry=https://registry.example/",
+      "npmRegistryServer", '"--port", "8080"', '"sort_key": "name"']) expect(plaintext, kept).toContain(kept);
     expect(exported.summary.reconnect?.files?.count).toBeGreaterThanOrEqual(7);
     // restoring brings none back and leaves the destination's own deep store in place
     const target = directory();
-    mkdirSync(join(target, "bots", "bot"), { recursive: true });
-    writeFileSync(join(target, "bots", "bot", "vault.enc"), "DESTINATION_OWN_VAULT");
+    mkdirSync(join(target, "principals", "pr_ana", "sub"), { recursive: true });
+    writeFileSync(join(target, "principals", "pr_ana", "sub", "deep.enc"), "DESTINATION_OWN_VAULT");
     const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
     commitPendingWorkspaceRestore(target, staged.id);
     expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
     const scan = (root: string): string[] => readdirSync(root, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile())
       .filter((entry) => readFileSync(join(entry.parentPath, entry.name)).includes(MARKER)).map((entry) => join(entry.parentPath, entry.name));
     expect(scan(target)).toEqual([]);
-    expect(readFileSync(join(target, "bots", "bot", "vault.enc"), "utf8")).toBe("DESTINATION_OWN_VAULT");
+    expect(readFileSync(join(target, "principals", "pr_ana", "sub", "deep.enc"), "utf8")).toBe("DESTINATION_OWN_VAULT");
     expect(readFileSync(join(target, "attachments", "talk.key"), "utf8")).toBe("KEYNOTE_DOCUMENT_KEPT");
+  });
+
+  it("never hands this machine's secrets of a principal id to another person the archive puts behind that id", async () => {
+    const principalsFile = (sub: string) => ({ version: 1, principals: [{ id: "pr_ana", kind: "human", subject: { iss: "https://idp.example", sub }, createdAt: 1 }] });
+    const source = directory();
+    fixture(source).close();
+    json(join(source, "principals.json"), principalsFile("someone-else"));
+    mkdirSync(join(source, "principals", "pr_ana"), { recursive: true });
+    writeFileSync(join(source, "principals", "pr_ana", "notes.md"), "archive person");
+    const exported = await createWorkspaceBackup(source, { password: PASSWORD });
+    const restore = async (sub: string) => {
+      const target = directory();
+      json(join(target, "principals.json"), principalsFile(sub));
+      mkdirSync(join(target, "principals", "pr_ana", "codex"), { recursive: true });
+      writeFileSync(join(target, "principals", "pr_ana", "connections.enc"), "DESTINATION_OWN_CONNECTIONS");
+      writeFileSync(join(target, "principals", "pr_ana", "codex", "auth.json"), "DESTINATION_OWN_SIGN_IN");
+      const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+      commitPendingWorkspaceRestore(target, staged.id);
+      expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
+      return target;
+    };
+    const other = await restore("ana");
+    expect(existsSync(join(other, "principals", "pr_ana", "connections.enc"))).toBe(false);
+    expect(existsSync(join(other, "principals", "pr_ana", "codex", "auth.json"))).toBe(false);
+    const same = await restore("someone-else");
+    expect(readFileSync(join(same, "principals", "pr_ana", "connections.enc"), "utf8")).toBe("DESTINATION_OWN_CONNECTIONS");
+    expect(readFileSync(join(same, "principals", "pr_ana", "codex", "auth.json"), "utf8")).toBe("DESTINATION_OWN_SIGN_IN");
   });
 
   it("restores an archive from a release that exported secrets without them, says so, and lists what to reconnect", async () => {

@@ -137,8 +137,8 @@ const ENGINE_HOME = /^(?:principals\/[^/]+\/[^/]+|org\/[^/]+|engine-policies\/[^
  *   hold the account and any API key (`.claude.json` itself is copied
  *   without them: withoutEngineAuthFields).
  * - the tools' own sign-ins a CLI or the person may leave in that HOME
- *   (credentialFileName below): `.netrc`, `.git-credentials`, `.npmrc`,
- *   `.pypirc` and the like, `credentials` (AWS), SSH private keys, and any
+ *   (credentialFileName below): `.netrc`, `.git-credentials`, `.pypirc`
+ *   and the like, `credentials` (AWS), SSH private keys, and any
  *   `.pem`, `.p12`, `.pfx`, `.enc` or `.key` file.
  * Each also with any suffix a copy, an atomic write or a lock leaves beside
  * it (`.bak`, `.lock`, `.tmp`, `.1.tmp`, `~`). */
@@ -146,10 +146,11 @@ const ENGINE_CREDENTIAL_FILE = /^(?:\.credentials\.json|auth\.json|auth\.encrypt
 
 /** Files that are a sign-in and nothing else, wherever they sit (an engine
  * home, a conversation's work folder, a project): `.netrc` (`_netrc` on
- * Windows), `.git-credentials`, `.npmrc` and `.yarnrc.yml` (registry
- * tokens), `.pypirc`, `.pgpass`, and SSH private keys (`id_rsa`,
- * `id_ed25519`..., not their `.pub`), with any copy or lock suffix. */
-const CREDENTIAL_FILE = /^(?:[._]netrc|\.git-credentials|\.npmrc|\.yarnrc\.yml|\.pypirc|\.pgpass|id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?)(?:~|[.-](?:bak|backup|old|orig|prev|previous|save|swp|lock|tmp)(?:[.~-][\w.~-]*)?|\.\d+(?:\.[0-9a-f-]+)?\.tmp)?$/i;
+ * Windows), `.git-credentials`, `.pypirc`, `.pgpass`, and SSH private keys
+ * (`id_rsa`, `id_ed25519`..., not their `.pub`), with any copy or lock
+ * suffix. A project's `.npmrc` and `.yarnrc.yml` are kept without their
+ * registry tokens (registrySettingsPath). */
+const CREDENTIAL_FILE = /^(?:[._]netrc|\.git-credentials|\.pypirc|\.pgpass|id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?)(?:~|[.-](?:bak|backup|old|orig|prev|previous|save|swp|lock|tmp)(?:[.~-][\w.~-]*)?|\.\d+(?:\.[0-9a-f-]+)?\.tmp)?$/i;
 
 export function credentialFileName(name: string): boolean {
   return CREDENTIAL_FILE.test(name);
@@ -158,7 +159,14 @@ export function credentialFileName(name: string): boolean {
 /** Folders that are a sign-in as a whole: Kimi Code's `credentials/`
  * (`credentials/kimi-code.json`), a desktop keyring a CLI may fall back to
  * (`.local/share/keyrings`, `python_keyring`). */
-const ENGINE_CREDENTIAL_FOLDER = /^(?:credentials|keyrings|python_keyring|\.ssh|\.aws|\.azure|\.docker|\.kube|\.gnupg|gh)$/i;
+const ENGINE_CREDENTIAL_FOLDER = /^(?:keyrings|python_keyring|\.ssh|\.aws|\.azure|\.docker|\.kube|\.gnupg)$/i;
+/** A folder that is a sign-in at its usual place only: Kimi's
+ * `credentials/` at the home's root or in the CLI's own folder, GitHub CLI's
+ * `.config/gh/` (a skill named `gh` stays). */
+const engineCredentialFolderAt = (parts: string[], i: number): boolean =>
+  ENGINE_CREDENTIAL_FOLDER.test(parts[i]!) ||
+  (/^credentials$/i.test(parts[i]!) && (i === 0 || (i === 1 && parts[0]!.startsWith(".")))) ||
+  (/^gh$/i.test(parts[i]!) && i > 0 && /^\.config$/i.test(parts[i - 1]!));
 
 /** An engine's saved sign-in in an engine home of the data folder (JC,
  * 2026-10-18: « Exclure les jetons »). A workspace backup keeps each
@@ -172,11 +180,11 @@ export function engineCredentialPath(path: string): boolean {
   const rest = ENGINE_HOME.exec(path)?.[1];
   if (!rest) return false;
   const parts = rest.split("/");
-  if (parts.slice(0, -1).some((part) => ENGINE_CREDENTIAL_FOLDER.test(part))) return true;
+  if (parts.slice(0, -1).some((_, i) => engineCredentialFolderAt(parts, i))) return true;
   const name = parts[parts.length - 1]!;
   // a `.env` template names variables and holds no value of them
   if (/^\.env\.(?:example|sample|template|dist)$/i.test(name)) return false;
-  return ENGINE_CREDENTIAL_FILE.test(name) || CREDENTIAL_FILE.test(name) || ENGINE_CREDENTIAL_FOLDER.test(name);
+  return ENGINE_CREDENTIAL_FILE.test(name) || CREDENTIAL_FILE.test(name) || engineCredentialFolderAt(parts, parts.length - 1);
 }
 
 /** An engine's settings file in an engine home, by name: Claude Code's
@@ -201,9 +209,12 @@ const SECRET_WORDS = new Set([
   "authorization", "cookie", "cookies", "bearer", "pat", "apikey", "apikeys", "apitoken", "authtoken",
   "accesstoken", "refreshtoken", "idtoken", "privatekey", "sessionkey", "clientsecret",
 ]);
-/** `<word> key` is a secret for these words (`api_key`, `x-api-key`,
- * `private_key`, `primaryApiKey`, `customApiKeyResponses`, `sessionKey`). */
+/** `<word> key` is a secret for these words anywhere in the name
+ * (`primaryApiKey`, `customApiKeyResponses`); a name that ends with `key`
+ * or `keys` is one too (`key`, `OPENAI_KEY`, `groqKey`), except after these
+ * words, which name a lookup or a keyboard key. */
 const KEY_QUALIFIERS = new Set(["api", "private", "secret", "access", "signing", "encryption", "client", "license", "master", "session", "auth"]);
+const NOT_SECRET_KEY = new Set(["sort", "cache", "partition", "primary", "foreign", "hot", "short", "shortcut", "keyboard", "group", "dedupe", "idempotency", "lookup", "public", "map", "object", "storage", "routing", "row", "column", "index", "unique", "composite", "join", "hash"]);
 /** `token` and `tokens` also count text (`max_tokens`,
  * `model_auto_compact_token_limit`): with one of these words the name is a
  * number, not a secret. */
@@ -234,15 +245,16 @@ export function secretFieldName(name: string): boolean {
   return words.some((word, i) =>
     SECRET_WORDS.has(word) ||
     ((word === "token" || word === "tokens") && !words.some((other) => TOKEN_COUNT_WORDS.has(other))) ||
-    ((word === "key" || word === "keys") && i > 0 && KEY_QUALIFIERS.has(words[i - 1]!)) ||
+    ((word === "key" || word === "keys") && ((i > 0 && KEY_QUALIFIERS.has(words[i - 1]!)) || (i === words.length - 1 && !(i > 0 && NOT_SECRET_KEY.has(words[i - 1]!))))) ||
     (word === "account" && words[i - 1] === "oauth"));
 }
 
 /** A value that is a secret by its shape, whatever its field is called (an
  * MCP server's `args`, a URL): OpenAI, Anthropic, Stripe, GitHub, GitLab,
- * Slack, AWS, Google and xAI keys, a JWT, an `Authorization` value, a PEM
+ * Slack, AWS, Google, xAI, Groq, Hugging Face, Fireworks, Replicate, NVIDIA,
+ * Tavily, Perplexity, Cerebras, npm and PyPI keys, a JWT, an `Authorization` value, a PEM
  * private key, a URL with a password in it. */
-const SECRET_VALUE = /(?:\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}|\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bglpat-[A-Za-z0-9_-]{20,}|\bxox[abprs]-[A-Za-z0-9-]{10,}|\bAKIA[0-9A-Z]{16}\b|\bAIza[0-9A-Za-z_-]{30,}|\bxai-[A-Za-z0-9]{20,}|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@)/;
+const SECRET_VALUE = /(?:\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}|\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bglpat-[A-Za-z0-9_-]{20,}|\bxox[abprs]-[A-Za-z0-9-]{10,}|\bAKIA[0-9A-Z]{16}\b|\bAIza[0-9A-Za-z_-]{30,}|\bxai-[A-Za-z0-9]{20,}|\b(?:gsk|hf|fw|r8|nvapi|tvly|pplx|csk|whsec|xapp|shpat|dop_v1|npm|glc|sq0atp)[_-][A-Za-z0-9]{20,}|\bpypi-[A-Za-z0-9_-]{50,}|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@)/;
 
 export function secretValue(value: string): boolean {
   return SECRET_VALUE.test(value);
@@ -251,16 +263,40 @@ export function secretValue(value: string): boolean {
 /** Maps whose every value is left out: an MCP server's or an engine's
  * environment and request headers. Their names stay readable in the
  * reconnect list (the engine settings line), their values never travel. */
-const SECRET_MAP = /^(?:env|environment|headers|http[_-]?headers|env[_-]?vars?)$/i;
+const SECRET_MAP = /^(?:env|environment|headers|http[_-]?headers|env[_-]?vars?|docker[_-]?env|container[_-]?env)$/i;
 
 const secretKey = (key: string, item: unknown): boolean =>
   secretFieldName(key) && item !== null && item !== "" && item !== undefined && typeof item !== "number" && typeof item !== "boolean";
 
+/** A command-line flag that names a secret (`--api-key`, `--token`,
+ * `-p`assword forms aside): the argument after it is its value, and
+ * `--api-key=<value>` holds it. */
+const secretFlag = (arg: string): "next" | "inline" | null => {
+  const flag = /^--?([A-Za-z][\w.-]*)(=.*)?$/.exec(arg);
+  if (!flag || !secretFieldName(flag[1]!)) return null;
+  return flag[2] ? "inline" : "next";
+};
+
+/** The positions of an argument list that hold a secret: a value shaped like
+ * one, a `--secret=value`, and the argument after a `--secret` flag. */
+function secretArgs(items: readonly unknown[]): Set<number> {
+  const drop = new Set<number>();
+  items.forEach((item, i) => {
+    if (typeof item !== "string") return;
+    if (SECRET_VALUE.test(item)) drop.add(i);
+    const flag = secretFlag(item);
+    if (flag === "inline") drop.add(i);
+    else if (flag === "next" && typeof items[i + 1] === "string" && !(items[i + 1] as string).startsWith("-")) drop.add(i + 1);
+  });
+  return drop;
+}
+
 function scrubJson(value: unknown): number {
   let removed = 0;
   if (Array.isArray(value)) {
+    const drop = secretArgs(value);
     for (let i = value.length - 1; i >= 0; i--) {
-      if (typeof value[i] === "string" && SECRET_VALUE.test(value[i] as string)) { value.splice(i, 1); removed++; }
+      if (drop.has(i)) { value.splice(i, 1); removed++; }
       else removed += scrubJson(value[i]);
     }
     return removed;
@@ -400,6 +436,14 @@ function scrubTomlValue(text: string, count: { removed: number }): string | null
       items.push(value);
     }
   }
+  if (c === "[") {
+    // an argument list: the value after a `--token` flag goes with it
+    const drop = secretArgs(items.map((item) => /^(?:"(?:[^"\\]|\\.)*"|'[^']*')$/.test(item) ? item.slice(1, -1) : null));
+    if (drop.size) {
+      count.removed += drop.size;
+      return `[${items.filter((_, i) => !drop.has(i)).join(", ")}]`;
+    }
+  }
   if (!changed) return text;
   return c === "{" ? (items.length ? `{ ${items.join(", ")} }` : "{}") : `[${items.join(", ")}]`;
 }
@@ -474,8 +518,11 @@ function scrubYaml(text: string): { text: string; removed: number } {
         if (typeof plain === "string" && SECRET_VALUE.test(plain)) { removed++; return visitYaml.REMOVE; }
         return undefined;
       },
-      Scalar(_, node, path) {
-        if (typeof node.value === "string" && SECRET_VALUE.test(node.value) && isSeq(path[path.length - 1])) { removed++; return visitYaml.REMOVE; }
+      Seq(_, seq) {
+        const drop = secretArgs(seq.items.map((item) => isScalar(item) ? item.value : undefined));
+        if (!drop.size) return undefined;
+        removed += drop.size;
+        seq.items = seq.items.filter((_, i) => !drop.has(i));
         return undefined;
       },
     });
@@ -503,6 +550,62 @@ export function withoutEngineSecrets(path: string, text: string): string | null 
   return scrubJson(value) ? JSON.stringify(value, null, 2) : null;
 }
 
+/** A project's or a home's npm and Yarn settings (`.npmrc`, `.yarnrc.yml`),
+ * anywhere: copied without their registry tokens and passwords
+ * (withoutRegistrySecrets), so a project keeps its registry settings. */
+export function registrySettingsPath(path: string): boolean {
+  return /(?:^|\/)(?:\.npmrc|\.yarnrc\.yml)$/i.test(path);
+}
+
+const NPMRC_SECRET = /^(?:_auth|_authToken|_password|username|email|certfile|keyfile|npmAuthToken|npmAuthIdent|npmPassword)$/i;
+
+/** `.npmrc` or `.yarnrc.yml` without its tokens, passwords and logins
+ * (`//registry/:_authToken=...`, `_auth`, `npmAuthToken`); null when it
+ * holds none. */
+export function withoutRegistrySecrets(path: string, text: string): string | null {
+  if (/\.ya?ml$/i.test(path)) {
+    const docs = parseAllDocuments(text);
+    if (!Array.isArray(docs)) return null;
+    if (docs.some((doc) => doc.errors.length)) throw new Error("Unreadable YAML.");
+    let removed = 0;
+    for (const doc of docs) visitYaml(doc, {
+      Pair(_, pair) {
+        const key = isScalar(pair.key) ? String(pair.key.value) : "";
+        const plain = isScalar(pair.value) ? pair.value.value : undefined;
+        if (NPMRC_SECRET.test(key) || secretFieldName(key) || (typeof plain === "string" && SECRET_VALUE.test(plain))) { removed++; return visitYaml.REMOVE; }
+        return undefined;
+      },
+    });
+    return removed ? docs.map((doc) => doc.toString()).join("") : null;
+  }
+  let removed = 0;
+  const kept = text.split("\n").filter((line) => {
+    const field = /^\s*([^=#;]+?)\s*=\s*(.*)$/.exec(line);
+    if (!field) return true;
+    const name = field[1]!.split(":").pop()!.trim();
+    if (NPMRC_SECRET.test(name) || secretFieldName(name) || SECRET_VALUE.test(field[2]!)) { removed++; return false; }
+    return true;
+  });
+  return removed ? kept.join("\n") : null;
+}
+
+/** A file a bot export (server/bot-zip.ts) leaves out because it is a
+ * sign-in or a key whatever folder it sits in: the sign-in files
+ * (credentialFileName), an engine's (`.credentials.json`, `auth.json`,
+ * `.env` but not its templates), a sealed store (`.enc`), a certificate or
+ * private key (`.pem`, `.p12`, `.pfx`), a `.key` that is not a Keynote
+ * document (`zip` true when the file starts like a zip), and any file in a
+ * `.ssh`, `.aws`, `.gnupg` or `.docker` folder. */
+export function exportedSecretFile(relativePath: string, zip: () => boolean): boolean {
+  const parts = relativePath.split("/");
+  const name = parts[parts.length - 1]!;
+  if (parts.slice(0, -1).some((part) => /^(?:\.ssh|\.aws|\.azure|\.gnupg|\.docker|\.kube|keyrings)$/i.test(part))) return true;
+  if (/^\.env\.(?:example|sample|template|dist)$/i.test(name)) return false;
+  if (CREDENTIAL_FILE.test(name)) return true;
+  if (/\.key(?:~|[.-](?:bak|backup|old|orig|prev|previous|save|swp|lock|tmp))?$/i.test(name)) return !zip();
+  return ENGINE_CREDENTIAL_FILE.test(name) && !/\.keys?$/i.test(name);
+}
+
 /** Claude Code's sign-in fields of `.claude.json`, which a restore puts
  * back from the destination's own copy (carryDestinationSecrets). */
 export const CLAUDE_AUTH_FIELDS = ["oauthAccount", "primaryApiKey", "customApiKeyResponses"] as const;
@@ -520,11 +623,12 @@ export const CLAUDE_AUTH_FIELDS = ["oauthAccount", "primaryApiKey", "customApiKe
  * restores without them. The match ignores case. */
 const WORKSPACE_SECRET = /^(?:(?:[^/]+\/)*[^/]+\.(?:enc|keys?)(?:~|[.-](?:bak|backup|old|orig|prev|previous|save|swp|lock|tmp)(?:[.~-][\w.~-]*)?|\.\d+(?:\.[0-9a-f-]+)?\.tmp)?|push-devices(?:\/.*)?)$/i;
 /** The folders that hold a person's own files rather than the app's: chat
- * attachments, conversation work folders and workspaces (projects, skills).
+ * attachments, conversation work folders, workspaces (projects, skills) and
+ * the local VM homes.
  * A `.key` there is as likely a Keynote document as a key, and a `.enc` a
  * file the person encrypted; only the sign-in files (credentialFileName)
  * are left out of them. */
-const PERSON_FILES = /^(?:attachments|task-workspaces|workspaces)(?:\/|$)/i;
+const PERSON_FILES = /^(?:attachments|task-workspaces|workspaces|vm-home|vm-homes)(?:\/|$)/i;
 
 export function savedSignInPath(path: string): boolean {
   if (engineCredentialPath(path)) return true;

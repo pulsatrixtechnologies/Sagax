@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   configSecretCounts, confidentialDataScopePath, destinationSignInFile, disposableEngineHomePath, engineCredentialPath, engineSettingsPath, ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath,
-  portableWorkspaceConfig, ReconnectTally, redownloadedOrgLibraryPath, restoredWorkspaceConfig, savedSignInPath, secretCategory, withoutEngineSecrets,
+  portableWorkspaceConfig, ReconnectTally, redownloadedOrgLibraryPath, restoredWorkspaceConfig, savedSignInPath, secretCategory, secretFieldName, withoutEngineSecrets, withoutRegistrySecrets,
 } from "./workspace-backup-policy.ts";
 
 describe("workspace backup data boundary", () => {
@@ -212,6 +212,18 @@ describe("workspace backup data boundary", () => {
     expect(yamlOut).not.toContain("FAKE_SECRET");
     for (const kept of ["default: x", "base_url: http://127.0.0.1:1234/v1", "command: docs", "toolsets: [ web ]"]) expect(yamlOut).toContain(kept);
     expect(withoutEngineSecrets("x/config.toml", 'model = "x"\n')).toBeNull();
+  });
+
+  it("finds a secret word anywhere in a field name, and leaves references and counts alone", () => {
+    for (const name of ["openai_api_key", "github_token", "apiToken", "GITHUB_PAT", "db_password", "credentials", "key", "OPENAI_KEY", "groqKey", "oauthAccount", "customApiKeyResponses", "x-api-key"])
+      expect(secretFieldName(name), name).toBe(true);
+    for (const name of ["api_key_env", "bearer_token_env_var", "envKey", "apiKeyHelper", "token_url", "max_tokens", "model_auto_compact_token_limit", "sort_key", "keybindings", "monkey"])
+      expect(secretFieldName(name), name).toBe(false);
+    expect(withoutRegistrySecrets("p/.npmrc", "registry=https://r.example/\n//r.example/:_authToken=FAKE\n")).toBe("registry=https://r.example/\n");
+    expect(withoutRegistrySecrets("p/.npmrc", "registry=https://r.example/\n")).toBeNull();
+    expect(savedSignInPath("principals/pr_ana/claude/skills/gh/SKILL.md")).toBe(false);
+    expect(savedSignInPath("principals/pr_ana/codex/.config/gh/hosts.yml")).toBe(true);
+    expect(savedSignInPath("vm-home/talk.key")).toBe(false);
   });
 
   it("counts what to reconnect by category, a person once and an engine sign-in once per engine home", () => {
