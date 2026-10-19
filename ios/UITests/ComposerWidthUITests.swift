@@ -26,6 +26,9 @@ final class ComposerWidthUITests: XCTestCase {
 
     @MainActor
     func testLandscapeBarSpansTheSafeArea() throws {
+        // A landscape iPad is 768 pt or wider: the desktop shell and its
+        // pill, not this composer.
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPad turns into the desktop shell")
         let app = openChat()
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -89,9 +92,12 @@ final class ComposerWidthUITests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(leading, margin - tolerance, label)
             }
         } else {
-            // iPad phone UI: centred, never wider than the readable column
+            // iPad phone UI (under 768 pt, so narrower than the 760 pt
+            // cap): the same 12 pt on both sides as on the iPhone
             XCTAssertEqual(leading, trailing, accuracy: tolerance, "\(label): centred")
-            XCTAssertLessThanOrEqual(fieldEnd - plus.frame.minX, 760 - 2 * margin + tolerance, label)
+            if window.width <= 760 {
+                XCTAssertEqual(leading, margin, accuracy: tolerance, "\(label): leading margin")
+            }
         }
     }
 
@@ -112,6 +118,8 @@ final class ComposerWidthUITests: XCTestCase {
             XCTAssertEqual(row.frame.minX, window.minX, accuracy: tolerance, "\(label): row starts at the screen edge")
             XCTAssertEqual(row.frame.maxX, window.maxX, accuracy: tolerance, "\(label): row ends at the screen edge")
         }
+        // When every chip fits, nothing scrolls and this only checks that
+        // the last one ends whole inside the margin.
         row.swipeLeft()
         row.swipeLeft()
         Thread.sleep(forTimeInterval: 0.8)
