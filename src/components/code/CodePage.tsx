@@ -162,11 +162,17 @@ export function CodePage() {
   const { state, dispatch } = useStore();
   const status = useCodeStatus();
   const runId = state.codeFocus.runId;
+  // A Perspicax without the agents API: no Code page at all (the sidebar
+  // hides its row), back to the conversation.
+  const notAvailable = status?.available === false && status.reason === "not_available";
+  useEffect(() => {
+    if (notAvailable) dispatch({ type: "showChat" });
+  }, [notAvailable, dispatch]);
   const open = (id: string) => dispatch({ type: "showCode", runId: id });
   return (
     <main data-code-page className="relative flex h-full min-w-0 flex-1 flex-col bg-app">
       <WindowDragStrip />
-      {status === null ? (
+      {status === null || notAvailable ? (
         <div className="flex flex-1 items-center justify-center"><Loader2 size={18} className="animate-spin text-ink-tertiary motion-reduce:animate-none" aria-hidden /></div>
       ) : !status.available ? (
         <BusinessGate businessUrl={status.businessUrl} reason={status.reason} />

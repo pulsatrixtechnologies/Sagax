@@ -104,6 +104,10 @@ describe("request source for the lockout", () => {
 describe("scopes", () => {
   it("lets a person read their own Claude connectors; only an admin turns them off", () => {
     expect(requiredScope("GET", "/api/me/harness-connectors")).toBe("client");
+    // A member sees the images a bot's Markdown renders, not only downloads.
+    expect(requiredScope("GET", "/api/threads/t-1/messages/m-1/file")).toBe("client");
+    expect(requiredScope("POST", "/api/threads/t-1/messages/m-1/file")).toBe("client");
+    expect(requiredScope("DELETE", "/api/threads/t-1/messages/m-1/file")).toBe("admin");
     expect(requiredScope("PUT", "/api/me/harness-connectors")).toBe("admin");
     expect(requiredScope("PUT", "/api/harness-connectors/settings")).toBe("admin");
   });

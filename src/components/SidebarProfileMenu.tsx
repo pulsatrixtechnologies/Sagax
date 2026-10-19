@@ -70,7 +70,7 @@ import { canViewUsage } from "@/lib/viewer";
 import { ShortcutHint } from "./ShortcutHint";
 import { useStore } from "@/state/store";
 import { useUpdaterState, type UpdaterState } from "@/lib/updater";
-import { openUpdatePrompt } from "@/lib/update-prompt";
+import { openUpdatePrompt, requestUpdateCheck } from "@/lib/update-prompt";
 import { brand } from "../lib/brand";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -216,18 +216,18 @@ export function useUpdateItem(): UpdateEntry | null {
       key: "update",
       label,
       icon: <UpdateIcon phase={phase} pending={pending} />,
-      disabled: updateBusy(phase, pending) || state?.retryable === false,
-      // progress is reported on the row itself, so the menu stays put
-      keepOpen: true,
+      // Open while an update checks, downloads or waits: the dialog shows
+      // where it stands. Only a started install takes no click.
+      disabled: phase === "installing",
       attention: phase === "downloaded" || phase === "error",
       attentionTone: phase === "error" ? "danger" : "accent",
+      // Never installs (2026-10-19: on Windows "Check for updates" on a
+      // downloaded update quit straight into a silent install). It opens
+      // the update dialog, which follows the check and asks before any
+      // restart: "Restart to install" or "Later".
       onSelect: () => {
-        if (phase === "downloaded") {
-          setPending(true);
-          return void updater.install();
-        }
         setCheckedAt(Date.now());
-        void updater.check();
+        requestUpdateCheck();
       },
     },
   };

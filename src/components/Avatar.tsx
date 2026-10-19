@@ -227,19 +227,22 @@ export function PrimaryBotBadge({ size, ringClassName = "ring-panel", label }: {
 export function shapeMoodFor(state: MausState | undefined): ShapeMood {
   if (!state) return "idle";
   if (["thinking", "searching", "loading", "curious", "confused"].includes(state)) return "thinking";
-  if (["working", "progress", "orbit", "radar", "writing", "uploading", "sending", "receiving", "dictating", "humming"].includes(state)) return "working";
-  if (["happy", "celebrate", "proud", "laughing", "excited", "playful"].includes(state)) return "happy";
+  if (state === "alerting") return "blocked";
+  if (["writing", "sending", "receiving", "dictating"].includes(state)) return "streaming";
+  if (["working", "progress", "orbit", "radar", "uploading", "humming"].includes(state)) return "working";
+  if (["happy", "celebrate", "proud", "laughing", "excited", "playful", "notifying"].includes(state)) return "happy";
   if (["sleeping", "drowsy", "powering-down"].includes(state)) return "sleeping";
   return "idle";
 }
 
 /** Trombi's pose for the app's mascot states. */
 export function trombiPoseFor(state: MausState | undefined): TrombiPose {
+  // Trombi keeps his own poses: the shapes' newer moods fold back onto them
+  if (state === "listening" || state === "notifying") return "speak";
   const mood = shapeMoodFor(state);
-  if (mood === "thinking" || mood === "working") return "think";
+  if (mood === "thinking" || mood === "working" || mood === "streaming") return "think";
   if (mood === "happy") return "celebrate";
   if (mood === "sleeping") return "sleep";
-  if (state === "listening" || state === "notifying") return "speak";
   return "idle";
 }
 
@@ -247,7 +250,9 @@ export function trombiPoseFor(state: MausState | undefined): TrombiPose {
 export function bunbuMoodFor(state: MausState | undefined): BunbuMood {
   if (state === "listening" || state === "dictating") return "listening";
   if (state === "notifying") return "speaking";
-  return shapeMoodFor(state);
+  // Bunbu keeps its own five moods: the shapes' newer ones fold back onto them
+  const mood = shapeMoodFor(state);
+  return mood === "streaming" ? "working" : mood === "blocked" ? "idle" : mood;
 }
 
 /** Shiba's face for the app's mascot states: most states name one of its sixteen faces. */

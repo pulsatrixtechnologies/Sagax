@@ -37,9 +37,10 @@ describe("plugins modal translation", () => {
   it("keeps the account identity verbatim inside the translated confirmation", () => {
     setLocale("pt-br");
     const confirmation = disconnectAccountConfirmation("Gmail", { id: "ca_work", alias: "work" });
-    expect(confirmation).toContain("“work” (ca_work)");
+    expect(confirmation).toContain("“work”");
+    expect(confirmation).not.toContain("ca_work");
     expect(confirmation).toBe(
-      t("connectors.disconnectConfirm", { identity: "“work” (ca_work)", service: "Gmail" }),
+      t("connectors.disconnectConfirm", { identity: "“work”", service: "Gmail" }),
     );
     expect(confirmation).not.toContain("Disconnect");
   });

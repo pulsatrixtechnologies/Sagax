@@ -449,8 +449,10 @@ const __BASE_VERSION__: string;
       updater?: {
         check(): Promise<void>;
         /** apply the download: quit-and-install, or copy the command and open
-         * a terminal. On a server's page, only from the person's click. */
-        install(): Promise<void>;
+         * a terminal. On a server's page, only from the person's click.
+         * `confirmed`: the person chose "Restart to install" in the update
+         * dialog; without it the desktop app asks natively first. */
+        install(options?: { confirmed?: boolean }): Promise<void>;
         /** opt in or out of pre-release versions from Sagax's GitHub releases */
         setPrereleases?(enabled: boolean): Promise<UpdaterState>;
         onState(cb: (s: UpdaterState) => void): () => void;

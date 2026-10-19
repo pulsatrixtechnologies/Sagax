@@ -6,6 +6,7 @@
 // server decides what each scope answers (server/routine-scope.ts).
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { personLabel } from "@/lib/human-label";
 import { permissionMissingText } from "@/lib/permissions";
 import {
   ROUTINE_SCOPE_PERMISSION,
@@ -98,7 +99,7 @@ export function RoutineScopeBar({ prefs, allowed, teams, owners, advanced, onCha
 
 /** The owner of someone else's routine: their avatar (or initials) and name. */
 export function RoutineOwnerBadge({ owner, size = 16, className }: { owner: { id: string; name: string; avatarUrl?: string }; size?: number; className?: string }) {
-  const name = owner.name || owner.id;
+  const name = personLabel(owner.name, owner.id);
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join("") || "?";
   return (
     <span data-routine-owner={owner.id} title={t("routines.scope.ownedBy", { name })} className={cn("inline-flex min-w-0 items-center gap-1", className)}>

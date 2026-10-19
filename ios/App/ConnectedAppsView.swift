@@ -257,7 +257,7 @@ struct ConnectedAppsView: View {
     private var confirmationText: String {
         guard let confirming else { return "" }
         let account = confirming.account
-        let identity = account.nonemptyAlias.map { "“\($0)” (\(account.id))" } ?? "“\(account.id)”"
+        let identity = "“\(account.readableName)”"
         return pluginsFormat("Disconnect %1$@ from %2$@? Only this %2$@ account will be revoked. Your other %2$@ accounts will stay connected.", identity, confirming.card.label)
     }
 
@@ -488,12 +488,12 @@ struct ConnectedAppsView: View {
                     if account.isActive {
                         Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.success)
                     }
-                    Text(verbatim: account.nonemptyAlias ?? account.id)
+                    Text(verbatim: account.readableName)
                         .font(Theme.Font.labelMedium)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                 }
-                Text(verbatim: (account.nonemptyAlias != nil ? "\(account.id) · " : "") + account.status.lowercased())
+                Text(verbatim: account.status.lowercased())
                     .font(Theme.font(10.5))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
@@ -512,7 +512,7 @@ struct ConnectedAppsView: View {
             }
             .buttonStyle(.plain)
             .disabled(busy)
-            .accessibilityLabel(Text(verbatim: pluginsFormat("Disconnect %1$@ from %2$@", account.nonemptyAlias ?? account.id, card.label)))
+            .accessibilityLabel(Text(verbatim: pluginsFormat("Disconnect %1$@ from %2$@", account.readableName, card.label)))
             .accessibilityIdentifier("connected-apps-disconnect.\(account.id)")
         }
         .padding(.horizontal, 12)
@@ -584,9 +584,11 @@ struct FlowRow: Layout {
     }
 }
 
-private extension ConnectorAccount {
-    var nonemptyAlias: String? {
-        let value = alias?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value?.isEmpty == false ? value : nil
+extension ConnectorAccount {
+    /// The account as a person reads it: its alias, never the provider's
+    /// account id (JC 2026-10-19: no GUID on screen).
+    var readableName: String {
+        let value = alias?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? String(localized: "Connected account") : value
     }
 }

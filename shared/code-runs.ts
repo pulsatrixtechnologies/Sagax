@@ -12,7 +12,10 @@ export type CodeUnavailableReason =
   /** An organization server, but no live sign-in to borrow a token from. */
   | "no_session"
   /** Perspicax did not answer or refused. */
-  | "unreachable";
+  | "unreachable"
+  /** This Perspicax does not serve the cloud agents API yet (404 on
+   * `/api/v1/agents/environments`): Code stays hidden. */
+  | "not_available";
 
 export interface CodeStatus {
   available: boolean;

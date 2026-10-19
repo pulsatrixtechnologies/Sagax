@@ -106,6 +106,14 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("routines:propose.action", "own", "propose_routine_action"),
   p("terminal:offer", "own", "offer_shell_terminal"),
   p("meetings:join", "own", "join_meeting"),
+  // 2026-10-19 (member admin audit, docs/member-admin-audit.md): the
+  // person's own data or destinations, never an admin's.
+  p("teamsetup:propose", "own", "propose_team_setup"),
+  p("rules:update", "own", "rules_update"),
+  p("docs:update", "own", "docs_update"),
+  p("credentials:login", "own", "request_login"),
+  p("computers:select", "own", "select_computer"),
+  p("pairing:manage", "own", "manage_pairing"),
   // Dispatch
   p("bots:ask", "dispatch", "ask_bot"),
   p("bots:delegate", "dispatch", "delegate_bot"),
@@ -126,14 +134,9 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("agents:delete", "admin", "delete_agent"),
   p("rooms:create", "admin", "create_room"),
   p("rooms:manage", "admin", "manage_room"),
-  p("teamsetup:propose", "admin", "propose_team_setup"),
   p("teammemory:propose", "admin", "propose_team_memory"),
-  p("rules:update", "admin", "rules_update"),
-  p("docs:update", "admin", "docs_update"),
   p("mcp:add", "admin", "add_mcp_server"),
   p("credentials:request", "admin", "request_credential"),
-  p("credentials:login", "admin", "request_login"),
-  p("computers:select", "admin", "select_computer"),
   p("computers:use", "admin", "shared_computer"),
   p("vm:exec", "admin", "vm_exec"),
   p("actions:invoke", "admin", "act"),
@@ -180,7 +183,6 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   profileTool("api:action", "dispatch", "action", "<profile>__action"),
   profileTool("api:action.read", "read", "read_action", "<profile>__read_action"),
   profileTool("api:operation", "dispatch", "operation", "<profile>__<operation>"),
-  p("pairing:manage", "admin", "manage_pairing"),
   p("settings:manage", "admin", "manage_settings"),
 ];
 
@@ -228,7 +230,14 @@ export const ROLE_OVERRIDES: Partial<Record<McpRole, Record<string, McpScope | n
   // A member may start a bot of their own, nothing wider.
   member: { "bots:create": "self", "bots:delete.propose": "self", "rooms:create": "self", "rooms:manage": "self" },
   // Automation never creates bots, widens access or runs host commands.
-  service: { "vm:exec": null, "actions:invoke": null },
+  // 2026-10-19: no person speaks in a service turn (a routine, a webhook):
+  // pairing a device or asking a person for a login needs that person, a
+  // team setup could create bots under Full access, and a bot's rules and
+  // docs are lasting instructions untrusted text must not write.
+  service: {
+    "vm:exec": null, "actions:invoke": null, "pairing:manage": null, "credentials:login": null,
+    "teamsetup:propose": null, "rules:update": null, "docs:update": null,
+  },
 };
 
 const rank = (scope: McpScope) => MCP_SCOPES.indexOf(scope);

@@ -15,6 +15,43 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Never a UUID/GUID on screen (2026-10-19)
+
+JC: "N'affiche JAMAIS des GUID, on ne comprend rien." Jamais d'UUID/GUID
+visible ; libellé humain, identifiant seulement en info-bulle ou action
+Copier. On desktop, web, iOS and Android:
+
+- Show a name: the bot's, the person's, the engine's, the environment or
+  computer ("Cloud computer", "Local VM", the Mac's name), the repository
+  or folder. When the name is gone, show a plain word ("Deleted bot",
+  "Unknown person", "Removed engine", "Account 2"), never the id. Never cut
+  an id short as a label (`id.slice(0, 8)` reads no better).
+- The id may stay in a `title` tooltip or a Copy action for support, never
+  in the text itself.
+- Helpers: `shared/human-id.ts` (`isOpaqueId`, `containsUuid`,
+  `readableOr`, `sagaxFolder`, `quotedIdOr` for server text a person may
+  read), `src/lib/human-label.ts` (`personLabel`, `botLabel`,
+  `engineLabel`), `src/lib/short-path.ts` (`shortPath`/`humanPath`: the
+  folders Sagax names after ids, task-workspaces/<bot>/<thread>,
+  parallel-worktrees/<bot>/<thread> and workspaces/<bot>, read as "This
+  conversation's folder", "Parallel task's folder", "The bot's own
+  folder"). iOS: `HumanID` (`ios/App/HumanID.swift`).
+- Text the server returns to a bot that holds an id it needs (a cloud
+  agent's `cloud_agent_id`, an `env_id`) tells the bot to name the thing
+  to the person, never the id.
+- Guard: `src/lib/no-visible-ids.test.ts` renders key cards and labels
+  with UUID fixtures and fails when a UUID reaches visible text. Add a
+  case there for any new screen that names records.
+
+## Side cards on the chat's right edge (2026-10-19)
+
+The dev context pods (Environment, Context, Connectors, Changes) and the
+"This run" checklist above the composer are one column: same width, same
+right edge, same card. Both draw with `src/lib/side-card.ts` (`SIDE_CARD`,
+`SIDE_CARD_HEADER`, `SIDE_CARD_ICON_BUTTON`) and take their width from
+`railGeometry` (`src/components/dev-pods/DevPods.tsx`); the run card sits
+in `RailAligned`. No hard-coded width or radius on either side.
+
 ## Tests
 
 `pnpm test` runs every vitest file in one serial process (about 45 minutes),
@@ -4264,8 +4301,8 @@ organization server serves the same bundle. Three ways in, all through
 - "What's new" opens once after an update (`whatsNewDecision`), never on a
   fresh install or a dev build. Before an update the feed's release body is
   shown by `UpdateBanner`, folded under "What's new in <version>" in the
-  small "Update ready" dialog (title, one sentence, the pills Not now and
-  Update). The dialog opens when an update has downloaded; after Not now,
+  small "Update ready" dialog (title, one sentence, the pills Later and
+  Restart to install). The dialog opens when an update has downloaded; after Later,
   the round cloud button at the right of the sidebar's account row
   (`SidebarProfileMenu`, `showsUpdateButton`, a downloaded update only)
   opens it again through `openUpdatePrompt` (`src/lib/update-prompt.ts`).
@@ -4287,6 +4324,39 @@ file with no English section is shown whole. A new release only needs its
 file in `docs/releases`; no list to edit. Tests:
 `src/lib/bundled-release-notes.test.ts`, `src/lib/release-notes.test.ts`,
 `src/components/SidebarProfileMenu.test.ts`.
+
+## Updates: confirmed, visible, never silent on Windows (2026-10-19)
+
+A Windows report: account menu > Help > "Check for updates" on an update
+already downloaded quit the app straight into a silent NSIS install, minutes
+with no window, shortcut and pin icons blank, Sagax not reopened; and a
+relaunch during that install showed a bare "Not Found". Keep these rules:
+
+- "Check for updates" (menu, Settings > Updates) never installs: it calls
+  `requestUpdateCheck` (`src/lib/update-prompt.ts`) and `UpdateBanner`
+  follows the check in its dialog: searching, "Sagax X.Y.Z is available"
+  (notes, progress, Later keeps it downloading), "Update ready" (Later,
+  Restart to install), "Sagax is up to date", or the failure with Try again.
+- Only the dialog's Restart to install installs, as
+  `updater.install({ confirmed: true })`. Main installs an unconfirmed call
+  (an older organization page) only after a native question, Later by
+  default (`electron/update-confirm.mjs`, coordinator `confirmInstall`).
+- Windows: `autoInstallOnAppQuit` is off (electron-updater would run the
+  installer silently on quit) and `quitAndInstall(false, true)` runs the
+  NSIS installer with its progress window, then reopens Sagax. macOS and
+  AppImage keep install on quit and the silent swap.
+- NSIS identity is pinned (`electron/packaging-windows.node-test.mjs`):
+  appId, productName, package name (install folder), shortcutName,
+  one-click per user, shortcuts created once and kept by updates
+  (`--keep-shortcuts`). `build/installer.nsh` only refreshes shell icons.
+- At start the packaged app waits on the loading screen while its bundle is
+  incomplete (`uiBundleState`, `waitForUiBundle`), and a main-frame load of
+  its page that answers an HTTP error or cannot connect is retried behind a
+  loading page, then shown as an error page with Try again
+  (`installLoadRecovery`, `electron/load-recovery.mjs`).
+- Tests: `electron/updater-coordinator.node-test.mjs`,
+  `electron/updater.test.mjs`, `electron/update-confirm.node-test.mjs`,
+  `electron/load-recovery.node-test.mjs`, `src/components/UpdateBanner.test.ts`.
 
 ## No phone-home
 

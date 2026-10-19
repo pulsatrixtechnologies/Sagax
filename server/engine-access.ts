@@ -191,11 +191,23 @@ export function memberBotAdminApproval(input: {
    * one of them could have spelled is never a built-in tool
    * (sagax-internal-tools.ts foreignToolSpelling). */
   foreignMcpServers?: Iterable<string>;
+  /** 2026-10-19 (JC): the call acts on one of the owner's own destinations
+   * (their server environment, their own computer or its Local VM) mounted
+   * for this turn (member-environment.ts ownDestinationCall): the owner's
+   * card at their own level, never an admin's, whatever the tool. */
+  ownDestination?: boolean;
+  /** 2026-10-19: the owner holds `host.commands` (given in Perspicax): the
+   * server commands of their own bots are theirs to approve. */
+  ownerRunsServerCommands?: boolean;
 }): boolean {
-  if (input.ownEnvironment) return false;
-  if (serverCommandApproval(input)) return true;
+  if (input.ownEnvironment || input.ownDestination || input.ownerRunsServerCommands) return false;
   const builtin = !foreignToolSpelling(input.tool, input.foreignMcpServers ?? []);
-  if (builtin && memberOwnScopeTool(input.tool?.trim())) return false;
+  // 2026-10-19 (member admin audit): a built-in tool of the member's own
+  // scope is judged by its exact name before the shell pattern, which read
+  // `agents__offer_shell_terminal` (a card the person approves) as a shell
+  // command and sent the member's terminal offer to an admin.
+  if (!input.command && builtin && memberOwnScopeTool(input.tool?.trim())) return false;
+  if (serverCommandApproval(input)) return true;
   // 2026-10-16: the Data tools are the bot's own database, confined to its
   // own folders on an organization server (sagax-internal-tools.ts).
   if (builtin && dataToolName(input.tool)) return false;

@@ -300,8 +300,23 @@ export interface WireBotGrant {
   at: number;
 }
 
+/** A bot-to-bot conversation of this bot waiting on the person
+ * (server/inter-bot-approvals.ts): never listed, its cards are answered from
+ * the conversation the person has open. */
+export interface WireWaitingApproval {
+  threadId: string;
+  /** The bot that opened it. */
+  openedByName?: string;
+  kind?: "pair" | "work";
+  /** The conversation's last change (epoch ms): a new card refreshes it. */
+  updatedAt?: number;
+}
+
 export interface WireBot {
   waitingForTeammates?: boolean;
+  /** Bot-to-bot conversations waiting on this viewer's approval. Absent:
+   * none. Server-derived. */
+  waitingApprovals?: WireWaitingApproval[];
   id: string;
   /** The task selected in the UI; running turns keep their own thread id. */
   threadId: string;
@@ -833,6 +848,15 @@ export interface OptionCardData {
    * whose owner is not an organization admin. Only an admin answers it; the
    * owner sees it waiting for an admin. Never remembered. */
   adminApproval?: boolean;
+  /** 2026-10-19: a server-level card of a bot whose owner holds
+   * host.commands, answered by that owner by hand; the right is checked
+   * again when the card is answered. */
+  serverCommandHolder?: boolean;
+  /** 2026-10-19 (PR 3): the person whose own destination (cloud computer,
+   * Local VM, own computer) this call acts on, when that is not the bot's
+   * owner: the speaker in their own conversation with a shared bot. They
+   * answer it, never an admin and never the bot's owner. */
+  destinationAnswerer?: string;
   /** The organization admins who can answer an adminApproval card (at most
    * five names), so the member's waiting line can say who. */
   adminNames?: string[];

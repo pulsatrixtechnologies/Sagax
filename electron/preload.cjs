@@ -405,7 +405,8 @@ const bridge = {
   setCredential: (name, value) => ipcRenderer.invoke("credential:set", name, value),
 
   /** In-app auto-update. Updates download by themselves; install is the
-   *  person's "Restart to update". State object:
+   *  person's "Restart to install": install({ confirmed: true }) from the
+   *  update dialog, otherwise main asks natively first. State object:
    *  { status: "idle"|"checking"|"downloading"|"preparing"|"downloaded"|"installing"|"handed-off"|"error",
    *    version?, percent?, message? }. onState fires immediately with the
    *    current state, then on every transition. Dormant in dev (no bridge). */
@@ -413,8 +414,9 @@ const bridge = {
     check: () => ipcRenderer.invoke("update:check"),
     download: () => ipcRenderer.invoke("update:download"),
     // An organization server's page restarts this app only on the person's click.
-    install: () => isLocalPage || navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("update:install") : Promise.reject(new Error("Choose Restart to update.")),
+    install: (options) => isLocalPage || navigator.userActivation?.isActive === true
+      ? ipcRenderer.invoke("update:install", { confirmed: options?.confirmed === true })
+      : Promise.reject(new Error("Choose Restart to update.")),
     /** Opt in or out of pre-release versions (our GitHub releases only). */
     setPrereleases: (enabled) => ipcRenderer.invoke("update:set-prereleases", enabled === true),
     onState: (cb) => {

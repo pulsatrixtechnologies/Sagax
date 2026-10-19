@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -337,7 +336,6 @@ private fun ConnectorAccountRow(account: ConnectorAccount) {
         Column(modifier = Modifier.weight(1f)) {
             Text(account.displayName)
             Text(localizedMobileCopy(ConnectedAppsPolicy.statusLabel(account.status)), color = secondaryTint, fontSize = 12.sp)
-            SelectionContainer { Text(account.id, color = secondaryTint, fontSize = 11.sp) }
         }
         Text(if (account.isActive) stringResource(R.string.mobile_active_a733b809) else stringResource(R.string.mobile_pending_96f608c1), color = secondaryTint, fontSize = 12.sp)
     }

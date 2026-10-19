@@ -44,14 +44,27 @@ describe("terminal destination rights", () => {
   const member: TerminalAccess = { organization: true, admin: false, ownsBot: true };
   const notOwner: TerminalAccess = { organization: true, admin: false, ownsBot: false };
   const admin: TerminalAccess = { organization: true, admin: true, ownsBot: false };
+  const delegated: TerminalAccess = { organization: true, admin: false, ownsBot: false, serverHosts: true };
+  const soloStranger: TerminalAccess = { organization: false, admin: false, ownsBot: false, ownsConversation: true };
+  const ownConversation: TerminalAccess = { organization: true, admin: false, ownsBot: false, ownsConversation: true };
 
-  it("keeps the server's hosts for admins and a person's own environment for their own bot", () => {
+  it("keeps the server's hosts for admins and a person's own environment for themselves (2026-10-19: from any conversation of theirs)", () => {
     expect(terminalResourceAllowed({ scope: "server" }, member)).toBe(false);
     expect(terminalResourceAllowed({ scope: "server" }, admin)).toBe(true);
     // A row from an older adapter (no scope) is a server host.
     expect(terminalResourceAllowed({}, member)).toBe(false);
     expect(terminalResourceAllowed({ scope: "personal" }, member)).toBe(true);
+    // 2026-10-19 (JC): a person's own cloud computer, Local VM and computer
+    // are theirs from any conversation of theirs on an organization server,
+    // whoever owns the bot; answering someone else's card opens nothing
+    expect(terminalResourceAllowed({ scope: "personal" }, ownConversation)).toBe(true);
     expect(terminalResourceAllowed({ scope: "personal" }, notOwner)).toBe(false);
+    // a solo server: the operator only
+    expect(terminalResourceAllowed({ scope: "personal" }, soloStranger)).toBe(false);
+    // the server's hosts: also a person an admin gave host.commands to
+    expect(terminalResourceAllowed({ scope: "server" }, delegated)).toBe(true);
+    expect(terminalResourceAllowed({}, delegated)).toBe(true);
+    expect(terminalResourceAllowed({ scope: "server" }, { ...member, serverHosts: false })).toBe(false);
     expect(terminalResourceAllowed({ scope: "personal" }, admin)).toBe(true);
     expect(terminalResourceAllowed({ scope: "personal" }, undefined)).toBe(false);
   });
@@ -64,6 +77,9 @@ describe("terminal destination rights", () => {
     expect((await registry.listAll(ctx(member))).map((row) => row.provider)).toEqual(["sandbox"]);
     expect((await registry.listAll(ctx(admin))).map((row) => row.provider)).toEqual(["ssh", "sandbox"]);
     expect(await registry.listAll(ctx(notOwner))).toEqual([]);
+    expect((await registry.listAll(ctx(ownConversation))).map((row) => row.provider)).toEqual(["sandbox"]);
+    expect((await registry.listAll(ctx(delegated))).map((row) => row.provider)).toEqual(["ssh"]);
+    expect(await registry.listAll(ctx(soloStranger))).toEqual([]);
     expect(await registry.listAll(ctx())).toEqual([]);
     await expect(registry.open({ provider: "ssh", id: "nas" }, { ...ctx(member), sessionId: "s", cols: 80, rows: 24 })).rejects.toThrow(/not allowed/);
   });
@@ -102,8 +118,10 @@ describe("terminal request service", () => {
   let dataDir: string;
   let calls: { opened: TerminalOpenContext[]; resized: { cols: number; rows: number }[] };
   let workPlace: TerminalWorkPlace;
+  let taskOwner: string | undefined;
 
   beforeEach(() => {
+    taskOwner = undefined;
     messages = [];
     dataDir = mkdtempSync(join(tmpdir(), "sagax-terminal-"));
     calls = { opened: [], resized: [] };
@@ -120,7 +138,7 @@ describe("terminal request service", () => {
     const sessions = createTerminalSessionManager({ registry, audit, now: () => 1_700_000_000_000 });
     const store = {
       bot: () => ({ id: botId, name: "T", color: "#336699" }),
-      taskByThread: () => ({ ownerPrincipalId: OWNER }),
+      taskByThread: () => ({ ownerPrincipalId: taskOwner ?? OWNER }),
       messagesFor: () => messages,
       appendMessage: (_thread: string, partial: Partial<Message>) => {
         const message = { id: `m${messages.length}`, at: 1, role: "bot", kind: "text", ...partial } as Message;
@@ -159,6 +177,12 @@ describe("terminal request service", () => {
     expect(owner.defaultResource?.provider).toBe("sandbox");
     const member = await requests.destinations({ botId, threadId, principalId: MEMBER });
     expect(member.resources).toEqual([]);
+    // 2026-10-19: a conversation of the member's own with this bot (shared
+    // with them): their own environments open from it
+    taskOwner = MEMBER;
+    const own = await requests.destinations({ botId, threadId, principalId: MEMBER });
+    expect(own.resources.map((row) => row.provider)).toEqual(["sandbox", "desktop"]);
+    taskOwner = undefined;
     const admin = await requests.destinations({ botId, threadId, principalId: ADMIN });
     expect(admin.resources.map((row) => row.provider)).toEqual(["test", "sandbox", "desktop"]);
   });

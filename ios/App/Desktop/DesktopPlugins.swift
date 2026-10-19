@@ -180,7 +180,7 @@ struct DesktopConnectedAppsPage: View {
     private var confirmationText: String {
         guard let confirming else { return "" }
         let account = confirming.account
-        let identity = account.desktopAlias.map { "“\($0)” (\(account.id))" } ?? "“\(account.id)”"
+        let identity = "“\(account.readableName)”"
         return pluginsFormat("Disconnect %1$@ from %2$@? Only this %2$@ account will be revoked. Your other %2$@ accounts will stay connected.", identity, confirming.card.label)
     }
 
@@ -360,7 +360,7 @@ struct DesktopConnectedAppsPage: View {
             }
             ForEach(accounts) { account in
                 HStack(spacing: 8) {
-                    DesktopText(verbatim: account.desktopAlias ?? account.id, size: 12, weight: .medium)
+                    DesktopText(verbatim: account.readableName, size: 12, weight: .medium)
                     Spacer(minLength: 0)
                     Button("Disconnect") { confirming = (card, account) }
                         .buttonStyle(DesktopButtonStyle(kind: .ghost, size: 12, height: 26))
@@ -808,13 +808,6 @@ struct DesktopMcpServersPage: View {
         defer { busy = nil }
         do { adminServers = try await client.deleteMCPServer(server.name) }
         catch { self.error = error.localizedDescription }
-    }
-}
-
-private extension ConnectorAccount {
-    var desktopAlias: String? {
-        let value = alias?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value?.isEmpty == false ? value : nil
     }
 }
 

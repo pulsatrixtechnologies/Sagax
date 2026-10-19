@@ -118,6 +118,7 @@ import { unreadMessageIds } from "@/lib/unread-divider";
 import { NewMessagesDivider } from "./NewMessagesDivider";
 import { appendDraftAttachments, useReplyDraft } from "@/lib/drafts";
 import { citationPreviewText, splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
+import { botLabel } from "@/lib/human-label";
 import { highlightCitationSource } from "@/lib/citations-dom";
 import { latestFailure, latestReply, type TranscriptSnapshot } from "@/lib/transcript-announcer";
 import { pendingApprovals } from "./PendingApproval";
@@ -1686,7 +1687,7 @@ export function GroupView({ group: stored }: { group: Group }) {
                     const bot = members.find((item) => item.id === id);
                     // The owner removes any bot; anyone else only their own.
                     const removable = ownsRoom || ownBotIds.has(id);
-                    return bot ? { ...botPublicProfile(bot), name: bot.name || id, removable } : { id, name: id, removable };
+                    return bot ? { ...botPublicProfile(bot), name: botLabel(bot.name, id), removable } : { id, name: botLabel(null, id), removable };
                   })}
                   {...roster}
                   addBotLabel={ownsRoom ? undefined : "Ajouter mon robot"}

@@ -161,6 +161,9 @@ describe("redactSecretsInText", () => {
       [`xai ${"xai-"}${alpha}`, /xai-/],
       [`groq ${"gsk_"}${alpha}ABCD`, /gsk_/],
       [`huggingface ${"hf_"}${alpha}`, /hf_/],
+      [`stripe ${"sk_" + "live_"}${alpha}`, /sk_live_[a-z]/],
+      [`stripe test ${"sk_" + "test_"}${alpha}`, /sk_test_[a-z]/],
+      [`stripe restricted ${"rk_" + "live_"}${alpha}`, /rk_live_[a-z]/],
     ];
     for (const [input, leak] of cases) {
       const out = redactSecretsInText(input);

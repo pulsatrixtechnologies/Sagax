@@ -16,6 +16,7 @@ import { useStore } from "@/state/store";
 import type { VaultItemKind } from "../../../shared/credential-vault";
 import { FIELD, PILL, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow } from "../SettingsPrimitives";
 import { ExportPanel, ImportPanel, importOutcomeText } from "./CredentialsTransfer";
+import { botLabel } from "@/lib/human-label";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const inputClass = FIELD;
@@ -59,7 +60,7 @@ export function CredentialsSettings() {
     }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
-  const botName = useCallback((id: string) => state.bots.find((bot) => bot.id === id)?.name ?? id, [state.bots]);
+  const botName = useCallback((id: string) => botLabel(state.bots.find((bot) => bot.id === id)?.name, id), [state.bots]);
 
   if (!data) {
     return error

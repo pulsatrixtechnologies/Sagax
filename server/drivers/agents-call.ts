@@ -1018,7 +1018,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (r.error) return { text: String(r.error), isError: true };
     const resources = Array.isArray(r.resources) ? r.resources : [];
     if (!resources.length) {
-      return { text: "No terminal destination is available to this person here (their cloud computer, Local VM and computer are not reachable, and the server hosts are an organization admin's). Tell them; do not offer a terminal." };
+      return { text: "No terminal destination is available to this person here (their cloud computer, Local VM and computer are not reachable right now, and the organization's server hosts need “Run commands on the organization's server”, which an organization admin gives in Perspicax under Bot rights > Who has what). Tell them; do not offer a terminal." };
     }
     const fallback = r.default && typeof r.default === "object" ? `\nDefault (where you work now): ${JSON.stringify(r.default)}` : "";
     return { text: `Terminal destinations this person may open:\n${JSON.stringify(resources, null, 2)}${fallback}` };

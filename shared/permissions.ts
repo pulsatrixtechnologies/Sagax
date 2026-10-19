@@ -278,12 +278,25 @@ const definitions = [
       fr: "Une sauvegarde contient les conversations et les fichiers de tout le monde; une restauration les remplace.",
     },
   },
+  // 2026-10-19 (JC): running commands on the organization's shared host is
+  // a right an admin gives (a person, a team), never an admin's alone. A
+  // person's own destinations (their cloud computer, their Local VM, their
+  // own computer) never need it: those commands are theirs at their own
+  // approval level.
+  {
+    key: "host.commands", group: "host", memberDefault: false, adminOnly: false,
+    label: { en: "Run commands on the organization's server", fr: "Exécuter des commandes sur le serveur de l'organisation" },
+    description: {
+      en: "Open a terminal on the organization's server hosts (the Sagax server, its SSH and unRAID hosts) and approve by hand the server commands of the bots they own. A shell there reaches the whole server, everyone's data included: give it only to people you would trust as admins of the server. Their own cloud computer, Local VM and computer never need it.",
+      fr: "Ouvrir un terminal sur les hôtes du serveur de l'organisation (le serveur Sagax, ses hôtes SSH et unRAID) et approuver à la main les commandes serveur des bots qu'ils possèdent. Un terminal là-bas atteint tout le serveur, données de chacun comprises : ne la donnez qu'à des personnes à qui vous confieriez l'administration du serveur. Leur propre ordinateur infonuagique, leur VM locale et leur ordinateur n'en ont jamais besoin.",
+    },
+  },
   {
     key: "host.shell", group: "host", memberDefault: false, adminOnly: true,
-    label: { en: "Run commands on the server", fr: "Exécuter des commandes sur le serveur" },
+    label: { en: "Change the server's own setup", fr: "Changer la configuration propre du serveur" },
     description: {
-      en: "Approve a member bot's server-level commands, save command rules, change the server's own MCP servers, an engine's program path, its computers and this computer.",
-      fr: "Approuver les commandes de niveau serveur des bots des membres, enregistrer des règles de commande, changer les serveurs MCP du serveur, le chemin du programme d'un moteur, ses ordinateurs et cet ordinateur.",
+      en: "Approve the server commands of other people's bots, save command rules, change the server's own MCP servers, an engine's program path, its computers and this computer.",
+      fr: "Approuver les commandes serveur des bots des autres, enregistrer des règles de commande, changer les serveurs MCP du serveur, le chemin du programme d'un moteur, ses ordinateurs et cet ordinateur.",
     },
     adminOnlyReason: {
       en: "It runs programs on the server's own machine, outside anyone's space.",

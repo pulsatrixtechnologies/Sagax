@@ -71,13 +71,20 @@ function listContext(principalId: string, botId: string, threadId: string, acces
 export function createTerminalRequestService(deps: TerminalRequestServiceDeps) {
   const ownerOf = (botId: string, threadId: string) =>
     (deps.store.taskByThread(botId, threadId)?.ownerPrincipalId || deps.owner?.(botId, threadId) || "").trim().toLowerCase();
+  /** What this person may open here: deps.access, plus whether this
+   * conversation is their own (2026-10-19: their own environments open from
+   * any conversation of theirs, whoever owns the bot). */
+  const accessFor = (principalId: string, botId: string, threadId: string): TerminalAccess => {
+    const person = principalId.trim().toLowerCase();
+    return { ...deps.access(person, botId), ownsConversation: Boolean(person) && ownerOf(botId, threadId) === person };
+  };
 
   /** What this person may open for this bot in this conversation: the list
    * behind list_terminal_resources and the card's menu. */
   async function destinations(args: { botId: string; threadId: string; principalId?: string }) {
     const principalId = args.principalId?.trim().toLowerCase() || ownerOf(args.botId, args.threadId);
     if (!principalId) return { principalId: "", resources: [] as TerminalResource[], defaultResource: null };
-    const ctx = listContext(principalId, args.botId, args.threadId, deps.access(principalId, args.botId));
+    const ctx = listContext(principalId, args.botId, args.threadId, accessFor(principalId, args.botId, args.threadId));
     const resources = await deps.registry.listAll(ctx);
     const workPlace = deps.workPlace?.(args.botId, args.threadId, principalId) ?? null;
     return { principalId, resources, defaultResource: defaultTerminalDestination(resources, workPlace) };
@@ -182,7 +189,7 @@ export function createTerminalRequestService(deps: TerminalRequestServiceDeps) {
         return { claimed: true, outcome: "rejected" };
       }
       const principalId = args.principalId.trim().toLowerCase();
-      const access = deps.access(principalId, request.botId);
+      const access = accessFor(principalId, request.botId, request.threadId);
       const wanted = args.pick ?? { provider: request.provider, resourceId: request.resourceId };
       const from = terminalResourceKey(request.provider, request.resourceId);
       const to = terminalResourceKey(wanted.provider, wanted.resourceId);
@@ -195,7 +202,7 @@ export function createTerminalRequestService(deps: TerminalRequestServiceDeps) {
       if (!resource) {
         // The card stays open: the person can pick a destination they may open.
         deps.audit.write({ at: deps.now(), kind: "session.refused", principalId, requestId: args.requestId, resourceId: to, provider: wanted.provider, reason: "not_allowed" });
-        return { claimed: true, status: 403, error: "You are not allowed to open a terminal on this destination, or it is no longer available." };
+        return { claimed: true, status: 403, error: "You are not allowed to open a terminal on this destination, or it is no longer available. Your own cloud computer, Local VM and computer are always yours; a host of the organization's server needs \"Run commands on the organization's server\", which an organization admin gives in Perspicax (Bot rights > Who has what)." };
       }
       if (to !== from) deps.audit.write({ at: deps.now(), kind: "session.destination", principalId, requestId: args.requestId, from, to });
       try {
