@@ -74,6 +74,7 @@ import { isPureLeakedSystemHarnessMessage, stripLeakedSystemHarnessMessages } fr
 import { isProviderSafetyBlock, PROVIDER_SAFETY_GUIDANCE, PROVIDER_SAFETY_HELP_URL } from "../../shared/provider-safety";
 import { isCancelledTranscriptRow } from "../../shared/client-cancel";
 import { BotAvatar } from "./Avatar";
+import { BotHeaderPill, botPillActions } from "./BotHeaderPill";
 import { TurnPresence } from "./TurnPresence";
 import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
@@ -1699,6 +1700,8 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   // strip, so the two stay vertically aligned; every other skin ignores it.
   const { macInset, browser } = useMacInsetChrome();
   const panelOpen = !remoteClient && (state.settingsOpen || state.computerOpen);
+  // The pill toggles whichever right panel is showing, the remote one too.
+  const pillPanelOpen = state.settingsOpen || state.computerOpen;
   // A shared bot on an organization server: each person's conversation is
   // their own; several people talk together in a group.
   const perspicaxOrg = usePerspicaxOrg();
@@ -2033,24 +2036,23 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
         )}
       >
         <div className="absolute left-1/2 top-1/2 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center gap-2" style={headerNoDragStyle}>
-          <button
-            onClick={() => dispatch({ type: "toggleSettings", open: true })}
-            className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px] transition-colors duration-[120ms] hover:bg-elevated-hover"
-            title={t("chat.openPanel")}
-            aria-label={t("chat.openPanelAria", { name: bot.name })}
-          >
-            <BotAvatar
-              bot={bot}
-              primary={isViewersPrimaryBot(bot, viewerActorId(state.config))}
-              primaryRingClassName="ring-elevated"
-              state={stateForBot({ ...bot, messages })}
-              size={24}
-              motion={mascotMotion?.kind ?? "none"}
-              motionKey={mascotMotion?.nonce ?? 0}
-              animated={mascotRowAnimated(bot, state.pendingQueued, mascotMotion?.kind)}
-            />
-            <span className="truncate text-[14px] font-medium leading-5 text-ink">{bot.name}</span>
-          </button>
+          <BotHeaderPill
+            name={bot.name}
+            panelOpen={pillPanelOpen}
+            onToggle={() => { for (const action of botPillActions(pillPanelOpen)) dispatch(action); }}
+            avatar={
+              <BotAvatar
+                bot={bot}
+                primary={isViewersPrimaryBot(bot, viewerActorId(state.config))}
+                primaryRingClassName="ring-elevated"
+                state={stateForBot({ ...bot, messages })}
+                size={24}
+                motion={mascotMotion?.kind ?? "none"}
+                motionKey={mascotMotion?.nonce ?? 0}
+                animated={mascotRowAnimated(bot, state.pendingQueued, mascotMotion?.kind)}
+              />
+            }
+          />
           <TeammatesWorkingChip
             busy={bot.busy}
             waitingForTeammates={bot.waitingForTeammates}

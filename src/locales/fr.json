@@ -6038,6 +6038,8 @@
   "chat.moreMenu.aria": "Plus d'options",
   "chat.openPanel": "Ouvrir le panneau du bot",
   "chat.openPanelAria": "Ouvrir le panneau de {name}",
+  "chat.closePanel": "Fermer le panneau du bot",
+  "chat.closePanelAria": "Fermer le panneau de {name}",
   "chat.openGroupPanel": "Ouvrir le panneau du groupe",
   "settings.sidebarHidden.whereHint": "Réaffichez-les depuis la ligne Masqués, au bas de la barre latérale.",
   "task.unreadMany": "Fils non lus",

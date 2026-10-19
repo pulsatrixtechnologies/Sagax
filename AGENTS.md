@@ -3086,6 +3086,16 @@ the bot engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
 
 ## Bot panel
 
+The chat header's bot pill (`BotHeaderPill.tsx`, Grok Bot parity,
+2026-10-18) is mascot, name, then a small gray chevron (`ChevronRight`,
+`data-bot-header-chevron`) that turns down while the panel is open. It
+toggles: a click opens the panel, a click while any tab of it (Details,
+Library, Computer, or the remote client's panels) is open closes it
+(`botPillActions`, both slots like the panel's close button). It carries
+`aria-expanded`, and its label reads "Open {name}'s panel" or "Close
+{name}'s panel" (`chat.openPanelAria`, `chat.closePanelAria`). Rooms keep
+their own pill (`GroupView`). Test: `src/components/BotHeaderPill.test.ts`.
+
 The bot's side panel (`src/components/BotSettingsDialog.tsx`, tabs in
 `bot-settings/panel-tabs.ts`) shows Details | Library | Computer under the
 mascot, which carries the one "Edit bot" pencil (a 28 px badge at the
