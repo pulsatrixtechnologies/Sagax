@@ -17,9 +17,11 @@ export function WidgetImage({ node, where }: { node: WidgetNode; where: WidgetWh
   const form = useWidgetForm();
   // A picture that does not arrive (address gone, refused, blocked, offline)
   // says so and offers another try, never an empty framed box.
-  const [failed, setFailed] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const src = widgetString(node, "src");
+  // A new address (a widget that streams or is regenerated) gets its own try.
+  const failed = failedSrc !== null && failedSrc === src;
   if (!src || !/^https:\/\//i.test(src)) return null;
   const box = boxStyle(node);
   const thumb = where.item === true && where.lead === true && box.width === undefined && box.height === undefined;
@@ -53,17 +55,17 @@ export function WidgetImage({ node, where }: { node: WidgetNode; where: WidgetWh
   }
   if (failed) {
     const retry = () => {
-      setFailed(false);
+      setFailedSrc(null);
       setAttempt((value) => value + 1);
     };
     return (
       <span
-        role="alert"
+        role="status"
         data-widget-image-failed=""
-        className={cn("flex max-w-full flex-col items-center justify-center gap-1.5 bg-inset px-3 text-center text-[12px] leading-4 text-ink-secondary", !thumb && "min-h-[88px] py-3", frame)}
+        className={cn("flex max-w-full flex-col items-center justify-center bg-inset text-center text-[12px] leading-4 text-ink-secondary", thumb ? "p-0" : "min-h-[88px] gap-1.5 px-3 py-3", frame)}
         style={style}
       >
-        <ImageOff aria-hidden="true" size={thumb ? 16 : 18} className="shrink-0" />
+        {!thumb && <ImageOff aria-hidden="true" size={18} className="shrink-0" />}
         {!thumb && <span>{t("attach.imageUnavailable")}</span>}
         <button
           type="button"
@@ -73,9 +75,9 @@ export function WidgetImage({ node, where }: { node: WidgetNode; where: WidgetWh
           }}
           aria-label={t("attach.retryAria", { name: alt || t("attach.imageUnavailable") })}
           title={t("chat.retry")}
-          className="flex items-center gap-1 rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[11px] text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className={cn("flex items-center gap-1 text-[11px] text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus", thumb ? "size-full justify-center rounded-[inherit]" : "rounded-md border border-hairline/50 bg-panel px-2 py-1")}
         >
-          <RotateCcw aria-hidden="true" size={11} />
+          <RotateCcw aria-hidden="true" size={thumb ? 14 : 11} />
           {!thumb && t("chat.retry")}
         </button>
       </span>
@@ -86,7 +88,7 @@ export function WidgetImage({ node, where }: { node: WidgetNode; where: WidgetWh
       key={attempt}
       src={src}
       alt={alt ?? ""}
-      onError={() => setFailed(true)}
+      onError={() => setFailedSrc(src)}
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"

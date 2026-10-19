@@ -32,7 +32,7 @@ describe("WidgetImage when the picture does not arrive", () => {
 
     await act(async () => first.dispatchEvent(new Event("error")));
     expect(host.querySelector("img")).toBeNull();
-    const alert = host.querySelector("[role=alert]");
+    const alert = host.querySelector("[data-widget-image-failed]");
     expect(alert?.textContent).toContain("Image unavailable");
     const retry = alert?.querySelector("button");
     expect(retry?.textContent).toContain("Retry");
@@ -42,6 +42,15 @@ describe("WidgetImage when the picture does not arrive", () => {
     const again = host.querySelector("img");
     expect(again).not.toBeNull();
     expect(again).not.toBe(first);
-    expect(host.querySelector("[role=alert]")).toBeNull();
+    expect(host.querySelector("[data-widget-image-failed]")).toBeNull();
+  });
+
+  it("a new address gets its own try", async () => {
+    const node = (src: string) => ({ id: "img-1", type: "Image", src }) as Parameters<typeof WidgetImage>[0]["node"];
+    await act(async () => root.render(createElement(WidgetImage, { node: node("https://img.example.com/a.png"), where })));
+    await act(async () => host.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(host.querySelector("[data-widget-image-failed]")).not.toBeNull();
+    await act(async () => root.render(createElement(WidgetImage, { node: node("https://img.example.com/b.png"), where })));
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("https://img.example.com/b.png");
   });
 });
