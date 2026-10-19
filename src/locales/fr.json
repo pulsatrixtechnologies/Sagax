@@ -1343,6 +1343,7 @@
   "youtube.transcriptPanel": "Transcription",
   "youtube.noCaptions": "Cette vidéo n'a pas de sous-titres publics : aucune transcription à afficher.",
   "youtube.transcriptBlocked": "YouTube n'a pas rendu la transcription pour l'instant. Réessaie dans un moment.",
+  "youtube.watchOnYoutube": "Regarder sur YouTube",
   "youtube.videoUnavailable": "Cette vidéo est privée, retirée ou restreinte : YouTube n'en donne pas la transcription.",
   "chat.retry": "Réessayer",
   "chat.run.more": "+{count} de plus",

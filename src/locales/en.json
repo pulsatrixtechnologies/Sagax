@@ -1667,6 +1667,7 @@
   "youtube.transcriptPanel": "Transcript",
   "youtube.noCaptions": "This video has no public captions, so there is no transcript to show.",
   "youtube.transcriptBlocked": "YouTube did not return the transcript right now. Try again in a moment.",
+  "youtube.watchOnYoutube": "Watch on YouTube",
   "youtube.videoUnavailable": "This video is private, removed or restricted: YouTube does not share its transcript.",
   "chat.chiefOfStaff": "Primary Bot",
   "chat.claudeUpdate.aria": "Update Claude Code",
