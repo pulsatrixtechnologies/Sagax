@@ -83,7 +83,10 @@ it("comes back after 4 h to a fresh topic made with its first message; during a 
     await api("POST", `/api/bots/${bot.id}/read`, { threadId: second });
     const rested = taskOf(await snapshot(bot.id), second);
     expect(rested.busy).toBeFalsy();
-    expect(freshTopicOnReturn({ topic: rested, now: Date.now(), afterMs: AFTER, leftAt: Date.now() - AFTER - 1 })).toEqual({ fresh: true, reason: "away" });
+    // left once it was answered, back 4 h later: a fresh topic
+    expect(freshTopicOnReturn({ topic: rested, now: rested.updatedAt + AFTER + 2, afterMs: AFTER, leftAt: rested.updatedAt + 1 })).toEqual({ fresh: true, reason: "away" });
+    // left before the answer came: the answer is shown first
+    expect(freshTopicOnReturn({ topic: rested, now: rested.updatedAt + AFTER + 2, afterMs: AFTER, leftAt: rested.updatedAt - 1 })).toEqual({ fresh: false, reason: "unread" });
   } finally {
     await fixture.close();
     await removeTempDir(gates);
