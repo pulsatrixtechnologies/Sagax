@@ -4000,6 +4000,7 @@
   "rich.viewSource": "Voir la source",
   "rich.widget.blocked": "Le widget a quitté son bac à sable à répétition et a été arrêté.",
   "rich.widget.escaped": "Le widget a tenté de quitter son bac à sable et a été réinitialisé.",
+  "rich.widget.imperfect": "Affichage imparfait",
   "rich.widget.pending": "Le widget est en cours de rédaction. Il s'exécutera une fois le message terminé.",
   "rich.widget.restart": "Redémarrer le widget",
   "rich.widget.title": "Widget interactif",

@@ -58,6 +58,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   api_plan: "read", api_result_query: "read", identity: "read", flow: "read",
   api_upload: "conversation", flow_action: "conversation",
   // chat widgets (agents-widget-tools.ts): a card in the member's own conversation
+  check_widget: "read",
   show_widget: "conversation",
   update_widget: "conversation",
   // artifacts (agents-artifact-tools.ts): the bot's own saved widgets; a

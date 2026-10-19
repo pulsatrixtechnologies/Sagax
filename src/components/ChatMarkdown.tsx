@@ -1411,7 +1411,7 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
           const pageVideo = page?.url && !pending ? youtubeVideoId(page.url) : null;
           if (pageVideo) return <YouTubeMiniPlayer videoId={pageVideo} message={scopedMessage} onSendToBot={youtubeSendToBot} />;
           if (page) return <ArtifactCard page={page} pending={pending} />;
-          return <WidgetFrame code={code} pending={pending} />;
+          return <WidgetFrame code={code} pending={pending} imperfect={lang.trim().toLowerCase() === "widget-imperfect"} />;
         }
         if (kind === "chart") return <ChartBlock code={code} pending={pending} />;
         if (kind === "csv" && !pending) {

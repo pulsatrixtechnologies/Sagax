@@ -5190,6 +5190,7 @@
   "rich.viewSource": "View source",
   "rich.widget.blocked": "The widget kept leaving its sandbox and was stopped.",
   "rich.widget.escaped": "The widget tried to leave its sandbox and was reset.",
+  "rich.widget.imperfect": "Display may be imperfect",
   "rich.widget.pending": "The widget is still being written. It runs once the message is complete.",
   "rich.widget.restart": "Restart widget",
   "rich.widget.title": "Interactive widget",

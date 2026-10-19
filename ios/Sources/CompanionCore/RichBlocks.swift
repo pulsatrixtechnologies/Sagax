@@ -24,7 +24,7 @@ public enum RichFenceKind: String, Sendable {
 public enum RichBlocks {
     private static let fenceKinds: [String: RichFenceKind] = [
         "email": .email, "mail": .email, "eml": .email,
-        "widget": .widget, "html-widget": .widget, "artifact": .widget,
+        "widget": .widget, "html-widget": .widget, "widget-imperfect": .widget, "artifact": .widget,
         "chart": .chart,
         "csv": .csv, "tsv": .csv,
         "cw": .cw,

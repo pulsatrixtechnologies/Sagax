@@ -13,7 +13,7 @@ import { parseWidgetInput, widgetAdvice } from "../../shared/widget.ts";
 import type { ToolCallContext, ToolCallResult } from "./agents-call.ts";
 import type { Json } from "./agents-client.ts";
 
-export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", "show_widget", "update_widget", "propose_page"]);
+export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", "check_widget", "show_widget", "update_widget", "propose_page"]);
 
 const CARD_ROUTE = "/api/internal/options-card";
 
@@ -31,6 +31,22 @@ export async function callCardTool(name: string, args: Json, context: ToolCallCo
     });
     return {
       text: `Rendered the native options card in this Watcher thread (message ${String(result.messageId ?? "created")}). Wait for the person's click or custom response; the card itself authorizes no external action.`,
+    };
+  }
+
+  // The ```widget self-check (server/widget-check.ts): the report as text,
+  // the screenshot as an image beside it for the front ends that pass one on.
+  if (name === "check_widget") {
+    if (typeof args.html !== "string" || !args.html.trim()) return { text: "html: the widget's HTML, exactly as it goes in the ```widget fence.", isError: true };
+    const { ok, body } = await apiResponse("/api/internal/widget-check", { method: "POST", body: JSON.stringify({ html: args.html }) });
+    if (!ok) return { text: String(body.error ?? "The widget could not be checked; review it yourself, then show it."), isError: true };
+    const text = String(body.text ?? "");
+    const isError = body.isError === true;
+    if (typeof body.screenshot !== "string") return { text, ...(isError ? { isError } : {}) };
+    return {
+      text,
+      ...(isError ? { isError } : {}),
+      passthrough: { content: [{ type: "text", text }, { type: "image", data: body.screenshot, mimeType: "image/jpeg" }], ...(isError ? { isError } : {}) },
     };
   }
 

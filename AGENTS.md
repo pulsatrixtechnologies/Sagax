@@ -43,6 +43,31 @@ Copier. On desktop, web, iOS and Android:
   with UUID fixtures and fails when a UUID reaches visible text. Add a
   case there for any new screen that names records.
 
+## Widgets check themselves before they show (2026-10-19)
+
+JC: "Le bot doit être capable de se contre-valider et de l'ajuster
+dynamiquement quand il le construit." A bot passes the HTML of a ```widget
+fence to `check_widget` (`server/drivers/agents-widget-tools.ts`) before it
+shows it; the system prompt says so (`WIDGET_SELF_CHECK_PROMPT`).
+
+- `server/widget-check.ts` renders the chat's own document
+  (`buildWidgetDocument`, iframe sandboxed to allow-scripts) at 720 and 360
+  px, light and dark, and `server/widget-check-audit.ts` reports: JS errors,
+  horizontal scroll, overflow, clipped, overlapping or crushed text, hidden or
+  covered controls, contrast below 3:1, targets under 24 px with a neighbour
+  (or under 12 px). The bot gets the list plus a small JPEG as the tool result.
+- Three checks per turn (thread + generation). After the third failure the
+  bot shows its best version in a ```widget-imperfect fence; the chat draws it
+  with a discreet "Affichage imparfait".
+- One warm headless Chrome over a CDP pipe (no port, no window), closed after
+  3 idle minutes, never started while `memoryWatch` is high or critical (#804),
+  OOM score 900. Chrome: `SAGAX_WIDGET_CHECK_CHROME` (`off` disables), then
+  `AGENT_BROWSER_EXECUTABLE_PATH`, the desktop bundle, a Playwright headless
+  shell. Never the person's browser. No Chrome: the tool says "unavailable".
+- Tests: `server/widget-check.test.ts` (fixtures in
+  `server/testing/widget-check-fixtures/`, broken ones must fail, healthy ones
+  must pass with no defect).
+
 ## Side cards on the chat's right edge (2026-10-19)
 
 The dev context pods (Environment, Context, Connectors, Changes) and the

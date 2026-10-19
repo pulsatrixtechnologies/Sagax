@@ -201,6 +201,11 @@ const WIDGET_KIT_PROMPT =
   + "<table class=\"table\"><thead><tr><th>#</th><th>Ticket</th><th>Status</th></tr></thead><tbody><tr><td class=\"id\">48213</td><td class=\"title\">Printer offline</td><td><span class=\"badge badge-warning\">New</span></td></tr></tbody></table></div>."
   + " A ```cw fence draws only on its own in your message, never inside a ```widget or a show_widget card, where it stays text.";
 
+/** The widget self-check (server/widget-check.ts, JC 2026-10-19): the bot
+ * checks and fixes its own widget before the person sees it. */
+export const WIDGET_SELF_CHECK_PROMPT =
+  " Before you show a ```widget, pass its HTML to check_widget, read the validation report and fix every defect before you answer; show only HTML that passed. After the third failed check, show your best version in a ```widget-imperfect fence instead.";
+
 /** How the chat renders rich output (src/components/ChatMarkdown.tsx and
  * src/lib/rich-blocks.ts own the other side of each convention). Sent to
  * every bot whose replies land in the chat transcript. */
@@ -209,6 +214,7 @@ export const RICH_OUTPUT_PROMPT =
   + " When you write an email for the person, put it in one ```email fence: header lines To:, Cc:, Bcc: and Subject: (only the ones that apply), a blank line, then the body in Markdown; it shows as a draft card with Copy and Open in mail app, and nothing is sent."
   + " For a chart, use a ```chart fence holding JSON such as {\"type\":\"bar\",\"title\":\"Tickets\",\"labels\":[\"Mon\",\"Tue\"],\"series\":[{\"name\":\"Opened\",\"data\":[4,7]}]} (type bar, line, area or pie) or CSV with a header row; for a large dataset, a ```csv fence becomes a sortable, filterable table."
   + " For an interactive tool (calculator, simulator, small form or visualization), use a ```widget fence with self-contained HTML, CSS and inline JavaScript; it runs in a sandbox with no network access, so inline all data and never load external scripts, fonts or images."
+  + WIDGET_SELF_CHECK_PROMPT
   + WIDGET_KIT_PROMPT
   + " When you have a hosted page the person can open, put it in one ```artifact fence holding JSON such as {\"title\":\"Report\",\"url\":\"https://example.com/page\"} (a real https URL only, never invented); it shows as a card with Open."
   + CW_FENCE_PROMPT

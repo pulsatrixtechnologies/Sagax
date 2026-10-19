@@ -35,6 +35,8 @@ let execResponse: unknown = { exitCode: 0, stdout: "PDF_OK\n", stderr: "", timed
 let lastAttachBody: any = null;
 let attachStatus = 200;
 let attachResponse: unknown = { ok: true, name: "report.pdf", bytes: 48639 };
+let lastWidgetCheckBody: unknown = null;
+let widgetCheckResponse: unknown = { text: "Widget check passed (attempt 1).", isError: false };
 let postCalls = 0;
 let postResponse: unknown = { ok: true, messageId: "msg-1", roomName: "Launch" };
 const DEFAULT_AGENTS = { bots: [{ id: "bot-helper", name: "Helper", model: "fake-model", busy: false }] };
@@ -221,6 +223,16 @@ beforeAll(async () => {
         lastExecBody = JSON.parse(data);
         res.writeHead(execStatus, { "content-type": "application/json" });
         res.end(JSON.stringify(execResponse));
+      });
+      return;
+    }
+    if (req.method === "POST" && req.url === "/api/internal/widget-check") {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => {
+        lastWidgetCheckBody = JSON.parse(data);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(widgetCheckResponse));
       });
       return;
     }
@@ -679,6 +691,7 @@ describe("agents-proxy MCP surface", () => {
       "start_thread",
       "vm_exec",
       "attach_file",
+      "check_widget",
       "show_widget",
       "update_widget",
       "save_artifact",
@@ -1006,6 +1019,23 @@ describe("agents-proxy MCP surface", () => {
     expect(lastAttachBody).toEqual({ path: "/home/cua/workspace/report.pdf", name: "Q3 report.pdf" });
     await callTool("attach_file", { path: "clip.mp4" });
     expect(lastAttachBody).toEqual({ path: "clip.mp4" });
+  });
+
+  it("check_widget sends the HTML and hands back the report, with the screenshot as an image", async () => {
+    const passed = await callTool("check_widget", { html: "<div class=\"card\">Ok</div>" });
+    expect(lastWidgetCheckBody).toEqual({ html: "<div class=\"card\">Ok</div>" });
+    expect(passed.result.isError).toBeFalsy();
+    expect(passed.result.content).toEqual([{ type: "text", text: "Widget check passed (attempt 1)." }]);
+    widgetCheckResponse = { text: "Widget check found 1 defect (attempt 1 of 3)", isError: true, screenshot: "AAAA" };
+    const failed = await callTool("check_widget", { html: "<p>x</p>" });
+    expect(failed.result.isError).toBe(true);
+    expect(failed.result.content).toEqual([
+      { type: "text", text: "Widget check found 1 defect (attempt 1 of 3)" },
+      { type: "image", data: "AAAA", mimeType: "image/jpeg" },
+    ]);
+    const empty = await callTool("check_widget", { html: " " });
+    expect(empty.result.isError).toBe(true);
+    widgetCheckResponse = { text: "Widget check passed (attempt 1).", isError: false };
   });
 
   it("attach_file hands a refusal to the model so it can fix the file and retry", async () => {

@@ -146,6 +146,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"exact","route":"/api/internal/vm-exec","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/voice-call/end","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/voice-note","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
+  {"method":"POST","kind":"exact","route":"/api/internal/widget-check","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/internal/workplace/mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/workplace/mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/workspace/docs","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},

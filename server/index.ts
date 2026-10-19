@@ -297,7 +297,8 @@ import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts"
 import { registerEnginesBinDir } from "./engine-install.ts";
 import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineCheck } from "./engines-self-check.ts";
 import { engineStartGate, routineEngineGate, type EngineSlot } from "./engine-start-gate.ts";
-import { IdleEnginePool, MemoryWatch, memoryGuardSettings } from "./engine-memory-guard.ts";
+import { IdleEnginePool, markOomVictim, MemoryWatch, memoryGuardSettings } from "./engine-memory-guard.ts";
+import { checkWidgetForTurn, WidgetCheckAttempts, WidgetRenderer } from "./widget-check.ts";
 import { sessionIdlePolicy } from "./drivers/session-idle.ts";
 import { serveStaticUi } from "./static-ui.ts";
 import { coalescedRun } from "./coalesced-run.ts";
@@ -32697,6 +32698,14 @@ ROUTES.push(createLiveRoutes({
 }));
 
 const toolResults = new ToolResults();
+// check_widget (server/widget-check.ts): one warm headless browser for every
+// bot, never started while memory is high, the OOM killer's first pick.
+const widgetRenderer = new WidgetRenderer({
+  memoryOk: () => memoryWatch.current() !== "high" && memoryWatch.current() !== "critical",
+  onSpawn: (pid) => { markOomVictim(pid, 900); },
+  log: (line) => console.log(line),
+});
+const widgetCheckAttempts = new WidgetCheckAttempts();
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   let url: URL;
   try {
@@ -33783,6 +33792,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const result = toolResults.read(internalCapability, id, offset);
         return result ? json(res, 200, result) : json(res, 404, { error: "Saved result unavailable in this bot's conversation, expired, or offset out of range. Do not repeat an action to retrieve its output." });
+      }
+      if (method === "POST" && path === "/api/internal/widget-check") {
+        const body = await readInternalBody();
+        requireActiveInternalCapability();
+        const checked = await checkWidgetForTurn(widgetRenderer, widgetCheckAttempts, `${internalCapability.threadId}:${internalCapability.generation}`, body);
+        return json(res, checked.status, checked.body);
       }
       if (method === "POST" && path === "/api/internal/options-card") {
         if (!connectorThread(internalSender.id, internalCapability.threadId)) {
