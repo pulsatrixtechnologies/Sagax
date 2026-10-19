@@ -17,6 +17,7 @@ import { GrantEditor } from "./GrantEditor";
 import { viewerCan } from "@/lib/viewer";
 import { permissionMissingText } from "@/lib/permissions";
 import { personLabel } from "@/lib/human-label";
+import { readableOr } from "../../../shared/human-id";
 
 /** The grants the bot carries, as the editor's first rows (labels come from
  * the directory once it answers; the server's answer replaces them). */
@@ -31,7 +32,7 @@ export function initialGrantRows(bot: Pick<Bot, "grants" | "directGrants" | "own
     return {
       ...grant,
       kind: team ? "team" as const : "user" as const,
-      label: team ? teams.get(id)?.name ?? id : personLabel(person?.name, id),
+      label: team ? readableOr(teams.get(id)?.name ?? id, t("ids.deletedTeam")) : personLabel(person?.name, id),
       ...(person?.disabled ? { disabled: true } : {}),
     };
   });

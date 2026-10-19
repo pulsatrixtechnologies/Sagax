@@ -8485,6 +8485,7 @@
   "ids.removedEngine": "Removed engine",
   "ids.unknownPerson": "Unknown person",
   "ids.deletedBot": "Deleted bot",
+  "ids.deletedTeam": "Deleted team",
   "ids.untitled": "Untitled",
   "ids.customVoice": "Custom voice",
   "devPods.context.title": "Context",

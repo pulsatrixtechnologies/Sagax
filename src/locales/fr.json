@@ -8472,6 +8472,7 @@
   "ids.removedEngine": "Moteur retiré",
   "ids.unknownPerson": "Personne inconnue",
   "ids.deletedBot": "Bot supprimé",
+  "ids.deletedTeam": "Équipe supprimée",
   "ids.untitled": "Sans titre",
   "ids.customVoice": "Voix personnalisée",
   "devPods.context.title": "Contexte",

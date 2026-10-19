@@ -6,8 +6,8 @@ import Foundation
 /// shared/human-id.ts.
 enum HumanID {
     private static let opaque = try! NSRegularExpression(
-        pattern: "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{20,}|[a-z]{1,12}[-_](?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|[0-9a-z]{20,}))$",
-        options: [.caseInsensitive]
+        pattern: "^(?:(?i:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{20,}|[a-z]{1,12}[-_](?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|(?=[0-9a-z]*[0-9])[0-9a-z]{20,}))|(?=[A-Za-z0-9]*[0-9])(?=[A-Za-z0-9]*[a-z])(?=[A-Za-z0-9]*[A-Z])[A-Za-z0-9]{16,})$",
+        options: []
     )
 
     /// Whether `value` is an id a person cannot read.

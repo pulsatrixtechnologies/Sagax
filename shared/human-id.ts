@@ -12,14 +12,17 @@ export const UUID_FRAGMENT = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}(?:-[0-9a-f]{0,
 const WHOLE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Long hex (an object id, a digest) or a prefixed random id. */
 const LONG_HEX = /^[0-9a-f]{20,}$/i;
-const PREFIXED_ID = /^[a-z]{1,12}[-_](?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|[0-9a-z]{20,})$/i;
+const PREFIXED_ID = /^[a-z]{1,12}[-_](?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|(?=[0-9a-z]*\d)[0-9a-z]{20,})$/i;
+/** A random token with no separator: digits and both cases mixed
+ * ("21m00Tcm4TlvDq8ikWAM"), which no name looks like. */
+const RANDOM_TOKEN = /^(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[a-z])(?=[A-Za-z0-9]*[A-Z])[A-Za-z0-9]{16,}$/;
 
 /** Whether `value` is an identifier a person cannot read (a UUID, a long
  * hex id, "draft-<uuid>"), as opposed to a name. */
 export function isOpaqueId(value: string): boolean {
   const text = value.trim();
   if (!text) return false;
-  return WHOLE_UUID.test(text) || LONG_HEX.test(text) || PREFIXED_ID.test(text);
+  return WHOLE_UUID.test(text) || LONG_HEX.test(text) || PREFIXED_ID.test(text) || RANDOM_TOKEN.test(text);
 }
 
 /** Whether `text` shows a UUID/GUID anywhere, whole or truncated. */

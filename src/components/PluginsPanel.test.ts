@@ -233,12 +233,12 @@ describe("connected-app status races", () => {
     expect(racing.gmail).toEqual({ connected: true, accounts: [{ id: "ca_new", status: "ACTIVE" }] });
   });
 
-  it("names the exact account and limits disconnect confirmation to that account", () => {
+  it("names the exact account by its alias or place, never its id, and limits disconnect confirmation to that account", () => {
     expect(disconnectAccountConfirmation("Gmail", { id: "ca_work", alias: "work" })).toBe(
-      "Disconnect “work” (ca_work) from Gmail? Only this Gmail account will be revoked. Your other Gmail accounts will stay connected.",
+      "Disconnect “work” from Gmail? Only this Gmail account will be revoked. Your other Gmail accounts will stay connected.",
     );
-    expect(disconnectAccountConfirmation("GitHub", { id: "ca_personal" })).toContain(
-      "Disconnect “ca_personal” from GitHub? Only this GitHub account will be revoked.",
+    expect(disconnectAccountConfirmation("GitHub", { id: "ca_personal" }, 1)).toContain(
+      "Disconnect “Account 2” from GitHub? Only this GitHub account will be revoked.",
     );
   });
 

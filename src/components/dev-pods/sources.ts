@@ -172,7 +172,7 @@ export function devOutputs(messages: readonly Message[]): DevOutput[] {
  * gives way to the nearest readable one above it. */
 export function folderLabel(path: string): string {
   const sagax = sagaxFolder(path);
-  if (sagax) return sagax.rest.at(-1) ?? sagaxFolderLabel(sagax.kind);
+  if (sagax) return [...sagax.rest].reverse().find((part) => !isOpaqueId(part)) ?? sagaxFolderLabel(sagax.kind);
   const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean);
   const readable = [...parts].reverse().find((part) => !isOpaqueId(part));
   return readable ?? (parts.length ? sagaxFolderLabel("bot") : path);
@@ -181,5 +181,5 @@ export function folderLabel(path: string): string {
 /** A branch Sagax made for a parallel task is named after the conversation
  * id (sagax/parallel-<id>): it reads as a parallel task's branch. */
 export function isParallelTaskBranch(branch: string): boolean {
-  return /^sagax\/parallel-[0-9a-f-]+$/i.test(branch);
+  return /^sagax\/parallel-[\w-]+$/.test(branch);
 }

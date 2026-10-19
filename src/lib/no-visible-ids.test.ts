@@ -60,7 +60,8 @@ describe("shared/human-id", () => {
     expect(isOpaqueId("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b")).toBe(true);
     expect(containsUuid("d4eb1f10-ceef-428a-afdd-d53d119…")).toBe(true);
     expect(containsUuid("Environment d4eb1f10-ceef-428a")).toBe(true);
-    for (const name of ["claude", "Pepper", "sagax", "feat/login-redirect", "ann@example.com", "build-01", "work-2024-10-19"]) {
+    expect(isOpaqueId("21m00Tcm4TlvDq8ikWAM")).toBe(true);
+    for (const name of ["claude", "Pepper", "sagax", "feat/login-redirect", "ann@example.com", "build-01", "work-2024-10-19", "team_engineeringplatform", "release-candidatebuildnotes", "codex-2", "ara"]) {
       expect(isOpaqueId(name), name).toBe(false);
       expect(containsUuid(name), name).toBe(false);
     }
