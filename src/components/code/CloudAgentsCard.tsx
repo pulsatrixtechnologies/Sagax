@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cloudAgentStatusActive, type CloudAgentRecord } from "../../../shared/cloud-agents.ts";
 import { RunCard } from "./RunCard";
 import { cn } from "@/lib/cn";
+import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import { api, useStore } from "@/state/store";
 
@@ -96,7 +97,7 @@ function RowMenu({ record, botId }: { record: CloudAgentRecord; botId: string })
           >
             <Square size={13} aria-hidden />{t("code.action.stop")}
           </button>
-          <button type="button" role="menuitem" className={item} disabled={!prUrl} onClick={() => { setOpen(false); if (prUrl) void navigator.clipboard?.writeText(prUrl).catch(() => {}); }}>
+          <button type="button" role="menuitem" className={item} disabled={!prUrl} onClick={() => { setOpen(false); if (prUrl) void copyText(prUrl); }}>
             <Copy size={13} aria-hidden />{t("code.action.copyPr")}
           </button>
           <a role="menuitem" className={cn(item, !prUrl && "pointer-events-none opacity-50")} href={prUrl ?? undefined} target="_blank" rel="noreferrer" aria-disabled={!prUrl} onClick={() => setOpen(false)}>

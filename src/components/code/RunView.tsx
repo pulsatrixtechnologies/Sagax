@@ -20,6 +20,7 @@ import {
   type CodeEvent, type CodeRun, type FollowUpMode,
 } from "@/lib/code-runs";
 import { cn } from "@/lib/cn";
+import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import { readableErrorMessage } from "@/lib/readable-error";
 
@@ -101,7 +102,7 @@ function RunMenu({ run, consoleUrl, onStop, onArchive }: { run: CodeRun; console
           <button type="button" role="menuitem" className={item} disabled={terminal} onClick={() => { setOpen(false); onStop(); }}><Square size={13} aria-hidden />{t("code.action.stop")}</button>
           <button type="button" role="menuitem" className={item} onClick={() => { setOpen(false); onArchive(); }}><Archive size={13} aria-hidden />{t("code.action.archive")}</button>
           {consoleUrl && <a role="menuitem" className={item} href={`${consoleUrl.replace(/\/$/, "")}/runs/${encodeURIComponent(run.id)}`} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}><ExternalLink size={13} aria-hidden />{t("code.action.console")}</a>}
-          <button type="button" role="menuitem" className={item} disabled={!link} onClick={() => { setOpen(false); if (link) void navigator.clipboard?.writeText(link).catch(() => {}); }}><Copy size={13} aria-hidden />{t("code.action.copyLink")}</button>
+          <button type="button" role="menuitem" className={item} disabled={!link} onClick={() => { setOpen(false); if (link) void copyText(link); }}><Copy size={13} aria-hidden />{t("code.action.copyLink")}</button>
         </div>
       )}
     </div>
