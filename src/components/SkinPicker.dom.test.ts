@@ -71,7 +71,7 @@ describe("SkinPicker", () => {
     expect(tile(family)!.getAttribute("aria-pressed")).toBe("true");
     // the selected tile's miniature is the worn skin itself
     expect(tile(family)!.querySelector("[data-skin]")!.getAttribute("data-skin")).toBe(skin);
-    if (variant) expect(swatch(variant)!.getAttribute("aria-checked")).toBe("true");
+    if (variant) expect(swatch(variant)!.getAttribute("aria-pressed")).toBe("true");
     else expect(host.querySelector('[data-settings-row="skinVariant"]')).toBeNull();
     expect(modePill()!.textContent).toContain(mode);
     expect(document.documentElement.dataset.skin).toBe(skin);

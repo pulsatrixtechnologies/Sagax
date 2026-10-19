@@ -16,7 +16,7 @@ import "../styles.css";
 
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
-writeSkinAuto(params.get("auto") === "1");
+if (params.has("auto")) writeSkinAuto(params.get("auto") === "1");
 if (params.get("unlocked") === "1") localStorage.setItem("omb.retro98.unlocked", "1");
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
 setLocale(params.get("lang") ?? "fr");

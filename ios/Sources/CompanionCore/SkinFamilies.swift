@@ -47,7 +47,7 @@ public struct SkinVariant: Equatable, Hashable, Identifiable, Sendable {
 }
 
 public enum SkinFamilyID: String, CaseIterable, Identifiable, Sendable {
-    case phone, pulsatrix, studio, atelier
+    case phone, pulsatrix, studio, atelier, retro98
     public var id: String { rawValue }
 }
 
@@ -57,9 +57,13 @@ public struct SkinFamily: Equatable, Identifiable, Sendable {
     /// One line, English; the app localizes it.
     public let tagline: String
     public let variants: [SkinVariant]
+    /// Hibou 98: listed only while worn (the computer's choice) or, for the
+    /// computer, once unlocked; the phone never offers it for itself.
+    public var secret: Bool { id == .retro98 }
 
-    /// The phone's families. Hibou 98 is a desktop-only easter egg and Meadow
-    /// is not on the phone yet; the phone's own Black and Dim are a family.
+    /// The phone's families: the phone's own Black and Dim are one, Hibou 98
+    /// (secret, the computer's choice only) another. Meadow is not on the
+    /// phone yet.
     public static let all: [SkinFamily] = [
         SkinFamily(
             id: .phone, name: "Black", tagline: "The phone's own look. Near-black, quiet greys.",
@@ -87,6 +91,10 @@ public struct SkinFamily: Equatable, Identifiable, Sendable {
                 SkinVariant(id: "lagoon", name: "Lagoon", light: .lagoon, dark: nil),
             ]
         ),
+        SkinFamily(
+            id: .retro98, name: "Hibou 98", tagline: "Bevelled grey windows on a teal desktop, straight out of the late 90s.",
+            variants: [SkinVariant(id: "classic", name: "Classic", light: .retro98, dark: nil)]
+        ),
     ]
 
     public static func of(_ id: SkinFamilyID) -> SkinFamily {
@@ -100,8 +108,7 @@ public struct SkinPlace: Equatable, Sendable {
     public let variant: SkinVariant
     public let scheme: SkinScheme
 
-    /// Every phone skin but Hibou 98 has one place; Hibou 98 (never listed
-    /// on the phone) reads as Pulsatrix Light, the nearest light family.
+    /// Every skin has one place (Hibou 98 in its own secret family).
     public static func of(_ skin: SkinID) -> SkinPlace {
         for family in SkinFamily.all {
             for variant in family.variants {

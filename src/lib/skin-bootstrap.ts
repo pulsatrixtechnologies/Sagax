@@ -1,5 +1,7 @@
 // First-paint skin: the same rules as readSkin() in skins.ts, without touching
-// the DOM. index.html runs equivalent logic inline before the module bundle loads.
+// the DOM. index.html runs equivalent logic inline before the module bundle
+// loads (skin-families.test.ts keeps its ids and Auto pairs equal).
+// skinIdFromStored is the stored id alone; the inline script adds Auto.
 
 import { autoPairs, SKIN_MODE_KEY } from "./skin-families";
 import { DEFAULT_SKIN, SKIN_IDS, type SkinId } from "./skins";

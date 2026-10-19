@@ -12,7 +12,7 @@
 // drift from what picking it actually does.
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
-import { chooseSkin, prefersDarkScheme, readSkin, type SkinId } from "@/lib/skins";
+import { chooseSkin, prefersDarkScheme, readSkin, SKIN_IDS, type SkinId } from "@/lib/skins";
 import {
   canFollowSystem,
   carryMode,
@@ -94,9 +94,10 @@ const MODES: readonly SkinModeChoice[] = ["light", "dark", "auto"];
 
 /** The skin the document wears now (main.tsx stamped it before the first paint). */
 function wornSkin(): SkinId {
-  // SAFETY: main.tsx writes this attribute from applySkin() before the first
-  // paint, and readSkin() covers the case where it is absent or unreadable.
-  return (document.documentElement.dataset.skin as SkinId) || readSkin();
+  // main.tsx writes this attribute from applySkin() before the first paint;
+  // anything else (absent, edited by hand) falls back to the stored skin.
+  const stamped = document.documentElement.dataset.skin;
+  return SKIN_IDS.find((id) => id === stamped) ?? readSkin();
 }
 
 /** The worn skin and the mode, re-read when anything changes the skin
@@ -172,15 +173,14 @@ export function SkinPicker() {
       </div>
       {place.family.variants.length > 1 && (
         <CompactRow label={t("settings.skin.variantLabel")} rowId="skinVariant">
-          <div role="radiogroup" aria-label={t("settings.skin.variantLabel")} className="flex flex-wrap items-center justify-end gap-1.5">
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
             {place.family.variants.map((variant) => {
               const selected = variant.id === place.variant.id;
               return (
                 <button
                   key={variant.id}
                   type="button"
-                  role="radio"
-                  aria-checked={selected}
+                  aria-pressed={selected}
                   aria-label={variantName(variant)}
                   title={variantName(variant)}
                   data-skin-variant={variant.id}
