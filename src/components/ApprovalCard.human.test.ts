@@ -40,18 +40,10 @@ function ask(id: string, tool: string, input: string, extra: Record<string, unkn
 }
 
 describe("human approval card", () => {
-  it("reads Sagax's computer choice as the place, never 'Computer select dans Sagax Computer' (prod 0.5.27)", () => {
+  it("never names Sagax's own server as a product: no 'Computer select dans Sagax Computer' (prod 0.5.27)", () => {
     setLocale("fr");
-    const id = "sagax-computer__computer_select";
-    const prod: Message = { id: "c", role: "bot", kind: "options", at: 1, card: {
-      title: "Approval needed", subtitle: id, options: ["Allow", "Deny"], requestId: "req-c", tool: "other", mcpTool: id, adminApproval: true,
-    } as never };
-    const [pending] = pendingApprovals([prod]);
-    const html = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: pending!, count: 1, index: 0, bot }));
-    expect(html).not.toMatch(/Computer select|Sagax Computer/i);
-    expect(toolLabel(id)).toBe("choisir sur lequel de vos ordinateurs il travaille");
-    expect(toolLabel(`mcp__${id}`, JSON.stringify({ target: "cloud" }))).toBe("utiliser votre ordinateur cloud");
-    expect(toolLabel(id, JSON.stringify({ target: "local_vm" }))).toBe("utiliser la VM locale de votre ordinateur");
+    expect(toolLabel("sagax-computer__computer_select")).not.toMatch(/Sagax Computer/);
+    expect(toolLabel("mcp__sagax-environment__run_command")).not.toMatch(/Sagax Environment/);
   });
 
   it("shows a plain title, summary and risk chip in the composer's box, and hides the raw id and JSON", () => {

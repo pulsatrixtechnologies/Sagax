@@ -13165,10 +13165,12 @@ bus.subscribe((event: RuntimeEvent) => {
       // never their mode, and never on their real computer.
       const speakerEnvironmentRules = Boolean(destinationAnswerer && ownEnvironmentTool(event.mcpTool ?? event.tool) && memberEnvironmentAutonomyAllowed(cfg.organization));
 
-      // 2026-10-19 (prod 0.5.27): computer_select only picks among the
-      // places this turn mounted for the person who answers its card (their
-      // cloud computer, their own computer, its Local VM): their card, never
-      // an admin's (member-environment.ts ownComputerChoiceCall).
+      // 2026-10-19 (prod 0.5.27, #810 follow-up): computer_select only picks
+      // among the places this turn mounted for the person it is for (their
+      // cloud computer, their own computer, its Local VM): never an admin's,
+      // and no card at all (autoVerdict ownComputerChoice). Each call on the
+      // place it picks keeps its own rules (member-environment.ts
+      // ownComputerChoiceCall).
       const ownComputerChoice = Boolean(permission && asker && event.requestId && !foreignToolSpelling(event.mcpTool ?? event.tool, foreignServers)
         && ownComputerChoiceRequest(asker, event.threadId, event.mcpTool ?? event.tool, cardAnswerer, guestDriven));
       const serverLevelCard = Boolean(memberAsker && asker && memberBotAdminApproval({
@@ -13297,6 +13299,7 @@ bus.subscribe((event: RuntimeEvent) => {
             origin: asker ? ownEnvironmentOrigin(asker, event.threadId) : "other", stepUpRequired: selfAnswerStepUp,
           }),
           ownAttachmentRead: attachmentRead,
+          ownComputerChoice: ownComputerChoice && !strictCard,
           ...(event.mcpTool ? { toolName: event.mcpTool } : {}),
           stepUpRequired: attachmentRead && !selfAnswerStepUp.length && asker
             ? autoAnswerStepUp(asker, event.threadId, {
@@ -27702,18 +27705,25 @@ function destinationOfCall(bot: BotRecord, threadId: string, tool: string | unde
     mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
   }) ? { person, byOwner: false } : null;
 }
-/** 2026-10-19 (prod 0.5.27): whether a call is the computer_select Sagax
- * mounted for this turn of this bot, choosing among the places of the person
- * who answers its card (member-environment.ts ownComputerChoiceCall). */
+/** 2026-10-19 (prod 0.5.27, #810 follow-up): whether a call is the
+ * computer_select Sagax mounted for this turn of this bot, choosing among the
+ * places of the person this turn is for: who answers its cards, or the
+ * speaker who wrote it in their own conversation with a bot someone else
+ * owns (as destinationOfCall). member-environment.ts ownComputerChoiceCall. */
 function ownComputerChoiceRequest(bot: BotRecord, threadId: string, tool: string | undefined, answerer: string, guestDriven: boolean): boolean {
   const workplace = turnWorkplaces.get(threadId);
   const mine = workplace?.botId === bot.id;
+  const persons = [answerer];
+  const speaker = turnSpeakers.get(threadId);
+  const person = speaker?.origin === "person" ? speaker.principalId?.trim().toLowerCase() ?? "" : "";
+  if (person && (store.taskByThread(bot.id, threadId)?.ownerPrincipalId ?? "").trim().toLowerCase() === person
+    && destinationTurnOrigin(bot, threadId, person) === "owner") persons.push(person);
   return ownComputerChoiceCall({
     identity: IDENTITY.kind,
     tool,
     mounted: Boolean(mine && workplace.computerChoice),
     choicePrincipalId: mine ? workplace.decision.principal : null,
-    answererPrincipalId: answerer,
+    personPrincipalIds: persons,
     guestDriven,
   });
 }

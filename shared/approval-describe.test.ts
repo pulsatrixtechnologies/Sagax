@@ -22,23 +22,6 @@ describe("server approval words", () => {
 });
 
 describe("approvalPlain", () => {
-  it("reads the prod 0.5.27 Grok card (kind other, no arguments, the tool id as subtitle) in plain words", () => {
-    const plain = approvalPlain({ botName: "Sunny", tool: "sagax-computer__computer_select", toolInput: undefined, detail: "sagax-computer__computer_select" });
-    expect(plain.title).toBe("Allow Sunny to choose which of your computers it works on?");
-  });
-  it.each([
-    [{ target: "cloud", reason: "Lancer le script" }, "Allow Moss to use your cloud computer?"],
-    [{ target: "this_computer" }, "Allow Moss to use your computer?"],
-    [{ target: "local_vm" }, "Allow Moss to use the Local VM on your computer?"],
-    [{ target: "browser" }, "Allow Moss to use the built-in browser?"],
-    [{}, "Allow Moss to choose which of your computers it works on?"],
-  ])("reads computer_select %j as the place it picks, never 'computer select in Sagax Computer'", (args, title) => {
-    for (const tool of ["mcp__sagax-computer__computer_select", "sagax-computer__computer_select"]) {
-      const plain = approvalPlain({ botName: "Moss", tool, toolInput: JSON.stringify(args) });
-      expect(plain.title).toBe(title);
-      expect(plain.title).not.toMatch(/computer select|Sagax Computer/i);
-    }
-  });
   it("names the bot and the action, never the raw tool id", () => {
     const plain = approvalPlain({ botName: "Cryptic", tool: "sagax-environment__run_command", toolInput: '{"command":"echo hi"}', detail: 'sagax-environment__run_command {"command":"echo hi"}' });
     expect(plain.title).toMatch(/^Allow Cryptic to .+\?$/);

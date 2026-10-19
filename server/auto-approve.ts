@@ -168,6 +168,7 @@ export type AutoVerdictSource =
    * server environment, their Local VM), server/member-environment.ts. */
   | "own-environment"
   | "own-attachment"
+  | "own-computer-choice"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -221,6 +222,12 @@ export function autoVerdict(
      * after the safety hold and the person's own rules, never when a
      * security key protects it. */
     ownAttachmentRead?: boolean;
+    /** 2026-10-19 (#810 follow-up): Sagax's own computer_select choosing
+     * among the places of the person this turn is for
+     * (member-environment.ts ownComputerChoiceCall). The bot decides where it
+     * works: answered at any level, after the safety hold and the person's
+     * own rules, never when a security key protects it. */
+    ownComputerChoice?: boolean;
     /** The engine's own `<server>__<tool>` name when `tool` is a kind (ACP
      * "other") or a bare name: what the outbound guard reads for Sagax's own
      * tools and the owner's environment. */
@@ -273,6 +280,9 @@ export function autoVerdict(
   }
   if (context?.ownAttachmentRead && selfAnswerable) {
     return { approve: `approved ${tool} (your own attachment)`, source: "own-attachment" };
+  }
+  if (context?.ownComputerChoice && selfAnswerable) {
+    return { approve: `approved ${tool} (choosing among your own computers)`, source: "own-computer-choice" };
   }
   // The owner's own environment: only at a level that already runs work
   // unasked (Auto, Auto-accept edits). At Ask the person asked to see every

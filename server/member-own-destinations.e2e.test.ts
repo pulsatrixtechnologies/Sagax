@@ -15,8 +15,8 @@
 //               and the refusal says what to ask for and where; once an
 //               admin gives "Run commands on the organization's server" in
 //               Perspicax, it is his card; an admin is unchanged
-//   choice      choosing his own cloud computer (computer_select) is HIS
-//               card, never an admin's (prod 0.5.27)
+//   choice      the bot choosing his own cloud computer (computer_select)
+//               has no card at all, even at Ask (prod 0.5.27)
 //   terminal    his own destinations are listed from any bot he talks to;
 //               a server host only with that permission
 import { spawn, type ChildProcess } from "node:child_process";
@@ -28,7 +28,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { approvalPlain } from "../shared/approval-describe.ts";
 import { MEMBER_DEFAULT_PERMISSIONS } from "../shared/permissions.ts";
 import { SandboxdVerifier } from "./sandboxd-auth.ts";
 import { SandboxService } from "./sandboxd-core.ts";
@@ -259,20 +258,12 @@ posixOnly("organization server: a member's own destinations", () => {
       await sleep(500);
       if (!(vm.answer()?.behavior === "allow")) expect((await turn.cardOf(vm.id)).adminApproval).not.toBe(true);
       // prod 0.5.27: choosing his own cloud computer (computer_select, Auto)
-      // waited for an admin as "Computer select dans Sagax Computer". It is
-      // his card, he answers it, and it reads as the place it picks.
+      // waited for an admin as "Computer select dans Sagax Computer". The
+      // bot decides where it works (JC): no card at all, even at Ask.
       expect(turn.mcpServers).toContain("sagax-computer");
       const choose = await turn.ask("mcp__sagax-computer__computer_select", { target: "cloud", reason: "Lancer la commande dans le nuage" });
-      await sleep(300);
-      if (choose.answer()?.behavior !== "allow") {
-        const chooseCard = await turn.cardOf(choose.id);
-        expect(chooseCard.adminApproval).not.toBe(true);
-        expect(approvalPlain({ botName: "Juniper", tool: chooseCard.mcpTool ?? chooseCard.tool, toolInput: chooseCard.toolInput ?? chooseCard.subtitle }).title)
-          .toBe("Allow Juniper to use your cloud computer?");
-        const chosen = await turn.respond(bob, choose.id, "allow");
-        expect(chosen.status, chosen.text).toBe(200);
-        await waitFor(async () => choose.answer()?.behavior === "allow");
-      }
+      await waitFor(async () => choose.answer()?.behavior === "allow");
+      expect(await turn.noCard(choose.id)).toBe(true);
     } finally {
       await turn.end();
     }

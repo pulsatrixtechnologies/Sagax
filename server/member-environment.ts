@@ -219,21 +219,24 @@ export function ownDestinationCall(input: {
   return Boolean(environment) && environment === input.ownerPrincipalId.trim().toLowerCase();
 }
 
-// 2026-10-19 (JC, prod 0.5.27): computer_select ("sagax-computer",
-// server/auto-computer.ts) only chooses among the places Sagax already
-// mounted for this turn as the person's own: their cloud computer, their own
-// computer, its Local VM, the built-in browser. It never reaches a computer
-// the organization shares (that is `agents` shared_computer, still an
-// admin's). Mounted by Sagax for this turn (never recognized by a name alone)
-// and answered by the person whose places they are, it is that person's card
-// at their own level, never an admin's; each call on the place it picks is
-// judged on its own afterwards.
+// 2026-10-19 (JC, prod 0.5.27, then #810 follow-up): computer_select
+// ("sagax-computer", server/auto-computer.ts) only chooses among the places
+// Sagax already mounted for this turn as one person's own: their cloud
+// computer, their own computer, its Local VM, the built-in browser. There is
+// no menu for the person any more: the bot decides where it works. So when
+// those places belong to the person this turn is for (who speaks, or who
+// answers its cards), the choice needs no card at all, at any approval
+// level, on every engine (Claude already pre-allows it). It never reaches a
+// computer the organization shares (`agents` shared_computer keeps its
+// card). Each call on the place it picks keeps its own rules: on their real
+// computer, always a card. Recognized by Sagax's own mount for this turn,
+// never by a name alone.
 
 /** The one tool of Sagax's computer choice, as a provider spells it. */
 const COMPUTER_CHOICE_TOOL = /^(?:mcp__)?sagax-computer__computer_select$/;
 
 /** Whether a call is Sagax's own computer_select, mounted for this turn,
- * choosing among the places of the person who answers its card. */
+ * choosing among the places of the person this turn is for. */
 export function ownComputerChoiceCall(input: {
   identity: "solo" | "perspicax";
   tool: string | undefined;
@@ -241,14 +244,15 @@ export function ownComputerChoiceCall(input: {
   mounted: boolean;
   /** Whose places the turn may reach (the workplace decision's person). */
   choicePrincipalId: string | null | undefined;
-  /** Who answers the card. */
-  answererPrincipalId: string;
+  /** The person this turn is for: who answers its cards, and the speaker
+   * when they wrote it themselves in their own conversation. */
+  personPrincipalIds: readonly string[];
   guestDriven: boolean;
 }): boolean {
   if (input.identity !== "perspicax" || input.guestDriven || !input.mounted) return false;
   if (!COMPUTER_CHOICE_TOOL.test(input.tool?.trim() ?? "")) return false;
-  const person = input.choicePrincipalId?.trim().toLowerCase();
-  return Boolean(person) && person === input.answererPrincipalId.trim().toLowerCase();
+  const places = input.choicePrincipalId?.trim().toLowerCase();
+  return Boolean(places) && input.personPrincipalIds.some((person) => person.trim().toLowerCase() === places);
 }
 
 /** The read-only tools of a person's own destination that may read their
