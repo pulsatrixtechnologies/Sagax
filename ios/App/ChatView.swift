@@ -411,6 +411,11 @@ struct ChatView: View {
 #if DEBUG
             // `-open-plus`: the + sheet up, for the screenshot harness
             if ProcessInfo.processInfo.arguments.contains("-open-plus") { showingPlus = true }
+            // `-fresh-topic`: the chat as a return after the threshold draws it
+            // (Session+FreshTopic.swift), for the screenshot harness
+            if ProcessInfo.processInfo.arguments.contains("-fresh-topic"), case let .bot(bot) = openedChat {
+                session.freshTopics[bot.id] = openedChat.threadId
+            }
             if ProcessInfo.processInfo.arguments.contains("-open-profile") { openProfile() }
             if let screen = ParityLaunch.current?.screen {
                 if screen.opensComputer { showingComputer = true }

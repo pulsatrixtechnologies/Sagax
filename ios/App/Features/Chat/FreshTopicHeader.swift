@@ -25,7 +25,7 @@ struct FreshTopicHeader: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("chat.freshTopic.earlier")
             .accessibilityHint(Text("Shows the previous topic of this conversation"))
-            Spacer(minLength: 120)
+            Spacer(minLength: 0)
             VStack(spacing: 6) {
                 Text(verbatim: botName)
                     .font(.headline)
@@ -36,9 +36,22 @@ struct FreshTopicHeader: View {
             }
             .frame(maxWidth: 360)
             .accessibilityIdentifier("chat.freshTopic")
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
         .padding(.bottom, 24)
+        // the line at the top, the bot's name in the middle of the empty chat
+        .modifier(FillsVisibleHeight())
+    }
+}
+
+private struct FillsVisibleHeight: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.containerRelativeFrame(.vertical, alignment: .top) { height, _ in max(0, height - 24) }
+        } else {
+            content.frame(minHeight: 420, alignment: .top)
+        }
     }
 }
