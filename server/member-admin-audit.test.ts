@@ -63,6 +63,11 @@ describe("member admin audit, section 1: bot tool calls", () => {
   it.each(["list_bots", "ask_bot", "memory_write", "offer_shell_terminal", "list_terminal_resources", "propose_team_setup"])("agents %s (the member's own scope): the owner's card", (tool) => {
     expect(answerer(`mcp__agents__${tool}`)).toBe("owner");
   });
+  it("the terminal offer still goes to an admin when a command is described or another server spells it", () => {
+    expect(memberBotAdminApproval({ tool: "mcp__agents__offer_shell_terminal", command: { command: "ls" }, workspaceRoot: "/nowhere" })).toBe(true);
+    expect(memberBotAdminApproval({ tool: "mcp__agents__offer_shell_terminal", workspaceRoot: "/nowhere", foreignMcpServers: ["agents"] })).toBe(true);
+    expect(memberBotAdminApproval({ tool: "mcp__agents__offer_shell_terminal", workspaceRoot: "/nowhere" })).toBe(false);
+  });
   it.each(["browser", "computer", "files", "shell", "terminal"])("the %s MCP server on the shared host: an admin's", (server) => {
     expect(answerer(`mcp__${server}__run`)).toBe("admin");
   });
@@ -108,10 +113,8 @@ describe("member admin audit, section 3: MCP permission catalogue", () => {
     expect(decide({ id: "pr_admin", role: "admin" }, tool, "org").allowed).toBe(true);
     expect(DOC).toContain(`\`${tool}\``);
   });
-  it("a turn no person speaks in never pairs a device or asks for a login", () => {
-    expect(decide({ id: "bot", role: "service" }, "manage_pairing", "self").allowed).toBe(false);
-    expect(decide({ id: "bot", role: "service" }, "request_login", "self").allowed).toBe(false);
-    expect(decide({ id: "bot", role: "service" }, "rules_update", "self").allowed).toBe(true);
+  it.each(["manage_pairing", "request_login", "propose_team_setup", "rules_update", "docs_update", "create_bot"])("a turn no person speaks in (routine, webhook) never calls %s", (tool) => {
+    expect(decide({ id: "bot", role: "service" }, tool, "self").allowed).toBe(false);
   });
 });
 

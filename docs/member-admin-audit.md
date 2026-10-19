@@ -63,12 +63,17 @@ ask first (Grok and the other ACP engines, Codex).
 Mode on GOX: `shadow` (unset): a denial is audited (`mcp.shadow`), nothing is
 refused. The tiers matter once a server runs `SAGAX_MCP_PERMISSIONS=enforce`.
 
+A turn no person speaks in (a routine, a webhook: role `service`) never gets
+`manage_pairing`, `request_login`, `propose_team_setup`, `rules_update` or
+`docs_update`, whatever their tier: they need the person, could create bots
+under Full access, or would write lasting instructions from untrusted text.
+
 | Tool | Where | Before (member) | After (member) | Why |
 |---|---|---|---|---|
 | `rules_update`, `docs_update` | own (the bot's own RULES.md and docs) | admin tier (denied) | own | Own data. |
 | `request_login` | own (their own vault; the value never reaches the bot) | admin tier | own | Own data. |
 | `select_computer` | own (picks among their own places) | admin tier | own | Own destination. |
-| `manage_pairing` | own (their own devices; the route is open to members) | admin tier | own | Own data. |
+| `manage_pairing` | own (create: a code bound to the speaking person and capped to their scopes, on an organization server; list stays an admin route) | admin tier | own; the engine gate still treats it as host level (section 1) | Own devices. |
 | `propose_team_setup` | own (a card for their own team of bots) | admin tier | own, self scope | A proposal they confirm. |
 | `propose_team_memory` | org (memory the whole section reads) | admin tier | unchanged | Organization data. |
 | `create_bot`, `propose_bot_deletion`, `create_room`, `manage_room` | own (self scope override) | allowed at self | unchanged | Already. |

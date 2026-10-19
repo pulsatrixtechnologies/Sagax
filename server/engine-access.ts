@@ -208,7 +208,6 @@ export function memberBotAdminApproval(input: {
   // command and sent the member's terminal offer to an admin.
   if (!input.command && builtin && memberOwnScopeTool(input.tool?.trim())) return false;
   if (serverCommandApproval(input)) return true;
-  if (builtin && memberOwnScopeTool(input.tool?.trim())) return false;
   // 2026-10-16: the Data tools are the bot's own database, confined to its
   // own folders on an organization server (sagax-internal-tools.ts).
   if (builtin && dataToolName(input.tool)) return false;

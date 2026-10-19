@@ -231,8 +231,13 @@ export const ROLE_OVERRIDES: Partial<Record<McpRole, Record<string, McpScope | n
   member: { "bots:create": "self", "bots:delete.propose": "self", "rooms:create": "self", "rooms:manage": "self" },
   // Automation never creates bots, widens access or runs host commands.
   // 2026-10-19: no person speaks in a service turn (a routine, a webhook):
-  // pairing a device or asking a person for a login needs that person.
-  service: { "vm:exec": null, "actions:invoke": null, "pairing:manage": null, "credentials:login": null },
+  // pairing a device or asking a person for a login needs that person, a
+  // team setup could create bots under Full access, and a bot's rules and
+  // docs are lasting instructions untrusted text must not write.
+  service: {
+    "vm:exec": null, "actions:invoke": null, "pairing:manage": null, "credentials:login": null,
+    "teamsetup:propose": null, "rules:update": null, "docs:update": null,
+  },
 };
 
 const rank = (scope: McpScope) => MCP_SCOPES.indexOf(scope);
