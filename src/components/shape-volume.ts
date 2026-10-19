@@ -254,20 +254,23 @@ function eyeBoxes(eyes: string): { cx: number; cy: number; w: number; h: number 
 /** The eyes drawn in a style. Capsules are the engine's own; ovals and arcs are built on each eye's box, so they follow it (pose, gaze, blink). */
 export function styledEyes(eyes: string, style: EyeStyle): string {
   if (style === "capsule" || !eyes) return eyes;
-  return eyeBoxes(eyes)
+  const boxes = eyeBoxes(eyes);
+  // two eyes never touch: an oval or an arch stays within its share of the gap between them
+  const gap = boxes.length > 1 ? Math.abs(boxes[1].cx - boxes[0].cx) : Infinity;
+  return boxes
     .map(({ cx, cy, w, h }) => {
       const size = Math.max(w, h);
       // a blink still closes them: the box's height follows the lid
       const open = Math.min(1, h / Math.max(w * 1.6, 0.01));
       if (style === "oval") {
-        const rx = size * 0.58;
-        const ry = Math.max(0.4, size * 0.4 * open);
+        const rx = Math.min(size * 0.46, gap * 0.44);
+        const ry = Math.max(0.4, size * 0.33 * open);
         return `M${round2(cx - rx)} ${round2(cy)}A${round2(rx)} ${round2(ry)} 0 1 0 ${round2(cx + rx)} ${round2(cy)}A${round2(rx)} ${round2(ry)} 0 1 0 ${round2(cx - rx)} ${round2(cy)}Z`;
       }
       // pleased (∩ ∩): a full, thick half-moon arch, low in the face and centred on the eye
-      const hw = Math.max(w * 1.05, h * 0.34);
-      const hh = hw * 0.95 * Math.max(0.25, open);
-      const t = Math.max(1, hw * 0.6);
+      const hw = Math.min(Math.max(w * 1.35, h * 0.44), gap * 0.42);
+      const hh = hw * 0.9 * Math.max(0.25, open);
+      const t = Math.max(1.2, hw * 0.72);
       const y = cy + size * 0.36;
       const ix = Math.max(0.2, hw - t);
       const iy = Math.max(0.15, hh - t);
