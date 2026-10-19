@@ -224,6 +224,8 @@ describe("workspace backup data boundary", () => {
     expect(savedSignInPath("principals/pr_ana/claude/skills/gh/SKILL.md")).toBe(false);
     expect(savedSignInPath("principals/pr_ana/codex/.config/gh/hosts.yml")).toBe(true);
     expect(savedSignInPath("vm-home/talk.key")).toBe(false);
+    const args = JSON.parse(withoutEngineSecrets("org/claude/.mcp.json", JSON.stringify({ mcpServers: { g: { command: "docker", args: ["run", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=FAKE_SECRET_1", "--header", "X-API-Key: FAKE_SECRET_2", "-e", "LOG_LEVEL=debug", "img"] } } }))!);
+    expect(args.mcpServers.g.args).toEqual(["run", "-e", "--header", "-e", "LOG_LEVEL=debug", "img"]);
   });
 
   it("counts what to reconnect by category, a person once and an engine sign-in once per engine home", () => {

@@ -214,7 +214,7 @@ const SECRET_WORDS = new Set([
  * or `keys` is one too (`key`, `OPENAI_KEY`, `groqKey`), except after these
  * words, which name a lookup or a keyboard key. */
 const KEY_QUALIFIERS = new Set(["api", "private", "secret", "access", "signing", "encryption", "client", "license", "master", "session", "auth"]);
-const NOT_SECRET_KEY = new Set(["sort", "cache", "partition", "primary", "foreign", "hot", "short", "shortcut", "keyboard", "group", "dedupe", "idempotency", "lookup", "public", "map", "object", "storage", "routing", "row", "column", "index", "unique", "composite", "join", "hash"]);
+const NOT_SECRET_KEY = new Set(["tool", "model", "provider", "sort", "cache", "partition", "primary", "foreign", "hot", "short", "shortcut", "keyboard", "group", "dedupe", "idempotency", "lookup", "public", "map", "object", "storage", "routing", "row", "column", "index", "unique", "composite", "join", "hash"]);
 /** `token` and `tokens` also count text (`max_tokens`,
  * `model_auto_compact_token_limit`): with one of these words the name is a
  * number, not a secret. */
@@ -284,6 +284,9 @@ function secretArgs(items: readonly unknown[]): Set<number> {
   items.forEach((item, i) => {
     if (typeof item !== "string") return;
     if (SECRET_VALUE.test(item)) drop.add(i);
+    // `NAME=value` (docker run -e) and `Name: value` (a --header) of a secret name
+    const pair = /^([A-Za-z_][\w.-]*)\s*(?:=|:\s)\s*\S/.exec(item);
+    if (pair && !item.startsWith("-") && secretFieldName(pair[1]!)) drop.add(i);
     const flag = secretFlag(item);
     if (flag === "inline") drop.add(i);
     else if (flag === "next" && typeof items[i + 1] === "string" && !(items[i + 1] as string).startsWith("-")) drop.add(i + 1);
