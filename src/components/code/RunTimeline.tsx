@@ -106,7 +106,7 @@ export function RunTimeline({ events, onApprove, workedMinutes, working }: RunTi
           case "followup":
             return (
               <li key={key} className="flex flex-col items-end gap-1">
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-bubble-user px-3.5 py-2 text-[13.5px] text-bubble-user-ink">{item.text}</div>
+                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-bubble-user px-3.5 py-2 text-[13.5px] text-ink">{item.text}</div>
                 {item.kind === "followup" && item.mode !== "queue" && <span className="text-[11px] text-ink-tertiary">{t(`code.followup.mode.${item.mode}` as "code.followup.mode.steer")}</span>}
                 {item.kind === "task" && index === 0 && workedMinutes !== undefined && (
                   <span data-run-worked className="self-start text-[12px] text-ink-tertiary">{workedMinutes < 1 ? t("code.timeline.worked.lt1") : t("code.timeline.worked", { n: workedMinutes })}</span>
