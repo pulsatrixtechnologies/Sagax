@@ -3376,15 +3376,24 @@ Rules, none optional (`server/routes/bot-code-branches.ts`, git in
   organization server: a request with no person is refused (`no_person`),
   never run as the server; git and gh get no `HOME`, ssh agent or config
   folder of the server's (`isolated`); a commit needs the person's name and
-  email (`no_author`); origin's fetch and push URLs must both be
-  `https://github.com/<repo>` and no local config may reroute the push
-  (`unsafe_config`: insteadOf, proxy, sslVerify, extraheader, pushurl,
-  helpers, includes); every answer (state, errors, git messages) shows a
+  email (`no_author`); the repository's local and worktree git config
+  must hold only plainly safe keys (`SAFE_LOCAL_CONFIG`, an allowlist:
+  filters, diff drivers, signing programs, url rewrites, proxies, TLS,
+  headers, helpers, includes and remote helpers are refused as
+  `unsafe_config`, so an LFS repository is not acted on there); the push
+  goes to `https://github.com/<repo>.git` named in the command (origin's
+  URLs never decide it); a worktree counts only if its git folder is the
+  repository's own; every answer (state, errors, git messages) shows a
   server path as its folder name only (`redactPaths`).
 - What: never a force push, never the default branch (no push, delete or
   pull request): origin's HEAD, the remote's HEAD read at push time, and
   main, master, trunk and develop by name whatever HEAD says (or when
-  origin has no HEAD). Hooks, fsmonitor and textconv off, the message
+  origin has no HEAD); a pull request goes to GitHub's own default branch
+  (`gh api repos/<repo>`) and never from it. Hooks, fsmonitor, textconv,
+  signing programs and signature checks off on every call; gh runs in a
+  fresh empty folder (an empty home and config per call on an
+  organization server) with `--title`/`--body` from the commits, never
+  `--fill`, the message
   through a fresh private temp file (`mkdtemp`, `wx`; never argv, never in
   the repository). Delete: refused while checked out in a
   worktree (no folder is ever removed); work not on origin needs

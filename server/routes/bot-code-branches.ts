@@ -168,7 +168,7 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
       if (action === "pull") {
         if (!repo) return json(res, 200, { pull: null, reason: "not_github" });
         if (!publish) return json(res, 200, { pull: null, reason: "github_not_connected" });
-        const pull = await new BranchPulls(exec, repository.root, repo, publish.gh, isolated).find(branch);
+        const pull = await new BranchPulls(exec, repository.root, repo, { ...credentials.git, ...publish.gh }, isolated).find(branch);
         return json(res, 200, { pull: pull ?? null });
       }
       if (!ACTIONS.has(action)) return json(res, 404, { error: "no such action" });
@@ -195,7 +195,8 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
         const state = await git.state();
         if (state.isDefault) return json(res, 409, { error: "The default branch is not proposed from here.", code: "default_branch" });
         if (!state.pushed) return json(res, 409, { error: "Push the branch first: GitHub has no commits for it yet.", code: "not_pushed" });
-        const pull = await new BranchPulls(exec, repository.root, repo, publish.gh, isolated).open(branch, state.base);
+        const subjects = await git.subjects(await git.base());
+        const pull = await new BranchPulls(exec, repository.root, repo, { ...credentials.git, ...publish.gh }, isolated).open(branch, subjects, task.title);
         deps.audit(auth, "code.branch.pull_request", target, { number: pull.number, url: pull.url });
         return json(res, 200, { ok: true, pull, state: shown(state) });
       }

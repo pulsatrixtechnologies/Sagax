@@ -333,6 +333,8 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/browser\\/network$","tier":"admin","readOnly":false,"scope":"bots:admin","defaultEnabled":false},
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/cards\\/([\\w-]+)$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/cloud-agents(?:\\/([\\w-]+)(?:\\/(follow-up|cancel|archive|artifacts|transcript))?)?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/code\\/branch(?:\\/(diff|pull|commit|push|pr|delete))?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/code\\/branches\\/archived$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"DELETE","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/command-allowlist(?:\\/([\\w-]+))?$","tier":"admin","readOnly":false,"scope":"bots:admin","defaultEnabled":false,"destructive":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/command-allowlist(?:\\/([\\w-]+))?$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/compact$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},

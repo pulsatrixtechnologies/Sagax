@@ -9130,5 +9130,5 @@
   "botPanel.branch.error.commitFailed": "git n'a pas pu faire le commit de ces changements.",
   "botPanel.branch.error.noPerson": "Connectez-vous à votre nom pour agir sur une branche ici.",
   "botPanel.branch.error.noAuthor": "Votre nom et votre courriel sont requis pour signer un commit ici. Ajoutez-les d'abord à votre profil.",
-  "botPanel.branch.error.unsafeConfig": "La configuration git de ce dépôt change la façon de pousser : il n'est donc pas poussé d'ici."
+  "botPanel.branch.error.unsafeConfig": "La configuration git de ce dépôt peut changer ce que git exécute ou l'endroit où il pousse : le panneau n'y agit donc pas ici."
 }

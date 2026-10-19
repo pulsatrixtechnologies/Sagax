@@ -257,6 +257,34 @@ describe("Coding branches: acted on where the repository is", () => {
     const removed = await api.post("/api/bots/pepper/code/branch/delete", { threadId: "t1", branch: "feat/widgets" });
     expect(removed.body.code).toBe("checked_out");
     expect(JSON.stringify([commit.body, removed.body])).not.toContain(dir);
+
+    // local config the bot could have written (a clean filter runs at add/status): refused
+    git(repo, "config", "filter.x.clean", "touch /nonexistent-sentinel");
+    try {
+      const read = await api.get(`/api/bots/pepper/code/branch?${q("feat/widgets")}`);
+      expect(read.body.code).toBe("unsafe_config");
+      expect(JSON.stringify(read.body)).not.toContain(dir);
+    } finally {
+      git(repo, "config", "--unset", "filter.x.clean");
+    }
+  });
+
+  it("never runs a signing program the repository names, even on a solo server", async () => {
+    const sentinel = join(dir, "gpg-ran");
+    const program = join(dir, "fake-gpg.sh");
+    writeFileSync(program, `#!/bin/sh\ntouch ${sentinel}\nexit 1\n`, { mode: 0o755 });
+    git(worktree, "config", "commit.gpgSign", "true");
+    git(worktree, "config", "gpg.program", program);
+    try {
+      writeFileSync(join(worktree, "signed.ts"), "export const signed = 1;\n");
+      const api = await serve(deps());
+      const commit = await api.post("/api/bots/pepper/code/branch/commit", { threadId: "t1", branch: "feat/widgets", message: "Signed?" });
+      expect(commit.status).toBe(200);
+      expect(existsSync(sentinel)).toBe(false);
+    } finally {
+      git(worktree, "config", "--unset", "commit.gpgSign");
+      git(worktree, "config", "--unset", "gpg.program");
+    }
   });
 
   it("says a branch whose repository is elsewhere has no actions here", async () => {
@@ -304,15 +332,21 @@ describe("Coding branches: the pieces", () => {
     let created = false;
     const exec: GitExec = async (program, args, options) => {
       calls.push({ args: [program, ...args], env: options.env });
+      if (args[0] === "api") return { code: 0, stdout: "main\n", stderr: "" };
       if (args[1] === "list") return { code: 0, stdout: created ? JSON.stringify([{ number: 7, url: "https://github.com/o/r/pull/7", state: "OPEN" }]) : "[]", stderr: "" };
       created = true;
       return { code: 0, stdout: "https://github.com/o/r/pull/7\n", stderr: "" };
     };
     const pulls = new BranchPulls(exec, "/tmp", "o/r", { GH_TOKEN: "tok" });
     expect(await pulls.find("feat/x")).toBeUndefined();
-    expect(await pulls.open("feat/x", "main")).toEqual({ number: 7, url: "https://github.com/o/r/pull/7", state: "open" });
-    expect(await pulls.open("feat/x", "main")).toMatchObject({ number: 7, state: "open" });
-    expect(calls.filter((call) => call.args[2] === "create")).toHaveLength(1);
-    expect(calls.every((call) => call.args.includes("--repo") && call.args.includes("o/r") && call.env?.GH_TOKEN === "tok")).toBe(true);
+    expect(await pulls.open("feat/x", ["Add x"], "Thread title")).toEqual({ number: 7, url: "https://github.com/o/r/pull/7", state: "open" });
+    expect(await pulls.open("feat/x", ["Add x"], "Thread title")).toMatchObject({ number: 7, state: "open" });
+    const create = calls.filter((call) => call.args[2] === "create");
+    expect(create).toHaveLength(1);
+    expect(create[0]!.args).toEqual(expect.arrayContaining(["--head=feat/x", "--base=main", "--title=Add x"]));
+    expect(calls.filter((call) => call.args[1] !== "api").every((call) => call.args.includes("--repo") && call.args.includes("o/r"))).toBe(true);
+    expect(calls.every((call) => call.env?.GH_TOKEN === "tok")).toBe(true);
+    // GitHub's own default branch is never proposed, whatever the local refs say
+    await expect(pulls.open("main", [], "x")).rejects.toMatchObject({ code: "default_branch" });
   });
 });

@@ -9130,5 +9130,5 @@
   "botPanel.branch.error.commitFailed": "git could not commit these changes.",
   "botPanel.branch.error.noPerson": "Sign in as yourself to act on a branch here.",
   "botPanel.branch.error.noAuthor": "Your name and email are needed to sign a commit here. Add them to your profile first.",
-  "botPanel.branch.error.unsafeConfig": "This repository's git config changes how it pushes, so it is not pushed from here."
+  "botPanel.branch.error.unsafeConfig": "This repository's git config can change what git runs or where it pushes, so the panel does not act on it here."
 }

@@ -26389,9 +26389,7 @@ function codeBranchCredentials(viewerId: string | undefined): BranchCredentials 
   // global or system config, credential helper or ssh key). The route
   // refuses a request with no person before this.
   const home = join(DATA_DIR, "code-branches", "home-empty");
-  const ghConfig = join(DATA_DIR, "code-branches", "gh-empty");
   mkdirSync(home, { recursive: true, mode: 0o700 });
-  mkdirSync(ghConfig, { recursive: true, mode: 0o700 });
   const git: Record<string, string> = {
     HOME: home,
     GIT_CONFIG_NOSYSTEM: "1",
@@ -26418,7 +26416,8 @@ function codeBranchCredentials(viewerId: string | undefined): BranchCredentials 
     ...author,
     publish: {
       push: { GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_1: header.GIT_CONFIG_KEY_0!, GIT_CONFIG_VALUE_1: header.GIT_CONFIG_VALUE_0! },
-      gh: { HOME: home, GH_TOKEN: connection.token, GH_HOST: "github.com", GH_CONFIG_DIR: ghConfig },
+      // gh gets a fresh empty home and config folder per call (server/code-branches.ts).
+      gh: { GH_TOKEN: connection.token, GH_HOST: "github.com" },
     },
   };
 }
