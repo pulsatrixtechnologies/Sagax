@@ -349,12 +349,25 @@ describe("the cluster wake", () => {
     expect(r.calls.filter((call) => call === "kubernetes:exec")).toHaveLength(1);
   });
 
-  it("prewake starts the cluster and the person's environment before a routine, and never on Docker", async () => {
+  it("prewake starts the cluster and the person's environment before a routine of a bot that used it, and never on Docker", async () => {
     const r = rig({ upAfterProbes: 2 });
+    // never used by this bot: nothing is woken or created
+    expect(await r.manager.prewake(ALICE, "bot-1")).toBe(false);
+    expect(r.posts).toHaveLength(0);
+    r.cluster.up = true;
+    await r.manager.exec(ALICE, { argv: ["true"] }, "bot-1");
+    r.cluster.up = false;
+    r.waker.markUnreachable();
+    clock += 10 * 60_000;
     expect(await r.manager.prewake(ALICE, "bot-1")).toBe(true);
     expect(r.posts).toHaveLength(1);
     expect(r.calls.at(-1)).toBe("kubernetes:ensure");
+    // a prewake is not a use: a week later it stops
+    clock += 8 * 24 * 3600_000;
+    expect(await r.manager.prewake(ALICE, "bot-1")).toBe(false);
     const docker = rig({ route: "docker" });
+    await docker.manager.exec(ALICE, { argv: ["true"] }, "bot-1");
+    docker.calls.length = 0;
     expect(await docker.manager.prewake(ALICE, "bot-1")).toBe(false);
     expect(docker.calls).toEqual([]);
     expect(docker.posts).toHaveLength(0);

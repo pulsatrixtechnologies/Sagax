@@ -67,6 +67,9 @@ export interface ClusterWaitEvent {
 
 export class UserSandboxManager {
   private readonly pending = new Map<string, number>();
+  /** person + bot -> last call that could wake the cluster (a bot's real
+   * use), for prewake. In memory: after a restart the first run is cold. */
+  private readonly recentUse = new Map<string, number>();
   /** One desktop open at a time per person (two at once raced on the VNC
    * password file and one failed), and the passwords of the live views
    * still open: a second view must not change them under the first. */
@@ -130,14 +133,19 @@ export class UserSandboxManager {
     // after a cut connection; a command (exec) only when it surely did not
     // reach the provisioner.
     const run = async <T>(call: () => Promise<T>, idempotent = false): Promise<T> => {
+      const calledAt = this.now();
       await ready();
+      if (mode === "wake") this.recentUse.set(useKey(who.principalId, who.botId), this.now());
       const startedAt = this.now();
       let resent = false;
       for (;;) {
         try {
           return await call();
         } catch (error) {
-          if (mode === "wake" && sandboxStarting(error) && this.now() - startedAt < SANDBOX_STARTING_RETRY_MS) {
+          // Bounded twice: the starting window, and the whole call (wake
+          // included) stays under the engine's 10 minute cut of a tool call.
+          if (mode === "wake" && sandboxStarting(error) && this.now() - startedAt < SANDBOX_STARTING_RETRY_MS
+            && this.now() - calledAt < SANDBOX_CALL_BUDGET_MS) {
             notify("waiting");
             await this.sleep(SANDBOX_STARTING_RETRY_DELAY_MS);
             continue;
@@ -154,9 +162,9 @@ export class UserSandboxManager {
       info: () => run(() => client.info(), true),
       status: (key) => run(() => client.status(key), true),
       ensure: (key) => run(() => client.ensure(key), true),
-      stop: (key) => run(() => client.stop(key), true),
-      pause: (key) => run(() => client.pause(key), true),
-      resume: (key) => run(() => client.resume(key), true),
+      stop: (key) => run(() => client.stop(key)),
+      pause: (key) => run(() => client.pause(key)),
+      resume: (key) => run(() => client.resume(key)),
       markUsed: (key) => run(() => client.markUsed(key), true),
       stats: (key) => run(() => client.stats(key), true),
       remove: (key, options) => run(() => client.remove(key, options)),
@@ -354,11 +362,18 @@ export class UserSandboxManager {
    * signed out; best effort, never throws. True when it was asked. */
   async prewake(principalId: string, botId?: string): Promise<boolean> {
     if (!this.options.kubernetes || !this.options.kubernetesWaker || this.pending.has(principalId)) return false;
+    // Only for a bot that used this environment lately: a routine that never
+    // touches it must not keep the cluster up or create an environment.
+    const usedAt = this.recentUse.get(useKey(principalId, botId));
+    if (usedAt === undefined || this.now() - usedAt > PREWAKE_RECENT_USE_MS) return false;
     try {
       if ((this.options.backendFor?.(principalId, botId) ?? "docker") !== "kubernetes") return false;
       await this.clientFor(principalId, botId, "wake").ensure(this.keyFor(principalId));
     } catch (error) {
       console.warn(`user-sandbox: prewake failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // a prewake is not a use: it must not keep itself going
+      this.recentUse.set(useKey(principalId, botId), usedAt);
     }
     return true;
   }
@@ -591,6 +606,16 @@ export class UserSandboxManager {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
+}
+
+/** A whole call that waits for the cluster and then for its pod stays under
+ * the 10 minute cut an engine puts on one tool call. */
+export const SANDBOX_CALL_BUDGET_MS = 9 * 60_000 + 30_000;
+/** prewake only for a bot that used the environment this recently. */
+export const PREWAKE_RECENT_USE_MS = 7 * 24 * 3600_000;
+
+function useKey(principalId: string, botId?: string): string {
+  return `${principalId}\n${botId ?? ""}`;
 }
 
 const VNC_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";

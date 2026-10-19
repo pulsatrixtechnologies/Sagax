@@ -1826,6 +1826,8 @@ export class RoutineManager {
       if (!routine.enabled || routine.suspended || routine.target === "room-goal" || dueAt == null) continue;
       if (dueAt - now > PREWAKE_LEAD_MS || dueAt < now - 60_000) continue;
       if (this.prewoken.get(routine.id) === dueAt) continue;
+      // An occurrence skipped while the person is away wakes nothing.
+      if (routine.onlyWhenPresent && awayDecision(routine, this.presenceOf(routine)) === "skip") continue;
       this.prewoken.set(routine.id, dueAt);
       try { prewake(cloneRoutine(routine), dueAt); } catch { /* best effort */ }
     }
