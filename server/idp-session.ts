@@ -320,8 +320,9 @@ export class IdpSessionManager {
   private readonly sessions: IdpSessionStore;
   private readonly principals: IdpPrincipalStore;
   private readonly now: () => number;
-  /** When this server started: a recheck needs a refresh after it. */
-  private readonly startedAt: number;
+  /** Grants the provider refreshed since this process started (memory
+   * only, so no clock is trusted): what a recheck after a restart needs. */
+  private readonly refreshedSinceStart = new Set<string>();
   private readonly refreshAfter: number;
   private readonly log: (line: string) => void;
   private readonly inflight = new Map<string, Promise<void>>();
@@ -347,7 +348,6 @@ export class IdpSessionManager {
     this.sessions = options.sessions;
     this.principals = options.principals;
     this.now = options.now ?? Date.now;
-    this.startedAt = this.now();
     this.refreshAfter = options.refreshAfterMs ?? DEFAULT_REFRESH_AFTER_SECONDS * 1000;
     this.log = options.log ?? ((line) => console.warn(line));
     this.schedule = options.schedule ?? ((run, delayMs) => { setTimeout(run, delayMs).unref(); });
@@ -413,8 +413,7 @@ export class IdpSessionManager {
       return false;
     }
     if (!ref || !grant || !isSessionGrant(grant)) return false;
-    const since = this.startedAt;
-    if (grant.lastOkAt < since) {
+    if (!this.refreshedSinceStart.has(ref)) {
       if (!this.inflight.get(ref) && this.gateOf(grant)) return false;
       await this.startRefresh(ref);
     }
@@ -424,7 +423,7 @@ export class IdpSessionManager {
     } catch {
       return false;
     }
-    if (!after || after.lastOkAt < since || !this.sessions.byId(session.id)) return false;
+    if (!after || !this.refreshedSinceStart.has(ref) || !this.sessions.byId(session.id)) return false;
     this.sessions.recheckDone?.(session.id);
     return true;
   }
@@ -601,6 +600,7 @@ export class IdpSessionManager {
         this.endGrant(ref, "the rotated grant could not be kept");
         return;
       }
+      this.refreshedSinceStart.add(ref);
       if (outcome.identity) this.applyIdentity(next, outcome.identity);
       if (this.onRenewed) {
         try {

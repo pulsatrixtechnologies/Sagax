@@ -753,7 +753,11 @@ describe("sessions from an OpenID Connect sign-in", () => {
     expect(reopened.needsRecheck(issued.session.id)).toBe(true);
     // an email session still needs a clean close to come back
     expect(reopened.authenticate(email.token)).toBeNull();
+    // nor does it act for anyone (bot-act copies, person lookups) before then
+    expect(reopened.delegate(issued.session.id)).toBeNull();
+    expect(reopened.liveWhere((s) => s.principalId === "pr_y")).toEqual([]);
     reopened.recheckDone(issued.session.id);
+    expect(reopened.liveWhere((s) => s.principalId === "pr_y").map((s) => s.id)).toEqual([issued.session.id]);
     expect(reopened.needsRecheck(issued.session.id)).toBe(false);
     reopened.close();
     const clean = new SessionRegistry({ file: path, now: () => clock });

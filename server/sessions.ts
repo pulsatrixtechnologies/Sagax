@@ -814,7 +814,8 @@ export class SessionRegistry {
   /** Live durable sessions the predicate picks (copies). Bot-act copies are excluded. */
   liveWhere(pick: (session: SessionRecord) => boolean): SessionRecord[] {
     const now = this.now();
-    return this.sessions.filter((s) => !s.ephemeral && s.expiresAt > now && !this.personal(s.scopes) && pick(s)).map((s) => structuredClone(s));
+    // A session still waiting for its provider recheck acts for no one.
+    return this.sessions.filter((s) => !s.ephemeral && s.expiresAt > now && !this.recheck.has(s.id) && !this.personal(s.scopes) && pick(s)).map((s) => structuredClone(s));
   }
 
   /** A 60-second copy of one live session, for one bot action. Same scopes,
@@ -823,7 +824,7 @@ export class SessionRegistry {
    * an expired session, or a session this registry refuses as personal. */
   delegate(sessionId: string): { token: string; session: PublicSession } | null {
     const source = this.sessions.find((s) => s.id === sessionId && s.expiresAt > this.now());
-    if (!source || source.ephemeral || this.personal(source.scopes)) return null;
+    if (!source || source.ephemeral || this.recheck.has(source.id) || this.personal(source.scopes)) return null;
     const now = this.now();
     const token = `sgx_sess_${randomBytes(32).toString("base64url")}`;
     const record: SessionRecord = {

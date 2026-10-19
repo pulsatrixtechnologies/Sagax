@@ -32874,7 +32874,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // provider not answering yet, a 503 the client retries, never a sign-out.
       if (sessions.needsRecheck(auth.session.id)) {
         await settledWithin(idpSessions.recheck(auth.session), IDP_REFRESH_WAIT_MS);
-        if (sessions.byId(auth.session.id) && sessions.needsRecheck(auth.session.id)) {
+        const waiting = sessions.byId(auth.session.id);
+        if (waiting && sessions.needsRecheck(waiting.id)) {
+          // No grant left to confirm it (a logout whose write was lost, a
+          // device whose person has no live sign-in): ended, not "retry".
+          if (idpSessions.mustRefuse(waiting) === "idp_session_ended") return endSession(401, "idp_session_ended", "Your Pulsatrix sign-in has ended. Sign in again.");
           res.setHeader("retry-after", "5");
           return json(res, 503, { error: "Sagax restarted and is confirming your Pulsatrix sign-in. Try again in a moment.", code: "idp_recheck_pending" });
         }
