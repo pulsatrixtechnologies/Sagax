@@ -1596,6 +1596,8 @@ export function ComputerPanel({
         computerOff={livePlace === "off"}
         botName={bot.name}
         botId={bot.id}
+        threadId={bot.threadId}
+        inUse={livePlace === "auto" ? (autoSurfaceCurrent ? (autoSurface.surface ?? "unknown") : "unknown") : livePlace}
         browser={browserOffered ? <BrowserPanel bot={bot} /> : null}
       />
       {!embedded && <div className="mt-6">
