@@ -213,58 +213,38 @@ final class ComposerPowerUITests: XCTestCase {
 
     // MARK: - Busy send (CO15)
 
-    /// While the bot works a send asks what it should do: "Add to the
-    /// current task" joins the running turn; "New task in parallel" opens a
-    /// parallel task that answers here.
+    /// While the bot works a send never asks (JC 2026-10-18): it goes at
+    /// once as auto and the bot routes it (server/busy-routing.ts). The
+    /// fixture's engine takes words live, so they join the running turn,
+    /// marked for the bot to route.
     @MainActor
-    func testBusySendSteersAndStartsAParallelTask() throws {
+    func testBusySendGoesAtOnceWithoutAChooser() throws {
         try setUpFixture()
         let lab = try busyCardLab()
         let app = try launch("Card Lab")
-        let steerWords = "actually use the other file \(stamp())"
-        type(app, steerWords)
+        let words = "Inventaire de remplacement du trimestre pour le conseil \(stamp())"
+        type(app, words)
         send(app)
-        XCTAssertTrue(element(app, "busy-send-chooser").waitForExistence(timeout: 10), "the busy-send chooser")
-        XCTAssertTrue(element(app, "busy-send-steer").isSelected, "a short correction suggests a steer")
-        attach("Busy-send chooser", app)
-        tap(app, "busy-send-steer")
-        try eventually("the words joined the running turn") {
-            try page(lab.threadId).contains { $0.role == "user" && $0.text == steerWords && $0.steered == true }
+        XCTAssertFalse(element(app, "busy-send-chooser").waitForExistence(timeout: 2), "no chooser any more")
+        try eventually("the words reached the running work") {
+            try page(lab.threadId).contains { $0.role == "user" && $0.text == words && ($0.steered == true || $0.parallelTask?.role == "request") }
         }
-        XCTAssertFalse(element(app, "busy-send-chooser").exists)
-
-        let parallelWords = "Inventaire de remplacement du trimestre pour le conseil \(stamp())"
-        type(app, parallelWords)
-        send(app)
-        XCTAssertTrue(element(app, "busy-send-parallel").waitForExistence(timeout: 10))
-        XCTAssertTrue(element(app, "busy-send-parallel").isSelected, "a new request suggests parallel")
-        tap(app, "busy-send-parallel")
-        try eventually("the request opened a parallel task") {
-            try page(lab.threadId).contains { $0.text == parallelWords && $0.parallelTask?.role == "request" }
-        }
-        let request = try XCTUnwrap(try page(lab.threadId).first { $0.text == parallelWords }?.parallelTask)
-        try eventually("the parallel task is a thread of Card Lab") {
-            try fleet().bots.first { $0.id == lab.id }?.tasks?.contains {
-                $0.threadId == request.threadId && $0.parallelOf?.threadId == lab.threadId
-            } == true
-        }
-        attach("Steered and parallel", app)
+        attach("Busy send routed by the bot", app)
         idle(lab)
     }
 
     // MARK: - Steer a held send (CO14)
 
-    /// "After this one" holds the words; Steer on the held row folds them
-    /// into the running turn without stopping it.
+    /// Words held for after the running turn (here sent by the API with
+    /// busyMode after, as an older build or a relay can); Steer on the held
+    /// row folds them into the running turn without stopping it.
     @MainActor
     func testQueuedSendSteersIntoTheRunningTurn() throws {
         try setUpFixture()
         let lab = try busyCardLab()
         let app = try launch("Card Lab")
         let words = "Ajoute aussi le tableau \(stamp())"
-        type(app, words)
-        send(app)
-        tap(app, "busy-send-after")
+        _ = try request("POST", "/api/bots/\(lab.id)/messages", body: ["text": words, "threadId": lab.threadId, "busyMode": "after"])
         XCTAssertTrue(element(app, "queued-steer").waitForExistence(timeout: 20), "the held send with Steer")
         XCTAssertFalse(try page(lab.threadId).contains { $0.text == words }, "held, not said yet")
         attach("Held send with Steer", app)
@@ -342,7 +322,7 @@ final class ComposerPowerUITests: XCTestCase {
         idle(lab)
         // something new to fold since any earlier compaction
         let words = "Note pour le résumé \(stamp())"
-        try request("POST", "/api/bots/\(lab.id)/messages", body: ["text": words, "threadId": lab.threadId])
+        _ = try request("POST", "/api/bots/\(lab.id)/messages", body: ["text": words, "threadId": lab.threadId])
         try eventually("the reply settled") {
             try !busy(lab.id) && page(lab.threadId).last?.role == "bot"
         }

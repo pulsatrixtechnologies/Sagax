@@ -245,7 +245,7 @@ extension ChatView {
                 },
                 send: { submit() },
                 voice: startVoiceMode,
-                hardwareReturn: { submit(busyMode: openBusyChoice) },
+                hardwareReturn: { submit() },
                 draftChanged: { old, new in draftChanged(from: old, to: new) }
             ))
         }

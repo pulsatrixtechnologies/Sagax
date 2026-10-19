@@ -3178,13 +3178,66 @@ of that thread. The owner's notification of such a run names no thread, only
 ## Parallel tasks (sending while the bot works, 2026-10-02)
 
 A message sent to a busy 1:1 conversation carries `busyMode`
-(`shared/parallel-tasks.ts`): `steer` joins the running turn (the default,
-live steer or the queue), `after` waits in the queue, `parallel` runs it as
-its own task. The composer offers the three (`BusySendChooser`, suggested
-choice by `suggestBusySendMode`, Enter picks) unless the person set a
-default in Settings > Parallel threads (`sagax.busySend.v1`, synced per
-person). Keep these rules, each covered by `server/parallel-tasks.test.ts`,
-`server/parallel-tasks.e2e.test.ts` or `src/components/parallel-tasks.ui.test.ts`:
+(`shared/parallel-tasks.ts`): `steer` joins the running turn (live steer or
+the queue), `after` waits in the queue, `parallel` runs it as its own task.
+A send that names no mode joins the running turn (the API, relays, older
+builds). Since 2026-10-18 nobody is asked (JC: the bot orchestrates); see
+"Busy sends: the bot routes them" below.
+
+## Busy sends: the bot routes them (2026-10-18)
+
+JC: "Le message est livré au bot tout de suite et le bot (orchestrateur)
+décide." No chooser any more, desktop or iOS (`BusySendChooser` and the
+iOS `BusySendChooserView` are gone, so are the personal `sagax.busySend.v1`
+default and the bot editor's busy-send row; `busySend` is still stored,
+exported and read by older builds, no client reads it). Rules, covered by
+`server/busy-routing.test.ts`, `server/busy-routing.e2e.test.ts`,
+`src/components/Composer.busySend.test.ts`,
+`server/drivers/agents-catalog-route-message.test.ts` and the iOS
+`ComposerSendTests`:
+
+- The apps send `routeWhileBusy: true` (a field an older server ignores,
+  so it steers as before) when the 1:1 conversation is busy and not on a
+  call; `busyMode: "auto"` means the same. The server reads it as
+  `BusySendRequest` `auto`; guarded relays and voice calls stay `steer`;
+  a thread that is itself a parallel task, a routine run or a room never
+  routes (`autoRoutableThread`) and joins the running turn.
+- Engine that steers live: the words are steered in behind a short note
+  (`orchestratedSteerText`: "[Sent while you work · route <handle> ...]",
+  the handle is the steer id). THREADS_PROMPT (`server/system-prompt.ts`)
+  tells the bot: a precision or a correction, use it now; an independent
+  request, `route_message` `parallel` (it becomes a parallel task, the
+  person's row turned into its request line, no second row,
+  `startParallelTask` `existingRequestId`, `parallelOf.routed`); a request
+  that needs the current result or the same files or records,
+  `route_message` `after` (the row stays, a queue item with
+  `existingMessageId` starts the next turn on that row, no pending chip,
+  and the bot says so in one line). `handoffs.routedAway` keeps a routed
+  message from being offered again as unseen.
+- `route_message` (agents MCP, `threads:route`, tier own, member scope
+  conversation) is offered only in a person's 1:1 turn
+  (`SAGAX_ROUTE_MESSAGES`, depth 0, `autoRoutableThread`); its internal
+  route (`server/routes/route-message-internal.ts`) re-checks depth, the
+  bot and the thread the words were steered into (`RoutableSteers`, in
+  memory, 6 h), and is idempotent per handle.
+- Engine that cannot steer, or a refused steer (images, a pending computer
+  choice, someone else's words on an organization server): the server
+  routes (`classifyWithoutSteer`): the rule (`classifyBusySend`: a short
+  correction or a dependency or a file or record named by the running
+  request too means `after`) decides what it is sure of, else the bot's
+  tool-free model (`busyClassifyEngine`, same gates as a segment digest,
+  6 s), else `parallel`. Never an error, never a chooser. A turn being
+  stopped keeps the words for the next turn, as before. Log lines start
+  with `[busy-route]`.
+- One line per resource: a parallel task may name the files or records it
+  writes (`route_message` `resources`, `parallelOf.resources`); it waits
+  while a pending task asked before it, or a running one, names the same
+  key (`parallelResourceBlocked`, in `parallelBlocked` and at start), then
+  the drain starts it. Worktrees already keep two tasks off the same files.
+- Unchanged: approvals and security keys, confidential threads (a parallel
+  task of a confidential conversation is confidential and its owner's), the
+  per-person limit (`threads.maxParallelPerPerson`, default 3), Stop on each
+  task, its card in the conversation.
 
 - A parallel task is a thread of the same bot (`TaskRecord.parallelOf`,
   never a TASK_PATCH_FIELD): its own engine session, the conversation's

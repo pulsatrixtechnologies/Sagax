@@ -42,6 +42,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   react_to_message: "conversation",
   remove_reaction: "conversation",
   start_thread: "conversation",
+  route_message: "conversation",
   close_thread: "conversation",
   retry_thread: "conversation",
   create_options_card: "conversation",

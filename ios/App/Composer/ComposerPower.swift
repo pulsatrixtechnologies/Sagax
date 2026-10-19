@@ -165,12 +165,10 @@ extension ChatView {
         // and only those changes: the field itself follows the typing as is.
         let reopensMenu = power.commandMenuDismissed
         let unforcesMenu = power.commandMenuForced && new.hasPrefix("/")
-        let dropsChoice = power.busyChoice?.threadId == threadId && new != old
-        if reopensMenu || unforcesMenu || dropsChoice {
+        if reopensMenu || unforcesMenu {
             withAnimation(.snappy(duration: 0.2)) {
                 if reopensMenu { power.commandMenuDismissed = false }
                 if unforcesMenu { power.commandMenuForced = false }
-                if dropsChoice { power.busyChoice = nil }
             }
         }
         if power.pasteCheckSuppressed {
@@ -307,16 +305,4 @@ extension ChatView {
             power.steering.remove(thread)
         }
     }
-
-    // MARK: - Busy send
-
-    /// The chooser, when it is open on this thread and the bot still works.
-    var openBusyChoice: BusySendMode? {
-        guard let choice = power.busyChoice, choice.threadId == threadId,
-              BusySendChoice.offered(for: current), session.surfaceGate.allows(.busySendChoice)
-        else { return nil }
-        return choice.mode
-    }
-
-    var busyName: String { current.name }
 }

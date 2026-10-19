@@ -6,7 +6,7 @@ public struct SendOptions: Hashable, Sendable {
     /// quote, unrelated to branch ancestry.
     public var replyToId: String?
     /// Bots only: what the send does while the bot is working. Nil leaves
-    /// the server default (steer).
+    /// the server default (steer); `.auto` lets the bot route it.
     public var busyMode: BusySendMode?
     /// Rooms only: "goal" runs the line as a bounded room goal (`/goal`).
     public var goal: Bool
@@ -23,7 +23,10 @@ public struct SendOptions: Hashable, Sendable {
         if let replyToId, !replyToId.isEmpty { body["replyToId"] = replyToId }
         switch destination {
         case .bot:
-            if let busyMode { body["busyMode"] = busyMode.rawValue }
+            // auto travels as its own field: an older server ignores it and
+            // joins the running turn, where an unknown busyMode would be a 400
+            if busyMode == .auto { body["routeWhileBusy"] = true }
+            else if let busyMode { body["busyMode"] = busyMode.rawValue }
         case .room:
             if goal { body["mode"] = "goal" }
         }

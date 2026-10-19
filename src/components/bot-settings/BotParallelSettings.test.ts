@@ -45,7 +45,6 @@ function render() {
   return {
     html,
     threads: byLabel("Maximum running conversations for this bot"),
-    busy: byLabel("When someone writes while this bot is working"),
     perPerson: byLabel("Parallel tasks per person on this bot"),
   };
 }
@@ -60,14 +59,13 @@ beforeEach(() => {
 });
 
 describe("BotParallelSettings (per bot, 2026-10-15)", () => {
-  it("shows the server default until the bot has its own, and each person's own busy-send choice", () => {
+  it("shows the server default until the bot has its own, and no busy-send choice (the bot routes)", () => {
     const view = render();
     expect(view.html).toContain("Parallel conversations");
     expect(view.html).toContain("Maximum running conversations for this bot");
     expect(view.threads.props.value).toBe("4");
     expect(view.perPerson.props.value).toBe("2");
-    expect(view.busy.props.value).toBe("");
-    expect(view.html).toContain("Each person&#x27;s own choice");
+    expect(view.html).not.toContain("When someone writes while this bot is working");
   });
 
   it("shows the bot's own values", () => {
@@ -75,8 +73,6 @@ describe("BotParallelSettings (per bot, 2026-10-15)", () => {
     const view = render();
     expect(view.threads.props.value).toBe("1");
     expect(view.perPerson.props.value).toBe("5");
-    expect(view.busy.props.value).toBe("after");
-    expect(view.html).not.toContain("Each person&#x27;s own choice");
   });
 
   it("saves each change on this bot, never in Settings", async () => {
@@ -85,10 +81,6 @@ describe("BotParallelSettings (per bot, 2026-10-15)", () => {
     await flush();
     expect(fixture.api).toHaveBeenCalledWith("/api/bots/b1/runtime-settings", { method: "PATCH", body: JSON.stringify({ maxConcurrentThreads: 6 }) });
     expect(render().threads.props.value).toBe("6");
-    fixture.api.mockResolvedValue({ stored: { maxConcurrentThreads: 6, busySend: "parallel" } });
-    choose(render().busy, "parallel");
-    await flush();
-    expect(fixture.api).toHaveBeenLastCalledWith("/api/bots/b1/runtime-settings", { method: "PATCH", body: JSON.stringify({ busySend: "parallel" }) });
     fixture.api.mockResolvedValue({ stored: { maxParallelPerPerson: 9 } });
     choose(render().perPerson, "9");
     await flush();

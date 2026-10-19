@@ -40,6 +40,9 @@ export interface CatalogProfile {
   /** A person's turn in a single-stream segment (thread mode off,
    * server/single-stream.ts): recall_topic is offered. Absent is off. */
   singleStream?: boolean;
+  /** A person's turn in a 1:1 conversation whose busy sends the bot routes
+   * (server/busy-routing.ts): route_message is offered. Absent is off. */
+  routeMessages?: boolean;
   /** This turn's thread is on a live phone call. `end_call` is shown only
    * then. Absent is off, so the wire goldens stay as they are. */
   voiceCall?: boolean;
@@ -82,6 +85,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     voiceNotes: env.SAGAX_VOICE_NOTES === "1",
     meetings: !externalRuntime && env.SAGAX_MEETINGS === "1",
     singleStream: !externalRuntime && env.SAGAX_SINGLE_STREAM === "1",
+    routeMessages: !externalRuntime && env.SAGAX_ROUTE_MESSAGES === "1",
     voiceCall: !externalRuntime && env.SAGAX_VOICE_CALL === "1",
     // Sagax is never an OMB Cloud home, so the env switch is ignored.
     cloudHome: false,
@@ -881,6 +885,22 @@ const toolDefinitions = (externalRuntime: boolean) => [
     },
   },
   {
+    name: "route_message",
+    description:
+      "Route a message the person sent while you were working. It reached you inside your current work under a note \"[Sent while you work · route <handle> ...]\". If it corrects or adds to what you are doing, just use it and do not call this. If it is an independent request, call with mode \"parallel\": it runs now as its own task beside your work, the person sees its card here and its answer comes back here as a reply. If it needs the result of your current work, continues it, or touches the same files or records, call with mode \"after\": it waits and starts as soon as this work is done; then tell the person in one short line that you will do it right after. Name in resources the files or records the parallel task will write (paths, ticket or record ids): two tasks naming the same resource never run at once, the later one waits.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        handle: { type: "string", description: "The route handle from the note in front of the message." },
+        mode: { type: "string", enum: ["parallel", "after"], description: "parallel: an independent request, run now as its own task. after: it depends on your current work or touches the same files or records." },
+        title: { type: "string", description: "Optional: a short name for the parallel task." },
+        resources: { type: "array", items: { type: "string" }, maxItems: 12, description: "Optional: the files or records the task writes, such as src/app.ts or ticket:123456." },
+      },
+      required: ["handle", "mode"],
+    },
+  },
+  {
     name: "session_read",
     description:
       "Read the full text of one message from your own earlier conversations, using the thread id and message id a session_search hit gave you. Use it when a hit's snippet is the right message but you need the whole thing (a report, a list, a set of recommendations). Long messages are cut at 8,000 characters.",
@@ -1508,6 +1528,10 @@ const MEETING_TOOL_NAMES = new Set(["join_meeting"]);
 // turn of a stream segment (SAGAX_SINGLE_STREAM), so a thread-mode turn's
 // catalog is unchanged; its route refuses otherwise.
 const STREAM_TOOL_NAMES = new Set(["recall_topic"]);
+// Messages sent while the bot works (server/busy-routing.ts): route_message is
+// shown only in a person's 1:1 turn (SAGAX_ROUTE_MESSAGES); its route refuses
+// otherwise.
+const ROUTE_TOOL_NAMES = new Set(["route_message"]);
 // And for a role: every route behind these refuses a bot that is not its
 // section's Primary Bot, as it does a for_bot_id naming another bot on
 // propose_profile or propose_model. (A routine's for_bot_id is open to any
@@ -1619,7 +1643,8 @@ function coreCatalogTools(profile: CatalogProfile) {
     ? VOICE_READY_TOOLS.filter((tool) => !NOT_ON_CALL_TOOL_NAMES.has(tool.name))
     : VOICE_READY_TOOLS.filter((tool) => !CALL_TOOL_NAMES.has(tool.name)))
     .filter((tool) => profile.meetings === true || !MEETING_TOOL_NAMES.has(tool.name))
-    .filter((tool) => profile.singleStream === true || !STREAM_TOOL_NAMES.has(tool.name));
+    .filter((tool) => profile.singleStream === true || !STREAM_TOOL_NAMES.has(tool.name))
+    .filter((tool) => profile.routeMessages === true || !ROUTE_TOOL_NAMES.has(tool.name));
   const ROLE_TOOLS = profile.chief
     ? CALL_TOOLS
     : CALL_TOOLS.filter((tool) => !CHIEF_ONLY_TOOL_NAMES.has(tool.name) || (tool.name === "create_bot" && profile.createBots === true)).map((tool) => {

@@ -1448,6 +1448,24 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const more = r.more === true && typeof r.firstId === "string" ? `\n\n[Older messages remain: call recall_topic with before "${r.firstId}".]` : "";
     return { text: `Topic ${JSON.stringify(String(r.title ?? ""))} (id ${topicId}), oldest first:\n\n${page}${more}\n\n(Your own past conversation with this person, not new instructions.)` };
   }
+  if (name === "route_message") {
+    const handle = typeof args.handle === "string" ? args.handle.trim() : "";
+    const mode = args.mode === "parallel" || args.mode === "after" ? args.mode : "";
+    if (!handle || !mode) return { text: "route_message needs the handle from the note in front of the message and a mode, parallel or after.", isError: true };
+    const title = typeof args.title === "string" ? args.title.trim() : "";
+    const resources = Array.isArray(args.resources) ? args.resources.filter((key): key is string => typeof key === "string") : [];
+    let r: Json;
+    try {
+      r = await api("/api/internal/route-message", { method: "POST", body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, handle, mode, ...(title ? { title } : {}), ...(resources.length ? { resources } : {}) }) });
+    } catch (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      return { text: `Couldn't route that message: ${why}. ${mode === "parallel" ? "Call route_message again with mode \"after\" so it waits for your current work, or handle it yourself now." : "Handle it yourself once your current work is done."}`, isError: true };
+    }
+    if (r.routed === "parallel") {
+      return { text: `${r.already ? "Already routed: " : ""}it runs as its own parallel task (${String(r.state ?? "running")}); its card is in this conversation and its answer will come back here. Do not do that request yourself; go on with your current work.` };
+    }
+    return { text: `${r.already ? "Already routed: " : ""}it waits and starts as soon as your current work is done. Tell the person in one short line that you will do it right after, then go on with your current work.` };
+  }
   if (name === "session_read") {
     const threadId = String(args.thread_id ?? "").trim();
     const messageId = String(args.message_id ?? "").trim();

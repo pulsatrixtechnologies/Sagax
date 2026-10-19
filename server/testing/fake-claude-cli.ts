@@ -168,6 +168,11 @@
 //                      prompt's first <attached-file> tag names.
 //                      An argument "$PROMPT_ID" becomes the id the prompt
 //                      names after "PROMPT_ID=".
+//                      A call with `onSteer: true` never runs at a turn's
+//                      start: it runs when a message steered into the
+//                      running turn contains `when` (the model reading it
+//                      mid-turn), with "$ROUTE_HANDLE" the handle its
+//                      "[Sent while you work · route <handle>" note names.
 //   FAKE_CLAUDE_PROXY_FETCH an http URL each such turn GETs through
 //                      HTTP_PROXY first; the reply carries proxy:<status>:<body>.
 //   FAKE_CLAUDE_MCP_PAUSE_MS a pause between two calls (a test can change
@@ -884,7 +889,7 @@ const playTurn = (prompt: JsonValue, late = false) => {
       ...call,
       arguments: Object.fromEntries(Object.entries(call.arguments).map(([key, value]) => [key, value === "$ATTACHED_FILE" ? attachedPath : value === "$PROMPT_ID" ? promptId : value])),
     });
-    void runFakeMcpCalls(fakeMcpCalls.filter((call) => !call.when || promptText.includes(call.when)).map(withAttached), argAfter("--mcp-config")).then(
+    void runFakeMcpCalls(fakeMcpCalls.filter((call) => !call.onSteer && (!call.when || promptText.includes(call.when))).map(withAttached), argAfter("--mcp-config")).then(
       (note) => playReply(prompt, note),
       (error: unknown) => playReply(prompt, `mcp:error:${error instanceof Error ? error.message : String(error)}`),
     );
@@ -927,7 +932,7 @@ async function playVoiceTurn(prompt: JsonValue): Promise<void> {
   finishIfDone();
 }
 
-type FakeMcpCall = { server: string; tool: string; arguments: Record<string, unknown>; when?: string };
+type FakeMcpCall = { server: string; tool: string; arguments: Record<string, unknown>; when?: string; onSteer?: boolean };
 const fakeMcpCalls: FakeMcpCall[] | null = (() => {
   const raw = process.env.FAKE_CLAUDE_MCP_CALLS;
   if (!raw) return null;
@@ -941,6 +946,7 @@ const fakeMcpCalls: FakeMcpCall[] | null = (() => {
         tool: call.tool,
         arguments: call.arguments && typeof call.arguments === "object" && !Array.isArray(call.arguments) ? call.arguments as Record<string, unknown> : {},
         ...(typeof call.when === "string" && call.when ? { when: call.when } : {}),
+        ...((call as { onSteer?: unknown }).onSteer === true ? { onSteer: true } : {}),
       }));
   } catch {
     return null;
@@ -1261,6 +1267,16 @@ process.stdin.on("data", (c) => {
       else {
         steered.push(promptText(prompt));
         steeredMessages.push(prompt);
+      }
+      // the model reads the steered words and calls a tool about them
+      const steerText = JSON.stringify(prompt);
+      const onSteer = (fakeMcpCalls ?? []).filter((call) => call.onSteer && (!call.when || steerText.includes(call.when)));
+      if (onSteer.length) {
+        const handle = /route ([\w-]+):/.exec(steerText)?.[1] ?? "";
+        void runFakeMcpCalls(onSteer.map((call) => ({
+          ...call,
+          arguments: Object.fromEntries(Object.entries(call.arguments).map(([key, value]) => [key, value === "$ROUTE_HANDLE" ? handle : value])),
+        })), argAfter("--mcp-config")).catch(() => {});
       }
       if (process.env.FAKE_CLAUDE_STEER_RECEIVED) writeFileSync(process.env.FAKE_CLAUDE_STEER_RECEIVED, "received");
     } else {

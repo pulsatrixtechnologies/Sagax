@@ -76,6 +76,11 @@ interface QueueEntry {
     via?: "call";
     /** The Live call they were spoken on (Message.callId); only with via. */
     callId?: string;
+    /** The words are already a row of the thread (a message steered into the
+     * running turn that the bot set aside for after it, route_message
+     * `after`): the drain starts the turn on that row instead of writing a
+     * second one, and no pending chip shows them twice. */
+    existingMessageId?: string;
   }>;
 }
 
@@ -127,7 +132,7 @@ export function queuedSteerSnapshot(ownsThread: (botId: string, threadId: string
   Record<string, Array<{ queueId: string; text: string; reason?: SteerQueueReason }>> {
   return Object.fromEntries([...queues]
     .filter(([threadId, entry]) => ownsThread(entry.botId, threadId))
-    .map(([threadId, entry]) => [threadId, entry.items.map((item) => ({
+    .map(([threadId, entry]) => [threadId, entry.items.filter((item) => !item.existingMessageId).map((item) => ({
       queueId: item.messageId, text: item.text, ...(item.reason ? { reason: item.reason } : {}),
     }))]));
 }
@@ -147,7 +152,7 @@ export function queueSteeredMessage(
   botId: string,
   threadId: string,
   text: string,
-  options: { prompt?: string; replyToId?: string; sendId?: string; dataContext?: Message["dataContext"]; reason?: SteerQueueReason; unattended?: boolean; peerAsk?: Message["peerAsk"]; origin?: WorkOrigin; sender?: ResolvedSender; trigger?: UsageTrigger; speaker?: TurnSpeaker; voiceCall?: Message["voiceCall"]; callId?: string; via?: "call" } = {},
+  options: { prompt?: string; replyToId?: string; sendId?: string; dataContext?: Message["dataContext"]; reason?: SteerQueueReason; unattended?: boolean; peerAsk?: Message["peerAsk"]; origin?: WorkOrigin; sender?: ResolvedSender; trigger?: UsageTrigger; speaker?: TurnSpeaker; voiceCall?: Message["voiceCall"]; callId?: string; via?: "call"; existingMessageId?: string } = {},
 ): QueuedSteer {
   const id = newId();
   const entry = queues.get(threadId) ?? { botId, items: [] };
@@ -171,6 +176,7 @@ export function queueSteeredMessage(
     ...(options.voiceCall ? { voiceCall: options.voiceCall } : {}),
     queuedAt: Date.now(),
     ...spokenLineFields(options.via, options.callId),
+    ...(options.existingMessageId ? { existingMessageId: options.existingMessageId } : {}),
   };
   saveChatFollowup({ id, kind: "bot", ownerId: botId, threadId, payload: item });
   entry.items.push(item);
@@ -256,6 +262,12 @@ export function drainSteeredMessages(
     changed();
     const appended: Message[] = [];
     for (const item of group) {
+      // Already a row (route_message after): the turn starts on it.
+      const existing = item.existingMessageId ? store.patchMessage(threadId, item.existingMessageId, { queueId: item.messageId }) : null;
+      if (existing) {
+        appended.push(existing);
+        continue;
+      }
       // queueId is the pending-chip identity from the 202; append still
       // assigns a fresh transcript id so replay/exclude keep using message.id.
       appended.push(

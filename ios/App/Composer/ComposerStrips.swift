@@ -2,7 +2,6 @@
 // WP3), each the phone's drawing of a desktop composer part:
 // - SuggestionStrip: "@" bots (and @everyone) and "#" threads
 //   (Composer.tsx mention popup, CO11, CO12, RM9);
-// - BusySendChooserView: after / steer / parallel (BusySendChooser.tsx, CO15);
 // - FailedSendBanner: "Not sent" with Retry (Composer.tsx:904, CO17);
 // - PastedTextChip: a long paste held as a chip (ComposerAttachments.tsx, CO5).
 // None of them knows the screen it sits on, so the iPad pill reuses them.
@@ -103,106 +102,6 @@ struct SuggestionStrip: View {
         switch item {
         case let .mention(choice): return "suggestion-@\(choice.name)"
         case let .thread(thread, _): return "suggestion-#\(thread.title.trimmingCharacters(in: .whitespaces))"
-        }
-    }
-}
-
-// MARK: - Busy send
-
-struct BusySendChooserView: View {
-    @Environment(\.themePalette) var themePalette
-    let name: String
-    let highlighted: BusySendMode
-    let pick: (BusySendMode) -> Void
-    let close: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(name) is working. What should this message do?")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 4)
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Theme.textTertiary)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Keep editing")
-                .accessibilityIdentifier("busy-send-close")
-            }
-            ForEach(BusySendChoice.order, id: \.self) { mode in
-                let active = mode == highlighted
-                Button {
-                    Haptics.selection()
-                    pick(mode)
-                } label: {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: Self.icon(mode))
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(active ? Theme.accent : Theme.textSecondary)
-                            .frame(width: 18)
-                            .padding(.top, 1)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(Self.label(mode))
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Theme.textPrimary)
-                            Text(Self.hint(mode))
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(active ? Theme.accent.opacity(0.10) : Color.clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(active ? Theme.accent.opacity(0.5) : Color.clear, lineWidth: 1)
-                    )
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("busy-send-\(mode.rawValue)")
-                .accessibilityAddTraits(active ? .isSelected : [])
-            }
-        }
-        .padding(8)
-        .background(Theme.cardRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.hairline, lineWidth: 0.6))
-        .padding(.horizontal, 4)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("busy-send-chooser")
-    }
-
-    static func icon(_ mode: BusySendMode) -> String {
-        switch mode {
-        case .steer: return "arrow.turn.down.right"
-        case .parallel: return "arrow.triangle.branch"
-        case .after: return "clock"
-        }
-    }
-
-    static func label(_ mode: BusySendMode) -> LocalizedStringKey {
-        switch mode {
-        case .steer: return "Add to the current task"
-        case .parallel: return "New task in parallel"
-        case .after: return "After this one"
-        }
-    }
-
-    static func hint(_ mode: BusySendMode) -> LocalizedStringKey {
-        switch mode {
-        case .steer: return "Joins the work in progress"
-        case .parallel: return "Runs now on its own, answers here"
-        case .after: return "Waits for the current work to finish"
         }
     }
 }

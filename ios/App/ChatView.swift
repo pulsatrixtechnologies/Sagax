@@ -471,7 +471,6 @@ struct ChatView: View {
             replyTo = restored.replyTo
             selectedPhotos = []
             power.commandMenuForced = false
-            power.busyChoice = nil
             showingPlus = false
             finder.close()
             follow.resume()

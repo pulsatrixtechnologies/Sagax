@@ -1,6 +1,6 @@
 // What a send does beyond its words (feature parity matrix CO5, CO14, CO15,
-// CO17, RM5): the busy-send choice (src/components/BusySendChooser.tsx,
-// shared/parallel-tasks.ts), long pastes held as chips
+// CO17, RM5): a busy send routed by the bot (shared/parallel-tasks.ts
+// `auto`, server/busy-routing.ts), long pastes held as chips
 // (src/lib/composer-attachments.ts), a failed send kept for Retry
 // (Composer.tsx `retryFailedSend`), and Steer on held sends
 // (src/components/ComposerQueuedMessages.tsx).
@@ -9,37 +9,10 @@ import Foundation
 // MARK: - Busy send
 
 public enum BusySendChoice {
-    /// `BUSY_SEND_ORDER`: the order the chooser lists the choices in.
-    public static let order: [BusySendMode] = [.steer, .parallel, .after]
-
-    /// Words that read as a change to the running work (`STEER_HINTS`).
-    static let steerHints = [
-        // fr
-        "arrête", "arrete", "stop", "plutôt", "plutot", "attends", "non,", "non ", "aussi", "en fait", "oublie", "change", "corrige", "continue", "au lieu",
-        // en
-        "instead", "wait", "also", "actually", "don't", "dont", "cancel", "rather", "keep going", "use ", "no,",
-    ]
-
-    /// `suggestBusySendMode`: a short correction reads as a steer; anything
-    /// else as unrelated work, which runs in parallel.
-    public static func suggest(_ text: String) -> BusySendMode {
-        let words = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !words.isEmpty else { return .steer }
-        let short = words.count <= 60
-        if short, steerHints.contains(where: { words.hasPrefix($0) || words.contains(" \($0)") }) { return .steer }
-        return .parallel
-    }
-
-    /// `moveBusyChoice`: the next highlighted choice for an arrow key.
-    public static func move(_ current: BusySendMode, by delta: Int) -> BusySendMode {
-        let index = order.firstIndex(of: current) ?? 0
-        let count = order.count
-        return order[((index + delta) % count + count) % count]
-    }
-
-    /// `offersBusyChoice`: a one-to-one conversation that is working. A room
-    /// and a voice call never ask (their words join the running turn).
-    public static func offered(for chat: Chat, onCall: Bool = false) -> Bool {
+    /// A one-to-one conversation that is working: the send goes as `.auto`
+    /// and the bot routes it (no chooser since 2026-10-18). A room and a
+    /// voice call never route (their words join the running turn).
+    public static func routesAuto(for chat: Chat, onCall: Bool = false) -> Bool {
         guard case let .bot(bot) = chat else { return false }
         return bot.busy == true && !onCall
     }
@@ -119,7 +92,7 @@ public struct PastedText: Identifiable, Hashable, Sendable {
 
 /// A send the computer refused or never answered (`FailedComposerSend`):
 /// shown above the field with Retry and Dismiss. Retry sends exactly this
-/// again: the same words, attachments, quote and busy choice.
+/// again: the same words, attachments, quote and busy mode.
 public struct FailedSend: Identifiable, Hashable, Sendable {
     public let id: UUID
     /// What the person wrote (the banner's quote).

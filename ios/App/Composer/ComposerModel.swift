@@ -13,8 +13,6 @@ final class ComposerModel: ObservableObject {
     @Published var failed: [String: [FailedSend]] = [:]
     /// Long pastes waiting to go with the next send, per thread.
     @Published var pastes: [String: [PastedText]] = [:]
-    /// The busy-send chooser, open on this thread with this choice highlighted.
-    @Published var busyChoice: (threadId: String, mode: BusySendMode)?
     /// Threads whose held sends are being steered.
     @Published var steering: Set<String> = []
     /// A Retry in flight, so it cannot be tapped twice.

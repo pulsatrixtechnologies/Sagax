@@ -6,10 +6,10 @@ import UIKit
 
 extension ChatView {
     /// Send the draft (or a quick reply's words). While a one-to-one
-    /// conversation works, the send first asks what it should do (after,
-    /// steer, parallel) unless `busyMode` already says; a failed send is
-    /// kept above the field with Retry (WP3).
-    func submit(_ explicitText: String? = nil, busyMode chosen: BusySendMode? = nil) {
+    /// conversation works, the send goes as `.auto`: the bot decides whether
+    /// it joins the work, runs in parallel or waits (never asked since
+    /// 2026-10-18). A failed send is kept above the field with Retry (WP3).
+    func submit(_ explicitText: String? = nil) {
         // This also cancels an in-flight permission prompt before it can
         // open the microphone after the message has already been sent.
         dictation.stop()
@@ -47,17 +47,7 @@ extension ChatView {
             ThreadRefs.serialize(words, threads: session.threadRefCandidates, currentBotId: chatAtSend.id),
             pastes: pastesAtSend
         ), citations: citationsAtSend)
-        var busyMode: BusySendMode?
-        if BusySendChoice.offered(for: chatAtSend), session.surfaceGate.allows(.busySendChoice) {
-            guard let chosen else {
-                withAnimation(.snappy(duration: 0.2)) {
-                    power.busyChoice = (chatAtSend.threadId, BusySendChoice.suggest(requestText))
-                }
-                return
-            }
-            busyMode = chosen
-        }
-        power.busyChoice = nil
+        let busyMode: BusySendMode? = BusySendChoice.routesAuto(for: chatAtSend) && session.surfaceGate.allows(.busySendChoice) ? .auto : nil
         sendingMessage = true
         attachmentError = nil
         power.commandMenuForced = false
@@ -211,7 +201,7 @@ extension ChatView {
                         // hardware Return still sends, Shift-Return breaks
                         // the line. onKeyPress never sees the software
                         // keyboard, so this cannot turn its Return into a send.
-                        .onHardwareReturn { submit(busyMode: openBusyChoice) }
+                        .onHardwareReturn { submit() }
                     }
 
                     // Tap: dictation, as before. Hold: a voice note that a

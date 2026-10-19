@@ -213,15 +213,22 @@ final class ComposerSuggestionsTests: XCTestCase {
 }
 
 final class ComposerSendTests: XCTestCase {
-    func testBusySendSuggestionAndOrder() {
-        XCTAssertEqual(BusySendChoice.suggest("actually use the other file"), .steer)
-        XCTAssertEqual(BusySendChoice.suggest("plutôt le rapport de mardi"), .steer)
-        XCTAssertEqual(BusySendChoice.suggest("Write the quarterly report for the board meeting next week please"), .parallel)
-        XCTAssertEqual(BusySendChoice.suggest("   "), .steer)
-        XCTAssertEqual(BusySendChoice.order, [.steer, .parallel, .after])
-        XCTAssertEqual(BusySendChoice.move(.steer, by: 1), .parallel)
-        XCTAssertEqual(BusySendChoice.move(.steer, by: -1), .after)
-        XCTAssertEqual(BusySendChoice.move(.after, by: 1), .steer)
+    func testBusySendIsRoutedByTheBot() {
+        var working = Bot(id: "b", threadId: "t", name: "B", title: "", description: "", notifications: true, color: "blue",
+                          unread: false, modelSelection: ModelSelection(instanceId: "own", model: "m"), createdAt: 0)
+        working.busy = true
+        var resting = working
+        resting.busy = false
+        let busy = Chat.bot(working)
+        let idle = Chat.bot(resting)
+        XCTAssertTrue(BusySendChoice.routesAuto(for: busy))
+        XCTAssertFalse(BusySendChoice.routesAuto(for: busy, onCall: true), "a call joins the running turn")
+        XCTAssertFalse(BusySendChoice.routesAuto(for: idle))
+        // auto travels as routeWhileBusy (an older server ignores it), never as a busyMode
+        var body: [String: Any] = [:]
+        SendOptions(busyMode: .auto).apply(to: &body, destination: .bot(id: "b", threadId: "t"))
+        XCTAssertEqual(body["routeWhileBusy"] as? Bool, true)
+        XCTAssertNil(body["busyMode"])
     }
 
     func testLongPasteBecomesAChip() {

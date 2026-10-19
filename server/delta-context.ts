@@ -329,6 +329,14 @@ export class Handoffs {
     else pending.steerIds.set(steerId, [...(pending.steerIds.get(steerId) ?? []), messageId]);
   }
 
+  /** The bot routed a message steered into its running turn elsewhere
+   * (route_message, server/busy-routing.ts): the session read it, so it is
+   * counted received with the turn and never offered again as unseen. */
+  routedAway(threadId: string, messageId: string): void {
+    const pending = this.pending.get(threadId);
+    if (pending?.steers.includes(messageId) && !pending.confirmed.includes(messageId)) pending.confirmed.push(messageId);
+  }
+
   /** A context message the running turn wrote itself through one of its
    * tools (show_widget): the session made it, so it is counted as received
    * with the turn's replies and never offered back as unseen. `claimId` is

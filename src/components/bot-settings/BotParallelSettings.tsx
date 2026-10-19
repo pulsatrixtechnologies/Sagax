@@ -1,12 +1,13 @@
 // Parallel conversations of this bot (JC 2026-10-15, formerly Settings >
 // General > Advanced for every bot): how many of its conversations work at
-// once, what a message sent while it works does, and how many parallel
-// tasks one person may have running on it. Owner or admin
+// once and how many parallel tasks one person may have running on it. What a
+// message sent while it works does is the bot's own call (2026-10-18,
+// server/busy-routing.ts), so there is no setting for it. Owner or admin
 // (server/routes/bot-runtime-settings.ts).
 import { t } from "@/lib/i18n";
 import { BOT_THREAD_LIMITS, botParallelLimit, botThreadLimit } from "@/lib/bot-runtime-settings";
 import { useStore, type Bot } from "@/state/store";
-import { MAX_PARALLEL_PER_PERSON, parseBusySendPreference } from "../../../shared/parallel-tasks";
+import { MAX_PARALLEL_PER_PERSON } from "../../../shared/parallel-tasks";
 import { DescribedRow, HelpTip, PillSelect, SettingsGroup } from "../SettingsPrimitives";
 import { useBotRuntimeSettings } from "./useBotRuntimeSettings";
 
@@ -32,22 +33,6 @@ export function BotParallelSettings({ bot }: { bot: Bot }) {
             disabled={saving}
             onChange={(next) => { const value = Number(next); if (value !== threads) void save({ maxConcurrentThreads: value }); }}
             options={BOT_THREAD_LIMITS.map((limit) => ({ value: String(limit), label: String(limit) }))}
-          />
-        </DescribedRow>
-        <DescribedRow label={t("botPanel.parallel.busySend")} help={t("settings.threads.busySend.help")} rowId="botBusySend">
-          <PillSelect
-            value={shown.busySend ?? ""}
-            ariaLabel={t("botPanel.parallel.busySend")}
-            disabled={saving}
-            onChange={(next) => { if (next) void save({ busySend: parseBusySendPreference(next) }); }}
-            options={[
-              // Absent: each person keeps their own earlier default.
-              ...(!shown.busySend ? [{ value: "", label: t("botPanel.parallel.busySendPersonal") }] : []),
-              { value: "ask", label: t("settings.threads.busySend.ask") },
-              { value: "steer", label: t("composer.busy.choice.steer") },
-              { value: "parallel", label: t("composer.busy.choice.parallel") },
-              { value: "after", label: t("composer.busy.choice.after") },
-            ]}
           />
         </DescribedRow>
         <DescribedRow label={t("botPanel.parallel.perPerson")} help={t("botPanel.parallel.perPersonHelp")} rowId="botPerPerson">

@@ -1,5 +1,4 @@
-// Parallel tasks in the renderer (shared/parallel-tasks.ts): the busy-send
-// chooser, the task card, approvals of a parallel task in the conversation's
+// Parallel tasks in the renderer (shared/parallel-tasks.ts): the task card, approvals of a parallel task in the conversation's
 // stepper, and the activity detail (plain step names, nested sub-agents,
 // a message box for a running task).
 import { createElement } from "react";
@@ -17,7 +16,6 @@ vi.mock("@/state/store", () => ({
 }));
 
 import type { BotActivityDetail } from "../../shared/bot-activity";
-import { BusySendChooser, moveBusyChoice } from "./BusySendChooser";
 import { ParallelResultLabel, ParallelTaskCard, parallelCardState } from "./ParallelTaskCard";
 import { parallelPendings, waitingParallelTasks } from "./parallel-approvals";
 import { ActivityDetailBody } from "./bot-settings/ActivityDetailModal";
@@ -29,19 +27,6 @@ const card = (state?: string) => ({
   threadRef: { botId: "pepper", threadId: "par", title: "Draft the email" },
   parallelTask: { threadId: "par", title: "Draft the email", requestMessageId: "req", role: "card", ...(state ? { state } : {}), startedAt: NOW - 5_000 },
 }) as never;
-
-describe("busy send chooser", () => {
-  it("offers the three choices with the suggested one highlighted, arrows cycling", () => {
-    const html = renderToStaticMarkup(createElement(BusySendChooser, { highlighted: "parallel", onHighlight: () => {}, onPick: () => {}, onClose: () => {}, name: "Pepper" }));
-    expect(html).toContain("Pepper is working. What should this message do?");
-    expect(html.match(/data-busy-send="/g)).toHaveLength(3);
-    expect(html).toMatch(/aria-selected="true"[^>]*data-busy-send="parallel"/);
-    expect(html).toContain("Add to the current task");
-    expect(html).toContain("After this one");
-    expect(moveBusyChoice("after", 1)).toBe("steer");
-    expect(moveBusyChoice("steer", -1)).toBe("after");
-  });
-});
 
 describe("parallel task card", () => {
   it("reads live state from its task: running, waiting for approval, then the recorded end", () => {

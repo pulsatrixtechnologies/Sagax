@@ -88,7 +88,7 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// The engine's own slash commands in the "/" menu (CO9). Sidecars wait
     /// on S1; Sagax's own commands (`/learn`, `/setup`, `/goal`) always show.
     case engineCommands
-    /// The busy-send chooser: after, steer, parallel (CO15).
+    /// A busy send the bot routes (`routeWhileBusy`, CO15; the chooser is gone since 2026-10-18).
     case busySendChoice
     /// Steer a held send into the running turn (CO14, RM5).
     case queueSteer

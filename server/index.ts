@@ -50,6 +50,7 @@ import { draftSummary, foldPoint } from "./compaction-summary.ts";
 import { composeStreamDigest, draftSegmentDigest, extractSegmentDigest, recallTopicPage, streamCandidate, STREAM_FULL_ENTRIES, type SegmentDigest } from "./single-stream.ts";
 import { isStreamSegment } from "../shared/single-stream.ts";
 import { createRecallTopicInternalRoutes } from "./routes/recall-topic-internal.ts";
+import { createRouteMessageInternalRoutes } from "./routes/route-message-internal.ts";
 import { compactBudget, contextWindowFor, defaultCompactAt, nativeCompactionPoint, shouldCompact } from "./context-budget.ts";
 import { autoCompactWindow, claudeSignedIn, resolveClaudeConfigDir, setSoloClaudeLinkedHandler } from "./drivers/claude.ts";
 import { claudeAccountLinked, soloClaudeAccountLinked, type SoloClaudeLinkCache } from "./claude-account.ts";
@@ -421,6 +422,7 @@ import {
   parallelAdmission,
   parallelBlocked,
   parallelBrief,
+  parallelResourceBlocked,
   parallelOutcome,
   parallelPending,
   parallelResultText,
@@ -428,7 +430,8 @@ import {
   prepareParallelWorkspace,
   type BriefLine,
 } from "./parallel-tasks.ts";
-import { isBusySendMode, type BusySendMode, type ParallelTaskRef, type ParallelTaskState } from "../shared/parallel-tasks.ts";
+import { isBusySendRequest, type BusySendRequest, type ParallelTaskRef, type ParallelTaskState } from "../shared/parallel-tasks.ts";
+import { RoutableSteers, classifyWithoutSteer, orchestratedSteerText } from "./busy-routing.ts";
 import {
   cancelChannelMessage,
   drainChannelMessages,
@@ -3769,6 +3772,9 @@ function agentsIntegration(
       // recall_topic: a person's turn in a single-stream segment
       // (server/single-stream.ts). The route re-checks.
       SAGAX_SINGLE_STREAM: depth === 0 && store.taskByThread(botId, threadId)?.streamSegment === true ? "1" : "0",
+      // route_message: a person's turn in a 1:1 conversation whose busy sends
+      // the bot may route (server/busy-routing.ts). The route re-checks.
+      SAGAX_ROUTE_MESSAGES: depth === 0 && autoRoutableThread(botId, threadId) ? "1" : "0",
       // And for a role: team setup, bot creation and deletion, rooms and
       // retries are shown only to a Chief of Staff, whom their routes require.
       SAGAX_CHIEF_OF_STAFF: store.bot(botId)?.chiefOfStaff === true ? "1" : "0",
@@ -15347,6 +15353,11 @@ async function startParallelTask(input: {
   voiceCall?: Message["voiceCall"];
   /** start_thread `workspace`: where its Auto turns start. */
   autoWorkspace?: AutoComputerTarget;
+  /** route_message parallel: the person's row already in the conversation
+   * (steered into the running turn) becomes the request line; no second row. */
+  existingRequestId?: string;
+  /** The files or records it writes (route_message): one queue per resource. */
+  resources?: string[];
 }): Promise<{ ok: true; threadId: string; message: Message; parallel: { threadId: string; title: string; state: ParallelTaskState; cardMessageId: string } }> {
   const bot = store.bot(input.botId);
   const parentTask = bot ? store.taskByThread(bot.id, input.threadId) : undefined;
@@ -15389,7 +15400,13 @@ async function startParallelTask(input: {
   const now = Date.now();
   // The request line, in the conversation the person is reading. A task the
   // bot opened has no person's words to show: its card is the anchor.
-  const request = input.byBot ? null : store.appendMessage(input.threadId, {
+  const existingRequest = input.existingRequestId
+    ? store.patchMessage(input.threadId, input.existingRequestId, {
+      steered: false,
+      parallelTask: { threadId: child.threadId, title, requestMessageId: input.existingRequestId, role: "request" },
+    })
+    : null;
+  const request = input.byBot ? null : existingRequest ?? store.appendMessage(input.threadId, {
     role: "user",
     kind: "text",
     text: input.text,
@@ -15399,7 +15416,7 @@ async function startParallelTask(input: {
     ...(input.voiceCall ? { voiceCall: input.voiceCall } : {}),
     parallelTask: { threadId: child.threadId, title, requestMessageId: "", role: "request" },
   });
-  if (request) {
+  if (request && !existingRequest) {
     store.patchMessage(input.threadId, request.id, {
       parallelTask: { threadId: child.threadId, title, requestMessageId: request.id, role: "request" },
     });
@@ -15417,6 +15434,8 @@ async function startParallelTask(input: {
     threadId: input.threadId, messageId: anchorId, cardMessageId: card.id, at: now,
     ...(input.principalId ? { principalId: input.principalId } : {}),
     ...(input.byBot ? { byBot: true } : {}),
+    ...(input.resources?.length ? { resources: input.resources } : {}),
+    ...(input.existingRequestId ? { routed: true } : {}),
   });
   if (IDENTITY.kind === "perspicax") {
     appendAdminAction(DATA_DIR, {
@@ -15444,7 +15463,10 @@ async function startParallelTask(input: {
     ok: true as const, threadId: input.threadId, message: store.messagesFor(input.threadId).find((m) => m.id === anchorId) ?? request ?? card,
     parallel: { threadId: child.threadId, title, state, cardMessageId: card.id },
   });
-  const mustQueue = admission.action === "queue" || botAtThreadCapacity(bot.id) || Boolean(activeGroupTurnForBot(bot.id));
+  // Another pending task holds one of its resources: it waits in that
+  // resource's line (parallelResourceBlocked), and the drain starts it after.
+  const resourceBusy = parallelResourceBlocked({ task: store.taskByThread(bot.id, child.threadId)!, tasks: store.tasks(bot.id), busy: (id) => threadBusy(bot.id, id) });
+  const mustQueue = admission.action === "queue" || resourceBusy || botAtThreadCapacity(bot.id) || Boolean(activeGroupTurnForBot(bot.id));
   if (mustQueue) {
     queueSteeredMessage(bot.id, child.threadId, input.text, {
       prompt: brief, reason: "capacity", sender: input.sender, trigger: input.trigger, speaker: input.speaker,
@@ -15468,6 +15490,89 @@ async function startParallelTask(input: {
   }
   patchParallelCard(input.threadId, card.id, { state: "running" });
   return reply("running");
+}
+
+// ── auto routing of a send while the bot works (server/busy-routing.ts) ──
+
+/** What an auto send carried, kept with its routing handle. */
+interface AutoRouteContext {
+  replyTo?: Message;
+  sendId?: string;
+  sender?: ResolvedSender;
+  trigger?: UsageTrigger;
+  speaker?: TurnSpeaker;
+  principalId?: string;
+  auth?: RequestAuth;
+}
+
+const routableSteers = new RoutableSteers<AutoRouteContext>();
+
+/** A conversation whose busy sends the bot may route: a bot's 1:1 thread
+ * that is not itself a parallel task (a task of a task is refused), a
+ * routine run or a room. Otherwise auto reads as joining the running turn. */
+function autoRoutableThread(botId: string, threadId: string): boolean {
+  const task = store.taskByThread(botId, threadId);
+  return Boolean(task && !task.parallelOf && !task.routineRunId && !store.groupByThread(threadId));
+}
+
+/** The running work, in the person's words: the latest request of the
+ * thread's active path (what the classifier compares a new message with). */
+function runningRequestText(threadId: string): string {
+  const asked = store.activePath(threadId).filter((message) => message.role === "user" && message.kind === "text" && message.text?.trim() && !message.parallelTask);
+  return asked.slice(-2).map((message) => message.text!).join("\n");
+}
+
+/** The bot's tool-free one-shot for the fallback classification, under the
+ * same gates as a segment digest (policy, budget, hosted models). */
+function busyClassifyEngine(botId: string): ((prompt: string, options?: { signal?: AbortSignal }) => Promise<string>) | undefined {
+  const bot = store.bot(botId);
+  const instance = bot ? streamDigestEngine(bot) : null;
+  return instance?.generateText ? instance.generateText.bind(instance) : undefined;
+}
+
+/** route_message: the bot moves a message steered into its running turn.
+ * `parallel` makes the person's row the request of a new parallel task;
+ * `after` keeps the row and starts a turn on it once this one is done (the
+ * tool's answer asks the bot to say so in one line). Idempotent per handle. Only the turn the words were
+ * steered into may route them. */
+async function routeSteeredMessage(input: { botId: string; threadId: string; handle: string; mode: "parallel" | "after"; title?: string; resources: string[] }):
+  Promise<{ status: number; body: Record<string, unknown> }> {
+  let entry = routableSteers.get(input.handle);
+  // the steer's acknowledgement can trail the turn reading the words
+  for (let waited = 0; entry && !entry.messageId && waited < 3_000; waited += 50) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    entry = routableSteers.get(input.handle);
+  }
+  if (!entry || entry.botId !== input.botId || entry.threadId !== input.threadId || !entry.messageId) {
+    return { status: 404, body: { error: "no message to route with that handle in this conversation" } };
+  }
+  if (entry.routed) return { status: 200, body: { routed: entry.routed, ...(entry.target ? { target: entry.target } : {}), already: true } };
+  const row = store.messagesFor(input.threadId).find((message) => message.id === entry!.messageId);
+  if (!row || !store.taskByThread(input.botId, input.threadId)) return { status: 404, body: { error: "that message is no longer in this conversation" } };
+  const { context } = entry;
+  if (input.mode === "parallel") {
+    const started = await startParallelTask({
+      botId: input.botId, threadId: input.threadId, text: entry.text, existingRequestId: row.id,
+      ...context, ...(input.title ? { title: input.title } : {}), ...(input.resources.length ? { resources: input.resources } : {}),
+    });
+    entry.routed = "parallel";
+    entry.target = started.parallel.threadId;
+    handoffs.routedAway(input.threadId, row.id);
+    console.log(`[busy-route] ${input.botId}/${input.threadId} parallel (bot) -> ${started.parallel.threadId} ${started.parallel.state}`);
+    return { status: 200, body: { routed: "parallel", target: started.parallel.threadId, state: started.parallel.state } };
+  }
+  store.patchMessage(input.threadId, row.id, { steered: false });
+  const queued = queueSteeredMessage(input.botId, input.threadId, entry.text, {
+    existingMessageId: row.id,
+    prompt: `[You set this message aside earlier to handle once your previous work was done. Handle it now.]\n${promptWithReply(entry.text, context.replyTo, context.sender?.name || cfg.profile?.name?.trim() || "User")}`,
+    ...(context.replyTo ? { replyToId: context.replyTo.id } : {}),
+    sender: context.sender, trigger: context.trigger, speaker: context.speaker,
+  });
+  entry.routed = "after";
+  entry.target = queued.id;
+  handoffs.routedAway(input.threadId, row.id);
+  console.log(`[busy-route] ${input.botId}/${input.threadId} after (bot) -> queue ${queued.id}`);
+  return { status: 200, body: { routed: "after", queueId: queued.id } };
 }
 
 /** A parallel task's first turn settled: post its result into the
@@ -24654,6 +24759,11 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
       const page = recallTopicPage(segmentHistory(bot, topicId).entries, (entry) => (entry.role === "user" ? userName : bot.name), before);
       return { ...page, text: redactSecretsInText(page.text) };
     },
+  }),
+  // route_message (server/routes/route-message-internal.ts, server/busy-routing.ts)
+  createRouteMessageInternalRoutes({
+    ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    route: (input) => routeSteeredMessage(input),
   }),
   // request_login (server/routes/credential-vault-internal.ts)
   createCredentialVaultInternalRoutes({
@@ -40338,12 +40448,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // What a send to a busy conversation does (shared/parallel-tasks.ts):
       // join the running turn (steer, the default), run as its own task in
       // parallel, or wait for the running turn (after).
-      if (body.busyMode !== undefined && !isBusySendMode(body.busyMode)) {
-        return json(res, 400, { error: "busyMode must be steer, parallel or after" });
+      if (body.busyMode !== undefined && !isBusySendRequest(body.busyMode)) {
+        return json(res, 400, { error: "busyMode must be auto, steer, parallel or after" });
       }
       // On a call, words said while the bot works always join its turn: a
       // phone has no "run this in parallel" (and no chooser asks).
-      const busyMode: BusySendMode = guardedBody || voiceCall ? "steer" : (body.busyMode ?? "steer");
+      // Auto (what the apps ask since 2026-10-18, `routeWhileBusy: true`, a
+      // field an older server ignores, or busyMode "auto"): the bot
+      // orchestrates (server/busy-routing.ts). A send that names no mode (the
+      // API, an older build) keeps joining the running turn.
+      const busyMode: BusySendRequest = guardedBody || voiceCall ? "steer" : (body.busyMode ?? (body.routeWhileBusy === true ? "auto" : "steer"));
       const messageSpeaker = speakerFor(auth);
       const postedActor = misuseActor(messageSpeaker.origin === "person" ? messageSpeaker.principalId : undefined, messageSpeaker.origin);
       const messageMisuse = misuseRefusal(text, { ...postedActor, surface: "message", botId: bot.id, threadId });
@@ -40484,9 +40598,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             // steer was offered only when a live instance could take it;
             // the second check carries that fact to the type system.
             const steerId = randomUUID();
+            // Auto (server/busy-routing.ts): the bot routes the words it
+            // reads, through the handle the note in front of them names.
+            const routable = busyMode === "auto" && autoRoutableThread(bot.id, threadId);
+            const routeContext: AutoRouteContext = {
+              replyTo, sendId, sender: messageSender(auth), trigger, speaker: speakerFor(auth),
+              principalId: auth.kind === "session" ? personKey(auth.session) : undefined, auth,
+            };
             if (busyAdmission.action === "steer" && instance?.adapter.steer) {
+              const words = promptWithReply(promptWithDataContext(text, dataContext), replyTo, cfg.profile?.name?.trim() || "User");
+              if (routable) routableSteers.open(steerId, { botId: bot.id, threadId, text, context: routeContext });
               steered = await instance.adapter
-                .steer(threadId, voiceCallSteerPrompt(promptWithReply(promptWithDataContext(text, dataContext), replyTo, cfg.profile?.name?.trim() || "User"), voiceCall), { steerId })
+                .steer(threadId, voiceCallSteerPrompt(routable ? orchestratedSteerText(steerId, words) : words, voiceCall), { steerId })
                 .catch((): SteerOutcome => "indeterminate");
             }
             // steer() is awaited adapter work. The turn can settle, the task can
@@ -40503,6 +40626,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const delivered = steered !== "refused";
             if (delivered) {
               if (steered === "steered" && !current.busy) {
+                routableSteers.drop(steerId);
                 // Said on a call, the words must get an answer: the turn
                 // they were written into ended first, so they start the
                 // next one (a phone has no composer to resend from).
@@ -40542,10 +40666,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               store.setTaskAskedAt(bot.id, threadId, message.at);
               // Offered to the next turn again unless the person stops this one.
               handoffs.steered(threadId, steerTarget, instance?.instanceId, message.id, steerId);
+              if (routable) routableSteers.bind(steerId, message.id);
               return { ok: true as const, steered: true as const, threadId, message };
             }
+            routableSteers.drop(steerId);
             if (!current.busy) {
               return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall, undefined, undefined, dataContext);
+            }
+            // Auto, and the running turn cannot take the words live (this
+            // engine cannot steer, or the steer was refused): the server
+            // routes them, a parallel task or the queue, never an error. A
+            // turn being stopped keeps them for the next turn, as before.
+            if (routable && !stoppingThreads.has(threadId)) {
+              const decided = await classifyWithoutSteer({ text, running: runningRequestText(threadId), generateText: busyClassifyEngine(bot.id) });
+              console.log(`[busy-route] ${bot.id}/${threadId} ${decided.mode} (${decided.by}, no live steer)`);
+              const after = store.projectBotForTask(bot.id, threadId);
+              if (!after || !store.taskByThread(bot.id, threadId)) throw Object.assign(new Error("the target task no longer exists"), { status: 409 });
+              // the running turn ended while the model answered: a plain turn
+              if (!after.busy) return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall, undefined, undefined, dataContext);
+              if (decided.mode === "parallel") return startParallelTask({ botId: bot.id, threadId, text, ...routeContext });
             }
             const queued = queueSteeredMessage(current.id, threadId, text, {
               replyToId: replyTo?.id,

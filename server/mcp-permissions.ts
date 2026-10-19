@@ -113,6 +113,7 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("bots:coordinate", "dispatch", "coordinate_bots"),
   p("agents:send", "dispatch", "send_prompt"),
   p("threads:start", "dispatch", "start_thread"),
+  p("threads:route", "own", "route_message"),
   p("threads:retry", "dispatch", "retry_thread"),
   p("cloudagents:launch", "dispatch", "launch_cloud_agent"),
   p("cloudagents:followup", "dispatch", "cloud_agent_follow_up"),

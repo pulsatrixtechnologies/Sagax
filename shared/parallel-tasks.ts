@@ -9,20 +9,31 @@
 // Server: server/parallel-tasks.ts and the send route in server/index.ts.
 
 /** What a message sent while the bot is busy does.
- * - steer: join the running turn (today's behavior; queued when the engine
- *   cannot take it live).
+ * - steer: join the running turn (queued when the engine cannot take it live).
  * - parallel: run as its own task, in parallel.
  * - after: wait for the running turn, then run (the queue). */
 export type BusySendMode = "steer" | "parallel" | "after";
 
-/** The person's default for a busy send (localStorage, synced per person on an
- * organization server): "ask" offers the three choices each time. */
+/** What a send asks for. `auto` (the default since 2026-10-18, JC: the bot
+ * orchestrates, the person is never asked) leaves it to the bot: a
+ * correction of the running work joins it, an independent request runs as a
+ * parallel task, one that depends on the running work or touches the same
+ * files waits for it (server/busy-routing.ts). The three explicit modes stay
+ * for the API, relays and older builds. */
+export type BusySendRequest = BusySendMode | "auto";
+
+/** An older build's per-person default (localStorage, synced per person on
+ * an organization server). No client reads it any more: every send is auto. */
 export type BusySendPreference = "ask" | BusySendMode;
 
 export const BUSY_SEND_PREFERENCE_KEY = "sagax.busySend.v1";
 
 export function isBusySendMode(value: unknown): value is BusySendMode {
   return value === "steer" || value === "parallel" || value === "after";
+}
+
+export function isBusySendRequest(value: unknown): value is BusySendRequest {
+  return value === "auto" || isBusySendMode(value);
 }
 
 export function parseBusySendPreference(value: unknown): BusySendPreference {
@@ -66,6 +77,12 @@ export interface TaskParallelOf {
   outcome?: ParallelTaskState;
   /** Opened by the bot itself (start_thread with report_back), not a person. */
   byBot?: boolean;
+  /** The files or records it writes, as the bot named them (route_message):
+   * a task waits while another pending one names the same (one queue per
+   * resource, server/parallel-tasks.ts parallelResourceBlocked). */
+  resources?: string[];
+  /** Routed by the bot from a message steered into its running turn. */
+  routed?: boolean;
 }
 
 /** Default number of parallel tasks one person may have running on one bot. */
@@ -80,15 +97,57 @@ const STEER_HINTS = [
   "instead", "wait", "also", "actually", "don't", "dont", "cancel", "rather", "keep going", "use ", "no,",
 ];
 
-/** The choice offered first when the person picks per message: a short
- * correction reads as a steer; anything else as unrelated work, which runs
- * in parallel. The person always sees and can change the choice. */
+/** A short correction reads as a steer; anything else as unrelated work,
+ * which runs in parallel. The first guess of classifyBusySend. */
 export function suggestBusySendMode(text: string): BusySendMode {
   const words = text.trim().toLowerCase();
   if (!words) return "steer";
   const short = words.length <= 60;
   if (short && STEER_HINTS.some((hint) => words.startsWith(hint) || words.includes(` ${hint}`))) return "steer";
   return "parallel";
+}
+
+/** Words that say the request needs the running work's result first. */
+const AFTER_HINTS = [
+  // fr
+  "ensuite", "après ça", "apres ca", "après ceci", "une fois que", "une fois fini", "une fois terminé", "quand tu auras", "quand t'auras", "quand tu as fini",
+  "avec le résultat", "avec le resultat", "à partir du résultat", "à partir de ça", "le même fichier", "ce même fichier", "dans ce fichier", "puis ",
+  // en
+  "after that", "afterwards", "then ", "once you're done", "once you are done", "once that's done", "when you're done", "when you are done",
+  "when you finish", "with the result", "using the result", "based on that", "same file", "that file", "in that file",
+];
+
+/** File paths, ticket numbers and record ids a message names: two pieces of
+ * work naming the same one touch the same resource. */
+export function namedResources(text: string): string[] {
+  const found = new Set<string>();
+  for (const match of text.matchAll(/(?:^|[\s(`"'])((?:~|\.{1,2})?\/?(?:[\w.-]+\/)+[\w.-]+|[\w-]+\.(?:ts|tsx|js|mjs|json|md|swift|py|rs|go|yaml|yml|sql|csv|xlsx|docx|pdf|txt|html|css))(?=$|[\s),.;:`"'])/gi)) {
+    found.add(`file:${match[1]!.replace(/^\.\//, "").toLowerCase()}`);
+  }
+  for (const match of text.matchAll(/(?:#|\b(?:ticket|billet|issue|pr|invoice|facture)\s*#?\s*)(\d{3,})\b/gi)) found.add(`id:${match[1]}`);
+  return [...found];
+}
+
+/** Whether two resource lists share one key. A key names a resource
+ * (`file:src/a.ts`, `id:123456`, or any key a bot gives route_message);
+ * comparison ignores case. */
+export function resourcesOverlap(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  if (!a?.length || !b?.length) return false;
+  const left = new Set(a.map((key) => key.trim().toLowerCase()).filter(Boolean));
+  return b.some((key) => left.has(key.trim().toLowerCase()));
+}
+
+/** Where an auto send goes while the bot works, without asking the model:
+ * a short correction joins the running work, a request that needs its
+ * result or names a resource the running work names waits for it, anything
+ * else runs in parallel. `sure` is false when only the default picked it
+ * (the server may then ask the bot's model). */
+export function classifyBusySend(input: { text: string; running?: string }): { mode: BusySendMode; sure: boolean; why: "correction" | "depends" | "same-resource" | "independent" } {
+  const words = input.text.trim().toLowerCase();
+  if (suggestBusySendMode(input.text) === "steer") return { mode: "steer", sure: true, why: "correction" };
+  if (AFTER_HINTS.some((hint) => words.startsWith(hint.trimEnd()) || words.includes(` ${hint}`) || words.includes(`, ${hint}`))) return { mode: "after", sure: true, why: "depends" };
+  if (input.running && resourcesOverlap(namedResources(input.text), namedResources(input.running))) return { mode: "after", sure: true, why: "same-resource" };
+  return { mode: "parallel", sure: false, why: "independent" };
 }
 
 /** A task card's state from the task's live record. */

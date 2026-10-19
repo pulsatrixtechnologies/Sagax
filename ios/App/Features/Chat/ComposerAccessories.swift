@@ -191,15 +191,6 @@ extension ChatView {
 
         replyStrip
 
-        if let choice = openBusyChoice {
-            BusySendChooserView(
-                name: busyName,
-                highlighted: choice,
-                pick: { submit(busyMode: $0) },
-                close: { withAnimation(.snappy(duration: 0.2)) { power.busyChoice = nil } }
-            )
-            .transition(.slideUp(reduce: reduceMotion))
-        }
     }
 
     /// How far the phone composer's scrolling strips reach past its margin:

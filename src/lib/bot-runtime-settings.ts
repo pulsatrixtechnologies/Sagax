@@ -1,7 +1,8 @@
-// A bot's own parallel conversations, automatic recovery and busy-send
-// default (server/bot-runtime-settings.ts, JC 2026-10-15). A bot without a
-// value of its own reads the server default (Settings no longer edits it);
-// busySend falls back to the person's own earlier choice.
+// A bot's own parallel conversations and automatic recovery
+// (server/bot-runtime-settings.ts, JC 2026-10-15). A bot without a value of
+// its own reads the server default (Settings no longer edits it). busySend
+// is still stored and exported for older builds; no client reads it since
+// 2026-10-18 (the bot routes busy sends itself, server/busy-routing.ts).
 import type { BusySendPreference } from "../../shared/parallel-tasks";
 import { DEFAULT_MAX_PARALLEL_PER_PERSON } from "../../shared/parallel-tasks";
 import type { Bot, ConfigStatus } from "@/state/store";
@@ -30,12 +31,6 @@ export function botParallelLimit(bot: RuntimeBot, config: RuntimeConfig): number
 
 export function botRecovery(bot: RuntimeBot, config: RuntimeConfig): BotRecovery {
   return bot.automaticRecovery ?? config?.automaticRecovery ?? { enabled: false };
-}
-
-/** What a message sent while this bot works does: the bot's own choice,
- * else the person's own earlier default. */
-export function botBusySend(bot: Pick<Bot, "busySend"> | null | undefined, personal: BusySendPreference): BusySendPreference {
-  return bot?.busySend ?? personal;
 }
 
 export function botRuntimeSettingsPath(botId: string): string {

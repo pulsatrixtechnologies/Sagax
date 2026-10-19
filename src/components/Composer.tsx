@@ -83,12 +83,8 @@ import {
   doubleEnterSteerWindowExpiresAt,
   doubleEnterSteersQueue,
 } from "./ComposerQueuedMessages";
-import { BusySendChooser, moveBusyChoice } from "./BusySendChooser";
 import { useParallelApprovals } from "./parallel-approvals";
-import { useBusySendPreference } from "@/lib/busy-send";
-import { botBusySend } from "@/lib/bot-runtime-settings";
 import { useOnCall } from "@/lib/call";
-import { suggestBusySendMode, type BusySendMode } from "../../shared/parallel-tasks";
 import { browserAvailable, builtInBrowserEnabled, dataWindowEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { requestBrowserTeach } from "@/lib/teach-request";
 import { TeachChooserDialog } from "./TeachStepsDialog";
@@ -221,22 +217,12 @@ export function Composer({
     ? members?.find((member) => member.id === pending.message.from?.botId) ??
       members?.find((member) => member.id === groupBusyBotId)
     : bot;
-  const busyName = group
-    ? (members?.find((b) => b.id === groupBusyBotId)?.name ??
-      (groupWorking ? t("composer.busy.team") : t("composer.busy.aBot")))
-    : (bot?.name ?? t("composer.busy.theBot"));
-  // A send while this 1:1 conversation works: join, parallel task or after
-  // (shared/parallel-tasks.ts). "ask" offers the choice; null = closed.
-  // The bot's own default wins (bot editor > Permissions, 2026-10-15); a
-  // bot without one keeps the person's own earlier choice.
-  const busySendPreference = botBusySend(bot, useBusySendPreference());
-  // on a voice call the words join the running turn: no chooser
+  // A send while this 1:1 conversation works is "auto" (JC 2026-10-18): the
+  // bot decides whether it joins the running work, runs as a parallel task
+  // or waits for it (server/busy-routing.ts). Nobody is asked. On a voice
+  // call the words join the running turn.
   const onCall = useOnCall();
-  const offersBusyChoice = Boolean(bot && !group && busy && onCall !== bot.id);
-  const [busyChoice, setBusyChoice] = useState<BusySendMode | null>(null);
-  useEffect(() => {
-    if (!offersBusyChoice) setBusyChoice(null);
-  }, [offersBusyChoice]);
+  const autoRoutesBusySend = Boolean(bot && !group && busy && onCall !== bot.id);
   // Per-thread draft: switching bots unmounts this component, so both the
   // text and its attachment chips have to outlive it (see lib/drafts).
   const draftId = group
@@ -849,7 +835,7 @@ export function Composer({
       dispatch({ type: "send", botId: bot.id, ...retry });
     }
   };
-  const send = (chosen?: BusySendMode) => {
+  const send = () => {
     // The Hibou 98 easter egg: the secret command toggles the retro owl and
     // is never sent to anyone.
     if (consumeRetroCommand(text, attachments.length)) {
@@ -880,17 +866,8 @@ export function Composer({
     const composed = composeMessage(serializeThreadRefs(effectiveText, threads, currentBotId), attachments);
     if (!composed) return;
     const body = restoredRequestText(draftId) ?? composed;
-    // While this conversation works, the person says what the message does,
-    // or their default does.
-    let busyMode: BusySendMode | undefined;
-    if (offersBusyChoice) {
-      busyMode = chosen ?? (busySendPreference === "ask" ? undefined : busySendPreference);
-      if (!busyMode) {
-        setBusyChoice(suggestBusySendMode(body));
-        return;
-      }
-    }
-    setBusyChoice(null);
+    // While this conversation works, the bot routes the message.
+    const busyMode = autoRoutesBusySend ? "auto" as const : undefined;
     // The viewed Data result (in this bot's Data window) travels as its own
     // field of the send, never in the words: only for this bot's own thread,
     // and never ahead of an opening command the server parses first.
@@ -1294,15 +1271,6 @@ export function Composer({
           onPendingChange={(pending) => changeDraftAttachmentPending(draftId, pending)}
           uploadImage={uploadImage}
         />
-        {busyChoice && offersBusyChoice && (
-          <BusySendChooser
-            highlighted={busyChoice}
-            onHighlight={setBusyChoice}
-            onPick={(mode) => send(mode)}
-            onClose={() => setBusyChoice(null)}
-            name={busyName}
-          />
-        )}
         <QueuedComposerMessages
           items={queuedMessages}
           onSteer={canSteerQueued ? steerQueued : undefined}
@@ -1441,23 +1409,6 @@ export function Composer({
               if (e.key === "Escape") {
                 e.preventDefault();
                 setDismissedAt(mention?.start ?? null);
-                return;
-              }
-            }
-            if (busyChoice) {
-              if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowUp") {
-                e.preventDefault();
-                setBusyChoice(moveBusyChoice(busyChoice, e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1));
-                return;
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setBusyChoice(null);
-                return;
-              }
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send(busyChoice);
                 return;
               }
             }

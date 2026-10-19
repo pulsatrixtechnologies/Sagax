@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
-import type { ParallelTaskState, TaskParallelOf } from "../shared/parallel-tasks.ts";
+import { resourcesOverlap, type ParallelTaskState, type TaskParallelOf } from "../shared/parallel-tasks.ts";
 
 /** A conversation line the brief may quote for context. */
 export interface BriefLine {
@@ -158,7 +158,29 @@ export function parallelAdmission(input: {
   return { action: "queue", running, waiting };
 }
 
-/** Whether a waiting parallel task must keep waiting for its person's limit. */
+/** Whether a parallel task must wait for another one that holds one of its
+ * resources (`TaskParallelOf.resources`): never two tasks writing the same
+ * file or record at once. One queue per resource, first asked first served:
+ * it waits for every pending task asked before it that names one of its
+ * resources, and for any such task already running. */
+export function parallelResourceBlocked(input: {
+  task: { parallelOf?: TaskParallelOf; threadId: string };
+  tasks: readonly { parallelOf?: TaskParallelOf; threadId: string }[];
+  busy: (threadId: string) => boolean;
+}): boolean {
+  const mine = input.task.parallelOf;
+  if (!mine || !parallelPending(input.task) || !mine.resources?.length) return false;
+  return input.tasks.some((task) => {
+    if (task.threadId === input.task.threadId || !parallelPending(task)) return false;
+    const other = task.parallelOf!;
+    if (!resourcesOverlap(mine.resources, other.resources)) return false;
+    const earlier = other.at < mine.at || (other.at === mine.at && task.threadId < input.task.threadId);
+    return earlier || input.busy(task.threadId);
+  });
+}
+
+/** Whether a waiting parallel task must keep waiting: for its person's limit,
+ * or for a resource another task holds (parallelResourceBlocked). */
 export function parallelBlocked(input: {
   task: { parallelOf?: TaskParallelOf; threadId: string };
   tasks: readonly { parallelOf?: TaskParallelOf; threadId: string }[];
@@ -167,6 +189,7 @@ export function parallelBlocked(input: {
   busy: (threadId: string) => boolean;
 }): boolean {
   if (!parallelPending(input.task)) return false;
+  if (parallelResourceBlocked(input)) return true;
   const key = parallelKey(input.task.parallelOf!);
   const running = input.tasks.filter((task) => task.threadId !== input.task.threadId && input.busy(task.threadId)
     && parallelPending(task) && parallelKey(task.parallelOf!) === key).length;
