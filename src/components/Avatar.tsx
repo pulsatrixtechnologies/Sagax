@@ -4,6 +4,7 @@
 // are translated to the owl's six states by src/lib/owl/owl-state.ts. A bot
 // may wear another character instead (bot.mascotLook: one of the shapes, or
 // Trombi), drawn by BotAvatar for every bot avatar in the app.
+import { ShapeMascot as LegacyShapeMascot } from "./shape-legacy/ShapeMascot";
 import {
   forwardRef,
   memo,
@@ -317,6 +318,9 @@ export function frogExpressionFor(state: MausState | undefined): FrogExpression 
  * The bot's character, when it is not the owl: one of the shapes, Trombi, Bunbu, Shiba, Grump, Ogre or Frog, in the bot's look. Every bot avatar in the app comes through
  * BotAvatar, so this is where a character change shows everywhere.
  */
+/** From this size up a shape uses the pre-#786 drawing (the sidebar tops out at 60). */
+const LEGACY_SHAPE_MIN = 96;
+
 function CharacterAvatar({
   look,
   color,
@@ -339,6 +343,23 @@ function CharacterAvatar({
   shapeGazeRef?: React.MutableRefObject<((gaze: { x: number; y: number }) => void) | null>;
 }) {
   const full = completeMascotLook(look);
+  if (full.character === "shape" && size >= LEGACY_SHAPE_MIN) {
+    // Big avatars (profile viewer, Details tab) keep the pre-#786 drawing
+    const old = shapeMoodFor(state);
+    return (
+      <LegacyShapeMascot
+        shape={full.shape}
+        skin={full.skins.shape}
+        color={color}
+        size={size}
+        mood={old === "streaming" ? "working" : old === "blocked" ? "idle" : old}
+        animated={animated}
+        move={move}
+        moveBody
+        label={label ?? null}
+      />
+    );
+  }
   if (full.character === "shape") {
     return (
       <ShapeMascot

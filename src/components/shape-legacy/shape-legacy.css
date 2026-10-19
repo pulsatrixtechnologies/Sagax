@@ -1,0 +1,14 @@
+/* Pre-#786 shapes, kept for the big avatars (profile viewer, Details tab). */
+.shape-legacy.shape-mascot-live.shape-mood-working .shape-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: shape-bounce-legacy 0.9s ease-in-out infinite;
+}
+@keyframes shape-bounce-legacy {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  45% { transform: translateY(-6%) scale(0.98, 1.03); }
+  70% { transform: translateY(0) scale(1.04, 0.96); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shape-legacy.shape-mascot-live .shape-body { animation: none; }
+}
