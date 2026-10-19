@@ -10290,11 +10290,17 @@ function scopeChannelApproval(
   if (kind === "runtime") {
     const event = payload.event;
     if (!event || typeof event !== "object") return { action: "same" };
-    const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown; botId?: unknown; requestId?: unknown };
+    const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown; botId?: unknown; requestId?: unknown; tool?: unknown; mcpTool?: unknown };
     if (row.type !== "request.opened" || row.requestType !== "permission") return { action: "same" };
     const bot = approvalBot(row);
     if (!bot) return { action: "drop" };
-    const audience = approvalAudience({ ownerUserId: cardAnswererId(bot, typeof row.threadId === "string" ? row.threadId : undefined, noteCard(row.threadId, row.requestId)), host: approvalHostOf(bot) });
+    // The event is broadcast before its card exists: judge the speaker's own
+    // destination from the turn itself (destinationOfCall), as the card will.
+    const threadId = typeof row.threadId === "string" ? row.threadId : undefined;
+    const tool = typeof row.mcpTool === "string" ? row.mcpTool : typeof row.tool === "string" ? row.tool : undefined;
+    const destination = threadId ? destinationOfCall(bot, threadId, tool, cloudGuestDriven(threadId)) : null;
+    const answerer = destination && !destination.byOwner ? destination.person : cardAnswererId(bot, threadId, noteCard(row.threadId, row.requestId));
+    const audience = approvalAudience({ ownerUserId: answerer, host: approvalHostOf(bot) });
     return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
   }
   return { action: "same" };
@@ -10679,6 +10685,13 @@ async function respondToCard(input: {
   }
   const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
   if (refusal) return { ok: false, status: 403, error: refusal };
+  // Security review 2026-10-19 (pre-existing): a spoken answer meets the
+  // same answerer rules as the screen: an admin's card for an admin, any
+  // other card for the person who answers it.
+  const liveAdminCheck = adminApprovalCheck(auth, threadId, requestId);
+  if (liveAdminCheck === "refused") return { ok: false, status: 403, error: ADMIN_APPROVAL_REQUIRED.error };
+  const liveOwnerRefusal = liveAdminCheck ? null : approvalAnswerRefusal(auth, threadId, requestId);
+  if (liveOwnerRefusal) return { ok: false, status: 403, error: liveOwnerRefusal };
   const bot = store.botByThread(threadId);
   if (!bot) return { ok: false, status: 404, error: "The chat is gone." };
   const cardMessage = store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId);
@@ -12944,6 +12957,12 @@ bus.subscribe((event: RuntimeEvent) => {
       const destinationAnswerer = destination && !destination.byOwner ? destination.person : undefined;
       const cardAnswerer = asker ? destinationAnswerer ?? approvalOwnerId(asker, event.threadId) : "";
       const destinationOrigin = asker && destination ? destinationTurnOrigin(asker, event.threadId, destination.person) : "other";
+      // Security review 2026-10-19: a call on a person's environment Sagax
+      // mounted this turn that is not the card answerer's own (a peer hop
+      // that mounted the sender's person, a turn nobody wrote in someone's
+      // confidential thread): no mode, rule or session grant of the answerer
+      // answers it, and it is judged at Ask.
+      const foreignDestination = Boolean(permission && asker && event.requestId && !destination && mountedDestinationOf(asker, event.threadId, event.mcpTool ?? event.tool) !== null);
       const serverLevelCard = Boolean(memberAsker && asker && memberBotAdminApproval({
         tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
@@ -13035,7 +13054,7 @@ bus.subscribe((event: RuntimeEvent) => {
         break;
       }
       const baseVerdict = permission && asker && event.requestId
-        ? autoVerdict(strictCard ? "ask" : effectiveApprovalMode, event.tool, {
+        ? autoVerdict(strictCard || foreignDestination ? "ask" : effectiveApprovalMode, event.tool, {
           requiresExplicitApproval: event.requiresExplicitApproval,
           sagaxGate: event.sagaxGate === true,
           ruleAllowed: Boolean(gateAllowKey && !strictCard && !guestDriven && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
@@ -13118,6 +13137,7 @@ bus.subscribe((event: RuntimeEvent) => {
           origin: ownEnvironmentOrigin(asker, event.threadId), stepUpRequired: [],
         }))
         || (ownDestination && !ownEnvironment && !attachmentRead && !speakerEnvironmentRules)
+        || foreignDestination
       ));
       const owner = ownerCall && asker
         ? ownerDecision({
@@ -13289,7 +13309,7 @@ bus.subscribe((event: RuntimeEvent) => {
           // a member's bot is approved one action at a time: a session rule
           // (Claude's own suggestion) could reach past its workspace. Never on
           // a guest's turn either: an "always" for it would outlive it.
-          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !strictCard && !memberAsker && !guestDriven && safetyEffect?.kind !== "hold" ? true : undefined,
+          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !strictCard && !memberAsker && !guestDriven && !destinationAnswerer && !foreignDestination && safetyEffect?.kind !== "hold" ? true : undefined,
           ...(adminApproval ? { adminApproval: true } : {}),
           ...(destinationAnswerer ? { destinationAnswerer } : {}),
           ...(serverCommandHolder ? { serverCommandHolder: true } : {}),
@@ -27329,6 +27349,15 @@ function destinationOfCall(bot: BotRecord, threadId: string, tool: string | unde
     mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
   }) ? { person, byOwner: false } : null;
 }
+/** The person whose environment (sagax-environment, sagax-desktop) Sagax
+ * mounted this turn when this tool belongs to it, or null. */
+function mountedDestinationOf(bot: BotRecord, threadId: string, tool: string | undefined): string | null {
+  const workplace = turnWorkplaces.get(threadId);
+  if (workplace?.botId !== bot.id || !workplace.decision.principal) return null;
+  const match = /^(?:mcp__)?([a-z][a-z-]{0,63})__[a-z][a-z0-9_]{0,63}$/.exec(tool?.trim() ?? "");
+  if (!match || !(workplace.ownEnvironmentServers ?? new Set<string>()).has(match[1]!)) return null;
+  return workplace.decision.principal.trim().toLowerCase();
+}
 /** Whether `person` wrote this turn themselves (member-environment.ts
  * ownEnvironmentTurnOrigin, for the person whose destination it is). */
 function destinationTurnOrigin(bot: BotRecord, threadId: string, person: string): "owner" | "other" {
@@ -39297,7 +39326,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A server command of a member's bot is approved once, by an admin.
       if (pending.card?.adminApproval || memberOwnedInOrg(bot)) return json(res, 403, ADMIN_APPROVAL_REQUIRED);
       // A standing grant is an approval: the same people who may approve
-      // the card it came from may remember it.
+      // the card it came from may remember it (security review 2026-10-19:
+      // its answerer, not only whoever started the thread).
+      const answererRefusal = approvalAnswerRefusal(auth, bot.threadId, pending.card!.requestId!);
+      if (answererRefusal) return json(res, 403, { error: answererRefusal });
       const refusal = cardAnswerRefusal(auth, bot.threadId, pending.card!.requestId!, "allow");
       if (refusal) return json(res, 403, { error: refusal });
       const stepUpRefusal = alwaysAllowStepUpGate(ruleManager(auth), bot.id, bot.threadId, pending.card!.requestId!, allowKey, body.stepUp);
