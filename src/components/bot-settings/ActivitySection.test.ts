@@ -344,7 +344,7 @@ describe("history and errors", () => {
 });
 
 describe("Coding, code work only", () => {
-  const pr = { repo: "acme/parser", number: 42, title: "Split the lexer", url: "https://github.com/acme/parser/pull/42", action: "opened" as const, at: NOW - 3_600_000 };
+  const pr = { repo: "acme/parser", number: 42, title: "Split the lexer", url: "https://github.com/acme/parser/pull/42", action: "opened" as const, branch: "fix/lexer", at: NOW - 3_600_000 };
   const shipped = codeJob("thread:ship", {
     code: {
       folder: "/srv/repos/parser", branch: "fix/lexer", repo: "acme/parser", repoUrl: "https://github.com/acme/parser",
@@ -371,13 +371,18 @@ describe("Coding, code work only", () => {
     expect(html).toContain("acme/parser · Opened · 1 h ago");
     expect(html).toContain('data-code-link="https://github.com/acme/parser/pull/42"');
     expect(html).toContain(">Branches<");
-    expect(html).toContain("acme/parser · Pushed");
+    // a branch is a grouped card row like a routine's: status pill, where and when
+    expect(html).toContain('data-branch-status="open"');
+    expect(html).toContain("PR #42 open");
+    expect(html).toContain("acme/parser · 1 h ago");
     expect(html).toContain(">Commits<");
     expect(html).toContain("fix: split the lexer");
     expect(html).toContain("1a2b3c4 · fix/lexer · Pushed");
     // a row without a page is not a link
     const local = renderToStaticMarkup(createElement(CodeWorkList, { work: { pullRequests: [], branches: [{ name: "spike", pushed: false, at: NOW }], commits: [] }, now: NOW }));
-    expect(local).toContain("Not pushed · just now");
+    expect(local).toContain('data-branch-status="local"');
+    expect(local).toContain(">Not pushed<");
+    expect(local).toContain("just now");
     expect(local).not.toContain("data-code-link");
     expect(local).not.toContain("Pull requests");
   });

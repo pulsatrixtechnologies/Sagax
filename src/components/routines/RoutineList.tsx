@@ -9,6 +9,8 @@ import { PILL_INFO } from "@/lib/status-tones";
 import { Switch } from "../SettingsPrimitives";
 import { RoutineOwnerBadge } from "./RoutineScopeBar";
 import { personLabel } from "@/lib/human-label";
+import { GROUPED_CARD, GROUPED_ROW } from "@/lib/grouped-card";
+import { cn } from "@/lib/cn";
 
 const SUSPEND_REASON_KEYS = {
   person_out: "routines.suspendReason.person_out",
@@ -59,7 +61,7 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
     {loading && <p role="status" className="flex items-center gap-2 p-3 text-[12px] text-ink-secondary"><Loader2 size={14} className="animate-spin" />{t("routines.loading")}</p>}
     {!loading && !error && sorted.length === 0 && <div className="rounded-xl border border-dashed border-hairline/50 p-5 text-center text-[13px] text-ink-secondary"><Repeat2 size={20} className="mx-auto mb-2 opacity-60" />{emptyText ?? t("routines.empty")}</div>}
     {sorted.length > 0 && (
-      <div className={grouped ? "flex flex-col overflow-hidden rounded-xl border border-hairline-weak bg-card" : "flex flex-col gap-0.5"}>
+      <div className={grouped ? GROUPED_CARD : "flex flex-col gap-0.5"}>
         {sorted.map((routine) => {
           const bot = upcoming ? bots?.find((candidate) => candidate.id === routine.botId) : undefined;
           const botName = bot?.name ?? routine.bot?.name;
@@ -73,7 +75,7 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           const runAsOther = routine.runAs && routine.runAs.principalId.toLowerCase() !== routine.owner?.id?.toLowerCase() ? routine.runAs : null;
           const readOnly = routine.canEdit === false;
           return (
-            <div key={routine.id} data-routine-row className={grouped ? "flex items-center gap-2.5 border-b border-hairline-weak px-3 py-2.5 last:border-b-0 hover:bg-hover" : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover"}>
+            <div key={routine.id} data-routine-row className={grouped ? cn("flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW) : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover"}>
               <button type="button" onClick={() => onOpen(routine)} className="min-w-0 flex-1 text-left">
                 {state ? (
                   <span className="flex min-w-0 items-center gap-2">

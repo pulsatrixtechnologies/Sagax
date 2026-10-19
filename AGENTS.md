@@ -3333,6 +3333,65 @@ of that thread. The owner's notification of such a run names no thread, only
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
 
+## Coding branches: the person acts on them (2026-10-19)
+
+JC: "Mets le même encadré pour les éléments de coding" and "Je devrais
+pouvoir interagir (commit, push, etc.), archiver". Details > Coding's pull
+requests, branches and commits sit in the Routines card (`GROUPED_CARD`,
+`GROUPED_ROW` in `src/lib/grouped-card.ts`, used by `RoutineList` grouped
+and `ActivitySection`; never a copy of the classes). A branch row
+(`src/components/bot-settings/CodeBranchList.tsx`) is its icon, name, a
+status pill (Not pushed, Pushed, PR #n open, Merged, PR closed, Deleted),
+then repository, commits ahead, changed files and time, and a "..." menu:
+Commit (proposed message, editable; the changed files, all chosen), Push,
+Open the pull request (or open one), View diff (the Code section's
+`DiffView`), Show in folder (local app, a local path only), Open in
+Computer, Archive or Unarchive, Delete local branch. Each action shows a
+spinner on the row, then one line saying what happened or why not. A
+pull request carries its head `branch` (`server/activity-code-work.ts`),
+so the card shows what the bot did to it until GitHub says more.
+
+Rules, none optional (`server/routes/bot-code-branches.ts`, git in
+`server/code-branches.ts`):
+
+- Where: the coding thread's own folder (`task.cwd`) when it is a git
+  repository on this server; a branch is acted on only if that thread
+  worked on it (its calls, or the folder's checked-out branch). A branch
+  whose repository is elsewhere (the person's sandbox, a Local VM, their
+  computer through the bridge) reads `place: "elsewhere"` and nothing runs
+  (known gap: those places have exec paths, `UserSandboxManager.exec`,
+  `containerExec`, the bridge's `run_command`, but no thread records the
+  repository's folder there).
+- Who: the thread must pass `thread.post` for the viewer (not theirs reads
+  as 404). Their own branch asks no approval. Push and pull requests use
+  their own credentials: on a solo server the host's git and gh are theirs;
+  on an organization server only their GitHub connection
+  (`usablePersonGithub`), as an extra header for github.com with no system
+  or global git config, no credential helper, no ssh, and gh with
+  `GH_TOKEN` and an empty config; without it the action is refused
+  (`github_not_connected`), never done with the server's or the
+  organization's tokens. On an organization server only an https GitHub
+  remote is pushed, and a server path is shown as its folder name only.
+- What: never a force push, never the default branch (no push, delete or
+  pull request), hooks and fsmonitor off, the message through a file in
+  the git folder (never argv). Delete: refused while checked out in a
+  worktree (no folder is ever removed); work not on origin needs
+  `confirmUnpushed` (the panel asks twice). Pull requests: GitHub only,
+  through `gh pr create --fill --repo`, an open one reused.
+- Archive: per person and bot in `code-branch-archive.json` (0600), keyed
+  `repo-or-folder:branch`; the branch stays; "Show archived (n)" brings it
+  back. Archived branches do not take one of the five places.
+- Every action writes an admin activity row (`code.branch.commit`, `push`,
+  `pull_request`, `delete`, `archive`, `unarchive`).
+- iOS and Android: their Coding section lists running jobs only, no
+  branches yet; the card and a subset of actions (Push, PR, Archive) are
+  for later.
+- Tests: `server/routes/bot-code-branches.e2e.test.ts` (real git, a bare
+  local remote), `src/components/bot-settings/CodeBranchList.test.ts`,
+  `ActivitySection.test.ts`, `server/activity-code-work.test.ts`.
+  Screenshots: `node scripts/capture-bot-panel-coding.mjs` (headless, the
+  gallery `src/gallery/bot-panel-coding.html`).
+
 ## Parallel tasks (sending while the bot works, 2026-10-02)
 
 A message sent to a busy 1:1 conversation carries `busyMode`
