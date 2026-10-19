@@ -473,20 +473,31 @@ in `server/routes/security-keys.ts`. Rules, covered by
 - "A sign-in younger than 15 minutes" (`server/recent-sign-in.ts`,
   2026-10-18) is the session's `authAt`, never its `createdAt`: a bot that
   can create a pairing code (`manage_pairing`, act on
-  `POST /api/auth/pairing`) redeems it into a brand new session. Only an
-  interactive sign-in stamps `authAt`: "Sign in with Pulsatrix" (web, or
-  handed to the desktop or a phone through its one-time pairing window) and
-  an email code the person typed. A pairing code, the phone's `/api/pair`,
-  an invite link, a renewal, a bot-act copy and an act-as session stamp
-  nothing, and a session stored before this change has none (sign in
-  again). A headless server's loopback never counts (a bot's shell is a
-  loopback caller there); the desktop app's own person does. The same rule
-  gates the vault export for a person without a key. Not covered yet: the
-  provider's `auth_time` and `max_age` (a silent single sign-on at
-  Perspicax still counts), and a headless solo server with no email
-  sign-in has no way to a recent sign-in (a first key there needs the
-  desktop app). Tests: `server/recent-sign-in.test.ts`,
-  `server/recent-sign-in.e2e.test.ts`, C5 in
+  `POST /api/auth/pairing`) redeems it into a brand new session. Only
+  "Sign in with Pulsatrix" stamps `authAt` (web, or handed to the desktop
+  or a phone through its one-time pairing window), and only from the
+  id_token's verified `auth_time` when that moment is itself within the
+  15 minutes (no more than 60 s ahead of this clock, dated now then;
+  `authAtFromAuthTime`, 2026-10-19): a silent single sign-on or an old
+  sign-in at the provider gives a valid session that is not recent. An
+  email code is a valid sign-in but never a recent one (a bot that reads
+  the person's mailbox can type it). A pairing code, the phone's
+  `/api/pair`, an invite link, a renewal, a bot-act copy and an act-as
+  session stamp nothing, and a session stored before this change has none
+  (sign in again). "Sign in again" (Settings > Security for the first key,
+  the vault export's refusal) is `/auth/oidc/start?fresh=1`
+  (`src/lib/sign-in-again.ts`; the desktop app carries `fresh` to the
+  system browser): Perspicax gets `prompt=login` and `max_age=0` and asks
+  for the factors even with a console session there (Perspicax keeps no
+  sign-in session at `/oauth/authorize` and answers `prompt=none` with
+  `login_required`). A server without the Pulsatrix sign-in has no path to
+  a recent sign-in: the row says so, with no button, and a first key or an
+  export in clear there needs the desktop app. A headless server's
+  loopback never counts (a bot's shell is a loopback caller there); the
+  desktop app's own person does. The same rule gates the vault export for a
+  person without a key. Tests: `server/recent-sign-in.test.ts`,
+  `server/recent-sign-in.e2e.test.ts`, `server/oidc-login.test.ts` (the
+  auth_time and `fresh` cases), `server/email-signin.test.ts`, C5 in
   `server/org-admin-console.e2e.test.ts`. The last key removed
   clears the classes.
 - Recovery when every key is lost: stop the server, remove the person's

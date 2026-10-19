@@ -114,10 +114,11 @@ const sessionSchema = z.object({
    * extends it. A file that still contains one is ignored. */
   ephemeral: z.literal(true).optional(),
   /** When the person last proved themselves interactively for this session:
-   * an OpenID Connect sign-in or an email code they typed (2026-10-18).
-   * Never set by a pairing code, an invite link, a bot-act copy, an act-as
-   * session or a renewal: those prove a credential, not the person at the
-   * keyboard. The "sign-in younger than 15 minutes" gates read this, never
+   * the verified, recent `auth_time` of an OpenID Connect sign-in
+   * (2026-10-18; from `auth_time` since 2026-10-19). Never set by an email
+   * code (a bot reading the mailbox can type it), a pairing code, an invite
+   * link, a bot-act copy, an act-as session or a renewal: those prove a
+   * credential, not the person at the keyboard. The "sign-in younger than 15 minutes" gates read this, never
    * `createdAt` (server/recent-sign-in.ts). */
   authAt: z.number().optional(),
 });

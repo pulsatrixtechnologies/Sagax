@@ -764,7 +764,7 @@ export class OidcRelyingParty {
 
   /** Begin a sign-in: remember state, nonce and PKCE verifier, and return
    * the authorization URL and the browser binding. */
-  async start(options: { client?: OidcClientKind; returnTo?: string; purpose?: OidcFlowPurpose; principalId?: string; subject?: { iss: string; sub: string }; sessionId?: string } = {}): Promise<StartedFlow> {
+  async start(options: { client?: OidcClientKind; returnTo?: string; purpose?: OidcFlowPurpose; principalId?: string; subject?: { iss: string; sub: string }; sessionId?: string; fresh?: boolean } = {}): Promise<StartedFlow> {
     const purpose = options.purpose ?? "signin";
     let expect: RoutineDelegationExpectation | undefined;
     if (purpose === "routines" || purpose === "reauth") {
@@ -813,8 +813,10 @@ export class OidcRelyingParty {
     // account's own delegation).
     if (expect) url.searchParams.set("login_hint", expect.subject.sub);
     // 2026-10-18: a sign-in again, never an existing session at the
-    // provider (OIDC Core 3.1.2.1); the callback checks auth_time.
-    if (purpose === "reauth") {
+    // provider (OIDC Core 3.1.2.1); the callback checks auth_time. The same
+    // for "Sign in again" (`fresh`, 2026-10-19), whose session counts as a
+    // recent sign-in only from a recent auth_time (server/recent-sign-in.ts).
+    if (purpose === "reauth" || (purpose === "signin" && options.fresh)) {
       url.searchParams.set("prompt", "login");
       url.searchParams.set("max_age", "0");
     }

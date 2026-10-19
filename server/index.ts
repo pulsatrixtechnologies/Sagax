@@ -32331,8 +32331,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
       }
       const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId || undefined });
-      // the person typed the code they received: an interactive sign-in
-      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id, authAt: Date.now() });
+      // A valid sign-in, never a recent one (no authAt): a bot that reads
+      // the person's mailbox can type the code too (server/recent-sign-in.ts).
+      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id });
       const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: true, sharedComputers: lendingEnabled() });
       const secure = requestOrigin(req)?.startsWith("https://") === true;
       res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));

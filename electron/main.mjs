@@ -578,7 +578,8 @@ async function startPulsatrixSignIn(_win, loginStart) {
     loopback = null;
     pendingSystemSignIn.begin(origin);
   }
-  const url = oidcSignInModule.desktopStartUrl(origin, loopback?.returnTo ?? (ownsSagax ? oidcSignInModule.sagaxReturnLink(origin) : undefined));
+  const fresh = new URL(start).searchParams.get("fresh") === "1";
+  const url = oidcSignInModule.desktopStartUrl(origin, loopback?.returnTo ?? (ownsSagax ? oidcSignInModule.sagaxReturnLink(origin) : undefined), fresh);
   const current = { origin, url, loopback };
   currentSignIn = current;
   setSignInState({ status: "waiting", origin });
