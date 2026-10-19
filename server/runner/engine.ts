@@ -28,6 +28,8 @@ export interface EngineFactoryInput {
   environment: Record<string, string>;
   /** Writable home for the engine's own state (CODEX_HOME and the like). */
   stateDir: string;
+  /** The bootstrap's approval_level (default auto). */
+  approvalMode?: "ask" | "edits" | "auto" | "full";
 }
 
 export type EngineFactory = (input: EngineFactoryInput) => Promise<RunnerEngineHandle>;

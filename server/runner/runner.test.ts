@@ -250,6 +250,9 @@ describe("sagax-runner cycle", () => {
     git(check, "bundle", "verify", "--quiet", join(root, "b1.bundle"));
     git(check, "fetch", "--quiet", join(root, "b1.bundle"), `refs/heads/${BRANCH}:refs/heads/fetched`);
     expect(git(check, "log", "-1", "--format=%an %s", "fetched").trim()).toBe("Pulsatrix Agent Fix the widgets");
+    // Incremental: the base is the one prerequisite.
+    const mainSha = git(bare, "rev-parse", "main").trim();
+    expect(prerequisites(fake.bundles[0]!)).toEqual([mainSha]);
 
     // A followup runs a second turn in the same session, then a new bundle.
     fake.push("followup", { text: "Also add second.txt", mode: "queue" });
@@ -258,6 +261,10 @@ describe("sagax-runner cycle", () => {
     expect(engine.turns[1]!.text).toBe("Also add second.txt");
     expect(engine.turns[1]!.resumeCursor).toBe("sess-1");
     expect(bundleHeads(fake.bundles[1]!).map((h) => h.ref)).toEqual([`refs/heads/${BRANCH}`]);
+    // The second bundle starts from the first push.
+    expect(prerequisites(fake.bundles[1]!)).toEqual([heads[0]!.sha]);
+    writeFileSync(join(root, "b2.bundle"), fake.bundles[1]!);
+    git(check, "bundle", "verify", "--quiet", join(root, "b2.bundle"));
     await expectEventually(() => fake.states().filter((s) => s === "idle").length === 2);
 
     fake.push("stop");
@@ -466,6 +473,34 @@ describe("sagax-runner review cases", () => {
     await result;
   }, 60_000);
 
+  it("shows a refused bundle as a warning and sends the branch again next time", async () => {
+    await setup({ setup: "", verify: [] });
+    fake.bundleRefuseOnce = "not a fast forward";
+    engine.scripts.push(writeHello);
+    engine.scripts.push((turn) => { writeFileSync(join(turn.cwd!, "second.txt"), "two\n"); });
+    const { result } = start();
+    await fake.waitFor((e) => e.kind === "warning" && String(e.data.text).includes("not a fast forward"));
+    await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle");
+    fake.push("followup", { text: "more", mode: "queue" });
+    await expectEventually(() => fake.bundles.length === 2);
+    // Nothing was accepted: the second bundle still starts from the base.
+    expect(prerequisites(fake.bundles[1]!)).toEqual([git(bare, "rev-parse", "main").trim()]);
+    fake.push("stop");
+    await result;
+  }, 60_000);
+
+  it("takes the author and the approval level from the bootstrap", async () => {
+    await setup({ setup: "", verify: [], author: { name: "Ada Dev", email: "ada@users.noreply.example.com" }, approval_level: "ask" });
+    engine.scripts.push(writeHello);
+    const { result, dirs } = start();
+    await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle");
+    expect(engine.input!.approvalMode).toBe("ask");
+    expect(engine.input!.environment.GIT_AUTHOR_EMAIL).toBe("ada@users.noreply.example.com");
+    expect(git(join(dirs.workspace, "repo"), "log", "-1", "--format=%an <%ae>").trim()).toBe("Ada Dev <ada@users.noreply.example.com>");
+    fake.push("stop");
+    await result;
+  }, 60_000);
+
   it("drops an events batch Perspicax refuses (4xx) and goes on", async () => {
     await setup({ setup: "", verify: [] });
     fake.eventsStatusOnce = 422;
@@ -481,7 +516,7 @@ describe("sagax-runner review cases", () => {
     engine.scripts.push(writeHello);
     const first = start();
     await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle");
-    fake.push("stop");
+    const stopSeq = fake.push("stop");
     await first.result;
     // What Perspicax pushed, plus a commit a person added on the PR.
     writeFileSync(join(root, "b1.bundle"), fake.bundles[0]!);
@@ -495,13 +530,16 @@ describe("sagax-runner review cases", () => {
     const personHead = git(person, "rev-parse", "HEAD").trim();
 
     engine = new FakeEngine();
-    fake.newPod(bootstrapFor({ setup: "", verify: [], followup: { text: "Also add second.txt", mode: "queue" }, resume: { session_id: "sess-1", summary: "hello.txt added" } }));
+    // commands_after: the old stop (consumed by the first Pod) is not replayed.
+    expect(fake.lastSeq).toBe(stopSeq);
+    fake.newPod(bootstrapFor({ setup: "", verify: [], followup: { text: "Also add second.txt", mode: "queue" }, resume: { session_id: "sess-1", summary: "hello.txt added" }, commands_after: stopSeq, last_pushed_sha: personHead }));
     engine.scripts.push((turn) => { writeFileSync(join(turn.cwd!, "second.txt"), "two\n"); });
     const second = start();
     await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle").catch((error) => { throw new Error(`${error.message} ${JSON.stringify(fake.events.filter((e) => e.kind === "state" || e.kind === "warning"))}`); });
     expect(engine.turns[0]).toMatchObject({ text: "Also add second.txt", resumeCursor: "sess-1" });
     expect(fake.bundles).toHaveLength(1);
     const head = bundleHeads(fake.bundles[0]!)[0]!.sha;
+    expect(prerequisites(fake.bundles[0]!)).toEqual([personHead]);
     writeFileSync(join(root, "b2.bundle"), fake.bundles[0]!);
     git(person, "fetch", "--quiet", join(root, "b2.bundle"), `refs/heads/${BRANCH}:refs/heads/next`);
     expect(git(person, "merge-base", "--is-ancestor", personHead, head)).toBe("");
@@ -509,6 +547,11 @@ describe("sagax-runner review cases", () => {
     await second.result;
   }, 90_000);
 });
+
+function prerequisites(bundle: Buffer): string[] {
+  const header = bundle.subarray(0, bundle.indexOf("\n\n")).toString("utf8");
+  return header.split("\n").filter((line) => line.startsWith("-")).map((line) => line.slice(1).split(" ")[0]!);
+}
 
 /** Async on purpose: the fake Perspicax runs in this process, so a
  * synchronous child would block the very server it talks to. */

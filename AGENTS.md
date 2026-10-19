@@ -4748,6 +4748,9 @@ image `deploy/run/Dockerfile` (built locally by `scripts/build-run-image.sh`,
 never pushed). The Pod comes from the run provisioner
 (`server/sandboxd-runs-spec.ts`). Rules, none optional:
 
+- Known MVP limit: one run token, also the model proxy key, so the agent
+  can call the runner routes itself; `verify` is information, not proof,
+  and Perspicax checks every bundle again.
 - HTTPS out only, no port (CA-3): bootstrap, secrets (once), events in
   batches (256 events, 1 MiB), long-polled commands, bundle. Every call
   carries the run token; a 401 anywhere stops the runner at once (engine
@@ -4768,15 +4771,20 @@ never pushed). The Pod comes from the run provisioner
   `http.<git_url>.extraHeader` in `GIT_CONFIG_*` variables (never argv,
   never `.git/config`), `remote.origin.pushurl = no-push://`, a pre-push
   hook that refuses (comfort only). The branch is `px/*`, never the base.
-  Publishing is `git bundle create - refs/heads/<branch>`, checked to name
-  that one reference, posted to Perspicax, which pushes (CA-5). A followup
+  Publishing is the incremental `git bundle create - ^<last_pushed_sha or
+  base_sha> refs/heads/<branch>`, checked to name that one reference,
+  posted to Perspicax, which pushes (CA-5); `received` and `pushed` move
+  the start of the next bundle, `refused` is a visible warning. A followup
   Pod starts from the branch on the repository and fast-forwards a reused
   clone to it.
 - Engines are Sagax's own drivers, headless (`server/runner/engine-drivers.ts`):
   Claude Code with `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` = model proxy and
   run token; Codex on the driver's Company provider at
   `<model_proxy.openai>/v1` with the token in `SAGAX_COMPANY_API_KEY`. No
-  engine code in the runner; approval level `auto`, residual asks become
+  engine code in the runner; approval level from the bootstrap
+  (`approval_level`, default `auto`), commits by the bootstrap's `author`
+  (default Pulsatrix Agent), the command long poll starts at
+  `commands_after` (a followup Pod never replays an old stop). Residual asks become
   `approval` events answered by the `approve` command (unknown option = deny).
 - Tests: `server/runner/runner.test.ts` (whole cycle against
   `server/testing/fake-perspicax-runner.ts`, real smart HTTP git, fake

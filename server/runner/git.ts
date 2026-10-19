@@ -47,7 +47,8 @@ export interface GitOptions {
   dir: string;
   gitUrl: string;
   token: string;
-  authorEmail?: string;
+  /** Author and committer of the runner's commits (default Pulsatrix Agent). */
+  author?: GitAuthor;
   /** git binary, for tests. */
   git?: string;
   /** Extra environment (PATH, HOME) for git. */
@@ -57,23 +58,28 @@ export interface GitOptions {
 /** The environment of a git call: no prompts, no helpers, no system or
  * global config that could add a credential, and the header (when asked)
  * for the git URL only. */
-export function gitEnv(options: Pick<GitOptions, "gitUrl" | "token" | "env" | "authorEmail">, withAuth: boolean): Record<string, string> {
+export interface GitAuthor { name: string; email: string }
+
+export const DEFAULT_AUTHOR: GitAuthor = { name: AGENT_NAME, email: AGENT_EMAIL_DEFAULT };
+
+/** The identity variables of the run's commits (runner, setup, verify, engine). */
+export function authorEnv(author: GitAuthor = DEFAULT_AUTHOR): Record<string, string> {
+  return { GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email, GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email };
+}
+
+export function gitEnv(options: Pick<GitOptions, "gitUrl" | "token" | "env" | "author">, withAuth: boolean): Record<string, string> {
   const base: Record<string, string> = {};
   for (const [key, value] of Object.entries(options.env ?? process.env)) {
     if (value === undefined) continue;
     if (key.startsWith("GIT_")) continue;
     base[key] = value;
   }
-  const email = options.authorEmail ?? AGENT_EMAIL_DEFAULT;
   const env: Record<string, string> = {
     ...base,
     GIT_TERMINAL_PROMPT: "0",
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_AUTHOR_NAME: AGENT_NAME,
-    GIT_AUTHOR_EMAIL: email,
-    GIT_COMMITTER_NAME: AGENT_NAME,
-    GIT_COMMITTER_EMAIL: email,
+    ...authorEnv(options.author),
   };
   // The runner's own git calls never run a hook or an fsmonitor the agent
   // may have planted in the clone (a followup Pod reuses it), and never
@@ -211,6 +217,10 @@ export class RunGit {
     return { baseSha, startSha };
   }
 
+  async hasCommit(sha: string): Promise<boolean> {
+    return (await this.git(["cat-file", "-e", `${sha}^{commit}`], { allowFail: true })).code === 0;
+  }
+
   async head(): Promise<string> {
     return (await this.text(["rev-parse", "HEAD"])).trim();
   }
@@ -255,11 +265,13 @@ export class RunGit {
     });
   }
 
-  /** `git bundle create - refs/heads/<branch>`, checked to name that one
-   * reference and nothing else before it leaves the Pod. */
-  async bundle(branch: string, maxBytes: number): Promise<Buffer> {
+  /** `git bundle create - ^<since> refs/heads/<branch>` (incremental:
+   * Perspicax holds `since`, the last accepted push or the base), checked to
+   * name that one reference and nothing else before it leaves the Pod. */
+  async bundle(branch: string, since: string, maxBytes: number): Promise<Buffer> {
     const ref = `refs/heads/${branch}`;
-    const { stdout } = await this.git(["bundle", "create", "-", ref], { maxBytes });
+    if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(since)) throw new Error("prérequis du bundle invalide");
+    const { stdout } = await this.git(["bundle", "create", "-", `^${since}`, ref], { maxBytes });
     const heads = bundleHeads(stdout);
     if (heads.length !== 1 || heads[0]!.ref !== ref) throw new Error(`le bundle doit nommer ${ref} seulement`);
     return stdout;

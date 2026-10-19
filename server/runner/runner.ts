@@ -17,7 +17,7 @@ import { join } from "node:path";
 import type { RuntimeEvent } from "../contracts.ts";
 import { capDiff, parseUnifiedDiff } from "./diff.ts";
 import { decisionFor, mapRuntimeEvent, type EngineFactory, type PendingAsk, type RunnerEngineHandle } from "./engine.ts";
-import { AGENT_EMAIL_DEFAULT, AGENT_NAME, GitError, RunGit, runBranchProblem } from "./git.ts";
+import { AGENT_EMAIL_DEFAULT, AGENT_NAME, GitError, RunGit, authorEnv, runBranchProblem, type GitAuthor } from "./git.ts";
 import { Masker } from "./mask.ts";
 import {
   MAX_DIFF_BYTES,
@@ -138,6 +138,7 @@ class Runner {
   private unsubscribe: (() => void) | null = null;
   private sessionId: string | null = null;
   private baseSha = "";
+  private author: GitAuthor = { name: AGENT_NAME, email: AGENT_EMAIL_DEFAULT };
   private lastPushed = "";
   private state: RunState | null = null;
   private stopReason: StopReason | null = null;
@@ -235,6 +236,9 @@ class Runner {
     this.bootstrap = parseBootstrap(raw, this.deps.client.base);
     const b = this.bootstrap;
     if (this.deps.runId && b.run_id !== this.deps.runId) throw new Error("le bootstrap ne correspond pas à PX_RUN_ID");
+    // A followup Pod never replays what an earlier Pod consumed (an old stop).
+    this.afterSeq = b.commands_after;
+    this.author = b.author ?? { name: AGENT_NAME, email: this.deps.agentEmail ?? AGENT_EMAIL_DEFAULT };
     this.setState("setup");
     this.poller = this.pollCommands();
     const maxMs = b.limits.max_duration_sec * 1000;
@@ -263,13 +267,16 @@ class Runner {
       token: this.deps.token,
       git: this.deps.git,
       env: this.deps.env,
-      authorEmail: this.deps.agentEmail,
+      author: this.author,
     });
     const how = await this.git.cloneOrReuse();
     if (how === "reused") this.emit({ kind: "terminal", data: { text: "Clone existant réutilisé (volume du run).\n" } });
     const { baseSha, startSha } = await this.git.checkoutBranch(b.branch, b.base_branch, b.existing_branch);
-    this.baseSha = baseSha;
-    this.lastPushed = startSha;
+    // Perspicax's own record wins: the base at launch and the last push it
+    // accepted are what the incremental bundle starts from.
+    this.baseSha = b.base_sha && await this.git.hasCommit(b.base_sha) ? b.base_sha : baseSha;
+    if (b.base_sha && this.baseSha !== b.base_sha) this.warn("La base indiquée par Perspicax est introuvable dans le clone ; base lue sur le dépôt.");
+    this.lastPushed = b.last_pushed_sha && await this.git.hasCommit(b.last_pushed_sha) ? b.last_pushed_sha : (b.last_pushed_sha ? startSha : (startSha === baseSha ? this.baseSha : startSha));
     if (this.stopping) throw new Stop();
 
     if (b.setup.trim()) {
@@ -290,15 +297,13 @@ class Runner {
       effort: b.effort,
       cwd: this.git.dir,
       stateDir: this.deps.stateDir,
+      approvalMode: b.approval_level,
       environment: {
         ANTHROPIC_BASE_URL: b.model_proxy.anthropic,
         ANTHROPIC_API_KEY: this.deps.token,
         OPENAI_BASE_URL: `${b.model_proxy.openai}/v1`,
         OPENAI_API_KEY: this.deps.token,
-        GIT_AUTHOR_NAME: AGENT_NAME,
-        GIT_AUTHOR_EMAIL: this.deps.agentEmail ?? AGENT_EMAIL_DEFAULT,
-        GIT_COMMITTER_NAME: AGENT_NAME,
-        GIT_COMMITTER_EMAIL: this.deps.agentEmail ?? AGENT_EMAIL_DEFAULT,
+        ...authorEnv(this.author),
         // Read-only root and filtered egress: no self-update, no extra calls.
         DISABLE_AUTOUPDATER: "1",
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
@@ -512,7 +517,7 @@ class Runner {
     }
     let bundle: Buffer;
     try {
-      bundle = await this.git.bundle(b.branch, MAX_BUNDLE_BYTES);
+      bundle = await this.git.bundle(b.branch, this.lastPushed, MAX_BUNDLE_BYTES);
     } catch (error) {
       this.warn(`Bundle non créé : ${error instanceof GitError ? error.message : error instanceof Error ? error.message : String(error)}`);
       return;
@@ -521,9 +526,13 @@ class Runner {
     if (this.stopping) return;
     try {
       const result = await this.deps.client.bundle(bundle);
-      // A 200 means Perspicax took the bundle (P1.9 answers its record,
-      // status "received"; the push and the PR follow on its side).
-      this.lastPushed = result.head_sha ?? stats.head_sha;
+      if (result.status === "refused") {
+        this.warn(`Perspicax a refusé la branche : ${this.masker.mask(result.reason ?? "sans raison donnée")}`);
+      } else {
+        // received (the push follows on Perspicax's side) or pushed: the
+        // next bundle starts from this commit.
+        this.lastPushed = result.head_sha ?? stats.head_sha;
+      }
     } catch (error) {
       if (error instanceof RunnerUnauthorized) throw error;
       const detail = error instanceof RunnerHttpError ? error.message : String(error);
@@ -560,13 +569,7 @@ class Runner {
     return new Promise((resolve) => {
       const env: Record<string, string> = {};
       for (const [key, value] of Object.entries(this.deps.env ?? process.env)) if (value !== undefined) env[key] = value;
-      Object.assign(env, {
-        GIT_AUTHOR_NAME: AGENT_NAME,
-        GIT_AUTHOR_EMAIL: this.deps.agentEmail ?? AGENT_EMAIL_DEFAULT,
-        GIT_COMMITTER_NAME: AGENT_NAME,
-        GIT_COMMITTER_EMAIL: this.deps.agentEmail ?? AGENT_EMAIL_DEFAULT,
-        GIT_TERMINAL_PROMPT: "0",
-      }, options.env);
+      Object.assign(env, authorEnv(this.author), { GIT_TERMINAL_PROMPT: "0" }, options.env);
       this.emit({ kind: "terminal", data: { text: truncateUtf8(`$ ${this.masker.mask(command)}\n`, 16 * 1024) } });
       const child = spawn(this.deps.shell ?? "bash", ["-c", command], { cwd: this.git.dir, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
       const stream = this.masker.stream();

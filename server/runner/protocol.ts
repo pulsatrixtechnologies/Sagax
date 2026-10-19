@@ -42,7 +42,17 @@ export interface RunnerBootstrap {
   followup: { text: string; mode: FollowupMode } | null;
   resume: { session_id: string | null; summary: string } | null;
   limits: { max_duration_sec: number };
+  /** Commands a previous Pod already consumed: the long poll starts here. */
+  commands_after: number;
+  base_sha: string | null;
+  last_pushed_sha: string | null;
+  author: { name: string; email: string } | null;
+  approval_level: RunnerApprovalLevel;
 }
+
+export const APPROVAL_LEVELS = ["ask", "edits", "auto", "full"] as const;
+export type RunnerApprovalLevel = (typeof APPROVAL_LEVELS)[number];
+const SHA_RE = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 
 export interface RunnerSecret {
   name: string;
@@ -85,9 +95,10 @@ export type RunnerCommand =
   | { seq: number; kind: "stop"; data: Record<string, never> };
 
 export interface BundleResult {
-  pushed: boolean;
+  status: "received" | "pushed" | "refused";
   head_sha?: string;
   pr?: { number: number; url: string; state: string } | null;
+  reason?: string;
 }
 
 /** The token is dead: the run ended or was revoked. Stop, do not retry. */
@@ -175,6 +186,24 @@ export function parseBootstrap(raw: unknown, base: URL): RunnerBootstrap {
     };
   }
   const maxDuration = Number(limits.max_duration_sec);
+  const sha = (value: unknown, field: string): string | null => {
+    if (value === null || value === undefined || value === "") return null;
+    if (typeof value !== "string" || !SHA_RE.test(value.toLowerCase())) throw new Error(`bootstrap: ${field} is not a commit id`);
+    return value.toLowerCase();
+  };
+  const after = Number(o.commands_after ?? 0);
+  if (!Number.isSafeInteger(after) || after < 0) throw new Error("bootstrap: commands_after is invalid");
+  let author: RunnerBootstrap["author"] = null;
+  if (o.author && typeof o.author === "object") {
+    const a = o.author as Record<string, unknown>;
+    const name = typeof a.name === "string" ? a.name.trim() : "";
+    const email = typeof a.email === "string" ? a.email.trim() : "";
+    // Values git takes as an identity: no angle brackets or line breaks.
+    if (name && email && name.length <= 200 && email.length <= 320 && !/[<>\n\r\0]/.test(name + email) && email.includes("@")) author = { name, email };
+    else throw new Error("bootstrap: author is invalid");
+  }
+  const level = o.approval_level ?? "auto";
+  if (!APPROVAL_LEVELS.includes(level as RunnerApprovalLevel)) throw new Error(`bootstrap: approval_level ${JSON.stringify(level)} is not supported`);
   return {
     run_id: str(o.run_id, "run_id", { max: 128 }),
     env_id: str(o.env_id, "env_id", { max: 128 }),
@@ -194,6 +223,11 @@ export function parseBootstrap(raw: unknown, base: URL): RunnerBootstrap {
     followup,
     resume,
     limits: { max_duration_sec: Number.isFinite(maxDuration) && maxDuration > 0 ? maxDuration : 4 * 3600 },
+    commands_after: after,
+    base_sha: sha(o.base_sha, "base_sha"),
+    last_pushed_sha: sha(o.last_pushed_sha, "last_pushed_sha"),
+    author,
+    approval_level: level as RunnerApprovalLevel,
   };
 }
 
@@ -329,13 +363,14 @@ export class ControlClient {
       timeoutMs: 5 * 60_000,
     });
     const body = await this.json("/bundle", response) as Record<string, unknown>;
-    // The contract answers {pushed, head_sha, pr}; Perspicax P1.9 answers
-    // its bundle record ({status: "received", head_sha, ...}). Either is a
-    // bundle taken.
+    // {status: received|pushed|refused, head_sha, pr?, reason?}. Anything
+    // else is read as refused (nothing counts as pushed by accident).
+    const status = body?.status === "received" || body?.status === "pushed" ? body.status : "refused";
     return {
-      pushed: body?.pushed === true || body?.status === "received" || body?.status === "pushed",
+      status,
       head_sha: typeof body?.head_sha === "string" ? body.head_sha : undefined,
       pr: body?.pr && typeof body.pr === "object" ? body.pr as BundleResult["pr"] : null,
+      reason: typeof body?.reason === "string" ? body.reason.slice(0, 500) : undefined,
     };
   }
 }

@@ -149,6 +149,24 @@ describe("protocol", () => {
     expect(() => parseBootstrap({ ...raw, model_proxy: { ...raw.model_proxy, openai: "https://px.example.com/api/v1/agents/model-proxy/openai" }, engine: "gemini" }, base)).toThrow(/engine/);
   });
 
+  it("validates the bootstrap's cursor, commits, author and approval level", () => {
+    const raw = {
+      run_id: "r", env_id: "e", title: "t", prompt: "p", engine: "codex", model: null, effort: null,
+      repo: { owner: "a", name: "b" }, base_branch: "main", branch: "px/x", existing_branch: false, setup: "", verify: [],
+      git_url: "https://px.example.com/api/v1/agents/runner/git/a/b.git",
+      model_proxy: { anthropic: "https://px.example.com/api/v1/agents/model-proxy/anthropic", openai: "https://px.example.com/api/v1/agents/model-proxy/openai" },
+      followup: null, resume: null, limits: {},
+    };
+    expect(parseBootstrap(raw, base)).toMatchObject({ commands_after: 0, base_sha: null, last_pushed_sha: null, author: null, approval_level: "auto" });
+    const sha = "c".repeat(40);
+    expect(parseBootstrap({ ...raw, commands_after: 7, base_sha: sha, author: { name: "A B", email: "a@b.c" }, approval_level: "full" }, base))
+      .toMatchObject({ commands_after: 7, base_sha: sha, author: { name: "A B", email: "a@b.c" }, approval_level: "full" });
+    expect(() => parseBootstrap({ ...raw, base_sha: "main" }, base)).toThrow(/base_sha/);
+    expect(() => parseBootstrap({ ...raw, author: { name: "A <x>", email: "a@b.c" } }, base)).toThrow(/author/);
+    expect(() => parseBootstrap({ ...raw, approval_level: "custom" }, base)).toThrow(/approval_level/);
+    expect(() => parseBootstrap({ ...raw, commands_after: -1 }, base)).toThrow(/commands_after/);
+  });
+
   it("parses commands and moves the cursor past unknown kinds", () => {
     expect(parseCommands({ commands: [{ seq: 3, kind: "future", data: {} }, { seq: 2, kind: "approve", data: { approval_id: "a", option: "allow" } }] }))
       .toEqual({ commands: [{ seq: 2, kind: "approve", data: { approval_id: "a", option: "allow" } }], lastSeq: 3 });

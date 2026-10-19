@@ -29,6 +29,8 @@ export class FakePerspicax {
   /** Called on each events POST (after recording). */
   onEvents: ((events: Array<{ kind: string; data: Record<string, unknown> }>) => void) | null = null;
   bundleStatus = 200;
+  /** Answer {status: "refused", reason} to the next bundle (once). */
+  bundleRefuseOnce: string | null = null;
   /** Answer 503 to this many bootstrap calls first. */
   bootstrapFailures = 0;
   /** Answer this status to the next events POST (once), e.g. 422. */
@@ -73,10 +75,11 @@ export class FakePerspicax {
     this.secretsCalls = 0;
     this.events.length = 0;
     this.bundles.length = 0;
-    // Commands of the previous Pod are not replayed: the runner starts its
-    // cursor at 0 (the contract gives no initial cursor yet).
-    this.commands = [];
-    this.seq = 0;
+  }
+
+  /** The seq of the last command pushed (a bootstrap's commands_after). */
+  get lastSeq(): number {
+    return this.seq;
   }
 
   push(kind: string, data: Record<string, unknown> = {}): number {
@@ -161,8 +164,8 @@ export class FakePerspicax {
       this.bundles.push(bytes);
       if (this.bundleStatus !== 200) return this.json(res, this.bundleStatus, { error: "refused" });
       const head = /^([0-9a-f]{40}) refs\/heads\//m.exec(bytes.subarray(0, 4096).toString("latin1"))?.[1];
-      // The shape Perspicax P1.9 answers today (its bundle record).
-      return this.json(res, 200, { status: "received", head_sha: head, ref_name: "refs/heads/px/x", seq: this.bundles.length });
+      if (this.bundleRefuseOnce) { const reason = this.bundleRefuseOnce; this.bundleRefuseOnce = null; return this.json(res, 200, { status: "refused", head_sha: head, reason }); }
+      return this.json(res, 200, { status: "received", head_sha: head });
     }
     return this.json(res, 404, { error: "no route" });
   }

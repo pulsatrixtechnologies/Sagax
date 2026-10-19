@@ -13,8 +13,9 @@ import { EFFORT_LEVELS, type EffortLevel } from "../../shared/wire.ts";
 import type { DriverCreateInput, ProviderInstance } from "../contracts.ts";
 import type { EngineFactory, EngineFactoryInput, RunnerEngineHandle } from "./engine.ts";
 
-/** The approval level of a run: the engine's own reviewer decides; what it
- * still asks becomes an `approval` event (spec 7.1). */
+/** The default approval level of a run (the bootstrap's approval_level
+ * overrides it): the engine's own reviewer decides; what it still asks
+ * becomes an `approval` event (spec 7.1). */
 export const RUN_APPROVAL_MODE: ApprovalMode = "auto";
 
 export interface DriverPlan {
@@ -85,7 +86,7 @@ export function realEngineFactory(options: { claudeCli?: string; codexCli?: stri
         cwd: input.cwd,
         model: plan.model,
         effort: plan.effort,
-        approvalMode: RUN_APPROVAL_MODE,
+        approvalMode: input.approvalMode ?? RUN_APPROVAL_MODE,
       },
       dispose: async () => {
         await instance.adapter.stopAll().catch(() => undefined);
