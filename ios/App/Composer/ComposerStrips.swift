@@ -27,6 +27,9 @@ struct SuggestionStrip: View {
     }
 
     let items: [Item]
+    /// Space before the first chip and after the last, inside the scroll
+    /// view (the phone composer's margin when it bleeds to the edges).
+    var edgeInset: CGFloat = 4
     let pick: (Item) -> Void
 
     var body: some View {
@@ -43,7 +46,7 @@ struct SuggestionStrip: View {
                     .accessibilityIdentifier(identifier(item))
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, edgeInset)
             .padding(.vertical, 2)
         }
         .scrollClipDisabledCompat()

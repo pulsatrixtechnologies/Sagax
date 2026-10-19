@@ -259,11 +259,14 @@ extension ChatView {
                 .chatGlassRim(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
         }
-        .padding(.leading, Theme.Chat.composerLeading)
-        .padding(.trailing, Theme.Chat.composerInset)
+        // One margin on both sides, inside the safe area (the container
+        // already keeps a landscape bar clear of the sensor housing, so
+        // nothing is added for it here). The scrolling strips above bleed
+        // back out to the edges (`composerStripBleed`).
+        .padding(.horizontal, Theme.Chat.composerMargin)
         .padding(.top, Self.composerTopPadding)
         .padding(.bottom, composerFocused ? 8 : Theme.Chat.composerBottom)
-        .frame(maxWidth: CompanionLayout.chatWidth)
+        .frame(maxWidth: CompanionLayout.composerMaxWidth)
         .frame(maxWidth: .infinity)
         // the "/" menu reads the engine's commands once it opens
         .task(id: commandLoadKey) { await loadCommands() }

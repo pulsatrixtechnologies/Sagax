@@ -22,7 +22,12 @@ public struct PredictiveActionChipsView: View {
     public let chips: [ActionChipItem]
     public let accentColor: Color
     public let onSelectChip: (ActionChipItem) -> Void
-    
+    /// Space before the first chip and after the last, inside the scroll
+    /// view: the phone composer passes its side margin, so the row scrolls
+    /// to the screen edge yet starts on the bar's edge and ends with the
+    /// last chip whole.
+    public var edgeInset: CGFloat = 14
+
     
     public static let defaultChips: [ActionChipItem] = [
         ActionChipItem(title: "Show diff", icon: "arrow.triangle.pull", prompt: "Show latest git diff"),
@@ -34,10 +39,12 @@ public struct PredictiveActionChipsView: View {
     public init(
         chips: [ActionChipItem] = PredictiveActionChipsView.defaultChips,
         accentColor: Color = .purple,
+        edgeInset: CGFloat = 14,
         onSelectChip: @escaping (ActionChipItem) -> Void
     ) {
         self.chips = chips
         self.accentColor = accentColor
+        self.edgeInset = edgeInset
         self.onSelectChip = onSelectChip
     }
     
@@ -69,10 +76,12 @@ public struct PredictiveActionChipsView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("composer-chip.\(chip.id)")
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, edgeInset)
             .padding(.vertical, 3)
         }
+        .accessibilityIdentifier("composer-chips")
     }
 }

@@ -248,10 +248,13 @@ enum Theme {
         static let bulletIndent: CGFloat = 26
         /// Name capsule: 12 pt leading, 24 pt mascot, 10 pt gap, 15 pt trailing.
         static let capsuleMascot: CGFloat = 24
-        /// Composer row: 29.3 pt from the screen edges, 30 pt above the bottom.
-        static let composerInset: CGFloat = 29.3
-        /// The "+" circle starts at x 29.7.
-        static let composerLeading: CGFloat = 29.7
+        /// Composer row: 12 pt from each edge of the safe area, 30 pt above
+        /// the bottom. The chat bar of the reference app runs almost the full
+        /// width, its "+" and its field 12 pt from the edges with the
+        /// keyboard open or closed (JC, 2026-10-18: "la chatbar est pas
+        /// assez large"). The earlier 29.3 pt (measure-chat-profile.md) left
+        /// the bar narrow on every phone.
+        static let composerMargin: CGFloat = 12
         static let composerBottom: CGFloat = 30
         static let composerGap: CGFloat = 9.6
         /// The white voice / send capsule inside the field.

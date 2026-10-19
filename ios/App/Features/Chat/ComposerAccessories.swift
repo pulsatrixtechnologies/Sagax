@@ -107,15 +107,22 @@ extension ChatView {
             )
             .transition(.slideUp(reduce: reduceMotion))
         } else if !suggestions.isEmpty {
-            SuggestionStrip(items: suggestions, pick: pickSuggestion)
+            SuggestionStrip(items: suggestions, edgeInset: composerStripBleed + 4, pick: pickSuggestion)
+                .composerStripBleed(composerStripBleed)
                 .transition(.opacity)
         } else if composerFocused && draft.isEmpty && attachments.isEmpty && !current.busy
                     && !hasPendingApproval && !storedChips.isEmpty {
             // Quick replies while the keyboard is up: the resting
             // screen is the reference's bare composer.
-            PredictiveActionChipsView(chips: storedChips, accentColor: MausPalette.color(current.color)) { chip in
+            // The first chip on the "+" edge, not 14 pt inside it.
+            PredictiveActionChipsView(
+                chips: storedChips,
+                accentColor: MausPalette.color(current.color),
+                edgeInset: desktopChat == nil ? composerStripBleed : 14
+            ) { chip in
                 submit(chip.prompt)
             }
+            .composerStripBleed(composerStripBleed)
             .transition(.opacity)
         }
 
@@ -136,8 +143,9 @@ extension ChatView {
                         )
                     }
                 }
-                .padding(.horizontal, 2)
+                .padding(.horizontal, composerStripBleed + 2)
             }
+            .composerStripBleed(composerStripBleed)
             .scrollClipDisabledCompat()
             .accessibilityIdentifier("composer-citations")
             .transition(.slideUp(reduce: reduceMotion))
@@ -154,8 +162,9 @@ extension ChatView {
                         }
                     }
                 }
-                .padding(.horizontal, 2)
+                .padding(.horizontal, composerStripBleed + 2)
             }
+            .composerStripBleed(composerStripBleed)
             .scrollClipDisabledCompat()
             .transition(.slideUp(reduce: reduceMotion))
         }
@@ -171,8 +180,9 @@ extension ChatView {
                         }
                     }
                 }
-                .padding(.horizontal, 2)
+                .padding(.horizontal, composerStripBleed + 2)
             }
+            .composerStripBleed(composerStripBleed)
             .scrollClipDisabledCompat()
             .transition(.slideUp(reduce: reduceMotion))
         }
@@ -190,5 +200,22 @@ extension ChatView {
             )
             .transition(.slideUp(reduce: reduceMotion))
         }
+    }
+
+    /// How far the phone composer's scrolling strips reach past its margin:
+    /// all the way back to the edge, so a row of chips scrolls edge to edge
+    /// instead of being cut 12 pt short of it. The iPad pill keeps its own
+    /// insets (0: no bleed).
+    var composerStripBleed: CGFloat {
+        desktopChat == nil ? Theme.Chat.composerMargin : 0
+    }
+}
+
+extension View {
+    /// Widens a horizontal scroll strip past the composer's side margin by
+    /// `bleed` on both sides; the strip pads its content by the same amount,
+    /// so its first item still lines up with the bar.
+    func composerStripBleed(_ bleed: CGFloat) -> some View {
+        padding(.horizontal, -bleed)
     }
 }

@@ -28,7 +28,7 @@ extension ChatView {
                 .padding(.vertical, 10)
                 .frame(maxWidth: CompanionLayout.chatWidth, alignment: .leading)
                 .glassSheet(cornerRadius: 30)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.Chat.composerMargin)
                 // above the composer row (30 pt bottom inset, 44 pt tall)
                 .padding(.bottom, Theme.Chat.composerBottom + Theme.Metric.glassLarge + 12)
                 .frame(maxWidth: .infinity)
