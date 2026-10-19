@@ -610,6 +610,7 @@ import { LocalVmLease, LocalVmLeasePool } from "./local-vm-lease.ts";
 import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts";
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { routineRunCard } from "./routine-run-card.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
 import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
@@ -18726,25 +18727,6 @@ function routineSourceThread(run: RoutineRun): string | null {
   return routineSourceOwner(run)?.threadId ?? null;
 }
 
-function routineRunCard(run: RoutineRun): NonNullable<Message["routineRun"]> {
-  const visibleSummary = run.status === "waiting" ? run.attention : run.output;
-  const summary = visibleSummary ? redactSecretsInText(visibleSummary).slice(0, 2_000) : undefined;
-  const error = run.error ? redactSecretsInText(run.error).slice(0, 500) : undefined;
-  const card: NonNullable<Message["routineRun"]> = {
-    runId: run.id,
-    routineId: run.routineId,
-    routineName: redactSecretsInText(run.routineName),
-    scheduledFor: run.scheduledFor,
-    status: run.status,
-  };
-  if (run.goalStatus) card.goalStatus = run.goalStatus;
-  if (run.deferredAt != null && run.status === "queued") card.deferredAt = run.deferredAt;
-  if (run.threadId) card.executionThreadId = run.threadId;
-  if (summary) card.summary = summary;
-  if (error) card.error = error;
-  return card;
-}
-
 function routineRunFallbackText(card: NonNullable<Message["routineRun"]>): string {
   const goalState = card.goalStatus === "needs-input"
     ? "needs your input"
@@ -18794,7 +18776,7 @@ function syncRoutineRunToSource(run: RoutineRun): string | null {
     return null;
   }
   const sourceThreadId = source.threadId;
-  const card = routineRunCard(run);
+  const card = routineRunCard(run, sourceThreadId);
   const text = routineRunFallbackText(card);
   const existing = store.messagesFor(sourceThreadId).find(
     (message) => message.kind === "routine.run" && message.routineRun?.runId === run.id,
@@ -19008,6 +18990,17 @@ routines = new RoutineManager({
     // transcript: a whole thread on every scheduled run once passed the phone
     // sidecar's 4 MiB event ceiling and ended the stream (MOCA-179).
     return task;
+  },
+  // 2026-10-19 (GOX): wake the person's server environment before a
+  // scheduled bot run (PREWAKE_LEAD_MS, server/routines.ts), so the run does
+  // not spend its first ten minutes on a stopped cluster and give up.
+  prewake: (routine) => {
+    if (!userSandbox || IDENTITY.kind !== "perspicax" || routine.target !== "bot") return;
+    const principal = effectiveRunAs(routine)?.trim().toLowerCase();
+    if (!principal) return;
+    const place = decideWorkplace({ desktopTargeted: false, routine: true, principal, personAsked: false });
+    if (place.target !== "user-sandbox" && routine.runOn !== "cloud" && !cloudOnlyBot(routine.botId)) return;
+    void userSandbox.prewake(principal, routine.botId);
   },
   joinConversation: (run) => {
     if (!routinesInConversationEnabled(cfg) || run.target !== "bot") return null;

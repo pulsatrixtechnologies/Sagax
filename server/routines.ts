@@ -368,6 +368,10 @@ export interface RoutineManagerOptions {
   /** The zone a routine's daily times, windows and weekdays are read in (the
    * person's on an organization server), or undefined for the default. */
   timeZoneFor?: (routine: { botId?: string; runAs?: string }) => string | undefined;
+  /** A bot routine is due within PREWAKE_LEAD_MS: wake what its run needs
+   * (the person's server environment) now. Once per occurrence, best
+   * effort; the run itself still waits for whatever is not up yet. */
+  prewake?: (routine: Routine, dueAt: number) => void;
   /** When set, run this bot's routine in that existing conversation instead of
    * a new hidden task. Room goals never use it. */
   joinConversation?: (run: RoutineRun) => string | null;
@@ -476,6 +480,10 @@ const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const CATCH_UP_MS = 12 * 60 * 60_000;
 /** How long before a due routine the computer is asked to stay awake. */
 const WAKE_HORIZON_MS = 60 * 60_000;
+/** 2026-10-19: how early a scheduled bot routine asks its server environment
+ * to wake (options.prewake). A stopped AKS cluster plus a cold node pool took
+ * ~11 min from the webhook to a running pod. */
+export const PREWAKE_LEAD_MS = 12 * 60_000;
 
 /** How long a run may sit deferred behind a busy target before the user
  * hears about it once. Surfacing only; dispatch semantics stay unchanged. */
@@ -1015,6 +1023,8 @@ export class RoutineManager {
   /** Run ids the constructor kept running after a restart (takeRestartResumes). */
   private readonly restartResumes: string[] = [];
   private ticking = false;
+  /** routine id -> the occurrence (nextRunAt) already pre-woken. */
+  private readonly prewoken = new Map<string, number>();
   /** The file existed but could not be read (corrupt JSON or a schema
    * failure). Saves are refused while set so a fresh empty state can never
    * overwrite whatever is on disk. Missing means a first run. */
@@ -1807,6 +1817,21 @@ export class RoutineManager {
     this.timer = null;
   }
 
+  /** Ask options.prewake once for each bot routine due within the lead. */
+  private prewakeUpcoming(now: number): void {
+    const prewake = this.options.prewake;
+    if (!prewake) return;
+    for (const routine of this.routines) {
+      const dueAt = routine.nextRunAt;
+      if (!routine.enabled || routine.suspended || routine.target === "room-goal" || dueAt == null) continue;
+      if (dueAt - now > PREWAKE_LEAD_MS || dueAt < now - 60_000) continue;
+      if (this.prewoken.get(routine.id) === dueAt) continue;
+      this.prewoken.set(routine.id, dueAt);
+      try { prewake(cloneRoutine(routine), dueAt); } catch { /* best effort */ }
+    }
+    if (this.prewoken.size > 2_000) this.prewoken.clear();
+  }
+
   async tick(): Promise<void> {
     if (this.ticking || this.paused) return;
     this.ticking = true;
@@ -1833,6 +1858,7 @@ export class RoutineManager {
           await this.options.interruptTurn?.(run.botId, threadId).catch(() => {});
         }
       }
+      this.prewakeUpcoming(now);
       // Only when I'm here (server/routine-away.ts): skip a recurring
       // occurrence, or hold a one-time routine, while the person is away.
       const awaySkipped: Routine[] = [];

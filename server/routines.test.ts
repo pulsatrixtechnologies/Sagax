@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import {
   nextOccurrence,
+  PREWAKE_LEAD_MS,
   RoutineManager,
   RoutineScheduleError,
   RoutineInputError,
@@ -3491,5 +3492,47 @@ describe("the organization memory before a run (2026-10-11)", () => {
     h.manager.runNow(routine.id);
     await h.manager.tick();
     expect(h.started.map((turn) => turn.prompt)).toEqual(["Triage the new tickets"]);
+  });
+});
+
+describe("pre-waking a scheduled run's environment (2026-10-19)", () => {
+  const start = Date.parse("2026-10-19T18:00:00Z");
+  it("asks once per occurrence, PREWAKE_LEAD_MS before it is due, and never for a disabled routine", async () => {
+    const h = harness(start);
+    const asked: Array<{ id: string; dueAt: number }> = [];
+    h.options.prewake = (routine, dueAt) => asked.push({ id: routine.id, dueAt });
+    const routine = h.manager.create({ name: "Dispatch", prompt: "Dispatch", botId: "maus-1",
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: start + 60 * 60_000 } });
+    h.manager.create({ name: "Off", prompt: "Off", botId: "maus-1", enabled: false,
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: start + 60 * 60_000 } });
+    const dueAt = h.manager.getRoutine(routine.id)!.nextRunAt!;
+    await h.manager.tick();
+    expect(asked).toEqual([]);
+    h.setNow(dueAt - PREWAKE_LEAD_MS - 1_000);
+    await h.manager.tick();
+    expect(asked).toEqual([]);
+    h.setNow(dueAt - PREWAKE_LEAD_MS + 1_000);
+    await h.manager.tick();
+    await h.manager.tick();
+    expect(asked).toEqual([{ id: routine.id, dueAt }]);
+    h.setNow(dueAt);
+    await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+    const next = h.manager.getRoutine(routine.id)!.nextRunAt!;
+    expect(next).toBeGreaterThan(dueAt);
+    h.setNow(next - PREWAKE_LEAD_MS + 1_000);
+    await h.manager.tick();
+    expect(asked).toEqual([{ id: routine.id, dueAt }, { id: routine.id, dueAt: next }]);
+  });
+
+  it("a failing prewake never stops the schedule", async () => {
+    const h = harness(start);
+    h.options.prewake = () => { throw new Error("cluster gone"); };
+    const routine = h.manager.create({ name: "Dispatch", prompt: "Dispatch", botId: "maus-1",
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: start + 5 * 60_000 } });
+    await h.manager.tick();
+    h.setNow(h.manager.getRoutine(routine.id)!.nextRunAt!);
+    await h.manager.tick();
+    expect(h.started).toHaveLength(1);
   });
 });

@@ -293,7 +293,7 @@ function usePageVisible(): boolean {
 }
 
 /** The cloud screen's state: "starting" while the environment's cluster
- * wakes (it slept outside office hours), never an error in that window. */
+ * wakes (it slept while idle), never an error in that window. */
 export function serverScreenState(status: ServerEnvironmentStatus | null, pending: PowerAction | null): ScreenState {
   if (!status) return "starting";
   const power = powerState(status.state, pending);
