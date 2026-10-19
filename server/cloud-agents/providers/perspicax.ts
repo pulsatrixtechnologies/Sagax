@@ -92,12 +92,17 @@ export function personalEnvironment(env: Pick<PerspicaxEnvironment, "token_sourc
   return env.token_source === "personnel" || env.token_source === "au_choix";
 }
 
-export function createPerspicaxProvider(fetchImpl: HttpFetch, baseUrl: () => string | null, personal?: () => PersonalSubscriptions | null): CloudAgentProviderAdapter {
+/** This server's link token (PerspicaxDirectory.linkBearer). */
+export type LinkBearer = (reread?: boolean) => string | null;
+
+export function createPerspicaxProvider(fetchImpl: HttpFetch, baseUrl: () => string | null, personal?: () => PersonalSubscriptions | null, link: LinkBearer = () => null): CloudAgentProviderAdapter {
   const client = new PerspicaxAgentsClient(fetchImpl);
   const access = (token: string): PerspicaxAccess => {
     const base = baseUrl();
     if (!base) throw new ProviderHttpError(501, "not_available", "Perspicax runs need Sagax Business (an organization server signed in with Perspicax).");
-    return { baseUrl: base, token };
+    // `token` is the acting person's sign-in (the record's principal: who
+    // speaks, or the bot's owner for a routine); the link token says which server.
+    return { baseUrl: base, token, link: () => link(), relink: () => link(true) };
   };
   return {
     id: "perspicax",

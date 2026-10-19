@@ -1068,6 +1068,15 @@ export class PerspicaxDirectory {
     return { ok: false, error: "unreachable", status };
   }
 
+  /** The link token for a link route this server calls with its own client
+   * (the cloud agents client, server/cloud-agents/perspicax-client.ts), or
+   * null when the server is not linked. `reread` reads the file again (after
+   * a 401: the token may have rotated). Never logged. */
+  linkBearer(reread = false): string | null {
+    const link = reread ? this.readLink() : this.link ?? this.readLink();
+    return link?.linkToken ?? null;
+  }
+
   /** Hand Perspicax the short access token of a personal run's engine
    * subscription: `PUT /api/v1/agents/runs/{id}/subscription-token` with the
    * link token (which server) and the person's live sign-in access token

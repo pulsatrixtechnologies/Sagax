@@ -1,10 +1,15 @@
 // A client of Perspicax's cloud agents API (`/api/v1/agents`, Perspicax PR
-// #372, lot P1.1; its spec section 10.1). Sagax calls it with the person's
-// own sign-in token: there is no key to paste and none is stored here.
+// #372, lot P1.1; its spec section 10.1). There is no key to paste and none
+// is stored here. Every call carries two credentials (2026-10-19, as the
+// other link routes do): `Authorization: Bearer <link token>` says which
+// server calls, `x-perspicax-subject-token: <sign-in token>` says who acts:
+// the person who speaks in a conversation, the bot's owner for a routine
+// (the record's principal), never anyone else. A person's sign-in token
+// alone as a Bearer is refused by Perspicax.
 //
 // Rules, none optional:
-//   - the token goes in `Authorization: Bearer` only, never in a URL, an
-//     error or a log line;
+//   - tokens go in those two headers only, never in a URL, an error or a
+//     log line; a 401 re-reads the link token once (it may have rotated);
 //   - every call has a timeout; a non-2xx answer becomes a ProviderHttpError
 //     with Perspicax's own message (quota refusals are shown as they are);
 //   - ids are checked before they reach a path;
@@ -26,6 +31,7 @@ import type {
 import { commitsFrom, diffFilesFrom, type CodeArtifact, type CodeCommit, type CodeFileEntry, type DiffFile, type FollowUpMode } from "../../shared/code-runs.ts";
 import { createHash } from "node:crypto";
 
+import { SUBJECT_TOKEN_HEADER } from "../perspicax-link.ts";
 import { ProviderHttpError } from "./providers/http.ts";
 import type { HttpFetch } from "./providers/types.ts";
 
@@ -47,8 +53,12 @@ const LOG_SHARE_MS = 3_000;
 export interface PerspicaxAccess {
   /** Perspicax's origin (the issuer). */
   baseUrl: string;
-  /** The person's access token. */
+  /** The acting person's Sagax sign-in access token (who). */
   token: string;
+  /** This server's link token (which server), or null when not linked. */
+  link: () => string | null;
+  /** The link token read again from its file after a 401. */
+  relink?: () => string | null;
 }
 
 function checkId(id: string): string {
@@ -72,20 +82,40 @@ export class PerspicaxAgentsClient {
     return new URL(`${PERSPICAX_AGENTS_PATH}${path}`, base.origin).toString();
   }
 
+  /** The two credentials of a call. */
+  private headers(link: string, access: PerspicaxAccess, extra: Record<string, string>): Record<string, string> {
+    return { authorization: `Bearer ${link}`, [SUBJECT_TOKEN_HEADER]: access.token, ...extra };
+  }
+
+  /** One request with the link token, and once more with a fresh one after a 401. */
+  private async send(access: PerspicaxAccess, url: string, init: { method?: string; headers: Record<string, string>; body?: string; signal: AbortSignal }): Promise<Response> {
+    const link = access.link();
+    if (!link) throw new ProviderHttpError(501, "not_linked", "This Sagax server is not linked to Perspicax.");
+    let res = await this.fetchImpl(url, { ...init, headers: this.headers(link, access, init.headers) });
+    if (res.status === 401 && access.relink) {
+      const again = access.relink();
+      if (again && again !== link) {
+        await res.body?.cancel().catch(() => {});
+        res = await this.fetchImpl(url, { ...init, headers: this.headers(again, access, init.headers) });
+      }
+    }
+    return res;
+  }
+
   private async call<T>(access: PerspicaxAccess, method: string, path: string, body?: unknown, optional = false): Promise<T | null> {
     let res: Response;
     try {
-      res = await this.fetchImpl(this.url(access, path), {
+      res = await this.send(access, this.url(access, path), {
         method,
         headers: {
-          authorization: `Bearer ${access.token}`,
           accept: "application/json",
           ...(body === undefined ? {} : { "content-type": "application/json" }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof ProviderHttpError) throw error;
       throw new ProviderHttpError(502, "unreachable", "Perspicax did not answer.");
     }
     if (optional && (res.status === 404 || res.status === 405 || res.status === 501)) {
@@ -275,13 +305,14 @@ export class PerspicaxAgentsClient {
     const headersDue = setTimeout(stopOpening, this.timeoutMs);
     try {
       // `after` and `Last-Event-ID` both: Perspicax resumes after the larger.
-      res = await this.fetchImpl(this.url(access, `/runs/${checkId(id)}/stream?after=${cursor}`), {
-        headers: { authorization: `Bearer ${access.token}`, accept: "text/event-stream", ...(cursor > 0 ? { "last-event-id": String(cursor) } : {}) },
+      res = await this.send(access, this.url(access, `/runs/${checkId(id)}/stream?after=${cursor}`), {
+        headers: { accept: "text/event-stream", ...(cursor > 0 ? { "last-event-id": String(cursor) } : {}) },
         signal: opening.signal,
       });
-    } catch {
+    } catch (error) {
       signal.removeEventListener("abort", stopOpening);
       if (signal.aborted) return;
+      if (error instanceof ProviderHttpError) throw error;
       throw new ProviderHttpError(502, "unreachable", "Perspicax did not answer.");
     } finally {
       clearTimeout(headersDue);

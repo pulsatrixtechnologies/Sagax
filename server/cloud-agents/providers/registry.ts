@@ -1,7 +1,7 @@
 import { createClaudeCloudProvider } from "./claude.ts";
 import { createCodexCloudProvider } from "./codex.ts";
 import { createCursorProvider } from "./cursor.ts";
-import { createPerspicaxProvider, type PersonalSubscriptions } from "./perspicax.ts";
+import { createPerspicaxProvider, type LinkBearer, type PersonalSubscriptions } from "./perspicax.ts";
 import type { CloudAgentProviderAdapter, HttpFetch } from "./types.ts";
 import type { CloudAgentProviderId } from "../../../shared/cloud-agents.ts";
 
@@ -13,6 +13,8 @@ export interface ProviderRegistryOptions {
   perspicaxBaseUrl?: () => string | null;
   /** Personal runs' subscriptions (organization server only). */
   personalSubscriptions?: () => PersonalSubscriptions | null;
+  /** This server's link token, sent with every Perspicax call. */
+  perspicaxLink?: LinkBearer;
 }
 
 export function createProviderRegistry(options: ProviderRegistryOptions = {}): Map<CloudAgentProviderId, CloudAgentProviderAdapter> {
@@ -21,6 +23,6 @@ export function createProviderRegistry(options: ProviderRegistryOptions = {}): M
     ["cursor", createCursorProvider(fetchImpl, options.cursorBaseUrl)],
     ["claude", createClaudeCloudProvider(fetchImpl, options.claudeBaseUrl)],
     ["codex", createCodexCloudProvider()],
-    ["perspicax", createPerspicaxProvider(fetchImpl, options.perspicaxBaseUrl ?? (() => null), options.personalSubscriptions)],
+    ["perspicax", createPerspicaxProvider(fetchImpl, options.perspicaxBaseUrl ?? (() => null), options.personalSubscriptions, options.perspicaxLink)],
   ]);
 }

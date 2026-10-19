@@ -26318,6 +26318,11 @@ function cloudAgentPrincipal(auth: RequestAuth): string | null {
 }
 
 const perspicaxAgentsClient = new PerspicaxAgentsClient();
+/** The link token every cloud agents call carries (which server); the
+ * person's sign-in token rides along as the subject (who). */
+const perspicaxLinkBearer = (reread?: boolean): string | null =>
+  codeFixture ? codeFixture.linkToken : perspicaxDirectory?.linkBearer(reread) ?? null;
+const perspicaxAgentsAccess = (baseUrl: string, token: string) => ({ baseUrl, token, link: () => perspicaxLinkBearer(), relink: () => perspicaxLinkBearer(true) });
 // Personal runs (Perspicax #384): this server hands Perspicax the short
 // access token of the person's own engine sign-in and renews it while the
 // run is live (server/cloud-agents/subscription-depositor.ts). Organization
@@ -26346,7 +26351,7 @@ const subscriptionDepositor = IDENTITY.kind === "perspicax" && engineLogins && !
     subjectToken: (principalId) => perspicaxAccessToken(principalId),
     runs: async (subjectToken) => {
       const base = perspicaxBase();
-      return base ? perspicaxAgentsClient.runs({ baseUrl: base, token: subjectToken }, { mine: true }) : [];
+      return base ? perspicaxAgentsClient.runs(perspicaxAgentsAccess(base, subjectToken), { mine: true }) : [];
     },
     signedIn: (principalId, driver) => engineLogins!.signedIn(principalId, driver),
     vaultKey: (principalId, provider) => {
@@ -26365,7 +26370,7 @@ const subscriptionDepositor = IDENTITY.kind === "perspicax" && engineLogins && !
   })
   : null;
 subscriptionDepositor?.start();
-const cloudAgentProviders = createProviderRegistry({ perspicaxBaseUrl: perspicaxBase, personalSubscriptions: () => subscriptionDepositor });
+const cloudAgentProviders = createProviderRegistry({ perspicaxBaseUrl: perspicaxBase, personalSubscriptions: () => subscriptionDepositor, perspicaxLink: perspicaxLinkBearer });
 cloudAgentManager = new CloudAgentManager({
   store: cloudAgentStore,
   credentials: cloudAgentCredentials,
@@ -26417,7 +26422,7 @@ ROUTES.push(createCodeRoutes({
     const principalId = cloudAgentPrincipal(auth);
     if (!principalId) return { ok: false, reason: "no_session" };
     const token = await perspicaxAccessToken(principalId);
-    return token ? { ok: true, principalId, access: { baseUrl: base, token } } : { ok: false, reason: "no_session" };
+    return token ? { ok: true, principalId, access: perspicaxAgentsAccess(base, token) } : { ok: false, reason: "no_session" };
   },
   consoleUrl: () => {
     const base = perspicaxBase();

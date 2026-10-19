@@ -32,7 +32,7 @@ async function boot(mode: "org" | "solo") {
   manager = new CloudAgentManager({
     store: new CloudAgentStore(dataDir),
     credentials: new CloudAgentCredentialStore(dataDir, () => ({ kind: "key", key: Buffer.alloc(32, 3) })),
-    providers: new Map([["perspicax", createPerspicaxProvider(fetch, () => fake.url)]]),
+    providers: new Map([["perspicax", createPerspicaxProvider(fetch, () => fake.url, undefined, () => fake.linkToken)]]),
     accessToken: async () => fake.token,
   });
   const handler = createCodeRoutes({
@@ -40,7 +40,7 @@ async function boot(mode: "org" | "solo") {
     manager,
     reachable: () => mode === "org" ? { ok: true } : { ok: false, reason: "solo" },
     access: async () => mode === "org"
-      ? { ok: true, principalId: "pr_alice", access: { baseUrl: fake.url, token: fake.token } }
+      ? { ok: true, principalId: "pr_alice", access: { baseUrl: fake.url, token: fake.token, link: () => fake.linkToken } }
       : { ok: false, reason: "solo" },
     consoleUrl: () => `${fake.url}/console/agents`,
     botVisible: (_auth, botId) => botId === "bot-1",

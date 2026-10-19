@@ -23,6 +23,7 @@ import type { AddressInfo } from "node:net";
 import { parseUnifiedDiff } from "../../shared/code-runs.ts";
 
 export const FAKE_PERSPICAX_TOKEN = "fixture-access-token";
+export const FAKE_PERSPICAX_LINK_TOKEN = "fixture-link-token";
 
 interface FakeEnv {
   id: string;
@@ -80,7 +81,10 @@ interface Script {
 
 export interface FakePerspicaxAgents {
   url: string;
+  /** The person's sign-in token (x-perspicax-subject-token). */
   token: string;
+  /** The server's link token (Authorization: Bearer). */
+  linkToken: string;
   close(): Promise<void>;
   /** Plays one tick of every scripted run (tests drive time with it). */
   tick(): void;
@@ -94,6 +98,7 @@ export interface FakePerspicaxOptions {
   /** Seed sample environments and runs (default true). */
   seed?: boolean;
   token?: string;
+  linkToken?: string;
   now?: () => number;
   port?: number;
   /** Serve `/diff`, `/commits`, `/files` and `/approve` (Perspicax P1.5).
@@ -299,6 +304,7 @@ function sampleFiles(diff: string): Sample["files"] {
 export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {}): Promise<FakePerspicaxAgents> {
   const now = options.now ?? Date.now;
   const token = options.token ?? FAKE_PERSPICAX_TOKEN;
+  const linkToken = options.linkToken ?? FAKE_PERSPICAX_LINK_TOKEN;
   const envs: FakeEnv[] = [];
   const runs: FakeRun[] = [];
   const events = new Map<string, FakeEvent[]>();
@@ -533,7 +539,11 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
       const path = url.pathname;
       if (!path.startsWith("/api/v1/agents/")) return fail(res, 404, "not_found", "not found");
-      if (req.headers.authorization !== `Bearer ${token}`) return fail(res, 401, "unauthorized", "sign in");
+      // As Perspicax (2026-10-19): the link token says which server, the
+      // person's sign-in token says who. A sign-in token alone as a Bearer
+      // is no session here: 401, as the real gateway answers.
+      if (req.headers.authorization !== `Bearer ${linkToken}`) return fail(res, 401, "unauthorized", "sign in first");
+      if (req.headers["x-perspicax-subject-token"] !== token) return fail(res, 403, "subject", "the person's Sagax sign-in token is not valid here");
       const method = req.method ?? "GET";
       const rest = path.slice("/api/v1/agents/".length).split("/");
 
@@ -675,6 +685,7 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
   return {
     url: `http://127.0.0.1:${port}`,
     token,
+    linkToken,
     tick,
     runs: () => runs,
     events: (runId) => events.get(runId) ?? [],
