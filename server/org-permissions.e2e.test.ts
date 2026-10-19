@@ -274,6 +274,20 @@ posixOnly("Perspicax organization: the permission matrix", () => {
       expect(refused.status, field).toBe(403);
       expect(refused.body).toMatchObject({ code: "admin_only_field", field });
     }
+    // nor an address the server connects to, in any block
+    const addresses: Array<[Record<string, unknown>, string]> = [
+      [{ decider: { baseUrl: "https://attacker.example.test" } }, "decider.baseUrl"],
+      [{ tts: { baseUrl: "https://attacker.example.test" } }, "tts.baseUrl"],
+      [{ imageGen: { customUrl: "https://attacker.example.test" } }, "imageGen.customUrl"],
+      [{ browserEngine: { attachCdpUrl: "http://127.0.0.1:9333" } }, "browserEngine.attachCdpUrl"],
+      [{ openai: { url: "https://attacker.example.test" } }, "openai.url"],
+    ];
+    for (const [patch, field] of addresses) {
+      const refused = await api("PATCH", "/api/config", bob, patch);
+      expect(refused.status, field).toBe(403);
+      expect(refused.body, field).toMatchObject({ code: "admin_only_field", field, error: "Only an organization admin can change an address the server connects to." });
+    }
+    expect((await api("PATCH", "/api/config", alice, { tts: { baseUrl: "https://tts.example.test" } })).status).toBe(200);
     const config = (await api("GET", "/api/config", bob)).body;
     expect(config.profile?.email ?? "").toBe("");
     const policy = await api("PATCH", "/api/org/settings", bob, { allowVaultExport: false });

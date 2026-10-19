@@ -2483,6 +2483,18 @@ function webhookDelegateRefusal(auth: RequestAuth, webhookIds: string[], body: u
   }
   return null;
 }
+/** Security review 2026-10-19, pass 3: the first address field (`url` or a
+ * key ending in `Url`) anywhere in a config patch, as a dotted path. */
+function configAddressField(value: unknown, prefix = "", depth = 0): string | undefined {
+  if (!value || typeof value !== "object" || depth > 4) return undefined;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (key === "url" || /Url$/.test(key)) return path;
+    const nested = configAddressField(child, path, depth + 1);
+    if (nested) return nested;
+  }
+  return undefined;
+}
 /** 2026-10-19: an organization admin, or a person an admin gave this key in
  * Perspicax (shared/permissions.ts). Loopback follows its trust. */
 function adminOrDelegate(auth: RequestAuth, key: PermissionKey): boolean {
@@ -43432,14 +43444,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Security review 2026-10-19: nor a provider's endpoint (every bot on
         // the workspace key, admins' too, would talk to it), the OpenAI-
         // compatible engines, or the maintainer switches that reach the host.
+        // Security review 2026-10-19, pass 3: nor any address in any block
+        // (decider.baseUrl, tts.baseUrl, imageGen.customUrl,
+        // browserEngine.attachCdpUrl, a provider's url...): a delegate never
+        // points the server at an endpoint they control.
         const record = body as Record<string, unknown>;
-        const providerUrl = ["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "opencodeGo"]
-          .find((key) => record[key] && typeof record[key] === "object" && Object.hasOwn(record[key] as object, "url"));
         const hostFeature = record.features && typeof record.features === "object"
           ? ["sharedComputers", "claudeUserMcp"].find((key) => Object.hasOwn(record.features as object, key)) : undefined;
         const field = ["signIn", "profile", "organization", "openaiCompat"].find((key) => Object.hasOwn(body, key))
-          ?? (providerUrl ? `${providerUrl}.url` : undefined) ?? (hostFeature ? `features.${hostFeature}` : undefined);
-        if (field) return json(res, 403, { error: "Only an organization admin can change this part of the settings.", code: "admin_only_field", field });
+          ?? configAddressField(record) ?? (hostFeature ? `features.${hostFeature}` : undefined);
+        if (field) return json(res, 403, {
+          error: field.toLowerCase().endsWith("url")
+            ? "Only an organization admin can change an address the server connects to."
+            : "Only an organization admin can change this part of the settings.",
+          code: "admin_only_field", field,
+        });
       }
       if (hostedModels && ["instances", "anthropic", "openai", "openrouter", "openaiCompat", "xai", "mistral", "cerebras", "groq", "opencodeGo"].some(key => Object.hasOwn(body, key))) return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
       if (profileManagedFor(auth) && writesManagedProfile(body)) return json(res, 403, MANAGED_PROFILE_REFUSAL);
