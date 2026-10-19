@@ -3,7 +3,8 @@
 // A conversation one bot opened on another (a "pair" or "work" thread, or an
 // agent ask) lives on the destination bot and is never listed in a sidebar.
 // The wire bot now names it on BOTH ends, so each chat can show the same
-// exchange, folded, marked "Conversation with <other bot>":
+// exchange as the same quiet centered line the transcript already uses for a
+// bot-to-bot exchange, at its place in time (startedAt):
 //
 //   - the destination's chat names it as "in" (the other bot opened it);
 //   - the origin's chat names it as "out" (this bot opened it on the other).
@@ -48,6 +49,7 @@ export function interBotConversations(
       direction,
       ...(kind === "work" || kind === "pair" ? { kind } : {}),
       updatedAt: task.updatedAt ?? task.createdAt ?? 0,
+      ...(typeof task.createdAt === "number" ? { startedAt: task.createdAt } : {}),
       ...(isRunning(owner.id, task.threadId) ? { running: true } : {}),
     });
   };

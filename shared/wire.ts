@@ -323,6 +323,8 @@ export interface WireBotConversation {
   direction: "in" | "out";
   kind?: "pair" | "work";
   updatedAt?: number;
+  /** When the conversation was opened: where its line sits in the chat. */
+  startedAt?: number;
   /** The conversation is working now (a discreet indicator and a Stop). */
   running?: boolean;
 }

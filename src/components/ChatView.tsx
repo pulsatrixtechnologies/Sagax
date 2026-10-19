@@ -130,7 +130,7 @@ import { CHAT_BUBBLE_WIDTH_CLASS, chatBubbleWidth } from "@/lib/chat-bubble-widt
 import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
-import { BotConversations } from "./BotConversations";
+import { BotConversationLine, conversationAnchors } from "./BotConversations";
 import { BotActivityPicker, TaskPicker, ThreadReturnLink, ThreadsOffReturnLink } from "./TaskPicker";
 
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
@@ -1096,6 +1096,24 @@ const MessagesList = memo(function MessagesList({
     () => cloudAgentAnchors(items.map((item) => listedItemMessages(item)[0]?.at ?? 0), cloudAgents),
     [items, cloudAgents],
   );
+  // A bot-to-bot conversation named on this bot (either end) is a quiet
+  // line at its place in time, in the main chat only, unless the transcript
+  // already holds its line (the origin's "Go to conversation" receipt).
+  const selfBot = storeBots.find((candidate) => candidate.id === botId);
+  const conversationRows = useMemo(() => {
+    const rows = selfBot?.botConversations ?? [];
+    if (!selfBot || !rows.length || threadId !== (selfBot.mainThreadId ?? selfBot.threadId)) return [];
+    const linked = new Set(transcript.flatMap((message) => [message.threadRef?.threadId, message.comm?.threadId]).filter(Boolean));
+    return rows.filter((row) => row.threadId !== threadId && !linked.has(row.threadId));
+  }, [selfBot, threadId, transcript]);
+  const conversationAt = useMemo(
+    () => conversationAnchors(conversationRows, items.map((item) => listedItemMessages(item)[0]?.at ?? 0), hasMore),
+    [conversationRows, items, hasMore],
+  );
+  const conversationLines = (rows: readonly NonNullable<Bot["botConversations"]>[number][] | undefined) =>
+    selfBot && rows?.map((row) => (
+      <BotConversationLine key={`conversation:${row.threadId}`} self={selfBot} row={row} bots={storeBots} showToolCalls={showToolCalls} />
+    ));
   // Every row is wrapped the same way, keyed by its first message, so a card
   // appearing under a row never remounts that row.
   const withCloudAgents = (index: number, node: ReactNode): ReactNode => {
@@ -1103,6 +1121,7 @@ const MessagesList = memo(function MessagesList({
     const item = items[index]!;
     return (
       <Fragment key={`row:${item.kind}:${listedItemMessages(item)[0]?.id ?? index}`}>
+        {conversationLines(conversationAt.before.get(index))}
         {node}
         {group && <div className="flex justify-start"><CloudAgentsCard records={group} botId={botId} confidential={confidential} /></div>}
       </Fragment>
@@ -1372,6 +1391,7 @@ const MessagesList = memo(function MessagesList({
           </div>
         );
       })()))}
+      {conversationLines(conversationAt.after)}
     </>
   );
 });
@@ -2196,7 +2216,6 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       <ThreadsOffReturnLink bot={bot} />
       {streamOn && <EarlierTopicActivity bot={bot} onReach={reachEarlierTopic} includeCurrent={fresh} />}
       <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />
-      <BotConversations bot={bot} bots={state.bots} />
       </>}
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {findOpen && <ChatFindBar threadId={bot.threadId} {...(streamOn ? { threadIds: [bot.threadId, ...segmentsAbove(bot.tasks, bot.threadId).map((task) => task.threadId)] } : {})} onClose={() => setFindOpen(false)} />}
