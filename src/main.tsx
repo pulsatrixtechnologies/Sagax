@@ -5,7 +5,7 @@ import {
   BROWSER_SIGN_IN_FAILED, previewBrowserSignIn, readSessionState, SERVICE_TRUST_REASON, takeBrowserSignInFromLocation, takePairingFromLocation, takeInvitedEmailFromLocation,
 } from "./lib/session";
 import { bootstrapBrand } from "./lib/brand";
-import { applySkin, readSkin } from "./lib/skins";
+import { applySkin, installSkinAutoFollow, readSkin } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
 import { migrateInterfaceModeToAdvancedOnce, retireLegacyInterfaceMode } from "./lib/interface-mode";
 import { BrowserSignInPage } from "./pair/BrowserSignInPage";
@@ -48,6 +48,8 @@ rememberOpenThreadHash();
 // The old always-on key is not a choice. Drop it before the first paint.
 retireLegacyInterfaceMode();
 applySkin(readSkin());
+// Auto (Settings > Appearance > Skin): the system's light or dark, live.
+installSkinAutoFollow();
 applyFont(readFont());
 
 /** A pairing link lands on /pair. A remote browser without a session lands

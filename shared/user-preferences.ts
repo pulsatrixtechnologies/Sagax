@@ -15,6 +15,9 @@
 export const USER_PREFERENCE_KEYS = [
   // appearance (the Hibou 98 switch goes with the skin it swaps)
   "omb-skin",
+  // Auto (follow the system) and the last variant per skin family (src/lib/skin-families.ts)
+  "omb-skin-mode",
+  "omb-skin-variants",
   "omb-font",
   "omb-show-threads",
   "omb.retro98.on",

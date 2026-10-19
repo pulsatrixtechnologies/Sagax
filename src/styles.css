@@ -486,6 +486,7 @@
    including raised-hover, the tightest of the lot at 5.62:1.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="pulsatrix"] {
+  --skin-swatch: #3c76f4;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --code-color-scheme: dark;
   --color-app: #030b17;
   --color-panel: #060f20;
@@ -572,6 +573,7 @@
    over that navy the way v3's card sits inside its shell.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="pulsatrix-light"] {
+  --skin-swatch: #2f62dd;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --code-color-scheme: light;
   --mascot-shadow-color: rgba(20,24,40,0.35);
   --mascot-shadow-wide: rgba(20,24,40,0.18);
@@ -650,6 +652,7 @@
    pnpm check:contrast and src/lib/midnight-skin.test.ts.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="midnight"] {
+  --skin-swatch: #9a9a9a;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --code-color-scheme: dark;
   --glyph-ripple-tint: #4d8dff;  /* Midnight's accent is grey: the glyph ring takes a blue */
   --color-app: #121212;          /* Sand Dark chrome: window, chat, bot panel */
@@ -709,6 +712,7 @@
    value is named next to each, so the drift stays auditable.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="atelier"] {
+  --skin-swatch: #a05f25;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --color-primary-badge: #c2410c;   /* the reference orange is 2.2:1 on this light rail */
   --code-color-scheme: light;
   --mascot-shadow-color: rgba(40,30,16,0.35);
@@ -784,6 +788,7 @@
    8px — because sheet metal doesn't round the way paper does.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="foundry"] {
+  --skin-swatch: #d99a3e;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --code-color-scheme: dark;
   --color-app: #100e0b;           /* deepest ground, warm black */
   --color-panel: #171410;         /* sidebar */
@@ -850,6 +855,7 @@
    round more than paper does, and far more than sheet metal.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="lagoon"] {
+  --skin-swatch: #11736d;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --color-primary-badge: #c2410c;   /* the reference orange is 2.2:1 on this light rail */
   --code-color-scheme: light;
   --mascot-shadow-color: rgba(12,36,34,0.35);
@@ -920,6 +926,7 @@
    desaturated: it marks actions and focus without making the chrome glow.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="graphite"] {
+  --skin-swatch: #8a9bb3;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --code-color-scheme: dark;
   --color-app: #111214;
   --color-panel: #181a1d;
@@ -976,6 +983,7 @@
    crisp and familiar instead of colourful.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="linen"] {
+  --skin-swatch: #50627a;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --color-primary-badge: #c2410c;   /* the reference orange is 2.2:1 on this light rail */
   --code-color-scheme: light;
   --mascot-shadow-color: rgba(20,24,36,0.35);
@@ -1034,6 +1042,7 @@
    much as the accent, so the skin feels cohesive rather than neon or themed.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="dusk"] {
+  --skin-swatch: #9474a3;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --code-color-scheme: dark;
   --color-app: #121014;
   --color-panel: #19161c;
@@ -1096,6 +1105,7 @@
    #f7f7f7, selected row #e1e1e1.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="daylight"] {
+  --skin-swatch: #3a3a3a;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --color-primary-badge: #c2410c;   /* the reference orange is 2.2:1 on this light rail */
   --code-color-scheme: light;
   --mascot-shadow-color: rgba(20,20,20,0.35);
@@ -1168,6 +1178,7 @@
    is loaded only while this skin is worn. A light skin on every OS setting.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="retro98"] {
+  --skin-swatch: #008080;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --color-primary-badge: #9a3412;   /* the reference orange is 2.2:1 on this light rail */
   --code-color-scheme: light;
   --mascot-shadow-color: rgba(0,0,0,0.35);
@@ -1230,6 +1241,7 @@
    as the accent border.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="meadow"] {
+  --skin-swatch: #1a7a48;   /* the variant swatch in Settings > Appearance > Skin (decorative) */
   --color-primary-badge: #c2410c;   /* the reference orange is 2.2:1 on this light rail */
   --app-glow: none;
   --code-color-scheme: light;

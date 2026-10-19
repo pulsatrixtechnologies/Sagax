@@ -4,6 +4,8 @@
 // that keeps the two halves from drifting apart, and it means adding a skin is
 // one CSS block plus one line in SKINS.
 
+import { autoPairs, readSkinAuto, writeSkinAuto } from "./skin-families";
+
 export const SKIN_IDS = [
   "pulsatrix",
   "pulsatrix-light",
@@ -74,13 +76,59 @@ function getStore(): Storage | undefined {
   }
 }
 
+/** The system's scheme (Auto follows it); light when it cannot be read. */
+export function prefersDarkScheme(): boolean {
+  try {
+    return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches === true;
+  } catch {
+    return false;
+  }
+}
+
+/** The stored skin as worn: under Auto (skin-families.ts), the stored
+ * variant's light or dark skin for the system's scheme now. */
+export function resolveStoredSkin(stored: string | null | undefined, auto: boolean, prefersDark: boolean): SkinId {
+  const skin = isSkinId(stored) ? stored : DEFAULT_SKIN;
+  if (!auto) return skin;
+  const pair = autoPairs()[skin];
+  return pair ? pair[prefersDark ? 1 : 0] : skin;
+}
+
 export function readSkin(): SkinId {
   try {
-    const stored = getStore()?.getItem(KEY);
-    return isSkinId(stored) ? stored : DEFAULT_SKIN;
+    return resolveStoredSkin(getStore()?.getItem(KEY), readSkinAuto(getStore()), prefersDarkScheme());
   } catch {
     return DEFAULT_SKIN;
   }
+}
+
+/**
+ * Wear a skin chosen in the picker: the skin itself, and whether it follows
+ * the system (Auto). A skin with no light and dark pair cannot follow it.
+ */
+export function chooseSkin(id: SkinId, auto: boolean): void {
+  writeSkinAuto(auto && Boolean(autoPairs()[id]), getStore());
+  applySkin(id);
+}
+
+/** Under Auto, the system switching between light and dark switches the
+ * variant's skin, live. Installed once by main.tsx; returns the remover. */
+export function installSkinAutoFollow(): () => void {
+  let query: MediaQueryList | undefined;
+  try {
+    query = typeof window === "undefined" ? undefined : window.matchMedia?.("(prefers-color-scheme: dark)");
+  } catch {
+    query = undefined;
+  }
+  if (!query) return () => undefined;
+  const follow = () => {
+    if (!readSkinAuto(getStore())) return;
+    const worn = document.documentElement.dataset.skin;
+    const next = resolveStoredSkin(worn, true, query?.matches === true);
+    if (next !== worn) applySkin(next);
+  };
+  query.addEventListener?.("change", follow);
+  return () => query?.removeEventListener?.("change", follow);
 }
 
 /**

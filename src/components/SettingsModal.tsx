@@ -41,8 +41,6 @@ import { CredentialsSettings } from "./settings/CredentialsSettings";
 import { PublishedPagesSettings } from "./PublishedPages";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { workspacesAvailable } from "./WorkspacesSection";
-import { applySkin, readSkin, visibleSkins, type SkinId } from "@/lib/skins";
-import { readRetroUnlocked } from "@/lib/retro98";
 import { AboutMeEditor, aboutMeFirstLine } from "./AboutMeSettings";
 import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { AccountCard } from "./settings/AccountCard";
@@ -95,8 +93,8 @@ export const SECTIONS: Array<{
   // Settings groups its rail: you, AI, the workspace, this app last.
   // 0.5.6 (JC): General is laid out as Grok Bot's (Account, Appearance,
   // System); Updates is a page of its own, as there.
-  { id: "general", group: "you", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "grants", "autorisations", "theme", "thème", "language", "langue", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
-  { id: "appearance", group: "you", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
+  { id: "general", group: "you", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "grants", "autorisations", "language", "langue", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
+  { id: "appearance", group: "you", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "thème", "variant", "variante", "light", "clair", "dark", "sombre", "auto", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
   // 2026-10-14: Privacy is a card of this page on an organization server.
   { id: "notifications", group: "you", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
   // 2026-10-16: the credential vault (logins, API keys, notes; 1Password).
@@ -397,26 +395,6 @@ function LanguageRow() {
         ariaLabel={t("settings.language.aria")}
         onChange={(next) => setLanguageChoice(next)}
         options={[{ value: "", label: t("settings.language.system") }, ...localeChoices.map(({ code, label }) => ({ value: code, label }))]}
-      />
-    </CompactRow>
-  );
-}
-
-/** General > Appearance > Theme: the skin, by name. The miniatures stay in
- * Appearance (2026-10-14 picker); this is the one-line choice Grok Bot has. */
-function ThemeRow() {
-  const [active, setActive] = useState<SkinId>(() => (document.documentElement.dataset.skin as SkinId) || readSkin());
-  const [skins] = useState(() => visibleSkins(readRetroUnlocked(), active));
-  return (
-    <CompactRow label={t("settings.theme.title")} rowId="theme">
-      <PillSelect
-        value={active}
-        ariaLabel={t("settings.theme.title")}
-        onChange={(next) => {
-          applySkin(next);
-          setActive(next);
-        }}
-        options={skins.map((skin) => ({ value: skin.id, label: skin.name }))}
       />
     </CompactRow>
   );
@@ -795,7 +773,8 @@ export function SettingsModal() {
                   )}
                 </SettingsGroup>
                 <SettingsGroup title={t("settings.group.appearance")} groupId="appearance">
-                  <ThemeRow />
+                  {/* the skin, its variant and Light, Dark or Auto are chosen in
+                      one place: Appearance > Skin (2026-10-19) */}
                   <LanguageRow />
                 </SettingsGroup>
                 <SettingsGroup title={t("settings.group.system")} groupId="system">

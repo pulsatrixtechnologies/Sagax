@@ -14,12 +14,23 @@
     <script>
       (function () {
         var SKINS = ["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98", "meadow"];
+        // Auto (src/lib/skin-families.ts): a variant's light and dark skins.
+        var PAIRS = {"pulsatrix-light":["pulsatrix-light","pulsatrix"],"pulsatrix":["pulsatrix-light","pulsatrix"],"daylight":["daylight","midnight"],"midnight":["daylight","midnight"],"linen":["linen","graphite"],"graphite":["linen","graphite"],"atelier":["atelier","foundry"],"foundry":["atelier","foundry"]};
         var d = "pulsatrix";
-        var s;
+        var s, m;
         try {
           s = localStorage.getItem("omb-skin");
+          m = localStorage.getItem("omb-skin-mode");
         } catch (e) {}
-        document.documentElement.dataset.skin = SKINS.indexOf(s) >= 0 ? s : d;
+        s = SKINS.indexOf(s) >= 0 ? s : d;
+        if (m === "auto" && PAIRS[s]) {
+          var k = false;
+          try {
+            k = matchMedia("(prefers-color-scheme: dark)").matches;
+          } catch (e) {}
+          s = PAIRS[s][k ? 1 : 0];
+        }
+        document.documentElement.dataset.skin = s;
       })();
     </script>
   </head>

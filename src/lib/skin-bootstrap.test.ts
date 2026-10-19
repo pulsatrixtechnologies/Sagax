@@ -24,3 +24,20 @@ describe("skin bootstrap before hydration", () => {
     expect(JSON.parse(out)).toEqual(input);
   });
 });
+
+describe("skin bootstrap under Auto", () => {
+  function run(stored: Record<string, string>, dark: boolean): string | undefined {
+    const root = { dataset: {} as Record<string, string> };
+    const fn = new Function("localStorage", "matchMedia", "document", skinBootstrapInlineScript());
+    fn({ getItem: (key: string) => stored[key] ?? null }, () => ({ matches: dark }), { documentElement: root });
+    return root.dataset.skin;
+  }
+
+  it("swaps a paired skin for the system's scheme, and only under Auto", () => {
+    expect(run({ "omb-skin": "midnight" }, false)).toBe("midnight");
+    expect(run({ "omb-skin": "midnight", "omb-skin-mode": "auto" }, false)).toBe("daylight");
+    expect(run({ "omb-skin": "atelier", "omb-skin-mode": "auto" }, true)).toBe("foundry");
+    expect(run({ "omb-skin": "dusk", "omb-skin-mode": "auto" }, false)).toBe("dusk");
+    expect(run({ "omb-skin-mode": "auto" }, false)).toBe("pulsatrix-light");
+  });
+});
