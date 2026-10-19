@@ -2,7 +2,7 @@ import { Loader2, Repeat2 } from "lucide-react";
 import { t } from "@/lib/i18n";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
-import { routineNextRunPhrase, routineUpcomingState, routineWhenLabel } from "@/lib/routine-display";
+import { routineNextRunPhrase, routineScheduleState, routineUpcomingState, routineWhenLabel } from "@/lib/routine-display";
 import type { Bot } from "@/state/store";
 import { BotAvatar } from "@/components/Avatar";
 import { PILL_INFO } from "@/lib/status-tones";
@@ -74,6 +74,9 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           // only when the job acts as someone other than the owner.
           const runAsOther = routine.runAs && routine.runAs.principalId.toLowerCase() !== routine.owner?.id?.toLowerCase() ? routine.runAs : null;
           const readOnly = routine.canEdit === false;
+          // With a switch the line under the name is the state: Paused, or
+          // when it runs (the schedule stays in the tooltip when paused).
+          const stateLine = toggle && !upcoming && !routine.enabled && routineScheduleState(routine) === t("routines.pausedSchedule") ? t("routines.pausedSchedule") : null;
           return (
             <div key={routine.id} data-routine-row className={grouped ? cn("flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW) : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover"}>
               <button type="button" onClick={() => onOpen(routine)} className="min-w-0 flex-1 text-left">
@@ -90,7 +93,7 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                     {botName && <span aria-hidden="true" className="shrink-0">·</span>}
                     <span className="max-w-full shrink-0 truncate">{when}</span>
                   </span>
-                ) : <span data-routine-when={when} title={when} className="line-clamp-2 text-[13px] leading-[18px] text-ink-secondary">{when}</span>}
+                ) : <span data-routine-when={stateLine ?? when} title={when} className="line-clamp-2 text-[13px] leading-[18px] text-ink-secondary">{stateLine ?? when}</span>}
                 {(runAsOther || routine.suspended || otherOwner) && (
                   <span className="mt-0.5 flex flex-wrap gap-1.5">
                     {otherOwner && <RoutineOwnerBadge owner={otherOwner} size={14} className="max-w-full rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary" />}

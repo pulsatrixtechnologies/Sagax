@@ -5339,6 +5339,7 @@
   "routines.pause": "Pause",
   "routines.paused.close": "Close paused routines",
   "routines.pausedSchedule": "Paused",
+  "routines.toggleFailed": "Couldn't change \"{name}\". It is back as it was. Try again.",
   "routines.previous": "Previous dates",
   "routines.repeat.daily": "Every day",
   "routines.repeat.once": "Once",

@@ -8,6 +8,9 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 export function cronScheduleLabel(schedule: RoutineCronSchedule): string {
   const [minute, hour, day, month, weekday] = schedule.expression.trim().split(/\s+/);
   let label = `Cron ${schedule.expression}`;
+  if (/^\d+$/.test(minute ?? "") && hour === "*" && day === "*" && month === "*" && weekday === "*") {
+    label = `Every hour at :${minute!.padStart(2, "0")}`;
+  }
   if (/^\d+$/.test(minute ?? "") && /^\d+$/.test(hour ?? "")) {
     const time = `${hour!.padStart(2, "0")}:${minute!.padStart(2, "0")}`;
     const monthDay = /^\d+$/.test(day ?? "") ? Number(day) : null;
