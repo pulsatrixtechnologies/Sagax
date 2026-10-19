@@ -12963,6 +12963,12 @@ bus.subscribe((event: RuntimeEvent) => {
       // confidential thread): no mode, rule or session grant of the answerer
       // answers it, and it is judged at Ask.
       const foreignDestination = Boolean(permission && asker && event.requestId && !destination && mountedDestinationOf(asker, event.threadId, event.mcpTool ?? event.tool) !== null);
+      // 2026-10-19 (PR 3): the speaker's explicit Always allow rules answer a
+      // call in their own isolated environment (their cloud computer, their
+      // Local VM) on someone else's bot, while the organization allows it;
+      // never their mode, and never on their real computer.
+      const speakerEnvironmentRules = Boolean(destinationAnswerer && ownEnvironmentTool(event.mcpTool ?? event.tool) && memberEnvironmentAutonomyAllowed(cfg.organization));
+
       const serverLevelCard = Boolean(memberAsker && asker && memberBotAdminApproval({
         tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
@@ -12993,6 +12999,12 @@ bus.subscribe((event: RuntimeEvent) => {
         input: typeof event.input === "string" ? event.input : undefined,
         roots: ownAttachmentRoots(asker, event.threadId),
       }));
+      // Security review 2026-10-19: no saved Allow key (the Sagax gate's
+      // Always allow) answers or is offered for a call no rule may answer:
+      // someone else's environment, or a destination outside an isolated
+      // environment the person's rules cover (their real computer, their
+      // cloud computer while the organization turned autonomy off).
+      const gateGrantBlocked = foreignDestination || (ownDestination && !ownEnvironment && !speakerEnvironmentRules && !attachmentRead);
       // A confidential thread's card goes to its owner only: one they could
       // not answer (an organization admin's card, another person's machine)
       // is refused rather than shown to anyone else.
@@ -13057,7 +13069,7 @@ bus.subscribe((event: RuntimeEvent) => {
         ? autoVerdict(strictCard || foreignDestination ? "ask" : effectiveApprovalMode, event.tool, {
           requiresExplicitApproval: event.requiresExplicitApproval,
           sagaxGate: event.sagaxGate === true,
-          ruleAllowed: Boolean(gateAllowKey && !strictCard && !guestDriven && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
+          ruleAllowed: Boolean(gateAllowKey && !strictCard && !guestDriven && !gateGrantBlocked && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
           commandAllowed: Boolean(command && commandAllowlist.matches(asker.id, command)),
           safetyHold: safetyEffect?.kind === "hold",
           // A gate card stays a person's choice. Reads the gate already
@@ -13125,11 +13137,6 @@ bus.subscribe((event: RuntimeEvent) => {
       // computer, or their server environment while the organization turned
       // autonomy off) is never answered by the owner's mode or rules either:
       // the card shows (a read of their own attachments excepted).
-      // 2026-10-19 (PR 3): the speaker's explicit Always allow rules answer a
-      // call in their own isolated environment (their cloud computer, their
-      // Local VM) on someone else's bot, while the organization allows it;
-      // never their mode, and never on their real computer.
-      const speakerEnvironmentRules = Boolean(destinationAnswerer && ownEnvironmentTool(event.mcpTool ?? event.tool) && memberEnvironmentAutonomyAllowed(cfg.organization));
       const ownerOriginRefused = Boolean(ownerCall && asker && (
         (ownEnvironment && !ownEnvironmentAutonomy({
           call: true, mode: "auto", tool: event.mcpTool ?? event.tool,
@@ -13304,7 +13311,7 @@ bus.subscribe((event: RuntimeEvent) => {
             ? { version: 1, questions, ...(event.origin === "output" ? { origin: "output" as const } : {}) }
             : undefined,
           commandAllowlist: command ?? undefined,
-          ...(gateAllowKey && !strictCard && !memberAsker && !guestDriven ? { allowKey: gateAllowKey } : {}),
+          ...(gateAllowKey && !strictCard && !memberAsker && !guestDriven && !gateGrantBlocked ? { allowKey: gateAllowKey } : {}),
           // Provider-owned session grants remain separate from exact commands.
           // a member's bot is approved one action at a time: a session rule
           // (Claude's own suggestion) could reach past its workspace. Never on
