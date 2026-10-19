@@ -1,7 +1,7 @@
 // The content nodes that hold no nodes of their own: an image, a badge, a
 // progress bar. (An Icon is a WidgetGlyph and a Chart is WidgetChart.)
-import type { CSSProperties } from "react";
-import { ImageOff } from "lucide-react";
+import { useState, type CSSProperties } from "react";
+import { ImageOff, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { widgetNumber, widgetString, type WidgetNode } from "../../../shared/widget";
@@ -15,6 +15,10 @@ import { progressClip } from "@/lib/motion";
  * request to whatever address the bot wrote. One click loads the card's images. */
 export function WidgetImage({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
   const form = useWidgetForm();
+  // A picture that does not arrive (address gone, refused, blocked, offline)
+  // says so and offers another try, never an empty framed box.
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const src = widgetString(node, "src");
   if (!src || !/^https:\/\//i.test(src)) return null;
   const box = boxStyle(node);
@@ -47,10 +51,42 @@ export function WidgetImage({ node, where }: { node: WidgetNode; where: WidgetWh
       </button>
     );
   }
+  if (failed) {
+    const retry = () => {
+      setFailed(false);
+      setAttempt((value) => value + 1);
+    };
+    return (
+      <span
+        role="alert"
+        data-widget-image-failed=""
+        className={cn("flex max-w-full flex-col items-center justify-center gap-1.5 bg-inset px-3 text-center text-[12px] leading-4 text-ink-secondary", !thumb && "min-h-[88px] py-3", frame)}
+        style={style}
+      >
+        <ImageOff aria-hidden="true" size={thumb ? 16 : 18} className="shrink-0" />
+        {!thumb && <span>{t("attach.imageUnavailable")}</span>}
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            retry();
+          }}
+          aria-label={t("attach.retryAria", { name: alt || t("attach.imageUnavailable") })}
+          title={t("chat.retry")}
+          className="flex items-center gap-1 rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[11px] text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        >
+          <RotateCcw aria-hidden="true" size={11} />
+          {!thumb && t("chat.retry")}
+        </button>
+      </span>
+    );
+  }
   return (
     <img
+      key={attempt}
       src={src}
       alt={alt ?? ""}
+      onError={() => setFailed(true)}
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"
