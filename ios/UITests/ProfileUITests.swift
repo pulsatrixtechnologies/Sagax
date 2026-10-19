@@ -423,6 +423,43 @@ final class ProfileUITests: XCTestCase {
         ParityShots.save("links-browser", app)
     }
 
+    /// Go to message on a link of another of Ara's conversations switches
+    /// her chat to it in place: the panel closes onto that conversation and
+    /// Back goes home, with no second chat screen over the first one.
+    /// Needs the links lab (`PARITY_LINKS=1`, ios/parity/links-lab.mjs).
+    @MainActor
+    func testGoToMessageSwitchesTheChatToTheLinksConversation() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["PARITY_LINKS"] == "1", "the fixture runs without PARITY_LINKS=1")
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the phone's chat stack")
+        // Ara's chat, her panel opened by hand: the 03 screen's launcher
+        // would open the panel again on every thread the chat shows
+        let app = launch(screen: "02-chat")
+        let name = app.buttons["chat-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 30))
+        name.tap()
+        XCTAssertTrue(element("profile-name", in: app).waitForExistence(timeout: 10))
+        element("panel-tab.library", in: app).tap()
+        let chip = element("thread-files-chip.links", in: app)
+        XCTAssertTrue(chip.waitForExistence(timeout: 15))
+        chip.tap()
+        let link = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'profile-link.' AND label CONTAINS 'links-lab.example.com'")).firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 10), "the other conversation's link")
+        link.press(forDuration: 1.2)
+        let go = app.buttons["Go to message"].firstMatch
+        XCTAssertTrue(go.waitForExistence(timeout: 5))
+        go.tap()
+
+        let reply = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Le lien de l'autre conversation est prêt.")).firstMatch
+        XCTAssertTrue(reply.waitForExistence(timeout: 15), "the chat shows the link's conversation")
+        ParityShots.save("links-go-to-message", app)
+        let back = app.buttons["Back"].firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
+        XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 10), "one chat screen: Back is home")
+    }
+
     /// The iPad's bot panel has the same Links chip and rows.
     @MainActor
     func testIPadLibraryShowsTheLinks() throws {

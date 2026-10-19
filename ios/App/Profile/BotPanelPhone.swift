@@ -648,20 +648,16 @@ private struct PhoneBotPanelContent: View {
         }
     }
 
-    /// Go to message on a link: its own conversation of this bot, which
-    /// opens first when it is not the one on screen.
+    /// Go to message on a link: its own conversation of this bot, which the
+    /// chat under the panel switches to in place when it is another one.
     private func showInChat(_ link: BotLink) {
         guard let messageId = link.messageId else { return }
         let botId = bot.id
         let threadId = link.threadId ?? bot.threadId
-        let onScreen = bot.threadId
         dismiss()
         Task {
             try? await Task.sleep(nanoseconds: 600_000_000)
-            if threadId != onScreen {
-                _ = await session.openThread(ThreadRef(botId: botId, threadId: threadId, title: ""), shownBotId: nil)
-            }
-            await session.jump(to: messageId, inThread: threadId)
+            await session.showLinkMessage(messageId, botId: botId, threadId: threadId)
         }
     }
 

@@ -72,6 +72,8 @@ import { ROUTINE_LAB, seedRoutineLab, seedRoutineLabRuns } from "./routine-lab.m
 import { RICH_LAB, seedRichLabBot, seedRichLabTranscript } from "./rich-lab.mjs";
 // PARITY_WIDGETS=1: every chat widget sample for the widget UI tests (widget-lab.mjs).
 import { WIDGET_LAB, seedWidgetLabBot, seedWidgetLabTranscript } from "./widget-lab.mjs";
+// PARITY_LINKS=1: a second Ara conversation with the newest link, for Go to message (links-lab.mjs).
+import { LINKS_LAB, seedLinksLab, seedLinksLabTranscript } from "./links-lab.mjs";
 // PARITY_PLUGINS=1: connected apps, MCP sign-in and a bot without apps for the WP9 UI tests (plugin-lab.mjs).
 import {
   PLUGIN_LAB, closePluginLab, pluginLabHook, pluginLabServerEnv, seedPluginLab, startPluginLabBroker,
@@ -761,6 +763,7 @@ async function main() {
   if (PLUGIN_LAB) await seedPluginLab(base, api, ROOT, seeded.ids);
   if (RICH_LAB) await seedRichLabBot(base, api);
   if (WIDGET_LAB) await seedWidgetLabBot(base, api);
+  if (LINKS_LAB) await seedLinksLab(base, api, seeded.ids);
   await stopServer(child);
 
   seedTranscripts(dataDir, seeded);
@@ -768,6 +771,7 @@ async function main() {
   if (ROUTINE_LAB) seedRoutineLabRuns(dataDir);
   if (RICH_LAB) seedRichLabTranscript(dataDir, png);
   if (WIDGET_LAB) seedWidgetLabTranscript(dataDir);
+  if (LINKS_LAB) seedLinksLabTranscript(dataDir);
   seedCommandRules(dataDir, seeded);
   const ownerMode = process.env.PARITY_OWNER === "1";
   if (ownerMode) {

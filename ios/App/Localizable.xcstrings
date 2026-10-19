@@ -69681,6 +69681,28 @@
           }
         }
       }
+    },
+    "%lld threads, %lld with news": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld threads, %2$lld with news"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld fils, %2$lld avec du nouveau"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld threads, %2$lld com novidades"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

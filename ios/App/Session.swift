@@ -99,6 +99,11 @@ final class Session: ObservableObject {
     /// Per bot, a topic made for a fresh draft whose first message has not
     /// gone through yet: a retry goes there, never into a second topic.
     var createdFreshTopics: [String: String] = [:]
+    /// Per bot, a thread the chat on screen for that bot moves to in place
+    /// (Go to message from the bot panel's Links): consumed by ChatView.
+    /// The panel only opens over that chat today; a door to it from
+    /// anywhere else needs its own way to open the chat.
+    @Published var threadSwitches: [String: ThreadSwitch] = [:]
     @Published private(set) var notificationAuthorization: UNAuthorizationStatus = .notDetermined
     /// Distinguishes a real `.notDetermined` result from the in-memory value
     /// used while notification settings are still loading at launch.
@@ -289,11 +294,16 @@ final class Session: ObservableObject {
            ),
            let data = try? Data(contentsOf: url),
            let fleet = try? JSONDecoder().decode(Fleet.self, from: data) {
+            // The tailnet host is the one this fixture pairing consented to
+            // (d4b073b3a: a tailnet route without it builds no request, and
+            // the image and voice previews said "That address doesn't look
+            // right" instead of loading).
             let preview = Connection(
                 id: "preview-current",
                 name: "Milind’s MacBook Pro",
                 host: "preview.tailnet.ts.net",
-                port: 8810
+                port: 8810,
+                allowedTailnetHost: "preview.tailnet.ts.net"
             )
             connection = preview
             if arguments.contains("-computer-switcher-preview") {
@@ -301,7 +311,8 @@ final class Session: ObservableObject {
                     id: "preview-other",
                     name: "MacBook Air",
                     host: "air.tailnet.ts.net",
-                    port: 8810
+                    port: 8810,
+                    allowedTailnetHost: "air.tailnet.ts.net"
                 )
                 registry = CompanionConnectionRegistry(
                     connections: [preview, other],
@@ -911,6 +922,13 @@ final class Session: ObservableObject {
     }
 
     private func persistRegistry() {
+#if DEBUG
+        // The parity harness's fixture server is held in memory only: an
+        // endpoint update during a parity run saved it as this device's
+        // pairing (without its token), and every later launch, the demo's
+        // included, opened that dead pairing instead.
+        if ParityLaunch.current != nil { return }
+#endif
         SagaxSharedConnectionStore.saveRegistry(registry)
     }
 
@@ -1461,6 +1479,11 @@ final class Session: ObservableObject {
                 createdFreshTopics[startedTopic.botId] = nil
                 freshTopics[startedTopic.botId] = nil
                 startedTopics[startedTopic.botId] = startedTopic.threadId
+                // the bot picked again from now on opens the new topic, not
+                // the one under the draft
+                if let topic = state.bot(startedTopic.botId)?.projected(forThread: startedTopic.threadId) {
+                    threadSelection.rememberThread(.bot(topic), connectionID: connectionID)
+                }
             }
             // The send succeeded on the computer it was addressed to, so the
             // draft clears either way. Its queue row belongs to that computer,
@@ -3084,6 +3107,19 @@ final class Session: ObservableObject {
         if state.bots[botIndex].threadId == threadId { state.bots[botIndex].pinnedMessageId = messageId }
     }
 
+    /// Go to message on a link of one bot (its panel's Links tab): the
+    /// link's conversation becomes the bot's selection and the chat on
+    /// screen for that bot switches to it in place, as a thread chip does,
+    /// never a second chat screen over it; then the message.
+    func showLinkMessage(_ messageId: String, botId: String, threadId: String) async {
+        if state.bot(botId)?.threadId != threadId {
+            let opened = await openThread(ThreadRef(botId: botId, threadId: threadId, title: ""), shownBotId: botId)
+            guard opened == threadId else { return }
+        }
+        threadSwitches[botId] = ThreadSwitch(threadId: threadId)
+        await jump(to: messageId, inThread: threadId)
+    }
+
     /// Scroll a conversation to one of its messages (a reply quote, the
     /// pinned banner). A message outside the loaded page is fetched around
     /// first, the way a search hit is.
@@ -3189,6 +3225,13 @@ final class Session: ObservableObject {
             if !quietly { actionError = error.localizedDescription }
         }
     }
+}
+
+/// A thread the chat on screen for one bot moves to (Session.threadSwitches);
+/// the token makes the same thread asked twice a change.
+struct ThreadSwitch: Equatable {
+    let threadId: String
+    let token = UUID()
 }
 
 /// A chat plus the two things a roster row shows that the record itself does

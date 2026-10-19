@@ -173,6 +173,13 @@ struct ChatView: View {
         return session.startedTopics[bot.id]
     }
 
+    /// A thread this bot's chat should move to in place (Go to message on a
+    /// link of another of its conversations), if any.
+    var threadSwitch: ThreadSwitch? {
+        guard case let .bot(bot) = chat else { return nil }
+        return session.threadSwitches[bot.id]
+    }
+
     /// Bot selection is local to this screen; another device's navigation
     /// must not move a draft, approval, or Stop action to a different thread.
     var threadId: String { current.threadId }
@@ -402,6 +409,13 @@ struct ChatView: View {
             guard let started, case let .bot(bot) = current else { return }
             session.consumeStartedTopic(bot.id)
             selectedThreadId = started
+        }
+        .onValueChange(of: threadSwitch) { request in
+            // Go to message on a link of another conversation of this bot:
+            // this screen switches there, as a thread chip does
+            guard let request, case let .bot(bot) = current else { return }
+            session.threadSwitches[bot.id] = nil
+            selectedThreadId = request.threadId
         }
     }
 

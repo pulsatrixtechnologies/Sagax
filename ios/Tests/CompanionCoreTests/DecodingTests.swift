@@ -143,6 +143,29 @@ final class DecodingTests: XCTestCase {
         XCTAssertFalse(fleet.groups.isEmpty)
     }
 
+    /// Every bundled preview fleet the UI tests launch (`-threads-preview`,
+    /// `-open-thread-preview`, ...) must decode: a fixture that stops
+    /// decoding silently drops the app to the unpaired home.
+    func testEveryPreviewFleetDecodes() throws {
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("App")
+        for name in ["StorePreview", "ThreadPreview", "OpenThreadPreview", "RosterPreview", "CardsPreview",
+                     "ImagePreview", "ChatUpdatePreview", "ChatPresentationPreview"] {
+            let data = try Data(contentsOf: app.appendingPathComponent("\(name).json"))
+            do {
+                let fleet = try JSONDecoder().decode(Fleet.self, from: data)
+                XCTAssertFalse(fleet.bots.isEmpty && fleet.groups.isEmpty, "\(name) has no chats")
+            } catch {
+                XCTFail("\(name).json no longer decodes as a Fleet: \(error)")
+            }
+        }
+        let pages = try Data(contentsOf: app.appendingPathComponent("ThreadPreviewPages.json"))
+        XCTAssertNoThrow(try JSONDecoder().decode([String: ThreadPage].self, from: pages))
+    }
+
     func testOldAndNewAvatarProfilesDecodeTogether() throws {
         let oldBot = try XCTUnwrap(decode(Fleet.self, "bots-full").bots.first)
         XCTAssertNil(oldBot.avatarUrl)
