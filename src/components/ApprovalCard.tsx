@@ -204,7 +204,9 @@ export function toolLabel(tool?: string, input?: string, hints?: ToolHints): str
   if (server === "composio" && composio) return composio;
   const described = describeApproval(tool, input, hints);
   const action = described.action ?? composio ?? name.replace(/_+/g, " ");
-  return described.product ? t("approval.phrase.inProduct", { action, product: described.product }) : action;
+  // Sagax's own built-in servers (sagax-environment, sagax-computer) are the
+  // bot itself: never "... in Sagax Computer" (shared approvalAction).
+  return described.product && !server.startsWith("sagax-") ? t("approval.phrase.inProduct", { action, product: described.product }) : action;
 }
 
 /** What the card shows for a plain tool approval (not a proposal): a

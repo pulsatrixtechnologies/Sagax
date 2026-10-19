@@ -17,7 +17,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { ToolGrantStore } from "./tool-grants.ts";
-import { sagaxInternalSelfAnswers, sagaxInternalTool } from "./sagax-internal-tools.ts";
+import { foreignToolSpelling, sagaxInternalSelfAnswers, sagaxInternalTool } from "./sagax-internal-tools.ts";
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
 import { auditSampleFromEnv, deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, mcpPolicyEnv, permissionModeFromEnv, principalFromEnv } from "./mcp-permissions.ts";
@@ -1059,7 +1059,7 @@ import { createMcpAuditInternalRoutes } from "./routes/mcp-audit-internal.ts";
 import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/routine-run-internal.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
-import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
+import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownComputerChoiceCall, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
@@ -1491,6 +1491,9 @@ type TurnWorkplace = {
    * this turn (`sagax-environment`, `sagax-desktop`): how the approval path
    * recognizes the owner's own environment (member-environment.ts). */
   ownEnvironmentServers?: ReadonlySet<string>;
+  /** Sagax mounted computer_select (`sagax-computer`) for this turn: how the
+   * approval path recognizes it (member-environment.ts ownComputerChoiceCall). */
+  computerChoice?: boolean;
 };
 const turnWorkplaces = new Map<string, TurnWorkplace>();
 let egressProxy: EgressProxy | null = null;
@@ -5034,6 +5037,7 @@ function mountUserSandbox(
   }
   const workplace = turnWorkplaces.get(input.threadId);
   if (workplace && workplace.generation === input.generation && mounted.size) workplace.ownEnvironmentServers = mounted;
+  if (workplace && workplace.generation === input.generation && auto) workplace.computerChoice = true;
 }
 
 /** The Auto selection of the turn a capability belongs to, or null when the
@@ -13159,12 +13163,19 @@ bus.subscribe((event: RuntimeEvent) => {
       // never their mode, and never on their real computer.
       const speakerEnvironmentRules = Boolean(destinationAnswerer && ownEnvironmentTool(event.mcpTool ?? event.tool) && memberEnvironmentAutonomyAllowed(cfg.organization));
 
+      // 2026-10-19 (prod 0.5.27): computer_select only picks among the
+      // places this turn mounted for the person who answers its card (their
+      // cloud computer, their own computer, its Local VM): their card, never
+      // an admin's (member-environment.ts ownComputerChoiceCall).
+      const ownComputerChoice = Boolean(permission && asker && event.requestId && !foreignToolSpelling(event.mcpTool ?? event.tool, foreignServers)
+        && ownComputerChoiceRequest(asker, event.threadId, event.mcpTool ?? event.tool, cardAnswerer, guestDriven));
       const serverLevelCard = Boolean(memberAsker && asker && memberBotAdminApproval({
         tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
         ownerScopedMcpServer: ownerScopedMcpServerFor(asker, event.threadId),
         ownEnvironment,
         ownDestination,
+        ownComputerChoice,
         foreignMcpServers: foreignServers,
       }));
       // Security review 2026-10-19: a holder of host.commands answers a
@@ -27634,6 +27645,21 @@ function destinationOfCall(bot: BotRecord, threadId: string, tool: string | unde
     guestDriven,
     mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
   }) ? { person, byOwner: false } : null;
+}
+/** 2026-10-19 (prod 0.5.27): whether a call is the computer_select Sagax
+ * mounted for this turn of this bot, choosing among the places of the person
+ * who answers its card (member-environment.ts ownComputerChoiceCall). */
+function ownComputerChoiceRequest(bot: BotRecord, threadId: string, tool: string | undefined, answerer: string, guestDriven: boolean): boolean {
+  const workplace = turnWorkplaces.get(threadId);
+  const mine = workplace?.botId === bot.id;
+  return ownComputerChoiceCall({
+    identity: IDENTITY.kind,
+    tool,
+    mounted: Boolean(mine && workplace.computerChoice),
+    choicePrincipalId: mine ? workplace.decision.principal : null,
+    answererPrincipalId: answerer,
+    guestDriven,
+  });
 }
 /** The person whose environment (sagax-environment, sagax-desktop) Sagax
  * mounted this turn when this tool belongs to it, or null. */

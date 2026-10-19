@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { setLocale } from "@/lib/i18n";
 import type { Bot, Message } from "@/state/store";
-import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalCard, toolLabel } from "./ApprovalCard";
 import { RiskChip, TechnicalDetails } from "./ApprovalParts";
 import { PendingApprovalPanel, pendingApprovals, readOnlyApprovals, spokenApprovalPrompt, stepperIndex } from "./PendingApproval";
 
@@ -40,6 +40,20 @@ function ask(id: string, tool: string, input: string, extra: Record<string, unkn
 }
 
 describe("human approval card", () => {
+  it("reads Sagax's computer choice as the place, never 'Computer select dans Sagax Computer' (prod 0.5.27)", () => {
+    setLocale("fr");
+    const id = "sagax-computer__computer_select";
+    const prod: Message = { id: "c", role: "bot", kind: "options", at: 1, card: {
+      title: "Approval needed", subtitle: id, options: ["Allow", "Deny"], requestId: "req-c", tool: "other", mcpTool: id, adminApproval: true,
+    } as never };
+    const [pending] = pendingApprovals([prod]);
+    const html = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: pending!, count: 1, index: 0, bot }));
+    expect(html).not.toMatch(/Computer select|Sagax Computer/i);
+    expect(toolLabel(id)).toBe("choisir sur lequel de vos ordinateurs il travaille");
+    expect(toolLabel(`mcp__${id}`, JSON.stringify({ target: "cloud" }))).toBe("utiliser votre ordinateur cloud");
+    expect(toolLabel(id, JSON.stringify({ target: "local_vm" }))).toBe("utiliser la VM locale de votre ordinateur");
+  });
+
   it("shows a plain title, summary and risk chip in the composer's box, and hides the raw id and JSON", () => {
     setLocale("fr");
     const [pending] = pendingApprovals([ask("a", TOOL, ARGS)]);

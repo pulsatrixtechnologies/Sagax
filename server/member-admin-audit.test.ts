@@ -9,7 +9,7 @@ import { ADMIN_ONLY_PERMISSIONS, can, isPermissionKey, normalizePermissions } fr
 import { memberBotAdminApproval, memberOwnedBot } from "./engine-access.ts";
 import { decide } from "./mcp-permissions.ts";
 import { HOST_LEVEL_AGENT_TOOLS } from "./member-tool-scope.ts";
-import { ownDestinationCall } from "./member-environment.ts";
+import { ownComputerChoiceCall, ownDestinationCall } from "./member-environment.ts";
 import { terminalResourceAllowed } from "./terminal-resources/registry.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
 import { USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
@@ -40,6 +40,37 @@ describe("member admin audit, section 1: bot tool calls", () => {
   it.each(sandbox)("sagax-environment %s in the owner's own cloud computer: the owner's card", (tool) => {
     expect(answerer(`mcp__${USER_SANDBOX_MCP_NAME}__${tool}`)).toBe("owner");
   });
+  // Prod 0.5.27: a member's bot asked "Computer select dans Sagax Computer"
+  // and the card waited for an admin.
+  const choice = (tool: string, options: { mounted?: boolean; places?: string | null; answerer?: string; guest?: boolean } = {}): "owner" | "admin" => {
+    const ownComputerChoice = ownComputerChoiceCall({
+      identity: "perspicax", tool, mounted: options.mounted ?? true,
+      choicePrincipalId: options.places === undefined ? OWNER : options.places,
+      answererPrincipalId: options.answerer ?? OWNER, guestDriven: options.guest === true,
+    });
+    return memberBotAdminApproval({ tool, workspaceRoot: "/nowhere", ownComputerChoice }) ? "admin" : "owner";
+  };
+  it.each([
+    ["mcp__sagax-computer__computer_select", "cloud"],
+    ["sagax-computer__computer_select", "this_computer"],
+    ["mcp__sagax-computer__computer_select", "local_vm"],
+    ["sagax-computer__computer_select", "browser"],
+  ])("%s to %s (choosing among their own places): the owner's card", (tool) => {
+    expect(choice(tool)).toBe("owner");
+  });
+  it.each([
+    ["not mounted by Sagax this turn", { mounted: false }],
+    ["someone else's places", { places: "pr_someone_else" }],
+    ["no person decided", { places: null }],
+    ["answered by someone else", { answerer: "pr_someone_else" }],
+    ["a guest drives the turn", { guest: true }],
+  ] as const)("computer_select not the answerer's own choice (%s): an admin's card", (_label, options) => {
+    expect(choice("mcp__sagax-computer__computer_select", options)).toBe("admin");
+  });
+  it.each(["mcp__sagax-computer__computer_use", "mcp__computer__computer_select", "mcp__agents__shared_computer", "computer_select"])("%s is not the computer choice: an admin's card", (tool) => {
+    expect(choice(tool)).toBe("admin");
+  });
+
   it.each([
     ["someone else's destination", { environment: "pr_someone_else" }],
     ["no destination mounted this turn", { mounted: new Set<string>() }],

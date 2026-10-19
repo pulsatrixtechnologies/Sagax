@@ -105,6 +105,11 @@ export const APPROVAL_EN: Readonly<Record<string, string>> = Object.freeze({
   "approval.verb.update": "change {resource}",
   "approval.verb.update.bare": "change data",
   "approval.verb.use": "use {name}",
+"approval.computerSelect.cloud": "use your cloud computer",
+"approval.computerSelect.thisComputer": "use your computer",
+"approval.computerSelect.localVm": "use the Local VM on your computer",
+"approval.computerSelect.browser": "use the built-in browser",
+"approval.computerSelect.choose": "choose which of your computers it works on",
 "approval.phrase.inProduct": "{action} in {product}",
 });
 
@@ -443,6 +448,26 @@ function prettyJson(args: Record<string, unknown> | undefined, text: string | un
   return text && isTechnicalText(text) ? text : undefined;
 }
 
+type ComputerChoice = "cloud" | "thisComputer" | "localVm" | "browser" | "choose";
+const COMPUTER_CHOICE_ACTION: Record<ComputerChoice, string> = {
+  cloud: "approval.computerSelect.cloud",
+  thisComputer: "approval.computerSelect.thisComputer",
+  localVm: "approval.computerSelect.localVm",
+  browser: "approval.computerSelect.browser",
+  choose: "approval.computerSelect.choose",
+};
+/** computer_select's target as server/auto-computer.ts parseAutoComputerTarget
+ * reads it; no target (or one it refuses) only reports where it works. */
+function computerChoiceTarget(value: unknown): ComputerChoice {
+  if (typeof value !== "string") return "choose";
+  const key = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (key === "cloud" || key === "server" || key === "server_environment") return "cloud";
+  if (key === "this_computer" || key === "local" || key === "computer" || key === "my_computer") return "thisComputer";
+  if (key === "local_vm" || key === "vm") return "localVm";
+  if (key === "browser" || key === "web" || key === "navigateur") return "browser";
+  return "choose";
+}
+
 /** The whole reading of one permission ask. `input` is the card's full
  * JSON when the server sent it, else its (maybe truncated) subtitle. */
 export function describeApproval(
@@ -460,6 +485,19 @@ export function describeApproval(
   const parsed = parseToolId(tool);
   if (!parsed.server) {
     return { risk: riskFor(undefined, hints, builtin), argsJson };
+  }
+  // 2026-10-19 (prod 0.5.27): Sagax's own computer choice reads as the
+  // place it picks ("use your cloud computer"), never "computer select in
+  // Sagax Computer".
+  if (parsed.server === "sagax-computer" && parsed.name === "computer_select") {
+    const reason = typeof args?.reason === "string" ? args.reason.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+    return {
+      action: words.t(COMPUTER_CHOICE_ACTION[computerChoiceTarget(args?.target)]),
+      ...(reason ? { summary: reason } : {}),
+      risk: riskFor(undefined, hints, builtin),
+      server: parsed.server,
+      argsJson,
+    };
   }
   const { product, prefixTokens } = productFor(parsed);
   // cw_psa_schedule__query → [cw, psa, schedule, query]; the product

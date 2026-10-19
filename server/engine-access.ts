@@ -199,11 +199,15 @@ export function memberBotAdminApproval(input: {
    * for this turn (member-environment.ts ownDestinationCall): the owner's
    * card at their own level, never an admin's, whatever the tool. */
   ownDestination?: boolean;
+  /** 2026-10-19 (prod 0.5.27): Sagax's own computer_select, mounted for this
+   * turn, choosing among the answerer's own places
+   * (member-environment.ts ownComputerChoiceCall): never an admin's. */
+  ownComputerChoice?: boolean;
   /** 2026-10-19: the owner holds `host.commands` (given in Perspicax): the
    * server commands of their own bots are theirs to approve. */
   ownerRunsServerCommands?: boolean;
 }): boolean {
-  if (input.ownEnvironment || input.ownDestination || input.ownerRunsServerCommands) return false;
+  if (input.ownEnvironment || input.ownDestination || input.ownComputerChoice || input.ownerRunsServerCommands) return false;
   const builtin = !foreignToolSpelling(input.tool, input.foreignMcpServers ?? []);
   // 2026-10-19 (member admin audit): a built-in tool of the member's own
   // scope is judged by its exact name before the shell pattern, which read

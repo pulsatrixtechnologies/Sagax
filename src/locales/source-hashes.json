@@ -12985,7 +12985,12 @@
       "botPanel.branch.error.noPerson": "7448a1e1a2b0c88bc0d264ef386f73c421e04a071682afb64b50d5fa0649e1eb",
       "botPanel.branch.error.noAuthor": "f38f12fd5636de61078db78a4cb5fd578b1df3a2938c0e2810a3226275017057",
       "botPanel.branch.error.unsafeConfig": "48a77690815fa6fd9ffeebb025de5972385f62d2671515ddfd64c569dd79c6af",
-      "routines.toggleFailed": "cfadc302760cf9c9638d57cd3fa8dfb471e155ebc65936b209e4c26b16380f62"
+      "routines.toggleFailed": "cfadc302760cf9c9638d57cd3fa8dfb471e155ebc65936b209e4c26b16380f62",
+      "approval.computerSelect.cloud": "58337bcd61517718ec6c9ad5e36152a96908966d2e2ea91f9dcc1d65d2439611",
+      "approval.computerSelect.thisComputer": "79105204b5dd631e800a0a4103d67e22aef6ed41ce65417b4831b4e87e244b9f",
+      "approval.computerSelect.localVm": "e8a3db6d566ef0373f15a72e5ce55f713a603970d4d72fbea473e3b293969b44",
+      "approval.computerSelect.browser": "23f80c28fb3adec73776b31b0a17ac1347cb838dfd59d772bba7be6373f5c12b",
+      "approval.computerSelect.choose": "b4d12b526f38d937c4e3c1957db4ccb32d2c0ab7e913c8e500d0ad34cabfae56"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

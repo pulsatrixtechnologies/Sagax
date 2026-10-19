@@ -219,6 +219,38 @@ export function ownDestinationCall(input: {
   return Boolean(environment) && environment === input.ownerPrincipalId.trim().toLowerCase();
 }
 
+// 2026-10-19 (JC, prod 0.5.27): computer_select ("sagax-computer",
+// server/auto-computer.ts) only chooses among the places Sagax already
+// mounted for this turn as the person's own: their cloud computer, their own
+// computer, its Local VM, the built-in browser. It never reaches a computer
+// the organization shares (that is `agents` shared_computer, still an
+// admin's). Mounted by Sagax for this turn (never recognized by a name alone)
+// and answered by the person whose places they are, it is that person's card
+// at their own level, never an admin's; each call on the place it picks is
+// judged on its own afterwards.
+
+/** The one tool of Sagax's computer choice, as a provider spells it. */
+const COMPUTER_CHOICE_TOOL = /^(?:mcp__)?sagax-computer__computer_select$/;
+
+/** Whether a call is Sagax's own computer_select, mounted for this turn,
+ * choosing among the places of the person who answers its card. */
+export function ownComputerChoiceCall(input: {
+  identity: "solo" | "perspicax";
+  tool: string | undefined;
+  /** Sagax mounted its computer_select server for this turn. */
+  mounted: boolean;
+  /** Whose places the turn may reach (the workplace decision's person). */
+  choicePrincipalId: string | null | undefined;
+  /** Who answers the card. */
+  answererPrincipalId: string;
+  guestDriven: boolean;
+}): boolean {
+  if (input.identity !== "perspicax" || input.guestDriven || !input.mounted) return false;
+  if (!COMPUTER_CHOICE_TOOL.test(input.tool?.trim() ?? "")) return false;
+  const person = input.choicePrincipalId?.trim().toLowerCase();
+  return Boolean(person) && person === input.answererPrincipalId.trim().toLowerCase();
+}
+
 /** The read-only tools of a person's own destination that may read their
  * own attachments without a card. */
 const ATTACHMENT_READ_TOOLS: ReadonlySet<string> = new Set(["read_file", "list_files", "search_files"]);
