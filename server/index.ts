@@ -2496,6 +2496,19 @@ function configAddressField(value: unknown, prefix = "", depth = 0): string | un
   }
   return undefined;
 }
+/** 2026-10-19 (JC): the first provider key or token (`key`, `apiKey`,
+ * `fishKey`, `token`, `providerKeys`...) anywhere in a config patch, as a
+ * dotted path. Provider keys of the server are an admin's. */
+function configProviderKeyField(value: unknown, prefix = "", depth = 0): string | undefined {
+  if (!value || typeof value !== "object" || depth > 4) return undefined;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (/(key|keys|token|secret|password)$/i.test(key)) return path;
+    const nested = configProviderKeyField(child, path, depth + 1);
+    if (nested) return nested;
+  }
+  return undefined;
+}
 /** 2026-10-19: an organization admin, or a person an admin gave this key in
  * Perspicax (shared/permissions.ts). Loopback follows its trust. */
 function adminOrDelegate(auth: RequestAuth, key: PermissionKey): boolean {
@@ -43469,11 +43482,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // vps (an SSH alias of the server) and box (whose account runs the
         // computers) choose where bots run: an admin's, like an address.
         const field = ["signIn", "profile", "organization", "openaiCompat", "vps", "box"].find((key) => Object.hasOwn(body, key))
-          ?? configAddressField(record) ?? (hostFeature ? `features.${hostFeature}` : undefined);
+          ?? configAddressField(record) ?? configProviderKeyField(record) ?? (hostFeature ? `features.${hostFeature}` : undefined);
         if (field) return json(res, 403, {
           error: field.toLowerCase().endsWith("url")
             ? "Only an organization admin can change an address the server connects to."
-            : "Only an organization admin can change this part of the settings.",
+            : field === configProviderKeyField(record)
+              ? "Only an organization admin can change a provider key of the server."
+              : "Only an organization admin can change this part of the settings.",
           code: "admin_only_field", field,
         });
       }

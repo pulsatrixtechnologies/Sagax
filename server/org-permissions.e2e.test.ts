@@ -287,6 +287,22 @@ posixOnly("Perspicax organization: the permission matrix", () => {
       expect(refused.status, field).toBe(403);
       expect(refused.body, field).toMatchObject({ code: "admin_only_field", field, error: "Only an organization admin can change an address the server connects to." });
     }
+    // nor a provider key of the server (JC 2026-10-19), in any block
+    const providerKeys: Array<[Record<string, unknown>, string]> = [
+      [{ openrouter: { key: "sk-test" } }, "openrouter.key"],
+      [{ openai: { key: "sk-test" } }, "openai.key"],
+      [{ anthropic: { key: "sk-test" } }, "anthropic.key"],
+      [{ tts: { key: "tts-test" } }, "tts.key"],
+      [{ tts: { fishKey: "tts-test" } }, "tts.fishKey"],
+      [{ composio: { apiKey: "ck-test" } }, "composio.apiKey"],
+      [{ decider: { key: "dk-test" } }, "decider.key"],
+    ];
+    for (const [patch, field] of providerKeys) {
+      const refused = await api("PATCH", "/api/config", bob, patch);
+      expect(refused.status, field).toBe(403);
+      expect(refused.body, field).toMatchObject({ code: "admin_only_field", field, error: "Only an organization admin can change a provider key of the server." });
+    }
+    expect((await api("PATCH", "/api/config", alice, { openrouter: { key: "sk-test" } })).status).toBe(200);
     expect((await api("PATCH", "/api/config", alice, { tts: { baseUrl: "https://tts.example.test" } })).status).toBe(200);
     for (const [patch, field] of [[{ vps: { sshAlias: "host-shell-box" } }, "vps"], [{ box: { token: "x" } }, "box"], [{ features: { vpsComputer: true } }, "features.vpsComputer"]] as const) {
       const refused = await api("PATCH", "/api/config", bob, patch);

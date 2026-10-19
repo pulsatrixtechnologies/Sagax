@@ -5665,6 +5665,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** The store when there is one; null outside a provider (static renders, tests). */
+export function useStoreOptional() {
+  return useContext(StoreContext);
+}
+
 export function useStore() {
   const ctx = useContext(StoreContext);
   if (!ctx) throw new Error("useStore outside provider");

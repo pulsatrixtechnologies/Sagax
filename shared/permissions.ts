@@ -299,14 +299,14 @@ const definitions = [
     },
   },
   // 2026-10-19 (JC): delegable. Who is an admin (the sign-in lists), the
-  // operator's own profile, tool grants and the interim attach window stay
-  // with admins.
+  // operator's own profile, tool grants, the interim attach window and the
+  // server's provider keys stay with admins.
   {
     key: "server.settings", group: "server", memberDefault: false, adminOnly: false,
     label: { en: "Change the server's settings", fr: "Changer les réglages du serveur" },
     description: {
-      en: "Change the installation's settings, keys, webhooks, connected apps, bot defaults and organization policies (Full access, marketplaces and their tokens, GitHub app). It changes security and payment settings for everyone. Who is an admin, tool grants and the interim attach window stay with admins.",
-      fr: "Changer les réglages de l'installation, les clés, les webhooks, les applications connectées, les valeurs par défaut des bots et les politiques de l'organisation (accès complet, marchés et leurs jetons, application GitHub). Elle change les réglages de sécurité et de paiement pour tout le monde. Qui est admin, les droits d'outils et la fenêtre de rattachement intérimaire restent aux admins.",
+      en: "Change the installation's settings, webhooks, connected apps, bot defaults and organization policies (Full access, marketplaces and their tokens, GitHub app). It changes security and payment settings for everyone. Who is an admin, tool grants, the interim attach window and the server's provider keys (OpenRouter, OpenAI, Anthropic, voice, Composio...) stay with admins.",
+      fr: "Changer les réglages de l'installation, les webhooks, les applications connectées, les valeurs par défaut des bots et les politiques de l'organisation (accès complet, marchés et leurs jetons, application GitHub). Elle change les réglages de sécurité et de paiement pour tout le monde. Qui est admin, les droits d'outils, la fenêtre de rattachement intérimaire et les clés de fournisseurs du serveur (OpenRouter, OpenAI, Anthropic, voix, Composio...) restent aux admins.",
     },
   },
   {
