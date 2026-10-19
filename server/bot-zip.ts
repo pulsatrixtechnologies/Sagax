@@ -31,6 +31,7 @@
 // copy without host settings (memberImportReset), and a rollback that
 // removes everything the import wrote when any step fails.
 import { botRuntimeSettingsShape } from "./bot-runtime-settings.ts";
+import { exportedSecretFile, registrySettingsPath, withoutRegistrySecrets } from "./workspace-backup-policy.ts";
 import { randomUUID } from "node:crypto";
 import { closeSync, createWriteStream, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
@@ -210,7 +211,22 @@ interface PlanFile {
   scrub: boolean;
 }
 
-/** Files under `root`, never following a link, skipping `node_modules`. */
+/** A `.npmrc` or `.yarnrc.yml` with a registry token in it (or unreadable). */
+function registryHoldsSecret(rel: string, path: string): boolean {
+  try { return withoutRegistrySecrets(rel, readFileSync(path, "utf8")) !== null; } catch { return true; }
+}
+
+function startsLikeZip(path: string): boolean {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    const head = Buffer.alloc(4);
+    return readSync(fd, head, 0, 4, 0) === 4 && head.readUInt32LE(0) === 0x04034b50;
+  } catch { return false; } finally { if (fd !== undefined) closeSync(fd); }
+}
+
+/** Files under `root`, never following a link, skipping `node_modules` and
+ * every sign-in or key file (exportedSecretFile). */
 function walkFiles(root: string, options: { skip?: (rel: string) => boolean } = {}): Array<{ rel: string; path: string; size: number }> {
   const out: Array<{ rel: string; path: string; size: number }> = [];
   let rootStat;
@@ -231,6 +247,9 @@ function walkFiles(root: string, options: { skip?: (rel: string) => boolean } = 
       if (stat.isDirectory()) {
         if (!SKIPPED_DIRS.has(name)) stack.push(path);
       } else if (stat.isFile() && stat.size <= MAX_FILE_BYTES) {
+        // no sign-in or key leaves in a bot export (JC 2026-10-18 « Exclure tout »)
+        if (exportedSecretFile(rel, () => startsLikeZip(path))) continue;
+        if (registrySettingsPath(rel) && registryHoldsSecret(rel, path)) continue;
         out.push({ rel, path, size: stat.size });
       }
     }

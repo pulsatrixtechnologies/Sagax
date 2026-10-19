@@ -299,6 +299,30 @@ describe("bot zip round trip", () => {
   });
 });
 
+describe("bot zip: no sign-in or key file (JC 2026-10-18 « Exclure tout »)", () => {
+  it("leaves out sign-in files, keys and sealed stores of the desk and the work folders, and keeps a Keynote document", async () => {
+    const fx = fixture();
+    const source = richBot(fx);
+    const desk = workspaceDir(source.id);
+    const work = join(DATA_DIR, "task-workspaces", source.id, source.threadId);
+    mkdirSync(join(desk, ".ssh"), { recursive: true });
+    mkdirSync(work, { recursive: true });
+    const marker = "FAKE_SECRET_DO_NOT_USE";
+    for (const [dir, name] of [[desk, ".netrc"], [desk, ".git-credentials"], [desk, "server.pem"], [desk, "vault.enc"], [desk, "tls.key"], [desk, ".env"], [join(desk, ".ssh"), "config"],
+      [work, "id_ed25519"], [work, ".pypirc"], [work, ".npmrc"]] as const) writeFileSync(join(dir, name), name === ".npmrc" ? `//r.example/:_authToken=${marker}\n` : `${marker} ${name}`);
+    writeFileSync(join(desk, ".env.example"), "API_KEY=\n");
+    writeFileSync(join(desk, "talk.key"), Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from("KEYNOTE")]));
+    const inspected = inspectBotZip(await exportToFile(fx.host, source.id));
+    if (inspected.kind !== "zip") throw new Error("zip expected");
+    const names = inspected.reader.under("");
+    const text = Buffer.concat(names.map((name) => inspected.reader.read(name))).toString("latin1");
+    expect(text.includes(marker)).toBe(false);
+    expect(names).toContain("workspace/talk.key");
+    expect(names).toContain("workspace/.env.example");
+    inspected.reader.close();
+  });
+});
+
 describe("bot zip import rules", () => {
   it("a member's copy drops computer, browser and host tools, and Full access arrives as Ask", async () => {
     const fx = fixture({ organization: true });

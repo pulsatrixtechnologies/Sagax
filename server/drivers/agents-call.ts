@@ -551,6 +551,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const r = await api("/api/internal/coordinate-bots", { method: "POST", body: JSON.stringify({
       groupId: canonical.group_id, botIds: ids, message: canonical.message,
       rework: canonical.rework,
+      ...(canonical.mode === "work" || canonical.mode === "consult" ? { mode: canonical.mode } : {}),
     }) });
     return { text: JSON.stringify(r), ...(r.error ? { isError: true } : {}) };
   }
@@ -1112,7 +1113,8 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       method: "POST",
       body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, routineId }),
     });
-    return { text: `Started a run of routine ${routineId}${typeof r.runId === "string" ? ` (run ${r.runId})` : ""}. It runs on its own; check list_routines for the result.` };
+    const note = typeof r.message === "string" ? ` ${r.message}` : " It runs on its own.";
+    return { text: `${r.alreadyRunning === true ? "Joined the run already under way" : "Started a run"} of routine ${routineId}${typeof r.runId === "string" ? ` (run ${r.runId})` : ""}.${note} Check list_routines for the result.` };
   }
   if (name === "propose_routine") {
     const { fields: routine, error: scheduleError } = routineFields(args);

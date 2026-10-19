@@ -9,7 +9,7 @@ import { Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { api, useStore } from "@/state/store";
+import { api, useStoreOptional } from "@/state/store";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { HelpTip, SettingsGroup } from "../SettingsPrimitives";
 import type { OwnerRuleRow } from "../bot-settings/OwnerPermissionsCard";
@@ -24,11 +24,11 @@ export function myRulesInOrder(rules: readonly OwnerRuleRow[], botName: (id: str
 }
 
 export function MyApprovalRules() {
-  const { state } = useStore();
+  const bots = useStoreOptional()?.state.bots ?? [];
   const [rules, setRules] = useState<OwnerRuleRow[] | null>(null);
   const [removing, setRemoving] = useState<OwnerRuleRow | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const botName = useCallback((id: string) => state.bots.find((bot) => bot.id === id)?.name ?? id, [state.bots]);
+  const botName = useCallback((id: string) => bots.find((bot) => bot.id === id)?.name ?? id, [bots]);
   const load = useCallback(() => api<{ rules: OwnerRuleRow[] }>("/api/approval-rules")
     .then((body) => setRules(body.rules ?? []))
     .catch(() => setRules([])), []);

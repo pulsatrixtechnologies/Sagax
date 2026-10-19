@@ -761,6 +761,49 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   { methods: ["GET", "POST"], path: /^\/api\/instances\/[\w.-]+\/api-key$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/[\w.-]+\/(?:refresh-models|install|auth\/start|auth\/complete|auth\/cancel|auth\/sign-out|claude-update)$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/(?:claude|chatgpt)-accounts$/, permission: "engines.manage" },
+  // 2026-10-19 (JC): the four admin keys an admin may now give in Perspicax.
+  // What changes admin rights stays admin scope (no row here): a backup
+  // restore, the tool grants, the sign-in lists, attaching an interim
+  // person. Handlers still refuse a delegate who acts on an admin
+  // (people.manage) or on the fields that make admins (server.settings).
+  // host.shell: the server's own setup
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/command-allowlist$/, permission: "host.shell" },
+  { methods: ["GET", "DELETE"], path: /^\/api\/auto-review\/rules(?:\/[^/]{1,300})?$/, permission: "host.shell" },
+  { methods: ["GET"], path: /^\/api\/org\/approvals$/, permission: "host.shell" },
+  { methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], path: /^\/api\/mcp\/servers(?:\/import|\/[^/]{1,128}(?:\/(?:test|rename|oauth\/(?:start|disconnect|probe|status)))?)?$/, permission: "host.shell" },
+  { methods: ["GET"], path: /^\/api\/mcp\/tool-names$/, permission: "host.shell" },
+  { methods: ["GET"], path: /^\/api\/cli-candidates$/, permission: "host.shell" },
+  { methods: ["POST"], path: /^\/api\/cli-test$/, permission: "host.shell" },
+  { methods: ["GET", "POST", "PATCH"], path: /^\/api\/team-computers(?:\/[\w.-]+(?:\/(?:provision|join|sleep|control))?)?$/, permission: "host.shell" },
+  { methods: ["GET", "POST"], path: /^\/api\/computers\/(?:boxes|vps)(?:\/[\w.-]+\/(?:sleep|delete|remove))?$/, permission: "host.shell" },
+  { methods: ["GET", "POST"], path: /^\/api\/local-computer(?:\/(?:instances|pull|run|start|stop|remove|screenshot|interrupt|ensure|reset))?$/, permission: "host.shell" },
+  { methods: ["GET", "PUT", "POST"], path: /^\/api\/computer\/(?:maintenance|disk-saver)$/, permission: "host.shell" },
+  { methods: ["POST"], path: /^\/api\/browser-engine\/install$/, permission: "host.shell" },
+  // backup.workspace: the export, never the restore
+  { methods: ["GET", "POST"], path: /^\/api\/workspace-backup\/(?:status|client-state|export|download\/[\w.-]{1,200})$/, permission: "backup.workspace" },
+  // server.settings
+  { methods: ["PUT", "PATCH"], path: /^\/api\/config$/, permission: "server.settings" },
+  { methods: ["POST"], path: /^\/api\/keys\/test$/, permission: "server.settings" },
+  { methods: ["POST"], path: /^\/api\/webhooks$/, permission: "server.settings" },
+  { methods: ["POST"], path: /^\/api\/webhooks\/[\w-]+\/(?:rotate|test|reveal)$/, permission: "server.settings" },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/webhooks\/[\w-]+$/, permission: "server.settings" },
+  { methods: ["PATCH"], path: /^\/api\/org\/settings$/, permission: "server.settings" },
+  { methods: ["PUT", "DELETE"], path: /^\/api\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, permission: "server.settings" },
+  { methods: ["PUT"], path: /^\/api\/tts\/provider$/, permission: "server.settings" },
+  { methods: ["PUT"], path: /^\/api\/harness-connectors\/settings$/, permission: "server.settings" },
+  { methods: ["POST"], path: /^\/api\/decider\/test$/, permission: "server.settings" },
+  { methods: ["GET", "POST", "PUT", "DELETE"], path: /^\/api\/connectors(?:\/[\w.-]{1,128}(?:\/[\w.-]{1,128}){0,3})?$/, permission: "server.settings" },
+  { methods: ["GET", "POST"], path: /^\/api\/bot-defaults(?:\/(?:skills\/preview|avatar))?$/, permission: "server.settings" },
+  // (the custom domain stays an admin's: pairing and invite links use it)
+  { methods: ["PATCH"], path: /^\/api\/live\/settings$/, permission: "server.settings" },
+  // people.manage: never on an admin (checked in each handler)
+  { methods: ["GET"], path: /^\/api\/auth\/sessions$/, permission: "people.manage" },
+  { methods: ["DELETE"], path: /^\/api\/auth\/sessions\/[\w-]+$/, permission: "people.manage" },
+  { methods: ["GET"], path: /^\/api\/auth\/pairing$/, permission: "people.manage" },
+  { methods: ["DELETE"], path: /^\/api\/auth\/pairing\/[\w-]+$/, permission: "people.manage" },
+  { methods: ["GET", "POST"], path: /^\/api\/org\/people\/[\w-]+\/connections(?:\/revoke)?$/, permission: "people.manage" },
+  { methods: ["POST"], path: /^\/api\/org\/bots\/[\w-]+\/force-(?:stop|delete)$/, permission: "people.manage" },
+  { methods: ["GET", "POST"], path: /^\/api\/admin\/pages(?:\/[\w-]+\/revoke)?$/, permission: "people.manage" },
 ];
 
 /** The permission that opens this admin-scope route to a person, or null. */
@@ -798,9 +841,12 @@ export const memberBotFieldViolation = sharedMemberBotFieldViolation;
 /** The capabilities block GET /api/config puts on `viewer`. An admin scope
  * may edit the installation. Pairing is also open to an organization member
  * when org pairing is on (the route itself stays the gate). */
-export function capabilitiesForAuth(auth: { scopes: readonly string[] }, options: { orgPairing: boolean; viewUsage?: boolean }): ViewerCapabilities {
+export function capabilitiesForAuth(auth: { scopes: readonly string[] }, options: { orgPairing: boolean; viewUsage?: boolean; editConfig?: boolean; manageComputers?: boolean; manageBackups?: boolean }): ViewerCapabilities {
   const admin = auth.scopes.includes("admin");
-  return viewerCapabilities({ admin, pairDevices: admin || options.orgPairing, viewUsage: options.viewUsage });
+  return viewerCapabilities({
+    admin, pairDevices: admin || options.orgPairing, viewUsage: options.viewUsage,
+    editConfig: options.editConfig, manageComputers: options.manageComputers, manageBackups: options.manageBackups,
+  });
 }
 
 /** What the computer owner's paired phone (through the companion sidecar)

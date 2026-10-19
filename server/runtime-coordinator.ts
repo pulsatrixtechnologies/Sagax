@@ -195,8 +195,12 @@ export class RuntimeCoordinator implements Coordinator {
 
   // ── enqueue ──────────────────────────────────────────────────────────
 
+  /** `mode`: "work" (the default) is refused back up its own tree; "consult"
+   * is a question, allowed to an ancestor (the bot that sent the work);
+   * "auto" is a consultation when the target is an ancestor, else work. */
   enqueue(source: RoomAddress, generation: string, parentId: string | undefined, target: RoomAddress, _key: string, text: string,
-    approvalGranted = false, rework = false, sourceText = "", requestBatchKey?: string, origin?: WorkOrigin): { node: HandoffView; duplicate: boolean } {
+    approvalGranted = false, rework = false, sourceText = "", requestBatchKey?: string, origin?: WorkOrigin,
+    mode: "work" | "consult" | "auto" = "work", person?: string): { node: HandoffView; duplicate: boolean; joined?: boolean } {
     this.ready();
     let parent = parentId ? this.store.get(parentId) : this.store.get(generation);
     if (parent && parent.status !== "running") throw new Error(NOT_RUNNING);
@@ -216,17 +220,20 @@ export class RuntimeCoordinator implements Coordinator {
           ...(source.groupId ? { groupId: source.groupId } : {}) } },
         brief: sourceText.slice(0, BRIEF_MAX),
         level: this.host.levelOf(source).level,
+        ...(person ? { person } : {}),
       });
     }
     // The legacy rules, in the legacy order, with the legacy words.
     const lineage = path(this.store, parent);
-    if (lineage.some(n => ancestorOf(address(n), target))) throw new Error(ANCESTOR);
+    const upTree = lineage.some(n => ancestorOf(address(n), target));
+    const asked: "work" | "consult" = mode === "auto" ? (upTree ? "consult" : "work") : mode;
+    if (upTree && asked === "work") throw new Error(ANCESTOR);
     const siblings = this.store.children(parent.id);
     const existing = siblings.findLast(c => c.assignee.botId === target.botId && c.assignee.destination.groupId === target.groupId && c.brief === brief);
     if (existing && !(rework && isTerminal(existing))) return { node: view(existing, parent), duplicate: true };
     if (!rework && siblings.some(c => kindOf(c.assignee.destination.groupId, parent) === kind && c.assignee.destination.groupId === target.groupId &&
       c.assignee.botId === target.botId && c.status === "completed")) throw new Error(ALREADY_COMPLETED);
-    if (kind === "work" && target.groupId && lineage.some(n => n.assignee.destination.groupId === target.groupId)) throw new Error(ROOM_ANCESTOR);
+    if (asked === "work" && kind === "work" && target.groupId && lineage.some(n => n.assignee.destination.groupId === target.groupId)) throw new Error(ROOM_ANCESTOR);
     const level = this.host.levelOf(target);
     const result = this.runtime.enqueue({
       parentId: parent.id,
@@ -234,7 +241,7 @@ export class RuntimeCoordinator implements Coordinator {
       requester: { kind: "bot_turn", botId: parent.assignee.botId, threadId: parent.assignee.destination.threadId, chief: this.host.chiefOf(address(parent)) },
       assignee: { botId: target.botId, destination: { kind: target.groupId ? "room_thread" : "work_thread", threadId: target.threadId,
         ...(target.groupId ? { groupId: target.groupId } : {}) } },
-      mode: "work", reply: "resume", brief: text, rework,
+      mode: asked, reply: "resume", brief: text, rework,
       levels: { own: level.level },
       ...(level.driverKind !== undefined ? { driverKind: level.driverKind } : {}),
       approved: approvalGranted,
@@ -244,7 +251,7 @@ export class RuntimeCoordinator implements Coordinator {
       if (result.outcome === "budget") throw new Error(BUDGET);
       throw new Error(RUNTIME_DEPTH.test(result.reason) ? DEPTH : result.reason);
     }
-    return { node: view(result.assignment, parent), duplicate: result.duplicate };
+    return { node: view(result.assignment, parent), duplicate: result.duplicate, ...(result.assignment.joins !== undefined ? { joined: true } : {}) };
   }
 
   /** A room brief is displayed once; each recipient keeps its own execution and result. */

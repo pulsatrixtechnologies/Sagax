@@ -401,14 +401,15 @@ describe("resolveRequestAuth", () => {
     expect(gate("GET", "/api/usage.csv").auth?.kind).toBe("session");
     // a solo server (no orgDirectory) never opens it
     expect(gate("GET", "/api/usage", {})).toMatchObject({ auth: null, error: "forbidden: this session lacks the admin scope" });
-    // a route no permission opens keeps the scope refusal
-    expect(gate("PUT", "/api/config")).toMatchObject({ auth: null, error: "forbidden: this session lacks the admin scope" });
-    expect(gate("PUT", "/api/config").permission).toBeUndefined();
+    // a route no permission opens keeps the scope refusal (2026-10-19: tool
+    // grants change admin rights)
+    expect(gate("GET", "/api/tool-grants")).toMatchObject({ auth: null, error: "forbidden: this session lacks the admin scope" });
+    expect(gate("GET", "/api/tool-grants").permission).toBeUndefined();
     held.add("engines.manage");
     expect(gate("PATCH", "/api/instances/codex").auth?.kind).toBe("session");
     expect(gate("POST", "/api/instances/codex/install").auth?.kind).toBe("session");
-    // never the CLI test, which runs a program
-    expect(gate("POST", "/api/cli-test").auth).toBeNull();
+    // never the CLI test, which runs a program: that is host.shell
+    expect(gate("POST", "/api/cli-test")).toMatchObject({ auth: null, permission: "host.shell" });
   });
 
   it("maps admin-scope routes to permissions only with the organization directory", () => {
@@ -421,7 +422,19 @@ describe("resolveRequestAuth", () => {
     expect(routePermission("PUT", "/api/skills-library/my-skill", org)).toBe("skills.library");
     expect(routePermission("POST", "/api/instances/claude-accounts", org)).toBe("engines.manage");
     expect(routePermission("POST", "/api/instances/claude/leftover-files/remove", org)).toBeNull();
-    expect(routePermission("PUT", "/api/mcp/servers/x", org)).toBeNull();
+    // 2026-10-19: the four admin keys an admin gives in Perspicax
+    expect(routePermission("PUT", "/api/mcp/servers/x", org)).toBe("host.shell");
+    expect(routePermission("PATCH", "/api/config", org)).toBe("server.settings");
+    expect(routePermission("PATCH", "/api/org/settings", org)).toBe("server.settings");
+    expect(routePermission("GET", "/api/workspace-backup/status", org)).toBe("backup.workspace");
+    expect(routePermission("POST", "/api/workspace-backup/export", org)).toBe("backup.workspace");
+    expect(routePermission("DELETE", "/api/auth/sessions/abc", org)).toBe("people.manage");
+    // never what changes admin rights
+    expect(routePermission("POST", "/api/workspace-backup/restore", org)).toBeNull();
+    expect(routePermission("POST", "/api/workspace-backup/upload", org)).toBeNull();
+    expect(routePermission("POST", "/api/workspace-backup/preview", org)).toBeNull();
+    expect(routePermission("GET", "/api/tool-grants", org)).toBeNull();
+    expect(routePermission("POST", "/api/org/interim-people/attach", org)).toBeNull();
     expect(routePermission("GET", "/api/usage", {})).toBeNull();
     // every route a permission opens is admin scope to begin with
     for (const [method, path] of [["GET", "/api/usage"], ["GET", "/api/admin-activity"], ["GET", "/api/marketplaces"], ["GET", "/api/skills-library"], ["PATCH", "/api/instances/codex"]] as const) {

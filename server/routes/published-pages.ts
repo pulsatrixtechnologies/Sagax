@@ -300,6 +300,9 @@ export interface PublishedPageRouteDeps {
   reachable(origin: string): boolean;
   /** An organization admin (the admin routes below). */
   isAdmin?(auth: RequestAuth): boolean;
+  /** 2026-10-19: whether this caller may act on this person's page (a
+   * person an admin gave people.manage never revokes an admin's). */
+  mayActOn?(auth: RequestAuth, ownerPrincipalId: string): boolean;
   /** Write an admin activity row (category security) for an admin's act. */
   audit?(auth: RequestAuth, req: IncomingMessage, row: { action: string; target: { kind: string; id: string; name?: string } }): void;
   now?(): number;
@@ -337,6 +340,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       if (revoke && method === "POST") {
         const page = deps.pages.get(revoke[1]!);
         if (!page) return json(res, 404, { error: "This page does not exist.", code: "not_found" });
+        if (deps.mayActOn && !deps.mayActOn(auth, page.ownerId ?? "")) return json(res, 403, { error: "Only an organization admin can revoke an admin's page.", code: "target_is_admin" });
         const result = deps.pages.revoke(page.id, deps.owner(auth) ?? "admin");
         if (failed(result)) return json(res, result.status, { error: result.error, code: result.code });
         const title = result.versions.at(-1)?.title;

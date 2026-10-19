@@ -8,7 +8,7 @@ import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.
 import { RoutineManager, type RoutineRun } from "./routines.ts";
 import { waitForExit } from "./testing/cleanup.ts";
 
-it("recovers queued/due work without resurrecting an interrupted routine after restart", async () => {
+it("recovers queued/due work and resumes an interrupted routine once, without its stale handoffs, after restart", async () => {
   const fixture = await launchVerificationServer();
   const { url, dataDir, logPath } = fixture.info;
   let restarted: ChildProcess | undefined;
@@ -51,7 +51,7 @@ it("recovers queued/due work without resurrecting an interrupted routine after r
       enabled: false, schedule: { type: "daily", time: "09:00", weekdays: [1] },
     })).routine;
     const interrupted = (await api("POST", "/api/routines", {
-      name: "Interrupted peer work", prompt: "Do not resume after recovery", botId: interruptedBot.id,
+      name: "Interrupted peer work", prompt: "Resume once after recovery", botId: interruptedBot.id,
       enabled: false, schedule: { type: "daily", time: "09:00", weekdays: [1] },
     })).routine;
     await waitForExit(fixture.child, { signal: "SIGTERM" });
@@ -75,7 +75,7 @@ it("recovers queued/due work without resurrecting an interrupted routine after r
       id: "interrupted-run", routineId: interrupted.id, routineName: interrupted.name,
       prompt: interrupted.prompt, target: "bot", botId: interruptedBot.id, runOn: "maus",
       scheduledFor: dueAt, createdAt: dueAt, startedAt: dueAt, manual: true,
-      status: "waiting", threadId: interruptedBot.threadId,
+      status: "running", threadId: interruptedBot.threadId,
     });
     disk.runs.push({
       id: "historical-run", routineId: "historical-routine", routineName: "Previously completed work",
@@ -120,7 +120,7 @@ it("recovers queued/due work without resurrecting an interrupted routine after r
       expect(restarted.exitCode, `restarted server exited; see ${logPath}`).toBeNull();
       try {
         runs = (await api("GET", "/api/routines")).runs;
-        if ([scheduled.id, manual.id, cron.id].every((id) => runs.some((run) => run.routineId === id && run.status === "completed"))) break;
+        if ([scheduled.id, manual.id, cron.id, interrupted.id].every((id) => runs.some((run) => run.routineId === id && run.status === "completed"))) break;
       } catch {
         // The exact replacement child is still starting its listener.
       }
@@ -130,7 +130,8 @@ it("recovers queued/due work without resurrecting an interrupted routine after r
       expect.objectContaining({ routineId: scheduled.id, scheduledFor: dueAt, status: "completed" }),
       expect.objectContaining({ routineId: cron.id, scheduledFor: cronDueAt, status: "completed" }),
       expect.objectContaining({ id: queued.id, routineId: manual.id, status: "completed" }),
-      expect.objectContaining({ id: "interrupted-run", status: "failed", error: expect.stringContaining("restarted") }),
+      // Cut once: resumed in its own thread and finished there.
+      expect.objectContaining({ id: "interrupted-run", status: "completed", restartResumes: 1 }),
     ]));
     expect(runs.filter(run => run.routineId === cron.id && run.scheduledFor < Math.floor(Date.now() / 60_000) * 60_000)).toHaveLength(1);
     const restoredCron = (await api("GET", "/api/routines")).routines.find((routine: { id: string }) => routine.id === cron.id);

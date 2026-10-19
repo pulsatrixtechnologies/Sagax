@@ -126,13 +126,15 @@ describe("member admin audit, section 4: permission keys", () => {
     expect(can({ admin: false, permissions: ["host.commands"] }, "host.commands")).toBe(true);
     expect(can({ admin: true, permissions: [] }, "host.commands")).toBe(true);
   });
-  it.each(["host.shell", "backup.workspace", "server.settings", "people.manage", "server.link"] as const)("%s stays an admin's in this pass, and the document says so", (key) => {
-    expect(ADMIN_ONLY_PERMISSIONS).toContain(key);
-    expect(can({ admin: false, permissions: [key] }, key)).toBe(false);
+  it.each(["host.shell", "backup.workspace", "server.settings", "people.manage"] as const)("%s is given in Perspicax (2026-10-19), and the document says so", (key) => {
+    expect(ADMIN_ONLY_PERMISSIONS).not.toContain(key);
+    expect(can({ admin: false, permissions: [] }, key)).toBe(false);
+    expect(can({ admin: false, permissions: [key] }, key)).toBe(true);
     expect(can({ admin: true, permissions: [] }, key)).toBe(true);
     expect(DOC).toContain(`\`${key}\``);
   });
-  it("nothing else is admin only", () => {
-    expect([...ADMIN_ONLY_PERMISSIONS].sort()).toEqual(["backup.workspace", "host.shell", "people.manage", "server.link", "server.settings"]);
+  it("only server.link stays admin only: it decides who reaches the server at all", () => {
+    expect([...ADMIN_ONLY_PERMISSIONS]).toEqual(["server.link"]);
+    expect(can({ admin: false, permissions: ["server.link"] }, "server.link")).toBe(false);
   });
 });

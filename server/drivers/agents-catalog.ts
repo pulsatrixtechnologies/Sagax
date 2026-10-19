@@ -307,6 +307,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
       bot_ids: { type: "array", items: { type: "string", description: "A teammate's id exactly as list_bots or your roster prints it ([id: …]). A teammate's unique display name also resolves; a name shared by two reachable teammates is refused." }, minItems: 1, maxItems: 4, uniqueItems: true },
       message: { type: "string", minLength: 1, maxLength: 4000, description: "Question or task for these teammates; later requests in the same conversation can build on earlier ones. Send separate requests when responsibilities differ." },
       rework: { type: "boolean", description: "True only to send concrete work again to someone whose request already finished or failed: a correction, a re-check or a retry." },
+      mode: { type: "string", enum: ["work", "consult"], description: "consult: a question only, allowed to the bot that sent you this work. Default: consult for that bot, else work." },
     }, required: ["bot_ids", "message"] },
   },
   {
@@ -1029,7 +1030,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "run_routine",
     description:
-      "Run one of this bot's own routines now, once. Get the routine id from list_routines. The schedule and the Active switch stay as they are; a paused routine runs and stays paused. Refused while a run of that routine is already in progress.",
+      "Run one of this bot's own routines now, once. Get the routine id from list_routines. The schedule and the Active switch stay as they are; a paused routine runs and stays paused. It waits while busy, then starts; a run already in progress is returned, never doubled.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

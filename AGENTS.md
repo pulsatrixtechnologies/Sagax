@@ -410,6 +410,87 @@ remembered, exported, logged or shared beyond its owner
   `src/components/ChatView.confidential.test.ts`,
   `ios/Tests/CompanionCoreTests/ConfidentialThreadTests.swift`.
 
+## Workspace backup: no secret at all (2026-10-18)
+
+JC, 15:55: « Exclure tout ». A workspace backup (`.sagaxbackup`,
+`server/workspace-backup.ts`, also what a cloud move and the desktop's
+company backups carry) holds no secret: every rule is in
+`server/workspace-backup-policy.ts`, covered by
+`workspace-backup-policy.test.ts` and `workspace-backup.test.ts` (one test
+fills every location below with obvious fakes and scans every byte of the
+decrypted archive, the staging and the restored folder).
+
+- `savedSignInPath` (never exported, never installed by a restore):
+  - in an engine home (`principals/<id>/<engine>`, `principals/<id>/<driver>-key`,
+    `org/<x>`, `engine-policies/<x>`): `.credentials.json`, `auth.json`,
+    `mcp_credentials.json`, `oauth_creds.json`, `.env`, `credentials/`
+    (Kimi), `.ssh/`, `.aws/`, `.docker/`, `gh/`, any `.pem`/`.enc`/`.key`
+    and the like (`engineCredentialPath`, list in the file), Sagax's
+    `.pulsabot-login.json` marker and Claude's `.claude.json.backup*`;
+  - anywhere, even a work folder: `.netrc`, `_netrc`, `.git-credentials`,
+    `.pypirc`, `.pgpass`, SSH private keys (`credentialFileName`; reconnect
+    category `files`); `.npmrc` and `.yarnrc.yml` are copied without their
+    tokens (`withoutRegistrySecrets`);
+  - every sealed store or key of a person, `principals/<id>/*.enc` and
+    `*.key` (`connections.enc`, `credential-vault.enc`, `engine-api-keys.enc`,
+    `mcp-oauth.enc`, `cloud-agent-credentials.enc`, any future one);
+  - every `*.enc` and `*.key` at ANY depth outside the person's own files
+    (`attachments/`, `task-workspaces/`, `workspaces/`, where a `.key` may be
+    a Keynote document), with copy suffixes (`.bak`, `.lock`, `.tmp`,
+    `.previous`, `.1.tmp`, `~`), at the top of the data folder
+    (`marketplace-tokens.enc`, `idp-revocations.enc`, the HMAC keys
+    `agent-api.key`, `media-proxy.key`, `published-pages.key`,
+    `template-links.key`, any future one) and `push-devices/`.
+  A new secret store goes there by name (`.enc` or `.key` already does),
+  never in `excludedWorkspaceAuthPath`, which refuses the whole archive.
+- Engine settings files (`engineSettingsPath`: `.claude.json`,
+  `settings.json`, `config.toml`, `config.yaml`, `models.json`,
+  `opencode.json`, the MCP files) are copied by `withoutEngineSecrets`:
+  without any key whose name holds a secret word (`secretFieldName`: words
+  of the name, so `openai_api_key`, `github_token`, `apiToken`, `GITHUB_PAT`,
+  `db_password`, `credentials`, any name ending in `key`: `key`,
+  `OPENAI_KEY`; not `api_key_env`, `envKey`, `max_tokens`, `sort_key`),
+  without any value shaped like a key (`secretValue`: `sk-`, `ghp_`, JWT,
+  `Bearer`, PEM, `user:pass@` URL, also inside `args`), the argument after
+  a secret flag (`--token <v>`, `--api-key=<v>`) and without the
+  values of every `env` and `headers` map. TOML: dotted keys, inline tables,
+  `[x.env.y]` tables, multi-line arrays and strings (small reader in the
+  file). YAML: parsed by `yaml` and edited in place (flow maps, block and
+  folded values, sequences). A file that does not parse is left out with a
+  warning.
+- `config.json` keeps only `PORTABLE_CONFIG_KEYS` (none holds a secret);
+  `webhooks.json` loses `secretHash`, `pendingToken`, `signingSecret`,
+  `graphSubscription`; a `*_FILE` variable's file inside the data folder (the
+  Perspicax link file) is never exported and stays in place.
+- The destination keeps its own: top-level ones stay in place
+  (`destinationSignInFile`, `keptInPlace`; a missing HMAC key is made again
+  at start, so old shared links change only on another machine), and
+  `carryDestinationSecrets` puts the destination's own secrets back into
+  the restored tree, only under `org/`, `engine-policies/` and
+  `principals/<id>/` when the archive's principals.json names the same
+  person behind that id (subject, else local operator, else email;
+  `samePrincipals`), never elsewhere
+  (and the Claude sign-in fields into a restored `.claude.json`).
+- An older archive that holds them still restores: `withoutEngineCredentials`
+  drops them at staging (manifest recounted, warnings) and `prepareRestore`
+  never installs them.
+- The summary's `reconnect` (`ReconnectTally`, shared
+  `WORKSPACE_BACKUP_RECONNECT`) counts by category what the source held:
+  engines (per engine home, with people), provider keys, connections,
+  credential vault, MCP, GitHub, cloud agents, triggers, phones, shared
+  links, engine settings. Counts only, never a name or a value. The restore
+  preview and Settings > Backups after the restore (`GET
+  /api/workspace-backup/status` `lastRestoreReconnect`) show it
+  (`WorkspaceBackupReconnectList`, keys `backup.reconnect.*`).
+- A bot export (`server/bot-zip.ts` walkFiles) leaves out the same sign-in
+  files, `.enc`, `.pem`, `.p12`, `.pfx`, a `.key` that is not a Keynote zip,
+  `.env` (not its templates), `.ssh/`, `.aws/`, `.docker/` and an `.npmrc`
+  with a token (`exportedSecretFile`).
+- `comms-tokens/` and an engine home's `tmp/`, `.tmp/`, `.cache/`,
+  `Library/Caches/` (`disposableEngineHomePath`) are never exported.
+- Not covered: secrets a person typed into a conversation, a note or a
+  project file (the export warns), and secrets in engine transcripts.
+
 ## Meetings: the bot takes notes (2026-10-16)
 
 `join_meeting` (`server/meetings/`, card `meetingRequest`, UI

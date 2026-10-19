@@ -230,6 +230,9 @@ export interface RoutineRun {
   /** When the one-per-run deferral notice was raised, so restarts and repeat
    * ticks stay quiet. */
   deferredNoticeAt?: number;
+  /** Times a restart cut this run and the next start resumed it in place
+   * (at most once; a second cut fails it with ROUTINE_RESTARTED). */
+  restartResumes?: number;
   /** Why this receipt exists. Kept optional so version-1 files migrate in place. */
   triggerSource?: RoutineRunTrigger;
   webhookId?: string;
@@ -368,6 +371,10 @@ export interface RoutineManagerOptions {
   /** When set, run this bot's routine in that existing conversation instead of
    * a new hidden task. Room goals never use it. */
   joinConversation?: (run: RoutineRun) => string | null;
+  /** Whether that conversation is working right now. A run that joins a
+   * busy conversation waits in the queue (deferred, visible on its card) and
+   * starts once the conversation is free, instead of failing on it. */
+  threadBusy?: (botId: string, threadId: string) => boolean;
   createGoalTask?: (groupId: string, title: string) => { threadId: string } | null;
   isResultsThread?: (botId: string, threadId: string) => boolean;
   /** Reuse a chosen routine.resultsThreadId, else the bot's main thread
@@ -475,6 +482,13 @@ const WAKE_HORIZON_MS = 60 * 60_000;
 export const ROUTINE_DEFERRAL_NOTICE_MS = 30 * 60_000;
 /** Why a run still going when the server stopped failed at the next start. */
 export const ROUTINE_RESTARTED = "Sagax restarted while this routine was running";
+/** The continuation a run cut by a restart resumes with, in its own thread. */
+export const ROUTINE_RESUME_PROMPT = "Sagax restarted while this routine run was working and cut it off; this turn continues it. First check what the cut turn already did (records written or sent, files, messages) so nothing is done twice, then finish the routine and report as usual. A restart alone is not a blocker.";
+/** How many times one run is resumed after a restart before it fails. */
+const ROUTINE_RESTART_RESUMES = 1;
+/** Errors of a start that only met a busy conversation or bot: the run goes
+ * back to the queue instead of failing. */
+const BUSY_START = new Set(["thread_busy", "thread_limit"]);
 const MAX_DATE_MS = 8_640_000_000_000_000;
 const LOCAL_DAY_MS = 24 * 60 * 60_000;
 const INTERVAL_RESTRICTION_SEARCH_MS = 9 * LOCAL_DAY_MS;
@@ -997,6 +1011,9 @@ export class RoutineManager {
   private routineRequestReceipts: RoutineRequestReceipt[] = [];
   private webhookRunReceipts: WebhookRunReceipt[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
+  private paused = false;
+  /** Run ids the constructor kept running after a restart (takeRestartResumes). */
+  private readonly restartResumes: string[] = [];
   private ticking = false;
   /** The file existed but could not be read (corrupt JSON or a schema
    * failure). Saves are refused while set so a fresh empty state can never
@@ -1128,8 +1145,22 @@ export class RoutineManager {
       }
     }
     // A local process cannot still own these turns after a full restart.
+    // A bot run cut once resumes in its own thread (takeRestartResumes);
+    // a room goal, or a run cut a second time, fails as before.
     const recovered: RoutineRun[] = [];
+    let resumable = false;
     for (const run of this.runs) {
+      // Only a run whose turn was working: a waiting one (an approval, its
+      // teammates) fails as before, its card or the runtime owns what's next.
+      if (run.status === "running" && run.target === "bot" && run.threadId &&
+        (run.restartResumes ?? 0) < ROUTINE_RESTART_RESUMES) {
+        run.status = "running";
+        run.restartResumes = (run.restartResumes ?? 0) + 1;
+        run.attention = undefined;
+        this.restartResumes.push(run.id);
+        resumable = true;
+        continue;
+      }
       if (run.status === "running" || run.status === "waiting") {
         run.status = "failed";
         if (run.target === "room-goal") run.goalStatus = "failed";
@@ -1139,7 +1170,7 @@ export class RoutineManager {
         recovered.push(cloneRun(run));
       }
     }
-    if (recovered.length > 0) {
+    if (recovered.length > 0 || resumable) {
       this.save();
       for (const run of recovered) {
         this.notifyRunChanged(run);
@@ -1297,9 +1328,20 @@ export class RoutineManager {
     );
   }
 
+  /** The run of this thread: the active one first (a conversation several
+   * runs joined), else the first recorded. */
   runForThread(threadId: string): RoutineRun | null {
-    const run = this.runs.find((candidate) => candidate.threadId === threadId);
+    const run = this.runs.find((candidate) => candidate.threadId === threadId && ["running", "waiting"].includes(candidate.status)) ??
+      this.runs.find((candidate) => candidate.threadId === threadId);
     return run ? cloneRun(run) : null;
+  }
+
+  /** Fail this one run, whatever its thread now runs. */
+  failRunById(id: string, message: string) {
+    const run = this.runs.find((r) => r.id === id && ["running", "waiting"].includes(r.status));
+    if (!run) return;
+    this.failRun(run, message);
+    queueMicrotask(() => void this.tick());
   }
 
   create(input: RoutineInput, request?: RoutineRequestCommitFor<"create">, meta?: RoutineWriteMeta): Routine {
@@ -1739,7 +1781,21 @@ export class RoutineManager {
 
   get isTicking(): boolean { return this.ticking; }
 
+  /** The runs a restart cut that resume now, each once: the host starts
+   * ROUTINE_RESUME_PROMPT in each one's thread (failThread if it cannot). */
+  takeRestartResumes(): RoutineRun[] {
+    const ids = this.restartResumes.splice(0);
+    return this.runs.filter((run) => ids.includes(run.id) && run.status === "running").map(cloneRun);
+  }
+
+  /** Shutdown: dispatch nothing more; runs already going keep going. */
+  pause() {
+    this.paused = true;
+    this.stop();
+  }
+
   start() {
+    this.paused = false;
     if (this.timer) return;
     void this.tick();
     this.timer = setInterval(() => void this.tick(), 10_000);
@@ -1752,7 +1808,7 @@ export class RoutineManager {
   }
 
   async tick(): Promise<void> {
-    if (this.ticking) return;
+    if (this.ticking || this.paused) return;
     this.ticking = true;
     try {
       const now = this.now();
@@ -1884,24 +1940,20 @@ export class RoutineManager {
         }
         // A bot can have spare thread slots while this routine is waiting on
         // a teammate. Queue means after THIS run, not merely a free bot slot.
-        const sameRoutineWorking = triggerSource === "schedule" && this.runs.some(other =>
+        // A manual run (Run now, run_routine) waits for the routine's run in
+        // progress too: two passes of one routine never write at once.
+        const sameRoutineWorking = triggerSource !== "webhook" && this.runs.some(other =>
           other.id !== run.id && other.routineId === run.routineId && ["running", "waiting"].includes(other.status));
         const state = sameRoutineWorking ? "busy" : this.targetState(run);
         if (state === "busy") {
-          // A queued run behind a busy target is deferred, not silent. Stamp
-          // the wait once so receipts and cards can say how long it has been
-          // held; the run still dispatches the moment the target frees.
-          if (run.deferredAt == null) {
-            run.deferredAt = now;
-            this.save();
-            this.emitRun(run);
-          }
-          if (run.deferredNoticeAt == null && now - run.deferredAt >= ROUTINE_DEFERRAL_NOTICE_MS) {
-            run.deferredNoticeAt = now;
-            this.save();
-            this.emitRun(run);
-            this.options.onRunDeferred?.(cloneRun(run));
-          }
+          this.defer(run, now);
+          continue;
+        }
+        // A run that joins a conversation waits while that conversation works
+        // (the turn that asked for it, a person's): queued, never failed.
+        const joinedEarly = run.target === "room-goal" ? null : this.options.joinConversation?.(run) || null;
+        if (joinedEarly && this.options.threadBusy?.(run.botId, joinedEarly)) {
+          this.defer(run, now);
           continue;
         }
         if (state === "missing") {
@@ -1949,7 +2001,7 @@ export class RoutineManager {
         const startedAt = this.now();
         const suffix = ` · ${new Date(startedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
         const title = `${run.routineName.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;
-        const joined = run.target === "room-goal" ? null : this.options.joinConversation?.(run) || null;
+        const joined = joinedEarly;
         const task = joined
           ? { threadId: joined }
           : run.target === "room-goal"
@@ -2006,11 +2058,39 @@ export class RoutineManager {
             );
           }
         } catch (error) {
+          // The joined conversation started working between the check and
+          // the start: back to the queue, deferred, not failed.
+          const code = (error as { code?: unknown } | null)?.code;
+          if (joined && typeof code === "string" && BUSY_START.has(code) && run.status === "running" && run.threadId === joined) {
+            run.status = "queued";
+            run.threadId = undefined;
+            run.startedAt = undefined;
+            this.save();
+            this.defer(run, this.now());
+            continue;
+          }
           this.failThread(task.threadId, error instanceof Error ? error.message : String(error));
         }
       }
     } finally {
       this.ticking = false;
+    }
+  }
+
+  /** A queued run behind a busy target is deferred, not silent. The wait is
+   * stamped once so receipts and cards say how long it has been held; the
+   * run still dispatches the moment the target frees. */
+  private defer(run: RoutineRun, now: number): void {
+    if (run.deferredAt == null) {
+      run.deferredAt = now;
+      this.save();
+      this.emitRun(run);
+    }
+    if (run.deferredNoticeAt == null && now - run.deferredAt >= ROUTINE_DEFERRAL_NOTICE_MS) {
+      run.deferredNoticeAt = now;
+      this.save();
+      this.emitRun(run);
+      this.options.onRunDeferred?.(cloneRun(run));
     }
   }
 

@@ -226,6 +226,8 @@ export interface HarnessConnectorRouteDeps {
   principalFor(auth: RequestAuth): string;
   localPrincipalId(): string;
   isAdmin(auth: RequestAuth): boolean;
+  /** 2026-10-19: a person an admin gave server.settings in Perspicax. */
+  settingsDelegate?(auth: RequestAuth): boolean;
   /** The CLI and environment of the caller's own Claude account, or a
    * reason it has none. */
   claudeAccountFor(principalId: string): { cli: string; env: NodeJS.ProcessEnv; key: string } | { unavailable: "no_engine" | "not_signed_in" | "key" };
@@ -247,7 +249,7 @@ export function createHarnessConnectorRoutes(deps: HarnessConnectorRouteDeps): R
     const admin = deps.isAdmin(auth) && isAdminScope(auth);
     if (path === HARNESS_CONNECTORS_SETTINGS_PATH) {
       if (method !== "PUT") return json(res, 405, { error: "method not allowed" });
-      if (!admin) return json(res, 403, { error: "Only an administrator can change this." });
+      if (!admin && !deps.settingsDelegate?.(auth)) return json(res, 403, { error: "Only an administrator can change this." });
       if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
         return json(res, 415, { error: "content-type must be application/json" });
       }
