@@ -14,7 +14,7 @@
 //   GET  /api/code/environments
 //   GET  /api/code/runs                       ?mine, newest first, archived left out
 //   POST /api/code/runs                       { env_id, prompt, engine?, model?, title? }
-//   GET  /api/code/runs/:id                   ...and /events?after=, /stream?after= (SSE)
+//   GET  /api/code/runs/:id                   ...and /events?after=, /stream?after= (SSE, Last-Event-ID too)
 //   POST /api/code/runs/:id/(read|followup|approve|stop|archive)
 //   GET  /api/code/runs/:id/(diff|commits|files)
 import type { ServerResponse } from "node:http";
@@ -146,7 +146,7 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
       if (method === "GET") {
         if (action === "events") {
           const after = Number(url.searchParams.get("after") ?? 0) || 0;
-          return json(res, 200, { items: await deps.client.events(who, id, after) });
+          return json(res, 200, { items: await deps.client.allEvents(who, id, after) });
         }
         // A 404 on an artifact route means "not served yet" (a later
         // Perspicax lot), so the run itself is checked first.
@@ -158,7 +158,11 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
           // Seen (and the run exists) before the stream opens: a refusal is
           // still a plain JSON answer.
           await deps.client.run(who, id);
-          const after = Number(url.searchParams.get("after") ?? 0) || 0;
+          // An EventSource reconnects with its first URL and Last-Event-ID:
+          // resume after the larger, as Perspicax does.
+          const lastHeader = req.headers["last-event-id"];
+          const lastId = Number(Array.isArray(lastHeader) ? lastHeader[0] : lastHeader ?? 0) || 0;
+          const after = Math.max(0, Number(url.searchParams.get("after") ?? 0) || 0, lastId);
           const abort = new AbortController();
           const cap = setTimeout(() => abort.abort(), STREAM_MAX_MS);
           cap.unref?.();
@@ -171,7 +175,7 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
             for await (const event of deps.client.stream(who, id, after, abort.signal)) {
               if (res.writableEnded) break;
               res.write(`event: ${event.kind.replace(/[^a-z_]/g, "")}\nid: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
-              if (event.kind === "state" || event.kind === "pr") touchLocal(id);
+              if (event.kind === "state" || event.kind === "pr" || event.kind === "stats") touchLocal(id);
             }
           } catch {
             // Perspicax went away: the client reconnects with its last seq.

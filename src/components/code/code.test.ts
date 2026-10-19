@@ -129,6 +129,24 @@ describe("timeline and helpers", () => {
     expect(items[3]).toMatchObject({ answer: "Allow" });
   });
 
+  it("reads the runner protocol's payloads: input_summary, output_summary, choices and detail, verify", () => {
+    const items = timelineItems([
+      ev(1, "requested", { prompt: "Do it" }),
+      ev(2, "tool_call", { id: "a", name: "Bash", input_summary: "pnpm test" }),
+      ev(3, "tool_result", { id: "a", ok: true, output_summary: "42 passed" }),
+      ev(4, "approval", { approval_id: "ap", title: "Remove deps?", detail: "Touches the lockfile.", choices: ["Allow", "Deny"] }),
+      ev(5, "verify", { commands: [{ cmd: "pnpm test", ok: true, exit_code: 0 }, { cmd: "pnpm lint", ok: false, exit_code: 1, tail: "2 warnings" }] }),
+      ev(6, "stats", { files: 1, added: 2, removed: 0, commits: 1 }),
+      ev(7, "diff", { files: [] }),
+      ev(8, "commits", { commits: [] }),
+      ev(9, "terminal", { text: "$ pnpm test" }),
+    ]);
+    expect(items.map((item) => item.kind)).toEqual(["task", "tools", "approval", "verify"]);
+    expect(items[1]).toMatchObject({ calls: [{ name: "Bash", summary: "pnpm test", ok: true, output: "42 passed" }] });
+    expect(items[2]).toMatchObject({ options: ["Allow", "Deny"], detail: "Touches the lockfile." });
+    expect(items[3]).toMatchObject({ passed: 1, failed: 1 });
+  });
+
   it("merges live events without duplicates, in order", () => {
     expect(mergeEvents([ev(1, "a", {}), ev(3, "a", {})], [ev(2, "a", {}), ev(3, "a", {})]).map((e) => e.seq)).toEqual([1, 2, 3]);
   });

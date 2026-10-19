@@ -3,7 +3,7 @@
 // calls folded per burst, approval cards answered inline, the PR link.
 // Same contract as the Perspicax console's `RunTimeline` (its spec, section
 // 8.0): the events in props, `onApprove` for the approval buttons.
-import { Check, ChevronRight, ExternalLink, GitPullRequest, ShieldQuestion, Wrench, X } from "lucide-react";
+import { Check, ChevronRight, ExternalLink, GitPullRequest, ListChecks, ShieldQuestion, Wrench, X } from "lucide-react";
 
 import type { RunEvent } from "../../../shared/cloud-agents.ts";
 import { ChatMarkdown } from "../ChatMarkdown";
@@ -44,6 +44,29 @@ function Tools({ item }: { item: Extract<TimelineItem, { kind: "tools" }> }) {
   );
 }
 
+function Verify({ item }: { item: Extract<TimelineItem, { kind: "verify" }> }) {
+  return (
+    <details data-run-verify className="group rounded-lg text-[12.5px] text-ink-secondary">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1 py-0.5 hover:bg-hover">
+        <ChevronRight size={12} aria-hidden className="transition-transform group-open:rotate-90 motion-reduce:transition-none" />
+        <ListChecks size={12} aria-hidden className={item.failed ? "text-danger" : "text-success"} />
+        {item.failed ? t("code.timeline.verify.failed", { passed: item.passed, failed: item.failed }) : t("code.timeline.verify.ok", { n: item.passed })}
+      </summary>
+      <ul className="ml-5 mt-1 flex flex-col gap-1">
+        {item.commands.map((command, index) => (
+          <li key={`${command.cmd}:${index}`} className="flex min-w-0 items-start gap-1.5">
+            {command.ok ? <Check size={12} aria-hidden className="mt-0.5 shrink-0 text-success" /> : <X size={12} aria-label={t("code.timeline.failed")} className="mt-0.5 shrink-0 text-danger" />}
+            <span className="min-w-0">
+              <span className="font-mono text-[11.5px] text-ink">{command.cmd}</span>
+              {!command.ok && command.tail && <span className="mt-0.5 block whitespace-pre-wrap font-mono text-[11px] text-ink-tertiary">{command.tail}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function Approval({ item, onApprove }: { item: Extract<TimelineItem, { kind: "approval" }>; onApprove?: RunTimelineProps["onApprove"] }) {
   return (
     <div data-run-approval={item.approvalId} className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5">
@@ -51,6 +74,7 @@ function Approval({ item, onApprove }: { item: Extract<TimelineItem, { kind: "ap
         <ShieldQuestion size={15} aria-hidden className="mt-0.5 shrink-0 text-warning" />
         <span className="min-w-0 flex-1">{item.title || t("code.timeline.approval")}</span>
       </div>
+      {item.detail && <p className="ml-6 mt-1 whitespace-pre-wrap text-[12.5px] text-ink-secondary">{item.detail}</p>}
       {item.answer ? (
         <p className="ml-6 mt-1 text-[12px] text-ink-secondary">{t("code.timeline.answered", { option: item.answer })}</p>
       ) : onApprove ? (
@@ -95,6 +119,8 @@ export function RunTimeline({ events, onApprove, workedMinutes, working }: RunTi
             return <li key={key}><Tools item={item} /></li>;
           case "approval":
             return <li key={key}><Approval item={item} onApprove={onApprove} /></li>;
+          case "verify":
+            return <li key={key}><Verify item={item} /></li>;
           case "pr":
             return (
               <li key={key}>

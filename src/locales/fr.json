@@ -9002,5 +9002,7 @@
   "code.timeline.tools.one": "1 appel d'outil",
   "code.commits.count.one": "1 commit",
   "code.card.files.one": "1 fichier",
-  "code.timeline.worked.lt1": "A travaillé moins d'une minute"
+  "code.timeline.worked.lt1": "A travaillé moins d'une minute",
+  "code.timeline.verify.ok": "Vérifications réussies ({n})",
+  "code.timeline.verify.failed": "Vérifications : {passed} réussies, {failed} en échec"
 }

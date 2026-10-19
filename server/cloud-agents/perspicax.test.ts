@@ -84,6 +84,89 @@ describe("PerspicaxAgentsClient", () => {
     const followed = await client.followUp(access(), "run_02draft00b71", "Ajoute un test de plus", "queue");
     expect(followed.state).toBe("running");
   });
+
+  it("reads every page of a list and keeps a teammate's run out of mine", async () => {
+    const seen: string[] = [];
+    const client = new PerspicaxAgentsClient(async (input, init) => {
+      seen.push(String(input));
+      return fetch(input, init);
+    });
+    const all = await client.runs(access());
+    const mine = await client.runs(access(), { mine: true });
+    expect(all.some((run) => run.id === "run_08team000b12")).toBe(true);
+    expect(mine.some((run) => run.id === "run_08team000b12")).toBe(false);
+    expect(mine.every((run) => run.requested_by === "person_demo")).toBe(true);
+    // newest first by created_at, as Perspicax lists them
+    const created = mine.map((run) => run.created_at);
+    expect([...created].sort().reverse()).toEqual(created);
+    expect(seen.some((url) => url.includes("page=1") && url.includes("page_size=200"))).toBe(true);
+  });
+
+  it("follows every page of a Page<T> answer", async () => {
+    const pages = [
+      { items: [{ id: "run_a" }, { id: "run_b" }], page: 1, page_size: 2, total: 3 },
+      { items: [{ id: "run_c" }], page: 2, page_size: 2, total: 3 },
+    ];
+    const client = new PerspicaxAgentsClient(async (input) => {
+      const page = Number(new URL(String(input)).searchParams.get("page"));
+      return new Response(JSON.stringify(pages[page - 1] ?? { items: [], page, page_size: 2, total: 3 }), { headers: { "content-type": "application/json" } });
+    });
+    expect((await client.runs(access())).map((run) => run.id)).toEqual(["run_a", "run_b", "run_c"]);
+  });
+
+  it("shows Perspicax's own message from a {code, message} error body", async () => {
+    const client = new PerspicaxAgentsClient();
+    await expect(client.create(access(), { env_id: "env_nope", prompt: "x" })).rejects.toMatchObject({ status: 404, message: "environment env_nope" });
+    await expect(client.stop(access(), "run_01merged0a3f")).rejects.toMatchObject({ status: 409 });
+    await expect(client.archive(access(), "run_07live000a55")).rejects.toMatchObject({ status: 409, message: expect.stringContaining("stop it first") });
+  });
+
+  it("puts an ended run back in the queue on a follow-up, as Perspicax does", async () => {
+    const client = new PerspicaxAgentsClient();
+    const followed = await client.followUp(access(), "run_04branch0d9e", "Ajoute une section Mise à jour", "steer");
+    expect(followed.state).toBe("queued");
+    for (let i = 0; i < 20; i++) fake.tick();
+    expect((await client.run(access(), "run_04branch0d9e")).state).toBe("idle");
+  });
+
+  it("resumes the stream after the Last-Event-ID it sends", async () => {
+    const headers: (string | null)[] = [];
+    const client = new PerspicaxAgentsClient(async (input, init) => {
+      headers.push(new Headers(init?.headers).get("last-event-id"));
+      return fetch(input, init);
+    });
+    const events = await client.allEvents(access(), "run_01merged0a3f");
+    const abort = new AbortController();
+    const seen: number[] = [];
+    for await (const event of client.stream(access(), "run_01merged0a3f", 5, abort.signal)) {
+      seen.push(event.seq);
+      if (event.seq === events.at(-1)!.seq) abort.abort();
+    }
+    expect(headers.at(-1)).toBe("5");
+    expect(seen[0]).toBe(6);
+  });
+});
+
+describe("PerspicaxAgentsClient before Perspicax P1.5 (no artifact routes)", () => {
+  let early: FakePerspicaxAgents;
+  beforeEach(async () => { early = await startFakePerspicaxAgents({ tickMs: 0, artifactRoutes: false }); });
+  afterEach(async () => { await early.close(); });
+  const earlyAccess = () => ({ baseUrl: early.url, token: early.token });
+
+  it("reads the diff and the commits from the run's latest diff and commits events", async () => {
+    const client = new PerspicaxAgentsClient();
+    const diff = await client.diff(earlyAccess(), "run_01merged0a3f");
+    expect(diff.available).toBe(true);
+    expect(diff.items.map((file) => file.path)).toEqual(["src/invoices/list.ts", "src/invoices/list.test.ts", "docs/invoices.md"]);
+    expect((await client.commits(earlyAccess(), "run_01merged0a3f")).items).toHaveLength(2);
+    expect(await client.files(earlyAccess(), "run_01merged0a3f")).toEqual({ available: false, items: [] });
+  });
+
+  it("says a run with no diff event has nothing yet, and an approval is not available yet", async () => {
+    const client = new PerspicaxAgentsClient();
+    expect(await client.diff(earlyAccess(), "run_06approv0f42")).toEqual({ available: false, items: [] });
+    await expect(client.approve(earlyAccess(), "run_06approv0f42", "ap_1", "Autoriser")).rejects.toMatchObject({ status: 501, code: "not_available" });
+  });
 });
 
 describe("pickEnvironment", () => {

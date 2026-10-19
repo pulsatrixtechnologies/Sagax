@@ -9002,5 +9002,7 @@
   "code.timeline.tools.one": "1 tool call",
   "code.commits.count.one": "1 commit",
   "code.card.files.one": "1 file",
-  "code.timeline.worked.lt1": "Worked less than a minute"
+  "code.timeline.worked.lt1": "Worked less than a minute",
+  "code.timeline.verify.ok": "Checks passed ({n})",
+  "code.timeline.verify.failed": "Checks: {passed} passed, {failed} failed"
 }

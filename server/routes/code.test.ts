@@ -125,6 +125,23 @@ describe("Code routes on an organization server", () => {
     expect(text).not.toContain(fake.token);
   });
 
+  it("lists runs started outside Sagax (console, MCP) but not a teammate's", async () => {
+    const items = (await get("/api/code/runs")).body.items as { id: string; origin: string }[];
+    expect(items.some((run) => run.origin === "console")).toBe(true);
+    expect(items.some((run) => run.id === "run_08team000b12")).toBe(false);
+  });
+
+  it("resumes the relayed stream after the browser's Last-Event-ID", async () => {
+    const abort = new AbortController();
+    const res = await fetch(`${base}/api/code/runs/run_01merged0a3f/stream`, { headers: { "last-event-id": "5" }, signal: abort.signal });
+    const reader = res.body!.getReader();
+    let text = "";
+    while (!/\nid: \d+\n/.test(text)) text += new TextDecoder().decode((await reader.read()).value);
+    abort.abort();
+    expect(text).toMatch(/\nid: 6\n/);
+    expect(text).not.toMatch(/\nid: [1-5]\n/);
+  });
+
   it("says a missing artifact route is not available yet instead of failing", async () => {
     expect((await get("/api/code/runs/run_05failed0e11/diff")).body).toEqual({ available: true, items: [] });
     expect((await get("/api/code/runs/run_nope/diff")).status).toBe(404);

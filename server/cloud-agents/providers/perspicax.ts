@@ -116,8 +116,8 @@ export function createPerspicaxProvider(fetchImpl: HttpFetch, baseUrl: () => str
     async refresh(token, record: CloudAgentRecord) {
       const where = access(token);
       const run = await client.run(where, record.externalId);
-      const ended = run.state === "idle" || run.state === "finished" || run.state === "failed";
-      const result = ended ? lastMessage(await client.events(where, run.id).catch(() => [])) : undefined;
+      const ended = run.state === "idle" || run.state === "finished" || run.state === "failed" || run.state === "stopped" || run.state === "expired";
+      const result = ended ? lastMessage(await client.allEvents(where, run.id).catch(() => [])) : undefined;
       return runSnapshot(run, result);
     },
 
@@ -139,7 +139,7 @@ export function createPerspicaxProvider(fetchImpl: HttpFetch, baseUrl: () => str
     },
 
     async transcript(token, record) {
-      const events = await client.events(access(token), record.externalId);
+      const events = await client.allEvents(access(token), record.externalId);
       return events.flatMap((event): CloudAgentTranscriptLine[] => {
         const at = Date.parse(event.at) || 0;
         if (event.kind === "requested" && typeof event.payload.prompt === "string") return [{ at, role: "user" as const, text: event.payload.prompt }];

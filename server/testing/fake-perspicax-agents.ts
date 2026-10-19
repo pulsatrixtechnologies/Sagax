@@ -1,6 +1,15 @@
 // A fake of Perspicax's cloud agents API (`/api/v1/agents`, Perspicax PR
 // #372 plus the artifact routes of its spec section 10.1), in process, on
-// 127.0.0.1. Tests use it, and `SAGAX_CODE_FIXTURE=1` starts one inside a
+// 127.0.0.1. It follows the real gateway (crates/gateway/src/api/agents.rs
+// and model/agents.rs): `Page<T>` lists (`page`, `page_size` at most 200,
+// `total`), `mine`, runs newest first by `created_at`, `Mutated<T>` answers
+// (`{audit_id, value}`), errors `{code, message, details}`, SSE resumed after
+// `max(after, Last-Event-ID)`, a follow-up that puts an ended run back in
+// `queued`, stop refused on an ended run, archive refused on an active one,
+// the queue cap (409). The runs' events use the runner protocol's payloads
+// (`tool_call.input_summary`, `approval.choices`, `stats`, `diff`, `commits`,
+// `verify`). `artifactRoutes: false` answers 404 on diff, commits, files and
+// approve, as Perspicax does before lot P1.5. Tests use it, and `SAGAX_CODE_FIXTURE=1` starts one inside a
 // verification server so the desktop's Code section can be driven before
 // the real API is deployed. It never runs an agent: a run plays a short
 // script of events on a timer (states, messages, a tool call, an approval,
@@ -10,6 +19,8 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+
+import { parseUnifiedDiff } from "../../shared/code-runs.ts";
 
 export const FAKE_PERSPICAX_TOKEN = "fixture-access-token";
 
@@ -85,9 +96,18 @@ export interface FakePerspicaxOptions {
   token?: string;
   now?: () => number;
   port?: number;
+  /** Serve `/diff`, `/commits`, `/files` and `/approve` (Perspicax P1.5).
+   * Default true; false answers 404 there, as Perspicax #372 does. */
+  artifactRoutes?: boolean;
 }
 
 const PERSON = "person_demo";
+/** Someone else on the same team: their runs are seen, not "mine". */
+const TEAMMATE = "person_teammate";
+const ACTIVE = ["queued", "waking", "provisioning", "setup", "running", "waiting_for_approval", "idle"];
+const TERMINAL = ["finished", "failed", "stopped", "expired", "archived"];
+/** `agents.max_queued_per_person` default. */
+const MAX_QUEUED = 20;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const ulid = () => randomBytes(8).toString("hex");
@@ -352,14 +372,15 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
     let t = at + 2_000;
     for (const state of ["waking", "provisioning", "setup", "running"]) { setState(run, state, "", t); t += 1_500; }
     push(run, "message", { role: "assistant", text: "Je lis le dépôt et je repère les fichiers touchés." }, t += step);
-    push(run, "tool_call", { id: "t1", name: "Bash", input: { command: "pnpm test" }, summary: "pnpm test" }, t += step);
-    push(run, "tool_result", { id: "t1", ok: !end.error, output: end.error ? "3 tests en échec" : "Tests : 161 réussis, 0 échec" }, t += step);
+    push(run, "tool_call", { id: "t1", name: "Bash", input_summary: "pnpm test" }, t += step);
+    push(run, "tool_result", { id: "t1", ok: !end.error, output_summary: end.error ? "3 tests en échec" : "Tests : 161 réussis, 0 échec" }, t += step);
+    push(run, "verify", { commands: [{ cmd: "pnpm test", ok: !end.error, exit_code: end.error ? 1 : 0, tail: end.error ? "3 tests en échec" : "" }] }, t += step);
     const added = sample.diff.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
     const removed = sample.diff.split("\n").filter((l) => l.startsWith("-") && !l.startsWith("---")).length;
     const files = (sample.diff.match(/^diff --git /gm) ?? []).length;
     if (!end.error) {
-      run.stats = { files, added, removed, commits: sample.commits.length, last_sha: sample.commits.at(-1)?.sha ?? "" };
-      push(run, "status", { text: `Commit ${sample.commits.at(-1)?.sha.slice(0, 7)} poussé sur ${run.branch}` }, t += step);
+      run.stats = { files, added, removed, commits: sample.commits.length, head_sha: sample.commits.at(-1)?.sha ?? "" };
+      artifacts(run, sample, t += step);
     }
     if (end.pr) {
       run.pr = { number: end.pr.number, url: `https://github.com/${run.repo}/pull/${end.pr.number}`, state: end.pr.state, head_sha: sample.commits.at(-1)?.sha ?? "" };
@@ -369,34 +390,46 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
     setState(run, end.state, end.error ?? "", t += step);
   };
 
+  /** What the runner sends at the end of a turn: stats, diff, commits. */
+  const artifacts = (run: FakeRun, sample: Sample, at = now()) => {
+    push(run, "stats", { ...run.stats }, at);
+    if (sample.diff) push(run, "diff", { files: parseUnifiedDiff(sample.diff) }, at);
+    push(run, "commits", { commits: sample.commits.map((c) => ({ ...c })) }, at);
+  };
   const commit = (title: string, at: number) => ({ sha: randomBytes(20).toString("hex"), title, author: "Agent cloud", at: iso(at) });
 
   /** The live script of a run: its next steps, one per tick. */
-  const script = (run: FakeRun, sample: Sample, from: "queued" | "running" | "followup", reply: string) => {
+  const script = (run: FakeRun, sample: Sample, start: "queued" | "running" | "followup" | "restart", reply: string) => {
     samples.set(run.id, sample);
     const steps: Script["steps"] = [];
+    const from: "queued" | "running" | "followup" = start === "restart" ? "followup" : start;
+    if (start === "restart") {
+      // An ended run back in `queued` after a follow-up: a new Pod.
+      for (const state of ["waking", "provisioning", "setup", "running"]) steps.push((r) => setState(r, state));
+    }
     if (from === "queued") {
       for (const state of ["waking", "provisioning", "setup", "running"]) steps.push((r) => setState(r, state));
       steps.push((r) => push(r, "message", { role: "assistant", text: "Je clone le dépôt et j'installe les dépendances." }));
     }
     if (from !== "followup") {
-      steps.push((r) => push(r, "tool_call", { id: "t1", name: "Read", input: { path: "src/" }, summary: "Lire src/" }));
-      steps.push((r) => push(r, "tool_result", { id: "t1", ok: true, output: "12 fichiers lus" }));
+      steps.push((r) => push(r, "tool_call", { id: "t1", name: "Read", input_summary: "Lire src/" }));
+      steps.push((r) => push(r, "tool_result", { id: "t1", ok: true, output_summary: "12 fichiers lus" }));
       steps.push((r) => push(r, "message", { role: "assistant", text: "J'ai trouvé la cause. Je corrige et j'ajoute un test." }));
-      steps.push((r) => push(r, "tool_call", { id: "t2", name: "Bash", input: { command: "pnpm test" }, summary: "pnpm test" }));
-      steps.push((r) => push(r, "tool_result", { id: "t2", ok: true, output: "Tests : 42 réussis, 0 échec" }));
+      steps.push((r) => push(r, "tool_call", { id: "t2", name: "Bash", input_summary: "pnpm test" }));
+      steps.push((r) => push(r, "tool_result", { id: "t2", ok: true, output_summary: "Tests : 42 réussis, 0 échec" }));
     } else {
       steps.push((r) => push(r, "message", { role: "assistant", text: "Je reprends avec votre suite." }));
-      steps.push((r) => push(r, "tool_call", { id: "t3", name: "Edit", input: { path: "src/" }, summary: "Modifier 1 fichier" }));
-      steps.push((r) => push(r, "tool_result", { id: "t3", ok: true, output: "1 fichier modifié" }));
+      steps.push((r) => push(r, "tool_call", { id: "t3", name: "Edit", input_summary: "Modifier 1 fichier" }));
+      steps.push((r) => push(r, "tool_result", { id: "t3", ok: true, output_summary: "1 fichier modifié" }));
     }
+    steps.push((r) => push(r, "verify", { commands: [{ cmd: "pnpm test", ok: true, exit_code: 0, tail: "" }] }));
     steps.push((r) => {
       const c = commit(from === "followup" ? "Appliquer la suite demandée" : `fix: ${r.title.toLowerCase()}`, now());
       sample.commits.push(c);
       const added = sample.diff.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
       const removed = sample.diff.split("\n").filter((l) => l.startsWith("-") && !l.startsWith("---")).length;
-      r.stats = { files: (sample.diff.match(/^diff --git /gm) ?? []).length, added, removed, commits: sample.commits.length, last_sha: c.sha };
-      push(r, "status", { text: `Commit ${c.sha.slice(0, 7)} poussé sur ${r.branch}` });
+      r.stats = { files: (sample.diff.match(/^diff --git /gm) ?? []).length, added, removed, commits: sample.commits.length, head_sha: c.sha };
+      artifacts(r, sample);
     });
     if (!runPrNumber(run)) {
       steps.push((r) => {
@@ -448,13 +481,17 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
     samples.set(g.id, { diff: "", commits: [], files: [] });
     for (const state of ["waking", "provisioning", "setup", "running"]) setState(g, state, "", t - 19 * 60_000);
     push(g, "message", { role: "assistant", text: "Trois dépendances ne sont importées nulle part. Je dois lancer `pnpm remove`, qui modifie le lockfile." }, t - 18 * 60_000);
-    push(g, "approval", { approval_id: "ap_1", title: "Lancer pnpm remove left-pad is-odd chalk ?", options: ["Autoriser", "Refuser"] }, t - 17 * 60_000);
+    push(g, "approval", { approval_id: "ap_1", title: "Lancer pnpm remove left-pad is-odd chalk ?", detail: "pnpm remove modifie package.json et pnpm-lock.yaml.", choices: ["Autoriser", "Refuser"] }, t - 17 * 60_000);
     setState(g, "waiting_for_approval", "", t - 17 * 60_000);
 
     const f = newRun({ id: "run_07live000a55", env_id: web.id, title: "Garder le brouillon du composeur", prompt: "Le texte du composeur se perd au changement de conversation. Garde un brouillon par conversation." }, t - 3 * 60_000);
     for (const state of ["waking", "provisioning", "setup", "running"]) setState(f, state, "", t - 170_000);
     push(f, "message", { role: "assistant", text: "Je clone le dépôt et j'installe les dépendances." }, t - 160_000);
     script(f, { diff: DIFF_COMPOSER, commits: [], files: sampleFiles(DIFF_COMPOSER) }, "running", "Le composeur garde un brouillon par conversation. PR en brouillon pour revue.");
+    // A teammate's run in the team environment: seen in the list, not "mine".
+    const h = newRun({ id: "run_08team000b12", env_id: api.id, title: "Journaliser les erreurs d'export", prompt: "Ajoute un journal aux erreurs d'export.", requested_by: TEAMMATE, runs_as: TEAMMATE, origin: "mcp" }, t - 2 * H);
+    history(h, { diff: DIFF_TESTS, commits: [commit("feat: journal des erreurs d'export", t - 1.9 * H)], files: sampleFiles(DIFF_TESTS) }, t - 2 * H, 4,
+      { state: "finished", pr: { number: 18, state: "open" }, reply: "Le journal est en place. PR ouverte." });
   }
 
   const json = (res: ServerResponse, status: number, body: unknown) => {
@@ -471,7 +508,14 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
       return {};
     }
   };
-  const page = <T>(items: T[]) => ({ items, page: 1, page_size: items.length, total: items.length });
+  /** Perspicax's error body. */
+  const fail = (res: ServerResponse, status: number, code: string, message: string) => json(res, status, { code, message, details: {} });
+  /** `Page::of`: `page` from 1, `page_size` 1 to 200 (50 by default). */
+  const page = <T>(items: T[], url: URL) => {
+    const number = Math.max(1, Math.floor(Number(url.searchParams.get("page") ?? 1)) || 1);
+    const size = Math.min(200, Math.max(1, Math.floor(Number(url.searchParams.get("page_size") ?? 50)) || 50));
+    return { items: items.slice((number - 1) * size, number * size), page: number, page_size: size, total: items.length };
+  };
   const mutated = <T>(value: T) => ({ audit_id: `aud_${ulid()}`, value });
 
   const tick = () => {
@@ -488,32 +532,38 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
     void (async () => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
       const path = url.pathname;
-      if (!path.startsWith("/api/v1/agents/")) return json(res, 404, { error: "not found" });
-      if (req.headers.authorization !== `Bearer ${token}`) return json(res, 401, { error: "Unauthorized" });
+      if (!path.startsWith("/api/v1/agents/")) return fail(res, 404, "not_found", "not found");
+      if (req.headers.authorization !== `Bearer ${token}`) return fail(res, 401, "unauthorized", "sign in");
       const method = req.method ?? "GET";
       const rest = path.slice("/api/v1/agents/".length).split("/");
 
       if (rest[0] === "environments" && rest.length === 1 && method === "GET") {
-        return json(res, 200, page(envs.filter((e) => url.searchParams.get("archived") === "true" || !e.archived)));
+        return json(res, 200, page(envs.filter((e) => url.searchParams.get("archived") === "true" || !e.archived), url));
       }
-      if (rest[0] !== "runs") return json(res, 404, { error: "not found" });
+      if (rest[0] !== "runs") return fail(res, 404, "not_found", "not found");
 
       if (rest.length === 1) {
         if (method === "GET") {
           const state = url.searchParams.get("state");
           const envId = url.searchParams.get("env_id");
-          const rows = runs.filter((r) => (!state || r.state === state) && (!envId || r.env_id === envId))
-            .sort((x, y) => Date.parse(y.updated_at) - Date.parse(x.updated_at));
-          return json(res, 200, page(rows));
+          const mine = url.searchParams.get("mine") === "true";
+          const rows = runs.filter((r) => (!state || r.state === state) && (!envId || r.env_id === envId)
+            && (!mine || r.requested_by === PERSON || r.runs_as === PERSON))
+            .sort((x, y) => y.created_at.localeCompare(x.created_at) || y.id.localeCompare(x.id));
+          return json(res, 200, page(rows, url));
         }
         if (method === "POST") {
           const body = await readJson(req);
-          const environment = envs.find((e) => e.id === body.env_id);
-          if (!environment) return json(res, 404, { error: "no such environment" });
+          const environment = envs.find((e) => e.id === body.env_id && (e.scope !== "personnelle" || e.owner_id === PERSON));
+          if (!environment) return fail(res, 404, "not_found", `environment ${String(body.env_id)}`);
+          if (environment.archived) return fail(res, 409, "conflict", `environment ${environment.id} is archived`);
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-          if (!prompt) return json(res, 400, { error: "prompt is required" });
-          const active = runs.filter((r) => ["queued", "waking", "provisioning", "setup", "running", "waiting_for_approval"].includes(r.state)).length;
-          if (active >= 4) return json(res, 409, { error: "4 runs at once at most per person (agents.max_runs_per_person)." });
+          if (!prompt) return fail(res, 400, "validation", "a run needs a prompt");
+          if (typeof body.repo === "string" && !environment.repos.some((r) => `${r.owner}/${r.name}`.toLowerCase() === (body.repo as string).toLowerCase())) {
+            return fail(res, 400, "validation", `repository ${body.repo} is not in environment ${environment.id}`);
+          }
+          const queued = runs.filter((r) => r.requested_by === PERSON && r.state === "queued").length;
+          if (queued >= MAX_QUEUED) return fail(res, 409, "conflict", `quota: ${queued} run(s) already waiting, the queue holds ${MAX_QUEUED} per person`);
           const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : prompt.split("\n")[0]!.slice(0, 80);
           const run = newRun({
             env_id: environment.id,
@@ -523,23 +573,26 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
             ...(typeof body.model === "string" && body.model ? { model: body.model } : {}),
             origin: body.origin === "sagax" || body.origin === "mcp" ? body.origin : "console",
             ...(typeof body.origin_ref === "string" ? { origin_ref: body.origin_ref } : {}),
+            unread: true,
           }, now());
           script(run, { diff: DIFF_COMPOSER, commits: [], files: sampleFiles(DIFF_COMPOSER) }, "queued", "C'est fait. La branche est poussée et une PR en brouillon attend votre revue.");
           return json(res, 200, mutated(run));
         }
-        return json(res, 405, { error: "method" });
+        return fail(res, 405, "method", "method not allowed");
       }
 
       const run = runs.find((r) => r.id === rest[1]);
-      if (!run) return json(res, 404, { error: "no such run" });
+      if (!run) return fail(res, 404, "not_found", `run ${rest[1]}`);
       const action = rest[2];
       if (!action && method === "GET") return json(res, 200, run);
       if (action === "events" && method === "GET") {
         const after = Number(url.searchParams.get("after") ?? 0) || 0;
-        return json(res, 200, (events.get(run.id) ?? []).filter((e) => e.seq > after));
+        const limit = Math.min(1000, Math.max(1, Math.floor(Number(url.searchParams.get("limit") ?? 500)) || 500));
+        return json(res, 200, (events.get(run.id) ?? []).filter((e) => e.seq > after).slice(0, limit));
       }
       if (action === "stream" && method === "GET") {
-        let cursor = Number(url.searchParams.get("after") ?? 0) || 0;
+        const lastId = Number(req.headers["last-event-id"] ?? 0) || 0;
+        let cursor = Math.max(0, Number(url.searchParams.get("after") ?? 0) || 0, lastId);
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
         res.write(": ok\n\n");
         const flush = () => {
@@ -554,22 +607,29 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
         req.on("close", () => { clearInterval(timer); clearInterval(ping); });
         return;
       }
-      if (action === "read" && method === "POST") { run.unread = false; return json(res, 200, run); }
+      if (action === "read" && method === "POST") { if (run.requested_by === PERSON) run.unread = false; return json(res, 200, run); }
       if (action === "followup" && method === "POST") {
         const body = await readJson(req);
         const text = typeof body.text === "string" ? body.text.trim() : "";
-        if (!text) return json(res, 400, { error: "text is required" });
-        if (["failed", "stopped", "expired", "archived"].includes(run.state)) {
-          return json(res, 409, { error: `run is ${run.state}` });
-        }
-        const mode = body.mode === "steer" || body.mode === "interrupt" ? body.mode : "queue";
+        if (!text) return fail(res, 400, "validation", "a follow up needs text");
+        const mode = body.mode === undefined ? "queue" : body.mode;
+        if (mode !== "queue" && mode !== "steer" && mode !== "interrupt") return fail(res, 400, "validation", `mode ${String(mode)}: queue, steer or interrupt`);
+        if (run.state === "archived") return fail(res, 409, "conflict", `run ${run.id} is archived`);
+        const ended = TERMINAL.includes(run.state);
+        // An ended run goes back to `queued`: the lifecycle starts a new Pod.
+        if (ended) setState(run, "queued");
         push(run, "followup", { text, mode, by: PERSON });
-        if (!scripts.has(run.id)) {
+        if (ended) {
+          scripts.delete(run.id);
+          script(run, samples.get(run.id) ?? { diff: DIFF_COMPOSER, commits: [], files: [] }, "restart", "La suite est appliquée et poussée sur la même branche.");
+        } else if (!scripts.has(run.id)) {
           setState(run, "running");
           script(run, samples.get(run.id) ?? { diff: DIFF_COMPOSER, commits: [], files: [] }, "followup", "La suite est appliquée et poussée sur la même branche.");
         }
         return json(res, 200, mutated(run));
       }
+      const artifactRoutes = options.artifactRoutes !== false;
+      if (!artifactRoutes && ["approve", "diff", "commits", "files"].includes(action ?? "")) return fail(res, 404, "not_found", "not found");
       if (action === "approve" && method === "POST") {
         const body = await readJson(req);
         const option = typeof body.option === "string" ? body.option : "";
@@ -586,11 +646,14 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
         return json(res, 200, mutated(run));
       }
       if (action === "stop" && method === "POST") {
+        if (TERMINAL.includes(run.state)) return fail(res, 409, "conflict", `run ${run.id} already ended (${run.state})`);
         scripts.delete(run.id);
-        if (!["finished", "failed", "stopped", "expired", "archived"].includes(run.state)) setState(run, "stopped");
+        setState(run, "stopped");
         return json(res, 200, mutated(run));
       }
       if (action === "archive" && method === "POST") {
+        if (run.state === "archived") return fail(res, 409, "conflict", `run ${run.id} is archived`);
+        if (ACTIVE.includes(run.state)) return fail(res, 409, "conflict", `run ${run.id} is still ${run.state}; stop it first`);
         scripts.delete(run.id);
         setState(run, "archived");
         return json(res, 200, mutated(run));
@@ -602,8 +665,8 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
       }
       if (action === "commits" && method === "GET") return json(res, 200, { items: sample.commits });
       if (action === "files" && method === "GET") return json(res, 200, { items: sample.commits.length ? sample.files : [] });
-      return json(res, 404, { error: "not found" });
-    })().catch(() => { if (!res.headersSent) json(res, 500, { error: "fake failed" }); });
+      return fail(res, 404, "not_found", "not found");
+    })().catch(() => { if (!res.headersSent) fail(res, 500, "internal", "fake failed"); });
   });
   await new Promise<void>((resolve) => server.listen(options.port ?? 0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;

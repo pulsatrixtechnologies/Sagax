@@ -213,7 +213,9 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
       let pending: number | null = null;
       void followRunEvents(runId, initial.at(-1)?.seq ?? 0, (event) => {
         setEvents((list) => mergeEvents(list, [event]));
-        if (["state", "pr", "status", "approval_answer", "followup"].includes(event.kind) && pending === null) {
+        // A new diff or commit list (runner events) reloads the artifacts.
+        if (event.kind === "diff" || event.kind === "commits" || event.kind === "stats") lastStats.current = "";
+        if (["state", "pr", "status", "stats", "diff", "commits", "approval", "approval_answer", "followup"].includes(event.kind) && pending === null) {
           pending = window.setTimeout(() => { pending = null; if (live) void reloadRun(); }, 250);
         }
       }, abort.signal, () => activeRef.current);

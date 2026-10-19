@@ -8,8 +8,14 @@
 //   - every call has a timeout; a non-2xx answer becomes a ProviderHttpError
 //     with Perspicax's own message (quota refusals are shown as they are);
 //   - ids are checked before they reach a path;
-//   - the artifact routes (diff, commits, files) belong to a later Perspicax
-//     lot: a 404 or 405 there is "not available yet", not an error.
+//   - the artifact routes (diff, commits, files) and `approve` belong to
+//     Perspicax lot P1.5: a 404 or 405 there is "not available yet", not an
+//     error. Until they are served, the diff and the commits are read from
+//     the run's own `diff` and `commits` events (runner protocol), the latest
+//     of each;
+//   - lists are `Page<T>` (`items`, `page`, `page_size` at most 200, `total`):
+//     every page is read, up to a cap;
+//   - an error body is `{ code, message, details }`.
 import type {
   PerspicaxEnvironment,
   PerspicaxNewRun,
@@ -25,6 +31,14 @@ export const PERSPICAX_AGENTS_PATH = "/api/v1/agents";
 export const PERSPICAX_TIMEOUT_MS = 10_000;
 const ANSWER_MAX_BYTES = 4 * 1024 * 1024;
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
+/** Perspicax's page size ceiling (`Paging::clamp`). */
+const PAGE_SIZE = 200;
+/** Rows a list reads at most (Perspicax keeps 2000 runs per list). */
+const LIST_MAX = 2000;
+/** One `GET /events` answer holds at most this many rows. */
+const EVENTS_PAGE = 1000;
+/** Events read at most when the whole log is needed (diff fallback, transcript). */
+const EVENTS_MAX = 20_000;
 
 export interface PerspicaxAccess {
   /** Perspicax's origin (the issuer). */
@@ -76,7 +90,7 @@ export class PerspicaxAgentsClient {
       let message = `Perspicax answered ${res.status}.`;
       try {
         const parsed = JSON.parse(text) as { error?: unknown; message?: unknown };
-        const said = typeof parsed.error === "string" ? parsed.error : typeof parsed.message === "string" ? parsed.message : "";
+        const said = typeof parsed.message === "string" ? parsed.message : typeof parsed.error === "string" ? parsed.error : "";
         if (said.trim()) message = said.trim().slice(0, 500);
       } catch {}
       throw new ProviderHttpError(res.status, res.status === 409 ? "conflict" : "perspicax", message);
@@ -105,18 +119,37 @@ export class PerspicaxAgentsClient {
     return run as PerspicaxRun;
   }
 
-  async environments(access: PerspicaxAccess): Promise<PerspicaxEnvironment[]> {
-    const page = await this.must<PerspicaxPage<PerspicaxEnvironment>>(access, "GET", "/environments?page_size=200");
-    return Array.isArray(page?.items) ? page.items.filter((env) => !env.archived) : [];
+  /** Every page of a `Page<T>` list, in order, up to `LIST_MAX` rows. */
+  private async pages<T>(access: PerspicaxAccess, path: string, params: URLSearchParams): Promise<T[]> {
+    const out: T[] = [];
+    for (let page = 1; out.length < LIST_MAX; page++) {
+      params.set("page", String(page));
+      params.set("page_size", String(PAGE_SIZE));
+      const answer = await this.must<PerspicaxPage<T>>(access, "GET", `${path}?${params}`);
+      const items = Array.isArray(answer?.items) ? answer.items : [];
+      out.push(...items);
+      const total = typeof answer?.total === "number" ? answer.total : out.length;
+      if (items.length === 0 || out.length >= total) break;
+    }
+    return out.slice(0, LIST_MAX);
   }
 
+  /** The environments this person may see (Perspicax leaves the archived
+   * ones out unless asked). */
+  async environments(access: PerspicaxAccess): Promise<PerspicaxEnvironment[]> {
+    const rows = await this.pages<PerspicaxEnvironment>(access, "/environments", new URLSearchParams());
+    return rows.filter((env) => !env.archived);
+  }
+
+  /** Runs newest first (`created_at`). `mine` keeps the ones the person asked
+   * for or that run with their rights, whatever started them (Sagax, the
+   * console, an MCP client, an automation). */
   async runs(access: PerspicaxAccess, query: { mine?: boolean; envId?: string; state?: string } = {}): Promise<PerspicaxRun[]> {
-    const params = new URLSearchParams({ page_size: "200" });
+    const params = new URLSearchParams();
     if (query.mine) params.set("mine", "true");
     if (query.envId) params.set("env_id", query.envId);
     if (query.state) params.set("state", query.state);
-    const page = await this.must<PerspicaxPage<PerspicaxRun>>(access, "GET", `/runs?${params}`);
-    return Array.isArray(page?.items) ? page.items : [];
+    return this.pages<PerspicaxRun>(access, "/runs", params);
   }
 
   async run(access: PerspicaxAccess, id: string): Promise<PerspicaxRun> {
@@ -127,9 +160,24 @@ export class PerspicaxAgentsClient {
     return this.runAnswer(access, "POST", "/runs", input, true);
   }
 
+  /** One answer of the event log: at most `EVENTS_PAGE` rows after `after`. */
   async events(access: PerspicaxAccess, id: string, after = 0): Promise<RunEvent[]> {
-    const list = await this.must<RunEvent[]>(access, "GET", `/runs/${checkId(id)}/events?after=${Math.max(0, Math.floor(after))}&limit=1000`);
+    const list = await this.must<RunEvent[]>(access, "GET", `/runs/${checkId(id)}/events?after=${Math.max(0, Math.floor(after))}&limit=${EVENTS_PAGE}`);
     return Array.isArray(list) ? list : [];
+  }
+
+  /** The whole event log after `after`, page by page, up to `EVENTS_MAX`. */
+  async allEvents(access: PerspicaxAccess, id: string, after = 0): Promise<RunEvent[]> {
+    const out: RunEvent[] = [];
+    let cursor = Math.max(0, Math.floor(after));
+    while (out.length < EVENTS_MAX) {
+      const page = await this.events(access, id, cursor);
+      out.push(...page);
+      const last = page.at(-1)?.seq;
+      if (page.length < EVENTS_PAGE || typeof last !== "number" || last <= cursor) break;
+      cursor = last;
+    }
+    return out;
   }
 
   async markRead(access: PerspicaxAccess, id: string): Promise<PerspicaxRun> {
@@ -140,8 +188,11 @@ export class PerspicaxAgentsClient {
     return this.runAnswer(access, "POST", `/runs/${checkId(id)}/followup`, { text, mode }, true);
   }
 
+  /** `POST /runs/:id/approve` (Perspicax P1.5). Before it is served, a 404
+   * is a clear "not available yet", never a raw error. */
   async approve(access: PerspicaxAccess, id: string, approvalId: string, option: string): Promise<void> {
-    await this.must<unknown>(access, "POST", `/runs/${checkId(id)}/approve`, { approval_id: approvalId, option });
+    const answer = await this.call<unknown>(access, "POST", `/runs/${checkId(id)}/approve`, { approval_id: approvalId, option }, true);
+    if (answer === null) throw new ProviderHttpError(501, "not_available", "Perspicax does not take approvals from Sagax yet.");
   }
 
   async stop(access: PerspicaxAccess, id: string): Promise<PerspicaxRun> {
@@ -152,27 +203,23 @@ export class PerspicaxAgentsClient {
     return this.runAnswer(access, "POST", `/runs/${checkId(id)}/archive`, {}, true);
   }
 
+  /** The run's diff: `GET /runs/:id/diff` once Perspicax serves it, else the
+   * latest `diff` event of the log (`{files: [DiffView.files]}`). Neither:
+   * not available. */
   async diff(access: PerspicaxAccess, id: string): Promise<CodeArtifact<DiffFile>> {
     const answer = await this.call<unknown>(access, "GET", `/runs/${checkId(id)}/diff`, undefined, true);
-    return answer === null ? { available: false, items: [] } : { available: true, items: diffFilesFrom(answer) };
+    if (answer !== null) return { available: true, items: diffFilesFrom(answer) };
+    const event = lastOfKind(await this.allEvents(access, id), "diff");
+    return event ? { available: true, items: diffFilesFrom(event.payload) } : { available: false, items: [] };
   }
 
+  /** The run's commits: `GET /runs/:id/commits`, else the latest `commits`
+   * event (`{commits: [{sha, title, author, at}]}`). */
   async commits(access: PerspicaxAccess, id: string): Promise<CodeArtifact<CodeCommit>> {
     const answer = await this.call<unknown>(access, "GET", `/runs/${checkId(id)}/commits`, undefined, true);
-    if (answer === null) return { available: false, items: [] };
-    const rows = Array.isArray(answer) ? answer : Array.isArray((answer as { items?: unknown }).items) ? (answer as { items: unknown[] }).items : [];
-    const items: CodeCommit[] = rows.flatMap((row) => {
-      if (!row || typeof row !== "object") return [];
-      const c = row as Record<string, unknown>;
-      if (typeof c.sha !== "string") return [];
-      return [{
-        sha: c.sha,
-        title: typeof c.title === "string" ? c.title : typeof c.message === "string" ? c.message.split("\n")[0]! : "",
-        ...(typeof c.author === "string" ? { author: c.author } : {}),
-        ...(typeof c.at === "string" ? { at: c.at } : {}),
-      }];
-    });
-    return { available: true, items };
+    if (answer !== null) return { available: true, items: commitsFrom(answer) };
+    const event = lastOfKind(await this.allEvents(access, id), "commits");
+    return event ? { available: true, items: commitsFrom(event.payload) } : { available: false, items: [] };
   }
 
   async files(access: PerspicaxAccess, id: string): Promise<CodeArtifact<CodeFileEntry>> {
@@ -192,9 +239,11 @@ export class PerspicaxAgentsClient {
    * Perspicax closes the stream or `signal` aborts. */
   async *stream(access: PerspicaxAccess, id: string, after: number, signal: AbortSignal): AsyncGenerator<RunEvent> {
     let res: Response;
+    const cursor = Math.max(0, Math.floor(after));
     try {
-      res = await this.fetchImpl(this.url(access, `/runs/${checkId(id)}/stream?after=${Math.max(0, Math.floor(after))}`), {
-        headers: { authorization: `Bearer ${access.token}`, accept: "text/event-stream" },
+      // `after` and `Last-Event-ID` both: Perspicax resumes after the larger.
+      res = await this.fetchImpl(this.url(access, `/runs/${checkId(id)}/stream?after=${cursor}`), {
+        headers: { authorization: `Bearer ${access.token}`, accept: "text/event-stream", ...(cursor > 0 ? { "last-event-id": String(cursor) } : {}) },
         signal,
       });
     } catch {
@@ -234,6 +283,28 @@ export class PerspicaxAgentsClient {
       try { await res.body.cancel(); } catch {}
     }
   }
+}
+
+function lastOfKind(events: readonly RunEvent[], kind: string): RunEvent | undefined {
+  for (let i = events.length - 1; i >= 0; i--) if (events[i]!.kind === kind) return events[i];
+  return undefined;
+}
+
+/** Commits from a `/commits` answer (a list, `{items}`) or a `commits` event (`{commits}`). */
+export function commitsFrom(answer: unknown): CodeCommit[] {
+  const box = answer && typeof answer === "object" ? answer as { items?: unknown; commits?: unknown } : {};
+  const rows = Array.isArray(answer) ? answer : Array.isArray(box.items) ? box.items : Array.isArray(box.commits) ? box.commits : [];
+  return rows.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const c = row as Record<string, unknown>;
+    if (typeof c.sha !== "string") return [];
+    return [{
+      sha: c.sha,
+      title: typeof c.title === "string" ? c.title : typeof c.message === "string" ? c.message.split("\n")[0]! : "",
+      ...(typeof c.author === "string" ? { author: c.author } : {}),
+      ...(typeof c.at === "string" ? { at: c.at } : {}),
+    }];
+  });
 }
 
 async function readCapped(res: Response): Promise<string> {

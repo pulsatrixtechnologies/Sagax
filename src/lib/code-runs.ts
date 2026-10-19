@@ -147,7 +147,8 @@ export type TimelineItem =
   | { kind: "followup"; seq: number; at: string; text: string; mode: string }
   | { kind: "message"; seq: number; at: string; text: string }
   | { kind: "tools"; seq: number; at: string; calls: { id: string; name: string; summary: string; ok?: boolean; output?: string }[] }
-  | { kind: "approval"; seq: number; at: string; approvalId: string; title: string; options: string[]; answer?: string }
+  | { kind: "approval"; seq: number; at: string; approvalId: string; title: string; detail?: string; options: string[]; answer?: string }
+  | { kind: "verify"; seq: number; at: string; passed: number; failed: number; commands: { cmd: string; ok: boolean; tail?: string }[] }
   | { kind: "pr"; seq: number; at: string; number: number; url: string; state: string }
   | { kind: "status"; seq: number; at: string; text: string }
   | { kind: "warning"; seq: number; at: string; text: string; details?: string };
@@ -176,7 +177,8 @@ export function timelineItems(events: readonly CodeEvent[]): TimelineItem[] {
         break;
       case "tool_call": {
         const last = out.at(-1);
-        const call = { id: text(p.id) || String(event.seq), name: text(p.name) || "tool", summary: text(p.summary) };
+        // Runner protocol: `{id, name, input_summary}`.
+        const call = { id: text(p.id) || String(event.seq), name: text(p.name) || "tool", summary: text(p.input_summary) || text(p.summary) };
         if (last?.kind === "tools") last.calls.push(call);
         else out.push({ kind: "tools", ...base, calls: [call] });
         break;
@@ -186,14 +188,16 @@ export function timelineItems(events: readonly CodeEvent[]): TimelineItem[] {
           const row = out[i]!;
           if (row.kind !== "tools") continue;
           const call = row.calls.find((c) => c.id === text(p.id)) ?? row.calls.at(-1);
-          if (call) { call.ok = p.ok !== false; call.output = text(p.output); }
+          if (call) { call.ok = p.ok !== false; call.output = text(p.output_summary) || text(p.output); }
           break;
         }
         break;
       }
       case "approval": {
-        const options = Array.isArray(p.options) ? p.options.filter((o): o is string => typeof o === "string") : [];
-        const row = { kind: "approval" as const, ...base, approvalId: text(p.approval_id), title: text(p.title), options };
+        // Runner protocol: `{approval_id, title, detail, choices}`.
+        const raw = Array.isArray(p.choices) ? p.choices : Array.isArray(p.options) ? p.options : [];
+        const options = raw.filter((o): o is string => typeof o === "string");
+        const row = { kind: "approval" as const, ...base, approvalId: text(p.approval_id), title: text(p.title), ...(text(p.detail) ? { detail: text(p.detail) } : {}), options };
         approvals.set(row.approvalId, row);
         out.push(row);
         break;
@@ -209,6 +213,18 @@ export function timelineItems(events: readonly CodeEvent[]): TimelineItem[] {
       case "status":
         if (text(p.text)) out.push({ kind: "status", ...base, text: text(p.text) });
         break;
+      case "verify": {
+        const commands = (Array.isArray(p.commands) ? p.commands : []).flatMap((row) => {
+          if (!row || typeof row !== "object") return [];
+          const c = row as Record<string, unknown>;
+          return [{ cmd: text(c.cmd), ok: c.ok === true, ...(text(c.tail) ? { tail: text(c.tail) } : {}) }];
+        });
+        if (commands.length) {
+          const passed = commands.filter((c) => c.ok).length;
+          out.push({ kind: "verify", ...base, passed, failed: commands.length - passed, commands });
+        }
+        break;
+      }
       case "warning":
         if (text(p.text)) out.push({ kind: "warning", ...base, text: text(p.text), ...(text(p.details) ? { details: text(p.details) } : {}) });
         break;
