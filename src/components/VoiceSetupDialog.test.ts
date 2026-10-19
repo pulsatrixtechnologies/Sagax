@@ -145,6 +145,8 @@ describe("voice set-up pop-up", () => {
     click(byAttribute(render(), "label", "All voice settings"));
     expect(fixture.dispatch.mock.calls).toEqual([
       [{ type: "select", id: "pepper" }],
+      // opened by hand: no fresh topic over it (#763, src/lib/fresh-topic.ts)
+      [{ type: "freshTopic", botId: "pepper", threadId: null }],
       [{ type: "toggleSettings", open: true, section: "voice" }],
     ]);
   });
@@ -156,6 +158,10 @@ describe("voice set-up pop-up", () => {
     click(byAttribute(render({ bot: left }), "label", "All voice settings"));
     expect(fixture.dispatch.mock.calls).toEqual([
       [{ type: "switchTask", botId: "pepper", threadId: "main" }],
+      // the switch clears a fresh topic, and so does the landing on a topic
+      // that is not idle (#763)
+      [{ type: "freshTopic", botId: "pepper", threadId: null }],
+      [{ type: "freshTopic", botId: "pepper", threadId: null }],
       [{ type: "toggleSettings", open: true, section: "voice" }],
     ]);
   });

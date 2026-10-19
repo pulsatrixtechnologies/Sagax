@@ -10,7 +10,7 @@ import type { DuckDBConnection } from "@duckdb/node-api";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { DATA_LIMITS, DATA_RESULTS_SCHEMA } from "../../shared/data-surface.ts";
-import { CLOSE_DRAIN_MS, EXTENSION_INSTALL_TIMEOUT_MS, Lane, closeNames, createDataEngine, dataEngine, drainLanes, duckdbDirectory, instanceSettings, levenshtein, likePattern, loadExtensions, type DataEngineOptions } from "./engine.ts";
+import { CLOSE_DRAIN_MS, EXTENSION_INSTALL_TIMEOUT_MS, Lane, REINTERRUPT_MS, closeNames, createDataEngine, dataEngine, drainLanes, duckdbDirectory, instanceSettings, levenshtein, likePattern, loadExtensions, type DataEngineOptions } from "./engine.ts";
 import { DataFailure, type BotDatabase, type DataEngine } from "./types.ts";
 
 const root = mkdtempSync(join(tmpdir(), "omb-data-engine-"));
@@ -539,6 +539,59 @@ describe("cancellation", () => {
     expect((await queued).rows).toEqual([[7]]);
     db.interrupt("bot");
     expect((await db.run("SELECT 8", bot)).rows).toEqual([[8]]);
+  });
+});
+
+describe("an interrupt that lands before the statement begins", () => {
+  // DuckDB clears the interrupt flag when a statement begins, so an interrupt
+  // that arrives while the statement is still being set up is lost. This
+  // connection behaves the same way: it honours an interrupt only once the
+  // statement runs, and that statement never ends on its own.
+  function lateStartConnection(startMs: number) {
+    const seen = { interrupts: 0, started: false };
+    let stop: ((error: Error) => void) | null = null;
+    const connection = {
+      async run() {
+        await new Promise((resolve) => setTimeout(resolve, startMs));
+        seen.started = true;
+        return new Promise((_resolve, reject) => { stop = reject; });
+      },
+      interrupt() {
+        seen.interrupts++;
+        stop?.(new Error("INTERRUPT Error: Interrupted!"));
+      },
+    };
+    return { seen, connection };
+  }
+
+  it("still cancels the statement when the signal fires before it begins", async () => {
+    const { seen, connection } = lateStartConnection(100);
+    const lane = new Lane(connection as never);
+    const controller = new AbortController();
+    const running = lane.run(LONG_QUERY, { timeoutMs: 60_000, signal: controller.signal }, (conn) => conn.run(LONG_QUERY));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.abort();
+    const started = Date.now();
+    const error = await failure(running);
+    expect(error.error.code).toBe("cancelled");
+    expect(seen.started).toBe(true);
+    expect(seen.interrupts).toBeGreaterThan(1);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    // the lane is free again, and no interrupt reaches the next turn
+    const after = seen.interrupts;
+    expect(await lane.run("SELECT 1", {}, async () => "next")).toBe("next");
+    await new Promise((resolve) => setTimeout(resolve, REINTERRUPT_MS * 4));
+    expect(seen.interrupts).toBe(after);
+  });
+
+  it("still cancels it when the lane is interrupted directly before it begins", async () => {
+    const { seen, connection } = lateStartConnection(100);
+    const lane = new Lane(connection as never);
+    const running = lane.run(LONG_QUERY, { timeoutMs: 60_000 }, (conn) => conn.run(LONG_QUERY));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    lane.interrupt();
+    expect((await failure(running)).error.code).toBe("cancelled");
+    expect(seen.started).toBe(true);
   });
 });
 

@@ -42,7 +42,7 @@ Keep its JSON output and the reported persistent log/evidence paths. The
 permanent version is:
 
 ```sh
-pnpm exec vitest run server/workspace-backup-workflow.test.ts --silent=false
+pnpm exec vitest run server/workspace-backup-workflow.e2e.test.ts --silent=false
 ```
 
 ## Additional checks

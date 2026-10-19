@@ -40,10 +40,11 @@ beforeEach(() => {
 describe("a team map hand-off", () => {
   it("opens the bot it went to as its row would", () => {
     const edge = { sourceBotId: "clive", targetBotId: "ada", state: "connected" as const };
-    expect(click(edge)).toEqual([{ type: "select", id: "ada" }]);
+    // then no fresh topic over what it opens (#763, src/lib/fresh-topic.ts)
+    expect(click(edge)).toEqual([{ type: "select", id: "ada" }, { type: "freshTopic", botId: "ada", threadId: null }]);
     fixture.dispatch.mockClear();
     fixture.showThreads = false;
-    expect(click(edge)).toEqual([{ type: "switchTask", botId: "ada", threadId: "ada-chat" }]);
+    expect(click(edge)).toEqual([{ type: "switchTask", botId: "ada", threadId: "ada-chat" }, { type: "freshTopic", botId: "ada", threadId: null }, { type: "freshTopic", botId: "ada", threadId: null }]);
   });
 
   it("opens the thread doing the work, or the room it ran in", () => {
@@ -51,6 +52,8 @@ describe("a team map hand-off", () => {
     expect(click({ sourceBotId: "clive", targetBotId: "ada", state: "running", threadId: "ada-old" })).toEqual([
       { type: "select", id: "ada" },
       { type: "switchTask", botId: "ada", threadId: "ada-old" },
+      // a thread opened by name is shown, never a fresh topic over it (#763)
+      { type: "freshTopic", botId: "ada", threadId: null },
       { type: "revealThread", threadId: "ada-old" },
     ]);
     fixture.dispatch.mockClear();

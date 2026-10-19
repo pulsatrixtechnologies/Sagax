@@ -119,7 +119,14 @@ describe("ComposeToPicker", () => {
       expect(html).toContain("Open chat");
       expect(html).not.toContain("New thread");
       rendered.find((node) => node.props["data-compose-bot"] === "vega")?.props.onClick?.();
-      expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "select", id: "vega" });
+      // "main" has been silent far longer than the threshold, so coming back
+      // lands on a fresh topic drawn over it (#763, src/lib/fresh-topic.ts):
+      // a draft on the client, never a thread on the server
+      expect(fixture.dispatch.mock.calls).toEqual([
+        [{ type: "select", id: "vega" }],
+        [{ type: "freshTopic", botId: "vega", threadId: "main", auto: true }],
+      ]);
+      expect(fixture.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "newTask" }));
       expect(close).toHaveBeenCalled();
     });
 
@@ -132,7 +139,12 @@ describe("ComposeToPicker", () => {
         tasks: [{ threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 }, { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60, confidential: true }],
       }));
       rendered.find((node) => node.props["data-compose-bot"] === "vega")?.props.onClick?.();
-      expect(fixture.dispatch.mock.calls).toEqual([[{ type: "select", id: "vega" }], [{ type: "switchTask", botId: "vega", threadId: "main" }]]);
+      expect(fixture.dispatch.mock.calls).toEqual([
+        [{ type: "select", id: "vega" }],
+        [{ type: "switchTask", botId: "vega", threadId: "main" }],
+        // "main" is long silent: a fresh topic drawn over it (#763)
+        [{ type: "freshTopic", botId: "vega", threadId: "main", auto: true }],
+      ]);
       expect(fixture.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "newTask" }));
     });
 

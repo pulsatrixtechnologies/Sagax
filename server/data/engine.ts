@@ -258,10 +258,13 @@ function failureFrom(error: unknown, sql: string, interrupted: InterruptCause | 
   return new DataFailure({ code: "sql_error", message, sql, line });
 }
 
+/** How often an interrupt is asked again until the interrupted work settles. */
+export const REINTERRUPT_MS = 25;
+
 /** One connection, one statement at a time, with the interrupt aimed at it. */
 export class Lane {
   private queue: Promise<unknown> = Promise.resolve();
-  private running: { interrupted: InterruptCause | null } | null = null;
+  private running: { interrupt: (cause: InterruptCause) => void } | null = null;
 
   readonly connection: DuckDB.DuckDBConnection;
   constructor(connection: DuckDB.DuckDBConnection) { this.connection = connection; }
@@ -276,12 +279,18 @@ export class Lane {
     const timeoutMs = options.timeoutMs ?? DATA_LIMITS.sqlTimeoutMs;
     if (options.signal?.aborted) throw new DataFailure({ code: "cancelled", message: "Cancelled before it ran.", sql });
     const state: { interrupted: InterruptCause | null } = { interrupted: null };
-    this.running = state;
+    let again: NodeJS.Timeout | undefined;
     const interrupt = (cause: InterruptCause) => {
       if (state.interrupted) return;
       state.interrupted = cause;
       this.connection.interrupt();
+      // DuckDB drops an interrupt that lands before the statement has begun
+      // (a starting query clears the flag), and the work may start another
+      // statement after this one: ask again until the work settles. The lane
+      // runs one turn at a time, so this never reaches the next turn.
+      again = setInterval(() => this.connection.interrupt(), REINTERRUPT_MS);
     };
+    this.running = { interrupt };
     const timer = setTimeout(() => interrupt("timeout"), timeoutMs);
     const onAbort = () => interrupt("cancelled");
     options.signal?.addEventListener("abort", onAbort, { once: true });
@@ -291,15 +300,14 @@ export class Lane {
       throw failureFrom(error, sql, state.interrupted, timeoutMs);
     } finally {
       clearTimeout(timer);
+      clearInterval(again);
       options.signal?.removeEventListener("abort", onAbort);
       this.running = null;
     }
   }
 
   interrupt(): void {
-    if (!this.running) return;
-    this.running.interrupted ??= "cancelled";
-    this.connection.interrupt();
+    this.running?.interrupt("cancelled");
   }
 }
 

@@ -48,7 +48,7 @@ them as frequent stalls.
 pnpm exec vitest run server/workspace-backup-worker.test.ts \
   server/workspace-backup.test.ts server/workspace-backup-policy.test.ts \
   server/workspace-backup-http.test.ts server/workspace-backup-maintenance.test.ts \
-  server/workspace-backup-workflow.test.ts \
+  server/workspace-backup-workflow.e2e.test.ts \
   server/webhook-ingress.test.ts server/request-auth.test.ts
 pnpm lint
 pnpm typecheck

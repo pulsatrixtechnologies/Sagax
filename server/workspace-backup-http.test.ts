@@ -1,6 +1,6 @@
 // Real HTTP/auth/maintenance and disposable files; archive work is mocked so
 // revocation can be held at a deterministic boundary. The archive/restart
-// workflow is covered separately by workspace-backup-workflow.test.ts.
+// workflow is covered separately by workspace-backup-workflow.e2e.test.ts.
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type Server } from "node:http";

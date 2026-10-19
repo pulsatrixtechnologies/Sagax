@@ -33,6 +33,9 @@ const bot: Bot = {
     { threadId: "unread", title: "Finished reply", createdAt: 6, unread: true, openedBy: { botId: "atlas", name: "Atlas", at: 6 } },
   ],
 };
+// Opening a bot by hand or by name shows what it opens to: no fresh topic
+// drawn over it (#763, src/lib/fresh-topic.ts).
+const cleared = { type: "freshTopic", botId: "atlas", threadId: null };
 const densities: SidebarDensity[] = ["comfortable", "compact", "icons"];
 const rowProps = (density: SidebarDensity) => ({ bot, density, onMenu: vi.fn() });
 
@@ -86,7 +89,10 @@ describe("bot-first sidebar", () => {
       renderToStaticMarkup(createElement(Capture));
       const row = findElement(tree, "data-sidebar-bot-row", bot.id)!;
       row.props.onClick!({ type: "click", target: {} } as MouseEvent);
-      expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "select", id: bot.id });
+      // Opening the bot by hand shows the topic it opens to: no fresh topic
+      // is drawn over it (#763: the draft is cleared, src/lib/fresh-topic.ts).
+      const opened = [[{ type: "select", id: bot.id }], [cleared]];
+      expect(fixture.dispatch.mock.calls).toEqual(opened);
       // Nobody has written here yet, so the selection is the bot's main
       // thread too: opening it must not create or switch a task.
       expect(bot.threadId).toBe("last-selected");
@@ -95,7 +101,7 @@ describe("bot-first sidebar", () => {
         const preventDefault = vi.fn();
         row.props.onKeyDown!({ key, preventDefault } as unknown as KeyboardEvent);
         expect(preventDefault).toHaveBeenCalledOnce();
-        expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "select", id: bot.id });
+        expect(fixture.dispatch.mock.calls).toEqual(opened);
       }
     });
   }
@@ -114,7 +120,7 @@ describe("bot-first sidebar", () => {
       findElement(tree, "data-sidebar-bot-row", bot.id)!.props.onClick!({ type: "click", target: {} } as MouseEvent);
       // The single stream keeps a New topic it is on: the topic before is
       // drawn above it, so nothing is stranded.
-      expect(fixture.dispatch.mock.calls).toEqual([[{ type: "select", id: bot.id }]]);
+      expect(fixture.dispatch.mock.calls).toEqual([[{ type: "select", id: bot.id }], [cleared]]);
     }
   });
 
@@ -126,17 +132,21 @@ describe("bot-first sidebar", () => {
     const used = { ...bot, threadId: "idle-history", mainThreadId: "idle-history" };
     for (const enabled of [false, true]) {
       fixture.showThreads = enabled;
-      const opened = enabled ? { type: "select", id: bot.id } : { type: "switchTask", botId: bot.id, threadId: "last-selected" };
+      // the switch, then no fresh topic over what it opens (#763): the switch
+      // clears it, and so does the landing on a topic that is not idle
+      const opened = enabled
+        ? [[{ type: "select", id: bot.id }], [cleared]]
+        : [[{ type: "switchTask", botId: bot.id, threadId: "last-selected" }], [cleared], [cleared]];
       let tree: ReactNode;
       function Capture() { tree = BotListItem({ ...rowProps(density), bot: used }); return tree; }
       renderToStaticMarkup(createElement(Capture));
       const row = findElement(tree, "data-sidebar-bot-row", bot.id)!;
       fixture.dispatch.mockClear();
       row.props.onClick!({ type: "click", target: {} } as MouseEvent);
-      expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith(opened);
+      expect(fixture.dispatch.mock.calls).toEqual(opened);
       fixture.dispatch.mockClear();
       row.props.onKeyDown!({ key: "Enter", preventDefault: vi.fn() } as unknown as KeyboardEvent);
-      expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith(opened);
+      expect(fixture.dispatch.mock.calls).toEqual(opened);
     }
   });
 
@@ -257,6 +267,7 @@ describe("bot-first sidebar", () => {
     editProfile().props.onClick!({} as MouseEvent);
     expect(fixture.dispatch.mock.calls).toEqual([
       [{ type: "select", id: bot.id }],
+      [cleared],
       [{ type: "toggleSettings", open: true }],
     ]);
 
@@ -265,7 +276,7 @@ describe("bot-first sidebar", () => {
     fixture.state.settingsOpen = true;
     render();
     editProfile().props.onClick!({} as MouseEvent);
-    expect(fixture.dispatch.mock.calls).toEqual([[{ type: "select", id: bot.id }]]);
+    expect(fixture.dispatch.mock.calls).toEqual([[{ type: "select", id: bot.id }], [cleared]]);
   });
 
 

@@ -45,6 +45,8 @@ describe("useExternalChatLinks", () => {
     render(loaded, dispatch);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: "select", id: "scout" },
+      // a link shows what it names, never a fresh topic over it (#763)
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "scout-main" },
     ]);
     expect(fixture.link).toBeNull();
@@ -63,6 +65,7 @@ describe("useExternalChatLinks", () => {
       { type: "toggleAppSettings", open: false },
       { type: "toggleShortcuts", open: false },
       { type: "select", id: "scout" },
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "scout-main" },
     ]);
   });
@@ -77,6 +80,8 @@ describe("useExternalChatLinks", () => {
     render({ ...loaded, bots: [left] }, dispatch);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: "switchTask", botId: "scout", threadId: "scout-main" },
+      { type: "freshTopic", botId: "scout", threadId: null },
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "scout-main" },
     ]);
   });

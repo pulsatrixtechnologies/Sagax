@@ -191,10 +191,12 @@ describe("Triggers pop-up", () => {
       (row.props.onOpenChat as (threadId: string) => void)("delivery-run");
       return fixture.dispatch.mock.calls.map(([action]) => action).filter((action) => action.type !== "toggleTriggers");
     };
-    expect(openChat()).toEqual([{ type: "select", id: "scout" }, { type: "switchTask", botId: "scout", threadId: "delivery-run" }]);
+    // a thread opened by name is shown, never a fresh topic over it (#763)
+    const cleared = { type: "freshTopic", botId: "scout", threadId: null };
+    expect(openChat()).toEqual([{ type: "select", id: "scout" }, { type: "switchTask", botId: "scout", threadId: "delivery-run" }, cleared]);
     // The thread Scout was on keeps its unread mark: only its activity row reaches it.
     fixture.showThreads = false;
-    expect(openChat()).toEqual([{ type: "switchTask", botId: "scout", threadId: "delivery-run" }]);
+    expect(openChat()).toEqual([{ type: "switchTask", botId: "scout", threadId: "delivery-run" }, cleared]);
   });
 
   it("closes through the store", () => {

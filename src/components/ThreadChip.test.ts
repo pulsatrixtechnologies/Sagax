@@ -66,6 +66,8 @@ describe("ThreadChip", () => {
     expect(fixture.dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: "select", id: "scout" },
       { type: "switchTask", botId: "scout", threadId: "qa-245" },
+      // a thread opened by name is shown, never a fresh topic over it (#763)
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "qa-245" },
     ]);
   });
@@ -78,6 +80,8 @@ describe("ThreadChip", () => {
     findElement(tree, "data-thread-chip")!.props.onClick!();
     expect(fixture.dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: "switchTask", botId: "scout", threadId: "qa-245" },
+      // a thread opened by name is shown, never a fresh topic over it (#763)
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "qa-245" },
     ]);
   });

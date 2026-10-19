@@ -277,6 +277,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"GET","kind":"prefix","route":"/api/testing/","tier":"read","readOnly":true,"scope":"testing:read","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/testing/internal-capability","tier":"write","readOnly":false,"scope":"testing:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/testing/org-library","tier":"write","readOnly":false,"scope":"testing:write","defaultEnabled":true},
+  {"method":"ANY","kind":"exact","route":"/api/timedtext","tier":"write","readOnly":false,"scope":"timedtext:write","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/tool-grants","tier":"admin","readOnly":true,"scope":"tool-grants:admin","defaultEnabled":false},
   {"method":"POST","kind":"exact","route":"/api/tool-grants","tier":"admin","readOnly":false,"scope":"tool-grants:admin","defaultEnabled":false},
   {"method":"GET","kind":"prefix","route":"/api/tool-grants/","tier":"admin","readOnly":true,"scope":"tool-grants:admin","defaultEnabled":false},

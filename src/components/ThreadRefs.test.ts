@@ -106,6 +106,8 @@ describe("ThreadLink", () => {
     expect(fixture.dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: "select", id: "scout" },
       { type: "switchTask", botId: "scout", threadId: "qa-245" },
+      // a link shows what it names, never a fresh topic over it (#763)
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "qa-245" },
       { type: "setThreadReturn", threadReturn: { ownerId: "scout", threadId: "scout-main" } },
     ]);
@@ -117,6 +119,7 @@ describe("ThreadLink", () => {
     findElement(tree, "data-thread-link")!.props.onClick!();
     expect(fixture.dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: "switchTask", botId: "scout", threadId: "qa-245" },
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "qa-245" },
     ]);
   });
@@ -145,6 +148,7 @@ describe("openChatLink", () => {
     expect(actions(dispatch)).toEqual([
       { type: "select", id: "scout" },
       { type: "switchTask", botId: "scout", threadId: "qa-245" },
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "qa-245" },
       // Sagax's way back to the chat that was open
       { type: "setThreadReturn", threadReturn: { ownerId: "ada", threadId: "ada-qa" } },
@@ -162,6 +166,7 @@ describe("openChatLink", () => {
     expect(openChatLink(dispatch, "openmausbot://bot/scout", await state(), true)).toBe(true);
     expect(actions(dispatch)).toEqual([
       { type: "select", id: "scout" },
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "scout-main" },
     ]);
   });
@@ -183,6 +188,7 @@ describe("openChatLink", () => {
     expect(openChatLink(dispatch, "openmausbot://thread/qa-245?bot=ada", await state(), true)).toBe(false);
     expect(actions(dispatch)).toEqual([
       { type: "select", id: "ada" },
+      { type: "freshTopic", botId: "ada", threadId: null },
       { type: "notice", notice: { kind: "thread-gone", botName: "Ada" } },
     ]);
   });
@@ -237,6 +243,8 @@ describe("openChatLink", () => {
     expect(openChatLink(dispatch, "openmausbot://bot/scout", left, false)).toBe(true);
     expect(actions(dispatch)).toEqual([
       { type: "switchTask", botId: "scout", threadId: "scout-main" },
+      { type: "freshTopic", botId: "scout", threadId: null },
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "scout-main" },
     ]);
     // A dead thread link shows that bot the same way.
@@ -244,6 +252,8 @@ describe("openChatLink", () => {
     expect(openChatLink(dead, "openmausbot://thread/gone?bot=scout", left, false)).toBe(false);
     expect(actions(dead)).toEqual([
       { type: "switchTask", botId: "scout", threadId: "scout-main" },
+      { type: "freshTopic", botId: "scout", threadId: null },
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "notice", notice: { kind: "thread-gone", botName: "Scout" } },
     ]);
     // With threads shown, the thread it is on, as before.
@@ -251,6 +261,7 @@ describe("openChatLink", () => {
     expect(openChatLink(shown, "openmausbot://bot/scout", left, true)).toBe(true);
     expect(actions(shown)).toEqual([
       { type: "select", id: "scout" },
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "qa-245" },
     ]);
   });
@@ -260,6 +271,7 @@ describe("openChatLink", () => {
     expect(openChatLink(dispatch, "openmausbot://thread/qa-245?bot=scout", await state(), false)).toBe(true);
     expect(actions(dispatch)).toEqual([
       { type: "switchTask", botId: "scout", threadId: "qa-245" },
+      { type: "freshTopic", botId: "scout", threadId: null },
       { type: "revealThread", threadId: "qa-245" },
     ]);
   });
