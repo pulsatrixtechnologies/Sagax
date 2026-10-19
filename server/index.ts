@@ -1049,7 +1049,7 @@ import { createMcpAuditInternalRoutes } from "./routes/mcp-audit-internal.ts";
 import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/routine-run-internal.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
-import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTurnOrigin } from "./member-environment.ts";
+import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
@@ -1386,7 +1386,7 @@ function observePushFrame(payload: Record<string, unknown>): void {
         if (IDENTITY.kind !== "perspicax") return [localPrincipalId()];
         const bot = note.botId ? store.bot(note.botId) : note.threadId ? store.botByThread(note.threadId) : undefined;
         if (!bot) return [];
-        if (note.kind === "approval") return [approvalOwnerId(bot, typeof note.threadId === "string" ? note.threadId : undefined)];
+        if (note.kind === "approval") return [cardAnswererId(bot, typeof note.threadId === "string" ? note.threadId : undefined, noteCard(note.threadId, (note as { requestId?: unknown }).requestId))];
         const person = note.threadId ? privateThreadOwner(store.taskByThread(bot.id, note.threadId), effectiveBotOwner(bot)) : effectiveBotOwner(bot);
         return person ? [person] : [];
       },
@@ -9883,7 +9883,7 @@ function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: s
   if (message.card && typeof message.card === "object" && message.card.terminalRequest) return null;
   if (!isApprovalCardMessage(message)) return refusal;
   const bot = botForApproval(threadId, message);
-  const audience = bot ? approvalAudience({ ownerUserId: approvalOwnerId(bot, threadId), host: approvalHostOf(bot) }) : null;
+  const audience = bot ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, message.card), host: approvalHostOf(bot) }) : null;
   if (approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403) return refusal;
   return null;
 }
@@ -10023,7 +10023,7 @@ function pendingApprovalsFor(viewer: { principalId: string; orgAdmin: boolean },
   const out: AdminApproval[] = [];
   for (const { bot, threadId, message, card } of pendingApprovalCards()) {
     const kind = card.adminApproval ? "admin" as const : "owner" as const;
-    const ownerId = approvalOwnerId(bot, threadId);
+    const ownerId = cardAnswererId(bot, threadId, card);
     // A confidential thread's cards are its owner's alone: never in the
     // organization queue, never someone else's to decide.
     if (store.isConfidentialThread(threadId) && (kind === "admin" || ownerId !== viewer.principalId)) continue;
@@ -10066,7 +10066,7 @@ async function answerCardFromConsole(viewer: OrgAdminViewer, threadId: string, r
   if (card.answered || card.dismissed || card.expired) return { ok: false, status: 409, code: "card_not_pending", message: "This approval was already answered or has expired." };
   const kind = card.adminApproval ? "admin" : "owner";
   if (store.isConfidentialThread(threadId) && kind === "admin") return { ok: false, status: 404, code: "not_found", message: "No such approval." };
-  if (kind === "admin" ? !viewer.orgAdmin : approvalOwnerId(bot, threadId) !== viewer.principalId) {
+  if (kind === "admin" ? !viewer.orgAdmin : cardAnswererId(bot, threadId, card) !== viewer.principalId) {
     return { ok: false, status: 403, code: "forbidden", message: kind === "admin" ? "Only an organization admin can answer this approval." : "Only the bot owner can answer this approval." };
   }
   if (approvalTypeOf(card) !== "tool" || approvalHostOf(bot).kind !== "fleet") {
@@ -10129,7 +10129,7 @@ function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalV
   if (!isApprovalCardMessage(row)) return message;
   const bot = botForApproval(threadId, row);
   const audience = bot
-    ? approvalAudience({ ownerUserId: approvalOwnerId(bot, threadId), host: approvalHostOf(bot) })
+    ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, row.card as { destinationAnswerer?: unknown } | undefined), host: approvalHostOf(bot) })
     : { userId: "\0", deviceId: null as string | null };
   const ownerName = bot ? approvalOwnerName(audience.userId) : "the owner";
   return approvalDelivery({
@@ -10284,17 +10284,17 @@ function scopeChannelApproval(
     if (note.kind !== "approval") return { action: "same" };
     const bot = approvalBot(note);
     if (!bot) return { action: "drop" };
-    const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot, typeof note.threadId === "string" ? note.threadId : undefined), host: approvalHostOf(bot) });
+    const audience = approvalAudience({ ownerUserId: cardAnswererId(bot, typeof note.threadId === "string" ? note.threadId : undefined, noteCard(note.threadId, (note as { requestId?: unknown }).requestId)), host: approvalHostOf(bot) });
     return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
   }
   if (kind === "runtime") {
     const event = payload.event;
     if (!event || typeof event !== "object") return { action: "same" };
-    const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown; botId?: unknown };
+    const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown; botId?: unknown; requestId?: unknown };
     if (row.type !== "request.opened" || row.requestType !== "permission") return { action: "same" };
     const bot = approvalBot(row);
     if (!bot) return { action: "drop" };
-    const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot, typeof row.threadId === "string" ? row.threadId : undefined), host: approvalHostOf(bot) });
+    const audience = approvalAudience({ ownerUserId: cardAnswererId(bot, typeof row.threadId === "string" ? row.threadId : undefined, noteCard(row.threadId, row.requestId)), host: approvalHostOf(bot) });
     return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
   }
   return { action: "same" };
@@ -12937,7 +12937,13 @@ bus.subscribe((event: RuntimeEvent) => {
       // at their own level, never an admin's; and an owner who holds
       // host.commands (given in Perspicax) answers the server commands of
       // their own bots.
-      const ownDestination = Boolean(permission && asker && event.requestId && ownDestinationRequest(asker, event.threadId, event.mcpTool ?? event.tool, guestDriven));
+      const destination = permission && asker && event.requestId ? destinationOfCall(asker, event.threadId, event.mcpTool ?? event.tool, guestDriven) : null;
+      const ownDestination = Boolean(destination);
+      // 2026-10-19 (PR 3): on a bot someone else owns, the speaker's own
+      // destination is the speaker's card.
+      const destinationAnswerer = destination && !destination.byOwner ? destination.person : undefined;
+      const cardAnswerer = asker ? destinationAnswerer ?? approvalOwnerId(asker, event.threadId) : "";
+      const destinationOrigin = asker && destination ? destinationTurnOrigin(asker, event.threadId, destination.person) : "other";
       const serverLevelCard = Boolean(memberAsker && asker && memberBotAdminApproval({
         tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
@@ -12963,7 +12969,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // sent, staged in their own destination) needs no card, at any level,
       // from the owner's own turn; deny and ask rules, a safety hold and a
       // security key still come first (auto-approve.ts).
-      const attachmentRead = Boolean(ownDestination && asker && !strictCard && ownEnvironmentOrigin(asker, event.threadId) === "owner" && ownAttachmentRead({
+      const attachmentRead = Boolean(ownDestination && asker && !strictCard && destinationOrigin === "owner" && ownAttachmentRead({
         tool: event.mcpTool ?? event.tool,
         input: typeof event.input === "string" ? event.input : undefined,
         roots: ownAttachmentRoots(asker, event.threadId),
@@ -13007,7 +13013,7 @@ bus.subscribe((event: RuntimeEvent) => {
         }
         : null;
       const customReview = customCall && asker
-        ? reviewCustomRules(customRules.rulesOf(approvalOwnerId(asker, event.threadId), asker.id), customCall, asker.id)
+        ? reviewCustomRules(customRules.rulesOf(cardAnswerer, asker.id), customCall, asker.id)
         : null;
       const customDecision = customReview?.decision.kind === "allow"
         && (strictCard || guestDriven || safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true)
@@ -13077,7 +13083,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const ownerLayer = Boolean(permission && asker && event.requestId && !baseVerdict?.approve && !strictCard && !guestDriven
         && !/^(?:mcp__[^_]+__)?(?:askuserquestion|ask_user)$/i.test(ownerTool) && memberOwnScopeTool(ownerTool) !== "conversation");
       const ownerCall = ownerLayer && asker
-        ? { ownerId: approvalOwnerId(asker, event.threadId), botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}) }
+        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}) }
         : null;
       // 2026-10-17 (re-review of #690): the owner's permission mode (auto,
       // bypass) and Always allow rules never answer what Sagax itself would
@@ -13100,17 +13106,22 @@ bus.subscribe((event: RuntimeEvent) => {
       // computer, or their server environment while the organization turned
       // autonomy off) is never answered by the owner's mode or rules either:
       // the card shows (a read of their own attachments excepted).
+      // 2026-10-19 (PR 3): the speaker's explicit Always allow rules answer a
+      // call in their own isolated environment (their cloud computer, their
+      // Local VM) on someone else's bot, while the organization allows it;
+      // never their mode, and never on their real computer.
+      const speakerEnvironmentRules = Boolean(destinationAnswerer && ownEnvironmentTool(event.mcpTool ?? event.tool) && memberEnvironmentAutonomyAllowed(cfg.organization));
       const ownerOriginRefused = Boolean(ownerCall && asker && (
         (ownEnvironment && !ownEnvironmentAutonomy({
           call: true, mode: "auto", tool: event.mcpTool ?? event.tool,
           ...(typeof event.input === "string" ? { input: event.input } : {}),
           origin: ownEnvironmentOrigin(asker, event.threadId), stepUpRequired: [],
         }))
-        || (ownDestination && !ownEnvironment && !attachmentRead)
+        || (ownDestination && !ownEnvironment && !attachmentRead && !speakerEnvironmentRules)
       ));
       const owner = ownerCall && asker
         ? ownerDecision({
-          mode: effectivePermissionMode(asker, ownerCall.ownerId),
+          mode: destinationAnswerer ? "approval" : effectivePermissionMode(asker, ownerCall.ownerId),
           rules: ownerApprovals.rulesOf(ownerCall.ownerId, asker.id),
           call: ownerCall,
           personMustAnswer: safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true,
@@ -13280,6 +13291,7 @@ bus.subscribe((event: RuntimeEvent) => {
           // a guest's turn either: an "always" for it would outlive it.
           allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !strictCard && !memberAsker && !guestDriven && safetyEffect?.kind !== "hold" ? true : undefined,
           ...(adminApproval ? { adminApproval: true } : {}),
+          ...(destinationAnswerer ? { destinationAnswerer } : {}),
           ...(serverCommandHolder ? { serverCommandHolder: true } : {}),
           // who will answer it, for the member's waiting line
           ...(adminApproval && orgAdminNames().length ? { adminNames: orgAdminNames() } : {}),
@@ -25437,7 +25449,7 @@ ROUTES.push(createCustomRuleRoutes({
     if (!message || !card || card.requestType !== "permission" || card.answered || card.dismissed || card.expired || card.adminApproval) return null;
     const botId = message.from?.botId ?? store.botByThread(where.threadId)?.id;
     const bot = botId ? store.bot(botId) : undefined;
-    if (!bot || approvalOwnerId(bot, where.threadId).toLowerCase() !== personId.toLowerCase()) return null;
+    if (!bot || cardAnswererId(bot, where.threadId, card).toLowerCase() !== personId.toLowerCase()) return null;
     const binding = card.customRuleCandidate?.binding;
     return binding ? { ...binding, botId: bot.id } : undefined;
   },
@@ -25447,7 +25459,7 @@ ROUTES.push(createCustomRuleRoutes({
     if (!message || !card || card.requestType !== "permission" || !card.tool || card.answered || card.dismissed || card.expired || card.adminApproval) return null;
     const botId = message.from?.botId ?? store.botByThread(where.threadId)?.id;
     const bot = botId ? store.bot(botId) : undefined;
-    if (!bot || approvalOwnerId(bot, where.threadId).toLowerCase() !== personId.toLowerCase()) return null;
+    if (!bot || cardAnswererId(bot, where.threadId, card).toLowerCase() !== personId.toLowerCase()) return null;
     if (rule.botId !== null && rule.botId !== bot.id) return "not-covered";
     const binding = card.customRuleCandidate?.binding;
     const call: CustomRuleCall = {
@@ -27291,6 +27303,55 @@ function ownDestinationRequest(bot: BotRecord, threadId: string, tool: string | 
     mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
   });
 }
+/** 2026-10-19 (JC, PR 3): whose own destination a call acts on. The bot's
+ * owner (ownDestinationRequest), or, on a bot someone else owns, the person
+ * who speaks in their own conversation with it: the destination Sagax
+ * mounted is theirs, so the card is THEIRS, never an admin's and never the
+ * bot owner's. Only when that person wrote this turn themselves (no other
+ * bot's hop, routine, webhook, email or automation) and the conversation is
+ * their own (its task owner). Null: not a person's own destination. */
+function destinationOfCall(bot: BotRecord, threadId: string, tool: string | undefined, guestDriven: boolean): { person: string; byOwner: boolean } | null {
+  const owner = effectiveBotOwner(bot).trim().toLowerCase();
+  if (ownDestinationRequest(bot, threadId, tool, guestDriven)) return { person: owner, byOwner: true };
+  const speaker = turnSpeakers.get(threadId);
+  const person = speaker?.origin === "person" ? speaker.principalId?.trim().toLowerCase() ?? "" : "";
+  if (!person || person === owner) return null;
+  if ((store.taskByThread(bot.id, threadId)?.ownerPrincipalId ?? "").trim().toLowerCase() !== person) return null;
+  if (destinationTurnOrigin(bot, threadId, person) !== "owner") return null;
+  const workplace = turnWorkplaces.get(threadId);
+  const mine = workplace?.botId === bot.id;
+  return ownDestinationCall({
+    identity: IDENTITY.kind,
+    tool,
+    environmentPrincipalId: mine ? workplace.decision.principal : null,
+    ownerPrincipalId: person,
+    guestDriven,
+    mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
+  }) ? { person, byOwner: false } : null;
+}
+/** Whether `person` wrote this turn themselves (member-environment.ts
+ * ownEnvironmentTurnOrigin, for the person whose destination it is). */
+function destinationTurnOrigin(bot: BotRecord, threadId: string, person: string): "owner" | "other" {
+  return ownEnvironmentTurnOrigin({
+    speaker: turnSpeakers.get(threadId),
+    ownerPrincipalId: person,
+    internalTurn: isInternalTurn(threadId),
+    routineLineage: turnRoutineLineage.has(threadId),
+    automation: Boolean(directRequestOwners.get(threadId)?.automation),
+    unattended: isUnattended(bot.id, threadId),
+  });
+}
+/** Who answers this card: the person whose own destination it acts on when
+ * that is not the bot's owner (destinationOfCall), else approvalOwnerId. */
+function cardAnswererId(bot: BotRecord, threadId: string | undefined, card: { destinationAnswerer?: unknown } | null | undefined): string {
+  const answerer = typeof card?.destinationAnswerer === "string" ? card.destinationAnswerer.trim().toLowerCase() : "";
+  return answerer || approvalOwnerId(bot, threadId);
+}
+/** The card of an approval notification or row, when it names one. */
+function noteCard(threadId: unknown, requestId: unknown): { destinationAnswerer?: unknown } | undefined {
+  if (typeof threadId !== "string" || typeof requestId !== "string") return undefined;
+  return store.messagesFor(threadId).find((row) => row.card?.requestId === requestId)?.card;
+}
 /** 2026-10-19: the attachments folders of the owner's own destinations,
  * where Sagax staged the files they sent: their desktop app's folder on
  * their computer, /workspace/attachments in their server environment. */
@@ -27496,9 +27557,9 @@ function threadActionClassContext(botId: string | undefined, threadId: string): 
 
 /** Whose chosen classes apply when nobody answers as a person: the bot's
  * owner. */
-function stepUpPolicyPerson(threadId: string, message: { from?: { botId?: string } } | undefined): string | null {
+function stepUpPolicyPerson(threadId: string, message: { from?: { botId?: string }; card?: { destinationAnswerer?: unknown } } | undefined): string | null {
   const bot = botForApproval(threadId, message ?? {});
-  return bot ? approvalOwnerId(bot, threadId) || null : null;
+  return bot ? cardAnswererId(bot, threadId, message?.card) || null : null;
 }
 
 /** A bot act card holds no route of its own: its classes and content come
@@ -27606,7 +27667,7 @@ function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: s
   }
   const bot = botForApproval(threadId, message);
   if (!bot) return { status: 404, error: "No such approval." };
-  const ownerId = approvalOwnerId(bot, threadId);
+  const ownerId = cardAnswererId(bot, threadId, card);
   const caller = ruleManager(auth);
   if (!caller || caller.toLowerCase() !== ownerId.toLowerCase()) return { status: 403, error: "Only the bot owner can save a rule." };
   const candidate = card.ownerRule;
@@ -32097,7 +32158,7 @@ const orgMember = createOrgMemberRoutes({
     if (!message?.card) return null;
     const card = message.card;
     const bot = botForApproval(threadId, message);
-    const ownerId = bot ? approvalOwnerId(bot, threadId) : null;
+    const ownerId = bot ? cardAnswererId(bot, threadId, card) : null;
     return {
       found: true,
       open: !card.answered && !card.dismissed && !card.expired,

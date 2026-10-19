@@ -8047,6 +8047,8 @@
   "sidebar.openUnreadThread": "Open {name}, unread",
   "computer.group.yours": "Your computer",
   "computer.group.bots": "Bots' computer",
+  "myRules.title": "Your approval rules",
+  "myRules.help": "Every Always allow and Always deny you saved, on your bots and on bots shared with you. They are yours alone: delete one and the card asks again. On your own computer a command always asks; on your cloud computer and your Local VM, Always allow works.",
   "computer.others": "Other computers",
   "computer.others.show": "Show other computers",
   "computer.others.hide": "Hide other computers",

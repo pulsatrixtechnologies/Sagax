@@ -198,8 +198,8 @@ posixOnly("organization server: a member's own destinations", () => {
       const rows = (await api("GET", `/api/threads/${bot.threadId}/messages?limit=200`, auth)).body.messages as Array<{ card?: any }>;
       return !rows.some((m) => m.card?.requestId === id);
     };
-    const respond = (who: Auth, requestId: string, behavior: "allow" | "deny") =>
-      api("POST", `/api/threads/${bot.threadId}/respond`, who, { requestId, behavior });
+    const respond = (who: Auth, requestId: string, behavior: "allow" | "deny", rule?: "allow" | "deny") =>
+      api("POST", `/api/threads/${bot.threadId}/respond`, who, { requestId, behavior, ...(rule ? { rule } : {}) });
     const end = async () => {
       for (const socket of sockets) socket.destroy();
       await api("POST", `/api/bots/${bot.id}/interrupt`, auth, {});
@@ -283,6 +283,84 @@ posixOnly("organization server: a member's own destinations", () => {
       await prefer("computer");
     }
   }, 120_000);
+
+  it("PR 3: Always allow on his own cloud computer; his list in settings revokes it; never on his real computer", async () => {
+    const prefer = (place: "server" | "computer") => api("PUT", "/api/me/preferences", bob, { preferences: { "sagax.botWorkplace.v1": JSON.stringify({ place, routines: false, network: "all" }) } });
+    const sage = await bobBot("Sage");
+    expect((await prefer("server")).status).toBe(200);
+    let turn = await heldTurn(bob, sage, "travaille dans le nuage");
+    try {
+      const first = await turn.ask("mcp__sagax-environment__run_command", { command: "npm test" });
+      const card = await turn.cardOf(first.id);
+      expect(card.adminApproval).not.toBe(true);
+      expect(card.ownerRule).toBeTruthy();
+      const saved = await turn.respond(bob, first.id, "allow", "allow");
+      expect(saved.status, saved.text).toBe(200);
+      await waitFor(async () => first.answer()?.behavior === "allow");
+      const rules = (await api("GET", "/api/approval-rules", bob)).body.rules as Array<{ id: string; botId: string | null; behavior: string }>;
+      const rule = rules.find((row) => row.botId === sage.id && row.behavior === "allow");
+      expect(rule).toBeTruthy();
+      // the same call now runs with no card
+      const again = await turn.ask("mcp__sagax-environment__run_command", { command: "npm test" });
+      await waitFor(async () => again.answer()?.behavior === "allow");
+      expect(await turn.noCard(again.id)).toBe(true);
+      // revoked from his list: the card asks again
+      expect((await api("DELETE", `/api/approval-rules/${rule!.id}`, bob)).status).toBe(200);
+      const revoked = await turn.ask("mcp__sagax-environment__run_command", { command: "npm test" });
+      expect(await turn.cardOf(revoked.id)).toBeTruthy();
+      expect(revoked.answer()).toBeUndefined();
+    } finally {
+      await turn.end();
+      await prefer("computer");
+    }
+    // his real computer: no Always allow offered (security review)
+    turn = await heldTurn(bob, sage, "sur mon pc");
+    try {
+      const desktopCall = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir" });
+      const card = await turn.cardOf(desktopCall.id);
+      expect(card.adminApproval).not.toBe(true);
+      expect(card.ownerRule).toBeFalsy();
+    } finally {
+      await turn.end();
+    }
+  }, 150_000);
+
+  it("PR 3: on a bot Alice shares with him, his own destination is HIS card, never an admin's or Alice's", async () => {
+    const created = await api("POST", "/api/bots", alice, { name: "Atlas" });
+    expect(created.status, created.text).toBe(201);
+    const atlasId = created.body.bot.id as string;
+    expect((await api("PATCH", `/api/bots/${atlasId}`, alice, { modelSelection: { instanceId: "hold", model: "fake-model" } })).status).toBe(200);
+    const bobId = (await api("GET", "/api/auth/session", bob)).body.principalId as string;
+    const granted = await api("POST", `/api/bots/${atlasId}/direct-grants`, alice, { userId: bobId });
+    expect(granted.status, granted.text).toBe(200);
+    const bobView = ((await api("GET", "/api/bots", bob)).body.bots as Array<{ id: string; threadId: string }>).find((bot) => bot.id === atlasId)!;
+    expect(bobView).toBeTruthy();
+    const atlas = { id: atlasId, threadId: bobView.threadId };
+    const turn = await heldTurn(bob, atlas, "ouvre mon pc");
+    try {
+      expect(turn.mcpServers).toContain("sagax-desktop");
+      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "whoami" });
+      const card = await turn.cardOf(command.id);
+      expect(card.adminApproval).not.toBe(true);
+      expect(card.destinationAnswerer).toBe(bobId);
+      // Alice owns the bot, but it is Bob's computer: not hers to answer
+      expect([403, 404]).toContain((await turn.respond(alice, command.id, "allow")).status);
+      const allowed = await turn.respond(bob, command.id, "allow");
+      expect(allowed.status, allowed.text).toBe(200);
+      await waitFor(async () => command.answer()?.behavior === "allow");
+      // his attachments: read with no card
+      const read = await turn.ask("mcp__sagax-desktop__read_file", { path: `${BOB_ATTACHMENTS}\\a1b2c3d4-notes.txt` });
+      await waitFor(async () => read.answer()?.behavior === "allow");
+      // a server command on Alice's bot (she is an admin) from Bob's turn:
+      // never Bob's to answer
+      const shell = await turn.ask("Bash", { command: "id" });
+      await sleep(500);
+      expect([403, 404]).toContain((await turn.respond(bob, shell.id, "allow")).status);
+      expect(shell.answer()).toBeUndefined();
+    } finally {
+      await turn.end();
+    }
+  }, 150_000);
 
   it("the organization's server: an admin's, until an admin gives the permission in Perspicax; an admin is unchanged", async () => {
     const otto = await bobBot("Otto");

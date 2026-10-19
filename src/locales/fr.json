@@ -8034,6 +8034,8 @@
   "sidebar.openUnreadThread": "Ouvrir {name}, non lu",
   "computer.group.yours": "Votre ordinateur",
   "computer.group.bots": "Ordinateur des bots",
+  "myRules.title": "Vos règles d'approbation",
+  "myRules.help": "Chaque « Toujours permettre » et « Toujours refuser » que vous avez enregistré, sur vos bots et sur les bots partagés avec vous. Elles ne sont qu'à vous : supprimez-en une et la carte redemande. Sur votre propre ordinateur, une commande demande toujours ; sur votre ordinateur infonuagique et votre VM locale, « Toujours permettre » fonctionne.",
   "computer.others": "Autres ordinateurs",
   "computer.others.show": "Afficher les autres ordinateurs",
   "computer.others.hide": "Masquer les autres ordinateurs",

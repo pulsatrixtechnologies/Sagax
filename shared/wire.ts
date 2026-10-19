@@ -837,6 +837,11 @@ export interface OptionCardData {
    * host.commands, answered by that owner by hand; the right is checked
    * again when the card is answered. */
   serverCommandHolder?: boolean;
+  /** 2026-10-19 (PR 3): the person whose own destination (cloud computer,
+   * Local VM, own computer) this call acts on, when that is not the bot's
+   * owner: the speaker in their own conversation with a shared bot. They
+   * answer it, never an admin and never the bot's owner. */
+  destinationAnswerer?: string;
   /** The organization admins who can answer an adminApproval card (at most
    * five names), so the member's waiting line can say who. */
   adminNames?: string[];
