@@ -83,10 +83,10 @@ try {
     const url = new URL(route.request().url());
     const branch = url.searchParams.get("branch") ?? "";
     const reply = (body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
-    if (/\/code\/branch$/.test(url.pathname)) return reply({ branch, place: "server", folderName: "web", repo: "acme/web", canPublish: true, ...INFO[branch] });
-    if (/\/code\/branch\/pull$/.test(url.pathname)) return reply({ pull: PULL[branch] ?? null });
-    if (/\/code\/branch\/diff$/.test(url.pathname)) return reply(DIFF);
-    if (/\/code\/branches\/archived$/.test(url.pathname)) return reply({ keys: [] });
+    if (url.pathname.endsWith("/code/branch")) return reply({ branch, place: "server", folderName: "web", repo: "acme/web", canPublish: true, ...INFO[branch] });
+    if (url.pathname.endsWith("/code/branch/pull")) return reply({ pull: PULL[branch] ?? null });
+    if (url.pathname.endsWith("/code/branch/diff")) return reply(DIFF);
+    if (url.pathname.endsWith("/code/branches/archived")) return reply({ keys: [] });
     return reply({ error: "not in this gallery" }, 404);
   });
   for (const { id, label } of skins) {
