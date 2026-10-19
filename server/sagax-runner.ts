@@ -10,7 +10,8 @@
 //   PX_SECRETS_DIR      memory-backed directory for secrets (/dev/shm/px-secrets)
 //   SAGAX_RUNNER_STATE  writable state of the engines (<HOME>/.sagax-runner)
 //   PX_AGENT_EMAIL      e-mail of the "Pulsatrix Agent" commits
-// Exit codes: 0 stopped, expired or token revoked (401); 1 failed.
+// Exit codes: 0 stopped, expired, terminated (SIGTERM) or token revoked
+// (401); 1 failed.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -35,11 +36,16 @@ async function main(): Promise<number> {
   const { ensureDirs } = await import("./config.ts");
   ensureDirs();
   const { realEngineFactory } = await import("./runner/engine-drivers.ts");
-  // The runner's own environment for setup and verify: no PX_ variable
-  // beyond the run id (the token stays in its file).
+  // The token's file path leaves the runner's environment, so the engines
+  // and setup do not inherit it. (The engines still get the token itself
+  // as their model proxy key, by contract.)
+  delete process.env.PX_RUN_TOKEN_FILE;
   const env: Record<string, string | undefined> = { ...process.env };
-  delete env.PX_RUN_TOKEN_FILE;
+  const terminate = new AbortController();
+  process.once("SIGTERM", () => terminate.abort());
   const result = await runRunner({
+    signal: terminate.signal,
+    runId: process.env.PX_RUN_ID?.trim() || undefined,
     client: new ControlClient({ base, token }),
     token,
     engineFactory: realEngineFactory(),

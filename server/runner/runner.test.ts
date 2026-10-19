@@ -409,6 +409,107 @@ describe("sagax-runner Git guard (negative)", () => {
   }, 30_000);
 });
 
+describe("sagax-runner review cases", () => {
+  it("retries a bootstrap answered 503, then runs", async () => {
+    await setup({ setup: "", verify: [] });
+    fake.bootstrapFailures = 1;
+    engine.scripts.push(writeHello);
+    const { result } = start();
+    await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle", 30_000);
+    fake.push("stop");
+    expect((await result).exit).toBe("stopped");
+  }, 60_000);
+
+  it("never publishes a branch that carries a secret value", async () => {
+    await setup({ setup: 'printf "token=%s\\n" "$SETUP_TOKEN" > config.txt', verify: [] });
+    engine.scripts.push(writeHello);
+    const { result } = start();
+    await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle");
+    expect(fake.bundles).toHaveLength(0);
+    const warning = fake.events.find((e) => e.kind === "warning" && String(e.data.text).includes("non publiée"));
+    expect(String(warning?.data.text)).toContain("config.txt");
+    expect(JSON.stringify(fake.events)).not.toContain(SETUP_SECRET);
+    fake.push("stop");
+    await result;
+  }, 60_000);
+
+  it("masks a secret that straddles a 16 KiB cut or a 4 KiB summary", async () => {
+    await setup({ setup: "", verify: [] });
+    engine.scripts.push((_turn, eng) => {
+      eng.emit({ type: "item.started", itemType: "tool", itemId: "t9", title: "Bash", summary: "dump" });
+      eng.emit({ type: "item.completed", itemType: "tool", itemId: "t9", ok: true, output: `${"x".repeat(4_090)}${AGENT_SECRET}${"y".repeat(12_280)}${AGENT_SECRET}${"z".repeat(100)}` });
+    });
+    const { result } = start();
+    await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle");
+    const sent = JSON.stringify(fake.events);
+    for (let k = 6; k < AGENT_SECRET.length; k++) {
+      expect(sent).not.toContain(AGENT_SECRET.slice(0, k) + "\\n[...");
+    }
+    const terminal = fake.events.filter((e) => e.kind === "terminal").map((e) => String(e.data.text)).join("");
+    expect(terminal).not.toContain(AGENT_SECRET.slice(0, 10));
+    expect(terminal.split(MASK).length - 1).toBe(2);
+    for (const e of fake.events.filter((ev) => ev.kind === "terminal")) expect(Buffer.byteLength(String(e.data.text))).toBeLessThanOrEqual(16 * 1024);
+    expect(sent).not.toContain(AGENT_SECRET);
+    fake.push("stop");
+    await result;
+  }, 60_000);
+
+  it("kills what setup left running, so no process keeps setup_only secrets", async () => {
+    await setup({ setup: 'sleep 30 & echo $! > "$HOME/bg.pid"; echo started', verify: [] });
+    engine.scripts.push(writeHello);
+    const { result, dirs } = start();
+    await fake.waitFor((e) => e.kind === "state" && e.data.state === "running");
+    const pid = Number(readFileSync(join(dirs.workspace, "bg.pid"), "utf8").trim());
+    expect(pid).toBeGreaterThan(0);
+    await expectEventually(() => { try { process.kill(pid, 0); return false; } catch { return true; } }, 5_000);
+    fake.push("stop");
+    await result;
+  }, 60_000);
+
+  it("drops an events batch Perspicax refuses (4xx) and goes on", async () => {
+    await setup({ setup: "", verify: [] });
+    fake.eventsStatusOnce = 422;
+    engine.scripts.push(writeHello);
+    const { result } = start();
+    await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle");
+    fake.push("stop");
+    expect((await result).exit).toBe("stopped");
+  }, 60_000);
+
+  it("on a followup Pod, catches up with commits pushed to the branch since", async () => {
+    await setup({ setup: "", verify: [] });
+    engine.scripts.push(writeHello);
+    const first = start();
+    await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle");
+    fake.push("stop");
+    await first.result;
+    // What Perspicax pushed, plus a commit a person added on the PR.
+    writeFileSync(join(root, "b1.bundle"), fake.bundles[0]!);
+    git(bare, "fetch", "--quiet", join(root, "b1.bundle"), `refs/heads/${BRANCH}:refs/heads/${BRANCH}`);
+    const person = join(root, "person");
+    git(root, "clone", "--quiet", "-b", BRANCH, bare, person);
+    writeFileSync(join(person, "review.txt"), "fix\n");
+    git(person, "add", ".");
+    git(person, "commit", "--quiet", "-m", "review fix");
+    git(person, "push", "--quiet", "origin", BRANCH);
+    const personHead = git(person, "rev-parse", "HEAD").trim();
+
+    engine = new FakeEngine();
+    fake.newPod(bootstrapFor({ setup: "", verify: [], followup: { text: "Also add second.txt", mode: "queue" }, resume: { session_id: "sess-1", summary: "hello.txt added" } }));
+    engine.scripts.push((turn) => { writeFileSync(join(turn.cwd!, "second.txt"), "two\n"); });
+    const second = start();
+    await fake.waitFor((e) => e.kind === "state" && e.data.state === "idle").catch((error) => { throw new Error(`${error.message} ${JSON.stringify(fake.events.filter((e) => e.kind === "state" || e.kind === "warning"))}`); });
+    expect(engine.turns[0]).toMatchObject({ text: "Also add second.txt", resumeCursor: "sess-1" });
+    expect(fake.bundles).toHaveLength(1);
+    const head = bundleHeads(fake.bundles[0]!)[0]!.sha;
+    writeFileSync(join(root, "b2.bundle"), fake.bundles[0]!);
+    git(person, "fetch", "--quiet", join(root, "b2.bundle"), `refs/heads/${BRANCH}:refs/heads/next`);
+    expect(git(person, "merge-base", "--is-ancestor", personHead, head)).toBe("");
+    fake.push("stop");
+    await second.result;
+  }, 90_000);
+});
+
 /** Async on purpose: the fake Perspicax runs in this process, so a
  * synchronous child would block the very server it talks to. */
 function runAsync(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): Promise<{ status: number | null; stderr: string }> {

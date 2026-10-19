@@ -11,6 +11,7 @@
 // The runner never listens on a port, never holds a write token, and masks
 // every known secret (and the run token) in what it sends.
 import { spawn } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { RuntimeEvent } from "../contracts.ts";
@@ -35,9 +36,11 @@ import { SecretStore } from "./secrets.ts";
 
 /** The largest bundle Perspicax accepts (its API body limit). */
 export const MAX_BUNDLE_BYTES = 64 * 1024 * 1024;
+/** Above this the raw diff is not read whole (memory). */
+const MAX_DIFF_TEXT_BYTES = 32 * 1024 * 1024;
 const TAIL_BYTES = 4 * 1024;
 
-export type RunnerExit = "stopped" | "expired" | "unauthorized" | "failed";
+export type RunnerExit = "stopped" | "expired" | "unauthorized" | "terminated" | "failed";
 
 export interface RunnerDeps {
   client: ControlClient;
@@ -58,6 +61,10 @@ export interface RunnerDeps {
   setupTimeoutMs?: number;
   verifyTimeoutMs?: number;
   relayFlushDelayMs?: number;
+  /** Aborted on SIGTERM: the runner stops its engine and exits. */
+  signal?: AbortSignal;
+  /** PX_RUN_ID: the bootstrap must name the same run. */
+  runId?: string;
   /** How long a bootstrap without an answer (or a 5xx) is retried. */
   bootstrapRetryMs?: number;
   log?: (line: string) => void;
@@ -69,6 +76,10 @@ export interface RunnerResult {
 }
 
 class Stop extends Error {}
+
+/** stop: the `stop` command; expired: max duration; unauthorized: 401;
+ * terminated: SIGTERM (the Pod is going away). */
+export type StopReason = "stop" | "expired" | "unauthorized" | "terminated";
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -105,7 +116,15 @@ export function runSystemNote(b: RunnerBootstrap): string {
 }
 
 export async function runRunner(deps: RunnerDeps): Promise<RunnerResult> {
-  return new Runner(deps).run();
+  const runner = new Runner(deps);
+  const onAbort = () => runner.halt("terminated");
+  if (deps.signal?.aborted) onAbort();
+  deps.signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    return await runner.run();
+  } finally {
+    deps.signal?.removeEventListener("abort", onAbort);
+  }
 }
 
 class Runner {
@@ -121,7 +140,8 @@ class Runner {
   private baseSha = "";
   private lastPushed = "";
   private state: RunState | null = null;
-  private stopReason: "stop" | "expired" | "unauthorized" | null = null;
+  private stopReason: StopReason | null = null;
+  private interrupted = false;
   private readonly stopped = deferred<void>();
   private readonly pollAbort = new AbortController();
   private poller: Promise<void> | null = null;
@@ -168,7 +188,7 @@ class Runner {
   }
 
   /** Stop request, expiry or dead token: everything waiting wakes up. */
-  private halt(reason: "stop" | "expired" | "unauthorized"): void {
+  halt(reason: StopReason): void {
     if (this.stopReason === "unauthorized") return;
     if (this.stopReason && reason !== "unauthorized") return;
     this.stopReason = reason;
@@ -185,7 +205,12 @@ class Runner {
         if (turn.userEcho) this.emit({ kind: "message", data: { role: "user", text: turn.userEcho } });
         const finished = await this.runTurn(turn);
         if (!finished || this.stopping) break;
-        await this.publish();
+        try {
+          await this.publish();
+        } catch (error) {
+          if (error instanceof RunnerUnauthorized) throw error;
+          this.warn(`Publication du tour impossible : ${this.masker.mask(error instanceof Error ? error.message : String(error))}`);
+        }
         if (this.stopping) break;
         if (!this.followups.length) this.setState("idle");
         const next = await this.nextFollowup();
@@ -209,6 +234,7 @@ class Runner {
     const raw = await this.bootstrapWithRetry();
     this.bootstrap = parseBootstrap(raw, this.deps.client.base);
     const b = this.bootstrap;
+    if (this.deps.runId && b.run_id !== this.deps.runId) throw new Error("le bootstrap ne correspond pas à PX_RUN_ID");
     this.setState("setup");
     this.poller = this.pollCommands();
     const maxMs = b.limits.max_duration_sec * 1000;
@@ -249,6 +275,10 @@ class Runner {
     if (b.setup.trim()) {
       const result = await this.shell(b.setup, { env: this.secrets.setupEnv(), timeoutMs: this.deps.setupTimeoutMs ?? 30 * 60_000, label: "setup" });
       if (result.code !== 0) this.warn(`Le script setup a échoué (code ${result.code ?? "délai dépassé"}) ; le run continue sur l'image de base.`);
+      // A process setup left behind still holds the setup_only secrets in
+      // its environment: none survives setup.
+      const killed = killProcessesHolding(this.secrets.setupOnlyValues());
+      if (killed) this.warn(`${killed} processus laissé(s) par setup avec des secrets setup_only ont été arrêtés.`);
     }
     // The agent never sees a setup_only secret.
     this.secrets.eraseSetupOnly();
@@ -269,6 +299,9 @@ class Runner {
         GIT_AUTHOR_EMAIL: this.deps.agentEmail ?? AGENT_EMAIL_DEFAULT,
         GIT_COMMITTER_NAME: AGENT_NAME,
         GIT_COMMITTER_EMAIL: this.deps.agentEmail ?? AGENT_EMAIL_DEFAULT,
+        // Read-only root and filtered egress: no self-update, no extra calls.
+        DISABLE_AUTOUPDATER: "1",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
         ...this.secrets.agentEnv(),
       },
     });
@@ -296,6 +329,7 @@ class Runner {
   private async runTurn(turn: { text: string; resumeCursor?: string; recoveryText?: string }): Promise<boolean> {
     const engine = this.engine!;
     this.setState("running");
+    this.interrupted = false;
     const completion = deferred<boolean>();
     this.active = { done: completion.resolve };
     const resumeCursor = turn.resumeCursor ?? this.sessionId ?? undefined;
@@ -317,12 +351,13 @@ class Runner {
     if (outcome === null) {
       // Stop during the turn: the engine stops, nothing is published.
       await this.interruptActive();
-      await Promise.race([completion.promise, sleep(10_000)]);
+      await Promise.race([completion.promise, sleep(10_000, true)]);
       this.active = null;
       return false;
     }
     this.active = null;
-    if (!outcome) this.warn("Le tour du moteur s'est terminé en erreur ; le travail fait jusque-là est conservé.");
+    this.asks.clear();
+    if (!outcome && !this.interrupted) this.warn("Le tour du moteur s'est terminé en erreur ; le travail fait jusque-là est conservé.");
     return true;
   }
 
@@ -331,8 +366,11 @@ class Runner {
     await this.engine.adapter.interruptTurn(this.bootstrap.run_id, this.active.turnId).catch(() => undefined);
   }
 
-  private onEngineEvent(event: RuntimeEvent): void {
-    if (event.threadId && this.bootstrap && event.threadId !== this.bootstrap.run_id) return;
+  private onEngineEvent(raw: RuntimeEvent): void {
+    if (raw.threadId && this.bootstrap && raw.threadId !== this.bootstrap.run_id) return;
+    // Masked whole, before any cut or truncation: a secret is never split
+    // into two halves that each escape the mask.
+    const event = this.masker.maskDeep(raw);
     if (event.type === "turn.completed") {
       this.active?.done(event.ok);
       return;
@@ -418,6 +456,7 @@ class Runner {
       }
       if (mode === "interrupt") {
         this.followups.unshift(text);
+        this.interrupted = true;
         await this.interruptActive();
         return;
       }
@@ -431,7 +470,9 @@ class Runner {
   private async publish(): Promise<void> {
     const b = this.bootstrap;
     const verify = [];
-    for (const cmd of b.verify) {
+    // An interrupted turn goes straight on to the next request: its work is
+    // committed and published, verify runs after the next turn.
+    for (const cmd of this.interrupted ? [] : b.verify) {
       if (this.stopping) return;
       const result = await this.shell(cmd, { env: this.secrets.agentEnv(), timeoutMs: this.deps.verifyTimeoutMs ?? 20 * 60_000, label: "verify" });
       verify.push({ cmd, ok: result.code === 0, exit_code: result.code, tail: result.tail });
@@ -452,12 +493,23 @@ class Runner {
     const from = (await this.git.text(["merge-base", this.baseSha, "HEAD"], { allowFail: true })).trim() || this.baseSha;
     const stats = await this.git.stats(from);
     this.emit({ kind: "stats", data: stats });
-    const { files, truncated } = capDiff(parseUnifiedDiff(this.masker.mask(await this.git.diffText(from))), MAX_DIFF_BYTES);
+    const rawDiff = await this.git.diffText(from, MAX_DIFF_TEXT_BYTES).catch(() => null);
+    if (rawDiff === null) this.warn("Le diff est trop volumineux pour être affiché ; seuls les totaux sont envoyés.");
+    const maskedDiff = rawDiff === null ? "" : this.masker.mask(rawDiff);
+    const { files, truncated } = capDiff(parseUnifiedDiff(maskedDiff), MAX_DIFF_BYTES);
     this.emit({ kind: "diff", data: { files } });
     if (truncated) this.warn("Le diff est trop volumineux : certains fichiers n'ont que leurs totaux.");
     this.emit({ kind: "commits", data: { commits: await this.git.commits(from) } });
 
     if (stats.head_sha === this.lastPushed) return;
+    // A secret value (or the run token) in what would be pushed: the branch
+    // is not published. The masked diff would hide it from the person while
+    // the pull request carried it in clear.
+    const leaked = await this.leakedFiles(from, rawDiff, maskedDiff);
+    if (leaked) {
+      this.warn(`Branche non publiée : un secret de l'environnement figure dans ${leaked}. Retirez-le puis demandez une suite.`);
+      return;
+    }
     let bundle: Buffer;
     try {
       bundle = await this.git.bundle(b.branch, MAX_BUNDLE_BYTES);
@@ -465,16 +517,42 @@ class Runner {
       this.warn(`Bundle non créé : ${error instanceof GitError ? error.message : error instanceof Error ? error.message : String(error)}`);
       return;
     }
-    await this.relay.flush();
+    await Promise.race([this.relay.flush(), this.stopped.promise, sleep(30_000, true)]);
+    if (this.stopping) return;
     try {
       const result = await this.deps.client.bundle(bundle);
-      if (result.pushed) this.lastPushed = result.head_sha ?? stats.head_sha;
-      else this.warn("Perspicax n'a pas poussé la branche.");
+      // A 200 means Perspicax took the bundle (P1.9 answers its record,
+      // status "received"; the push and the PR follow on its side).
+      this.lastPushed = result.head_sha ?? stats.head_sha;
     } catch (error) {
       if (error instanceof RunnerUnauthorized) throw error;
       const detail = error instanceof RunnerHttpError ? error.message : String(error);
       this.warn(`Branche non publiée : ${detail}`);
     }
+  }
+
+  /** Files of the run's changes (or commit messages) that contain a known
+   * secret, named for the warning; null when clean. */
+  private async leakedFiles(from: string, rawDiff: string | null, maskedDiff: string): Promise<string | null> {
+    const messages = await this.git.text(["log", "--format=%B", `${from}..HEAD`]);
+    const where: string[] = [];
+    if (this.masker.mask(messages) !== messages) where.push("un message de commit");
+    if (rawDiff === null) {
+      // Too big to read whole: check each changed file's new content.
+      const names = (await this.git.text(["diff", "--name-only", "-z", `${from}..HEAD`])).split("\0").filter(Boolean);
+      for (const name of names) {
+        const blob = await this.git.git(["cat-file", "-p", `HEAD:${name}`], { allowFail: true, maxBytes: 64 * 1024 * 1024 }).catch(() => null);
+        const text = blob?.stdout.toString("utf8") ?? "";
+        if (text && this.masker.mask(text) !== text) where.push(name);
+      }
+    } else if (maskedDiff !== rawDiff) {
+      for (const file of parseUnifiedDiff(rawDiff)) {
+        const added = file.hunks.flatMap((h) => h.lines.filter((l) => l.kind === "add").map((l) => l.text)).join("\n");
+        if (this.masker.mask(added) !== added || this.masker.mask(file.path) !== file.path) where.push(this.masker.mask(file.path));
+      }
+      if (!where.length) where.push("le diff");
+    }
+    return where.length ? where.slice(0, 10).join(", ") : null;
   }
 
   /** setup and verify: bash -c in the clone, output masked and relayed. */
@@ -505,11 +583,15 @@ class Runner {
       const killGroup = (signal: NodeJS.Signals) => { try { process.kill(-child.pid!, signal); } catch { child.kill(signal); } };
       const timer = setTimeout(() => { killGroup("SIGTERM"); setTimeout(() => killGroup("SIGKILL"), 5_000).unref?.(); }, options.timeoutMs);
       let settled = false;
-      void this.stopped.promise.then(() => { if (!settled) killGroup("SIGTERM"); });
+      const onStop = () => { if (!settled) killGroup("SIGTERM"); };
+      void this.stopped.promise.then(onStop);
       const done = (code: number | null) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        // Nothing the command started outlives it (a daemon keeps the
+        // environment it was given).
+        killGroup("SIGKILL");
         const rest = stream.end();
         buffered += rest;
         tail += rest;
@@ -518,6 +600,10 @@ class Runner {
         resolve({ code, tail: truncateTail(tail) });
       };
       child.on("error", () => done(127));
+      // exit, not close: a background process holding the pipes must not
+      // keep the command running until its timeout. A short grace lets
+      // the last output arrive.
+      child.on("exit", (code) => { setTimeout(() => done(code), 200); });
       child.on("close", (code) => done(code));
     });
   }
@@ -527,21 +613,24 @@ class Runner {
   private async end(result?: RunnerResult): Promise<RunnerResult> {
     const reason = this.stopReason;
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
-    if (reason === "stop" || reason === "expired") this.setState("finished");
+    // The contract: `stop` -> finished. An expiry or a SIGTERM is
+    // Perspicax's to name (expired, stopped).
+    if (reason === "stop") this.setState("finished");
     this.pollAbort.abort();
     this.wake?.();
     if (reason !== "unauthorized") {
-      await Promise.race([this.relay.flush(), sleep(15_000)]);
+      await Promise.race([this.relay.flush(), sleep(15_000, true)]);
     }
     this.relay.kill();
     this.unsubscribe?.();
     await this.interruptActive();
     await this.engine?.dispose().catch(() => undefined);
     this.secrets.wipeAll();
-    await Promise.race([this.poller ?? Promise.resolve(), sleep(1_000)]);
+    await Promise.race([this.poller ?? Promise.resolve(), sleep(1_000, true)]);
     if (result) return result;
     if (reason === "unauthorized") return { exit: "unauthorized" };
     if (reason === "expired") return { exit: "expired" };
+    if (reason === "terminated") return { exit: "terminated" };
     return { exit: "stopped" };
   }
 }
@@ -552,7 +641,27 @@ function truncateTail(text: string): string {
   return bytes.subarray(bytes.length - TAIL_BYTES).toString("utf8").replace(/^�+/, "");
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => { const t = setTimeout(resolve, ms); t.unref?.(); });
+/** A backoff keeps the process alive (unref = false): during the bootstrap
+ * retries nothing else holds the event loop. Guards that only bound a wait
+ * pass unref = true. */
+function sleep(ms: number, unref = false): Promise<void> {
+  return new Promise((resolve) => { const t = setTimeout(resolve, ms); if (unref) t.unref?.(); });
+}
+
+/** Linux: kill every process of this uid (but this one) whose environment
+ * holds one of `values`. Returns how many were killed. Elsewhere (tests on
+ * macOS) there is no /proc and nothing to do beyond the group kill. */
+export function killProcessesHolding(values: string[], procDir = "/proc"): number {
+  if (!values.length || !existsSync(procDir)) return 0;
+  let killed = 0;
+  for (const name of readdirSync(procDir)) {
+    if (!/^\d+$/.test(name) || Number(name) === process.pid) continue;
+    let environ: string;
+    try { environ = readFileSync(join(procDir, name, "environ"), "latin1"); } catch { continue; }
+    const utf8 = Buffer.from(environ, "latin1").toString("utf8");
+    if (!values.some((value) => utf8.includes(value))) continue;
+    try { process.kill(Number(name), "SIGKILL"); killed++; } catch { /* gone or not ours */ }
+  }
+  return killed;
 }
 

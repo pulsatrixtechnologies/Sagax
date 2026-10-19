@@ -4757,13 +4757,21 @@ never pushed). The Pod comes from the run provisioner
 - Secrets: one 0400 file each in `/dev/shm/px-secrets` (memory), visible
   to `setup`; the `setup_only` ones (the default) are erased before the
   engine starts. Every secret value and the run token are masked in all
-  events (`server/runner/mask.ts`, chunk boundaries included).
+  events (`server/runner/mask.ts`, engine events masked whole before any
+  cut). Nothing `setup` started survives it (process group killed, and on
+  Linux any process whose environment holds a `setup_only` value). A branch
+  whose diff or commit messages hold a secret value is never bundled (a
+  warning names the files). The setup of a followup Pod runs the repository
+  as the agent left it; the runner's own git calls ignore its hooks and
+  fsmonitor.
 - Git: read through Perspicax with the token as
   `http.<git_url>.extraHeader` in `GIT_CONFIG_*` variables (never argv,
   never `.git/config`), `remote.origin.pushurl = no-push://`, a pre-push
   hook that refuses (comfort only). The branch is `px/*`, never the base.
   Publishing is `git bundle create - refs/heads/<branch>`, checked to name
-  that one reference, posted to Perspicax, which pushes (CA-5).
+  that one reference, posted to Perspicax, which pushes (CA-5). A followup
+  Pod starts from the branch on the repository and fast-forwards a reused
+  clone to it.
 - Engines are Sagax's own drivers, headless (`server/runner/engine-drivers.ts`):
   Claude Code with `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` = model proxy and
   run token; Codex on the driver's Company provider at

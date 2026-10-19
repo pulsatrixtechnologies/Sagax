@@ -329,8 +329,11 @@ export class ControlClient {
       timeoutMs: 5 * 60_000,
     });
     const body = await this.json("/bundle", response) as Record<string, unknown>;
+    // The contract answers {pushed, head_sha, pr}; Perspicax P1.9 answers
+    // its bundle record ({status: "received", head_sha, ...}). Either is a
+    // bundle taken.
     return {
-      pushed: body?.pushed === true,
+      pushed: body?.pushed === true || body?.status === "received" || body?.status === "pushed",
       head_sha: typeof body?.head_sha === "string" ? body.head_sha : undefined,
       pr: body?.pr && typeof body.pr === "object" ? body.pr as BundleResult["pr"] : null,
     };

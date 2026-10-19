@@ -54,7 +54,7 @@ beforeEach(() => {
     bootstrap: (base) => ({
       run_id: "runclaude01", env_id: "envclaude01", title: "Say hello", prompt: "Say hello", engine: engineName,
       model: engineName === "codex" ? "gpt-test" : null, effort: null, repo: { owner: "acme", name: "widgets" }, base_branch: "main", branch: "px/hello-cd34",
-      existing_branch: false, setup: "", verify: [],
+      existing_branch: false, setup: 'test -n "$SETUP_TOKEN" && echo setup-ran', verify: [],
       git_url: `${base}/api/v1/agents/runner/git/acme/widgets.git`,
       model_proxy: { anthropic: `${base}/api/v1/agents/model-proxy/anthropic`, openai: `${base}/api/v1/agents/model-proxy/openai` },
       followup: null, resume: null, limits: { max_duration_sec: 600 },

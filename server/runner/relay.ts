@@ -5,6 +5,7 @@
 import { Masker } from "./mask.ts";
 import {
   MAX_BATCH_BYTES,
+  RunnerHttpError,
   MAX_EVENTS_PER_BATCH,
   MAX_TERMINAL_BYTES,
   RunnerUnauthorized,
@@ -15,6 +16,7 @@ import {
 /** Above this many queued events the oldest terminal output is dropped
  * first, so a long silence from Perspicax cannot exhaust the Pod's memory. */
 const MAX_QUEUED_EVENTS = 20_000;
+const KEEP = new Set<RunnerEvent["kind"]>(["state", "approval", "diff", "verify", "stats", "commits", "session"]);
 
 export function truncateUtf8(text: string, maxBytes: number, marker = "\n[... tronqué]"): string {
   if (Buffer.byteLength(text) <= maxBytes) return text;
@@ -76,6 +78,11 @@ export class EventRelay {
   emit(event: RunnerEvent, urgent = false): void {
     if (this.dead) return;
     const masked = this.options.masker.maskDeep(event);
+    // The mask can be longer than the value: cut terminal text again after.
+    if (masked.kind === "terminal" && Buffer.byteLength(masked.data.text) > MAX_TERMINAL_BYTES) {
+      for (const piece of terminalEvents(masked.data.text)) this.emit(piece, urgent);
+      return;
+    }
     const bytes = Buffer.byteLength(JSON.stringify(masked));
     if (bytes > MAX_BATCH_BYTES - 64) {
       this.queue.push({ event: { kind: "warning", data: { text: `Un événement ${event.kind} trop volumineux (${bytes} octets) a été omis.` } }, bytes: 200 });
@@ -89,8 +96,12 @@ export class EventRelay {
 
   private trim(): void {
     while (this.queue.length > MAX_QUEUED_EVENTS) {
-      const index = this.queue.findIndex((item) => item.event.kind === "terminal");
-      this.queue.splice(index >= 0 ? index : 0, 1);
+      // Terminal output first, then other chatter; never a state, an
+      // approval, a diff or a verify result.
+      let index = this.queue.findIndex((item) => item.event.kind === "terminal");
+      if (index < 0) index = this.queue.findIndex((item) => !KEEP.has(item.event.kind));
+      if (index < 0) break;
+      this.queue.splice(index, 1);
       this.dropped++;
     }
   }
@@ -140,6 +151,13 @@ export class EventRelay {
           return;
         }
         this.options.onError?.(error);
+        // Perspicax refused this batch for what it holds (4xx): retrying it
+        // would block every later event. Drop it and go on.
+        if (error instanceof RunnerHttpError && error.status >= 400 && error.status < 500) {
+          this.queue.splice(0, batch.length);
+          this.dropped += batch.length;
+          continue;
+        }
         failures++;
         await this.sleep(Math.min(30_000, 500 * 2 ** Math.min(failures, 6)));
       }

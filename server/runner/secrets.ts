@@ -63,6 +63,11 @@ export class SecretStore {
     return env;
   }
 
+  /** The setup_only values still held (before eraseSetupOnly). */
+  setupOnlyValues(): string[] {
+    return this.secrets.filter((s) => s.setup_only && s.value.length >= 6).map((s) => s.value);
+  }
+
   /** Erase the setup_only secrets: their files and the runner's copy. */
   eraseSetupOnly(): string[] {
     const erased: string[] = [];

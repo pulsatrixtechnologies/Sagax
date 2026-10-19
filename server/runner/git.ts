@@ -75,7 +75,13 @@ export function gitEnv(options: Pick<GitOptions, "gitUrl" | "token" | "env" | "a
     GIT_COMMITTER_NAME: AGENT_NAME,
     GIT_COMMITTER_EMAIL: email,
   };
-  const pairs: Array<[string, string]> = [["credential.helper", ""], ["protocol.allow", "never"], ["protocol.http.allow", "always"], ["protocol.https.allow", "always"]];
+  // The runner's own git calls never run a hook or an fsmonitor the agent
+  // may have planted in the clone (a followup Pod reuses it), and never
+  // follow a redirect with the header.
+  const pairs: Array<[string, string]> = [
+    ["credential.helper", ""], ["protocol.allow", "never"], ["protocol.http.allow", "always"], ["protocol.https.allow", "always"],
+    ["core.hooksPath", "/dev/null"], ["core.fsmonitor", "false"], ["http.followRedirects", "false"],
+  ];
   if (withAuth) pairs.push([`http.${options.gitUrl}.extraHeader`, `Authorization: Bearer ${options.token}`]);
   env.GIT_CONFIG_COUNT = String(pairs.length);
   pairs.forEach(([key, value], index) => {
@@ -184,8 +190,16 @@ export class RunGit {
     const local = (await this.text(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}^{commit}`], { allowFail: true })).trim();
     const remote = (await this.text(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}^{commit}`], { allowFail: true })).trim();
     if (local) {
-      await this.git(["checkout", "--quiet", branch]);
-    } else if (existing) {
+      await this.git(["checkout", "--quiet", "--force", branch]);
+      // Commits pushed to the branch since (by Perspicax, or by a person on
+      // the pull request): catch up, so the next bundle is a fast forward.
+      if (remote) {
+        const merged = await this.git(["merge", "--ff-only", "--quiet", `refs/remotes/origin/${branch}`], { allowFail: true });
+        if (merged.code !== 0) throw new Error(`la branche locale ${branch} a divergé de celle du dépôt`);
+      }
+    } else if (existing || remote) {
+      // A branch already on the repository (an existing branch, or this
+      // run's own branch on a followup Pod without its volume) is the start.
       if (!remote) throw new Error(`la branche existante ${branch} est introuvable sur le dépôt`);
       await this.git(["checkout", "--quiet", "-b", branch, "--no-track", `refs/remotes/origin/${branch}`]);
     } else {
@@ -215,8 +229,8 @@ export class RunGit {
     return this.head();
   }
 
-  async diffText(fromSha: string): Promise<string> {
-    return this.text(["diff", "--no-color", "--no-ext-diff", "--find-renames", `${fromSha}..HEAD`]);
+  async diffText(fromSha: string, maxBytes?: number): Promise<string> {
+    return (await this.git(["diff", "--no-color", "--no-ext-diff", "--find-renames", `${fromSha}..HEAD`], { maxBytes })).stdout.toString("utf8");
   }
 
   async stats(fromSha: string): Promise<{ files: number; added: number; removed: number; commits: number; head_sha: string }> {

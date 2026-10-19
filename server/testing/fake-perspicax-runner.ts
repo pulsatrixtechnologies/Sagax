@@ -29,12 +29,16 @@ export class FakePerspicax {
   /** Called on each events POST (after recording). */
   onEvents: ((events: Array<{ kind: string; data: Record<string, unknown> }>) => void) | null = null;
   bundleStatus = 200;
+  /** Answer 503 to this many bootstrap calls first. */
+  bootstrapFailures = 0;
+  /** Answer this status to the next events POST (once), e.g. 422. */
+  eventsStatusOnce: number | null = null;
   private commands: FakeCommand[] = [];
   private seq = 0;
   private waiters: Array<() => void> = [];
   private server: Server | null = null;
   base = "";
-  private readonly options: FakePerspicaxOptions;
+  private options: FakePerspicaxOptions;
 
   constructor(options: FakePerspicaxOptions) {
     this.options = options;
@@ -60,6 +64,19 @@ export class FakePerspicax {
 
   get modelProxy(): { anthropic: string; openai: string } {
     return { anthropic: `${this.base}/api/v1/agents/model-proxy/anthropic`, openai: `${this.base}/api/v1/agents/model-proxy/openai` };
+  }
+
+  /** A new Pod of the same run (a followup): same address, new bootstrap,
+   * secrets handed out again, fresh records. */
+  newPod(bootstrap: (base: string) => Record<string, unknown>): void {
+    this.options.bootstrap = bootstrap;
+    this.secretsCalls = 0;
+    this.events.length = 0;
+    this.bundles.length = 0;
+    // Commands of the previous Pod are not replayed: the runner starts its
+    // cursor at 0 (the contract gives no initial cursor yet).
+    this.commands = [];
+    this.seq = 0;
   }
 
   push(kind: string, data: Record<string, unknown> = {}): number {
@@ -107,15 +124,21 @@ export class FakePerspicax {
     const path = url.pathname;
     const api = "/api/v1/agents/runner";
     if (path.startsWith(`${api}/git/acme/widgets.git/`)) return this.git(req, res, path.slice(`${api}/git/acme/widgets.git/`.length), url);
-    if (req.method === "GET" && path === `${api}/bootstrap`) return this.json(res, 200, this.options.bootstrap(this.base));
+    if (req.method === "GET" && path === `${api}/bootstrap`) {
+      if (this.bootstrapFailures > 0) { this.bootstrapFailures--; return this.json(res, 503, { error: "starting" }); }
+      return this.json(res, 200, this.options.bootstrap(this.base));
+    }
     if (req.method === "GET" && path === `${api}/secrets`) {
       this.secretsCalls++;
       if (this.secretsCalls > 1) return this.json(res, 409, { error: "already handed out" });
       return this.json(res, 200, { secrets: this.options.secrets ?? [] });
     }
     if (req.method === "POST" && path === `${api}/events`) {
-      const body = JSON.parse((await this.body(req)).toString("utf8")) as { events: Array<{ kind: string; data: Record<string, unknown> }> };
-      if (body.events.length > 256) return this.json(res, 413, { error: "too many" });
+      const raw = await this.body(req);
+      let body: { events: Array<{ kind: string; data: Record<string, unknown> }> };
+      try { body = JSON.parse(raw.toString("utf8")); } catch { return this.json(res, 400, { error: "not JSON" }); }
+      if (body.events.length > 256 || raw.length > 1024 * 1024) return this.json(res, 413, { error: "too big" });
+      if (this.eventsStatusOnce) { const status = this.eventsStatusOnce; this.eventsStatusOnce = null; return this.json(res, status, { error: "refused" }); }
       this.events.push(...body.events);
       this.onEvents?.(body.events);
       return this.json(res, 200, { accepted: body.events.length });
@@ -138,7 +161,8 @@ export class FakePerspicax {
       this.bundles.push(bytes);
       if (this.bundleStatus !== 200) return this.json(res, this.bundleStatus, { error: "refused" });
       const head = /^([0-9a-f]{40}) refs\/heads\//m.exec(bytes.subarray(0, 4096).toString("latin1"))?.[1];
-      return this.json(res, 200, { pushed: true, head_sha: head, pr: { number: 7, url: "https://github.com/acme/widgets/pull/7", state: "draft" } });
+      // The shape Perspicax P1.9 answers today (its bundle record).
+      return this.json(res, 200, { status: "received", head_sha: head, ref_name: "refs/heads/px/x", seq: this.bundles.length });
     }
     return this.json(res, 404, { error: "no route" });
   }
