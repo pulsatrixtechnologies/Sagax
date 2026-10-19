@@ -151,8 +151,16 @@ export interface RenewInput {
  * again. Never throws, never keeps the CLI's output. */
 export async function renewWithCli(input: RenewInput): Promise<void> {
   const env: Record<string, string | undefined> = { ...process.env, ...input.environment };
-  if (input.engine === "claude-code") env.CLAUDE_CONFIG_DIR = input.loginDir;
-  else env.CODEX_HOME = input.loginDir;
+  // As the sign-in flow does: a server key must never win over the person's
+  // OAuth sign-in, or the CLI would never renew it.
+  if (input.engine === "claude-code") {
+    env.CLAUDE_CONFIG_DIR = input.loginDir;
+    delete env.ANTHROPIC_API_KEY;
+    delete env.ANTHROPIC_AUTH_TOKEN;
+  } else {
+    env.CODEX_HOME = input.loginDir;
+    delete env.OPENAI_API_KEY;
+  }
   const args = input.engine === "claude-code" ? ["auth", "status", "--json"] : ["app-server"];
   const timeoutMs = input.timeoutMs ?? 20_000;
   await new Promise<void>((resolve) => {

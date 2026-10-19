@@ -87,8 +87,11 @@ export class PerspicaxAgentsClient {
     return { authorization: `Bearer ${link}`, [SUBJECT_TOKEN_HEADER]: access.token, ...extra };
   }
 
-  /** One request with the link token, and once more with a fresh one after a 401. */
-  private async send(access: PerspicaxAccess, url: string, init: { method?: string; headers: Record<string, string>; body?: string; signal: AbortSignal }): Promise<Response> {
+  /** One request with the link token, and once more with a fresh one after a 401.
+   * Never follows a redirect: fetch would drop Authorization on another origin
+   * but keep x-perspicax-subject-token, the person's sign-in. */
+  private async send(access: PerspicaxAccess, url: string, initIn: { method?: string; headers: Record<string, string>; body?: string; signal: AbortSignal }): Promise<Response> {
+    const init = { ...initIn, redirect: "error" as const };
     const link = access.link();
     if (!link) throw new ProviderHttpError(501, "not_linked", "This Sagax server is not linked to Perspicax.");
     let res = await this.fetchImpl(url, { ...init, headers: this.headers(link, access, init.headers) });

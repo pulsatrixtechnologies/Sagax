@@ -75,6 +75,8 @@ export const WATCH_FOR_MS = 5 * 60_000;
 export const RENEW_BACKOFF_MS = [5 * 60_000, 15 * 60_000] as const;
 /** After Perspicax refused a token, it is offered again this much later. */
 export const REFUSED_RETRY_MS = 10 * 60_000;
+/** The pause after a failed hand-off that is not a refusal. */
+const OTHER_RETRY_MS = 30_000;
 
 const LIVE = new Set(["waking", "provisioning", "setup", "running", "waiting_for_approval", "idle"]);
 
@@ -276,6 +278,9 @@ export class SubscriptionDepositor {
       this.setStatus(principalId, run.id, { state: "refused", engine }, answer.error);
       return;
     }
+    // An older Perspicax (405) or a run gone: wait as long as for a refusal;
+    // any other failure: a short pause, never a retry every few seconds.
+    this.refusedUntil.set(run.id, now + (answer.error === "unsupported" || answer.error === "gone" ? REFUSED_RETRY_MS : OTHER_RETRY_MS));
     this.setStatus(principalId, run.id, this.statuses.get(run.id)?.status ?? { state: "expired", engine }, answer.error);
   }
 
