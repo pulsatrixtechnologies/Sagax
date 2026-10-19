@@ -324,7 +324,7 @@ final class SettingsUITests: XCTestCase {
         setSkin("black", in: app)
         XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x141414 }, "home background \(String(homeBackground(app), radix: 16))")
 
-        // Following the phone with the default pair, Black twice: Black on a
+        // setSkin(nil) writes Black fixed (the phone's own look). Black on a
         // dark simulator and on a light one alike.
         setSkin(nil, in: app)
         XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x141414 }, "home background \(String(homeBackground(app), radix: 16))")
@@ -408,7 +408,10 @@ final class SettingsUITests: XCTestCase {
             for _ in 0..<8 where !menu.isHittable { app.swipeUp() }
             XCTAssertTrue(menu.waitForExistence(timeout: 5))
             menu.tap()
-            let option = app.buttons["theme.mode.\(mode)"]
+            // menu items can lose their identifier: fall back to the label
+            let label = ["light": "Light", "dark": "Dark", "auto": "Auto (follow the phone)"][mode] ?? mode
+            var option = app.buttons["theme.mode.\(mode)"]
+            if !option.waitForExistence(timeout: 3) { option = app.buttons[label] }
             XCTAssertTrue(option.waitForExistence(timeout: 5), mode)
             option.tap()
         }

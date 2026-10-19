@@ -97,9 +97,14 @@ struct AppearanceSettingsView: View {
         return selection.skinChoice(deviceDark: deviceDark)
     }
 
-    /// The computer has no Black family; Auto is the phone's own.
+    /// The computer has no Black family; Auto is the phone's own; Hibou 98 only when worn.
     private var families: [SkinFamily] {
-        selection.mode == .computer ? SkinFamily.all.filter { $0.id != .phone } : SkinFamily.all
+        let wornFamily = current.place.family.id
+        return SkinFamily.all.filter { family in
+            if selection.mode == .computer && family.id == .phone { return false }
+            // Hibou 98 stays hidden until it is worn
+            return family.id != .retro98 || wornFamily == .retro98
+        }
     }
 
     private func wear(_ variant: SkinVariant, mode: SkinModeChoice) {
@@ -115,10 +120,8 @@ struct AppearanceSettingsView: View {
         if on {
             themes.update { $0.mode = .computer }
         } else {
-            // back to this phone: the skin the computer wore, in the same mode
-            let place = SkinPlace.of(selection.computerSkin ?? selection.fixedSkin)
-            let mode: SkinModeChoice = place.scheme == .light ? .light : .dark
-            themes.update { $0 = $0.choosing(place.variant, mode: mode) }
+            // back to this phone: its own pair, never the computer's skin
+            themes.update { $0.mode = .system }
         }
     }
 
