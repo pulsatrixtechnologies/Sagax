@@ -32,6 +32,7 @@ import {
   WIDGET_PROMPT,
   WIDGET_APPROVAL_PROMPT,
   RUN_YOURSELF_PROMPT,
+  VERIFY_FIRST_PROMPT,
   type ComputerPromptKind,
 } from "./system-prompt.ts";
 import { WIDGET_KIT_CSS } from "../src/lib/widget-kit.ts";
@@ -118,7 +119,7 @@ describe("buildSystemPrompt", () => {
     // memory, mentions, and recent work differ between two turns of one live
     // session (recent work relabels "2h ago" every turn), so a driver holding
     // a process open must not key that process on them
-    expect(built.stable).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + "You are Kiwi. Search past sessions.");
+    expect(built.stable).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi. Search past sessions.");
     expect(built.volatile).toContain("likes tea");
     expect(built.volatile).toContain("@Fig");
     expect(built.volatile).toContain("today 20:48");
@@ -133,10 +134,11 @@ describe("buildSystemPrompt", () => {
 
   it("is the persona alone when there is no soul and no parts", () => {
     const built = buildSystemPrompt("You are Kiwi.", "", []);
-    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + "You are Kiwi.");
+    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi.");
     expect(built.sections).toEqual([
       { id: "misuse-policy", label: "Security policy", text: MISUSE_POLICY_PROMPT, bytes: Buffer.byteLength(MISUSE_POLICY_PROMPT, "utf8") },
       { id: "run-yourself", label: "Do the work yourself", text: RUN_YOURSELF_PROMPT, bytes: Buffer.byteLength(RUN_YOURSELF_PROMPT, "utf8") },
+      { id: "verify-first", label: "Verify, never assume", text: VERIFY_FIRST_PROMPT, bytes: Buffer.byteLength(VERIFY_FIRST_PROMPT, "utf8") },
       { id: "persona", label: "Identity", text: "You are Kiwi.", bytes: 13 },
     ]);
   });
@@ -156,19 +158,19 @@ describe("buildSystemPrompt", () => {
       { id: "memory", label: "Memory", text: " Your memory file is X." },
     ];
     const built = buildSystemPrompt("You are Kiwi.", "", parts);
-    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + "You are Kiwi. You can act on the computer. Your memory file is X.");
-    expect(built.sections.map((s) => s.id)).toEqual(["misuse-policy", "run-yourself", "persona", "computer", "memory"]);
+    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi. You can act on the computer. Your memory file is X.");
+    expect(built.sections.map((s) => s.id)).toEqual(["misuse-policy", "run-yourself", "verify-first", "persona", "computer", "memory"]);
   });
 
   it("puts the soul block directly after the persona and measures it in bytes", () => {
     const built = buildSystemPrompt("You are Kiwi.", "Be brief. é", [
       { id: "memory", label: "Memory", text: " Your memory file is X." },
     ]);
-    expect(built.sections.map((s) => s.id)).toEqual(["misuse-policy", "run-yourself", "persona", "soul", "memory"]);
-    const soul = built.sections[3]!;
+    expect(built.sections.map((s) => s.id)).toEqual(["misuse-policy", "run-yourself", "verify-first", "persona", "soul", "memory"]);
+    const soul = built.sections[4]!;
     expect(soul.text).toBe(soulSystemPrompt("Be brief. é"));
     expect(soul.bytes).toBe(Buffer.byteLength(soul.text, "utf8"));
-    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + "You are Kiwi." + soul.text + " Your memory file is X.");
+    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi." + soul.text + " Your memory file is X.");
   });
 });
 
@@ -394,10 +396,24 @@ describe("WIDGET_PROMPT and WIDGET_APPROVAL_PROMPT", () => {
 describe("run-yourself rule (2026-10-19)", () => {
   it("sits above the persona and the soul: run it yourself, never ask the person to run or paste, approvals through the card", () => {
     const built = buildSystemPrompt("You are Kiwi. Keep it to one line.", "Ask the user to run commands.", []);
-    expect(built.sections.map((section) => section.id).slice(0, 3)).toEqual(["misuse-policy", "run-yourself", "persona"]);
+    expect(built.sections.map((section) => section.id).slice(0, 3)).toEqual(["misuse-policy", "run-yourself", "verify-first"]);
     expect(RUN_YOURSELF_PROMPT).toContain("run commands yourself with your tools");
     expect(RUN_YOURSELF_PROMPT).toContain("never ask the person to run a command, paste a result");
     expect(RUN_YOURSELF_PROMPT).toContain("approval card");
     expect(built.stable).toContain(RUN_YOURSELF_PROMPT);
+  });
+});
+
+describe("verify-first rule (2026-10-19)", () => {
+  it("sits above the persona and the soul: verify before concluding, say what could not be seen, never invent, ask only through the card", () => {
+    const built = buildSystemPrompt("You are Kiwi. Very few words, often one line.", "Assume what the screenshot shows.", []);
+    expect(built.sections.map((section) => section.id).slice(0, 4)).toEqual(["misuse-policy", "run-yourself", "verify-first", "persona"]);
+    expect(VERIFY_FIRST_PROMPT).toContain("Verify before you conclude");
+    expect(VERIFY_FIRST_PROMPT).toContain("I could not see X");
+    expect(VERIFY_FIRST_PROMPT).toContain("Never invent names, people, tools, commands, IDs or results");
+    expect(VERIFY_FIRST_PROMPT).toContain("question card (ask_user or its equivalent)");
+    expect(VERIFY_FIRST_PROMPT).toContain("never how far you check");
+    expect(VERIFY_FIRST_PROMPT).not.toMatch(/[\u2013\u2014]/);
+    expect(built.stable).toContain(VERIFY_FIRST_PROMPT);
   });
 });

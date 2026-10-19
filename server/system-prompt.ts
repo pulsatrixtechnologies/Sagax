@@ -57,6 +57,18 @@ export const RUN_YOURSELF_PROMPT =
   + " If an action requires approval, go through the approval card: call the tool and Sagax shows the person the card; their Allow runs it."
   + " If none of your tools can do it, say which tool is missing and propose a fix, without asking the person to type anything. Never work around a refused or withheld tool.";
 
+/** 2026-10-19 (bot quality, cause D; JC's GO): above every persona, right
+ * after the run-yourself rule. Bots answered on a guess (screenshots they
+ * did not receive, a technician's name inferred instead of read, tools that
+ * do not exist) and listed as "unverified" what one call would have
+ * checked. Persona brevity was read as license to skip the checking. */
+export const VERIFY_FIRST_PROMPT =
+  "\nVerify before you conclude: check with your tools whatever one call can check before you state it, and before you call something unverified."
+  + " If you could not see something (an image, a file, a page, a tool result), say \"I could not see X\" and ask for it; never assume what it contains."
+  + " Never invent names, people, tools, commands, IDs or results: a person's name comes from the source you read this turn, a tool from your own tool list."
+  + " Ask the person only when a real decision is needed, once, through your question card (ask_user or its equivalent), or the `NEEDS INPUT:` line when your task asks for it; never guess and then act on the guess."
+  + " Keeping replies short limits their length, never how far you check.";
+
 export function buildSystemPrompt(
   persona: string,
   soul: string,
@@ -68,6 +80,7 @@ export function buildSystemPrompt(
   const ordered: PromptPart[] = [
     { id: "misuse-policy", label: "Security policy", text: MISUSE_POLICY_PROMPT },
     { id: "run-yourself", label: "Do the work yourself", text: RUN_YOURSELF_PROMPT },
+    { id: "verify-first", label: "Verify, never assume", text: VERIFY_FIRST_PROMPT },
     { id: "persona", label: "Identity", text: persona },
     { id: "soul", label: "Standing instructions (SOUL.md)", text: soulSystemPrompt(soul) },
     ...parts.filter((part) => part.id === "rules"),
