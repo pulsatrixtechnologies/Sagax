@@ -43,11 +43,36 @@ export const stopRun = (id: string) => action(id, "stop");
 export const archiveRun = (id: string) => action(id, "archive");
 
 /** Whether the section can reach Perspicax, read once per mount. */
+/** The status is shared by the sidebar row and the page, and kept a few
+ * minutes: a Perspicax without the agents API is asked once, not on every
+ * render or page visit. */
+const STATUS_TTL_MS = 5 * 60_000;
+let statusCache: { at: number; value: Promise<CodeStatus> } | null = null;
+
+export function codeStatusOnce(load: () => Promise<CodeStatus> = loadCodeStatus, now = Date.now()): Promise<CodeStatus> {
+  if (statusCache && now - statusCache.at < STATUS_TTL_MS) return statusCache.value;
+  const value = load().catch((): CodeStatus => ({ available: false, reason: "unreachable" }));
+  statusCache = { at: now, value };
+  return value;
+}
+
+/** Tests only. */
+export function resetCodeStatusCache() {
+  statusCache = null;
+}
+
+/** The sidebar's Code row: hidden while the status loads and whenever this
+ * Perspicax does not serve the agents API yet. A solo server keeps it (its
+ * page says Code needs Sagax Business). */
+export function codeRowVisible(status: CodeStatus | null): boolean {
+  return status !== null && (status.available || status.reason !== "not_available");
+}
+
 export function useCodeStatus(): CodeStatus | null {
   const [status, setStatus] = useState<CodeStatus | null>(null);
   useEffect(() => {
     let live = true;
-    loadCodeStatus().then((value) => { if (live) setStatus(value); }).catch(() => { if (live) setStatus({ available: false, reason: "unreachable" }); });
+    void codeStatusOnce().then((value) => { if (live) setStatus(value); });
     return () => { live = false; };
   }, []);
   return status;

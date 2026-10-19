@@ -141,6 +141,14 @@ export class PerspicaxAgentsClient {
     return out.slice(0, LIST_MAX);
   }
 
+  /** Whether this Perspicax serves the cloud agents API at all (#372). A
+   * Perspicax without it answers 404 (or 405, 501) on the environments list:
+   * that is "not available", never an error. Other failures throw. */
+  async servesAgents(access: PerspicaxAccess): Promise<boolean> {
+    const answer = await this.call<unknown>(access, "GET", "/environments?page=1&page_size=1", undefined, true);
+    return answer !== null;
+  }
+
   /** The environments this person may see (Perspicax leaves the archived
    * ones out unless asked). */
   async environments(access: PerspicaxAccess): Promise<PerspicaxEnvironment[]> {

@@ -41,6 +41,7 @@ import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { otherAuthorName, viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
 import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { codeRowVisible, useCodeStatus } from "@/lib/code-runs";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
@@ -2461,6 +2462,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
 }) {
   const store = useStore();
   const { state } = store;
+  // The Code row shows only where Code can work (codeRowVisible).
+  const codeStatus = useCodeStatus();
   const listFade = useScrollFade();
   const dispatch: typeof store.dispatch = (action) => {
     store.dispatch(action);
@@ -3122,13 +3125,15 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         )}
         {/* Code: every Perspicax run of the person, at the conversations'
             level (src/components/code/CodePage.tsx). */}
-        <div className={cn("mb-2", density === "icons" && "flex justify-center")}>
-          <SidebarPlaces
-            iconOnly={density === "icons"}
-            places={[{ key: "code", label: t("code.title"), icon: Code2, active: state.activeView === "code", onSelect: () => dispatch({ type: "showCode" }) }]}
-            divider={false}
-          />
-        </div>
+        {codeRowVisible(codeStatus) && (
+          <div className={cn("mb-2", density === "icons" && "flex justify-center")}>
+            <SidebarPlaces
+              iconOnly={density === "icons"}
+              places={[{ key: "code", label: t("code.title"), icon: Code2, active: state.activeView === "code", onSelect: () => dispatch({ type: "showCode" }) }]}
+              divider={false}
+            />
+          </div>
+        )}
         <div className="flex flex-col gap-1">
           {matchingBots.length === 0 && visibleGroups.length === 0 && q && q.length < MIN_QUERY && (
             <div className="px-3 py-6 text-center text-[13px] text-sidebar-ink-secondary">{t("sidebar.noMatch", { query: q })}</div>

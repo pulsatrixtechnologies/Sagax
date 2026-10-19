@@ -10,7 +10,8 @@
 // conversation (server/cloud-agents/store.ts), which these routes refresh so
 // the conversation's card follows.
 //
-//   GET  /api/code/status                     available, or why not (solo: Sagax Business)
+//   GET  /api/code/status                     available, or why not (solo: Sagax Business;
+//                                             not_available: Perspicax without the agents API)
 //   GET  /api/code/environments
 //   GET  /api/code/runs                       ?mine, newest first, archived left out
 //   POST /api/code/runs                       { env_id, prompt, engine?, model?, title? }
@@ -45,11 +46,16 @@ export interface CodeRouteDeps {
    * confidential, or a grant be withdrawn, after the launch). */
   threadReadable?: (auth: RequestAuth, botId: string, threadId: string) => boolean;
   fixture?: boolean;
+  /** Clock for the probe cache (tests). */
+  now?: () => number;
 }
 
 const RUN_PATH = /^\/api\/code\/runs\/([A-Za-z0-9_-]{1,80})(?:\/(events|stream|read|followup|approve|stop|archive|diff|commits|files))?$/;
 const PROMPT_MAX = 50_000;
 const STREAM_MAX_MS = 30 * 60_000;
+/** How long the answer to "does this Perspicax serve the agents API" holds. */
+export const PROBE_TTL_MS = 5 * 60_000;
+const PROBE_RETRY_MS = 60_000;
 
 function fail(res: ServerResponse, json: typeof import("../harness/http.ts").json, e: unknown) {
   if (e instanceof ProviderHttpError) {
@@ -78,15 +84,41 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
     if (local) void deps.manager.refresh(local.id).catch(() => null);
   };
 
+  // One answer per Perspicax origin: "yes" and "no" kept PROBE_TTL_MS, a
+  // failure PROBE_RETRY_MS (Perspicax may come back sooner).
+  const probes = new Map<string, { at: number; ttl: number; answer: Promise<"yes" | "no" | "error"> }>();
+  const servesAgents = (access: PerspicaxAccess): Promise<"yes" | "no" | "error"> => {
+    const key = new URL(access.baseUrl).origin;
+    const now = (deps.now ?? Date.now)();
+    const kept = probes.get(key);
+    if (kept && now - kept.at < kept.ttl) return kept.answer;
+    const entry = { at: now, ttl: PROBE_TTL_MS, answer: Promise.resolve<"yes" | "no" | "error">("error") };
+    entry.answer = deps.client.servesAgents(access).then(
+      (yes) => (yes ? "yes" : "no"),
+      () => { entry.ttl = PROBE_RETRY_MS; return "error"; },
+    );
+    probes.set(key, entry);
+    return entry.answer;
+  };
+
   return async ({ req, res, path, url, method, auth, json, readBody }) => {
     if (!path.startsWith("/api/code/")) return PASS;
 
     if (path === "/api/code/status") {
       if (method !== "GET") return PASS;
       const reach = deps.reachable(auth);
-      const status: CodeStatus = reach.ok
-        ? { available: true, ...(deps.consoleUrl() ? { consoleUrl: deps.consoleUrl() } : {}), ...(deps.fixture ? { fixture: true } : {}) }
-        : { available: false, reason: reach.reason, ...(reach.reason === "solo" ? { businessUrl: SAGAX_BUSINESS_URL } : {}) };
+      if (!reach.ok) {
+        return json(res, 200, { available: false, reason: reach.reason, ...(reach.reason === "solo" ? { businessUrl: SAGAX_BUSINESS_URL } : {}) } satisfies CodeStatus);
+      }
+      // Does this Perspicax serve the cloud agents API at all? Asked once per
+      // Perspicax and kept a few minutes, so a Perspicax without it (before
+      // #372) costs one call, not one per page load.
+      const access = await deps.access(auth);
+      if (!access.ok) return json(res, 200, { available: false, reason: access.reason } satisfies CodeStatus);
+      const served = await servesAgents(access.access);
+      if (served === "no") return json(res, 200, { available: false, reason: "not_available" } satisfies CodeStatus);
+      if (served === "error") return json(res, 200, { available: false, reason: "unreachable" } satisfies CodeStatus);
+      const status: CodeStatus = { available: true, ...(deps.consoleUrl() ? { consoleUrl: deps.consoleUrl() } : {}), ...(deps.fixture ? { fixture: true } : {}) };
       return json(res, 200, status);
     }
 
