@@ -387,12 +387,19 @@ decrypted archive, the staging and the restored folder).
   - in an engine home (`principals/<id>/<engine>`, `principals/<id>/<driver>-key`,
     `org/<x>`, `engine-policies/<x>`): `.credentials.json`, `auth.json`,
     `mcp_credentials.json`, `oauth_creds.json`, `.env`, `credentials/`
-    (Kimi) and the like (`engineCredentialPath`, list in the file), Sagax's
+    (Kimi), `.ssh/`, `.aws/`, `.docker/`, `gh/`, any `.pem`/`.enc`/`.key`
+    and the like (`engineCredentialPath`, list in the file), Sagax's
     `.pulsabot-login.json` marker and Claude's `.claude.json.backup*`;
+  - anywhere, even a work folder: `.netrc`, `_netrc`, `.git-credentials`,
+    `.npmrc`, `.yarnrc.yml`, `.pypirc`, `.pgpass`, SSH private keys
+    (`credentialFileName`; reconnect category `files`);
   - every sealed store or key of a person, `principals/<id>/*.enc` and
     `*.key` (`connections.enc`, `credential-vault.enc`, `engine-api-keys.enc`,
     `mcp-oauth.enc`, `cloud-agent-credentials.enc`, any future one);
-  - every `*.enc` and `*.key` at the top of the data folder
+  - every `*.enc` and `*.key` at ANY depth outside the person's own files
+    (`attachments/`, `task-workspaces/`, `workspaces/`, where a `.key` may be
+    a Keynote document), with copy suffixes (`.bak`, `.lock`, `.tmp`,
+    `.previous`, `.1.tmp`, `~`), at the top of the data folder
     (`marketplace-tokens.enc`, `idp-revocations.enc`, the HMAC keys
     `agent-api.key`, `media-proxy.key`, `published-pages.key`,
     `template-links.key`, any future one) and `push-devices/`.
@@ -401,10 +408,16 @@ decrypted archive, the staging and the restored folder).
 - Engine settings files (`engineSettingsPath`: `.claude.json`,
   `settings.json`, `config.toml`, `config.yaml`, `models.json`,
   `opencode.json`, the MCP files) are copied by `withoutEngineSecrets`:
-  without any key named like a secret (`apiKey`, `api_key`, `token`,
-  `bearer_token`, `password`, `oauthAccount`, `primaryApiKey`...) and
-  without the values of every `env` and `headers` map (an MCP server's
-  included). A JSON one that does not parse is left out with a warning.
+  without any key whose name holds a secret word (`secretFieldName`: words
+  of the name, so `openai_api_key`, `github_token`, `apiToken`, `GITHUB_PAT`,
+  `db_password`, `credentials`; not `api_key_env`, `envKey`, `max_tokens`),
+  without any value shaped like a key (`secretValue`: `sk-`, `ghp_`, JWT,
+  `Bearer`, PEM, `user:pass@` URL, also inside `args`) and without the
+  values of every `env` and `headers` map. TOML: dotted keys, inline tables,
+  `[x.env.y]` tables, multi-line arrays and strings (small reader in the
+  file). YAML: parsed by `yaml` and edited in place (flow maps, block and
+  folded values, sequences). A file that does not parse is left out with a
+  warning.
 - `config.json` keeps only `PORTABLE_CONFIG_KEYS` (none holds a secret);
   `webhooks.json` loses `secretHash`, `pendingToken`, `signingSecret`,
   `graphSubscription`; a `*_FILE` variable's file inside the data folder (the
@@ -412,8 +425,9 @@ decrypted archive, the staging and the restored folder).
 - The destination keeps its own: top-level ones stay in place
   (`destinationSignInFile`, `keptInPlace`; a missing HMAC key is made again
   at start, so old shared links change only on another machine), and
-  `carryDestinationSecrets` puts the destination's own secrets under
-  `principals/`, `org/` and `engine-policies/` back into the restored tree
+  `carryDestinationSecrets` puts the destination's own secrets back into
+  the restored tree (under `principals/`, `org/`, `engine-policies/`
+  always; in another folder only when the restored tree still has it)
   (and the Claude sign-in fields into a restored `.claude.json`).
 - An older archive that holds them still restores: `withoutEngineCredentials`
   drops them at staging (manifest recounted, warnings) and `prepareRestore`

@@ -553,6 +553,7 @@
   "backup.reconnect.phones": "Phones for notifications (open the app on each phone): {count}",
   "backup.reconnect.sharedLinks": "Shared links (published pages, template links), to share again when restored on another device: {count}",
   "backup.reconnect.engineSettings": "Engine settings restored without their keys, tokens or environment values: {count}",
+  "backup.reconnect.files": "Sign-in files and keys from work folders (.netrc, .npmrc, .git-credentials, SSH keys), to add again: {count}",
   "backup.recovering": "Restoring this browser’s saved drafts and preferences…",
   "backup.replace": "Replace installation",
   "backup.replaceWarning": "This replaces everything in this installation; it does not merge. A recoverable safety backup of the current installation is kept before replacement. Restart is required.",

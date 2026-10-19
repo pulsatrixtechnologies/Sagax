@@ -1463,8 +1463,9 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
   return prepared;
 }
 
-/** The destination's own secrets under its people and engine homes
- * (`principals/`, `org/`, `engine-policies/`) never left this machine, and
+/** The destination's own secrets (savedSignInPath: under its people and
+ * engine homes `principals/`, `org/`, `engine-policies/`, and any sealed
+ * store, key or sign-in file in another folder) never left this machine, and
  * a restore does not take them away: each one goes into the install copy
  * at its path (one the archive cannot hold, savedSignInPath), and a
  * restored `.claude.json` gets back this machine's Claude sign-in fields.
@@ -1479,6 +1480,9 @@ function carryDestinationSecrets(dataDir: string, prepared: string): void {
       const target = join(prepared, relativePath);
       if (entryExists(target)) return;
       const parent = relativePath.split("/").slice(0, -1);
+      // elsewhere (a bot's folder, a work folder) only into a folder the
+      // restored tree still has, never as a new orphan folder
+      if (!PEOPLE_AND_ENGINE_HOMES.has(parent[0]!.toLowerCase()) && !entryExists(join(prepared, ...parent))) return;
       for (let i = 1; i <= parent.length; i++) {
         const path = join(prepared, ...parent.slice(0, i));
         if (!entryExists(path)) folder(path);
@@ -1488,7 +1492,7 @@ function carryDestinationSecrets(dataDir: string, prepared: string): void {
       return;
     }
     if (stat.isDirectory()) {
-      for (const name of readdirSync(source)) if (validRelative(`${relativePath}/${name}`)) visit(`${relativePath}/${name}`);
+      for (const name of readdirSync(source)) if (name !== "node_modules" && validRelative(`${relativePath}/${name}`)) visit(`${relativePath}/${name}`);
       return;
     }
     if (!stat.isFile() || !engineSettingsPath(relativePath) || !/(?:^|\/)\.claude\.json$/i.test(relativePath)) return;
@@ -1502,8 +1506,12 @@ function carryDestinationSecrets(dataDir: string, prepared: string): void {
       writeFileSync(target, JSON.stringify(restored, null, 2), { mode: 0o600 });
     } catch { /* absent or unreadable: the restored settings stay as they are */ }
   };
-  for (const top of ["principals", "org", "engine-policies"]) visit(top);
+  for (const top of readdirSync(dataDir)) {
+    if (top.startsWith(".") || keptInPlace(top) || excluded(top)) continue;
+    if (validRelative(top) && lstatSync(join(dataDir, top)).isDirectory()) visit(top);
+  }
 }
+const PEOPLE_AND_ENGINE_HOMES = new Set(["principals", "org", "engine-policies"]);
 
 export function readLastWorkspaceRestore(dataDir: string): LastWorkspaceRestore | null {
   const root = backupRoot(dataDir);

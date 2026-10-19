@@ -891,6 +891,77 @@ describe("encrypted full workspace backups", () => {
     expect(readLastWorkspaceRestore(target)?.summary?.reconnect).toEqual(exported.summary.reconnect);
   });
 
+  it("holds none of the secrets the security review found, whatever their form: deep or suffixed stores, dotted and inline TOML, flow and multi-line YAML, names with a secret word in them, tools' sign-in files", async () => {
+    const source = directory();
+    fixture(source).close();
+    let n = 0;
+    // obvious fakes, each also shaped like a real key so that the value check sees them
+    const fake = (shape = "sk-") => `${shape}FAKESECRETDONOTUSE${String(++n).padStart(3, "0")}xxxxxxxxxxxxxxxxxxxx`;
+    const put = (path: string, content: string) => { mkdirSync(join(source, path, ".."), { recursive: true }); writeFileSync(join(source, path), content); };
+    // 1. sealed stores and keys at any depth, and with a copy, lock or temp suffix
+    for (const path of ["bots/bot/vault.enc", "principals/pr_ana/sub/deep.enc", "principals/pr_ana/connections.enc.bak", "agent-api.key.lock", "mcp-oauth.enc.tmp",
+      "data-scopes/bot/s/store.key~", "browser-state/x.json.enc.previous", "principals/pr_ana/codex/auth.json.bak", "principals/pr_ana/claude/.credentials.json.lock",
+      "org/codex/.codex/auth.json.1.tmp", "principals/pr_ana/codex/.ssh/id_ed25519", "principals/pr_ana/codex/server.pem"]) put(path, fake());
+    // 2. TOML: dotted keys, inline tables, env tables in every form, multi-line values
+    put("principals/pr_ana/codex/config.toml", [
+      'model = "gpt-5"', "model_max_output_tokens = 4000", 'api_key_env = "OPENAI_API_KEY"',
+      `providers.local.api_key = "${fake()}"`,
+      `local = { base_url = "http://127.0.0.1:1234/v1", api_key = "${fake()}", nested = { token = "${fake()}", keep = 1 } }`,
+      `mcp_servers.a.env = { ANY = "${fake()}" }`, `mcp_servers.b.env.ANY = "${fake()}"`, `"mcp_servers"."c".'env' = { X = '${fake()}' }`,
+      "[mcp_servers.docs]", 'command = "docs"', "args = [", '  "--token",', `  "${fake("ghp_")}",`, '  "--verbose",', "]",
+      `openai_api_key = """`, fake(), '"""', `github_token = '''${fake("ghp_")}'''`,
+      `servers = [{ name = "x", headers = { Authorization = "Bearer ${fake("")}" } }]`,
+      "[mcp_servers.docs.env.nested]", `ANY = "${fake()}"`, "[ui]", 'theme = "dark"', "",
+    ].join("\n"));
+    // 3. YAML: flow mappings, quoted keys, block and folded values, header and env sequences, args
+    put("engine-policies/hermes-org/config.yaml", [
+      "model:", "  default: x", "  max_tokens: 1000", "providers:", `  local: { base_url: "http://127.0.0.1:1234/v1", api_key: ${fake()} }`,
+      "  other:", "    api_key: |", `      ${fake()}`, "    secret_key: >", `      ${fake()}`, `  "github_token": "${fake("ghp_")}"`,
+      "mcp_servers:", "  docs:", "    command: docs", `    args: [--key, ${fake()}]`, "    headers:", `      - "Authorization: Bearer ${fake("")}"`,
+      "    env:", `      TOKEN: ${fake()}`, `url: https://user:${fake("")}@example.com/x`, "",
+    ].join("\n"));
+    // 4. field names with a secret word in them, in JSON settings
+    put("principals/pr_ana/claude/settings.json", JSON.stringify({ model: "opus", maxTokens: 8, apiKeyHelper: "/usr/local/bin/key-helper",
+      openai_api_key: fake(), github_token: fake(), apiToken: fake(), GITHUB_PAT: fake(), credentials: { user: fake() }, db_password: fake(), XAI_API_KEY: fake(),
+      mcpServers: { a: { command: "a", args: ["--api-key", fake()] } } }));
+    put("principals/pr_ana/grok/.grok/mcp.json", JSON.stringify({ servers: [{ url: "https://mcp.example", clientSecret: fake(), sessionKey: fake() }] }));
+    // 5. the tools' own sign-in files, in an engine home and in a work folder
+    for (const name of [".netrc", ".git-credentials", ".npmrc", ".pypirc", "_netrc", ".pgpass"]) {
+      put(`principals/pr_ana/codex/${name}`, fake());
+      put(`task-workspaces/bot/thread/${name}`, fake());
+    }
+    put("task-workspaces/bot/thread/.ssh/id_rsa", fake());
+    put("task-workspaces/bot/thread/.ssh/id_rsa.pub", "ssh-ed25519 PUBLIC_KEY_KEPT");
+    put("attachments/talk.key", "KEYNOTE_DOCUMENT_KEPT");
+    const exported = await createWorkspaceBackup(source, { password: PASSWORD });
+    const MARKER = "FAKESECRETDONOTUSE";
+    const archive = readFileSync(exported.path);
+    expect(archive.includes(MARKER)).toBe(false);
+    const header = archive.subarray(0, 44);
+    const decipher = createDecipheriv("aes-256-gcm", scryptSync(PASSWORD, header.subarray(16, 32), 32, { N: 131_072, r: 8, p: 1, maxmem: 256 * 1024 ** 2 }), header.subarray(32, 44));
+    decipher.setAAD(header);
+    decipher.setAuthTag(archive.subarray(archive.length - 16));
+    const plaintext = Buffer.concat([decipher.update(archive.subarray(44, archive.length - 16)), decipher.final()]).toString("latin1");
+    const left = Array.from({ length: n }, (_, i) => `${MARKER}${String(i + 1).padStart(3, "0")}`).filter((marker) => plaintext.includes(marker));
+    expect(left).toEqual([]);
+    // what is not a secret travels
+    for (const kept of ["model_max_output_tokens = 4000", 'api_key_env = "OPENAI_API_KEY"', "http://127.0.0.1:1234/v1", '"--verbose"', 'theme = "dark"', "max_tokens: 1000",
+      "command: docs", "/usr/local/bin/key-helper", "PUBLIC_KEY_KEPT", "KEYNOTE_DOCUMENT_KEPT", "keep = 1"]) expect(plaintext, kept).toContain(kept);
+    expect(exported.summary.reconnect?.files?.count).toBeGreaterThanOrEqual(7);
+    // restoring brings none back and leaves the destination's own deep store in place
+    const target = directory();
+    mkdirSync(join(target, "bots", "bot"), { recursive: true });
+    writeFileSync(join(target, "bots", "bot", "vault.enc"), "DESTINATION_OWN_VAULT");
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    commitPendingWorkspaceRestore(target, staged.id);
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
+    const scan = (root: string): string[] => readdirSync(root, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile())
+      .filter((entry) => readFileSync(join(entry.parentPath, entry.name)).includes(MARKER)).map((entry) => join(entry.parentPath, entry.name));
+    expect(scan(target)).toEqual([]);
+    expect(readFileSync(join(target, "bots", "bot", "vault.enc"), "utf8")).toBe("DESTINATION_OWN_VAULT");
+    expect(readFileSync(join(target, "attachments", "talk.key"), "utf8")).toBe("KEYNOTE_DOCUMENT_KEPT");
+  });
+
   it("restores an archive from a release that exported secrets without them, says so, and lists what to reconnect", async () => {
     const source = directory();
     const exported = await createWorkspaceBackup(source, { password: PASSWORD });

@@ -24,7 +24,7 @@ export interface WorkspaceBackupSummary {
 /** The reconnect list's categories, in the order the app shows them. */
 export const WORKSPACE_BACKUP_RECONNECT = [
   "engines", "providerKeys", "connections", "credentialVault", "mcp", "github",
-  "cloudAgents", "triggers", "phones", "sharedLinks", "engineSettings",
+  "cloudAgents", "triggers", "phones", "sharedLinks", "engineSettings", "files",
 ] as const;
 export type WorkspaceBackupReconnectCategory = typeof WORKSPACE_BACKUP_RECONNECT[number];
 /** `count`: sign-ins, keys, files or links; `people`: how many people they belong to, when they are a person's. */

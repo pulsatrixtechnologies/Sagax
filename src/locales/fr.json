@@ -5300,6 +5300,7 @@
   "backup.reconnect.phones": "Téléphones pour les notifications (ouvrez l’app sur chaque téléphone) : {count}",
   "backup.reconnect.sharedLinks": "Liens partagés (pages publiées, liens de gabarits), à repartager si la restauration se fait sur un autre appareil : {count}",
   "backup.reconnect.engineSettings": "Réglages de moteurs restaurés sans leurs clés, jetons ni valeurs d’environnement : {count}",
+  "backup.reconnect.files": "Fichiers d’identifiants et clés des dossiers de travail (.netrc, .npmrc, .git-credentials, clés SSH), à remettre : {count}",
   "backup.recovering": "Restauration des brouillons et préférences de ce navigateur…",
   "backup.replace": "Remplacer l'installation",
   "backup.replaceWarning": "Remplace tout le contenu de cette installation, sans fusion. Une sauvegarde de sécurité est gardée avant. Un redémarrage est nécessaire.",

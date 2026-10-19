@@ -167,7 +167,7 @@ describe("workspace backup data boundary", () => {
       "agent-api.key", "media-proxy.key", "published-pages.key", "template-links.key", "future-signing.key", "Published-Pages.KEY",
       "push-devices", "push-devices/pr_ana.json"]) expect(savedSignInPath(path), path).toBe(true);
     for (const path of ["workspaces/bot/marketplace-tokens.enc", "workspaces/bot/agent-api.key", "attachments/a.key", "principals/pr_ana/claude/settings.json",
-      "principals.json", "published-pages.json", "template-links.json", "security-keys.json", "push-devices.json", "principals/pr_ana/notes/x.enc"]) expect(savedSignInPath(path), path).toBe(false);
+      "principals.json", "published-pages.json", "template-links.json", "security-keys.json", "push-devices.json", "attachments/talk.key", "workspaces/w/notes/x.enc"]) expect(savedSignInPath(path), path).toBe(false);
     // a destination keeps its own top-level ones in place
     for (const name of ["agent-api.key", "media-proxy.key", "marketplace-tokens.enc", "push-devices"]) expect(destinationSignInFile(name), name).toBe(true);
     for (const name of ["principals", "published-pages.json", "principals/pr_ana/connections.enc"]) expect(destinationSignInFile(name), name).toBe(false);
@@ -210,7 +210,7 @@ describe("workspace backup data boundary", () => {
       "mcp_servers:", "  docs:", "    command: docs", "    env:", "      TOKEN: FAKE_SECRET_DO_NOT_USE_7", "    headers:", "      - FAKE_SECRET_DO_NOT_USE_8", "toolsets: [web]", ""].join("\n");
     const yamlOut = withoutEngineSecrets("engine-policies/hermes-org/config.yaml", yaml)!;
     expect(yamlOut).not.toContain("FAKE_SECRET");
-    for (const kept of ["default: x", "base_url: http://127.0.0.1:1234/v1", "command: docs", "toolsets: [web]"]) expect(yamlOut).toContain(kept);
+    for (const kept of ["default: x", "base_url: http://127.0.0.1:1234/v1", "command: docs", "toolsets: [ web ]"]) expect(yamlOut).toContain(kept);
     expect(withoutEngineSecrets("x/config.toml", 'model = "x"\n')).toBeNull();
   });
 
