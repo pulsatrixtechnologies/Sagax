@@ -4738,3 +4738,40 @@ every engine's agents catalogue and in rooms. Keep:
 - Tests: `shared/reactions.test.ts`, `server/drivers/agents-catalog-reactions.test.ts`,
   `server/bot-reactions.e2e.test.ts` (idempotence, list, confidential thread,
   echo).
+
+## Cloud agent runner: sagax-runner and the sagax-run image (2026-10-19)
+
+The process of a cloud agent run's Pod (Perspicax spec "cloud agents",
+lot P1.4). Entry `server/sagax-runner.ts` (at the server root so the
+drivers' helpers resolve beside it once bundled), code in `server/runner/`,
+image `deploy/run/Dockerfile` (built locally by `scripts/build-run-image.sh`,
+never pushed). The Pod comes from the run provisioner
+(`server/sandboxd-runs-spec.ts`). Rules, none optional:
+
+- HTTPS out only, no port (CA-3): bootstrap, secrets (once), events in
+  batches (256 events, 1 MiB), long-polled commands, bundle. Every call
+  carries the run token; a 401 anywhere stops the runner at once (engine
+  stopped, secrets wiped, nothing more sent). `PX_CONTROL_URL` is https
+  (loopback http for tests), and the token is only sent to its origin:
+  a bootstrap whose `git_url` or `model_proxy` points elsewhere fails.
+- Secrets: one 0400 file each in `/dev/shm/px-secrets` (memory), visible
+  to `setup`; the `setup_only` ones (the default) are erased before the
+  engine starts. Every secret value and the run token are masked in all
+  events (`server/runner/mask.ts`, chunk boundaries included).
+- Git: read through Perspicax with the token as
+  `http.<git_url>.extraHeader` in `GIT_CONFIG_*` variables (never argv,
+  never `.git/config`), `remote.origin.pushurl = no-push://`, a pre-push
+  hook that refuses (comfort only). The branch is `px/*`, never the base.
+  Publishing is `git bundle create - refs/heads/<branch>`, checked to name
+  that one reference, posted to Perspicax, which pushes (CA-5).
+- Engines are Sagax's own drivers, headless (`server/runner/engine-drivers.ts`):
+  Claude Code with `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` = model proxy and
+  run token; Codex on the driver's Company provider at
+  `<model_proxy.openai>/v1` with the token in `SAGAX_COMPANY_API_KEY`. No
+  engine code in the runner; approval level `auto`, residual asks become
+  `approval` events answered by the `approve` command (unknown option = deny).
+- Tests: `server/runner/runner.test.ts` (whole cycle against
+  `server/testing/fake-perspicax-runner.ts`, real smart HTTP git, fake
+  engine; Git guard negatives), `server/runner/runner-drivers.test.ts` (the
+  real Claude and Codex drivers with their fake CLIs),
+  `server/runner/units.test.ts`.

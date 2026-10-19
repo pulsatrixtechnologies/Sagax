@@ -81,6 +81,9 @@ const ENTRY_POINTS = [
   "user-sandbox-proxy.ts",
   // the sandbox provisioner service (deploy/docker-compose.sandbox.yml)
   "sandboxd.ts",
+  // the runner of a cloud agent run, entry point of the sagax-run image
+  // (deploy/run/Dockerfile); at the root so the drivers' helpers resolve
+  "sagax-runner.ts",
   "drivers/agents-proxy.ts",
   "drivers/dweb-proxy.ts",
   "drivers/phone-proxy.ts",
