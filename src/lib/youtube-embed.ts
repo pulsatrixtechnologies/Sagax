@@ -50,6 +50,8 @@ export async function createYoutubePlayer(
       Player: new (
         el: HTMLElement,
         opts: {
+          width?: string | number;
+          height?: string | number;
           videoId: string;
           host?: string;
           playerVars?: Record<string, string | number>;
@@ -61,12 +63,17 @@ export async function createYoutubePlayer(
   const Player = w.YT?.Player;
   if (!Player) return null;
   return new Promise((resolve) => {
+    // 100% both ways: left to itself the IFrame API writes width="640"
+    // height="390" on the iframe. YouTube's own controls (play, scrub bar,
+    // fullscreen) stay on: nothing of Sagax is laid over the player.
     const player = new Player(mount, {
+      width: "100%",
+      height: "100%",
       videoId,
       host: "https://www.youtube-nocookie.com",
       playerVars: {
-        controls: 0,
-        modestbranding: 1,
+        controls: 1,
+        fs: 1,
         rel: 0,
         playsinline: 1,
         origin: window.location.origin,

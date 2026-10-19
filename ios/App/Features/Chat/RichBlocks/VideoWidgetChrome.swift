@@ -12,6 +12,12 @@ struct VideoWidgetChrome<Stage: View, Drawer: View>: View {
     var error: String?
     var onRetry: (() -> Void)?
     var drawerOpen: Bool = false
+    /// False for a player that draws its own title and controls (the YouTube
+    /// embed): nothing is laid over the stage, so its play button, scrub bar
+    /// and fullscreen button stay visible and tappable.
+    var overlaysStage: Bool = true
+    /// A row under the stage (title and actions when `overlaysStage` is false).
+    var footer: AnyView?
     @ViewBuilder var stage: () -> Stage
     @ViewBuilder var drawer: () -> Drawer
 
@@ -21,25 +27,27 @@ struct VideoWidgetChrome<Stage: View, Drawer: View>: View {
                 stage()
                     .aspectRatio(16 / 9, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                LinearGradient(
-                    colors: [.black.opacity(0.72), .black.opacity(0.05), .clear],
-                    startPoint: .top,
-                    endPoint: .center
-                )
-                .allowsHitTesting(false)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                    if let streamer, !streamer.isEmpty {
-                        Text([streamer, source].compactMap { $0 }.joined(separator: " · "))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.white.opacity(0.78))
-                            .lineLimit(1)
+                if overlaysStage {
+                    LinearGradient(
+                        colors: [.black.opacity(0.72), .black.opacity(0.05), .clear],
+                        startPoint: .top,
+                        endPoint: .center
+                    )
+                    .allowsHitTesting(false)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                        if let streamer, !streamer.isEmpty {
+                            Text([streamer, source].compactMap { $0 }.joined(separator: " · "))
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.78))
+                                .lineLimit(1)
+                        }
                     }
+                    .padding(12)
                 }
-                .padding(12)
                 if live {
                     HStack(spacing: 6) {
                         Circle().fill(.white).frame(width: 6, height: 6)
@@ -83,6 +91,9 @@ struct VideoWidgetChrome<Stage: View, Drawer: View>: View {
                 }
             }
             .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+            if let footer {
+                footer
+            }
             if drawerOpen {
                 drawer()
                     .transition(.opacity.combined(with: .move(edge: .top)))

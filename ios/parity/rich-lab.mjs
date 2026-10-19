@@ -94,6 +94,9 @@ export function seedRichLabTranscript(dataDir, png) {
       "",
       "[^src]: Guide de remplacement, page 12.",
     ].join("\n"), ...turn },
+    // A YouTube link alone on its line: the inline player (YouTubeMiniPlayerView)
+    // and its transcript button, which reads real captions from YouTube.
+    { id: "rich-youtube", role: "bot", kind: "text", text: "La vidéo :\n\nhttps://www.youtube.com/watch?v=jNQXAC9IVRw", ...turn },
     { id: "rich-digest", role: "bot", kind: "digest", text: "[digest] · tools: shell ×4 (1 failed) · files: changed rapport.md",
       digest: { turnId: "rich-turn", botId: lab.bot.id, threadId: lab.bot.threadId, at: now, durationMs: 4000, tools: [{ name: "shell", count: 4, failed: 1 }],
         files: { changed: ["rapport.md"], added: [], deleted: [] }, memory: [], reply: "Le rapport est prêt.", hookCoverage: "full",

@@ -11,6 +11,10 @@ const skinParam = params.get("skin");
 const skin = (skinParam === "daylight" || skinParam === "pulsatrix" ? skinParam : readSkin());
 applySkin(skin);
 
+// ?youtube=<id>: a real embed and a real transcript button (its /api call
+// needs a server behind the gallery, e.g. a Vite proxy to a fixture server).
+const live = params.get("youtube")?.match(/^[\w-]{11}$/)?.[0];
+
 const poster = "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=800&q=80";
 function Gallery() {
   return (
@@ -48,6 +52,12 @@ function Gallery() {
             ]}
           />
         </section>
+        {live && (
+          <section>
+            <h1 className="mb-4 text-lg font-semibold">YouTube (live embed)</h1>
+            <YouTubeMiniPlayer videoId={live} />
+          </section>
+        )}
       </div>
     </div>
   );

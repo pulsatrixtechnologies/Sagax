@@ -60455,6 +60455,22 @@
         }
       }
     },
+    "youtube.noCaptions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video has no public captions, so there is no transcript to show."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette vidéo n'a pas de sous-titres publics : aucune transcription à afficher."
+          }
+        }
+      }
+    },
     "youtube.playerTitle": {
       "localizations": {
         "en": {
@@ -60499,6 +60515,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoyer au robot"
+          }
+        }
+      }
+    },
+    "youtube.transcriptBlocked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YouTube did not return the transcript right now. Try again in a moment."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YouTube n'a pas rendu la transcription pour l'instant. Réessaie dans un moment."
           }
         }
       }
@@ -60563,6 +60595,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transcription"
+          }
+        }
+      }
+    },
+    "youtube.videoUnavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video is private, removed or restricted: YouTube does not share its transcript."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette vidéo est privée, retirée ou restreinte : YouTube n'en donne pas la transcription."
           }
         }
       }

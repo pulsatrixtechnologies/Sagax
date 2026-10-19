@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useId, useRef, useState } from "react";
 import { FileText } from "lucide-react";
 
-import { api } from "@/state/store";
+import { api, ApiError } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { createYoutubePlayer, type YoutubePlayerHandle } from "@/lib/youtube-embed";
 import type { MessageAttachmentContext } from "../AttachmentPreview";
@@ -38,7 +38,6 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
   const [channel, setChannel] = useState(initialChannel ?? "");
   const [loading, setLoading] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
-  const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cues, setCues] = useState<TranscriptCue[]>(initialCues ?? []);
   const [filter, setFilter] = useState("");
@@ -74,7 +73,12 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
     if (!mount) return;
     let cancelled = false;
     setPlayerReady(false);
-    void createYoutubePlayer(mount, videoId).then((handle) => {
+    // A fresh element per player: the IFrame API replaces the element it is
+    // given with its iframe, and a player that was mounted then torn down
+    // (React's StrictMode, a remount) must not take the next one's element.
+    const host = document.createElement("div");
+    mount.replaceChildren(host);
+    void createYoutubePlayer(host, videoId).then((handle) => {
       if (cancelled) {
         handle?.destroy();
         return;
@@ -86,6 +90,7 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
       cancelled = true;
       playerRef.current?.destroy();
       playerRef.current = null;
+      mount.replaceChildren();
     };
   }, [videoId, posterOnly]);
 
@@ -116,8 +121,7 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
       setCues(res.cues);
       setDrawerOpen(true);
     } catch (e) {
-      const body = e as { message?: string };
-      setError(body.message ?? t("youtube.transcriptError"));
+      setError(transcriptErrorMessage(e));
       setDrawerOpen(true);
     } finally {
       setLoading(false);
@@ -129,14 +133,6 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
     const body = cues.map((c) => `[${formatCue(c.startMs)}] ${c.text}`).join("\n");
     onSendToBot(t("youtube.handoffPrompt", { videoId, transcript: body }));
   }, [cues, onSendToBot, videoId]);
-
-  const togglePlay = useCallback(() => {
-    const p = playerRef.current;
-    if (!p) return;
-    if (playing) p.pause();
-    else p.play();
-    setPlaying(!playing);
-  }, [playing]);
 
   const footerActions = (
     <button
@@ -160,8 +156,7 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
       stageRef={shellRef}
       labelId={titleId}
       loading={!playerReady && !embedGrace}
-      playing={playing}
-      onPlayToggle={playerReady || embedGrace ? togglePlay : undefined}
+      embedControls
       footerActions={footerActions}
       drawerOpen={drawerOpen}
       drawer={
@@ -191,6 +186,15 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
     </MediaPlayerChrome>
   );
 });
+
+/** The server answers with a code; the words are the app's, in the person's language. */
+export function transcriptErrorMessage(e: unknown): string {
+  const code = e instanceof ApiError ? e.body?.error : undefined;
+  if (code === "no_captions") return t("youtube.noCaptions");
+  if (code === "unavailable") return t("youtube.videoUnavailable");
+  if (code === "blocked") return t("youtube.transcriptBlocked");
+  return t("youtube.transcriptError");
+}
 
 function formatCue(ms: number): string {
   const total = Math.floor(ms / 1000);

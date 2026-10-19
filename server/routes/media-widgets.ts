@@ -77,17 +77,21 @@ export async function handleMediaProxy(
 export function createMediaWidgetRoutes(): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
     if (path === "/api/youtube/transcript" && method === "POST") {
-      if (auth.kind !== "session") return json(res, 401, { error: "Unauthorized" });
+      // A person: a signed-in session, the desktop app (loopback owner) or a
+      // phone through the companion (loopback too). Not a bot's shell on a
+      // shared server (loopback service trust).
+      if (auth.kind === "loopback" ? auth.trust === "service" : auth.kind !== "session") return json(res, 401, { error: "Unauthorized" });
       const parsed = transcriptBody.safeParse(await readBody(req));
-      if (!parsed.success) return json(res, 400, { error: "videoId required" });
+      if (!parsed.success) return json(res, 400, { error: "invalid_video", message: "Identifiant de vidéo YouTube invalide." });
       try {
-        const cues = await fetchYoutubeTranscript(parsed.data.videoId);
-        return json(res, 200, { videoId: parsed.data.videoId, cues });
+        const transcript = await fetchYoutubeTranscript(parsed.data.videoId);
+        return json(res, 200, { videoId: parsed.data.videoId, ...transcript });
       } catch (error) {
         const code = (error as { code?: string }).code;
-        if (code === "no_captions") return json(res, 404, { error: "no_captions", message: "Aucune transcription publique pour cette vidéo." });
-        if (code === "invalid_video") return json(res, 400, { error: "invalid_video" });
-        return json(res, 502, { error: "unavailable", message: "Impossible de joindre YouTube pour l'instant." });
+        if (code === "no_captions") return json(res, 404, { error: "no_captions", message: "Cette vidéo n'a pas de sous-titres publics." });
+        if (code === "invalid_video") return json(res, 400, { error: "invalid_video", message: "Identifiant de vidéo YouTube invalide." });
+        if (code === "unavailable") return json(res, 422, { error: "unavailable", message: "Vidéo privée, retirée ou restreinte : YouTube n'en donne pas la transcription." });
+        return json(res, 502, { error: "blocked", message: "YouTube n'a pas rendu la transcription pour l'instant. Réessaie plus tard." });
       }
     }
     return PASS;

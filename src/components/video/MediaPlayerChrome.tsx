@@ -70,6 +70,12 @@ type ChromeProps = {
   /** Below the stage: transcript drawer content. */
   drawer?: ReactNode;
   drawerOpen?: boolean;
+  /**
+   * The media draws its own controls (the YouTube embed): nothing is laid
+   * over the stage (video-player.css hides the overlays), and the title and
+   * `footerActions` sit in a row under it.
+   */
+  embedControls?: boolean;
   children: ReactNode;
 };
 
@@ -88,6 +94,7 @@ export const MediaPlayerChrome = memo(function MediaPlayerChrome({
   footerActions,
   drawer,
   drawerOpen,
+  embedControls = false,
   children,
 }: ChromeProps) {
   const autoId = useId();
@@ -151,14 +158,14 @@ export const MediaPlayerChrome = memo(function MediaPlayerChrome({
     native.setCurrent(t);
   }, [native]);
 
-  const showCenterPlay = !loading && !error && !playing && onPlayToggle;
+  const showCenterPlay = !embedControls && !loading && !error && !playing && onPlayToggle;
   const chromeOn = controlsVisible || !playing;
   const viewers = header.viewerCount != null && header.viewerCount > 0
     ? header.viewerCount.toLocaleString()
     : null;
 
   return (
-    <div className="vpc-card" role="group" aria-labelledby={labelId} data-vpc="1">
+    <div className="vpc-card" role="group" aria-labelledby={labelId} data-vpc="1" data-embed-controls={embedControls ? "true" : undefined}>
       <div
         ref={stageRef}
         className="vpc-stage"
@@ -306,10 +313,24 @@ export const MediaPlayerChrome = memo(function MediaPlayerChrome({
             >
               {fs ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </ChromeIconButton>
-            {footerActions && <div className="vpc-actions">{footerActions}</div>}
+            {footerActions && !embedControls && <div className="vpc-actions">{footerActions}</div>}
           </div>
         </div>
       </div>
+
+      {embedControls && (
+        <div className="vpc-footer">
+          <div className="vpc-titles">
+            <p className="vpc-footer-title">{header.title}</p>
+            {(header.streamer || header.source) && (
+              <p className="vpc-footer-sub">
+                {[header.streamer, header.source].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </div>
+          {footerActions && <div className="vpc-actions">{footerActions}</div>}
+        </div>
+      )}
 
       {drawer && (
         <div className="vpc-drawer" data-open={drawerOpen ? "true" : "false"}>
