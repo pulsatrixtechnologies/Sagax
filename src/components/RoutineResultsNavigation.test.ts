@@ -94,12 +94,19 @@ beforeEach(() => {
 });
 afterAll(() => vi.unstubAllGlobals());
 
+
+/** The navigation dispatched, without the fresh topic bookkeeping every
+ * thread open also dispatches (src/lib/fresh-topic.ts). */
+function navigationCalls(): unknown[][] {
+  return fixture.dispatch.mock.calls.filter(([action]) => (action as { type?: string }).type !== "freshTopic");
+}
+
 describe("routine results navigation", () => {
   it("opens a historical run's source, not a destination configured after that run", () => {
     const { buttons, onClose } = details();
     expect(buttons.has("Open results thread")).toBe(true);
     buttons.get("Open results thread")!.onClick!();
-    expect(fixture.dispatch.mock.calls).toEqual([
+    expect(navigationCalls()).toEqual([
       [{ type: "select", id: bot.id }],
       [{ type: "switchTask", botId: bot.id, threadId: "original-source" }],
     ]);
@@ -108,14 +115,14 @@ describe("routine results navigation", () => {
 
   it("uses the definition's destination only for a definition-only view", () => {
     details(null).buttons.get("Open results thread")!.onClick!();
-    expect(fixture.dispatch).toHaveBeenLastCalledWith({ type: "switchTask", botId: bot.id, threadId: "new-results" });
+    expect(navigationCalls().at(-1)).toEqual([{ type: "switchTask", botId: bot.id, threadId: "new-results" }]);
   });
 
   it("opens the bot's main thread for a definition with no thread of its own, never for a run", () => {
     const { resultsThreadId: _chosen, ...unchosen } = routine;
     fixture.state!.bots = [{ ...bot, mainThreadId: "original-source" }];
     details(null, unchosen).buttons.get("Open results thread")!.onClick!();
-    expect(fixture.dispatch).toHaveBeenLastCalledWith({ type: "switchTask", botId: bot.id, threadId: "original-source" });
+    expect(navigationCalls().at(-1)).toEqual([{ type: "switchTask", botId: bot.id, threadId: "original-source" }]);
     expect(details({ ...run, sourceThreadId: undefined }, unchosen).buttons.has("Open results thread")).toBe(false);
   });
 
@@ -126,7 +133,7 @@ describe("routine results navigation", () => {
 
   it("opens the original group task from a historical run even when the definition has changed", () => {
     details({ ...run, sourceThreadId: "original-room-source" }).buttons.get("Open results thread")!.onClick!();
-    expect(fixture.dispatch.mock.calls).toEqual([
+    expect(navigationCalls()).toEqual([
       [{ type: "select", id: group.id }],
       [{ type: "switchGroupTask", groupId: group.id, threadId: "original-room-source" }],
     ]);
@@ -137,7 +144,7 @@ describe("routine results navigation", () => {
     const buttons = buttonsFrom(() => ChatView({ bot }));
     expect(buttons.has("Back to results")).toBe(true);
     buttons.get("Back to results")!.onClick!();
-    expect(fixture.dispatch.mock.calls).toEqual([
+    expect(navigationCalls()).toEqual([
       [{ type: "select", id: group.id }],
       [{ type: "switchGroupTask", groupId: group.id, threadId: "original-room-source" }],
     ]);
@@ -149,17 +156,17 @@ describe("routine results navigation", () => {
     buttons.get("Open results thread")!.onClick!();
     // "original-source" is an earlier topic of the single stream: the stream
     // opens at its newest topic, the earlier one drawn above.
-    expect(fixture.dispatch.mock.calls).toEqual([[{ type: "switchTask", botId: bot.id, threadId: "new-results" }]]);
+    expect(navigationCalls()).toEqual([[{ type: "switchTask", botId: bot.id, threadId: "new-results" }]]);
     fixture.dispatch.mockClear();
     // Open thread, from a run whose bot is on its results thread.
     fixture.state!.bots = [{ ...bot, threadId: "new-results" }];
     details().buttons.get("Open thread")!.onClick!();
-    expect(fixture.dispatch.mock.calls).toEqual([[{ type: "switchTask", botId: bot.id, threadId: "execution" }]]);
+    expect(navigationCalls()).toEqual([[{ type: "switchTask", botId: bot.id, threadId: "execution" }]]);
     // With threads shown, as before.
     fixture.showThreads = true;
     fixture.dispatch.mockClear();
     details().buttons.get("Open thread")!.onClick!();
-    expect(fixture.dispatch.mock.calls).toEqual([
+    expect(navigationCalls()).toEqual([
       [{ type: "select", id: bot.id }],
       [{ type: "switchTask", botId: bot.id, threadId: "execution" }],
     ]);
