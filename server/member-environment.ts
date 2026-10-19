@@ -188,3 +188,96 @@ export function ownEnvironmentCall(input: {
   const environment = input.environmentPrincipalId?.trim().toLowerCase();
   return Boolean(environment) && environment === input.ownerPrincipalId.trim().toLowerCase();
 }
+
+// 2026-10-19 (JC): a person's own destinations are theirs. A tool of their
+// server environment or of their own computer (the desktop bridge, every
+// tool: This computer and its Local VM), mounted by Sagax for this turn as
+// the environment of the bot's owner, is that owner's own work: its card is
+// theirs at their own approval level, never an organization admin's. Unlike
+// ownEnvironmentCall this does not depend on the organization's autonomy
+// policy (memberEnvironmentAutonomy decides whether a card shows, not who
+// answers it), and it covers the owner's own computer, which is not an
+// isolated environment and so never runs unasked by this rule.
+
+/** Whether a call acts on the bot owner's own destination (their server
+ * environment, their own computer or its Local VM) mounted for this turn. */
+export function ownDestinationCall(input: {
+  identity: "solo" | "perspicax";
+  tool: string | undefined;
+  environmentPrincipalId: string | null | undefined;
+  ownerPrincipalId: string;
+  guestDriven: boolean;
+  mountedServers: ReadonlySet<string>;
+}): boolean {
+  if (input.identity !== "perspicax" || input.guestDriven) return false;
+  const match = /^(?:mcp__)?([a-z][a-z-]{0,63})__([a-z][a-z0-9_]{0,63})$/.exec(input.tool?.trim() ?? "");
+  if (!match) return false;
+  const server = match[1]!;
+  if (server !== USER_SANDBOX_MCP_NAME && server !== DESKTOP_BRIDGE_MCP_NAME) return false;
+  if (!input.mountedServers.has(server)) return false;
+  const environment = input.environmentPrincipalId?.trim().toLowerCase();
+  return Boolean(environment) && environment === input.ownerPrincipalId.trim().toLowerCase();
+}
+
+/** The read-only tools of a person's own destination that may read their
+ * own attachments without a card. */
+const ATTACHMENT_READ_TOOLS: ReadonlySet<string> = new Set(["read_file", "list_files", "search_files"]);
+
+/** A path, normalized for a prefix test on the platform it belongs to:
+ * forward slashes, no trailing slash, case folded on Windows and macOS
+ * (case-insensitive file systems). Null when it is not absolute or has a
+ * `.` or `..` segment (a traversal never counts as inside). */
+export function normalizedDestinationPath(path: string, platform: "darwin" | "win32" | "linux"): string | null {
+  if (typeof path !== "string" || !path.trim() || /[\0\r\n]/.test(path)) return null;
+  let value = path.trim();
+  if (platform === "win32") {
+    value = value.replace(/\\/g, "/");
+    if (/^\/\/[?.]\//.test(value)) value = value.slice(4);
+    if (!/^[a-zA-Z]:\//.test(value)) return null;
+  } else if (!value.startsWith("/")) return null;
+  const segments = value.split("/");
+  const head = segments.shift()!;
+  const kept: string[] = [];
+  for (const segment of segments) {
+    if (segment === "") continue;
+    if (segment === "." || segment === "..") return null;
+    kept.push(segment);
+  }
+  const joined = `${head}/${kept.join("/")}`;
+  return platform === "linux" ? joined : joined.toLowerCase();
+}
+
+/** Whether a call only reads the person's own attachments on their own
+ * destination: a read tool (read_file, list_files, search_files) whose path
+ * is inside one of `roots` (the attachments folder Sagax staged their files
+ * in: the desktop app's own folder on their computer, /workspace/attachments
+ * in their server environment). A Windows short name (BOBSMI~1) is compared
+ * as written: the root is the folder the app itself reported, and the bot
+ * sees the path Sagax staged under it. Arguments that cannot be read, a
+ * missing path, a relative path or a traversal are not a read of the
+ * attachments (fail closed: the card shows). */
+export function ownAttachmentRead(input: {
+  tool: string | undefined;
+  input: string | undefined;
+  /** Each root with the server whose tools reach it: a folder of the
+   * person's computer is never a path of their server environment. */
+  roots: ReadonlyArray<{ server: string; path: string; platform: "darwin" | "win32" | "linux" }>;
+}): boolean {
+  const match = /^(?:mcp__)?([a-z][a-z-]{0,63})__([a-z][a-z0-9_]{0,63})$/.exec(input.tool?.trim() ?? "");
+  if (!match || !ATTACHMENT_READ_TOOLS.has(match[2]!)) return false;
+  if (match[1] !== USER_SANDBOX_MCP_NAME && match[1] !== DESKTOP_BRIDGE_MCP_NAME) return false;
+  if (match[1] === USER_SANDBOX_MCP_NAME && match[2] === "search_files") return false;
+  let args: unknown;
+  try { args = JSON.parse(input.input ?? ""); } catch { return false; }
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  const path = (args as Record<string, unknown>).path;
+  if (typeof path !== "string") return false;
+  const server = match[1]!;
+  return input.roots.some((root) => {
+    if (root.server !== server) return false;
+    const base = normalizedDestinationPath(root.path, root.platform);
+    const target = normalizedDestinationPath(path, root.platform);
+    if (!base || !target) return false;
+    return target === base || target.startsWith(base.endsWith("/") ? base : `${base}/`);
+  });
+}

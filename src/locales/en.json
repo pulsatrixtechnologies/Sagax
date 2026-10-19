@@ -216,6 +216,7 @@
   "approval.action.update": "Update",
   "approval.adminWillAnswer": "An admin ({admins}) sees it in Settings > Organization. Your bot continues as soon as it is approved, or skips this step if it is denied.",
   "approval.adminWillAnswerUnnamed": "The organization's admins see it in Settings > Organization. Your bot continues as soon as it is approved, or skips this step if it is denied.",
+  "approval.adminDelegate": "To approve your own bots' server commands yourself, ask an admin to give you “Run commands on the organization's server” in Perspicax (Bot rights > Who has what). Your own computer, Local VM and cloud computer never need it.",
   "approval.applied.changedSince": "Changed since, so it can't be undone here.",
   "approval.applied.details": "Details",
   "approval.applied.field.cwd": "working folder",

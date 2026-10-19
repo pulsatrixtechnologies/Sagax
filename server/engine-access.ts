@@ -191,8 +191,16 @@ export function memberBotAdminApproval(input: {
    * one of them could have spelled is never a built-in tool
    * (sagax-internal-tools.ts foreignToolSpelling). */
   foreignMcpServers?: Iterable<string>;
+  /** 2026-10-19 (JC): the call acts on one of the owner's own destinations
+   * (their server environment, their own computer or its Local VM) mounted
+   * for this turn (member-environment.ts ownDestinationCall): the owner's
+   * card at their own level, never an admin's, whatever the tool. */
+  ownDestination?: boolean;
+  /** 2026-10-19: the owner holds `host.commands` (given in Perspicax): the
+   * server commands of their own bots are theirs to approve. */
+  ownerRunsServerCommands?: boolean;
 }): boolean {
-  if (input.ownEnvironment) return false;
+  if (input.ownEnvironment || input.ownDestination || input.ownerRunsServerCommands) return false;
   if (serverCommandApproval(input)) return true;
   const builtin = !foreignToolSpelling(input.tool, input.foreignMcpServers ?? []);
   if (builtin && memberOwnScopeTool(input.tool?.trim())) return false;

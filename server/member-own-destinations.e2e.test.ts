@@ -1,0 +1,326 @@
+// A member's own destinations through the real organization server
+// (2026-10-19, JC: "everyone should be able to run commands on their own
+// VM, PC or cloud computer"). A member (Bob, not an admin) connects his
+// Windows desktop app; his bot (Auto: his computer, the cloud one switch
+// away) asks for permissions through its broker socket like an engine, and
+// the test reads who has to answer each card.
+//
+//   attachment  Bob sent a .zip: listing and reading it in his own
+//               attachments folder (Windows short name, backslashes) runs
+//               with no card; a traversal out of it keeps a card (his)
+//   computer    a command on his own computer is HIS card at his level,
+//               never an admin's, and he can answer it
+//   sandbox     his server environment: the same, autonomy policy off too
+//   server      a command on the organization's server waits for an admin
+//               and the refusal says what to ask for and where; once an
+//               admin gives "Run commands on the organization's server" in
+//               Perspicax, it is his card; an admin is unchanged
+//   terminal    his own destinations are listed from any bot he talks to;
+//               a server host only with that permission
+import { spawn, type ChildProcess } from "node:child_process";
+import { createServer, type Server } from "node:http";
+import { connect, type AddressInfo, type Socket } from "node:net";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { MEMBER_DEFAULT_PERMISSIONS } from "../shared/permissions.ts";
+import { SandboxdVerifier } from "./sandboxd-auth.ts";
+import { SandboxService } from "./sandboxd-core.ts";
+import { createSandboxdHandler } from "./sandboxd.ts";
+import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { FakeDocker } from "./testing/fake-docker.ts";
+import { connectFakeDesktop, type FakeDesktop } from "./testing/fake-desktop.ts";
+import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
+import { freePortBlock } from "./testing/ports.ts";
+import { sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
+
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
+const posixOnly = describe.skipIf(process.platform === "win32");
+const ORG_KEY = "sk-ant-test-org-key-000000";
+const SANDBOXD_KEY = "e".repeat(64);
+const INSTANCE = "e2e-own-dest";
+const ALICE: FakeOidcUser = { sub: "01J9S5ALICE00000000000000A", email: "alice@example.test", name: "Alice", preferred_username: "alice", role: "admin" };
+const BOB: FakeOidcUser = { sub: "01J9S5BOB000000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
+const BOB_ATTACHMENTS = "C:\\Users\\BOBSMI~1\\AppData\\Local\\Temp\\Sagax\\attachments";
+
+let PORT = 0;
+let BASE = "";
+let child: ChildProcess;
+let home: string;
+let log = "";
+let idp: FakeOidcProvider;
+let provisioner: Server;
+const docker = new FakeDocker();
+/** Request ids stay unique across turns: a card is found by its id. */
+let asked = 0;
+
+type Auth = { cookie?: string };
+const api = async (method: string, path: string, auth?: Auth, body?: unknown): Promise<{ status: number; body: any; text: string }> => {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(auth?.cookie ? { cookie: auth.cookie } : {}), origin: BASE },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let parsed: any = {};
+  try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+  return { status: res.status, body: parsed, text };
+};
+const cookiePair = (setCookie: string) => setCookie.split(";")[0]!;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function signIn(user: FakeOidcUser): Promise<Auth> {
+  idp.user = { ...user };
+  const start = await fetch(`${BASE}/auth/oidc/start`, { redirect: "manual" });
+  const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
+  const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
+  const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+  const session = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
+  expect(callback.headers.get("location"), log.slice(-2000)).toBe("/");
+  return { cookie: cookiePair(session!) };
+}
+
+async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms = 20_000): Promise<T> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const value = await read();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`timed out. server log:\n${log.slice(-4000)}`);
+    await sleep(150);
+  }
+}
+
+posixOnly("organization server: a member's own destinations", () => {
+  let alice: Auth;
+  let bob: Auth;
+  let desktop: FakeDesktop;
+  const holdDump = () => join(home, "hold-dump.json");
+
+  beforeAll(async () => {
+    chmodSync(FAKE_CLAUDE, 0o755);
+    const service = new SandboxService(docker, sandboxdConfigFromEnv({ SAGAX_SANDBOX_IMAGE: "sagax-sandbox:test", SAGAX_SANDBOX_INSTANCE: INSTANCE }));
+    await service.installEgressPolicy();
+    provisioner = createServer(createSandboxdHandler(service, new SandboxdVerifier(SANDBOXD_KEY)));
+    await new Promise<void>((resolve) => provisioner.listen(0, "127.0.0.1", resolve));
+    idp = await startFakeOidcProvider({ user: ALICE });
+    idp.directoryPeople = [ALICE, BOB].map((user) => idp.personOf(user));
+    PORT = await freePortBlock([0, 1]);
+    BASE = `http://127.0.0.1:${PORT}`;
+    home = mkdtempSync(join(tmpdir(), "omb-own-dest-"));
+    const data = join(home, ".sagax");
+    mkdirSync(data, { recursive: true });
+    mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
+    writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
+      version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
+    }), { mode: 0o640 });
+    writeFileSync(join(home, "sandboxd-key"), `${SANDBOXD_KEY}\n`, { mode: 0o400 });
+    writeFileSync(join(data, "config.json"), JSON.stringify({
+      organization: { memberBotsUseOrgKey: true },
+      instances: {
+        // A turn that waits, so the test speaks to its permission broker.
+        hold: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: join(home, "hold-dump.json") }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+      },
+    }));
+    child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+      cwd: join(SERVER_DIR, ".."),
+      env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1", SAGAX_TERMINAL_TEST: "1",
+        ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+        HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+        SAGAX_IDENTITY: "perspicax",
+        SAGAX_PERSPICAX_ISSUER: idp.issuer,
+        SAGAX_PUBLIC_URL: BASE,
+        SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+        SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
+        SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
+        SAGAX_ORG_NAME: "Acme",
+        SAGAX_SANDBOXD_URL: `http://127.0.0.1:${(provisioner.address() as AddressInfo).port}`,
+        SAGAX_SANDBOXD_KEY_FILE: join(home, "sandboxd-key"),
+        SAGAX_SANDBOX_INSTANCE: INSTANCE,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout!.on("data", (c) => (log += c));
+    child.stderr!.on("data", (c) => (log += c));
+    await waitFor(async () => {
+      try { return (await fetch(`${BASE}/api/health`)).ok; } catch { return false; }
+    });
+    alice = await signIn(ALICE);
+    bob = await signIn(BOB);
+    await waitFor(async () => {
+      const got = (await api("GET", "/api/org/directory", alice)).body.people as unknown[] | undefined;
+      return got && got.length === 2;
+    });
+    // Bob's Windows desktop app (a Windows 8.3 short name in the profile path).
+    desktop = await connectFakeDesktop({
+      base: BASE, cookie: bob.cookie!, name: "Bob's PC", platform: "win32", attachmentsDir: BOB_ATTACHMENTS,
+      handle: async (operation) => ({ content: [{ type: "text", text: `desktop:${operation.action}` }] }),
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await desktop?.close();
+    child?.kill("SIGTERM");
+    if (child) await waitForExit(child);
+    await idp?.close();
+    await new Promise<void>((resolve) => provisioner?.close(() => resolve()));
+    if (home) removeTempDir(home);
+  });
+
+  /** A held turn of `bot` and a way to ask its broker like an engine. */
+  async function heldTurn(auth: Auth, bot: { id: string; threadId: string }, text: string) {
+    rmSync(holdDump(), { force: true });
+    const sent = await api("POST", `/api/bots/${bot.id}/messages`, auth, { text });
+    expect(sent.status, sent.text).toBe(202);
+    await waitFor(async () => existsSync(holdDump()), 20_000);
+    const mcp = (JSON.parse(readFileSync(holdDump(), "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers;
+    const socketPath = mcp.ogb.args.at(-1) as string;
+    const sockets: Socket[] = [];
+    const ask = async (tool: string, input: Record<string, unknown>) => {
+      const socket = connect(socketPath);
+      sockets.push(socket);
+      await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+      const id = `own-dest-${bot.id.slice(0, 6)}-${++asked}`;
+      let answer: any;
+      let buffer = "";
+      socket.on("data", (chunk) => { buffer += chunk; if (buffer.includes("\n")) answer = JSON.parse(buffer.split("\n")[0]!); });
+      socket.write(JSON.stringify({ t: "ask", id, kind: "permission", tool, input }) + "\n");
+      return { id, answer: () => answer };
+    };
+    const cardOf = async (id: string) => waitFor(async () => {
+      const got = await api("GET", `/api/threads/${bot.threadId}/messages?limit=200`, auth);
+      return (got.body.messages as Array<{ card?: any }> | undefined)?.find((m) => m.card?.requestId === id)?.card ?? null;
+    });
+    const noCard = async (id: string) => {
+      const rows = (await api("GET", `/api/threads/${bot.threadId}/messages?limit=200`, auth)).body.messages as Array<{ card?: any }>;
+      return !rows.some((m) => m.card?.requestId === id);
+    };
+    const respond = (who: Auth, requestId: string, behavior: "allow" | "deny") =>
+      api("POST", `/api/threads/${bot.threadId}/respond`, who, { requestId, behavior });
+    const end = async () => {
+      for (const socket of sockets) socket.destroy();
+      await api("POST", `/api/bots/${bot.id}/interrupt`, auth, {});
+      await waitFor(async () => !((await api("GET", "/api/bots", auth)).body.bots as Array<{ id: string; busy?: boolean }>).find((b) => b.id === bot.id)?.busy);
+    };
+    return { ask, cardOf, noCard, respond, end, mcpServers: Object.keys(mcp) };
+  }
+
+  async function bobBot(name: string) {
+    const created = await api("POST", "/api/bots", bob, { name });
+    expect(created.status, created.text).toBe(201);
+    const bot = { id: created.body.bot.id as string, threadId: created.body.bot.threadId as string };
+    expect((await api("PATCH", `/api/bots/${bot.id}`, bob, { modelSelection: { instanceId: "hold", model: "fake-model" } })).status).toBe(200);
+    return bot;
+  }
+
+  it("his own computer and his attachments: never an admin; reads of what he sent need no card", async () => {
+    const pickle = await bobBot("Juniper");
+    const turn = await heldTurn(bob, pickle, "lis mon zip");
+    try {
+      expect(turn.mcpServers).toContain("sagax-desktop");
+      // the .zip he attached, unpacked in his own attachments folder: listed
+      // and read with no card at all, even at Ask
+      const list = await turn.ask("mcp__sagax-desktop__list_files", { path: `${BOB_ATTACHMENTS}\\a6d1def1-fichier` });
+      await waitFor(async () => list.answer()?.behavior === "allow");
+      expect(await turn.noCard(list.id)).toBe(true);
+      const read = await turn.ask("mcp__sagax-desktop__read_file", { path: `${BOB_ATTACHMENTS.replace(/\\/g, "/")}/a6d1def1-fichier/rapport.txt` });
+      await waitFor(async () => read.answer()?.behavior === "allow");
+      // a traversal out of it is not a read of his attachments: his card
+      const escape = await turn.ask("mcp__sagax-desktop__read_file", { path: `${BOB_ATTACHMENTS}\\..\\..\\..\\secret.txt` });
+      const escapeCard = await turn.cardOf(escape.id);
+      expect(escapeCard.adminApproval).not.toBe(true);
+      expect(escape.answer()).toBeUndefined();
+      // a command on his own computer: his card at his level, never an admin's
+      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "echo ok; whoami", timeout_seconds: 20 });
+      const commandCard = await turn.cardOf(command.id);
+      expect(commandCard.adminApproval).not.toBe(true);
+      const allowed = await turn.respond(bob, command.id, "allow");
+      expect(allowed.status, allowed.text).toBe(200);
+      await waitFor(async () => command.answer()?.behavior === "allow");
+      // a write elsewhere on his computer: his card too
+      const write = await turn.ask("mcp__sagax-desktop__write_file", { path: "C:\\Users\\BOBSMI~1\\Documents\\notes.txt", content: "x" });
+      expect((await turn.cardOf(write.id)).adminApproval).not.toBe(true);
+      // the Local VM on his computer
+      const vm = await turn.ask("mcp__sagax-desktop__local_vm", { action: "run", command: "unzip fichier.zip" });
+      await sleep(500);
+      if (!(vm.answer()?.behavior === "allow")) expect((await turn.cardOf(vm.id)).adminApproval).not.toBe(true);
+    } finally {
+      await turn.end();
+    }
+  }, 120_000);
+
+  it("his server environment: his card even when the organization turns autonomy off", async () => {
+    // Works on: the cloud computer (his server environment)
+    const prefer = (place: "server" | "computer") => api("PUT", "/api/me/preferences", bob, { preferences: { "sagax.botWorkplace.v1": JSON.stringify({ place, routines: false, network: "all" }) } });
+    expect((await prefer("server")).status).toBe(200);
+    const off = await api("PATCH", "/api/org/settings", alice, { memberEnvironmentAutonomy: false });
+    expect(off.status, off.text).toBe(200);
+    const moss = await bobBot("Moss");
+    const turn = await heldTurn(bob, moss, "travaille dans le nuage");
+    try {
+      expect(turn.mcpServers).toContain("sagax-environment");
+      const run = await turn.ask("mcp__sagax-environment__run_command", { command: "unzip /workspace/attachments/fichier.zip" });
+      expect((await turn.cardOf(run.id)).adminApproval).not.toBe(true);
+      const allowed = await turn.respond(bob, run.id, "allow");
+      expect(allowed.status, allowed.text).toBe(200);
+      // his attachments in his environment: read without a card
+      const read = await turn.ask("mcp__sagax-environment__read_file", { path: "/workspace/attachments/fichier/rapport.txt" });
+      await waitFor(async () => read.answer()?.behavior === "allow");
+    } finally {
+      await turn.end();
+      await api("PATCH", "/api/org/settings", alice, { memberEnvironmentAutonomy: true });
+      await prefer("computer");
+    }
+  }, 120_000);
+
+  it("the organization's server: an admin's, until an admin gives the permission in Perspicax; an admin is unchanged", async () => {
+    const otto = await bobBot("Otto");
+    let turn = await heldTurn(bob, otto, "commande serveur");
+    try {
+      const shell = await turn.ask("Bash", { command: "cat /etc/hostname" });
+      const card = await turn.cardOf(shell.id);
+      expect(card.adminApproval).toBe(true);
+      const refused = await turn.respond(bob, shell.id, "allow");
+      expect(refused.status).toBe(403);
+      // the refusal says what to ask an admin for, and where they give it
+      expect(String(refused.body.error)).toContain("Run commands on the organization's server");
+      expect(String(refused.body.error)).toContain("Perspicax");
+      // an admin answers it, as before
+      const byAdmin = await turn.respond(alice, shell.id, "allow");
+      expect(byAdmin.status, byAdmin.text).toBe(200);
+      await waitFor(async () => shell.answer()?.behavior === "allow");
+    } finally {
+      await turn.end();
+    }
+    // terminal: his own destinations are listed; the server's test host is not
+    const listed = async (auth: Auth, bot: { id: string; threadId: string }) =>
+      ((await api("GET", `/api/terminal/resources?botId=${bot.id}&threadId=${bot.threadId}`, auth)).body.resources ?? []) as Array<{ provider: string; scope?: string }>;
+    const bobOwn = await listed(bob, otto);
+    expect(bobOwn.some((row) => row.provider === "desktop")).toBe(true);
+    expect(bobOwn.some((row) => (row.scope ?? "server") === "server")).toBe(false);
+    // from Alice's bot he talks to, his own destinations are still his
+    const created = await api("POST", "/api/bots", alice, { name: "Shared" });
+    const shared = { id: created.body.bot.id as string, threadId: created.body.bot.threadId as string };
+    expect((await listed(alice, shared)).some((row) => (row.scope ?? "server") === "server")).toBe(true);
+
+    // an admin gives Bob "Run commands on the organization's server" in
+    // Perspicax (a permission set): the directory carries it
+    idp.directoryPeople = [idp.personOf(ALICE), { ...idp.personOf(BOB), permissions: [...MEMBER_DEFAULT_PERMISSIONS, "host.commands"] }];
+    await waitFor(async () => (await listed(bob, otto)).some((row) => (row.scope ?? "server") === "server"), 30_000);
+    turn = await heldTurn(bob, otto, "commande serveur encore");
+    try {
+      const shell = await turn.ask("Bash", { command: "cat /etc/hostname" });
+      const card = await turn.cardOf(shell.id);
+      expect(card.adminApproval).not.toBe(true);
+      const allowed = await turn.respond(bob, shell.id, "allow");
+      expect(allowed.status, allowed.text).toBe(200);
+      await waitFor(async () => shell.answer()?.behavior === "allow");
+    } finally {
+      await turn.end();
+      idp.directoryPeople = [ALICE, BOB].map((user) => idp.personOf(user));
+    }
+  }, 150_000);
+});

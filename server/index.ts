@@ -1046,7 +1046,7 @@ import { createMcpAuditInternalRoutes } from "./routes/mcp-audit-internal.ts";
 import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/routine-run-internal.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
-import { memberEnvironmentAutonomyAllowed, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTurnOrigin } from "./member-environment.ts";
+import { memberEnvironmentAutonomyAllowed, ownAttachmentRead, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
@@ -9270,8 +9270,9 @@ function terminalPrincipalId(auth: RequestAuth): string | undefined {
  * Sagax app (organization server, server/desktop-terminal.ts). */
 const desktopTerminals = new DesktopTerminals((person, operation) => desktopBridges.request(person, operation, () => true));
 /** What `principalId` may open in the in-chat terminal for `botId`
- * (2026-10-15, JC): the server's hosts stay an organization admin's; a
- * person's own environments are theirs, for their own bot. */
+ * (2026-10-15, JC; 2026-10-19): the server's hosts are an organization
+ * admin's or a holder of host.commands'; a person's own environments are
+ * always theirs (terminal-resources/registry.ts). */
 function terminalAccessFor(principalId: string, botId: string): TerminalAccess {
   const person = principalId.trim().toLowerCase();
   const organization = IDENTITY.kind === "perspicax";
@@ -9284,7 +9285,10 @@ function terminalAccessFor(principalId: string, botId: string): TerminalAccess {
   const admin = record?.local === true || record?.orgRole === "admin";
   const bot = store.bot(botId);
   const ownsBot = Boolean(bot && person && effectiveBotOwner(bot).trim().toLowerCase() === person);
-  return { organization, admin, ownsBot };
+  // 2026-10-19 (JC): the server's hosts also open for a person an admin
+  // gave host.commands to in Perspicax (a person or a team).
+  const serverHosts = !admin && Boolean(record) && record?.disabledAt === undefined && principalCan(person, "host.commands");
+  return { organization, admin, ownsBot, serverHosts };
 }
 /** Where `botId` works in this conversation now, as a terminal destination:
  * the place Auto chose this turn, else its Workspace (or the conversation's
@@ -9890,7 +9894,7 @@ const MEMBER_BOT_FULL_ACCESS = {
   code: "member_bot_full_access",
 } as const;
 const ADMIN_APPROVAL_REQUIRED = {
-  error: "This command would run on the server: an organization admin has to approve it.",
+  error: "This command would run on the organization's server: an organization admin has to approve it. To approve the server commands of your own bots yourself, ask an admin to give you \"Run commands on the organization's server\" in Perspicax (Bot rights > Who has what).",
   code: "admin_approval_required",
 } as const;
 
@@ -12911,12 +12915,29 @@ bus.subscribe((event: RuntimeEvent) => {
           summary: event.summary,
         })
         : [];
+      // 2026-10-19 (JC): a call on the owner's own destination (their server
+      // environment, their own computer or its Local VM) is the owner's card
+      // at their own level, never an admin's; and an owner who holds
+      // host.commands (given in Perspicax) answers the server commands of
+      // their own bots.
+      const ownDestination = Boolean(permission && asker && event.requestId && ownDestinationRequest(asker, event.threadId, event.mcpTool ?? event.tool, guestDriven));
       const adminApproval = Boolean(memberAsker && asker && memberBotAdminApproval({
         tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
         ownerScopedMcpServer: ownerScopedMcpServerFor(asker, event.threadId),
         ownEnvironment,
+        ownDestination,
+        ownerRunsServerCommands: principalCan(effectiveBotOwner(asker), "host.commands"),
         foreignMcpServers: foreignServers,
+      }));
+      // 2026-10-19: a read of the person's own attachments (the files they
+      // sent, staged in their own destination) needs no card, at any level,
+      // from the owner's own turn; deny and ask rules, a safety hold and a
+      // security key still come first (auto-approve.ts).
+      const attachmentRead = Boolean(ownDestination && asker && !adminApproval && ownEnvironmentOrigin(asker, event.threadId) === "owner" && ownAttachmentRead({
+        tool: event.mcpTool ?? event.tool,
+        input: typeof event.input === "string" ? event.input : undefined,
+        roots: ownAttachmentRoots(asker, event.threadId),
       }));
       // A confidential thread's card goes to its owner only: one they could
       // not answer (an organization admin's card, another person's machine)
@@ -13006,8 +13027,16 @@ bus.subscribe((event: RuntimeEvent) => {
             ...(typeof event.input === "string" ? { input: event.input } : {}),
             origin: asker ? ownEnvironmentOrigin(asker, event.threadId) : "other", stepUpRequired: selfAnswerStepUp,
           }),
+          ownAttachmentRead: attachmentRead,
           ...(event.mcpTool ? { toolName: event.mcpTool } : {}),
-          stepUpRequired: selfAnswerStepUp,
+          stepUpRequired: attachmentRead && !selfAnswerStepUp.length && asker
+            ? autoAnswerStepUp(asker, event.threadId, {
+              tool: event.tool,
+              ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
+              ...(typeof event.input === "string" ? { input: event.input } : {}),
+              summary: event.summary,
+            })
+            : selfAnswerStepUp,
           ruleChange: toolChangesRules(event.mcpTool ?? event.tool),
         })
         : null;
@@ -27135,6 +27164,48 @@ function ownEnvironmentRequest(bot: BotRecord, threadId: string, tool: string | 
     guestDriven,
     mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
   });
+}
+/** 2026-10-19 (JC): whether a call acts on the bot owner's own destination
+ * (their server environment, their own computer or its Local VM) that Sagax
+ * mounted for this turn: the owner's card, never an admin's
+ * (member-environment.ts ownDestinationCall). */
+function ownDestinationRequest(bot: BotRecord, threadId: string, tool: string | undefined, guestDriven: boolean): boolean {
+  const workplace = turnWorkplaces.get(threadId);
+  const mine = workplace?.botId === bot.id;
+  return ownDestinationCall({
+    identity: IDENTITY.kind,
+    tool,
+    environmentPrincipalId: mine ? workplace.decision.principal : null,
+    ownerPrincipalId: effectiveBotOwner(bot),
+    guestDriven,
+    mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
+  });
+}
+/** 2026-10-19: the attachments folders of the owner's own destinations,
+ * where Sagax staged the files they sent: their desktop app's folder on
+ * their computer, /workspace/attachments in their server environment. */
+function ownAttachmentRoots(bot: BotRecord, threadId: string): Array<{ server: string; path: string; platform: "darwin" | "win32" | "linux" }> {
+  const workplace = turnWorkplaces.get(threadId);
+  if (workplace?.botId !== bot.id) return [];
+  const person = workplace.decision.principal;
+  if (!person) return [];
+  const roots: Array<{ server: string; path: string; platform: "darwin" | "win32" | "linux" }> = [];
+  const mounted = workplace.ownEnvironmentServers ?? new Set<string>();
+  if (mounted.has(DESKTOP_BRIDGE_MCP_NAME)) {
+    const desktop = desktopBridges.current(person);
+    if (desktop?.attachmentsDir) roots.push({ server: DESKTOP_BRIDGE_MCP_NAME, path: desktop.attachmentsDir, platform: desktop.platform });
+  }
+  if (mounted.has(USER_SANDBOX_MCP_NAME)) roots.push({ server: USER_SANDBOX_MCP_NAME, path: SANDBOX_ATTACHMENTS_DIR, platform: "linux" });
+  return roots;
+}
+/** 2026-10-19: whether this person holds a permission (an organization
+ * admin holds every one); a disabled or unknown person holds none. */
+function principalCan(principalId: string | undefined | null, key: PermissionKey): boolean {
+  const id = principalId?.trim().toLowerCase() ?? "";
+  if (!id || !isPrincipalId(id)) return false;
+  const person = principals.byId(id);
+  if (!person || person.disabledAt !== undefined) return false;
+  return can(principalPermissions(id), key);
 }
 /** 2026-10-16 security review: whose turn asks, for the owner's own
  * environment (member-environment.ts ownEnvironmentTurnOrigin). Only the

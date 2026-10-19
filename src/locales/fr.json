@@ -153,6 +153,7 @@
   "approval.action.update": "Mettre à jour",
   "approval.adminWillAnswer": "Un admin ({admins}) la voit dans Réglages > Organisation. Votre bot continue dès qu'elle est approuvée, ou saute cette étape si elle est refusée.",
   "approval.adminWillAnswerUnnamed": "Les admins de l'organisation la voient dans Réglages > Organisation. Votre bot continue dès qu'elle est approuvée, ou saute cette étape si elle est refusée.",
+  "approval.adminDelegate": "Pour approuver vous-même les commandes serveur de vos bots, demandez à un admin de vous donner « Exécuter des commandes sur le serveur de l'organisation » dans Perspicax (Droits sur les bots > Qui a quoi). Votre ordinateur, votre VM locale et votre ordinateur infonuagique n'en ont jamais besoin.",
   "approval.aria.details": "Détails de l'autorisation",
   "approval.aria.pending": "Autorisation en attente",
   "approval.aria.pendingProfile": "Confirmation de profil en attente",

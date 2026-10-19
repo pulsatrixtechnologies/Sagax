@@ -165,6 +165,7 @@ export type AutoVerdictSource =
   /** 2026-10-16: a tool of the bot owner's own isolated environment (their
    * server environment, their Local VM), server/member-environment.ts. */
   | "own-environment"
+  | "own-attachment"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -212,6 +213,12 @@ export function autoVerdict(
      * (server/member-environment.ts ownEnvironmentAutonomy). Answered only
      * at Auto or Auto-accept edits, never at Ask. */
     ownEnvironment?: boolean;
+    /** 2026-10-19: a read of the person's own attachments in their own
+     * destination, from the owner's own turn
+     * (member-environment.ts ownAttachmentRead). Answered at any level,
+     * after the safety hold and the person's own rules, never when a
+     * security key protects it. */
+    ownAttachmentRead?: boolean;
     /** The engine's own `<server>__<tool>` name when `tool` is a kind (ACP
      * "other") or a bare name: what the outbound guard reads for Sagax's own
      * tools and the owner's environment. */
@@ -261,6 +268,9 @@ export function autoVerdict(
   const selfAnswerable = !context?.requiresExplicitApproval && !sendsOut && !(context?.stepUpRequired?.length);
   if (context?.sagaxInternal && selfAnswerable && !context.ruleChange) {
     return { approve: `approved ${tool} (Sagax tool)`, source: "sagax-internal" };
+  }
+  if (context?.ownAttachmentRead && selfAnswerable) {
+    return { approve: `approved ${tool} (your own attachment)`, source: "own-attachment" };
   }
   // The owner's own environment: only at a level that already runs work
   // unasked (Auto, Auto-accept edits). At Ask the person asked to see every

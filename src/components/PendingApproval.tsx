@@ -353,6 +353,7 @@ export function PendingApprovalActions({
         <span role="status" className="flex min-w-0 flex-col text-[12.5px] text-ink-secondary">
           <span>{t("approval.waitingForAdmin")}</span>
           <span>{adminWillAnswerLine(pending.message.card.adminNames)}</span>
+          <span data-admin-delegate="">{t("approval.adminDelegate")}</span>
         </span>
       </div>
     );
