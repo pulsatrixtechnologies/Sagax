@@ -201,8 +201,13 @@ export function memberBotAdminApproval(input: {
   ownerRunsServerCommands?: boolean;
 }): boolean {
   if (input.ownEnvironment || input.ownDestination || input.ownerRunsServerCommands) return false;
-  if (serverCommandApproval(input)) return true;
   const builtin = !foreignToolSpelling(input.tool, input.foreignMcpServers ?? []);
+  // 2026-10-19 (member admin audit): a built-in tool of the member's own
+  // scope is judged by its exact name before the shell pattern, which read
+  // `agents__offer_shell_terminal` (a card the person approves) as a shell
+  // command and sent the member's terminal offer to an admin.
+  if (!input.command && builtin && memberOwnScopeTool(input.tool?.trim())) return false;
+  if (serverCommandApproval(input)) return true;
   if (builtin && memberOwnScopeTool(input.tool?.trim())) return false;
   // 2026-10-16: the Data tools are the bot's own database, confined to its
   // own folders on an organization server (sagax-internal-tools.ts).
