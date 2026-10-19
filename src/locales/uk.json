@@ -2423,5 +2423,11 @@
   "pdf.openDefault": "Відкрити в типовій програмі",
   "pdf.openDefaultAria": "Відкрити {name} у типовій програмі",
   "pdf.openDefaultHint": "Відкрити цей PDF у типовій програмі для PDF на цьому комп'ютері",
-  "pdf.openDefaultFailed": "Не вдалося відкрити цей PDF в іншій програмі. Збережіть копію."
+  "pdf.openDefaultFailed": "Не вдалося відкрити цей PDF в іншій програмі. Збережіть копію.",
+  "chat.inputRequest.title": "{bot} потребує вашої відповіді",
+  "chat.inputRequest.reminder": "{bot} досі чекає на вашу відповідь",
+  "chat.inputRequest.placeholder": "Ваша відповідь",
+  "chat.inputRequest.send": "Надіслати відповідь",
+  "chat.inputRequest.open": "Відкрити розмову",
+  "chat.inputRequest.answered": "Відповідь надіслано: робота триває."
 }

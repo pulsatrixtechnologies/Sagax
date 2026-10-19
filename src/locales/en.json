@@ -9038,5 +9038,11 @@
   "botPanel.model.lockedAdmin": "An approval is waiting for an admin in this bot's conversation. The model can change once it is answered.",
   "botPanel.model.lockedWorking": "This bot's conversation is working. Stop its turn to change the model.",
   "botPanel.model.lockedOpen": "Open the conversation",
-  "model.noEngine.body": "Add your own key or subscription, or ask an admin to give you an engine in Perspicax (Who has what)."
+  "model.noEngine.body": "Add your own key or subscription, or ask an admin to give you an engine in Perspicax (Who has what).",
+  "chat.inputRequest.title": "{bot} needs your answer",
+  "chat.inputRequest.reminder": "{bot} is still waiting for your answer",
+  "chat.inputRequest.placeholder": "Your answer",
+  "chat.inputRequest.send": "Send answer",
+  "chat.inputRequest.open": "Open the conversation",
+  "chat.inputRequest.answered": "Answer sent: the work continues."
 }

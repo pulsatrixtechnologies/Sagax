@@ -10,6 +10,7 @@ import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
+import { READABLE_HIDDEN_SEGMENTS } from "../shared/readable-hidden.ts";
 import { dataToolName, foreignToolSpelling } from "./sagax-internal-tools.ts";
 
 export type EngineAccessRefusal = "engine_missing" | "no_access";
@@ -107,6 +108,8 @@ export function serverCommandApproval(input: { tool?: string; command?: unknown 
 /** File tools an owner may approve for their own bot when every path stays
  * in the bot's own task workspace. */
 const WORKSPACE_FILE_TOOLS = new Set(["read", "write", "edit", "multiedit", "notebookedit", "notebookread", "glob", "grep", "ls"]);
+/** The ones that only read. */
+const READ_ONLY_FILE_TOOLS = new Set(["read", "notebookread", "glob", "grep", "ls"]);
 
 /** A path's real location: the deepest existing ancestor resolved through
  * its symlinks, then the part that does not exist yet. */
@@ -216,12 +219,16 @@ export function memberBotAdminApproval(input: {
   if (!WORKSPACE_FILE_TOOLS.has(tool)) return true;
   if (!input.paths?.length) return true;
   const root = realLocation(input.workspaceRoot);
+  // 2026-10-19 (bot quality, cause A): a read may open the bot's own skill
+  // revisions and plugin manifests (READABLE_HIDDEN_SEGMENTS); every other
+  // dot folder, and any write into a dot folder, still waits for an admin.
+  const reads = READ_ONLY_FILE_TOOLS.has(tool);
   return !input.paths.every((path) => {
     if (typeof path !== "string" || !isAbsolute(path)) return false;
     const rel = relative(root, realLocation(path));
     if (rel === "") return true;
     if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return false;
-    return !rel.split(sep).some((segment) => segment.startsWith("."));
+    return !rel.split(sep).some((segment) => segment.startsWith(".") && !(reads && READABLE_HIDDEN_SEGMENTS.has(segment)));
   });
 }
 

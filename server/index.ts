@@ -919,6 +919,7 @@ import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces,
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
+import { syncPluginsToSandbox } from "./sandbox-plugins.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
 import { MarketplaceTokens } from "./marketplace-tokens.ts";
 import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
@@ -6350,6 +6351,28 @@ async function syncGithubForTurn(principalId: string, generation: string, botId?
   const connection = personGithub(principalId);
   if (connection) await syncGithubToSandbox(principalId, connection, botId);
 }
+/** Once per turn: the bot's installed plugins in its owner's own cloud
+ * computer (server/sandbox-plugins.ts), so a plugin's scripts run there.
+ * Never in another person's environment: a plugin may come from a private
+ * marketplace only its owner reads. Best effort. */
+const pluginSyncedGenerations = new Set<string>();
+async function syncPluginsForTurn(principalId: string, generation: string, botId: string): Promise<void> {
+  if (!userSandbox) return;
+  const key = `${principalId}\n${generation}\n${botId}`;
+  if (pluginSyncedGenerations.has(key)) return;
+  pluginSyncedGenerations.add(key);
+  if (pluginSyncedGenerations.size > 2_000) pluginSyncedGenerations.delete(pluginSyncedGenerations.values().next().value!);
+  const bot = store.bot(botId);
+  if (!bot || effectiveBotOwner(bot).trim().toLowerCase() !== principalId.trim().toLowerCase()) return;
+  const plugins = botPlugins.enabledPlugins(botId);
+  if (!plugins.length) return;
+  try {
+    const result = await syncPluginsToSandbox(plugins, { exec: (input) => userSandbox!.exec(principalId, input, botId) });
+    if (result.skipped.length) console.warn(`[plugins] not copied to the server environment: ${result.skipped.map((row) => `${row.name} (${row.reason})`).join(", ")}`);
+  } catch (error) {
+    console.warn(`[plugins] server environment not updated: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 const githubConnect = new GithubConnect({
   clientId: githubClientId,
   save: (principalId, connection) => personConnections.setGithub(principalId, connection),
@@ -8551,33 +8574,15 @@ const coordinator: Coordinator = createCoordinator({
         thread: store.taskByThread(parent?.botId ?? node.botId, parent?.threadId ?? node.threadId)?.title,
       };
     },
-    // A teammate ended its turn on a question for the person: one chip where
-    // the work was asked for (the report chip's shape), both conversations
-    // unread, one notification — never more per park.
-    park: (node, question) => {
-      const bot = store.bot(node.botId);
-      if (!bot) return;
-      const parent = node.parentId ? coordinator.node(node.parentId) : undefined;
-      const title = store.taskByThread(bot.id, node.threadId)?.title ?? "Teammate work";
-      if (parent) {
-        const group = parent.groupId ? store.group(parent.groupId) : undefined;
-        const parentLive = parent.groupId ? Boolean(group && store.groupTaskByThread(group.id, parent.threadId)) : Boolean(store.taskByThread(parent.botId, parent.threadId));
-        if (parentLive) {
-          store.appendMessage(parent.threadId, {
-            role: "bot", kind: "activity",
-            from: { botId: bot.id, name: bot.name, color: bot.color },
-            tool: { name: `${bot.name} needs your input: ${question.slice(0, 180)}`, ok: true },
-            ...(node.groupId ? { comm: { groupId: node.groupId, threadId: node.threadId, withBotId: bot.id, withName: bot.name, withColor: bot.color } }
-              : { threadRef: { botId: bot.id, threadId: node.threadId, title } }),
-          });
-          if (group) store.patchGroup(group.id, { unread: true });
-          else store.patchTask(parent.botId, parent.threadId, { unread: true });
-        }
-      }
-      if (node.groupId) store.patchGroup(node.groupId, { unread: true });
-      else store.patchTask(bot.id, node.threadId, { unread: true });
-      notify(deliverableNotification("delegation-settled", bot, node.threadId, question, { avatarUrl: bot.avatarUrl }));
-    },
+    // A teammate ended its turn on a question for the person: one card where
+    // the work was asked for, both conversations unread, one notification,
+    // never more per park. 2026-10-19 (bot quality, cause B): the card holds
+    // the whole question (it was cut at 180 characters inside a chip that
+    // never showed it) and answers it in place (WireMessage.inputRequest);
+    // when the requester's conversation is itself a bot-to-bot one, the
+    // conversation the person started the work in gets it too.
+    park: (node, question) => postInputRequest(node, question, false),
+    remind: (node, question) => postInputRequest(node, question, true),
     // The level the target thread really runs with (invariant I6): the same
     // decision a coordinated turn makes at dispatch — the thread's own bot
     // (a delegated level is stored on it by applyDelegatedLevel), as a peer-
@@ -8594,6 +8599,58 @@ const coordinator: Coordinator = createCoordinator({
   },
 });
 activeCoordinationForThread = threadId => coordinator.activeDirect(threadId);
+/** The input-request cards still open per waiting work thread, so the answer
+ * marks them answered (in memory: a restart parks again and re-posts). */
+const openInputRequests = new Map<string, Array<{ threadId: string; messageId: string }>>();
+/** A parked teammate's question as a card (park, and its reminders). */
+function postInputRequest(node: HandoffView, question: string, reminder: boolean): void {
+  const bot = store.bot(node.botId);
+  if (!bot) return;
+  const full = question.trim() || "Your answer is needed to continue.";
+  const title = store.taskByThread(bot.id, node.threadId)?.title ?? "Teammate work";
+  const posted: Array<{ threadId: string; messageId: string }> = [];
+  const postTo = (target: HandoffView | undefined) => {
+    if (!target || posted.some((row) => row.threadId === target.threadId)) return;
+    // Never into a room (its members may not read the waiting thread) nor a
+    // confidential conversation; a room's own work answers in the room.
+    if (target.groupId || store.isConfidentialThread(target.threadId)) return;
+    const group = target.groupId ? store.group(target.groupId) : undefined;
+    const live = target.groupId ? Boolean(group && store.groupTaskByThread(group.id, target.threadId)) : Boolean(store.taskByThread(target.botId, target.threadId));
+    if (!live) return;
+    const message = store.appendMessage(target.threadId, {
+      role: "bot", kind: "activity",
+      from: { botId: bot.id, name: bot.name, color: bot.color },
+      tool: { name: `${bot.name} ${reminder ? "is still waiting for your answer" : "needs your input"}: ${full}`, ok: true },
+      // answered in place only for a bot conversation (a room answers in the room)
+      ...(node.groupId ? {} : { inputRequest: { botId: bot.id, threadId: node.threadId, botName: bot.name, title, question: full, ...(reminder ? { reminder: true } : {}) } }),
+      ...(node.groupId ? { comm: { groupId: node.groupId, threadId: node.threadId, withBotId: bot.id, withName: bot.name, withColor: bot.color } }
+        : { threadRef: { botId: bot.id, threadId: node.threadId, title } }),
+    });
+    if (message?.id) posted.push({ threadId: target.threadId, messageId: message.id });
+    if (group) store.patchGroup(group.id, { unread: true });
+    else store.patchTask(target.botId, target.threadId, { unread: true });
+  };
+  const parent = node.parentId ? coordinator.node(node.parentId) : undefined;
+  postTo(parent);
+  // The requester's conversation is a bot-to-bot one: the person reads the
+  // conversation the work started in.
+  if (parent && node.rootId !== parent.id) postTo(coordinator.node(node.rootId));
+  if (posted.length) openInputRequests.set(node.threadId, [...(openInputRequests.get(node.threadId) ?? []), ...posted].slice(-10));
+  if (openInputRequests.size > 2_000) openInputRequests.delete(openInputRequests.keys().next().value!);
+  if (node.groupId) store.patchGroup(node.groupId, { unread: true });
+  else store.patchTask(bot.id, node.threadId, { unread: true });
+  notify(deliverableNotification("delegation-settled", bot, node.threadId, full, { avatarUrl: bot.avatarUrl }));
+}
+/** The person answered in the waiting thread: its cards say so. */
+function settleInputRequests(threadId: string): void {
+  const rows = openInputRequests.get(threadId);
+  if (!rows) return;
+  openInputRequests.delete(threadId);
+  for (const row of rows) {
+    const message = store.activePath(row.threadId).find((candidate) => candidate.id === row.messageId);
+    if (message?.inputRequest) store.patchMessage(row.threadId, row.messageId, { inputRequest: { ...message.inputRequest, answered: true } });
+  }
+}
 const groupUsageReader = new GroupUsageReader(DATA_DIR);
 try { groupUsageReader.refresh(); } catch { /* accounting must not block startup */ }
 /** Where the person stopped reading a conversation: its newest message now.
@@ -16916,6 +16973,7 @@ async function startTurn(
     && !opts?.computerSelectionContinuation && !opts?.editedMessageId && !warmOnly && !commsDepth && !opts?.peerAsk && !userMessage.peerAsk;
   if (personLine && coordinator.answer(threadId, text)) {
     store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: "Answer passed to the waiting work", ok: true } });
+    settleInputRequests(threadId);
     opts?.onTurnSettled?.();
     queueMicrotask(drainQueuedSends);
     return userMessage;
@@ -33730,7 +33788,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (method === "GET" && path === "/api/internal/workspace/read") {
         try {
-          const read = readWorkspaceText(internalSender.id, url.searchParams.get("path") ?? "", Number(url.searchParams.get("offset") ?? 0));
+          // Its own files, skill revisions and installed plugins (2026-10-19):
+          // on an organization server this is the bot's only file read.
+          const read = readWorkspaceText(internalSender.id, url.searchParams.get("path") ?? "", Number(url.searchParams.get("offset") ?? 0), botPlugins.enabledPlugins(internalSender.id));
           markWorkspaceUse(internalSender.id, [read.path]);
           return json(res, 200, read);
         } catch (error) {
@@ -33794,6 +33854,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
           // Their GitHub connection, where gh and git read it (once per turn).
           if (rpcMethod === "tools/call") await syncGithubForTurn(ownerId, internalCapability.generation, internalCapability.botId);
+          // The bot's installed plugins, when this is its owner's environment.
+          if (rpcMethod === "tools/call") await syncPluginsForTurn(ownerId, internalCapability.generation, internalCapability.botId);
           // The bot's own "no computer" setting holds on the environment's desktop too.
           const toolName = (frame?.params as { name?: unknown } | undefined)?.name;
           if (rpcMethod === "tools/call" && (toolName === "computer_use" || toolName === "computer_list_tools") && store.bot(internalCapability.botId)?.computer === "off") {

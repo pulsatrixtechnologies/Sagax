@@ -22,6 +22,7 @@ import { PlaceIcon } from "./PlaceIcon";
 import { ScreenFrame } from "./ScreenFrame";
 import { effectivePlace, placeLabelKey } from "@/lib/place";
 import { ThreadChip } from "./ThreadChip";
+import { InputRequestCard } from "./InputRequestCard";
 import { withoutDeadThreadChips } from "@/lib/dead-thread-chips";
 import { ToolActivity, botNames } from "./ToolActivity";
 import { StepRow } from "./StepRow";
@@ -153,6 +154,7 @@ export function RoomToolChip({ message, roomId }: { message: Message; roomId?: s
   const storeGroups = useStoreSelector((current) => current.groups);
   const tool = message.tool;
   if (!tool) return null;
+  if (message.inputRequest) return <InputRequestCard message={message} />;
   if (message.threadRef) return <ThreadChip message={message} />;
   if (failedTurnCause(tool.name) !== null) {
     return <FailedTurnRow tool={tool} engine={botEngine(storeBots.find((b) => b.id === message.from?.botId), instances)} botId={message.from?.botId} />;

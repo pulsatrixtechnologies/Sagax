@@ -3,6 +3,7 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
+import { claudeLaunchLevel } from "./claude-level.ts";
 import { waitForExit } from "./cleanup.ts";
 
 type AgentsIntegration = { command: string; args: string[]; env: Record<string, string> };
@@ -232,7 +233,8 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
     await waitForExit(child, { signal: "SIGTERM", graceMs: 500 });
     appendFileSync(`${planPath}.evidence.jsonl`, JSON.stringify({ botId, turnIndex, threadId: integration.env.SAGAX_THREAD_ID,
       model: argv.includes("--model") ? arg("--model") : undefined,
-      permissionMode: argv.includes("--permission-mode") ? arg("--permission-mode") : undefined,
+      // the Sagax level: Approve for me is acceptEdits plus its allowlist (claude-level.ts)
+      permissionMode: claudeLaunchLevel(argv),
       snapshotMode: argv.includes("--system-prompt-snapshot") ? arg("--system-prompt-snapshot") : undefined,
       resumed, system, prompt, evidence, ...(entry ? { planKey: entry.key } : {}), ...(approval ? { approval } : {}), ...(screen ? { screen } : {}), ...launch?.evidence }) + "\n");
   }

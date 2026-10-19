@@ -14,7 +14,7 @@ import { composeEnvelope } from "./envelope.ts";
 import { assignmentLevel } from "./level.ts";
 import type { RuntimeStore } from "./store.ts";
 import { awaited, childrenSince, clip, CUT_TWICE, duration, isTerminal, ownsConversation, path, restartNote, wakeOwner } from "./tree.ts";
-import { DEFAULT_LIMITS, type Assignment, type Assignee, type Clock, type EnqueueRequest, type EnqueueResult, type EnvelopeNames,
+import { DEFAULT_LIMITS, INPUT_REMIND_REPEAT_MS, type Assignment, type Assignee, type Clock, type EnqueueRequest, type EnqueueResult, type EnvelopeNames,
   type EventKind, type InboxItem, type InboxKind, type Level, type Limits, type LiveEdge, type Origin, type Outcome, type Owner,
   type Reply, type Requester, type RunInput, type RunResult, type StatusView, type TurnEvidence, type TurnRunner } from "./types.ts";
 
@@ -80,6 +80,9 @@ export class Runtime {
   private closing = false;
   private ticking = false;
   private readonly turns = new Map<string, LiveTurn>();
+  /** Reminders already sent per parked assignment (in memory: a restart
+   * starts the wait window over anyway, see since()). */
+  private readonly reminded = new Map<string, number>();
   /** Wall-clock activity per root seen through progress(): a turn that keeps
    * reporting tool calls keeps its tree out of the stall window without a
    * row write per call. */
@@ -318,7 +321,10 @@ export class Runtime {
       } else if (n.status === "queued" && now - this.since(n.lastActivityAt) > this.limits.queueMs) {
         this.cancelTree(n, n.executions > 0 ? "not resumed" : "never started", "failed", "expired");
       } else if (n.status === "needs_input" && now - this.since(n.lastActivityAt) > this.limits.inputWaitMs) {
+        this.reminded.delete(n.id);
         this.cancelTree(n, "the person did not answer", "failed", "expired");
+      } else if (n.status === "needs_input") {
+        this.remindIfDue(n, now);
       } else if (n.status === "running") {
         const turn = this.turns.get(n.id);
         if (turn && mono - turn.activeAt > this.limits.turnStallMs) {
@@ -555,6 +561,7 @@ export class Runtime {
     const n = this.store.get(id);
     if (!n || n.status !== "needs_input") return false;
     const now = this.clock.now();
+    this.reminded.delete(id);
     n.answer = clip(text, BRIEF_MAX); delete n.question; n.status = "queued"; n.lastActivityAt = now;
     // Time parked was charged to no window: the tree's stall window
     // restarts with the answer, not with the question.
@@ -737,6 +744,17 @@ export class Runtime {
   private renew(root: Assignment, now: number): void {
     root.lastActivityAt = now;
     if (root.budgets) root.budgets = { since: now, requests: 0, executions: 0, wakes: 0 };
+  }
+
+  /** A parked question still unanswered: remind the person after
+   * inputRemindMs, then once a day. The work keeps waiting. */
+  private remindIfDue(n: Assignment, now: number): void {
+    const waited = now - this.since(n.lastActivityAt);
+    const sent = this.reminded.get(n.id) ?? 0;
+    if (waited <= this.limits.inputRemindMs + sent * INPUT_REMIND_REPEAT_MS) return;
+    this.reminded.set(n.id, sent + 1);
+    if (this.reminded.size > 5_000) this.reminded.delete(this.reminded.keys().next().value!);
+    if (this.runner.remind) this.safe("remind", () => this.runner.remind!(n, n.question ?? "", waited));
   }
 
   /** A clock anchor, never before this boot: downtime is nobody's budget. */

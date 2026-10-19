@@ -1,8 +1,10 @@
 // What the harness does with a provider's permission request.
 //
 // Nothing here decides whether an action is safe. Each approval level is a
-// provider's own permission mode passed straight through (Claude `auto`,
-// Grok `--permission-mode`, Codex `approvalsReviewer`, …), and a request that
+// provider's own permission mode passed straight through (Grok
+// `--permission-mode`, Codex `approvalsReviewer`, …; Claude's Auto since
+// 2026-10-19 is Auto-accept edits plus a fixed allowlist, never the CLI's
+// silent classifier: drivers/claude.ts claudeAutoAllowedTools), and a request that
 // reaches this process is one the provider left for a person. The grants the
 // app applies are Full access and the person's exact saved commands. Approve
 // for me also allows a web search, and that is the one action the app itself

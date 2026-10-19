@@ -76,6 +76,9 @@ export interface CoordinatorHost {
   /** A teammate ended its turn on a question for the person: show it where
    * the work was asked for (and again after a restart). */
   park(node: HandoffView, question: string): void;
+  /** Still parked (runtime inputRemindMs, then daily): the same question
+   * again, in full, where the person reads. The work keeps waiting. */
+  remind?(node: HandoffView, question: string, waitedMs: number): void;
   /** The permission level the target thread will actually run with, after
    * the host applied any delegated level, and its engine kind. Recorded on
    * the assignment so the envelope states the truth (invariant I6). */

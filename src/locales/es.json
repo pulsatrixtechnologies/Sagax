@@ -1909,5 +1909,11 @@
   "pdf.openDefault": "Abrir en la app predeterminada",
   "pdf.openDefaultAria": "Abrir {name} en la app predeterminada",
   "pdf.openDefaultHint": "Abrir este PDF en la app de PDF predeterminada de este equipo",
-  "pdf.openDefaultFailed": "No se pudo abrir este PDF en otra app. Guarda una copia en su lugar."
+  "pdf.openDefaultFailed": "No se pudo abrir este PDF en otra app. Guarda una copia en su lugar.",
+  "chat.inputRequest.title": "{bot} necesita tu respuesta",
+  "chat.inputRequest.reminder": "{bot} sigue esperando tu respuesta",
+  "chat.inputRequest.placeholder": "Tu respuesta",
+  "chat.inputRequest.send": "Enviar respuesta",
+  "chat.inputRequest.open": "Abrir la conversación",
+  "chat.inputRequest.answered": "Respuesta enviada: el trabajo continúa."
 }

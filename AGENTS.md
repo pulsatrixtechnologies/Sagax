@@ -73,6 +73,35 @@ isolation rather than sharing a server between tests. Suites pick free ports
 with `server/testing/ports.ts` and each vitest process gets its own Local VM
 namespace, so shards do not collide.
 
+## Bot quality: approvals and tools where the bot works (2026-10-19)
+
+JC's GO on points 1 and 2 of the bot quality diagnostic. Rules:
+
+- Claude's Approve for me never launches `--permission-mode auto`: its
+  classifier refused external writes in silence. It is `acceptEdits` plus
+  `CLAUDE_AUTO_ALLOWED_TOOLS` (`server/drivers/claude.ts`: web search, task
+  list, ToolSearch, Task, `pwd`; no git, Skill, ls or wc rule); every other
+  call reaches the broker and is a real card (`autoVerdict` decides, as
+  before). Tests read the level with `server/testing/claude-level.ts`.
+- A parked question (NEEDS INPUT) waits: reminder after 30 min then daily
+  (`inputRemindMs`, `TurnRunner.remind`), expiry after 7 days, never the
+  old 30 min `failed`. The card (`WireMessage.inputRequest`,
+  `src/components/InputRequestCard.tsx`) holds the whole question and
+  answers in place; it goes to the requester's conversation and, when that
+  is bot-to-bot, to the root conversation too.
+- `workspace_read` reads the bot's own `skills/.revisions` and
+  `.claude-plugin` (`shared/readable-hidden.ts`) and its installed plugins as
+  `plugins/<name>/...`; every other hidden name stays refused, nothing hidden
+  is writable. The member-bot file rule (`memberBotAdminApproval`) admits the
+  same two folders for reads only.
+- The bot's enabled plugins are copied into its owner's own cloud computer
+  (`server/sandbox-plugins.ts`, `/workspace/sagax-plugins/<plugin>`), once
+  per change, never into another person's environment. GitHub there stays
+  the environment owner's own connection (`syncGithubForTurn`), never an
+  organization or another person's token.
+- `RUN_YOURSELF_PROMPT` sits above every persona: run commands yourself,
+  never ask the person to run or paste, approvals through the card.
+
 ## Workspace: always Auto, the bot chooses (2026-10-18)
 
 JC: "It should ALWAYS stick to default, and the bot chooses. So basically bot

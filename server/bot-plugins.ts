@@ -741,6 +741,20 @@ export class BotPlugins {
       .filter((dir) => existsSync(dir));
   }
 
+  /** Enabled plugins by name and folder: what the bot may read as
+   * `plugins/<name>/...` (workspace_read) and what is copied into its
+   * owner's cloud computer. A name two marketplaces share is listed once. */
+  enabledPlugins(botId: string): Array<{ name: string; dir: string }> {
+    if (!BOT_ID.test(botId)) return [];
+    const out: Array<{ name: string; dir: string }> = [];
+    for (const plugin of this.listPlugins(botId)) {
+      if (!plugin.enabled || out.some((row) => row.name === plugin.name)) continue;
+      const dir = this.pluginDir(botId, plugin.marketplace, plugin.name);
+      if (existsSync(dir)) out.push({ name: plugin.name, dir });
+    }
+    return out;
+  }
+
   /** The bots with at least one plugin from this marketplace. */
   botsUsing(marketplace: string): string[] {
     const base = join(this.options.dataDir, "bot-plugins");

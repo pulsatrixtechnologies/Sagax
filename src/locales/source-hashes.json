@@ -1930,7 +1930,13 @@
       "voiceMode.progress.teammate": "c0966d38d1b980f28ffe36f17f6b7ceca34abc99e4428758732ee949278a1831",
       "voiceMode.progress.work": "bcc039e853101b71db491d69ddfe164212faf18ccbfcf793f559ebb2560b8448",
       "voiceMode.progress.still": "3b0da9b06237ee47d63c7170edb7cd8d8ee10c4ff38a7b6763e3a048868aac09",
-      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51"
+      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51",
+      "chat.inputRequest.title": "00c49145270d04d8528b1deb958ecc7d847b3bbf34b631183f2105f24960379f",
+      "chat.inputRequest.reminder": "b5e44476c8ec9b49eb6b9ad62ef248f0e79ae9367c9c898e7ea0d60cf27e14d1",
+      "chat.inputRequest.placeholder": "d0e869b777a6967931bd4373c58e06cb6298087670665671b42a402df024ce20",
+      "chat.inputRequest.send": "18737070e41c09ddacd89d76cae1362ffd2b4b15427bb9ee8ce8ce2ae84ae1ac",
+      "chat.inputRequest.open": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120"
     },
     "es": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -3843,7 +3849,13 @@
       "voiceMode.progress.teammate": "c0966d38d1b980f28ffe36f17f6b7ceca34abc99e4428758732ee949278a1831",
       "voiceMode.progress.work": "bcc039e853101b71db491d69ddfe164212faf18ccbfcf793f559ebb2560b8448",
       "voiceMode.progress.still": "3b0da9b06237ee47d63c7170edb7cd8d8ee10c4ff38a7b6763e3a048868aac09",
-      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51"
+      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51",
+      "chat.inputRequest.title": "00c49145270d04d8528b1deb958ecc7d847b3bbf34b631183f2105f24960379f",
+      "chat.inputRequest.reminder": "b5e44476c8ec9b49eb6b9ad62ef248f0e79ae9367c9c898e7ea0d60cf27e14d1",
+      "chat.inputRequest.placeholder": "d0e869b777a6967931bd4373c58e06cb6298087670665671b42a402df024ce20",
+      "chat.inputRequest.send": "18737070e41c09ddacd89d76cae1362ffd2b4b15427bb9ee8ce8ce2ae84ae1ac",
+      "chat.inputRequest.open": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120"
     },
     "fr": {
       "access.addKey": "8a9f02fd9bdb83ac02d3240dcade949d6f3ffa2fc0b3df528e348bb4d29ae639",
@@ -12885,7 +12897,13 @@
       "chat.botConversation.loading": "08cd9919453184389e78d9924a9dc3d4b68f2529b79bdd195dd51fb6139f927c",
       "chat.botConversation.empty": "f0d5968f615ed7ab11fdf8f17586cfaeb2845eee5757459e804b4e9d663a3588",
       "chat.botConversation.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
-      "chat.botConversation.stop": "cae7d57bc067a514b8e34c9589631a95c7dc051638ddd2a190773269279a99df"
+      "chat.botConversation.stop": "cae7d57bc067a514b8e34c9589631a95c7dc051638ddd2a190773269279a99df",
+      "chat.inputRequest.title": "00c49145270d04d8528b1deb958ecc7d847b3bbf34b631183f2105f24960379f",
+      "chat.inputRequest.reminder": "b5e44476c8ec9b49eb6b9ad62ef248f0e79ae9367c9c898e7ea0d60cf27e14d1",
+      "chat.inputRequest.placeholder": "d0e869b777a6967931bd4373c58e06cb6298087670665671b42a402df024ce20",
+      "chat.inputRequest.send": "18737070e41c09ddacd89d76cae1362ffd2b4b15427bb9ee8ce8ce2ae84ae1ac",
+      "chat.inputRequest.open": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -14788,7 +14806,13 @@
       "pdf.openDefault": "9e0b4d6b797b382046a669828dfc57809e4ea51acc412be0b702767f7d3ac1e1",
       "pdf.openDefaultAria": "8b1cd9454a77b0d8278634cbe7ba48ffabfe88ecf9988c933cb186c31c09d804",
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
-      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31"
+      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
+      "chat.inputRequest.title": "00c49145270d04d8528b1deb958ecc7d847b3bbf34b631183f2105f24960379f",
+      "chat.inputRequest.reminder": "b5e44476c8ec9b49eb6b9ad62ef248f0e79ae9367c9c898e7ea0d60cf27e14d1",
+      "chat.inputRequest.placeholder": "d0e869b777a6967931bd4373c58e06cb6298087670665671b42a402df024ce20",
+      "chat.inputRequest.send": "18737070e41c09ddacd89d76cae1362ffd2b4b15427bb9ee8ce8ce2ae84ae1ac",
+      "chat.inputRequest.open": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120"
     },
     "ja": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -18703,7 +18727,13 @@
       "pdf.openDefault": "9e0b4d6b797b382046a669828dfc57809e4ea51acc412be0b702767f7d3ac1e1",
       "pdf.openDefaultAria": "8b1cd9454a77b0d8278634cbe7ba48ffabfe88ecf9988c933cb186c31c09d804",
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
-      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31"
+      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
+      "chat.inputRequest.title": "00c49145270d04d8528b1deb958ecc7d847b3bbf34b631183f2105f24960379f",
+      "chat.inputRequest.reminder": "b5e44476c8ec9b49eb6b9ad62ef248f0e79ae9367c9c898e7ea0d60cf27e14d1",
+      "chat.inputRequest.placeholder": "d0e869b777a6967931bd4373c58e06cb6298087670665671b42a402df024ce20",
+      "chat.inputRequest.send": "18737070e41c09ddacd89d76cae1362ffd2b4b15427bb9ee8ce8ce2ae84ae1ac",
+      "chat.inputRequest.open": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120"
     },
     "pt-br": {
       "access.routineDelegation.reason.no_right": "ac5fc48626b20107ca2c65df67b3c5abe42acd2044cdb994e0c73821b3cbb71b",
@@ -21404,7 +21434,13 @@
       "voiceMode.progress.teammate": "c0966d38d1b980f28ffe36f17f6b7ceca34abc99e4428758732ee949278a1831",
       "voiceMode.progress.work": "bcc039e853101b71db491d69ddfe164212faf18ccbfcf793f559ebb2560b8448",
       "voiceMode.progress.still": "3b0da9b06237ee47d63c7170edb7cd8d8ee10c4ff38a7b6763e3a048868aac09",
-      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51"
+      "voiceMode.progress.steps": "c1a46235bdf6823579073bf5e453c7c2556fa95a9368045a5ae643f7f7adfa51",
+      "chat.inputRequest.title": "00c49145270d04d8528b1deb958ecc7d847b3bbf34b631183f2105f24960379f",
+      "chat.inputRequest.reminder": "b5e44476c8ec9b49eb6b9ad62ef248f0e79ae9367c9c898e7ea0d60cf27e14d1",
+      "chat.inputRequest.placeholder": "d0e869b777a6967931bd4373c58e06cb6298087670665671b42a402df024ce20",
+      "chat.inputRequest.send": "18737070e41c09ddacd89d76cae1362ffd2b4b15427bb9ee8ce8ce2ae84ae1ac",
+      "chat.inputRequest.open": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -23831,7 +23867,13 @@
       "pdf.openDefault": "9e0b4d6b797b382046a669828dfc57809e4ea51acc412be0b702767f7d3ac1e1",
       "pdf.openDefaultAria": "8b1cd9454a77b0d8278634cbe7ba48ffabfe88ecf9988c933cb186c31c09d804",
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
-      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31"
+      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
+      "chat.inputRequest.title": "00c49145270d04d8528b1deb958ecc7d847b3bbf34b631183f2105f24960379f",
+      "chat.inputRequest.reminder": "b5e44476c8ec9b49eb6b9ad62ef248f0e79ae9367c9c898e7ea0d60cf27e14d1",
+      "chat.inputRequest.placeholder": "d0e869b777a6967931bd4373c58e06cb6298087670665671b42a402df024ce20",
+      "chat.inputRequest.send": "18737070e41c09ddacd89d76cae1362ffd2b4b15427bb9ee8ce8ce2ae84ae1ac",
+      "chat.inputRequest.open": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120"
     },
     "zh-tw": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -27600,7 +27642,13 @@
       "pdf.openDefault": "9e0b4d6b797b382046a669828dfc57809e4ea51acc412be0b702767f7d3ac1e1",
       "pdf.openDefaultAria": "8b1cd9454a77b0d8278634cbe7ba48ffabfe88ecf9988c933cb186c31c09d804",
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
-      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31"
+      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
+      "chat.inputRequest.title": "00c49145270d04d8528b1deb958ecc7d847b3bbf34b631183f2105f24960379f",
+      "chat.inputRequest.reminder": "b5e44476c8ec9b49eb6b9ad62ef248f0e79ae9367c9c898e7ea0d60cf27e14d1",
+      "chat.inputRequest.placeholder": "d0e869b777a6967931bd4373c58e06cb6298087670665671b42a402df024ce20",
+      "chat.inputRequest.send": "18737070e41c09ddacd89d76cae1362ffd2b4b15427bb9ee8ce8ce2ae84ae1ac",
+      "chat.inputRequest.open": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120"
     },
     "zh": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -30311,7 +30359,13 @@
       "pdf.openDefault": "9e0b4d6b797b382046a669828dfc57809e4ea51acc412be0b702767f7d3ac1e1",
       "pdf.openDefaultAria": "8b1cd9454a77b0d8278634cbe7ba48ffabfe88ecf9988c933cb186c31c09d804",
       "pdf.openDefaultHint": "0e050b93064a4899ca827879bfa270ac566d203a10f0f1377d02f17f79543305",
-      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31"
+      "pdf.openDefaultFailed": "af38cdc3aa9df69688774c98ebdfc48f1baa449af8a9bc9387dc90438f5a7e31",
+      "chat.inputRequest.title": "00c49145270d04d8528b1deb958ecc7d847b3bbf34b631183f2105f24960379f",
+      "chat.inputRequest.reminder": "b5e44476c8ec9b49eb6b9ad62ef248f0e79ae9367c9c898e7ea0d60cf27e14d1",
+      "chat.inputRequest.placeholder": "d0e869b777a6967931bd4373c58e06cb6298087670665671b42a402df024ce20",
+      "chat.inputRequest.send": "18737070e41c09ddacd89d76cae1362ffd2b4b15427bb9ee8ce8ce2ae84ae1ac",
+      "chat.inputRequest.open": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120"
     }
   }
 }

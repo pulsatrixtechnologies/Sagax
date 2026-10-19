@@ -280,6 +280,9 @@ export interface TurnRunner {
   /** The assignment is parked on the person; show (or re-show after a
    * restart) what it needs. */
   park(a: Assignment, question: string): void;
+  /** Still parked after inputRemindMs (then daily): remind the person, the
+   * same question in full. Optional: a host without it reminds nobody. */
+  remind?(a: Assignment, question: string, waitedMs: number): void;
   /** A settled child, into its requester's conversation (a chip, a line), or
    * a root that ended alone, into its own. Called once per settlement. */
   report(a: Assignment, parent?: Assignment): void;
@@ -312,8 +315,12 @@ export interface Limits {
    * counts as activity by touching progress()). */
   turnStallMs: number;
   /** How long a parked assignment waits on the person before it expires:
-   * not run, not refused. */
+   * not run, not refused. 2026-10-19 (bot quality, cause B): a week. A
+   * question is never cancelled because the person was away for an hour. */
   inputWaitMs: number;
+  /** A parked question is shown again (runner.remind) after this long, then
+   * every day, until it is answered or expires. */
+  inputRemindMs: number;
 }
 
 export const DEFAULT_LIMITS: Limits = {
@@ -324,8 +331,12 @@ export const DEFAULT_LIMITS: Limits = {
   queueMs: 24 * 60 * 60_000,
   stallMs: 4 * 60 * 60_000,
   turnStallMs: 20 * 60_000,
-  inputWaitMs: 30 * 60_000,
+  inputWaitMs: 7 * 24 * 60 * 60_000,
+  inputRemindMs: 30 * 60_000,
 };
+
+/** After the first reminder, one a day. */
+export const INPUT_REMIND_REPEAT_MS = 24 * 60 * 60_000;
 
 // ── read models ────────────────────────────────────────────────────────
 

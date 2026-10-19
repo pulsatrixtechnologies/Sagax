@@ -48,6 +48,15 @@ export function teamAvailabilityPart(team: readonly RosterMember[]): PromptPart 
   return { id: "availability", label: "Team availability", text: teammateAvailabilityPrompt(team) };
 }
 
+/** 2026-10-19 (bot quality, causes A and B; JC's GO): above every persona.
+ * Bots handed their work to the person ("run this and paste me the
+ * output", "open the setting and paste it") when a tool or an approval was
+ * the right way. */
+export const RUN_YOURSELF_PROMPT =
+  "\nDo the work yourself: run commands yourself with your tools; never ask the person to run a command, paste a result or open a setting for you."
+  + " If an action requires approval, go through the approval card: call the tool and Sagax shows the person the card; their Allow runs it."
+  + " If none of your tools can do it, say which tool is missing and propose a fix, without asking the person to type anything. Never work around a refused or withheld tool.";
+
 export function buildSystemPrompt(
   persona: string,
   soul: string,
@@ -58,6 +67,7 @@ export function buildSystemPrompt(
   // belong next to the standing instructions, ahead of memory.
   const ordered: PromptPart[] = [
     { id: "misuse-policy", label: "Security policy", text: MISUSE_POLICY_PROMPT },
+    { id: "run-yourself", label: "Do the work yourself", text: RUN_YOURSELF_PROMPT },
     { id: "persona", label: "Identity", text: persona },
     { id: "soul", label: "Standing instructions (SOUL.md)", text: soulSystemPrompt(soul) },
     ...parts.filter((part) => part.id === "rules"),

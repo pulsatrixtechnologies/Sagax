@@ -23,6 +23,7 @@ import {
   brokerSocketCandidates,
   claudeCliSupports,
   claudeCliUpdate,
+  CLAUDE_AUTO_ALLOWED_TOOLS,
   claudeHookSettings,
   claudeLimitMessage,
   ClaudeDriver,
@@ -39,6 +40,7 @@ import {
   turnCostFromRunningTotal,
   type ClaudeConfig,
 } from "./claude.ts";
+import { AUTO_ALLOWLIST_COPY, claudeLaunchLevel } from "../testing/claude-level.ts";
 import { removeTempDir } from "../testing/cleanup.ts";
 import { rebuiltSessionNotice } from "../resume-recovery.ts";
 import { ephemeralWorkspaceTokenPath } from "../workspace-backup-policy.ts";
@@ -1197,7 +1199,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await create(undefined, {}, { permissionMode: "bypassPermissions" });
     const dump = join(scratch, "approval-transitions.json");
     process.env.FAKE_CLAUDE_DUMP = dump;
-    for (const [approvalMode, nativeMode] of [["full", "bypassPermissions"], ["auto", "auto"], ["edits", "acceptEdits"], ["ask", "default"]] as const) {
+    for (const [approvalMode, nativeMode] of [["full", "bypassPermissions"], ["auto", "acceptEdits"], ["edits", "acceptEdits"], ["ask", "default"]] as const) {
       const { turnId } = await instance.adapter.sendTurn({
         threadId: "t-mode-transitions",
         text: "hello",
@@ -1557,7 +1559,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(JSON.stringify(seen.argv)).not.toContain("tok");
     const allowed = seen.argv[seen.argv.indexOf("--allowedTools") + 1];
     expect(allowed).toContain("mcp__agents");
-    expect(seen.argv[seen.argv.indexOf("--permission-mode") + 1]).toBe(approvalMode === "auto" ? "auto" : "default");
+    expect(seen.argv[seen.argv.indexOf("--permission-mode") + 1]).toBe(approvalMode === "auto" ? "acceptEdits" : "default");
     expect(seen.argv).toContain("--permission-prompt-tool");
     expect(seen.mcpConfig.mcpServers.ogb.alwaysLoad).toBe(true);
   });
@@ -3575,40 +3577,36 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(await instance.snapshot()).toMatchObject({ state: "unavailable" });
   });
 
-  it("tags each ask with whether the CLI's own reviewer is running, read from init", async () => {
-    // The real CLI accepts `--permission-mode auto` for every model and, when
-    // auto is unavailable (Haiku 4.5, Sonnet 4.5 on 2.1.266), starts in
-    // Manual without an error. Only init's permissionMode tells the truth,
-    // and the harness needs it to tell a verdict from a Manual session
-    // asking about everything.
-    process.env.FAKE_CLAUDE_AUTO_UNAVAILABLE_MODELS = "claude-haiku-4-5";
+  it("never starts the CLI's auto classifier for Approve for me: an allowlist, and every other call is a card", async () => {
+    // 2026-10-19 (bot quality, cause B): `--permission-mode auto` refused
+    // external writes in silence. Auto is Auto-accept edits, a fixed list of
+    // tools that never need a person, and the broker for everything else.
     await create("hang", {}, { permissionMode: "bypassPermissions" });
-    const raise = async (threadId: string, id: string) => {
-      const conn = connect(permissionSocketPath(threadId));
-      await new Promise<void>((resolve, reject) => {
-        conn.on("connect", resolve);
-        conn.on("error", reject);
-      });
-      conn.write(JSON.stringify({ t: "ask", id, tool: "Bash", input: { command: "wc -l notes.md" } }) + "\n");
-      const opened = await recorder.until((e) => e.type === "request.opened" && e.requestId === id);
-      conn.destroy();
-      return opened;
-    };
-
-    // Auto on a model the classifier does not cover: the session runs Manual
-    await instance.adapter.sendTurn({ threadId: "t-review-off", text: "go", approvalMode: "auto", model: "claude-haiku-4-5" });
-    await recorder.until((e) => e.type === "session.started" && e.threadId === "t-review-off");
-    expect(await raise("t-review-off", "ask-off")).toMatchObject({ nativeReview: "inactive" });
-
-    // Auto on a covered model: the reviewer is running, its ask is a verdict
-    await instance.adapter.sendTurn({ threadId: "t-review-on", text: "go", approvalMode: "auto", model: "claude-sonnet-5" });
-    await recorder.until((e) => e.type === "session.started" && e.threadId === "t-review-on");
-    expect(await raise("t-review-on", "ask-on")).toMatchObject({ nativeReview: "active" });
-
-    // Ask mode never claims anything about a reviewer
-    await instance.adapter.sendTurn({ threadId: "t-review-ask", text: "go", approvalMode: "ask", model: "claude-haiku-4-5" });
-    await recorder.until((e) => e.type === "session.started" && e.threadId === "t-review-ask");
-    expect(await raise("t-review-ask", "ask-ask")).toHaveProperty("nativeReview", undefined);
+    const dump = join(scratch, "auto-allowlist.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await instance.adapter.sendTurn({ threadId: "t-auto-allow", text: "go", approvalMode: "auto", model: "claude-sonnet-5" });
+    await recorder.until((e) => e.type === "session.started" && e.threadId === "t-auto-allow");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv[seen.argv.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+    expect(seen.argv).not.toContain("auto");
+    expect(seen.argv).toContain("--permission-prompt-tool");
+    const allowed = String(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).split(",");
+    for (const tool of CLAUDE_AUTO_ALLOWED_TOOLS) expect(allowed).toContain(tool);
+    // the scripted test agent reads the level back from this list
+    expect([...AUTO_ALLOWLIST_COPY]).toEqual([...CLAUDE_AUTO_ALLOWED_TOOLS]);
+    expect(claudeLaunchLevel(seen.argv)).toBe("auto");
+    // nothing that writes or runs an arbitrary command is pre-allowed
+    for (const tool of ["Bash", "Write", "Edit", "WebFetch", "mcp__perspicax"]) expect(allowed).not.toContain(tool);
+    expect(allowed.filter((tool) => tool.startsWith("Bash"))).toEqual(["Bash(pwd)"]);
+    expect(allowed).not.toContain("Skill");
+    // an ask is a plain card: no reviewer claim
+    const conn = connect(permissionSocketPath("t-auto-allow"));
+    await new Promise<void>((resolve, reject) => { conn.on("connect", resolve); conn.on("error", reject); });
+    conn.write(JSON.stringify({ t: "ask", id: "ask-cw", tool: "mcp__perspicax__cw_psa__write", input: { resource: "activities", op: "close" } }) + "\n");
+    const opened = await recorder.until((e) => e.type === "request.opened" && e.requestId === "ask-cw");
+    conn.destroy();
+    expect(opened).toMatchObject({ requestType: "permission", tool: "mcp__perspicax__cw_psa__write" });
+    expect((opened as { nativeReview?: unknown }).nativeReview).toBeUndefined();
   });
 
   it("attaches exact native Bash command input with the launch directory only to shell permissions", async () => {

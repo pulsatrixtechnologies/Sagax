@@ -779,6 +779,10 @@ export interface WireMessage {
   /** thread chips: "Opened thread #Title on @X". */
   /** `gone` is stamped at read time when the target thread no longer exists. */
   threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
+  /** A teammate parked on a question for the person (server park/remind,
+   * 2026-10-19): the whole question, answered from the card in place (the
+   * answer is a person's message into `threadId`, the waiting work). */
+  inputRequest?: { botId: string; threadId: string; botName: string; title?: string; question: string; reminder?: boolean; answered?: boolean };
   /** A bot's page proposal (shared/published-pages.ts): the card the person
    * reviews and publishes it from. `text` is the fallback line. */
   pagePublish?: { pageId: string; version: number; title: string };

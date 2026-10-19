@@ -161,6 +161,23 @@ export function resolveClaudeConfigDir(configDir?: string, env: NodeJS.ProcessEn
   return normalize(expanded);
 }
 
+/** What Approve for me pre-allows on Claude Code instead of the CLI's auto
+ * classifier (2026-10-19): tools that only read or that never leave the
+ * turn. Reads of files need no rule (the CLI never asks for Read, Glob or
+ * Grep in the launch folder). No git rule: git runs commands a repository's
+ * config names (core.fsmonitor, diff.external, a pager) and writes with
+ * --output. No Skill: a skill's `allowed-tools` would grant tools with no
+ * card, and acceptEdits may edit a skill. No ls or wc: they reach paths
+ * outside the folder. Task's subagents keep this list and the broker.
+ * Everything else, an MCP write first, asks on a card. */
+export const CLAUDE_AUTO_ALLOWED_TOOLS: readonly string[] = [
+  "WebSearch", "TodoWrite", "ToolSearch", "Task", "Bash(pwd)",
+];
+
+export function claudeAutoAllowedTools(): string[] {
+  return [...CLAUDE_AUTO_ALLOWED_TOOLS];
+}
+
 /** Whether a stream frame is the CLI reporting that it has no login.
  *
  * The CLI flags its own api-error frames (`error`, `is_api_error_message`);
@@ -1672,11 +1689,20 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // `bypassPermissions`; Ask/Auto must restore Claude's interactive
       // broker instead of inheriting that silent bypass. Calls without a
       // per-turn mode keep the legacy adapter behavior.
-      const permissionMode = turn.approvalMode === undefined
+      // 2026-10-19 (bot quality, cause B): Approve for me never starts the
+      // CLI's own auto mode. Its classifier refused external writes in
+      // silence (no card, only "add a permission rule"), even after the
+      // person said yes in the chat, and the bot concluded it could not.
+      // Auto is now Auto-accept edits plus a fixed list of tools that never
+      // need a person (claudeAutoAllowedTools); every other call reaches
+      // Sagax's broker (mcp__ogb__approve) and becomes a real card.
+      const requestedMode = turn.approvalMode === undefined
         ? config.permissionMode
         : turn.approvalMode === "full" ? "bypassPermissions"
           : turn.approvalMode === "auto" ? "auto"
             : turn.approvalMode === "edits" ? "acceptEdits" : "default";
+      const autoAllowlist = requestedMode === "auto";
+      const permissionMode = autoAllowlist ? "acceptEdits" : requestedMode;
       const controlsHost = turn.integrations?.localComputer?.scope === "local-computer";
       if (controlsHost && permissionMode === "bypassPermissions" && turn.approvalMode !== "full") {
         throw new Error("local computer control requires the interactive approval broker");
@@ -1929,6 +1955,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       }
       // an allowed name is mcp__<server> or mcp__<server>__<tool> (agentsAllowedTools)
       allowed.splice(0, allowed.length, ...allowed.filter((name) => Object.hasOwn(mcpServers, name.slice("mcp__".length).split("__")[0])));
+      // Approve for me: the built-ins that never need a person (read-only
+      // shell lines, a web search, the task list). Deny rules still win, so
+      // a withheld host tool stays withheld.
+      if (autoAllowlist && !turn.guestConfined) allowed.push(...claudeAutoAllowedTools());
       // Keep ask_user available even in Full access. Native bypass skips
       // permission prompts, not questions requiring a person's answer.
       let broker: Awaited<ReturnType<typeof createPermissionBroker>> | undefined;
@@ -2161,14 +2191,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             onAsk: (ask) => {
               const eventTurnId = sessions.get(threadId)?.turn?.turnId ?? turnId;
               askTools.set(ask.id, typeof ask.tool === "string" ? ask.tool : undefined);
-              // Auto was requested: say whether the CLI's reviewer is actually
-              // running, from init, so the harness can tell a classifier's
-              // verdict from a Manual session asking about everything.
-              const nativeMode = sessions.get(threadId)?.nativePermissionMode ?? null;
-              const nativeReview =
-                permissionMode === "auto" && nativeMode !== null
-                  ? nativeMode === "auto" ? "active" : "inactive"
-                  : undefined;
+              // Approve for me no longer runs the CLI's reviewer (see
+              // requestedMode), so an ask never reports one.
               const questions = askQuestions(ask);
               emit({
                 ...base(threadId, eventTurnId),
@@ -2182,7 +2206,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                   ? permissionCommand(ask.input.command, commandCwd) : undefined,
                 paths: ask.kind === "permission" ? permissionPaths(ask.tool, ask.input, cwd) : undefined,
                 requiresExplicitApproval: ask.kind === "permission" && ask.tool === "Bash" && ask.input.dangerouslyDisableSandbox === true || undefined,
-                nativeReview,
                 // the proxy hands Claude its own suggested rules on `always`;
                 // host control stays one action at a time
                 allowSession: ask.kind === "permission" && !(controlsHost && typeof ask.tool === "string" && ask.tool.startsWith("mcp__computer")) ? true : undefined,

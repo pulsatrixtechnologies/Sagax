@@ -97,6 +97,7 @@ import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { RawMarkdownView } from "./RawMarkdownToggle";
 import { ParallelResultLabel, ParallelTaskCard } from "./ParallelTaskCard";
 import { ThreadChip } from "./ThreadChip";
+import { InputRequestCard } from "./InputRequestCard";
 import { withoutDeadThreadChips } from "@/lib/dead-thread-chips";
 import { VerifyCard } from "./VerifyCard";
 import { askText, runSkill, runSteps, runSummary, showRun, skillPrompt } from "@/lib/verify-steps";
@@ -882,6 +883,7 @@ const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { m
   const { bots, dispatch, botDmIds } = useChatRows();
   const tool = message.tool;
   if (!tool) return null;
+  if (message.inputRequest) return <InputRequestCard message={message} />;
   if (message.threadRef) return <ThreadChip message={message} />;
   // bot⇄bot comm chip: a DM is read in this column (the exchange sheet), not
   // by selecting that channel. A Posted-in-room receipt still opens the room.
@@ -1309,7 +1311,7 @@ const MessagesList = memo(function MessagesList({
                   </>
                 );
               }
-              if (!showToolCalls && !m.comm && !m.threadRef && !m.dataResult) return null;
+              if (!showToolCalls && !m.comm && !m.threadRef && !m.dataResult && !m.inputRequest) return null;
               return <ActivityChip message={m} place={place} />;
             }
             case "digest":

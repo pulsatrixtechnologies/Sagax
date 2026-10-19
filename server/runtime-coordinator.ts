@@ -390,6 +390,7 @@ export class RuntimeCoordinator implements Coordinator {
       canStart: a => !host.busy(this.project(a)),
       run: (a, input, signal) => this.run(a, input, signal),
       park: (a, question) => host.park(this.project(a), question),
+      remind: (a, question, waitedMs) => host.remind?.(this.project(a), question, waitedMs),
       report: (a, parent) => host.report(view(a, parent), parent && this.project(parent)),
       changed: rows => {
         const groups = new Set<string>();
