@@ -240,6 +240,29 @@ describe("CloudAgentManager with the perspicax provider", () => {
     expect(completions).toHaveLength(2);
   });
 
+  it("refuses a personal run without the person's sign-in for its engine, and watches one it launched", async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "sagax-perspicax-"));
+    const watched: string[] = [];
+    let signedIn = false;
+    const personal = { ready: (_p: string, engine: string) => signedIn ? { ok: true as const } : { ok: false as const, message: `no ${engine} sign-in` }, watch: (_p: string, runId: string) => { watched.push(runId); } };
+    const mgr = new CloudAgentManager({
+      store: new CloudAgentStore(dataDir),
+      credentials: new CloudAgentCredentialStore(dataDir, () => ({ kind: "key", key: Buffer.alloc(32, 7) })),
+      providers: new Map([["perspicax", createPerspicaxProvider(fetch, () => fake.url, () => personal)]]),
+      accessToken: async () => fake.token,
+    });
+    const launch = { botId: "bot-1", threadId: "thread-1", principalId: "pr_alice", launch: { provider: "perspicax" as const, prompt: "Corrige", repos: [{ url: "https://github.com/demo/web-app" }] } };
+    await expect(mgr.launch(launch)).rejects.toMatchObject({ status: 409, code: "no_subscription", message: "no claude-code sign-in" });
+    expect(fake.runs().filter((r) => r.prompt === "Corrige")).toHaveLength(0);
+    signedIn = true;
+    const record = await mgr.launch(launch);
+    expect(watched).toEqual([record.externalId]);
+    // A team environment uses the organization's key: no check, no watch.
+    signedIn = false;
+    await mgr.launch({ ...launch, launch: { ...launch.launch, repos: [{ url: "https://github.com/demo/api" }] } });
+    expect(watched).toHaveLength(1);
+  });
+
   it("asks which environment when the repository is missing and several exist", async () => {
     const { mgr } = manager(fake.token);
     await expect(mgr.launch({ botId: "bot-1", threadId: "thread-1", principalId: "pr_alice", launch: { provider: "perspicax", prompt: "x" } }))

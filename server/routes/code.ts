@@ -21,10 +21,11 @@
 import type { ServerResponse } from "node:http";
 
 import { RUN_ENGINES, type PerspicaxRun } from "../../shared/cloud-agents.ts";
-import { SAGAX_BUSINESS_URL, type CodeRun, type CodeStatus, type CodeUnavailableReason, type FollowUpMode } from "../../shared/code-runs.ts";
+import { SAGAX_BUSINESS_URL, type CodeRun, type CodeSubscription, type CodeStatus, type CodeUnavailableReason, type FollowUpMode } from "../../shared/code-runs.ts";
 import type { CloudAgentManager } from "../cloud-agents/manager.ts";
 import type { PerspicaxAccess, PerspicaxAgentsClient } from "../cloud-agents/perspicax-client.ts";
 import { ProviderHttpError } from "../cloud-agents/providers/http.ts";
+import { personalEnvironment, type PersonalSubscriptions } from "../cloud-agents/providers/perspicax.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -42,6 +43,9 @@ export interface CodeRouteDeps {
   manager: CloudAgentManager;
   consoleUrl: () => string | undefined;
   botVisible: (auth: RequestAuth, botId: string) => boolean;
+  /** Personal runs' subscriptions (organization server): the check before a
+   * launch, the watch after it, and what the run view shows. */
+  personal?: () => (PersonalSubscriptions & { status(runId: string): CodeSubscription | undefined }) | null;
   /** The viewer may read that thread of that bot (a thread can turn
    * confidential, or a grant be withdrawn, after the launch). */
   threadReadable?: (auth: RequestAuth, botId: string, threadId: string) => boolean;
@@ -74,6 +78,8 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
   /** The run plus the bot and thread that launched it here, when the viewer may see that bot. */
   const joined = (auth: RequestAuth, principalId: string, run: PerspicaxRun): CodeRun => {
     const local = deps.manager.byExternal("perspicax", run.id);
+    const subscription = deps.personal?.()?.status(run.id);
+    if (subscription) run = { ...run, subscription } as CodeRun;
     if (!local || local.principalId !== principalId || !local.botId || !deps.botVisible(auth, local.botId)) return run;
     const threadOk = local.threadId && (!deps.threadReadable || deps.threadReadable(auth, local.botId, local.threadId));
     return { ...run, botId: local.botId, ...(threadOk ? { threadId: local.threadId } : {}) };
@@ -171,6 +177,15 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
           if (engine && !(RUN_ENGINES as readonly string[]).includes(engine)) return json(res, 400, { error: "engine must be claude-code or codex" });
           const model = str(body, "model").slice(0, 120);
           const title = str(body, "title").slice(0, 200);
+          // A personal run needs the person's own sign-in for its engine.
+          const subscriptions = deps.personal?.() ?? null;
+          if (subscriptions) {
+            const env = (await deps.client.environments(who)).find((row) => row.id === envId);
+            if (env && personalEnvironment(env)) {
+              const ready = subscriptions.ready(access.principalId, engine || env.engine_default);
+              if (!ready.ok) return json(res, 409, { error: ready.message, code: "no_subscription" });
+            }
+          }
           const run = await deps.client.create(who, {
             env_id: envId,
             prompt,
@@ -179,6 +194,7 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
             ...(model ? { model } : {}),
             ...(title ? { title } : {}),
           });
+          if (subscriptions && run.token_source === "personnel") subscriptions.watch(access.principalId, run.id);
           return json(res, 201, { item: joined(auth, access.principalId, run) });
         }
         return PASS;

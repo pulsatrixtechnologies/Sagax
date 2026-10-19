@@ -324,7 +324,7 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
     const row: FakeEnv = {
       id, name, owner_id: PERSON, scope,
       repos: [{ provider: "github", owner, name: repo, default_branch: "main" }],
-      engine_default: engine, model_default: model, token_source: "org", client_data: false, health, archived: false,
+      engine_default: engine, model_default: model, token_source: scope === "personnelle" ? "personnel" : "org", client_data: false, health, archived: false,
     };
     envs.push(row);
     return row;
@@ -342,7 +342,7 @@ export async function startFakePerspicaxAgents(options: FakePerspicaxOptions = {
       branch: `px/${slug}-${id.slice(-4)}`,
       engine: environment.engine_default,
       model: environment.model_default,
-      token_source: "org",
+      token_source: environment.token_source === "personnel" ? "personnel" : "org",
       origin: "console",
       origin_ref: "",
       requested_by: PERSON,

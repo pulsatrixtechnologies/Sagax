@@ -82,7 +82,7 @@ export class CloudAgentManager {
   }): Promise<CloudAgentRecord> {
     const adapter = this.provider(input.launch.provider);
     const token = await this.token(input.principalId, input.launch.provider);
-    const launched = await adapter.launch(token, input.launch);
+    const launched = await adapter.launch(token, { ...input.launch, principalId: input.principalId });
     const record = this.deps.store.create({
       botId: input.botId,
       threadId: input.threadId,

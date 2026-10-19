@@ -9131,5 +9131,9 @@
   "botPanel.branch.error.commitFailed": "git could not commit these changes.",
   "botPanel.branch.error.noPerson": "Sign in as yourself to act on a branch here.",
   "botPanel.branch.error.noAuthor": "Your name and email are needed to sign a commit here. Add them to your profile first.",
-  "botPanel.branch.error.unsafeConfig": "This repository's git config can change what git runs or where it pushes, so the panel does not act on it here."
+  "botPanel.branch.error.unsafeConfig": "This repository's git config can change what git runs or where it pushes, so the panel does not act on it here.",
+  "code.subscription.title": "Your subscription for this run",
+  "code.subscription.missing": "This run uses your own {engine} subscription, and you have no {engine} sign-in in Sagax. Connect it in Settings, My subscriptions and keys, then start the run again.",
+  "code.subscription.expired": "Your {engine} sign-in in Sagax expired and could not be renewed. Sign in again in Settings, My subscriptions and keys.",
+  "code.subscription.refused": "Perspicax refused your {engine} subscription for this run."
 }

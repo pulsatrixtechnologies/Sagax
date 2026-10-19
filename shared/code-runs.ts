@@ -35,6 +35,19 @@ export const SAGAX_BUSINESS_URL = "https://pulsatrix.ca";
 export interface CodeRun extends PerspicaxRun {
   botId?: string;
   threadId?: string;
+  /** A personal run: whether this server handed Perspicax the person's
+   * engine subscription token (server/cloud-agents/subscription-depositor.ts). */
+  subscription?: CodeSubscription;
+}
+
+export type CodeSubscriptionState = "ok" | "missing" | "expired" | "refused";
+
+export interface CodeSubscription {
+  state: CodeSubscriptionState;
+  engine: "claude-code" | "codex";
+  /** ISO time the handed-over token is valid until (state ok). */
+  until?: string;
+  message?: string;
 }
 
 export interface CodeEnvironment extends PerspicaxEnvironment {}

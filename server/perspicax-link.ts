@@ -250,6 +250,27 @@ const OWN_ACCOUNT_ERASE_ANSWER_MAX_BYTES = 8 * 1024;
  * uses one of the person's keys; `unsupported`: an older Perspicax without the route;
  * `refused`: another 4xx (its status kept); `link`: no link or the link
  * token was refused; `unreachable`: no answer, a 5xx or an unreadable one. */
+/** 2026-10-19 (Perspicax #384, lot P1.9): a personal cloud agent run's
+ * subscription token, handed over by this server. */
+export const SUBSCRIPTION_TOKEN_TIMEOUT_MS = 10_000;
+
+export interface SubscriptionTokenBody {
+  provider: "anthropic" | "openai";
+  /** The short access token, never a refresh token. */
+  access_token: string;
+  /** RFC 3339, within 24 h. */
+  expires_at: string;
+  account_id?: string;
+}
+
+export type SubscriptionTokenDeposit =
+  | { ok: true }
+  /** link: no or refused link token; subject: the person's sign-in token is
+   * not valid there; gone: no live personal run of this person (404);
+   * forbidden: personal credentials are off for the organization; rejected:
+   * Perspicax refused the body (400); unsupported: an older Perspicax (405). */
+  | { ok: false; error: "link" | "subject" | "gone" | "forbidden" | "rejected" | "unsupported" | "unreachable"; status?: number; message?: string };
+
 export type OwnAccountErasure =
   | { ok: true; sub: string; auditId?: string }
   | { ok: false; error: "link" | "subject" | "reauth_required" | "last_admin" | "bound" | "unsupported" | "refused" | "unreachable"; status?: number };
@@ -1044,6 +1065,58 @@ export class PerspicaxDirectory {
     if (status === 409 && parsed.code === "last_admin") return { ok: false, error: "last_admin", status };
     if (status === 409 && parsed.code === "bound") return { ok: false, error: "bound", status };
     if (status >= 400 && status < 500) return { ok: false, error: "refused", status };
+    return { ok: false, error: "unreachable", status };
+  }
+
+  /** Hand Perspicax the short access token of a personal run's engine
+   * subscription: `PUT /api/v1/agents/runs/{id}/subscription-token` with the
+   * link token (which server) and the person's live sign-in access token
+   * (SUBJECT_TOKEN_HEADER, who; Perspicax checks they asked for the run). A
+   * 401 re-reads the link file once. Never logs a token; never throws. */
+  async depositSubscriptionToken(subjectToken: string, runId: string, body: SubscriptionTokenBody): Promise<SubscriptionTokenDeposit> {
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(runId)) return { ok: false, error: "rejected" };
+    let link = this.link ?? this.readLink();
+    if (!link) return { ok: false, error: "link" };
+    const call = (token: string) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}/api/v1/agents/runs/${encodeURIComponent(runId)}/subscription-token`, {
+      method: "PUT",
+      redirect: "error",
+      signal: AbortSignal.timeout(SUBSCRIPTION_TOKEN_TIMEOUT_MS),
+      headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${token}`, [SUBJECT_TOKEN_HEADER]: subjectToken },
+      body: JSON.stringify(body),
+    });
+    let response: Response;
+    try {
+      response = await call(link.linkToken);
+      if (response.status === 401) {
+        void response.body?.cancel().catch(() => {});
+        const again = this.readLink();
+        if (!again) return { ok: false, error: "link" };
+        link = again;
+        response = await call(link.linkToken);
+      }
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    const status = response.status;
+    if (status === 204 || status === 200) {
+      void response.body?.cancel().catch(() => {});
+      return { ok: true };
+    }
+    let parsed: Record<string, unknown> = {};
+    try {
+      const text = await readLimited(response, 16_384);
+      const value: unknown = text ? JSON.parse(text) : null;
+      if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+    } catch {
+      /* not JSON */
+    }
+    const message = typeof parsed.message === "string" ? parsed.message.slice(0, 300) : undefined;
+    const said = message ? { message } : {};
+    if (status === 401) return { ok: false, error: "link", status };
+    if (status === 403) return { ok: false, error: parsed.code === "subject" ? "subject" : "forbidden", status, ...said };
+    if (status === 404) return { ok: false, error: "gone", status, ...said };
+    if (status === 405) return { ok: false, error: "unsupported", status };
+    if (status === 400 || status === 409 || status === 422) return { ok: false, error: "rejected", status, ...said };
     return { ok: false, error: "unreachable", status };
   }
 

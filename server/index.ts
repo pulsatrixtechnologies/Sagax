@@ -976,6 +976,8 @@ import { createProviderRegistry } from "./cloud-agents/providers/registry.ts";
 import { createCloudAgentRoutes } from "./routes/cloud-agents.ts";
 import { createCodeRoutes } from "./routes/code.ts";
 import { PerspicaxAgentsClient } from "./cloud-agents/perspicax-client.ts";
+import { SubscriptionDepositor } from "./cloud-agents/subscription-depositor.ts";
+import { ENGINE_DRIVER, readSubscriptionAccess, renewWithCli, type RunEngine } from "./cloud-agents/subscription-access.ts";
 import { cloudAgentInternalAction, handleCloudAgentInternal } from "./routes/cloud-agents-internal.ts";
 import { cloudAgentWakePrompt } from "./cloud-agents/wake.ts";
 import { cloudAgentWireItem } from "./cloud-agents/activity.ts";
@@ -26315,7 +26317,51 @@ function cloudAgentPrincipal(auth: RequestAuth): string | null {
   return IDENTITY.kind !== "perspicax" && auth.trust !== "service" && auth.relay === undefined ? localPrincipalId() : null;
 }
 
-const cloudAgentProviders = createProviderRegistry({ perspicaxBaseUrl: perspicaxBase });
+const perspicaxAgentsClient = new PerspicaxAgentsClient();
+// Personal runs (Perspicax #384): this server hands Perspicax the short
+// access token of the person's own engine sign-in and renews it while the
+// run is live (server/cloud-agents/subscription-depositor.ts). Organization
+// server only; never with the code fixture.
+function subscriptionCli(engine: RunEngine): { cli: string; environment: Record<string, string | undefined> } | null {
+  const driver = ENGINE_DRIVER[engine];
+  for (const [instanceId, entry] of Object.entries(instanceConfigs(cfg))) {
+    if (entry.driver !== driver) continue;
+    const configured = (entry.config as { cli?: unknown } | undefined)?.cli;
+    const cli = loginCliFor(entry.driver, configured, registry.cliTarget(instanceId)?.cli);
+    if (cli) return { cli, environment: entry.environment ?? {} };
+  }
+  const cli = loginCliFor(driver, undefined, undefined);
+  return cli ? { cli, environment: {} } : null;
+}
+const subscriptionDepositor = IDENTITY.kind === "perspicax" && engineLogins && !codeFixture
+  ? new SubscriptionDepositor({
+    people: () => principals.list()
+      .filter((person) => person.subject && person.disabledAt === undefined
+        && (engineLogins!.signedIn(person.id, "claudeAgent") || engineLogins!.signedIn(person.id, "codex")))
+      .map((person) => person.id),
+    subjectOf: (principalId) => {
+      const person = principals.byId(principalId);
+      return person?.subject && IDENTITY.kind === "perspicax" && person.subject.iss === IDENTITY.issuer ? person.subject.sub : null;
+    },
+    subjectToken: (principalId) => perspicaxAccessToken(principalId),
+    runs: async (subjectToken) => {
+      const base = perspicaxBase();
+      return base ? perspicaxAgentsClient.runs({ baseUrl: base, token: subjectToken }, { mine: true }) : [];
+    },
+    signedIn: (principalId, driver) => engineLogins!.signedIn(principalId, driver),
+    read: (principalId, engine) => readSubscriptionAccess(engine, engineLogins!.loginDir(principalId, ENGINE_DRIVER[engine])),
+    renew: async (principalId, engine) => {
+      const cli = subscriptionCli(engine);
+      if (cli) await renewWithCli({ engine, cli: cli.cli, environment: cli.environment, loginDir: engineLogins!.loginDir(principalId, ENGINE_DRIVER[engine]) });
+    },
+    deposit: async (subjectToken, runId, body) => perspicaxDirectory
+      ? perspicaxDirectory.depositSubscriptionToken(subjectToken, runId, body)
+      : { ok: false, error: "link" },
+    log: (line) => console.log(line),
+  })
+  : null;
+subscriptionDepositor?.start();
+const cloudAgentProviders = createProviderRegistry({ perspicaxBaseUrl: perspicaxBase, personalSubscriptions: () => subscriptionDepositor });
 cloudAgentManager = new CloudAgentManager({
   store: cloudAgentStore,
   credentials: cloudAgentCredentials,
@@ -26353,7 +26399,8 @@ function cloudAgentRecordVisible(record: CloudAgentRecord, viewerId: string | un
 }
 
 ROUTES.push(createCodeRoutes({
-  client: new PerspicaxAgentsClient(),
+  client: perspicaxAgentsClient,
+  personal: () => subscriptionDepositor,
   manager: cloudAgentManager,
   fixture: codeFixture !== null,
   reachable: (auth) => {

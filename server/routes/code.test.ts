@@ -24,6 +24,7 @@ let server: Server;
 let base = "";
 let dataDir = "";
 let manager: CloudAgentManager;
+let personalHook: Parameters<typeof createCodeRoutes>[0]["personal"] = undefined;
 
 async function boot(mode: "org" | "solo") {
   fake = await startFakePerspicaxAgents({ tickMs: 0 });
@@ -43,6 +44,7 @@ async function boot(mode: "org" | "solo") {
       : { ok: false, reason: "solo" },
     consoleUrl: () => `${fake.url}/console/agents`,
     botVisible: (_auth, botId) => botId === "bot-1",
+    personal: () => personalHook?.() ?? null,
   });
   server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -140,6 +142,30 @@ describe("Code routes on an organization server", () => {
     abort.abort();
     expect(text).toMatch(/\nid: 6\n/);
     expect(text).not.toMatch(/\nid: [1-5]\n/);
+  });
+
+  it("refuses a personal launch without the sign-in, and shows a run's subscription state", async () => {
+    let signedIn = false;
+    const watched: string[] = [];
+    personalHook = () => ({
+      ready: () => signedIn ? { ok: true } : { ok: false, message: "Connect your Claude subscription in Sagax." },
+      watch: (_p, runId) => { watched.push(runId); },
+      status: (runId) => runId === "run_03open000c2d" ? { state: "missing", engine: "claude-code" } : undefined,
+    });
+    try {
+      const refused = await post("/api/code/runs", { env_id: "env_01demoweb", prompt: "Corrige" });
+      expect(refused).toMatchObject({ status: 409, body: { code: "no_subscription", error: "Connect your Claude subscription in Sagax." } });
+      signedIn = true;
+      const made = await post("/api/code/runs", { env_id: "env_01demoweb", prompt: "Corrige" });
+      expect(made.status).toBe(201);
+      expect(watched).toEqual([made.body.item.id]);
+      // a team environment (organization key): no check
+      signedIn = false;
+      expect((await post("/api/code/runs", { env_id: "env_02demoapi", prompt: "Corrige" })).status).toBe(201);
+      expect((await get("/api/code/runs/run_03open000c2d")).body.item.subscription).toEqual({ state: "missing", engine: "claude-code" });
+    } finally {
+      personalHook = undefined;
+    }
   });
 
   it("says a missing artifact route is not available yet instead of failing", async () => {

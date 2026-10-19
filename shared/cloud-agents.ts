@@ -53,6 +53,9 @@ export interface CloudAgentLaunchInput {
   envId?: string;
   /** Perspicax: `claude-code` or `codex` (the environment's default otherwise). */
   engine?: string;
+  /** Set by the server (CloudAgentManager.launch), never by a tool call:
+   * the person launching, for a personal run's subscription. */
+  principalId?: string;
 }
 
 export interface CloudAgentFollowUpInput {

@@ -281,6 +281,20 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
         </div>
       </div>
       <div className="mx-auto flex w-full max-w-[760px] flex-col gap-2 px-6 pb-4">
+        {run.subscription && run.subscription.state !== "ok" && (
+          <div role="alert" data-code-subscription={run.subscription.state} className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0 text-warning" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-ink">{t("code.subscription.title")}</p>
+                <p className="text-[12.5px] text-ink-secondary">
+                  {t(`code.subscription.${run.subscription.state}` as "code.subscription.missing", { engine: run.subscription.engine === "codex" ? "ChatGPT (Codex)" : "Claude" })}
+                </p>
+                {run.subscription.state === "refused" && run.subscription.message && <p className="mt-1 text-[12px] text-ink-tertiary">{run.subscription.message}</p>}
+              </div>
+            </div>
+          </div>
+        )}
         {warnings.filter((w) => !dismissed.has(w.seq)).map((warning) => (
           <div key={warning.seq} role="status" data-code-warning className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5">
             <div className="flex items-start gap-2">

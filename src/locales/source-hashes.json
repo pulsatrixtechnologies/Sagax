@@ -12990,7 +12990,11 @@
       "approval.computerSelect.thisComputer": "79105204b5dd631e800a0a4103d67e22aef6ed41ce65417b4831b4e87e244b9f",
       "approval.computerSelect.localVm": "e8a3db6d566ef0373f15a72e5ce55f713a603970d4d72fbea473e3b293969b44",
       "approval.computerSelect.browser": "23f80c28fb3adec73776b31b0a17ac1347cb838dfd59d772bba7be6373f5c12b",
-      "approval.computerSelect.choose": "b4d12b526f38d937c4e3c1957db4ccb32d2c0ab7e913c8e500d0ad34cabfae56"
+      "approval.computerSelect.choose": "b4d12b526f38d937c4e3c1957db4ccb32d2c0ab7e913c8e500d0ad34cabfae56",
+      "code.subscription.title": "9d29edef2b12de3b85981cca7fd3709f0cec435300b55776469ca0a14e2130f2",
+      "code.subscription.missing": "b38c79a4c4ee970e216ced660ab0e8f967bf9379aa18e04578c8d64e36da51c0",
+      "code.subscription.expired": "71ba5c5bc4cfa2409780b212561946830b8dc7ee304cd2ac833e2dbcb3914694",
+      "code.subscription.refused": "3c4446c1f3f2b12e14863f4ca6bcdd5740287b9a489ff5075c4c45c47a25deb1"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
