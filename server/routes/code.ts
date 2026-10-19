@@ -41,6 +41,9 @@ export interface CodeRouteDeps {
   manager: CloudAgentManager;
   consoleUrl: () => string | undefined;
   botVisible: (auth: RequestAuth, botId: string) => boolean;
+  /** The viewer may read that thread of that bot (a thread can turn
+   * confidential, or a grant be withdrawn, after the launch). */
+  threadReadable?: (auth: RequestAuth, botId: string, threadId: string) => boolean;
   fixture?: boolean;
 }
 
@@ -66,7 +69,8 @@ export function createCodeRoutes(deps: CodeRouteDeps): RouteHandler {
   const joined = (auth: RequestAuth, principalId: string, run: PerspicaxRun): CodeRun => {
     const local = deps.manager.byExternal("perspicax", run.id);
     if (!local || local.principalId !== principalId || !local.botId || !deps.botVisible(auth, local.botId)) return run;
-    return { ...run, botId: local.botId, ...(local.threadId ? { threadId: local.threadId } : {}) };
+    const threadOk = local.threadId && (!deps.threadReadable || deps.threadReadable(auth, local.botId, local.threadId));
+    return { ...run, botId: local.botId, ...(threadOk ? { threadId: local.threadId } : {}) };
   };
   /** A change seen here also refreshes the thread card of a bot-launched run. */
   const touchLocal = (runId: string) => {

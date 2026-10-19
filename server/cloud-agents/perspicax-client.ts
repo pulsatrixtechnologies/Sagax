@@ -23,7 +23,9 @@ import type {
   PerspicaxRun,
   RunEvent,
 } from "../../shared/cloud-agents.ts";
-import { diffFilesFrom, type CodeArtifact, type CodeCommit, type CodeFileEntry, type DiffFile, type FollowUpMode } from "../../shared/code-runs.ts";
+import { commitsFrom, diffFilesFrom, type CodeArtifact, type CodeCommit, type CodeFileEntry, type DiffFile, type FollowUpMode } from "../../shared/code-runs.ts";
+import { createHash } from "node:crypto";
+
 import { ProviderHttpError } from "./providers/http.ts";
 import type { HttpFetch } from "./providers/types.ts";
 
@@ -39,6 +41,8 @@ const LIST_MAX = 2000;
 const EVENTS_PAGE = 1000;
 /** Events read at most when the whole log is needed (diff fallback, transcript). */
 const EVENTS_MAX = 20_000;
+/** How long one log read serves the diff and commits fallbacks. */
+const LOG_SHARE_MS = 3_000;
 
 export interface PerspicaxAccess {
   /** Perspicax's origin (the issuer). */
@@ -55,6 +59,9 @@ function checkId(id: string): string {
 export class PerspicaxAgentsClient {
   private readonly fetchImpl: HttpFetch;
   private readonly timeoutMs: number;
+  /** One read of a run's log shared by the diff and commits fallbacks
+   * asked together (a few seconds; keyed by a digest, never the token). */
+  private readonly logReads = new Map<string, { at: number; read: Promise<RunEvent[]> }>();
   constructor(fetchImpl: HttpFetch = fetch, timeoutMs = PERSPICAX_TIMEOUT_MS) {
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
@@ -203,13 +210,25 @@ export class PerspicaxAgentsClient {
     return this.runAnswer(access, "POST", `/runs/${checkId(id)}/archive`, {}, true);
   }
 
+  private sharedLog(access: PerspicaxAccess, id: string): Promise<RunEvent[]> {
+    const now = Date.now();
+    for (const [key, entry] of this.logReads) if (now - entry.at > LOG_SHARE_MS) this.logReads.delete(key);
+    const key = createHash("sha256").update(`${access.baseUrl}\n${access.token}\n${id}`).digest("hex");
+    const hit = this.logReads.get(key);
+    if (hit) return hit.read;
+    const read = this.allEvents(access, id);
+    read.catch(() => this.logReads.delete(key));
+    this.logReads.set(key, { at: now, read });
+    return read;
+  }
+
   /** The run's diff: `GET /runs/:id/diff` once Perspicax serves it, else the
    * latest `diff` event of the log (`{files: [DiffView.files]}`). Neither:
    * not available. */
   async diff(access: PerspicaxAccess, id: string): Promise<CodeArtifact<DiffFile>> {
     const answer = await this.call<unknown>(access, "GET", `/runs/${checkId(id)}/diff`, undefined, true);
     if (answer !== null) return { available: true, items: diffFilesFrom(answer) };
-    const event = lastOfKind(await this.allEvents(access, id), "diff");
+    const event = lastOfKind(await this.sharedLog(access, id), "diff");
     return event ? { available: true, items: diffFilesFrom(event.payload) } : { available: false, items: [] };
   }
 
@@ -218,7 +237,7 @@ export class PerspicaxAgentsClient {
   async commits(access: PerspicaxAccess, id: string): Promise<CodeArtifact<CodeCommit>> {
     const answer = await this.call<unknown>(access, "GET", `/runs/${checkId(id)}/commits`, undefined, true);
     if (answer !== null) return { available: true, items: commitsFrom(answer) };
-    const event = lastOfKind(await this.allEvents(access, id), "commits");
+    const event = lastOfKind(await this.sharedLog(access, id), "commits");
     return event ? { available: true, items: commitsFrom(event.payload) } : { available: false, items: [] };
   }
 
@@ -240,15 +259,24 @@ export class PerspicaxAgentsClient {
   async *stream(access: PerspicaxAccess, id: string, after: number, signal: AbortSignal): AsyncGenerator<RunEvent> {
     let res: Response;
     const cursor = Math.max(0, Math.floor(after));
+    // The headers must come within the call timeout; the body then streams
+    // until `signal` aborts or Perspicax closes it.
+    const opening = new AbortController();
+    const stopOpening = () => opening.abort();
+    signal.addEventListener("abort", stopOpening, { once: true });
+    const headersDue = setTimeout(stopOpening, this.timeoutMs);
     try {
       // `after` and `Last-Event-ID` both: Perspicax resumes after the larger.
       res = await this.fetchImpl(this.url(access, `/runs/${checkId(id)}/stream?after=${cursor}`), {
         headers: { authorization: `Bearer ${access.token}`, accept: "text/event-stream", ...(cursor > 0 ? { "last-event-id": String(cursor) } : {}) },
-        signal,
+        signal: opening.signal,
       });
     } catch {
+      signal.removeEventListener("abort", stopOpening);
       if (signal.aborted) return;
       throw new ProviderHttpError(502, "unreachable", "Perspicax did not answer.");
+    } finally {
+      clearTimeout(headersDue);
     }
     if (!res.ok || !res.body) {
       await res.body?.cancel().catch(() => {});
@@ -280,6 +308,7 @@ export class PerspicaxAgentsClient {
       throw new ProviderHttpError(502, "unreachable", error instanceof Error && error.name === "AbortError" ? "Perspicax stream aborted." : "Perspicax stream broke.");
     } finally {
       reader.releaseLock();
+      signal.removeEventListener("abort", stopOpening);
       try { await res.body.cancel(); } catch {}
     }
   }
@@ -288,23 +317,6 @@ export class PerspicaxAgentsClient {
 function lastOfKind(events: readonly RunEvent[], kind: string): RunEvent | undefined {
   for (let i = events.length - 1; i >= 0; i--) if (events[i]!.kind === kind) return events[i];
   return undefined;
-}
-
-/** Commits from a `/commits` answer (a list, `{items}`) or a `commits` event (`{commits}`). */
-export function commitsFrom(answer: unknown): CodeCommit[] {
-  const box = answer && typeof answer === "object" ? answer as { items?: unknown; commits?: unknown } : {};
-  const rows = Array.isArray(answer) ? answer : Array.isArray(box.items) ? box.items : Array.isArray(box.commits) ? box.commits : [];
-  return rows.flatMap((row) => {
-    if (!row || typeof row !== "object") return [];
-    const c = row as Record<string, unknown>;
-    if (typeof c.sha !== "string") return [];
-    return [{
-      sha: c.sha,
-      title: typeof c.title === "string" ? c.title : typeof c.message === "string" ? c.message.split("\n")[0]! : "",
-      ...(typeof c.author === "string" ? { author: c.author } : {}),
-      ...(typeof c.at === "string" ? { at: c.at } : {}),
-    }];
-  });
 }
 
 async function readCapped(res: Response): Promise<string> {

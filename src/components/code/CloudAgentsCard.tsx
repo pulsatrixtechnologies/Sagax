@@ -45,6 +45,12 @@ export function useThreadCloudAgents(botId: string, threadId: string): CloudAgen
   return records;
 }
 
+/** A provider's link, kept only when it is https (never javascript: or a
+ * local file). */
+export function httpsOnly(url: string | undefined): string | undefined {
+  return typeof url === "string" && url.startsWith("https://") ? url : undefined;
+}
+
 /** Each record goes under the last transcript row at or before its launch
  * (a little slack: the tool's chip lands just after the record). Returns
  * row index -> records. Pure, for tests. */
@@ -81,7 +87,7 @@ function RowMenu({ record, botId }: { record: CloudAgentRecord; botId: string })
     window.addEventListener("keydown", key);
     return () => { window.removeEventListener("mousedown", close); window.removeEventListener("keydown", key); };
   }, [open]);
-  const prUrl = record.pr?.url ?? record.gitBranches.find((branch) => branch.prUrl)?.prUrl;
+  const prUrl = httpsOnly(record.pr?.url ?? record.gitBranches.find((branch) => branch.prUrl)?.prUrl);
   const item = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-popover-ink hover:bg-popover-hover disabled:opacity-50";
   return (
     <div ref={ref} className="relative">
@@ -114,7 +120,7 @@ export function CloudAgentsCard({ records, botId, confidential = false }: { reco
   if (records.length === 0) return null;
   const open = (record: CloudAgentRecord) => {
     if (record.provider === "perspicax") dispatch({ type: "showCode", runId: record.externalId });
-    else if (record.url) window.open(record.url, "_blank", "noopener,noreferrer");
+    else if (httpsOnly(record.url)) window.open(httpsOnly(record.url), "_blank", "noopener,noreferrer");
   };
   return (
     <section data-cloud-agents-card aria-label={t("code.card.title", { n: records.length })} className="my-2 flex w-full max-w-[560px] flex-col gap-1 rounded-xl border border-hairline bg-card px-2 py-2">

@@ -225,6 +225,21 @@ describe("CloudAgentManager with the perspicax provider", () => {
     expect(synced?.gitBranches[0]?.branch).toMatch(/^px\//);
   });
 
+  it("wakes the bot when a turn ends idle, once per turn, and again after a follow-up", async () => {
+    const { mgr, completions } = manager(fake.token);
+    const record = await mgr.launch({ botId: "bot-1", threadId: "thread-1", principalId: "pr_alice", launch: { provider: "perspicax", prompt: "Corrige", repos: [{ url: "https://github.com/demo/web-app" }] } });
+    for (let i = 0; i < 20; i++) fake.tick();
+    await mgr.refresh(record.id);
+    await mgr.refresh(record.id);
+    expect(completions).toHaveLength(1);
+    expect(completions[0]).toContain("PR en brouillon");
+    await mgr.followUp(record.id, "pr_alice", { text: "Encore un test", mode: "steer" });
+    await mgr.refresh(record.id);
+    for (let i = 0; i < 20; i++) fake.tick();
+    await mgr.refresh(record.id);
+    expect(completions).toHaveLength(2);
+  });
+
   it("asks which environment when the repository is missing and several exist", async () => {
     const { mgr } = manager(fake.token);
     await expect(mgr.launch({ botId: "bot-1", threadId: "thread-1", principalId: "pr_alice", launch: { provider: "perspicax", prompt: "x" } }))
@@ -266,5 +281,16 @@ describe("CloudAgentStore files", () => {
     expect(reopened.listAll().map((a) => a.externalId).sort()).toEqual(["bc-1", "run_1"]);
     reopened.patch(reopened.listAll()[0]!.id, { name: "A2" });
     expect(existsSync(join(dataDir, "cloud-agents", "records.json.bak"))).toBe(true);
+  });
+
+  it("writes only the statuses an older build knows to records.json", async () => {
+    const { readFileSync } = await import("node:fs");
+    dataDir = mkdtempSync(join(tmpdir(), "sagax-store-"));
+    const store = new CloudAgentStore(dataDir);
+    const row = store.create({ botId: "b", threadId: "t", principalId: "p", provider: "cursor", externalId: "bc-1", name: "A", repos: [] });
+    store.patch(row.id, { status: "expired" });
+    const legacy = JSON.parse(readFileSync(join(dataDir, "cloud-agents", "records.json"), "utf8"));
+    expect(legacy.agents[0].status).toBe("failed");
+    expect(store.get(row.id)?.status).toBe("expired");
   });
 });

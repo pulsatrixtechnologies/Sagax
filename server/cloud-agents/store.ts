@@ -77,6 +77,13 @@ const fileSchema = z.object({
 type Doc = z.infer<typeof fileSchema>;
 const LEGACY_PROVIDERS = new Set(["cursor", "claude", "codex"]);
 
+const LEGACY_STATUS: Partial<Record<CloudAgentStatus, CloudAgentStatus>> = { queued: "creating", waiting_for_approval: "running", expired: "failed" };
+
+function legacyStatus(record: CloudAgentRecord): CloudAgentRecord {
+  const older = LEGACY_STATUS[record.status];
+  return older ? { ...record, status: older } : record;
+}
+
 export class CloudAgentStore {
   private readonly file: string;
   private readonly perspicaxFile: string;
@@ -124,7 +131,9 @@ export class CloudAgentStore {
 
   private save(): void {
     const doc = this.load();
-    this.write(this.file, doc.agents.filter((a) => LEGACY_PROVIDERS.has(a.provider)));
+    // An older build parses records.json strictly: it gets only the statuses
+    // it knows (the new ones are written as their nearest old one).
+    this.write(this.file, doc.agents.filter((a) => LEGACY_PROVIDERS.has(a.provider)).map(legacyStatus));
     const perspicax = doc.agents.filter((a) => !LEGACY_PROVIDERS.has(a.provider));
     if (perspicax.length || existsSync(this.perspicaxFile)) this.write(this.perspicaxFile, perspicax);
   }

@@ -132,7 +132,10 @@ export function createCloudAgentRoutes(deps: CloudAgentRouteDeps): RouteHandler 
 
     if (method === "GET" && !action) {
       const item = deps.manager.get(agentId);
-      if (!item || item.botId !== botId) return json(res, 404, { error: "no such cloud agent" });
+      if (!item || item.botId !== botId || !deps.recordVisible(auth, item)) return json(res, 404, { error: "no such cloud agent" });
+      // Only the person who launched it refreshes it: a refresh borrows
+      // their credentials (their key, or their Perspicax sign-in).
+      if (item.principalId !== deps.principalId(auth)) return json(res, 200, { item });
       await deps.manager.refresh(agentId);
       const fresh = deps.manager.get(agentId);
       return json(res, 200, { item: fresh });

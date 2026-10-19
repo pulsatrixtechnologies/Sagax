@@ -93,7 +93,12 @@ export async function followRunEvents(id: string, after: number, onEvent: (event
       if (signal.aborted) return;
     }
     if (signal.aborted || !keepGoing()) return;
-    await new Promise((resolve) => setTimeout(resolve, backoff));
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(done, backoff);
+      function done() { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); }
+      signal.addEventListener("abort", done, { once: true });
+    });
+    if (signal.aborted) return;
     backoff = Math.min(backoff * 2, 15_000);
   }
 }

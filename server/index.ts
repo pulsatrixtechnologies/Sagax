@@ -969,6 +969,7 @@ import { PerspicaxAgentsClient } from "./cloud-agents/perspicax-client.ts";
 import { cloudAgentInternalAction, handleCloudAgentInternal } from "./routes/cloud-agents-internal.ts";
 import { cloudAgentWakePrompt } from "./cloud-agents/wake.ts";
 import { cloudAgentWireItem } from "./cloud-agents/activity.ts";
+import type { CloudAgentRecord } from "../shared/cloud-agents.ts";
 import { inGitRepository } from "./activity-coding.ts";
 import { repositoryInfo } from "./activity-code-work.ts";
 import { launchedAgentsForBot } from "./launched-agents.ts";
@@ -10407,6 +10408,11 @@ function sseFrameFor(
   if (payload?.kind === "cloud.agent" && typeof payload.botId === "string") {
     const bot = store.bot(payload.botId);
     if (!bot || !listedBotVisible(bot, client.viewerId || undefined)) return null;
+    // A shared bot: a run launched in someone else's thread reaches only
+    // the people who may read that thread (same rule as the list route).
+    const itemId = payload.item && typeof payload.item === "object" ? (payload.item as { id?: unknown }).id : undefined;
+    const record = typeof itemId === "string" ? cloudAgentStore.get(itemId) : null;
+    if (!record || !cloudAgentRecordVisible(record, client.viewerId || undefined)) return null;
   }
   // A read position in a conversation between two people follows both
   // people's "Send read receipts" choice (server/read-receipts.ts).
@@ -26013,13 +26019,16 @@ ROUTES.push(createCloudAgentRoutes({
   },
   principalId: (auth) => cloudAgentPrincipal(auth),
   botName: (botId) => store.bot(botId)?.name,
-  recordVisible: (auth, record) => {
-    const viewerId = channelFilterViewerId(auth);
-    if (!viewerId || record.principalId === viewerId) return true;
-    const bot = record.botId ? store.bot(record.botId) : undefined;
-    return Boolean(bot && record.threadId) && botThreadReadable(bot!, record.threadId!, viewerId, "thread.read");
-  },
+  recordVisible: (auth, record) => cloudAgentRecordVisible(record, channelFilterViewerId(auth)),
 }));
+
+/** Who sees a cloud agent record: everyone on a solo server (no viewer),
+ * else the person who launched it and whoever may read its thread. */
+function cloudAgentRecordVisible(record: CloudAgentRecord, viewerId: string | undefined): boolean {
+  if (!viewerId || record.principalId === viewerId) return true;
+  const bot = record.botId ? store.bot(record.botId) : undefined;
+  return Boolean(bot && record.threadId) && botThreadReadable(bot!, record.threadId!, viewerId, "thread.read");
+}
 
 ROUTES.push(createCodeRoutes({
   client: new PerspicaxAgentsClient(),
@@ -26044,6 +26053,11 @@ ROUTES.push(createCodeRoutes({
   botVisible: (auth, botId) => {
     const bot = store.bot(botId);
     return Boolean(bot) && listedBotVisible(bot!, channelFilterViewerId(auth));
+  },
+  threadReadable: (auth, botId, threadId) => {
+    const viewerId = channelFilterViewerId(auth);
+    const bot = store.bot(botId);
+    return Boolean(bot) && (!viewerId || botThreadReadable(bot!, threadId, viewerId, "thread.read"));
   },
 }));
 

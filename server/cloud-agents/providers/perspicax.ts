@@ -4,6 +4,7 @@
 // the existing cloud agent tools. The token is the person's sign-in access
 // token (CloudAgentManager asks `accessToken` for it), never a pasted key.
 import {
+  normalizeCloudAgentStatus,
   RUN_ENGINES,
   runOrigin,
   runPr,
@@ -117,7 +118,10 @@ export function createPerspicaxProvider(fetchImpl: HttpFetch, baseUrl: () => str
       const where = access(token);
       const run = await client.run(where, record.externalId);
       const ended = run.state === "idle" || run.state === "finished" || run.state === "failed" || run.state === "stopped" || run.state === "expired";
-      const result = ended ? lastMessage(await client.allEvents(where, run.id).catch(() => [])) : undefined;
+      // The log is read once per turn end (the state changed, or no result
+      // yet), never on every sync of a run that waits `idle`.
+      const changed = normalizeCloudAgentStatus(run.state) !== record.status || !record.lastResult;
+      const result = ended && changed ? lastMessage(await client.allEvents(where, run.id).catch(() => [])) : undefined;
       return runSnapshot(run, result);
     },
 

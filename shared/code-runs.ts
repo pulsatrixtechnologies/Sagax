@@ -191,3 +191,20 @@ export function diffFilesFrom(value: unknown): DiffFile[] {
   }
   return out;
 }
+
+/** Commits from a `/commits` answer (a list, `{items}`) or a `commits` event (`{commits}`). */
+export function commitsFrom(answer: unknown): CodeCommit[] {
+  const box = answer && typeof answer === "object" ? answer as { items?: unknown; commits?: unknown } : {};
+  const rows = Array.isArray(answer) ? answer : Array.isArray(box.items) ? box.items : Array.isArray(box.commits) ? box.commits : [];
+  return rows.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const c = row as Record<string, unknown>;
+    if (typeof c.sha !== "string") return [];
+    return [{
+      sha: c.sha,
+      title: typeof c.title === "string" ? c.title : typeof c.message === "string" ? c.message.split("\n")[0]! : "",
+      ...(typeof c.author === "string" ? { author: c.author } : {}),
+      ...(typeof c.at === "string" ? { at: c.at } : {}),
+    }];
+  });
+}

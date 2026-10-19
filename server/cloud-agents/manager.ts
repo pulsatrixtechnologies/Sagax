@@ -171,7 +171,13 @@ export class CloudAgentManager {
   private applySnapshot(id: string, snap: ProviderRunSnapshot, extra?: { clearPending?: boolean }) {
     const status = normalizeCloudAgentStatus(snap.status);
     const ended = TERMINAL.has(status);
+    // A Perspicax run that works again after a turn end (a follow-up) will
+    // wake its bot again at the next one.
+    const before = this.deps.store.get(id);
+    const working = status === "queued" || status === "creating" || status === "running" || status === "waiting_for_approval";
+    const rearm = Boolean(before && before.provider === "perspicax" && before.completionNotified && working && before.status !== status);
     return this.deps.store.patch(id, {
+      ...(rearm ? { completionNotified: false } : {}),
       status,
       ...(snap.latestRunId ? { latestRunId: snap.latestRunId } : {}),
       ...(snap.result ? { lastResult: snap.result } : {}),
@@ -217,7 +223,10 @@ export class CloudAgentManager {
   }
 
   private maybeComplete(record: CloudAgentRecord): void {
-    if (record.completionNotified || !TERMINAL.has(record.status)) return;
+    // A Perspicax run ends its turn `idle` (its Pod waits for a follow-up
+    // until it expires): that turn end wakes the bot, as a finish would.
+    const turnEnd = TERMINAL.has(record.status) || (record.provider === "perspicax" && record.status === "idle");
+    if (record.completionNotified || !turnEnd) return;
     const summary = record.lastResult?.trim()
       || record.error?.trim()
       || `Cloud agent ${record.name} finished (${record.status}).`;

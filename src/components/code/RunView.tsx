@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { CodeArtifact, CodeCommit, CodeFileEntry, DiffFile } from "../../../shared/code-runs.ts";
+import { commitsFrom, diffFilesFrom, type CodeArtifact, type CodeCommit, type CodeFileEntry, type DiffFile } from "../../../shared/code-runs.ts";
 import { DiffView } from "./DiffView";
 import { formatAge, pillLabel, RunPillBadge, runCardPill } from "./RunCard";
 import { RunTimeline } from "./RunTimeline";
@@ -201,6 +201,7 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
 
   useEffect(() => {
     let live = true;
+    let pending: number | null = null;
     const abort = new AbortController();
     setRun(null); setEvents([]); setDiff(null); setCommits(null); setFiles(null); setError(null);
     lastStats.current = "";
@@ -211,17 +212,18 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
       const initial = await loadRunEvents(runId).catch(() => [] as CodeEvent[]);
       if (!live) return;
       setEvents(initial);
-      let pending: number | null = null;
       void followRunEvents(runId, initial.at(-1)?.seq ?? 0, (event) => {
         setEvents((list) => mergeEvents(list, [event]));
-        // A new diff or commit list (runner events) reloads the artifacts.
-        if (event.kind === "diff" || event.kind === "commits" || event.kind === "stats") lastStats.current = "";
-        if (["state", "pr", "status", "stats", "diff", "commits", "approval", "approval_answer", "followup"].includes(event.kind) && pending === null) {
+        // The runner's diff and commit list arrive whole in the event:
+        // shown as they are, no round trip to Perspicax.
+        if (event.kind === "diff") setDiff({ available: true, items: diffFilesFrom(event.payload) });
+        if (event.kind === "commits") setCommits({ available: true, items: commitsFrom(event.payload) });
+        if (["state", "pr", "status", "stats", "approval", "approval_answer", "followup"].includes(event.kind) && pending === null) {
           pending = window.setTimeout(() => { pending = null; if (live) void reloadRun(); }, 250);
         }
       }, abort.signal, () => activeRef.current);
     })();
-    return () => { live = false; abort.abort(); };
+    return () => { live = false; abort.abort(); if (pending !== null) window.clearTimeout(pending); };
   }, [runId, reloadRun]);
 
   const working = run ? runWorking(run) : false;
