@@ -1869,15 +1869,12 @@ body {
   mask-image: linear-gradient(to top, black calc(100% - var(--glass-reach, 0px)), transparent);
 }
 /* The frame publishes its bars' heights. Rows rest clear of the glass,
-   keyboard focus scrolls them clear, and the scrollbar runs only between the
-   bars (a bar over it would swallow the drag). */
+   keyboard focus scrolls them clear, and the overlay scrollbar
+   (src/lib/overlay-scrollbars.ts) runs only between the bars, read from
+   --glass-top and --glass-bottom (a bar over it would swallow the drag). */
 .glass-scroller {
   scroll-padding-top: var(--glass-top, 0px);
   scroll-padding-bottom: calc(var(--glass-bottom, 0px) + var(--glass-bottom-reach, 0px));
-}
-.glass-scroller::-webkit-scrollbar-track {
-  margin-top: var(--glass-top, 0px);
-  margin-bottom: var(--glass-bottom, 0px);
 }
 .glass-scroller-content {
   padding-top: var(--glass-top, 0px);
@@ -1940,35 +1937,64 @@ body {
   color: var(--color-ink);
 }
 
-/* Scrollbars: a slim pill in each skin's own --color-scrollbar, never a
-   full-height slab. At rest it is a 2px line, enough to say "this scrolls";
-   with the pointer on it (anywhere across the 8px gutter, since the
-   transparent border is part of the thumb) or while dragged it widens to a
-   6px pill and darkens, as macOS and Windows 11 scrollbars do. The gutter
-   never changes width, so nothing reflows, and the track stays clear, so no
-   gray rail runs down a panel. (Widening on hover of the scrolling area
-   instead, via `*:hover::-webkit-scrollbar-thumb`, does not repaint in
-   Chromium, so it is not used.) */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Scrollbars: overlay, invisible at rest (macOS and Grok Bot, 2026-10-18).
+   The native bars are hidden in every skin but Hibou 98, so no scroller
+   reserves a gutter and nothing reflows when a bar shows. One thumb per axis
+   is drawn over the edge of the element being scrolled by
+   src/lib/overlay-scrollbars.ts: it shows while the person scrolls or
+   rests the pointer on the bar's strip, then fades out after a second.
+   Scrolling stays native (keyboard, trackpad, wheel). The part is a 10px
+   hit area; the pill inside it is 6px, 8px under the pointer or dragged,
+   in a wash of the scroller's own ink, so it follows every skin. */
+:root:not([data-skin="retro98"]) * {
+  scrollbar-width: none;
 }
-/* Grok's thin rounded thumb: a faint wash of the ink color. */
-::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-ink) 14%, transparent);
+:root:not([data-skin="retro98"]) ::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.overlay-scrollbar-thumb {
+  position: fixed;
+  z-index: 2147483646;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  transition: opacity 240ms ease-out;
+}
+.overlay-scrollbar-thumb[data-visible="true"] {
+  opacity: 1;
+  pointer-events: auto;
+  transition-duration: 80ms;
+}
+.overlay-scrollbar-thumb::before {
+  content: "";
+  position: absolute;
   border-radius: 9999px;
+  background: color-mix(in srgb, var(--overlay-scrollbar-ink, var(--color-ink)) 28%, transparent);
+  transition: width 120ms ease-out, height 120ms ease-out, background-color 120ms ease-out;
 }
-::-webkit-scrollbar-thumb:vertical { min-height: 40px; }
-::-webkit-scrollbar-thumb:horizontal { min-width: 40px; }
-/* the thumb was inert — it never acknowledged the pointer */
-::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-ink) 21%, transparent);
+.overlay-scrollbar-thumb[data-axis="y"]::before { top: 0; bottom: 0; width: 6px; }
+.overlay-scrollbar-thumb[data-axis="y"][data-side="right"]::before { right: 0; }
+.overlay-scrollbar-thumb[data-axis="y"][data-side="left"]::before { left: 0; }
+.overlay-scrollbar-thumb[data-axis="x"]::before { left: 0; right: 0; bottom: 0; height: 6px; }
+.overlay-scrollbar-thumb[data-axis="y"]:hover::before,
+.overlay-scrollbar-thumb[data-axis="y"][data-dragging="true"]::before { width: 8px; }
+.overlay-scrollbar-thumb[data-axis="x"]:hover::before,
+.overlay-scrollbar-thumb[data-axis="x"][data-dragging="true"]::before { height: 8px; }
+.overlay-scrollbar-thumb:hover::before,
+.overlay-scrollbar-thumb[data-dragging="true"]::before {
+  background: color-mix(in srgb, var(--overlay-scrollbar-ink, var(--color-ink)) 45%, transparent);
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+@media (prefers-reduced-motion: reduce) {
+  .overlay-scrollbar-thumb,
+  .overlay-scrollbar-thumb::before { transition: none; }
 }
-::-webkit-scrollbar-corner {
-  background: transparent;
+@media (forced-colors: active) {
+  .overlay-scrollbar-thumb::before { background: CanvasText; }
 }
 
 @keyframes panel-in {

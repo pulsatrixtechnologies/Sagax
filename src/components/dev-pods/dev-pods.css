@@ -10,7 +10,6 @@
     opacity var(--dev-pods-duration) var(--dev-pods-ease),
     transform var(--dev-pods-duration) var(--dev-pods-ease),
     visibility 0s linear var(--dev-pods-duration);
-  scrollbar-width: thin;
 }
 
 .dev-pods-rail[data-open="true"] {

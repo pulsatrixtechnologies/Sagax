@@ -121,7 +121,7 @@ export function OrgEngineSetupBody({ readiness, onContinue }: { readiness: Perso
         </p>
         <RecheckButton {...check} />
       </div>
-      <div className="mt-2.5 min-h-0 divide-y divide-hairline/40 overflow-y-auto rounded-xl border border-hairline/40 bg-card [scrollbar-width:thin]">
+      <div className="mt-2.5 min-h-0 divide-y divide-hairline/40 overflow-y-auto rounded-xl border border-hairline/40 bg-card">
         {readiness.connectable.map(({ instance, access }) => {
           const expanded = open === instance.instanceId;
           return (

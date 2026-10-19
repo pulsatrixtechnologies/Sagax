@@ -17,6 +17,7 @@ import { startPresence } from "./lib/presence";
 import { startRoutineAwayBeat } from "./lib/routine-away-beat";
 import { installAnimationPause } from "./lib/animation-pause";
 import { installConsoleRing } from "./lib/console-ring";
+import { installOverlayScrollbars } from "./lib/overlay-scrollbars";
 import { syncDesktopAppearance } from "./lib/desktop-appearance-sync";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
 import "./styles.css";
@@ -38,6 +39,8 @@ if (floatingBot) document.documentElement.dataset.floatingBot = "";
 installAnimationPause();
 // The window's console lines, redacted, for Settings > Download logs.
 installConsoleRing();
+// Scrollbars draw over the content and fade when unused (styles.css).
+installOverlayScrollbars();
 
 // Slice 7: an "Open in Sagax" link survives the sign-in (/pair, Perspicax).
 rememberOpenThreadHash();

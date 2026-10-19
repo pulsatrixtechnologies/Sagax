@@ -3806,6 +3806,28 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
 - The toast never shows while the person types, one at a time, its chime
   follows Notification sounds, and reduced motion stills it.
 
+## Overlay scrollbars (2026-10-18)
+
+Scrollbars never reserve a gutter: `src/styles.css` sets
+`scrollbar-width: none` on every element (and hides `::-webkit-scrollbar`)
+in every skin but Hibou 98, which keeps its classic bars
+(`src/styles/retro98.css`). `src/lib/overlay-scrollbars.ts`
+(`installOverlayScrollbars`, called from `src/main.tsx` and the verification
+preview) draws one thumb per axis over the edge of the element being
+scrolled. It shows while a wheel, touch, scroll key or drag scrolls that
+element, or while the pointer rests on the 12px strip along its edge, and
+fades after `IDLE_MS` (1 s). The scrolled element wears `is-scrolling` while
+its bar shows. A programmatic scroll (the chat following a stream) shows
+nothing. The thumb reads the scroller's own `--color-ink`, respects
+`--glass-top`/`--glass-bottom`, can be dragged, and is `aria-hidden`.
+
+- Do not add `::-webkit-scrollbar`, `scrollbar-width`, `scrollbar-gutter` or
+  `[scrollbar-width:thin]` styles in a component; there is one rule.
+- An element that must keep a native bar takes `data-native-scrollbar`
+  (the terminal, `.xterm`, is skipped already).
+- Inside an open `<dialog>` the thumb is mounted in the dialog (top layer).
+- Tests: `src/lib/overlay-scrollbars.dom.test.ts`.
+
 ## Sidebar look (owner's reference window, 2026-10-11 and 2026-10-12)
 
 The owner compared Sagax with an OpenMausBot window side by side and asked

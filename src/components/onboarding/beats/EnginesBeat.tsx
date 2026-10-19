@@ -206,7 +206,7 @@ export function EnginesBeat({
       )}
 
       <div
-        className="animate-rise mt-2.5 min-h-0 divide-y divide-hairline/40 overflow-y-auto rounded-xl border border-hairline/40 bg-card [scrollbar-width:thin]"
+        className="animate-rise mt-2.5 min-h-0 divide-y divide-hairline/40 overflow-y-auto rounded-xl border border-hairline/40 bg-card"
         style={staggerIndex(2)}
       >
         {instances === null
