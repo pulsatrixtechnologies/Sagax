@@ -833,6 +833,10 @@ export interface OptionCardData {
    * whose owner is not an organization admin. Only an admin answers it; the
    * owner sees it waiting for an admin. Never remembered. */
   adminApproval?: boolean;
+  /** 2026-10-19: a server-level card of a bot whose owner holds
+   * host.commands, answered by that owner by hand; the right is checked
+   * again when the card is answered. */
+  serverCommandHolder?: boolean;
   /** The organization admins who can answer an adminApproval card (at most
    * five names), so the member's waiting line can say who. */
   adminNames?: string[];

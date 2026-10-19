@@ -287,8 +287,8 @@ const definitions = [
     key: "host.commands", group: "host", memberDefault: false, adminOnly: false,
     label: { en: "Run commands on the organization's server", fr: "Exécuter des commandes sur le serveur de l'organisation" },
     description: {
-      en: "Open a terminal on the organization's server hosts (the Sagax server, its SSH and unRAID hosts) and approve the server commands of the bots they own. Their own cloud computer, Local VM and computer never need it.",
-      fr: "Ouvrir un terminal sur les hôtes du serveur de l'organisation (le serveur Sagax, ses hôtes SSH et unRAID) et approuver les commandes serveur des bots qu'ils possèdent. Leur propre ordinateur infonuagique, leur VM locale et leur ordinateur n'en ont jamais besoin.",
+      en: "Open a terminal on the organization's server hosts (the Sagax server, its SSH and unRAID hosts) and approve by hand the server commands of the bots they own. A shell there reaches the whole server, everyone's data included: give it only to people you would trust as admins of the server. Their own cloud computer, Local VM and computer never need it.",
+      fr: "Ouvrir un terminal sur les hôtes du serveur de l'organisation (le serveur Sagax, ses hôtes SSH et unRAID) et approuver à la main les commandes serveur des bots qu'ils possèdent. Un terminal là-bas atteint tout le serveur, données de chacun comprises : ne la donnez qu'à des personnes à qui vous confieriez l'administration du serveur. Leur propre ordinateur infonuagique, leur VM locale et leur ordinateur n'en ont jamais besoin.",
     },
   },
   {
