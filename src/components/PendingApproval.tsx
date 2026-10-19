@@ -8,7 +8,7 @@
 // (it scrolls instead), and the buttons ordered least-destructive-last so
 // the primary action sits under your thumb.
 import { memo, useState } from "react";
-import { ChevronLeft, ChevronRight, GitFork } from "lucide-react";
+import { Bot as BotIcon, ChevronLeft, ChevronRight, GitFork } from "lucide-react";
 import { api, useStore, type Bot, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t, tFromServer } from "@/lib/i18n";
@@ -42,6 +42,9 @@ export interface Pending {
    * its own thread, where the answer goes, and its name for the card. */
   threadId?: string;
   parallelTitle?: string;
+  /** A bot-to-bot conversation's card (WireBot.waitingApprovals): the bot
+   * that asked ("" when its name is unknown). */
+  askedBy?: string;
 }
 
 /** The persisted payload is the authoritative marker. Tool names are
@@ -237,6 +240,12 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
       }
       className="px-4 pt-3"
     >
+      {pending.askedBy !== undefined && (
+        <div className="mb-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-secondary" data-approval-asked-by={pending.threadId}>
+          <BotIcon size={12} aria-hidden="true" />
+          <span className="truncate">{pending.askedBy ? t("approval.askedByBot", { name: pending.askedBy }) : t("approval.askedByOtherBot")}</span>
+        </div>
+      )}
       {pending.parallelTitle && (
         <div className="mb-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-secondary" data-approval-parallel={pending.threadId}>
           <GitFork size={12} aria-hidden="true" />
@@ -590,9 +599,12 @@ export function PendingApprovalBox({
         pending={pending}
         threadId={threadId}
         bot={botFor(pending)}
-        // a parallel task's "cancel" stops that task, never this conversation's turn
+        // a parallel task's "cancel" stops that task, a bot-to-bot
+        // conversation's stops that conversation's turn, never this one's
         onCancelTurn={pending.threadId && pending.threadId !== threadId && botFor(pending)
-          ? () => dispatch({ type: "stopParallelTask", botId: botFor(pending)!.id, threadId: pending.threadId! })
+          ? pending.askedBy !== undefined
+            ? () => dispatch({ type: "interrupt", botId: botFor(pending)!.id, threadId: pending.threadId! })
+            : () => dispatch({ type: "stopParallelTask", botId: botFor(pending)!.id, threadId: pending.threadId! })
           : onCancelTurn}
       />
     </div>

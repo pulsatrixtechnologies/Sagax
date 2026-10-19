@@ -21,7 +21,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { ROUTINE_CONVERSATION_HEADER } from "../../shared/wire";
-import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark } from "../../shared/wire";
+import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark, WireWaitingApproval } from "../../shared/wire";
 import { DATA_ROUTES, dataSheetKey, withDataThread, type DataSheet, type DataTable } from "../../shared/data-surface";
 import type { TurnDigest } from "../../shared/digest";
 import type { MessageReaction } from "../../shared/reactions";
@@ -578,6 +578,10 @@ export interface Bot {
   /** Owner selection, independent of engine approval mode. */
   toolScope?: ToolScope;
   waitingForTeammates?: boolean;
+  /** Bot-to-bot conversations waiting on the viewer's approval
+   * (WireBot.waitingApprovals): never listed, their cards join the open
+   * conversation's approval box (parallel-approvals.ts). */
+  waitingApprovals?: WireWaitingApproval[];
   id: string;
   threadId: string;
   /** The bot's main thread, worked out by the server (WireBot.mainThreadId). */
@@ -2568,7 +2572,7 @@ export function reducer(state: AppState, action: Action): AppState {
         // The slim deletion broadcast can arrive before the full snapshot.
         // Finish that switch once, replaying any events received in between.
         // Later duplicate HTTP snapshots must not overwrite newer messages.
-        return reducer(switching, { type: "taskSwitched", bot: { ...before, ...action.bot, computer: action.bot.computer, section: action.bot.section, toolScope: action.bot.toolScope, messages: action.bot.messages, browserProfile: action.bot.browserProfile } });
+        return reducer(switching, { type: "taskSwitched", bot: { ...before, ...action.bot, computer: action.bot.computer, section: action.bot.section, toolScope: action.bot.toolScope, waitingApprovals: action.bot.waitingApprovals, messages: action.bot.messages, browserProfile: action.bot.browserProfile } });
       }
       const patched = updateBot(switching, action.bot.id, (b) => ({
         ...b,
@@ -2587,6 +2591,8 @@ export function reducer(state: AppState, action: Action): AppState {
         // A complete frame omits section after another client moves the bot
         // into General. Retaining the old label strands an empty team in UI.
         section: action.bot.section,
+        // A complete frame omits it once no bot-to-bot card waits.
+        waitingApprovals: action.bot.waitingApprovals,
         tasks: action.bot.tasks ? mergeTaskStamps(b.tasks, action.bot.tasks) : b.tasks,
         // Clear immediately on deletion: old approvals must never be sent
         // to the replacement thread while waiting for its transcript.
@@ -4517,7 +4523,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .then(async () => {
               if (action.alwaysAllow) {
                 const bot = stateRef.current.bots.find((candidate) => candidate.id === action.alwaysAllow?.botId);
-                const owner = bot?.tasks?.some((task) => task.threadId === action.threadId);
+                // a bot-to-bot conversation (even one left out of tasks) keeps
+                // its grant on that thread, never the whole bot
+                const owner = bot?.tasks?.some((task) => task.threadId === action.threadId)
+                  || bot?.waitingApprovals?.some((row) => row.threadId === action.threadId);
                 const next = [...new Set([...(bot ? currentTaskBot(bot, action.threadId).alwaysAllow ?? [] : []), action.alwaysAllow.key])];
                 // Save the grant BEFORE releasing the bot: it may ask again
                 // within milliseconds. A failed preference save must still

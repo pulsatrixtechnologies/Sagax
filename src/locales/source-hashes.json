@@ -12867,7 +12867,14 @@
       "updates.dialog.upToDateBodyPlain": "03c9dea7a0935c2a4b95ea7334cadbee4cde4884663dea6bafbd44dcf161471c",
       "updates.dialog.downloadingBody": "e3cdc3669fa24580427dca9830a637f094dc0bfc5e644d295c6c879e321cf3e9",
       "updates.dialog.windowsReadyBody": "e1e5c4e3ef019b3f642da6e7650bbcceba018cab0e27392112bcd0396373b280",
-      "updates.dialog.windowsInstallingBody": "caece0f76d41bc2ec5ea55f98f702eb48f14d9490514b676b2b1cdd5431786a3"
+      "updates.dialog.windowsInstallingBody": "caece0f76d41bc2ec5ea55f98f702eb48f14d9490514b676b2b1cdd5431786a3",
+      "approval.askedByBot": "2ba5c8cdd5a11cb6fc99bfdec34d7987228c3a016833854fa951fcde0579fec4",
+      "approval.askedByOtherBot": "32de23b11389ccac3bcb527e83a50cc49121748e1a30c9ae5d51b944db8ce905",
+      "botPanel.model.lockedApproval": "e91d248179718774c2e914d57f5854cb6ed44e4c7d738db5d1f61400efc4e5b2",
+      "botPanel.model.lockedAdmin": "16879727c44b13a3c6902af906578805acbec2aa35563839652f737c6b08e34c",
+      "botPanel.model.lockedWorking": "0f0baa04643bdb1a92abe0f8c4840ce0bc7c79fffb2f834fdfd0cac8f292ffd7",
+      "botPanel.model.lockedOpen": "938751c5ba29e5a4157b1996ffe4a95e6dffdff4e4c7e7a31a430cd1c83b009b",
+      "model.noEngine.body": "37554f98b8ea1974ccac55127872d3ea16d584466e1d9b2fe861ca7881530787"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

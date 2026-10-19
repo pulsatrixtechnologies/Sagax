@@ -9014,5 +9014,12 @@
   "code.card.files.one": "1 file",
   "code.timeline.worked.lt1": "Worked less than a minute",
   "code.timeline.verify.ok": "Checks passed ({n})",
-  "code.timeline.verify.failed": "Checks: {passed} passed, {failed} failed"
+  "code.timeline.verify.failed": "Checks: {passed} passed, {failed} failed",
+  "approval.askedByBot": "Asked by {name}",
+  "approval.askedByOtherBot": "Asked by another bot",
+  "botPanel.model.lockedApproval": "An approval is waiting for you in this bot's conversation. Answer it to change the model.",
+  "botPanel.model.lockedAdmin": "An approval is waiting for an admin in this bot's conversation. The model can change once it is answered.",
+  "botPanel.model.lockedWorking": "This bot's conversation is working. Stop its turn to change the model.",
+  "botPanel.model.lockedOpen": "Open the conversation",
+  "model.noEngine.body": "Add your own key or subscription, or ask an admin to give you an engine in Perspicax (Who has what)."
 }

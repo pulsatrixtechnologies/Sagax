@@ -9014,5 +9014,12 @@
   "code.card.files.one": "1 fichier",
   "code.timeline.worked.lt1": "A travaillé moins d'une minute",
   "code.timeline.verify.ok": "Vérifications réussies ({n})",
-  "code.timeline.verify.failed": "Vérifications : {passed} réussies, {failed} en échec"
+  "code.timeline.verify.failed": "Vérifications : {passed} réussies, {failed} en échec",
+  "approval.askedByBot": "Demandée par {name}",
+  "approval.askedByOtherBot": "Demandée par un autre bot",
+  "botPanel.model.lockedApproval": "Une approbation vous attend dans la conversation de ce bot. Répondez-y pour changer le modèle.",
+  "botPanel.model.lockedAdmin": "Une approbation attend un admin dans la conversation de ce bot. Le modèle pourra changer une fois qu'elle aura une réponse.",
+  "botPanel.model.lockedWorking": "La conversation de ce bot travaille. Arrêtez son tour pour changer le modèle.",
+  "botPanel.model.lockedOpen": "Ouvrir la conversation",
+  "model.noEngine.body": "Ajoutez votre clé ou votre abonnement, ou demandez à un admin de vous donner un moteur dans Perspicax (Qui a quoi)."
 }

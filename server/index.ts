@@ -877,6 +877,7 @@ import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBot
 import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, levelRank, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
+import { interBotWaiting } from "./inter-bot-approvals.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
@@ -6823,7 +6824,11 @@ const wireBot = (bot: BotRecord): WireBot => {
     ? { ...rest, approvalMode: "ask" as const, autoApprove: false }
     : rest;
   const lead = instructionsLead(visible.soul);
+  // 2026-10-19: a bot-to-bot conversation's cards wait on the person, who
+  // never sees that conversation (server/inter-bot-approvals.ts).
+  const waitingApprovals = allTasks ? interBotWaiting(bot.id, allTasks) : [];
   return { ...visible, waitingForTeammates: activeCoordinationForThread(bot.threadId) && !threadBusy(bot.id, bot.threadId),
+    ...(waitingApprovals.length ? { waitingApprovals } : {}),
     mainThreadId: botMainThread(bot.id),
     avatarUrl: visible.avatarUrl ?? null, ...(lead ? { instructionsLead: lead } : {}), ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection)) } : {}) };
 };
@@ -13306,6 +13311,14 @@ bus.subscribe((event: RuntimeEvent) => {
         },
       });
       if (event.requestId) askMessageByRequest.set(`${event.threadId}:${event.requestId}`, message.id);
+      // 2026-10-19: a card in a bot-to-bot conversation refreshes the bot's
+      // waitingApprovals, even when the conversation already waited on an
+      // earlier card (no activity change, so no bot frame otherwise).
+      if (asker && event.threadId) {
+        const opener = store.taskByThread(asker.id, event.threadId)?.openedBy?.botId;
+        const fresh = opener && opener !== asker.id ? store.bot(asker.id) : undefined;
+        if (fresh) broadcast({ kind: "bot", bot: wireBot(fresh) });
+      }
       if (hiddenApproval && asker) scheduleApprovalExpiry({
         threadId: event.threadId, requestId: event.requestId!, messageId: message.id,
         instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId, botId: asker.id, botName: asker.name,
@@ -27983,7 +27996,7 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
   if (!record) return bot;
   const mine = viewerThreadOf(record, viewerId);
   const mineTask = mine ? store.taskByThread(record.id, mine) : undefined;
-  return narrowBotForViewer(bot, {
+  const narrowed = narrowBotForViewer(bot, {
     viewerId,
     botOwnerPrincipalId: effectiveBotOwner(record),
     activity: viewerBotActivity(record, viewerId),
@@ -27991,6 +28004,16 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
     ...(mineTask ? { mineTask: { ...wireTask(mineTask, record.modelSelection), ...store.projectBotForTask(record.id, mine!) } as unknown as Record<string, unknown> } : {}),
     ...(mineTask ? { mineWireTask: wireTask(mineTask, record.modelSelection) as unknown as Record<string, unknown> } : {}),
   });
+  // Only the bot-to-bot cards this viewer answers (approvalOwnerId).
+  if (!("waitingApprovals" in narrowed)) return narrowed;
+  const viewerKey = viewerId.trim().toLowerCase();
+  // and only in conversations they may read (the card is answered from there)
+  const waiting = interBotWaiting(record.id, record.tasks, (task) =>
+    approvalOwnerId(record, task.threadId).trim().toLowerCase() === viewerKey && botThreadReadable(record, task.threadId, viewerId));
+  const out: Record<string, unknown> = { ...narrowed };
+  if (waiting.length) out.waitingApprovals = waiting;
+  else delete out.waitingApprovals;
+  return out as T;
 }
 /** A JSON response as an organization viewer receives it: every bot it
  * carries (under `bot`, or in `bots`, at the top or one level down)

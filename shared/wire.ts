@@ -300,8 +300,23 @@ export interface WireBotGrant {
   at: number;
 }
 
+/** A bot-to-bot conversation of this bot waiting on the person
+ * (server/inter-bot-approvals.ts): never listed, its cards are answered from
+ * the conversation the person has open. */
+export interface WireWaitingApproval {
+  threadId: string;
+  /** The bot that opened it. */
+  openedByName?: string;
+  kind?: "pair" | "work";
+  /** The conversation's last change (epoch ms): a new card refreshes it. */
+  updatedAt?: number;
+}
+
 export interface WireBot {
   waitingForTeammates?: boolean;
+  /** Bot-to-bot conversations waiting on this viewer's approval. Absent:
+   * none. Server-derived. */
+  waitingApprovals?: WireWaitingApproval[];
   id: string;
   /** The task selected in the UI; running turns keep their own thread id. */
   threadId: string;
