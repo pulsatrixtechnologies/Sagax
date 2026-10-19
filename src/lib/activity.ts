@@ -1,6 +1,7 @@
 // Settings → Activity: the shape GET /api/admin-activity answers with
 // (server/admin-activity.ts), and the pure pieces the screen renders from.
 import { t } from "./i18n";
+import { readableOr } from "../../shared/human-id";
 import { en, type LocaleKey } from "@/locales";
 
 export const ACTIVITY_WHATS = ["all", "approvals", "decisions", "config", "people", "session", "webhook", "mcp", "engine", "bot", "budget", "visibility"] as const;
@@ -72,7 +73,7 @@ export function describeEntry(entry: ActivityEntry): string {
   }
   const actionKey = `activity.action.${entry.action}`;
   const action = known(actionKey) ? t(actionKey) : entry.action;
-  const target = entry.target?.name ?? entry.target?.id;
+  const target = readableOr(entry.target?.name ?? entry.target?.id, "");
   return target ? `${action}: ${target}` : action;
 }
 

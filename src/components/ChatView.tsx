@@ -153,7 +153,7 @@ import { GotoGroupChip } from "./GotoGroupChip";
 import { collapseGotoLines, silentChatItem, type GotoGroup, type GotoTarget } from "@/lib/goto-lines";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { CancelledTurnRow } from "./CancelledTurnRow";
-import { DevPods, DevPodsToggle } from "./dev-pods/DevPods";
+import { DevPods, DevPodsToggle, RailAligned } from "./dev-pods/DevPods";
 import { ActivityRun } from "./ActivityRun";
 import { CwActivityWidgets, CwWidgetView } from "./cw/CwWidgetView";
 import { webhookMessageView } from "@/lib/webhook-message";
@@ -2375,7 +2375,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           the transcript pad, the jump pill and bottom-follow all move with
           it. */}
       {lastRunStep && showRun(recordedRun) && showRunCard && runDismissed.get(transcriptKey) !== lastRunStep.id && (
-        <div className="flex justify-end px-5 pb-2">
+        <RailAligned className="pb-2">
           <VerifyCard
             key={transcriptKey}
             steps={recordedRun}
@@ -2387,7 +2387,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
               composerDockRef.current?.querySelector("textarea")?.focus();
             }}
           />
-        </div>
+        </RailAligned>
       )}
       {confidential && <ConfidentialBanner position="bottom" className="mb-1" />}
       {canWrite === false ? (

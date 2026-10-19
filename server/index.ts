@@ -49,6 +49,7 @@ import { boundedContextText, selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BY
 import { draftSummary, foldPoint } from "./compaction-summary.ts";
 import { composeStreamDigest, draftSegmentDigest, extractSegmentDigest, recallTopicPage, streamCandidate, STREAM_FULL_ENTRIES, type SegmentDigest } from "./single-stream.ts";
 import { isStreamSegment } from "../shared/single-stream.ts";
+import { quotedIdOr } from "../shared/human-id.ts";
 import { createRecallTopicInternalRoutes } from "./routes/recall-topic-internal.ts";
 import { createRouteMessageInternalRoutes } from "./routes/route-message-internal.ts";
 import { compactBudget, contextWindowFor, defaultCompactAt, nativeCompactionPoint, shouldCompact } from "./context-budget.ts";
@@ -5044,6 +5045,13 @@ async function stagePendingAttachments(threadId: string, generation: string): Pr
  * tools on the Sagax server (server/drivers/host-tools.ts). An engine that
  * cannot withhold them is refused (409 host_tools, server/org-engine-admission.ts)
  * rather than let loose in the container. */
+/** An engine in an error a person reads: `provider instance "ghost"` for a
+ * readable id, "The selected engine" for an opaque one (no GUID on screen). */
+function engineReference(instanceId: string): string {
+  const quoted = quotedIdOr(instanceId, "");
+  return quoted ? `provider instance ${quoted}` : "The selected engine";
+}
+
 function withholdHostToolsFor(instance: { adapter: { capabilities: { withholdsHostTools?: boolean } }; displayName?: string; driverKind: string }): boolean {
   return orgWithholdHostTools(instance, IDENTITY.kind === "perspicax", engineDisplayName(instance));
 }
@@ -16685,7 +16693,7 @@ async function startTurn(
     // engine. Try it again now, so the next message runs on the new engine.
     if (removedComputerInstanceIds(cfg.instances).has(bot.modelSelection.instanceId)) void retryComputerEngineMove();
     throw Object.assign(
-      new Error(`provider instance "${bot.modelSelection.instanceId}" is unavailable — pick another model in settings`),
+      new Error(`${engineReference(bot.modelSelection.instanceId)} is unavailable — pick another model in settings`),
       { status: 409 },
     );
   }
@@ -41214,7 +41222,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const rerunSelection = turnSelection(bot.id, bot.threadId) ?? bot.modelSelection;
       if (!registry.get(rerunSelection.instanceId)) {
         return json(res, 409, {
-          error: `provider instance "${rerunSelection.instanceId}" is unavailable — pick another model in settings`,
+          error: `${engineReference(rerunSelection.instanceId)} is unavailable — pick another model in settings`,
         });
       }
       const rerunInstance = registry.get(rerunSelection.instanceId)!;

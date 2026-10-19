@@ -8,6 +8,7 @@ import { X } from "lucide-react";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { CompactRow, HelpTip, PillSelect, SettingsGroup } from "../SettingsPrimitives";
 import { t } from "@/lib/i18n";
+import { engineLabel } from "@/lib/human-label";
 import { currentTaskBot, useStore, visibleMessages, type Bot } from "@/state/store";
 import { pendingApprovals } from "../PendingApproval";
 import { engineOfferContext, useOfferedInstances } from "@/lib/offered-instances";
@@ -147,7 +148,7 @@ function FallbackChain({ bot, onChange }: { bot: Bot; onChange: (fallback: Bot["
       instance.instanceId !== bot.modelSelection.instanceId &&
       !chain.some((entry) => entry.instanceId === instance.instanceId),
   );
-  const nameOf = (instanceId: string) => state.instances.find((instance) => instance.instanceId === instanceId)?.displayName ?? instanceId;
+  const nameOf = (instanceId: string) => engineLabel(state.instances.find((instance) => instance.instanceId === instanceId)?.displayName, instanceId);
 
   const add = (instanceId: string) => {
     const instance = state.instances.find((candidate) => candidate.instanceId === instanceId);

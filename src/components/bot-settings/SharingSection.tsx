@@ -16,6 +16,7 @@ import type { GrantAdministration, OrgDirectory, WireGrant } from "@/lib/perspic
 import { GrantEditor } from "./GrantEditor";
 import { viewerCan } from "@/lib/viewer";
 import { permissionMissingText } from "@/lib/permissions";
+import { personLabel } from "@/lib/human-label";
 
 /** The grants the bot carries, as the editor's first rows (labels come from
  * the directory once it answers; the server's answer replaces them). */
@@ -30,7 +31,7 @@ export function initialGrantRows(bot: Pick<Bot, "grants" | "directGrants" | "own
     return {
       ...grant,
       kind: team ? "team" as const : "user" as const,
-      label: team ? teams.get(id)?.name ?? id : person?.name ?? id,
+      label: team ? teams.get(id)?.name ?? id : personLabel(person?.name, id),
       ...(person?.disabled ? { disabled: true } : {}),
     };
   });

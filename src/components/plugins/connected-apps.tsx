@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Bot, type InstanceInfo } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { readableOr } from "../../../shared/human-id";
 import type { LocaleKey } from "@/locales";
 import { readCachedInventory, writeCachedInventory } from "@/lib/connected-apps-cache";
 import { reserveConnectionPage, reusableConnectionUrl, type PendingAuthorization } from "@/lib/connector-oauth";
@@ -81,11 +82,18 @@ export function preloadConnectedApps(force = false): Promise<ConnectorInventory>
   return connectorStatusRequest;
 }
 
+/** A connected account as a person reads it: its alias, or "Account N"
+ * (its place in the list), never the provider's account id. */
+export function connectedAccountLabel(account: { id: string; alias?: string }, index: number): string {
+  return readableOr(account.alias, t("ids.accountN", { n: index + 1 }));
+}
+
 export function disconnectAccountConfirmation(
   service: string,
   account: { id: string; alias?: string },
+  index = 0,
 ) {
-  const identity = account.alias ? `“${account.alias}” (${account.id})` : `“${account.id}”`;
+  const identity = `“${connectedAccountLabel(account, index)}”`;
   return t("connectors.disconnectConfirm", { identity, service });
 }
 

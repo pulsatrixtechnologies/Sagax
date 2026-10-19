@@ -34,22 +34,25 @@ export function repoSlug(value: string): string | null {
 export function pickEnvironment(envs: PerspicaxEnvironment[], input: { envId?: string; repo?: string }): PerspicaxEnvironment {
   if (input.envId) {
     const named = envs.find((env) => env.id === input.envId);
-    if (!named) throw new ProviderHttpError(404, "no_environment", `No Perspicax environment ${input.envId} is open to this person.`);
+    if (!named) throw new ProviderHttpError(404, "no_environment", `No Perspicax environment ${input.envId} is open to this person. List them again and use one of theirs; to the person, name an environment by its name, never by its env_id.`);
     return named;
   }
+  // The person reads environments by name (JC 2026-10-19: no GUID on
+  // screen); the env_id is for the relaunch call only.
   const list = (rows: PerspicaxEnvironment[]) => rows.map((env) => `- ${env.name} (env_id ${env.id})`).join("\n");
+  const ask = "Ask the person which one by its name (never show an env_id to them), then launch again with its env_id";
   const slug = input.repo ? repoSlug(input.repo) : null;
   if (slug) {
     const matches = envs.filter((env) => env.repos.some((repo) => `${repo.owner}/${repo.name}`.toLowerCase() === slug));
     if (matches.length === 1) return matches[0]!;
     if (matches.length > 1) {
-      throw new ProviderHttpError(409, "ambiguous_environment", `Several Perspicax environments hold ${slug}. Ask the person which one, then launch again with its env_id:\n${list(matches)}`);
+      throw new ProviderHttpError(409, "ambiguous_environment", `Several Perspicax environments hold ${slug}. ${ask}:\n${list(matches)}`);
     }
     throw new ProviderHttpError(404, "no_environment", `No Perspicax environment holds ${slug}. The person creates one in the Perspicax console (Cloud agents).`);
   }
   if (envs.length === 1) return envs[0]!;
   if (envs.length === 0) throw new ProviderHttpError(404, "no_environment", "No Perspicax environment is open to this person. They create one in the Perspicax console (Cloud agents).");
-  throw new ProviderHttpError(409, "ambiguous_environment", `Which repository? Ask the person, then launch again with its env_id:\n${list(envs)}`);
+  throw new ProviderHttpError(409, "ambiguous_environment", `Which repository? ${ask}:\n${list(envs)}`);
 }
 
 function lastMessage(events: { kind: string; payload: Record<string, unknown> }[]): string | undefined {

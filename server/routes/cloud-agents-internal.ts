@@ -71,7 +71,8 @@ export async function handleCloudAgentInternal(
       const where = record.provider === "perspicax"
         ? " It runs in Perspicax and shows in the person's Code section; a card under your message follows it."
         : "";
-      return { text: `Launched cloud agent ${record.name} (${record.id}). Status: ${record.status}.${record.url ? ` ${record.url}` : ""}${where}` };
+      // The id is for the follow-up tools; the person reads the run by name.
+      return { text: `Launched cloud agent ${record.name}. Status: ${record.status}.${record.url ? ` ${record.url}` : ""}${where} Its cloud_agent_id for follow-up calls is ${record.id}; never show that id to the person, call the run by its name.` };
     }
     if (action === "follow_up") {
       const id = String(body.cloud_agent_id ?? "").trim();

@@ -8,6 +8,7 @@ import { BotAvatar } from "@/components/Avatar";
 import { PILL_INFO } from "@/lib/status-tones";
 import { Switch } from "../SettingsPrimitives";
 import { RoutineOwnerBadge } from "./RoutineScopeBar";
+import { personLabel } from "@/lib/human-label";
 
 const SUSPEND_REASON_KEYS = {
   person_out: "routines.suspendReason.person_out",
@@ -91,7 +92,7 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                 {(runAsOther || routine.suspended || otherOwner) && (
                   <span className="mt-0.5 flex flex-wrap gap-1.5">
                     {otherOwner && <RoutineOwnerBadge owner={otherOwner} size={14} className="max-w-full rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary" />}
-                    {runAsOther && <span data-routine-run-as className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routines.runAs", { name: runAsOther.name || runAsOther.principalId })}</span>}
+                    {runAsOther && <span data-routine-run-as className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routines.runAs", { name: personLabel(runAsOther.name, runAsOther.principalId) })}</span>}
                     {routine.suspended && <span data-routine-suspended={routine.suspended.reason} className={`truncate rounded-md ${PILL_INFO} px-1.5 text-[11.5px] leading-[18px]`}>{routineSuspendedText(routine.suspended.reason)}</span>}
                   </span>
                 )}

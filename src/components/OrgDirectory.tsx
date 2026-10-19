@@ -4,16 +4,17 @@ import type { OrgRole } from "../../server/org-directory.ts";
 import { t } from "@/lib/i18n";
 import { Card, CountPill, DANGER_PILL, DescribedRow, PILL, SettingsGroup, cardCount } from "./SettingsPrimitives";
 import { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
+import { personLabel as humanPersonLabel } from "@/lib/human-label";
 
 export type OrgPersonView = { id: string; role: OrgRole; email?: string };
 export type PendingInviteView = { email: string; token?: string; link?: string; expiresAt?: number };
 
 const inputClass = "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50";
 
-/** A person by email; a principal without one by a short id. */
+/** A person by email; a principal without one reads as an unknown person
+ * (never its id). */
 export function personLabel(person: OrgPersonView): string {
-  if (person.email) return person.email;
-  return person.id.length > 12 ? `${person.id.slice(0, 11)}…` : person.id;
+  return humanPersonLabel(person.email, person.id);
 }
 
 function roleLabel(role: OrgRole): string {

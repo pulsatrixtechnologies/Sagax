@@ -26,6 +26,7 @@ import { Loader2, TriangleAlert, X } from "lucide-react";
 import { api, ApiError, useStore } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { readableOr } from "../../shared/human-id";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
 import { isWhopServer } from "@/lib/whop-integration";
 import { skillsLibraryEnabled } from "@/lib/feature-flags";
@@ -71,6 +72,7 @@ import {
   botsMissingConnectedApps,
   botsWithLimitedServiceTools,
   connectorActionLabel,
+  connectedAccountLabel,
   disconnectAccountConfirmation,
   hasUsableConnectedApps,
   useConnectedApps,
@@ -1054,16 +1056,16 @@ function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, in
   const busy = apps.busySlug === slug;
   const limited = botsWithLimitedServiceTools(bots, instances, slug);
   const rows: DetailAccount[] = accounts.length
-    ? accounts.map((account) => ({
+    ? accounts.map((account, index) => ({
       id: account.id,
-      label: account.alias || account.id,
-      detail: `${account.alias ? `${account.id} · ` : ""}${account.status.toLowerCase()}`,
+      label: connectedAccountLabel(account, index),
+      detail: account.status.toLowerCase(),
       status: /^active$/i.test(account.status) ? "connected" : /^(initiated|initializing)$/i.test(account.status) ? "pending" : "needs_auth",
       onRemove: () => {
-        if (!window.confirm(disconnectAccountConfirmation(item.name, account))) return;
+        if (!window.confirm(disconnectAccountConfirmation(item.name, account, index))) return;
         apps.disconnectAccount(slug, account.id);
       },
-      removeLabel: t("connectors.disconnectAria", { account: account.alias || account.id, service: item.name }),
+      removeLabel: t("connectors.disconnectAria", { account: connectedAccountLabel(account, index), service: item.name }),
     }))
     : [{ id: "default", label: t("connectApps.detail.noAccountNeeded"), status: "connected" }];
   return {
@@ -1178,8 +1180,8 @@ function mcpDetail(item: PluginItem, { mcp, mcpAccountDraft, setMcpAccountDraft 
     onTest: () => void mcp.test(server),
     testing: mcp.busy === `test:${name}`,
     enabled: { value: server.enabled, onToggle: () => void mcp.toggle(server), label: t("mcp.toggleAria", { name, state: t(server.enabled ? "mcp.state.off" : "mcp.state.on") }) },
-    accounts: [account, ...others.map((other): DetailAccount => {
-      const label = other.label ?? other.id;
+    accounts: [account, ...others.map((other, index): DetailAccount => {
+      const label = readableOr(other.label ?? other.id, t("ids.accountN", { n: index + 2 }));
       return {
         id: other.id,
         label,

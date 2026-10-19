@@ -74,6 +74,7 @@ import {
   type Attachment,
 } from "@/lib/composer-attachments";
 import { mausInk, type MausState } from "@/lib/mascot";
+import { personLabel } from "@/lib/human-label";
 import {
   addDays,
   atLocalTime,
@@ -1584,7 +1585,7 @@ export function EventDetails({
             </div>
           </div>
           {otherOwner && <div data-event-details-owner className="flex items-start gap-3"><UserRound size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="min-w-0 flex-1"><div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">{t("routines.scope.owner")}</div><RoutineOwnerBadge owner={otherOwner} size={18} className="mt-1 text-[12.5px] text-ink" />{(!editable || routine?.redacted) && <div className="mt-1 text-[11.5px] text-ink-secondary">{routine?.redacted ? t("routines.scope.redacted") : t("routines.scope.readOnly")}</div>}</div></div>}
-          {routine?.runAs && <div data-event-details-run-as className="flex items-start gap-3"><UserRound size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="min-w-0 flex-1"><div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">{t("routines.runAsField.label")}</div><div className="mt-1 truncate text-[12.5px] text-ink">{routine.runAs.name || routine.runAs.principalId}</div></div></div>}
+          {routine?.runAs && <div data-event-details-run-as className="flex items-start gap-3"><UserRound size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="min-w-0 flex-1"><div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">{t("routines.runAsField.label")}</div><div className="mt-1 truncate text-[12.5px] text-ink">{personLabel(routine.runAs.name, routine.runAs.principalId)}</div></div></div>}
           {isRoomGoal && (
             <div className="flex items-start gap-3">
               <UsersRound size={17} className="mt-1 shrink-0 text-ink-secondary" />
