@@ -493,7 +493,7 @@ export function PendingApprovalActions({
             aria-keyshortcuts="Y"
             onClick={() => decide("allow")}
             disabled={isSkillRequest && !reviewedSha256}
-            className={cn(big, "bg-success text-success-ink hover:brightness-110 focus-visible:ring-success/60")}
+            className={cn(big, "bg-success hover:brightness-110 focus-visible:ring-success/60")}
           >
             <span className="flex items-center gap-2 text-[17px] font-semibold leading-6">
               {t("approvals.yes")}

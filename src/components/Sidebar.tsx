@@ -2478,9 +2478,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const showThreads = useShowThreads();
   const showLogo = useShowSidebarLogo();
   // the Approvals row's count: conversations waiting on the person's answer
-  const approvalsWaiting = useMemo(() => state.bots
+  // (a plain count: a hook here would shift every hook below it)
+  const approvalsWaiting = state.bots
     .filter((bot) => !bot.hidden)
-    .reduce((total, bot) => total + (bot.tasks ?? []).filter((task) => task.activity === "waiting-on-you").length, 0), [state.bots]);
+    .reduce((total, bot) => total + (bot.tasks ?? []).filter((task) => task.activity === "waiting-on-you").length, 0);
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const { capabilities } = useDesktopCapabilities();
   const sidebarRef = useRef<HTMLElement>(null);

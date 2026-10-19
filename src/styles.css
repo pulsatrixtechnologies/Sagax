@@ -3301,9 +3301,9 @@ button:disabled.bg-danger {
   70% { opacity: 1; transform: scale(1.08); }
   100% { opacity: 1; transform: scale(1); }
 }
-.approval-row-enter { animation: approval-row-in 220ms var(--ease-emphasized, cubic-bezier(0.16, 1, 0.3, 1)) both; }
-.approval-row-leave { animation: approval-row-out 320ms var(--ease-exit, cubic-bezier(0.4, 0, 1, 1)) both; overflow: hidden; pointer-events: none; }
-.approval-mark-in { animation: approval-mark-in 320ms var(--ease-emphasized, cubic-bezier(0.16, 1, 0.3, 1)) both; }
+.approval-row-enter { animation: approval-row-in 220ms var(--ease-emphasized) both; }
+.approval-row-leave { animation: approval-row-out 320ms var(--ease-exit) both; overflow: hidden; pointer-events: none; }
+.approval-mark-in { animation: approval-mark-in 320ms var(--ease-emphasized) both; }
 @media (prefers-reduced-motion: reduce) {
   .approval-row-enter, .approval-mark-in { animation: none; }
   .approval-row-leave { animation: none; display: none; }

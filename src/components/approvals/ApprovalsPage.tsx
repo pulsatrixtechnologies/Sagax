@@ -167,7 +167,7 @@ function BulkConfirm({ decision, selected, bots, busy, onCancel, onConfirm }: {
             onClick={onConfirm}
             className={cn(
               "flex flex-[1.4] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-40",
-              allow ? "bg-success text-success-ink hover:brightness-110" : "bg-danger text-danger-ink hover:brightness-110",
+              allow ? "bg-success hover:brightness-110" : "bg-danger text-danger-ink hover:brightness-110",
             )}
           >
             {busy && <Loader2 size={14} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
@@ -467,7 +467,7 @@ export function ApprovalsPage() {
                   <span className="text-[12.5px] font-medium text-ink">{t("approvals.bulk.selected", { count: checked.size })}</span>
                   <span className="flex-1" />
                   <button type="button" onClick={() => setConfirm("deny")} className="rounded-lg border border-danger/40 px-2.5 py-1 text-[12.5px] font-medium text-danger hover:bg-danger/10">{t("approvals.bulk.deny")}</button>
-                  <button type="button" onClick={() => setConfirm("allow")} className="rounded-lg bg-success px-2.5 py-1 text-[12.5px] font-semibold text-success-ink hover:brightness-110">{t("approvals.bulk.allow")}</button>
+                  <button type="button" onClick={() => setConfirm("allow")} className="rounded-lg bg-success px-2.5 py-1 text-[12.5px] font-semibold hover:brightness-110">{t("approvals.bulk.allow")}</button>
                   <button type="button" onClick={() => setChecked(new Set())} aria-label={t("approvals.bulk.clear")} title={t("approvals.bulk.clear")} className="rounded-md p-1 text-ink-secondary hover:bg-control"><X size={14} aria-hidden="true" /></button>
                 </div>
               ) : decidable.length > 1 ? (
