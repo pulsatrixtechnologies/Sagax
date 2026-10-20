@@ -16772,7 +16772,7 @@ setSafetyConfirm((request) => confirmHeldCard(request));
 /** The approval card a server-side check waits on (a safety hold, a My
  * Chrome payment, send or delete): Allow or Deny, in the conversation, with
  * a notification. Full access and Approve for me do not answer it. */
-async function confirmHeldCard(request: { threadId?: string; botId?: string; tool?: string; summary: string; allowKey?: string }): Promise<"allow" | "deny" | "timeout"> {
+async function confirmHeldCard(request: { threadId?: string; botId?: string; tool?: string; summary: string; allowKey?: string; fingerprint?: string }): Promise<"allow" | "deny" | "timeout"> {
   const threadId = request.threadId;
   if (!threadId) return "deny";
   const bot = (request.botId ? store.bot(request.botId) : undefined) ?? store.botByThread(threadId);
@@ -16780,7 +16780,7 @@ async function confirmHeldCard(request: { threadId?: string; botId?: string; too
   // 2026-10-19 (JC: "Toujours permettre" on every card): Always allow keeps
   // this exact held action (its fingerprint) for this bot; kept, it passes
   // and the journal names the rule
-  const candidate = { tool: `safety:${request.tool ?? "action"}`, scope: { action: request.fingerprint }, description: summary || "This exact action" };
+  const candidate = { tool: `safety:${request.tool ?? "action"}`, scope: { action: request.fingerprint ?? "" }, description: summary || "This exact action" };
   const kept = bot && request.fingerprint ? keptCardRule(bot, threadId, candidate, autoAnswerStepUp(bot, threadId, { tool: request.tool ?? "action", summary })) : undefined;
   if (bot && kept) {
     appendDecision(DATA_DIR, { threadId, requestId: `safety-rule-${randomUUID()}`, botId: bot.id, botName: bot.name, tool: request.tool ?? "action", summary, decision: "auto-approved", source: "owner-rule", rule: kept.id });
