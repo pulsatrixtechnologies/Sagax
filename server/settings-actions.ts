@@ -212,7 +212,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         const held = await deps.acts().handlePlanned({
           facts,
           target: { kind: "ui", command: built.ui, input: built.input, action: { type: built.ui, ...built.input }, write: true },
-          plan: { effect: "hold", summary: `${spec.label} (${spec.key}): ${describe(value)}`, stepUpClasses: [], onDone: (how) => deps.audit({ key: spec.key, value, secret: false, how, botId: input.botId, actor: speaker }) },
+          // 2026-10-20 (security review): Always allow keeps this preference and this value
+          plan: { effect: "hold", summary: `${spec.label} (${spec.key}): ${describe(value)}`, stepUpClasses: [], rule: { tool: "sagax_settings", scope: { setting: spec.key, value: valueDigest(value) }, description: `${spec.label}: ${describe(value)}`.slice(0, 500) }, onDone: (how) => deps.audit({ key: spec.key, value, secret: false, how, botId: input.botId, actor: speaker }) },
           threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
         });
         return held.status < 400 ? text(200, `${String(held.body.text ?? "")} ${HOLD_TEXT[decidedUi.reason]}`.trim()) : held;

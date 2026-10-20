@@ -37,7 +37,7 @@ export interface TerminalRequestServiceDeps {
   owner?(botId: string, threadId: string): string;
   /** 2026-10-19 (JC: "Toujours permettre" on every card): the Always allow
    * this person kept for this bot and this destination, or null. */
-  keptRule?(principalId: string, botId: string, candidate: { tool: string; scope: Record<string, string> }): { id: string } | null;
+  keptRule?(principalId: string, botId: string, candidate: { tool: string; scope: Record<string, string> }, threadId: string): { id: string } | null;
   /** One journal row for an offer a kept rule opened. */
   journalRule?(input: { threadId: string; botId: string; requestId: string; summary: string; rule: string }): void;
 }
@@ -160,7 +160,7 @@ export function createTerminalRequestService(deps: TerminalRequestServiceDeps) {
         provider: resource.provider,
         requestId,
       });
-      const kept = deps.keptRule?.(principalId, args.botId, rule) ?? null;
+      const kept = deps.keptRule?.(principalId, args.botId, rule, args.threadId) ?? null;
       if (kept) {
         // the person's kept rule answers as them, with their own rights
         const opened = await this.resolve({ threadId: args.threadId, requestId, behavior: "allow", principalId });

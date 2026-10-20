@@ -9746,7 +9746,20 @@ const terminalFeature = installTerminalFeature({
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
   // 2026-10-19 (JC: "Toujours permettre" on every card): a terminal is
   // destructive and irreversible; a key the person chose for those asks
-  keptRule: (principalId, botId, candidate) => {
+  keptRule: (principalId, botId, candidate, threadId) => {
+    // 2026-10-20 (security review): never on a guest's turn, nor on a turn
+    // that is not the person's own (a routine, a webhook, another bot)
+    const bot = store.bot(botId);
+    if (!bot || cloudGuestDriven(threadId)) return null;
+    const origin = ownEnvironmentTurnOrigin({
+      speaker: turnSpeakers.get(threadId),
+      ownerPrincipalId: principalId,
+      internalTurn: isInternalTurn(threadId),
+      routineLineage: turnRoutineLineage.has(threadId),
+      automation: Boolean(directRequestOwners.get(threadId)?.automation),
+      unattended: isUnattended(botId, threadId),
+    });
+    if (origin !== "owner") return null;
     if (securityKeys.required(principalId, ["destructive", "irreversible"], principalId).length) return null;
     const rule = ownerApprovals.rulesOf(principalId, botId).find((row) => row.botId === botId && ruleCoversExactScope(row, candidate.tool, candidate.scope));
     return rule ? { id: rule.id } : null;
@@ -14006,7 +14019,9 @@ bus.subscribe((event: RuntimeEvent) => {
         && !/^(?:mcp__[^_]+__)?(?:askuserquestion|ask_user)$/i.test(ownerTool)
         ? { botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
         : null;
-      const strictRule = strictCall && asker && !baseVerdict?.approve && safetyEffect?.kind !== "hold" && event.requiresExplicitApproval !== true
+      // 2026-10-20 (security review): never on a turn that is not the
+      // person's own (a routine, a webhook, another bot)
+      const strictRule = strictCall && asker && !baseVerdict?.approve && safetyEffect?.kind !== "hold" && event.requiresExplicitApproval !== true && !ownerOriginRefused
         ? strictCardRule(asker, event.threadId, strictCall, adminApproval ? "admin" : "holder", {
           tool: event.tool,
           ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
@@ -27971,7 +27986,10 @@ async function requestCwAction(auth: RequestAuth, threadId: string, body: Record
   const candidate = { ...described, tool: CW_WIDGET_RULE_TOOL };
   const answerer = approvalOwnerId(bot, threadId);
   const stepUp = autoAnswerStepUp(bot, threadId, { tool: "cw_psa__write", input: card.toolInput, summary: card.summary });
-  const kept = !stepUp.length && scopeKeepable(candidate.scope)
+  // 2026-10-20 (security review): the answerer's rule answers only the
+  // answerer's own request, never another member's in a group channel
+  const ownRequest = Boolean(answerer) && actorPrincipalId(auth).trim().toLowerCase() === answerer.trim().toLowerCase();
+  const kept = ownRequest && !stepUp.length && scopeKeepable(candidate.scope)
     ? matchOwnerRule(ownerApprovals.rulesOf(answerer, bot.id).filter((rule) => rule.botId === bot.id), { ownerId: answerer, botId: bot.id, tool: CW_WIDGET_RULE_TOOL, input: card.toolInput })
     : undefined;
   const message = store.appendMessage(threadId, {
