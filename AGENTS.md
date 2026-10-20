@@ -5334,6 +5334,11 @@ image `deploy/run/Dockerfile` (built locally by `scripts/build-run-image.sh`,
 never pushed). The Pod comes from the run provisioner
 (`server/sandboxd-runs-spec.ts`). Rules, none optional:
 
+- The image has no Hermes, so its engines stage runs
+  `scripts/harden-image-deps.mjs --no-venv` (npm overlay only; a venv found
+  anyway fails the build). Without the flag the script requires a Hermes
+  venv and the build stops at "no venv found" (fixed 2026-10-20).
+
 - Known MVP limit: one run token, also the model proxy key, so the agent
   can call the runner routes itself; `verify` is information, not proof,
   and Perspicax checks every bundle again.
