@@ -3278,7 +3278,7 @@ export class Store {
         }
       }
       // "Until new activity" ends the moment the thread has something new for
-      // the person, and every unread wake funnels through patchTask — so this
+      // the person, and every unread wake funnels through patchTask, so this
       // one hook is the whole activity alarm. A time-based snooze is left to
       // its clock: attention overrides it on screen without clearing it.
       if (task.snoozedUntil === 0 && patch.unread === true) task.snoozedUntil = undefined;

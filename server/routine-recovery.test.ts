@@ -18,10 +18,10 @@ const START = new Date(2026, 7, 17, 8, 0, 0).getTime();
 const SECOND = 1_000;
 const MINUTE = 60_000;
 const ROUTING = "stream error: workspace routing discovery failed: error sending request";
-const STALL = "No activity for 20 minutes — the routine was stopped";
+const STALL = "No activity for 20 minutes, the routine was stopped";
 const SIGNED_OUT = "Not logged in · Please run /login";
 const SIGN_IN_ACTION = "This bot's engine is signed out. Sign in again in Settings → Model providers.";
-const BUSY = "this thread is already working — interrupt it first";
+const BUSY = "this thread is already working, interrupt it first";
 type EventBody = RuntimeEvent extends infer E ? E extends RuntimeEvent ? Omit<E, "eventId" | "provider" | "threadId" | "createdAt"> : never : never;
 
 function harness(extra: Partial<RoutineManagerOptions> = {}) {
@@ -223,9 +223,9 @@ describe("an unattended run whose bot is busy when it starts", () => {
     expect(h.failed).toHaveLength(1);
 
     const other = harness();
-    other.refuse(Object.assign(new Error('provider instance "gone" is unavailable — pick another model in settings'), { status: 409 }));
+    other.refuse(Object.assign(new Error('provider instance "gone" is unavailable, pick another model in settings'), { status: 409 }));
     const refused = await other.start(other.routine().id);
-    expect(other.run(refused.id)).toMatchObject({ status: "failed", error: 'provider instance "gone" is unavailable — pick another model in settings' });
+    expect(other.run(refused.id)).toMatchObject({ status: "failed", error: 'provider instance "gone" is unavailable, pick another model in settings' });
   });
 });
 

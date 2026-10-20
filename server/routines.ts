@@ -16,7 +16,7 @@ import { isRoutineProblemRun, type RoutineRetryCause } from "../shared/routines.
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 import { ROUTINE_PARTS, type PartPair, type RoutinePart } from "./package-parts.ts";
 import {
-  dispatchRefusal, engineFacts, loadOwnerNotices, recoverRun, requeueOnce, retryNote, weekRuns,
+  dispatchRefusal, engineFacts, loadOwnerNotices, recoverRun, retryNote, weekRuns,
   type RoutineAlert, type RoutineFailureFacts, type RoutineOwnerNotice,
 } from "./routine-recovery.ts";
 import { ROUTINE_DEFERRAL_NOTICE_MS, ROUTINE_SKIPPED_WHILE_WAITING, ROUTINE_SUPERSEDED, skipNeedsNotice, supersededBy } from "./routine-execution.ts";
