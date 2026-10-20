@@ -11,7 +11,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { DATA_DIR, ensureDirs, NATIVE_DIR } from "../../config.ts";
 import { BUILT_IN_DATA_SYSTEM_PROMPT } from "../../data/instructions.ts";
@@ -21,7 +21,7 @@ import { recordEvents, type EventRecorder } from "../../testing/events.ts";
 import { promptSplitFingerprints, writePromptSplitReceipt } from "../prompt-split.ts";
 import { GROK_TOOL_REUSE_HINT as HINT } from "./grok.ts";
 import { createAcpDriver, DEFAULT_ACP_PROMPT_IDLE_MS, skipSubscriptionAuthForLocalInject, type AcpSupport } from "./core.ts";
-import { GrokAgentDriver, grokAcceptsUnadvertisedImages } from "./grok.ts";
+import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokConfigDeclaresMcp } from "./grok.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { KimiAgentDriver } from "./kimi.ts";
@@ -1413,8 +1413,11 @@ describe("ACP turns (fake CLI)", () => {
   });
 
   it.each(["grok-4.7", "grok-4.6", "grok-4.5", "local-model"])(
-    "keeps native Grok Auto when selecting and resuming %s",
+    "keeps native Grok Auto (bots opted out of the gate) when selecting and resuming %s",
     async (model) => {
+      // Auto is gated by default (grok-approval-gate.ts); this is the opt-out path
+      writeFileSync(join(DATA_DIR, "grok-approval-gate.json"), JSON.stringify({ bots: "none" }));
+      onTestFinished(() => rmSync(join(DATA_DIR, "grok-approval-gate.json"), { force: true }));
       await create(GrokAgentDriver);
       const agents = { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} };
       for (const resumeCursor of [undefined, "fake-acp-session"]) {
@@ -1522,8 +1525,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(lines[2]).toContain("Not approved: third__anything did not run");
     });
 
-    it("keeps Grok's use_tool ask as a card for a bot without the flag", async () => {
-      writeFileSync(flagFile, JSON.stringify({ bots: ["bot-gated"] }));
+    it("keeps Grok's use_tool ask as a card for a bot that opted out", async () => {
+      writeFileSync(flagFile, JSON.stringify({ off: ["other-bot"] }));
       process.env.FAKE_ACP_ASK_BEFORE_MCP = "use_tool";
       process.env.FAKE_ACP_MCP_CALLS = "agents:list_bots";
       await create(GrokAgentDriver, "mcp-call");
@@ -1604,8 +1607,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(await instance.adapter.respondToRequest("t-gate-stop", card.requestId, { behavior: "allow" })).toBe("unavailable");
     });
 
-    it("leaves bots without the flag, and Ask, Edits and Full access, on their current modes", async () => {
-      writeFileSync(flagFile, JSON.stringify({ bots: ["bot-gated"] }));
+    it("leaves an opted-out bot, and Ask, Edits and Full access, on their current modes", async () => {
+      writeFileSync(flagFile, JSON.stringify({ off: ["other-bot"] }));
       await create(GrokAgentDriver);
       const cases: Array<{ botId: string; approvalMode: "auto" | "ask" | "edits" | "full"; mode: string }> = [
         { botId: "other-bot", approvalMode: "auto", mode: "auto" },
@@ -1629,9 +1632,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       }
     });
 
-    it("treats a missing or corrupt flag file as off", async () => {
+    it("gates Auto by default: a missing, corrupt or legacy opt-in flag file is on (engine parity)", async () => {
       await create(GrokAgentDriver);
-      for (const [index, content] of [undefined, "not json", JSON.stringify({ bots: "some" })].entries()) {
+      for (const [index, content] of [undefined, "not json", JSON.stringify({ bots: "some" }), JSON.stringify({ bots: ["someone-else"] })].entries()) {
         if (content === undefined) rmSync(flagFile, { force: true }); else writeFileSync(flagFile, content);
         const dump = join(scratch, `gate-flag-${index}.json`);
         process.env.FAKE_ACP_DUMP = dump;
@@ -1641,8 +1644,47 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         });
         await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
         const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
-        expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "auto"]);
+        expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "default"]);
+        expect(seen.argv).not.toContain("--allow");
+        // account-level MCPs are not mounted by Sagax: off on a gated turn
+        expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCPS_ENABLED).toBe("false");
+        expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("false");
       }
+    });
+
+    it("keeps Grok's own auto mode on a solo turn whose Grok config declares MCP servers Sagax cannot gate", async () => {
+      await create(GrokAgentDriver);
+      const project = mkdtempSync(join(tmpdir(), "grok-project-"));
+      onTestFinished(() => removeTempDir(project));
+      mkdirSync(join(project, ".grok"));
+      writeFileSync(join(project, ".grok", "config.toml"), "[mcp_servers.mine]\ncommand = \"node\"\n");
+      for (const [index, withholdHostTools] of [false, true].entries()) {
+        const dump = join(scratch, `gate-config-mcp-${index}.json`);
+        process.env.FAKE_ACP_DUMP = dump;
+        const { turnId } = await instance.adapter.sendTurn({
+          threadId: `t-gate-config-mcp-${index}`, botId: "bot-gated", text: "go", model: "grok-4.5", approvalMode: "auto", cwd: project,
+          withholdHostTools, integrations: { agents: server("agents") },
+        });
+        await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+        const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
+        const mode = seen.argv[seen.argv.indexOf("--permission-mode") + 1];
+        // an organization turn reaches those servers through use_tool only: still gated
+        expect(mode).toBe(withholdHostTools ? "default" : "auto");
+      }
+    });
+
+    it("runs Grok's own auto mode only for an explicit opt-out ({bots: \"none\"})", async () => {
+      writeFileSync(flagFile, JSON.stringify({ bots: "none" }));
+      await create(GrokAgentDriver);
+      const dump = join(scratch, "gate-none.json");
+      process.env.FAKE_ACP_DUMP = dump;
+      const { turnId } = await instance.adapter.sendTurn({
+        threadId: "t-gate-none", botId: "bot-gated", text: "go", model: "grok-4.5", approvalMode: "auto",
+        integrations: { agents: server("agents") },
+      });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+      const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
+      expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "auto"]);
     });
   });
 
@@ -1685,7 +1727,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(seen.argv).toEqual([
       "--no-subagents", "--disable-web-search",
       "--deny", "Bash", "--deny", "Read", "--deny", "Edit", "--deny", "Write", "--deny", "Grep", "--deny", "WebFetch", "--deny", "WebSearch",
-      "--permission-mode", "auto", ...AGENTS_READ_ONLY_ALLOW,
+      // Auto decides through Sagax (the gate, on by default): no classifier, no allow rules
+      "--permission-mode", "default",
       "agent", "--no-leader", "-m", "grok-4.7", "--reasoning-effort", "high", "stdio",
     ]);
     expect(seen.argv).not.toContain("--sandbox");
@@ -1749,7 +1792,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     ["ask", true, "default"],
     ["full", true, "bypassPermissions"],
     ["custom", true, "default"],
-    ["auto", false, "auto"],
+    // Auto is gated by default: Grok runs `default`, Sagax decides
+    ["auto", false, "default"],
   ] as const)("Grok %s with agents mounted=%s overrides a legacy full-auto setting", async (approvalMode, mounted, nativeMode) => {
     instance = await GrokAgentDriver.create({
       instanceId: "grok-mode-override",
@@ -3243,6 +3287,46 @@ describe("ACP snapshot", () => {
       expect((await instance.snapshot()).authenticated).toBe(true);
     } finally {
       await instance.dispose();
+    }
+  });
+});
+
+describe("grokConfigDeclaresMcp", () => {
+  it("finds an MCP server table in GROK_HOME's config or the project's, and nothing else", () => {
+    const home = mkdtempSync(join(tmpdir(), "grok-home-"));
+    const project = mkdtempSync(join(tmpdir(), "grok-cwd-"));
+    try {
+      const env = { GROK_HOME: home };
+      expect(grokConfigDeclaresMcp(env, project)).toBe(false);
+      writeFileSync(join(home, "config.toml"), "[models]\ndefault = \"grok-4.5\"\n[model.local]\nmodel = \"x\"\n# [mcp_servers.commented]\n");
+      expect(grokConfigDeclaresMcp(env, project)).toBe(false);
+      writeFileSync(join(home, "config.toml"), "[models]\n  [mcp_servers.pulsatrix_dispatch]\nurl = \"https://x\"\n");
+      expect(grokConfigDeclaresMcp(env, project)).toBe(true);
+      writeFileSync(join(home, "config.toml"), "[ \"mcp_servers\" . a ]\n");
+      expect(grokConfigDeclaresMcp(env, project)).toBe(true);
+      writeFileSync(join(home, "config.toml"), "");
+      mkdirSync(join(project, ".grok"));
+      writeFileSync(join(project, ".grok", "config.toml"), "[mcp_servers]\na = { command = \"node\" }\n");
+      expect(grokConfigDeclaresMcp(env, project)).toBe(true);
+      expect(grokConfigDeclaresMcp(env, undefined)).toBe(false);
+      // a parent folder's config counts, as Grok reads it
+      const sub = join(project, "a", "b");
+      mkdirSync(sub, { recursive: true });
+      expect(grokConfigDeclaresMcp(env, sub)).toBe(true);
+      // a dotted key or an assignment counts too
+      writeFileSync(join(project, ".grok", "config.toml"), "");
+      expect(grokConfigDeclaresMcp(env, sub)).toBe(false);
+      for (const text of ["mcp_servers.x.command = \"node\"\n", "mcp_servers = { x = { command = \"node\" } }\n"]) {
+        writeFileSync(join(project, ".grok", "config.toml"), text);
+        expect(grokConfigDeclaresMcp(env, sub)).toBe(true);
+      }
+      // a config override is never read here: it counts as declaring
+      writeFileSync(join(project, ".grok", "config.toml"), "");
+      expect(grokConfigDeclaresMcp({ ...env, GROK_CONFIG: "/elsewhere.toml" }, sub)).toBe(true);
+      expect(grokConfigDeclaresMcp({ ...env, GROK_CONFIG_PATH: "/elsewhere.toml" }, sub)).toBe(true);
+    } finally {
+      removeTempDir(home);
+      removeTempDir(project);
     }
   });
 });

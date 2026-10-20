@@ -109,6 +109,31 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
   return env.GROK_HOME || harnessHome("grok", env);
 }
 
+/** Whether Grok may load MCP servers Sagax did not mount: a config override
+ * (GROK_CONFIG, GROK_CONFIG_PATH), or an `mcp_servers` table, dotted key or
+ * assignment in GROK_HOME's config.toml or any `.grok/config.toml` from the
+ * turn's folder up (the files grokInheritedProfile reads). Errs toward yes:
+ * any line that starts with mcp_servers counts. */
+export function grokConfigDeclaresMcp(env: Record<string, string | undefined>, cwd?: string): boolean {
+  if (env.GROK_CONFIG || env.GROK_CONFIG_PATH) return true;
+  const files = [join(grokHome(env), "config.toml")];
+  if (cwd) {
+    for (let directory = resolve(cwd);;) {
+      files.push(join(directory, ".grok", "config.toml"));
+      const parent = dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
+    }
+  }
+  return files.some((file) => {
+    try {
+      return /^\s*(?:\[\[?\s*)?["']?mcp_servers\b/m.test(readFileSync(file, "utf8"));
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** The grok.com sign-in a turn runs on is stored. */
 export function grokSignedIn(env: Record<string, string | undefined>): boolean {
   return existsSync(join(grokHome(env), "auth.json"));
@@ -766,10 +791,17 @@ const support: AcpSupport = {
   // residual requests still ask. Never replace it with bypassPermissions.
   // Verified: grok 1.0.3 --help and xai-org/grok-build@37949780,
   // crates/codegen/xai-grok-pager-bin/src/main.rs:1259-1273.
-  // Approval gate (grok-approval-gate.ts), per-bot flag: an Auto turn runs
+  // Approval gate (grok-approval-gate.ts), on unless the bot opts out: an Auto turn runs
   // Grok in `default` mode, with no per-call classifier wait, and Sagax
   // holds every MCP call that is not reviewed read-only for a card.
-  approvalGate: (config, turn) => !config.fullAuto && turn.approvalMode === "auto" && grokApprovalGateEnabled(turn.botId),
+  // Solo only: MCP servers the person declared in Grok's own config.toml are
+  // not mounted by Sagax, so the gate cannot hold them, and in `default`
+  // mode Grok may call them with no prompt. Such a turn keeps Grok's own
+  // auto mode. An organization turn withholds host tools: Grok reaches any
+  // MCP tool through use_tool only, and gated-mcp-ask.ts keeps every ask
+  // that names a server Sagax did not mount as a card.
+  approvalGate: (config, turn, context) => !config.fullAuto && turn.approvalMode === "auto" && grokApprovalGateEnabled(turn.botId)
+    && (turn.withholdHostTools === true || !grokConfigDeclaresMcp(context?.env ?? process.env, context?.cwd)),
   approvalReadOnly: (server, botId) => gateReadOnlyTools(server, botId),
 
   spawnArgs: (config, turn, launch) => {
@@ -914,8 +946,10 @@ const support: AcpSupport = {
   transformEnv: (env) => {
     delete env.XAI_API_KEY;
   },
-  applyTurnEnv: (env, { toolScope, withholdHostTools }) => {
-    if (toolScope !== undefined || withholdHostTools === true) {
+  applyTurnEnv: (env, { toolScope, withholdHostTools, approvalGated }) => {
+    // A gated turn too: account-level MCPs are not mounted by Sagax, so the
+    // gate could not hold their calls.
+    if (toolScope !== undefined || withholdHostTools === true || approvalGated === true) {
       // The verified runtime gives these local env switches priority over
       // account defaults, preventing an unfiltered managed gateway fallback.
       env.GROK_MANAGED_MCPS_ENABLED = "false";

@@ -347,7 +347,7 @@ export interface AcpSupport {
    * MCP server is mounted through the gate with an approval socket, and
    * only `approvalReadOnly` tools run unasked. Decided once per turn; the
    * same decision reaches spawnArgs as `launch.approvalGate`. */
-  approvalGate?(config: AcpConfig, turn: SendTurnInput): boolean;
+  approvalGate?(config: AcpConfig, turn: SendTurnInput, context?: { env: Record<string, string | undefined>; cwd: string }): boolean;
   /** The reviewed read-only tools of one mounted server (upstream names). */
   approvalReadOnly?(server: { name: string; builtin: boolean; spec?: McpServerSpec }, botId?: string): string[];
   /** Provider credential variables this ACP child is allowed to inherit. */
@@ -443,7 +443,7 @@ export interface AcpSupport {
    *  snapshot share `transformEnv` and must not see a per-turn overlay. */
   applyTurnEnv?(
     env: Record<string, string | undefined>,
-    ctx: { model?: string; requestedModel?: string; fullAuto: boolean; botId?: string; cwd: string; toolScope?: SendTurnInput["toolScope"]; withholdHostTools?: boolean; localKeyPrincipal?: string; threadId: string; mcpServers: Array<{ name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> }> },
+    ctx: { model?: string; requestedModel?: string; fullAuto: boolean; botId?: string; cwd: string; toolScope?: SendTurnInput["toolScope"]; withholdHostTools?: boolean; approvalGated?: boolean; localKeyPrincipal?: string; threadId: string; mcpServers: Array<{ name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> }> },
   ): void;
   /** Organization server (SendTurnInput.access): point this one turn's child
    *  at the payer's own home and key, never the server's own login.
@@ -1978,7 +1978,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             : turn;
         // One decision per turn, shared by the MCP mounts and spawnArgs: a
         // turn can never get the ungated mode with ungated servers.
-        const approvalGated = support.approvalGate?.(turnConfig, cliTurn) === true;
+        const approvalGated = support.approvalGate?.(turnConfig, cliTurn, { env, cwd }) === true;
         const mcpServers = acpMcpServers(callAgentsEnv ? withAgentsEnv(callAgentsEnv) : turn, approvalGated);
         const sessionServersKey = callAgentsEnv
           ? acpMcpServers(withAgentsEnv({
@@ -1989,6 +1989,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         support.applyTurnEnv?.(env, {
           model: resolvedModel, requestedModel: turn.model, fullAuto: turnConfig.fullAuto === true, botId: turn.botId, cwd, toolScope: turn.toolScope,
           withholdHostTools: turn.withholdHostTools === true,
+          approvalGated,
           localKeyPrincipal: turn.access?.localKeyPrincipal,
           threadId, mcpServers,
         });
