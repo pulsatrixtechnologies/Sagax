@@ -147,6 +147,19 @@ describe("ClaudeDriver.decodeConfig", () => {
     expect(Object.keys(claudeHookSettings("/tmp/helper.ts"))).not.toContain("Stop");
   });
 
+  it("keeps the engine waiting only on hooks whose answer it needs", () => {
+    type Entry = Array<{ matcher: string; hooks: Array<{ async?: boolean }> }>;
+    const settings = claudeHookSettings("/tmp/helper.ts") as Record<string, Entry>;
+    // recording only: background, the model goes on (~180 ms a tool call)
+    expect(settings.PostToolUse![0]!.hooks[0]!.async).toBe(true);
+    expect(settings.PreCompact![0]!.hooks[0]!.async).toBe(true);
+    // the timeout hint and the post-compaction context are answers: synchronous
+    expect(settings.PostToolUseFailure![0]!.hooks[0]!.async).toBeUndefined();
+    expect(settings.SessionStart![0]!.hooks[0]!.async).toBeUndefined();
+    // a fresh or resumed session never waits on the helper
+    expect(settings.SessionStart![0]!.matcher).toBe("compact");
+  });
+
   it("keeps the per-turn hook token where workspace backups never look", () => {
     const path = relative(DATA_DIR, hookTokenFile("thread", "bot")).replaceAll("\\", "/");
     expect(ephemeralWorkspaceTokenPath(path)).toBe(true);

@@ -106,6 +106,7 @@ export function view(a: Assignment, parent?: Assignment): HandoffView {
   const origin = legacyOrigin(a.origin);
   if (origin) node.origin = origin;
   if (a.restart !== undefined) node.restart = a.restart;
+  if (a.relay) node.relay = true;
   return node;
 }
 
@@ -205,7 +206,7 @@ export class RuntimeCoordinator implements Coordinator {
    * "auto" is a consultation when the target is an ancestor, else work. */
   enqueue(source: RoomAddress, generation: string, parentId: string | undefined, target: RoomAddress, _key: string, text: string,
     approvalGranted = false, rework = false, sourceText = "", requestBatchKey?: string, origin?: WorkOrigin,
-    mode: "work" | "consult" | "auto" = "work", person?: string): { node: HandoffView; duplicate: boolean; joined?: boolean } {
+    mode: "work" | "consult" | "auto" = "work", person?: string, relay = false): { node: HandoffView; duplicate: boolean; joined?: boolean } {
     this.ready();
     let parent = parentId ? this.store.get(parentId) : this.store.get(generation);
     if (parent && parent.status !== "running") throw new Error(NOT_RUNNING);
@@ -251,6 +252,8 @@ export class RuntimeCoordinator implements Coordinator {
       ...(level.driverKind !== undefined ? { driverKind: level.driverKind } : {}),
       approved: approvalGranted,
       ...(target.groupId && requestBatchKey ? { batchKey: requestBatchKey } : {}),
+      // Only a direct thread relays: a room already shows every reply.
+      ...(relay && !target.groupId ? { relay: true } : {}),
     });
     if (!result.ok) {
       if (result.outcome === "budget") throw new Error(BUDGET);
@@ -426,6 +429,18 @@ export class RuntimeCoordinator implements Coordinator {
     // those open with the envelope again (and the restart note first).
     const resumed = input.turn === "resume";
     const settled = input.settled ?? [];
+    // The requester only passed the request on (coordinate_bots relay): the
+    // reply goes to the person as it is, without a model turn that would
+    // only say it again (perf parity round 5). Anything else to weigh (a
+    // failure, a withheld result, a teammate still at work, a room) runs
+    // the resume as usual.
+    if (resumed && settled.length && this.host.relay && a.assignee.destination.groupId === undefined &&
+      settled.every(child => child.relay && child.status === "completed" && this.readable(child, a, node) === child) &&
+      !this.host.validate(node, parent && this.project(parent)) &&
+      this.store.children(a.id).every(child => child.reply === "none" || isTerminal(child))) {
+      const replies = settled.map(child => view(child, a));
+      if (this.host.relay(node, replies)) return { kind: "completed", text: clip(replies.map(r => r.result).join("\n\n"), BRIEF_MAX) };
+    }
     const body = resumed
       ? composeResume(a, this.host.names(node, parent && this.project(parent)),
         settled.map(child => composeReport(this.readable(child, a, node), this.host.names(view(child, a), node))))

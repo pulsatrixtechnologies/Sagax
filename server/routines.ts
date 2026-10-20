@@ -1062,6 +1062,7 @@ export class RoutineManager {
   private routineRequestReceipts: RoutineRequestReceipt[] = [];
   private webhookRunReceipts: WebhookRunReceipt[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
+  private dueWake: ReturnType<typeof setTimeout> | null = null;
   private paused = false;
   /** Run ids the constructor kept running after a restart (takeRestartResumes). */
   private readonly restartResumes: string[] = [];
@@ -1864,14 +1865,34 @@ export class RoutineManager {
   start() {
     this.paused = false;
     if (this.timer) return;
-    void this.tick();
     this.timer = setInterval(() => void this.tick(), 10_000);
     this.timer.unref?.();
+    void this.tick();
   }
 
   stop() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.dueWake) clearTimeout(this.dueWake);
+    this.dueWake = null;
+  }
+
+  /** The 10 s tick alone starts a run up to 10 s after it is due (5 s on
+   * average, perf parity round 5): a routine due before the next tick gets
+   * a one-shot wake at its time. */
+  private armDueWake(): void {
+    if (this.dueWake) clearTimeout(this.dueWake);
+    this.dueWake = null;
+    if (!this.timer || this.paused) return;
+    const now = this.now();
+    let next = Infinity;
+    for (const routine of this.routines) {
+      const dueAt = routine.nextRunAt;
+      if (routine.enabled && !routine.suspended && dueAt != null && dueAt > now && dueAt < next) next = dueAt;
+    }
+    if (next - now >= 10_000) return;
+    this.dueWake = setTimeout(() => { this.dueWake = null; void this.tick(); }, next - now + 5);
+    this.dueWake.unref?.();
   }
 
   /** Ask options.prewake once for each bot routine due within the lead. */
@@ -2244,6 +2265,7 @@ export class RoutineManager {
       }
     } finally {
       this.ticking = false;
+      this.armDueWake();
     }
   }
 
@@ -2786,6 +2808,8 @@ export class RoutineManager {
     try {
       mutate();
       this.save();
+      // a routine created or moved to within the next tick starts on time
+      if (!this.ticking) this.armDueWake();
     } catch (error) {
       this.routines = before.routines;
       this.runs = before.runs;

@@ -217,6 +217,51 @@ describe("RuntimeCoordinator: the requesting turn and its tree", () => {
     expect(w.host.reports).toHaveLength(1);
   });
 
+  it("relay: a resume carrying only relayed replies runs no turn; the host shows them and the root completes", async () => {
+    const w = world((node) => node.botId === "builder" ? { ok: true, text: "Rome." } : undefined);
+    const relayed: Array<{ node: HandoffView; replies: HandoffView[] }> = [];
+    w.host.relay = (node, replies) => { relayed.push({ node, replies }); return true; };
+    const { node } = w.coordinator.enqueue(chief, "gen-1", undefined, builder, "builder", "Capital of Italy?", false, false, "Ask builder", undefined, userOrigin, "auto", undefined, true);
+    expect(node.relay).toBe(true);
+    w.coordinator.tick();
+    await flush();
+    w.coordinator.sourceSettled("gen-1", true);
+    w.coordinator.tick();
+    await flush();
+    expect(w.host.runs.map(r => r.resumed)).toEqual([false]);
+    expect(relayed).toHaveLength(1);
+    expect(relayed[0]!.node.id).toBe("gen-1");
+    expect(relayed[0]!.replies.map(r => r.result)).toEqual(["Rome."]);
+    expect(w.coordinator.node("gen-1")).toMatchObject({ status: "completed", result: "Rome." });
+  });
+
+  it("relay: a failed reply, a host that declines, a room or a mix with ordinary work still runs the resume turn", async () => {
+    const cases: Array<{ script: Script; accept: boolean; extra?: boolean; room?: boolean }> = [
+      { script: (n) => n.botId === "builder" ? { ok: false, text: "provider down" } : undefined, accept: true },
+      { script: () => undefined, accept: false },
+      { script: () => undefined, accept: true, extra: true },
+      { script: () => undefined, accept: true, room: true },
+    ];
+    for (const c of cases) {
+      const w = world(c.script);
+      let asked = 0;
+      w.host.relay = () => { asked += 1; return c.accept; };
+      const target = c.room ? inRoom("builder", "g2", "room-2") : builder;
+      const { node } = w.coordinator.enqueue(chief, "gen-1", undefined, target, "builder", "Q", false, false, "Ask", undefined, userOrigin, "auto", undefined, true);
+      expect(Boolean(node.relay)).toBe(!c.room);
+      if (c.extra) send(w, chief, "gen-1", undefined, tester, "Test it");
+      w.coordinator.tick();
+      await flush();
+      w.coordinator.sourceSettled("gen-1", true);
+      w.coordinator.tick();
+      await flush();
+      // the requester reviews: one resume turn, whatever the host was asked
+      expect(w.host.runs.filter(r => r.resumed)).toHaveLength(1);
+      // the host is only asked when every reply relays and completed
+      expect(asked).toBe(c === cases[1] ? 1 : 0);
+    }
+  });
+
   it("active() is all() without the ended nodes, with the same views", async () => {
     const w = world();
     const ended_ = new Set(["completed", "failed", "cancelled"]);

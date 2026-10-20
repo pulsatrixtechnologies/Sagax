@@ -236,7 +236,7 @@ export class Runtime {
       reply: req.reply ?? (mode === "notify" ? "none" : "resume"), brief, ...(req.doneWhen ? { doneWhen: req.doneWhen } : {}),
       status: "queued", level, levelSource: source, executions: 0, restarts: 0, createdAt: now, lastActivityAt: now, result: "",
       rework: Boolean(req.rework), ...(req.approved !== undefined ? { approved: req.approved } : {}),
-      ...(req.batchKey !== undefined ? { batchKey: req.batchKey } : {}), version: 1,
+      ...(req.batchKey !== undefined ? { batchKey: req.batchKey } : {}), ...(req.relay ? { relay: true } : {}), version: 1,
     };
     const person = root ? root.person : req.person;
     if (person) node.person = person;

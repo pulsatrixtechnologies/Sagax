@@ -582,6 +582,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       groupId: canonical.group_id, botIds: ids, message: canonical.message,
       rework: canonical.rework,
       ...(canonical.mode === "work" || canonical.mode === "consult" ? { mode: canonical.mode } : {}),
+      ...(canonical.relay === true ? { relay: true } : {}),
     }) });
     return { text: JSON.stringify(r), ...(r.error ? { isError: true } : {}) };
   }
