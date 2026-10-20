@@ -115,8 +115,10 @@ export function changedSectionsNote(
 }
 
 /** The sections a turn's note describes even when their text is the same
- * as last turn's: the mentions section names the message being sent now. */
-const PER_TURN_SECTIONS: readonly string[] = ["mentions"];
+ * as last turn's: the mentions section names the message being sent now,
+ * and the phone-call section marks an interrupted call turn (both set
+ * SendTurnInput.mentionTurn). */
+const PER_TURN_SECTIONS: readonly string[] = ["mentions", "voice-call"];
 
 /** What a reused session should be told about its volatile half, for every
  * driver that keeps one session per thread (2026-10-19 perf parity, point

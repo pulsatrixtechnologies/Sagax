@@ -250,6 +250,9 @@ describe("volatileSectionsUpdate (only what changed)", () => {
     const note = volatileSectionsUpdate([memory, mentions], withMention, true)!;
     expect(note).toContain("tagged @Beta");
     expect(note).not.toContain("likes tea");
+    // an interrupted call turn re-sends its phone-call section the same way
+    const call = { id: "voice-call", text: "\n\nPhone call: interrupted." };
+    expect(volatileSectionsUpdate([memory, call], sectionFingerprints([memory, call]), true)).toContain("interrupted");
   });
 
   it("asks for the whole half when the session's copy is unknown (new process, compaction)", () => {

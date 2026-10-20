@@ -19,7 +19,14 @@ export interface CodexInstructionReceipt {
    * (prompt-split.ts sectionFingerprints), so a later turn sends only the
    * sections that changed. */
   sections?: Record<string, string>;
+  /** Section-only notes delivered since the whole half last rode. Codex
+   * compacts its own thread without telling us, which can summarize away
+   * the note that carried an unchanged section; the whole half rides again
+   * after CODEX_SECTION_NOTES_BEFORE_FULL of them. */
+  sectionNotes?: number;
 }
+
+export const CODEX_SECTION_NOTES_BEFORE_FULL = 5;
 
 const isFingerprint = (value: string) => /^[0-9a-f]{64}$/.test(value);
 const validSections = (value: unknown): value is Record<string, string> =>
@@ -33,12 +40,13 @@ function parseReceipt(raw: string | undefined): CodexInstructionReceipt | null {
   try {
     const parsed = JSON.parse(trimmed) as unknown;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const record = parsed as { instructions?: unknown; volatile?: unknown; sections?: unknown };
+      const record = parsed as { instructions?: unknown; volatile?: unknown; sections?: unknown; sectionNotes?: unknown };
       if (typeof record.instructions === "string" && isFingerprint(record.instructions)) {
         return {
           instructions: record.instructions,
           ...(typeof record.volatile === "string" && isFingerprint(record.volatile) ? { volatile: record.volatile } : {}),
           ...(typeof record.volatile === "string" && validSections(record.sections) ? { sections: record.sections } : {}),
+          ...(typeof record.sectionNotes === "number" && record.sectionNotes >= 0 ? { sectionNotes: record.sectionNotes } : {}),
         };
       }
     }
@@ -123,15 +131,23 @@ export async function syncCodexInstructions(
     mkdirSync(directory, { recursive: true });
     writeFileAtomic(path, JSON.stringify({ instructions: fingerprint }), { mode: 0o600 });
   }
+  // The sections the native thread holds: known only on a resumed thread
+  // whose committed receipt recorded them, and not after too many
+  // section-only notes in a row (see sectionNotes).
+  const sectionNotes = previous?.sectionNotes ?? 0;
+  const previousSections = resumed && previous?.volatile !== undefined && sectionNotes < CODEX_SECTION_NOTES_BEFORE_FULL
+    ? previous.sections
+    : undefined;
+  const nextSectionNotes = !deliverVolatile ? sectionNotes : previousSections ? sectionNotes + 1 : 0;
   const commitVolatile = previous?.instructions === fingerprint && previous?.volatile === volatileFingerprint
     && (!sections || previous.sections !== undefined)
     ? null
     : () => {
         mkdirSync(directory, { recursive: true });
-        writeFileAtomic(path, JSON.stringify({ instructions: fingerprint, volatile: volatileFingerprint, ...(sections ? { sections } : {}) }), { mode: 0o600 });
+        writeFileAtomic(path, JSON.stringify({
+          instructions: fingerprint, volatile: volatileFingerprint,
+          ...(sections ? { sections, sectionNotes: nextSectionNotes } : {}),
+        }), { mode: 0o600 });
       };
-  // The sections the native thread holds: known only on a resumed thread
-  // whose committed receipt recorded them.
-  const previousSections = resumed && previous?.volatile !== undefined ? previous.sections : undefined;
   return { deliverVolatile, hadVolatile, ...(previousSections ? { previousSections } : {}), commitVolatile };
 }

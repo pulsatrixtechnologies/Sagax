@@ -765,7 +765,10 @@ describe("OpenAICompatDriver", () => {
       ];
       const third = await send({ text: "again", ...turn([memory, at("3h")]), transcript: history });
       expect(third.at(-1)).toEqual({ role: "user", content: "again" });
-      // once the full note leaves the window, the whole half rides again
+      // once the full note leaves the window, the whole half rides again,
+      // even when it did not change
+      const unchanged = await send({ text: "same", ...turn([memory, at("3h")]), transcript: history.slice(2) });
+      expect(unchanged.at(-1).content).toContain("likes tea");
       const trimmed = await send({ text: "later", ...turn([memory, at("4h")]), transcript: history.slice(2) });
       expect(trimmed.at(-1).content).toContain("likes tea");
       expect(trimmed.at(-1).content).toContain("Recent: 4h");

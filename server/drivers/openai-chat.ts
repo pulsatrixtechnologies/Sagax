@@ -240,7 +240,11 @@ function replayDelivered(
     if (record.volatile !== undefined) {
       volatile = record.volatile;
       if (!record.sections) sections = undefined;
-      else if (record.sections.full || sections) {
+      else if (!record.sections.full && !sections) {
+        // Only a partial copy is in the window (its full note was trimmed
+        // away): unknown, so the next turn delivers the whole half again.
+        volatile = undefined;
+      } else {
         const merged: Record<string, string> = record.sections.full ? {} : { ...sections };
         for (const [id, print] of Object.entries(record.sections.prints)) {
           if (print === null) delete merged[id];
