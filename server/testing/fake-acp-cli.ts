@@ -104,6 +104,8 @@
 //   FAKE_ACP_RPC_FAILURE_FILE  read a JSON-RPC error object on session/prompt;
 //                       once read this process stays poisoned even if the
 //                       file is removed. A replacement process can recover.
+//   FAKE_ACP_RPC_FAILURE_WHILE_FILE=1  not poisoned: fail only while the
+//                       file exists (an engine's usage limit that resets).
 //   FAKE_ACP_RPC_FAILURE_METHOD  initialize, session/new or session/prompt (default).
 //   FAKE_ACP_RPC_FAILURE_GATE  hold the error until this file exists.
 //   FAKE_ACP_RPC_FAILURE_AFTER_OUTPUT  emit text + a tool result before failing.
@@ -601,6 +603,7 @@ function emitUsageUpdates(): void {
 function failRpc(msg: { method: string; id: unknown }): boolean {
   if (msg.method !== (process.env.FAKE_ACP_RPC_FAILURE_METHOD ?? "session/prompt")) return false;
   const failureFile = process.env.FAKE_ACP_RPC_FAILURE_FILE;
+  if (process.env.FAKE_ACP_RPC_FAILURE_WHILE_FILE === "1") rpcFailure = null;
   if (failureFile && existsSync(failureFile)) rpcFailure = JSON.parse(readFileSync(failureFile, "utf8"));
   if (!rpcFailure) return false;
   if (msg.method === "session/prompt" && process.env.FAKE_ACP_RPC_FAILURE_AFTER_USAGE === "1") emitUsageUpdates();
