@@ -20,6 +20,33 @@ export const PREWARM_PER_PERSON_PER_MINUTE = 6;
  * in one conversation at a time. A new warm closes the oldest. */
 export const PREWARM_MAX_WAITING = 3;
 
+/** At most this many teammates warmed for one request. */
+export const NAMED_TEAMMATES_MAX = 2;
+
+/** The teammates a person's request names (perf round 3: their engines start
+ * while the bot reads the request, so a delegation does not wait for a cold
+ * start): its @mentions first, then a teammate's whole name as a word,
+ * case-insensitive, 3 characters or more. Hidden bots never. */
+export function namedTeammates<T extends { id: string; name: string; hidden?: boolean }>(text: string, peers: readonly T[], tagged: readonly T[]): T[] {
+  const out = tagged.filter((peer) => !peer.hidden);
+  const lower = text.toLowerCase();
+  const word = /[\p{L}\p{N}_]/u;
+  for (const peer of peers) {
+    if (out.length >= NAMED_TEAMMATES_MAX) break;
+    const name = peer.name.trim().toLowerCase();
+    if (peer.hidden || name.length < 3 || out.some((p) => p.id === peer.id)) continue;
+    for (let at = lower.indexOf(name); at !== -1; at = lower.indexOf(name, at + 1)) {
+      const before = at === 0 ? "" : lower[at - 1]!;
+      const after = lower[at + name.length] ?? "";
+      if (!word.test(before) && !word.test(after)) {
+        out.push(peer);
+        break;
+      }
+    }
+  }
+  return out.slice(0, NAMED_TEAMMATES_MAX);
+}
+
 export type PrewarmBegin = "started" | "extended" | "limited";
 
 type Job = {

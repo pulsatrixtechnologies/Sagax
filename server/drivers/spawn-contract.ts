@@ -55,10 +55,23 @@ export function switchesCover(live: Record<string, boolean> | undefined, want: R
   return Object.entries(want).every(([key, on]) => !on || live?.[key] === true);
 }
 
+/** The turn capability of a Perspicax profile bridge
+ * (server/perspicax-mcp-bridge.ts). It is minted per turn; the Perspicax
+ * tokens themselves never leave the harness. */
+export const PERSPICAX_TOKEN_ENV = "SAGAX_PERSPICAX_TOKEN";
+
 /** The MCP servers of a contract with each per-turn token's value masked:
  * two turns of one call then make the same contract. */
 export function withoutTurnTokens(servers: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...servers };
+  // A Perspicax bridge reads its turn capability from a file the harness
+  // rewrites each turn (warmPerspicaxEnv): a pre-warmed process is then the
+  // same process the next turn needs. Without the file, the value stays.
+  for (const [name, server] of Object.entries(servers)) {
+    const env = (server as { env?: Record<string, unknown> } | null | undefined)?.env;
+    if (!env || !env.SAGAX_PERSPICAX_TOKEN_FILE || !(PERSPICAX_TOKEN_ENV in env)) continue;
+    out[name] = { ...(server as object), env: { ...env, [PERSPICAX_TOKEN_ENV]: "(turn token)" } };
+  }
   // Only the agents server reads its turn values from files, and only when
   // they were written (SAGAX_COMMS_TOKEN_FILE): otherwise a reused process
   // would keep a stale token, so the contract keeps it and relaunches.
@@ -75,7 +88,8 @@ export function withoutTurnTokens(servers: Record<string, unknown>): Record<stri
 /** The turn files a process's agents server reads, to remove with it. */
 export function turnFiles(servers: Record<string, unknown>): string[] {
   const env = (servers.agents as { env?: Record<string, unknown> } | null | undefined)?.env ?? {};
-  return [env.SAGAX_COMMS_TOKEN_FILE, env.SAGAX_TURN_DEPTH_FILE].filter((file): file is string => typeof file === "string");
+  const perspicax = Object.values(servers).map((server) => (server as { env?: Record<string, unknown> } | null | undefined)?.env?.SAGAX_PERSPICAX_TOKEN_FILE);
+  return [env.SAGAX_COMMS_TOKEN_FILE, env.SAGAX_TURN_DEPTH_FILE, ...perspicax].filter((file): file is string => typeof file === "string");
 }
 
 /** Where a warm (call) session's agents proxy reads the current turn's
@@ -110,4 +124,33 @@ export function warmCommsEnv(threadId: string, botId: string | undefined, env: R
   return env.SAGAX_TURN_DEPTH === undefined
     ? { ...env, SAGAX_COMMS_TOKEN_FILE: tokenPath }
     : { ...env, SAGAX_COMMS_TOKEN_FILE: tokenPath, SAGAX_TURN_DEPTH_FILE: `${tokenPath}.depth` };
+}
+
+/** Where a Perspicax profile bridge of a kept process reads the current
+ * turn's capability: beside the thread's comms token, one file per profile,
+ * 0600, rewritten every turn. */
+export function perspicaxTokenFile(threadId: string, botId: string | undefined, profileId: string): string {
+  const profile = createHash("sha256").update(profileId).digest("hex").slice(0, 16);
+  return `${commsTokenFile(threadId, botId)}.px-${profile}`;
+}
+
+/** Write this turn's Perspicax bridge capability where the bridge reads it
+ * on every frame (server/perspicax-mcp-bridge.ts) and return the bridge env
+ * that names the file. A pre-warmed (or kept) process then serves the next
+ * turn as is: the capability alone no longer relaunches it. The launch value
+ * stays in the env as the bridge's fallback; on a write failure the env is
+ * returned unchanged and the contract keeps the value (a relaunch, never a
+ * stale capability). */
+export function warmPerspicaxEnv(threadId: string, botId: string | undefined, env: Record<string, string>): Record<string, string> {
+  const token = env[PERSPICAX_TOKEN_ENV];
+  const profileId = env.SAGAX_PERSPICAX_PROFILE;
+  if (!token || !profileId) return env;
+  const tokenPath = perspicaxTokenFile(threadId, botId, profileId);
+  try {
+    mkdirSync(dirname(tokenPath), { recursive: true, mode: 0o700 });
+    writeFileAtomic(tokenPath, token, { mode: 0o600 });
+  } catch {
+    return env;
+  }
+  return { ...env, SAGAX_PERSPICAX_TOKEN_FILE: tokenPath };
 }

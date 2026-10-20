@@ -206,7 +206,7 @@ import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts"
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import type { CaptureTurn } from "./memory-capture.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
-import { canAccessTeam, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, setPeerScope, roomPeerRosterSystemPrompt, roomRosterLine, PEER_ACCESS_HELP } from "./peer-roster.ts";
+import { canAccessTeam, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, setPeerScope, roomPeerRosterSystemPrompt, roomRosterLine, uniquePeerName, PEER_ACCESS_HELP } from "./peer-roster.ts";
 import { orgPeerInScope } from "./peer-scope.ts";
 import {
   containerComputerAction,
@@ -794,7 +794,7 @@ import {
 import { callHasParkableWork, classifyVoiceIntent } from "../src/lib/voice-mode/voice-topics.ts";
 import { VoiceCallSessions, voiceCallTurnSettle } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
-import { prewarmWindowMs, ThreadPrewarm } from "./thread-prewarm.ts";
+import { namedTeammates, prewarmWindowMs, ThreadPrewarm } from "./thread-prewarm.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
 import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
 import { effortAcceptedByModel, effortForModel } from "../shared/model-capabilities.ts";
@@ -15647,7 +15647,7 @@ const threadPrewarm = new ThreadPrewarm({ windowMs: prewarmWindowMs() });
 /** routineRunId of a task reserved for a scheduled run not started yet. */
 const RESERVED_RUN_PREFIX = "prewarm:";
 type PrewarmOutcome = "started" | "extended" | "limited" | "skipped";
-type PrewarmTurnOpts = { speaker: TurnSpeaker; runOn?: RoutineRunOn; automationSource?: "schedule" | "manual" };
+type PrewarmTurnOpts = { speaker: TurnSpeaker; runOn?: RoutineRunOn; automationSource?: "schedule" | "manual"; commsDepth?: number; cardContinuation?: boolean; warmCoordination?: boolean };
 /** Why a thread is not warmed now, or null when it may be. */
 function prewarmRefusal(botId: string, threadId: string): string | null {
   const level = memoryWatch.current();
@@ -15662,9 +15662,13 @@ function prewarmRefusal(botId: string, threadId: string): string | null {
   const bot = store.projectBotForTask(botId, threadId);
   if (!bot) return "no task";
   if (registry.get(bot.modelSelection.instanceId)?.adapter.capabilities.warmSession !== true) return "engine";
-  // Perspicax profile servers carry tokens exchanged per turn: the next
-  // turn's contract would differ and relaunch, so a warm would only cost.
-  if (IDENTITY.kind === "perspicax" && perspicaxMcp && (store.bot(botId)?.perspicax?.profiles.length ?? 0) > 0) return "perspicax";
+  // Perspicax profile servers: for Claude their turn capability rides a file
+  // the bridge reads on every frame (spawn-contract.ts warmPerspicaxEnv), so
+  // the next turn reuses the warm process; the Perspicax tokens stay in
+  // perspicaxMcp. Other engines still carry it in their launch, where a warm
+  // would only be relaunched.
+  if (IDENTITY.kind === "perspicax" && perspicaxMcp && (store.bot(botId)?.perspicax?.profiles.length ?? 0) > 0
+    && registry.get(bot.modelSelection.instanceId)?.driverKind !== "claudeAgent") return "perspicax";
   return null;
 }
 /** A real turn takes a warm over: wait for its setup, at most
@@ -15697,6 +15701,9 @@ function prewarmThread(botId: string, threadId: string, person: string, opts: Pr
       speaker: opts.speaker,
       ...(opts.runOn ? { runOn: opts.runOn } : {}),
       ...(opts.automationSource ? { automationSource: opts.automationSource } : {}),
+      ...(opts.commsDepth ? { commsDepth: opts.commsDepth } : {}),
+      ...(opts.cardContinuation ? { cardContinuation: true } : {}),
+      ...(opts.warmCoordination ? { warmCoordination: true } : {}),
       onWarmSettled: (ok) => {
         // counted with the finished sessions, so the idle cap (#804) holds
         if (ok && !signal.aborted && !runningTurnEngines.has(threadId)) idleEngines.noteIdle(threadId, () => {
@@ -15710,6 +15717,67 @@ function prewarmThread(botId: string, threadId: string, person: string, opts: Pr
       resolve();
     });
   }), windowMs);
+}
+/** Work threads opened ahead for a named teammate (prewarmNamedTeammates):
+ * hidden and empty until coordinate_bots takes one, removed otherwise. */
+const reservedWorkThreads = new Map<string, { botId: string; timer: NodeJS.Timeout }>();
+const RESERVED_WORK_MS = 120_000;
+function releaseReservedWorkThread(threadId: string): void {
+  const reserved = reservedWorkThreads.get(threadId);
+  if (!reserved) return;
+  reservedWorkThreads.delete(threadId);
+  clearTimeout(reserved.timer);
+  const task = store.taskByThread(reserved.botId, threadId);
+  if (!task || task.hidden !== true || !reservedThreadUnused(threadId) || threadBusy(reserved.botId, threadId)) return;
+  threadPrewarm.cancel(threadId);
+  releaseWarmEngine(threadId);
+  store.deleteTask(reserved.botId, threadId);
+}
+/** Nothing but activity rows (a delegated level noted at opening). */
+function reservedThreadUnused(threadId: string): boolean {
+  return store.messagesFor(threadId).every(message => message.kind === "activity");
+}
+/** coordinate_bots took the thread opened ahead: it shows from now on. Also
+ * one whose timer already ran or a restart forgot: hidden, opened as work,
+ * never used. */
+function adoptReservedWorkThread(botId: string, threadId: string): void {
+  const reserved = reservedWorkThreads.get(threadId);
+  if (reserved) {
+    reservedWorkThreads.delete(threadId);
+    clearTimeout(reserved.timer);
+  }
+  const task = store.taskByThread(botId, threadId);
+  if (task?.hidden === true && (reserved || (task.openedBy?.kind === "work" && reservedThreadUnused(threadId)))) store.setTaskHidden(botId, threadId, false);
+}
+/** Start the engine of each named teammate that has no work thread from
+ * this conversation yet, in that thread opened ahead, hidden (adopted by
+ * coordinate_bots, removed after RESERVED_WORK_MS). Same limits as any
+ * pre-warm. */
+function prewarmNamedTeammates(sender: BotRecord, threadId: string, peers: Array<{ id: string }>): void {
+  for (const peer of peers) {
+    try {
+      const target = store.bot(peer.id);
+      if (!target || target.hidden || engineEligibility(target)) continue;
+      if (registry.get(target.modelSelection.instanceId)?.adapter.capabilities.warmSession !== true) continue;
+      // Only a thread opened ahead here: an existing work thread keeps the
+      // speaker and lineage its own pending continuations are judged by.
+      if (store.workThread(target.id, sender.id, threadId)) continue;
+      const memory = memoryWatch.current();
+      if (memory === "high" || memory === "critical" || idleEngines.maxIdle === 0) continue;
+      const work = store.createTask(target.id, `@${sender.name} · work`, false, undefined,
+        { botId: sender.id, name: sender.name, kind: "work", threadId, at: Date.now() }, undefined, undefined, undefined, true);
+      if (!work) continue;
+      const reservedThread = work.threadId;
+      reservedWorkThreads.set(reservedThread, { botId: target.id, timer: setTimeout(() => releaseReservedWorkThread(reservedThread), RESERVED_WORK_MS) });
+      applyDelegatedLevel(sender, threadId, target, reservedThread);
+      const outcome = prewarmThread(target.id, work.threadId, threadPersonKey(threadId) ?? "local", {
+        speaker: peerSpeaker(sender.id, threadId), commsDepth: MAX_COMMS_DEPTH, cardContinuation: true, warmCoordination: true,
+      });
+      if (outcome !== "started" && outcome !== "extended") releaseReservedWorkThread(work.threadId);
+    } catch (error) {
+      console.error(`[prewarm] teammate skipped: ${error instanceof Error ? error.message.slice(0, 120) : "error"}`);
+    }
+  }
 }
 /** Who a hang-up frame is for: the person who hung up, else the thread's
  * person, else the operator at this computer. */
@@ -17541,6 +17609,9 @@ async function startTurn(
     /** Start the engine for a call that was just accepted. No transcript
      * row, no turn, no model prompt. The first spoken turn joins it. */
     warmOnly?: boolean;
+    /** A warm for a teammate's coordinate_bots turn (prewarmNamedTeammates):
+     * built as that turn will be, so the turn takes the warm process as is. */
+    warmCoordination?: boolean;
     /** Aborted when that call ends before the warm is needed. */
     warmSignal?: AbortSignal;
     /** Fired once the warm has released its claim, whether or not the
@@ -17656,7 +17727,9 @@ async function startTurn(
   // Routines and legacy peer delivery already have their own completion
   // owners. Only ordinary chats opt into this scheduler; its child turns
   // carry an exact node id rather than inheriting a routine's lifetime.
-  const boundedCoordination = !opts?.automationSource && (!opts?.commsDepth || Boolean(opts?.coordination));
+  // A teammate's warm is shaped as the coordinate_bots turn it precedes.
+  const coordinated = Boolean(opts?.coordination) || (opts?.warmOnly === true && opts.warmCoordination === true);
+  const boundedCoordination = !opts?.automationSource && (!opts?.commsDepth || coordinated);
   if (bot.approvalGrant) {
     throw Object.assign(new Error("this bot's approval level is still being confirmed — try again"), { status: 409, code: "settling" });
   }
@@ -18017,7 +18090,9 @@ async function startTurn(
   if (!warmOnly && opts?.trigger) turnTriggers.set(threadId, opts.trigger);
   // A fresh delegated turn (coordinate_bots) is a new hop on its thread:
   // it records its speaker so a hop it starts in turn carries the same one.
-  if (!opts.cardContinuation || (opts.coordination && !opts.coordination.resumed)) {
+  // A teammate's warm records the speaker its coordinate_bots turn will, so
+  // both are judged for the same person (mcpIdentityEnv).
+  if (!opts.cardContinuation || (opts.coordination && !opts.coordination.resumed) || (warmOnly && opts.warmCoordination === true)) {
     turnSpeakers.set(threadId, speaker);
     turnSpeakerPrincipals.set(threadId, orgSpeakerPrincipal(bot, speaker));
     if (routineLineage(speaker)) {
@@ -18047,7 +18122,7 @@ async function startTurn(
     }
   }
 
-  const agentsMounted = (commsDepth < MAX_COMMS_DEPTH || Boolean(opts?.coordination)) && instance.adapter.capabilities.agentsMcp === true;
+  const agentsMounted = (commsDepth < MAX_COMMS_DEPTH || coordinated) && instance.adapter.capabilities.agentsMcp === true;
 
   // busy flips immediately so the composer locks; the dispatch itself runs
   // in the background — boat provisioning can take ~90s and must never
@@ -18932,7 +19007,7 @@ async function startTurn(
         const origin = opts?.cardContinuation
           ? store.activePath(threadId).findLast(message => message.role === "user" && message.kind === "text")
           : userMessage;
-        const ownThreadCreation = boundedCoordination && !opts?.coordination && Boolean(origin && !origin.peerAsk);
+        const ownThreadCreation = boundedCoordination && !coordinated && Boolean(origin && !origin.peerAsk);
         integrations.agents = agentsIntegration(bot.id, threadId, commsDepth, skillAuthoring, dispatchClaimId, opts?.coordination?.id, boundedCoordination, ownThreadCreation, worksInWorkspace);
       }
       if (instance.adapter.capabilities.hooks === true && hooksEnabled()) {
@@ -18947,6 +19022,12 @@ async function startTurn(
             sectionPeers,
           )
         : [];
+      // A person's request that names a teammate: its engine starts now, in
+      // the work thread coordinate_bots would use, so the delegation does not
+      // wait for a cold start (perf round 3).
+      if (!warmOnly && integrations.agents && boundedCoordination && !commsDepth && !opts?.coordination && !store.groupByThread(threadId)) {
+        prewarmNamedTeammates(bot, threadId, namedTeammates(providerText, sectionPeers, tagged));
+      }
       const coordinationPrompt = bot.chiefOfStaff
         ? chiefOfStaffSystemPrompt(
             bot.id,
@@ -19095,7 +19176,7 @@ async function startTurn(
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT + myChromePromptFor(bot, threadId) : "" },
         { id: "data", label: "Data", text: integrations.data ? BUILT_IN_DATA_SYSTEM_PROMPT : "" },
         { id: "coordination", label: "Team", text: coordinationPrompt ? ` ${coordinationPrompt}` : "" },
-        { id: "assignment", label: "Teammate task", text: coordinationNode?.parentId ? `\n${coordinationSystemInstructions()}` : "" },
+        { id: "assignment", label: "Teammate task", text: coordinationNode?.parentId || (warmOnly && opts?.warmCoordination === true) ? `\n${coordinationSystemInstructions()}` : "" },
         { id: "outstanding", label: "Outstanding teammate work", text: outstandingAssignmentsPrompt(threadId) },
         { id: "credential", label: "Credentials", text: credentialPrompt },
         // its own paragraph, so a smaller model reads it as a rule of its
@@ -19129,7 +19210,7 @@ async function startTurn(
         { id: "skill-instructions", label: "Skill instructions", text: skillInstructions },
         { id: "playbooks", label: "Playbooks", text: packagePlaybooks },
         { id: "webhook", label: "Webhook provenance", text: opts?.automationSource === "webhook" ? WEBHOOK_PROMPT : "" },
-        { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
+        { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => uniquePeerName(b, sectionPeers) ? peerName(b.name) : `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed (a unique name works as its bot_ids entry); do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
         // a voice call: the phone-call instruction (server/voice-call-prompt.ts)
         { id: "voice-call", label: "Phone call", text: voiceCallText },
       ], instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
@@ -37250,6 +37331,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 if (!task) throw new Error("The recipient no longer exists");
                 target.threadId = task.threadId;
                 if (!continued) createdThread = task.threadId;
+                else adoptReservedWorkThread(target.botId, task.threadId);
                 applyDelegatedLevel(internalSender, internalCapability.threadId, store.bot(target.botId)!, target.threadId);
               }
               // No mode: a question to the bot that sent this work (an

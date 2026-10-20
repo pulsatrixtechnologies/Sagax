@@ -53,7 +53,7 @@ import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS, 
 import { engineFailureMessage, type EngineFailureKind } from "./engine-errors.ts";
 import { claudeAuthFailure, claudeAuthRecovery } from "./claude-auth-recovery.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
-import { contractChanges, switchesCover, turnFiles, turnSwitches, warmCommsEnv, withoutTurnTokens } from "./spawn-contract.ts";
+import { contractChanges, PERSPICAX_TOKEN_ENV, switchesCover, turnFiles, turnSwitches, warmCommsEnv, warmPerspicaxEnv, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
 import {
   applyClaudeInject,
@@ -2001,7 +2001,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const botOwned = new Set<string>();
       for (const [name, server] of Object.entries(turn.integrations?.custom ?? {})) {
         if (Object.hasOwn(mcpServers, name)) continue;
-        mcpServers[name] = { ...server };
+        // A Perspicax profile bridge: its turn capability rides a file (like
+        // the agents comms token above), so a pre-warmed process is kept.
+        // Never rewritten under a turn still running on this thread's process.
+        const serverEnv = (server as { env?: Record<string, string> }).env;
+        mcpServers[name] = serverEnv?.[PERSPICAX_TOKEN_ENV] && !sessions.get(threadId)?.turn
+          ? { ...server, env: warmPerspicaxEnv(threadId, botId, serverEnv) }
+          : { ...server };
         botOwned.add(name);
       }
       // computer_select only chooses among the computers this turn may
