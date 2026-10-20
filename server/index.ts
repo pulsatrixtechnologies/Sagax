@@ -28,6 +28,7 @@ import {
   openSafetyHold,
   safetyArm,
   safetyForgetArmed,
+  safetyIsArmed,
   safetyHttpRefusal,
   safetyPermissionEffect,
   safetyRejectArmed,
@@ -7430,8 +7431,6 @@ function selfApplyBlocked(threadId: string): boolean {
  * receipt with Undo (server/direct-apply.ts). Team setup and peer approvals
  * stay Full access only (fullAccessForSource). */
 function appliesDirectly(botId: string, threadId: string, targetBotId: string): DirectApply | null {
-  // 2026-10-20: the person asked their own Primary Bot for this change now
-  if (primaryAskedGrant && primaryAskedGrant.botId === botId && primaryAskedGrant.threadId === threadId && primaryAskedGrant.targetBotId === targetBotId) return "primary-bot";
   return directApply({
     fullAccess: fullAccessForSource(botId, threadId),
     botId,
@@ -7442,15 +7441,13 @@ function appliesDirectly(botId: string, threadId: string, targetBotId: string): 
 
 /** 2026-10-20 (JC: "le bot principal fait tout"): a proposal the person's own
  * Primary Bot makes because the person asked for it in this turn's message
- * applies at once, without a card. Set only around one submit, for exactly
- * that bot, conversation and target (primaryAskedProposal). */
-let primaryAskedGrant: { botId: string; threadId: string; targetBotId: string } | null = null;
-
+ * applies at once, without a card: the submit gets `primaryAsked`, passed
+ * down explicitly (never a shared flag another call could read). */
 /** The same proof as sagax_settings' quote (server/settings-actions.ts):
  * the person's own Primary Bot, their own message in this turn, the quote in
  * it with a word of the change, the target bot (or routine) named and the
  * person's own. The proof, or why not. */
-function primaryAskedProposal(input: { botId: string; threadId: string; generation: string; quote: unknown; targetBotId: string; key: string; value?: unknown; routineName?: string; valueNames?: string[] }): { botName: string; messageId: string; person: string } | string {
+function primaryAskedProposal(input: { botId: string; threadId: string; generation: string; quote: unknown; targetBotId: string; key: string; value?: unknown; routineName?: string; valueNames?: string[] }): { botName: string; messageId: string; person: string; quote: string } | string {
   if (input.quote === undefined) return "no quote";
   const gate = primaryTurnGate(input.botId, input.threadId, input.generation);
   if ("error" in gate) return gate.error;
@@ -7462,28 +7459,30 @@ function primaryAskedProposal(input: { botId: string; threadId: string; generati
   if (!primaryBotSameOwner(from, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
   const asked = askedBotChange({
     key: input.key, family: input.key.split(".")[0] ?? "bot", value: input.value, quote: String(input.quote),
-    names: [target.name, input.routineName], speakingBot: target.id === from.id, speakingName: from.name,
+    names: [target.name, input.routineName], speakingBot: target.id === from.id, speakingName: from.name, message: gate.message.text,
     ...(input.valueNames ? { valueNames: input.valueNames } : {}),
   });
-  return asked === true ? { botName: gate.botName, messageId: gate.message.id, person: gate.person } : asked;
+  return asked === true ? { botName: gate.botName, messageId: gate.message.id, person: gate.person, quote: String(input.quote) } : asked;
 }
 
 /** Runs one submit with the person's request as its grant, and journals it
  * as theirs, via the Primary Bot. */
-async function withPrimaryAsked<T>(proof: { botName: string; messageId: string; person: string } | string, scope: { botId: string; threadId: string; targetBotId: string; kind: string }, submit: () => T | Promise<T>): Promise<T> {
-  if (typeof proof === "string") return submit();
-  primaryAskedGrant = { botId: scope.botId, threadId: scope.threadId, targetBotId: scope.targetBotId };
-  try {
-    const result = await submit();
-    if ((result as { state?: unknown } | null)?.state === "applied") appendAdminAction(DATA_DIR, {
-      category: "setting", action: "setting.change", target: { kind: "bot", id: scope.targetBotId }, changed: [scope.kind],
-      after: { how: "run", bot: scope.botId, via: "primary-bot", viaBot: proof.botName, messageId: proof.messageId },
-      actor: IDENTITY.kind === "perspicax" ? { kind: "person", principalId: proof.person, via: "sagax" } : { kind: "loopback" },
-    });
-    return result;
-  } finally {
-    primaryAskedGrant = null;
-  }
+async function withPrimaryAsked<T>(proof: { botName: string; messageId: string; person: string; quote: string } | string, scope: { botId: string; threadId: string; targetBotId: string; kind: string }, submit: (primaryAsked: boolean) => T | Promise<T>): Promise<T> {
+  if (typeof proof === "string") return submit(false);
+  const result = await submit(true);
+  if ((result as { state?: unknown } | null)?.state === "applied") appendAdminAction(DATA_DIR, {
+    category: "setting", action: "setting.change", target: { kind: "bot", id: scope.targetBotId }, changed: [scope.kind],
+    after: { how: "run", bot: scope.botId, via: "primary-bot", viaBot: proof.botName, messageId: proof.messageId, quote: proof.quote.slice(0, 200) },
+    actor: IDENTITY.kind === "perspicax" ? { kind: "person", principalId: proof.person, via: "sagax" } : { kind: "loopback" },
+  });
+  return result;
+}
+
+/** A quote that did not prove the request, journaled so an injection
+ * attempt is visible. */
+function journalRefusedQuote(botId: string, targetBotId: string, kind: string, reason: string): void {
+  appendAdminAction(DATA_DIR, { category: "setting", action: "setting.refused", target: { kind: "bot", id: targetBotId }, changed: [kind],
+    after: { bot: botId, via: "primary-bot", reason: reason.slice(0, 200) }, actor: { kind: "loopback" } });
 }
 
 function peerReviewRequired(bot: BotRecord, threadId: string): boolean {
@@ -24022,9 +24021,14 @@ function proposalPersistence(botId: string, threadId: string, opensCard = true) 
       !message.card.dismissed && !message.card.expired,
   );
   // 2026-10-20 (JC): a waiting proposal never blocks a new one. Past the
-  // budget the oldest waiting cards are replaced: closed, nothing applied.
-  for (const message of openRequests.slice(0, Math.max(0, openRequests.length - 7))) {
+  // budget the oldest waiting cards are replaced: closed as expired, nothing
+  // applied, journaled. A card under a safety hold is never replaced.
+  const replaceable = openRequests.filter((message) => !(message.card?.requestId && safetyIsArmed(message.card.requestId)));
+  const surplus = Math.max(0, openRequests.length - 7);
+  if (replaceable.length < surplus) return { ok: false as const, status: 429, error: "confirm or cancel an existing proposal first" };
+  for (const message of replaceable.slice(0, surplus)) {
     store.patchMessage(threadId, message.id, { card: { ...message.card!, answered: "deny", expired: true, options: [], held: "Replaced by a newer proposal. Nothing was applied." } });
+    appendDecision(DATA_DIR, { threadId, requestId: message.card!.requestId ?? message.id, botId, tool: "proposal", summary: message.card!.title ?? "proposal", decision: "auto-denied", source: "expired" });
   }
   return { ok: true as const };
 }
@@ -36772,13 +36776,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (routineSafety?.kind === "stop") return json(res, 409, { error: routineSafety.message });
         // 2026-10-20: asked now by the person, it applies without a card
         const routineTarget = forBot?.botId ?? from.id;
-        const routineName = proposedInput.action === "create"
-          ? ("routine" in body && body.routine && typeof body.routine === "object" ? String((body.routine as { name?: unknown }).name ?? "") : "")
+        // an existing routine's own name (never one the bot chose for a new one)
+        const routineName = proposedInput.action === "create" ? undefined
           : routines?.listRoutines().find((routine) => routine.id === proposedInput.routineId)?.name;
         const askedProof = body.quote === undefined ? "no quote" : primaryAskedProposal({ botId: from.id, threadId: fromThreadId, generation: internalCapability.generation, quote: body.quote, targetBotId: routineTarget,
           key: proposedInput.action === "delete" ? "routine.delete" : `routine.${proposedInput.action}`, ...(routineName ? { routineName } : {}) });
-        if (body.quote !== undefined && typeof askedProof === "string") return json(res, 403, { error: `Not applied at once: ${askedProof}. Without quote it becomes a card for the person.` });
-        const proposed = await withPrimaryAsked(routineSafety?.kind === "hold" ? "safety hold" : askedProof, { botId: from.id, threadId: fromThreadId, targetBotId: routineTarget, kind: `routine.${proposedInput.action}` }, () => routineRequests.submit({
+        if (body.quote !== undefined && typeof askedProof === "string") {
+          journalRefusedQuote(from.id, routineTarget, `routine.${proposedInput.action}`, askedProof);
+          return json(res, 403, { error: `Not applied at once: ${askedProof}. Without quote it becomes a card for the person.` });
+        }
+        const proposed = await withPrimaryAsked(routineSafety?.kind === "hold" ? "safety hold" : askedProof, { botId: from.id, threadId: fromThreadId, targetBotId: routineTarget, kind: `routine.${proposedInput.action}` }, (primaryAsked) => routineRequests.submit({ primaryAsked,
           botId: from.id,
           threadId: fromThreadId,
           proposal: proposedInput,
@@ -36909,8 +36916,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             if (typeof askedProof === "string") break;
           }
         }
-        if (body.quote !== undefined && typeof askedProof === "string") return json(res, 403, { error: `Not applied at once: ${askedProof}. Without quote it becomes a card for the person.` });
-        const proposed = await withPrimaryAsked(askedProof, { botId: from.id, threadId: body.fromThreadId, targetBotId, kind: "bot.profile" }, () => profileRequests.submit({
+        if (body.quote !== undefined && typeof askedProof === "string") {
+          journalRefusedQuote(from.id, targetBotId, "bot.profile", askedProof);
+          return json(res, 403, { error: `Not applied at once: ${askedProof}. Without quote it becomes a card for the person.` });
+        }
+        const proposed = await withPrimaryAsked(askedProof, { botId: from.id, threadId: body.fromThreadId, targetBotId, kind: "bot.profile" }, (primaryAsked) => profileRequests.submit({ primaryAsked,
           botId: from.id,
           threadId: body.fromThreadId,
           targetBotId,
@@ -36957,8 +36967,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const instanceId = typeof selection.instanceId === "string" ? selection.instanceId : "";
         const askedProof = body.quote === undefined ? "no quote" : primaryAskedProposal({ botId: from.id, threadId: body.fromThreadId, generation: internalCapability.generation, quote: body.quote, targetBotId, key: "bot.model", value: body.modelSelection,
           valueNames: [instanceId, registry.get(instanceId)?.displayName ?? "", typeof selection.model === "string" ? selection.model : ""].filter(Boolean) });
-        if (body.quote !== undefined && typeof askedProof === "string") return json(res, 403, { error: `Not applied at once: ${askedProof}. Without quote it becomes a card for the person.` });
-        const proposed = await withPrimaryAsked(askedProof, { botId: from.id, threadId: body.fromThreadId, targetBotId, kind: "bot.model" }, () => modelRequests.submit({
+        if (body.quote !== undefined && typeof askedProof === "string") {
+          journalRefusedQuote(from.id, targetBotId, "bot.model", askedProof);
+          return json(res, 403, { error: `Not applied at once: ${askedProof}. Without quote it becomes a card for the person.` });
+        }
+        const proposed = await withPrimaryAsked(askedProof, { botId: from.id, threadId: body.fromThreadId, targetBotId, kind: "bot.model" }, (primaryAsked) => modelRequests.submit({ primaryAsked,
           botId: from.id,
           threadId: body.fromThreadId,
           targetBotId,

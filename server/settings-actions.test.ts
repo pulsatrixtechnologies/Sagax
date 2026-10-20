@@ -233,6 +233,14 @@ describe("askedBotChange (the Primary Bot changes the person's bots on their wor
     // standing grants, sharing and other families keep their card
     expect(askedBotChange({ key: "bot.toolGrant", family: "bot", value: {}, quote: "Mets SWAT", names: ["SWAT"], speakingBot: false })).toMatch(/only/);
     expect(askedBotChange({ key: "account.email", family: "account", value: "x", quote: "Change mon courriel", names: [], speakingBot: true })).toMatch(/only/);
+    // security review 2026-10-20: one quote carries one kind of change, a
+    // question or a refusal right after it does not ask, a bare "you" is not the bot
+    expect(askedBotChange({ key: "bot.persona", family: "bot", value: "x", quote: "change le modèle de Ember", names: ["Ember"], speakingBot: false })).toMatch(/which setting/);
+    expect(askedBotChange({ key: "bot.cwd", family: "bot", value: "/", quote: "change le dossier de Ember", names: ["Ember"], speakingBot: false })).toMatch(/only/);
+    expect(askedBotChange({ key: "bot.delete", family: "bot", value: true, quote: "supprime Ember", message: "supprime Ember ? non, pas encore", names: ["Ember"], speakingBot: false })).toMatch(/question/);
+    expect(askedBotChange({ key: "bot.delete", family: "bot", value: true, quote: "ne supprime pas Ember", names: ["Ember"], speakingBot: false })).toMatch(/refuse/);
+    expect(askedBotChange({ key: "routine.create", family: "routine", value: {}, quote: "use the web", names: ["Cryptic"], speakingBot: true, speakingName: "Cryptic" })).toMatch(/itself/);
+    expect(askedBotChange({ key: "bot.persona", family: "bot", value: "x", quote: "can you change your tone", names: ["Cryptic"], speakingBot: true, speakingName: "Cryptic" })).toMatch(/itself/);
     // the speaking bot itself: "toi" or its name
     expect(askedBotChange({ key: "bot.effort", family: "bot", value: "high", quote: "mets-toi en effort high", names: ["Cryptic"], speakingBot: true, speakingName: "Cryptic" })).toBe(true);
   });

@@ -136,52 +136,83 @@ export function askedChange(message: string, key: string, value: unknown, botNam
 }
 
 /** 2026-10-20 (JC: "le bot principal fait tout"): beyond levels and rules,
- * a Primary Bot changes any setting of the person's own bots and routines
- * at once when the person asks for it in their message (model, engine,
- * effort, persona, routines, managed teams, archive, delete). Standing tool
- * grants and sharing keep their card. */
-const PERSON_ASKED_FAMILIES: ReadonlySet<string> = new Set(["bot", "routine"]);
-const KEEP_CARD_ON_WORDS: ReadonlySet<string> = new Set(["bot.alwaysAllow", "bot.toolGrant", "bot.share", "bot.visibility", "routine.runAs"]);
-const WORDS_VALUE_KEYS: ReadonlySet<string> = new Set(["bot.name", "bot.title", "routine.name"]);
-/** Words the quote carries for a deletion or an archive. */
-const DELETE_WORDS = /(?:^| )(?:supprim|efface|detrui|delete|remove|destroy|erase)/;
-const ARCHIVE_WORDS = /(?:^| )(?:archiv|range|cache|masque|hide)/;
-const RESTORE_WORDS = /(?:^| )(?:desarchiv|unarchiv|restaur|retabli|reaffiche|unhide|show)/;
+ * a Primary Bot changes these settings of the person's own bots and
+ * routines at once when the person asks for it in their message. Each key
+ * needs its own words in the quote (security review 2026-10-20: one quote
+ * must not carry another change): a name or title in the person's words,
+ * the engine or model, the effort, the team, a word of the setting. Every
+ * other key (working folder, tools, grants, sharing, runs as...) keeps its
+ * card. */
+const WORD = (pattern: string) => new RegExp(`(?:^| )(?:${pattern})`);
+const DELETE_WORDS = WORD("supprim|efface|detrui|delete|destroy|erase");
+const ARCHIVE_WORDS = WORD("archiv|masque|hide");
+const RESTORE_WORDS = WORD("desarchiv|unarchiv|restaur|retabli|reaffiche|unhide");
+const ROUTINE_WORDS = WORD("routine|tache|automatisation|planifi|schedul|cron");
+const KEY_WORDS: Readonly<Record<string, RegExp | "value" | "model" | "effort" | "teams" | "delete" | "archive">> = {
+  "bot.model": "model", "bot.effort": "effort", "bot.name": "value", "bot.title": "value", "bot.description": "value",
+  "bot.persona": WORD("persona|personnalite|soul|instruction|consigne|caractere|personality|ton |tone"),
+  "bot.notifications": WORD("notif|alert|avis"), "bot.speakReplies": WORD("voix|voice|parle|lecture|speak|read aloud|a voix haute"),
+  "bot.voiceNotes": WORD("note vocale|notes vocales|voice note"), "bot.pinned": WORD("epingl|pin"),
+  "bot.managedSections": "teams", "bot.section": "teams", "bot.hidden": "archive", "bot.delete": "delete",
+  "routine.enabled": WORD("pause|suspend|desactiv|arret|stop|reprend|resume|reactiv|activ|enable|disable|coupe"),
+  "routine.run": WORD("lance|roule|execute|run|demarre|start"), "routine.delete": "delete", "routine.name": "value",
+  "routine.schedule": WORD("horaire|heure|chaque|tous les|toutes les|quotidien|hebdo|schedule|daily|weekly|every|cron|minute|matin|soir|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche"),
+  "routine.prompt": WORD("consigne|instruction|prompt|demande|texte"),
+  "routine.create": ROUTINE_WORDS, "routine.update": ROUTINE_WORDS, "routine.pause": WORD("pause|suspend|desactiv|arret|stop|coupe|disable"),
+  "routine.resume": WORD("reprend|resume|reactiv|activ|relance|enable"), "routine.run_now": WORD("lance|roule|execute|run|demarre|start"),
+};
+/** A refusal or a question right after the quote ("supprime Ember ? non"). */
+const AFTER_REFUSAL = /^ *(?:\?|non\b|pas\b|jamais\b|attend|not\b|no\b|don't|dont\b|never\b|wait\b)/i;
 
 /** Whether the person's words (quote, already proved in their message) ask
- * for this change of their own bot or routine: the bot or routine named (or
- * "toi" for the speaking bot), the new engine or model named for a model
- * change, the effort for an effort, the word for a deletion or an archive.
- * True, or why not. */
+ * for this change of their own bot or routine: the bot named (or "toi-même"
+ * or its name for the speaking bot), and the key's own words. True, or why
+ * not. */
 export function askedBotChange(input: {
   key: string;
   family: string;
   value: unknown;
   quote: string;
-  /** The bot the change touches, or the routine and its bot. */
+  /** The bot the change touches, then the routine's own name (server-side). */
   names: readonly (string | undefined)[];
   speakingBot: boolean;
   speakingName?: string;
   /** The engine's names (instance id and label, model id) for bot.model. */
   valueNames?: readonly (string | undefined)[];
+  /** The person's whole message, to read what follows the quote. */
+  message?: string;
 }): true | string {
-  if (!PERSON_ASKED_FAMILIES.has(input.family) || KEEP_CARD_ON_WORDS.has(input.key)) return "only approval levels, rules and the person's own bots and routines change at once on the person's words";
+  const want = KEY_WORDS[input.key];
+  if (!want) return "only approval levels, rules, and the model, effort, persona, profile, teams, archive, deletion and routines of the person's own bots change at once on the person's words";
   const said = normalizeWords(input.quote);
   if (input.speakingBot) {
-    if (!REFLEXIVE.test(said) && !messageNamesCard(input.quote, [input.speakingName, ...input.names])) return "the person's words (quote) do not say this bot itself (\"toi\", or its name)";
+    if (!SELF_WORDS.test(said) && !messageNamesCard(input.quote, [input.speakingName])) return "the person's words (quote) do not say this bot itself (\"toi-même\", or its name)";
   } else if (!messageNamesCard(input.quote, input.names)) {
     return `the person's words (quote) do not name ${input.names.find(Boolean) ?? "that bot or routine"}`;
   }
-  if ((input.key === "bot.delete" || input.key === "routine.delete") && !DELETE_WORDS.test(said)) return "the person's words (quote) do not ask to delete it";
-  if (input.key === "bot.hidden" && !(input.value === false ? RESTORE_WORDS : ARCHIVE_WORDS).test(said)) return `the person's words (quote) do not ask to ${input.value === false ? "restore" : "archive"} it`;
-  if (input.key === "bot.model" && !(input.valueNames ?? []).some((name) => name && personWrote(input.quote, name))) return "the person's words (quote) do not name the new engine or model";
-  // a new name or title is the person's own words
-  if (WORDS_VALUE_KEYS.has(input.key) && !(typeof input.value === "string" && input.value.trim() && personWrote(input.quote, input.value))) return "the person's words (quote) do not hold the new text";
-  if (input.key === "bot.effort" && !(typeof input.value === "string" && personWrote(input.quote, input.value))) return "the person's words (quote) do not name the effort";
-  if (input.key === "bot.managedSections" && Array.isArray(input.value) && input.value.length
-    && !input.value.some((name) => typeof name === "string" && name && personWrote(input.quote, name))) return "the person's words (quote) do not name the team";
-  return true;
+  if (input.message) {
+    const at = input.message.toLowerCase().indexOf(input.quote.trim().toLowerCase());
+    if (at >= 0 && AFTER_REFUSAL.test(input.message.slice(at + input.quote.trim().length).replace(/^[\s.,;:!»"')]*(?=\?)/, ""))) return "the person's words are a question or are refused right after; ask them";
+  }
+  if (NEGATED_CHANGE.test(said)) return "the person's words refuse it. Do not do it.";
+  const value = input.value;
+  switch (want) {
+    case "value": return typeof value === "string" && value.trim() && personWrote(input.quote, value) ? true : "the person's words (quote) do not hold the new text";
+    case "model": return (input.valueNames ?? []).some((name) => name && personWrote(input.quote, name)) ? true : "the person's words (quote) do not name the new engine or model";
+    case "effort": return typeof value === "string" && personWrote(input.quote, value) ? true : "the person's words (quote) do not name the effort";
+    case "teams": {
+      const teams = Array.isArray(value) ? value : [value];
+      return teams.every((name) => typeof name !== "string" || !name || personWrote(input.quote, name)) && (teams.length > 0 || WORD("retire|enleve|remove|aucune|none").test(said)) ? true : "the person's words (quote) do not name the team";
+    }
+    case "delete": return DELETE_WORDS.test(said) ? true : "the person's words (quote) do not ask to delete it";
+    case "archive": return (value === false ? RESTORE_WORDS : ARCHIVE_WORDS).test(said) ? true : `the person's words (quote) do not ask to ${value === false ? "restore" : "archive"} it`;
+    default: return want.test(said) ? true : `the person's words (quote) do not say which setting (${input.key})`;
+  }
 }
+/** "toi-même", "yourself": the speaking bot, said plainly (not a bare "you"). */
+const SELF_WORDS = /(?:^| )(?:toi meme|toi|mets toi|passe toi|yourself)(?: |$)/;
+/** A refusal inside the quote worded with a change verb ("ne supprime pas"). */
+const NEGATED_CHANGE = /(?:^| )(?:n'|ne |pas |jamais |don't |dont |do not |not |never )(?:\S+'|\S+ ){0,2}(?:supprim|efface|delete|remove|archiv|passe|change|mets|met |switch|set|rename|renomm)/;
 
 /** Settings whose route asks the always-grant key itself. */
 const STANDING_GRANTS: ReadonlySet<string> = new Set(["bot.alwaysAllow", "rules.commandAllow", "bot.toolGrant"]);
@@ -384,7 +415,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       : !PERSON_ASKED_KEYS.has(spec.key) ? askedBotChange({
         key: spec.key, family: spec.family, value, quote: typeof args.quote === "string" ? args.quote : proof.message,
         names: [changedBot ? deps.targetName?.("bot", changedBot) : undefined, ...(spec.target === "routine" && ids.target ? [deps.targetName?.("routine", ids.target)] : [])],
-        speakingBot: !changedBot || changedBot === input.botId, speakingName: input.botName,
+        speakingBot: !changedBot || changedBot === input.botId, speakingName: input.botName, message: proof.message,
         ...(spec.key === "bot.model" ? { valueNames: modelNames(value, deps.instanceName) } : {}),
       })
       : askedChange(proof.message, spec.key, value, subjectBot ? deps.targetName?.("bot", subjectBot) : undefined, !subjectBot || subjectBot === input.botId,
