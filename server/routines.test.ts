@@ -3589,6 +3589,11 @@ describe("a run that fails on a passing provider error before doing anything", (
     failTurn(answered, "thread-1", ROUTING);
     expect(answered.manager.listRuns()[0]).toMatchObject({ status: "failed" });
 
+    const streamed = await started();
+    streamed.manager.handleRuntimeEvent({ ...event("thread-1"), type: "content.delta", streamKind: "assistant_text", delta: "Starting the sw" });
+    failTurn(streamed, "thread-1", ROUTING);
+    expect(streamed.manager.listRuns()[0]).toMatchObject({ status: "failed" });
+
     const refused = await started();
     failTurn(refused, "thread-1", "workspace routing discovery unauthorized (401)");
     expect(refused.manager.listRuns()[0]).toMatchObject({ status: "failed" });

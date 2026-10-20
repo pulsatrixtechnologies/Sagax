@@ -915,13 +915,15 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       // ChatGPT login: a custom provider's 401 is its own key's, and its
       // success proves nothing about ChatGPT. No model means the catalog's
       // default, which is provider-qualified when config.toml picks another.
-      const chatgptTurn = ownLogin &&
+      // An organization owner key runs on its own provider: no Codex sign-in is involved.
+      const accessEnv = childEnv();
+      const ownerKeyTurn = codexAccessLaunch(accessEnv, turn.access).ownerKey;
+      const chatgptTurn = ownLogin && !ownerKeyTurn &&
         decodeCodexSelection(turn.model || models.default).modelProvider === OFFICIAL_CODEX_PROVIDER;
       const route: CodexRoute = plan ? "plan" : chatgptTurn ? "own" : "other";
-      // Without a sign-in Codex runs a turn and fails only after a minute of reconnects. An
-      // organization owner key needs no sign-in, and a per-turn Codex home is checked where it lives.
-      const accessEnv = childEnv();
-      const signedOut = chatgptTurn && !codexAccessLaunch(accessEnv, turn.access).ownerKey && await loginCheck(accessEnv) === "missing";
+      // Without a sign-in Codex runs a turn and fails only after a minute of reconnects. A per-turn
+      // Codex home (a person's subscription) is checked where it lives.
+      const signedOut = chatgptTurn && await loginCheck(accessEnv) === "missing";
       assertPlanCurrent();
       if (active.has(threadId)) throw new Error("a turn is already running on this thread");
       const turnId = newId();
@@ -1529,7 +1531,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       // Each bot's Codex reads auth.json when it starts, possibly while another one rewrites it.
       const retryLoginRace = (raw: string, refused: boolean): boolean => {
         const missing = CODEX_MISSING_CREDENTIALS.test(raw);
-        if (!chatgptTurn || loginRaceRetried || state.streamed || attempt >= RETRY_MAX_ATTEMPTS - 1 || !(refused || missing)) return false;
+        // The race is read on the instance's own auth.json: a per-turn Codex home is not retried.
+        if (!chatgptTurn || turn.access?.codexHome || loginRaceRetried || state.streamed || attempt >= RETRY_MAX_ATTEMPTS - 1 || !(refused || missing)) return false;
         const mark = loginMark();
         if (!mark || (!missing && mark[1] === launchedLogin)) return false;
         loginRaceRetried = true;

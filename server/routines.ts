@@ -1851,6 +1851,11 @@ export class RoutineManager {
     this.ticking = true;
     try {
       const now = this.now();
+      // A run cancelled or stopped mid-turn never reaches turn.completed here: forget its work mark.
+      for (const id of this.workedRuns) {
+        const run = this.runs.find((candidate) => candidate.id === id);
+        if (!run || !["running", "waiting"].includes(run.status)) this.workedRuns.delete(id);
+      }
       for (const run of this.runs) {
         if (
           !["running", "waiting"].includes(run.status) ||
@@ -2177,6 +2182,10 @@ export class RoutineManager {
         event.type === "turn.completed" || (event.type === "item.completed" && event.itemType === "assistant_text")
       )
     ) return null;
+    // Anything the turn did or said (a tool, an approval, streamed text): a replay could repeat it.
+    if (event.type === "item.started" || event.type === "item.completed" || event.type === "request.opened" ||
+      (event.type === "item.updated" && event.itemType === "tool") ||
+      (event.type === "content.delta" && event.streamKind === "assistant_text")) this.workedRuns.add(run.id);
     if (event.type === "turn.started") {
       run.status = "running";
       run.attention = undefined;
@@ -2193,8 +2202,7 @@ export class RoutineManager {
     } else if (event.type === "turn.retrying" || event.type === "item.started") {
       // turn.retrying: the driver will relaunch this same run; a transient blip is not a
       // receipt-worthy failure, so keep the run running and stay quiet.
-      // item.started: the run began its work, so a later failure is not a clean restart.
-      if (event.type === "item.started") this.workedRuns.add(run.id);
+      // item.started: the run began its work (noted above), so a later failure is not a clean restart.
       return null;
     } else if (event.type === "turn.completed") {
       if (event.cost != null) run.cost = (run.cost ?? 0) + event.cost;
