@@ -56,6 +56,14 @@ export const ALLOWED = [
       file.replaceAll("\\", "/").startsWith("dist-server/") &&
       /APNS_HOSTS\d*\s*=\s*Object\.freeze\(\{\s*production: "api\.push\.apple\.com",\s*sandbox: "api\.sandbox\.push\.apple\.com",?\s*\}\)/.test(around),
   },
+  {
+    // sagax_help knowledge (server/self-knowledge/): generated documentation
+    // prose that names the hosts and projects Sagax blocks. It is data the
+    // bot reads, never a URL the app fetches or a client of these hosts.
+    why: "generated sagax_help knowledge text (documentation prose, never fetched), dist-server only",
+    test: (match, around, file = "") =>
+      file.replaceAll("\\", "/") === "dist-server/self-knowledge/knowledge.generated.json",
+  },
 ];
 
 const SKIP_FILE = /(?:\.test\.|\.node-test\.|\.electron\.test\.|\.d\.mts$|\.map$|\.png$|\.jpe?g$|\.webp$|\.gif$|\.ico$|\.icns$|\.woff2?$|\.ttf$|\.otf$|\.mp3$|\.wav$|\.glb$|\.zip$|\.wasm$)/i;
