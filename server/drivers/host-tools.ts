@@ -37,8 +37,29 @@ export const CLAUDE_HOST_TOOLS: readonly string[] = [
   "EnterWorktree", "ExitWorktree", "Workflow", "DesignSync",
 ];
 
-export function claudeDisallowedTools(configured: readonly string[] | undefined, withhold: boolean): string[] {
+/** Claude Code built-ins a Sagax turn never uses, removed from every turn
+ * (2026-10-19 perf parity: about 4,000 prompt tokens a turn). Each one
+ * either duplicates a Sagax feature the bot must use instead (Cron* and
+ * ScheduleWakeup: routines; ListAgents: the agents tools, which it shadows;
+ * PushNotification: Sagax notifications) or reaches a claude.ai service the
+ * Sagax turn is not part of (RemoteTrigger, PublishPlugin,
+ * ShareOnboardingGuide, DesignSync, ReportFindings). Names an older or newer
+ * CLI lacks are ignored by the CLI. */
+export const CLAUDE_UNUSED_TOOLS: readonly string[] = [
+  "CronCreate", "CronDelete", "CronList", "ScheduleWakeup", "ListAgents", "PushNotification",
+  "RemoteTrigger", "PublishPlugin", "ShareOnboardingGuide", "DesignSync", "ReportFindings",
+];
+
+/** Claude Code commands that only drive the tools above (/loop schedules a
+ * wakeup or a cron, /schedule a remote trigger): hidden from the command
+ * list, since a Sagax turn could not run them. Sagax routines do this. */
+export const CLAUDE_UNUSED_COMMANDS: ReadonlySet<string> = new Set(["loop", "schedule"]);
+
+/** `explicitTools`: the turn already names its built-ins (--tools), so the
+ * unused ones are off without a deny rule. */
+export function claudeDisallowedTools(configured: readonly string[] | undefined, withhold: boolean, explicitTools = false): string[] {
   const merged = new Set(configured ?? []);
+  if (!explicitTools) for (const tool of CLAUDE_UNUSED_TOOLS) merged.add(tool);
   if (withhold) for (const tool of CLAUDE_HOST_TOOLS) merged.add(tool);
   return [...merged];
 }

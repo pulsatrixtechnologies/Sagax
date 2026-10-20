@@ -40,6 +40,7 @@ import {
   turnCostFromRunningTotal,
   type ClaudeConfig,
 } from "./claude.ts";
+import { CLAUDE_UNUSED_TOOLS } from "./host-tools.ts";
 import { AUTO_ALLOWLIST_COPY, claudeLaunchLevel } from "../testing/claude-level.ts";
 import { removeTempDir } from "../testing/cleanup.ts";
 import { rebuiltSessionNotice } from "../resume-recovery.ts";
@@ -1042,7 +1043,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       await instance.adapter.sendTurn({ threadId: "t-allow-deny", text: "hi" });
       await recorder.until((e) => e.type === "turn.completed");
       const seen = JSON.parse(readFileSync(dump, "utf8"));
-      expect(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).toBe("Bash,Read,Write,Edit");
+      expect(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).toBe(["Bash", "Read", "Write", "Edit", ...CLAUDE_UNUSED_TOOLS].join(","));
       expect(Object.keys(seen.settings.permissions)).toEqual(["allow"]);
       expect(seen.settings.permissions.allow).toEqual(["Bash(claude plugin marketplace add acme/marketplace)", "Read", "Edit"]);
     } finally {
