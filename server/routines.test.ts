@@ -2738,6 +2738,31 @@ describe("RoutineManager", () => {
     expect(h.failed).toHaveLength(1);
   });
 
+  it.each([
+    // a Cloud run's Claude turn: its api-error frame is the run's error row, its result's stop token says nothing
+    ["stop_sequence", 'Your Claude account is out of credits (Claude says: "Credit balance is too low"). Add credits with Claude, then run it again.',
+      'Your Claude account is out of credits (Claude says: "Credit balance is too low"). Add credits with Claude, then run it again.'],
+    ["stop_sequence", undefined, "The engine stopped without saying why (stop reason: stop_sequence)."],
+    ["rpc_error", undefined, "The engine stopped without saying why (stop reason: rpc_error)."],
+    [undefined, undefined, "The bot did not complete this run"],
+  ])("records a failed run's real cause, never a bare stop token (%s)", async (stopReason, error, expected) => {
+    const h = harness();
+    const routine = h.manager.create({
+      name: "Morning report",
+      prompt: "Write the report",
+      botId: "maus-failed",
+      schedule: { type: "once", at: new Date(2026, 7, 17, 8, 1).getTime() },
+    });
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    const base = { provider: "claude", threadId: "thread-1", createdAt: new Date().toISOString() };
+    if (error) h.manager.handleRuntimeEvent({ ...base, eventId: "runtime-error", type: "runtime.error", message: error });
+    h.manager.handleRuntimeEvent({ ...base, eventId: "turn-completed", type: "turn.completed", ok: false, stopReason });
+
+    expect(h.manager.listRuns()[0]).toMatchObject({ status: "failed", error: expected });
+    expect(h.failed).toMatchObject([{ error: expected }]);
+  });
+
   // rpc_error and auth_required: production 2026-10-08, a Grok 402 showed as a
   // bare "Failed: rpc_error" in the routine modal. "quota" and
   // "stop_sequence": an account past its weekly limit (Oct 9-10).

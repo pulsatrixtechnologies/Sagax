@@ -336,6 +336,7 @@ import { serverApprovalWords } from "./approval-words.ts";
 import {
   isModelVariant,
   TurnNotStartedError,
+  TurnAuthenticationRefusedError,
   type McpServerSpec,
   type ModelSelection,
   type RequestOutcome,
@@ -514,7 +515,7 @@ import {
 } from "./confidential-threads.ts";
 import { makeCapContinuationSubscriber } from "./turn-continuation.ts";
 import { TurnStops, stoppedTurnOutcome } from "./turn-outcome.ts";
-import { buildRecoveryText, buildTurnContext, engineIsFresh, NATIVELY_REPLAYING_DRIVER_KINDS } from "./turn-context.ts";
+import { buildRecoveryText, buildTurnContext, engineIsFresh, replaysNatively } from "./turn-context.ts";
 import { Handoffs, handedStateUsable, isContextMessage, recordHanded, renderUnseen, sessionStart, unseenMessages, withUnseenMessages, type ContextMessage } from "./delta-context.ts";
 import { extractTurnImages } from "./turn-images.ts";
 import { callTitleExcerpt, threadTitlePrompt, titleConversationExcerpt, type ThreadTitleSource } from "./thread-title.ts";
@@ -591,6 +592,7 @@ import {
   composioSystemPrompt,
   customMcpPrompt,
   CREDENTIAL_PROMPT,
+  longCommandsPrompt,
   REACTION_PROMPT,
   mentionPrompt,
   THREADS_PROMPT,
@@ -607,6 +609,7 @@ import {
   resolveComputerPromptKind,
   teamAvailabilityPart,
 } from "./system-prompt.ts";
+import { shellTimeoutHookResult } from "./shell-timeout-hint.ts";
 import { readCuaConnection, readCuaUnavailableReason, gatedLocalComputer } from "./local-computer.ts";
 import {
   discoverExistingPerBotLocalVms,
@@ -3326,7 +3329,7 @@ const managedPolicy = new ManagedDesktopPolicy({ onChange: () => {
 }, hostComputersAllowed: () => IDENTITY.kind !== "perspicax" });
 // A key the provider refused, or accepted again, changes what Model
 // providers and the picker show; the config event refreshes /api/instances.
-onKeyRejectionChange(() => broadcast({ kind: "config", ...configStatus() }));
+onKeyRejectionChange(() => { registry.forgetSnapshots(); broadcast({ kind: "config", ...configStatus() }); });
 /** Why this server may not set up a desktop on itself (an organization
  * server), or undefined. */
 function hostComputerRefusal(): string | undefined {
@@ -7135,6 +7138,7 @@ function previewSystemPrompt(bot: BotRecord) {
         cwd: bot.cwd,
       }),
     },
+    { id: "shell", label: "Long-running commands", text: privateWorkspace ? longCommandsPrompt(computerPromptKind) : "" },
     { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
     // Auto cannot know its place until dispatch, so the preview stays silent
@@ -12069,6 +12073,7 @@ function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: 
     return lines.length ? { ok: true, context: lines.join("\n") } : { ok: true };
   }
   if (name === "Stop") return { ok: true };
+  if (name === "PostToolUseFailure") return shellTimeoutHookResult(payload);
   if (name !== "PostToolUse") return { ok: true, ignored: name || "unknown" };
   const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
   if (!toolUseId) return { ok: true, ignored: "PostToolUse without tool_use_id" };
@@ -15371,7 +15376,7 @@ async function compactConversation(input: {
   // beside the summary (otherwise two huge latest exchanges would cause a
   // fold on every turn and still not fit).
   const rebuildBytes = cfg.context?.rebuildBytes ?? DEFAULT_REBUILD_BYTES;
-  const replayFold = !manual && NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind)
+  const replayFold = !manual && replaysNatively(instance.driverKind)
     && selectReplay(context, { budgetBytes: rebuildBytes, excludedIds, compaction: record }).dropped > 0
     ? foldPoint(history) : null;
   const keptStart = replayFold ? history.findIndex(entry => entry.id === replayFold.firstKeptId) : -1;
@@ -16685,6 +16690,8 @@ async function acceptDirectSend(
       const profile = store.bot(botId);
       if (profile && !profile.modelSelection.instanceId && !profile.modelSelection.model) {
         if (enginesRead) await enginesRead;
+        // Probes afresh for an engine installed or signed in since.
+        registry.forgetSnapshots();
         await refreshUnsetModelSelections();
       }
       const currentAtStart = store.projectBotForTask(botId, threadId);
@@ -17971,7 +17978,7 @@ async function startTurn(
           fresh,
           compacted: contextReset,
           externallyUpdated: Boolean(externalContextMarker) || handedStale,
-          replaysNatively: NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind),
+          replaysNatively: replaysNatively(instance.driverKind),
         });
         // Snapshot the cursor alongside the context decision. An external result
         // can arrive during async computer/setup work and clear the task cursor;
@@ -18763,6 +18770,7 @@ async function startTurn(
         // false when they are not — see agentsMounted above)
         { id: "setup", label: "Setup", text: setupSystemPrompt(setupMode, { skills: skillAuthoring, cwd: liveBot?.cwd ?? bot.cwd }) },
         { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, confidential: store.isConfidentialThread(threadId) }) : "" },
+        { id: "shell", label: "Long-running commands", text: worksInWorkspace ? longCommandsPrompt(computerPromptKind) : "" },
         { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
         { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
         { id: "plan", label: "Surface", text: surfacePrompt({ computer: mountedComputer, browser: Boolean(integrations.browser) }, { pinned: plan.pinned, note: plan.note + vpsUnavailableNote + (computerSkipped && plan.computer !== "off" ? computerSkippedNote(redactSecretsInText(computerSkipped)) : ""), canSelect: computerSelectionTurns.has(threadId) || (warmOnly && maySelectComputer), cloudHome: Boolean(CLOUD_HOME) }) },
@@ -18885,7 +18893,7 @@ async function startTurn(
       // saw the conversation: the next turn must still rebuild it, so the
       // bookkeeping that would mark the context delivered is left for it.
       const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
-        !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
+        !replaysNatively(instance.driverKind));
       if (!warmOnly) voiceLatency.mark(threadId, "dispatch");
       // A call turn (and the warm that prepares its process, so the two share
       // one spawn contract) runs at the engine's low effort: the person is
@@ -19162,6 +19170,7 @@ async function startTurn(
       const backups = botRecoveryBackups(current, cfg);
       const nextIndex = backups.findIndex((candidate, index) => index >= (opts?.automaticRecoveryIndex ?? 0) &&
         registry.get(candidate.instanceId)?.enabled && !orgEngineAllowRefusal(candidate.instanceId) &&
+        (!(e instanceof TurnAuthenticationRefusedError) || candidate.instanceId !== instanceId) &&
         (candidate.instanceId !== instanceId || candidate.model !== model));
       const backup = backups[nextIndex];
       if (mayRecover && backup && current && (!opts?.cardContinuation || opts.coordination) &&
@@ -19189,7 +19198,7 @@ async function startTurn(
               ...hostedModels?.resetTask(current.modelSelection, checked.selection), rewound: true,
             });
             store.appendMessage(threadId, { role: "bot", kind: "activity", tool: {
-              name: `recovery: Automatic recovery: ${instance.displayName || instance.driverKind} could not start. Trying ${target.displayName || target.driverKind} · ${checked.selection.model} once in this thread.`, ok: true,
+              name: `recovery: Automatic recovery: ${instance.displayName || instance.driverKind} ${e instanceof TurnAuthenticationRefusedError ? "is signed out" : "could not start"}. Trying ${target.displayName || target.driverKind} · ${checked.selection.model} once in this thread.`, ok: true,
             } });
             await startTurn(bot.id, text, { ...opts, threadId, userMessage, editedMessageId: undefined,
               automaticRecoveryAttempted: true, automaticRecoveryIndex: nextIndex + 1 });
@@ -21787,6 +21796,7 @@ async function runGroupMemberTurn(
   const roomSystem = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE }) : "" },
+    { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
     { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" })) },
@@ -41941,6 +41951,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const profile = store.bot(bot.id);
           if (profile && !profile.modelSelection.instanceId && !profile.modelSelection.model) {
             if (enginesRead) await enginesRead;
+            registry.forgetSnapshots();
             await refreshUnsetModelSelections();
           }
           const currentAtStart = store.projectBotForTask(bot.id, threadId);
@@ -43976,6 +43987,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && authStatus) {
       res.setHeader("cache-control", "no-store");
       const state = await providerAuthSessions.status(authStatus[1], auth.kind === "session" ? auth.session.id : "loopback", url.searchParams.get("flowId") ?? "");
+      // A finished device sign-in changed what the engine reports; the page reads the engines next.
+      if (state.phase !== "waiting") registry.forgetSnapshots();
       return json(res, 200, { auth: state });
     }
     const instanceAction = /^\/api\/instances\/([\w.-]+)\/(refresh-models|install|auth\/start|auth\/complete|auth\/cancel|auth\/sign-out)$/.exec(path);
@@ -44005,6 +44018,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             return json(res, 403, { error: "Continue with ChatGPT on the computer running Sagax. Hosted Pro sign-in requires OpenAI's hosted-app approval." });
           }
           const started = await providerAuthSessions.start(instance, owner);
+          if (started.phase === "succeeded") registry.forgetSnapshots();
           // Revocation can arrive while the CLI is obtaining a device code.
           if (auth.kind === "session" && !sessions.isLive(auth.session.id)) {
             providerAuthSessions.revokeOwner(owner);
@@ -44016,6 +44030,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const instance = registry.get(instanceId);
           if (!instance) return json(res, 404, { error: "unknown instance" });
           await providerAuthSessions.signOut(instance, owner);
+          registry.forgetSnapshots();
           return json(res, 200, { instances: await instancesForViewer(auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null) });
         }
         if (action === "auth/complete") {
@@ -44025,6 +44040,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const callbackUrl = typeof body?.callbackUrl === "string" ? body.callbackUrl : typeof body?.code === "string" ? body.code : "";
           if (!flowId || !callbackUrl) return json(res, 400, { error: "flowId and a code or callbackUrl are required" });
           await providerAuthSessions.complete(instanceId, owner, flowId, callbackUrl);
+          registry.forgetSnapshots();
           return json(res, 200, { ok: true });
         }
         const body = await readBody(req, 4096);
@@ -44116,6 +44132,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 500, { error: error instanceof Error ? error.message : String(error) });
       } finally {
         claudeUpdatesInFlight.delete(target.cli);
+        // Even a failed update may have replaced the executable.
+        registry.forgetSnapshots();
       }
     }
 
@@ -44938,6 +44956,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         recordAchievements(localPrincipalId(), [{ type: "claude.linked" }]);
       }
       for (const key of resetKeys) if (key) forgetKey(key);
+      // A saved key reaches an engine through the environment its status read uses, often with no reload.
+      registry.forgetSnapshots();
       // Desktops already counting down move to the new window at once, in
       // every isolation mode; busy work still defers its expiry.
       if (patch.localVm?.idleTimeoutMinutes !== undefined) {

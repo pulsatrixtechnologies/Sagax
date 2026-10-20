@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CALL_MARK, ENDED_MARK, INTERRUPTED_MARK, voiceCallTurn } from "../testing/voice-call-turns.ts";
 import { recordEvents } from "../testing/events.ts";
-import { buildTurnContext, NATIVELY_REPLAYING_DRIVER_KINDS } from "../turn-context.ts";
+import { buildTurnContext, replaysNatively } from "../turn-context.ts";
 import { instanceConfigs } from "../config.ts";
 import { OpenAICompatDriver } from "./openai-compat.ts";
 
@@ -511,7 +511,7 @@ describe("OpenAICompatDriver", () => {
     ];
     // Mirrors server/index.ts's real call: buildTurnContext only inlines the
     // transcript into turnText when the driver is NOT in
-    // NATIVELY_REPLAYING_DRIVER_KINDS. openai-compat's runtime already
+    // replaysNatively. openai-compat's runtime already
     // replays via SendTurnInput.transcript (messagesFor() in
     // openai-chat.ts), so both must not fire for the same turn.
     const { turnText } = buildTurnContext({
@@ -520,7 +520,7 @@ describe("OpenAICompatDriver", () => {
       rewound: true,
       fresh: false,
       externallyUpdated: false,
-      replaysNatively: NATIVELY_REPLAYING_DRIVER_KINDS.includes("openai-compat"),
+      replaysNatively: replaysNatively("openai-compat"),
     });
     const inst = await OpenAICompatDriver.create({
       instanceId: "test-u25",
