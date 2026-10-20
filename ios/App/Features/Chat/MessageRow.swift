@@ -265,9 +265,12 @@ struct MessageRow: View {
                 selecting = SelectableText(text: message.compaction?.summary ?? message.text ?? "")
             }
         case .screen:
-            ScreenShot(threadId: chat.threadId, message: message)
+            // Views on request only (shared/requested-views.ts).
+            if message.requested == true {
+                ScreenShot(threadId: chat.threadId, message: message)
+            }
         case .video:
-            if let video = message.video {
+            if let video = message.video, message.requested == true {
                 VideoWidgetView(video: video)
             }
         case .widget:
