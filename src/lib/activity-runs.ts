@@ -9,6 +9,7 @@
 import type { Message } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { autoWorkerLine } from "@/lib/auto-model";
+import { limitFailoverLineText } from "@/lib/limit-failover";
 import { failedTurnCause } from "../../shared/failed-turn";
 import { isStoppedTurnName } from "../../shared/client-cancel";
 import { localDay } from "@/lib/transcript-derivations";
@@ -35,6 +36,10 @@ export function statusActivity(message: Message): { kind: "recovery" | "notice" 
   // (shared/offered-engines.ts), in the reader's language.
   const move = message.kind === "activity" ? message.tool?.engineMove : undefined;
   if (move) return { kind: "notice", text: t("model.org.engineMoved", { from: move.from, to: move.to }) };
+  // 2026-10-19: a usage limit sent the turn to another engine, or it came
+  // back (shared/limit-failover.ts), in the reader's language.
+  const limit = message.kind === "activity" ? message.tool?.limitFailover : undefined;
+  if (limit) return { kind: "recovery", text: limitFailoverLineText(limit) };
   if (name?.startsWith("recovery:")) return { kind: "recovery", text: name.slice("recovery:".length).trim() };
   // The Kubernetes cluster of the server environments is starting
   // (server/sandbox-k8s-wake.ts): the server's fixed rows, in the person's language.

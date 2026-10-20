@@ -167,7 +167,7 @@ describe("outward links", () => {
 describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
   const noop = () => {};
   const handlers = {
-    onAutomations: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
+    onAutomations: noop, onApprovals: noop, onCode: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
     onViewUsage: noop, onSwitch: noop, onAddOrganization: noop, onSignOut: noop, onMobile: noop,
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
@@ -185,8 +185,20 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
     ...patch,
   });
 
-  it("is Usage, Help, Settings, Automations and Achievements, in that order", () => {
-    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "achievements"]);
+  it("is Usage, Help, Settings, Automations, Approvals and Achievements, in that order; Code only where it can work", () => {
+    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "approvals", "achievements"]);
+    expect(items({ codeVisible: true }).map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "approvals", "code", "achievements"]);
+  });
+
+  it("opens Approvals and Code with their routes, and counts waiting approvals", () => {
+    const calls: string[] = [];
+    const menu = items({ codeVisible: true, approvalsWaiting: 3, handlers: { ...handlers, onApprovals: () => calls.push("approvals"), onCode: () => calls.push("code") } });
+    const approvals = menu.find((entry) => entry.key === "approvals")!;
+    expect(approvals.trailing).toBeTruthy();
+    expect(items().find((entry) => entry.key === "approvals")!.trailing).toBeUndefined();
+    approvals.onSelect();
+    menu.find((entry) => entry.key === "code")!.onSelect();
+    expect(calls).toEqual(["approvals", "code"]);
   });
 
   it("has no Team map: it opens from the Automations header and the palette (JC, 2026-10-18)", () => {

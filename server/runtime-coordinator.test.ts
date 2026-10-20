@@ -7,6 +7,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
 import type { CoordinatorHost, HandoffView } from "./coordinator.ts";
@@ -214,6 +215,42 @@ describe("RuntimeCoordinator: the requesting turn and its tree", () => {
     await flush();
     expect(w.coordinator.node("gen-1")).toMatchObject({ status: "completed", executions: 2 });
     expect(w.host.reports).toHaveLength(1);
+  });
+
+  it("active() is all() without the ended nodes, with the same views", async () => {
+    const w = world();
+    const ended_ = new Set(["completed", "failed", "cancelled"]);
+    const same = () => expect(w.coordinator.active()).toEqual(w.coordinator.all().filter(n => !ended_.has(n.status)));
+    const { node } = send(w, chief, "gen-1", undefined, builder, "Build it");
+    same(); expect(w.coordinator.active().map(n => n.id)).toEqual(["gen-1", node.id]);
+    w.coordinator.sourceSettled("gen-1", true); w.coordinator.tick(); await flush();
+    same(); expect(w.coordinator.active().map(n => n.id)).toEqual(["gen-1"]);
+    w.coordinator.tick(); await flush();
+    expect(w.coordinator.all()).toHaveLength(2);
+    expect(w.coordinator.active()).toEqual([]);
+  });
+
+  it("active() never reads an ended row: one that no longer parses stops all(), not active()", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "runtime-coordinator-active-"));
+    try {
+      const w = world(hold, {}, dir);
+      send(w, chief, "gen-1", undefined, tester, "Test it");
+      w.coordinator.sourceSettled("gen-1", true); w.coordinator.tick(); await flush();
+      w.coordinator.tick(); await flush();
+      expect(w.coordinator.all().map(n => n.status)).toEqual(["completed", "completed"]);
+      const { node } = send(w, chief, "gen-2", undefined, builder, "Build it");
+      w.coordinator.sourceSettled("gen-2", true); w.coordinator.tick();
+      // The settled tree's rows go bad on disk; nothing live reads them.
+      const db = new DatabaseSync(join(dir, "runtime.db"));
+      db.prepare("UPDATE assignments SET json = 'not json' WHERE root_id = ?").run("gen-1");
+      db.close();
+      expect(() => w.coordinator.all()).toThrow(/invalid JSON/);
+      expect(w.coordinator.active().map(n => [n.id, n.status])).toEqual([["gen-2", "waiting"], [node.id, "running"]]);
+      expect(w.coordinator.outstandingDirect("chief-chat").map(n => n.id)).toEqual([node.id]);
+      w.coordinator.close();
+    } finally {
+      await removeTempDir(dir);
+    }
   });
 
   it("a failed requesting turn keeps its accepted work and says so in its result", async () => {

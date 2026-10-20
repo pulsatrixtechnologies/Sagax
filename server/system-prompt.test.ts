@@ -10,6 +10,7 @@ import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
 import { soulSystemPrompt } from "./bot-folder.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT } from "./browser-engine.ts";
 import {
+  longCommandsPrompt,
   buildSystemPrompt,
   CLOUD_HOME_PLACE,
   cloudHomePrompt,
@@ -429,5 +430,18 @@ describe("verify-first rule (2026-10-19)", () => {
     expect(VERIFY_FIRST_PROMPT).toContain("call sagax_help before you answer or say it is impossible");
     expect(VERIFY_FIRST_PROMPT).not.toMatch(/[\u2013\u2014]/);
     expect(built.stable).toContain(VERIFY_FIRST_PROMPT);
+  });
+});
+
+describe("longCommandsPrompt", () => {
+  it("names Bash's limit everywhere and vm_exec's own limit only with a Local VM", () => {
+    for (const kind of [null, "local", "vps", "box"] as const) {
+      const text = longCommandsPrompt(kind);
+      expect(text).toContain("`timeout` in milliseconds, up to 600000");
+      expect(text).not.toContain("vm_exec");
+    }
+    for (const kind of ["vm-private", "vm-shared"] as const) {
+      expect(longCommandsPrompt(kind)).toContain("vm_exec takes `timeout_seconds` instead (default 60, at most 300)");
+    }
   });
 });

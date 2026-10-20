@@ -31,6 +31,15 @@ export const SETTING_NOTES: Record<string, { text?: string; access?: string }> =
 
 export const GUIDES: Guide[] = [
   {
+    id: "settings-by-bot",
+    title: "Change any setting through a bot",
+    where: "bot tool sagax_settings; the same settings on screen (bot editor, Automations, Settings)",
+    access: "the person speaking, with their own rights: a member cannot do through a bot what they cannot do by hand",
+    keywords: "reglage reglages setting settings modifier changer change niveau approbation approval approuver pour moi auto modele model effort routine horaire schedule fil thread section geree managed built-in persona mascotte skin apparence notifications coffre vault organisation organization",
+    text: "Yes: every setting is an action. A bot calls sagax_settings: action list (with a family: bot, thread, routine, group, section, rules, account, appearance, notifications, models, connections, credentials, server, organization, computer) gives the keys, get reads one, set changes it, through the same route the screen calls with the person's own session. The person's own bots and routines (model, effort, approval level up to the bot's own, managed teams such as Built-in, persona, look, routine schedule, conversation, on/off) change at once when the bot is at Approve for me or Full. A secret, a deletion, another person, several people or an organization setting waits for the person's Allow on a card, with their security key when they chose one for that kind; so does anything at Ask, and Full or Custom. Every change is written to the admin journal (setting.change). The full inventory is docs/settings-actions.md.",
+    refs: ["tool:sagax_settings", "file:server/settings-actions.ts", "file:shared/settings-actions.ts", "file:docs/settings-actions.md"],
+  },
+  {
     id: "plugins",
     title: "Install a plugin for a bot",
     where: "sidebar Connect apps (Connecter des applications), scope For <bot> (Pour <bot>)",

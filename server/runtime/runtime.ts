@@ -124,7 +124,7 @@ export class Runtime {
         if (n.status === "needs_input") {
           this.store.update(n, { kind: "restart_reconciled", at: now, detail: "needs_input: parked again" });
           this.touch(n);
-          this.safe("park", () => this.runner.park(n, n.question ?? ""));
+          this.safe("park", () => this.runner.park(n, n.question ?? "", true));
           continue;
         }
         if (n.status !== "running") continue;

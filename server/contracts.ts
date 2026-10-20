@@ -58,6 +58,11 @@ export class TurnNotStartedError extends Error {
 }
 
 
+/** The CLI refused sign-in before any model or tool activity, and its process stopped. */
+export class TurnAuthenticationRefusedError extends TurnNotStartedError {
+  override readonly name = "TurnAuthenticationRefusedError";
+}
+
 /** Variants are opaque provider IDs, not the cross-engine effort enum. */
 export function isModelVariant(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 256 &&

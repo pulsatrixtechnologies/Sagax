@@ -2079,6 +2079,59 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(recorder.events.some(e => e.type === "runtime.error")).toBe(false);
   });
 
+  it("preserves a streamed partial reply before disposal removes its listeners", async () => {
+    await create(GrokAgentDriver, "stall-after-text");
+    await instance.adapter.sendTurn({ threadId: "t-dispose-partial", text: "go" });
+    await recorder.until((event) => event.type === "content.delta" && event.streamKind === "assistant_text");
+
+    await instance.dispose();
+
+    expect(recorder.events.filter((event) => event.type === "item.completed" && event.itemType === "assistant_text"))
+      .toEqual([expect.objectContaining({ text: "half an answer, then silence" })]);
+    expect(recorder.events.filter((event) => event.type === "turn.completed"))
+      .toEqual([expect.objectContaining({ threadId: "t-dispose-partial", stopReason: "cancelled" })]);
+  });
+
+  it("rejects turns started by completion listeners during disposal", async () => {
+    await create(GrokAgentDriver, "stall-after-text");
+    await instance.adapter.sendTurn({ threadId: "t-dispose-listener", text: "go" });
+    await recorder.until((event) => event.type === "content.delta" && event.streamKind === "assistant_text");
+    let followup: Promise<unknown> | undefined;
+    instance.adapter.onEvent((event) => {
+      if (event.type === "turn.completed" && event.threadId === "t-dispose-listener") {
+        followup = instance.adapter.sendTurn({ threadId: "t-dispose-followup", text: "next" });
+        void followup.catch(() => {});
+      }
+    });
+
+    await instance.dispose();
+
+    expect(followup).toBeDefined();
+    await expect(followup).rejects.toThrow(/shutting down/);
+    expect(instance.adapter.hasSession("t-dispose-followup")).toBe(false);
+    await expect(instance.adapter.sendTurn({ threadId: "t-after-dispose", text: "late" })).rejects.toThrow(/shutting down/);
+  });
+
+  it("rejects a turn whose command resolution finishes after disposal", async () => {
+    let markResolving!: () => void;
+    const resolving = new Promise<void>((resolve) => { markResolving = resolve; });
+    let finishCommand!: (command: { command: string }) => void;
+    const command = new Promise<{ command: string }>((resolve) => { finishCommand = resolve; });
+    await create(createAcpDriver({
+      ...SELECT_MODEL_SUPPORT,
+      resolveCommand: () => { markResolving(); return command; },
+    }));
+    const sending = instance.adapter.sendTurn({ threadId: "t-dispose-resolving", text: "go" });
+    void sending.catch(() => {});
+    await resolving;
+    await instance.dispose();
+    finishCommand({ command: FAKE_CLI });
+
+    await expect(sending).rejects.toThrow(/shutting down/);
+    expect(instance.adapter.hasSession("t-dispose-resolving")).toBe(false);
+    expect(recorder.events).toEqual([]);
+  });
+
   // Qwen Code goes quiet for minutes while it compresses history, backs off
   // a rate limit (up to 5 min a wait) or waits on one model request (its SDK
   // allows 600 s). At 180 s the guard cut those turns off mid-work.
@@ -2096,6 +2149,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     const err = recorder.events.find((e) => e.type === "runtime.error");
     expect(err?.message).toMatch(/no tool running/i);
     expect(err?.message).toContain("SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS");
+    expect(err).toMatchObject({ stalled: true });
     // the streamed chunk reached the UI before the child went silent
     expect(recorder.events.some((e) => e.type === "content.delta")).toBe(true);
     expect(instance.adapter.hasSession("t-stall")).toBe(false);
@@ -2511,6 +2565,61 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       await failStartup();
       const ack = await instance.adapter.sendTurn({ threadId: "startup-activity", text: "go", startupRecovery: true });
       expect(await recorder.until((event) => event.type === "turn.completed" && event.turnId === ack.turnId)).toMatchObject({ ok: false });
+    });
+  });
+
+  describe("an engine's account and HTTP failures", () => {
+    /** The provider's refusal as the CLI answers session/prompt: JSON-RPC's internal error around its own line. */
+    const refuse = (details: string) => {
+      const failureFile = join(scratch, "prompt-failure.json");
+      process.env.FAKE_ACP_RPC_FAILURE_FILE = failureFile;
+      writeFileSync(failureFile, JSON.stringify({ code: -32603, message: "Internal error", data: { details, service: "session", errorName: "APIError" } }));
+    };
+    const failed = async (threadId: string) => {
+      const ack = await instance.adapter.sendTurn({ threadId, text: "Run the morning report" });
+      const completed = await recorder.until((e) => e.type === "turn.completed" && e.turnId === ack.turnId);
+      const errors = recorder.events.filter((e) => e.type === "runtime.error" && e.turnId === ack.turnId);
+      return { completed, errors };
+    };
+
+    it("names a Grok account out of credits as the account failure it is, in Grok's own account wording", async () => {
+      // what Cloud routine runs recorded, as far as the aggregate kept it
+      refuse("API error (status 402 Payment Required): Grok Build us…");
+      await create(GrokAgentDriver);
+      const { completed, errors } = await failed("t-grok-402");
+      // Grok's driver words its own 402 (describeAccountError); the shared wording covers the other engines.
+      expect(errors).toEqual([expect.objectContaining({
+        message: expect.stringContaining("the usage balance of the Grok account it runs on is used up"),
+        setup: true,
+      })]);
+      expect(completed).toMatchObject({ ok: false, stopReason: "auth_required" });
+    });
+
+    it("names any other ACP engine out of credits the same way", async () => {
+      refuse("API error (status 402 Payment Required): Your plan has no credits left. Ask an admin to add more.");
+      await create(GeminiAgentDriver);
+      const { errors } = await failed("t-gemini-402");
+      expect(errors).toEqual([expect.objectContaining({
+        message: 'Your Gemini account is out of credits (Gemini says: "Your plan has no credits left"). Add credits with Gemini, then run it again.',
+      })]);
+    });
+
+    it("puts another HTTP failure in plain words that keep its class, and leaves an unknown one as it was", async () => {
+      refuse("API error (status 503 Service Unavailable): upstream connect error");
+      await create(GrokAgentDriver);
+      const outage = await failed("t-grok-503");
+      expect(outage.errors).toEqual([expect.objectContaining({
+        message: 'Grok had a temporary server problem (HTTP 503; Grok says: "upstream connect error"). Try again in a few minutes.',
+      })]);
+      expect(outage.errors[0]).not.toHaveProperty("setup");
+      expect(outage.completed).toMatchObject({ ok: false, stopReason: "rpc_error" });
+
+      refuse("Grok could not finish the session");
+      await create(GrokAgentDriver);
+      const unknown = await failed("t-grok-unknown");
+      expect(unknown.errors).toEqual([expect.objectContaining({
+        message: "Internal error: Grok could not finish the session (session/prompt, service: session, APIError)",
+      })]);
     });
   });
 

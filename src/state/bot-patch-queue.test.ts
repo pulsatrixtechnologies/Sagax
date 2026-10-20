@@ -313,6 +313,28 @@ describe("bot patch queue", () => {
     expect(queue.overlayFor("bot-1")).toEqual({});
   });
 
+  it("sends the shown thread with a bot model change but never folds it into bot state", async () => {
+    const sent: BotUpdatePatch[] = [];
+    const overlays: BotUpdatePatch[] = [];
+    const queue = createBotPatchQueue({
+      send: async (_botId, patch) => {
+        sent.push(patch);
+        return bot();
+      },
+      reconcile: async () => bot(),
+      onAuthoritative: (_bot, overlay) => overlays.push(overlay),
+      onError: vi.fn(),
+    });
+    const modelSelection = { instanceId: "claude", model: "claude-opus-5-5" };
+
+    queue.enqueue("bot-1", { modelSelection, threadId: "shown" }, bot());
+    expect(queue.overlayFor("bot-1")).toEqual({ modelSelection });
+    await queue.flush("bot-1");
+
+    expect(sent).toEqual([{ modelSelection, threadId: "shown" }]);
+    for (const overlay of overlays) expect(overlay).not.toHaveProperty("threadId");
+  });
+
   it("carries acknowledgeLocalAuto to the wire but never into a state overlay", async () => {
     // The consent flag is the server's proof the local-auto warning dialog was
     // shown (server/index.ts gate). Coalesced with other edits it must still

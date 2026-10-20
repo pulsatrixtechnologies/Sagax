@@ -186,6 +186,9 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   profileTool("api:action.read", "read", "read_action", "<profile>__read_action"),
   profileTool("api:operation", "dispatch", "operation", "<profile>__<operation>"),
   p("settings:manage", "admin", "manage_settings"),
+  // every setting as the person (server/settings-actions.ts): the person's
+  // own rights decide on the route, like act
+  p("settings:change", "own", "sagax_settings"),
 ];
 
 const BY_TOOL = new Map<string, McpPermission>(MCP_PERMISSIONS.filter((x) => x.tool && !x.profileKind).flatMap((x) => [x.tool as string, ...(x.aliases ?? [])].map((name) => [name, x] as const)));

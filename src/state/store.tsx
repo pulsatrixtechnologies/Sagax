@@ -83,7 +83,7 @@ import { useChatErrorClear } from "./chat-error";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents, publishLiveFrame, publishMissedFrames } from "@/lib/live-events";
 import { receiveAchievementsFrame } from "@/lib/achievements";
-import { announceServerPreferences } from "@/lib/user-preferences-sync";
+import { announceServerPreferences, applyBotPreference } from "@/lib/user-preferences-sync";
 import { applyPersonLabel } from "@/lib/person-labels";
 import { announcePersonAvatar, withViewerAvatar } from "@/lib/person-avatars";
 import { StoreSourceContext, usePublishedStoreSource } from "./store-source";
@@ -279,7 +279,7 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
    * narration of the same chip ("reading a file"), used by call mode. */
   /** `setup` marks an error fixed by installing something, not by retrying.
    * `summary` is the call's input on one redacted line (the shell command). */
-  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; durationMs?: number; itemId?: string; outputPath?: string; fullResult?: boolean; /** Files the call wrote (shared/wire.ts). */ files?: string[]; widget?: import("../../shared/cw-widgets/types").CwWidget; ruleNotice?: import("../../shared/custom-rules").CustomRuleNotice; engineMove?: import("../../shared/offered-engines").OrgEngineMove };
+  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; durationMs?: number; itemId?: string; outputPath?: string; fullResult?: boolean; /** Files the call wrote (shared/wire.ts). */ files?: string[]; widget?: import("../../shared/cw-widgets/types").CwWidget; ruleNotice?: import("../../shared/custom-rules").CustomRuleNotice; engineMove?: import("../../shared/offered-engines").OrgEngineMove; limitFailover?: import("../../shared/limit-failover").LimitFailoverLine };
   /** user messages sent into a running turn — the model saw it mid-turn */
   steered?: boolean;
   /** a user message that did not come from typing here: through the
@@ -3096,6 +3096,7 @@ export function reducer(state: AppState, action: Action): AppState {
         confirmFullAccess: _fullConfirmation,
         applyToAllThreads: _allThreads,
         organizationFullAccess: _orgFull,
+        threadId: _threadId,
         computer,
         connectorTools,
         connectorScopes,
@@ -4833,7 +4834,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (botBeforeUpdate) {
             botPatchQueue.enqueue(
               action.botId,
-              { modelSelection: action.selection },
+              { modelSelection: action.selection, threadId: botBeforeUpdate.switchingTo ?? botBeforeUpdate.threadId },
               botBeforeUpdate,
             );
           }
@@ -5508,6 +5509,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         case "bot-act": {
           const command = uiCommandToAction(frame.action, frame.input);
+          // a preference on this device (sagax_settings): written where its
+          // module reads it, then announced like another tab's change
+          if (command && command.action.type === "setPreference") {
+            applyBotPreference(String(command.action.key), String(command.action.value));
+            break;
+          }
           if (command) dispatch(command.action as Action);
           break;
         }

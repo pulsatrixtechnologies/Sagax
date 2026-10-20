@@ -187,6 +187,11 @@ export class RuntimeCoordinator implements Coordinator {
     return rows.map(row => view(row, row.parentId ? byId.get(row.parentId) : undefined));
   }
 
+  active(): HandoffView[] {
+    this.ready();
+    return this.live().map(row => this.project(row));
+  }
+
   children(id: string): HandoffView[] {
     this.ready();
     const parent = this.store.get(id);
@@ -372,8 +377,13 @@ export class RuntimeCoordinator implements Coordinator {
 
   answer(threadId: string, text: string): boolean {
     this.ready();
-    const parked = this.live().find(n => n.status === "needs_input" && n.assignee.destination.threadId === threadId);
+    const parked = this.parkedIn(threadId);
     return parked ? this.runtime.answer(parked.id, text) : false;
+  }
+
+  awaitingAnswer(threadId: string): boolean {
+    this.ready();
+    return this.parkedIn(threadId) !== undefined;
   }
 
   forgetThread(threadId: string): { removed: number; scrubbed: number } {
@@ -389,7 +399,7 @@ export class RuntimeCoordinator implements Coordinator {
       validate: (a, parent) => host.validate(view(a, parent), parent && this.project(parent)),
       canStart: a => !host.busy(this.project(a)),
       run: (a, input, signal) => this.run(a, input, signal),
-      park: (a, question) => host.park(this.project(a), question),
+      park: (a, question, restored) => host.park(this.project(a), question, restored),
       remind: (a, question, waitedMs) => host.remind?.(this.project(a), question, waitedMs),
       report: (a, parent) => host.report(view(a, parent), parent && this.project(parent)),
       changed: rows => {
@@ -436,6 +446,11 @@ export class RuntimeCoordinator implements Coordinator {
 
   private live(): Assignment[] {
     return this.store.all({ nonTerminal: true });
+  }
+
+  /** The assignment in this thread that is parked on the person's answer. */
+  private parkedIn(threadId: string): Assignment | undefined {
+    return this.live().find(n => n.status === "needs_input" && n.assignee.destination.threadId === threadId);
   }
 
   private direct(a: Assignment, threadId: string): boolean {

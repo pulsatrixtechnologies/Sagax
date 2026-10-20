@@ -20,6 +20,11 @@
 #
 # HOME is the /data volume, so engine CLI logins (~/.claude, ~/.codex, ...) and
 # Sagax's own state (/data/.openmausbot, kept for existing volumes) persist across container restarts.
+#
+# A plain `docker run` of either image wants `--init --shm-size=512m`, as the
+# compose files set: the bots' browsers leave exited processes for an init to
+# collect, and Chrome needs shared memory (docs/browser-packaging.md, "Process
+# hygiene").
 
 # node:24-trixie-slim as of 2026-10-06 (Node 24.21.0). Rebuild to pick a
 # newer tag; apt-get upgrade still applies Debian patches on top.

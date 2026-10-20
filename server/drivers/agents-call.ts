@@ -8,6 +8,7 @@
 // room posts, checking a delegation made this turn) are the harness's: one
 // proxy can serve many turns of a warm engine, and only the harness knows
 // where a turn begins.
+import { readFileSync } from "node:fs";
 import { CREDENTIAL_TARGETS, isCredentialTargetId } from "../../shared/credential-request.ts";
 import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
 
@@ -17,6 +18,7 @@ import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction }
 import { callCardTool, CARD_TOOL_NAMES } from "./agents-call-cards.ts";
 import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.ts";
 import { HELP_TOOL_NAMES } from "./agents-help-tools.ts";
+import { SETTINGS_TOOL_NAMES } from "./agents-settings-tools.ts";
 import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, PERSPICAX_TOOL_NAMES, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
 import { harnessClientFromEnv } from "./agents-client.ts";
 import type { HarnessClient, Json } from "./agents-client.ts";
@@ -49,10 +51,21 @@ export interface ToolCallResult {
  *   (agents-catalog.ts) and the harness address and token (agents-client.ts). */
 export function toolCallContextFromEnv(env: NodeJS.ProcessEnv): ToolCallContext {
   const profile = catalogProfileFromEnv(env);
+  const launchedDepth = Number(env.SAGAX_TURN_DEPTH ?? "0") || 0;
+  const depthFile = env.SAGAX_TURN_DEPTH_FILE;
   return {
     botId: profile.botId,
     threadId: env.SAGAX_THREAD_ID ?? "",
-    depth: Number(env.SAGAX_TURN_DEPTH ?? "0") || 0,
+    // A process kept across turns reads the current turn's depth each call.
+    get depth() {
+      if (!depthFile) return launchedDepth;
+      try {
+        const value = Number(readFileSync(depthFile, "utf8").trim());
+        return Number.isInteger(value) && value >= 0 ? value : launchedDepth;
+      } catch {
+        return launchedDepth;
+      }
+    },
     externalRuntime: profile.externalRuntime,
     coordinating: profile.coordinating,
     sharedComputers: profile.sharedComputers,
@@ -480,6 +493,14 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const { ok, body } = await apiResponse("/api/internal/self-knowledge", { method: "POST", body: JSON.stringify({ question: args.question }) });
     if (!ok) return { text: String(body.error ?? "The knowledge base is unavailable; check your own tool list before you answer."), isError: true };
     return { text: String(body.text ?? "") };
+  }
+  // sagax_settings (server/settings-actions.ts): every setting, as the person
+  if (SETTINGS_TOOL_NAMES.has(name)) {
+    if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
+    const { status, body } = await apiResponse("/api/internal/settings", { method: "POST", body: JSON.stringify(args ?? {}) });
+    const text = String(body.text ?? body.error ?? "").slice(0, 12000);
+    if (status >= 400 || body.error) return { text: text || "The change was refused.", isError: true };
+    return { text: text || "Done." };
   }
   if (name === "answer_approval" || name === "nudge_person" || name === "manage_pairing" || name === "manage_settings" || PERSPICAX_TOOL_NAMES.has(name)) {
     if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };

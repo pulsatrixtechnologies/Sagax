@@ -64,12 +64,14 @@ export type BotUpdatePatch = Partial<
   /** Organization server: Full is granted over HTTP (the server checks the
    * policy, the owner and the one-time confirmation). Never a bot field. */
   organizationFullAccess?: boolean;
+  /** With modelSelection: the thread this client shows. Body only: Bot.threadId is the server's selection. */
+  threadId?: string;
 };
 
 /** A wire patch after clear-only values have been normalized for Bot state. */
 export type BotStatePatch = Omit<
   BotUpdatePatch,
-  "computer" | "connectorTools" | "connectorScopes" | "acknowledgeLocalAuto" | "confirmFullAccess" | "applyToAllThreads" | "organizationFullAccess"
+  "computer" | "connectorTools" | "connectorScopes" | "acknowledgeLocalAuto" | "confirmFullAccess" | "applyToAllThreads" | "organizationFullAccess" | "threadId"
 > & {
   computer?: Bot["computer"];
   connectorTools?: Bot["connectorTools"];
@@ -130,6 +132,7 @@ const stateOverlay = (patch: BotUpdatePatch): BotStatePatch => {
     confirmFullAccess: _fullConfirmation,
     applyToAllThreads: _allThreads,
     organizationFullAccess: _orgFull,
+    threadId: _threadId,
     computer,
     connectorTools,
     connectorScopes,

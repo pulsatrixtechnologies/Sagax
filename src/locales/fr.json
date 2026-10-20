@@ -6337,6 +6337,12 @@
   "routines.runsOn.teamCloudHome": "My Cloud, avec tout le groupe",
   "routines.searchLogs": "Chercher dans les journaux d'exécution",
   "routines.showAll": "Afficher toutes les routines",
+  "routines.weekRuns": "{ok} exécutions sur {total} réussies cette semaine",
+  "routines.retried.stalled": "Relancée après un blocage du moteur · {status}",
+  "routines.retried.restarted": "Relancée après un redémarrage de Sagax · {status}",
+  "routines.retried.rate_limited": "Relancée après une limite de débit · {status}",
+  "routines.retried.provider": "Relancée après une erreur passagère · {status}",
+  "routines.retried.usage_limit": "Exécutée après la réinitialisation de la limite d'usage · {status}",
   "routines.skippedRuns": "Occurrences planifiées sautées pendant l'occupation : {count}",
   "routines.starting": "Démarrage…",
   "routines.status.cancelled": "Annulée",
@@ -9264,5 +9270,9 @@
   "code.subscription.title": "Votre abonnement pour ce run",
   "code.subscription.missing": "Ce run utilise votre propre abonnement {engine}, et vous n'avez aucune connexion {engine} dans Sagax. Connectez-la dans Réglages, Mes abonnements et mes clés, puis relancez le run.",
   "code.subscription.expired": "Votre connexion {engine} dans Sagax a expiré et n'a pas pu être renouvelée. Reconnectez-vous dans Réglages, Mes abonnements et mes clés.",
-  "code.subscription.refused": "Perspicax a refusé votre abonnement {engine} pour ce run."
+  "code.subscription.refused": "Perspicax a refusé votre abonnement {engine} pour ce run.",
+  "limitFailover.switched": "Limite atteinte sur {from} : je continue sur {to} jusqu'à la réinitialisation (vers {time}).",
+  "limitFailover.back": "La limite de {engine} est réinitialisée : retour sur {engine}.",
+  "limitFailover.waiting": "Limite atteinte sur {from} et aucun autre moteur n'est disponible : votre message sera renvoyé à la réinitialisation (vers {time}).",
+  "limitFailover.waitingRoutine": "Limite atteinte sur {from} et aucun autre moteur n'est disponible : cette routine sera relancée à la réinitialisation (vers {time})."
 }

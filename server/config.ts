@@ -111,6 +111,7 @@ const browserEngineConfigSchema = z.object({
   /** What the bots' browsers may reach past the public internet
    * (server/browser/egress/policy.ts, port of OpenMausBot #2930). */
   egress: browserEgressConfigSchema.optional(),
+  idleTimeoutMinutes: z.number().int().min(1).max(60).optional(), // an unused browser closes after this (browserIdleMs)
 });
 const roomConfigSchema = z.object({
   turnTimeoutMinutes: z
@@ -822,7 +823,7 @@ export interface AppConfig {
   /** CDP target of a Chrome the operator already has running (a bare port,
    * e.g. "9333", or an http(s)/ws(s) URL). When set, a bot's browser
    * attaches to it instead of agent-browser spawning its own (#1396). */
-  browserEngine?: { attachCdpUrl?: string; egress?: BrowserEgressConfig };
+  browserEngine?: { attachCdpUrl?: string; egress?: BrowserEgressConfig; idleTimeoutMinutes?: number };
   instances?: InstanceConfigMap;
 }
 export type BrowserProfile = z.output<typeof browserProfileSchema> & {

@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
-import { spawn, type ChildProcess } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +23,7 @@ import {
   ensureChrome,
   installAgentBrowserBinary,
   isMusl,
+  isTemporaryBrowserSession,
   pinnedBinaryPath,
   prepareBrowserSessionState,
   resolveAgentBrowserBinary,
@@ -53,6 +54,15 @@ function lifecycleChild(args: readonly string[] = [], options: { code?: number; 
     child.emit("close", args[0] === "session" ? 0 : options.code ?? 0);
   });
   return child as ReturnType<typeof spawn>;
+}
+
+/** The engine over a set of running daemons: `session list` lists them, and
+ * a `close` that succeeds (code 0) stops the session it was sent for. */
+function runningDaemons(running: Set<string>, options: { code?: number; onClose?: () => void } = {}) {
+  return ((_binary: string, args: readonly string[], spawnOptions?: { env?: NodeJS.ProcessEnv }) => lifecycleChild(args, {
+    ...options, sessions: [...running],
+    onClose: () => { options.onClose?.(); if (!options.code) running.delete(spawnOptions?.env?.AGENT_BROWSER_SESSION ?? ""); },
+  })) as unknown as typeof spawn;
 }
 
 describe("sizing the page of a launched browser", () => {
@@ -91,8 +101,9 @@ describe("deleting one browser session's saved logins", () => {
     scratch.push(home);
     const directory = join(home, ".agent-browser", "sessions");
     mkdirSync(join(directory, ".tmp"), { recursive: true });
-    vi.mocked(spawn).mockImplementation((_binary, args) => lifecycleChild(args, { code: closeCode }));
-    return { home, directory, options: { env: { HOME: home, USERPROFILE: home, PATH: "" } } };
+    const running = new Set(["work"]);
+    vi.mocked(spawn).mockImplementation(runningDaemons(running, { code: closeCode }));
+    return { home, directory, running, options: { env: { HOME: home, USERPROFILE: home, PATH: "" } } };
   }
 
   it("removes only exact state/backup/candidate files and never calls state clear", async () => {
@@ -103,7 +114,16 @@ describe("deleting one browser session's saved logins", () => {
     expect(await clearBrowserSessionState("fixture-browser", "work", options)).toBe(true);
     for (const name of removed) expect(existsSync(join(directory, name)), name).toBe(false);
     for (const name of preserved) expect(readFileSync(join(directory, name), "utf8"), name).toBe("fixture state");
-    expect(vi.mocked(spawn).mock.calls.map((call) => call[1])).toEqual([["close"], ["session", "list", "--json"]]);
+    expect(vi.mocked(spawn).mock.calls.map((call) => call[1])).toEqual([["session", "list", "--json"], ["close"], ["session", "list", "--json"]]);
+  });
+
+  // `close` goes through the CLI's daemon start: sent to a stopped session it
+  // started a daemon only to stop it, and left that session's .config behind.
+  it("never sends close to a browser that is not running", async () => {
+    const { options, running } = fixture();
+    running.clear();
+    expect(await clearBrowserSessionState("fixture-browser", "work", options)).toBe(true);
+    expect(vi.mocked(spawn).mock.calls.map((call) => call[1])).toEqual([["session", "list", "--json"]]);
   });
 
   it("cannot launch a browser from close through inherited launch flags or native user config", async () => {
@@ -114,13 +134,16 @@ describe("deleting one browser session's saved logins", () => {
       AGENT_BROWSER_SOCKET_DIR: "/fixture/sockets",
     } as typeof options.env;
     expect(await clearBrowserSessionState("fixture-browser", "work", options)).toBe(true);
-    const env = vi.mocked(spawn).mock.calls[0][2]?.env;
-    expect(env).not.toHaveProperty("AGENT_BROWSER_EXECUTABLE_PATH");
-    expect(env).not.toHaveProperty("AGENT_BROWSER_NO_WEBMCP");
-    expect(env).not.toHaveProperty("AGENT_BROWSER_PROFILE");
-    expect(env?.AGENT_BROWSER_SOCKET_DIR).toBe("/fixture/sockets");
-    expect(env?.AGENT_BROWSER_CONFIG).toBe(join(home, ".agent-browser", "omb-managed-config.json"));
-    expect(readFileSync(env!.AGENT_BROWSER_CONFIG!, "utf8")).toBe("{}\n");
+    expect(vi.mocked(spawn).mock.calls.map((call) => call[1])).toContainEqual(["close"]);
+    for (const [, , spawned] of vi.mocked(spawn).mock.calls) {
+      const env = spawned?.env;
+      expect(env).not.toHaveProperty("AGENT_BROWSER_EXECUTABLE_PATH");
+      expect(env).not.toHaveProperty("AGENT_BROWSER_NO_WEBMCP");
+      expect(env).not.toHaveProperty("AGENT_BROWSER_PROFILE");
+      expect(env?.AGENT_BROWSER_SOCKET_DIR).toBe("/fixture/sockets");
+      expect(env?.AGENT_BROWSER_CONFIG).toBe(join(home, ".agent-browser", "omb-managed-config.json"));
+      expect(readFileSync(env!.AGENT_BROWSER_CONFIG!, "utf8")).toBe("{}\n");
+    }
   });
 
   it("preserves state when closing the daemon fails", async () => {
@@ -134,26 +157,51 @@ describe("deleting one browser session's saved logins", () => {
   it("waits for actual daemon disappearance after close acknowledgement", async () => {
     const { options } = fixture();
     let polls = 0;
-    vi.mocked(spawn).mockImplementation((_binary, args) => lifecycleChild(args, { sessions: args?.[0] === "session" && ++polls === 1 ? ["work", "work-client"] : ["work-client"] }));
+    vi.mocked(spawn).mockImplementation((_binary, args) => lifecycleChild(args, { sessions: args?.[0] === "session" && ++polls <= 2 ? ["work", "work-client"] : ["work-client"] }));
     expect(await closeBrowserSession("fixture-browser", { ...options.env, AGENT_BROWSER_SESSION: "work" })).toBe(true);
-    expect(polls).toBe(2);
+    expect(polls).toBe(3);
+  });
+
+  // A turn can start the next daemon under the same name while the old one
+  // is still closing; that one is neither waited for nor stopped.
+  it("finishes when its daemon is gone even though a new one took the session's name", async () => {
+    const { options } = fixture();
+    const env = { ...options.env, AGENT_BROWSER_SESSION: "work" };
+    const pidFile = browserDaemonPidPath(env);
+    mkdirSync(join(pidFile, ".."), { recursive: true });
+    writeFileSync(pidFile, "2147483000");
+    vi.mocked(spawn).mockImplementation((_binary, args) => lifecycleChild(args, { sessions: ["work"], onClose: () => writeFileSync(pidFile, "2147483001") }));
+    const started = Date.now();
+    expect(await closeBrowserSession("fixture-browser", env, 10_000)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(readFileSync(pidFile, "utf8")).toBe("2147483001");
+  });
+
+  it("joins a close of the same browser already in flight instead of sending a second", async () => {
+    const { options } = fixture();
+    const env = { ...options.env, AGENT_BROWSER_SESSION: "work" };
+    expect(await Promise.all([closeBrowserSession("fixture-browser", env), closeBrowserSession("fixture-browser", env)])).toEqual([true, true]);
+    expect(vi.mocked(spawn).mock.calls.filter((call) => call[1]?.[0] === "close")).toHaveLength(1);
   });
 
   it("waits for inventory stdout to finish after the process exits", async () => {
     const { options } = fixture();
+    let polls = 0;
     vi.mocked(spawn).mockImplementation((_binary, args) => {
       if (args?.[0] !== "session") return lifecycleChild(args);
+      const sessions = ++polls === 1 ? ["work"] : [];
       const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), kill: () => true });
       queueMicrotask(() => {
         child.emit("exit", 0);
         queueMicrotask(() => {
-          child.stdout.emit("data", '{"success":true,"data":{"sessions":[]}}');
+          child.stdout.emit("data", JSON.stringify({ success: true, data: { sessions } }));
           child.emit("close", 0);
         });
       });
       return child as ReturnType<typeof spawn>;
     });
     expect(await closeBrowserSession("fixture-browser", { ...options.env, AGENT_BROWSER_SESSION: "work" })).toBe(true);
+    expect(polls).toBe(2);
   });
 
   it.each(['not-json', '{"success":true}', '{"success":false,"data":{"sessions":[]}}'])("refuses an invalid shutdown inventory %s", async (inventory) => {
@@ -208,52 +256,178 @@ describe("a browser daemon that will not close (#2603)", () => {
   });
 
   // A symlink to node stands in for the agent-browser binary: `ps` shows the
-  // path it was started through, and `close` fails because node cannot find
-  // a script by that name — the same failed close a hung daemon gives.
-  const daemons: ChildProcess[] = [];
-  // Each daemon leads its own group, with its child inside it.
-  afterEach(() => { for (const daemon of daemons.splice(0)) { try { process.kill(-daemon.pid!, "SIGKILL"); } catch { /* already stopped */ } } });
-  async function hungDaemon(script: string) {
+  // path a daemon was started through. The inventory and `close` are faked;
+  // the daemon, its browser and the process listing are real.
+  const groups: number[] = [];
+  afterEach(() => { for (const group of groups.splice(0)) { try { process.kill(-group, "SIGKILL"); } catch { /* already stopped */ } } });
+  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  /** A process that has exited, even one nobody collected. */
+  const gone = (actual: typeof import("node:child_process"), pid: number) => {
+    try { return actual.execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).trim().startsWith("Z"); } catch { return true; }
+  };
+  // The daemon's browser leads a process group of its own, as Chrome does, with
+  // a helper inside it; each writes its pid where the test can read it.
+  // On USR1 it starts one more helper, as Chrome does for a new page.
+  const BROWSER = `const { spawn } = require('node:child_process'); const fs = require('node:fs');
+    const helper = spawn('sleep', ['30'], { stdio: 'ignore' });
+    process.on('SIGUSR1', () => { const late = spawn('sleep', ['30'], { stdio: 'ignore' }); fs.writeFileSync(process.env.HELPER_PID + '.late', String(late.pid)); });
+    fs.writeFileSync(process.env.HELPER_PID, String(helper.pid)); setInterval(() => {}, 1000);`;
+  const DAEMON = `const { spawn } = require('node:child_process');
+    const browser = spawn(process.execPath, ['-e', ${JSON.stringify(BROWSER)}, '--', '--remote-debugging-port=0', '--user-data-dir=' + process.env.PROFILE_DIR], { detached: true, stdio: 'ignore' });
+    require('node:fs').writeFileSync(process.env.BROWSER_PID, String(browser.pid)); setInterval(() => {}, 1000);`;
+  // agent-browser's daemon on TERM: it saves the session's sign-ins over its
+  // browser's DevTools connection, which takes a moment, then stops that
+  // browser's group itself and exits. It records whether the browser was
+  // still there to save from.
+  const SAVING_DAEMON = `const { spawn } = require('node:child_process'); const fs = require('node:fs');
+    const browser = spawn(process.execPath, ['-e', ${JSON.stringify(BROWSER)}, '--', '--remote-debugging-port=0', '--user-data-dir=' + process.env.PROFILE_DIR], { detached: true, stdio: 'ignore' });
+    fs.writeFileSync(process.env.BROWSER_PID, String(browser.pid));
+    process.on('SIGTERM', () => setTimeout(() => {
+      let running = true; try { process.kill(browser.pid, 0); } catch { running = false; }
+      fs.writeFileSync(process.env.BROWSER_PID + '.saved', running ? 'saved' : 'browser already gone');
+      try { process.kill(-browser.pid, 'SIGKILL'); } catch {}
+      process.exit(0);
+    }, 200));
+    setInterval(() => {}, 1000);`;
+  async function engine(options: { close: (pids: { daemon: number; browser: number; helper: number }) => number | Promise<number>; via?: "symlink" | "resolved" | "unreaped"; daemon?: string }) {
     const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
-    vi.mocked(spawn).mockImplementation(actual.spawn);
     const home = mkdtempSync(join(tmpdir(), "omb-browser-hung-"));
     scratch.push(home);
     const binaryPath = join(home, "agent-browser");
     symlinkSync(process.execPath, binaryPath);
-    const daemon = actual.spawn(binaryPath, ["-e", script], { detached: true, stdio: "ignore" });
-    daemon.unref();
-    daemons.push(daemon);
-    await vi.waitFor(() => expect(daemon.pid).toBeTypeOf("number"));
-    const env = { HOME: home, USERPROFILE: home, PATH: "", AGENT_BROWSER_SESSION: "work" };
+    const env = { HOME: home, USERPROFILE: home, PATH: process.env.PATH ?? "", AGENT_BROWSER_SESSION: "work" };
     mkdirSync(join(home, ".agent-browser"), { recursive: true });
-    return { actual, binaryPath, daemon, env, pidPath: browserDaemonPidPath(env) };
+    const files = { BROWSER_PID: join(home, "browser.pid"), HELPER_PID: join(home, "helper.pid"), PROFILE_DIR: join(home, `agent-browser-chrome-${randomUUID()}`) };
+    mkdirSync(join(files.PROFILE_DIR, "Default"), { recursive: true });
+    // What agent-browser hands each daemon, and its Chrome inherits.
+    const daemonEnv = { ...process.env, ...files, AGENT_BROWSER_DAEMON: "1", AGENT_BROWSER_SESSION: "work" };
+    let daemon: number;
+    if (options.via === "unreaped") {
+      // No init: the daemon's parent never collects it, so once killed it stays a zombie.
+      const parent = actual.spawn("/bin/sh", ["-c", `"$0" -e "$1" & echo $! > "$2"; exec sleep 30`, binaryPath, options.daemon ?? DAEMON, join(home, "daemon.pid")], { detached: true, stdio: "ignore", env: daemonEnv });
+      groups.push(parent.pid!);
+      await vi.waitFor(() => expect(existsSync(join(home, "daemon.pid")) && readFileSync(join(home, "daemon.pid"), "utf8").trim()).toBeTruthy());
+      daemon = Number(readFileSync(join(home, "daemon.pid"), "utf8").trim());
+    } else {
+      // agent-browser starts its daemon through its canonical path, which a
+      // global npm install reaches through a symlink.
+      const started = actual.spawn(options.via === "resolved" ? realpathSync(process.execPath) : binaryPath, ["-e", options.daemon ?? DAEMON], { detached: true, stdio: "ignore", env: daemonEnv });
+      started.unref();
+      daemon = started.pid!;
+    }
+    groups.push(daemon);
+    await vi.waitFor(() => expect(existsSync(files.BROWSER_PID) && existsSync(files.HELPER_PID) && readFileSync(files.HELPER_PID, "utf8").trim()).toBeTruthy(), { timeout: 5_000 });
+    const pids = { daemon, browser: Number(readFileSync(files.BROWSER_PID, "utf8")), helper: Number(readFileSync(files.HELPER_PID, "utf8")) };
+    groups.push(pids.browser);
+    writeFileSync(browserDaemonPidPath(env), String(daemon));
+    const running = new Set(["work"]);
+    vi.mocked(spawn).mockImplementation(((binary: string, args: readonly string[], spawnOptions: object) => {
+      if (args[0] === "session") return lifecycleChild(args, { sessions: [...running] });
+      if (args[0] !== "close") return actual.spawn(binary, args, spawnOptions);
+      const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), kill: () => true });
+      void Promise.resolve(options.close(pids)).then((code) => {
+        if (code === 0) running.delete("work");
+        child.emit("exit", code); child.emit("close", code);
+      });
+      return child;
+    }) as unknown as typeof spawn);
+    return { actual, binaryPath, env, pids, profile: files.PROFILE_DIR, lateHelper: () => Number(readFileSync(`${files.HELPER_PID}.late`, "utf8")) };
   }
-  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
-  it.skipIf(!posix)("stops the daemon and the browser under it when close fails", async () => {
-    const { actual, binaryPath, daemon, env, pidPath } = await hungDaemon(
-      "require('node:child_process').spawn('sleep', ['30'], { stdio: 'ignore' }); setInterval(() => {}, 1000);",
-    );
-    let browser = 0;
-    await vi.waitFor(() => {
-      browser = Number(actual.execFileSync("pgrep", ["-P", String(daemon.pid)], { encoding: "utf8" }).trim());
-      expect(browser).toBeGreaterThan(1);
-    });
-    writeFileSync(pidPath, String(daemon.pid));
+  it.skipIf(!posix)("stops the daemon and the browser under it when close fails, and removes the profile folder it would have", async () => {
+    const { actual, binaryPath, env, pids, profile } = await engine({ close: () => 1 });
+    expect(existsSync(profile)).toBe(true);
     expect(await closeBrowserSession(binaryPath, env, 2_000)).toBe(true);
-    expect(alive(daemon.pid!)).toBe(false);
-    await vi.waitFor(() => expect(alive(browser)).toBe(false));
+    for (const pid of Object.values(pids)) expect(gone(actual, pid), String(pid)).toBe(true);
+    expect(existsSync(profile)).toBe(false);
+  });
+
+  // TERM to the browser at the same time would leave the daemon nothing to
+  // save the sign-ins from.
+  it.skipIf(!posix)("lets a daemon that will not close save its sign-ins from its browser before anything else is stopped", async () => {
+    const { actual, binaryPath, env, pids } = await engine({ close: () => 1, daemon: SAVING_DAEMON });
+    expect(await closeBrowserSession(binaryPath, env, 1_000)).toBe(true);
+    expect(readFileSync(join(env.HOME, "browser.pid.saved"), "utf8")).toBe("saved");
+    for (const pid of Object.values(pids)) expect(gone(actual, pid), String(pid)).toBe(true);
+  });
+
+  // A close can answer while the browser it should have stopped still runs
+  // (here its daemon dies first): that browser is stopped by its process group.
+  it.skipIf(!posix)("does not report closed while the browser it started still runs", async () => {
+    const { actual, binaryPath, env, pids } = await engine({ close: ({ daemon }) => { process.kill(daemon, "SIGKILL"); return 0; } });
+    expect(await closeBrowserSession(binaryPath, env, 500)).toBe(true);
+    for (const pid of Object.values(pids)) expect(gone(actual, pid), String(pid)).toBe(true);
+  });
+
+  // A helper Chrome starts after the tree was read (a page opening while the
+  // close runs) is in the browser's process group, and stops with it.
+  it.skipIf(!posix)("stops what the browser started after the close began, by its process group", async () => {
+    let late = "";
+    const { actual, binaryPath, env, pids } = await engine({ close: async ({ browser }) => {
+      process.kill(browser, "SIGUSR1");
+      await vi.waitFor(() => { late = readFileSync(join(env.HOME, "helper.pid.late"), "utf8"); expect(late).toBeTruthy(); });
+      return 1;
+    } });
+    expect(await closeBrowserSession(binaryPath, env, 1_000)).toBe(true);
+    for (const pid of [...Object.values(pids), Number(late)]) expect(gone(actual, pid), String(pid)).toBe(true);
+  });
+
+  it.skipIf(!posix)("returns as soon as the daemon and its browser have exited", async () => {
+    const { actual, binaryPath, env, pids } = await engine({ close: ({ daemon, browser }) => { process.kill(-browser, "SIGTERM"); process.kill(daemon, "SIGTERM"); return 0; } });
+    const started = Date.now();
+    expect(await closeBrowserSession(binaryPath, env, 10_000)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    for (const pid of Object.values(pids)) expect(gone(actual, pid), String(pid)).toBe(true);
+  });
+
+  it.skipIf(!posix)("finds a daemon started through the binary's resolved path", async () => {
+    const { actual, binaryPath, env, pids } = await engine({ close: () => 1, via: "resolved" });
+    expect(await closeBrowserSession(binaryPath, env, 1_000)).toBe(true);
+    for (const pid of Object.values(pids)) expect(gone(actual, pid), String(pid)).toBe(true);
+  });
+
+  // Without init (docker compose without `init: true`) nothing collects a
+  // killed daemon: it stays a zombie, which has exited all the same.
+  it.skipIf(!posix)("counts a stopped daemon nothing collects as gone", async () => {
+    const { actual, binaryPath, env, pids } = await engine({ close: () => 1, via: "unreaped" });
+    expect(await closeBrowserSession(binaryPath, env, 1_000)).toBe(true);
+    expect(alive(pids.daemon)).toBe(true); // a zombie still answers signal 0
+    for (const pid of Object.values(pids)) expect(gone(actual, pid), String(pid)).toBe(true);
+  });
+
+  // Started from a shell without job control, a daemon stays in that shell's
+  // process group, which is none of the tree's own: one that ignores TERM is
+  // stopped by its pid, and its browser's group as a whole.
+  it.skipIf(!posix)("stops a daemon that ignores TERM in no process group of its own by its pid", async () => {
+    const { actual, binaryPath, env, pids } = await engine({ close: () => 1, via: "unreaped", daemon: `process.on('SIGTERM', () => {}); ${DAEMON}` });
+    expect(await closeBrowserSession(binaryPath, env, 500)).toBe(true);
+    for (const pid of Object.values(pids)) expect(gone(actual, pid), String(pid)).toBe(true);
   });
 
   it.skipIf(!posix)("leaves alone a process the pid file names that is not this agent-browser", async () => {
-    const { actual, binaryPath, env, pidPath } = await hungDaemon("setInterval(() => {}, 1000);");
+    const { actual, binaryPath, env } = await engine({ close: () => 1 });
     const stranger = actual.spawn("sleep", ["30"], { stdio: "ignore" });
     try {
-      writeFileSync(pidPath, String(stranger.pid));
-      expect(await closeBrowserSession(binaryPath, env, 2_000)).toBe(false);
+      writeFileSync(browserDaemonPidPath(env), String(stranger.pid));
+      expect(await closeBrowserSession(binaryPath, env, 1_000)).toBe(false);
       expect(alive(stranger.pid!)).toBe(true);
     } finally {
       stranger.kill("SIGKILL");
+    }
+  });
+
+  // A daemon killed without cleanup leaves its pid file, and the engine lists
+  // the session for as long as that pid is alive: once another of this
+  // binary's processes took it (another bot's daemon, or an engine command
+  // such as a bot's MCP server), only the environment tells them apart.
+  it.skipIf(!posix)("leaves alone another session's daemon, or an engine command, that took the pid of this one", async () => {
+    const { actual, binaryPath, env } = await engine({ close: () => 1 });
+    for (const taken of [{ AGENT_BROWSER_DAEMON: "1", AGENT_BROWSER_SESSION: "play" }, { AGENT_BROWSER_SESSION: "work" }]) {
+      const other = actual.spawn(binaryPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore", env: { PATH: process.env.PATH, ...taken } });
+      groups.push(other.pid!);
+      writeFileSync(browserDaemonPidPath(env), String(other.pid));
+      expect(await closeBrowserSession(binaryPath, env, 500)).toBe(false);
+      expect(alive(other.pid!)).toBe(true);
     }
   });
 });
@@ -308,7 +482,8 @@ describe("restoring exactly one browser profile", () => {
     writeFileSync(join(directory, "client-client.json.enc"), "old state");
     await prepareBrowserSessionState("fixture-browser", "client", options);
     expect(readFileSync(join(directory, `${browserRestoreKey("client")}-client.json.enc`), "utf8")).toBe("current state");
-    expect(spawn).toHaveBeenCalledTimes(2);
+    // Nothing ran, so nothing was asked to close: only work's inventory.
+    expect(vi.mocked(spawn).mock.calls.map((call) => call[1])).toEqual([["session", "list", "--json"]]);
   });
 
   it("deduplicates preparations by home and session, and skips guest persistence", async () => {
@@ -317,12 +492,12 @@ describe("restoring exactly one browser profile", () => {
     await Promise.all([prepareBrowserSessionState("fixture-browser", "work", a.options), prepareBrowserSessionState("fixture-browser", "work", a.options)]);
     await prepareBrowserSessionState("fixture-browser", "work", b.options);
     await prepareBrowserSessionState("fixture-browser", "guest", { ...a.options, persistent: false });
-    expect(spawn).toHaveBeenCalledTimes(4);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("flushes a running legacy daemon before copying its newly saved login", async () => {
     const { directory, options } = fixture();
-    vi.mocked(spawn).mockImplementation((_binary, args) => lifecycleChild(args, { onClose: () => { writeFileSync(join(directory, "work-work.json.enc"), "just-flushed login"); } }));
+    vi.mocked(spawn).mockImplementation(runningDaemons(new Set(["work"]), { onClose: () => { writeFileSync(join(directory, "work-work.json.enc"), "just-flushed login"); } }));
     await prepareBrowserSessionState("fixture-browser", "work", options);
     expect(readFileSync(join(directory, `${browserRestoreKey("work")}-work.json.enc`), "utf8")).toBe("just-flushed login");
   });
@@ -333,7 +508,7 @@ describe("restoring exactly one browser profile", () => {
     await expect(prepareBrowserSessionState("fixture-browser", "work", { ...options, isCurrent: () => false })).rejects.toThrow(/access changed/);
     expect(spawn).not.toHaveBeenCalled();
     let current = true;
-    vi.mocked(spawn).mockImplementation((_binary, args) => lifecycleChild(args, { onClose: () => { current = false; } }));
+    vi.mocked(spawn).mockImplementation(runningDaemons(new Set(["work"]), { onClose: () => { current = false; } }));
     await expect(prepareBrowserSessionState("fixture-browser", "work", { ...options, isCurrent: () => current })).rejects.toThrow(/access changed/);
     expect(existsSync(join(directory, `${browserRestoreKey("work")}-work.json.enc`))).toBe(false);
   });
@@ -341,11 +516,11 @@ describe("restoring exactly one browser profile", () => {
   it("does not migrate after a failed native close and allows a later retry", async () => {
     const { directory, options } = fixture();
     writeFileSync(join(directory, "work-work.json.enc"), "saved login");
-    let code = 1;
-    vi.mocked(spawn).mockImplementation((_binary, args) => lifecycleChild(args, { code }));
+    const running = new Set(["work"]);
+    vi.mocked(spawn).mockImplementation(runningDaemons(running, { code: 1 }));
     await expect(prepareBrowserSessionState("fixture-browser", "work", options)).rejects.toThrow(/safely prepare/);
     expect(existsSync(join(directory, `${browserRestoreKey("work")}-work.json.enc`))).toBe(false);
-    code = 0;
+    vi.mocked(spawn).mockImplementation(runningDaemons(running));
     await prepareBrowserSessionState("fixture-browser", "work", options);
     expect(readFileSync(join(directory, `${browserRestoreKey("work")}-work.json.enc`), "utf8")).toBe("saved login");
   });
@@ -709,6 +884,16 @@ describe("what a bot gets", () => {
     expect(first).toMatch(/^guest-[a-f0-9-]+$/u);
     expect(first).not.toBe(second);
     expect(spec(first, false).env).toMatchObject({ AGENT_BROWSER_RESTORE: browserRestoreKey(first), AGENT_BROWSER_RESTORE_SAVE: "never" });
+  });
+
+  it("names a temporary browser after its data dir, so one a crash left behind is still recognisably its own", () => {
+    const session = browserSessionId("bot-a", "guest", "/data/one");
+    expect(session).toMatch(/^guest-[a-f0-9]{8}-[a-f0-9]{16}$/u);
+    expect(isTemporaryBrowserSession(session, "/data/one")).toBe(true);
+    expect(isTemporaryBrowserSession(session, "/data/two")).toBe(false);
+    expect(isTemporaryBrowserSession(browserSessionId("bot-a", "", "/data/one"), "/data/one")).toBe(false);
+    // No longer than the uuid form it replaced: agent-browser's socket path is capped.
+    expect(session.length).toBeLessThanOrEqual(42);
   });
 
   it("names sessions after the shared profile, else the bot, in shell-safe form", () => {

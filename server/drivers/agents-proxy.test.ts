@@ -712,6 +712,7 @@ describe("agents-proxy MCP surface", () => {
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",

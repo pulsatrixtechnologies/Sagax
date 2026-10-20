@@ -8,6 +8,7 @@
  * server/store.ts; the wire projection is typed so a new server field
  * fails compilation until it is either declared here or explicitly listed
  * as server-private. */
+import type { LimitFailoverLine } from "./limit-failover.ts";
 import type { MeetingRequestCardData } from "./meeting-request.ts";
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { DataBroadcast } from "./data-surface.ts";
@@ -682,6 +683,9 @@ export interface WireMessage {
     /** 2026-10-18: the bot left an engine the organization no longer
      * offers and now runs on Auto (shared/offered-engines.ts). */
     engineMove?: OrgEngineMove;
+    /** 2026-10-19: a usage limit sent the turn to another engine, or it
+     * came back (shared/limit-failover.ts); drawn in the reader's language. */
+    limitFailover?: LimitFailoverLine;
   };
   /** A bot line a "post" webhook wrote: whoever called the webhook chose
    * its words. On a Cloud home a conversation holding one is someone else's

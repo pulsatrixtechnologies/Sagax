@@ -26,7 +26,7 @@ import { buildLogBundle, logBundleFileName, sanitizeRendererLines } from "./log-
 import { foldGrokVoiceCredential, grokVoiceFoldLog, migrateWorkspaceCredentials, workspaceCredentialEnv } from "./workspace-credentials.mjs";
 import { evictStartupCacheOnce } from "./startup-cache-eviction.mjs";
 import { activateExistingWindow, releaseSingleInstanceLock } from "./single-instance.mjs";
-import { pollServerIdentity } from "./server-boot-probe.mjs";
+import { bootFailureMessage, listeningSignal, pollServerIdentity, SERVER_BOOT_TIMEOUT_MS, SERVER_LISTENING_GRACE_MS } from "./server-boot-probe.mjs";
 import { createServerSupervisor } from "./server-supervisor.mjs";
 import { createBootUiHandler } from "./boot-ui.mjs";
 import { serverChildLaunch } from "./server-child-launch.mjs";
@@ -1871,7 +1871,11 @@ async function startServerOn(port, dataDir = runningDataDir ?? startupEnvironmen
   utilityServerExits.set(proc, new Promise((resolve) => {
     resolveServerExit = resolve;
   }));
-  proc.stdout?.on("data", (d) => slog(`[out] ${String(d).trimEnd()}`));
+  const listening = listeningSignal();
+  proc.stdout?.on("data", (d) => {
+    listening.hear(String(d));
+    slog(`[out] ${String(d).trimEnd()}`);
+  });
   proc.stderr?.on("data", (d) => slog(`[err] ${String(d).trimEnd()}`));
   // The packaged server opens its port before it loads (desktop-entry.mjs,
   // server/early-listener.ts) and says so on its private parent port: that
@@ -1935,21 +1939,17 @@ async function startServerOn(port, dataDir = runningDataDir ?? startupEnvironmen
     pid: () => proc.pid,
     bootTimeoutMs: SERVER_BOOT_TIMEOUT_MS,
     isExited: () => exited || desktopShutdownStarted,
+    // A child that printed its listening line is alive and only slow to answer
+    // /api/health: give it a grace instead of reaping it at the 60 s deadline.
+    isListening: listening.heard,
+    listeningGraceMs: SERVER_LISTENING_GRACE_MS,
   });
   // Main's own time-boxed calls to the server (refreshSharedComputersAllowed)
   // wait for this, not for the open port.
   localServerAnswering = probe.then(() => undefined, () => undefined);
   const identity = await Promise.race([portOpened, probe]);
   if (identity.outcome === "ready" && serverSupervisor.isCurrent(proc)) return { proc };
-  if (identity.outcome === "exited") {
-    slog(`child on port ${port} exited before answering /api/health`);
-  } else {
-    slog(
-      identity.outcome === "foreign-owner"
-        ? `port ${port} answered health checks from another process`
-        : `child on port ${port} did not answer /api/health within ${SERVER_BOOT_TIMEOUT_MS / 1000}s`,
-    );
-  }
+  slog(bootFailureMessage(port, identity));
   const stopped = await stopUtilityServer(proc);
   if (!stopped) {
     slog(`child on port ${port} did not exit after termination; refusing to start a sibling server`);
@@ -2033,8 +2033,6 @@ function buildErrorPage({ allPortsOccupied }) {
 // first boots write data dirs and pre-listen network calls (managed composio,
 // workspace credentials) can stall a healthy child far past 20s on some
 // machines, which used to surface as the misleading "ports are busy" page.
-const SERVER_BOOT_TIMEOUT_MS = 60_000;
-
 let cuaReady = Promise.resolve({ mode: "unavailable", reason: "not-started" });
 const androidDevice = createAndroidDeviceController({ resourcesPath: process.resourcesPath });
 const displayMediaGuard = createDisplayMediaGuard();

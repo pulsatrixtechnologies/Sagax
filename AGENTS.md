@@ -102,6 +102,50 @@ shows it; the system prompt says so (`WIDGET_SELF_CHECK_PROMPT`).
   `server/testing/widget-check-fixtures/`, broken ones must fail, healthy ones
   must pass with no defect).
 
+## Every setting is an action: sagax_settings (2026-10-19)
+
+JC: "Tout doit être modifiable via les bots. Absolument tout. [...] Arrête
+la paranoïa." A bot reads and changes any setting for the person speaking
+to it with `sagax_settings` (agents catalog, `server/drivers/agents-settings-tools.ts`,
+permission `settings:change`, member scope `own-setup`, deferred on Claude):
+`list` (by family) gives the keys, `get` reads, `set` changes.
+
+- Registry: `shared/settings-actions.ts`, one entry per setting (bot,
+  thread, routine, group, section, rules, account, appearance,
+  notifications, models, connections, credentials, server, organization,
+  computer): the route the screen calls and how to read it back. Adding a
+  setting to the app: add its entry, run `pnpm gen:settings-doc` (writes
+  `docs/settings-actions.md`, the inventory; the test fails when stale)
+  and `pnpm gen:self-knowledge`.
+- Rights: the route is replayed by the act engine (`server/bot-act.ts`
+  `handlePlanned`) with the person's own session; a route they cannot call
+  is refused before any card ("needs rights they do not have"), and the
+  route's own checks answer the rest. Turns with no person (routine,
+  webhook, guest) are refused as for `act`.
+- Policy (`shared/settings-actions-policy.ts`): a class the person protects
+  with a security key: card; secret, others, bulk, delete, org: card at
+  every level, Full included; not the owner's own work (the speaker owns
+  the speaking bot and the target): card; Ask or Edits: card; an approval
+  level or owner mode raised: runs up to the speaking bot's own level,
+  never Full or Custom; else it runs. Every applied change writes
+  `setting.change` (category `setting`) to the admin journal.
+- A planned replay carries `x-sagax-act-confirmed` (one-shot, 60 s, method
+  and path, minted only by this server): `ruleManager` then reads the bot
+  act copy as the person, and the approval-mode and settings step-up gates
+  accept the classes the card's key already covered (`actConfirmedCovers`;
+  a policy run covers none). `botActStepUpContent` adds the planned
+  classes to the card's own.
+- Device preferences (skin, notifications...) go to the person's open app
+  as the `setPreference` screen command (`DEVICE_PREFERENCE_KEYS` only;
+  `applyBotPreference`); an organization server saves them per person as
+  a change by hand.
+- `act` still refuses approval fields, rules and card answers; its error
+  points to `sagax_settings`. Security keys, vault export and import, and
+  the desktop-only Full of a personal server stay the person's (listed in
+  the doc).
+- Tests: `shared/settings-actions*.test.ts`, `server/settings-actions.test.ts`,
+  `server/settings-actions.e2e.test.ts`.
+
 ## Bots know Sagax and Perspicax: sagax_help (2026-10-19)
 
 JC: the bots know everything Sagax and Perspicax can do, kept up to date,
@@ -4581,6 +4625,46 @@ the kernel then killed the server itself. `server/engine-memory-guard.ts`:
 - Engines and all their descendants get `oom_score_adj`
   `SAGAX_CHILD_OOM_SCORE_ADJ` (500; `spawnCli` plus a sweep each tick), so an
   OOM kill takes one engine (one turn), not the server.
+
+## Usage limits: automatic backup engine (2026-10-19)
+
+Port of OpenMausBot #3074 (backup engine, back after the reset, with the
+clock fix #3120) and #2754 (another engine when one runs out), adapted to
+JC's rule: no card, the turn continues at once.
+
+- A failed turn whose cause is a usage limit (`limitKindOf` in
+  `server/limit-reset-time.ts`: the shared `quota` class, a spent balance,
+  a driver's `quota` stop, or a 429 the driver gave up on) blocks that
+  engine for that payer (`autoPayerKey`) until its reset: the engine's own
+  time (`runtime.error.limitResetsAt`, from Claude's `rate_limit_info`;
+  Retry-After, "try again in", an ISO or epoch reset, Codex's "try again
+  at 5:23 PM"), else a prudent estimate (1 h, 15 min for a 429).
+- The person's own message (request origin `user`) is sent again at once on
+  a backup, in the same thread, the message not duplicated
+  (`server/limit-failover-host.ts`). The engine's error row becomes one
+  `recovery:` line carrying `tool.limitFailover`, which the app draws in the
+  reader's language (`limitFailover.*` keys, `src/lib/limit-failover.ts`).
+- Candidates are `autoEnginesFor` (the same filter Auto uses): enabled,
+  organization policy and `allowedEngines`, sign-ins and keys of this
+  speaker (`resolveEngineAccess`), approval mode, tools the thread needs.
+  Never another sign-in to the same subscription engine
+  (`limitBackupAllowed`). Order: the bot's own backups, then the default
+  model of new bots, then the catalog. Engines blocked for this payer are
+  skipped: no ping-pong, at most 3 takeovers per message.
+- Only the thread moves (`switchTaskModel`, `rewound`), never the bot. The
+  failover is kept in `DATA_DIR/limit-failovers.json`; the first turn after
+  the reset plus `AFTER_RESET_MS` goes back to the engine the thread started
+  on, with one line. A thread someone moved since is left alone.
+- No backup: the line says the message is sent again at the reset, and it
+  is, once. A routine run is run again on the backup (`runNow`, once per
+  run), else at the reset (at most once per 12 h per routine). Other turns
+  (delegations, webhooks) only block the engine: their next turn starts on a
+  backup before it is refused (`beforeTurn` in `startTurn`).
+- Auto threads are left to Auto. Off with `SAGAX_LIMIT_FAILOVER=0`. Tests:
+  `server/limit-reset-time.test.ts`, `server/limit-failover.test.ts`,
+  `server/limit-failover-host.test.ts`, `src/lib/limit-failover.test.ts`,
+  `server/limit-failover.e2e.test.ts` (fake engines, the reset shortened by
+  `SAGAX_TEST_LIMIT_AFTER_RESET_MS`, read only when HOME is the data dir).
 
 ## App icon: the Pulsatrix logo (2026-10-14)
 

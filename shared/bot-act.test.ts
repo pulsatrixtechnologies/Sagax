@@ -62,7 +62,7 @@ describe("decideBotAct", () => {
   });
 
   it("refuses a mode change or a card answer in every mode, including full", () => {
-    const error = "A bot cannot change an approval mode or answer a card through act.";
+    const error = "act does not change approval levels, rules or grants, nor answer a card: use sagax_settings (bot.approvalMode, bot.permissionMode, rules.*), which asks the person when it must.";
     const full = { mode: "full" as const, scopes: ["admin", "client"] as const, neededScope: client };
     expect(decideBotAct({ raw: { ui: "decideRequest", input: { threadId: "t2", requestId: "r1", behavior: "allow" } }, ...full })).toMatchObject({ ok: false, status: 403, error });
     expect(decideBotAct({ raw: { ui: "answerCard", input: { botId: "b1", messageId: "m1", answer: "yes" } }, ...full })).toMatchObject({ ok: false, status: 403, error });

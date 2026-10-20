@@ -174,6 +174,8 @@ export function spawnCli(
   return child;
 }
 
+const EXEC_KILL_GRACE_MS = 2_000;
+
 export function execCli(
   cli: string,
   args: string[],
@@ -188,10 +190,18 @@ export function execCli(
     return;
   }
   const run = (done: () => void = () => {}) => {
-    execFile(resolved.command, resolved.args, { ...opts, windowsHide: true, encoding: "utf8" }, (err, stdout, stderr) => {
+    let escalate: NodeJS.Timeout | undefined;
+    const child = execFile(resolved.command, resolved.args, { ...opts, windowsHide: true, encoding: "utf8" }, (err, stdout, stderr) => {
+      clearTimeout(escalate);
       done();
       cb(err, stdout, stderr);
     });
+    // Node calls back only once the child exits, and a CLI wrapper that traps SIGTERM outlives the timeout's signal.
+    // Only the child is stopped: execFile starts no process group, so a grandchild that ignores SIGTERM can outlive it.
+    if (opts.timeout) {
+      escalate = setTimeout(() => void killCliTree(child, 0), opts.timeout + EXEC_KILL_GRACE_MS);
+      escalate.unref?.();
+    }
   };
   // A known engine CLI boots a whole runtime even to print its version:
   // while the server boots, those probes share the engine start limit
@@ -291,8 +301,12 @@ async function stopCliTree(child: ChildProcess, pid: number, timeoutMs: number):
       const deadline = Date.now() + ms;
       while (!settled()) {
         const remaining = deadline - Date.now();
-        if (remaining <= 0) return false;
-        await new Promise((resolve) => setTimeout(resolve, Math.min(25, remaining)));
+        if (remaining <= 0) {
+          // Timers run before libuv's poll phase reads SIGCHLD: a blocked loop reaches the deadline with the exit unread.
+          await new Promise((resolve) => setImmediate(resolve));
+          return settled();
+        }
+        await exitOrDelay(child, Math.min(25, remaining));
       }
       return true;
     };
@@ -343,8 +357,28 @@ async function stopCliTree(child: ChildProcess, pid: number, timeoutMs: number):
   });
 }
 
-/** Per-turn broker channel: unix socket on POSIX, named pipe on Windows
- * (Node can't listen on a filesystem socket path there — EACCES). */
+function exitOrDelay(child: ChildProcess, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      child.off("exit", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    child.once("exit", done);
+  });
+}
+
+/** True once the process itself has exited, within `ms`; members it left in its group are not counted. */
+export async function waitForExit(child: ChildProcess, ms: number): Promise<boolean> {
+  const exited = () => child.exitCode !== null || child.signalCode !== null;
+  const deadline = Date.now() + ms;
+  while (!exited() && Date.now() < deadline) await exitOrDelay(child, Math.min(250, deadline - Date.now()));
+  if (!exited()) await new Promise((resolve) => setImmediate(resolve));
+  return exited();
+}
+
+/** Unix socket on POSIX, named pipe on Windows (Node cannot listen on a filesystem socket path there: EACCES). */
 export function brokerSocketPath(dataDir: string, tag: string): string {
   return process.platform === "win32"
     // Named pipes share a global namespace; DATA_DIR cannot isolate two

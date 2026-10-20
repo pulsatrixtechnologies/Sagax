@@ -6,6 +6,8 @@
 // answering a card, or calling a /respond route is refused in every mode.
 // This module decides. It does not perform.
 
+import { DEVICE_PREFERENCE_KEYS } from "./settings-actions.ts";
+
 const PATH_MAX = 512;
 const QUERY_KEYS_MAX = 20;
 const QUERY_VALUE_MAX = 200;
@@ -171,6 +173,9 @@ const COMMANDS: Record<string, CommandSpec> = {
   setModel: { write: true, fields: { botId: "s", selection: "o", threadId: "s?", updateBotDefault: "b?" } },
   interrupt: { write: true, fields: { botId: "s", threadId: "s?" } },
   updateBot: { write: true, fields: { botId: "s", patch: "o" } },
+  // a preference kept on the person's device (sagax_settings): only the
+  // keys the settings registry names (DEVICE_PREFERENCE_KEYS)
+  setPreference: { write: true, fields: { key: "s", value: "S" } },
 };
 
 /** Screen or button the desktop app already dispatches. Unknown names and
@@ -198,6 +203,7 @@ export function uiCommandToAction(ui: string, input: unknown): { action: Record<
     kept[key] = value;
   }
   if (ui === "playMascotMotion" && !MOTIONS.has(String(action.kind))) return null;
+  if (ui === "setPreference" && !DEVICE_PREFERENCE_KEYS.has(String(action.key))) return null;
   let encoded: string;
   try {
     encoded = JSON.stringify(action);
@@ -278,8 +284,12 @@ export function decideBotAct(input: {
   } else if (!input.scopes.includes("admin") && !input.scopes.includes("client")) {
     return { ok: false, status: 403, error: "This person cannot call that route." };
   }
+  // a device preference is set by sagax_settings only, with its own classes
+  if (target.kind === "ui" && target.command === "setPreference") {
+    return { ok: false, status: 403, error: "Use sagax_settings to change a preference." };
+  }
   if (escalatesApproval(target)) {
-    return { ok: false, status: 403, error: "A bot cannot change an approval mode or answer a card through act." };
+    return { ok: false, status: 403, error: "act does not change approval levels, rules or grants, nor answer a card: use sagax_settings (bot.approvalMode, bot.permissionMode, rules.*), which asks the person when it must." };
   }
   const write = target.kind === "route" ? target.method !== "GET" && target.method !== "HEAD" : target.write;
   // Full still runs an ordinary write. Auto does not: it is "Approve for me"
@@ -451,7 +461,8 @@ function parseActTarget(raw: unknown): { ok: true; target: ActTarget } | { ok: f
   return { ok: true, target: { kind: "route", method, path: record.path, ...(query ? { query } : {}), ...(body !== undefined ? { body } : {}) } };
 }
 
-function acceptablePath(path: string): boolean {
+/** The same path the server routes, under /api, never internal or testing. */
+export function acceptablePath(path: string): boolean {
   if (path.length < 5 || path.length > PATH_MAX) return false;
   if (path.includes("%") || path.includes("?") || path.includes("#") || path.includes("\\") || path.includes("..") || path.includes("//")) return false;
   // 2026-10-16 (security review): the server reads the path through the URL

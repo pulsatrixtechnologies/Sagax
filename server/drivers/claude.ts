@@ -50,8 +50,10 @@ import { newEventId, newId, type EffortLevel, type TurnAccessInput } from "../co
 import { askInputDetail, askInputSummary, commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS, USAGE_LIMIT } from "./retry.ts";
+import { engineFailureMessage, type EngineFailureKind } from "./engine-errors.ts";
+import { claudeAuthFailure, claudeAuthRecovery } from "./claude-auth-recovery.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
-import { contractChanges, warmCommsEnv, withoutTurnTokens } from "./spawn-contract.ts";
+import { contractChanges, switchesCover, turnFiles, turnSwitches, warmCommsEnv, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
 import {
   applyClaudeInject,
@@ -205,13 +207,7 @@ export function claudeAutoAllowedTools(): string[] {
  * the frame an error, and covers CLI builds that flag the frame without
  * naming the reason.
  */
-export function claudeAuthFailure(
-  frame: { error?: unknown; is_api_error_message?: unknown },
-  text: string,
-): boolean {
-  if (frame.is_api_error_message !== true && typeof frame.error !== "string") return false;
-  return frame.error === "authentication_failed" || classifyError({ text }).reason === "auth";
-}
+export { claudeAuthFailure };
 
 /** A model newer than the installed Claude Code: the API refuses it and the
  * CLI relays that as an api-error frame ("Claude Code 2.1.268 does not
@@ -306,11 +302,31 @@ export function claudeLimitMessage(limit: ClaudeLimit | null, said?: string, now
 /** What an error `result` says failed its turn: its `errors` (2.1.295:
  * "No conversation found with session ID: …"), else its text, else its
  * kind. */
-export function claudeResultError(frame: { errors?: unknown; result?: unknown; subtype?: unknown; terminal_reason?: unknown }): string {
+export function claudeResultError(frame: { errors?: unknown; result?: unknown; subtype?: unknown; terminal_reason?: unknown; api_error_status?: unknown }): string {
   const errors = Array.isArray(frame.errors) ? frame.errors.filter((error): error is string => typeof error === "string" && error.trim() !== "") : [];
   if (errors.length) return errors.join("; ");
-  if (typeof frame.result === "string" && frame.result.trim()) return frame.result.trim();
-  return `Claude ended the turn with an error (${String(frame.subtype ?? frame.terminal_reason ?? "unknown")}).`;
+  if (typeof frame.result === "string" && frame.result.trim()) return claudeApiErrorMessage(frame, frame.result);
+  return `Claude ended the turn with an error (${String((frame.subtype !== "success" && frame.subtype) || frame.terminal_reason || "unknown")}).`;
+}
+
+/** Claude Code 2.1.295's api-error kinds (the assistant frame's `error`) that say the cause outright. */
+const CLAUDE_ERROR_KINDS: Record<string, EngineFailureKind> = {
+  billing_error: "credits",
+  overloaded: "overloaded",
+  server_error: "server",
+  rate_limit: "rate_limit",
+};
+
+/** An api-error frame or error result in plain words. Claude Code sends the frame as a synthetic message whose
+ * stop_reason is "stop_sequence", with `error` (billing_error, overloaded, server_error, rate_limit, invalid_request,
+ * model_not_found, unknown...) and its text ("API Error: 529 ...", "Credit balance is too low"); the result repeats the
+ * text with `api_error_status`. Each is one plain row, never a reply: a kind or status Sagax words is named, anything
+ * else keeps Claude's own words. */
+export function claudeApiErrorMessage(frame: { error?: unknown; api_error_status?: unknown }, text: string): string {
+  const said = text.trim();
+  const kind = typeof frame.error === "string" && Object.hasOwn(CLAUDE_ERROR_KINDS, frame.error) ? CLAUDE_ERROR_KINDS[frame.error] : null;
+  const status = typeof frame.api_error_status === "number" ? frame.api_error_status : undefined;
+  return engineFailureMessage("Claude", said, { kind, status }) ?? said;
 }
 
 /** The CLI environment shared by auth probes and real turns.
@@ -326,7 +342,7 @@ function claudeEnvironment(
   configDir?: string,
   instanceEnvironment: NodeJS.ProcessEnv = {},
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...source, PATH: augmentedPath(), NPM_CONFIG_LOGLEVEL: "error" };
+  const env: NodeJS.ProcessEnv = { BASH_MAX_TIMEOUT_MS: "600000", ...source, PATH: augmentedPath(), NPM_CONFIG_LOGLEVEL: "error" };
   if (configDir?.trim()) {
     env.CLAUDE_CONFIG_DIR = resolveClaudeConfigDir(configDir, env);
     for (const key of CLAUDE_ACCOUNT_ENV_KEYS) {
@@ -839,7 +855,7 @@ export function claudeHookSettings(helperPath: string): Record<string, unknown> 
     ? '"%SAGAX_HOOK_NODE%" "%SAGAX_HOOK_HELPER%"'
     : [process.execPath, helperPath].map(path => `'${path.replace(/'/g, "'\\''")}'`).join(" ");
   const entry = [{ matcher: "", hooks: [{ type: "command", command, timeout: 5 }] }];
-  return { PostToolUse: entry, PreCompact: entry, SessionStart: entry, Stop: entry };
+  return { PostToolUse: entry, PostToolUseFailure: entry, PreCompact: entry, SessionStart: entry, Stop: entry };
 }
 
 export function permissionSocketPath(threadId: string, botId?: string) {
@@ -1499,6 +1515,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       argsKey: string;
       /** the same contract as an object, to name what changed on a relaunch */
       contract?: unknown;
+      /** the turn files its agents server reads (removed with the process) */
+      turnFiles?: string[];
+      /** the agents switches it was launched with (spawn-contract.ts TURN_SWITCH_ENV) */
+      switches?: Record<string, boolean>;
       /** the MCP servers it was launched with (names), for the relaunch log */
       mcpNames?: string[];
       /** the volatile half of the system prompt this process was launched
@@ -1609,6 +1629,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       s.broker = undefined;
       broker?.close();
       appendNative(threadId, { dir: "out", source: "claude.session", msg: { close: why } });
+      // A process that ends takes its turn files along. A replacement built
+      // for this same thread already holds its values in its own env.
+      for (const file of s.turnFiles ?? []) {
+        try { rmSync(file, { force: true }); } catch { /* already gone */ }
+      }
       // stdin EOF is the CLI's exit signal; give it a moment, then insist
       try {
         s.child.stdin.end();
@@ -1660,9 +1685,18 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       });
     };
 
-    const emit = (event: RuntimeEvent) => {
+    // A signed-out refusal is held until the first model activity, so a turn
+    // that could not start rejects once its process has stopped (the harness
+    // then recovers it on a backup engine), instead of reading as an answer.
+    const authRecovery = claudeAuthRecovery((event: RuntimeEvent) => {
       for (const l of Array.from(listeners)) l(event);
-    };
+    }, async (threadId) => {
+      const session = sessions.get(threadId);
+      if (!session || !(await killCliTree(session.child))) return false;
+      await session.closed;
+      return sessions.get(threadId) !== session;
+    }, (threadId) => active.has(threadId));
+    const emit = (event: RuntimeEvent) => authRecovery.emit(event);
     const base = (threadId: string, turnId: string) => ({
       eventId: newEventId(),
       provider: DRIVER_KIND,
@@ -1881,10 +1915,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         const toolSearch = !turn.guestConfined && (config.tools === undefined || config.tools.includes("ToolSearch"));
         const agentsEnv = toolSearch ? { ...turn.integrations.agents.env, SAGAX_DEFER_RARE_TOOLS: "1" } : turn.integrations.agents.env;
         mcpServers.agents = { ...turn.integrations.agents, env: agentsEnv, alwaysLoad: true };
-        // On a call the process is kept from turn to turn: the turn's comms
-        // token (new every turn) rides a file the proxy reads on each call,
-        // and leaves the spawn contract (warmTurnTokens below).
-        if (turn.keepWarm && turn.integrations.agents.env?.SAGAX_COMMS_TOKEN) {
+        // The process is kept from turn to turn: the turn's comms token and
+        // depth (new every turn) ride a file the proxy reads on each call,
+        // and leave the spawn contract (withoutTurnTokens below), so a
+        // teammate's reply resuming this turn reuses this process.
+        // Never rewritten under a turn still running on this thread's process.
+        if (turn.integrations.agents.env?.SAGAX_COMMS_TOKEN && !sessions.get(threadId)?.turn) {
           mcpServers.agents = { ...turn.integrations.agents, env: warmCommsEnv(threadId, botId, agentsEnv), alwaysLoad: true };
         }
         allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
@@ -2073,7 +2109,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         system: turn.systemStable ?? turn.system ?? null,
         // a call's turns share one process: their per-turn tokens are not
         // part of what makes a process (they ride a file, see above)
-        mcpServers: turn.keepWarm ? withoutTurnTokens(mcpServers) : mcpServers,
+        mcpServers: withoutTurnTokens(mcpServers),
         warm: turn.keepWarm === true,
         cwd,
         model: injected.model ?? null,
@@ -2104,7 +2140,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         } catch {}
         mcpConfigPath = null;
       };
-      if (!turn.sessionReset && live && !live.turn && !live.closing && live.child.exitCode === null && live.argsKey === argsKey && (!sessionId || sessionId === live.sessionId)) {
+      const switches = turnSwitches(mcpServers);
+      if (!turn.sessionReset && live && !live.turn && !live.closing && live.child.exitCode === null && live.argsKey === argsKey && switchesCover(live.switches, switches) && (!sessionId || sessionId === live.sessionId)) {
         if (live.idleTimer) clearTimeout(live.idleTimer);
         // A second warm of the same call keeps the process and writes nothing.
         if (turn.warmOnly === true) {
@@ -2164,6 +2201,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // contract changed (names only, never values).
         if (!turn.sessionReset) {
           const why = live.argsKey !== argsKey ? `spawn contract changed (${live.contract ? contractChanges(live.contract, contract).join(", ") : "unknown"})`
+            : !switchesCover(live.switches, switches) ? "the turn needs agents tools the live process was launched without"
             : live.child.exitCode !== null ? "process exited" : live.closing ? "process closing" : live.turn ? "a turn is running" : "another session";
           console.warn(`claude (${instanceId}): thread ${threadId} relaunch: ${why}`);
         }
@@ -2319,6 +2357,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpConfigPath,
         systemPromptPath,
         argsKey,
+        switches,
+        turnFiles: turnFiles(mcpServers),
         contract,
         mcpNames: Object.keys(mcpServers),
         volatile: turn.systemVolatile ?? "",
@@ -2407,7 +2447,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         t.limitReached = t.explained = true;
         t.limit = claudeLimitRefusal(frame.api_error_params?.rate_limit_info) ?? t.limit;
         const said = typeof words === "string" && USAGE_LIMIT.test(words) ? words : undefined;
-        emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: claudeLimitMessage(t.limit ?? null, said) });
+        const resetsAt = t.limit?.resetsAt ? t.limit.resetsAt * 1_000 : undefined;
+        emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: claudeLimitMessage(t.limit ?? null, said),
+          ...(resetsAt && resetsAt > Date.now() ? { limitResetsAt: resetsAt } : {}) });
       };
       // The process's first result with a cost says what --resume restored,
       // which its turns are measured from; every result is kept for a later
@@ -2431,6 +2473,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         } catch {
           return;
         }
+        authRecovery.frame(threadId, o, session.costTotal);
         // A stdin message echoed back (--replay-user-messages) carries its
         // images again: keep their bytes out of the log, as when it was sent.
         appendNative(threadId, { dir: "in", source: "claude.sdk.message", msg: o?.type === "user" && o.isReplay === true && o.message ? diagnosticClaudeUserMessage(o) : o });
@@ -2572,18 +2615,18 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: text, setup: true, claudeUpdate: true });
               break;
             }
+            // The CLI's own report of any other API error is one plain error row
+            // in the real cause, never a reply: the model never produced it.
+            if ((o.is_api_error_message === true || typeof o.error === "string") && text.trim()) {
+              if (session.turn) session.turn.explained = true;
+              if (!session.turn?.stopRequested) emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: claudeApiErrorMessage(o, text) });
+              break;
+            }
             if (text.trim()) {
-              // The CLI's own report of any other API error is still shown,
-              // but marked: the model never produced it.
-              const apiError = o.is_api_error_message === true || typeof o.error === "string";
-              const synthetic = apiError ? { synthetic: true } : {};
-              if (apiError && session.turn) session.turn.explained = true;
               // fallback delta for CLIs/paths that never streamed the block
-              if (!session.turn?.sawStreamDelta) {
-                emit({ ...base(threadId, currentTurnId()), ...synthetic, type: "content.delta", streamKind: "assistant_text", delta: text });
-              }
+              if (!session.turn?.sawStreamDelta) emit({ ...base(threadId, currentTurnId()), type: "content.delta", streamKind: "assistant_text", delta: text });
               if (session.turn) session.turn.sawStreamDelta = false;
-              emit({ ...base(threadId, currentTurnId()), ...synthetic, type: "item.completed", itemType: "assistant_text", text });
+              emit({ ...base(threadId, currentTurnId()), type: "item.completed", itemType: "assistant_text", text });
             }
             for (const b of Array.isArray(msg.content) ? msg.content : []) {
               if (b.type === "tool_use") {
@@ -3276,7 +3319,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           // stdin open and no prompt, so the first spoken turn reuses it.
           warmSession: true,
         },
-        sendTurn,
+        sendTurn: (turn) => authRecovery.send(turn, sendTurn),
         steer,
         interruptTurn: async (threadId) => active.get(threadId)?.stop(),
         respondToRequest: async (threadId, requestId, decision) => {

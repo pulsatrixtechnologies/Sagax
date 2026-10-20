@@ -38,6 +38,12 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
  * The phone-call section (server/voice-call-prompt.ts) rides only on the
  * turns of a voice call and the first written turn after it. */
 const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "stream"]);
+/** Claude Code keeps its process across turns and tells a reused process
+ * what changed in its volatile half: the surface paragraph changes when a
+ * teammate's reply resumes a person's turn (no computer choice there), and
+ * relaunching the engine for that one paragraph cost 1.3 to 2.4 s and about
+ * 26,000 cache-write tokens, twice (2026-10-19 perf parity). */
+export const CLAUDE_REUSE_VOLATILE_SECTIONS: ReadonlySet<string> = new Set(["plan"]);
 
 /** The team availability section, defined once for the direct turn, the room
  * turn and the preview. Its id is what puts it in the volatile half: a call
@@ -85,7 +91,9 @@ export function buildSystemPrompt(
   persona: string,
   soul: string,
   parts: PromptPart[],
+  extraVolatile?: ReadonlySet<string>,
 ): { text: string; sections: PromptSection[]; stable: string; volatile: string; volatileSections: Array<{ id: string; text: string }> } {
+  const isVolatile = (id: string) => VOLATILE_SECTIONS.has(id) || extraVolatile?.has(id) === true;
   // RULES.md (server/workspace-files.ts) rides right after the soul and
   // before everything else, wherever a call site lists it: hard constraints
   // belong next to the standing instructions, ahead of memory.
@@ -110,13 +118,13 @@ export function buildSystemPrompt(
     .filter((part) => part.text.length > 0)
     .map((part) => ({ ...part, bytes: Buffer.byteLength(part.text, "utf8") }));
   const halves = (volatile: boolean) =>
-    sections.filter((section) => VOLATILE_SECTIONS.has(section.id) === volatile).map((section) => section.text).join("");
+    sections.filter((section) => isVolatile(section.id) === volatile).map((section) => section.text).join("");
   return {
     text: sections.map((section) => section.text).join(""),
     sections,
     stable: halves(false),
     volatile: halves(true),
-    volatileSections: sections.filter((section) => VOLATILE_SECTIONS.has(section.id)).map(({ id, text }) => ({ id, text })),
+    volatileSections: sections.filter((section) => isVolatile(section.id)).map(({ id, text }) => ({ id, text })),
   };
 }
 
@@ -266,6 +274,15 @@ export const REACTION_PROMPT =
   + " Never react and also write a sentence that says the same thing (no \"You're welcome\" after ❤️, no \"Noted\" after 👍, no \"Done\" after ✅): when the reaction says it all, end the turn with an empty reply: no emoji, no placeholder, no note that nothing more is needed; when you also answer, the text adds what the reaction cannot."
   + " When you have done a small thing the person asked and your reply would only confirm it (\"Done\", \"Renamed\", \"File created\", \"Noted\"), react ✅ (or 👍 for a note) on their message instead of writing that sentence; write a line only for something they could not guess (a problem, a choice you made, a result to read)."
   + " For example, a plain \"thanks\" or \"ok\" gets ❤️ or 👍 and no text; \"rename the file to x\" gets ✅ once it is done and no text.";
+/** Ten minutes stays inside the 20-minute turn stall watchdog, which sees nothing while a command runs. */
+export const BASH_MAX_TIMEOUT_MS = 600_000;
+const LONG_COMMANDS_TEXT =
+  ` Long-running shell commands: a shell call is stopped after a default limit (2 minutes for a Bash call) and the output of a stopped command is lost. Before running anything that can take more than a minute, such as transcription (whisper), ffmpeg or ffprobe over long media, renders, large builds or big file transfers, either pass a longer per-call timeout (Bash takes \`timeout\` in milliseconds, up to ${BASH_MAX_TIMEOUT_MS}) or start it detached with its output in a file (\`nohup <command> > /tmp/<job>.log 2>&1 &\`) and check that file in later calls. Never scan the whole disk with \`find /\` or similar: search by name with \`mdfind -name\` on macOS, or search a specific folder such as your workspace or home with a depth limit. If a command times out, do not rerun it the same way.`;
+const VM_LONG_COMMANDS_TEXT =
+  " In your Local VM, vm_exec takes `timeout_seconds` instead (default 60, at most 300); start anything longer detached the same way, inside the VM, and check its log with later vm_exec calls.";
+export function longCommandsPrompt(computer: ComputerPromptKind | null): string {
+  return LONG_COMMANDS_TEXT + (computer === "vm-private" || computer === "vm-shared" ? VM_LONG_COMMANDS_TEXT : "");
+}
 export const THREADS_PROMPT =
   " A thread is one conversation with its own history and its own run; a bot can have several running at once, and the person sees them as rows under that bot. Use start_thread to open one on yourself for separate work, or on a teammate to hand them a job that should run on its own. Messages the person sends while you work reach you inside your current work, under a note \"[Sent while you work · route <handle> ...]\": you decide what each one does, the person is never asked. A precision or a correction of what you are doing: use it now. An independent request: route_message with that handle and mode parallel, so it runs at once as its own task beside your work (the person sees its card here and its result comes back here); name the files or records it will write in resources. A request that needs your current result, continues it, or touches the same files or records: route_message with mode after, so it starts as soon as this work is done, and tell the person so in one short line. Never let two tasks write the same file or record at once. Use list_threads to see how the ones you opened are going. When you mention a thread to the person, write its title as #Title so it links. Do not use a ticket comment, a note, or a room post as a stand-in for a thread.";
 /** One-to-one chats only: rooms refuse widgets. */
