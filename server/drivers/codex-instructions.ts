@@ -72,6 +72,23 @@ export function codexDeveloperInstructions(config: unknown, botInstructions: str
     : botInstructions;
 }
 
+/** Codex compacted this native thread (a contextCompaction item): the
+ * notes that carried the volatile half may be summarized away, so the
+ * receipt keeps only the instructions and the next turn sends the whole
+ * half again (Claude does the same on compact_boundary). */
+export function forgetCodexVolatile(key: string, nativeThreadId: string): void {
+  const directory = join(DATA_DIR, "codex-instructions");
+  const path = join(directory, `${digest(JSON.stringify([key, nativeThreadId]))}.sha256`);
+  let previous: CodexInstructionReceipt | null;
+  try {
+    previous = parseReceipt(readFileSync(path, "utf8"));
+  } catch {
+    return;
+  }
+  if (!previous || previous.volatile === undefined) return;
+  writeFileAtomic(path, JSON.stringify({ instructions: previous.instructions }), { mode: 0o600 });
+}
+
 export async function syncCodexInstructions(
   key: string,
   nativeThreadId: string,

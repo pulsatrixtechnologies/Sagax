@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { DATA_DIR } from "../config.ts";
-import { CODEX_SECTION_NOTES_BEFORE_FULL, codexDeveloperInstructions, syncCodexInstructions } from "./codex-instructions.ts";
+import { CODEX_SECTION_NOTES_BEFORE_FULL, codexDeveloperInstructions, forgetCodexVolatile, syncCodexInstructions } from "./codex-instructions.ts";
 
 const receiptPath = (key: string, nativeThreadId: string) =>
   join(DATA_DIR, "codex-instructions", `${createHash("sha256").update(JSON.stringify([key, nativeThreadId])).digest("hex")}.sha256`);
@@ -115,6 +115,21 @@ describe("Codex instruction receipts", () => {
       sync.commitVolatile?.();
     }
     expect(known).toEqual([...Array(CODEX_SECTION_NOTES_BEFORE_FULL).fill(true), false, true]);
+  });
+
+  it("sends the whole half again after Codex compacts its thread", async () => {
+    const key = randomUUID();
+    const request = vi.fn().mockResolvedValue({});
+    const v1 = { memory: "a".repeat(64), recent: "b".repeat(64) };
+    (await syncCodexInstructions(key, "native", "rules", "memory v1", false, request, false, v1)).commitVolatile?.();
+    forgetCodexVolatile(key, "native");
+    // same volatile text: delivered anyway, as a whole half
+    const after = await syncCodexInstructions(key, "native", "rules", "memory v1", true, request, false, v1);
+    expect(after.deliverVolatile).toBe(true);
+    expect(after.previousSections).toBeUndefined();
+    // instructions untouched: no developer update is injected again
+    expect(request).not.toHaveBeenCalled();
+    forgetCodexVolatile(key, "missing");
   });
 
   it("treats a legacy bare-fingerprint receipt as unknown volatile context", async () => {

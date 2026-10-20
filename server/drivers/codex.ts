@@ -54,7 +54,7 @@ import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd } from "./permission-command.ts";
 import { commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
-import { codexDeveloperInstructions, syncCodexInstructions } from "./codex-instructions.ts";
+import { codexDeveloperInstructions, forgetCodexVolatile, syncCodexInstructions } from "./codex-instructions.ts";
 import { sectionFingerprints, volatileContextNote, volatileSectionsUpdate, withContextNote } from "./prompt-split.ts";
 import type { ApprovalMode } from "../../shared/approval-mode.ts";
 import { CodexDeviceAuthController } from "./codex-device-auth.ts";
@@ -1663,6 +1663,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           }
           case "item/completed": {
             const item = p.item ?? {};
+            // Codex compacted its thread: the volatile half rides whole next turn.
+            if (item.type === "contextCompaction" && codexThreadId) {
+              try { forgetCodexVolatile(threadId, codexThreadId); } catch { /* the 5-note bound still holds */ }
+            }
             if (item.type === "agentMessage") {
               if (item.text?.trim()) {
                 state.lastText = item.text;
