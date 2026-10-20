@@ -76,7 +76,7 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
   }
 }
 
-function auditRows(): Array<{ action: string; category: string; after?: Record<string, unknown>; before?: Record<string, unknown> }> {
+function auditRows(): Array<{ action: string; category: string; after?: Record<string, unknown>; before?: Record<string, unknown>; target?: unknown }> {
   const dir = join(home, ".openmausbot", "admin-activity");
   if (!existsSync(dir)) return [];
   return readdirSync(dir).flatMap((file) => readFileSync(join(dir, file), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
