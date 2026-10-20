@@ -665,7 +665,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "request_login",
     description:
-      "Ask to use a login saved in the person's Sagax vault for a site you must sign in to. Returns its handle at once if already allowed; otherwise the person gets a card to allow it, and you end the turn (Sagax resumes you with the handle). Fill it with the browser's fill_credential; you never see the value. Never ask for a password or code in chat.",
+      "Ask to use a login saved in the person's Sagax vault for a site you must sign in to. When a sign-in page appears while you work, call it with that page's host (accounts.example.com, not only example.com). Returns its handle at once if already allowed; otherwise the person gets a card to allow it or to sign in themselves, and you end the turn (Sagax resumes you). Sign in with the browser's fill_credential, field login; you never see the value. Never ask for a password or code in chat.",
     inputSchema: {
       type: "object",
       properties: {

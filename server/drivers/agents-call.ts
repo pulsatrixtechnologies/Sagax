@@ -1045,7 +1045,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (Array.isArray(r.granted) && r.granted.length) {
       const rows = (r.granted as Array<{ handle: string; name: string; domains: string[]; fields: string[] }>)
         .map((item) => `${item.handle} "${item.name}" (sites: ${item.domains.join(", ")}; fields: ${item.fields.join(", ")})`);
-      return { text: `Already allowed for you: ${rows.join("; ")}. Call fill_credential in the browser with the handle and the field. You never see the value.` };
+      return { text: `Already allowed for you: ${rows.join("; ")}. Call fill_credential in the browser with the handle and field login to sign in (or one field). You never see the value.` };
     }
     return {
       text: "A secure login request card is ready for the person. End this turn; Sagax resumes the task with the login's handle after they allow it or decline. Never ask them for a password or a code in chat.",

@@ -636,7 +636,7 @@ import { nextOccurrence, ROUTINE_RESTARTED, ROUTINE_RESUME_PROMPT, RoutineManage
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
-import { BrowserRuntime, browserRuntimeEnv } from "./browser-runtime.ts";
+import { BrowserRuntime, browserProfileChangeRefusal, browserRuntimeEnv } from "./browser-runtime.ts";
 import { browserEgress } from "./browser/egress/registry.ts";
 import { BrowserLive } from "./browser-live.ts";
 import { BrowserNetworkDebug } from "./browser-network-debug.ts";
@@ -6371,11 +6371,39 @@ function credentialVaultPersonRefusal(auth: RequestAuth): { status: number; body
   if (!principalId || principalId.startsWith("anon:")) return refusal;
   return null;
 }
+/** The bot's own browser session for a conversation (the vault card's
+ * "I'll sign in myself"), or null when it has none here. */
+async function personBrowserSession(botId: string, threadId: string): Promise<string | null> {
+  // The session id only (currentBrowserSession, the same one the bot's
+  // tools use): no engine started, no egress port opened.
+  const bot = store.bot(botId);
+  return bot && bot.browser !== false && builtInBrowserEnabled(cfg) ? currentBrowserSession(bot.id, bot.browserProfile, threadId) : null;
+}
 ROUTES.push(createCredentialVaultRoutes({
   vault: credentialVault,
   onePassword,
   principal: credentialVaultPrincipal,
   botExists: (id) => Boolean(store.bot(id)),
+  // The vault card's "I'll sign in myself": the bot's own browser for that
+  // conversation is armed first, and its password and code fields emptied at Done.
+  browser: {
+    armForPerson: async (botId, threadId) => {
+      const session = await personBrowserSession(botId, threadId);
+      return session ? browserRuntime.armForPerson(session, botId) : "This bot has no browser here.";
+    },
+    clearAfterPerson: async (botId, threadId) => {
+      const session = await personBrowserSession(botId, threadId);
+      return session ? browserRuntime.clearAfterPerson(session) : null;
+    },
+    armedForPerson: async (botId, threadId) => {
+      const session = await personBrowserSession(botId, threadId);
+      return session ? browserRuntime.armedForPerson(session) : false;
+    },
+    endForPerson: async (botId, threadId) => {
+      const session = await personBrowserSession(botId, threadId);
+      if (session) browserRuntime.endPersonSignIn(session);
+    },
+  },
   // Counts and ids only (server/routes/credential-vault.ts): never a name,
   // a site or a value.
   // On the desktop and on a server alike (admin-activity, category security).
@@ -25695,6 +25723,10 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   createCredentialVaultInternalRoutes({
     vault: credentialVault,
     principalForThread: vaultPrincipalForThread,
+    endPersonSignIn: async (botId, threadId) => {
+      const session = await personBrowserSession(botId, threadId);
+      if (session) browserRuntime.endPersonSignIn(session);
+    },
     botName: (botId, threadId) => {
       const owner = connectorThread(botId, threadId);
       return owner ? owner.bot.name : null;
@@ -41011,6 +41043,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             browserRuntime.heldBy(currentBrowserSession(existingBot.id, existingBot.browserProfile))) {
           return json(res, 409, { error: "Release browser control before changing its profile." });
         }
+        // A person signing in themselves in this bot's browser (the vault
+        // card): the panel would move to a browser that is not armed.
+        const signingIn = existingBot ? browserProfileChangeRefusal(browserRuntime, existingBot.id, existingBot.browserProfile, typeof requestedProfile === "string" ? requestedProfile : undefined) : null;
+        if (signingIn) return json(res, 409, { error: signingIn, code: "person_signing_in" });
         if (requestedProfile === undefined) patch.browserProfile = undefined;
         else if (
           typeof requestedProfile === "string" &&

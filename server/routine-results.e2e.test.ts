@@ -119,13 +119,14 @@ it("reports every run into the bot's main thread while fresh executions, approva
     broker = connect(socketPath);
     broker.on("error", () => {});
     await new Promise<void>((resolve, reject) => { broker!.once("connect", resolve); broker!.once("error", reject); });
-    broker.write(JSON.stringify({ t: "ask", id: "results-approval", kind: "permission", tool: "Bash", input: { command: "echo fixture-approval" } }) + "\n");
+    // The owner's routine work on Approve for me passes a plain command without a card (#820); a bulk change keeps one.
+    broker.write(JSON.stringify({ t: "ask", id: "results-approval", kind: "permission", tool: "mcp__perspicax__bulk_update", input: { note: "fixture-approval" } }) + "\n");
     await expect.poll(async () => (await runState(pending.id))?.status, { timeout: 15_000 }).toBe("waiting");
     const waitingCard = (await messages(dedicated)).find((message) => message.routineRun?.runId === pending.id);
     expect(waitingCard.routineRun).toMatchObject({ status: "waiting", executionThreadId: active.threadId });
     expect((await currentBot()).tasks.find((task: any) => task.threadId === active.threadId)).toMatchObject({ routineRunId: pending.id, unread: false });
     const approval = (await messages(active.threadId)).find((message) => message.card && !message.card.answered);
-    expect(approval?.card.tool).toBe("Bash");
+    expect(approval?.card.tool).toBe("mcp__perspicax__bulk_update");
 
     await api("DELETE", `/api/bots/${bot.id}/tasks/${dedicated}`);
     const fallback = (await currentBot()).tasks.find((task: any) => task.threadId === active.threadId);

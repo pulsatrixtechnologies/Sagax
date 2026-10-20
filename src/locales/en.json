@@ -9274,5 +9274,13 @@
   "limitFailover.switched": "Limit reached on {from}: continuing on {to} until it resets (around {time}).",
   "limitFailover.back": "{engine}'s limit has reset: back on {engine}.",
   "limitFailover.waiting": "Limit reached on {from} and no other engine is available: your message will be sent again when it resets (around {time}).",
-  "limitFailover.waitingRoutine": "Limit reached on {from} and no other engine is available: this routine runs again when it resets (around {time})."
+  "limitFailover.waitingRoutine": "Limit reached on {from} and no other engine is available: this routine runs again when it resets (around {time}).",
+  "vault.card.alsoFill": "Also fill it on {site}, always for this bot ({sites} is this login’s site). The bot chose this address: tick only if you know it is this site’s own sign-in page.",
+  "vault.card.signInMyself": "I’ll sign in myself instead",
+  "vault.card.selfHint": "Open {bot}’s browser, take control, sign in to {site}, then press Done. From now until that browser restarts, {bot} cannot run scripts or take screenshots in it, and Sagax empties its password and code fields at Done.",
+  "vault.card.openBrowser": "Open the browser",
+  "vault.card.signedInDone": "Done",
+  "vault.card.signedInSelf": "You signed in to {site} yourself",
+  "vault.card.selfUnprotected": "Not protected any more: {bot}’s browser is no longer prepared for your sign-in (Sagax restarted, 30 minutes passed, or the bot asked again). Do not type a password there now; prepare it again first.",
+  "vault.card.selfRearm": "Prepare again"
 }

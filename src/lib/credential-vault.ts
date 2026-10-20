@@ -3,7 +3,7 @@
 // here ever holds a value the server sent: the server never sends one, only
 // booleans that say one is saved. Values typed here go to the server once.
 import { api } from "@/state/store";
-import { bindingUrl, vaultDomainMatches, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault";
+import { bindingUrl, vaultDomainMatches, vaultSiteOf, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault";
 import type { VaultDuplicateMode, VaultExportFormat, VaultImportFormat, VaultTransferItem } from "../../shared/credential-vault-transfer";
 
 export type { VaultItemListing } from "../../shared/credential-vault";
@@ -65,20 +65,36 @@ export const importOnePasswordItem = (item: OnePasswordItem, domains?: string[])
   });
 
 const CARD = (botId: string, messageId: string) => `/api/bots/${encodeURIComponent(botId)}/vault-cards/${encodeURIComponent(messageId)}`;
-export const grantFromCard = (botId: string, messageId: string, threadId: string, mode: VaultGrantMode, choice: { itemId: string } | { item: VaultItemDraft }) =>
-  api<{ item: VaultItemListing }>(`${CARD(botId, messageId)}/grant`, { method: "POST", body: JSON.stringify({ threadId, mode, ...choice }) });
+export const grantFromCard = (botId: string, messageId: string, threadId: string, mode: VaultGrantMode, choice: { itemId: string } | { item: VaultItemDraft }, addSite = false) =>
+  api<{ item: VaultItemListing }>(`${CARD(botId, messageId)}/grant`, { method: "POST", body: JSON.stringify({ threadId, mode, ...choice, ...(addSite ? { addSite: true } : {}) }) });
+/** The person signed in themselves in the bot's browser instead. */
+/** Arm the bot's browser before the person signs in there themselves. */
+export const selfStartFromCard = (botId: string, messageId: string, threadId: string) =>
+  api<{ armed: true }>(`${CARD(botId, messageId)}/self-start`, { method: "POST", body: JSON.stringify({ threadId }) });
+/** Whether the bot's browser is still armed for the person's own sign-in. */
+export const selfStatusFromCard = (botId: string, messageId: string, threadId: string) =>
+  api<{ armed: boolean }>(`${CARD(botId, messageId)}/self-status`, { method: "POST", body: JSON.stringify({ threadId }) });
+export const signedInFromCard = (botId: string, messageId: string, threadId: string) =>
+  api<{ signedIn: true }>(`${CARD(botId, messageId)}/signed-in`, { method: "POST", body: JSON.stringify({ threadId }) });
 export const dismissCard = (botId: string, messageId: string, threadId: string) =>
   api<{ dismissed: true }>(`${CARD(botId, messageId)}/dismiss`, { method: "POST", body: JSON.stringify({ threadId }) });
 
 /** Items a request card offers: bound to the asked site (or a parent of it),
- * or named like the request; logins and API keys only. Pure, for tests. */
+ * or named like the request; then, after those, logins of the same site on
+ * another address (example.com for accounts.example.com), which the card
+ * can also fill there only if the person ticks it. Logins and API keys
+ * only. Pure, for tests. */
 export function matchingItems(items: readonly VaultItemListing[], request: { domain?: string; name?: string }): VaultItemListing[] {
   const name = request.name?.trim().toLowerCase();
-  return items.filter((item) => (item.kind === "login" || item.kind === "apiKey") && (
+  const usable = items.filter((item) => item.kind === "login" || item.kind === "apiKey");
+  const direct = usable.filter((item) =>
     (request.domain && vaultDomainMatches(item.domains, bindingUrl(request.domain))) ||
-    (name && item.name.toLowerCase().includes(name))
-  ));
+    (name && item.name.toLowerCase().includes(name)));
+  const site = request.domain ? vaultSiteOf(request.domain) : null;
+  const related = site ? usable.filter((item) => !direct.includes(item) && item.domains.some((domain) => vaultSiteOf(domain) === site)) : [];
+  return [...direct, ...related];
 }
+
 
 /** "a, b" or a list typed with spaces or new lines, as the server takes it. */
 export function parseDomains(text: string): string[] {
