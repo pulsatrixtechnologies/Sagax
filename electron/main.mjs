@@ -24,6 +24,7 @@ import {
 } from "./diagnostics.mjs";
 import { buildLogBundle, logBundleFileName, sanitizeRendererLines } from "./log-bundle.mjs";
 import { foldGrokVoiceCredential, grokVoiceFoldLog, migrateWorkspaceCredentials, workspaceCredentialEnv } from "./workspace-credentials.mjs";
+import { flushSessionCookies } from "./session-persistence.mjs";
 import { evictStartupCacheOnce } from "./startup-cache-eviction.mjs";
 import { activateExistingWindow, releaseSingleInstanceLock } from "./single-instance.mjs";
 import { bootFailureMessage, listeningSignal, pollServerIdentity, SERVER_BOOT_TIMEOUT_MS, SERVER_LISTENING_GRACE_MS } from "./server-boot-probe.mjs";
@@ -305,6 +306,8 @@ let quittingForUpdate = false;
 nativeAutoUpdater.on("before-quit-for-update", () => {
   quittingForUpdate = true;
   releaseSingleInstanceLock(app);
+  // The organization sign-in cookie survives the update (2026-10-20).
+  if (app.isReady()) void flushSessionCookies(session.defaultSession, { log: slog });
 });
 
 /** Hand a pending link to THIS computer's UI. False while it has to wait: the
@@ -5242,6 +5245,8 @@ app.on("before-quit", (e) => {
   ]);
   const cleanup = Promise.all([
     ownedHelperCleanup,
+    // The organization sign-in cookie is on disk before the process ends.
+    flushSessionCookies(session.defaultSession, { log: slog }),
     stoppingServer.then((stopped) => {
       if (!stopped) slog("server child did not stop before desktop exit; retaining the data-directory lease");
     }),

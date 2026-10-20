@@ -12,6 +12,7 @@
 // person's credential stores are never read or written through the bridge,
 // sizes are bounded, and every action is recorded in this computer's
 // activity log (action and target only, never contents).
+import { createAuthBackoff } from "./auth-backoff.mjs";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -397,11 +398,13 @@ export function createDesktopBridge({
     });
     const raw = await response.text();
     let json; try { json = JSON.parse(raw); } catch { json = null; }
-    if (!response.ok) throw Object.assign(new Error(json?.error ?? `Server request failed (${response.status})`), { status: response.status });
+    if (!response.ok) throw Object.assign(new Error(json?.error ?? `Server request failed (${response.status})`), { status: response.status, ...(typeof json?.code === "string" ? { code: json.code } : {}) });
     return json;
   };
 
   const run = env => {
+    // 2026-10-20: never 12 tries a minute against a server that refuses the session.
+    const backoff = createAuthBackoff({ baseMs: retryMs });
     const abort = new AbortController();
     const signal = abort.signal;
     let tunnel = null;
@@ -431,6 +434,7 @@ export function createDesktopBridge({
             await request(env, "/api/desktop-bridge/connect", registration, signal, secret);
           }
           registered = { id, secret };
+          backoff.reset();
           set({ connected: true, error: undefined });
           const preferences = async () => {
             try {
@@ -609,7 +613,7 @@ export function createDesktopBridge({
           if (signal.aborted) break;
           tunnel?.close(); tunnel = null;
           set({ connected: false, tunnel: false, ...(error?.quiet ? {} : { error: error?.message }) });
-          await delay(retryMs, undefined, { signal }).catch(() => {});
+          await delay(backoff.next(error), undefined, { signal }).catch(() => {});
         }
       }
       tunnel?.close();

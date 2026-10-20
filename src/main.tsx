@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import {
-  BROWSER_SIGN_IN_FAILED, previewBrowserSignIn, readSessionState, SERVICE_TRUST_REASON, takeBrowserSignInFromLocation, takePairingFromLocation, takeInvitedEmailFromLocation,
+  BROWSER_SIGN_IN_FAILED, previewBrowserSignIn, resolveSessionState, SERVICE_TRUST_REASON, takeBrowserSignInFromLocation, takePairingFromLocation, takeInvitedEmailFromLocation,
 } from "./lib/session";
 import { bootstrapBrand } from "./lib/brand";
 import { applySkin, applySkinDepth, applySkinTexture, installSkinAutoFollow, readSkin, readSkinDepth, readSkinTexture } from "./lib/skins";
@@ -79,7 +79,9 @@ async function chooseRoot(): Promise<React.ReactNode> {
     const pairing = takePairingFromLocation();
     return <PairPage initialCode={pairing.code} autoSubmit={pairing.auto} initialEmail={takeInvitedEmailFromLocation()} />;
   }
-  const session = await readSessionState();
+  // 2026-10-20: a deploy, a restart or a provider that is slow to confirm a
+  // sign-in is retried in silence; the sign-in screen only for a real end.
+  const session = await resolveSessionState();
   if (session.kind === "session") {
     try {
       const res = await fetch("/api/auth/session", { credentials: "same-origin" });

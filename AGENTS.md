@@ -2961,6 +2961,60 @@ not reload the page. `scripts/verify-desktop-sign-in.ts` proves it in a real
 Electron window. A change to that server code needs the server image
 redeployed.
 
+## Never signed out by a deploy (2026-10-20)
+
+JC's rule: a person is signed out only when their session is revoked, their
+account disabled, or after 30 days without use (`SESSION_TTL_MS`). Never by
+a Sagax or Perspicax deploy or restart, an app update, a failed refresh or a
+sensitive action. Keep these, each covered by a test:
+
+- Every 401 for a presented credential has a `code`
+  (`shared/session-refusal.ts`): `session_unknown` (the only retryable one),
+  `session_revoked`, `session_expired`, `idp_session_ended`,
+  `principal_disabled`, `session_cookie_only`, `sign_in_required`. Ended
+  sessions are remembered by token hash in `sessions.json` (`ended`, 35 days,
+  2,000 entries; `SessionRegistry.explainRefusal`). Each refusal and each
+  session the server ends is one `auth: session refused|ended` line
+  (`server/auth-refusal-log.ts`: code, route without query, via, client
+  family, session id prefix; never a token, hash or cookie; repeats once a
+  minute).
+- `server/idp-session.ts`: a refresh is marked in the vault before it is
+  sent (`refreshStartedAt`) and resumed at boot (`resumeInterrupted`); the
+  rotated token is written first and kept in memory if the write fails; the
+  vault is re-read before a refresh and before each write (a deploy's two
+  processes). `invalid_grant` is asked again after 2 s with the newest token
+  before it ends that sign-in; the person is marked out (all sessions,
+  `disabledAt`) only when a second sign-in of theirs is refused too, or when
+  they have no other sign-in to ask. The vault is written under an O_EXCL
+  lock, refresh paths only `update` a grant still present (never bring back
+  a removed one), and a file that cannot be read is never written over.
+  `invalid_client` and the like are a deploy for 15 minutes, then end the
+  sign-in; an ignored id_token keeps the 24 h clock running. Transient failures retry at 5 s
+  and 15 s (inside Perspicax's 30 s reuse grace), then each minute; 24 hours
+  of observed failures answer 503 `idp_unreachable`, never a sign-out.
+  `server/oidc-rp.ts`: only `invalid_grant` is a refusal; `invalid_client`
+  and the like, a 200 that is not a token answer, and an id_token that does
+  not verify (except another subject) are not.
+- The Perspicax directory puts a missing person out only when two answers a
+  minute apart miss them (`DIRECTORY_ABSENT_CONFIRM_MS`); `disabled` at once.
+- Clients: `resolveSessionState` (`src/lib/session.ts`, used by
+  `src/main.tsx`) retries 503, 5xx and network errors with backoff and shows
+  the sign-in screen only for a definitive code or after three
+  `session_unknown`. The desktop bridge and computer sharing back off to 10
+  minutes on 401/403 (`electron/auth-backoff.mjs`). The cookie jar is flushed
+  before a quit and an update (`electron/session-persistence.mjs`); the
+  startup eviction empties the HTTP cache only.
+- Tests: `server/no-logout.e2e.test.ts` ("redéploiement Sagax",
+  "redéploiement Perspicax", "mise à jour de l'app", "jeton expiré ->
+  rafraîchi en silence", "révocation -> déconnexion", "action sensible ->
+  confirmation ponctuelle sans déconnexion"), `server/deploy-bench.e2e.test.ts`
+  and the bench `node --experimental-strip-types
+  scripts/bench-deploy-no-logout.ts [people] [sessions]`,
+  `electron/session-persistence.node-test.mjs`,
+  `electron/auth-backoff.node-test.mjs`. The fake Perspicax
+  (`server/testing/fake-oidc-provider.ts`) has `reuseGraceMs`,
+  `dropNextRefreshAnswer`, `delayNextRefreshAnswer`, `stop` and `start`.
+
 ## Server environments (organization mode)
 
 On an organization server, bots run shell, file and browser tools in a

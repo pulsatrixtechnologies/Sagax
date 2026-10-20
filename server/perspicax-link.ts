@@ -414,6 +414,9 @@ export function sameSecret(presented: string, expected: string): boolean {
 
 /** The organization's people, read from Perspicax with the link token. One
  * refresh at a time; a failed call keeps the last good data. */
+/** A person missing from two directory answers this far apart is out. */
+export const DIRECTORY_ABSENT_CONFIRM_MS = 60_000;
+
 export class PerspicaxDirectory {
   private readonly options: PerspicaxDirectoryOptions;
   private readonly fetcher: typeof fetch;
@@ -427,6 +430,12 @@ export class PerspicaxDirectory {
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Slice 4: provider names per subject, from the last directory. */
   private keysBySub = new Map<string, string[]>();
+  /** 2026-10-20: a known subject missing from the directory, since when
+   * (memory only). Out only once it is still missing on a later answer at
+   * least DIRECTORY_ABSENT_CONFIRM_MS after: a partial answer from a
+   * Perspicax being redeployed must not sign anyone out. An explicit
+   * `disabled` is acted on at once. */
+  private absentSince = new Map<string, number>();
   /** Slice 4: owner keys read through the link, in memory only. */
   private readonly keyCache = new Map<string, { key: string; fingerprint: string; until: number }>();
   /** Avatars read through the link, by subject and version, in memory only. */
@@ -1353,8 +1362,17 @@ export class PerspicaxDirectory {
       if (before?.orgRole === "admin" && orgRole !== "admin") this.options.onRoleNarrowed(after.id);
       this.reportIntegrationRights(person, before, after.id, orgRole);
     }
+    for (const sub of this.absentSince.keys()) if (listed.has(sub)) this.absentSince.delete(sub);
     for (const [sub, principal] of known) {
       if (listed.has(sub) || principal.disabledAt !== undefined) continue;
+      const since = this.absentSince.get(sub);
+      if (since === undefined) {
+        this.absentSince.set(sub, fetchStartedAt);
+        this.log("perspicax directory: a known person is missing from the directory; signed out if still missing on a later answer");
+        continue;
+      }
+      if (fetchStartedAt - since < DIRECTORY_ABSENT_CONFIRM_MS) continue;
+      this.absentSince.delete(sub);
       this.options.onPersonOut(iss, sub);
     }
   }

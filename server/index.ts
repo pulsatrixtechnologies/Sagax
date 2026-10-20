@@ -836,6 +836,7 @@ import {
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, isBotActSession, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
 import { recentPersonSignIn } from "./recent-sign-in.ts";
+import { createAuthRefusalLogger } from "./auth-refusal-log.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
@@ -31885,6 +31886,10 @@ if (accountReauth) {
   setInterval(() => accountReauth.sweep(), 60_000).unref();
   sessions.onSessionRevoked((sessionId) => accountReauth.forgetSession(sessionId));
 }
+/** 2026-10-20: one line per 401 for a presented session and per session the
+ * server ends (server/auth-refusal-log.ts). */
+const authRefusals = createAuthRefusalLogger();
+const headerText = (value: string | string[] | undefined): string | undefined => Array.isArray(value) ? value[0] : value;
 const idpSessions = oidcRp && idpVault
   ? new IdpSessionManager({
     vault: idpVault,
@@ -31957,6 +31962,9 @@ if (idpSessions) {
   setInterval(() => {
     try { idpSessions.sweep(); } catch { /* retried on the next tick */ }
   }, IDP_SWEEP_INTERVAL_MS).unref();
+  // 2026-10-20: a refresh a stop interrupted (its answer, a rotated token,
+  // may be lost) is sent again now, inside Perspicax's reuse grace.
+  idpSessions.resumeInterrupted();
 }
 // The Perspicax directory (slice 3): read with the link token Perspicax
 // writes to SAGAX_PERSPICAX_LINK_FILE. Keeps the principals current and logs
@@ -34574,7 +34582,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (IDENTITY.kind === "perspicax" && path === "/api/org/import" && gate.auth?.kind !== "session") {
       return json(res, 401, { error: "Sign in with Pulsatrix to copy bots into this organization.", code: "session_required" });
     }
-    if (!gate.auth) return json(res, gate.status, gate.permission ? permissionRefusal(gate.permission) : { error: gate.error });
+    if (!gate.auth) {
+      if (gate.status === 401 && gate.code === "sign_in_required") return json(res, 401, { error: gate.error, code: gate.code });
+      if (gate.status === 401 && gate.code) {
+        authRefusals.record({ event: "refused", status: 401, code: gate.code, method, path, via: gate.via, userAgent: headerText(req.headers["user-agent"]), sessionId: gate.sessionId });
+        // A cookie that names no session any more is cleared, so the browser
+        // stops presenting it; only for a definitive reason (an unknown one
+        // may be a request that raced a deploy).
+        if (gate.via === "cookie" && gate.code !== "session_unknown") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
+        return json(res, 401, { error: gate.error, code: gate.code });
+      }
+      return json(res, gate.status, gate.permission ? permissionRefusal(gate.permission) : { error: gate.error });
+    }
     const auth = gate.auth;
     // Organization server: a person the provider signalled out is not
     // served, and a session whose grant the provider stopped refreshing ends
@@ -34583,8 +34602,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // found it due already carries the provider's answer: a demotion, a
     // disabled person.
     if (idpSessions && auth.kind === "session") {
-      const endSession = (status: number, code: string, error: string) => {
-        sessions.revoke(auth.session.id);
+      const endSession = (status: number, code: "idp_session_ended" | "principal_disabled", error: string, detail: string) => {
+        sessions.revoke(auth.session.id, code);
+        authRefusals.record({ event: "ended", status, code, method, path, via: auth.via, userAgent: headerText(req.headers["user-agent"]), sessionId: auth.session.id, detail });
         if (auth.via === "cookie") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
         return json(res, status, { error, code });
       };
@@ -34592,7 +34612,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
         return person?.disabledAt !== undefined || Boolean(person?.consoleDisabled);
       };
-      if (disabled()) return endSession(401, "principal_disabled", "Your account is disabled in Pulsatrix or on this Sagax server. Ask an administrator.");
+      if (disabled()) return endSession(401, "principal_disabled", "Your account is disabled in Pulsatrix or on this Sagax server. Ask an administrator.", "the person is disabled or marked out");
       // What the gate checked the route against, before any refresh.
       const gated = [...auth.scopes];
       // 2026-10-19: a session kept across an unclean restart waits for the
@@ -34604,7 +34624,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (waiting && sessions.needsRecheck(waiting.id)) {
           // No grant left to confirm it (a logout whose write was lost, a
           // device whose person has no live sign-in): ended, not "retry".
-          if (idpSessions.mustRefuse(waiting) === "idp_session_ended") return endSession(401, "idp_session_ended", "Your Pulsatrix sign-in has ended. Sign in again.");
+          if (idpSessions.mustRefuse(waiting) === "idp_session_ended") return endSession(401, "idp_session_ended", "Your Pulsatrix sign-in has ended. Sign in again.", "no sign-in grant left to confirm it after an unclean restart");
           res.setHeader("retry-after", "5");
           return json(res, 503, { error: "Sagax restarted and is confirming your Pulsatrix sign-in. Try again in a moment.", code: "idp_recheck_pending" });
         }
@@ -34612,17 +34632,29 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       await settledWithin(idpSessions.touch(auth.session), IDP_REFRESH_WAIT_MS);
       const current = sessions.byId(auth.session.id);
       if (!current || disabled()) {
+        // The refresh that ran for this request ended the session (it logged why).
+        const code = current ? "principal_disabled" : "idp_session_ended";
+        if (current) sessions.revoke(current.id, code);
+        authRefusals.record({ event: "refused", status: 401, code, method, path, via: auth.via, userAgent: headerText(req.headers["user-agent"]), sessionId: auth.session.id });
         if (auth.via === "cookie") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
-        return json(res, 401, { error: "Your Pulsatrix sign-in has ended. Sign in again.", code: "idp_session_ended" });
+        return json(res, 401, { error: code === "principal_disabled" ? "Your account is disabled in Pulsatrix or on this Sagax server. Ask an administrator." : "Your Pulsatrix sign-in has ended. Sign in again.", code });
       }
       const refusal = idpSessions.mustRefuse(current);
-      if (refusal) return endSession(401, refusal, "Your Pulsatrix sign-in has ended. Sign in again.");
+      if (refusal === "idp_session_ended") return endSession(401, refusal, "Your Pulsatrix sign-in has ended. Sign in again.", "no live sign-in grant for this session");
+      if (refusal === "idp_unreachable") {
+        // 2026-10-20: Perspicax has not answered a refresh for a long time.
+        // The session is not served until it does, but it is never ended for
+        // that: a 503 the client retries, never a sign-out.
+        authRefusals.record({ event: "refused", status: 503, code: refusal, method, path, via: auth.via, userAgent: headerText(req.headers["user-agent"]), sessionId: current.id });
+        res.setHeader("retry-after", "30");
+        return json(res, 503, { error: "Sagax cannot reach Pulsatrix to confirm your sign-in. Try again in a moment.", code: "idp_unreachable" });
+      }
       // A device with no grant of its own never holds more than its person's
       // organization role now, even when no grant of theirs was refreshed.
       const person = current.principalId ? principals.byId(current.principalId) : null;
       const clamped = idpSessions.clampScopes(current, person?.orgRole);
       if (clamped) {
-        if (!clamped.length) return endSession(401, "idp_session_ended", "Your Pulsatrix sign-in has ended. Sign in again.");
+        if (!clamped.length) return endSession(401, "idp_session_ended", "Your Pulsatrix sign-in has ended. Sign in again.", "the person's organization role leaves this device no scope");
         sessions.setScopes(current.id, clamped);
       }
       const scopes = clamped ?? current.scopes;

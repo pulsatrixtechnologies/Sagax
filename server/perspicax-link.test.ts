@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { avatarContentType, directoryIntervalMs, PerspicaxDirectory, readLinkFile, type Directory } from "./perspicax-link.ts";
+import { avatarContentType, DIRECTORY_ABSENT_CONFIRM_MS, directoryIntervalMs, PerspicaxDirectory, readLinkFile, type Directory } from "./perspicax-link.ts";
 import { PrincipalRegistry } from "./principals.ts";
 
 const ISSUER = "https://px.example.test";
@@ -202,11 +202,21 @@ describe("PerspicaxDirectory", () => {
     expect(changes).toEqual([["CAROL", true], ["CAROL", false]]);
   });
 
-  it("logs out a disabled person and a known subject gone from the directory", async () => {
-    const h = harness(directoryOf([person("BOB"), person("DAVE"), person("ERIN")]));
+  it("logs out a disabled person at once and a known subject gone from two answers a minute apart", async () => {
+    const h = harness(directoryOf([person("BOB"), person("DAVE"), person("ERIN"), person("FRED")]));
     await h.sync.refresh();
     expect(h.out).toEqual([]);
     h.setDirectory(directoryOf([person("BOB"), person("DAVE", { status: "disabled" })]));
+    await h.sync.refresh();
+    // 2026-10-20: missing once (a partial answer mid-deploy) is not out
+    expect(h.out.sort()).toEqual(["DAVE"]);
+    // still missing a minute later: out; back in the next answer: never out
+    h.clock.now += DIRECTORY_ABSENT_CONFIRM_MS;
+    h.setDirectory(directoryOf([person("BOB"), person("DAVE", { status: "disabled" }), person("FRED")]));
+    await h.sync.refresh();
+    expect(h.out.sort()).toEqual(["DAVE", "ERIN"]);
+    h.clock.now += DIRECTORY_ABSENT_CONFIRM_MS;
+    h.setDirectory(directoryOf([person("BOB"), person("DAVE", { status: "disabled", name: "Dave" })]));
     await h.sync.refresh();
     expect(h.out.sort()).toEqual(["DAVE", "ERIN"]);
     // already out: not signalled again on the next poll

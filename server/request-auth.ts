@@ -48,6 +48,13 @@ export interface RequestAuthResult {
   /** 2026-10-09: the permission that would have opened this route
    * (PERMISSION_ROUTES), when a session without admin scope was refused. */
   permission?: PermissionKey;
+  /** 2026-10-20: why a presented session credential was refused (the 401
+   * body's `code`), and the session it named when the server remembers it
+   * (for the log line only; never the token or its hash). */
+  code?: string;
+  sessionId?: string;
+  /** How the refused credential came: bearer, cookie or stream ticket. */
+  via?: "bearer" | "cookie" | "ticket";
 }
 
 const LOOPBACK_SCOPES: readonly Scope[] = ["admin", "client"];
@@ -1074,7 +1081,7 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
     if (via === "cookie" && !isSameOrigin(req)) return deny(403, "forbidden: cross-origin request");
     // A browser sign-in's session is its browser's cookie, never a bearer token, and
     // its changes come from this origin's own page, which a browser says so.
-    if (via === "bearer" && session.cookieOnly) return deny(401, "unauthorized: this session belongs to a browser; sign in with a pairing code");
+    if (via === "bearer" && session.cookieOnly) return { auth: null, status: 401, error: "unauthorized: this session belongs to a browser; sign in with a pairing code", code: "session_cookie_only", sessionId: session.id, via };
     if (via === "cookie" && session.cookieOnly && !["GET", "HEAD", "OPTIONS"].includes(method) && !provesSameOrigin(req)) {
       return deny(403, "forbidden: this browser's session makes changes only from its own page");
     }
@@ -1095,7 +1102,19 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
   // A removed email member must not become the loopback owner merely because
   // their now-invalid cookie or bearer was presented to a local address.
   if (via) {
-    return deny(401, "unauthorized: this session has expired or was revoked; pair this device again");
+    // 2026-10-20: say why, so a client can tell an ended session (sign in
+    // again) from one this server does not know (retry: a restart from an
+    // older copy, a request that raced a deploy). A ticket is single use and
+    // short: an unknown one is just that.
+    const why = via === "ticket" ? { code: "stream_ticket_invalid" as const } : options.sessions.explainRefusal(via === "bearer" ? bearer : cookie);
+    return {
+      auth: null,
+      status: 401,
+      error: "unauthorized: this session has expired or was revoked; pair this device again",
+      code: why.code,
+      ...("sessionId" in why && why.sessionId ? { sessionId: why.sessionId } : {}),
+      via,
+    };
   }
 
   const proxied = isProxied(req);
@@ -1116,7 +1135,7 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
       secureTokenMatch(headerValue(req.headers[DESKTOP_OWNER_HEADER]), options.loopbackMutationToken);
     // A browser is never the owner by being here: a web page, or the Chrome a
     // bot drives, is a browser on this machine too (OpenMausBot #2930).
-    if (fromBrowser(req) && !desktopOwner && !options.trustLocalBrowser) return deny(401, BROWSER_SIGN_IN);
+    if (fromBrowser(req) && !desktopOwner && !options.trustLocalBrowser) return { auth: null, status: 401, error: BROWSER_SIGN_IN, code: "sign_in_required" };
     if (options.loopbackMutationToken !== undefined && mutatingPublicRoute(method, path) && !desktopOwner) {
       return deny(403, "forbidden: this change must come from the desktop app or a paired device");
     }

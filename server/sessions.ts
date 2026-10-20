@@ -123,7 +123,34 @@ const sessionSchema = z.object({
   authAt: z.number().optional(),
 });
 
-const fileSchema = z.object({ version: z.literal(1), sessions: z.array(sessionSchema) });
+/** Why a session stopped authenticating, as the 401 `code` a client reads
+ * (2026-10-20). `session_unknown` (no trace of the token) is the only one a
+ * client may retry: a server just restarted from an older copy, a request
+ * that raced a deploy. Every other code is definitive. */
+export const SESSION_END_CODES = ["session_revoked", "session_expired", "idp_session_ended", "principal_disabled"] as const;
+export type SessionEndCode = typeof SESSION_END_CODES[number];
+export type SessionRefusalCode = SessionEndCode | "session_unknown";
+
+/** How long and how many ended sessions are remembered (by token hash), so a
+ * later request with that token is told why. Past either bound it reads as
+ * `session_unknown`. */
+export const ENDED_SESSION_MEMORY_MS = 35 * 24 * 60 * 60_000;
+export const ENDED_SESSION_MEMORY_MAX = 2_000;
+
+const endedSchema = z.object({
+  tokenHash: z.string().length(64),
+  id: z.string().min(1).max(64),
+  code: z.enum(SESSION_END_CODES),
+  at: z.number(),
+});
+type EndedSession = z.infer<typeof endedSchema>;
+
+const fileSchema = z.object({
+  version: z.literal(1),
+  sessions: z.array(sessionSchema),
+  // Older files have none; a damaged list is dropped, never the sessions.
+  ended: z.array(endedSchema).max(ENDED_SESSION_MEMORY_MAX * 2).optional().catch(undefined),
+});
 
 export type SessionRecord = z.infer<typeof sessionSchema>;
 
@@ -297,6 +324,8 @@ export class SessionRegistry {
    * not served until the identity provider confirms them again
    * (IdpSessionManager.recheck). Memory only. */
   private readonly recheck = new Set<string>();
+  /** Ended sessions by token hash (2026-10-20): why a token stopped working. */
+  private ended = new Map<string, EndedSession>();
   private closed = false;
   /** Set on an OMB Cloud home (requireAdmin): only admin scope, anywhere. */
   private adminOnly: string | null = null;
@@ -344,13 +373,55 @@ export class SessionRegistry {
     // The email on a provider session is a label: its membership is the
     // provider's (revalidateEmailSessions skips it too).
     const providerOnly = (session: SessionRecord) => session.idp !== undefined && session.userId === undefined && session.membershipAuthority === undefined;
+    const now = this.now();
+    for (const entry of parsed.data.ended ?? []) {
+      if (now - entry.at < ENDED_SESSION_MEMORY_MS) this.ended.set(entry.tokenHash, entry);
+    }
+    // Dropped here (account sessions after an unclean stop) are not
+    // remembered as ended: they read as unknown, which clients retry.
+    const dropped: SessionRecord[] = [];
     this.sessions = parsed.data.sessions.filter((session) => {
       if (session.ephemeral) return false;
       if (restoreAccounts || (session.email === undefined && session.userId === undefined && session.idp === undefined)) return true;
-      if (!restoreProviderSessions || !providerOnly(session)) return false;
+      if (!restoreProviderSessions || !providerOnly(session)) {
+        dropped.push(session);
+        return false;
+      }
       this.recheck.add(session.id);
       return true;
     });
+    if (dropped.length) {
+      console.warn(`sessions: ${dropped.length} account session(s) ended after an unclean stop${restoreProviderSessions ? "" : " (a session write had failed before it)"}`);
+    }
+  }
+
+  /** Keep why this session ended, by its token hash, bounded. */
+  private remember(session: Pick<SessionRecord, "tokenHash" | "id" | "ephemeral">, code: SessionEndCode, at = this.now()): void {
+    if (session.ephemeral) return;
+    this.ended.delete(session.tokenHash);
+    this.ended.set(session.tokenHash, { tokenHash: session.tokenHash, id: session.id, code, at });
+    while (this.ended.size > ENDED_SESSION_MEMORY_MAX) {
+      const oldest = this.ended.keys().next().value;
+      if (oldest === undefined) break;
+      this.ended.delete(oldest);
+    }
+  }
+
+  /** Why `token` does not authenticate (2026-10-20): the code of the 401 and
+   * the session id it named, when this server remembers it. Never the token
+   * or its hash. */
+  explainRefusal(token: string | undefined): { code: SessionRefusalCode; sessionId?: string } {
+    if (!token) return { code: "session_unknown" };
+    const hash = sha256(token);
+    const now = this.now();
+    const live = this.sessions.find((s) => sameDigest(s.tokenHash, hash));
+    if (live) {
+      if (live.expiresAt <= now) return { code: "session_expired", sessionId: live.id };
+      return { code: "session_revoked", sessionId: live.id };
+    }
+    const ended = this.ended.get(hash);
+    if (ended && now - ended.at < ENDED_SESSION_MEMORY_MS) return { code: ended.code, sessionId: ended.id };
+    return { code: "session_unknown" };
   }
 
   /** Whether a restored "Sign in with Pulsatrix" session still waits for its
@@ -395,8 +466,10 @@ export class SessionRegistry {
     const dir = dirname(this.options.file);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const sessions = this.sessions.filter((session) => !session.ephemeral);
+    const now = this.now();
+    const ended = [...this.ended.values()].filter((entry) => now - entry.at < ENDED_SESSION_MEMORY_MS);
     try {
-      writeFileAtomic(this.options.file, JSON.stringify({ version: 1, sessions }, null, 2) + "\n", { mode: 0o600 });
+      writeFileAtomic(this.options.file, JSON.stringify({ version: 1, sessions, ...(ended.length ? { ended } : {}) }, null, 2) + "\n", { mode: 0o600 });
       this.syncDirectory();
     } catch (error) {
       this.markUnsynced();
@@ -437,7 +510,10 @@ export class SessionRegistry {
     if (expired.length) {
       const durable = expired.some((s) => !s.ephemeral);
       this.sessions = this.sessions.filter((s) => s.expiresAt > now);
-      for (const s of expired) this.forget(s.id);
+      for (const s of expired) {
+        this.remember(s, "session_expired", now);
+        this.forget(s.id);
+      }
       if (durable) this.persist();
     }
   }
@@ -713,7 +789,10 @@ export class SessionRegistry {
     if (!revoked.length) return;
     const ids = new Set(revoked.map((session) => session.id));
     this.sessions = this.sessions.filter((session) => !ids.has(session.id));
-    for (const session of revoked) this.forget(session.id);
+    for (const session of revoked) {
+      this.remember(session, "session_revoked");
+      this.forget(session.id);
+    }
     try {
       this.persist();
     } catch {
@@ -773,10 +852,11 @@ export class SessionRegistry {
     return this.sessions.filter((s) => !s.ephemeral).map(publicSession);
   }
 
-  revoke(id: string): boolean {
+  revoke(id: string, code: SessionEndCode = "session_revoked"): boolean {
     const removed = this.sessions.find((s) => s.id === id);
     if (!removed) return false;
     this.sessions = this.sessions.filter((s) => s.id !== id);
+    this.remember(removed, code);
     this.forget(id);
     if (!removed.ephemeral) this.persist();
     return true;
@@ -784,11 +864,12 @@ export class SessionRegistry {
 
   /** Revoke every session the predicate picks, fire the revocation listeners
    * for each and persist once. Returns the revoked ids. */
-  revokeWhere(pick: (session: Readonly<SessionRecord>) => boolean): string[] {
+  revokeWhere(pick: (session: Readonly<SessionRecord>) => boolean, code: SessionEndCode = "session_revoked"): string[] {
     const gone = this.sessions.filter((s) => pick(s));
     if (!gone.length) return [];
     const ids = new Set(gone.map((s) => s.id));
     this.sessions = this.sessions.filter((s) => !ids.has(s.id));
+    for (const session of gone) this.remember(session, code);
     try {
       this.persist();
     } catch {
