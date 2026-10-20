@@ -23,7 +23,7 @@ import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
-import { CaptureBuffer, capturePrompt, newCandidates, parseCandidates, type Candidate, type CaptureBatch, type CaptureTurn } from "./memory-capture.ts";
+import { CaptureBuffer, captureItemLimit, capturePrompt, captureSize, newCandidates, parseCandidates, worthCapturing, type Candidate, type CaptureBatch, type CaptureTurn } from "./memory-capture.ts";
 import { factIdentity, lineFactIdentity, notebookIdentities } from "./memory-entries.ts";
 import { mergeTopicText } from "./memory-topics.ts";
 import { applyMoves, MAX_MOVES, organizeCandidates, organizePrompt, parseMoves } from "./memory-organize.ts";
@@ -32,6 +32,13 @@ import { applyTidy, contradictionCandidates, contradictionPrompt, parseContradic
 import { appendMemoryArchive, ARCHIVE_TOPIC, ensureWorkspace, listMemoryTopics, memoryDate, memoryEntry, memoryTopicIndex, readMemoryText, updateMemory, workspaceDir, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
 
 export const CAPTURE_MAX_TURNS = 6;
+/** One capture call reads at most this much of one bot's waiting threads;
+ * the rest wait for the next call (port de OpenMausBot #3017). */
+export const CAPTURE_CALL_MAX_TURNS = 2 * CAPTURE_MAX_TURNS;
+export const CAPTURE_CALL_MAX_BYTES = 24_000;
+/** A thread that goes quiet takes along its bot's other threads that would
+ * go quiet within this long. */
+export const CAPTURE_GATHER_MS = 15_000;
 export const MODEL_TIMEOUT_MS = 60_000;
 export const TIDY_CHECK_MS = 10 * 60_000;
 /** Below this many live entries there is nothing a contradiction pass may change. */
@@ -218,6 +225,17 @@ async function askModel(engine: UpkeepEngine, prompt: string): Promise<string | 
   }
 }
 
+/** A flushed thread waiting for its capture call; `done` answers a caller of `capture`. */
+interface Waiting {
+  batch: CaptureBatch;
+  done?: { resolve: (report: CaptureReport) => void; reject: (error: unknown) => void };
+}
+
+function callBytes(batch: CaptureBatch): number {
+  const { said, replied } = captureSize(batch.turns);
+  return said + replied;
+}
+
 export const NO_TEXT_ENGINE = "This bot's engine cannot make the quick background model call upkeep uses, so only expired notes and exact duplicates are tidied.";
 
 export interface MemoryUpkeep {
@@ -259,7 +277,10 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
   const tidying = new Map<string, Promise<TidyReport>>();
   let timer: ReturnType<typeof setInterval> | null = null;
   let paused = false;
-  const deferred: CaptureBatch[] = [];
+  // Flushed threads wait here, also through a backup. One worker drains it
+  // for the whole server, one capture call at a time.
+  const queue: Waiting[] = [];
+  let worker: Promise<void> | null = null;
 
   const record = (botId: string, patch: { lastTidy?: TidyReport; lastCapture?: CaptureReport }) => {
     // a capture or tidy still out when its bot was deleted leaves nothing behind
@@ -277,12 +298,94 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
 
   const writing = deps.writing ?? (<T>(_botId: string, write: () => T): T => write());
 
-  async function capture(batch: CaptureBatch): Promise<CaptureReport> {
-    const bot = deps.bot(batch.botId);
+  /** Files one conversation's items as that conversation's: its source
+   * label, its thread on every journal row. */
+  function fileCandidates(botId: string, threadId: string, candidates: readonly Candidate[]): { added: number; topics: number } {
+    const before = readRaw(botId, "MEMORY.md");
+    const archiveBefore = readRaw(botId, ARCHIVE_PATH);
+    const fresh = newCandidates(candidates, before ?? "");
+    const source = `${deps.sourceLabel(botId, threadId)} (noticed)`;
+    let added = 0;
+    const byTopic = new Map<string, Candidate[]>();
+    for (const candidate of fresh) {
+      if (candidate.topic) {
+        byTopic.set(candidate.topic, [...(byTopic.get(candidate.topic) ?? []), candidate]);
+        continue;
+      }
+      if (updateMemory(botId, { action: "append", text: candidate.text, ...(candidate.until ? { until: candidate.until } : {}) }, { source, now: now() }).ok) added += 1;
+    }
+    // Older entries the appends moved out are journaled first, as the
+    // tidy-up does, so undoing the newest row (MEMORY.md) brings them back.
+    recordMemoryChange(botId, { path: ARCHIVE_PATH, actor: "upkeep", via: "capture", threadId, before: archiveBefore, after: readRaw(botId, ARCHIVE_PATH) });
+    if (added) recordMemoryChange(botId, { path: "MEMORY.md", actor: "upkeep", via: "capture", threadId, before, after: readRaw(botId, "MEMORY.md") });
+    // Detail goes to a topic file the bot keeps for that subject, created
+    // with a header (title and other words for it) the first time.
+    const existing = new Map(listMemoryTopics(botId).map((topic) => [topic.name.toLowerCase(), topic.name]));
+    let topics = 0;
+    for (const [wanted, group] of byTopic) {
+      const name = existing.get(wanted) ?? wanted;
+      const path = `memory/${name}`;
+      const current = readRaw(botId, path);
+      if (current !== null && Buffer.byteLength(current, "utf8") > TOPIC_MAX_BYTES) continue;
+      const seen = notebookIdentities(current ?? "");
+      const lines = group
+        .filter((candidate) => !seen.has(factIdentity(candidate.text)))
+        .map((candidate) => memoryEntry(candidate.text, { source, now: now(), ...(candidate.until ? { until: candidate.until } : {}) }));
+      if (!lines.length) continue;
+      const title = name.replace(/\.md$/, "").replace(/-/g, " ");
+      const aliases = [...new Set(group.flatMap((candidate) => candidate.topicAliases ?? []))];
+      try {
+        writeMemoryTopic(botId, name, mergeTopicText(current, { title, aliases, lines }));
+      } catch {
+        continue;
+      }
+      recordMemoryChange(botId, { path, actor: "upkeep", via: "capture", threadId, before: current, after: readRaw(botId, path) });
+      existing.set(name.toLowerCase(), name);
+      topics += lines.length;
+    }
+    return { added, topics };
+  }
+
+  /**
+   * Which conversation each item came from. With several in one call and no
+   * valid "from", the guess is the one with the most said, used only where it
+   * cannot matter: the item is kept only if every conversation may still be
+   * captured, and reaches About me only if every one is the owner's own.
+   */
+  function attribute(candidates: readonly Candidate[], conversations: readonly CaptureBatch[], still: readonly boolean[]) {
+    const owner = conversations.map((conversation) => conversation.turns.every((turn) => turn.owner !== false));
+    const sizes = conversations.map((conversation) => captureSize(conversation.turns).said);
+    const guess = sizes.indexOf(Math.max(...sizes));
+    return candidates.flatMap((candidate) => {
+      const named = conversations.length === 1 ? 0 : candidate.from !== undefined && candidate.from <= conversations.length ? candidate.from - 1 : -1;
+      const sure = named >= 0;
+      const at = sure ? named : guess;
+      if (!still[at] || (!sure && !still.every(Boolean))) return [];
+      // Only the owner's own words reach About me: on a shared workspace
+      // another person's facts are not the owner's profile.
+      return [{ candidate, at, aboutMe: candidate.aboutUser && owner[at]! && (sure || owner.every(Boolean)) }];
+    });
+  }
+
+  /** One model call for one bot's waiting threads, each read as its own
+   * conversation. A thread that may not be captured (confidential) is left
+   * out before the prompt is built and checked again after the answer. */
+  async function captureCall(batches: readonly CaptureBatch[]): Promise<CaptureReport> {
+    const bot = deps.bot(batches[0]!.botId);
     const at = now().getTime();
     const off: CaptureReport = { at, added: 0, topics: 0, aboutMe: 0, note: "upkeep is off" };
     if (!upkeepEnabled(bot)) return off;
-    if (deps.capturable && !deps.capturable(batch.threadId)) return { ...off, note: "the conversation is confidential" };
+    const allowed = (threadId: string) => !deps.capturable || deps.capturable(threadId);
+    const refused: CaptureReport = { ...off, note: "the conversation is confidential" };
+    const byThread = new Map<string, CaptureBatch>();
+    for (const batch of batches) {
+      if (!allowed(batch.threadId)) continue;
+      const same = byThread.get(batch.threadId);
+      if (same) same.turns.push(...batch.turns);
+      else byThread.set(batch.threadId, { ...batch, turns: [...batch.turns] });
+    }
+    const conversations = [...byThread.values()];
+    if (!conversations.length) return refused;
     const engine = deps.engine(bot.id);
     if (!engine?.generateText) {
       const report = { at, added: 0, topics: 0, aboutMe: 0, note: NO_TEXT_ENGINE };
@@ -293,7 +396,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     const today = memoryDate(now());
     const answer = await askModel(engine, capturePrompt({
       botName: bot.name,
-      turns: batch.turns,
+      conversations: conversations.map((conversation) => conversation.turns),
       notebook: readRaw(bot.id, "MEMORY.md") ?? "",
       today,
       topics: memoryTopicIndex(bot.id),
@@ -303,87 +406,107 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       record(bot.id, { lastCapture: report });
       return report;
     }
-    // The thread may have turned confidential while the model answered.
-    if (deps.capturable && !deps.capturable(batch.threadId)) return { ...off, note: "the conversation is confidential" };
     if (paused) {
-      // a backup began while the model answered: run it again after
-      deferred.push(batch);
+      // a backup began while the model answered: ask again after it
+      queue.unshift(...conversations.map((batch) => ({ batch })));
       return { at, added: 0, topics: 0, aboutMe: 0, note: "deferred until the backup finishes" };
     }
-    // Re-read after the await: the bot or the person may have written since.
+    // Re-read after the await: the bot or the person may have written since,
+    // and a thread may have turned confidential while the model answered.
     // From here to the journal rows there is no await, so no write interleaves.
     if (!upkeepEnabled(deps.bot(bot.id))) return off;
-    const { parsed, added, topics } = writing(bot.id, () => {
-      const before = readRaw(bot.id, "MEMORY.md");
-      const archiveBefore = readRaw(bot.id, ARCHIVE_PATH);
-      const parsed = parseCandidates(answer, today);
-      const fresh = newCandidates(parsed, before ?? "");
-      const source = `${deps.sourceLabel(bot.id, batch.threadId)} (noticed)`;
+    const still = conversations.map((conversation) => allowed(conversation.threadId));
+    if (!still.some(Boolean)) return refused;
+    const filed = attribute(parseCandidates(answer, today, captureItemLimit(conversations.length)), conversations, still);
+    const { added, topics } = writing(bot.id, () => {
       let added = 0;
-      const byTopic = new Map<string, Candidate[]>();
-      for (const candidate of fresh) {
-        if (candidate.topic) {
-          byTopic.set(candidate.topic, [...(byTopic.get(candidate.topic) ?? []), candidate]);
-          continue;
-        }
-        if (updateMemory(bot.id, { action: "append", text: candidate.text, ...(candidate.until ? { until: candidate.until } : {}) }, { source, now: now() }).ok) added += 1;
-      }
-      // Older entries the appends moved out are journaled first, as the
-      // tidy-up does, so undoing the newest row (MEMORY.md) brings them back.
-      recordMemoryChange(bot.id, { path: ARCHIVE_PATH, actor: "upkeep", via: "capture", threadId: batch.threadId, before: archiveBefore, after: readRaw(bot.id, ARCHIVE_PATH) });
-      if (added) recordMemoryChange(bot.id, { path: "MEMORY.md", actor: "upkeep", via: "capture", threadId: batch.threadId, before, after: readRaw(bot.id, "MEMORY.md") });
-      // Detail goes to a topic file the bot keeps for that subject, created
-      // with a header (title and other words for it) the first time.
-      const existing = new Map(listMemoryTopics(bot.id).map((topic) => [topic.name.toLowerCase(), topic.name]));
       let topics = 0;
-      for (const [wanted, candidates] of byTopic) {
-        const name = existing.get(wanted) ?? wanted;
-        const path = `memory/${name}`;
-        const current = readRaw(bot.id, path);
-        if (current !== null && Buffer.byteLength(current, "utf8") > TOPIC_MAX_BYTES) continue;
-        const seen = notebookIdentities(current ?? "");
-        const lines = candidates
-          .filter((candidate) => !seen.has(factIdentity(candidate.text)))
-          .map((candidate) => memoryEntry(candidate.text, { source, now: now(), ...(candidate.until ? { until: candidate.until } : {}) }));
-        if (!lines.length) continue;
-        const title = name.replace(/\.md$/, "").replace(/-/g, " ");
-        const aliases = [...new Set(candidates.flatMap((candidate) => candidate.topicAliases ?? []))];
-        try {
-          writeMemoryTopic(bot.id, name, mergeTopicText(current, { title, aliases, lines }));
-        } catch {
-          continue;
-        }
-        recordMemoryChange(bot.id, { path, actor: "upkeep", via: "capture", threadId: batch.threadId, before: current, after: readRaw(bot.id, path) });
-        existing.set(name.toLowerCase(), name);
-        topics += lines.length;
-      }
-      return { parsed, added, topics };
+      conversations.forEach((conversation, i) => {
+        const own = filed.filter((item) => item.at === i).map((item) => item.candidate);
+        if (!own.length) return;
+        const result = fileCandidates(bot.id, conversation.threadId, own);
+        added += result.added;
+        topics += result.topics;
+      });
+      return { added, topics };
     });
-    // Only the owner's own words reach About me: on a shared workspace
-    // another person's facts are not the owner's profile. Every parsed fact
-    // counts, not only new ones — the bot may already have noted it in its
-    // own memory, and About me is where every other bot learns it.
-    const owner = batch.turns.every((turn) => turn.owner !== false);
-    const aboutMe = owner ? deps.addToAboutMe({ botId: bot.id, botName: bot.name }, parsed.filter((c) => c.aboutUser).map((c) => c.text)) : 0;
-    // whoever wrote MEMORY.md — the bot, the person or this capture — detail
+    // Every parsed fact counts for About me, not only new ones: the bot may
+    // already have noted it in its own memory, and About me is where every
+    // other bot learns it.
+    const learned = filed.filter((item) => item.aboutMe).map((item) => item.candidate.text);
+    const aboutMe = learned.length ? deps.addToAboutMe({ botId: bot.id, botName: bot.name }, learned) : 0;
+    // whoever wrote MEMORY.md (the bot, the person or this capture), detail
     // that is not core moves to its topic now, not only at night
     const organized = await organize(bot.id);
     const report: CaptureReport = { at, added, topics, aboutMe, organized };
     record(bot.id, { lastCapture: report });
-    if (added || topics || aboutMe) log(`memory upkeep: noticed ${added} fact(s) for MEMORY.md, ${topics} for topic files and ${aboutMe} for About me — ${bot.name} (${bot.id}) from ${batch.threadId}`);
+    if (added || topics || aboutMe) log(`memory upkeep: noticed ${added} fact(s) for MEMORY.md, ${topics} for topic files and ${aboutMe} for About me: ${bot.name} (${bot.id}) from ${conversations.map((conversation) => conversation.threadId).join(", ")}`);
     return report;
+  }
+
+  /** The first waiting batch, with its bot's other waiting batches that fit
+   * in the same call. */
+  function takeCall(): Waiting[] {
+    const first = queue.shift()!;
+    const call = [first];
+    let turns = first.batch.turns.length;
+    let bytes = callBytes(first.batch);
+    for (let i = 0; i < queue.length;) {
+      const next = queue[i]!;
+      const size = callBytes(next.batch);
+      if (next.batch.botId === first.batch.botId && turns + next.batch.turns.length <= CAPTURE_CALL_MAX_TURNS && bytes + size <= CAPTURE_CALL_MAX_BYTES) {
+        call.push(...queue.splice(i, 1));
+        turns += next.batch.turns.length;
+        bytes += size;
+      } else i += 1;
+    }
+    return call;
+  }
+
+  async function work(): Promise<void> {
+    try {
+      // threads flushed together are all queued before the first call takes its share
+      await Promise.resolve();
+      while (!paused && queue.length) {
+        const call = takeCall();
+        try {
+          const report = await captureCall(call.map((entry) => entry.batch));
+          for (const entry of call) entry.done?.resolve(report);
+        } catch (error) {
+          log(`memory upkeep: capture failed for ${call[0]!.batch.botId}: ${(error as Error).message}`);
+          for (const entry of call) entry.done?.reject(error);
+        }
+      }
+    } finally {
+      worker = null;
+    }
+  }
+
+  function kick(): void {
+    if (!worker && !paused && queue.length) worker = track(work());
+  }
+
+  function enqueue(entry: Waiting): void {
+    queue.push(entry);
+    kick();
+  }
+
+  function dropQueued(match: (batch: CaptureBatch) => boolean): void {
+    for (let index = queue.length - 1; index >= 0; index -= 1) {
+      if (!match(queue[index]!.batch)) continue;
+      const [entry] = queue.splice(index, 1);
+      entry!.done?.resolve({ at: now().getTime(), added: 0, topics: 0, aboutMe: 0, note: "upkeep is off" });
+    }
   }
 
   const buffer = new CaptureBuffer({
     quietMs: deps.quietMs,
     maxTurns: CAPTURE_MAX_TURNS,
+    gatherMs: CAPTURE_GATHER_MS,
     onFlush: (batch) => {
       if (deps.capturable && !deps.capturable(batch.threadId)) return;
-      if (paused) {
-        deferred.push(batch);
-        return;
-      }
-      void track(capture(batch)).catch((error: unknown) => log(`memory upkeep: capture failed for ${batch.botId}: ${(error as Error).message}`));
+      // a test or a pleasantry has nothing to keep, so it costs no call
+      if (worthCapturing(batch.turns)) enqueue({ batch });
     },
   });
 
@@ -569,10 +692,13 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       buffer.add(botId, threadId, turn);
     },
     flushThread: (threadId) => buffer.flush(threadId),
-    dropBot: (botId) => buffer.dropBot(botId),
+    dropBot(botId) {
+      buffer.dropBot(botId);
+      dropQueued((batch) => batch.botId === botId);
+    },
     forgetBot(botId) {
       buffer.dropBot(botId);
-      for (let index = deferred.length - 1; index >= 0; index -= 1) if (deferred[index]!.botId === botId) deferred.splice(index, 1);
+      dropQueued((batch) => batch.botId === botId);
       const state = loadState();
       if (!state.bots[botId]) return;
       delete state.bots[botId];
@@ -580,10 +706,10 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     },
     dropThread: (threadId) => {
       buffer.dropThread(threadId);
-      // a batch waiting for a backup to finish goes too
-      for (let index = deferred.length - 1; index >= 0; index -= 1) if (deferred[index]!.threadId === threadId) deferred.splice(index, 1);
+      // a batch waiting for its call, or for a backup to finish, goes too
+      dropQueued((batch) => batch.threadId === threadId);
     },
-    capture: (batch) => track(capture(batch)),
+    capture: (batch) => new Promise<CaptureReport>((resolve, reject) => enqueue({ batch, done: { resolve, reject } })),
     tidy,
     status(botId) {
       // the core judgements are upkeep's own bookkeeping, not status
@@ -615,7 +741,9 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     stop() {
       if (timer) clearInterval(timer);
       timer = null;
-      const waiting = [...deferred.splice(0), ...buffer.drain()];
+      const queued = queue.splice(0);
+      for (const entry of queued) entry.done?.resolve({ at: now().getTime(), added: 0, topics: 0, aboutMe: 0, note: "kept for the next start" });
+      const waiting = [...queued.map((entry) => entry.batch), ...buffer.drain()];
       if (deps.restoreTurn) savePending(waiting);
     },
     pause() {
@@ -623,9 +751,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     },
     resume() {
       paused = false;
-      for (const batch of deferred.splice(0)) {
-        void track(capture(batch)).catch((error: unknown) => log(`memory upkeep: capture failed for ${batch.botId}: ${(error as Error).message}`));
-      }
+      kick();
     },
     async idle() {
       while (inflight.size) await Promise.allSettled(inflight);
