@@ -47,7 +47,7 @@ const OWNER_CAUSES = new Set<RoutineOwnerCause>(["signed_out", "credits", "usage
 const ROUTING_LOOKUP = /\bworkspace routing discovery (?:failed|timed out)\b/i;
 
 /** A provider refusing for want of credit or payment, in its own words. */
-const OUT_OF_CREDITS = /\bpayment required\b|\b402\b|\binsufficient (?:account )?(?:funds|balance|credits?)\b|\b(?:credit|account) balance is too low\b|\bout of credits?\b|\bno credits? (?:left|remaining)\b|\bused all (?:available |of (?:your|its) )?credits\b/i;
+const OUT_OF_CREDITS = /\bpayment required\b|\b(?:http|status) 402\b|\binsufficient (?:account )?(?:funds|balance|credits?)\b|\b(?:credit|account) balance is too low\b|\bout of credits?\b|\bno credits? (?:left|remaining)\b|\bused all (?:available |of (?:your|its) )?credits\b/i;
 
 const OWNER_ACTION: Record<Exclude<RoutineOwnerCause, "setup">, string> = {
   signed_out: "This bot's engine is signed out. Sign in again in Settings → Model providers.",

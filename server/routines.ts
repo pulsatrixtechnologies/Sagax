@@ -439,6 +439,8 @@ export interface RoutineManagerOptions {
   onRunFailed?: (run: RoutineRun, alert?: RoutineAlert | null) => void;
   /** Raised once when a queued run has waited out the deferral notice window. */
   onRunDeferred?: (run: RoutineRun, alert?: RoutineAlert) => void;
+  /** A failed attempt went back to the queue: what the attempt left pending must not reach its second start. */
+  onRunRequeued?: (run: RoutineRun) => void;
   /** A successful provider turn is intermediate while its peer work or
    * queued continuation still belongs to this detached execution. */
   hasPendingDelegations?: (threadId: string) => boolean;
@@ -2284,6 +2286,7 @@ export class RoutineManager {
     else {
       this.save();
       this.emitRun(run);
+      this.options.onRunRequeued?.(cloneRun(run));
       if (recovery.alert) this.options.onRunDeferred?.(cloneRun(run), recovery.alert);
     }
     queueMicrotask(() => void this.tick());

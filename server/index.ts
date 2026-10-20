@@ -8787,7 +8787,7 @@ function postInputRequest(node: HandoffView, question: string, reminder: boolean
   if (parent && node.rootId !== parent.id) postTo(coordinator.node(node.rootId));
   if (posted.length) openInputRequests.set(node.threadId, [...(openInputRequests.get(node.threadId) ?? []), ...posted].slice(-10));
   if (openInputRequests.size > 2_000) openInputRequests.delete(openInputRequests.keys().next().value!);
-  if (restored && fresh === 0) return;
+  if (restored && fresh === 0 && posted.length > 0) return;
   if (node.groupId) store.patchGroup(node.groupId, { unread: true });
   else store.patchTask(bot.id, node.threadId, { unread: true });
   notify(deliverableNotification("delegation-settled", bot, node.threadId, full, { avatarUrl: bot.avatarUrl }));
@@ -19589,7 +19589,8 @@ routines = new RoutineManager({
   hasPendingDelegations: (threadId) => pendingThreads().includes(threadId) ||
     [...delegationWatch.values()].some((watch) => watch.sourceThreadId === threadId) ||
     pendingDelegationWakes.has(threadId),
-  handedOffWorkLive: (threadId) => coordinator.outstandingDirect(threadId).length > 0,
+  handedOffWorkLive: (threadId) => coordinator.outstandingDirect(threadId).length > 0 || pendingThreads().includes(threadId) ||
+    [...delegationWatch.values()].some((watch) => watch.sourceThreadId === threadId) || pendingDelegationWakes.has(threadId),
   botState: unattendedDispatchState,
   goalState: (groupId, coordinatorBotId) => {
     const group = store.group(groupId);
@@ -19736,6 +19737,11 @@ routines = new RoutineManager({
   },
   interruptGoal: interruptRoutineGroupGoal,
   onRunChanged: syncRoutineRunToSource,
+  onRunRequeued: (run) => {
+    if (!run.threadId) return;
+    pendingDelegationWakes.delete(run.threadId);
+    discardDelegations(commsBus, run.threadId);
+  },
   onRunFailed: (run, alert) => {
     if (run.threadId) {
       pendingDelegationWakes.delete(run.threadId);
