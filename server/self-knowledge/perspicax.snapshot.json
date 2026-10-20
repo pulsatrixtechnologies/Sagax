@@ -1,6 +1,6 @@
 {
-  "version": "1.8.41",
-  "commit": "700354b5",
+  "version": "1.8.42",
+  "commit": "4f30e4b1",
   "date": "2026-10-20",
   "sections": [
     {"id":"px:console:/access/data","kind":"perspicax","title":"Perspicax console: Data access (Accès aux données)","where":"Perspicax console > Access (Accès) > Data access (Accès aux données) (/access/data)","access":"admins only","text":"Data access (Accès aux données): a page of the Perspicax console menu, under Access (Accès), at /access/data.","source":"Perspicax console/src/lib/nav.ts"},
