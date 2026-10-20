@@ -93,7 +93,7 @@ export interface EgressSetup {
   host: EgressHost;
   config(): BrowserEgressConfig | undefined;
   listeners?: OwnListeners;
-  ownership?: ListenerOwnership;
+  ownership?: Pick<ListenerOwnership, "botOwned">;
 }
 
 interface Blocked { target: string; reason: Refusal }

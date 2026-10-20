@@ -4797,6 +4797,8 @@ setCuaStateListener((connection) => {
 });
 
 app.whenReady().then(async () => {
+  // First thing once ready: no session but the app window's reaches the server.
+  serverSessionGuard = { defaultSession: session.defaultSession, serverPort: () => SERVER_PORT };
   installSessionBlock(session.defaultSession, (line) => slog(`network: ${line}`));
   // Cached-before-the-fix attachment responses outlive `no-store`: entries
   // stored under the old one-year immutable policy can replay to a second
@@ -4907,7 +4909,6 @@ app.whenReady().then(async () => {
   // Full-access shell using curl cannot impersonate the person operating
   // the desktop app. The YouTube player's Referer rule runs in every build.
   installRequestHeaderRules({ mutationHeader: app.isPackaged });
-  serverSessionGuard = { defaultSession: session.defaultSession, serverPort: () => SERVER_PORT };
   // A runtime Dock image overrides the bundle icon with a flat PNG, which
   // on macOS 26 discards the Liquid Glass rendering (build/icon.icon) and
   // drops the icon into the gray "squircle jail". Packaged builds keep the

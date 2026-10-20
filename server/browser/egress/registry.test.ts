@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { agentBrowserDevToolsPorts, agentBrowserStreamPorts } from "../../browser-engine.ts";
+import { refusalFor } from "./policy.ts";
 import { BrowserEgress, OwnListeners, staticOwnPorts } from "./registry.ts";
 import type { ListenerOwnership } from "./ownership.ts";
 
@@ -91,6 +92,17 @@ describe("one gate per browser session", () => {
     } finally {
       await value.close();
     }
+  });
+
+  it("on a shared server, never opens another bot's server, only what the allow-list names (Sagax)", async () => {
+    const shared = (config: { allow?: string[] }) => {
+      const value = new BrowserEgress();
+      value.configure({ host: "server", config: () => config, listeners: new OwnListeners("server", { env: {}, ...noScans }), ownership: { botOwned: async () => false } });
+      return value;
+    };
+    const target = { host: "127.0.0.1", port: 43_210 };
+    expect(await refusalFor(target, [{ address: "127.0.0.1" }], shared({}).rules())).toBe("this-computer");
+    expect(await refusalFor(target, [{ address: "127.0.0.1" }], shared({ allow: ["127.0.0.1:43210"] }).rules())).toBeNull();
   });
 
   it("applies the admin allow-list only on a self-hosted server", () => {

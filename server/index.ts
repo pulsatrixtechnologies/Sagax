@@ -628,7 +628,6 @@ import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserRuntimeEnv } from "./browser-runtime.ts";
 import { browserEgress } from "./browser/egress/registry.ts";
-import type { ListenerOwnership } from "./browser/egress/ownership.ts";
 import { BrowserLive } from "./browser-live.ts";
 import { BrowserNetworkDebug } from "./browser-network-debug.ts";
 import {
@@ -4503,7 +4502,7 @@ function cancelDirectTurnDispatch(botId: string, expectedThreadId?: string): Dir
 const sharedEgressHost = !DESKTOP_MANAGED && (IDENTITY.kind === "perspicax" || HOSTED_WORKSPACE || LOOPBACK.trust === "service");
 browserEgress.configure({
   host: DESKTOP_MANAGED ? "desktop" : CLOUD_HOME ? "cloud" : "server", config: () => cfg.browserEngine?.egress,
-  ...(sharedEgressHost ? { ownership: { botOwned: async () => false } as unknown as ListenerOwnership } : {}),
+  ...(sharedEgressHost ? { ownership: { botOwned: async () => false } } : {}),
 });
 const browserRuntime = new BrowserRuntime({
   egressNotice: (session) => browserEgress.takeNotice(session),
