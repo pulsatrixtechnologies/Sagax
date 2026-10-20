@@ -1747,7 +1747,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (turn.guestConfined) args.push("--restricted", "--tools", GUEST_CLAUDE_TOOLS.join(","));
       else if (config.tools !== undefined) args.push("--tools", config.tools.join(","));
       // Organization server: no shell, file or fetch tool on the Sagax server.
-      const disallowedTools = claudeDisallowedTools(config.disallowedTools, turn.withholdHostTools === true);
+      const disallowedTools = claudeDisallowedTools(config.disallowedTools, turn.withholdHostTools === true, turn.guestConfined === true || config.tools !== undefined);
       if (disallowedTools.length) {
         args.push("--disallowedTools", disallowedTools.join(","));
       }
