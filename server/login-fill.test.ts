@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { vaultHandle } from "../shared/credential-vault.ts";
-import { BrowserRuntime, type BrowserSpawnSpec, type CredentialFillAccess } from "./browser-runtime.ts";
+import { BrowserRuntime, browserProfileChangeRefusal, PERSON_SIGN_IN_MS, type BrowserSpawnSpec, type CredentialFillAccess } from "./browser-runtime.ts";
 import { parseFillArguments, variants } from "./credential-fill.ts";
 import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 import { fieldList, loginOutcomeText, parseLoginState, stepFields } from "./login-fill.ts";
@@ -233,10 +233,10 @@ describe("hardening after the security review", () => {
     const { runtime } = setup();
     const scripted = engine("https://portal.example.test/login", ONE_STEP, ONE_STEP_SITE);
     expect((await call(runtime, "used", scripted.spec, "agent_browser_eval", { script: "1" })).isError).toBeUndefined();
-    expect(runtime.armForPerson("used")).toContain("restart");
+    expect(runtime.armForPerson("used", "bot-a")).toContain("restart");
     const site = engine("https://portal.example.test/login", ONE_STEP, ONE_STEP_SITE);
     await call(runtime, "person", site.spec, "agent_browser_snapshot", {});
-    expect(runtime.armForPerson("person")).toBeNull();
+    expect(runtime.armForPerson("person", "bot-a")).toBeNull();
     await call(runtime, "person", site.spec, "test_person_types", { id: "pass", value: "fake-person-typed-Pa55" });
     expect((await call(runtime, "person", site.spec, "agent_browser_eval", { script: "document.getElementById('pass').value" })).isError).toBe(true);
     expect((await call(runtime, "person", site.spec, "agent_browser_screenshot", {})).isError).toBe(true);
@@ -252,7 +252,7 @@ describe("hardening after the security review", () => {
     const site = engine("https://portal.example.test/login", ONE_STEP, ONE_STEP_SITE);
     expect(await runtime.clearAfterPerson("signin")).toContain("not prepared");
     await call(runtime, "signin", site.spec, "agent_browser_snapshot", {});
-    expect(runtime.armForPerson("signin")).toBeNull();
+    expect(runtime.armForPerson("signin", "bot-a")).toBeNull();
     // The bot's own restart_browser waits for Done.
     let closed = 0;
     await expect(runtime.agentRestart("signin", async () => { closed++; return true; })).rejects.toThrow(/signing in themselves/);
@@ -268,6 +268,39 @@ describe("hardening after the security review", () => {
     runtime.endPersonSignIn("signin");
     await runtime.agentRestart("signin", async () => true);
     expect(runtime.armedForPerson("signin")).toBe(false);
+  });
+
+  it("refuses to move a bot to another browser profile while a person signs in themselves in its browser (PATCH /api/bots/:id)", () => {
+    const runtime = new BrowserRuntime({ requestTimeoutMs: 5_000 });
+    cleanups.push(() => runtime.closeAll());
+    expect(browserProfileChangeRefusal(runtime, "bot-a", undefined, "work")).toBeNull();
+    expect(runtime.armForPerson("bot-a-session", "bot-a")).toBeNull();
+    expect(browserProfileChangeRefusal(runtime, "bot-a", undefined, "work")).toContain("signing in themselves");
+    expect(browserProfileChangeRefusal(runtime, "bot-a", "work", "work")).toBeNull();
+    expect(browserProfileChangeRefusal(runtime, "bot-b", undefined, "work")).toBeNull();
+    runtime.endPersonSignIn("bot-a-session");
+    expect(browserProfileChangeRefusal(runtime, "bot-a", undefined, "work")).toBeNull();
+  });
+
+  it("ends a person's sign-in after 30 minutes, and holds the bot's browser profile only while it runs", async () => {
+    let now = 1_000_000;
+    const runtime = new BrowserRuntime({ requestTimeoutMs: 5_000, takeoverTimeoutMs: 100, idleMs: 5_000, now: () => now });
+    cleanups.push(() => runtime.closeAll());
+    expect(runtime.armForPerson("ttl", "bot-a")).toBeNull();
+    expect(runtime.personSigningInForBot("bot-a")).toBe(true);
+    expect(runtime.personSigningInForBot("bot-b")).toBe(false);
+    await expect(runtime.agentRestart("ttl", async () => true)).rejects.toThrow(/signing in themselves/);
+    now += PERSON_SIGN_IN_MS - 1;
+    expect(runtime.armedForPerson("ttl")).toBe(true);
+    now += 2;
+    expect(runtime.armedForPerson("ttl")).toBe(false);
+    expect(runtime.personSigningInForBot("bot-a")).toBe(false);
+    await runtime.agentRestart("ttl", async () => true);
+    expect(browserProfileChangeRefusal(runtime, "bot-a", undefined, "work")).toBeNull();
+    // Ended by hand (Done, a grant, a newer card): the same.
+    expect(runtime.armForPerson("ttl2", "bot-a")).toBeNull();
+    runtime.endPersonSignIn("ttl2");
+    expect(runtime.personSigningInForBot("bot-a")).toBe(false);
   });
 
   it("checks the form again in the submit itself: a form retargeted after the fill is not sent, and the password is emptied", async () => {

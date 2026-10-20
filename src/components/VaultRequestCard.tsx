@@ -11,7 +11,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Check, Globe, KeyRound, Loader2, LockKeyhole, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
-import { createCredentialDraft, dismissCard, grantFromCard, loadCredentials, matchingItems, parseDomains, selfStartFromCard, signedInFromCard, type VaultItemListing } from "@/lib/credential-vault";
+import { createCredentialDraft, dismissCard, grantFromCard, loadCredentials, matchingItems, parseDomains, selfStartFromCard, selfStatusFromCard, signedInFromCard, type VaultItemListing } from "@/lib/credential-vault";
 import { t } from "@/lib/i18n";
 import { useStore, type Message } from "@/state/store";
 import { siteAddable, type VaultGrantMode } from "../../shared/credential-vault";
@@ -35,6 +35,10 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
   // Unticked by default: the bot chose the address it asked for.
   const [addSite, setAddSite] = useState(false);
   const [selfSignIn, setSelfSignIn] = useState(false);
+  // Whether the bot's browser is still armed for the person (null: not
+  // known yet). A restart of Sagax, 30 minutes or a newer card end it, and
+  // the card then says the browser is not protected any more.
+  const [armed, setArmed] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -50,6 +54,15 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
       .catch((failure) => { if (live) { setItems([]); setChoice(NEW); setError(failure instanceof Error ? failure.message : String(failure)); } });
     return () => { live = false; };
   }, [settled, request]);
+
+  useEffect(() => {
+    if (!selfSignIn || settled) return;
+    let live = true;
+    const check = () => { selfStatusFromCard(botId, message.id, threadId).then((answer) => { if (live) setArmed(answer.armed); }).catch(() => { if (live) setArmed(false); }); };
+    check();
+    const timer = setInterval(check, 5_000);
+    return () => { live = false; clearInterval(timer); };
+  }, [selfSignIn, settled, botId, message.id, threadId]);
 
   if (!request) return null;
 
@@ -118,6 +131,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
     setError(null);
     try {
       await selfStartFromCard(botId, message.id, threadId);
+      setArmed(true);
       setSelfSignIn(true);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
@@ -233,7 +247,11 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
         </button>
       ) : (
         <div className="mt-2 flex flex-col gap-2 rounded-md border border-hairline p-2" data-vault-self-panel>
-          <p className="text-[12px] leading-relaxed text-ink-secondary">{t("vault.card.selfHint", { bot: botName, site })}</p>
+          {armed === false ? (
+            <p role="alert" className="text-[12px] leading-relaxed text-danger" data-vault-self-unprotected>{t("vault.card.selfUnprotected", { bot: botName })}</p>
+          ) : (
+            <p className="text-[12px] leading-relaxed text-ink-secondary">{t("vault.card.selfHint", { bot: botName, site })}</p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" disabled={busy} onClick={() => dispatch({ type: "toggleComputer", open: true })} className={cn(ASK_CHIP, ASK_CHIP_IDLE)}>
               <Globe size={13} /> {t("vault.card.openBrowser")}
@@ -241,6 +259,11 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
             <button type="button" disabled={busy} onClick={() => void signedIn()} className={cn(ASK_CHIP, ASK_CHIP_IDLE)}>
               <Check size={13} /> {t("vault.card.signedInDone")}
             </button>
+            {armed === false && (
+              <button type="button" disabled={busy} onClick={() => void startSelf()} className={cn(ASK_CHIP, ASK_CHIP_IDLE)} data-vault-self-rearm>
+                {t("vault.card.selfRearm")}
+              </button>
+            )}
           </div>
         </div>
       )}

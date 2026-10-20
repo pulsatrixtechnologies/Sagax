@@ -71,6 +71,9 @@ export const grantFromCard = (botId: string, messageId: string, threadId: string
 /** Arm the bot's browser before the person signs in there themselves. */
 export const selfStartFromCard = (botId: string, messageId: string, threadId: string) =>
   api<{ armed: true }>(`${CARD(botId, messageId)}/self-start`, { method: "POST", body: JSON.stringify({ threadId }) });
+/** Whether the bot's browser is still armed for the person's own sign-in. */
+export const selfStatusFromCard = (botId: string, messageId: string, threadId: string) =>
+  api<{ armed: boolean }>(`${CARD(botId, messageId)}/self-status`, { method: "POST", body: JSON.stringify({ threadId }) });
 export const signedInFromCard = (botId: string, messageId: string, threadId: string) =>
   api<{ signedIn: true }>(`${CARD(botId, messageId)}/signed-in`, { method: "POST", body: JSON.stringify({ threadId }) });
 export const dismissCard = (botId: string, messageId: string, threadId: string) =>

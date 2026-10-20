@@ -9254,5 +9254,7 @@
   "vault.card.selfHint": "Open {bot}’s browser, take control, sign in to {site}, then press Done. From now until that browser restarts, {bot} cannot run scripts or take screenshots in it, and Sagax empties its password and code fields at Done.",
   "vault.card.openBrowser": "Open the browser",
   "vault.card.signedInDone": "Done",
-  "vault.card.signedInSelf": "You signed in to {site} yourself"
+  "vault.card.signedInSelf": "You signed in to {site} yourself",
+  "vault.card.selfUnprotected": "Not protected any more: {bot}’s browser is no longer prepared for your sign-in (Sagax restarted, 30 minutes passed, or the bot asked again). Do not type a password there now; prepare it again first.",
+  "vault.card.selfRearm": "Prepare again"
 }

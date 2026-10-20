@@ -14,6 +14,7 @@
 //   POST   /api/bots/:botId/vault-cards/:messageId/grant   { threadId, itemId | item, mode, addSite? }
 //   POST   /api/bots/:botId/vault-cards/:messageId/dismiss { threadId }
 //   POST   /api/bots/:botId/vault-cards/:messageId/self-start { threadId } arm the bot's browser for the person
+//   POST   /api/bots/:botId/vault-cards/:messageId/self-status { threadId } { armed } for the card
 //   POST   /api/bots/:botId/vault-cards/:messageId/signed-in { threadId }  the person signed in themselves
 //
 // The vault is the person's own: the session's principal on an organization
@@ -104,7 +105,7 @@ function importItem(raw: unknown): VaultTransferItem | null {
 }
 
 const ITEM = /^\/api\/me\/credentials\/([a-z0-9]{8,40})(?:\/(notes|grants)(?:\/([\w-]{1,128}))?)?$/;
-const CARD = /^\/api\/bots\/([\w-]+)\/vault-cards\/([\w-]+)\/(grant|dismiss|self-start|signed-in)$/;
+const CARD = /^\/api\/bots\/([\w-]+)\/vault-cards\/([\w-]+)\/(grant|dismiss|self-start|self-status|signed-in)$/;
 
 function refusal(error: unknown): { status: number; body: Record<string, unknown> } | null {
   if (error instanceof CredentialVaultError) return { status: error.status, body: { error: error.message, code: error.code } };
@@ -173,6 +174,11 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
           if (refused) return json(res, 409, { error: refused, code: "browser_not_clean" });
           return json(res, 200, { armed: true });
         }
+        if (action === "self-status") {
+          // Whether the browser is still armed for the person (a restart of
+          // Sagax, 30 minutes, a replaced card end it): the card says so.
+          return json(res, 200, { armed: deps.browser ? await deps.browser.armedForPerson(botId!, threadId) : false });
+        }
         if (action === "signed-in") {
           if (!deps.browser) return json(res, 409, { error: "The bot's browser is not available here.", code: "no_browser" });
           if (!await deps.browser.armedForPerson(botId!, threadId)) {
@@ -220,6 +226,8 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         }
         if (!item.domains.length) return json(res, 400, { error: "This item has no site it may be filled on. Add one first.", code: "invalid_domains" });
         const granted = deps.vault.grant(principalId, item.id, { botId: botId!, mode, threadId });
+        // A login chosen after "I'll sign in myself": that sign-in ends.
+        await deps.browser?.endForPerson(botId!, threadId);
         deps.audit?.("credentials.grant", auth, { id: item.id, botId, mode, via: "card", ...(addedSite ? { addedSite: true } : {}) });
         deps.cards.patch(botId!, threadId, messageId!, { ...secret, vault: { ...secret.vault, itemId: item.id, itemName: item.name, mode } });
         if (!deps.cards.resume(botId!, threadId, messageId!, "provided", grantedNote(granted, mode))) {

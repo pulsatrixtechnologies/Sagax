@@ -202,6 +202,7 @@ describe("credential vault routes", () => {
     expect((await call("POST", "/api/bots/bot-a/vault-cards/p1/self-start", { threadId: "t1" })).body).toMatchObject({ code: "browser_not_clean" });
     armRefusal = null;
     expect((await call("POST", "/api/bots/bot-a/vault-cards/p1/self-start", { threadId: "t1" })).body).toEqual({ armed: true });
+    expect((await call("POST", "/api/bots/bot-a/vault-cards/p1/self-status", { threadId: "t1" })).body).toEqual({ armed: true });
     // Done while the person still holds the browser: nothing settles.
     expect((await call("POST", "/api/bots/bot-a/vault-cards/p1/signed-in", { threadId: "t1" })).body).toMatchObject({ code: "browser_busy" });
     expect(resumed).toHaveLength(0);
@@ -214,6 +215,16 @@ describe("credential vault routes", () => {
     expect(audits.at(-1)).toEqual({ action: "credentials.signed_in", detail: { botId: "bot-a" } });
     expect(vault.granted(LOCAL_VAULT_PRINCIPAL, id, "bot-a", "t1")).toBe(false);
     expect((await call("POST", "/api/bots/bot-a/vault-cards/p1/signed-in", { threadId: "t1" })).status).toBe(409);
+  });
+
+  it("ends a person's own sign-in when a login is granted from the card instead", async () => {
+    const ended: string[] = [];
+    const { call, cards } = await serve({ browser: { armForPerson: async () => null, clearAfterPerson: async () => null, armedForPerson: async () => true, endForPerson: async (botId, threadId) => { ended.push(`${botId}:${threadId}`); } } });
+    const id = (await call("POST", "/api/me/credentials", login)).body.item.id as string;
+    cards.set("t1:g1", vaultRequestCard({ principalId: LOCAL_VAULT_PRINCIPAL, botName: "Ada", domain: "example.test" }));
+    expect((await call("POST", "/api/bots/bot-a/vault-cards/g1/self-start", { threadId: "t1" })).status).toBe(200);
+    expect((await call("POST", "/api/bots/bot-a/vault-cards/g1/grant", { threadId: "t1", itemId: id, mode: "once" })).status).toBe(200);
+    expect(ended).toEqual(["bot-a:t1"]);
   });
 
   it("marks a card signed in only once the bot was resumed, and refuses without a browser", async () => {
@@ -268,11 +279,13 @@ describe("request_login internal route", () => {
     const vault = new CredentialVault(dir, () => ({ kind: "key", key: Buffer.alloc(32, 6) }));
     const item = vault.create(LOCAL_VAULT_PRINCIPAL, login);
     const posted: SecretRequestCardData[] = [];
+    const ended: string[] = [];
     const routes = [createCredentialVaultInternalRoutes({
       vault,
       principalForThread: () => LOCAL_VAULT_PRINCIPAL,
       botName: () => "Ada",
       postCard: (_botId, _threadId, secret) => { posted.push(secret); return `m${posted.length}`; },
+      endPersonSignIn: async (botId, threadId) => { ended.push(`${botId}:${threadId}`); },
     })];
     const ask = async (body: Record<string, unknown>) => {
       let answer: { status: number; body: unknown } | null = null;
@@ -290,6 +303,8 @@ describe("request_login internal route", () => {
     const first = await ask({ domain: "example.test", reason: "to read the invoice" });
     expect(first.status).toBe(201);
     expect(posted[0]).toMatchObject({ target: "vaultLogin", vault: { domain: "example.test", principalId: LOCAL_VAULT_PRINCIPAL } });
+    // A newer card replaces the open one: a person's own sign-in begun from it ends.
+    expect(ended).toEqual(["bot-a:t1"]);
     vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "always" });
     const second = await ask({ domain: "example.test" });
     expect(second).toMatchObject({ status: 200, body: { granted: [{ handle: vaultHandle(item.id), name: "Example", domains: ["example.test"], fields: ["username", "password", "totp"] }] } });

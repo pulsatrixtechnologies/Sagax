@@ -4912,8 +4912,13 @@ in the bot's browser: `self-start` arms that browser first
 then scripts, screenshots, preview frames and CSS selectors are off until a
 restart; until Done the sign-in under way survives any restart or close,
 `forgetSession` arms the new browser again and the bot's `restart_browser`
-is refused), and Done (`signed-in`, 409 `not_armed` when the browser was
-not armed) empties its password and code fields
+is refused; it ends at Done, on a grant or a decline from the card, when a
+newer card replaces it, or after `PERSON_SIGN_IN_MS`, 30 minutes; meanwhile
+PATCH /api/bots/:id refuses a browser profile change,
+`browserProfileChangeRefusal`; the card polls `self-status` and says "Not
+protected any more" once the browser is no longer armed, also after a
+restart of Sagax), and Done (`signed-in`, 409 `not_armed` when the browser
+was not armed) empties its password and code fields
 (`clearAfterPerson`; refused while the person still holds the browser),
 resumes the bot (`signedInNote`: no handle, no value), then marks the card
 and writes `credentials.signed_in` (no site). The submit checks again, in

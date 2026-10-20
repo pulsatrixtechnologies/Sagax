@@ -9254,5 +9254,7 @@
   "vault.card.selfHint": "Ouvrez le navigateur de {bot}, prenez le contrôle, connectez-vous à {site}, puis touchez Terminé. D’ici le redémarrage de ce navigateur, {bot} ne peut pas y lancer de scripts ni de captures, et Sagax vide ses champs mot de passe et code à Terminé.",
   "vault.card.openBrowser": "Ouvrir le navigateur",
   "vault.card.signedInDone": "Terminé",
-  "vault.card.signedInSelf": "Vous vous êtes connecté à {site} vous-même"
+  "vault.card.signedInSelf": "Vous vous êtes connecté à {site} vous-même",
+  "vault.card.selfUnprotected": "Plus protégé : le navigateur de {bot} n’est plus préparé pour votre connexion (Sagax a redémarré, 30 minutes sont passées ou le bot a redemandé). N’y tapez pas de mot de passe maintenant ; préparez-le d’abord de nouveau.",
+  "vault.card.selfRearm": "Préparer de nouveau"
 }
