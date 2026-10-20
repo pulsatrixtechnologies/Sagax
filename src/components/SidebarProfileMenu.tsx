@@ -38,8 +38,10 @@ import {
   Check,
   CloudDownload,
   CalendarDays,
+  Code2,
   Gauge,
   Info,
+  Inbox,
   Keyboard,
   Laptop,
   Loader2,
@@ -74,6 +76,7 @@ import { openUpdatePrompt, requestUpdateCheck } from "@/lib/update-prompt";
 import { brand } from "../lib/brand";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { codeRowVisible, useCodeStatus } from "@/lib/code-runs";
 import { useAchievements } from "@/lib/achievements";
 import { isRoutineProblemRun } from "@/lib/routines";
 import { useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
@@ -280,6 +283,8 @@ export function footerMenuItems(places: SidebarMenuItem[], profileItems: Sidebar
 
 export interface ProfileMenuHandlers {
   onAutomations: () => void;
+  onApprovals: () => void;
+  onCode: () => void;
   onSettings: () => void;
   onAchievements: () => void;
   onShortcuts: () => void;
@@ -307,6 +312,12 @@ export function profileMenuItems(input: {
   mobile: boolean;
   achievementsLabel: string | null;
   automationsActive: boolean;
+  /** Approvals: conversations waiting on the person's answer, from every bot */
+  approvalsWaiting?: number;
+  approvalsActive?: boolean;
+  /** Code: only where Code can work (codeRowVisible) */
+  codeVisible?: boolean;
+  codeActive?: boolean;
   shortcutsTrailing?: ReactNode;
   /** Check for updates, where the desktop app answers */
   updateItem: SidebarMenuItem | null;
@@ -407,6 +418,31 @@ export function profileMenuItems(input: {
       active: input.automationsActive,
       onSelect: input.handlers.onAutomations,
     },
+    {
+      key: "approvals",
+      label: t("approvals.title"),
+      icon: <Inbox size={18} />,
+      active: input.approvalsActive,
+      trailing: input.approvalsWaiting ? (
+        <span
+          data-menu-count="approvals"
+          aria-label={`${t("approvals.title")}, ${input.approvalsWaiting}`}
+          className="shrink-0 rounded-full bg-warning px-1.5 text-[10.5px] font-semibold leading-4 tabular-nums text-black/80"
+        >
+          {input.approvalsWaiting > 99 ? "99+" : input.approvalsWaiting}
+        </span>
+      ) : undefined,
+      onSelect: input.handlers.onApprovals,
+    },
+    ...(input.codeVisible
+      ? [{
+          key: "code",
+          label: t("code.title"),
+          icon: <Code2 size={18} />,
+          active: input.codeActive,
+          onSelect: input.handlers.onCode,
+        }]
+      : []),
     ...(input.achievementsLabel
       ? [{
           key: "achievements",
@@ -491,6 +527,11 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const achievements = useAchievements();
+  const codeStatus = useCodeStatus();
+  // conversations waiting on the person's answer (a plain count, no hook)
+  const approvalsWaiting = state.bots
+    .filter((bot) => !bot.hidden)
+    .reduce((total, bot) => total + (bot.tasks ?? []).filter((task) => task.activity === "waiting-on-you").length, 0);
   const openAchievements = () => dispatch({ type: "toggleAchievements", open: true });
   // The routines badge sits at the right edge of the row; under the name,
   // the viewer's own title and points, each only while its "Show my ..."
@@ -528,6 +569,10 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     mobile: SAGAX_MOBILE_URL !== null,
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
     automationsActive: state.activeView === "routines",
+    approvalsWaiting,
+    approvalsActive: state.activeView === "approvals",
+    codeVisible: codeRowVisible(codeStatus),
+    codeActive: state.activeView === "code",
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
     updateItem: update ? { ...update.item, label: t("sidebar.update.check") } : null,
     switchTargets: lockedServer ? [] : account.targets,
@@ -535,6 +580,8 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     signOut: lockedServer,
     handlers: {
       onAutomations: () => dispatch({ type: "showRoutines" }),
+      onApprovals: () => dispatch({ type: "showApprovals" }),
+      onCode: () => dispatch({ type: "showCode" }),
       onSettings: () => dispatch({ type: "toggleAppSettings" }),
       onAchievements: openAchievements,
       onShortcuts: () => {
@@ -575,6 +622,14 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
         <img src={profile.avatarUrl} alt="" style={{ width: size, height: size }} className="rounded-full object-cover" />
       ) : (
         <InitialsAvatar initials={initials} size={size} />
+      )}
+      {approvalsWaiting > 0 && (
+        <span
+          data-avatar-approvals={approvalsWaiting}
+          title={`${t("approvals.title")}, ${approvalsWaiting}`}
+          aria-label={`${t("approvals.title")}, ${approvalsWaiting}`}
+          className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-sidebar bg-warning"
+        />
       )}
     </span>
   );

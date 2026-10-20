@@ -49,7 +49,14 @@ const team: Bot[] = [
     ],
   }, "J'ai supprimé le flux Power Automate « Nouveau courriel » comme demandé.", minutes(8)),
   bot("iris", "Iris", { title: "Full Stack, Dev Ops & ITSec", color: "orange", mascotBody: "drop", section: "My team" }, "J'ai fait le ménage de ma mémoire et gardé les règles actives.", minutes(42)),
-  bot("milo", "Milo", { title: "Vérification", color: "teal", mascotBody: "blob", section: "My team" }, "J'ai noté cette règle permanente. Une seule question avant de fermer.", minutes(70)),
+  bot("milo", "Milo", {
+    title: "Vérification", color: "teal", mascotBody: "blob", section: "My team",
+    // two conversations waiting on the person: the Approvals count
+    tasks: [
+      task("t-milo", "Général", minutes(70), { activity: "waiting-on-you" } as Partial<Task>),
+      task("t-milo-2", "Règle permanente", minutes(80), { activity: "waiting-on-you" } as Partial<Task>),
+    ],
+  }, "J'ai noté cette règle permanente. Une seule question avant de fermer.", minutes(70)),
   bot("lina", "Lina", { title: "Juridique et marketing", color: "purple", mascotBody: "circle", section: "My team" }, "Les deux sont supprimées, il ne me reste aucune routine.", minutes(130)),
   bot("forge", "Concepteur de bots", {
     color: "graphite", mascotBody: "capsule",
@@ -70,6 +77,7 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (!path.startsWith("/api/")) return realFetch(input, init);
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   if (path === "/api/bots") return json({ bots: team, groups: [], sections: ["My team"], computerControl: {} });
+  if (path === "/api/code/status") return json({ available: true });
   if (path === "/api/config") return json({ profile: { name: "Alex Gagnon" } });
   // the avatar menu's Usage › (a made-up plan, this month's cost)
   if (path === "/api/plan-usage") return json({ providers: [{
