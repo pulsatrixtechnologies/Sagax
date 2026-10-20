@@ -7,6 +7,7 @@ export const WORKSPACE_BACKUP_CLIENT_KEYS = [
   "omb-draft-channel-modes",
   "omb-skin",
   "omb-skin-mode",
+  "omb-skin-tint",
   "omb-skin-variants",
   "omb-show-threads",
   "omb-show-run-card",

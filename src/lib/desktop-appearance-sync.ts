@@ -133,7 +133,7 @@ export async function syncDesktopAppearance(): Promise<void> {
   } catch {
     return;
   }
-  const [{ applySkin, prefersDarkScheme, resolveStoredSkin, SKIN_IDS }, { writeSkinAuto }, { applyFont, FONT_IDS }, retro] = await Promise.all([
+  const [{ applySkin, prefersDarkScheme, resolveStoredSkin, SKIN_IDS }, { isSkinTint, writeSkinAuto }, { applyFont, FONT_IDS }, retro] = await Promise.all([
     import("./skins"),
     import("./skin-families"),
     import("./fonts"),
@@ -155,7 +155,8 @@ export async function syncDesktopAppearance(): Promise<void> {
       const auto = next["omb-skin-mode"] === "auto";
       writeSkinAuto(auto, storage);
       const skin = SKIN_IDS.find((id) => id === next["omb-skin"]);
-      if (skin && !retroOn) applySkin(resolveStoredSkin(skin, auto, prefersDarkScheme()));
+      // a phone that does not send a tint chose a plain skin: the family's own look
+      if (skin && !retroOn) applySkin(resolveStoredSkin(skin, auto, prefersDarkScheme()), isSkinTint(next["omb-skin-tint"]) ? next["omb-skin-tint"] : null);
       const font = FONT_IDS.find((id) => id === (next["omb-font"] ?? "skin"));
       if (font) applyFont(font);
     },

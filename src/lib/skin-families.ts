@@ -12,6 +12,17 @@
 // `omb-skin-mode` ("auto"): the variant's light or dark skin, following the
 // system. A family, a variant and a mode are therefore always derived from
 // the worn skin, so every saved choice, old or new, maps to itself.
+//
+// Colour variants (JC, 2026-10-19): « des variantes pour chacun : la couleur de
+// base, rouge, rose, bleu, vert, jaune ; pour Hibou 98, Windows XP, Vista, 7,
+// 8, 8.1, 10 et 11 ». A variant is now a base skin plus an optional TINT:
+// `data-skin` keeps the base skin's id (so the Windows caption overlay, the
+// phone and every older build read it unchanged) and `data-skin-tint` lays the
+// colour over it (src/styles/skin-tints.css), or, under Hibou 98, the chrome of
+// one Windows edition (src/styles/retro-editions.css). The tint is stored apart
+// in `omb-skin-tint` (skins.ts). The near-duplicate skins this replaces (Slate,
+// Plum, Meadow, Lagoon) stay worn by older builds; this one maps them to the
+// closest base and colour (LEGACY_SKINS), so nobody loses their choice.
 import type { SkinId } from "./skins";
 
 export type SkinScheme = "light" | "dark";
@@ -21,8 +32,19 @@ export type SkinModeChoice = SkinScheme | "auto";
 export const SKIN_FAMILY_IDS = ["pulsatrix", "studio", "atelier", "retro98"] as const;
 export type SkinFamilyId = (typeof SKIN_FAMILY_IDS)[number];
 
-export const SKIN_VARIANT_IDS = ["blue", "neutral", "slate", "plum", "meadow", "brass", "lagoon", "classic"] as const;
+/** The colours laid over the Pulsatrix, Studio and Atelier families. */
+export const SKIN_COLOR_TINTS = ["red", "pink", "blue", "green", "yellow"] as const;
+/** The Windows editions laid over Hibou 98 (its own 98 look is the Classic variant). */
+export const SKIN_WINDOWS_TINTS = ["xp", "vista", "win7", "win8", "win81", "win10", "win11"] as const;
+export const SKIN_TINT_IDS = [...SKIN_COLOR_TINTS, ...SKIN_WINDOWS_TINTS] as const;
+export type SkinTintId = (typeof SKIN_TINT_IDS)[number];
+
+export const SKIN_VARIANT_IDS = ["basic", "classic", ...SKIN_TINT_IDS] as const;
 export type SkinVariantId = (typeof SKIN_VARIANT_IDS)[number];
+
+export function isSkinTint(value: unknown): value is SkinTintId {
+  return typeof value === "string" && (SKIN_TINT_IDS as readonly string[]).includes(value);
+}
 
 export type SkinVariant = {
   id: SkinVariantId;
@@ -30,7 +52,17 @@ export type SkinVariant = {
   light?: SkinId;
   /** The skin worn in a dark mode, when the variant has one. */
   dark?: SkinId;
+  /** Laid over the skin as `data-skin-tint`; absent on the family's own look. */
+  tint?: SkinTintId;
 };
+
+/** The family's own look first, then one variant per colour over the same light and dark skins. */
+function colorVariants(light: SkinId, dark: SkinId, skip: readonly SkinTintId[] = []): SkinVariant[] {
+  return [
+    { id: "basic", light, dark },
+    ...SKIN_COLOR_TINTS.filter((tint) => !skip.includes(tint)).map((tint) => ({ id: tint, light, dark, tint })),
+  ];
+}
 
 export type SkinFamily = {
   id: SkinFamilyId;
@@ -41,56 +73,86 @@ export type SkinFamily = {
 };
 
 export const SKIN_FAMILIES: readonly SkinFamily[] = [
-  // Perspicax's own look: Geist, navy chrome, the soft glow from the top.
-  { id: "pulsatrix", name: "Pulsatrix", variants: [{ id: "blue", light: "pulsatrix-light", dark: "pulsatrix" }] },
+  // Perspicax's own look: Geist, navy chrome, the soft glow from the top. Its
+  // own colour is already blue, so it has no separate Blue variant.
+  { id: "pulsatrix", name: "Pulsatrix", variants: colorVariants("pulsatrix-light", "pulsatrix", ["blue"]) },
   // Grok Bot's flat neutral look: Inter, monochrome buttons, inverted bubbles in light.
-  {
-    id: "studio",
-    name: "Studio",
-    variants: [
-      { id: "neutral", light: "daylight", dark: "midnight" },
-      { id: "slate", light: "linen", dark: "graphite" },
-      { id: "plum", dark: "dusk" },
-      { id: "meadow", light: "meadow" },
-    ],
-  },
+  { id: "studio", name: "Studio", variants: colorVariants("daylight", "midnight") },
   // Paper: a tinted ground where surfaces get brighter as they rise.
+  { id: "atelier", name: "Atelier", variants: colorVariants("atelier", "foundry") },
+  // Bevelled late-90s windows and classic scrollbars; each later edition of
+  // Windows lays its own chrome over the same skin.
   {
-    id: "atelier",
-    name: "Atelier",
+    id: "retro98",
+    name: "Hibou 98",
+    secret: true,
     variants: [
-      { id: "brass", light: "atelier", dark: "foundry" },
-      { id: "lagoon", light: "lagoon" },
+      { id: "classic", light: "retro98" },
+      ...SKIN_WINDOWS_TINTS.map((tint) => ({ id: tint, light: "retro98" as SkinId, tint })),
     ],
   },
-  // Bevelled late-90s windows and classic scrollbars; keeps its own style.
-  { id: "retro98", name: "Hibou 98", secret: true, variants: [{ id: "classic", light: "retro98" }] },
 ];
+
+/**
+ * The skins older builds may still wear that no variant lists any more: each
+ * is worn as the closest base skin and colour. Their CSS blocks stay, so a
+ * build before the colour variants keeps drawing them.
+ */
+export const LEGACY_SKINS: Partial<Record<SkinId, { skin: SkinId; tint: SkinTintId }>> = {
+  graphite: { skin: "midnight", tint: "blue" },
+  linen: { skin: "daylight", tint: "blue" },
+  dusk: { skin: "midnight", tint: "pink" },
+  meadow: { skin: "daylight", tint: "green" },
+  lagoon: { skin: "atelier", tint: "blue" },
+};
+
+/** A worn skin and its tint, with a legacy skin mapped and a tint its family has no variant for dropped. */
+export function normalizeWorn(skin: SkinId, tint: SkinTintId | null | undefined): { skin: SkinId; tint: SkinTintId | null } {
+  const legacy = LEGACY_SKINS[skin];
+  if (legacy) return { ...legacy };
+  if (!tint) return { skin, tint: null };
+  return PLACES.has(placeKey(skin, tint)) ? { skin, tint } : { skin, tint: null };
+}
 
 export type SkinPlace = { family: SkinFamily; variant: SkinVariant; scheme: SkinScheme };
 
-const PLACES: ReadonlyMap<SkinId, SkinPlace> = (() => {
-  const map = new Map<SkinId, SkinPlace>();
+function placeKey(skin: SkinId, tint: SkinTintId | null | undefined): string {
+  return `${skin}|${tint ?? ""}`;
+}
+
+const PLACES: ReadonlyMap<string, SkinPlace> = (() => {
+  const map = new Map<string, SkinPlace>();
   for (const family of SKIN_FAMILIES) {
     for (const variant of family.variants) {
-      if (variant.light) map.set(variant.light, { family, variant, scheme: "light" });
-      if (variant.dark) map.set(variant.dark, { family, variant, scheme: "dark" });
+      if (variant.light) map.set(placeKey(variant.light, variant.tint), { family, variant, scheme: "light" });
+      if (variant.dark) map.set(placeKey(variant.dark, variant.tint), { family, variant, scheme: "dark" });
     }
   }
   return map;
 })();
 
-/** Where a worn skin sits: its family, its variant and its scheme. Every skin id has one place. */
-export function placeOfSkin(skin: SkinId): SkinPlace {
-  const place = PLACES.get(skin);
-  // Every SKIN_IDS entry is in the table (skin-families.test.ts); a missing one is a programming error.
+/**
+ * Where a worn skin and tint sit: the family, the variant and the scheme. A
+ * legacy skin sits at its mapped colour; a tint the family lacks is ignored.
+ */
+export function placeOfSkin(skin: SkinId, tint?: SkinTintId | null): SkinPlace {
+  const worn = normalizeWorn(skin, tint);
+  const place = PLACES.get(placeKey(worn.skin, worn.tint));
+  // Every SKIN_IDS entry is a base or a legacy skin (skin-families.test.ts); a missing one is a programming error.
   if (!place) throw new Error(`skin ${skin} belongs to no family`);
   return place;
 }
 
-/** Every skin, each in exactly one family (checked by the tests against SKIN_IDS). */
+/** Every base skin a family wears (checked by the tests against SKIN_IDS and LEGACY_SKINS). */
 export function familySkins(): SkinId[] {
-  return [...PLACES.keys()];
+  const out = new Set<SkinId>();
+  for (const family of SKIN_FAMILIES) {
+    for (const variant of family.variants) {
+      if (variant.light) out.add(variant.light);
+      if (variant.dark) out.add(variant.dark);
+    }
+  }
+  return [...out];
 }
 
 export function schemesOf(variant: SkinVariant): SkinScheme[] {
@@ -226,5 +288,28 @@ export function autoPairs(): Record<string, [SkinId, SkinId]> {
       }
     }
   }
+  return out;
+}
+
+/** The tints each base skin can wear: the first-paint script drops any other stored tint. */
+export function tintsBySkin(): Record<string, SkinTintId[]> {
+  const out: Record<string, SkinTintId[]> = {};
+  for (const family of SKIN_FAMILIES) {
+    for (const variant of family.variants) {
+      if (!variant.tint) continue;
+      for (const skin of [variant.light, variant.dark]) {
+        if (!skin) continue;
+        const list = (out[skin] ??= []);
+        if (!list.includes(variant.tint)) list.push(variant.tint);
+      }
+    }
+  }
+  return out;
+}
+
+/** LEGACY_SKINS as [base, tint] pairs, for the first-paint script. */
+export function legacyPairs(): Record<string, [SkinId, SkinTintId]> {
+  const out: Record<string, [SkinId, SkinTintId]> = {};
+  for (const [skin, mapped] of Object.entries(LEGACY_SKINS)) if (mapped) out[skin] = [mapped.skin, mapped.tint];
   return out;
 }

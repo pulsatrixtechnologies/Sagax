@@ -12,10 +12,11 @@
 // drift from what picking it actually does.
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
-import { chooseSkin, prefersDarkScheme, readSkin, SKIN_IDS, type SkinId } from "@/lib/skins";
+import { chooseSkin, prefersDarkScheme, readSkin, readSkinTint, SKIN_IDS, type SkinId } from "@/lib/skins";
 import {
   canFollowSystem,
   carryMode,
+  isSkinTint,
   defaultVariant,
   placeOfSkin,
   readRememberedVariants,
@@ -27,6 +28,7 @@ import {
   visibleFamilies,
   type SkinFamily,
   type SkinModeChoice,
+  type SkinTintId,
   type SkinVariant,
 } from "@/lib/skin-families";
 import { readRetroUnlocked } from "@/lib/retro98";
@@ -40,10 +42,11 @@ import { CompactRow, PillSelect } from "./SettingsPrimitives";
  * accent on purpose — a skin is mostly judged by where its colour lands, and a
  * single dot was too small to judge.
  */
-function Miniature({ skin, selected }: { skin: SkinId; selected: boolean }) {
+function Miniature({ skin, tint, selected }: { skin: SkinId; tint?: SkinTintId; selected: boolean }) {
   return (
     <div
       data-skin={skin}
+      data-skin-tint={tint}
       aria-hidden="true"
       className={cn("flex h-[78px] w-full overflow-hidden rounded-lg bg-app", selected ? "ring-2 ring-accent-border" : "ring-1 ring-hairline/60")}
     >
@@ -92,30 +95,33 @@ const familyTagline = (family: SkinFamily) => t(`settings.skin.family.${family.i
 const variantName = (variant: SkinVariant) => t(`settings.skin.variant.${variant.id}`);
 const MODES: readonly SkinModeChoice[] = ["light", "dark", "auto"];
 
-/** The skin the document wears now (main.tsx stamped it before the first paint). */
-function wornSkin(): SkinId {
-  // main.tsx writes this attribute from applySkin() before the first paint;
-  // anything else (absent, edited by hand) falls back to the stored skin.
-  const stamped = document.documentElement.dataset.skin;
-  return SKIN_IDS.find((id) => id === stamped) ?? readSkin();
+/** The skin and tint the document wears now (main.tsx stamped them before the first paint). */
+function wornSkin(): { skin: SkinId; tint: SkinTintId | null } {
+  // main.tsx writes these attributes from applySkin() before the first paint;
+  // anything else (absent, edited by hand) falls back to the stored choice.
+  const root = document.documentElement;
+  const stamped = SKIN_IDS.find((id) => id === root.dataset.skin);
+  if (!stamped) return { skin: readSkin(), tint: readSkinTint() };
+  const tint = root.dataset.skinTint;
+  return { skin: stamped, tint: isSkinTint(tint) ? tint : null };
 }
 
-/** The worn skin and the mode, re-read when anything changes the skin
- * (the picker, Auto following the system, Hibou 98, the phone). */
-function useSkinState(): { skin: SkinId; auto: boolean } {
-  const [state, setState] = useState(() => ({ skin: wornSkin(), auto: readSkinAuto() }));
+/** The worn skin, its tint and the mode, re-read when anything changes the
+ * skin (the picker, Auto following the system, Hibou 98, the phone). */
+function useSkinState(): { skin: SkinId; tint: SkinTintId | null; auto: boolean } {
+  const [state, setState] = useState(() => ({ ...wornSkin(), auto: readSkinAuto() }));
   useEffect(() => {
     const root = document.documentElement;
-    const observer = new MutationObserver(() => setState({ skin: wornSkin(), auto: readSkinAuto() }));
-    observer.observe(root, { attributes: true, attributeFilter: ["data-skin"] });
+    const observer = new MutationObserver(() => setState({ ...wornSkin(), auto: readSkinAuto() }));
+    observer.observe(root, { attributes: true, attributeFilter: ["data-skin", "data-skin-tint"] });
     return () => observer.disconnect();
   }, []);
   return state;
 }
 
 export function SkinPicker() {
-  const { skin: active, auto } = useSkinState();
-  const place = placeOfSkin(active);
+  const { skin: active, tint: activeTint, auto } = useSkinState();
+  const place = placeOfSkin(active, activeTint);
   const [, rerender] = useState(0);
   // Secret families stay out of the list until this device has found them.
   const [families] = useState(() => visibleFamilies(readRetroUnlocked(), place.family.id));
@@ -124,7 +130,7 @@ export function SkinPicker() {
 
   const wear = (family: SkinFamily, variant: SkinVariant, next: SkinModeChoice) => {
     rememberVariant(family.id, variant.id);
-    chooseSkin(resolveSkin(variant, next, prefersDarkScheme()), next === "auto");
+    chooseSkin(resolveSkin(variant, next, prefersDarkScheme()), next === "auto", variant.tint ?? null);
     // the mode key changes without a skin change when Auto lands on the worn skin
     rerender((n) => n + 1);
   };
@@ -157,7 +163,7 @@ export function SkinPicker() {
                 selected ? "bg-selected" : "hover:bg-hover",
               )}
             >
-              <Miniature skin={shown} selected={selected} />
+              <Miniature skin={shown} tint={variant.tint} selected={selected} />
               <span className="flex min-w-0 items-center gap-1.5 px-0.5 text-[13px] leading-[18px] text-ink">
                 <span className="min-w-0 truncate">{family.name}</span>
                 {family.secret && (
@@ -197,6 +203,7 @@ export function SkinPicker() {
                   <span
                     aria-hidden="true"
                     data-skin={variantSkin(variant, place.scheme)}
+                    data-skin-tint={variant.tint}
                     className="block size-full rounded-full"
                     style={{ background: "linear-gradient(135deg, var(--color-app) 0 50%, var(--skin-swatch) 50% 100%)" }}
                   />

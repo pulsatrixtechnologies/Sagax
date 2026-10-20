@@ -24,7 +24,7 @@
 //     each skin resolves once at its own root. Measured over the root and
 //     over every band, so a popover reads the same wherever it opens.
 //   - the inverted user bubble of Daylight and Meadow (`@scope` blocks).
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -61,6 +61,11 @@ function parseSkins(source) {
   const skins = new Map();
   for (const [, id, body] of source.matchAll(/(?:^|\n)\[data-skin="([a-z0-9-]+)"\]\s*\{([^}]*)\}/g)) {
     skins.set(id, declarations(body));
+  }
+  // A colour tint, `[data-skin="x"][data-skin-tint="t"] { … }`, is measured
+  // as worn: its tokens over its base skin's, under the id "x+t".
+  for (const [, id, tint, body] of source.matchAll(/(?:^|\n)\[data-skin="([a-z0-9-]+)"\]\[data-skin-tint="([a-z0-9-]+)"\]\s*\{([^}]*)\}/g)) {
+    if (skins.has(id)) skins.set(`${id}+${tint}`, { ...skins.get(id), ...declarations(body) });
   }
   return skins;
 }
@@ -418,7 +423,7 @@ export function checkContrast(css, { verbose = false } = {}) {
     const rootTokens = resolve({ ...base, ...raw }, {}, inline);
     report(id, "", measure(rootTokens, PAIRS));
     const contexts = [["popover", rootTokens]];
-    for (const band of bands.filter((b) => b.id === id)) {
+    for (const band of bands.filter((b) => b.id === id.split("+")[0])) {
       const bandTokens = resolve(band.tokens, rootTokens, inline);
       report(id, band.selector, measure(bandTokens, BAND_PAIRS));
       contexts.push([`${band.selector} popover`, bandTokens]);
@@ -497,7 +502,13 @@ if (isMain) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   const args = process.argv.slice(2);
   const cssArg = args.indexOf("--css");
-  const css = readFileSync(cssArg >= 0 ? args[cssArg + 1] : join(root, "src/styles.css"), "utf8");
+  let css = readFileSync(cssArg >= 0 ? args[cssArg + 1] : join(root, "src/styles.css"), "utf8");
+  // Hibou 98's Windows editions keep their palette blocks beside their chrome
+  // (src/styles/retro-editions/*.css): measured as retro98 tints like the colours.
+  if (cssArg < 0) {
+    const editions = join(root, "src/styles/retro-editions");
+    for (const file of readdirSync(editions).filter((name) => name.endsWith(".css")).sort()) css += "\n" + readFileSync(join(editions, file), "utf8");
+  }
   const result = checkContrast(css, { verbose: args.includes("--verbose") });
   for (const line of result.lines) console.log(line);
   console.log(result.failed ? `\n${result.failingPairs} pair(s) below target` : "\nall skins clear their targets in every context");

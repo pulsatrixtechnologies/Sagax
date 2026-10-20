@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
 // Settings > Appearance > Skin (2026-10-19): a tile per family, the chosen
-// family's variants as swatches and its mode as a pill (Light, Dark, Auto).
-// A saved skin opens on its own family, variant and scheme.
+// family's variants as swatches (its own look, then a colour or, under Hibou
+// 98, a Windows edition laid over it as `data-skin-tint`) and its mode as a
+// pill (Light, Dark, Auto). A saved skin and tint open on their own family,
+// variant and scheme; a retired look-alike opens on its colour.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SKIN_MODE_KEY, SKIN_VARIANTS_KEY } from "@/lib/skin-families";
+import { applySkin, readSkin, SKIN_TINT_KEY } from "@/lib/skins";
 import { SkinPicker } from "./SkinPicker";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -32,14 +35,18 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   delete document.documentElement.dataset.skin;
+  delete document.documentElement.dataset.skinTint;
   vi.unstubAllGlobals();
 });
 
-function open(skin: string) {
-  document.documentElement.dataset.skin = skin;
+function open(skin: string, tint?: string) {
   localStorage.setItem("omb-skin", skin);
+  if (tint) localStorage.setItem(SKIN_TINT_KEY, tint);
+  // as main.tsx does before the first paint
+  applySkin(readSkin());
   act(() => root.render(createElement(SkinPicker)));
 }
+const worn = () => [document.documentElement.dataset.skin, document.documentElement.dataset.skinTint ?? null];
 
 const tile = (id: string) => host.querySelector<HTMLButtonElement>(`[data-skin-family="${id}"]`);
 const swatch = (id: string) => host.querySelector<HTMLButtonElement>(`[data-skin-variant="${id}"]`);
@@ -56,75 +63,80 @@ describe("SkinPicker", () => {
   });
 
   it.each([
-    ["midnight", "studio", "neutral", "Dark"],
-    ["daylight", "studio", "neutral", "Light"],
-    ["graphite", "studio", "slate", "Dark"],
-    ["linen", "studio", "slate", "Light"],
-    ["dusk", "studio", "plum", "Dark"],
-    ["meadow", "studio", "meadow", "Light"],
-    ["atelier", "atelier", "brass", "Light"],
-    ["foundry", "atelier", "brass", "Dark"],
-    ["lagoon", "atelier", "lagoon", "Light"],
-    ["pulsatrix-light", "pulsatrix", null, "Light"],
-  ])("opens a saved %s on its family %s, variant %s, mode %s, wearing the same skin", (skin, family, variant, mode) => {
-    open(skin);
+    ["midnight", undefined, "studio", "basic", "Dark", ["midnight", null]],
+    ["daylight", "red", "studio", "red", "Light", ["daylight", "red"]],
+    ["foundry", "green", "atelier", "green", "Dark", ["foundry", "green"]],
+    ["pulsatrix-light", "pink", "pulsatrix", "pink", "Light", ["pulsatrix-light", "pink"]],
+    // the retired look-alikes: their base and closest colour
+    ["graphite", undefined, "studio", "blue", "Dark", ["midnight", "blue"]],
+    ["dusk", undefined, "studio", "pink", "Dark", ["midnight", "pink"]],
+    ["meadow", undefined, "studio", "green", "Light", ["daylight", "green"]],
+    ["lagoon", undefined, "atelier", "blue", "Light", ["atelier", "blue"]],
+  ])("opens a saved %s (tint %s) on its family %s, variant %s, mode %s", (skin, tint, family, variant, mode, expected) => {
+    open(skin, tint);
+    expect(worn()).toEqual(expected);
     expect(tile(family)!.getAttribute("aria-pressed")).toBe("true");
-    // the selected tile's miniature is the worn skin itself
-    expect(tile(family)!.querySelector("[data-skin]")!.getAttribute("data-skin")).toBe(skin);
-    if (variant) expect(swatch(variant)!.getAttribute("aria-pressed")).toBe("true");
-    else expect(host.querySelector('[data-settings-row="skinVariant"]')).toBeNull();
+    // the selected tile's miniature wears the worn skin and tint
+    const mini = tile(family)!.querySelector("[data-skin]")!;
+    expect([mini.getAttribute("data-skin"), mini.getAttribute("data-skin-tint")]).toEqual(expected);
+    expect(swatch(variant)!.getAttribute("aria-pressed")).toBe("true");
     expect(modePill()!.textContent).toContain(mode);
-    expect(document.documentElement.dataset.skin).toBe(skin);
   });
 
-  it("picks a variant: the skin changes, the scheme stays where the variant has it", async () => {
+  it("shows the family's own look and each colour as swatches, each in its own skin context", () => {
     open("midnight");
-    await act(async () => { swatch("slate")!.click(); await flush(); });
-    expect(document.documentElement.dataset.skin).toBe("graphite");
-    expect(localStorage.getItem("omb-skin")).toBe("graphite");
-    await act(async () => { swatch("meadow")!.click(); await flush(); });
-    // Meadow is light only
-    expect(document.documentElement.dataset.skin).toBe("meadow");
-    expect(JSON.parse(localStorage.getItem(SKIN_VARIANTS_KEY)!)).toEqual({ studio: "meadow" });
+    const ids = [...host.querySelectorAll("[data-skin-variant]")].map((el) => el.getAttribute("data-skin-variant"));
+    expect(ids).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
+    const dot = swatch("yellow")!.querySelector("[data-skin]")!;
+    expect([dot.getAttribute("data-skin"), dot.getAttribute("data-skin-tint")]).toEqual(["midnight", "yellow"]);
+    expect(swatch("basic")!.querySelector("[data-skin]")!.hasAttribute("data-skin-tint")).toBe(false);
   });
 
-  it("picks a family on its remembered variant", async () => {
-    localStorage.setItem(SKIN_VARIANTS_KEY, JSON.stringify({ studio: "plum" }));
+  it("picks a colour: the skin stays, the tint changes and is remembered", async () => {
+    open("midnight");
+    await act(async () => { swatch("red")!.click(); await flush(); });
+    expect(worn()).toEqual(["midnight", "red"]);
+    expect(localStorage.getItem("omb-skin")).toBe("midnight");
+    expect(localStorage.getItem(SKIN_TINT_KEY)).toBe("red");
+    await act(async () => { swatch("basic")!.click(); await flush(); });
+    expect(worn()).toEqual(["midnight", null]);
+    expect(localStorage.getItem(SKIN_TINT_KEY)).toBeNull();
+    expect(JSON.parse(localStorage.getItem(SKIN_VARIANTS_KEY)!)).toEqual({ studio: "basic" });
+  });
+
+  it("picks a family on its remembered colour", async () => {
+    localStorage.setItem(SKIN_VARIANTS_KEY, JSON.stringify({ atelier: "pink" }));
     open("pulsatrix");
-    expect(tile("studio")!.querySelector("[data-skin]")!.getAttribute("data-skin")).toBe("dusk");
-    await act(async () => { tile("studio")!.click(); await flush(); });
-    expect(document.documentElement.dataset.skin).toBe("dusk");
+    const mini = tile("atelier")!.querySelector("[data-skin]")!;
+    expect([mini.getAttribute("data-skin"), mini.getAttribute("data-skin-tint")]).toEqual(["foundry", "pink"]);
+    await act(async () => { tile("atelier")!.click(); await flush(); });
+    expect(worn()).toEqual(["foundry", "pink"]);
   });
 
-  it("Auto follows the system and is kept; a variant without a pair turns it off", async () => {
-    open("midnight");
+  it("Auto follows the system with the colour kept", async () => {
+    open("midnight", "green");
     systemDark = false;
     const trigger = modePill()!.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!;
     await act(async () => { trigger.click(); await flush(); });
     const auto = [...host.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Auto"))!;
     await act(async () => { auto.click(); await flush(); });
     expect(localStorage.getItem(SKIN_MODE_KEY)).toBe("auto");
-    expect(document.documentElement.dataset.skin).toBe("daylight");
-    await act(async () => { swatch("plum")!.click(); await flush(); });
-    expect(document.documentElement.dataset.skin).toBe("dusk");
-    expect(localStorage.getItem(SKIN_MODE_KEY)).toBeNull();
+    expect(worn()).toEqual(["daylight", "green"]);
+    await act(async () => { swatch("yellow")!.click(); await flush(); });
+    expect(worn()).toEqual(["daylight", "yellow"]);
+    expect(localStorage.getItem(SKIN_MODE_KEY)).toBe("auto");
   });
 
-  it("disables the modes a variant lacks", async () => {
-    open("dusk");
-    const trigger = modePill()!.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!;
-    await act(async () => { trigger.click(); await flush(); });
-    const options = [...host.querySelectorAll<HTMLElement>("[role='option']")];
-    const state = Object.fromEntries(options.map((el) => [el.textContent?.trim(), el.getAttribute("aria-disabled")]));
-    expect(state["Light"]).toBe("true");
-    expect(state["Dark"]).not.toBe("true");
-  });
-
-  it("keeps Hibou 98 a family of its own, with no variant or mode row", () => {
+  it("gives Hibou 98 its Windows editions as variants, with no mode row", async () => {
     localStorage.setItem("omb.retro98.unlocked", "1");
     open("retro98");
     expect(tile("retro98")!.getAttribute("aria-pressed")).toBe("true");
-    expect(host.querySelector('[data-settings-row="skinVariant"]')).toBeNull();
+    const ids = [...host.querySelectorAll("[data-skin-variant]")].map((el) => el.getAttribute("data-skin-variant"));
+    expect(ids).toEqual(["classic", "xp", "vista", "win7", "win8", "win81", "win10", "win11"]);
+    expect(swatch("classic")!.getAttribute("aria-pressed")).toBe("true");
     expect(modePill()).toBeNull();
+    await act(async () => { swatch("xp")!.click(); await flush(); });
+    expect(worn()).toEqual(["retro98", "xp"]);
+    expect(swatch("xp")!.getAttribute("aria-pressed")).toBe("true");
   });
 });

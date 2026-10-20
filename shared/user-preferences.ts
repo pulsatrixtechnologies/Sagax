@@ -17,6 +17,7 @@ export const USER_PREFERENCE_KEYS = [
   "omb-skin",
   // Auto (follow the system) and the last variant per skin family (src/lib/skin-families.ts)
   "omb-skin-mode",
+  "omb-skin-tint",
   "omb-skin-variants",
   "omb-font",
   "omb-show-threads",

@@ -15,13 +15,22 @@
       (function () {
         var SKINS = ["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98", "meadow"];
         // Auto (src/lib/skin-families.ts): a variant's light and dark skins.
-        var PAIRS = {"pulsatrix-light":["pulsatrix-light","pulsatrix"],"pulsatrix":["pulsatrix-light","pulsatrix"],"daylight":["daylight","midnight"],"midnight":["daylight","midnight"],"linen":["linen","graphite"],"graphite":["linen","graphite"],"atelier":["atelier","foundry"],"foundry":["atelier","foundry"]};
+        var PAIRS = {"pulsatrix-light":["pulsatrix-light","pulsatrix"],"pulsatrix":["pulsatrix-light","pulsatrix"],"daylight":["daylight","midnight"],"midnight":["daylight","midnight"],"atelier":["atelier","foundry"],"foundry":["atelier","foundry"]};
+        // A skin no variant lists any more: its base skin and colour (LEGACY_SKINS).
+        var LEGACY = {"graphite":["midnight","blue"],"linen":["daylight","blue"],"dusk":["midnight","pink"],"meadow":["daylight","green"],"lagoon":["atelier","blue"]};
+        // The tints (colours, Windows editions) each base skin can wear.
+        var TINTS = {"pulsatrix-light":["red","pink","green","yellow"],"pulsatrix":["red","pink","green","yellow"],"daylight":["red","pink","blue","green","yellow"],"midnight":["red","pink","blue","green","yellow"],"atelier":["red","pink","blue","green","yellow"],"foundry":["red","pink","blue","green","yellow"],"retro98":["xp","vista","win7","win8","win81","win10","win11"]};
         var d = "pulsatrix";
-        var s, m;
+        var s, m, t;
         try {
           s = localStorage.getItem("omb-skin");
           m = localStorage.getItem("omb-skin-mode");
+          t = localStorage.getItem("omb-skin-tint");
         } catch (e) {}
+        if (LEGACY[s]) {
+          t = LEGACY[s][1];
+          s = LEGACY[s][0];
+        }
         s = SKINS.indexOf(s) >= 0 ? s : d;
         if (m === "auto" && PAIRS[s]) {
           var k = false;
@@ -31,6 +40,7 @@
           s = PAIRS[s][k ? 1 : 0];
         }
         document.documentElement.dataset.skin = s;
+        if (t && TINTS[s] && TINTS[s].indexOf(t) >= 0) document.documentElement.dataset.skinTint = t;
       })();
     </script>
   </head>

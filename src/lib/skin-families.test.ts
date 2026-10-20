@@ -1,5 +1,6 @@
-// Skin families (2026-10-19): every old skin id is one variant of one family
-// in one scheme, so a saved choice maps to itself; Auto follows the system
+// Skin families (2026-10-19): every base skin is a variant of one family in
+// one scheme, a colour or a Windows edition is a tint over it, and the
+// retired look-alikes are worn as the closest base and colour; Auto follows the system
 // between a variant's light and dark skins; the first-paint script in
 // index.html carries the same pairs.
 import { readFileSync } from "node:fs";
@@ -11,6 +12,9 @@ import {
   defaultVariant,
   familySkins,
   findFamily,
+  LEGACY_SKINS,
+  legacyPairs,
+  normalizeWorn,
   placeOfSkin,
   readRememberedVariants,
   readSkinAuto,
@@ -19,11 +23,13 @@ import {
   SKIN_FAMILIES,
   SKIN_MODE_KEY,
   SKIN_VARIANTS_KEY,
+  SKIN_WINDOWS_TINTS,
+  tintsBySkin,
   variantSkin,
   visibleFamilies,
   writeSkinAuto,
 } from "./skin-families";
-import { resolveStoredSkin, SKIN_IDS, SKINS } from "./skins";
+import { resolveStoredSkin, SKIN_IDS, SKIN_TINT_KEY, SKINS } from "./skins";
 
 function memoryStore(seed: Record<string, string> = {}) {
   const data = new Map(Object.entries(seed));
@@ -36,73 +42,88 @@ function memoryStore(seed: Record<string, string> = {}) {
 }
 
 describe("skin families", () => {
-  it("puts every skin in exactly one family, variant and scheme", () => {
-    expect([...familySkins()].sort()).toEqual([...SKIN_IDS].sort());
-    expect(new Set(familySkins()).size).toBe(SKIN_IDS.length);
+  it("puts every base skin in a family, and maps every other skin id as a legacy colour", () => {
+    const bases = new Set(familySkins());
+    for (const id of SKIN_IDS) expect(bases.has(id) !== Boolean(LEGACY_SKINS[id]), id).toBe(true);
+    for (const legacy of Object.values(LEGACY_SKINS)) expect(bases.has(legacy!.skin)).toBe(true);
     for (const family of SKIN_FAMILIES) {
       expect(family.variants.length).toBeGreaterThan(0);
       for (const variant of family.variants) expect(variant.light ?? variant.dark).toBeTruthy();
     }
   });
 
-  it("maps every old skin id to itself: the same family, variant and scheme wear the same skin", () => {
-    for (const id of SKIN_IDS) {
-      const place = placeOfSkin(id);
-      expect(variantSkin(place.variant, place.scheme), id).toBe(id);
-      expect(resolveSkin(place.variant, place.scheme, false), id).toBe(id);
-      // a stored id with no Auto is worn as is
-      expect(resolveStoredSkin(id, false, true)).toBe(id);
-      expect(resolveStoredSkin(id, false, false)).toBe(id);
+  it("gives Pulsatrix, Studio and Atelier their own look plus each colour (JC, 2026-10-19)", () => {
+    const ids = (family: string) => findFamily(family)!.variants.map((v) => v.id);
+    expect(ids("studio")).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
+    expect(ids("atelier")).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
+    // Pulsatrix's own colour is already blue
+    expect(ids("pulsatrix")).toEqual(["basic", "red", "pink", "green", "yellow"]);
+    for (const family of ["pulsatrix", "studio", "atelier"]) {
+      for (const variant of findFamily(family)!.variants) {
+        expect(canFollowSystem(variant), `${family} ${variant.id}`).toBe(true);
+        expect(variant.tint ?? null).toBe(variant.id === "basic" ? null : variant.id);
+      }
     }
   });
 
-  it("groups the look-alikes as variants (JC's examples)", () => {
-    const family = (id: (typeof SKIN_IDS)[number]) => placeOfSkin(id).family.id;
-    // Midnight, Graphite and Dusk: one family
-    expect(new Set(["midnight", "graphite", "dusk"].map((id) => family(id as never)))).toEqual(new Set(["studio"]));
-    // Linen, Daylight and Meadow: one family; Pulsatrix Light with Pulsatrix
-    expect(new Set(["linen", "daylight", "meadow"].map((id) => family(id as never)))).toEqual(new Set(["studio"]));
-    expect(family("pulsatrix-light")).toBe("pulsatrix");
-    expect(placeOfSkin("pulsatrix-light").variant).toBe(placeOfSkin("pulsatrix").variant);
-    expect(placeOfSkin("daylight").variant).toBe(placeOfSkin("midnight").variant);
-    expect(placeOfSkin("atelier").variant).toBe(placeOfSkin("foundry").variant);
-    // Hibou 98 stays a family of its own, secret like the skin
-    expect(placeOfSkin("retro98").family.id).toBe("retro98");
+  it("gives Hibou 98 the classic look plus each Windows edition, all on the retro98 skin", () => {
+    const retro = findFamily("retro98")!;
+    expect(retro.variants.map((v) => v.id)).toEqual(["classic", ...SKIN_WINDOWS_TINTS]);
+    for (const variant of retro.variants) expect(variantSkin(variant, "light")).toBe("retro98");
     expect(findFamily("retro98")?.secret).toBe(true);
     expect(SKINS.find((skin) => skin.id === "retro98")?.secret).toBe(true);
   });
 
-  it("offers Auto only on a variant with a light and a dark skin", () => {
-    const studio = findFamily("studio")!;
-    const neutral = studio.variants.find((v) => v.id === "neutral")!;
-    const plum = studio.variants.find((v) => v.id === "plum")!;
-    const meadow = studio.variants.find((v) => v.id === "meadow")!;
-    expect(canFollowSystem(neutral)).toBe(true);
-    expect(canFollowSystem(plum)).toBe(false);
-    expect(resolveSkin(neutral, "auto", true)).toBe("midnight");
-    expect(resolveSkin(neutral, "auto", false)).toBe("daylight");
-    // a missing scheme falls to the one the variant has
-    expect(resolveSkin(plum, "light", false)).toBe("dusk");
-    expect(resolveSkin(meadow, "dark", true)).toBe("meadow");
-    expect(resolveSkin(meadow, "auto", true)).toBe("meadow");
+  it("places a worn skin and tint, and wears the same pair back", () => {
+    for (const family of SKIN_FAMILIES) {
+      for (const variant of family.variants) {
+        for (const scheme of ["light", "dark"] as const) {
+          const skin = variantSkin(variant, scheme);
+          const place = placeOfSkin(skin, variant.tint);
+          expect(place.family.id).toBe(family.id);
+          expect(place.variant.id).toBe(variant.id);
+          expect(variantSkin(place.variant, place.scheme)).toBe(skin);
+        }
+      }
+    }
+    // no tint, or one the family lacks: the family's own look
+    expect(placeOfSkin("midnight").variant.id).toBe("basic");
+    expect(placeOfSkin("pulsatrix", "blue").variant.id).toBe("basic");
+    expect(placeOfSkin("retro98", "red").variant.id).toBe("classic");
   });
 
-  it("carries the mode to a new variant: Auto where it can, else a scheme the variant has", () => {
-    const studio = findFamily("studio")!;
-    const [neutral, slate, plum, meadow] = studio.variants;
-    expect(carryMode(slate, "auto", "dark")).toBe("auto");
-    expect(carryMode(plum, "auto", "light")).toBe("dark");
-    expect(carryMode(meadow, "dark", "dark")).toBe("light");
-    expect(carryMode(neutral, "light", "light")).toBe("light");
+  it("wears the retired look-alikes as the closest base and colour", () => {
+    expect(normalizeWorn("graphite", null)).toEqual({ skin: "midnight", tint: "blue" });
+    expect(normalizeWorn("linen", "red")).toEqual({ skin: "daylight", tint: "blue" });
+    expect(normalizeWorn("dusk", null)).toEqual({ skin: "midnight", tint: "pink" });
+    expect(normalizeWorn("meadow", null)).toEqual({ skin: "daylight", tint: "green" });
+    expect(normalizeWorn("lagoon", null)).toEqual({ skin: "atelier", tint: "blue" });
+    const place = placeOfSkin("dusk");
+    expect([place.family.id, place.variant.id, place.scheme]).toEqual(["studio", "pink", "dark"]);
+    // a tint stays only where its family has it
+    expect(normalizeWorn("midnight", "xp")).toEqual({ skin: "midnight", tint: null });
+    expect(normalizeWorn("retro98", "win11")).toEqual({ skin: "retro98", tint: "win11" });
   });
 
-  it("opens a family on its remembered variant, else one that has the scheme worn now", () => {
+  it("follows the system on every colour, and carries the mode to a new variant", () => {
+    const studio = findFamily("studio")!;
+    const red = studio.variants.find((v) => v.id === "red")!;
+    expect(resolveSkin(red, "auto", true)).toBe("midnight");
+    expect(resolveSkin(red, "auto", false)).toBe("daylight");
+    expect(carryMode(red, "auto", "dark")).toBe("auto");
+    expect(carryMode(red, "light", "light")).toBe("light");
+    const classic = findFamily("retro98")!.variants[0];
+    expect(canFollowSystem(classic)).toBe(false);
+    expect(carryMode(classic, "auto", "dark")).toBe("light");
+  });
+
+  it("opens a family on its remembered variant, else its own look", () => {
     const studio = findFamily("studio")!;
     const atelier = findFamily("atelier")!;
-    expect(defaultVariant(studio, "dark").id).toBe("neutral");
-    expect(defaultVariant(studio, "dark", "plum").id).toBe("plum");
-    expect(defaultVariant(studio, "dark", "nope").id).toBe("neutral");
-    expect(defaultVariant(atelier, "dark").id).toBe("brass");
+    expect(defaultVariant(studio, "dark").id).toBe("basic");
+    expect(defaultVariant(studio, "dark", "pink").id).toBe("pink");
+    expect(defaultVariant(studio, "dark", "plum").id).toBe("basic");
+    expect(defaultVariant(atelier, "dark").id).toBe("basic");
   });
 
   it("lists Hibou 98 once unlocked or worn", () => {
@@ -129,8 +150,10 @@ describe("stored choice", () => {
     expect(resolveStoredSkin("daylight", true, true)).toBe("midnight");
     expect(resolveStoredSkin("pulsatrix-light", true, true)).toBe("pulsatrix");
     expect(resolveStoredSkin("foundry", true, false)).toBe("atelier");
+    // a retired look-alike: its base, then Auto
+    expect(resolveStoredSkin("dusk", true, false)).toBe("daylight");
+    expect(resolveStoredSkin("dusk", false, false)).toBe("midnight");
     // no pair: worn as is
-    expect(resolveStoredSkin("dusk", true, false)).toBe("dusk");
     expect(resolveStoredSkin("retro98", true, true)).toBe("retro98");
     // unknown: the default skin, then Auto
     expect(resolveStoredSkin("nope", false, true)).toBe("pulsatrix");
@@ -138,10 +161,10 @@ describe("stored choice", () => {
   });
 
   it("remembers the last variant per family and ignores bad values", () => {
-    const store = memoryStore({ [SKIN_VARIANTS_KEY]: JSON.stringify({ studio: "plum", atelier: "neutral", nope: "x" }) });
-    expect(readRememberedVariants(store)).toEqual({ studio: "plum" });
-    rememberVariant("atelier", "lagoon", store);
-    expect(readRememberedVariants(store)).toEqual({ studio: "plum", atelier: "lagoon" });
+    const store = memoryStore({ [SKIN_VARIANTS_KEY]: JSON.stringify({ studio: "pink", atelier: "plum", retro98: "xp", nope: "x" }) });
+    expect(readRememberedVariants(store)).toEqual({ studio: "pink", retro98: "xp" });
+    rememberVariant("atelier", "green", store);
+    expect(readRememberedVariants(store)).toEqual({ studio: "pink", atelier: "green", retro98: "xp" });
     expect(readRememberedVariants(memoryStore({ [SKIN_VARIANTS_KEY]: "{" }))).toEqual({});
     expect(readRememberedVariants(memoryStore({ [SKIN_VARIANTS_KEY]: "[1]" }))).toEqual({});
   });
@@ -152,8 +175,13 @@ describe("first paint", () => {
     const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
     const skins = JSON.parse(/var SKINS = (\[[^\]]*\]);/.exec(html)?.[1] ?? "null");
     const pairs = JSON.parse(/var PAIRS = (\{[^\n]*\});/.exec(html)?.[1] ?? "null");
+    const legacy = JSON.parse(/var LEGACY = (\{[^\n]*\});/.exec(html)?.[1] ?? "null");
+    const tints = JSON.parse(/var TINTS = (\{[^\n]*\});/.exec(html)?.[1] ?? "null");
     expect(skins).toEqual([...SKIN_IDS]);
     expect(pairs).toEqual(autoPairs());
+    expect(legacy).toEqual(legacyPairs());
+    expect(tints).toEqual(tintsBySkin());
+    expect(html).toContain(`localStorage.getItem("${SKIN_TINT_KEY}")`);
     expect(html).toContain(`localStorage.getItem("${SKIN_MODE_KEY}")`);
   });
 });

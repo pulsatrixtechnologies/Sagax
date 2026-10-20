@@ -4,7 +4,7 @@
 // that keeps the two halves from drifting apart, and it means adding a skin is
 // one CSS block plus one line in SKINS.
 
-import { autoPairs, readSkinAuto, writeSkinAuto } from "./skin-families";
+import { autoPairs, isSkinTint, LEGACY_SKINS, normalizeWorn, readSkinAuto, writeSkinAuto, type SkinTintId } from "./skin-families";
 
 export const SKIN_IDS = [
   "pulsatrix",
@@ -54,6 +54,8 @@ export function visibleSkins(unlocked: boolean, active?: SkinId): readonly Skin[
 export const DEFAULT_SKIN: SkinId = "pulsatrix";
 
 const KEY = "omb-skin";
+/** The colour (or Windows edition) laid over the worn skin; absent for the family's own look. */
+export const SKIN_TINT_KEY = "omb-skin-tint";
 
 // The input is whatever localStorage handed back — a string this app wrote
 // on an earlier run, a value edited by hand, or a leftover from a renamed
@@ -88,10 +90,26 @@ export function prefersDarkScheme(): boolean {
 /** The stored skin as worn: under Auto (skin-families.ts), the stored
  * variant's light or dark skin for the system's scheme now. */
 export function resolveStoredSkin(stored: string | null | undefined, auto: boolean, prefersDark: boolean): SkinId {
-  const skin = isSkinId(stored) ? stored : DEFAULT_SKIN;
+  const raw = isSkinId(stored) ? stored : DEFAULT_SKIN;
+  // a skin no variant lists any more is worn as its mapped base (its colour comes from readSkinTint)
+  const skin = LEGACY_SKINS[raw]?.skin ?? raw;
   if (!auto) return skin;
   const pair = autoPairs()[skin];
   return pair ? pair[prefersDark ? 1 : 0] : skin;
+}
+
+/** The stored tint, or null; a legacy skin still stored brings its mapped colour. */
+export function readSkinTint(): SkinTintId | null {
+  try {
+    const store = getStore();
+    const stored = store?.getItem(KEY);
+    const legacy = isSkinId(stored) ? LEGACY_SKINS[stored] : undefined;
+    if (legacy) return legacy.tint;
+    const tint = store?.getItem(SKIN_TINT_KEY);
+    return isSkinTint(tint) ? tint : null;
+  } catch {
+    return null;
+  }
 }
 
 export function readSkin(): SkinId {
@@ -106,9 +124,9 @@ export function readSkin(): SkinId {
  * Wear a skin chosen in the picker: the skin itself, and whether it follows
  * the system (Auto). A skin with no light and dark pair cannot follow it.
  */
-export function chooseSkin(id: SkinId, auto: boolean): void {
+export function chooseSkin(id: SkinId, auto: boolean, tint: SkinTintId | null = null): void {
   writeSkinAuto(auto && Boolean(autoPairs()[id]), getStore());
-  applySkin(id);
+  applySkin(id, tint);
 }
 
 /** Under Auto, the system switching between light and dark switches the
@@ -136,14 +154,29 @@ export function installSkinAutoFollow(): () => void {
  * paint (main.tsx) and again on every change from the picker — a stamped
  * attribute rather than a class so it can never collide with Tailwind.
  */
-export function applySkin(id: SkinId): void {
+export function applySkin(requested: SkinId, requestedTint?: SkinTintId | null): void {
+  // `undefined` keeps the tint worn now when the skin's family has it (Auto
+  // swapping light and dark, a gallery page re-applying the stored skin);
+  // null clears it. A legacy skin is worn as its mapped base and colour.
+  const keep = requestedTint === undefined ? readSkinTint() : requestedTint;
+  const { skin: id, tint } = normalizeWorn(requested, keep);
   // A structural skin brings a stylesheet layer that tokens cannot express.
   // It is fetched only when that skin is worn, and every rule in it is scoped
-  // to the skin, so it stays inert after switching away.
-  if (id === "retro98") void import("../styles/retro98.css").catch(() => undefined);
-  document.documentElement.dataset.skin = id;
+  // to the skin, so it stays inert after switching away. The colour tints are
+  // small and always loaded; the Windows editions' chrome comes with Hibou 98.
+  if (id === "retro98") {
+    void import("../styles/retro98.css").catch(() => undefined);
+    // every edition, not only the worn one: the picker's swatches read their colours
+    void import("../styles/retro-editions.css").catch(() => undefined);
+  }
+  const root = document.documentElement;
+  root.dataset.skin = id;
+  if (tint) root.dataset.skinTint = tint;
+  else delete root.dataset.skinTint;
   try {
     getStore()?.setItem(KEY, id);
+    if (tint) getStore()?.setItem(SKIN_TINT_KEY, tint);
+    else getStore()?.removeItem(SKIN_TINT_KEY);
   } catch {
     /* quota / private mode — the skin still applies for this session */
   }
