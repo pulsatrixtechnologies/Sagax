@@ -684,7 +684,7 @@ describe("OpenAICompatDriver", () => {
       });
       const recorder = recordEvents(inst.adapter);
       let turns = 0;
-      const send = async (input: { text: string; volatile: string; transcript: Array<{ role: "user" | "assistant"; text: string }>; threadId?: string; mentionTurn?: boolean; recalled?: string }) => {
+      const send = async (input: { text: string; volatile: string; transcript: Array<{ role: "user" | "assistant"; text: string }>; threadId?: string; mentionTurn?: boolean; recalled?: string; sections?: Array<{ id: string; text: string }> }) => {
         const threadId = input.threadId ?? "thread-replay";
         const settled = ++turns;
         await inst.adapter.sendTurn({
@@ -693,6 +693,7 @@ describe("OpenAICompatDriver", () => {
           system: `Standing rules.\n\n${input.volatile}`,
           systemStable: "Standing rules.",
           systemVolatile: input.volatile,
+          ...(input.sections ? { systemVolatileSections: input.sections } : {}),
           transcript: input.transcript,
           ...(input.mentionTurn ? { mentionTurn: true } : {}),
           ...(input.recalled ? { recalled: input.recalled } : {}),
@@ -746,6 +747,31 @@ describe("OpenAICompatDriver", () => {
         role: "user",
         content: "The Sagax context notes from earlier in this conversation have been cleared; the standing instructions still apply.\n\nagain",
       });
+      await done();
+    });
+
+    it("sends only the changed sections while the replayed notes hold the rest", async () => {
+      const { send, done } = await fixture();
+      const memory = { id: "memory", text: "Memory: likes tea." };
+      const at = (label: string) => ({ id: "recent", text: `\n\nRecent: ${label}` });
+      const turn = (sections: Array<{ id: string; text: string }>) => ({ volatile: sections.map((x) => x.text).join(""), sections });
+      await send({ text: "hello", ...turn([memory, at("2h")]), transcript: [] });
+      const second = await send({ text: "next", ...turn([memory, at("3h")]), transcript: [{ role: "user", text: "hello" }, { role: "assistant", text: "hi" }] });
+      expect(second.at(-1).content).toContain("Recent: 3h");
+      expect(second.at(-1).content).not.toContain("likes tea");
+      const history = [
+        { role: "user" as const, text: "hello" }, { role: "assistant" as const, text: "hi" },
+        { role: "user" as const, text: "next" }, { role: "assistant" as const, text: "hi" },
+      ];
+      const third = await send({ text: "again", ...turn([memory, at("3h")]), transcript: history });
+      expect(third.at(-1)).toEqual({ role: "user", content: "again" });
+      // once the full note leaves the window, the whole half rides again,
+      // even when it did not change
+      const unchanged = await send({ text: "same", ...turn([memory, at("3h")]), transcript: history.slice(2) });
+      expect(unchanged.at(-1).content).toContain("likes tea");
+      const trimmed = await send({ text: "later", ...turn([memory, at("4h")]), transcript: history.slice(2) });
+      expect(trimmed.at(-1).content).toContain("likes tea");
+      expect(trimmed.at(-1).content).toContain("Recent: 4h");
       await done();
     });
 

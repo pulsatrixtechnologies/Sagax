@@ -54,8 +54,8 @@ import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd } from "./permission-command.ts";
 import { commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
-import { codexDeveloperInstructions, syncCodexInstructions } from "./codex-instructions.ts";
-import { volatileContextNote, withContextNote } from "./prompt-split.ts";
+import { codexDeveloperInstructions, forgetCodexVolatile, syncCodexInstructions } from "./codex-instructions.ts";
+import { sectionFingerprints, volatileContextNote, volatileSectionsUpdate, withContextNote } from "./prompt-split.ts";
 import type { ApprovalMode } from "../../shared/approval-mode.ts";
 import { CodexDeviceAuthController } from "./codex-device-auth.ts";
 import { codexAccountEmail, codexHome } from "./codex-identity.ts";
@@ -1663,6 +1663,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           }
           case "item/completed": {
             const item = p.item ?? {};
+            // Codex compacted its thread: the volatile half rides whole next turn.
+            if (item.type === "contextCompaction" && codexThreadId) {
+              try { forgetCodexVolatile(threadId, codexThreadId); } catch { /* the 5-note bound still holds */ }
+            }
             if (item.type === "agentMessage") {
               if (item.text?.trim()) {
                 state.lastText = item.text;
@@ -2097,7 +2101,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           startedModel = started?.model ?? null;
         }
         if (!codexThreadId) throw new Error("Codex did not return a native thread id");
-        const { deliverVolatile, hadVolatile, commitVolatile } = await syncCodexInstructions(
+        const volatileSections = promptSplit ? turn.systemVolatileSections : undefined;
+        const { deliverVolatile, hadVolatile, previousSections, commitVolatile } = await syncCodexInstructions(
           threadId,
           codexThreadId,
           developerInstructions,
@@ -2105,14 +2110,18 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           resumedNativeThread,
           request,
           Boolean(turn.mentionTurn),
+          volatileSections ? sectionFingerprints(volatileSections) : undefined,
         );
         // A changed volatile half rides the next user input as a labelled
         // context block. It never touches the developer slot, so an
         // ordinary memory write or roster change neither appends a second
         // copy of the prompt to history nor re-uploads the conversation.
+        // Only the sections that changed ride when the thread's copy is
+        // known (2026-10-19 perf parity, point 4).
         if (deliverVolatile) {
           promptText = withContextNote(
-            volatileContextNote(promptSplit ? turn.systemVolatile ?? "" : "", hadVolatile),
+            volatileSectionsUpdate(volatileSections, previousSections, Boolean(turn.mentionTurn))
+              ?? volatileContextNote(promptSplit ? turn.systemVolatile ?? "" : "", hadVolatile),
             promptText,
           );
         }

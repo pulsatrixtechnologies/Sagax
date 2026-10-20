@@ -69,6 +69,7 @@ import { permissionCommand, permissionLaunchCwd, permissionPaths } from "./permi
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
 import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
+import { sectionFingerprints, volatileSectionsUpdate } from "./prompt-split.ts";
 import {
   ASK_USER_QUESTION_TOOL,
   ASK_USER_TOOL,
@@ -1311,6 +1312,10 @@ function withVolatileNote(text: string, volatile: string): string {
   const body = volatile.trim()
     ? `This part of your instructions changed since this session started. It replaces the earlier copy:\n\n${volatile.trim()}`
     : "The notes that were in your instructions when this session started have been cleared.";
+  return withReminder(text, body);
+}
+
+function withReminder(text: string, body: string): string {
   const note = `<system-reminder>\n${body}\n</system-reminder>`;
   return text ? `${note}\n\n${text}` : note;
 }
@@ -1525,6 +1530,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
        * with (see SendTurnInput.systemVolatile). A later turn whose volatile
        * text differs delivers the difference in-turn rather than relaunching. */
       volatile: string;
+      /** fingerprints of the volatile sections the process holds, by id
+       * (prompt-split.ts sectionFingerprints), so a later turn sends only
+       * the sections that changed. Undefined after a compaction or when the
+       * harness sent no sections: the next change then sends the whole half. */
+      volatileSections?: Record<string, string>;
       /** the CLI's session id from `init`, what --resume takes later */
       sessionId: string | null;
       /** the CLI emitted its `init` frame — it accepted the session and
@@ -2171,10 +2181,18 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         }
         const volatile = turn.systemVolatile ?? "";
         const unchanged = volatile === live.volatile || (live.volatile === COMPACTED_VOLATILE && !volatile.trim());
+        // Only the sections that changed ride (2026-10-19 perf parity,
+        // point 4): one recent-work line moving no longer re-sends the whole
+        // memory notebook into the session every turn.
+        const sectionsNote = unchanged && !turn.mentionTurn ? ""
+          : volatileSectionsUpdate(turn.systemVolatileSections, live.volatile === COMPACTED_VOLATILE ? undefined : live.volatileSections, Boolean(turn.mentionTurn));
         const message = unchanged && !turn.mentionTurn
           ? promptMsg
-          : claudeUserMessage(withVolatileNote(turn.text, volatile), turn.images);
+          : sectionsNote === null
+            ? claudeUserMessage(withVolatileNote(turn.text, volatile), turn.images)
+            : sectionsNote ? claudeUserMessage(withReminder(turn.text, sectionsNote), turn.images) : promptMsg;
         live.volatile = volatile;
+        live.volatileSections = turn.systemVolatileSections ? sectionFingerprints(turn.systemVolatileSections) : undefined;
         const running = live.turn;
         // A warm process can end between turns just as the next one is
         // written: this driver learns of an exit only when the event loop
@@ -2362,6 +2380,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         contract,
         mcpNames: Object.keys(mcpServers),
         volatile: turn.systemVolatile ?? "",
+        ...(turn.systemVolatileSections ? { volatileSections: sectionFingerprints(turn.systemVolatileSections) } : {}),
         sessionId: sessionId ?? newSessionId,
         sawInit: false,
         nativePermissionMode: null,
@@ -2571,6 +2590,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               // dropped is the volatile half of the prompt (memory, roster)
               // that rode an earlier turn, so the next turn delivers it again.
               session.volatile = COMPACTED_VOLATILE;
+              session.volatileSections = undefined;
             } else if (o.subtype === "thinking_tokens") {
               emit({ ...base(threadId, currentTurnId()), type: "item.updated", itemType: "reasoning", tokens: o.estimated_tokens });
             }

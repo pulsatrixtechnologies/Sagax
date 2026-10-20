@@ -1775,6 +1775,41 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(sent[2].message.content).toContain("likes tea");
   });
 
+  it("hands a live session only the volatile sections that changed", async () => {
+    await create();
+    const dump = join(scratch, "sections.json");
+    const prompts = join(scratch, "sections-prompts.jsonl");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    process.env.FAKE_CLAUDE_PROMPTS = prompts;
+    const memory = { id: "memory", text: "\n\nYour memory:\nlikes tea" };
+    const send = async (text: string, sections: Array<{ id: string; text: string }>) => {
+      recorder.events.length = 0;
+      const volatile = sections.map((section) => section.text).join("");
+      await instance.adapter.sendTurn({
+        threadId: "t-sections", text, system: "You are Testy." + volatile,
+        systemStable: "You are Testy.", systemVolatile: volatile, systemVolatileSections: sections,
+      });
+      await recorder.until((e) => e.type === "turn.completed");
+    };
+    await send("one", [memory, { id: "recent", text: "\n\nRecent: report (2h ago)" }]);
+    const firstPid = JSON.parse(readFileSync(dump, "utf8")).pid;
+    await send("two", [memory, { id: "recent", text: "\n\nRecent: report (3h ago)" }]);
+    await send("three", [{ id: "recent", text: "\n\nRecent: report (3h ago)" }]);
+    await send("four", [{ id: "recent", text: "\n\nRecent: report (3h ago)" }]);
+    expect(JSON.parse(readFileSync(dump, "utf8")).pid).toBe(firstPid);
+    const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line).message.content as string);
+    expect(sent[0]).toBe("one");
+    // only the moved line rides; the unchanged memory notebook does not
+    expect(sent[1]).toContain("3h ago");
+    expect(sent[1]).not.toContain("likes tea");
+    expect(sent[1].endsWith("two")).toBe(true);
+    // a section that went away is named, so the old copy does not stand
+    expect(sent[2]).toContain('"memory"');
+    expect(sent[2]).not.toContain("Recent:");
+    // nothing changed: the bare words
+    expect(sent[3]).toBe("four");
+  });
+
   it("redelivers unchanged mention context on every tagged turn", async () => {
     await create();
     const dump = join(scratch, "mention.json");
