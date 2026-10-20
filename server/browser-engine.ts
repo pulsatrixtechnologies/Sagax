@@ -12,11 +12,12 @@ import { execFile, spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
 import { browserBundlePaths } from "./browser-bundle-release.ts";
+import { browserProcessesRunning, browserProcessTree, stopBrowserProcesses } from "./browser-processes.ts";
 import { BROWSER_VIEWPORT_ARGS, browserRuntimeEnv, ownsBrowserViewport } from "./browser-runtime.ts";
 import { SIGN_IN_PROMPT } from "./system-prompt.ts";
 import { gateChromeSettings } from "./browser/egress/gate.ts";
@@ -62,24 +63,28 @@ function ensureManagedBrowserConfig(env: NodeJS.ProcessEnv): string {
   return path;
 }
 
-/** Close exactly one daemon without the CLI's implicit launch envelope. */
-export async function closeBrowserSession(binaryPath: string, env: NodeJS.ProcessEnv, timeoutMs = 15_000): Promise<boolean> {
-  if (!env.AGENT_BROWSER_SESSION || !/^[A-Za-z0-9_.-]{1,96}$/.test(env.AGENT_BROWSER_SESSION)) return false;
-  // Native CLI prepends a launch even to `close` when launch flags are set.
-  // Remove them, and bypass external project/user config, so closing a
-  // missing profile cannot launch and restore another legacy prefix match.
+/** The daemon-control environment: the session's own identity, never its
+ * launch flags, and OMB's empty config instead of a user's or project's. The
+ * native CLI prepends a launch even to `close` when launch flags are set, so
+ * this keeps a command from launching (and restoring) a missing profile. */
+function daemonControlEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv | null {
   let configPath: string;
   try { configPath = ensureManagedBrowserConfig(env); }
-  catch { return false; }
-  const closeEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("AGENT_BROWSER_") || ["AGENT_BROWSER_SESSION", "AGENT_BROWSER_SOCKET_DIR", "AGENT_BROWSER_NAMESPACE", "AGENT_BROWSER_ENCRYPTION_KEY", "AGENT_BROWSER_RESTORE", "AGENT_BROWSER_RESTORE_SAVE"].includes(key)));
-  closeEnv.AGENT_BROWSER_CONFIG = configPath;
-  const deadline = Date.now() + timeoutMs;
-  const run = (args: string[], capture = false) => new Promise<{ ok: boolean; output: string }>((done) => {
+  catch { return null; }
+  const controlEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("AGENT_BROWSER_") || ["AGENT_BROWSER_SESSION", "AGENT_BROWSER_SOCKET_DIR", "AGENT_BROWSER_NAMESPACE", "AGENT_BROWSER_ENCRYPTION_KEY", "AGENT_BROWSER_RESTORE", "AGENT_BROWSER_RESTORE_SAVE"].includes(key)));
+  controlEnv.AGENT_BROWSER_CONFIG = configPath;
+  return controlEnv;
+}
+
+/** One engine command, ended at `deadline`: whether it exited 0, and its
+ * stdout when asked for. */
+function runBrowserCommand(binaryPath: string, env: NodeJS.ProcessEnv, args: string[], deadline: number, capture = false): Promise<{ ok: boolean; output: string }> {
+  return new Promise((done) => {
     let settled = false;
     let output = "";
     const finish = (ok: boolean) => { if (!settled) { settled = true; done({ ok, output }); } };
     let child: ReturnType<typeof spawn>;
-    try { child = spawn(binaryPath, args, { env: closeEnv, stdio: capture ? ["ignore", "pipe", "ignore"] : "ignore", windowsHide: true }); }
+    try { child = spawn(binaryPath, args, { env, stdio: capture ? ["ignore", "pipe", "ignore"] : "ignore", windowsHide: true }); }
     catch { return finish(false); }
     let exited = false;
     let killTimer: NodeJS.Timeout | undefined;
@@ -99,23 +104,81 @@ export async function closeBrowserSession(binaryPath: string, env: NodeJS.Proces
     // exit can precede the last piped stdout chunk; close follows stdio.
     child.on("close", (code) => { exited = true; clearTimeout(timer); clearTimeout(killTimer); finish(code === 0); });
   });
+}
+
+/** The sessions whose daemons are running, from the launch-free inventory
+ * command; null when the engine could not say. */
+async function runningBrowserSessions(binaryPath: string, controlEnv: NodeJS.ProcessEnv, deadline: number): Promise<string[] | null> {
+  const status = await runBrowserCommand(binaryPath, controlEnv, ["session", "list", "--json"], deadline, true);
+  if (!status.ok) return null;
+  try {
+    const result = JSON.parse(status.output);
+    const sessions: unknown = result?.data?.sessions;
+    if (result?.success !== true || !Array.isArray(sessions) || !sessions.every((name) => typeof name === "string")) return null;
+    return sessions;
+  } catch { return null; }
+}
+
+/** The sessions whose daemons run under this HOME, from the launch-free
+ * inventory; null when the engine could not say. */
+export function runningBrowserSessionNames(binaryPath: string, env: NodeJS.ProcessEnv, timeoutMs = 15_000): Promise<string[] | null> {
+  const controlEnv = daemonControlEnv(env);
+  return controlEnv ? runningBrowserSessions(binaryPath, controlEnv, Date.now() + timeoutMs) : Promise.resolve(null);
+}
+
+/** The last close asked for, by daemon. Closes of one browser run one after
+ * another (the shutdown sweep beside a temporary browser's own close): the
+ * later one finds nothing running and sends no second `close`. */
+const closingBrowsers = new Map<string, Promise<boolean>>();
+
+/** Close exactly one daemon and the Chrome under it, without the CLI's
+ * implicit launch envelope. True once nothing of that browser runs. */
+export function closeBrowserSession(binaryPath: string, env: NodeJS.ProcessEnv, timeoutMs = 15_000): Promise<boolean> {
+  const session = env.AGENT_BROWSER_SESSION;
+  if (!session || !/^[A-Za-z0-9_.-]{1,96}$/.test(session)) return Promise.resolve(false);
+  const key = browserDaemonPidPath(env);
+  const attempt = (closingBrowsers.get(key) ?? Promise.resolve(true)).then(() => closeOnce(binaryPath, env, session, timeoutMs)).catch(() => false).finally(() => {
+    if (closingBrowsers.get(key) === attempt) closingBrowsers.delete(key);
+  });
+  closingBrowsers.set(key, attempt);
+  return attempt;
+}
+
+async function closeOnce(binaryPath: string, env: NodeJS.ProcessEnv, session: string, timeoutMs: number): Promise<boolean> {
+  const closeEnv = daemonControlEnv(env);
+  if (!closeEnv) return false;
+  const deadline = Date.now() + timeoutMs;
+  // The inventory answers first: `close` to a stopped session starts a
+  // daemon only to stop it again, and leaves its .config file behind.
+  const running = await runningBrowserSessions(binaryPath, closeEnv, deadline);
+  if (!running) return false;
+  if (!running.includes(session)) return true;
+  const pidFile = browserDaemonPidPath(env);
+  const daemonPid = () => { try { return readFileSync(pidFile, "utf8").trim(); } catch { return null; } };
+  const closing = daemonPid();
+  // Read before anything is asked to stop: once the daemon exits, its Chrome
+  // is re-parented and can no longer be found under it.
+  const tree = closing === null ? null : await browserProcessTree(binaryPath, Number(closing), session).catch(() => null);
   // A daemon that does not answer `close` keeps running with its Chrome,
   // detached from us, and every later restart failed the same way (#2603).
-  if (!(await run(["close"])).ok) return killBrowserDaemon(binaryPath, env);
-  // Native close acknowledges before the daemon exits. Observe its actual
-  // removal through the launch-free inventory command before reconnecting.
-  while (Date.now() < deadline) {
-    const status = await run(["session", "list", "--json"], true);
-    if (!status.ok) return false;
-    try {
-      const result = JSON.parse(status.output);
-      const sessions: unknown = result?.data?.sessions;
-      if (result?.success !== true || !Array.isArray(sessions) || !sessions.every((name) => typeof name === "string")) return false;
-      if (!sessions.includes(env.AGENT_BROWSER_SESSION)) return true;
-    } catch { return false; }
-    await new Promise((resolve) => setTimeout(resolve, Math.min(25, Math.max(1, deadline - Date.now()))));
+  if ((await runBrowserCommand(binaryPath, closeEnv, ["close"], deadline)).ok) {
+    // Native close answers before the daemon exits, and Chrome's helper
+    // processes can outlive the answer: closed means the inventory no longer
+    // lists this daemon (a new one may already have the session's name) and
+    // nothing of its process tree runs.
+    while (Date.now() < deadline) {
+      const sessions = await runningBrowserSessions(binaryPath, closeEnv, deadline);
+      if (!sessions) return false;
+      const listed = sessions.includes(session) && daemonPid() === closing;
+      if (!listed && !(tree && await browserProcessesRunning(tree))) return true;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(25, Math.max(1, deadline - Date.now()))));
+    }
   }
-  return killBrowserDaemon(binaryPath, env);
+  // Last resort: stop the daemon and its Chrome by the tree read before the
+  // close. Only a pid file that still names this session's daemon of this
+  // agent-browser binary gave one, so a stale file naming a reused pid, even
+  // one another bot's engine now runs under, kills nothing.
+  return tree ? stopBrowserProcesses(tree) : false;
 }
 
 /** Where agent-browser 0.37 writes `<session>.pid`: AGENT_BROWSER_SOCKET_DIR,
@@ -164,72 +227,6 @@ function agentBrowserEgressEnv(port: number, platform: NodeJS.Platform, mediaUdp
   // still goes through the gate.
   const args = mediaUdp ? gate.args.filter((arg) => !arg.includes("webrtc-ip-handling-policy")) : gate.args;
   return { AGENT_BROWSER_PROXY: gate.proxy, AGENT_BROWSER_PROXY_BYPASS: gate.bypass, AGENT_BROWSER_ARGS: args.join("\n") };
-}
-
-function execText(file: string, args: string[]): Promise<string | null> {
-  return new Promise((done) => {
-    execFile(file, args, { encoding: "utf8", timeout: 5_000, windowsHide: true }, (error, stdout) => done(error ? null : stdout));
-  });
-}
-
-/** Polls every 50 ms until `done()` or `ms` have passed. */
-async function waitUntil(done: () => boolean, ms: number): Promise<void> {
-  for (let waited = 0; waited < ms && !done(); waited += 50) await new Promise((resolve) => setTimeout(resolve, 50));
-}
-
-function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-/** Every process below `root`, read before anything is signalled: once the
- * daemon dies, its Chrome is re-parented and can no longer be found. */
-async function processDescendants(root: number): Promise<number[]> {
-  const listing = await execText("ps", ["-A", "-o", "pid=,ppid="]);
-  if (listing === null) return [];
-  const children = new Map<number, number[]>();
-  for (const line of listing.trim().split("\n")) {
-    const [pid, ppid] = line.trim().split(/\s+/).map(Number);
-    if (!Number.isInteger(pid) || !Number.isInteger(ppid)) continue;
-    children.set(ppid!, [...children.get(ppid!) ?? [], pid!]);
-  }
-  const found: number[] = [];
-  const walk = (pid: number) => { for (const child of children.get(pid) ?? []) { found.push(child); walk(child); } };
-  walk(root);
-  return found;
-}
-
-/** Last resort when the daemon will not close: stop it and its Chrome by the
- * pid it wrote. Only a pid that still runs this exact agent-browser binary
- * is touched, so a stale file naming a reused pid kills nothing. True once
- * the daemon is gone. */
-async function killBrowserDaemon(binaryPath: string, env: NodeJS.ProcessEnv): Promise<boolean> {
-  let pid: number;
-  try { pid = Number(readFileSync(browserDaemonPidPath(env), "utf8").trim()); }
-  catch { return false; }
-  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid || !processAlive(pid)) return false;
-  if (process.platform === "win32") {
-    const image = await execText("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"]);
-    if (!image?.toLowerCase().startsWith(`"${basename(binaryPath).toLowerCase()}"`)) return false;
-    // /T takes the daemon's Chrome with it.
-    await execText("taskkill", ["/PID", String(pid), "/T", "/F"]);
-  } else {
-    const command = await execText("ps", ["-o", "args=", "-p", String(pid)]);
-    if (!command?.trim().startsWith(binaryPath)) return false;
-    const tree = [pid, ...await processDescendants(pid)];
-    const signal = (targets: number[], value: NodeJS.Signals) => { for (const target of targets) { try { process.kill(target, value); } catch { /* already gone */ } } };
-    // TERM lets Chrome save the profile; a daemon stopped mid-hang only
-    // acts on KILL, which follows for whatever is still there.
-    signal(tree, "SIGTERM");
-    await waitUntil(() => !tree.some(processAlive), 2_000);
-    signal(tree.filter(processAlive), "SIGKILL");
-  }
-  await waitUntil(() => !processAlive(pid), 2_000);
-  return !processAlive(pid);
 }
 
 const preparedBrowserSessions = new Map<string, Promise<void>>();
@@ -787,9 +784,20 @@ export function agentBrowserFrame(input: {
   });
 }
 
+/** A temporary browser's session id starts with this data dir's tag, so a
+ * daemon a crash left behind is still recognisably this data dir's after the
+ * in-memory record of it is gone (BrowserSweep). */
+function temporaryBrowserPrefix(dataDir: string): string {
+  return `guest-${createHash("sha256").update(resolve(dataDir)).digest("hex").slice(0, 8)}-`;
+}
+
+export function isTemporaryBrowserSession(session: string, dataDir = DATA_DIR): boolean {
+  return session.startsWith(temporaryBrowserPrefix(dataDir));
+}
+
 /** Session ids are file-system and shell safe: a bot id or a profile partition. */
-export function browserSessionId(botId: string, partitionId: string): string {
-  if (partitionId === "guest") return `guest-${randomUUID()}`;
+export function browserSessionId(botId: string, partitionId: string, dataDir = DATA_DIR): string {
+  if (partitionId === "guest") return `${temporaryBrowserPrefix(dataDir)}${randomBytes(8).toString("hex")}`;
   const raw = partitionId || `bot-${botId}`;
   return raw.replace(/[^A-Za-z0-9_.-]/gu, "_").slice(0, 96);
 }
