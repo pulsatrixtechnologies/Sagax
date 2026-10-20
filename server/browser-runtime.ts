@@ -1,7 +1,8 @@
 import { killCliTree, spawnCli } from "./procs.ts";
 import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, READ_OPEN_PAGE_ONLY, readsAroundBrowser, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
 import { randomBytes } from "node:crypto";
-import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formPostsOnly, formStaysOnOrigin, parseEvalArray, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript } from "./credential-fill.ts";
+import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formPostsOnly, formStaysOnOrigin, LOGIN_MODE, parseEvalArray, parseEvalObject, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript, type FillRequest, type LoginRequest } from "./credential-fill.ts";
+import { clearScript, loginOutcomeText, loginStateScript, markerScript, MAX_LOGIN_STEPS, parseLoginState, stepFields, submitScript, type LoginField, type LoginOutcome, type LoginPageState } from "./login-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
 
 export interface BrowserSpawnSpec {
@@ -73,7 +74,7 @@ export class TransportError extends Error {}
 export interface CredentialFillAccess {
   /** The value to type: the vault checks the bot's grant and the page's
    * top-level URL (read from the engine) against the item's sites. */
-  resolve(request: { handle: string; field: VaultFillField; pageUrl: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string }>;
+  resolve(request: { handle: string; field: VaultFillField; pageUrl: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string; code?: string }>;
   /** The bot holds a live grant on some item: its own scripts are off in
    * the whole browser session, so it cannot plant a listener before a fill. */
   armed(): boolean;
@@ -136,6 +137,21 @@ return 'free';
 /** The current contents of the fields Sagax filled, edited or not. */
 const FILLED_VALUES_SCRIPT = `(() => {'use strict';
 return JSON.stringify(Array.from(document.querySelectorAll('[data-sagax-filled]')).map((el) => typeof el.value === 'string' ? el.value : '').filter(Boolean).slice(0, 20));
+})()`;
+/** The taint a person's own sign-in leaves (armForPerson): not an origin. */
+const PERSON_SIGN_IN = "person-sign-in";
+/** Empty every password and one-time code field of the top document. */
+const CLEAR_SIGN_IN_FIELDS_SCRIPT = `(() => {'use strict';
+let cleared = 0;
+for (const el of Array.from(document.querySelectorAll('input'))) {
+  const code = el.autocomplete === 'one-time-code' || /otp|totp|2fa|mfa|one.?time|verification|security.?code|auth.?code/i.test([el.name, el.id, el.autocomplete, el.placeholder].join(' '));
+  if (el.type !== 'password' && !code) continue;
+  if (!el.value) continue;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '');
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  cleared++;
+}
+return String(cleared);
 })()`;
 const KEYS_INTO_FILLED_REFUSAL = "That field holds a saved login Sagax filled: it cannot be typed into or edited, and keys are not sent to it. Act on another field, or submit the form.";
 
@@ -406,7 +422,9 @@ export class BrowserRuntime {
   /** recoveryCheckMs: how long the call after a lost one waits for the
    * engine to answer. It stays well inside the harness proxy's 130 s budget
    * for one call. */
-  private options: { requestTimeoutMs: number; takeoverTimeoutMs: number; idleMs: number; maxPending: number; resultBudget: number; recoveryCheckMs: number };
+  /** loginSettleMs / loginPollMs: how long a sign-in waits for the page to
+   * answer a submit, and how often it looks (server/login-fill.ts). */
+  private options: { requestTimeoutMs: number; takeoverTimeoutMs: number; idleMs: number; maxPending: number; resultBudget: number; recoveryCheckMs: number; loginSettleMs: number; loginPollMs: number };
   private closeBrowser: CloseBrowser;
   private applyViewport?: ApplyViewport;
   private pauseStream?: PauseStream;
@@ -418,7 +436,7 @@ export class BrowserRuntime {
 
   constructor({ closeBrowser, applyViewport, pauseStream, egressNotice, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser; applyViewport?: ApplyViewport; pauseStream?: PauseStream; egressNotice?: (session: string) => string | null } = {}) {
     this.egressNotice = egressNotice;
-    this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: DEFAULT_BROWSER_RESULT_BUDGET, recoveryCheckMs: 30_000, ...options };
+    this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: DEFAULT_BROWSER_RESULT_BUDGET, recoveryCheckMs: 30_000, loginSettleMs: 8_000, loginPollMs: 250, ...options };
     this.closeBrowser = closeBrowser ?? (async () => false);
     this.applyViewport = applyViewport;
     this.pauseStream = pauseStream;
@@ -783,43 +801,48 @@ export class BrowserRuntime {
     if (typeof request === "string") return toolText(request, true);
     if (!credentials) return toolText("Saved credentials are not available to you here; nothing was filled.", true);
     if (!await this.holdExclusive(session)) return toolText(BROWSER_FILLING, true);
+    const stillOurs = () => {
+      beforeDispatch?.();
+      if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
+    };
     try {
-      return await this.fillHeld(session, spec, client, request, beforeDispatch, credentials);
+      if (request.field === LOGIN_MODE) return await this.loginHeld(session, spec, client, request, stillOurs, credentials);
+      const href = await this.engineUrl(client);
+      stillOurs();
+      if (!href) return toolText("The page's address could not be read; nothing was filled.", true);
+      const done = await this.fillOne(session, spec, client, request, href, stillOurs, credentials);
+      if (!done.ok) return toolText(done.message, true);
+      return toolText(`Filled the ${FIELD_NAMES[request.field]} of "${done.label}" on ${new URL(href).host}. You do not see the value; check the page and submit the form when ready.`);
     } finally {
       this.gate(session).exclusive = false;
     }
   }
 
-  private async fillHeld(session: string, spec: BrowserSpawnSpec, client: BrowserClient, request: Exclude<ReturnType<typeof parseFillArguments>, string>, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess): Promise<unknown> {
-    const stillOurs = () => {
-      beforeDispatch?.();
-      if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
-    };
-    const href = await this.engineUrl(client);
-    stillOurs();
-    if (!href) return toolText("The page's address could not be read; nothing was filled.", true);
+  /** One field, the session already held: probe, vault, write. */
+  private async fillOne(session: string, spec: BrowserSpawnSpec, client: BrowserClient, request: FillRequest, href: string, stillOurs: () => void, credentials: CredentialFillAccess, typing?: (nonce: string) => void): Promise<{ ok: true; label: string; nonce: string } | { ok: false; code: string; message: string }> {
+    const refuse = (code: string) => ({ ok: false as const, code, message: problemText(code, request.field) });
     const origin = new URL(href).origin;
-    if (this.redactor.wasScripted(session, origin)) return toolText(problemText("scripted", request.field), true);
+    if (this.redactor.wasScripted(session, origin)) return refuse("scripted");
     const aim = aimOf(request);
     if (request.ref) {
       const clicked = await client.rpc("tools/call", { name: "agent_browser_click", arguments: { selector: request.ref } });
       stillOurs();
       if ((clicked as { isError?: unknown } | null)?.isError === true) {
-        return toolText(`${request.ref} could not be focused; nothing was filled. Take a new snapshot and pass a current ref.`, true);
+        return { ok: false, code: "ref", message: `${request.ref} could not be focused; nothing was filled. Take a new snapshot and pass a current ref.` };
       }
     }
     const nonce = randomBytes(16).toString("hex");
     const probe = parseProbe(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: probeScript(aim, request.field, nonce, origin), timeoutMs: 5_000 } }));
     stillOurs();
-    if (!probe) return toolText("The page could not be read; nothing was filled.", true);
-    if (probe.problem === "moved") return toolText(problemText("moved", request.field), true);
-    if (!probe.top) return toolText(problemText("frame", request.field), true);
-    if (probe.problem) return toolText(problemText(probe.problem, request.field), true);
-    if (!formStaysOnOrigin(probe.targets, origin)) return toolText(problemText("cross_origin_form", request.field), true);
-    if (!formPostsOnly(probe.methods)) return toolText(problemText("get_form", request.field), true);
+    if (!probe) return { ok: false, code: "unreadable", message: "The page could not be read; nothing was filled." };
+    if (probe.problem === "moved") return refuse("moved");
+    if (!probe.top) return refuse("frame");
+    if (probe.problem) return refuse(probe.problem);
+    if (!formStaysOnOrigin(probe.targets, origin)) return refuse("cross_origin_form");
+    if (!formPostsOnly(probe.methods)) return refuse("get_form");
     const resolved = await credentials.resolve({ handle: request.credential, field: request.field, pageUrl: href });
     stillOurs();
-    if (!resolved.ok) return toolText(resolved.message, true);
+    if (!resolved.ok) return { ok: false, code: resolved.code ?? "vault", message: resolved.message };
     // Remembered before the value leaves: anything the engine says from now
     // on, including an error that quotes it, is redacted.
     this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp", pieces: request.field !== "username", caseless: request.field === "username" });
@@ -827,7 +850,10 @@ export class BrowserRuntime {
     // The engine's stream would broadcast the write, value included, to its
     // clients: it is off while the write runs.
     const resume = this.pauseStream ? await this.pauseStream(session, spec) : async () => {};
-    if (!resume) return toolText("The browser's live view could not be paused, so nothing was typed. Try again.", true);
+    if (!resume) return { ok: false, code: "stream", message: "The browser's live view could not be paused, so nothing was typed. Try again." };
+    // Known before the write leaves, so a sign-in cut short after it (an
+    // error, the person taking the browser) still empties this field.
+    typing?.(nonce);
     let written: string | null;
     try {
       written = parseWrite(await client.rpc("tools/call", {
@@ -836,9 +862,184 @@ export class BrowserRuntime {
     } finally {
       await resume().catch(() => undefined);
     }
-    beforeDispatch?.();
-    if (written !== "ok") return toolText(problemText(written ?? "fill_failed", request.field), true);
-    return toolText(`Filled the ${FIELD_NAMES[request.field]} of "${resolved.label}" on ${new URL(href).host}. You do not see the value; check the page and submit the form when ready.`);
+    stillOurs();
+    if (written !== "ok") return refuse(written ?? "fill_failed");
+    return { ok: true, label: resolved.label, nonce };
+  }
+
+  /** What the page asks for now (server/login-fill.ts), or null. */
+  private async loginState(client: BrowserClient, origin: string): Promise<LoginPageState | null> {
+    try {
+      return parseLoginState(parseEvalObject(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: loginStateScript(origin), timeoutMs: 5_000 } })));
+    } catch (error) {
+      if (error instanceof TransportError) throw error;
+      return null;
+    }
+  }
+
+  /** fill_credential with field "login" (server/login-fill.ts, port of
+   * OpenMausBot #2929): each step of the sign-in is filled through fillOne,
+   * then submitted once; a field that comes back after it was sent is a
+   * refusal, and the password and code are then cleared from the page. */
+  private async loginHeld(session: string, spec: BrowserSpawnSpec, client: BrowserClient, request: LoginRequest, stillOurs: () => void, credentials: CredentialFillAccess): Promise<unknown> {
+    const secrets: Array<{ nonce: string; origin: string }> = [];
+    const state = { settled: false };
+    try {
+      return await this.loginSteps(session, spec, client, request, stillOurs, credentials, secrets, state);
+    } finally {
+      // Any exit that is not a finished step (a refusal, an error, a lost
+      // engine, the person taking the browser): the password and code Sagax
+      // typed are emptied, best effort, so none waits in the page.
+      if (!state.settled && secrets.length) {
+        for (const origin of new Set(secrets.map((secret) => secret.origin))) {
+          const nonces = secrets.filter((secret) => secret.origin === origin).map((secret) => secret.nonce);
+          await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: clearScript(nonces, origin), timeoutMs: 5_000 } }).catch(() => undefined);
+        }
+      }
+    }
+  }
+
+  private async loginSteps(session: string, spec: BrowserSpawnSpec, client: BrowserClient, request: LoginRequest, stillOurs: () => void, credentials: CredentialFillAccess, secrets: Array<{ nonce: string; origin: string }>, outcome: { settled: boolean }): Promise<unknown> {
+    const sent = new Set<LoginField>();
+    const filled: LoginField[] = [];
+    let label = "";
+    const clear = async (): Promise<boolean> => {
+      let cleared = false;
+      for (const origin of new Set(secrets.map((secret) => secret.origin))) {
+        try {
+          const nonces = secrets.filter((secret) => secret.origin === origin).map((secret) => secret.nonce);
+          const answer = parseWrite(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: clearScript(nonces, origin), timeoutMs: 5_000 } }));
+          cleared ||= answer === "cleared";
+        } catch (error) {
+          if (error instanceof TransportError) throw error;
+        }
+      }
+      return cleared;
+    };
+    const finish = (result: LoginOutcome, isError = false) => {
+      outcome.settled = result.kind !== "refused" && result.kind !== "nothing";
+      return toolText(loginOutcomeText(result), isError);
+    };
+    for (let step = 0; step < MAX_LOGIN_STEPS; step++) {
+      const href = await this.engineUrl(client);
+      stillOurs();
+      if (!href) return step === 0 ? toolText("The page's address could not be read; nothing was filled.", true) : finish({ kind: "submitted", label, filled, url: "(unreadable)", alert: "" });
+      const origin = new URL(href).origin;
+      const state = await this.loginState(client, origin);
+      stillOurs();
+      if (!state) {
+        if (step === 0) return toolText("The page could not be read; nothing was filled.", true);
+        return finish({ kind: "submitted", label, filled, url: href, alert: "" });
+      }
+      const { fill, again } = stepFields(state, sent);
+      // Sent once and asked again: the site said no. A user name shown
+      // again beside a new field is a page that keeps it; a password or
+      // code asked again, nothing new at all, or a filled password or code
+      // still in place, is a refusal.
+      if (step > 0 && (again.some((field) => field !== "username") || (fill.length === 0 && (again.length > 0 || state.secretLeft)))) {
+        const cleared = await clear();
+        stillOurs();
+        return finish({ kind: "refused", label, filled, alert: state.alert, cleared }, true);
+      }
+      if (fill.length === 0) {
+        if (step === 0) return toolText("No sign-in field was found on this page; nothing was filled. Open the site's sign-in page first, or fill one field at a time with its @eN ref.", true);
+        return finish({ kind: "submitted", label, filled, url: href, alert: state.alert });
+      }
+      const stepFilled: LoginField[] = [];
+      let last = "";
+      for (const field of fill) {
+        const done = await this.fillOne(session, spec, client, { credential: request.credential, field }, href, stillOurs, credentials,
+          field === "username" ? undefined : (nonce) => { secrets.push({ nonce, origin }); });
+        if (!done.ok) {
+          // A field the page seemed to have but the finder does not take, or
+          // that this login has no value for (a code without a seed): left.
+          if (field !== "password" && (done.code === "missing" || done.code === "no_value")) continue;
+          if (secrets.length) await clear();
+          stillOurs();
+          return toolText(done.message, true);
+        }
+        label = done.label;
+        stepFilled.push(field);
+        sent.add(field);
+        last = done.nonce;
+      }
+      if (!stepFilled.length) return toolText("This login has nothing to fill into the fields this page shows; nothing was filled.", true);
+      filled.push(...stepFilled);
+      if (!request.submit) return finish({ kind: "filled_only", label, filled });
+      if (state.captcha) return finish({ kind: "captcha", label, filled });
+      let submitted: string | null = null;
+      try {
+        submitted = parseWrite(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: submitScript(last, origin), timeoutMs: 5_000 } }));
+      } catch (error) {
+        if (error instanceof TransportError) throw error;
+      }
+      stillOurs();
+      if (submitted === "captcha") return finish({ kind: "captcha", label, filled });
+      if (submitted === "unsafe_form") return toolText("The form changed where or how it sends just before the submit (another site, or in the page address), so Sagax did not submit it and emptied the password and code it typed.", true);
+      if (submitted !== "submitted" && submitted !== "clicked") return finish({ kind: "no_submit", label, filled });
+      await this.settleAfterSubmit(client, href, last, origin, sent, stillOurs);
+    }
+    const href = await this.engineUrl(client);
+    stillOurs();
+    return finish({ kind: "submitted", label, filled, url: href || "(unreadable)", alert: "" });
+  }
+
+  /** Wait for the page to answer a submit: a new address, the filled field
+   * gone, or a field to fill. Bounded; the next step judges (an inline
+   * error that leaves the filled password in place is a refusal there). */
+  private async settleAfterSubmit(client: BrowserClient, href: string, nonce: string, origin: string, sent: ReadonlySet<LoginField>, stillOurs: () => void): Promise<void> {
+    const pause = () => new Promise((resolve) => setTimeout(resolve, this.options.loginPollMs));
+    const deadline = Date.now() + this.options.loginSettleMs;
+    while (Date.now() < deadline) {
+      await pause();
+      stillOurs();
+      let now = "";
+      try { now = await this.engineUrl(client); } catch (error) { if (error instanceof TransportError) throw error; }
+      if (now && now !== href) {
+        // A navigation: give the new document a moment to be readable.
+        for (let tries = 0; tries < 20 && Date.now() < deadline && !await this.loginState(client, new URL(now).origin); tries++) await pause();
+        return;
+      }
+      let marker: string | null = null;
+      try {
+        marker = parseWrite(await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: markerScript(nonce, origin), timeoutMs: 5_000 } }));
+      } catch (error) {
+        if (error instanceof TransportError) throw error;
+      }
+      if (marker === "gone" || marker === "moved") return;
+      const state = await this.loginState(client, origin);
+      if (!state) continue;
+      const next = stepFields(state, sent);
+      if (next.fill.length || next.again.length) return;
+    }
+  }
+
+  /** A person is about to sign in themselves in this browser (the vault
+   * card's "I'll sign in myself", port of OpenMausBot #2707). Refused where a
+   * bot ran a script in this browser session (a listener could still wait
+   * in the page); otherwise armed like a filled browser: the bot's scripts,
+   * screenshots, preview frames and CSS selectors are off until a restart.
+   * Null when armed, else the refusal. */
+  armForPerson(session: string): string | null {
+    if (this.redactor.everScripted(session)) return "A bot ran a script in this browser, so it is not clean for a sign-in. Press Restart in the Browser panel (or ask the bot to call restart_browser), then try again.";
+    this.redactor.taint(session, PERSON_SIGN_IN);
+    return null;
+  }
+
+  /** After the person signed in themselves: empty the page's password and
+   * code fields, so the bot never reads them back. Null when done (or no
+   * browser runs), else why not (the person still holds the browser). */
+  async clearAfterPerson(session: string): Promise<string | null> {
+    const entry = this.clients.get(session);
+    if (!entry) return null;
+    try {
+      await this.withAgentAction(session, async () => entry.client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: CLEAR_SIGN_IN_FIELDS_SCRIPT, timeoutMs: 5_000 } }));
+      return null;
+    } catch (error) {
+      if (error instanceof Error && error.message === BROWSER_CONTROL_REFUSAL) return "Give the browser back to the bot (or wait a few seconds without using it), then press Done.";
+      if (error instanceof TransportError) return null;
+      return error instanceof Error ? error.message : "The browser could not be reached.";
+    }
   }
 
   /** One call the harness itself makes in a browser it owns (a meeting's

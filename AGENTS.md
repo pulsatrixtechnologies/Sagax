@@ -4882,6 +4882,52 @@ before each run, satisfying the AgileBits code requirement on macOS, with a
 short environment.
 One-time codes are computed at fill time (`server/totp.ts`).
 
+Logins that fill where you'd expect (2026-10-19, port of OpenMausBot #2929,
+#2725/#2726 and the sign-in request of #2707, on this vault: no second login
+store). `fill_credential` with `field: "login"` (`server/login-fill.ts`, the
+loop in `BrowserRuntime.loginHeld`) signs in in one call: it reads what the
+page asks for with a script that carries no secret (`loginStateScript`),
+fills each field of the step through the same single-field path
+(`fillOne`: origin guard, top frame, POST on the page's origin, the vault's
+grant and site check on the engine's URL, the stdin write, the redactor),
+submits once (`submitScript`: the form's `requestSubmit` with its submit
+button, else a sign-in button around the field), waits for the page
+(`settleAfterSubmit`) and fills the next step (user name, Next, password,
+one-time code; at most `MAX_LOGIN_STEPS`). A password or code asked again,
+or left in place by an inline error, is a refusal: the filled password and
+code are emptied (`clearScript`) and nothing is sent twice. A visible
+CAPTCHA stops before the submit; `submit: false` only fills. Sites stay
+exact by default (stricter than upstream's whole-registrable-site rule):
+when a fill lands on another address, the refusal names the page's host and
+tells the bot to call `request_login` with it; the card then offers logins
+of the same site (`matchingItems`, `vaultSiteOf`: last two labels, a
+country's shared second level, a short list of shared hosting names) and,
+for a login of that same site only, "Also fill it on <site>", unticked
+(`addSite` on the grant route, with Always only; the server checks
+`siteAddable` itself: an exact host of the login's own site, never a
+wildcard, a shared hosting name or a look-alike; audited as `addedSite:
+true` with no site name). The card also lets the person sign in themselves
+in the bot's browser: `self-start` arms that browser first
+(`BrowserRuntime.armForPerson`: refused where a bot ran a script in it,
+then scripts, screenshots, preview frames and CSS selectors are off until a
+restart), and Done (`signed-in`) empties its password and code fields
+(`clearAfterPerson`; refused while the person still holds the browser),
+resumes the bot (`signedInNote`: no handle, no value), then marks the card
+and writes `credentials.signed_in` (no site). The submit checks again, in
+its own evaluation, that the form posts on the page's origin; any exit of a
+sign-in that is not a finished step empties what it typed; the page's alert
+reaches the bot only quoted as untrusted page text (`pageSays`). 1Password stays per item (a reference with its own bot
+grants, read at fill time, never on an organization server): finer than
+upstream's per-vault grants. Tests: `server/login-fill.test.ts` (happy-dom
+page behind a fake engine: one, two and three steps, refusals, CAPTCHA),
+`server/login-fill.e2e.test.ts` (a local fake site in a throwaway headless
+Chromium from Playwright's cache, skipped without it: one and two steps, a
+refused login, another site; what the bot sees and what the process prints
+hold no value nor encoding), the card blocks of
+`server/routes/credential-vault.test.ts` and
+`src/components/VaultRequestCard.test.ts`, and the data-folder sweep of
+`server/credential-vault.e2e.test.ts`.
+
 Reads of the vault are POSTs (`/api/me/credentials/list`, `/notes`, the
 1Password picker): a packaged desktop answers loopback GETs from any local
 process. The agent tool policy keeps `/api/me/credentials*` and

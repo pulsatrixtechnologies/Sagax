@@ -27,23 +27,33 @@ import {
 } from "../shared/credential-vault.ts";
 
 export const FILL_CREDENTIAL_TOOL = "fill_credential";
+/** field "login": a whole sign-in, step by step (server/login-fill.ts). */
+export const LOGIN_MODE = "login";
 export const REDACTED_CREDENTIAL = "[credential]";
 
 export const FILL_CREDENTIAL_TOOL_SPEC = {
   name: FILL_CREDENTIAL_TOOL,
   description:
-    "Fill a login the person saved in Sagax into the current page, without ever seeing it. credential is the handle request_login gave you (cred_...). field is username, password, totp (the current one-time code) or apiKey. target is the input's @eN ref from a snapshot or a CSS selector; omit it to let Sagax find the field (required for apiKey). The value is typed only when the page's top-level address is on the credential's sites over https, never into a frame. You never receive the value: later page reads show it as [credential], and page scripts are turned off in this browser until it restarts. Submit the form yourself with a click afterwards.",
+    "Fill a login the person saved in Sagax into the current page, without ever seeing it. credential is the handle request_login gave you (cred_...). field login signs in: Sagax fills the user name, password and one-time code the page asks for, submits, and goes through each step of a multi-step sign-in (user name, Next, password, code) in this one call, never sending a field twice; submit false only fills. field username, password, totp (the current one-time code) or apiKey fills that one field; target is then the input's @eN ref from a snapshot or a CSS selector (omit it to let Sagax find the field; required for apiKey). The value is typed only when the page's top-level address is on the credential's sites over https, never into a frame. If a sign-in page you reach is on another address than the credential's sites, call request_login with that page's host. You never receive the value: later page reads show it as [credential], and page scripts are turned off in this browser until it restarts.",
   inputSchema: {
     type: "object",
     properties: {
       credential: { type: "string", description: "The handle request_login gave you, cred_..." },
-      field: { type: "string", enum: [...VAULT_FILL_FIELDS] },
-      target: { type: "string", maxLength: 500, description: "The input's @eN ref or a CSS selector. Optional." },
+      field: { type: "string", enum: [LOGIN_MODE, ...VAULT_FILL_FIELDS] },
+      target: { type: "string", maxLength: 500, description: "The input's @eN ref or a CSS selector. Optional; not with login." },
+      submit: { type: "boolean", description: "login only: false fills without submitting. Default true." },
     },
     required: ["credential", "field"],
     additionalProperties: false,
   },
 } as const;
+
+/** fill_credential with field "login": every step of a sign-in. */
+export interface LoginRequest {
+  credential: string;
+  field: typeof LOGIN_MODE;
+  submit: boolean;
+}
 
 export interface FillRequest {
   credential: string;
@@ -54,12 +64,18 @@ export interface FillRequest {
 }
 
 /** Validate a fill_credential call's arguments. A string is the refusal. */
-export function parseFillArguments(params: unknown): FillRequest | string {
+export function parseFillArguments(params: unknown): FillRequest | LoginRequest | string {
   const args = (params as { arguments?: unknown } | null)?.arguments;
   if (!args || typeof args !== "object" || Array.isArray(args)) return "fill_credential needs credential and field.";
-  const { credential, field, target } = args as Record<string, unknown>;
+  const { credential, field, target, submit } = args as Record<string, unknown>;
   if (typeof credential !== "string" || !credential.trim()) return "fill_credential needs the credential handle request_login gave you.";
-  if (!isVaultFillField(field)) return `field must be one of ${VAULT_FILL_FIELDS.join(", ")}.`;
+  if (field === LOGIN_MODE) {
+    if (target !== undefined && target !== null && target !== "") return "field login finds the sign-in fields itself; leave target out, or fill one field at a time with its own field.";
+    if (submit !== undefined && typeof submit !== "boolean") return "submit must be true or false.";
+    return { credential: credential.trim(), field: LOGIN_MODE, submit: submit !== false };
+  }
+  if (submit !== undefined) return "submit applies to field login only.";
+  if (!isVaultFillField(field)) return `field must be one of ${[LOGIN_MODE, ...VAULT_FILL_FIELDS].join(", ")}.`;
   if (target !== undefined && (typeof target !== "string" || target.length > 500)) return "target must be an @eN ref or a CSS selector.";
   const trimmed = typeof target === "string" ? target.trim() : "";
   if (field === "apiKey" && !trimmed) return "An apiKey fill needs a target: the input's @eN ref or a CSS selector.";
@@ -454,6 +470,11 @@ export class SecretRedactor {
 
   wasScripted(session: string, origin: string): boolean {
     return this.scripted.get(session)?.has(origin) === true;
+  }
+
+  /** The bot ran a script anywhere in this browser session. */
+  everScripted(session: string): boolean {
+    return (this.scripted.get(session)?.size ?? 0) > 0;
   }
 
   forget(session: string): void {

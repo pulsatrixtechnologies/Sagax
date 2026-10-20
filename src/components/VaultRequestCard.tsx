@@ -2,21 +2,25 @@
 // from their credential vault, or saves a new one, and allows it for this
 // time (this conversation, 15 minutes) or always for this bot. The bot gets
 // a handle, never a value; it fills the login into its browser by reference
-// (server/credential-fill.ts). Once answered the card folds into one line.
+// (server/credential-fill.ts). When the login it picks is saved for another
+// address of the site, "Also fill it on ..." (unticked) adds the asked one.
+// The person may also sign in themselves in the bot's browser and press
+// Done (port of OpenMausBot #2707 and #2929, on Sagax's vault card). Once
+// answered the card folds into one line.
 import { useEffect, useState, type FormEvent } from "react";
-import { KeyRound, Loader2, LockKeyhole, X } from "lucide-react";
+import { Check, Globe, KeyRound, Loader2, LockKeyhole, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
-import { createCredentialDraft, dismissCard, grantFromCard, loadCredentials, matchingItems, parseDomains, type VaultItemListing } from "@/lib/credential-vault";
+import { createCredentialDraft, dismissCard, grantFromCard, loadCredentials, matchingItems, parseDomains, selfStartFromCard, signedInFromCard, type VaultItemListing } from "@/lib/credential-vault";
 import { t } from "@/lib/i18n";
 import { useStore, type Message } from "@/state/store";
-import type { VaultGrantMode } from "../../shared/credential-vault";
+import { siteAddable, type VaultGrantMode } from "../../shared/credential-vault";
 import { ASK_CHIP, ASK_CHIP_IDLE, ASK_CHIP_PICKED, ASK_FIELD, ASK_PRIMARY_BUTTON, AskCard, AskSettledLine, returnFocusToComposer } from "./AskCard";
 
 const NEW = "__new__";
 
 export function VaultRequestCard({ botId, threadId, message }: { botId: string; threadId: string; message: Message }) {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const secret = message.secret!;
   const request = secret.vault;
   const site = request?.domain ?? request?.name ?? "";
@@ -28,6 +32,9 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
   // look-alike must be typed by the person, not accepted with one click.
   const [draft, setDraft] = useState({ name: "", domains: "", username: "", password: "", totpSeed: "" });
   const [busy, setBusy] = useState(false);
+  // Unticked by default: the bot chose the address it asked for.
+  const [addSite, setAddSite] = useState(false);
+  const [selfSignIn, setSelfSignIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,6 +58,13 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
       <AskSettledLine icon={<X size={13} />} ariaLabel={t("vault.card.title", { site })}>
         <span className="text-ink-secondary">{t("vault.card.title", { site })}</span>
         <span> · {t("vault.card.superseded")}</span>
+      </AskSettledLine>
+    );
+  }
+  if (request.signedInSelf) {
+    return (
+      <AskSettledLine icon={<Check size={13} />} ariaLabel={t("vault.card.title", { site })}>
+        <span className="text-ink-secondary">{t("vault.card.signedInSelf", { site })}</span>
       </AskSettledLine>
     );
   }
@@ -84,7 +98,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
       const target = choice === NEW
         ? { item: createCredentialDraft({ ...draft, domains: parseDomains(draft.domains) }) }
         : { itemId: choice };
-      await grantFromCard(botId, message.id, threadId, mode, target);
+      await grantFromCard(botId, message.id, threadId, mode, target, mode === "always" && choice !== NEW && addSite && canAddSite);
       setDraft((current) => ({ ...current, password: "", totpSeed: "" }));
       returnFocusToComposer();
     } catch (failure) {
@@ -94,6 +108,36 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
     }
   };
   const decline = () => { void dismissCard(botId, message.id, threadId).catch(() => {}); };
+  const chosen = items?.find((item) => item.id === choice);
+  // Only another address of the chosen login's own site, never a look-alike
+  // or a shared hosting name (the server checks the same: siteAddable).
+  const canAddSite = Boolean(chosen && siteAddable(chosen.domains, request.domain));
+  const startSelf = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await selfStartFromCard(botId, message.id, threadId);
+      setSelfSignIn(true);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const signedIn = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await signedInFromCard(botId, message.id, threadId);
+      returnFocusToComposer();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
   const field = (key: keyof typeof draft, label: string, type = "text", autoComplete = "off") => (
     <input
       type={type}
@@ -129,7 +173,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
                 type="button"
                 role="radio"
                 aria-checked={choice === item.id}
-                onClick={() => setChoice(item.id)}
+                onClick={() => { setChoice(item.id); setAddSite(false); }}
                 className={cn(ASK_CHIP, choice === item.id ? ASK_CHIP_PICKED : ASK_CHIP_IDLE)}
               >
                 <span className="truncate">{item.name}{item.username ? ` · ${item.username}` : ""}</span>
@@ -145,6 +189,12 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
               {t("vault.card.newLogin")}
             </button>
           </div>
+          {choice !== NEW && request.domain && canAddSite && (
+            <label className="flex items-start gap-2 text-[12px] leading-relaxed text-ink-secondary" data-vault-add-site>
+              <input type="checkbox" checked={addSite} disabled={busy} onChange={(event) => setAddSite(event.target.checked)} className="mt-0.5" />
+              <span>{t("vault.card.alsoFill", { site: request.domain, sites: chosen?.domains.join(", ") ?? "" })}</span>
+            </label>
+          )}
           {choice === NEW && (
             <div className="flex flex-col gap-2">
               {request.domain && (
@@ -164,7 +214,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <button type="submit" disabled={busy || !choice} className={ASK_PRIMARY_BUTTON}>
+            <button type="submit" disabled={busy || !choice || (addSite && canAddSite)} className={ASK_PRIMARY_BUTTON}>
               {busy ? <Loader2 size={14} className="animate-spin" /> : <LockKeyhole size={14} />}
               {t("vault.card.allowOnce")}
             </button>
@@ -176,6 +226,23 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
             <LockKeyhole size={11} /> {t("vault.card.privacy")}
           </span>
         </form>
+      )}
+      {!selfSignIn ? (
+        <button type="button" disabled={busy} onClick={() => void startSelf()} className="mt-2 self-start text-[12px] text-ink-secondary underline underline-offset-2" data-vault-self>
+          {t("vault.card.signInMyself")}
+        </button>
+      ) : (
+        <div className="mt-2 flex flex-col gap-2 rounded-md border border-hairline p-2" data-vault-self-panel>
+          <p className="text-[12px] leading-relaxed text-ink-secondary">{t("vault.card.selfHint", { bot: botName, site })}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" disabled={busy} onClick={() => dispatch({ type: "toggleComputer", open: true })} className={cn(ASK_CHIP, ASK_CHIP_IDLE)}>
+              <Globe size={13} /> {t("vault.card.openBrowser")}
+            </button>
+            <button type="button" disabled={busy} onClick={() => void signedIn()} className={cn(ASK_CHIP, ASK_CHIP_IDLE)}>
+              <Check size={13} /> {t("vault.card.signedInDone")}
+            </button>
+          </div>
+        </div>
       )}
       {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
     </AskCard>

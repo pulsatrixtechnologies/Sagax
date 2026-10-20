@@ -6376,6 +6376,20 @@ ROUTES.push(createCredentialVaultRoutes({
   onePassword,
   principal: credentialVaultPrincipal,
   botExists: (id) => Boolean(store.bot(id)),
+  // The vault card's "I'll sign in myself": the bot's own browser for that
+  // conversation is armed first, and its password and code fields emptied at Done.
+  browser: {
+    armForPerson: async (botId, threadId) => {
+      const bot = store.bot(botId);
+      const browser = bot && bot.browser !== false && builtInBrowserEnabled(cfg) ? await browserIntegration(bot.id, bot.browserProfile, undefined, threadId) : null;
+      return browser ? browserRuntime.armForPerson(browser.session) : "This bot has no browser here.";
+    },
+    clearAfterPerson: async (botId, threadId) => {
+      const bot = store.bot(botId);
+      const browser = bot && bot.browser !== false && builtInBrowserEnabled(cfg) ? await browserIntegration(bot.id, bot.browserProfile, undefined, threadId) : null;
+      return browser ? browserRuntime.clearAfterPerson(browser.session) : null;
+    },
+  },
   // Counts and ids only (server/routes/credential-vault.ts): never a name,
   // a site or a value.
   // On the desktop and on a server alike (admin-activity, category security).
