@@ -53,7 +53,7 @@ import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS, 
 import { engineFailureMessage, type EngineFailureKind } from "./engine-errors.ts";
 import { claudeAuthFailure, claudeAuthRecovery } from "./claude-auth-recovery.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
-import { contractChanges, switchesCover, turnSwitches, warmCommsEnv, withoutTurnTokens } from "./spawn-contract.ts";
+import { contractChanges, switchesCover, turnFiles, turnSwitches, warmCommsEnv, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
 import {
   applyClaudeInject,
@@ -1515,6 +1515,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       argsKey: string;
       /** the same contract as an object, to name what changed on a relaunch */
       contract?: unknown;
+      /** the turn files its agents server reads (removed with the process) */
+      turnFiles?: string[];
       /** the agents switches it was launched with (spawn-contract.ts TURN_SWITCH_ENV) */
       switches?: Record<string, boolean>;
       /** the MCP servers it was launched with (names), for the relaunch log */
@@ -1627,6 +1629,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       s.broker = undefined;
       broker?.close();
       appendNative(threadId, { dir: "out", source: "claude.session", msg: { close: why } });
+      // A process that ends takes its turn files along. A replacement built
+      // for this same thread already holds its values in its own env.
+      for (const file of s.turnFiles ?? []) {
+        try { rmSync(file, { force: true }); } catch { /* already gone */ }
+      }
       // stdin EOF is the CLI's exit signal; give it a moment, then insist
       try {
         s.child.stdin.end();
@@ -1912,7 +1919,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // depth (new every turn) ride a file the proxy reads on each call,
         // and leave the spawn contract (withoutTurnTokens below), so a
         // teammate's reply resuming this turn reuses this process.
-        if (turn.integrations.agents.env?.SAGAX_COMMS_TOKEN) {
+        // Never rewritten under a turn still running on this thread's process.
+        if (turn.integrations.agents.env?.SAGAX_COMMS_TOKEN && !sessions.get(threadId)?.turn) {
           mcpServers.agents = { ...turn.integrations.agents, env: warmCommsEnv(threadId, botId, agentsEnv), alwaysLoad: true };
         }
         allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
@@ -2350,6 +2358,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         systemPromptPath,
         argsKey,
         switches,
+        turnFiles: turnFiles(mcpServers),
         contract,
         mcpNames: Object.keys(mcpServers),
         volatile: turn.systemVolatile ?? "",

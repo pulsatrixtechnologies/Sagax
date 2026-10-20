@@ -27,8 +27,15 @@ describe("spawn contract", () => {
   });
 
   it("masks the turn depth and the agents switches, and says when a live process covers a turn", () => {
-    const servers = (depth: string, route: string) => ({ agents: { env: { SAGAX_COMMS_TOKEN: "x", SAGAX_TURN_DEPTH: depth, SAGAX_ROUTE_MESSAGES: route, SAGAX_OWN_THREAD_CREATION: route } } });
+    const servers = (depth: string, route: string, files = true) => ({ agents: { env: {
+      SAGAX_COMMS_TOKEN: `x${depth}`, SAGAX_TURN_DEPTH: depth, SAGAX_ROUTE_MESSAGES: route, SAGAX_OWN_THREAD_CREATION: route,
+      ...(files ? { SAGAX_COMMS_TOKEN_FILE: "/t", SAGAX_TURN_DEPTH_FILE: "/t.depth" } : {}),
+    } }, other: { env: { SAGAX_COMMS_TOKEN: "kept" } } });
     expect(JSON.stringify(withoutTurnTokens(servers("0", "1")))).toBe(JSON.stringify(withoutTurnTokens(servers("1", "0"))));
+    // no files written (a full disk): the values stay in the contract
+    expect(JSON.stringify(withoutTurnTokens(servers("0", "1", false)))).not.toBe(JSON.stringify(withoutTurnTokens(servers("1", "0", false))));
+    // only the agents server is masked
+    expect((withoutTurnTokens(servers("0", "1")).other as { env: Record<string, string> }).env.SAGAX_COMMS_TOKEN).toBe("kept");
     const launched = turnSwitches(servers("0", "1"));
     expect(switchesCover(launched, turnSwitches(servers("1", "0")))).toBe(true);
     expect(switchesCover(turnSwitches(servers("1", "0")), launched)).toBe(false);

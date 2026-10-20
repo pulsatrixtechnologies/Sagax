@@ -42,7 +42,7 @@ export const TURN_TOKEN_ENV = ["SAGAX_COMMS_TOKEN", "SAGAX_TURN_DEPTH"] as const
  * runs in the process the person's turn launched; the server refuses what
  * this turn may not do whatever the tool list shows. A turn that needs a
  * switch the live process lacks still gets a fresh one. */
-export const TURN_SWITCH_ENV = ["SAGAX_ROUTE_MESSAGES", "SAGAX_OWN_THREAD_CREATION"] as const;
+export const TURN_SWITCH_ENV = ["SAGAX_ROUTE_MESSAGES", "SAGAX_OWN_THREAD_CREATION", "SAGAX_SINGLE_STREAM"] as const;
 
 /** The switches one turn needs, from its agents server's env. */
 export function turnSwitches(servers: Record<string, unknown>): Record<string, boolean> {
@@ -58,19 +58,24 @@ export function switchesCover(live: Record<string, boolean> | undefined, want: R
 /** The MCP servers of a contract with each per-turn token's value masked:
  * two turns of one call then make the same contract. */
 export function withoutTurnTokens(servers: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [name, server] of Object.entries(servers)) {
-    const env = (server as { env?: Record<string, unknown> } | null)?.env;
-    if (!env || !TURN_TOKEN_ENV.some((key) => key in env)) {
-      out[name] = server;
-      continue;
-    }
-    const masked = { ...env };
-    for (const key of TURN_TOKEN_ENV) if (key in masked) masked[key] = "(turn token)";
-    for (const key of TURN_SWITCH_ENV) if (key in masked) masked[key] = "(turn switch)";
-    out[name] = { ...(server as object), env: masked };
-  }
+  const out: Record<string, unknown> = { ...servers };
+  // Only the agents server reads its turn values from files, and only when
+  // they were written (SAGAX_COMMS_TOKEN_FILE): otherwise a reused process
+  // would keep a stale token, so the contract keeps it and relaunches.
+  const env = (servers.agents as { env?: Record<string, unknown> } | null | undefined)?.env;
+  if (!env || !env.SAGAX_COMMS_TOKEN_FILE) return out;
+  const masked = { ...env };
+  masked.SAGAX_COMMS_TOKEN = "(turn token)";
+  if (env.SAGAX_TURN_DEPTH_FILE && "SAGAX_TURN_DEPTH" in masked) masked.SAGAX_TURN_DEPTH = "(turn token)";
+  for (const key of TURN_SWITCH_ENV) if (key in masked) masked[key] = "(turn switch)";
+  out.agents = { ...(servers.agents as object), env: masked };
   return out;
+}
+
+/** The turn files a process's agents server reads, to remove with it. */
+export function turnFiles(servers: Record<string, unknown>): string[] {
+  const env = (servers.agents as { env?: Record<string, unknown> } | null | undefined)?.env ?? {};
+  return [env.SAGAX_COMMS_TOKEN_FILE, env.SAGAX_TURN_DEPTH_FILE].filter((file): file is string => typeof file === "string");
 }
 
 /** Where a warm (call) session's agents proxy reads the current turn's
@@ -89,11 +94,20 @@ export function warmCommsEnv(threadId: string, botId: string | undefined, env: R
   const token = env.SAGAX_COMMS_TOKEN;
   if (!token) return env;
   const tokenPath = commsTokenFile(threadId, botId);
-  mkdirSync(dirname(tokenPath), { recursive: true, mode: 0o700 });
-  writeFileAtomic(tokenPath, token, { mode: 0o600 });
-  // The turn's comms depth rides beside the token: the harness checks it
-  // against the token's own (a resumed turn is one deeper).
-  if (env.SAGAX_TURN_DEPTH === undefined) return { ...env, SAGAX_COMMS_TOKEN_FILE: tokenPath };
-  writeFileAtomic(`${tokenPath}.depth`, env.SAGAX_TURN_DEPTH, { mode: 0o600 });
-  return { ...env, SAGAX_COMMS_TOKEN_FILE: tokenPath, SAGAX_TURN_DEPTH_FILE: `${tokenPath}.depth` };
+  try {
+    mkdirSync(dirname(tokenPath), { recursive: true, mode: 0o700 });
+    // The turn's comms depth rides beside the token: the harness checks it
+    // against the token's own (a resumed turn is one deeper). Written first,
+    // so a token file never pairs with an older depth.
+    if (env.SAGAX_TURN_DEPTH !== undefined) writeFileAtomic(`${tokenPath}.depth`, env.SAGAX_TURN_DEPTH, { mode: 0o600 });
+    writeFileAtomic(tokenPath, token, { mode: 0o600 });
+  } catch {
+    // A full or read-only disk: the env carries this turn's values, and the
+    // contract (withoutTurnTokens) then keeps them, so nothing reuses a
+    // process holding an older token.
+    return env;
+  }
+  return env.SAGAX_TURN_DEPTH === undefined
+    ? { ...env, SAGAX_COMMS_TOKEN_FILE: tokenPath }
+    : { ...env, SAGAX_COMMS_TOKEN_FILE: tokenPath, SAGAX_TURN_DEPTH_FILE: `${tokenPath}.depth` };
 }

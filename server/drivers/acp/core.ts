@@ -1990,7 +1990,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         // turn can never get the ungated mode with ungated servers.
         const approvalGated = support.approvalGate?.(turnConfig, cliTurn, { env, cwd }) === true;
         const mcpServers = acpMcpServers(callAgentsEnv ? withAgentsEnv(callAgentsEnv) : turn, approvalGated);
-        const sessionServersKey = callAgentsEnv
+        // Masked only when the turn files were written (warmCommsEnv falls
+        // back to the env on a write failure, which must re-establish).
+        const sessionServersKey = callAgentsEnv?.SAGAX_COMMS_TOKEN_FILE
           ? acpMcpServers(withAgentsEnv({
             ...callAgentsEnv,
             ...Object.fromEntries(TURN_TOKEN_ENV.filter((key) => key in callAgentsEnv).map((key) => [key, "(turn token)"])),
