@@ -16,9 +16,11 @@ import { ensureDirs, NATIVE_DIR } from "../config.ts";
 import type { ProviderInstance } from "../contracts.ts";
 import { recordEvents, type EventRecorder } from "../testing/events.ts";
 import { encodeInjectId, localHost } from "./local-inject.ts";
+import { sagaxInternalSelfAnswers } from "../sagax-internal-tools.ts";
 import {
   applyPiLocalCatalog,
   buildMcpServers,
+  piGatedMcpInput,
   piGatedMcpTool,
   decodePiFrame,
   ensurePiInjectModel,
@@ -168,6 +170,22 @@ describe("piGatedMcpTool", () => {
       expect(piGatedMcpTool(title, mounted)).toBeUndefined();
     }
     expect(piGatedMcpTool("Allow data:data_sql?", null)).toBeUndefined();
+  });
+});
+
+describe("piGatedMcpInput", () => {
+  it("passes the extension's JSON, reads its no-argument line as {}, and never turns a missing or cut message into no arguments", () => {
+    expect(piGatedMcpInput('{"sql":"select 1"}', "data__data_sql")).toBe('{"sql":"select 1"}');
+    expect(piGatedMcpInput("Run data:data_show", "data__data_show")).toBe("{}");
+    expect(piGatedMcpInput("Run data:other", "data__data_show")).toBe("Run data:other");
+    expect(piGatedMcpInput('{"sql":"select * from read_csv(', "data__data_sql")).toBe('{"sql":"select * from read_csv(');
+    expect(piGatedMcpInput(undefined, "data__data_sql")).toBe("(arguments not shown)");
+    expect(piGatedMcpInput("", "data__data_sql")).toBe("(arguments not shown)");
+  });
+  it("keeps a confined Data call with unshown arguments on its card (sagax-internal-tools)", () => {
+    for (const message of [undefined, "", '{"sql":"attach \'x\''] as const) {
+      expect(sagaxInternalSelfAnswers("data__data_sql", piGatedMcpInput(message, "data__data_sql"), ["/w"], true)).toBe(false);
+    }
   });
 });
 

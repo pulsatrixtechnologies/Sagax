@@ -191,12 +191,27 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
  * report it (`mcpTool`), so Sagax's name-based answers (its own tools, a
  * Perspicax read or lease, the person's rules) apply on pi too. Only the
  * exact title pi-mcp-extension writes (`Allow <server>:<tool>?`) for a server
- * mounted on this turn; anything else stays an unnamed card. */
+ * mounted on this turn; anything else stays an unnamed card. A convenience,
+ * not a security boundary: pi's RPC does not say which extension asked, and
+ * in solo the person's own extensions (code inside pi already) could write
+ * the same title; an organization turn runs pi with --no-extensions. */
 export function piGatedMcpTool(title: unknown, mounted: Record<string, unknown> | null): string | undefined {
   if (typeof title !== "string" || !mounted) return undefined;
   const match = /^Allow ([A-Za-z0-9][\w-]{0,63}):([A-Za-z][\w-]{0,127})\?$/.exec(title);
   if (!match || !Object.hasOwn(mounted, match[1]!)) return undefined;
   return `${match[1]}__${match[2]}`;
+}
+
+/** The arguments of a named gated confirm, as Sagax's approval path reads
+ * them (`input`). pi-mcp-extension writes them as JSON cut at 300
+ * characters, or `Run <server>:<tool>` when there are none. A cut or
+ * missing message never reads as "no arguments": it stays text that does
+ * not parse, so a call judged on its arguments keeps its card. */
+export function piGatedMcpInput(message: unknown, mcpTool: string): string {
+  if (typeof message !== "string") return "(arguments not shown)";
+  const [server, tool] = mcpTool.split("__") as [string, string];
+  if (message === `Run ${server}:${tool}`) return "{}";
+  return message || "(arguments not shown)";
 }
 
 /** A pi `get_available_models` response payload, parsed at its I/O boundary. */
@@ -1082,6 +1097,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
                 ? evt.options.filter((option): option is string => typeof option === "string") : [];
               const summary = String(evt.title ?? (isQuestion ? "pi has a question" : "pi wants confirmation")).slice(0, 200);
               const mcpTool = isQuestion ? undefined : piGatedMcpTool(evt.title, mcpServers);
+              const mcpInput = mcpTool ? piGatedMcpInput(evt.message, mcpTool) : undefined;
               // A select is a question with named options; the structured
               // card renders from it while the flat choices keep older
               // clients answering. An input has nothing to pick from and
@@ -1144,7 +1160,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
                 requestType: isQuestion ? "question" : "permission",
                 tool: String(evt.title ?? "pi"),
                 summary,
-                ...(mcpTool ? { mcpTool } : {}),
+                ...(mcpTool ? { mcpTool, input: mcpInput } : {}),
                 ...(choices ? { choices } : {}),
                 ...(question ? { questions: [question] } : {}),
               });
