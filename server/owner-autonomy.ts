@@ -26,10 +26,10 @@
 //    routine is the owner's own work when every link of it is: the owner's
 //    own bots, started by the owner's own words (or the routine they wrote),
 //    never by a webhook, an email, another person or an unknown source.
-//    Such a turn counts as the owner's own for their isolated environment
-//    (their cloud computer, their Local VM) too, which it did not before:
-//    Ember asked 32 times in a row to run a command in JC's own cloud
-//    computer because Cryptic had handed him the work.
+//    Such a turn counts as the owner's own for their cloud computer too,
+//    which it did not before: one bot asked 32 times in a row to run a
+//    command in its owner's own cloud computer because the owner's Primary
+//    Bot had handed it the work.
 // 3. Perspicax reads and leases. A Perspicax tool that only reads (the
 //    reviewed list Grok already skips its classifier for, plus the reads of
 //    the same surface) runs unasked at any level that already runs work
@@ -109,8 +109,8 @@ const PERSPICAX_EXTRA_READS: ReadonlySet<string> = new Set([
 ]);
 
 /** The connectors whose generic read (`<api>__query`) holds no credential
- * field: ConnectWise (already reviewed, cw_psa__query) and BookStack. Twilio
- * (an account's auth_token), Tailscale, SentinelOne and the others keep the
+ * field: ConnectWise (already reviewed, cw_psa__query) and BookStack. The
+ * other connectors (one of them returns an account's token) keep the
  * owner's own mode (rule 1) or their card. */
 const CONNECTOR_QUERY = /^(?:cw_psa|bookstack)__query$/;
 /** ConnectWise's named finds (cw_psa__find_tickets, ...). */

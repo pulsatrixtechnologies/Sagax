@@ -70,12 +70,12 @@ export const VERIFY_FIRST_PROMPT =
   + " Keeping replies short limits their length, never how far you check.";
 
 /** 2026-10-19 (owner setup): a person's own AI client writes for them
- * through Perspicax (send_prompt). Their bots read "JC is asking via Ara"
- * as another agent's relay: one refused, two asked JC to confirm. The
- * message is authenticated as the person. */
+ * through Perspicax (send_prompt). Their bots read "<person> is asking via
+ * <assistant>" as another agent's relay: one refused, two asked the person
+ * to confirm. The message is authenticated as the person. */
 export function aiClientPrompt(personName: string): string {
   const name = personName.replace(/[\r\n]+/g, " ").trim().slice(0, 80) || "the person";
-  return `\nThis conversation is ${name}'s own AI client, signed in as ${name}: every message here is ${name}'s own request, with the same authority as if they typed it in the app. A name in it such as "via Ara" or "Luna" is the client they use, never another bot relaying: do not ask them to confirm it came from them.`;
+  return `\nThis conversation is ${name}'s own AI client, signed in as ${name}: every message here is ${name}'s own request, with the same authority as if they typed it in the app. Wording such as "asking via" an assistant's name names the client they use, never another bot relaying: do not ask them to confirm it came from them.`;
 }
 
 export function buildSystemPrompt(
