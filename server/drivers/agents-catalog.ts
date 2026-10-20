@@ -1586,6 +1586,40 @@ const CLOUD_HOME_SURFACE = {
   description: "auto = suitable configured computer, cloud = the bot's cloud computer, browser = built-in browser. Omit to list. This server runs in the cloud: the user's own computer and a Local VM are not places here.",
 };
 
+/** Agents tools a Claude Code turn loads only when the model asks for them
+ * (tool search), 2026-10-19 perf parity. They are long or rarely needed in
+ * an ordinary chat turn: routines, team and profile setup, cloud agents,
+ * artifacts, settings, transcripts. Every name stays callable and listed by
+ * name to the model; only its description and schema wait for a ToolSearch
+ * step. Coordination, reactions, widgets, memory, files, computer choice and
+ * results paging stay loaded, and so does any tool not named here. */
+export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "propose_routine", "propose_routine_action", "list_routines", "run_routine",
+  "propose_team_setup", "list_team_setup", "propose_profile", "propose_model", "propose_bot_deletion",
+  "propose_team_memory", "propose_page", "create_room", "manage_room", "create_bot",
+  "add_mcp_server", "skill_manage", "skills_list", "rules_update", "docs_update",
+  "launch_cloud_agent", "list_cloud_agents", "get_cloud_agent", "cancel_cloud_agent", "archive_cloud_agent",
+  "cloud_agent_follow_up", "cloud_agent_transcript", "find_cloud_agent_by_pr", "list_cloud_agent_artifacts",
+  "save_artifact", "update_artifact", "delete_artifact", "list_artifacts",
+  "manage_settings", "manage_pairing", "offer_shell_terminal", "list_terminal_resources", "vm_exec",
+  "shared_computer", "list_shared_computers", "nudge_person", "remove_reaction", "retry_thread",
+  "read_transcript", "read_transcript_cold", "read_transcript_page", "read_latest_page", "read_latest_page_with_threads",
+  "find_agents", "get_agent", "list_agents", "send_prompt", "await_turn", "create_agent", "delete_agent",
+  "workspace_read", "workspace_search", "session_read", "close_thread", "list_threads",
+  "request_login", "request_credential",
+]);
+
+/** The tools/list a Claude Code engine is served: the same tools, with the
+ * rare ones marked `_meta["anthropic/alwaysLoad"] = false` so the CLI defers
+ * them behind tool search although the server is always loaded (the CLI's
+ * per-tool override of a server's alwaysLoad). Other engines never get the
+ * marker (SAGAX_DEFER_RARE_TOOLS is set by the Claude driver only). */
+export function withDeferredRareTools<T extends { name: string }>(tools: readonly T[]): Array<T & { _meta?: Record<string, unknown> }> {
+  return tools.map((tool) => DEFERRED_AGENT_TOOL_NAMES.has(tool.name)
+    ? { ...tool, _meta: { "anthropic/alwaysLoad": false } }
+    : tool);
+}
+
 /** The tools one turn is shown, exactly as tools/list serializes them. */
 export function availableTools(profile: CatalogProfile) {
   const tools = catalogTools(profile);
