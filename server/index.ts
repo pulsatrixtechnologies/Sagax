@@ -346,6 +346,9 @@ import {
 } from "./contracts.ts";
 import { RETRY_MAX_ATTEMPTS } from "./drivers/retry.ts";
 import { recoveryCapabilityError } from "./automatic-recovery.ts";
+import { LimitFailoverStore } from "./limit-failover.ts";
+import { createLimitFailoverHost } from "./limit-failover-host.ts";
+import { limitFailoverText, resetClockText } from "../shared/limit-failover.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
 import { turnRunFor, type TurnRun } from "./turn-run.ts";
 import { attachmentsInText, autoModelRecord, bareModelId, explainPick, familyOfModel, isModelRefusal, nextInChain, pickOrchestrationModel, pickWorkerModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
@@ -11301,6 +11304,121 @@ function turnFailureCause(event: { threadId: string; turnId?: string; ok: boolea
   if (event.ok) return undefined;
   return turnStops.read(event.threadId, event.turnId)?.error ?? (event.stopReason?.trim() || undefined);
 }
+
+// ── usage limits (port of OpenMausBot #3074 and #2754, server/limit-failover.ts) ──
+// An engine whose usage limit refuses a turn hands the same message to
+// another engine this speaker really has, at once, with one line in the
+// thread; the thread goes back after the reset. Off with SAGAX_LIMIT_FAILOVER=0.
+/** The test clock (#3120): a fixture that isolated HOME may shorten the
+ * wait after a reset; nothing else may. */
+function limitAfterResetMs(): number | undefined {
+  const raw = process.env.SAGAX_TEST_LIMIT_AFTER_RESET_MS;
+  if (!raw || !process.env.SAGAX_DATA_DIR || process.env.SAGAX_DATA_DIR !== process.env.HOME) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+const limitFailoverStore = new LimitFailoverStore({ file: join(DATA_DIR, "limit-failovers.json"), now: () => Date.now(), afterResetMs: limitAfterResetMs() });
+const limitFailover = createLimitFailoverHost({
+  store: limitFailoverStore,
+  now: () => Date.now(),
+  enabled: () => process.env.SAGAX_LIMIT_FAILOVER?.trim() !== "0",
+  engineName: (instanceId) => {
+    const live = registry.get(instanceId);
+    return live ? engineDisplayName(live) : instanceId;
+  },
+  engine: (instanceId) => {
+    const live = registry.get(instanceId);
+    return live ? { instanceId, driverKind: live.driverKind } : undefined;
+  },
+  candidates: async (botId, threadId, speaker) => {
+    // No speaker known is an unknown person, never the owner (resolveTurnSpeaker).
+    // Solo: which engines are signed in comes from the probe cache; read it
+    // now when it is empty or stale, a backup is chosen only from what is known.
+    if (IDENTITY.kind !== "perspicax" && (!engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS))) {
+      await probeEngines().catch(() => {});
+    }
+    const bot = store.projectBotForTask(botId, threadId);
+    if (!bot) return [];
+    const guestConfined = cloudGuestDriven(threadId);
+    return autoEnginesFor(bot, (speaker ?? { origin: "person" }) as TurnSpeaker, guestConfined).map((engine) => ({
+      instanceId: engine.instanceId, driverKind: engine.driverKind,
+      models: engine.models.options.map((option) => option.id), defaultModel: engine.models.default,
+    }));
+  },
+  preferred: (botId, threadId) => {
+    const bot = store.projectBotForTask(botId, threadId);
+    const orgDefault = cfg.newBotDefaults?.profile.modelSelection ?? cfg.defaultModelSelection;
+    return [...botRecoveryBackups(bot, cfg), ...(orgDefault ? [{ instanceId: orgDefault.instanceId, model: orgDefault.model }] : [])];
+  },
+  config: (instanceId) => {
+    const config = providerConfigs()[instanceId];
+    return config ? { ...(config.environment ? { environment: config.environment } : {}), ...(config.access ? { access: config.access } : {}) } : undefined;
+  },
+  payer: (botId, speaker) => {
+    const bot = store.bot(botId);
+    return bot ? autoPayerKey(bot, (speaker ?? { origin: "person" }) as TurnSpeaker) : "server";
+  },
+  threadSelection: (botId, threadId) => store.projectBotForTask(botId, threadId)?.modelSelection ?? null,
+  busy: threadBusy,
+  switchThread: (botId, threadId, to) => {
+    const current = store.projectBotForTask(botId, threadId);
+    if (!current) return "the conversation is gone";
+    if (threadBusy(botId, threadId)) return "the conversation is working";
+    const target = registry.get(to.instanceId);
+    if (!target?.enabled) return "the engine is unavailable";
+    const refusal = policyModelRefusal(target) ?? orgEngineAllowRefusal(to.instanceId);
+    if (refusal) return refusal;
+    const checked = checkedTaskModelSwitch(current, to, false, true);
+    if (!checked.ok) return checked.error;
+    if (!store.switchTaskModel(botId, threadId, checked.selection, false, {
+      ...hostedModels?.resetTask(current.modelSelection, checked.selection), rewound: true,
+    })) return "the model switch could not be saved";
+    return null;
+  },
+  note: (threadId, line) => {
+    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: `recovery: ${limitFailoverText(line, limitClockText)}`, ok: true, limitFailover: line } });
+  },
+  replaceFailure: (threadId, turnId, line, since) => {
+    const tool = { name: `recovery: ${limitFailoverText(line, limitClockText)}`, ok: true, limitFailover: line };
+    // The engine's own error row for this turn becomes the line: one row,
+    // not two. A runtime.error row may carry no turn id: then the last one
+    // written since the turn was dispatched.
+    const failure = store.messagesFor(threadId).findLast((message) => message.kind === "activity" && message.tool !== undefined &&
+      failedTurnCause(message.tool.name) !== null && (turnId && message.turnId ? message.turnId === turnId : message.at >= since));
+    if (failure) store.patchMessage(threadId, failure.id, { tool });
+    else store.appendMessage(threadId, { role: "bot", kind: "activity", tool });
+  },
+  request: (threadId) => directRequestOwners.get(threadId),
+  resend: async (botId, threadId, messageId, speaker, trigger) => {
+    const path = store.activePath(threadId);
+    const message = path.find((candidate) => candidate.id === messageId);
+    // Only the person's own latest line, never one a bot delivered.
+    if (!message || message.role !== "user" || message.kind !== "text" || !message.text || message.peerAsk) return false;
+    if (path.findLast((candidate) => candidate.role === "user" && candidate.kind === "text")?.id !== messageId) return false;
+    if (!store.taskByThread(botId, threadId) || threadBusy(botId, threadId)) return false;
+    const replyTo = message.replyToId ? path.find((candidate) => candidate.id === message.replyToId) : undefined;
+    await startTurn(botId, message.text, {
+      threadId, userMessage: message, ...(speaker ? { speaker: speaker as TurnSpeaker } : {}),
+      ...(message.sender ? { sender: message.sender } : {}), ...(trigger ? { trigger: trigger as UsageTrigger } : {}),
+      ...(replyTo ? { replyTo } : {}), ...(message.via === "call" ? { via: "call" as const, ...(message.callId ? { callId: message.callId } : {}) } : {}),
+      ...(message.dataContext ? { dataContext: message.dataContext } : {}),
+    });
+    return true;
+  },
+  rerunRoutine: (routineId) => {
+    const routine = routines?.getRoutine(routineId);
+    return Boolean(routine?.enabled && routines?.runNow(routineId));
+  },
+});
+/** A reset as the English line says it, in this server's zone. */
+function limitClockText(at: number): string {
+  return resetClockText(at, "en-US", hostTimeZone());
+}
+bus.subscribe((event: RuntimeEvent) => {
+  if (shouldIgnoreProviderEvent(event)) return;
+  if (event.type === "runtime.error") limitFailover.noteError(event.threadId, event.message, event.limitResetsAt);
+  else if (event.type === "turn.completed" && event.ok) limitFailover.turnSucceeded(event.threadId);
+});
 /** Threads whose running turn a client abort ended (the abort sentence as
  * assistant text or as runtime.error), with that turn's id when known.
  * turn.completed reads it as a stop, not a failure, whatever stopReason the
@@ -14214,7 +14332,12 @@ bus.subscribe((event: RuntimeEvent) => {
         turnResourceOwners.get(event.threadId)?.lazyClaimFailureReported === true;
       const computerParked = event.stopReason === "exit_before_result" &&
         turnResourceOwners.get(event.threadId)?.computerParkedOn !== undefined;
-      if (!event.ok && !stopped && !lazyClaimAlreadyReported && !computerParked && !routines?.runForThread(event.threadId)) {
+      // A usage limit: another engine continues the turn, or it waits for the
+      // reset (server/limit-failover-host.ts); either way no incident.
+      const limitTaken = !event.ok && !stopped && !lazyClaimAlreadyReported && !computerParked && Boolean(bot) &&
+        limitFailover.turnFailed({ threadId: event.threadId, turnId: completedTurnId, cause: turnFailureCause(event), stopReason: event.stopReason,
+          routineRun: routineRun?.status === "failed" ? routineRun : null });
+      if (!event.ok && !stopped && !limitTaken && !lazyClaimAlreadyReported && !computerParked && !routines?.runForThread(event.threadId)) {
         const broken = bot ?? (speaker ? store.bot(speaker.botId) : undefined);
         if (broken) reportIncident({ kind: "failed", bot: broken, threadId: event.threadId, detail: turnFailureCause(event) ?? "the run ended without a result" });
       }
@@ -17144,6 +17267,19 @@ async function startTurn(
       automationSource: opts?.automationSource,
     }));
   }
+  // A usage limit (server/limit-failover-host.ts): back on the thread's own
+  // engine once it reset, or onto a backup while it is known to refuse.
+  // Never for a warm-up or a card's continuation of a running turn.
+  if (!opts?.warmOnly && !opts?.cardContinuation) {
+    const switching = limitFailover.beforeTurn(botId, threadId, resolveTurnSpeaker({
+      speaker: opts?.speaker,
+      sender: opts?.sender ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.sender),
+      peerAsk: opts?.peerAsk ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.peerAsk),
+      trigger: opts?.trigger,
+      automationSource: opts?.automationSource,
+    }));
+    if (switching) await switching;
+  }
   let bot = store.projectBotForTask(botId, threadId);
   if (!bot) throw Object.assign(new Error("no such task"), { status: 404 });
   // A person who does not own this bot runs on their own model and effort
@@ -18694,6 +18830,10 @@ async function startTurn(
         ...(onCall ? { budget: CALL_RECALL_BUDGET } : {}),
       });
       runningTurnEngines.set(threadId, instance);
+      if (!warmOnly) limitFailover.noteDispatch(threadId, {
+        botId: bot.id, engine: { instanceId: instance.instanceId, driverKind: instance.driverKind }, selection: bot.modelSelection,
+        payer: autoPayerKey(bot, speaker), speaker, ...(opts?.trigger ? { trigger: opts.trigger } : {}), at: Date.now(),
+      });
       idleEngines.noteBusy(threadId);
       // The prompt carries the soul as saved now. If it changed during setup,
       // decide again from what is actually sent — except on a continuation
@@ -45697,6 +45837,7 @@ const onListening = async () => {
   // that joins the same conversation waits for the resume, not the reverse.
   resumeTurnsCutByRestart();
   routines!.start();
+  limitFailover.start();
   memoryUpkeep.start();
   const leftover = pendingThreads();
   if (leftover.length) console.log(`delegations: ${leftover.length} thread(s) with queued handoffs from a previous run — draining`);

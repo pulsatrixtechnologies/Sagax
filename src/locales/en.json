@@ -9238,5 +9238,9 @@
   "code.subscription.title": "Your subscription for this run",
   "code.subscription.missing": "This run uses your own {engine} subscription, and you have no {engine} sign-in in Sagax. Connect it in Settings, My subscriptions and keys, then start the run again.",
   "code.subscription.expired": "Your {engine} sign-in in Sagax expired and could not be renewed. Sign in again in Settings, My subscriptions and keys.",
-  "code.subscription.refused": "Perspicax refused your {engine} subscription for this run."
+  "code.subscription.refused": "Perspicax refused your {engine} subscription for this run.",
+  "limitFailover.switched": "Limit reached on {from}: continuing on {to} until it resets (around {time}).",
+  "limitFailover.back": "{engine}'s limit has reset: back on {engine}.",
+  "limitFailover.waiting": "Limit reached on {from} and no other engine is available: your message will be sent again when it resets (around {time}).",
+  "limitFailover.waitingRoutine": "Limit reached on {from} and no other engine is available: this routine runs again when it resets (around {time})."
 }

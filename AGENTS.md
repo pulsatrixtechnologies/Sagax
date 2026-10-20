@@ -4582,6 +4582,46 @@ the kernel then killed the server itself. `server/engine-memory-guard.ts`:
   `SAGAX_CHILD_OOM_SCORE_ADJ` (500; `spawnCli` plus a sweep each tick), so an
   OOM kill takes one engine (one turn), not the server.
 
+## Usage limits: automatic backup engine (2026-10-19)
+
+Port of OpenMausBot #3074 (backup engine, back after the reset, with the
+clock fix #3120) and #2754 (another engine when one runs out), adapted to
+JC's rule: no card, the turn continues at once.
+
+- A failed turn whose cause is a usage limit (`limitKindOf` in
+  `server/limit-reset-time.ts`: the shared `quota` class, a spent balance,
+  a driver's `quota` stop, or a 429 the driver gave up on) blocks that
+  engine for that payer (`autoPayerKey`) until its reset: the engine's own
+  time (`runtime.error.limitResetsAt`, from Claude's `rate_limit_info`;
+  Retry-After, "try again in", an ISO or epoch reset, Codex's "try again
+  at 5:23 PM"), else a prudent estimate (1 h, 15 min for a 429).
+- The person's own message (request origin `user`) is sent again at once on
+  a backup, in the same thread, the message not duplicated
+  (`server/limit-failover-host.ts`). The engine's error row becomes one
+  `recovery:` line carrying `tool.limitFailover`, which the app draws in the
+  reader's language (`limitFailover.*` keys, `src/lib/limit-failover.ts`).
+- Candidates are `autoEnginesFor` (the same filter Auto uses): enabled,
+  organization policy and `allowedEngines`, sign-ins and keys of this
+  speaker (`resolveEngineAccess`), approval mode, tools the thread needs.
+  Never another sign-in to the same subscription engine
+  (`limitBackupAllowed`). Order: the bot's own backups, then the default
+  model of new bots, then the catalog. Engines blocked for this payer are
+  skipped: no ping-pong, at most 3 takeovers per message.
+- Only the thread moves (`switchTaskModel`, `rewound`), never the bot. The
+  failover is kept in `DATA_DIR/limit-failovers.json`; the first turn after
+  the reset plus `AFTER_RESET_MS` goes back to the engine the thread started
+  on, with one line. A thread someone moved since is left alone.
+- No backup: the line says the message is sent again at the reset, and it
+  is, once. A routine run is run again on the backup (`runNow`, once per
+  run), else at the reset (at most once per 12 h per routine). Other turns
+  (delegations, webhooks) only block the engine: their next turn starts on a
+  backup before it is refused (`beforeTurn` in `startTurn`).
+- Auto threads are left to Auto. Off with `SAGAX_LIMIT_FAILOVER=0`. Tests:
+  `server/limit-reset-time.test.ts`, `server/limit-failover.test.ts`,
+  `server/limit-failover-host.test.ts`, `src/lib/limit-failover.test.ts`,
+  `server/limit-failover.e2e.test.ts` (fake engines, the reset shortened by
+  `SAGAX_TEST_LIMIT_AFTER_RESET_MS`, read only when HOME is the data dir).
+
 ## App icon: the Pulsatrix logo (2026-10-14)
 
 The app's default icon is the official Pulsatrix owl mark (white outline,

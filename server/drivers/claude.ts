@@ -2407,7 +2407,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         t.limitReached = t.explained = true;
         t.limit = claudeLimitRefusal(frame.api_error_params?.rate_limit_info) ?? t.limit;
         const said = typeof words === "string" && USAGE_LIMIT.test(words) ? words : undefined;
-        emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: claudeLimitMessage(t.limit ?? null, said) });
+        const resetsAt = t.limit?.resetsAt ? t.limit.resetsAt * 1_000 : undefined;
+        emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: claudeLimitMessage(t.limit ?? null, said),
+          ...(resetsAt && resetsAt > Date.now() ? { limitResetsAt: resetsAt } : {}) });
       };
       // The process's first result with a cost says what --resume restored,
       // which its turns are measured from; every result is kept for a later
