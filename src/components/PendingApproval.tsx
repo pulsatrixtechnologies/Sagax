@@ -440,8 +440,9 @@ export function PendingApprovalActions({
     <button
       type="button"
       onClick={alwaysAllow.run}
+      disabled={isSkillRequest && !reviewedSha256}
       title={alwaysAllow.hint}
-      className={secondary}
+      className={cn(secondary, "disabled:cursor-not-allowed disabled:opacity-40")}
       data-always-allow=""
       {...(ownerRule ? { "data-owner-rule": "allow" } : {})}
     >

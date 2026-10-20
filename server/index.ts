@@ -13966,9 +13966,19 @@ bus.subscribe((event: RuntimeEvent) => {
       // their cloud computer) never asks, whatever the engine, the level or
       // the bot that asked; deny and ask rules, a safety hold and a security
       // key still come first (auto-approve.ts).
-      const readOnlyCommand = Boolean(ownDestination && asker && !strictCard && !guestDriven && !foreignDestination
-        && /^(?:mcp__)?(?:sagax-environment|sagax-desktop)__run_command$/.test((event.mcpTool ?? event.tool ?? "").trim())
-        && isReadOnlyCommand(event.command?.command ?? runCommandOf(typeof event.input === "string" ? event.input : undefined)));
+      // The cloud computer is isolated, so any turn reads there unasked; the
+      // person's real computer only from their own turn. A deny or ask rule
+      // the person kept (Settings > Security) keeps its say.
+      const readOnlyTool = /^(?:mcp__)?(sagax-environment|sagax-desktop)__run_command$/.exec((event.mcpTool ?? event.tool ?? "").trim());
+      const readOnlyText = event.command?.command ?? runCommandOf(typeof event.input === "string" ? event.input : undefined);
+      const readOnlyCommand = Boolean(ownDestination && asker && !strictCard && !guestDriven && !foreignDestination && readOnlyTool
+        && (readOnlyTool[1] === "sagax-environment" || destinationOrigin === "owner")
+        && isReadOnlyCommand(readOnlyText)
+        && !matchOwnerRule(ownerApprovals.rulesOf(cardAnswerer, asker.id).filter((rule) => rule.behavior !== "allow"), {
+          ownerId: cardAnswerer, botId: asker.id, tool: event.mcpTool ?? event.tool,
+          ...(typeof event.input === "string" ? { input: event.input } : {}),
+          ...(event.command?.cwd ? { cwd: event.command.cwd } : {}),
+        }));
       // Security review 2026-10-19: no saved Allow key (the Sagax gate's
       // Always allow) answers or is offered for a call no rule may answer:
       // someone else's environment, or a destination outside an isolated
@@ -14074,6 +14084,7 @@ bus.subscribe((event: RuntimeEvent) => {
               tool: event.tool,
               ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
               ...(typeof event.input === "string" ? { input: event.input } : {}),
+              ...(readOnlyCommand && readOnlyText ? { command: readOnlyText } : {}),
               summary: event.summary,
             })
             : selfAnswerStepUp,

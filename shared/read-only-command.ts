@@ -14,22 +14,27 @@ const READERS = new Set([
 ]);
 
 const GIT_READS = new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "blame", "describe", "shortlog"]);
-const GIT_LISTS = new Set(["branch", "remote", "tag", "stash"]);
+const GIT_LISTS = new Set(["branch", "remote", "tag"]);
 const GIT_LIST_FLAGS = new Set(["-a", "-r", "-v", "-vv", "--list", "-l", "--show-current", "--all", "--remotes", "list"]);
 
 /** Options that write a file or run another program, by reader. */
 const FORBIDDEN_OPTIONS: Record<string, RegExp> = {
   find: /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/,
   rg: /^--pre(=|$)/,
-  sort: /^(-o|--output)/,
-  tree: /^-o$/,
-  file: /^(-C|--compile)$/,
-  date: /^(-s|--set)/,
-  git: /^--output(=|$)|^--ext-diff$|^--textconv$/,
+  // short options combine (-uo out.txt): any cluster with o writes a file
+  sort: /^-[^-]*o|^--output|^--compress-program/,
+  tree: /^-[^-]*o/,
+  file: /^-[^-]*C|^--compile/,
+  date: /^-[^-]*s|^--set/,
+  printf: /^-v/,
+  git: /^--output(=|$)|^--ext-diff$|^--textconv$|^-c$|^--config-env/,
 };
 
 const SENSITIVE_PATH = /(^|[/~])\.(ssh|aws|gnupg|kube|docker|netrc|git-credentials|npmrc|pypirc|azure|password-store)(\/|$)|\.config\/(gh|gcloud)(\/|$)|(^|\/)id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)$|credentials|(^|\/)proc\/|\/etc\/(shadow|sudoers)|(^|\/)\.env(\.|$)|keychain/i;
 const SECRET_VARIABLE = /TOKEN|SECRET|KEY|PASS|AUTH|CRED|COOKIE|SESSION|PRIVATE/i;
+
+const RECURSIVE = new Set(["grep", "egrep", "fgrep", "rg", "find", "du", "tree", "ls", "cat"]);
+const WHOLE_TREE = new Set(["~", "~/", "/", "$HOME", "${HOME}", "$HOME/", "/root", "/home", "/Users", "~/*", "/*"]);
 
 type Part = { words: string[] };
 
@@ -54,6 +59,8 @@ function parts(line: string): Part[] | null {
       const name = /^\{([A-Za-z_][A-Za-z0-9_]*)\}|^([A-Za-z_][A-Za-z0-9_]*)/.exec(rest);
       if (!name) return null;
       if (SECRET_VARIABLE.test(name[1] ?? name[2] ?? "")) return null;
+      // PowerShell's $env:NAME (and any scoped variable) names another variable
+      if (text[i + 1 + name[0].length] === ":") return null;
       word += `$${name[0]}`; inWord = true; i += name[0].length; continue;
     }
     if (quote === "\"") { if (c === "\"") quote = null; else if (c === "\\") { word += text[i + 1] ?? ""; i += 1; } else word += c; continue; }
@@ -82,6 +89,11 @@ function readerOnly(words: string[]): boolean {
   const [program, ...args] = words;
   if (!program || program.includes("=") || program.includes("/")) return false;
   if (args.some((arg) => SENSITIVE_PATH.test(arg))) return false;
+  // a glob that starts a hidden name (.s*, ~/.ss?/) reaches dotfiles; a
+  // network path (\\host\share, //host) leaks credentials on Windows
+  if (args.some((arg) => /(^|\/)\.[^/]*[*?[]/.test(arg) || /^(\\\\|\/\/)/.test(arg))) return false;
+  // a recursive search of the whole home or disk reads every key file
+  if (RECURSIVE.has(program) && args.some((arg) => WHOLE_TREE.has(arg))) return false;
   const forbidden = FORBIDDEN_OPTIONS[program];
   if (forbidden && args.some((arg) => forbidden.test(arg))) return false;
   if (program === "git") {
@@ -102,6 +114,8 @@ export function isReadOnlyCommand(command: string | undefined): boolean {
   if (typeof command !== "string") return false;
   const line = command.trim();
   if (!line || line.length > 4000) return false;
+  // PowerShell (the desktop on Windows) keeps backslashes: \\host\share
+  if (/(^|[\s'"])\\\\/.test(line)) return false;
   const list = parts(line);
   return Boolean(list?.length) && list!.every((part) => readerOnly(part.words));
 }
@@ -120,6 +134,17 @@ export function runCommandOf(input: string | undefined): string | undefined {
   }
 }
 
+/** Programs that run another program or reach the network: a rule for
+ * them would cover anything, so they keep an exact rule. */
+const LAUNCHERS = new Set([
+  "bash", "sh", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "pwsh", "powershell", "cmd", "cmd.exe",
+  "python", "python3", "node", "deno", "bun", "ruby", "perl", "php", "lua", "osascript", "awk", "gawk",
+  "env", "sudo", "doas", "su", "xargs", "timeout", "nohup", "nice", "exec", "eval", "command", "builtin",
+  "time", "watch", "parallel", "npx", "pnpx", "bunx", "uvx", "pipx", "make", "docker", "kubectl",
+  "ssh", "scp", "sftp", "rsync", "curl", "wget", "nc", "ncat", "socat", "telnet", "ftp",
+  "start-process", "invoke-expression", "iex",
+]);
+
 /** 2026-10-20 (JC: "Toujours permettre" = this program, not the exact
  * string): the one program a plain command line runs (`cd` aside), when
  * it parses as plain programs (no substitution, redirect or background
@@ -131,8 +156,13 @@ export function singleProgramOf(command: string | undefined): string | undefined
   if (!line || line.length > 4000) return undefined;
   const list = parts(line);
   if (!list?.length) return undefined;
-  const programs = new Set(list.map((part) => part.words[0] ?? "").filter((program) => program !== "cd"));
+  // a cd elsewhere would carry the rule to another folder
+  if (list.some((part) => part.words[0] === "cd")) return undefined;
+  const programs = new Set(list.map((part) => part.words[0] ?? ""));
   if (programs.size !== 1) return undefined;
   const [program] = [...programs];
-  return program && /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/.test(program) ? program : undefined;
+  if (!program || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/.test(program) || LAUNCHERS.has(program.toLowerCase())) return undefined;
+  // git -C <elsewhere> / -c <config> runs in another place or another way
+  if (program === "git" && list.some((part) => part.words.some((word) => word === "-C" || word === "-c" || word.startsWith("--git-dir") || word.startsWith("--work-tree")))) return undefined;
+  return program;
 }

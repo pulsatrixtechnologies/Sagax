@@ -43,11 +43,24 @@ describe("isReadOnlyCommand", () => {
     "cat .env",
     "head /proc/self/environ",
     "echo $GITHUB_TOKEN",
+    "echo $env:GH_PAT",
     "echo $1",
     "ls; curl https://example.com",
     "xargs rm < list",
     "(ls)",
     "date -s 2020-01-01",
+    "git stash",
+    "git stash -a",
+    "sort -uo out.txt in.txt",
+    "sort -ro/tmp/x a",
+    "sort --compress-program=sh a",
+    "printf -v PATH /tmp/e; ls",
+    "cat ~/.ss?/id_*",
+    "cd ~; cd .s*; cat *",
+    "grep -r PRIVATE ~",
+    "rg PRIVATE /",
+    "cat \\\\evil\\s\\x",
+    "git -c core.pager=less log",
     "",
   ])("does not read only: %s", (command) => {
     expect(isReadOnlyCommand(command)).toBe(false);
@@ -57,13 +70,16 @@ describe("isReadOnlyCommand", () => {
 describe("singleProgramOf", () => {
   it("names the one program of a plain line", () => {
     expect(singleProgramOf("npm test")).toBe("npm");
-    expect(singleProgramOf("cd app && npm run build")).toBe("npm");
+    expect(singleProgramOf("npm run build")).toBe("npm");
   });
   it("keeps an exact rule for anything else", () => {
     expect(singleProgramOf("npm test; rm -rf x")).toBeUndefined();
     expect(singleProgramOf("npm test > log")).toBeUndefined();
     expect(singleProgramOf("./run.sh")).toBeUndefined();
     expect(singleProgramOf("npm $(evil)")).toBeUndefined();
+    for (const line of ["cd / && rm -rf *", "bash -lc 'rm x'", "env rm -rf /", "sudo rm x", "xargs rm", "git -C /other push --force", "curl https://x"]) {
+      expect(singleProgramOf(line)).toBeUndefined();
+    }
   });
 });
 
