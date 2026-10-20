@@ -50,7 +50,7 @@ export interface ApprovalsInboxDeps {
  * tool card or that a spoken answer could not settle either
  * (liveDecisionRefusal). */
 export function inboxSpecialCard(card: OptionCardData): boolean {
-  return Boolean(card.outboundRequest || card.adminApproval || card.botActRequest || card.cwActionRequest || card.emailSendRequest
+  return Boolean(card.outboundRequest || card.adminApproval || card.heldCode || card.botActRequest || card.cwActionRequest || card.emailSendRequest
     || card.teamMemoryRequest || card.confidentialMemoryRequest || card.terminalRequest || card.meetingRequest
     || card.routineRequest || card.skillRequest || (card as { tighteningRequest?: unknown }).tighteningRequest
     || approvalTypeOf(card) !== "tool" || liveDecisionRefusal(card));

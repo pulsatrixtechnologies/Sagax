@@ -10273,6 +10273,15 @@ function inboxBulkVerdict(threadId: string, card: NonNullable<Message["card"]>, 
   return needsKey ? "needs-key" : true;
 }
 
+/** A name the screen may show: never an email address or an identifier. */
+function plainPersonName(name: string | undefined): name is string {
+  return Boolean(name) && !/@/.test(name!) && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(name!) && !/^pr_/i.test(name!);
+}
+function inboxPersonName(principalId: string): string | undefined {
+  const name = adminPerson(principalId).name;
+  return plainPersonName(name) ? name : undefined;
+}
+
 function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
   const approvalViewer = viewerForApproval(auth);
   const viewerId = channelFilterViewerId(auth);
@@ -10281,7 +10290,9 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
   const out: InboxApproval[] = [];
   for (const { bot, threadId, message, card, question } of pendingInboxCards()) {
     const confidential = store.isConfidentialThread(threadId);
-    const ownerId = approvalOwnerId(bot, threadId);
+    // the person who answers this card (a destination's answerer included),
+    // as approvalAnswerRefusal and the console read it
+    const ownerId = cardAnswererId(bot, threadId, card);
     const group = store.groupByThread(threadId);
     const readable = !viewerId || botThreadReadable(bot, threadId, viewerId, "thread.read");
     let scope: InboxScope;
@@ -10319,7 +10330,7 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
       waitingOn = "owner";
     }
     // the card exactly as this person's conversation shows it
-    const shown = decidable && readable ? projectMessages(threadId, [message], approvalViewer)[0] as Message | undefined : undefined;
+    const shown = decidable && (readable || (card.adminApproval && orgAdmin)) ? projectMessages(threadId, [message], approvalViewer)[0] as Message | undefined : undefined;
     if (decidable && !question && !shown?.card?.requestId) continue;
     const type = approvalTypeOf(card);
     const kind: InboxKind = question ? "question"
@@ -10327,7 +10338,7 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
     const tool = card.mcpTool ?? card.tool;
     const described = kind === "permission" && tool ? describeApproval(String(tool), card.toolInput ?? card.subtitle, card.toolHints) : undefined;
     const needsKey = decidable && kind !== "question" ? Boolean(stepUpGate(viewer.principalId, threadId, card.requestId!, "allow", {}, undefined)) : false;
-    const owner = IDENTITY.kind === "perspicax" ? adminPerson(ownerId).name : undefined;
+    const owner = IDENTITY.kind === "perspicax" ? inboxPersonName(ownerId) : undefined;
     const title = group ? store.groupTasks(group.id).find((task) => task.threadId === threadId)?.title : store.taskByThread(bot.id, threadId)?.title;
     out.push({
       key: inboxKey(threadId, card.requestId!),
@@ -10344,7 +10355,7 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
       ...(tool && kind === "permission" ? { tool: String(tool).slice(0, 200) } : {}),
       ...(card.toolHints ? { toolHints: card.toolHints } : {}),
       decidable,
-      ...(waitingOn ? { waitingOn, waitingOnName: waitingOn === "owner" ? owner : orgAdminNames().join(", ") || undefined } : {}),
+      ...(waitingOn ? { waitingOn, waitingOnName: waitingOn === "owner" ? owner : orgAdminNames().filter(plainPersonName).join(", ") || undefined } : {}),
       ...(owner && scope !== "mine" ? { ownerName: owner } : {}),
       ...(needsKey ? { needsKey: true } : {}),
       bulk: decidable ? inboxBulkVerdict(threadId, card, kind, needsKey) : "not-yours",
@@ -10361,18 +10372,19 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
 function inboxHistory(auth: RequestAuth, viewer: InboxViewer): InboxHistoryEntry[] {
   const to = new Date();
   const from = new Date(to.getTime() - 30 * 24 * 60 * 60_000);
-  const admin = auth.kind === "loopback" || orgAdminCaller(auth) || !sharedMembership();
+  // an admin of this server only: never a chat-only guest of a solo server
+  const admin = auth.kind === "loopback" || orgAdminCaller(auth) || (auth.kind === "session" && auth.scopes.includes("admin"));
   const rows = readDecisionRange(DATA_DIR, { from, to }).filter((row) => {
     // a person's answer only: what was shown, decided by a rule or left to expire is not an answer
     if (row.source !== "user" && row.source !== "question") return false;
     if (row.decision !== "user-approved" && row.decision !== "user-denied" && row.decision !== "user-undone") return false;
     if (row.actor?.kind === "session" && row.actor.userId === viewer.principalId) return true;
     const bot = row.botId ? store.bot(row.botId) : undefined;
-    if (store.isConfidentialThread(row.threadId)) return Boolean(bot) && approvalOwnerId(bot!, row.threadId) === viewer.principalId;
+    if (store.isConfidentialThread(row.threadId)) return Boolean(bot) && cardAnswererId(bot!, row.threadId, undefined) === viewer.principalId;
     if (admin) return true;
-    return Boolean(bot) && approvalOwnerId(bot!, row.threadId) === viewer.principalId;
+    return Boolean(bot) && cardAnswererId(bot!, row.threadId, undefined) === viewer.principalId;
   });
-  return activityEntries(rows, [], { what: "decisions" }, (principalId) => adminPerson(principalId).name)
+  return activityEntries(rows, [], { what: "decisions" }, (principalId) => (admin ? adminPerson(principalId).name : inboxPersonName(principalId) ?? "someone"))
     .slice(0, INBOX_HISTORY_MAX)
     .map((entry) => {
       const row = entry as Extract<typeof entry, { type: "approval" }>;
@@ -10402,6 +10414,14 @@ async function answerInboxCard(auth: RequestAuth, threadId: string, requestId: s
   if (!message || !card || !isApprovalCardMessage(message)) return { ok: false, status: 404, code: "gone", message: "No such approval." };
   if (card.answered || card.dismissed || card.expired) return { ok: false, status: 409, code: "gone", message: "This approval was already answered or has expired." };
   if (stepUpGate(ruleManager(auth), threadId, requestId, decision, {}, undefined)) return { ok: false, status: 403, code: "needs-key", message: "This approval needs your security key." };
+  // the guards POST /api/threads/:id/respond meets on its way in: an
+  // archived temporary agent takes no answer, and the person must be able to
+  // post on the thread (an admin's card excepted, as adminAnswersPendingApproval)
+  const cardBot = botForApproval(threadId, message);
+  if (!cardBot) return { ok: false, status: 404, code: "gone", message: "No such approval." };
+  if (cardBot.temporary?.archived) return { ok: false, status: 410, code: "gone", message: "This agent was archived." };
+  const posterId = channelFilterViewerId(auth);
+  if (!card.adminApproval && posterId && !botThreadReadable(cardBot, threadId, posterId, "thread.post")) return { ok: false, status: 403, code: "not-yours", message: "You cannot answer on this conversation." };
   if (delegatedRequest() && store.isConfidentialThread(threadId)) return { ok: false, status: 403, code: "confidential", message: CONFIDENTIAL_CARD_DELEGATED };
   if (inboxSpecialCard(card) || isConfidentialMemoryCard(threadId, requestId) || isBotActCard(threadId, requestId)) return { ok: false, status: 400, code: "special", message: "Answer this one on its own card." };
   const adminCheck = adminApprovalCheck(auth, threadId, requestId);
