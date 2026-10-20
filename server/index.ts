@@ -12196,7 +12196,8 @@ const TOOL_RESULT_SPILL_MAX = 512 * 1024;
  * the activity row the fold already wrote for that call, which flips the
  * turn's evidence to "full" for the digest. Idempotent on the tool_use_id
  * (a re-delivered hook never double-writes). Other events are accepted and
- * ignored here; item 0.4 gives PreCompact/SessionStart/Stop their meaning. */
+ * ignored here; item 0.4 gives PreCompact/SessionStart their meaning (Stop is
+ * no longer registered: nothing used it, perf round 4). */
 const DIGESTS_AFTER_COMPACTION = 2;
 function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: boolean; ignored?: string; context?: string; hookSpecificOutput?: unknown } {
   const event = body && typeof body === "object" ? (body as { event?: unknown; payload?: unknown }) : {};
@@ -12231,7 +12232,6 @@ function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: 
     ];
     return lines.length ? { ok: true, context: lines.join("\n") } : { ok: true };
   }
-  if (name === "Stop") return { ok: true };
   if (name === "PostToolUseFailure") return shellTimeoutHookResult(payload);
   if (name !== "PostToolUse") return { ok: true, ignored: name || "unknown" };
   const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";

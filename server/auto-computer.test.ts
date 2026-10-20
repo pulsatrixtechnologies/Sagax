@@ -180,6 +180,14 @@ describe("Auto guidance (prompt fixture)", () => {
     expect(text).toContain("Never work around a refusal");
   });
 
+  it("rides the volatile half of the system prompt, never the stable one", async () => {
+    const { buildSystemPrompt } = await import("./system-prompt.ts");
+    const built = buildSystemPrompt("persona", "", [{ id: "workplace", label: "Workspace", text: `\n${AUTO_COMPUTER_RULES}` }]);
+    expect(built.stable).not.toContain("This bot's Workspace is Auto");
+    expect(built.volatile).toContain("This bot's Workspace is Auto");
+    expect(built.volatileSections.map((section) => section.id)).toContain("workplace");
+  });
+
   it("has no long dashes", () => {
     expect(text).not.toMatch(/[\u2013\u2014]/);
     expect(line).not.toMatch(/[\u2013\u2014]/);

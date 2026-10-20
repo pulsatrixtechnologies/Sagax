@@ -207,7 +207,7 @@ export const AUTO_COMPUTER_RULES = [
 export function autoComputerGuidance(state: AutoComputerState, desktopConnected: boolean): string {
   const available = AUTO_COMPUTER_TARGETS.filter((target) => autoComputerUnavailable(state, target, desktopConnected) === null);
   const start = state.selected ? autoComputerLabel(state.selected) : "no computer";
-  return `<workplace>This bot's Workspace is Auto (computer_select; the rules are in your system instructions). This turn starts on ${start}; available now: ${available.join(", ") || "none"}.</workplace>`;
+  return `<workplace>This bot's Workspace is Auto (computer_select; its rules are in the Workspace part of your Sagax context). This turn starts on ${start}; available now: ${available.join(", ") || "none"}.</workplace>`;
 }
 
 /** Where one Auto turn starts. */
