@@ -377,6 +377,8 @@ export class SessionRegistry {
     for (const entry of parsed.data.ended ?? []) {
       if (now - entry.at < ENDED_SESSION_MEMORY_MS) this.ended.set(entry.tokenHash, entry);
     }
+    // Dropped here (account sessions after an unclean stop) are not
+    // remembered as ended: they read as unknown, which clients retry.
     const dropped: SessionRecord[] = [];
     this.sessions = parsed.data.sessions.filter((session) => {
       if (session.ephemeral) return false;
@@ -388,7 +390,6 @@ export class SessionRegistry {
       this.recheck.add(session.id);
       return true;
     });
-    for (const session of dropped) this.remember(session, "session_revoked", now);
     if (dropped.length) {
       console.warn(`sessions: ${dropped.length} account session(s) ended after an unclean stop${restoreProviderSessions ? "" : " (a session write had failed before it)"}`);
     }

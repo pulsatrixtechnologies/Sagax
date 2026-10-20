@@ -2983,8 +2983,13 @@ sensitive action. Keep these, each covered by a test:
   rotated token is written first and kept in memory if the write fails; the
   vault is re-read before a refresh and before each write (a deploy's two
   processes). `invalid_grant` is asked again after 2 s with the newest token
-  before it ends that one sign-in; the person is marked out only when a
-  second sign-in of theirs is refused too. Transient failures retry at 5 s
+  before it ends that sign-in; the person is marked out (all sessions,
+  `disabledAt`) only when a second sign-in of theirs is refused too, or when
+  they have no other sign-in to ask. The vault is written under an O_EXCL
+  lock, refresh paths only `update` a grant still present (never bring back
+  a removed one), and a file that cannot be read is never written over.
+  `invalid_client` and the like are a deploy for 15 minutes, then end the
+  sign-in; an ignored id_token keeps the 24 h clock running. Transient failures retry at 5 s
   and 15 s (inside Perspicax's 30 s reuse grace), then each minute; 24 hours
   of observed failures answer 503 `idp_unreachable`, never a sign-out.
   `server/oidc-rp.ts`: only `invalid_grant` is a refusal; `invalid_client`

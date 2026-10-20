@@ -28,7 +28,7 @@
 //   - a back-channel logout revokes every session of that person at once,
 //     cancels their pairing codes and marks them out until they sign in again.
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 
@@ -56,6 +56,9 @@ export const IDP_QUICK_RETRY_MS: readonly number[] = [5_000, 15_000];
  * refresh racing another process (a deploy's old and new server) or a
  * provider that answered mid-deploy. */
 export const IDP_REFUSAL_RECHECK_MS = 2_000;
+/** Perspicax refusing this server's client (invalid_client and the like)
+ * is taken for a deploy this long, then as a refusal. */
+export const IDP_CLIENT_REFUSED_GRACE_MS = 15 * 60_000;
 export const DEFAULT_REFRESH_AFTER_SECONDS = 3000;
 /** A grant created for a web sign-in binds to its session at once; this is
  * only the window in which a crash could leave it unbound. */
@@ -201,15 +204,18 @@ export class IdpGrantVault {
 
   /** Read the file again (another process, a deploy's old or new server,
    * may have kept a rotated token). Memory that a failed write left ahead of
-   * the file is kept; a file that cannot be read keeps the last good copy. */
-  reload(): void {
-    if (this.dirty || !this.cached) return;
+   * the file is kept. A file that cannot be read now keeps the last good copy
+   * for reads, and returns false: no write may then go over that file. */
+  reload(): boolean {
+    if (this.dirty || !this.cached) return true;
     const previous = this.cached;
     this.cached = null;
     if (!this.load()) {
       this.cached = previous;
       this.unreadable = null;
+      return false;
     }
+    return true;
   }
 
   /** Null when the store works. */
@@ -232,6 +238,19 @@ export class IdpGrantVault {
     this.write((grants) => { grants[parsed.grantRef] = structuredClone(parsed); });
   }
 
+  /** Change a grant only if it is still there (never brings back one that
+   * another process or a logout removed). Returns whether it was. */
+  update(grantRef: string, change: (grant: IdpGrant) => IdpGrant): boolean {
+    let found = false;
+    this.write((grants) => {
+      const current = grants[grantRef];
+      if (!current) return;
+      found = true;
+      grants[grantRef] = structuredClone(grantSchema.parse(change(structuredClone(current))));
+    });
+    return found;
+  }
+
   delete(grantRef: string): boolean {
     let found = false;
     this.write((grants) => {
@@ -242,9 +261,54 @@ export class IdpGrantVault {
   }
 
   private write(change: (grants: Record<string, IdpGrant>) => void): void {
-    // Read-modify-write against the file, so a grant another process wrote
-    // is not put back to an older copy.
-    this.reload();
+    // Read-modify-write against the file, under a lock file shared with a
+    // deploy's other process, so a grant it wrote or removed is not put back
+    // to an older copy.
+    const release = this.lock();
+    try {
+      this.writeLocked(change);
+    } finally {
+      release();
+    }
+  }
+
+  /** An O_EXCL lock beside the vault, waited for at most a second; a lock
+   * older than ten seconds is a crashed holder's and is taken over. Without
+   * it the write still goes (never a lost rotation for a busy lock). */
+  private lock(): () => void {
+    const file = `${this.file}.lock`;
+    const until = Date.now() + 1_000;
+    for (;;) {
+      try {
+        mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+        const fd = openSync(file, "wx", 0o600);
+        closeSync(fd);
+        return () => { try { unlinkSync(file); } catch { /* gone */ } };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") return () => {};
+        try {
+          if (Date.now() - statSync(file).mtimeMs > 10_000) unlinkSync(file);
+        } catch {
+          /* released meanwhile */
+        }
+        if (Date.now() > until) return () => {};
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+    }
+  }
+
+  private writeLocked(change: (grants: Record<string, IdpGrant>) => void): void {
+    if (!this.reload()) {
+      // The file exists but cannot be read now: never written over. The
+      // change lives in memory until a write can go.
+      if (this.cached) {
+        const next: VaultDocument = { version: 1, grants: { ...this.cached.grants } };
+        change(next.grants);
+        this.cached = next;
+        this.dirty = true;
+      }
+      throw new IdpVaultError("The sign-in grant store could not be read again; the change is kept in memory.");
+    }
     const document = this.load();
     if (!document) throw new IdpVaultError(this.unreadable ?? "The sign-in grant store is unavailable.");
     const next: VaultDocument = { version: 1, grants: { ...document.grants } };
@@ -655,7 +719,7 @@ export class IdpSessionManager {
     // Write-ahead: a crash from here until the answer is kept leaves this
     // mark, and the next boot resumes the refresh at once (resumeInterrupted).
     try {
-      this.vault.set({ ...grant, refreshStartedAt: this.now() });
+      this.vault.update(ref, (g) => ({ ...g, refreshStartedAt: this.now() }));
     } catch {
       /* the refresh still runs; a crash now costs at most this grant */
     }
@@ -687,12 +751,23 @@ export class IdpSessionManager {
       delete next.failedAt;
       delete next.failingSince;
       delete next.refreshStartedAt;
+      if (outcome.note) {
+        // An id_token that did not verify: the grant is alive (the rotation
+        // is kept) but its claims are not confirmed, so the 24 h clock keeps
+        // running and a lasting failure stops serving the session (503).
+        next.failedAt = now;
+        next.failingSince = current.failingSince ?? now;
+      }
       // The rotated token is persisted before anything else: the old one is
       // dead (or will be once Perspicax's reuse grace ends). A failed write
       // keeps it in memory (the vault's copy) and the next write saves it;
       // the session is never ended for it.
       try {
-        this.vault.set(next);
+        if (!this.vault.update(ref, () => next)) {
+          // Released by another process meanwhile: the rotated token goes too.
+          this.revocations.enqueue(outcome.refreshToken, "refresh_token", "rotated after its session ended");
+          return;
+        }
       } catch (error) {
         this.log(`idp: could not write a rotated grant to disk yet (kept in memory): ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -727,8 +802,16 @@ export class IdpSessionManager {
       // lost its rotation, so the person is out only if their freshest other
       // sign-in is refused too; with no other sign-in, only this one ends
       // (never "marked out" from a single refusal).
-      this.endGrant(ref, witness ? `${outcome.error}; checking the person's other sign-in` : `${outcome.error}; refused twice`);
-      if (!witness) return;
+      if (!witness) {
+        // Refused twice and no other sign-in to ask: Perspicax ended it (a
+        // disabled person whose push was lost, or an expired family). The
+        // person has no session left either way; marked out so routines and
+        // channel turns stop too, until their next sign-in or the directory
+        // says they are in.
+        this.endGrant(ref, `${outcome.error}; refused twice, no other sign-in`, { personOut: true });
+        return;
+      }
+      this.endGrant(ref, `${outcome.error}; checking the person's other sign-in`);
       this.witnessing.add(witness.grantRef);
       try {
         await this.startRefresh(witness.grantRef);
@@ -738,7 +821,6 @@ export class IdpSessionManager {
       return;
     }
     const now = this.now();
-    const { refreshStartedAt: _started, ...settled } = current;
     if (outcome.rateLimited) {
       // Answered (by the pacer or Perspicax): nothing was rotated.
       // A rate limit is an answer, not an outage: the 24 h grace never
@@ -746,7 +828,7 @@ export class IdpSessionManager {
       const wait = Math.max(IDP_RETRY_AFTER_FAILURE_MS, outcome.retryAfterMs ?? IDP_RETRY_AFTER_FAILURE_MS);
       this.gates.set(ref, { until: now + wait, rateLimited: true });
       try {
-        this.vault.set({ ...settled, failedAt: now });
+        this.vault.update(ref, (g) => { const { refreshStartedAt: _s, ...rest } = g; return { ...rest, failedAt: now }; });
       } catch {
         /* the gate in memory holds */
       }
@@ -761,10 +843,17 @@ export class IdpSessionManager {
     const quick = IDP_QUICK_RETRY_MS[run];
     const wait = quick ?? IDP_RETRY_AFTER_FAILURE_MS;
     this.gates.set(ref, { until: now + wait, rateLimited: false });
+    if (outcome.clientRefused && current.failingSince !== undefined && now - current.failingSince >= IDP_CLIENT_REFUSED_GRACE_MS) {
+      // Perspicax has refused this server's client for a while: not a
+      // deploy any more, an admin removed it. The sign-in ends.
+      this.transientRuns.delete(ref);
+      this.endGrant(ref, `${outcome.error} for ${Math.round((now - current.failingSince) / 60_000)} min`);
+      return;
+    }
     try {
       // The write-ahead mark stays: Perspicax may have rotated and the answer
       // been lost, so a restart before the next try resumes it at once.
-      this.vault.set({ ...current, failedAt: now, failingSince: current.failingSince ?? now });
+      this.vault.update(ref, (g) => ({ ...g, failedAt: now, failingSince: g.failingSince ?? now }));
     } catch {
       /* the grace still counts from the last success */
     }

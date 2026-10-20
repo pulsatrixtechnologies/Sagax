@@ -41,4 +41,13 @@ describe("auth refusal log", () => {
     expect(sessionIdPrefix(undefined)).toBe("-");
     expect(loggablePath("/api/x?y=1")).toBe("/api/x");
   });
+
+  it("caps refusal lines and groups unknown tokens without their route", () => {
+    const lines: string[] = [];
+    const logger = createAuthRefusalLogger({ log: (line) => lines.push(line), now: () => 0 });
+    for (let i = 0; i < 500; i++) logger.record({ event: "refused", status: 401, code: "session_unknown", method: "GET", path: `/api/x${i}`, via: "bearer", userAgent: "curl/8" });
+    expect(lines).toHaveLength(1);
+    for (let i = 0; i < 500; i++) logger.record({ event: "refused", status: 401, code: "session_revoked", method: "GET", path: `/api/x${i}`, via: "bearer", sessionId: "abcdef12-x" });
+    expect(lines.length).toBeLessThanOrEqual(100);
+  });
 });

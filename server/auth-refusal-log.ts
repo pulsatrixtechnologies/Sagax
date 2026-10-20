@@ -61,12 +61,17 @@ export interface AuthRefusalLogger {
 }
 
 export const AUTH_REFUSAL_REPEAT_MS = 60_000;
+/** At most this many refusal lines a minute (ended sessions always go). */
+export const AUTH_REFUSAL_LINES_PER_MINUTE = 100;
 
 export function createAuthRefusalLogger(options: { log?: (line: string) => void; now?: () => number; repeatMs?: number } = {}): AuthRefusalLogger {
   const log = options.log ?? ((line: string) => console.warn(line));
   const now = options.now ?? Date.now;
   const repeatMs = options.repeatMs ?? AUTH_REFUSAL_REPEAT_MS;
   const seen = new Map<string, { at: number; suppressed: number }>();
+  let windowStart = now();
+  let written = 0;
+  let dropped = 0;
   return {
     record(event) {
       const fields = [
@@ -79,8 +84,18 @@ export function createAuthRefusalLogger(options: { log?: (line: string) => void;
         `session=${sessionIdPrefix(event.sessionId)}`,
       ];
       if (event.detail) fields.push(`detail="${event.detail.replace(/["\n\r]/g, " ").slice(0, 160)}"`);
-      const key = fields.join(" ");
+      // An unknown token names no session: grouped without its route, so a
+      // stranger trying many paths gets one line, not one per path.
+      const key = event.code === "session_unknown" && !event.sessionId
+        ? fields.filter((field) => !field.startsWith("route=")).join(" ")
+        : fields.join(" ");
       const at = now();
+      if (at - windowStart >= repeatMs) {
+        if (dropped) log(`auth: ${dropped} more session refusal line(s) held back in the last minute`);
+        windowStart = at;
+        written = 0;
+        dropped = 0;
+      }
       const last = seen.get(key);
       if (event.event === "refused" && last && at - last.at < repeatMs) {
         last.suppressed += 1;
@@ -90,8 +105,13 @@ export function createAuthRefusalLogger(options: { log?: (line: string) => void;
         for (const [k, v] of seen) if (at - v.at >= repeatMs) seen.delete(k);
         if (seen.size > 5_000) seen.clear();
       }
+      if (event.event === "refused" && written >= AUTH_REFUSAL_LINES_PER_MINUTE) {
+        dropped += 1;
+        return;
+      }
       const repeated = last?.suppressed ? ` repeated=${last.suppressed}` : "";
       seen.set(key, { at, suppressed: 0 });
+      written += 1;
       log(`${key}${repeated}`);
     },
   };

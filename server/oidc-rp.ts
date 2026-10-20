@@ -213,6 +213,9 @@ export type CallbackOutcome =
  * from a provider being redeployed or reconfigured: they are transient
  * (2026-10-20, JC: no sign-out for a Perspicax deploy). */
 const REJECTED_GRANT_ERRORS = new Set(["invalid_grant"]);
+/** Errors about this server's client registration: transient for a deploy's
+ * length (IDP_CLIENT_REFUSED_GRACE_MS), a refusal after. */
+const CLIENT_REFUSED_ERRORS = new Set(["invalid_client", "unauthorized_client", "invalid_target", "unsupported_grant_type"]);
 
 /** Default and cap of an access token's life when `expires_in` is missing or
  * out of range (seconds). */
@@ -232,7 +235,7 @@ export type RefreshOutcome =
   | { ok: true; refreshToken: string; identity?: OidcIdentity; accessToken?: string; expiresIn?: number; note?: string }
   /** `rejected`: the provider ended the grant (or answered something that
    * cannot be trusted); `transient`: try again later. */
-  | { ok: false; kind: "rejected" | "transient"; error: string; rateLimited?: true; retryAfterMs?: number };
+  | { ok: false; kind: "rejected" | "transient"; error: string; rateLimited?: true; retryAfterMs?: number; clientRefused?: true };
 
 /** A Retry-After Perspicax did not send, or sent unreadable, counts as this. */
 export const RETRY_AFTER_DEFAULT_MS = 60_000;
@@ -977,7 +980,7 @@ export class OidcRelyingParty {
       if ((got.status === 400 || got.status === 401) && oauthError && REJECTED_GRANT_ERRORS.has(oauthError)) {
         return { ok: false, kind: "rejected", error: `the identity provider refused the refresh (${oauthError})` };
       }
-      return { ok: false, kind: "transient", error: `the identity provider answered HTTP ${got.status}${oauthError ? ` (${oauthError})` : ""}` };
+      return { ok: false, kind: "transient", error: `the identity provider answered HTTP ${got.status}${oauthError ? ` (${oauthError})` : ""}`, ...(oauthError && CLIENT_REFUSED_ERRORS.has(oauthError) ? { clientRefused: true as const } : {}) };
     }
     const rotated = typeof got.body?.refresh_token === "string" && got.body.refresh_token ? got.body.refresh_token : undefined;
     const accessToken = typeof got.body?.access_token === "string" && got.body.access_token ? got.body.access_token : undefined;
