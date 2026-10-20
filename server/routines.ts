@@ -1865,6 +1865,9 @@ export class RoutineManager {
   start() {
     this.paused = false;
     if (this.timer) return;
+    // Repair: a wall-clock routine whose next run was stored in the wrong
+    // zone (a default that was the host's UTC) is recomputed once, here.
+    try { this.rescheduleWallClock((routine) => { const found = this.routines.find((candidate) => candidate === routine); return found?.schedule.type === "daily"; }); } catch (error) { console.warn("routines: wall-clock repair failed", error); }
     this.timer = setInterval(() => void this.tick(), 10_000);
     this.timer.unref?.();
     void this.tick();
