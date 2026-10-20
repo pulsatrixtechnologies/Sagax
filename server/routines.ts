@@ -398,8 +398,8 @@ export interface RoutineManagerOptions {
    * engine can be warmed (prewarmEngine). Without it, only a run that joins
    * a conversation is warmed. */
   reserveTask?: (botId: string, title: string, run: RoutineRun) => { threadId: string } | null;
-  /** The run took its reserved task: show it as any run's task. */
-  claimReservedTask?: (botId: string, threadId: string) => void;
+  /** The run took its reserved task: tag it as that run's task. */
+  claimReservedTask?: (botId: string, threadId: string, runId: string) => void;
   /** A task reserved for a run that did not start in time: remove it if it
    * is still empty, and close the engine warmed for it. */
   releaseReservedTask?: (botId: string, threadId: string) => void;
@@ -1943,7 +1943,7 @@ export class RoutineManager {
     const entry = this.reserved.get(run.routineId);
     if (!entry || !entry.threadId || entry.botId !== run.botId) return null;
     this.reserved.delete(run.routineId);
-    try { this.options.claimReservedTask?.(run.botId, entry.threadId); } catch { /* best effort */ }
+    try { this.options.claimReservedTask?.(run.botId, entry.threadId, run.id); } catch { /* best effort */ }
     return entry.threadId;
   }
 

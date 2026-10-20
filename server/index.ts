@@ -19880,8 +19880,9 @@ routines = new RoutineManager({
     if (CLOUD_HOME) threadStarters.set(task.threadId, routineOpener(run.routineId));
     return task;
   },
-  claimReservedTask: (botId, threadId) => {
-    if (store.taskByThread(botId, threadId)?.routineRunId?.startsWith(RESERVED_RUN_PREFIX)) store.patchTask(botId, threadId, { routineRunId: undefined });
+  claimReservedTask: (botId, threadId, runId) => {
+    // tagged with its run at once, so it never shows as a conversation
+    if (store.taskByThread(botId, threadId)?.routineRunId?.startsWith(RESERVED_RUN_PREFIX)) store.patchTask(botId, threadId, { routineRunId: runId });
   },
   releaseReservedTask: (botId, threadId) => {
     threadPrewarm.cancel(threadId);
@@ -42567,7 +42568,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!bot) return json(res, 404, { error: "no such bot" });
       requirePinnedClientThread(bot.id, body.threadId);
       if (delegatedRequest()) routeThreadId(bot, body.threadId);
-      if (body.threadId !== undefined && (typeof body.threadId !== "string" || !/^[\w-]+$/.test(body.threadId))) {
+      // A named thread only: an implicit one could open a viewer's thread.
+      if (typeof body.threadId !== "string" || !/^[\w-]+$/.test(body.threadId)) {
         return json(res, 400, { error: "threadId must be a task id" });
       }
       const threadId = routeThreadId(bot, body.threadId);
