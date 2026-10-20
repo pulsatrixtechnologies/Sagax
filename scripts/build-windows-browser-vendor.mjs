@@ -19,7 +19,7 @@ export const WINDOWS_VENDOR_SOURCE = {
   bytes: 1904718,
   sha256: "ed24a72a5260d9c1ea454cd849c44159bac570a6939ac645e4c5bdb98a421646",
 };
-export const WINDOWS_VENDOR_PATCH_SHA256 = "082e4b96f6ef268773a1b9c2e314b6755d3df2c58f6770434cf66668dbd76515";
+export const WINDOWS_VENDOR_PATCH_SHA256 = "09105423d52978662e8537d4c6f7c1f39de351d6d9afedabbcde5c99a66fe7fe";
 export const WINDOWS_VENDOR_RUST = "1.97.1";
 export const WINDOWS_VENDOR_PNPM = "11.1.3";
 const repository = fileURLToPath(new URL("../", import.meta.url));
