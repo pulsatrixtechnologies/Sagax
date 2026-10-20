@@ -19589,6 +19589,7 @@ routines = new RoutineManager({
   hasPendingDelegations: (threadId) => pendingThreads().includes(threadId) ||
     [...delegationWatch.values()].some((watch) => watch.sourceThreadId === threadId) ||
     pendingDelegationWakes.has(threadId),
+  handedOffWorkLive: (threadId) => coordinator.outstandingDirect(threadId).length > 0,
   botState: unattendedDispatchState,
   goalState: (groupId, coordinatorBotId) => {
     const group = store.group(groupId);

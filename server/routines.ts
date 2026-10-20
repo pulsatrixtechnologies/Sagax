@@ -16,6 +16,7 @@ import { isRoutineProblemRun } from "../shared/routines.ts";
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 import { classifyError } from "./drivers/retry.ts";
 import { ROUTINE_PARTS, type PartPair, type RoutinePart } from "./package-parts.ts";
+import { ROUTINE_DEFERRAL_NOTICE_MS, ROUTINE_SKIPPED_WHILE_WAITING, ROUTINE_SUPERSEDED, skipNeedsNotice, supersededBy } from "./routine-execution.ts";
 
 /** A driver stop reason that is a code, not a sentence (rpc_error, auth_required). */
 const ROUTINE_STOP_CODE = /^[a-z][a-z0-9_]*$/;
@@ -236,6 +237,8 @@ export interface RoutineRun {
   /** When the one-per-run deferral notice was raised, so restarts and repeat
    * ticks stay quiet. */
   deferredNoticeAt?: number;
+  /** When its current wait began; read only while the run is waiting. */
+  waitingSince?: number;
   /** Times a restart cut this run and the next start resumed it in place
    * (at most once; a second cut fails it with ROUTINE_RESTARTED). */
   restartResumes?: number;
@@ -432,6 +435,8 @@ export interface RoutineManagerOptions {
   /** A successful provider turn is intermediate while its peer work or
    * queued continuation still belongs to this detached execution. */
   hasPendingDelegations?: (threadId: string) => boolean;
+  /** Work this thread handed to another bot is still open, so its wait is not only on the person. */
+  handedOffWorkLive?: (threadId: string) => boolean;
   /** Slice 6: awaited right before a queued run gets its task (organization
    * mode). A refusal fails the run; with `suspend` the routine is paused. */
   admit?: (run: RoutineRun, routine: Routine | undefined) => Promise<RoutineAdmission>;
@@ -493,7 +498,7 @@ export const PREWAKE_LEAD_MS = 12 * 60_000;
 
 /** How long a run may sit deferred behind a busy target before the user
  * hears about it once. Surfacing only; dispatch semantics stay unchanged. */
-export const ROUTINE_DEFERRAL_NOTICE_MS = 30 * 60_000;
+export { ROUTINE_DEFERRAL_NOTICE_MS };
 /** Why a run still going when the server stopped failed at the next start. */
 export const ROUTINE_RESTARTED = "Sagax restarted while this routine was running";
 /** The continuation a run cut by a restart resumes with, in its own thread. */
@@ -1741,13 +1746,14 @@ export class RoutineManager {
     if (changed) this.save();
   }
 
-  async cancelRun(id: string): Promise<RoutineRun | null> {
+  async cancelRun(id: string, reason?: string): Promise<RoutineRun | null> {
     const run = this.runs.find((r) => r.id === id);
     if (!run || !["queued", "running", "waiting"].includes(run.status)) return null;
     run.status = "cancelled";
     if (run.target === "room-goal") run.goalStatus = "stopped";
     run.attention = undefined;
     run.finishedAt = this.now();
+    if (reason) run.error = reason;
     this.save();
     this.emitRun(run);
     if (run.threadId) {
@@ -1893,6 +1899,12 @@ export class RoutineManager {
       });
       if (awaySkipped.length > 0) this.skipWhileAway(awaySkipped, now);
       this.reportAwaySkips(now);
+      // An unanswered wait gives way to its routine's next occurrence, which would otherwise be skipped behind it.
+      for (const routine of dueRoutines) {
+        if (routine.schedule.type === "once" || now - routine.nextRunAt! > CATCH_UP_MS) continue;
+        const stale = this.runs.filter((run) => run.routineId === routine.id && supersededBy(routine.nextRunAt!, run, this.options.handedOffWorkLive));
+        for (const run of stale) await this.cancelRun(run.id, ROUTINE_SUPERSEDED);
+      }
       const scheduledRuns: RoutineRun[] = [];
       const allocations: ResultsThreadAllocation[] = [];
       if (dueRoutines.length > 0) {
@@ -1921,6 +1933,15 @@ export class RoutineManager {
               }
               scheduledRuns.push(run);
             } else {
+              const waiting = this.runs.find((run) => run.routineId === routine.id && run.status === "waiting" && run.waitingSince !== undefined);
+              // Once per wait, an occurrence skipped behind it leaves a missed receipt, so the owner is told.
+              if (waiting && skipNeedsNotice(scheduledFor, waiting.waitingSince!, routine.lastSkippedAt)) {
+                const missed = this.newRun(routine, scheduledFor, false, allocations);
+                missed.status = "missed";
+                missed.finishedAt = now;
+                missed.error = ROUTINE_SKIPPED_WHILE_WAITING;
+                scheduledRuns.push(missed);
+              }
               routine.skippedRuns = Math.min(Number.MAX_SAFE_INTEGER, (routine.skippedRuns ?? 0) + 1);
               routine.lastSkippedAt = scheduledFor;
             }
@@ -2193,8 +2214,7 @@ export class RoutineManager {
       run.status = "running";
       run.attention = undefined;
     } else if (event.type === "request.opened") {
-      run.status = "waiting";
-      run.attention = redactSecretsInText(event.summary).trim().slice(0, 500) || undefined;
+      this.wait(run, redactSecretsInText(event.summary).trim().slice(0, 500) || undefined);
     } else if (event.type === "request.resolved") {
       run.status = "running";
       run.attention = undefined;
@@ -2238,9 +2258,12 @@ export class RoutineManager {
       }
       this.workedRuns.delete(run.id);
       const pending = this.options.hasPendingDelegations?.(event.threadId) === true;
-      run.status = pending ? "waiting" : "completed";
-      run.attention = pending ? "Waiting for delegated work to finish" : undefined;
-      if (!pending) run.finishedAt = this.now();
+      if (pending) this.wait(run, "Waiting for delegated work to finish");
+      else {
+        run.status = "completed";
+        run.attention = undefined;
+        run.finishedAt = this.now();
+      }
       run.error = undefined;
     } else {
       return null;
@@ -2278,8 +2301,7 @@ export class RoutineManager {
           (status === "limit-reached" ? "The room goal reached its turn limit" : "The room goal is blocked"),
       );
     } else if (status === "needs-input" || status === "paused") {
-      run.status = "waiting";
-      run.attention = safeDetail.slice(0, 500) || (status === "paused" ? "The room goal is paused" : "The team needs your input");
+      this.wait(run, safeDetail.slice(0, 500) || (status === "paused" ? "The room goal is paused" : "The team needs your input"));
       run.error = undefined;
       this.save();
       this.emitRun(run);
@@ -2433,6 +2455,13 @@ export class RoutineManager {
   getRoutine(id: string): Routine | null {
     const routine = this.routines.find((candidate) => candidate.id === id);
     return routine ? cloneRoutine(routine) : null;
+  }
+
+  /** Timed from when it began, so a later occurrence can tell a wait that went unanswered. */
+  private wait(run: RoutineRun, attention: string | undefined) {
+    if (run.status !== "waiting" || run.waitingSince === undefined) run.waitingSince = this.now();
+    run.status = "waiting";
+    run.attention = attention;
   }
 
   private failRun(run: RoutineRun, message: string) {
