@@ -209,7 +209,9 @@ export function piGatedMcpTool(title: unknown, mounted: Record<string, unknown> 
  * not parse, so a call judged on its arguments keeps its card. */
 export function piGatedMcpInput(message: unknown, mcpTool: string): string {
   if (typeof message !== "string") return "(arguments not shown)";
-  const [server, tool] = mcpTool.split("__") as [string, string];
+  const cut = mcpTool.indexOf("__");
+  const server = mcpTool.slice(0, cut);
+  const tool = mcpTool.slice(cut + 2);
   if (message === `Run ${server}:${tool}`) return "{}";
   return message || "(arguments not shown)";
 }

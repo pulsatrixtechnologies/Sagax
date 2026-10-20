@@ -177,6 +177,7 @@ describe("piGatedMcpInput", () => {
   it("passes the extension's JSON, reads its no-argument line as {}, and never turns a missing or cut message into no arguments", () => {
     expect(piGatedMcpInput('{"sql":"select 1"}', "data__data_sql")).toBe('{"sql":"select 1"}');
     expect(piGatedMcpInput("Run data:data_show", "data__data_show")).toBe("{}");
+    expect(piGatedMcpInput("Run s:a__b", "s__a__b")).toBe("{}");
     expect(piGatedMcpInput("Run data:other", "data__data_show")).toBe("Run data:other");
     expect(piGatedMcpInput('{"sql":"select * from read_csv(', "data__data_sql")).toBe('{"sql":"select * from read_csv(');
     expect(piGatedMcpInput(undefined, "data__data_sql")).toBe("(arguments not shown)");
