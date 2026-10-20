@@ -319,16 +319,18 @@ export function githubTokenKind(token: string | undefined): GithubTokenKind {
  * (SAGAX_GH_TOKEN), never the argv.
  *
  * Sagax never overwrites a sign-in the person made there themselves (gh auth
- * login, gh auth logout, an edited hosts.yml). It owns hosts.yml only when
- * the file is absent or empty, when its checksum is the one Sagax recorded
- * in .config/gh/.sagax-managed the last time it wrote it, or (a file written
- * before that marker existed) when it is byte for byte what Sagax writes for
- * this connection. Otherwise the person's file stays, Sagax's own line in
- * git's credential store is taken out (so git uses the person's sign-in),
- * and the command prints sagax-github-kept-person-login.
+ * login, gh auth logout, an edited hosts.yml). It decides by the token, not
+ * the file's bytes (gh 2.40+ rewrites a hosts.yml into its multi-account
+ * layout on its first run): hosts.yml is Sagax's when it is absent or empty,
+ * or when gh's github.com token in it is the token Sagax put there (this
+ * connection's, the one it replaces, or the one whose SHA-256 Sagax noted in
+ * .config/gh/.sagax-managed). Otherwise the person's file stays as it is,
+ * only Sagax's own lines leave git's credential store (so git uses the
+ * person's sign-in), and the command prints sagax-github-kept-person-login.
+ * The person's own lines in git's credential store are always kept.
  *
- * `connection` null takes Sagax's connection out; `previous` (the connection
- * being taken out) lets a file written before the marker be recognized. */
+ * `connection` null takes Sagax's connection out (`previous` is the one being
+ * taken out); with a connection, `previous` is the one it replaces. */
 export function githubSandboxArgv(
   connection: Pick<GithubConnection, "token" | "login"> | null,
   previous?: Pick<GithubConnection, "token" | "login"> | null,
@@ -337,33 +339,41 @@ export function githubSandboxArgv(
   if (subject && !LOGIN.test(subject.login)) throw new GithubConnectError("invalid GitHub login", "invalid_login");
   const env: Record<string, string> = { SAGAX_GH_MODE: connection ? "set" : "remove" };
   if (subject) Object.assign(env, { SAGAX_GH_TOKEN: subject.token, SAGAX_GH_LOGIN: subject.login });
+  if (connection && previous?.token && previous.token !== connection.token) env.SAGAX_GH_PREV_TOKEN = previous.token;
+  // Tokens only ever pass through variables, shell builtins (test, printf)
+  // and stdin: never an argv.
   return {
     argv: ["sh", "-c", [
       "set -eu",
       "umask 077",
       "dir=\"$HOME/.config/gh\"; hosts=\"$dir/hosts.yml\"; mark=\"$dir/.sagax-managed\"; creds=\"$HOME/.git-credentials\"",
-      "tok=\"${SAGAX_GH_TOKEN:-}\"",
-      "expected() { printf 'github.com:\\n    oauth_token: %s\\n    user: %s\\n    git_protocol: https\\n' \"$SAGAX_GH_TOKEN\" \"$SAGAX_GH_LOGIN\"; }",
+      "tok=\"${SAGAX_GH_TOKEN:-}\"; prev=\"${SAGAX_GH_PREV_TOKEN:-}\"",
+      "digest() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -c1-64; }",
+      "known=\"\"; if [ -f \"$mark\" ]; then known=\"$(cat \"$mark\")\"; fi",
+      "sagax_token() { [ -n \"$1\" ] || return 1; [ \"$1\" = \"$tok\" ] && return 0; [ -n \"$prev\" ] && [ \"$1\" = \"$prev\" ] && return 0; [ -n \"$known\" ] && [ \"$(printf %s \"$1\" | digest)\" = \"$known\" ]; }",
+      // gh's github.com token, in the legacy and the multi-account layouts.
+      "file_token() { awk '/^github\\.com:/ { h = 1; next } /^[^ ]/ { h = 0 } h && /^    oauth_token:/ { sub(/^    oauth_token:[ ]*/, \"\"); print; exit }' \"$hosts\"; }",
+      "filter_creds() {",
+      "  [ -f \"$creds\" ] || return 0",
+      "  : > \"$creds.tmp\"",
+      "  while IFS= read -r line || [ -n \"$line\" ]; do",
+      "    case \"$line\" in https://*:*@github.com) t=\"${line#https://*:}\"; t=\"${t%@github.com}\"; if sagax_token \"$t\"; then continue; fi ;; esac",
+      "    printf '%s\\n' \"$line\" >> \"$creds.tmp\"",
+      "  done < \"$creds\"",
+      "  mv \"$creds.tmp\" \"$creds\"",
+      "}",
       "owned=no",
       "if [ ! -e \"$hosts\" ] || ! grep -q '[^[:space:]]' \"$hosts\"; then owned=yes",
-      "elif [ -f \"$mark\" ] && [ \"$(cksum < \"$hosts\")\" = \"$(cat \"$mark\")\" ]; then owned=yes",
-      "elif [ -n \"$tok\" ] && expected | cmp -s - \"$hosts\"; then owned=yes",
+      "elif sagax_token \"$(file_token)\"; then owned=yes",
       "fi",
-      // Sagax's own line only, matched through the environment (never the argv).
-      "drop_own_line() { if [ -n \"$tok\" ] && [ -f \"$creds\" ]; then awk 'BEGIN { own = \"https://\" ENVIRON[\"SAGAX_GH_LOGIN\"] \":\" ENVIRON[\"SAGAX_GH_TOKEN\"] \"@github.com\" } $0 != own' \"$creds\" > \"$creds.tmp\" || true; mv \"$creds.tmp\" \"$creds\"; fi; }",
-      "if [ \"$owned\" = no ]; then rm -f \"$mark\"; drop_own_line; echo sagax-github-kept-person-login; exit 0; fi",
-      "if [ \"$SAGAX_GH_MODE\" = remove ]; then",
-      "  rm -f \"$hosts\" \"$mark\"",
-      "  if [ -n \"$tok\" ]; then drop_own_line; elif [ -f \"$creds\" ]; then grep -v '@github.com' \"$creds\" > \"$creds.tmp\" || true; mv \"$creds.tmp\" \"$creds\"; fi",
-      "  echo sagax-github-removed; exit 0",
-      "fi",
+      "if [ \"$owned\" = no ]; then filter_creds; rm -f \"$mark\"; echo sagax-github-kept-person-login; exit 0; fi",
+      "if [ \"$SAGAX_GH_MODE\" = remove ]; then rm -f \"$hosts\"; filter_creds; rm -f \"$mark\"; echo sagax-github-removed; exit 0; fi",
       "mkdir -p \"$dir\"",
-      "expected > \"$hosts.tmp\"; mv \"$hosts.tmp\" \"$hosts\"",
-      "cksum < \"$hosts\" > \"$mark\"",
-      "touch \"$creds\"",
-      "grep -v '@github.com' \"$creds\" > \"$creds.tmp\" || true",
-      "printf 'https://%s:%s@github.com\\n' \"$SAGAX_GH_LOGIN\" \"$SAGAX_GH_TOKEN\" >> \"$creds.tmp\"",
-      "mv \"$creds.tmp\" \"$creds\"",
+      "printf 'github.com:\\n    oauth_token: %s\\n    user: %s\\n    git_protocol: https\\n' \"$tok\" \"$SAGAX_GH_LOGIN\" > \"$hosts.tmp\"",
+      "mv \"$hosts.tmp\" \"$hosts\"",
+      "filter_creds",
+      "printf '%s' \"$tok\" | digest > \"$mark\"",
+      "printf 'https://%s:%s@github.com\\n' \"$SAGAX_GH_LOGIN\" \"$tok\" >> \"$creds\"",
       "git config --global credential.https://github.com.helper store",
       "echo sagax-github-ready",
     ].join("\n")],

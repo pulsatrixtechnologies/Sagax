@@ -6418,10 +6418,20 @@ async function syncPluginsForTurn(principalId: string, generation: string, botId
     console.warn(`[plugins] server environment not updated: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+const githubReplaced = new Map<string, { token: string; login: string }>();
 const githubConnect = new GithubConnect({
   clientId: githubClientId,
-  save: (principalId, connection) => personConnections.setGithub(principalId, connection),
-  onConnected: (principalId, connection) => { void syncGithubToSandbox(principalId, connection); },
+  save: (principalId, connection) => {
+    // The connection a new one replaces: its token in the server environment is Sagax's too.
+    const before = personGithub(principalId);
+    if (connection && before && before.token !== connection.token) githubReplaced.set(principalId, before);
+    personConnections.setGithub(principalId, connection);
+  },
+  onConnected: (principalId, connection) => {
+    const previous = githubReplaced.get(principalId);
+    githubReplaced.delete(principalId);
+    void syncGithubToSandbox(principalId, connection, undefined, previous);
+  },
 });
 /** The organization admin's marketplace list (absent: any marketplace). */
 function pluginMarketplacePolicy(): MarketplacePolicy | undefined {

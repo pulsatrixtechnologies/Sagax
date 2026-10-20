@@ -97,7 +97,7 @@ export function githubAccessFailure(
   // A fine-grained token reaches one owner only; an OAuth token may lack
   // read:org or the organization's approval of the OAuth App.
   const owner = /^([^/\s]+)\//.exec(repo)?.[1];
-  if ((status === 404 || status === 403) && credential?.via === "person" && credential.login && owner && owner.toLowerCase() !== credential.login.toLowerCase()) {
+  if ((status === 404 || (status === 403 && !headers.get("retry-after"))) && credential?.via === "person" && credential.login && owner && owner.toLowerCase() !== credential.login.toLowerCase()) {
     const why = githubTokenKind(credential.token) === "fine_grained"
       ? "a fine-grained token reaches one owner only (your own account)"
       : "the organization has not granted it access, or it lacks the read:org and repo scopes";

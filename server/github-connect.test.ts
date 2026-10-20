@@ -158,7 +158,7 @@ describe("Sagax's GitHub sync in the server environment", () => {
     expect(existsSync(join(home, ".config/gh/.sagax-managed"))).toBe(false);
   }));
 
-  it("adopts a file it wrote before the marker existed, only when it matches byte for byte", () => withHome((home, hosts) => {
+  it("adopts a file it wrote before the marker existed by its token, never another token", () => withHome((home, hosts) => {
     mkdirSync(join(home, ".config/gh"), { recursive: true });
     const legacy = "github.com:\n    oauth_token: gho_one\n    user: jc\n    git_protocol: https\n";
     writeFileSync(hosts, legacy);
@@ -166,6 +166,31 @@ describe("Sagax's GitHub sync in the server environment", () => {
     writeFileSync(hosts, legacy.replace("gho_one", "gho_other"));
     rmSync(join(home, ".config/gh/.sagax-managed"));
     expect(run(home, { token: "gho_one", login: "jc" })).toBe("sagax-github-kept-person-login");
+  }));
+
+  it("still knows its own file after gh rewrote it into the multi-account layout", () => withHome((home, hosts, creds) => {
+    run(home, { token: "gho_one", login: "jc" });
+    const migrated = "github.com:\n    users:\n        jc:\n            oauth_token: gho_one\n    git_protocol: https\n    oauth_token: gho_one\n    user: jc\n";
+    writeFileSync(hosts, migrated);
+    // A new Sagax token (reconnect): the replaced one marks the file as Sagax's.
+    expect(run(home, { token: "gho_two", login: "jc" }, { token: "gho_one", login: "jc" })).toBe("sagax-github-ready");
+    writeFileSync(hosts, migrated.replaceAll("gho_one", "gho_two"));
+    // Rotation without the replaced one at hand: the noted SHA-256 is enough.
+    expect(run(home, { token: "gho_three", login: "jc" })).toBe("sagax-github-ready");
+    expect(readFileSync(hosts, "utf8")).toContain("oauth_token: gho_three");
+    expect(readFileSync(creds, "utf8")).toBe("https://jc:gho_three@github.com\n");
+    writeFileSync(hosts, migrated.replaceAll("gho_one", "gho_three"));
+    expect(run(home, null, { token: "gho_three", login: "jc" })).toBe("sagax-github-removed");
+    expect(existsSync(hosts)).toBe(false);
+    expect(readFileSync(creds, "utf8")).toBe("");
+  }));
+
+  it("keeps the person's own lines in git's credential store", () => withHome((home, _hosts, creds) => {
+    writeFileSync(creds, "https://jc:gho_mine@github.com\nhttps://jc:own@gitlab.example\n");
+    expect(run(home, null)).toBe("sagax-github-removed");
+    expect(readFileSync(creds, "utf8")).toBe("https://jc:gho_mine@github.com\nhttps://jc:own@gitlab.example\n");
+    run(home, { token: "gho_one", login: "jc" });
+    expect(readFileSync(creds, "utf8")).toBe("https://jc:gho_mine@github.com\nhttps://jc:own@gitlab.example\nhttps://jc:gho_one@github.com\n");
   }));
 
   it("takes out only its own sign-in on disconnect", () => withHome((home, hosts) => {
