@@ -962,7 +962,7 @@ import { roomMentionNotification, roomMentionReadPatch } from "./room-mentions.t
 import { PERSONAL_STDIO_TOOL_SERVER } from "./user-sandbox-proxy.ts";
 import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
-import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
+import { autoReviewThreadMode, createBotSettingsStore, defaultOrgTimeZone, hostTimeZone } from "./bot-settings.ts";
 import { turnClockEnabled, turnTimeZone, withTurnClock } from "./turn-clock.ts";
 import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
 import { createLocalComputerAutoRoutes } from "./routes/local-computer-auto.ts";
@@ -20041,7 +20041,11 @@ _loadPending();
 // Settings > Bot (server/bot-settings.ts): the zone routines read wall
 // clocks in, the server's by default and, on an organization server, each
 // routine's person's own when they chose one.
-setRoutineTimeZone(() => botSettings.server().timeZone ?? undefined);
+// An organization server with no zone chosen (person or server) used the
+// host's UTC, so "every day at 12:00" ran at 08:00 Eastern: it defaults to
+// SAGAX_DEFAULT_TIME_ZONE, else America/Toronto on a UTC host.
+setRoutineTimeZone(() => botSettings.server().timeZone
+  ?? (IDENTITY.kind === "perspicax" ? defaultOrgTimeZone(hostTimeZone(), process.env.SAGAX_DEFAULT_TIME_ZONE) ?? undefined : undefined));
 /** A solo server's person, from their pages' beats (server/routine-away.ts). */
 const localRoutineAway = new LocalAwayTracker();
 /** Whether the person a routine runs as is there now. Presence on an
@@ -20962,7 +20966,9 @@ async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: strin
   return true;
 }
 const ROUTINE_WEEKDAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
-const routineTimeZone = () => botSettings.server().timeZone ?? hostTimeZone();
+const routineTimeZone = () => botSettings.server().timeZone
+  ?? (IDENTITY.kind === "perspicax" ? defaultOrgTimeZone(hostTimeZone(), process.env.SAGAX_DEFAULT_TIME_ZONE) : null)
+  ?? hostTimeZone();
 const routineTimestamp = (value: number | undefined) =>
   value !== undefined && Number.isFinite(value) ? new Date(value).toISOString() : null;
 const agentRoutine = (
