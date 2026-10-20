@@ -85,7 +85,7 @@ import {
 import { actorForTurn, botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActService, type PerformActor } from "./bot-act.ts";
 import { createSettingsActions } from "./settings-actions.ts";
-import { cwActionCard, cwActionLanguage, cwToolWidget, createCwActionPasses } from "./cw-widget-actions.ts";
+import { cwActionCard, cwActionLanguage, cwToolRowWidget, createCwActionPasses } from "./cw-widget-actions.ts";
 import { cwActionInstruction, parseCwAction } from "../shared/cw-widgets/actions.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
 import { escapeAttribute } from "../src/lib/composer-attachments.ts";
@@ -13618,7 +13618,7 @@ bus.subscribe((event: RuntimeEvent) => {
           const row = store.messagesFor(event.threadId).find((m) => m.id === messageId);
           const existing = row?.tool;
           toolName = existing?.name ?? "tool";
-          const widget = event.ok && event.resultText ? cwToolWidget(toolName, existing?.input, event.resultText) : null;
+          const widget = event.ok && event.resultText ? cwToolRowWidget(toolName, existing?.input, event.resultText) : null;
           // How long the call ran, for the step row's quiet duration.
           const durationMs = row ? Math.max(0, Date.now() - row.at) : undefined;
           store.patchMessage(event.threadId, messageId, {

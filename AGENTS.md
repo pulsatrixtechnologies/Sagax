@@ -5280,6 +5280,20 @@ build its own bubble. Gallery: `src/gallery/chat-widgets.html`
 (`npx vite --config vite.gallery.config.ts`, then
 `/src/gallery/chat-widgets.html?skin=<id>&lang=<code>&only=<sample>&narrow=1`).
 
+## ConnectWise views on demand only (2026-10-20)
+
+- A ConnectWise tool row draws its widget (`CwWidgetView`, iOS
+  `CwWidgetCard`) only for a Perspicax view tool `cw_psa__show_<view>`
+  (`isCwViewTool`, `cwToolRowWidget`, `shownCwWidget`; iOS
+  `CwWidgets.isViewTool`). Perspicax serves those tools only when the
+  profile's "Vues interactives" is on (Perspicax #386). Every other read or
+  write (`cw_psa__query`, `find_*`, `*_write`) is an ordinary row and the bot
+  answers with a Markdown table. Rows stored earlier keep a `widget` field
+  and still draw as rows.
+- The bot writes a ```cw fence only when the person explicitly asks for an
+  interactive view (`CW_FENCE_PROMPT`, `server/system-prompt.ts`).
+- Test: `server/cw-widget-actions.test.ts`, `server/cw-widgets.e2e.test.ts`.
+
 ## Conversation events: routines turned on or off, Connect apps (2026-10-15)
 
 - A turn that turns routines on or off leaves ONE line per action and per

@@ -105,7 +105,7 @@ import { BotExchangeChip, ExchangeColumnProvider, TranscriptDate, useExchangeCol
 import { GotoGroupChip } from "./GotoGroupChip";
 import { collapseGotoLines, type GotoGroup } from "@/lib/goto-lines";
 import { ActivityRun } from "./ActivityRun";
-import { CwActivityWidgets, CwWidgetView } from "./cw/CwWidgetView";
+import { CwActivityWidgets, CwWidgetView, shownCwWidget } from "./cw/CwWidgetView";
 import { useDesktopCapabilities, useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { cn } from "@/lib/cn";
 import { shortPath } from "@/lib/short-path";
@@ -521,7 +521,7 @@ export const Transcript = memo(function Transcript({
     // Two or more "Go to conversation" lines in a row become one chip. Hidden
     // tool steps are already out; a folded run with Tool calls off draws nothing.
     return collapseGotoLines(listed, (item) =>
-      item.kind === "run" && !showToolCalls && !item.messages.some((step) => step.tool?.widget)) as RoomItem[];
+      item.kind === "run" && !showToolCalls && !item.messages.some((step) => shownCwWidget(step.tool))) as RoomItem[];
   }, [messages, showToolCalls, pairChannel, members, transcript, owners]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   // Seen by: each participant once, under the last line they have read.
@@ -693,7 +693,7 @@ export const Transcript = memo(function Transcript({
           );
         }
         if (item.kind === "run") {
-          const hasWidget = item.messages.some((step) => step.tool?.widget);
+          const hasWidget = item.messages.some((step) => shownCwWidget(step.tool));
           // Hidden steps still carry the divider: the reply under them is new.
           if (!showToolCalls && !hasWidget) return divider && <div key={item.id} className="contents">{divider}</div>;
           const cluster = !runs[i]!.joinsAbove;
@@ -826,9 +826,9 @@ export const Transcript = memo(function Transcript({
                   : undefined}
               />
             </div>
-          ) : m.kind === "activity" && m.tool?.widget ? (
+          ) : m.kind === "activity" && shownCwWidget(m.tool) ? (
             <div className="flex flex-col gap-2">
-              <CwWidgetView widget={m.tool.widget} threadId={group.threadId} botId={m.from?.botId} />
+              <CwWidgetView widget={m.tool!.widget!} threadId={group.threadId} botId={m.from?.botId} />
               {roomActivityVisible(m, showToolCalls) ? <RoomToolChip message={m} roomId={group.id} /> : null}
             </div>
           ) : m.kind === "activity" && m.tool ? (

@@ -157,7 +157,7 @@ import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { CancelledTurnRow } from "./CancelledTurnRow";
 import { DevPods, DevPodsToggle, RailAligned } from "./dev-pods/DevPods";
 import { ActivityRun } from "./ActivityRun";
-import { CwActivityWidgets, CwWidgetView } from "./cw/CwWidgetView";
+import { CwActivityWidgets, CwWidgetView, shownCwWidget } from "./cw/CwWidgetView";
 import { webhookMessageView } from "@/lib/webhook-message";
 import { splitTranscriptAttachments } from "@/lib/composer-attachments";
 import { useComposerDockPad } from "@/lib/composer-dock";
@@ -1217,7 +1217,7 @@ const MessagesList = memo(function MessagesList({
           );
         }
         if (item.kind === "run") {
-          const hasWidget = item.messages.some((step) => step.tool?.widget);
+          const hasWidget = item.messages.some((step) => shownCwWidget(step.tool));
           // Tool calls off: the steps go, a turn's narration stays folded.
           const shown = showToolCalls ? item.messages : item.messages.filter((step) => step.kind !== "activity");
           // Hidden steps still carry the divider: the reply under them is new.
@@ -1321,10 +1321,10 @@ const MessagesList = memo(function MessagesList({
                 );
               }
               if (m.parallelTask?.role === "card") return <ParallelTaskCard message={m} botId={botId} />;
-              if (m.tool?.widget) {
+              if (shownCwWidget(m.tool)) {
                 return (
                   <>
-                    <CwWidgetView widget={m.tool.widget} threadId={threadId} botId={botId} />
+                    <CwWidgetView widget={m.tool!.widget!} threadId={threadId} botId={botId} />
                     {showToolCalls ? <ActivityChip message={m} place={place} /> : null}
                   </>
                 );
