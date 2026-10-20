@@ -197,10 +197,15 @@ final class StayingSignedInTests: XCTestCase {
 
         // A desktop companion has no /api/auth/session: its own route answers.
         AuthStub.reset { request in
-            request.url?.path == "/api/companion/endpoints" ? (200, [:], Data(#"{"endpoints":[]}"#.utf8)) : (404, [:], Data())
+            request.url?.path == "/api/companion/endpoints" ? (200, [:], Data(#"{"serverName":"Mac","endpoints":[]}"#.utf8)) : (404, [:], Data())
         }
         let companion = await client(token: "live").probeAuthorization()
         XCTAssertEqual(companion, .valid)
+
+        // A captive portal or proxy page answering 200 is not the session.
+        AuthStub.reset { _ in (200, [:], Data("<html>Wi-Fi login</html>".utf8)) }
+        let portal = await client(token: "dead").probeAuthorization()
+        XCTAssertEqual(portal, .unreachable)
     }
 
     // MARK: Jeton périmé dans un trousseau, frais dans l'autre
@@ -252,7 +257,7 @@ final class StayingSignedInTests: XCTestCase {
 
         let slots = MemorySlots()
         slots.items[.shared] = ["org-older": "dead", "org": "live", "mac": "mac-token"]
-        let ids = ["org-older"] + registry.duplicates(of: older).map(\.id)
+        let ids = ["org-older"] + registry.credentialSiblings(of: older).map(\.id)
         let candidates = CompanionCredentials.candidates(ids: ids, excluding: "dead", in: slots)
         XCTAssertEqual(candidates.map(\.token), ["live"], "never another computer's token")
 
@@ -297,11 +302,14 @@ final class StayingSignedInTests: XCTestCase {
         }
     }
 
-    func testRevocationStillTriesAFresherTokenFirst() async {
-        let fresh = CredentialCandidate(token: "fresh", connectionID: "org", slot: .shared)
-        let script = ProbeScript(["revoked": [.unauthorized(code: "session_revoked")], "fresh": [.valid]])
-        let outcome = await recover(current: "revoked", candidates: [fresh], script: script)
-        XCTAssertEqual(outcome, .recovered(fresh))
+    func testARevokedSessionIsNeverBroughtBackByAnOlderCopy() async {
+        // An older token whose session was never revoked must not undo a
+        // sign-out done from another device or by an administrator.
+        let older = CredentialCandidate(token: "older", connectionID: "org", slot: .legacy)
+        let script = ProbeScript(["revoked": [.unauthorized(code: "session_revoked")], "older": [.valid]])
+        let outcome = await recover(current: "revoked", candidates: [older], script: script)
+        XCTAssertEqual(outcome, .signedOut(code: "session_revoked"))
+        XCTAssertEqual(script.probed, ["revoked"], "the older copy is not even tried")
     }
 
     func testRepeatedRefusalsWithNoFresherTokenSignOutAfterTheRestartWindow() async {
@@ -335,9 +343,26 @@ final class StayingSignedInTests: XCTestCase {
     }
 
     func testAStepUpRefusalIsNotASignOut() async {
-        // 403 step_up_required on a route: the bearer was recognized.
+        // 403 step_up_required: the bearer reached the server; not a sign-out.
         AuthStub.reset { _ in (403, [:], Data(#"{"error":"Confirm with your security key.","code":"step_up_required"}"#.utf8)) }
         let probe = await client(token: "live").probeAuthorization()
-        XCTAssertEqual(probe, .valid)
+        XCTAssertEqual(probe, .refused)
+        let script = ProbeScript(["live": [.refused]])
+        let outcome = await recover(current: "live", script: script)
+        XCTAssertEqual(outcome, .undecided, "stays signed in")
+    }
+
+    func testOnlyCertainSiblingsLendTheirToken() {
+        var older = server
+        older.id = "org-older"
+        var unknownEnvironment = server
+        unknownEnvironment.id = "org-unknown"
+        unknownEnvironment.serverEnvironmentId = nil
+        let registry = CompanionConnectionRegistry(connections: [server, older, unknownEnvironment])
+        XCTAssertEqual(registry.credentialSiblings(of: server).map(\.id), ["org-older"])
+        // A desktop computer's records never lend tokens to each other.
+        var mac = server
+        mac.serverEnvironmentId = nil
+        XCTAssertEqual(registry.credentialSiblings(of: mac), [])
     }
 }

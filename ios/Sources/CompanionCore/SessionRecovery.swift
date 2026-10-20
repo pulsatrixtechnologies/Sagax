@@ -47,8 +47,12 @@ public enum AuthProbeResult: Equatable, Sendable {
     /// The server is there but busy: 503 `idp_recheck_pending` after a
     /// restart, a gateway error while it deploys, 429. Never a sign-out.
     case retryLater(seconds: Double?)
-    /// No answer at all (offline, restarting). Never a sign-out.
+    /// No answer at all (offline, restarting), or one that is not the
+    /// session's (a captive portal page, a 400). Never a sign-out.
     case unreachable
+    /// The bearer reached the server but the route was refused (403): not a
+    /// sign-out for the token in use, never enough to adopt another token.
+    case refused
 }
 
 extension CompanionClient {
@@ -70,7 +74,13 @@ extension CompanionClient {
             guard let http = response as? HTTPURLResponse else { return .unreachable }
             switch http.statusCode {
             case 200...299:
-                return .valid
+                // Only the session's own answer counts: a portal or proxy
+                // page that answers 200 must not make a dead token "work".
+                let decoder = JSONDecoder()
+                let isSession = path == "/api/auth/session"
+                    ? (try? decoder.decode(AuthSession.self, from: data)) != nil
+                    : (try? decoder.decode(CompanionAnswer.self, from: data)) != nil
+                return isSession ? .valid : .unreachable
             case 401:
                 return .unauthorized(code: Self.refusalCode(in: data))
             case 404, 405:
@@ -79,16 +89,19 @@ extension CompanionClient {
             case 429, 500...599:
                 let retry = http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
                 return .retryLater(seconds: retry)
+            case 403:
+                return .refused
             default:
-                // 403 and friends: the bearer was recognized (a scope or a
-                // policy refused the route), so the session itself is alive.
-                return .valid
+                return .unreachable
             }
         }
         // Neither route exists here: the 401 that brought us here stands,
         // without a definitive code.
         return sawUnsupported ? .unauthorized(code: nil) : .unreachable
     }
+
+    /// The companion's endpoints answer, as far as telling it from a page.
+    private struct CompanionAnswer: Decodable { let serverName: String }
 
     /// The `code` of a JSON error body, if any.
     public static func refusalCode(in data: Data) -> String? {
@@ -186,6 +199,17 @@ public struct CredentialCandidate: Equatable, Sendable {
 }
 
 extension CompanionConnectionRegistry {
+    /// Records whose token may be tried for `connection` after a 401: the
+    /// same server for certain (a shared route and the same, known, server
+    /// environment id). A desktop computer's records are never mixed: two
+    /// computers can have used the same LAN address. One server record per
+    /// server is the rule (re-pairing replaces it), so these are leftovers
+    /// of the same account, never another person's.
+    public func credentialSiblings(of connection: Connection) -> [Connection] {
+        guard let environment = connection.serverEnvironmentId else { return [] }
+        return duplicates(of: connection).filter { $0.serverEnvironmentId == environment }
+    }
+
     /// Other saved records for the same server as `connection`: they share
     /// a route (the exact origin a bearer is sent to), and their server
     /// environment ids, when both are known, agree. The environment id alone
@@ -236,12 +260,12 @@ public enum UnauthorizedRecovery {
         }
     }
 
-    /// Decide what a 401 means, without ever signing out on the first one.
+    /// Decide what a 401 means: never a sign-out on a 401 alone.
     ///
-    /// Each round: probe the current token; then every other token this phone
-    /// holds for the same server, freshest place first. Any token that works
-    /// wins. A definitive `code` signs out (after the other tokens were
-    /// tried). Transient answers (503, gateway, offline) never count.
+    /// Each round: probe the current token. A definitive `code` signs out at
+    /// once. A bearer the server does not know: try every other copy this
+    /// phone holds for the same server; one that works wins. Transient
+    /// answers (503, gateway, offline, 403) never count.
     public static func run(
         current: String,
         candidates: @escaping () -> [CredentialCandidate],
@@ -258,20 +282,23 @@ public enum UnauthorizedRecovery {
             if Task.isCancelled { return .undecided }
 
             let answer = await probe(current)
-            if answer == .valid { return .recovered(nil) }
-
-            for candidate in candidates() where candidate.token != current {
-                if Task.isCancelled { return .undecided }
-                if await probe(candidate.token) == .valid { return .recovered(candidate) }
-            }
-
             switch answer {
+            case .valid:
+                return .recovered(nil)
             case let .unauthorized(code) where SessionEndCodes.isDefinitive(code):
+                // The server ended this session: that is final. No other
+                // copy may bring it back (an older token of a session the
+                // person or an administrator ended elsewhere included).
                 return .signedOut(code: code)
             case .unauthorized:
+                // Unknown bearer: maybe a stale copy. Try the others.
+                for candidate in candidates() where candidate.token != current {
+                    if Task.isCancelled { return .undecided }
+                    if await probe(candidate.token) == .valid { return .recovered(candidate) }
+                }
                 refusals += 1
                 if refusals >= policy.refusalsBeforeSignOut { return .signedOut(code: nil) }
-            case .retryLater, .unreachable, .valid:
+            case .retryLater, .unreachable, .refused:
                 continue
             }
         }

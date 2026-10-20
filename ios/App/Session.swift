@@ -174,8 +174,16 @@ final class Session: ObservableObject {
     /// `code` (`session_revoked`, `idp_session_ended`...), `server_changed`,
     /// or nil when every token this phone holds kept being refused.
     @Published private(set) var sessionEndCode: String?
-    /// One check after a burst of 401s, shared by every request that saw one.
+    /// One check after a burst of 401s, shared by every request that saw one,
+    /// for the connection and token it was started for.
     private var authRecoveryTask: Task<UnauthorizedRecovery.Outcome, Never>?
+    private var authRecoveryKey: (connectionID: String, token: String)?
+    /// When a check last found the token in use still valid: other 401s in
+    /// the next moments (a route's own refusal) start no new check.
+    private var authRecoveryValidAt: Date?
+    /// Tokens the server refused and the app moved away from: a stale copy
+    /// left in the Keychain (a save that failed) is never taken back.
+    private var refusedTokens: Set<String> = []
     /// Which of the connection's stored hosts the next attempt dials. The
     /// walk advances on address-shaped failures and the winner is promoted —
     /// and persisted — when a stream goes live.
@@ -489,7 +497,7 @@ final class Session: ObservableObject {
             // No token under this record: another record of the same server
             // may hold one (a sign-in saved before records were merged).
             // Adopt it rather than dropping to sign-in.
-            if let adopted = Keychain.candidates(for: registry.duplicates(of: saved).map(\.id), excluding: nil).first,
+            if let adopted = Keychain.candidates(for: registry.credentialSiblings(of: saved).map(\.id), excluding: nil).first,
                (try? Keychain.save(adopted.token, for: saved.id, removingDuplicates: [adopted.connectionID])) != nil {
                 registry.remove(id: adopted.connectionID)
                 persistRegistry()
@@ -523,7 +531,15 @@ final class Session: ObservableObject {
     /// checked again in the background (`recoverAuthorization`).
     func handleUnauthorized() {
         guard !isDemo, client != nil, status != .unauthorized else { return }
+        if let validAt = authRecoveryValidAt, Date().timeIntervalSince(validAt) < 30 { return }
         Task { [weak self] in _ = await self?.recoverAuthorization() }
+    }
+
+    private func cancelAuthRecovery() {
+        authRecoveryTask?.cancel()
+        authRecoveryTask = nil
+        authRecoveryKey = nil
+        authRecoveryValidAt = nil
     }
 
     /// Check the session after a 401, once for a whole burst. Probes the
@@ -534,28 +550,46 @@ final class Session: ObservableObject {
     /// the Keychain here.
     @discardableResult
     private func recoverAuthorization() async -> UnauthorizedRecovery.Outcome {
-        if let running = authRecoveryTask { return await running.value }
         guard let connection, let token, let client else { return .undecided }
         let connectionID = connection.id
-        let ids = [connectionID] + registry.duplicates(of: connection).map(\.id)
+        if let running = authRecoveryTask {
+            // Join only a check about this very connection and token.
+            guard authRecoveryKey?.connectionID == connectionID, authRecoveryKey?.token == token else {
+                return .undecided
+            }
+            return await running.value
+        }
+        // Another record's copy only travels over a route that protects
+        // credentials (https, tailnet), and only for the same server.
+        let siblings = client.connection.activeEndpoint?.protectsCredentials == true
+            ? registry.credentialSiblings(of: connection).map(\.id) : []
+        let ids = [connectionID] + siblings
+        let refused = refusedTokens
         let task = Task { @MainActor () -> UnauthorizedRecovery.Outcome in
             await UnauthorizedRecovery.run(
                 current: token,
-                candidates: { Keychain.candidates(for: ids, excluding: token) },
+                candidates: { Keychain.candidates(for: ids, excluding: token).filter { !refused.contains($0.token) } },
                 probe: { candidate in await client.replacingToken(candidate).probeAuthorization() },
                 sleep: { seconds in try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
             )
         }
         authRecoveryTask = task
+        authRecoveryKey = (connectionID, token)
         let outcome = await task.value
-        if authRecoveryTask == task { authRecoveryTask = nil }
+        if authRecoveryTask == task {
+            authRecoveryTask = nil
+            authRecoveryKey = nil
+        }
         // A new sign-in, a switch or a sign-out happened meanwhile: this
         // answer is about a token no longer in use.
         guard self.connection?.id == connectionID, self.token == token else { return .undecided }
         switch outcome {
-        case .recovered(nil), .undecided:
+        case .recovered(nil):
+            authRecoveryValidAt = Date()
+        case .undecided:
             break
         case let .recovered(candidate?):
+            refusedTokens.insert(token)
             adoptToken(candidate, for: connectionID)
         case let .signedOut(code):
             log.error("session ended: \(code ?? "refused", privacy: .public)")
@@ -598,7 +632,7 @@ final class Session: ObservableObject {
     private func adoptStoredTokenIfNewer() {
         guard !isDemo, let connection, let current = token,
               let stored = (try? Keychain.token(for: connection.id)) ?? nil,
-              !stored.isEmpty, stored != current
+              !stored.isEmpty, stored != current, !refusedTokens.contains(stored)
         else { return }
         log.notice("using the token saved in the Keychain")
         token = stored
@@ -737,8 +771,7 @@ final class Session: ObservableObject {
         // A fresh pairing settles any restore that was still waiting on the
         // keychain — the token is in hand, so there is nothing left to retry.
         restorePending = false
-        authRecoveryTask?.cancel()
-        authRecoveryTask = nil
+        cancelAuthRecovery()
         sessionEndCode = nil
         PushRegistrar.shared.forgetRegistration(connectionID: stored.id)
         connect()
@@ -1022,8 +1055,7 @@ final class Session: ObservableObject {
         resetAttachmentCache()
         attachmentSendIDs.removeAll()
         NotificationCoordinator.shared.setBadge(0)
-        authRecoveryTask?.cancel()
-        authRecoveryTask = nil
+        cancelAuthRecovery()
         sessionEndCode = nil
         status = .unpaired
     }
@@ -1038,6 +1070,7 @@ final class Session: ObservableObject {
         rotation = CandidateRotation(endpoints: saved.orderedEndpoints)
         let first = rotation.currentEndpoint.map(saved.dialing) ?? saved
         client = CompanionClient(connection: first, token: stored)
+        cancelAuthRecovery()
         sessionEndCode = nil
         status = .connecting
     }
@@ -1049,6 +1082,7 @@ final class Session: ObservableObject {
         streamTask = nil
         endpointRefreshTask?.cancel()
         endpointRefreshTask = nil
+        cancelAuthRecovery()
         restorePending = false
         endLinger()
         pendingNotification = nil
@@ -1307,9 +1341,15 @@ final class Session: ObservableObject {
                 // server says the session is over.
                 log.error("stream refused: unauthorized, checking the session")
                 switch await recoverAuthorization() {
-                case .recovered:
+                case .recovered(.some):
+                    // A fresher token: reconnect with it now.
                     reconnectDelay = 0
                     continue
+                case .recovered(nil):
+                    // The token works, the stream did not: the usual
+                    // backoff below, never a tight loop.
+                    if Task.isCancelled { return }
+                    status = .offline(String(localized: "Reconnecting to Sagax..."))
                 case .signedOut:
                     return
                 case .undecided:
