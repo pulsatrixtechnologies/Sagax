@@ -33,6 +33,21 @@ type Pending = {
   target: ActTarget;
   createdAt: number;
   running: boolean;
+  /** A planned setting change (server/settings-actions.ts): its step-up
+   * classes, and what to record once it ran. */
+  planned?: PlannedAct;
+};
+
+/** A change the settings registry built and classed (sagax_settings): the
+ * act engine runs or holds it as decided, never re-reading its body for
+ * approval fields (the registry put them there on purpose). */
+export type PlannedAct = {
+  effect: "run" | "hold";
+  summary: string;
+  /** Security key classes the card's Allow must cover. */
+  stepUpClasses: readonly string[];
+  /** Called once the route answered below 400. */
+  onDone?: (how: "run" | "allowed") => void;
 };
 
 export type BotActDeps = {
@@ -41,7 +56,9 @@ export type BotActDeps = {
   neededScope: (method: string, path: string) => "admin" | "client";
   operatorAudience: () => string;
   sessionForPerson: (personKey: string) => LiveSession | null;
-  performRoute: (actor: PerformActor, target: Extract<ActTarget, { kind: "route" }>) => Promise<{ status: number; text: string }>;
+  /** `confirmed`: this replay follows that person's own Allow on a planned
+   * change's card (the card's step-up covered `classes`). */
+  performRoute: (actor: PerformActor, target: Extract<ActTarget, { kind: "route" }>, confirmed?: { personKey: string | null; classes: readonly string[] }, maxChars?: number) => Promise<{ status: number; text: string }>;
   broadcastUi: (audience: string, command: string, input: Record<string, unknown>) => void;
   postCard: (input: { threadId: string; botId: string; botName: string; botColor: string; requestId: string; summary: string }) => { messageId: string };
   patchCard: (threadId: string, messageId: string, patch: { answered?: "allow" | "deny"; expired?: true }) => void;
@@ -76,6 +93,21 @@ export type BotActService = {
   /** What a waiting act card would do (its route and body), for the
    * security key step-up; undefined once it is gone. */
   target(requestId: string): ActTarget | undefined;
+  /** The step-up classes a planned change's card adds. */
+  plannedClasses(requestId: string): readonly string[];
+  /** A setting change the registry built and classed. The actor and the
+   * route's scope are checked here as for any act. */
+  handlePlanned(input: {
+    facts: TurnFacts;
+    target: ActTarget;
+    plan: PlannedAct;
+    threadId: string;
+    botId: string;
+    botName: string;
+    botColor: string;
+    /** A read whose whole answer the caller picks a value from. */
+    maxChars?: number;
+  }): Promise<BotActResult>;
 };
 
 export function createBotActService(deps: BotActDeps): BotActService {
@@ -96,6 +128,37 @@ export function createBotActService(deps: BotActDeps): BotActService {
     target(requestId) {
       return pending.get(requestId)?.target;
     },
+    plannedClasses(requestId) {
+      return pending.get(requestId)?.planned?.stepUpClasses ?? [];
+    },
+    async handlePlanned(input) {
+      sweep();
+      const actor = actorForTurn(input.facts);
+      if (actor.kind === "none") return refuse(403, NONE_REASON[actor.reason] ?? "This turn cannot act.");
+      let performActor: PerformActor;
+      let scopes: string[];
+      if (actor.kind === "person") {
+        const session = deps.sessionForPerson(actor.personKey);
+        if (!session) return refuse(403, "This person's session is no longer valid.");
+        performActor = { kind: "person", sessionId: session.id, personKey: actor.personKey, scopes: session.scopes };
+        scopes = session.scopes;
+      } else {
+        performActor = { kind: "operator" };
+        scopes = ["admin", "client"];
+      }
+      if (input.target.kind === "route" && !scopes.includes(deps.neededScope(input.target.method, input.target.path))) {
+        return refuse(403, "This person cannot change that setting: it needs rights they do not have.");
+      }
+      if (input.plan.effect === "run") {
+        // the registry and its policy decided: the route reads it as the
+        // person's planned change (no key was signed, so no class is covered)
+        const planned = { personKey: performActor.kind === "person" ? performActor.personKey : null, classes: [] as string[] };
+        const result = await run(performActor, input.target, undefined, planned, input.maxChars);
+        if (result.status < 400) input.plan.onDone?.("run");
+        return result;
+      }
+      return hold(performActor, input.target, input.plan.summary, input, input.plan);
+    },
     async handle(input) {
       sweep();
       const actor = actorForTurn(input.facts);
@@ -114,34 +177,7 @@ export function createBotActService(deps: BotActDeps): BotActService {
       const decision = decideBotAct({ raw: input.raw, mode: input.mode, scopes, neededScope: deps.neededScope });
       if (!decision.ok) return refuse(decision.status, decision.error);
       if (decision.effect === "run") return run(performActor, decision.target);
-      const actorKey = performActor.kind === "person" ? `person:${performActor.personKey}` : "operator";
-      let waiting = 0;
-      for (const item of pending.values()) if (item.actorKey === actorKey) waiting += 1;
-      if (waiting >= PENDING_CAP) return refuse(429, "Too many actions are waiting for approval.");
-      const requestId = deps.newId();
-      const posted = deps.postCard({
-        threadId: input.threadId,
-        botId: input.botId,
-        botName: input.botName,
-        botColor: input.botColor,
-        requestId,
-        summary: decision.summary,
-      });
-      pending.set(requestId, {
-        requestId,
-        threadId: input.threadId,
-        messageId: posted.messageId,
-        actorKey,
-        actor: performActor,
-        audience: performActor.kind === "person" ? performActor.personKey : deps.operatorAudience(),
-        target: decision.target,
-        createdAt: deps.now(),
-        running: false,
-      });
-      return {
-        status: 200,
-        body: { held: true, text: `Approval needed. ${decision.summary} A card is waiting in the conversation. Do not retry this action.` },
-      };
+      return hold(performActor, decision.target, decision.summary, input);
     },
 
     async confirm(input) {
@@ -173,12 +209,16 @@ export function createBotActService(deps: BotActDeps): BotActService {
       if ("error" in replay) return { handled: true, status: replay.status, body: { error: replay.error } };
       item.running = true;
       try {
-        const result = await run(replay, item.target, item.audience);
+        const confirmed = item.planned
+          ? { personKey: replay.kind === "person" ? replay.personKey : null, classes: item.planned.stepUpClasses }
+          : undefined;
+        const result = await run(replay, item.target, item.audience, confirmed);
         if (result.status >= 400) {
           item.running = false;
           const error = typeof result.body.error === "string" ? result.body.error : "The action was refused.";
           return { handled: true, status: result.status, body: { error } };
         }
+        item.planned?.onDone?.("allowed");
         pending.delete(item.requestId);
         deps.patchCard(item.threadId, item.messageId, { answered: "allow" });
         return { handled: true, status: 200, body: { ok: true, outcome: "allowed-once" } };
@@ -189,14 +229,52 @@ export function createBotActService(deps: BotActDeps): BotActService {
     },
   };
 
-  async function run(actor: PerformActor, target: ActTarget, audience?: string): Promise<BotActResult> {
+  function hold(
+    performActor: PerformActor,
+    target: ActTarget,
+    summary: string,
+    where: { threadId: string; botId: string; botName: string; botColor: string },
+    planned?: PlannedAct,
+  ): BotActResult {
+    const actorKey = performActor.kind === "person" ? `person:${performActor.personKey}` : "operator";
+    let waiting = 0;
+    for (const item of pending.values()) if (item.actorKey === actorKey) waiting += 1;
+    if (waiting >= PENDING_CAP) return refuse(429, "Too many actions are waiting for approval.");
+    const requestId = deps.newId();
+    const posted = deps.postCard({
+      threadId: where.threadId,
+      botId: where.botId,
+      botName: where.botName,
+      botColor: where.botColor,
+      requestId,
+      summary,
+    });
+    pending.set(requestId, {
+      requestId,
+      threadId: where.threadId,
+      messageId: posted.messageId,
+      actorKey,
+      actor: performActor,
+      audience: performActor.kind === "person" ? performActor.personKey : deps.operatorAudience(),
+      target,
+      createdAt: deps.now(),
+      running: false,
+      ...(planned ? { planned } : {}),
+    });
+    return {
+      status: 200,
+      body: { held: true, text: `Approval needed. ${summary} A card is waiting in the conversation. Do not retry this action.` },
+    };
+  }
+
+  async function run(actor: PerformActor, target: ActTarget, audience?: string, confirmed?: { personKey: string | null; classes: readonly string[] }, maxChars = 8000): Promise<BotActResult> {
     if (target.kind === "ui") {
       deps.broadcastUi(audience ?? (actor.kind === "person" ? actor.personKey : deps.operatorAudience()), target.command, target.input);
       return { status: 200, body: { text: "Done.", status: 200 } };
     }
     try {
-      const performed = await deps.performRoute(actor, target);
-      const text = performed.text.trim() ? performed.text.slice(0, 8000) : performed.status < 400 ? "Done." : "The action was refused.";
+      const performed = await deps.performRoute(actor, target, confirmed, maxChars);
+      const text = performed.text.trim() ? performed.text.slice(0, maxChars) : performed.status < 400 ? "Done." : "The action was refused.";
       if (performed.status >= 400) return { status: performed.status, body: { error: text, text, status: performed.status } };
       return { status: performed.status, body: { text, status: performed.status } };
     } catch {

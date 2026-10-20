@@ -670,6 +670,44 @@
       }
     },
     {
+      "name": "sagax_settings",
+      "description": "Read or change any Sagax setting for the person you speak with, with their rights: bots, conversations, routines, groups, teams, rules, account, appearance, notifications, models, connections, vault, server, organization. list (optional family) gives the keys, get reads, set changes. Their own bots and routines change at once at Approve for me or Full; a secret, a deletion, another person or the organization waits for their Allow. Try before saying you cannot.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "get",
+              "set"
+            ]
+          },
+          "family": {
+            "type": "string",
+            "description": "list: bot, thread, routine, group, section, rules, account, appearance, notifications, models, connections, credentials, server, organization, computer."
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "From list, e.g. bot.approvalMode."
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Id of the bot, conversation, routine, group, team, rule or vault item; default you or this conversation."
+          },
+          "value": {
+            "description": "The new value (set)."
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
       "name": "post_to_room",
       "description": "Put one message into a shared room you belong to, for example when the user asks you to tell the team something. Get group_id from list_rooms. This posts and returns: no room member's turn starts, nobody replies, and nothing comes back except confirmation — so never use it to ask a question or hand out work (use ask_bot or delegate_bot for those). Post once, say it in full, and tell the user what you posted. Set attach_voice_note true to attach this turn's voice note. If a post is refused, do not retry it: say what you wanted to post in your reply instead.",
       "inputSchema": {
