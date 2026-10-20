@@ -54,6 +54,10 @@ export interface InboxApproval {
    * would keep for this card, in plain words (the card's own scope), when
    * a bulk Always allow may keep it. */
   alwaysRule?: string;
+  /** 2026-10-20 (security review): the kind of rule it keeps (tool, scope
+   * keys, destructive kind, situation): a bulk Always allow takes cards of
+   * one kind only, the same action on targets of the same type. */
+  alwaysKind?: string;
   confidential?: boolean;
   destination?: InboxDestination;
   /** The card's message, exactly as the conversation shows it to the

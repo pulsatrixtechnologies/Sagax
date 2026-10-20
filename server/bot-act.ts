@@ -27,6 +27,11 @@ export function valueDigest(value: unknown): string {
   return createHash("sha256").update(canonical(value)).digest("hex").slice(0, 32);
 }
 
+/** A change to rules, permissions or standing grants: never an Always allow. */
+function ruleChange(classes: readonly string[]): boolean {
+  return classes.includes("rule-change") || classes.includes("always-grant");
+}
+
 /** The rule "Always allow" would keep for a raw act. A write that is more
  * than a plain one (any class but irreversible) is bound to its exact body. */
 export function actRuleCandidate(target: ActTarget, classes: readonly string[], describe: (target: ActTarget) => string): ActRuleCandidate {
@@ -87,6 +92,8 @@ export type PlannedAct = {
   /** Called once the route answered below 400. */
   onDone?: (how: "run" | "allowed" | "rule") => void;
   /** What "Always allow" keeps for this change (settings-actions.ts). */
+  /** No Always allow on this card (a change to rules or permissions). */
+  noRule?: boolean;
   rule?: ActRuleCandidate;
 };
 
@@ -209,8 +216,10 @@ export function createBotActService(deps: BotActDeps): BotActService {
         if (result.status < 400) input.plan.onDone?.("run");
         return result;
       }
-      const plannedRule = input.plan.rule ?? actRuleCandidate(input.target, input.plan.stepUpClasses, describeOf);
-      const allowedBy = ruleFor(performActor, input.botId, plannedRule, input.plan.stepUpClasses);
+      // 2026-10-20 (security review): a change to rules or permissions never
+      // has an Always allow, so a bot never replays an escalation unasked
+      const plannedRule = ruleChange(input.plan.stepUpClasses) || input.plan.noRule ? undefined : input.plan.rule ?? actRuleCandidate(input.target, input.plan.stepUpClasses, describeOf);
+      const allowedBy = plannedRule ? ruleFor(performActor, input.botId, plannedRule, input.plan.stepUpClasses) : null;
       if (allowedBy) {
         const planned = { personKey: performActor.kind === "person" ? performActor.personKey : null, classes: [] as string[] };
         const result = await run(performActor, input.target, undefined, planned, input.maxChars);
@@ -220,7 +229,8 @@ export function createBotActService(deps: BotActDeps): BotActService {
         }
         return result;
       }
-      return hold(performActor, input.target, input.plan.summary, input, { ...input.plan, rule: plannedRule });
+      const { rule: _offered, ...plan } = input.plan;
+      return hold(performActor, input.target, input.plan.summary, input, plannedRule ? { ...plan, rule: plannedRule } : plan);
     },
     async handle(input) {
       sweep();
@@ -241,8 +251,8 @@ export function createBotActService(deps: BotActDeps): BotActService {
       if (!decision.ok) return refuse(decision.status, decision.error);
       if (decision.effect === "run") return run(performActor, decision.target);
       const classes = actClassesOf(decision.target);
-      const candidate = actRuleCandidate(decision.target, classes, describeOf);
-      const allowedBy = ruleFor(performActor, input.botId, candidate, classes);
+      const candidate = ruleChange(classes) ? undefined : actRuleCandidate(decision.target, classes, describeOf);
+      const allowedBy = candidate ? ruleFor(performActor, input.botId, candidate, classes) : null;
       if (allowedBy) {
         const result = await run(performActor, decision.target);
         if (result.status < 400) deps.journalRule?.({ threadId: input.threadId, botId: input.botId, botName: input.botName, summary: decision.summary, rule: allowedBy.id });
@@ -311,7 +321,7 @@ export function createBotActService(deps: BotActDeps): BotActService {
   }
 
   function ruleFor(actor: PerformActor, botId: string, candidate: ActRuleCandidate, classes: readonly string[]): { id: string } | null {
-    if (!deps.actRule) return null;
+    if (!deps.actRule || ruleChange(classes)) return null;
     return deps.actRule({ person: actor.kind === "person" ? actor.personKey : null, botId, candidate, classes });
   }
 

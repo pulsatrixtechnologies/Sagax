@@ -10591,7 +10591,10 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
       ...(owner && scope !== "mine" ? { ownerName: owner } : {}),
       ...(needsKey ? { needsKey: true } : {}),
       bulk: decidable ? inboxBulkVerdict(threadId, card, kind, needsKey) : "not-yours",
-      ...(decidable && card.ownerRule && card.ownerRule.from !== "admin" ? { alwaysRule: card.ownerRule.description } : {}),
+      ...(decidable && card.ownerRule && card.ownerRule.from !== "admin" ? {
+        alwaysRule: card.ownerRule.description,
+        alwaysKind: [card.ownerRule.tool, Object.keys(card.ownerRule.scope ?? {}).sort().join(","), card.ownerRule.destructive ?? "", card.ownerRule.from ?? ""].join("|"),
+      } : {}),
       ...(confidential ? { confidential: true } : {}),
       ...(kind !== "question" ? { destination: inboxDestination(bot, card) } : {}),
       ...(shown ? { message: shown } : {}),

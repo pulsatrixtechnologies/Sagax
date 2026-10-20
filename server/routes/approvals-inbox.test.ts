@@ -123,6 +123,12 @@ describe("POST /api/approvals/bulk", () => {
     const denied = await post({ decision: "deny", items: [{ threadId: "t1", requestId: "r1" }], rule: "allow" });
     expect(denied.status).toBe(400);
     expect(answered).toEqual([]);
+    // 2026-10-20: one kind of rule only (same action, same type of target)
+    pending = pending.map((row) => ({ ...row, alwaysRule: "x", alwaysKind: row.requestId === "r2" ? "mcp__cw__delete|id||" : "mcp__cw__update|id||" }));
+    const mixed = await post({ decision: "allow", items: [{ threadId: "t1", requestId: "r1" }, { threadId: "t1", requestId: "r2" }], rule: "allow" });
+    expect(mixed.status).toBe(409);
+    expect(answered).toEqual([]);
+    pending = pending.map((row) => ({ ...row, alwaysKind: "mcp__cw__update|id||" }));
     const out = await post({ decision: "allow", items: [{ threadId: "t1", requestId: "r1" }, { threadId: "t1", requestId: "r2" }], rule: "allow" });
     expect(out.status).toBe(200);
     expect(answered).toEqual([{ requestId: "r1", decision: "allow", rule: "allow" }, { requestId: "r2", decision: "allow", rule: "allow" }]);

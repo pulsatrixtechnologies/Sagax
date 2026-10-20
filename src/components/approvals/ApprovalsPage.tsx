@@ -122,7 +122,7 @@ function BulkConfirm({ decision, selected, bots, busy, onCancel, onConfirm }: {
   const plan = bulkPlan(selected, decision);
   const [always, setAlways] = useState(false);
   // every card a bulk Always allow covers must have its own rule to keep
-  const alwaysOffered = decision === "allow" && plan.answered.length > 0 && plan.answered.every((entry) => Boolean(entry.alwaysRule));
+  const alwaysOffered = decision === "allow" && plan.answered.length > 0 && plan.answered.every((entry) => Boolean(entry.alwaysRule) && entry.alwaysKind === plan.answered[0]?.alwaysKind);
   const confirmRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { confirmRef.current?.focus(); }, []);
   const allow = decision === "allow";

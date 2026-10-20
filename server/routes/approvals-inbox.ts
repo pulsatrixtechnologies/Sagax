@@ -125,6 +125,14 @@ export function createApprovalsInboxRoutes(deps: ApprovalsInboxDeps): RouteHandl
       else selected.push(entry);
     }
     const plan = bulkPlan(selected, decision);
+    // 2026-10-20 (security review): a bulk Always allow is the same action on
+    // targets of the same type, each card with its own rule, or nothing
+    if (rule) {
+      const kinds = new Set(plan.answered.map((entry) => entry.alwaysKind ?? ""));
+      if (kinds.has("") || kinds.size > 1) {
+        return json(res, 409, { error: "A bulk Always allow takes the same action on targets of the same type only, each card with its own Always allow.", code: "bulk_mixed" });
+      }
+    }
     for (const { entry, reason } of plan.skipped) results.push({ key: entry.key, ok: false, code: reason });
     // One after the other, never in parallel: each answer settles its card
     // (and may resume a turn) before the next one is looked at.

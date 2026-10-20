@@ -252,6 +252,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         summary,
         stepUpClasses,
         rule,
+        // 2026-10-20 (security review): rules and permissions keep their card
+        ...(classes.includes("rule-change") || spec.family === "rules" ? { noRule: true } : {}),
         onDone: (how) => deps.audit({ key: spec.key, ...(ids.target ? { target: ids.target } : {}), value, secret, how, botId: input.botId, actor: speaker }),
       },
       threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
