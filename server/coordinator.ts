@@ -91,6 +91,9 @@ export interface Coordinator {
   node(id: string): HandoffView | undefined;
   has(id: string): boolean;
   all(): HandoffView[];
+  /** all() without the ended nodes. Ended rows only grow, so a caller that
+   * asks about live work (most do, on every broadcast) reads these. */
+  active(): HandoffView[];
   children(id: string): HandoffView[];
   /** Throws an Error whose message is the typed refusal the caller shows the model. */
   enqueue(source: RoomAddress, generation: string, parentId: string | undefined, target: RoomAddress, key: string, text: string,

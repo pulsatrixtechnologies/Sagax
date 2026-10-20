@@ -8802,7 +8802,7 @@ function publicGroupState(record: GroupRecord): WireGroup {
   const { installedPackage: _installedPackage, personThreads: _personThreads, ...group } = record;
   let usage: WireGroup["usage"];
   try { usage = groupUsageReader.forThread(group.threadId); } catch { /* accounting must not block chat */ }
-  const openHandoffs = coordinator.all().filter(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status));
+  const openHandoffs = coordinator.active().filter(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status));
   // A task works while a turn runs in it or its hand-offs are still out: its
   // composer locks on this, so another task stays free to talk in.
   const tasks = store.groupTasks(record.id).map((task) => {
@@ -15487,7 +15487,7 @@ const handoffs = new Handoffs({
 function reportsToRequester(threadId: string): boolean {
   const watched = delegationWatch.get(threadId);
   return Boolean(watched && delegationReportsBack(watched)) || [...awaitedAsks].some(ask => ask.threadId === threadId)
-    || coordinator.all().some(node => node.status === "running" && node.threadId === threadId && node.parentId !== undefined);
+    || coordinator.active().some(node => node.status === "running" && node.threadId === threadId && node.parentId !== undefined);
 }
 
 /** finalizeDelegationWatch's rule for who hears a delegation's end: an

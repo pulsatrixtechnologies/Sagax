@@ -187,6 +187,11 @@ export class RuntimeCoordinator implements Coordinator {
     return rows.map(row => view(row, row.parentId ? byId.get(row.parentId) : undefined));
   }
 
+  active(): HandoffView[] {
+    this.ready();
+    return this.live().map(row => this.project(row));
+  }
+
   children(id: string): HandoffView[] {
     this.ready();
     const parent = this.store.get(id);
