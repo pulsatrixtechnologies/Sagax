@@ -76,11 +76,14 @@ function parseSkins(source) {
   // A gradient fill (duo-tones, moods) declares its two ends as --accent-from
   // and --accent-to: the accent's pairs are measured at each end as well, as
   // "x+t@from" and "x+t@to", since a label crosses the whole gradient.
-  for (const [id, tokens] of [...skins]) {
+  // collected apart, then added: setting entries while iterating the map would visit them
+  const ends = new Map();
+  for (const [id, tokens] of skins) {
     for (const end of ["--accent-from", "--accent-to"]) {
-      if (tokens[end]) skins.set(`${id}@${end.slice(9)}`, { ...tokens, "--color-accent": tokens[end] });
+      if (tokens[end]) ends.set(`${id}@${end.slice(9)}`, { ...tokens, "--color-accent": tokens[end] });
     }
   }
+  for (const [id, tokens] of ends) skins.set(id, tokens);
   return skins;
 }
 
