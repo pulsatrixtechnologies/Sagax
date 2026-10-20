@@ -144,6 +144,9 @@ export function workspaceLocationsPrompt(botId: string, cwd: string | undefined,
   }) + ". Different conversations can have different working folders. For an existing file, use the exact path from the conversation; if missing here, check this bot's listed folders before saying it is gone or recreating it." +
     " Follow an explicitly requested destination. Otherwise put new task output in the current working folder and report its absolute path so another thread or room can use it." +
     " Do not move old files, edit another active thread's work, or read another bot's private folders without authorization. These paths do not grant additional access." +
+    // 2026-10-19: a bot started a local web server "only to display the
+    // images" of a document, minutes lost (server/office-media.ts).
+    " To look at a picture, read the image file itself; never start a web server or open a browser only to view one." +
     // Chat links and inline images open only inside the conversation's
     // folders; attach_file copies one file the turn saved elsewhere
     // (server/message-file.ts), and the reply's image of it shows that copy.

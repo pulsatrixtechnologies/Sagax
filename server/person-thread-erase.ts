@@ -20,6 +20,8 @@
 import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
+import { officeKind, officeMediaFolder } from "./office-media.ts";
+
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 /** The attachment store's own names (an opaque id and an extension). */
 const STORED_NAME = /^[A-Za-z0-9-]+\.[a-z0-9]{1,8}$/;
@@ -110,6 +112,10 @@ export function erasePersonThreadFiles(plan: PersonThreadErasurePlan, attachment
   };
   for (const folder of plan.folders) remove(folder, "a thread folder", true);
   for (const dir of plan.toolResults) remove(dir, "a thread's tool results", true);
-  for (const name of plan.attachments) remove(join(attachmentsDir, name), "a stored file", false);
+  for (const name of plan.attachments) {
+    remove(join(attachmentsDir, name), "a stored file", false);
+    // the pictures read out of an Office document (server/office-media.ts)
+    if (officeKind(name) && existsSync(officeMediaFolder(attachmentsDir, name))) remove(officeMediaFolder(attachmentsDir, name), "a stored file's pictures", true);
+  }
   return { removed };
 }
