@@ -2,7 +2,7 @@
   "version": "0.6.2",
   "generated": "2026-10-20",
   "hash": "df2b2259a75b845e",
-  "perspicax": {"version":"1.8.41","commit":"700354b5","date":"2026-10-20"},
+  "perspicax": {"version":"1.8.42","commit":"4f30e4b1","date":"2026-10-20"},
   "counts": {"setting":58,"notes":106,"doc":568,"engine":14,"guide":24,"menu":12,"perspicax":41,"release":62,"route":82,"tool":115},
   "sections": [
     {"id":"bot-setting:access","kind":"setting","title":"Bot settings: Access (Accès)","where":"the bot's editor: open the bot, Edit bot (Modifier le bot) > Model and tools > Access (Modèle et outils > Accès)","access":"the bot's owner, or someone allowed to manage it","keywords":"computer vm cloud vps folder workspace browser connected apps composio webhooks always allow grants tool selection tools mcp allow exclude","text":"Access of one bot. Holds: computer, vm, cloud, vps, folder, workspace, browser, connected apps, composio, webhooks, always allow, grants, tool selection, tools, mcp, allow, exclude.","source":"src/components/bot-settings/sections.ts"},
