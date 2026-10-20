@@ -4,6 +4,7 @@ import { api, ApiError, useStore, type Bot, type BotAnnouncement, type BrowserPr
 import { browserProfileDeletionBlockReason, browserProfilesMutation, newBrowserProfileId } from "@/lib/browser-profiles";
 import { isOwnerOrAdmin, readSessionState } from "@/lib/session";
 import { t } from "@/lib/i18n";
+import { MY_CHROME_PROFILE, myChromeCall } from "@/lib/my-chrome";
 
 /** Browser-panel and workspace settings share one editor. The server owns
  * session routing and erasure; this UI never handles cookies or partitions. */
@@ -31,6 +32,15 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
     });
     return () => { alive = false; };
   }, []);
+  // My Chrome is a choice only where the server offers it (the desktop).
+  const [myChromeOffered, setMyChromeOffered] = useState(false);
+  const hasBot = Boolean(bot);
+  useEffect(() => {
+    if (!hasBot) return;
+    let alive = true;
+    myChromeCall("status").then((status) => { if (alive) setMyChromeOffered(status.offered); }, () => {});
+    return () => { alive = false; };
+  }, [hasBot]);
 
   const failed = async (cause: unknown) => {
     setError(cause instanceof Error ? cause.message : t("settings.profiles.saveError"));
@@ -149,11 +159,12 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
             <option value="">{t("settings.profiles.own")}</option>
             {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
             <option value="guest">{t("settings.profiles.temporary")}</option>
-            {selected && selected !== "guest" && !profiles.some((profile) => profile.id === selected)
+            {(myChromeOffered || selected === MY_CHROME_PROFILE) && <option value={MY_CHROME_PROFILE}>{t("settings.profiles.myChrome")}</option>}
+            {selected && selected !== "guest" && selected !== MY_CHROME_PROFILE && !profiles.some((profile) => profile.id === selected)
               ? <option value={selected} disabled>{t("settings.profiles.removed")}</option> : null}
           </select>
           <p className="text-[11px] leading-relaxed text-ink-secondary">
-            {currentBot.busy ? t("settings.profiles.stopToSwitch") : selected === "guest" ? t("settings.profiles.temporaryHint") : t("settings.profiles.sharedHint")}
+            {currentBot.busy ? t("settings.profiles.stopToSwitch") : selected === "guest" ? t("settings.profiles.temporaryHint") : selected === MY_CHROME_PROFILE ? t("settings.profiles.myChromeHint") : t("settings.profiles.sharedHint")}
           </p>
         </div>
       )}

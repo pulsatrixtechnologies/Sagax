@@ -928,6 +928,10 @@ import { SETTINGS_ACTION_CLASS, STEP_UP_CLASSES, approvalModeLoosens, botActClas
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createComputerCareRoutes } from "./routes/computer-care.ts";
 import { createBrowserNetworkRoutes } from "./routes/browser-network.ts";
+import { createMyChromeRoutes } from "./routes/my-chrome.ts";
+import { createTeamLibraryGrokRoutes } from "./routes/team-library-grok.ts";
+import { MyChromeService } from "./browser/my-chrome/service.ts";
+import { MY_CHROME_PROFILE, MY_CHROME_SYSTEM_PROMPT, myChromeToolRefusal, runMyChromeTool, toolName as browserToolName } from "./browser/my-chrome/pilot.ts";
 import { MaintenanceScheduler, MaintenanceStore, oldCheckpointRepos, type DiskSaverTarget, type MaintainedComputer } from "./computer-care.ts";
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
 import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
@@ -4558,6 +4562,41 @@ const browserSweep = new BrowserSweep({
   },
   launchEnv: (session) => usedBrowserSessions.get(session)?.env,
 });
+// My Chrome (server/browser/my-chrome/): a bot set to "my-chrome" drives the
+// person's own Chrome through the gate, on the sites they allowed, with an
+// approval card for payments, sends and deletes. Off by default; an
+// organization server never offers it unless its my-chrome.json says so.
+const myChrome = new MyChromeService({
+  dataDir: DATA_DIR,
+  organization: IDENTITY.kind === "perspicax",
+  onStopped: async () => {
+    // Stop ends the engines' sessions too, so nothing reconnects on its own.
+    await Promise.allSettled([...usedBrowserSessions].filter(([session]) => isMyChromeSession(session)).map(async ([session, spec]) => {
+      myChrome.memory.forget(session);
+      await browserRuntime.close(session);
+      // The engine's daemon too: "close" on an attached Chrome leaves Chrome open.
+      await closeBrowserSession(spec.command, browserRuntimeEnv({ ...spec.env, AGENT_BROWSER_SESSION: session }), 4_000);
+    }));
+  },
+});
+const MY_CHROME_SESSION_PREFIX = "mychrome-";
+function isMyChromeSession(session: string): boolean {
+  return session.startsWith(MY_CHROME_SESSION_PREFIX);
+}
+/** The browser prompt's My Chrome paragraph, for a bot set to it. */
+function myChromePromptFor(bot: { id: string; browserProfile?: string | null }, threadId: string): string {
+  const current = store.bot(bot.id) ?? bot;
+  return current.browserProfile === MY_CHROME_PROFILE && !store.isConfidentialThread(threadId) ? MY_CHROME_SYSTEM_PROMPT : "";
+}
+/** A My Chrome call that would open an address outside the allowed sites. */
+function myChromeNavigationRefusal(params: unknown): string | null {
+  const url = (params as { arguments?: { url?: unknown } } | null)?.arguments?.url;
+  if (url === undefined || url === null || url === "" || url === "about:blank") return null;
+  if (typeof url === "string" && myChrome.allows(url)) return null;
+  let shown = String(url);
+  try { shown = new URL(shown).origin; } catch { /* keep */ }
+  return `Sagax blocked ${shown}: it is not one of the sites the person allowed in My Chrome. Ask them to allow it in Settings, or stay on the allowed sites.`;
+}
 // Temporary profiles last for this server run, but are never saved to disk.
 // The viewer and the agent must address the SAME temporary browser.
 const temporaryBrowserSessions = new Map<string, string>();
@@ -4574,6 +4613,7 @@ function currentBrowserSession(botId: string, profile: string | undefined, threa
     }
     return session;
   }
+  if (profile === MY_CHROME_PROFILE) return browserSessionId(botId, `${MY_CHROME_SESSION_PREFIX}${botId}`);
   if (profile === "guest") {
     let session = temporaryBrowserSessions.get(botId);
     if (!session) {
@@ -4625,11 +4665,18 @@ async function browserIntegration(botId: string, profile: string | undefined, tu
   // A profile that no longer exists falls back to the bot's own session.
   const threadForSession = turn?.threadId ?? sessionThreadId;
   const confidential = Boolean(threadForSession && store.isConfidentialThread(threadForSession));
-  const profileTarget = !confidential && profile && profile !== "guest" ? browserProfilePartitionTarget(cfg, profile) : null;
-  const partitionId = confidential || profile === "guest" ? "guest" : (profileTarget?.partitionId ?? "");
+  // My Chrome: the person's own Chrome through the gate. Never saved to or
+  // restored from disk; never in a confidential conversation (its own guest).
+  const ownChrome = !confidential && profile === MY_CHROME_PROFILE;
+  const profileTarget = !confidential && profile && profile !== "guest" && !ownChrome ? browserProfilePartitionTarget(cfg, profile) : null;
+  const partitionId = confidential || profile === "guest" ? "guest" : ownChrome ? MY_CHROME_PROFILE : (profileTarget?.partitionId ?? "");
   const session = currentBrowserSession(botId, profile, threadForSession);
-  const persistent = !confidential && profile !== "guest";
-  const attachCdpUrl = browserEngineAttachCdpUrl(cfg) ?? undefined;
+  const persistent = !confidential && profile !== "guest" && !ownChrome;
+  let attachCdpUrl = browserEngineAttachCdpUrl(cfg) ?? undefined;
+  if (ownChrome) {
+    try { attachCdpUrl = await myChrome.urlFor(session); }
+    catch { return null; }
+  }
   const spec = agentBrowserIntegration({
       binaryPath: status.binaryPath,
       session,
@@ -4637,7 +4684,8 @@ async function browserIntegration(botId: string, profile: string | undefined, tu
       persistent,
       env: { ...process.env, PATH: augmentedPath() },
       attachCdpUrl,
-      // A Chrome attached over CDP is the person's own: no gate to put it behind.
+      // A Chrome attached over CDP is the person's own: no gate to put it behind
+      // (My Chrome has its own: server/browser/my-chrome/gate.ts).
       ...(attachCdpUrl ? {} : { egressPort: await browserEgress.open(session) }),
     });
   usedBrowserSessions.set(session, spec);
@@ -16642,7 +16690,11 @@ setMisuseAlert((alert) => {
 // A risky call the engine will not ask about itself (a sandbox tool, a
 // desktop tool) waits on this card. Full and Auto do not answer it. The
 // respond route settles it before any provider sees the request id.
-setSafetyConfirm(async (request) => {
+setSafetyConfirm((request) => confirmHeldCard(request));
+/** The approval card a server-side check waits on (a safety hold, a My
+ * Chrome payment, send or delete): Allow or Deny, in the conversation, with
+ * a notification. Full access and Approve for me do not answer it. */
+async function confirmHeldCard(request: { threadId?: string; botId?: string; tool?: string; summary: string; allowKey?: string }): Promise<"allow" | "deny" | "timeout"> {
   const threadId = request.threadId;
   if (!threadId) return "deny";
   const held = openSafetyHold();
@@ -16657,6 +16709,7 @@ setSafetyConfirm(async (request) => {
       options: ["Allow", "Deny"],
       requestId: held.requestId,
       ...(request.tool ? { tool: request.tool } : {}),
+      ...(request.allowKey ? { allowKey: request.allowKey } : {}),
       held: HELD_NOTE["approval.held.native"],
       heldCode: "approval.held.native",
     },
@@ -16672,7 +16725,7 @@ setSafetyConfirm(async (request) => {
     }
   }
   return answer;
-});
+}
 
 /** The one path a person's direct message takes into a bot turn: spend cap,
  * idempotency, steer into a running turn, queue, or start. Used by
@@ -18834,7 +18887,7 @@ async function startTurn(
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
         { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, speaker)) },
-        { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT : "" },
+        { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT + myChromePromptFor(bot, threadId) : "" },
         { id: "data", label: "Data", text: integrations.data ? BUILT_IN_DATA_SYSTEM_PROMPT : "" },
         { id: "coordination", label: "Team", text: coordinationPrompt ? ` ${coordinationPrompt}` : "" },
         { id: "assignment", label: "Teammate task", text: coordinationNode?.parentId ? `\n${coordinationSystemInstructions()}` : "" },
@@ -21866,7 +21919,7 @@ async function runGroupMemberTurn(
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(roomTeamComputer) },
     { id: "plan", label: "Surface", text: surfacePrompt({ computer: roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind), browser: Boolean(integrations.browser) }, { note: roomPlan.note, cloudHome: Boolean(CLOUD_HOME) }) },
     { id: "cloud-home", label: "OMB Cloud", text: CLOUD_HOME ? cloudHomePrompt(Boolean(integrations.agents) && lendingEnabled()) : "" },
-    { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT : "" },
+    { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT + myChromePromptFor(bot, threadId) : "" },
     { id: "data", label: "Data", text: integrations.data ? BUILT_IN_DATA_SYSTEM_PROMPT : "" },
     { id: "recall", label: "Recall", text: integrations.agents && bot.memoryEnabled !== false ? SESSION_SEARCH_SYSTEM_PROMPT : "" },
     teamAvailabilityPart(outsideRoom),
@@ -25800,6 +25853,26 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   }),
 ];
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
+// A shared Grok Bot's public card (port of OpenMausBot #3073).
+ROUTES.push(createTeamLibraryGrokRoutes());
+ROUTES.push(createMyChromeRoutes({
+  service: () => myChrome,
+  // The person, never a bot acting for them: on a headless server a bot's
+  // shell is a loopback caller too and must not grant itself a site or
+  // resume after Stop (security review 2026-10-20, #834). Loopback counts
+  // only on the desktop, whose mutations carry Electron's capability.
+  allowed: (auth) => {
+    if (!adminOrDelegate(auth, "server.settings")) return false;
+    if (auth.kind === "loopback") return DESKTOP_MANAGED && auth.trust !== "service";
+    if (auth.session.ephemeral || isBotActSession(auth.session)) return false;
+    const principalId = auth.session.principalId?.trim();
+    return Boolean(principalId && !principalId.startsWith("anon:"));
+  },
+  botFor: (session) => {
+    const bot = store.bots.find((candidate) => candidate.browserProfile === MY_CHROME_PROFILE && currentBrowserSession(candidate.id, MY_CHROME_PROFILE) === session);
+    return bot ? { id: bot.id, name: bot.name } : null;
+  },
+}));
 ROUTES.push(createBrowserNetworkRoutes({
   bot: (id) => store.bot(id) ?? null,
   browserEnabled: () => builtInBrowserEnabled(cfg),
@@ -34845,6 +34918,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!bot || bot.browser === false || bot.computer === "off" || !builtInBrowserEnabled(cfg)) {
           return json(res, 403, { error: "browser tools are not enabled for this bot" });
         }
+        const ownChrome = bot.browserProfile === MY_CHROME_PROFILE && !store.isConfidentialThread(internalCapability.threadId);
+        const ownChromeOff = ownChrome ? myChrome.unavailable() : null;
+        if (ownChromeOff) return json(res, 403, { error: ownChromeOff });
         const browser = await browserIntegration(bot.id, bot.browserProfile, undefined, internalCapability.threadId);
         if (!browser || browser.session !== internalCapability.browserSession) {
           return json(res, 409, { error: "this browser profile changed; start a new turn" });
@@ -34853,7 +34929,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 400, { error: "unsupported browser method" });
         }
         if (body.method === "tools/call") {
-          const refusal = browserNavigationRefusal(body.params);
+          // My Chrome opens only the person's allowed sites (the gate checks
+          // again in Chrome); the built-in browser keeps its public-only rule.
+          const refusal = ownChrome ? myChromeNavigationRefusal(body.params) : browserNavigationRefusal(body.params);
           if (refusal) return json(res, 400, { error: refusal });
         }
         // fill_credential resolves through this turn's person's vault, for
@@ -34862,17 +34940,53 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const credentials = vaultPrincipal
           ? fillResolverFor(credentialVault, { principalId: vaultPrincipal, botId: bot.id, threadId: internalCapability.threadId }, readOnePasswordField)
           : undefined;
-        const result = await browserRuntime.agentRpc(browser.session, browser.spec, body.method, body.params, () => {
+        const beforeDispatch = () => {
           requireActiveInternalCapability();
           const current = store.bot(bot.id);
           if (!current || current.browser === false || current.computer === "off" || !builtInBrowserEnabled(cfg) ||
               currentBrowserSession(current.id, current.browserProfile, internalCapability.threadId) !== browser.session) {
             throw Object.assign(new Error("Browser access changed while connecting."), { status: 409 });
           }
+          if (ownChrome && myChrome.unavailable()) throw Object.assign(new Error(myChrome.unavailable()!), { status: 403 });
           if (body.method === "tools/call" && !claimTurnResource(internalCapability, `browser:${browser.session}`)) {
             throw Object.assign(new Error("another thread is using this browser — pause browser work until that thread finishes"), { status: 409 });
           }
-        }, credentials);
+        };
+        const run = (params: unknown) => browserRuntime.agentRpc(browser.session, browser.spec, body.method, params, beforeDispatch, credentials);
+        let result: unknown;
+        if (!ownChrome) result = await run(body.params);
+        else if (body.method === "tools/list") {
+          // Only the tools My Chrome allows are offered (no scripts, cookies or state).
+          const listed = await run(body.params) as { tools?: Array<{ name?: unknown }> } | null;
+          result = listed && Array.isArray(listed.tools)
+            ? { ...listed, tools: listed.tools.filter((tool) => myChromeToolRefusal({ name: tool?.name, arguments: {} }) === null) }
+            : listed;
+        } else {
+          result = await runMyChromeTool({
+            session: browser.session,
+            params: body.params,
+            memory: myChrome.memory,
+            run,
+            pageUrl: async () => {
+              const answer = await browserRuntime.agentRpc(browser.session, browser.spec, "tools/call", { name: "agent_browser_get_url", arguments: {} }, beforeDispatch, credentials) as { content?: Array<{ text?: unknown }> };
+              const text = String(answer?.content?.[0]?.text ?? "");
+              try { return String((JSON.parse(text) as { data?: { url?: unknown } }).data?.url ?? ""); } catch { return text; }
+            },
+            confirm: (summary, allowKey) => {
+              // "Always allow" saved on an earlier card: this kind of action on this site.
+              const grants = (store.projectBotForTask(bot.id, internalCapability.threadId) ?? store.bot(bot.id))?.alwaysAllow ?? [];
+              if (allowKey && grants.includes(allowKey)) return Promise.resolve("allow" as const);
+              return confirmHeldCard({
+                threadId: internalCapability.threadId,
+                botId: bot.id,
+                tool: `my_chrome:${browserToolName(body.params)}`,
+                summary,
+                ...(allowKey ? { allowKey } : {}),
+              });
+            },
+            notes: () => myChrome.takeNotes(browser.session),
+          });
+        }
         requireActiveInternalCapability();
         return json(res, 200, { result });
       }
@@ -41050,7 +41164,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (requestedProfile === undefined) patch.browserProfile = undefined;
         else if (
           typeof requestedProfile === "string" &&
-          (requestedProfile === "guest" || (cfg.browserProfiles ?? []).some((profile) => profile.id === requestedProfile))
+          (requestedProfile === "guest" || (requestedProfile === MY_CHROME_PROFILE && myChrome.offered) ||
+            (cfg.browserProfiles ?? []).some((profile) => profile.id === requestedProfile))
         ) {
           patch.browserProfile = requestedProfile;
         } else return json(res, 400, { error: "browserProfile must name an existing browser profile" });
@@ -46235,7 +46350,7 @@ const gracefulShutdown = createGracefulShutdown({
       // browser are one close (closeBrowserSession joins them).
       const temporaries = [...temporaryBrowserSessions.keys()].map((botId) => forgetTemporaryBrowser(botId));
       meetingService.leaveAll();
-      await Promise.all([...temporaries, browserSweep.closeAll()]);
+      await Promise.all([...temporaries, browserSweep.closeAll(), myChrome.close().catch(() => undefined)]);
       await browserRuntime.closeAll();
     },
     // Slice 5: the Perspicax MCP tokens revoked above, bounded.

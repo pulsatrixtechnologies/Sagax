@@ -12,6 +12,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { LocaleKey } from "@/locales";
 import { BrowserProfilesManager } from "../BrowserProfilesManager";
+import { MyChromeSettings } from "./MyChromeSettings";
 import { BrowserUnavailableNote } from "../SettingsLink";
 import { DescribedRow, HelpTip, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { DisclosurePill } from "./AppearanceSettings";
@@ -160,6 +161,7 @@ export function ExperimentalSettings() {
           onToggle={() => void toggle("browser", !browser)}
           below={(browser || profiles.length > 0) && <BrowserProfilesBelow count={profiles.length} />}
         />
+        {browser && <MyChromeSettings />}
         <div data-experimental-connected-apps="">
           <FeatureRow
             feature="connectedApps"

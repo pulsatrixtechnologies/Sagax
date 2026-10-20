@@ -4987,6 +4987,138 @@ export blocks of `server/credential-vault.test.ts` and
 the launcher forwards a throwaway `SAGAX_MCP_OAUTH_KEY` and sends the owner
 capability on its own starter rename).
 
+## My Chrome: a bot drives the person's own Chrome (2026-10-19)
+
+Port of OpenMausBot #2706 (My Chrome) with what Sagax needs of #2925, #2928,
+#2939 and #2949, narrowed by JC's rules. Off by default. Settings >
+Experimental > My Chrome (`src/components/settings/MyChromeSettings.tsx`,
+under the built-in browser row) turns it on and lists the allowed sites, each
+one exact origin (`https://host[:port]`, `http://localhost:port` the only
+plain http; `server/browser/my-chrome/sites.ts`), with Revoke, Stop / Resume
+and Chrome's address. A bot uses it when its browser session is "My Chrome"
+(`browserProfile: "my-chrome"`, `MY_CHROME_PROFILE`; BrowserProfilesManager
+offers it where the server does). Settings live in `my-chrome.json` (0600,
+`server/browser/my-chrome/settings.ts`); a file that does not read is "off".
+An organization server never offers it unless that file says
+`allowOnOrganizationServer: true` by hand (no route sets it).
+
+- The engine is still agent-browser (`AGENT_BROWSER_CDP`), but it reaches the
+  gate (`server/browser/my-chrome/gate.ts`), never Chrome: a loopback
+  WebSocket with a random 48-hex path per bot session. The gate holds one
+  DevTools connection to the person's Chrome, found from the setting (a port,
+  a loopback `ws://` or `http://`) or Chrome's `DevToolsActivePort` file
+  (`locate.ts`: that file only, never the profile's cookies, Login Data or
+  history; remote debugging on at `chrome://inspect/#remote-debugging`,
+  Chrome 144+, which asks the person before it lets Sagax in).
+- The engine sees only the tabs it opened through the gate (and popups they
+  opened): `Target.getTargets` is filtered, attaching to any other tab is
+  refused. A new tab starts blank, gets its guard, then goes to the address.
+  The guard (the gate's own session per tab) intercepts documents (`Fetch`)
+  and fails any top-level navigation outside the allowed sites: address,
+  link, redirect, form, script, popup (held by `Target.autoAttachRelated`
+  until guarded). Revoking a site refuses the engine on it at once.
+- `cdp-policy.ts` allowlists methods: no cookie call (`Network.getCookies`,
+  `getAllCookies`, `Storage.*`, `Page.getCookies`), no storage of any origin
+  (`DOMStorage`, `IndexedDB`, `CacheStorage`), no body or interception
+  (`getResponseBody`, `loadNetworkResource`, `Fetch`), no browser-wide call,
+  context, download, file upload, permission, autofill. Network events lose
+  every header, cookie and body; the `ExtraInfo` events are dropped. Frames
+  and workers of another site inside an allowed page are detached from the
+  engine; a frame of another origin on the same site (it would share the
+  page's process) is not loaded (`maybeSameSite`, errs toward "same").
+  `Page.captureSnapshot` and `addScriptToEvaluateOnNewDocument` with
+  `runImmediately` are refused, downloads are denied in the tab, and a
+  network event toward a site not allowed shows its origin only (no path,
+  query or initiator). Unknown methods are refused.
+- Each driven tab carries a banner (bottom right, "A Sagax bot is driving
+  this tab" / "Un bot Sagax pilote cet onglet") in an isolated world, hidden
+  from the accessibility tree, with a Stop button whose binding exists only
+  in that world and counts only a trusted click. Sagax shows its own banner
+  while a bot drives (`src/components/MyChromeIndicator.tsx`: which bot, on
+  which site, Stop). Stop (`POST /api/my-chrome/stop`, the tab's button, or
+  turning My Chrome off) terminates every engine connection first, then
+  removes the guards and banners, closes the Chrome connection and the
+  engines' sessions and forgets every gate address handed out (a copy left
+  in an engine's environment cannot reconnect after Resume); `stopped` is
+  saved and holds until Resume.
+- `/api/my-chrome/*` answers the person only (security review 2026-10-20,
+  #834): a session that is not an act/actAs one, or loopback on the desktop
+  (Electron's capability); a headless server's loopback (a bot's shell) is
+  refused. Residual risk, said in the PR: a bot with its own shell on the
+  same computer could still read Chrome's `DevToolsActivePort` and talk to
+  Chrome without the gate; Chrome's own remote-debugging consent is the
+  guard there.
+- The bot's calls (`server/browser/my-chrome/pilot.ts`, from the internal
+  browser route): only the page tools (no `agent_browser_eval`, cookies,
+  state, profiles, `read` with a URL, screenshot to a file), elements only by
+  `@eN` refs. A payment or purchase, a send (form, email, message, post,
+  save, confirm) or a delete waits on the same Allow / Deny card as a safety
+  hold (`confirmHeldCard` in server/index.ts; Full access and Approve for me
+  do not answer it). It is named from the role and name of the ref in the
+  bot's last snapshot, the key (Enter or Space, except after typing in a
+  search box), text with a line break, or an address (`/delete`,
+  `/checkout`...). An unknown ref or a button with no name is a card too.
+  Refs come only from a snapshot (JSON `data.refs` first; a ref the text
+  names twice differently is dropped), never from page text read by another
+  tool. Enter or Space with any modifier (Control+Enter...) is a send.
+  The card offers "Always allow" for one kind (payment, send or delete) on
+  one exact origin (`my_chrome:<kind>:<origin>`, `myChromeAllowKey`), saved
+  in the bot's `alwaysAllow` through the usual route (step-up, answerer
+  checks) and revocable there; a doubt ("unclear") or a page without a web
+  origin is carded every time.
+  Passwords go only through the vault's `fill_credential`. What the gate
+  blocked is added to the next result. The bot's prompt gets
+  `MY_CHROME_SYSTEM_PROMPT`. A confidential conversation never uses it.
+- Routes: `POST /api/my-chrome/{status,enable,sites,sites/revoke,address,stop,resume}`,
+  POST only, the person or an admin (`adminOrDelegate(server.settings)`),
+  admin and off in the agent tool policy.
+- The egress gate of the bots' own browsers (#2930) does not apply to My
+  Chrome (the person's browser); the site allowlist and the gate do.
+  `browserEngine.attachCdpUrl` keeps its old meaning (every bot attaches,
+  ungated): an operator setting, separate from My Chrome.
+
+Tests: `server/browser/my-chrome/my-chrome.test.ts` (sites, settings,
+locating Chrome, the DevTools policy, cards), `server/routes/my-chrome.test.ts`,
+`src/components/MyChromeIndicator.dom.test.ts`, and
+`server/browser/my-chrome/my-chrome.e2e.test.ts` against a throwaway headless
+Chrome for Testing (temporary profile, `--headless=new`, its own loopback
+port; `SAGAX_TEST_CHROME` or the Playwright cache, never the person's
+Chrome) and two local sites: the person's tabs stay invisible, every cookie
+and storage call is refused, no address, link, redirect or popup reaches the
+other site, its frame stays away from the engine, revoking works at once, the
+banner's Stop (a trusted click) and Sagax's Stop cut at once. With
+`SAGAX_TEST_AGENT_BROWSER=<agent-browser binary>` the last suite drives the
+real tool path: cards for delete, payment and send, refusals, Stop.
+
+## Import a shared Grok Bot (2026-10-19)
+
+Port of OpenMausBot #3073, without its optional Cursor sign-in (a third-party
+account token Sagax does not keep). Settings > Import
+(`src/components/settings/ImportSettings.tsx`, section `import`, hidden like
+Backups for whoever cannot manage backups, and in Simple mode), and a Grok
+Bot export dropped on Bot templates > Import (`TemplateTools` readFile).
+`src/components/GrokImportBox.tsx` reads an `https://x.ai/bot/<id>` link or a
+marketplace page through `POST /api/team-library/grok`
+(`server/routes/team-library-grok.ts`, admin scope; `server/team-library.ts`
+`fetchGrokTemplateCard` fetches only x.ai, redirects must stay there, 20 s,
+2 MB) and shows the public card (name, creator, description) with Start
+from the description (`grokStarterPackage`). The full setup comes from the
+person's own Grok Bot: Copy export prompt (`GROK_EXPORT_PROMPT`), then paste
+its JSON reply or choose it saved as a `.json` file (`openmaus.grok/1`, or
+pi-grokbot-import's `grokbot-bundle/v1`; the format ids stay upstream's).
+`shared/grok-import.ts` turns it into an `openmaus.package` v2 with one bot:
+instructions (cut at the soul limit, with a note), skills off, routines with
+a cron or a plain time paused, apps as connector requirements (Composio
+slugs when known), memories only when exported, key-shaped text redacted.
+Event routines and unreadable schedules are listed under Left out with their
+original text. The preview and Add are the templates' own
+(`TeamImportPreview`, `POST /api/teams/import?mode=add`). Tests:
+`shared/grok-import.test.ts`, `server/team-library.test.ts` (fixtures
+`server/fixtures/grok-share-page*.html`),
+`server/routes/team-library-grok.test.ts`,
+`src/components/settings/ImportSettings.dom.test.ts` (the export fixture
+`shared/fixtures/grok-import/shared-grok-bot.json`).
+
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 
 A bot shows a card, list, form, table or chart with the agents tool
