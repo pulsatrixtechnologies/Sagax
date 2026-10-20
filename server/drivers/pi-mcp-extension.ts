@@ -653,7 +653,9 @@ export default async function (pi: PiExtensionApi): Promise<void> {
   for (const mount of mounts) {
     if (!mount.client || !mount.def || !mount.tools) continue;
     const { serverName, def, client, tools } = mount;
-    const gated = def.scope === "local-computer" || (def.scope === "custom" && config.approvalMode !== "full");
+    // "approval": Sagax's own Browser and Data (pi.ts buildMcpServers), which
+    // ask like a custom server so Sagax's approval path decides.
+    const gated = def.scope === "local-computer" || ((def.scope === "custom" || def.scope === "approval") && config.approvalMode !== "full");
     let registered = 0;
 
     for (const tool of tools) {

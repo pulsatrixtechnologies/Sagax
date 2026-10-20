@@ -165,8 +165,13 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
       env: { ...NODE_ENV_FLAG, DWEB_URL: turn.integrations.dweb.url },
     };
   }
-  if (turn.integrations?.browser) servers.browser = { ...turn.integrations.browser };
-  if (turn.integrations?.data) servers.data = { ...turn.integrations.data };
+  // Browser and Data reach Sagax's approval path as on Claude (mounted, not
+  // pre-allowed there): the person's rules, the safety review and the
+  // security keys apply, and a Data call in the bot's own workspace is
+  // answered without a card (sagax-internal-tools.ts). Engine parity
+  // 2026-10-19: pi ran both with no card at every level.
+  if (turn.integrations?.browser) servers.browser = { ...turn.integrations.browser, scope: "approval" };
+  if (turn.integrations?.data) servers.data = { ...turn.integrations.data, scope: "approval" };
   for (const [name, server] of Object.entries(turn.integrations?.custom ?? {})) servers[name] = { ...server, scope: "custom" };
   for (const [name, server] of Object.entries(servers)) {
     if (parsed.scope !== undefined && !canUseMcpServer(parsed.scope, name)) { delete servers[name]; continue; }
@@ -180,6 +185,18 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
     servers[name] = { ...stdio, ...(original.scope ? { scope: original.scope } : {}), ...(directory ? { directory: true } : {}) };
   }
   return Object.keys(servers).length ? servers : null;
+}
+
+/** The `<server>__<tool>` a gated MCP confirm names, as the other engines
+ * report it (`mcpTool`), so Sagax's name-based answers (its own tools, a
+ * Perspicax read or lease, the person's rules) apply on pi too. Only the
+ * exact title pi-mcp-extension writes (`Allow <server>:<tool>?`) for a server
+ * mounted on this turn; anything else stays an unnamed card. */
+export function piGatedMcpTool(title: unknown, mounted: Record<string, unknown> | null): string | undefined {
+  if (typeof title !== "string" || !mounted) return undefined;
+  const match = /^Allow ([A-Za-z0-9][\w-]{0,63}):([A-Za-z][\w-]{0,127})\?$/.exec(title);
+  if (!match || !Object.hasOwn(mounted, match[1]!)) return undefined;
+  return `${match[1]}__${match[2]}`;
 }
 
 /** A pi `get_available_models` response payload, parsed at its I/O boundary. */
@@ -1064,6 +1081,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
               const selectOptions: string[] = isSelect && Array.isArray(evt.options)
                 ? evt.options.filter((option): option is string => typeof option === "string") : [];
               const summary = String(evt.title ?? (isQuestion ? "pi has a question" : "pi wants confirmation")).slice(0, 200);
+              const mcpTool = isQuestion ? undefined : piGatedMcpTool(evt.title, mcpServers);
               // A select is a question with named options; the structured
               // card renders from it while the flat choices keep older
               // clients answering. An input has nothing to pick from and
@@ -1126,6 +1144,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
                 requestType: isQuestion ? "question" : "permission",
                 tool: String(evt.title ?? "pi"),
                 summary,
+                ...(mcpTool ? { mcpTool } : {}),
                 ...(choices ? { choices } : {}),
                 ...(question ? { questions: [question] } : {}),
               });

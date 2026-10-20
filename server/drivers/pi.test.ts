@@ -19,6 +19,7 @@ import { encodeInjectId, localHost } from "./local-inject.ts";
 import {
   applyPiLocalCatalog,
   buildMcpServers,
+  piGatedMcpTool,
   decodePiFrame,
   ensurePiInjectModel,
   fetchPiModels,
@@ -155,6 +156,21 @@ describe("piLineReader", () => {
   });
 });
 
+describe("piGatedMcpTool", () => {
+  const mounted = { data: {}, perspicax_jc: {}, "my-mail": {} };
+  it("names the tool of the extension's own gated confirm, like the other engines", () => {
+    expect(piGatedMcpTool("Allow data:data_sql?", mounted)).toBe("data__data_sql");
+    expect(piGatedMcpTool("Allow perspicax_jc:claim?", mounted)).toBe("perspicax_jc__claim");
+    expect(piGatedMcpTool("Allow my-mail:send-draft?", mounted)).toBe("my-mail__send-draft");
+  });
+  it("names nothing for an unmounted server, another title or a question", () => {
+    for (const title of ["Allow other:x?", "Allow data:data_sql", "allow data:data_sql?", "Allow data:data sql?", "Allow click on your computer?", "Allow data:data_sql?\nmore", undefined, 7]) {
+      expect(piGatedMcpTool(title, mounted)).toBeUndefined();
+    }
+    expect(piGatedMcpTool("Allow data:data_sql?", null)).toBeUndefined();
+  });
+});
+
 describe("buildMcpServers", () => {
   it("mounts a selected custom mail server without unrelated built-ins", () => {
     const servers = buildMcpServers({ threadId: "selected", text: "Read mail", toolScope: { allow: ["mcp:mail:*"] }, integrations: {
@@ -219,6 +235,18 @@ describe("buildMcpServers", () => {
     expect(scoped.args[0]).toContain("mcp-gate");
     expect(scoped.env.SAGAX_GATE_DIRECTORY).toBe("1");
     expect(JSON.parse(JSON.parse(scoped.env.SAGAX_GATE_UPSTREAM).env.SAGAX_REMOTE_MCP_DIRECTORY)).toEqual({ name: "whop", toolScope });
+  });
+
+  it("sends Sagax's own Browser and Data through the approval path, as on Claude (engine parity)", () => {
+    const servers = buildMcpServers({ threadId: "t", text: "hi", integrations: {
+      browser: { command: "node", args: ["b"], env: {} },
+      data: { command: "node", args: ["d"], env: {} },
+      agents: { command: "node", args: ["a"], env: {} },
+    } });
+    expect(servers?.browser).toMatchObject({ scope: "approval" });
+    expect(servers?.data).toMatchObject({ scope: "approval" });
+    // the agents tools never ask, on every engine
+    expect(servers?.agents).not.toHaveProperty("scope");
   });
 
   it("marks a host computer with scope so the extension gates its tools", () => {
