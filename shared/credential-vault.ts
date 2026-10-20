@@ -73,6 +73,8 @@ export interface VaultRequestCardData {
   mode?: VaultGrantMode;
   /** The person whose vault answers (organization server). */
   principalId: string;
+  /** The person signed in themselves in the bot's browser instead. */
+  signedInSelf?: boolean;
 }
 
 const HOST_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
@@ -166,4 +168,54 @@ export function itemIdFromHandle(handle: unknown): string | null {
   if (typeof handle !== "string") return null;
   const match = /^cred_([a-z0-9]{8,40})$/.exec(handle.trim());
   return match ? match[1]! : null;
+}
+
+/** Hosting names under which every customer gets their own subdomain
+ * (alice.github.io and bob.github.io are strangers). A short list, not the
+ * public suffix list: it only keeps them out of the card's suggestions. */
+const SHARED_HOSTING = new Set([
+  "github.io", "gitlab.io", "herokuapp.com", "vercel.app", "netlify.app", "pages.dev", "workers.dev", "web.app", "firebaseapp.com",
+  "appspot.com", "azurewebsites.net", "cloudfront.net", "blogspot.com", "wordpress.com", "onrender.com", "fly.dev", "myshopify.com",
+  "okta.com", "oktapreview.com", "atlassian.net", "sharepoint.com", "s3.amazonaws.com", "amplifyapp.com", "glitch.me", "repl.co",
+]);
+
+/** Whether a host sits under a shared hosting name (alice.github.io), where
+ * neighbours are strangers: never added to a login from a bot's request. */
+export function onSharedHosting(domain: string): boolean {
+  const normalized = normalizeVaultDomain(domain);
+  if (!normalized || normalized.startsWith("http://")) return false;
+  const labels = normalized.replace(/^\*\./, "").replace(/:\d+$/, "").split(".");
+  for (let size = 2; size <= Math.min(3, labels.length); size++) if (SHARED_HOSTING.has(labels.slice(-size).join("."))) return true;
+  return false;
+}
+
+/** Whether a site a bot asked for may be added to this login from its card
+ * ("Also fill it on ..."): an exact host (never a wildcard), not under a
+ * shared hosting name, not already covered, and of the same site as one of
+ * the login's own bindings. A look-alike (examp1e.com) never is. */
+export function siteAddable(domains: readonly string[], site: string | undefined): boolean {
+  if (!site || site.startsWith("*.") || site.startsWith("http://") || onSharedHosting(site)) return false;
+  if (normalizeVaultDomain(site) !== site || vaultDomainMatches(domains, bindingUrl(site))) return false;
+  const own = vaultSiteOf(site);
+  return Boolean(own) && domains.some((domain) => !onSharedHosting(domain) && vaultSiteOf(domain) === own);
+}
+
+/** The site a binding belongs to, for suggesting a saved login on a
+ * request for another address of the same site (accounts.example.com and
+ * example.com): its last two labels, three under a country's shared second
+ * level (example.co.uk) or a shared hosting name (alice.github.io). Never
+ * used to fill: a fill matches the item's own bindings only. */
+export function vaultSiteOf(domain: string): string | null {
+  const normalized = normalizeVaultDomain(domain);
+  if (!normalized) return null;
+  if (normalized.startsWith("http://")) return normalized;
+  const host = normalized.replace(/^\*\./, "").replace(/:\d+$/, "");
+  if (host === "localhost") return host;
+  const labels = host.split(".");
+  const two = labels.slice(-2).join(".");
+  const three = labels.slice(-3).join(".");
+  const shared = SHARED_SECOND_LEVEL.test(two) || SHARED_HOSTING.has(two) || SHARED_HOSTING.has(three);
+  if (!shared) return two;
+  if (SHARED_HOSTING.has(three)) return labels.length >= 4 ? labels.slice(-4).join(".") : null;
+  return labels.length >= 3 ? three : null;
 }

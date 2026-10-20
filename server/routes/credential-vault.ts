@@ -11,8 +11,11 @@
 //   POST   /api/me/credentials/onepassword/import { via, vaultId, itemId, name?, domains? }
 //   POST   /api/me/credentials/import   { format, duplicates: merge|skip, items }  items the app read from a file
 //   POST   /api/me/credentials/export   { format, acknowledge: "plaintext", stepUp? } -> { items, onePassword }
-//   POST   /api/bots/:botId/vault-cards/:messageId/grant   { threadId, itemId | item, mode }
+//   POST   /api/bots/:botId/vault-cards/:messageId/grant   { threadId, itemId | item, mode, addSite? }
 //   POST   /api/bots/:botId/vault-cards/:messageId/dismiss { threadId }
+//   POST   /api/bots/:botId/vault-cards/:messageId/self-start { threadId } arm the bot's browser for the person
+//   POST   /api/bots/:botId/vault-cards/:messageId/self-status { threadId } { armed } for the card
+//   POST   /api/bots/:botId/vault-cards/:messageId/signed-in { threadId }  the person signed in themselves
 //
 // The vault is the person's own: the session's principal on an organization
 // server, the one local vault on a desktop or a solo server. No answer
@@ -26,7 +29,7 @@
 // only answered to the person's own app.
 import { randomUUID } from "node:crypto";
 
-import { isVaultGrantMode, normalizeVaultDomain, VAULT_ITEM_KINDS, VAULT_LOGIN_TARGET, vaultHandle, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault.ts";
+import { bindingUrl, isVaultGrantMode, normalizeVaultDomain, siteAddable, VAULT_ITEM_KINDS, vaultDomainMatches, VAULT_LOGIN_TARGET, vaultHandle, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault.ts";
 import { isVaultDuplicateMode, isVaultExportFormat, isVaultImportFormat, type VaultExportFormat, type VaultTransferItem } from "../../shared/credential-vault-transfer.ts";
 import type { SecretRequestCardData } from "../../shared/wire.ts";
 import { CredentialVaultError, type CredentialVault, type VaultItemInput } from "../credential-vault.ts";
@@ -41,6 +44,19 @@ export interface CredentialVaultRouteDeps {
    * on an organization server). */
   principal(auth: RequestAuth): string | null;
   botExists(botId: string): boolean;
+  /** The bot's own browser for this conversation, for a person who signs in
+   * there themselves: null to go on, else why not (server/browser-runtime.ts
+   * armForPerson, clearAfterPerson). Absent refuses that answer. */
+  browser?: {
+    armForPerson(botId: string, threadId: string): Promise<string | null>;
+    clearAfterPerson(botId: string, threadId: string): Promise<string | null>;
+    /** Whether self-start armed that browser and it still is (a restart
+     * re-arms it; nothing else may end it before Done). */
+    armedForPerson(botId: string, threadId: string): Promise<boolean>;
+    /** Done or declined: the sign-in under way ends (the browser stays armed
+     * until its next restart). */
+    endForPerson(botId: string, threadId: string): Promise<void>;
+  };
   cards: {
     /** The pending vault card a bot posted in this conversation, or null. */
     find(botId: string, threadId: string, messageId: string): SecretRequestCardData | null;
@@ -48,7 +64,7 @@ export interface CredentialVaultRouteDeps {
     /** Settle the card and wake the bot with this note. */
     resume(botId: string, threadId: string, messageId: string, outcome: "provided" | "dismissed", prompt: string): boolean;
   };
-  audit?(action: "credentials.create" | "credentials.delete" | "credentials.grant" | "credentials.revoke" | "credentials.import" | "credentials.export", auth: RequestAuth, detail: Record<string, unknown>): void;
+  audit?(action: "credentials.create" | "credentials.delete" | "credentials.grant" | "credentials.revoke" | "credentials.import" | "credentials.export" | "credentials.signed_in", auth: RequestAuth, detail: Record<string, unknown>): void;
   /** Whether this caller may take the vault's values out in a file now:
    * null to go on, else the refusal (a security key step-up, a sign-in
    * that is too old, a bot acting for its person). Absent refuses. */
@@ -89,7 +105,7 @@ function importItem(raw: unknown): VaultTransferItem | null {
 }
 
 const ITEM = /^\/api\/me\/credentials\/([a-z0-9]{8,40})(?:\/(notes|grants)(?:\/([\w-]{1,128}))?)?$/;
-const CARD = /^\/api\/bots\/([\w-]+)\/vault-cards\/([\w-]+)\/(grant|dismiss)$/;
+const CARD = /^\/api\/bots\/([\w-]+)\/vault-cards\/([\w-]+)\/(grant|dismiss|self-start|self-status|signed-in)$/;
 
 function refusal(error: unknown): { status: number; body: Record<string, unknown> } | null {
   if (error instanceof CredentialVaultError) return { status: error.status, body: { error: error.message, code: error.code } };
@@ -104,7 +120,14 @@ export function grantedNote(item: VaultItemListing, mode: VaultGrantMode): strin
   const fields = [item.username ? "username" : "", item.hasPassword ? "password" : "", item.hasTotp ? "totp" : "", item.hasApiKey ? "apiKey" : ""].filter(Boolean);
   return `Sagax credential update: the person allowed you to use the saved login "${item.name}", handle ${vaultHandle(item.id)}, on ${item.domains.join(", ")}` +
     `${mode === "once" ? " in this conversation for the next 15 minutes" : ""}. Fields: ${fields.join(", ") || "none"}. ` +
-    "Continue the task: in the browser, call fill_credential with this handle and the field. You never receive the value, and must not ask for it in chat.";
+    "Continue the task: in the browser, call fill_credential with this handle and field login to sign in (or one field at a time). You never receive the value, and must not ask for it in chat.";
+}
+
+/** What the bot is told after the person signed in themselves in its
+ * browser (the card's other answer, from OpenMausBot #2707's sign-in
+ * request): no handle, no value, only that the session is there. */
+export function signedInNote(site: string): string {
+  return `Sagax sign-in update: the person signed in to ${site} themselves, in your browser. Check that you are signed in (a snapshot), then continue the task that paused for it. Never ask them for a password or a one-time code in chat.`;
 }
 
 export function declinedNote(): string {
@@ -135,11 +158,47 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         if (secret.vault.principalId !== principalId) return json(res, 403, { error: "Only the person this request was made for can answer it.", code: "not_yours" });
         if (secret.provided || secret.dismissed || secret.superseded) return json(res, 409, { error: "this login request was already answered" });
         if (action === "dismiss") {
+          await deps.browser?.endForPerson(botId!, threadId);
           if (!deps.cards.resume(botId!, threadId, messageId!, "dismissed", declinedNote())) return json(res, 409, { error: "this login request is no longer available" });
           return json(res, 200, { dismissed: true });
         }
+        // The person signs in themselves in the bot's browser (port of
+        // OpenMausBot #2707). self-start arms that browser first, as a fill
+        // does: refused where the bot ran a script (a page could hold its
+        // listener), then scripts, screenshots and preview frames are off
+        // until a restart. Done empties the page's password and code fields
+        // before the bot is resumed, and marks the card only once resumed.
+        if (action === "self-start") {
+          if (!deps.browser) return json(res, 409, { error: "The bot's browser is not available here.", code: "no_browser" });
+          const refused = await deps.browser.armForPerson(botId!, threadId);
+          if (refused) return json(res, 409, { error: refused, code: "browser_not_clean" });
+          return json(res, 200, { armed: true });
+        }
+        if (action === "self-status") {
+          // Whether the browser is still armed for the person (a restart of
+          // Sagax, 30 minutes, a replaced card end it): the card says so.
+          return json(res, 200, { armed: deps.browser ? await deps.browser.armedForPerson(botId!, threadId) : false });
+        }
+        if (action === "signed-in") {
+          if (!deps.browser) return json(res, 409, { error: "The bot's browser is not available here.", code: "no_browser" });
+          if (!await deps.browser.armedForPerson(botId!, threadId)) {
+            return json(res, 409, { error: "This browser was not prepared for your sign-in. Press \"I'll sign in myself instead\" again, sign in, then press Done.", code: "not_armed" });
+          }
+          const unclear = await deps.browser.clearAfterPerson(botId!, threadId);
+          if (unclear) return json(res, 409, { error: unclear, code: "browser_busy" });
+          if (!deps.cards.resume(botId!, threadId, messageId!, "dismissed", signedInNote(secret.vault.domain ?? secret.vault.name ?? "the site"))) {
+            return json(res, 409, { error: "this login request is no longer available" });
+          }
+          await deps.browser.endForPerson(botId!, threadId);
+          const settled = deps.cards.find(botId!, threadId, messageId!) ?? secret;
+          if (settled.vault) deps.cards.patch(botId!, threadId, messageId!, { ...settled, vault: { ...settled.vault, signedInSelf: true } });
+          deps.audit?.("credentials.signed_in", auth, { botId });
+          return json(res, 200, { signedIn: true });
+        }
         const mode = input.mode;
         if (!isVaultGrantMode(mode)) return json(res, 400, { error: "mode must be once or always" });
+        if (input.addSite === true && mode !== "always") return json(res, 400, { error: "A site is added to a login only with Always: a one-time grant changes nothing for good.", code: "add_site_once" });
+        if (input.addSite === true && typeof input.itemId !== "string") return json(res, 400, { error: "Type the sites of a new login yourself.", code: "invalid_domains" });
         let item: VaultItemListing | null;
         if (typeof input.itemId === "string") item = deps.vault.item(principalId, input.itemId);
         else if (input.item && typeof input.item === "object") {
@@ -148,9 +207,28 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         } else return json(res, 400, { error: "send itemId or a new item" });
         if (!item) return json(res, 404, { error: "No such item", code: "unknown_item" });
         if (item.kind !== "login" && item.kind !== "apiKey") return json(res, 400, { error: "Only a login or an API key can be filled into a page." });
+        // "Also fill it on <site>": the site the bot asked for joins the
+        // login's sites only when the person ticked it on the card (unticked
+        // by default: the bot chose that address). Port of the card's save
+        // target of OpenMausBot #2929, on Sagax's own vault.
+        let addedSite = false;
+        if (input.addSite === true) {
+          // Only another address of the login's own site: never a wildcard
+          // the bot chose, a shared hosting name or a look-alike
+          // (siteAddable), whatever the card was told.
+          const site = secret.vault.domain;
+          if (!site) return json(res, 400, { error: "This request names no site to add.", code: "invalid_domains" });
+          if (!vaultDomainMatches(item.domains, bindingUrl(site))) {
+            if (!siteAddable(item.domains, site)) return json(res, 400, { error: `${site} is not another address of this login's site; it is not added. Edit the login's sites yourself if it belongs there.`, code: "site_not_related" });
+            item = deps.vault.update(principalId, item.id, { domains: [...item.domains, site] });
+            addedSite = true;
+          }
+        }
         if (!item.domains.length) return json(res, 400, { error: "This item has no site it may be filled on. Add one first.", code: "invalid_domains" });
         const granted = deps.vault.grant(principalId, item.id, { botId: botId!, mode, threadId });
-        deps.audit?.("credentials.grant", auth, { id: item.id, botId, mode, via: "card" });
+        // A login chosen after "I'll sign in myself": that sign-in ends.
+        await deps.browser?.endForPerson(botId!, threadId);
+        deps.audit?.("credentials.grant", auth, { id: item.id, botId, mode, via: "card", ...(addedSite ? { addedSite: true } : {}) });
         deps.cards.patch(botId!, threadId, messageId!, { ...secret, vault: { ...secret.vault, itemId: item.id, itemName: item.name, mode } });
         if (!deps.cards.resume(botId!, threadId, messageId!, "provided", grantedNote(granted, mode))) {
           return json(res, 409, { error: "this login request is no longer available" });

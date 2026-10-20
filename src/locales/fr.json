@@ -9248,5 +9248,13 @@
   "limitFailover.switched": "Limite atteinte sur {from} : je continue sur {to} jusqu'à la réinitialisation (vers {time}).",
   "limitFailover.back": "La limite de {engine} est réinitialisée : retour sur {engine}.",
   "limitFailover.waiting": "Limite atteinte sur {from} et aucun autre moteur n'est disponible : votre message sera renvoyé à la réinitialisation (vers {time}).",
-  "limitFailover.waitingRoutine": "Limite atteinte sur {from} et aucun autre moteur n'est disponible : cette routine sera relancée à la réinitialisation (vers {time})."
+  "limitFailover.waitingRoutine": "Limite atteinte sur {from} et aucun autre moteur n'est disponible : cette routine sera relancée à la réinitialisation (vers {time}).",
+  "vault.card.alsoFill": "Le remplir aussi sur {site}, toujours pour ce bot ({sites} est le site de cette connexion). Le bot a choisi cette adresse : cochez seulement si vous savez que c’est la vraie page de connexion de ce site.",
+  "vault.card.signInMyself": "Je me connecte moi-même",
+  "vault.card.selfHint": "Ouvrez le navigateur de {bot}, prenez le contrôle, connectez-vous à {site}, puis touchez Terminé. D’ici le redémarrage de ce navigateur, {bot} ne peut pas y lancer de scripts ni de captures, et Sagax vide ses champs mot de passe et code à Terminé.",
+  "vault.card.openBrowser": "Ouvrir le navigateur",
+  "vault.card.signedInDone": "Terminé",
+  "vault.card.signedInSelf": "Vous vous êtes connecté à {site} vous-même",
+  "vault.card.selfUnprotected": "Plus protégé : le navigateur de {bot} n’est plus préparé pour votre connexion (Sagax a redémarré, 30 minutes sont passées ou le bot a redemandé). N’y tapez pas de mot de passe maintenant ; préparez-le d’abord de nouveau.",
+  "vault.card.selfRearm": "Préparer de nouveau"
 }

@@ -425,7 +425,11 @@ export class CredentialVault {
       return { ok: false, code: "not_granted", message: `You are not allowed to use "${item.name}" here. Call request_login so the person can allow it.` };
     }
     if (!item.domains.length || !vaultDomainMatches(item.domains, request.pageUrl)) {
-      return { ok: false, code: "wrong_origin", message: `"${item.name}" is only filled on ${item.domains.join(", ") || "its own sites"} over https, and this page is not one of them. Nothing was filled.` };
+      // The page's host, as the bot can name it to request_login: the person
+      // then decides on the card whether this login also fills there.
+      let host = "";
+      try { host = new URL(request.pageUrl).host; } catch { host = ""; }
+      return { ok: false, code: "wrong_origin", message: `"${item.name}" is only filled on ${item.domains.join(", ") || "its own sites"} over https, and this page is not one of them. Nothing was filled.${host ? ` If this is where the same account signs in, call request_login with domain ${host} so the person can allow it there.` : ""}` };
     }
     let value: string | null = null;
     if (item.source === "1password" && item.onePassword && request.field !== "totp") {
@@ -591,13 +595,13 @@ export function fillResolverFor(
   context: { principalId: string; botId: string; threadId: string },
   readOnePassword?: OnePasswordFieldReader,
 ): {
-  resolve(request: { handle: string; field: VaultFillField; pageUrl: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string }>;
+  resolve(request: { handle: string; field: VaultFillField; pageUrl: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string; code: string }>;
   armed(): boolean;
 } {
   return {
     async resolve(request) {
       const resolved = await vault.resolveForFill(context.principalId, { ...request, botId: context.botId, threadId: context.threadId }, readOnePassword);
-      return resolved.ok ? { ok: true, value: resolved.value, label: resolved.item.name } : { ok: false, message: resolved.message };
+      return resolved.ok ? { ok: true, value: resolved.value, label: resolved.item.name } : { ok: false, message: resolved.message, code: resolved.code };
     },
     armed: () => vault.armed(context.principalId, context.botId, context.threadId),
   };
