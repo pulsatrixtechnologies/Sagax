@@ -147,7 +147,7 @@ export function workspaceLocationsPrompt(botId: string, cwd: string | undefined,
     // Claude's Read, Write, Edit, Glob, Grep and Bash resolve them from the
     // spawn cwd (currentWorkingFolder).
     (opts.relativePaths && cwd
-      ? ", where your tools start: name a file there by its relative path (notes.txt), any other by its absolute path."
+      ? "; your own file and shell tools (not a computer's tools) start there: name a file in it by its relative path (notes.txt), any other by its absolute path."
       : ".") +
     " For an existing file, use the exact path from the conversation; if it is not here, check the listed folders before saying it is gone or recreating it." +
     " Put new output where the person asked, else in currentWorkingFolder; when you say where a file is, give its full absolute path (never a relative one) so another thread or room can use it." +

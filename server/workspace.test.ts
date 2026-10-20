@@ -86,7 +86,7 @@ describe("workspace", () => {
   it("lets an engine that resolves relative paths name working-folder files briefly, and keeps absolute paths for reports", () => {
     const thread = ensureTaskWorkspace(BOT, "thread-first");
     const relative = workspaceLocationsPrompt(BOT, thread, undefined, { relativePaths: true });
-    expect(relative).toContain("name a file there by its relative path");
+    expect(relative).toContain("name a file in it by its relative path");
     expect(relative).toContain("give its full absolute path (never a relative one)");
     expect(workspaceLocationsPrompt(BOT, thread)).not.toContain("by its relative path");
     // no known folder: nothing to be relative to
