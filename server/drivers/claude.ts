@@ -9,7 +9,7 @@
 //   - every computer (this Mac, a Local VM, a VPS, or a Boat cloud
 //     computer through server/harness-mcp-proxy.ts computer) as the one
 //     stdio `computer` server in turn.integrations.localComputer
-import { claudeDisallowedTools } from "./host-tools.ts";
+import { CLAUDE_UNUSED_COMMANDS, claudeDisallowedTools } from "./host-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
 import { FLOW_TOOLS_MCP_NAME } from "../flow-tools.ts";
 import { isFlowToolsServer } from "./acp/grok-read-only-tools.ts";
@@ -1449,11 +1449,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         if (!scope.mcpFromUserConfig && !scope.claudeAiConnectors) env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
       }
       if (claudeCliSupports(cliVersion, "--plugin-dir")) for (const dir of scope.pluginDirs ?? []) args.push("--plugin-dir", dir);
-      const listed = await probeClaudeCommands({ cli: config.cli, args, env, cwd: scope.cwd ?? homedir() });
+      const listed = (await probeClaudeCommands({ cli: config.cli, args, env, cwd: scope.cwd ?? homedir() }))
+        .filter((command) => !CLAUDE_UNUSED_COMMANDS.has(command.name));
       const live = scope.botId ? liveCommands.get(liveCommandsKey(scope.botId, access?.identity)) : undefined;
       if (!live) return listed;
       const known = new Set(listed.map((command) => command.name));
-      const merged = [...listed, ...normalizeClaudeCommands(live.names.filter((name) => !known.has(name)))];
+      const merged = [...listed, ...normalizeClaudeCommands(live.names.filter((name) => !known.has(name) && !CLAUDE_UNUSED_COMMANDS.has(name)))];
       const terminal = new Set(live.terminal);
       return merged.map((command) => terminal.has(command.name) ? { ...command, unavailable: "interactive" as const } : command);
     };

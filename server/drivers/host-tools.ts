@@ -50,6 +50,11 @@ export const CLAUDE_UNUSED_TOOLS: readonly string[] = [
   "RemoteTrigger", "PublishPlugin", "ShareOnboardingGuide", "DesignSync", "ReportFindings",
 ];
 
+/** Claude Code commands that only drive the tools above (/loop schedules a
+ * wakeup or a cron, /schedule a remote trigger): hidden from the command
+ * list, since a Sagax turn could not run them. Sagax routines do this. */
+export const CLAUDE_UNUSED_COMMANDS: ReadonlySet<string> = new Set(["loop", "schedule"]);
+
 /** `explicitTools`: the turn already names its built-ins (--tools), so the
  * unused ones are off without a deny rule. */
 export function claudeDisallowedTools(configured: readonly string[] | undefined, withhold: boolean, explicitTools = false): string[] {
