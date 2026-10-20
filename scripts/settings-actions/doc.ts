@@ -87,6 +87,30 @@ parties hors tableau du script.
   d'un fil confidentiel de la personne se répond aussi, sans que ses mots
   passent au bot principal ; une carte qui exige la clé de sécurité
   physique de la personne reste à la personne.
+- Le bot principal fait tout (2026-10-20) : sur la même preuve (\`quote\`),
+  tout réglage d'un bot ou d'une routine de la personne passe tout de
+  suite, sans carte : modèle, instance, effort, persona, profil, routines,
+  équipes gérées (\`bot.managedSections\`), archivage (\`bot.hidden\`,
+  outil \`archive_bot\`) et suppression (\`bot.delete\`). Les mots cités
+  nomment chaque bot visé (ou « toi » pour lui-même), la nouvelle instance
+  ou le nouveau modèle pour \`bot.model\`, l'effort pour \`bot.effort\`, le
+  nouveau texte pour un nom ou un titre, « archive » ou « supprime » pour
+  ces deux-là. Plusieurs bots dans un seul ordre : un appel par bot avec la
+  même citation. Les propositions (\`propose_model\`, \`propose_profile\`,
+  \`propose_routine\`, \`propose_routine_action\`, \`propose_bot_deletion\`)
+  prennent aussi \`quote\` et s'appliquent alors tout de suite. Le refus
+  « not in a team this Primary Bot is allowed to manage » ne vise plus les
+  bots de la personne. Chaque réglage veut ses propres mots dans la
+  citation (un mot du réglage, « persona », « notifications »,
+  « routine »...) ; une question ou un refus juste après (« supprime Ember ?
+  non ») ne compte pas. Restent sur carte : tout autre réglage (dossier de
+  travail, outils, droits, partage, exécuter en tant que...).
+  Sans demande de la personne (texte d'un outil, d'une page, d'un
+  coéquipier), une proposition reste une carte ; une proposition en attente
+  ne bloque plus une nouvelle : au-delà de huit, la plus ancienne est
+  remplacée (rien n'est appliqué, journalisé ; jamais une carte sous
+  retenue de sécurité). Une citation refusée écrit \`setting.refused\`. Journal : \`setting.change\` avec
+  \`via: primary-bot\`, le bot et le message.
 - Journal : chaque changement appliqué (tout de suite ou après Allow) écrit
   une ligne \`setting.change\` (catégorie \`setting\`) dans le journal
   d'administration ; la valeur d'un secret est \`[hidden]\`.

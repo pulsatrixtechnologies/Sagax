@@ -132,6 +132,7 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   // Admin
   p("bots:create", "admin", "create_bot"),
   p("bots:delete.propose", "admin", "propose_bot_deletion"),
+  p("bots:archive", "admin", "archive_bot"),
   p("agents:create", "admin", "create_agent"),
   p("agents:delete", "admin", "delete_agent"),
   p("rooms:create", "admin", "create_room"),

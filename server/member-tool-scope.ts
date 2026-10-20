@@ -96,6 +96,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   propose_team_memory: "own-setup",
   propose_team_setup: "own-setup",
   propose_bot_deletion: "own-setup",
+  archive_bot: "own-setup",
   // every setting as the member (server/settings-actions.ts): the member's
   // own rights decide on the route the screen calls, a card otherwise
   sagax_settings: "own-setup",

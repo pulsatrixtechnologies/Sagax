@@ -213,3 +213,35 @@ describe("askedChange (a Primary Bot's change on the person's words, security re
     expect(askedChange("Retire la règle printf primary-later", "rules.ownerDelete", true, undefined, true, "Run a command (printf primary-later)")).toBe(true);
   });
 });
+
+describe("askedBotChange (the Primary Bot changes the person's bots on their words, 2026-10-20)", () => {
+  it("runs a named bot's model, archive and deletion, and refuses what the words do not say", async () => {
+    const { askedBotChange } = await import("./settings-actions.ts");
+    const order = "Passe SWAT, DOGE, Bot Designer et Disk Saver sur l'instance claudeApi";
+    const model = (names: string[], valueNames: string[]) => askedBotChange({ key: "bot.model", family: "bot", value: {}, quote: order, names, speakingBot: false, valueNames });
+    for (const name of ["SWAT", "DOGE", "Bot Designer", "Disk Saver"]) expect(model([name], ["claudeApi", "claude-opus"])).toBe(true);
+    // a bot or an engine the words do not name
+    expect(model(["Katarina"], ["claudeApi"])).toMatch(/Katarina/);
+    expect(model(["SWAT"], ["codex"])).toMatch(/engine or model/);
+    expect(askedBotChange({ key: "bot.hidden", family: "bot", value: true, quote: "Archive Disk Saver", names: ["Disk Saver"], speakingBot: false })).toBe(true);
+    expect(askedBotChange({ key: "bot.hidden", family: "bot", value: true, quote: "Passe Disk Saver sur codex", names: ["Disk Saver"], speakingBot: false })).toMatch(/archive/);
+    expect(askedBotChange({ key: "bot.delete", family: "bot", value: true, quote: "Supprime DOGE", names: ["DOGE"], speakingBot: false })).toBe(true);
+    expect(askedBotChange({ key: "bot.delete", family: "bot", value: true, quote: "Archive DOGE", names: ["DOGE"], speakingBot: false })).toMatch(/delete/);
+    // a new title is the person's own words
+    expect(askedBotChange({ key: "bot.title", family: "bot", value: "Night shift", quote: "Renomme le titre de SWAT en Night shift", names: ["SWAT"], speakingBot: false })).toBe(true);
+    expect(askedBotChange({ key: "bot.title", family: "bot", value: "Owned", quote: "Renomme SWAT", names: ["SWAT"], speakingBot: false })).toMatch(/new text/);
+    // standing grants, sharing and other families keep their card
+    expect(askedBotChange({ key: "bot.toolGrant", family: "bot", value: {}, quote: "Mets SWAT", names: ["SWAT"], speakingBot: false })).toMatch(/only/);
+    expect(askedBotChange({ key: "account.email", family: "account", value: "x", quote: "Change mon courriel", names: [], speakingBot: true })).toMatch(/only/);
+    // security review 2026-10-20: one quote carries one kind of change, a
+    // question or a refusal right after it does not ask, a bare "you" is not the bot
+    expect(askedBotChange({ key: "bot.persona", family: "bot", value: "x", quote: "change le modèle de Ember", names: ["Ember"], speakingBot: false })).toMatch(/which setting/);
+    expect(askedBotChange({ key: "bot.cwd", family: "bot", value: "/", quote: "change le dossier de Ember", names: ["Ember"], speakingBot: false })).toMatch(/only/);
+    expect(askedBotChange({ key: "bot.delete", family: "bot", value: true, quote: "supprime Ember", message: "supprime Ember ? non, pas encore", names: ["Ember"], speakingBot: false })).toMatch(/question/);
+    expect(askedBotChange({ key: "bot.delete", family: "bot", value: true, quote: "ne supprime pas Ember", names: ["Ember"], speakingBot: false })).toMatch(/refuse/);
+    expect(askedBotChange({ key: "routine.create", family: "routine", value: {}, quote: "use the web", names: ["Cryptic"], speakingBot: true, speakingName: "Cryptic" })).toMatch(/itself/);
+    expect(askedBotChange({ key: "bot.persona", family: "bot", value: "x", quote: "can you change your tone", names: ["Cryptic"], speakingBot: true, speakingName: "Cryptic" })).toMatch(/itself/);
+    // the speaking bot itself: "toi" or its name
+    expect(askedBotChange({ key: "bot.effort", family: "bot", value: "high", quote: "mets-toi en effort high", names: ["Cryptic"], speakingBot: true, speakingName: "Cryptic" })).toBe(true);
+  });
+});

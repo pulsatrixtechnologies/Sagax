@@ -337,6 +337,8 @@ export interface RoutineRequestServiceOptions {
 }
 
 export interface ProposeRoutineRequestArgs {
+  /** 2026-10-20: the person asked their Primary Bot for this now (server/index.ts primaryAskedProposal). */
+  primaryAsked?: boolean;
   botId: string;
   threadId: string;
   /** Untrusted model output; normalized by routineProposalSchema in propose(). */
@@ -1237,11 +1239,11 @@ export class RoutineRequestService {
     if (args.from) messageInput.from = args.from;
     // Resolve the current source-thread grant after the asynchronous probe.
     const owner = operation.forBot?.botId ?? botId;
-    const grant = submitted ? this.autoApply?.(botId, threadId, owner) ?? null : null;
+    const grant = submitted ? (args.primaryAsked ? "primary-bot" as const : this.autoApply?.(botId, threadId, owner) ?? null) : null;
     // A bot applying its own routines keeps at most SELF_ROUTINE_CAP of them
     // on; a create or resume past that shows the card, as before. Full
     // access has no cap.
-    const automatic = !args.explicitConfirm && (grant === "full-access" || (grant === "self" && !this.overSelfCap(operation, owner)));
+    const automatic = !args.explicitConfirm && (grant === "full-access" || grant === "primary-bot" || (grant === "self" && !this.overSelfCap(operation, owner)));
     // This check and append are deliberately adjacent and synchronous. JS
     // cannot interleave another completed proposal between the capacity /
     // ownership decision and the durable transcript write.

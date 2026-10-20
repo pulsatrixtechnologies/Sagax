@@ -906,6 +906,21 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   if (name === "list_team_setup") {
     return { text: JSON.stringify(await api("/api/internal/team-setup-catalog")) };
   }
+  // 2026-10-20 (JC: "le bot principal fait tout"): asked now by the person,
+  // a deletion or an archive is the screen's own (sagax_settings, quote)
+  if ((name === "propose_bot_deletion" && typeof args.quote === "string") || name === "archive_bot") {
+    if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
+    const botId = String(args.bot_id ?? "").trim();
+    if (!botId) return { text: `${name} needs bot_id.`, isError: true };
+    const restore = name === "archive_bot" && args.restore === true;
+    const { status, body } = await apiResponse("/api/internal/settings", { method: "POST", body: JSON.stringify({
+      action: "set", key: name === "archive_bot" ? "bot.hidden" : "bot.delete", target: botId, value: name === "archive_bot" ? !restore : true,
+      ...(typeof args.quote === "string" ? { quote: args.quote } : {}),
+    }) });
+    const text = String(body.text ?? body.error ?? "").slice(0, 4000);
+    if (status >= 400 || body.error) return { text: text || "The change was refused.", isError: true };
+    return { text: text || "Done." };
+  }
   if (name === "propose_team_setup" || name === "propose_bot_deletion") {
     const deleting = name === "propose_bot_deletion";
     const result = await api(deleting ? "/api/internal/bot-deletion-requests" : "/api/internal/team-setup-requests", {
@@ -1180,6 +1195,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
         routine,
         // JSON.stringify drops the key entirely when no target was named
         forBotId: forBotId || undefined,
+        ...(typeof args.quote === "string" ? { quote: args.quote } : {}),
       }),
     });
     return confirmationResult(r, `the new routine “${routine.name}”`);
@@ -1198,6 +1214,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       routineId,
       // JSON.stringify drops the key entirely when no target was named
       ...(forBotId ? { forBotId } : {}),
+      ...(typeof args.quote === "string" ? { quote: args.quote } : {}),
     };
     if (action === "update") {
       if (!jsonRecord(args.changes)) {
@@ -1247,6 +1264,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
         reason: args.reason,
         // JSON.stringify drops the key entirely when no target was named
         forBotId: forBotId || undefined,
+        ...(typeof args.quote === "string" ? { quote: args.quote } : {}),
       }),
     });
     return confirmationResult(r, "the profile change", "profile");
@@ -1274,6 +1292,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
         reason: args.reason,
         // JSON.stringify drops the key entirely when no target was named
         forBotId: forBotId || undefined,
+        ...(typeof args.quote === "string" ? { quote: args.quote } : {}),
       }),
     });
     return confirmationResult(r, "the default model change", "model");

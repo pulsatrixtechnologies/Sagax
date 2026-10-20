@@ -28,6 +28,7 @@ import {
   openSafetyHold,
   safetyArm,
   safetyForgetArmed,
+  safetyIsArmed,
   safetyHttpRefusal,
   safetyPermissionEffect,
   safetyRejectArmed,
@@ -87,7 +88,7 @@ import {
 } from "../shared/approval-mode.ts";
 import { actorForTurn, botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActService, type PerformActor } from "./bot-act.ts";
-import { createSettingsActions } from "./settings-actions.ts";
+import { askedBotChange, createSettingsActions } from "./settings-actions.ts";
 import { cwActionCard, cwActionLanguage, cwToolRowWidget, createCwActionPasses } from "./cw-widget-actions.ts";
 import { cwActionInstruction, parseCwAction } from "../shared/cw-widgets/actions.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
@@ -5523,6 +5524,8 @@ const controlLeaseIdSchema = z.string().min(16).max(120).regex(/^[A-Za-z0-9_-]+$
 const routineRequestSourceSchema = {
   fromBotId: z.string().min(1).max(128),
   fromThreadId: z.string().min(1).max(128),
+  // 2026-10-20: the person's words, when they asked their Primary Bot now
+  quote: z.string().max(600).optional(),
 };
 const routineRequestEnvelopeSchema = z.discriminatedUnion("action", [
   z.object({ ...routineRequestSourceSchema, action: z.literal("create"), routine: z.unknown(), forBotId: z.unknown().optional() }).strict(),
@@ -7434,6 +7437,52 @@ function appliesDirectly(botId: string, threadId: string, targetBotId: string): 
     targetBotId,
     blocked: selfApplyBlocked(threadId) || !connectorThread(botId, threadId),
   });
+}
+
+/** 2026-10-20 (JC: "le bot principal fait tout"): a proposal the person's own
+ * Primary Bot makes because the person asked for it in this turn's message
+ * applies at once, without a card: the submit gets `primaryAsked`, passed
+ * down explicitly (never a shared flag another call could read). */
+/** The same proof as sagax_settings' quote (server/settings-actions.ts):
+ * the person's own Primary Bot, their own message in this turn, the quote in
+ * it with a word of the change, the target bot (or routine) named and the
+ * person's own. The proof, or why not. */
+function primaryAskedProposal(input: { botId: string; threadId: string; generation: string; quote: unknown; targetBotId: string; key: string; value?: unknown; routineName?: string; valueNames?: string[] }): { botName: string; messageId: string; person: string; quote: string } | string {
+  if (input.quote === undefined) return "no quote";
+  const gate = primaryTurnGate(input.botId, input.threadId, input.generation);
+  if ("error" in gate) return gate.error;
+  const check = checkPersonQuote({ quote: input.quote, message: gate.message.text, intent: "setting" });
+  if (!check.ok) return check.reason;
+  const from = store.bot(input.botId);
+  const target = store.bot(input.targetBotId);
+  if (!from || !target) return "that bot no longer exists";
+  if (!primaryBotSameOwner(from, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
+  const asked = askedBotChange({
+    key: input.key, family: input.key.split(".")[0] ?? "bot", value: input.value, quote: String(input.quote),
+    names: [target.name, input.routineName], speakingBot: target.id === from.id, speakingName: from.name, message: gate.message.text,
+    ...(input.valueNames ? { valueNames: input.valueNames } : {}),
+  });
+  return asked === true ? { botName: gate.botName, messageId: gate.message.id, person: gate.person, quote: String(input.quote) } : asked;
+}
+
+/** Runs one submit with the person's request as its grant, and journals it
+ * as theirs, via the Primary Bot. */
+async function withPrimaryAsked<T>(proof: { botName: string; messageId: string; person: string; quote: string } | string, scope: { botId: string; threadId: string; targetBotId: string; kind: string }, submit: (primaryAsked: boolean) => T | Promise<T>): Promise<T> {
+  if (typeof proof === "string") return submit(false);
+  const result = await submit(true);
+  if ((result as { state?: unknown } | null)?.state === "applied") appendAdminAction(DATA_DIR, {
+    category: "setting", action: "setting.change", target: { kind: "bot", id: scope.targetBotId }, changed: [scope.kind],
+    after: { how: "run", bot: scope.botId, via: "primary-bot", viaBot: proof.botName, messageId: proof.messageId, quote: proof.quote.slice(0, 200) },
+    actor: IDENTITY.kind === "perspicax" ? { kind: "person", principalId: proof.person, via: "sagax" } : { kind: "loopback" },
+  });
+  return result;
+}
+
+/** A quote that did not prove the request, journaled so an injection
+ * attempt is visible. */
+function journalRefusedQuote(botId: string, targetBotId: string, kind: string, reason: string): void {
+  appendAdminAction(DATA_DIR, { category: "setting", action: "setting.refused", target: { kind: "bot", id: targetBotId }, changed: [kind],
+    after: { bot: botId, via: "primary-bot", reason: reason.slice(0, 200) }, actor: { kind: "loopback" } });
 }
 
 function peerReviewRequired(bot: BotRecord, threadId: string): boolean {
@@ -20626,7 +20675,7 @@ const routineRequests = new RoutineRequestService({
     const proposer = store.bot(proposerBotId);
     const targetBot = store.bot(target.botId);
     if (!targetBot) return `@${target.name} no longer exists, so this routine request cannot be confirmed for it`;
-    if (!proposer || !canReachPeer(proposer, targetBot)) {
+    if (!proposer || (!canReachPeer(proposer, targetBot) && !(proposer.chiefOfStaff && primaryBotSameOwner(proposer, targetBot)))) {
       return `@${target.name} is no longer in this section, so this routine request cannot be confirmed for it`;
     }
     return null;
@@ -20877,7 +20926,8 @@ const chiefPeerTargetRule = (noun: string) => (proposerBotId: string, targetBotI
   const target = store.bot(targetBotId);
   if (!target) return "that bot no longer exists";
   if (!proposer?.chiefOfStaff) return "only a Primary Bot can change another bot's " + noun;
-  if (!canReachPeer(proposer, target)) return "that bot is not in a team this Primary Bot is allowed to manage";
+  // 2026-10-20 (JC): every bot the person owns is their Primary Bot's to
+  // change; managed teams only widen what it coordinates
   if (!primaryBotSameOwner(proposer, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
   return null;
 };
@@ -23969,10 +24019,18 @@ function proposalPersistence(botId: string, threadId: string, opensCard = true) 
       (message.card?.routineRequest?.botId === botId || message.card?.profileRequest?.botId === botId || message.card?.modelRequest?.botId === botId || message.card?.teamSetupRequest?.botId === botId) &&
       !message.card.answered &&
       !message.card.dismissed && !message.card.expired,
-  ).length;
-  return openRequests >= 8
-    ? { ok: false as const, status: 429, error: "confirm or cancel an existing proposal first" }
-    : { ok: true as const };
+  );
+  // 2026-10-20 (JC): a waiting proposal never blocks a new one. Past the
+  // budget the oldest waiting cards are replaced: closed as expired, nothing
+  // applied, journaled. A card under a safety hold is never replaced.
+  const replaceable = openRequests.filter((message) => !(message.card?.requestId && safetyIsArmed(message.card.requestId)));
+  const surplus = Math.max(0, openRequests.length - 7);
+  if (replaceable.length < surplus) return { ok: false as const, status: 429, error: "confirm or cancel an existing proposal first" };
+  for (const message of replaceable.slice(0, surplus)) {
+    store.patchMessage(threadId, message.id, { card: { ...message.card!, answered: "deny", expired: true, options: [], held: "Replaced by a newer proposal. Nothing was applied." } });
+    appendDecision(DATA_DIR, { threadId, requestId: message.card!.requestId ?? message.id, botId, tool: "proposal", summary: message.card!.title ?? "proposal", decision: "auto-denied", source: "expired" });
+  }
+  return { ok: true as const };
 }
 
 function skillProposalPersistence(botId: string, threadId: string, opensCard = true) {
@@ -28370,6 +28428,7 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       const rule = ownerApprovals.rulesOf(person).find((row) => row.id === id);
       return rule ? [rule.description, ...Object.values(rule.scope ?? {})].join(" ") : undefined;
     },
+    instanceName: (instanceId) => registry.get(instanceId)?.displayName,
     targetName: (kind, id, botId) => {
       if (kind === "bot") return store.bot(id)?.name;
       if (kind === "thread") return botId ? `${store.bot(botId)?.name ?? "Bot"}: ${store.taskByThread(botId, id)?.title ?? "conversation"}` : undefined;
@@ -28378,14 +28437,15 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       if (kind === "section") return id;
       return undefined;
     },
-    audit: ({ key, target, value, secret, how, botId, actor }) => {
+    audit: ({ key, target, value, secret, how, botId, actor, primary }) => {
       appendAdminAction(DATA_DIR, {
         category: "setting",
         action: "setting.change",
         ...(target ? { target: { kind: key.split(".")[0] ?? "setting", id: target } } : {}),
         changed: [key],
-        // a long value is kept as its size and fingerprint, a secret never
-        after: { [key]: secret ? "[hidden]" : auditValue(value), how, bot: botId },
+        // a long value is kept as its size and fingerprint, a secret never;
+        // a Primary Bot's change on the person's words says so (2026-10-20)
+        after: { [key]: secret ? "[hidden]" : auditValue(value), how, bot: botId, ...(primary ? { via: "primary-bot", viaBot: primary.botName, messageId: primary.messageId } : {}) },
         actor: actor && IDENTITY.kind === "perspicax" ? { kind: "person", principalId: actor, via: "sagax" } : { kind: "loopback" },
       });
     },
@@ -36678,7 +36738,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             if (!target) {
               return json(res, 404, { error: "no bot with that id — call list_bots and copy the exact id from the result" });
             }
-            if (!canReachPeer(from, target)) {
+            // 2026-10-20: a Primary Bot reaches every bot of its person
+            if (!canReachPeer(from, target) && !(from.chiefOfStaff && primaryBotSameOwner(from, target))) {
               return json(res, 403, { error: `that bot belongs to a different section or is unavailable. ${PEER_ACCESS_HELP}` });
             }
             forBot = { botId: target.id, name: target.name };
@@ -36713,14 +36774,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           botId: from.id,
         });
         if (routineSafety?.kind === "stop") return json(res, 409, { error: routineSafety.message });
-        const proposed = await routineRequests.submit({
+        // 2026-10-20: asked now by the person, it applies without a card
+        const routineTarget = forBot?.botId ?? from.id;
+        // an existing routine's own name (never one the bot chose for a new one)
+        const routineName = proposedInput.action === "create" ? undefined
+          : routines?.listRoutines().find((routine) => routine.id === proposedInput.routineId)?.name;
+        const askedProof = body.quote === undefined ? "no quote" : primaryAskedProposal({ botId: from.id, threadId: fromThreadId, generation: internalCapability.generation, quote: body.quote, targetBotId: routineTarget,
+          key: proposedInput.action === "delete" ? "routine.delete" : `routine.${proposedInput.action}`, ...(routineName ? { routineName } : {}) });
+        if (body.quote !== undefined && typeof askedProof === "string") {
+          journalRefusedQuote(from.id, routineTarget, `routine.${proposedInput.action}`, askedProof);
+          return json(res, 403, { error: `Not applied at once: ${askedProof}. Without quote it becomes a card for the person.` });
+        }
+        const proposed = await withPrimaryAsked(routineSafety?.kind === "hold" ? "safety hold" : askedProof, { botId: from.id, threadId: fromThreadId, targetBotId: routineTarget, kind: `routine.${proposedInput.action}` }, (primaryAsked) => routineRequests.submit({ primaryAsked,
           botId: from.id,
           threadId: fromThreadId,
           proposal: proposedInput,
           from: owner.group ? { botId: from.id, name: from.name, color: from.color } : undefined,
           canCommit: () => internalCapabilityIsActive(internalCapability),
           ...(routineSafety?.kind === "hold" ? { explicitConfirm: true } : {}),
-        });
+        }));
         if (routineSafety?.kind === "hold") {
           safetyArm(proposed.requestId, {
             ...(routineWho.principalId ? { principalId: routineWho.principalId } : {}),
@@ -36825,6 +36897,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           forBotId: z.string().max(128).optional(),
           changes: z.unknown(),
           reason: z.unknown(),
+          quote: z.string().max(600).optional(),
         }).strict().safeParse(await readInternalBody());
         if (!parsed.success) return json(res, 400, { error: "invalid profile proposal" });
         const body = parsed.data;
@@ -36833,14 +36906,28 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const owner = connectorThread(from.id, body.fromThreadId);
         if (!owner) return json(res, 403, { error: "source conversation does not belong to sender" });
         const targetBotId = body.forBotId?.trim() || from.id;
-        const proposed = profileRequests.submit({
+        // 2026-10-20: asked now by the person, it applies without a card
+        const profileKeys: Record<string, string> = { name: "bot.name", title: "bot.title", description: "bot.description", soul: "bot.persona", cwd: "bot.cwd", notifications: "bot.notifications", speakReplies: "bot.speakReplies" };
+        const changed = body.changes && typeof body.changes === "object" ? Object.entries(body.changes as Record<string, unknown>) : [];
+        let askedProof: ReturnType<typeof primaryAskedProposal> = "no quote";
+        if (body.quote !== undefined) {
+          for (const [field, value] of changed.length ? changed : [["soul", undefined] as [string, unknown]]) {
+            askedProof = primaryAskedProposal({ botId: from.id, threadId: body.fromThreadId, generation: internalCapability.generation, quote: body.quote, targetBotId, key: profileKeys[field] ?? "bot.persona", value });
+            if (typeof askedProof === "string") break;
+          }
+        }
+        if (body.quote !== undefined && typeof askedProof === "string") {
+          journalRefusedQuote(from.id, targetBotId, "bot.profile", askedProof);
+          return json(res, 403, { error: `Not applied at once: ${askedProof}. Without quote it becomes a card for the person.` });
+        }
+        const proposed = await withPrimaryAsked(askedProof, { botId: from.id, threadId: body.fromThreadId, targetBotId, kind: "bot.profile" }, (primaryAsked) => profileRequests.submit({ primaryAsked,
           botId: from.id,
           threadId: body.fromThreadId,
           targetBotId,
           changes: body.changes,
           reason: body.reason,
           from: owner.group ? { botId: from.id, name: from.name, color: from.color } : undefined,
-        });
+        }));
         const byRule = proposed.state !== "applied" && "messageId" in proposed
           ? settleProposalByRule(from, body.fromThreadId, proposed as { requestId: string; messageId: string }, (args) => profileRequests.resolve(args))
           : undefined;
@@ -36865,6 +36952,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           forBotId: z.string().max(128).optional(),
           modelSelection: z.unknown(),
           reason: z.unknown(),
+          quote: z.string().max(600).optional(),
         }).strict().safeParse(await readInternalBody());
         if (!parsed.success) return json(res, 400, { error: "invalid model proposal" });
         const body = parsed.data;
@@ -36872,14 +36960,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!from) return json(res, 403, { error: "unknown sender" });
         const owner = connectorThread(from.id, body.fromThreadId);
         if (!owner) return json(res, 403, { error: "source conversation does not belong to sender" });
-        const proposed = modelRequests.submit({
+        const targetBotId = body.forBotId?.trim() || from.id;
+        // 2026-10-20: asked now by the person, it applies without a card;
+        // their words name the bot and the new engine or model
+        const selection = body.modelSelection && typeof body.modelSelection === "object" ? body.modelSelection as Record<string, unknown> : {};
+        const instanceId = typeof selection.instanceId === "string" ? selection.instanceId : "";
+        const askedProof = body.quote === undefined ? "no quote" : primaryAskedProposal({ botId: from.id, threadId: body.fromThreadId, generation: internalCapability.generation, quote: body.quote, targetBotId, key: "bot.model", value: body.modelSelection,
+          valueNames: [instanceId, registry.get(instanceId)?.displayName ?? "", typeof selection.model === "string" ? selection.model : ""].filter(Boolean) });
+        if (body.quote !== undefined && typeof askedProof === "string") {
+          journalRefusedQuote(from.id, targetBotId, "bot.model", askedProof);
+          return json(res, 403, { error: `Not applied at once: ${askedProof}. Without quote it becomes a card for the person.` });
+        }
+        const proposed = await withPrimaryAsked(askedProof, { botId: from.id, threadId: body.fromThreadId, targetBotId, kind: "bot.model" }, (primaryAsked) => modelRequests.submit({ primaryAsked,
           botId: from.id,
           threadId: body.fromThreadId,
-          targetBotId: body.forBotId?.trim() || from.id,
+          targetBotId,
           selection: body.modelSelection,
           reason: body.reason,
           from: owner.group ? { botId: from.id, name: from.name, color: from.color } : undefined,
-        });
+        }));
         const byRule = proposed.state !== "applied" && "messageId" in proposed
           ? settleProposalByRule(from, body.fromThreadId, proposed as { requestId: string; messageId: string }, (args) => modelRequests.resolve(args))
           : undefined;

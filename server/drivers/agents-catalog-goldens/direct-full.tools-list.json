@@ -1034,11 +1034,41 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 500
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 600,
+            "description": "Primary Bot: the person's own words asking this now (bot named); applies at once."
           }
         },
         "required": [
           "bot_id",
           "reason"
+        ]
+      }
+    },
+    {
+      "name": "archive_bot",
+      "description": "Primary Bot only: archive one of the person's bots (kept, restorable) or restore it. With quote it applies at once, else a card.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "bot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "restore": {
+            "type": "boolean"
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 600,
+            "description": "Primary Bot: the person's own words asking this now (bot named); applies at once."
+          }
+        },
+        "required": [
+          "bot_id"
         ]
       }
     },
@@ -1927,6 +1957,11 @@
           "for_bot_id": {
             "type": "string",
             "description": "Only when the user asks to schedule this routine for ANOTHER bot in your section: that bot's id from list_bots. Omit to schedule it for yourself. The routine then belongs to that bot and each run uses its engine and permissions."
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 600,
+            "description": "Primary Bot: the person's own words asking this now (bot named); applies at once."
           }
         },
         "required": [
@@ -2100,6 +2135,11 @@
               }
             },
             "description": "Fields to change when action is update. Omit for every other action."
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 600,
+            "description": "Primary Bot: the person's own words asking this now (bot named); applies at once."
           }
         },
         "required": [
@@ -2110,7 +2150,7 @@
     },
     {
       "name": "propose_profile",
-      "description": "Submit user-requested changes to your own name, title, description, standing instructions (SOUL.md), working folder (cwd), or your alert and voice toggles (notifications, speakReplies). Keep SOUL.md short — who you are and the rules you never break; put step-by-step procedure into a skill instead. A Primary Bot may pass for_bot_id (from list_bots) for a requested change to another bot in its section. Read the result: a change to your own routines, skills, profile or model applies immediately, and the person sees it with an Undo; a change for another bot may wait for the person's confirmation. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success without an applied result; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
+      "description": "Submit user-requested changes to your own name, title, description, standing instructions (SOUL.md), working folder (cwd), or your alert and voice toggles (notifications, speakReplies). Keep SOUL.md short — who you are and the rules you never break; put step-by-step procedure into a skill instead. A Primary Bot may pass for_bot_id (from list_bots) for a requested change to any bot of its person. Read the result: a change to your own routines, skills, profile or model applies immediately, and the person sees it with an Undo; a change for another bot may wait for the person's confirmation. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success without an applied result; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -2155,7 +2195,12 @@
           },
           "for_bot_id": {
             "type": "string",
-            "description": "Primary Bot only: the id of another bot in your section whose profile this changes. Omit to change your own."
+            "description": "Primary Bot only: the id of another bot of the person whose profile this changes. Omit to change your own."
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 600,
+            "description": "Primary Bot: the person's own words asking this now (bot named); applies at once."
           }
         },
         "required": [
@@ -2207,7 +2252,12 @@
           },
           "for_bot_id": {
             "type": "string",
-            "description": "Primary Bot only: the id of another bot in your section whose default model this changes. Omit to change your own."
+            "description": "Primary Bot only: the id of another bot of the person whose default model this changes. Omit to change your own."
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 600,
+            "description": "Primary Bot: the person's own words asking this now (bot named); applies at once."
           }
         },
         "required": [

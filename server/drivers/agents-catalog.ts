@@ -245,7 +245,13 @@ const ROUTINE_FIELDS_SCHEMA = {
 
 // propose_profile's one sentence about for_bot_id, which a bot that is not a
 // Primary Bot is not shown (catalogTools), along with the parameter itself.
-const CHIEF_PROFILE_TARGET = " A Primary Bot may pass for_bot_id (from list_bots) for a requested change to another bot in its section.";
+const CHIEF_PROFILE_TARGET = " A Primary Bot may pass for_bot_id (from list_bots) for a requested change to any bot of its person.";
+// 2026-10-20 (JC: "le bot principal fait tout"): the person's own words,
+// for a Primary Bot the person asked now; the change then applies at once.
+const PERSON_QUOTE = {
+  type: "string", maxLength: 600,
+  description: "Primary Bot: the person's own words asking this now (bot named); applies at once.",
+} as const;
 const PROPOSAL_OUTCOME = " Read the result: granted Full Access may apply the change immediately. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success from the permission mode alone; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.";
 /** Routines, skills, profile and model: a bot's change to itself applies at
  * any level (server/direct-apply.ts). */
@@ -581,8 +587,15 @@ const toolDefinitions = (externalRuntime: boolean) => [
     name: "propose_bot_deletion",
     description: "Primary Bot only: when the user explicitly asks to delete a named teammate, submit a separate deletion request for that exact bot. Deletion removes its conversations, memory, instructions, skills, and any computer owned only by it; generated project files and shared team computers remain. Running work or an unavailable computer provider can block deletion safely. Never delete yourself, substitute an archive, or put deletion into a setup batch. If review is pending, the decision and result resume you once." + PROPOSAL_OUTCOME,
     inputSchema: { type: "object", additionalProperties: false, properties: {
-      bot_id: { type: "string", minLength: 1 }, reason: { type: "string", minLength: 1, maxLength: 500 },
+      bot_id: { type: "string", minLength: 1 }, reason: { type: "string", minLength: 1, maxLength: 500 }, quote: PERSON_QUOTE,
     }, required: ["bot_id", "reason"] },
+  },
+  {
+    name: "archive_bot",
+    description: "Primary Bot only: archive one of the person's bots (kept, restorable) or restore it. With quote it applies at once, else a card.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {
+      bot_id: { type: "string", minLength: 1 }, restore: { type: "boolean" }, quote: PERSON_QUOTE,
+    }, required: ["bot_id"] },
   },
   {
     name: "create_room",
@@ -1074,6 +1087,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
           description:
             "Only when the user asks to schedule this routine for ANOTHER bot in your section: that bot's id from list_bots. Omit to schedule it for yourself. The routine then belongs to that bot and each run uses its engine and permissions.",
         },
+        quote: PERSON_QUOTE,
       },
       required: ["name", "instructions", "schedule"],
     },
@@ -1103,6 +1117,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
           properties: ROUTINE_FIELDS_SCHEMA,
           description: "Fields to change when action is update. Omit for every other action.",
         },
+        quote: PERSON_QUOTE,
       },
       required: ["routine_id", "action"],
     },
@@ -1135,8 +1150,9 @@ const toolDefinitions = (externalRuntime: boolean) => [
         reason: { type: "string", minLength: 1, maxLength: 500, description: "One sentence the user will see explaining why." },
         for_bot_id: {
           type: "string",
-          description: "Primary Bot only: the id of another bot in your section whose profile this changes. Omit to change your own.",
+          description: "Primary Bot only: the id of another bot of the person whose profile this changes. Omit to change your own.",
         },
+        quote: PERSON_QUOTE,
       },
       required: ["reason"],
     },
@@ -1164,8 +1180,9 @@ const toolDefinitions = (externalRuntime: boolean) => [
         reason: { type: "string", minLength: 1, maxLength: 500, description: "One sentence the user will see explaining why." },
         for_bot_id: {
           type: "string",
-          description: "Primary Bot only: the id of another bot in your section whose default model this changes. Omit to change your own.",
+          description: "Primary Bot only: the id of another bot of the person whose default model this changes. Omit to change your own.",
         },
+        quote: PERSON_QUOTE,
       },
       required: ["model_selection", "reason"],
     },
@@ -1563,7 +1580,7 @@ const GITHUB_CONNECT_TOOL_NAMES = new Set(["connect_github"]);
 // propose_profile or propose_model. (A routine's for_bot_id is open to any
 // bot that can reach that peer, so it stays.)
 const CHIEF_ONLY_TOOL_NAMES = new Set([
-  "create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "create_room", "manage_room", "retry_thread",
+  "create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "archive_bot", "create_room", "manage_room", "retry_thread",
   // 2026-10-20: the person's approval cards, answered at their request
   "sagax_approvals",
 ]);
@@ -1603,7 +1620,7 @@ const CLOUD_HOME_SURFACE = {
  * paging stay loaded, and so does any tool not named here. */
 export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "propose_routine", "propose_routine_action", "list_routines", "run_routine",
-  "propose_team_setup", "list_team_setup", "propose_profile", "propose_model", "propose_bot_deletion",
+  "propose_team_setup", "list_team_setup", "propose_profile", "propose_model", "propose_bot_deletion", "archive_bot",
   "propose_team_memory", "propose_page", "create_room", "manage_room", "create_bot",
   "add_mcp_server", "skill_manage", "skills_list", "rules_update", "docs_update",
   "launch_cloud_agent", "list_cloud_agents", "get_cloud_agent", "cancel_cloud_agent", "archive_cloud_agent",
