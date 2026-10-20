@@ -1865,9 +1865,9 @@ export class RoutineManager {
   start() {
     this.paused = false;
     if (this.timer) return;
-    void this.tick();
     this.timer = setInterval(() => void this.tick(), 10_000);
     this.timer.unref?.();
+    void this.tick();
   }
 
   stop() {
@@ -2808,6 +2808,8 @@ export class RoutineManager {
     try {
       mutate();
       this.save();
+      // a routine created or moved to within the next tick starts on time
+      if (!this.ticking) this.armDueWake();
     } catch (error) {
       this.routines = before.routines;
       this.runs = before.runs;

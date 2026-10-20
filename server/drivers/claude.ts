@@ -864,8 +864,9 @@ export function claudeHookSettings(helperPath: string): Record<string, unknown> 
   // - no Stop hook: the harness did nothing with it;
   // - PostToolUse and PreCompact only record (full result spill, log line):
   //   they run in the background (`async`), the model continues meanwhile.
-  //   The turn always has at least one more generation after a tool, so the
-  //   spill lands while the turn is still live;
+  //   A tool is followed by at least one more generation, so the spill lands
+  //   while the turn is live; one that lands after a stop is refused and that
+  //   turn's digest reads "preview" instead of "full";
   // - PostToolUseFailure answers a shell timeout hint: synchronous, rare;
   // - SessionStart only matters after a compaction (it re-sends digests):
   //   matched on `compact`, so a fresh or resumed session never waits on it.

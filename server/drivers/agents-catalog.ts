@@ -314,7 +314,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
       message: { type: "string", minLength: 1, maxLength: 4000, description: "Question or task for these teammates; later requests in the same conversation can build on earlier ones. Send separate requests when responsibilities differ." },
       rework: { type: "boolean", description: "True only to send concrete work again to someone whose request already finished or failed: a correction, a re-check or a retry." },
       mode: { type: "string", enum: ["work", "consult"], description: "consult: a question only, allowed to the bot that sent you this work. Default: consult for that bot, else work." },
-      relay: { type: "boolean", description: "True when the person only wants this one teammate's own answer passed back (ask it something, give its reply): the reply goes to the person directly, under the teammate's name, and you are not resumed. Leave out when you must combine replies, check the work, decide or continue after it." },
+      relay: { type: "boolean", description: "True when the person only wants this one teammate's own answer passed back (ask it something, give its reply): the reply goes to the person directly, right after the line naming the teammate, and you are not resumed. Leave out when you must combine replies, check the work, decide or continue after it." },
     }, required: ["bot_ids", "message"] },
   },
   {

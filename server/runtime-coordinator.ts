@@ -436,6 +436,7 @@ export class RuntimeCoordinator implements Coordinator {
     // the resume as usual.
     if (resumed && settled.length && this.host.relay && a.assignee.destination.groupId === undefined &&
       settled.every(child => child.relay && child.status === "completed" && this.readable(child, a, node) === child) &&
+      !this.host.validate(node, parent && this.project(parent)) &&
       this.store.children(a.id).every(child => child.reply === "none" || isTerminal(child))) {
       const replies = settled.map(child => view(child, a));
       if (this.host.relay(node, replies)) return { kind: "completed", text: clip(replies.map(r => r.result).join("\n\n"), BRIEF_MAX) };

@@ -8604,12 +8604,21 @@ function noteQueuedBehindPerson(node: HandoffView): void {
 // admission, turns, chips, names, parking and the level a thread runs with.
 /** Teammate thread -> requester thread, while a relayed reply streams
  * (coordinate_bots relay, CoordinatorHost.relay). */
-const relayStreams = new Map<string, { to: string; held: string; shown: boolean }>();
+const relayStreams = new Map<string, { to: string; full: string; sent: string; shown: boolean; stopped?: boolean }>();
+/** Requester threads showing a mirrored stream no bubble has replaced yet. */
+const relayShown = new Set<string>();
 /** Drop a relayed stream no bubble will replace: a thread frame on the
  * current leaf is what clients already clear a stream on. */
 function clearRelayedStream(threadId: string): void {
   const leaf = store.activePath(threadId).at(-1)?.id;
   if (leaf) broadcast({ kind: "thread", threadId, activeLeafId: leaf });
+}
+/** The runtime clips a result at 12 000 characters (runtime.ts RESULT_MAX). */
+const RELAY_RESULT_MAX = 12_000;
+/** The route check the coordinator runs before each dispatch and report. */
+function coordinatorValidate(node: HandoffView, parent?: HandoffView): string | undefined {
+  return roomHandoffProblem(node, parent) ??
+    (parent && store.bot(parent.botId)?.approvePeerComms && !fullAccessForSource(parent.botId, parent.threadId) && !node.approvalGranted ? "Sender now requires peer approval; submit a new approved request" : undefined);
 }
 const coordinator: Coordinator = createCoordinator({
   dataDir: DATA_DIR,
@@ -8619,8 +8628,7 @@ const coordinator: Coordinator = createCoordinator({
   now: Date.now,
   log: line => console.error("coordinator:", line),
   host: {
-    validate: (node, parent) => roomHandoffProblem(node, parent) ??
-      (parent && store.bot(parent.botId)?.approvePeerComms && !fullAccessForSource(parent.botId, parent.threadId) && !node.approvalGranted ? "Sender now requires peer approval; submit a new approved request" : undefined),
+    validate: coordinatorValidate,
     // Delegations' admission (canAdmitDirectTurn): a free slot admits work
     // beside a sibling that is running (#1589) or waiting on the person, so a
     // card holds only its own thread. Never overlap the addressed thread,
@@ -8711,12 +8719,17 @@ const coordinator: Coordinator = createCoordinator({
     relay: (node, replies) => {
       const bot = store.bot(node.botId);
       const texts = replies.map(reply => redactSecretsInText(reply.result.trim()));
+      // A result cut at the runtime's 12 000 characters, or a reply that
+      // carried files, is not relayed as is: the requester reviews it.
+      const partial = replies.some(reply => reply.result.length >= RELAY_RESULT_MAX ||
+        store.activePath(reply.threadId).some(m => m.role === "bot" && m.kind === "text" && m.attachments?.length && m.at >= (reply.startedAt ?? reply.createdAt)));
       if (node.groupId || !bot || !store.taskByThread(node.botId, node.threadId) || isUnattended(bot.id, node.threadId) ||
-        directRequestOwners.get(node.threadId)?.voiceCall || !texts.length || texts.some(text => !text)) {
+        directRequestOwners.get(node.threadId)?.voiceCall || !texts.length || texts.some(text => !text) || partial) {
         // the resume turn answers instead, from a clean slate
-        clearRelayedStream(node.threadId);
+        if (relayShown.delete(node.threadId)) clearRelayedStream(node.threadId);
         return false;
       }
+      relayShown.delete(node.threadId);
       for (const text of texts) store.appendMessage(node.threadId, { role: "bot", kind: "text", text });
       const quiet = turnAnswers(node.threadId, { cardContinuation: true, coordination: node }).quiet;
       if (!quiet) {
@@ -8752,6 +8765,9 @@ const coordinator: Coordinator = createCoordinator({
       // flag nor a done frame. One chip plus one notification per settle
       // covers the gap; steers land inside the running turn and never add
       // more. Group settles already speak through the room's own flow.
+      // The runtime declined to relay (a sibling still at work, a withheld
+      // result): this review answers, from a clean stream.
+      if (resumed && relayShown.delete(node.threadId)) clearRelayedStream(node.threadId);
       if (resumed && !group) {
         const settledFrom = [...new Set(coordinator.children(node.id)
           .map(child => store.bot(child.botId)?.name ?? "Teammate"))];
@@ -8780,8 +8796,11 @@ const coordinator: Coordinator = createCoordinator({
       // A relayed reply streams where the person reads it (coordinate_bots
       // relay): its text deltas are copied to the requester's conversation,
       // and the settled bubble the relay posts replaces them.
-      const relayTo = !group && !resumed && node.relay && parent && !parent.groupId ? parent.threadId : undefined;
-      const relayStream = relayTo ? { to: relayTo, held: "", shown: false } : undefined;
+      // Mirrored only on a route the requester may read now (the same check
+      // the report passes), and one mirror per requester thread at a time.
+      const relayTo = !group && !resumed && node.relay && parent && !parent.groupId && !coordinatorValidate(node, parent) &&
+        ![...relayStreams.values()].some(stream => stream.to === parent.threadId) ? parent.threadId : undefined;
+      const relayStream = relayTo ? { to: relayTo, full: "", sent: "", shown: false } : undefined;
       if (relayStream) relayStreams.set(node.threadId, relayStream);
       if (!group) return new Promise<{ ok: boolean; text: string }>(resolve => {
         let done = false;
@@ -8793,7 +8812,10 @@ const coordinator: Coordinator = createCoordinator({
             // No bubble follows a failed reply or a question for the person:
             // the half stream goes, so the requester's resume does not
             // stream after it.
-            if (relayStream.shown && (!outcome.ok || /^\s*NEEDS INPUT:/im.test(outcome.text))) clearRelayedStream(relayStream.to);
+            if (relayStream.shown && (!outcome.ok || /^\s*NEEDS INPUT:/im.test(outcome.text))) {
+              clearRelayedStream(relayStream.to);
+              relayShown.delete(relayStream.to);
+            }
           }
           resolve(outcome);
         };
@@ -13566,13 +13588,24 @@ bus.subscribe((event: RuntimeEvent) => {
     // requester's conversation too; only its visible text, never reasoning.
     // It waits for the requester's own turn to end (its "I asked …" line runs
     // beside the teammate), then sends what it held as one delta.
+    // Redacted as a whole, and the last word held back until it ends, so a
+    // secret split across deltas never streams; a redaction that changes
+    // what was already sent stops the mirror (the bubble still comes).
     const relay = event.type === "content.delta" && event.streamKind === "assistant_text" ? relayStreams.get(event.threadId) : undefined;
-    if (relay && event.type === "content.delta") {
-      relay.held += event.delta;
-      if (!liveTurnByThread.has(relay.to)) {
-        broadcast({ kind: "runtime", event: { ...publicEvent, threadId: relay.to, eventId: `${event.eventId}-relay`, delta: relay.held } as RuntimeEvent });
-        relay.held = "";
+    if (relay && !relay.stopped && event.type === "content.delta") {
+      relay.full += event.delta;
+      const redacted = redactSecretsInText(relay.full);
+      const cut = Math.max(redacted.lastIndexOf(" "), redacted.lastIndexOf("\n")) + 1;
+      const ready = redacted.slice(0, cut);
+      if (!ready.startsWith(relay.sent)) {
+        relay.stopped = true;
+        if (relay.shown) clearRelayedStream(relay.to);
+        relayShown.delete(relay.to);
+      } else if (ready.length > relay.sent.length && !liveTurnByThread.has(relay.to)) {
+        broadcast({ kind: "runtime", event: { ...publicEvent, threadId: relay.to, eventId: `${event.eventId}-relay`, delta: ready.slice(relay.sent.length) } as RuntimeEvent });
+        relay.sent = ready;
         relay.shown = true;
+        relayShown.add(relay.to);
       }
     }
   }
