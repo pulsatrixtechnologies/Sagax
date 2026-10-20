@@ -4,6 +4,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Bot, InstanceInfo } from "@/state/store";
 import type { ApprovalModeSelector } from "./ApprovalModeSelector";
 import type { ModelPicker } from "./ModelPicker";
+import { CODEX_USAGE_LIMIT_REACHED, CODEX_USAGE_URL } from "../../shared/codex-usage-limit";
+import { failedTurnTool } from "../../shared/failed-turn";
 
 const fixture = vi.hoisted(() => {
   vi.stubGlobal("window", {});
@@ -160,6 +162,15 @@ describe("thread control placement", () => {
     expect(markup).toContain("Manage usage");
     expect(markup).toContain("https://chatgpt.com/settings/usage");
     expect(markup).not.toContain(">Retry<");
+  });
+  it("sends a Codex usage limit to the account's Codex usage page, not Retry", () => {
+    const codex = { instanceId: "codex", driverKind: "codex", displayName: "Codex", snapshot: { state: "available", authenticated: true } } as unknown as InstanceInfo;
+    const limit = `${CODEX_USAGE_LIMIT_REACHED} This is OpenAI's limit, not your Sagax plan. It resets at 5:23 PM (UTC).`;
+    const markup = renderToStaticMarkup(createElement(FailedTurnRow, { tool: failedTurnTool(limit), engine: codex, onRetry: () => {} }));
+    expect(markup).toContain(limit.replaceAll("'", "&#x27;"));
+    expect(markup).toContain(`href="${CODEX_USAGE_URL}"`);
+    expect(markup).toContain("Manage usage");
+    expect(markup).not.toContain("<button");
   });
   it("opens a signed-out engine's failed turn with only the sign-in card", () => {
     const claude = {

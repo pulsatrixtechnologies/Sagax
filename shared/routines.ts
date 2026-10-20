@@ -176,6 +176,8 @@ export interface RoutineRun {
   admitAfter?: number;
   /** Slice 6: how many times admission was retried after a rate limit. */
   admitAttempts?: number;
+  /** A transient failure re-queued this run once; it starts again in the same thread. */
+  transientRetried?: boolean;
   /** Someone else's run seen through a wider scope: output, instructions
    * and threads withheld (server/routine-scope.ts). */
   redacted?: true;
