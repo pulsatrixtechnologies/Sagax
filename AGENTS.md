@@ -5208,3 +5208,15 @@ never pushed). The Pod comes from the run provisioner
   engine; Git guard negatives), `server/runner/runner-drivers.test.ts` (the
   real Claude and Codex drivers with their fake CLIs),
   `server/runner/units.test.ts`.
+
+## Engine parity: approvals decide in Sagax on every engine (2026-10-19)
+
+JC: whatever the provider (Grok, Claude, Codex, Gemini, Kimi, pi, local
+models), a bot behaves the same. Approve for me never hands the decision to
+an engine's own classifier when Sagax can hold the call: Claude runs
+Auto-accept edits plus a fixed allowlist (#797), and Grok Auto runs the
+Sagax approval gate by default (`server/drivers/acp/grok-approval-gate.ts`,
+opt-out `{"off": [botId]}` or `{"bots": "none"}` in
+`DATA_DIR/grok-approval-gate.json`). Every call that reaches Sagax goes
+through the same `request.opened` path (owner setup #820, member rules
+#776-#812, safety review, security keys), whatever the engine.

@@ -766,7 +766,7 @@ const support: AcpSupport = {
   // residual requests still ask. Never replace it with bypassPermissions.
   // Verified: grok 1.0.3 --help and xai-org/grok-build@37949780,
   // crates/codegen/xai-grok-pager-bin/src/main.rs:1259-1273.
-  // Approval gate (grok-approval-gate.ts), per-bot flag: an Auto turn runs
+  // Approval gate (grok-approval-gate.ts), on unless the bot opts out: an Auto turn runs
   // Grok in `default` mode, with no per-call classifier wait, and Sagax
   // holds every MCP call that is not reviewed read-only for a card.
   approvalGate: (config, turn) => !config.fullAuto && turn.approvalMode === "auto" && grokApprovalGateEnabled(turn.botId),

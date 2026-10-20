@@ -4,7 +4,8 @@
 In `--permission-mode auto`, Grok runs its safety classifier before **every** MCP tool call. On production this measured 4–9 s (up to 17 s, and once an approval card for the read-only `agents__list_bots`) for tools that answer in under 0.5 s. Allow rules do not skip it over ACP (repro below). In `default` mode Grok runs MCP tools supplied by the ACP client with no prompt at all, so Sagax gates them itself.
 
 ## How it works
-- **Flag:** `DATA_DIR/grok-approval-gate.json`, either `{"bots": ["<botId>"]}` or `{"bots": "all"}`. A missing, empty or invalid file means off, and Grok runs in auto mode as before. The file is read on every turn; the next turn of each bot respawns Grok in the new mode.
+- **Default:** on for every bot since 2026-10-19 (engine parity: Approve for me decides through Sagax on Grok as on Claude since #797, so the owner's setup #820 and the member rules apply the same way).
+- **Opt-out:** `DATA_DIR/grok-approval-gate.json`, either `{"off": ["<botId>"]}` or `{"bots": "none"}`. Those bots' Auto turns run Grok's own auto mode. A missing, empty or invalid file means on; the earlier opt-in list `{"bots": [...]}` no longer narrows anything. The file is read on every turn; the next turn of each bot respawns Grok in the new mode.
 - **Scope:** only Auto turns (`approvalMode: "auto"`, not Full access). Ask, Edits and Full access are unchanged.
 - **When the flag is on:**
   - Grok starts with `--permission-mode default`. Its built-in tools still prompt through ACP, and their cards are unchanged.
@@ -17,7 +18,7 @@ In `--permission-mode auto`, Grok runs its safety classifier before **every** MC
 - **No replay:** each call is its own card. An "always" answer is not reused.
 
 ## Rollback
-Remove the bot from the flag file (or delete the file). That needs no deploy.
+Add the bot to `"off"` in the flag file (or write `{"bots": "none"}`). That needs no deploy.
 
 ## Grok bug: allow rules do not skip the auto classifier over ACP
 xAI has no public issue tracker (`xai-org/grok-build` has issues disabled), so the repro lives here.

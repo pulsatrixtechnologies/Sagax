@@ -11,7 +11,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { DATA_DIR, ensureDirs, NATIVE_DIR } from "../../config.ts";
 import { BUILT_IN_DATA_SYSTEM_PROMPT } from "../../data/instructions.ts";
@@ -1413,8 +1413,11 @@ describe("ACP turns (fake CLI)", () => {
   });
 
   it.each(["grok-4.7", "grok-4.6", "grok-4.5", "local-model"])(
-    "keeps native Grok Auto when selecting and resuming %s",
+    "keeps native Grok Auto (bots opted out of the gate) when selecting and resuming %s",
     async (model) => {
+      // Auto is gated by default (grok-approval-gate.ts); this is the opt-out path
+      writeFileSync(join(DATA_DIR, "grok-approval-gate.json"), JSON.stringify({ bots: "none" }));
+      onTestFinished(() => rmSync(join(DATA_DIR, "grok-approval-gate.json"), { force: true }));
       await create(GrokAgentDriver);
       const agents = { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} };
       for (const resumeCursor of [undefined, "fake-acp-session"]) {
@@ -1522,8 +1525,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(lines[2]).toContain("Not approved: third__anything did not run");
     });
 
-    it("keeps Grok's use_tool ask as a card for a bot without the flag", async () => {
-      writeFileSync(flagFile, JSON.stringify({ bots: ["bot-gated"] }));
+    it("keeps Grok's use_tool ask as a card for a bot that opted out", async () => {
+      writeFileSync(flagFile, JSON.stringify({ off: ["other-bot"] }));
       process.env.FAKE_ACP_ASK_BEFORE_MCP = "use_tool";
       process.env.FAKE_ACP_MCP_CALLS = "agents:list_bots";
       await create(GrokAgentDriver, "mcp-call");
@@ -1604,8 +1607,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(await instance.adapter.respondToRequest("t-gate-stop", card.requestId, { behavior: "allow" })).toBe("unavailable");
     });
 
-    it("leaves bots without the flag, and Ask, Edits and Full access, on their current modes", async () => {
-      writeFileSync(flagFile, JSON.stringify({ bots: ["bot-gated"] }));
+    it("leaves an opted-out bot, and Ask, Edits and Full access, on their current modes", async () => {
+      writeFileSync(flagFile, JSON.stringify({ off: ["other-bot"] }));
       await create(GrokAgentDriver);
       const cases: Array<{ botId: string; approvalMode: "auto" | "ask" | "edits" | "full"; mode: string }> = [
         { botId: "other-bot", approvalMode: "auto", mode: "auto" },
@@ -1629,9 +1632,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       }
     });
 
-    it("treats a missing or corrupt flag file as off", async () => {
+    it("gates Auto by default: a missing, corrupt or legacy opt-in flag file is on (engine parity)", async () => {
       await create(GrokAgentDriver);
-      for (const [index, content] of [undefined, "not json", JSON.stringify({ bots: "some" })].entries()) {
+      for (const [index, content] of [undefined, "not json", JSON.stringify({ bots: "some" }), JSON.stringify({ bots: ["someone-else"] })].entries()) {
         if (content === undefined) rmSync(flagFile, { force: true }); else writeFileSync(flagFile, content);
         const dump = join(scratch, `gate-flag-${index}.json`);
         process.env.FAKE_ACP_DUMP = dump;
@@ -1641,8 +1644,23 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         });
         await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
         const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
-        expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "auto"]);
+        expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "default"]);
+        expect(seen.argv).not.toContain("--allow");
       }
+    });
+
+    it("runs Grok's own auto mode only for an explicit opt-out ({bots: \"none\"})", async () => {
+      writeFileSync(flagFile, JSON.stringify({ bots: "none" }));
+      await create(GrokAgentDriver);
+      const dump = join(scratch, "gate-none.json");
+      process.env.FAKE_ACP_DUMP = dump;
+      const { turnId } = await instance.adapter.sendTurn({
+        threadId: "t-gate-none", botId: "bot-gated", text: "go", model: "grok-4.5", approvalMode: "auto",
+        integrations: { agents: server("agents") },
+      });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+      const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
+      expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "auto"]);
     });
   });
 
@@ -1685,7 +1703,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(seen.argv).toEqual([
       "--no-subagents", "--disable-web-search",
       "--deny", "Bash", "--deny", "Read", "--deny", "Edit", "--deny", "Write", "--deny", "Grep", "--deny", "WebFetch", "--deny", "WebSearch",
-      "--permission-mode", "auto", ...AGENTS_READ_ONLY_ALLOW,
+      // Auto decides through Sagax (the gate, on by default): no classifier, no allow rules
+      "--permission-mode", "default",
       "agent", "--no-leader", "-m", "grok-4.7", "--reasoning-effort", "high", "stdio",
     ]);
     expect(seen.argv).not.toContain("--sandbox");
@@ -1749,7 +1768,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     ["ask", true, "default"],
     ["full", true, "bypassPermissions"],
     ["custom", true, "default"],
-    ["auto", false, "auto"],
+    // Auto is gated by default: Grok runs `default`, Sagax decides
+    ["auto", false, "default"],
   ] as const)("Grok %s with agents mounted=%s overrides a legacy full-auto setting", async (approvalMode, mounted, nativeMode) => {
     instance = await GrokAgentDriver.create({
       instanceId: "grok-mode-override",
