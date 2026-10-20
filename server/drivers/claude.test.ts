@@ -1576,7 +1576,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       threadId: "t-defer", text: "hi", ...turnExtra,
       integrations: { agents: { command: process.execPath, args: ["/fake/agents-proxy.js"], env: { SAGAX_BOT_ID: "b1", SAGAX_COMMS_TOKEN: "tok" } } },
     });
-    await recorder.until((e) => e.type === "turn.completed" || e.type === "turn.failed");
+    await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.mcpConfig.mcpServers.agents.env.SAGAX_DEFER_RARE_TOOLS).toBe(expected);
   });
