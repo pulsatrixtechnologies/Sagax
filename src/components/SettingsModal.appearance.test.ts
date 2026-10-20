@@ -71,6 +71,7 @@ vi.mock("@/lib/notification-preferences", () => {
     persistentNotifications: local("omb-notification-persistent"),
     dockBadge: local("omb-dock-badge"),
     nudgeShake: local("omb-nudge-shake"),
+    approvalChime: local("omb-approval-chime"),
     useLocalSwitch: (choice: { enabled: () => boolean }) => choice.enabled(),
   };
 });

@@ -517,6 +517,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/respond$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/respond$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/undo$/ }, // whoever may answer the card: see the handler
+  // the Approvals screen (server/routes/approvals-inbox.ts): the person's own
+  // cards, answered with the same refusals as /respond, once, never remembered
+  { methods: ["GET"], path: /^\/api\/approvals$/ },
+  { methods: ["POST"], path: /^\/api\/approvals\/bulk$/ },
   // a ConnectWise widget's change: an approval card for whoever may answer it (server/cw-widget-actions.ts)
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/cw-actions$/ },
   // an email draft's Send: an approval card for the bot's owner, then the send

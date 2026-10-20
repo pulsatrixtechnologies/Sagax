@@ -67,6 +67,7 @@ describe("decideBotAct", () => {
     expect(decideBotAct({ raw: { ui: "decideRequest", input: { threadId: "t2", requestId: "r1", behavior: "allow" } }, ...full })).toMatchObject({ ok: false, status: 403, error });
     expect(decideBotAct({ raw: { ui: "answerCard", input: { botId: "b1", messageId: "m1", answer: "yes" } }, ...full })).toMatchObject({ ok: false, status: 403, error });
     expect(decideBotAct({ raw: { method: "POST", path: "/api/threads/t2/respond", body: { behavior: "allow" } }, ...full })).toMatchObject({ ok: false, status: 403, error });
+    expect(decideBotAct({ raw: { method: "POST", path: "/api/approvals/bulk", body: { decision: "allow", items: [{ threadId: "t2", requestId: "r1" }] } }, ...full })).toMatchObject({ ok: false, status: 403, error });
     expect(decideBotAct({ raw: { method: "PATCH", path: "/api/bots/b1/tasks/t2", body: { approvalMode: "full", confirmFullAccess: true } }, ...full })).toMatchObject({ ok: false, status: 403, error });
     expect(decideBotAct({ raw: { ui: "updateBot", input: { botId: "b1", patch: { approvalMode: "full" } } }, ...full })).toMatchObject({ ok: false, status: 403, error });
     expect(decideBotAct({ raw: { ui: "updateTask", input: { botId: "b1", threadId: "t2", patch: { confirmFullAccess: true } } }, ...full })).toMatchObject({ ok: false, status: 403, error });
