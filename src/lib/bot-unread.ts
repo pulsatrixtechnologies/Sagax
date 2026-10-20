@@ -17,12 +17,13 @@ export function taskHiddenFromSidebar(task: { routineRunId?: string; hidden?: tr
 /** Sidebar dot, dock badge, and notifying pose.
  * A hidden routine execution is not a conversation, so it never counts, and
  * neither does an AI client's hidden conversation.
+ * An archived thread's reply never counts: it stays put away.
  * Bots saved before task lists still use their own unread flag. */
 export function botShowsUnread(bot: {
   id?: string;
   unread?: boolean;
-  tasks?: ReadonlyArray<{ unread?: boolean; routineRunId?: string; hidden?: true; openedBy?: { botId?: string } }> | null;
+  tasks?: ReadonlyArray<{ unread?: boolean; routineRunId?: string; hidden?: true; openedBy?: { botId?: string }; archivedAt?: number }> | null;
 }): boolean {
   if (!bot.tasks?.length) return Boolean(bot.unread);
-  return bot.tasks.some((task) => Boolean(task.unread) && !taskHiddenFromSidebar(task, bot.id ?? ""));
+  return bot.tasks.some((task) => Boolean(task.unread) && task.archivedAt === undefined && !taskHiddenFromSidebar(task, bot.id ?? ""));
 }

@@ -12,6 +12,7 @@ export type {
   RoutineContextAttachment,
   RoutineRunTrigger,
   RoutineRunStatus,
+  RoutineRetryCause,
   Routine,
   RoutineRun,
   RoutineInput,

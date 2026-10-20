@@ -3096,6 +3096,7 @@ export function reducer(state: AppState, action: Action): AppState {
         confirmFullAccess: _fullConfirmation,
         applyToAllThreads: _allThreads,
         organizationFullAccess: _orgFull,
+        threadId: _threadId,
         computer,
         connectorTools,
         connectorScopes,
@@ -4833,7 +4834,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (botBeforeUpdate) {
             botPatchQueue.enqueue(
               action.botId,
-              { modelSelection: action.selection },
+              { modelSelection: action.selection, threadId: botBeforeUpdate.switchingTo ?? botBeforeUpdate.threadId },
               botBeforeUpdate,
             );
           }

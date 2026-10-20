@@ -13101,7 +13101,13 @@
       "limitFailover.switched": "89bb4bb6b98b427d5f085bfef183ce9fb90e11a95610eba8aac3a32f8bb7bdc4",
       "limitFailover.back": "6e21499e41666eb166b13eed78a1d2cf4dcf8114b73a0f8c52caee3ba8e65c58",
       "limitFailover.waiting": "279877c388bc2a96e615cdb17c7eab72b31af223a2b36a9cbb9f5dc675eefecc",
-      "limitFailover.waitingRoutine": "1724617439a2871f99d8528b4448a7162d9a0f88fbb1ab1700739d689cd01811"
+      "limitFailover.waitingRoutine": "1724617439a2871f99d8528b4448a7162d9a0f88fbb1ab1700739d689cd01811",
+      "routines.weekRuns": "aee9c2ad842c619dc45a2563d3818ff836c9c95de7d80212514ad57372e376e8",
+      "routines.retried.stalled": "a6bde8bdb0dec3ad864da9f5487061d9ec12f13e7c07477723aaeb21bc966976",
+      "routines.retried.restarted": "5258445d642f247b2c37b2c74127203b535f95950163f7fdd176a1624f49ccf8",
+      "routines.retried.rate_limited": "be58a2a46285e5ae48252cbd4fc4c5e9fa8779ccf3c71dacd1d08401f132e921",
+      "routines.retried.provider": "aefd0de842d8736e5b6abba3df729e46dc0207fbddfe6947c256a8ed6542cc93",
+      "routines.retried.usage_limit": "ee2d5ec38e83a822078c1af3c8c1b8150e0c2e6ea027bdac2a38987db86eb489"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

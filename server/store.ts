@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic, writeFileAtomicIfChanged } from "./atomic.ts";
+import { commitBotChange, keptRevocation, saveBotsFor } from "./bots-save.ts";
 import { applyHumanIds } from "./channel-membership.ts";
 import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts";
 import { ensureSections, readSections, changeEmptySection } from "./section-context.ts";
@@ -1316,6 +1317,11 @@ export class Store {
   // Many saves repeat what is already on disk (the same resume cursor, an
   // unchanged task field), so both registries skip a byte-identical write.
   // Events are still emitted by the callers either way.
+  /** Memory changes only once bots.json holds them: a failed save puts the bot back as it was. */
+  private commitBotChange(bot: BotRecord, action: string, change: () => void, onRollback?: () => void) {
+    commitBotChange(bot, action, () => this.saveBots(), change, onRollback);
+  }
+
   private saveBots(bots: BotRecord[] = this.bots, registerSections = true) {
     if (registerSections) this.rememberSections([...this.bots, ...bots].map((bot) => bot.section));
     writeFileAtomicIfChanged(BOTS_FILE, JSON.stringify(bots.map(({ busy: _busy, activity: _activity, ...bot }) => ({
@@ -1580,9 +1586,9 @@ export class Store {
   /** A thread's durable record: DB rows, legacy JSON leftovers, and the
    * per-thread event logs. Every delete path funnels here — task, group,
    * and bot deletion — so the logs cannot outlive the thread anywhere. */
-  private deleteThreadRecord(threadId: string) {
+  private deleteThreadRecord(threadId: string, beforeCommit?: () => void) {
+    mdb.deleteThread(threadId, beforeCommit);
     this.threads.delete(threadId);
-    mdb.deleteThread(threadId);
     for (const file of [
       messagesFile(threadId),
       `${messagesFile(threadId)}.imported`,
@@ -2948,7 +2954,7 @@ export class Store {
     // The legacy mirror follows the task visible in chat, never a detached
     // routine task working in the background.
     if (!threadId || bot.threadId === threadId) bot.resumeCursors[instanceId] = cursor;
-    this.saveBots();
+    saveBotsFor("the conversation's engine session", () => this.saveBots());
     this.emit({ type: "bot", botId });
   }
 
@@ -2959,7 +2965,7 @@ export class Store {
     const task = this.taskByThread(botId, threadId);
     if (!task || task.lastInstanceId === instanceId) return;
     task.lastInstanceId = instanceId;
-    this.saveBots();
+    saveBotsFor("which engine has this conversation", () => this.saveBots());
   }
 
   setHandedMessages(botId: string, threadId: string, instanceId: string, state: HandedState) {
@@ -2969,7 +2975,7 @@ export class Store {
     const live = Object.entries(task.handedMessages ?? {})
       .filter(([id, record]) => id !== instanceId && record.session !== undefined && record.session === task.resumeCursors[id]);
     task.handedMessages = { ...Object.fromEntries(live), [instanceId]: state };
-    this.saveBots();
+    saveBotsFor("what this conversation handed its engine", () => this.saveBots());
   }
 
   /** Bank one settled turn onto its task. Called once per turn.completed;
@@ -3014,7 +3020,7 @@ export class Store {
         ? { context: { tokens: contextTokens, ...(contextWindow > 0 ? { window: contextWindow } : {}) } }
         : prev.context ? { context: prev.context } : {}),
     };
-    this.saveBots();
+    saveBotsFor("the thread's usage", () => this.saveBots());
     this.emit({ type: "bot", botId });
     return task.usage;
   }
@@ -3030,8 +3036,7 @@ export class Store {
     const bot = this.botByThread(threadId);
     const task = bot ? this.taskByThread(bot.id, threadId) : undefined;
     if (!bot || !task || task.cwd === undefined) return false;
-    delete task.cwd;
-    this.saveBots();
+    this.commitBotChange(bot, "the thread's folder", () => { delete task.cwd; });
     this.emit({ type: "bot", botId: bot.id });
     return true;
   }
@@ -3045,25 +3050,23 @@ export class Store {
     // ran elsewhere keeps its pin: it was not opened that way, and moving it
     // would lose its work and its session.
     if (opts.privateOnly && task.cwd === undefined) {
-      task.cwd = fallbackCwd ?? null;
-      this.saveBots();
+      const cwd = fallbackCwd ?? null;
+      this.commitBotChange(bot, "the thread's folder", () => { task.cwd = cwd; });
       this.emit({ type: "bot", botId });
-      return task.cwd;
+      return cwd;
     }
     if (opts.none) {
       if (task.cwd !== null) {
-        task.cwd = null;
-        this.saveBots();
+        this.commitBotChange(bot, "the thread's folder", () => { task.cwd = null; });
         this.emit({ type: "bot", botId });
       }
       return null;
     }
-    if (task.cwd === undefined) {
-      task.cwd = Object.keys(task.resumeCursors).length === 0 ? (bot.cwd ?? fallbackCwd ?? null) : null;
-      this.saveBots();
-      this.emit({ type: "bot", botId });
-    }
-    return task.cwd;
+    if (task.cwd !== undefined) return task.cwd;
+    const cwd = Object.keys(task.resumeCursors).length === 0 ? (bot.cwd ?? fallbackCwd ?? null) : null;
+    this.commitBotChange(bot, "the thread's folder", () => { task.cwd = cwd; });
+    this.emit({ type: "bot", botId });
+    return cwd;
   }
 
   /** The folder a room's member turns run in. Pins on the first turn that
@@ -3265,24 +3268,28 @@ export class Store {
     const task = this.taskByThread(botId, threadId);
     if (!bot || !task) return null;
     if (patch.projectId !== undefined && !this.project(botId, patch.projectId)) return null;
-    for (const key of TASK_PATCH_FIELDS) {
-      if (Object.prototype.hasOwnProperty.call(patch, key)) {
-        Object.assign(task, { [key]: structuredClone(patch[key]) });
+    // A revocation (a narrower approval level, fewer always-allowed tools)
+    // stays live when its save fails; a widening never does.
+    const revocation = keptRevocation(task, patch);
+    this.commitBotChange(bot, "the thread change", () => {
+      for (const key of TASK_PATCH_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(patch, key)) {
+          Object.assign(task, { [key]: structuredClone(patch[key]) });
+        }
       }
-    }
-    // "Until new activity" ends the moment the thread has something new for
-    // the person, and every unread wake funnels through patchTask — so this
-    // one hook is the whole activity alarm. A time-based snooze is left to
-    // its clock: attention overrides it on screen without clearing it.
-    if (task.snoozedUntil === 0 && patch.unread === true) task.snoozedUntil = undefined;
-    if (typeof patch.title === "string") task.title = patch.title.trim().slice(0, 80) || UNTITLED_THREAD;
-    if (Object.prototype.hasOwnProperty.call(patch, "pinned") && task.pinned !== true) delete task.pinned;
-    // Still hidden: attention belongs on the source conversation. A same-call
-    // clear of routineRunId (no-source promotion) may keep unread.
-    if (task.routineRunId || task.hidden === true) task.unread = false;
-    if (bot.threadId === threadId) this.mirrorActiveTask(bot, task);
-    bot.unread = botHasPersonUnread(bot);
-    this.saveBots();
+      // "Until new activity" ends the moment the thread has something new for
+      // the person, and every unread wake funnels through patchTask, so this
+      // one hook is the whole activity alarm. A time-based snooze is left to
+      // its clock: attention overrides it on screen without clearing it.
+      if (task.snoozedUntil === 0 && patch.unread === true) task.snoozedUntil = undefined;
+      if (typeof patch.title === "string") task.title = patch.title.trim().slice(0, 80) || UNTITLED_THREAD;
+      if (Object.prototype.hasOwnProperty.call(patch, "pinned") && task.pinned !== true) delete task.pinned;
+      // Still hidden: attention belongs on the source conversation. A same-call
+      // clear of routineRunId (no-source promotion) may keep unread.
+      if (task.routineRunId || task.hidden === true) task.unread = false;
+      if (bot.threadId === threadId) this.mirrorActiveTask(bot, task);
+      bot.unread = botHasPersonUnread(bot);
+    }, revocation && (() => Object.assign(task, revocation)));
     this.emit({ type: "bot", botId });
     return task;
   }
@@ -3362,18 +3369,16 @@ export class Store {
    * matches the new destination survive. Returns how many pins were cleared. */
   clearAutoSurfacePins(botId: string, destination: Destination): number {
     const bot = this.bot(botId);
-    if (!bot?.tasks) return 0;
-    let cleared = 0;
-    for (const task of bot.tasks) {
-      if (task.surface === undefined || task.surfaceSource !== "auto" || task.surface === destination) continue;
-      task.surface = undefined;
-      task.surfaceSource = undefined;
-      cleared++;
-    }
-    if (!cleared) return 0;
-    this.saveBots();
+    const stale = bot?.tasks?.filter((task) => task.surface !== undefined && task.surfaceSource === "auto" && task.surface !== destination) ?? [];
+    if (!bot || !stale.length) return 0;
+    this.commitBotChange(bot, "the threads' destinations", () => {
+      for (const task of stale) {
+        task.surface = undefined;
+        task.surfaceSource = undefined;
+      }
+    });
     this.emit({ type: "bot", botId });
-    return cleared;
+    return stale.length;
   }
 
   /** A person picks a model in one thread, and with updateBotDefault makes it
@@ -3476,8 +3481,20 @@ export class Store {
     if (projectId !== undefined && !this.project(botId, projectId)) return null;
     // An AI client's hidden conversation (#291) is never selected.
     if (hidden) activate = false;
+    const task = this.buildTask(bot, title, projectId, openedBy, approvalMode, ownerPrincipalId, modelSelection, hidden, cwd, confidential);
+    this.commitBotChange(bot, "the new thread", () => {
+      bot.tasks = [task, ...(bot.tasks ?? [])];
+      if (activate) this.mirrorActiveTask(bot, task);
+    });
+    this.emit({ type: "bot", botId });
+    return task;
+  }
+
+  /** A new task record, not yet in the bot's list. */
+  private buildTask(bot: BotRecord, title?: string, projectId?: string, openedBy?: TaskOpenedBy, approvalMode?: "ask" | "full",
+    ownerPrincipalId?: string, modelSelection?: ModelSelection, hidden = false, cwd?: string, confidential = false): TaskRecord {
     const createdAt = Date.now();
-    const task: TaskRecord = {
+    return {
       threadId: newId(),
       title: threadTitleFrom(title),
       createdAt,
@@ -3502,13 +3519,6 @@ export class Store {
       // thread is never briefly an ordinary one.
       ...(confidential ? { confidential: true as const } : {}),
     };
-    bot.tasks = [task, ...(bot.tasks ?? [])];
-    if (activate) {
-      this.mirrorActiveTask(bot, task);
-    }
-    this.saveBots();
-    this.emit({ type: "bot", botId });
-    return task;
   }
 
   /** Hide (or show again) an AI client's conversation (#291). A hidden
@@ -3519,22 +3529,23 @@ export class Store {
     const bot = this.bot(botId);
     const task = this.taskByThread(botId, threadId);
     if (!bot || !task) return null;
-    if (hidden) {
-      task.hidden = true;
-      task.unread = false;
-    } else {
-      delete task.hidden;
-    }
-    if (hidden && bot.threadId === threadId) {
-      const at = (candidate: TaskRecord) => candidate.updatedAt ?? candidate.createdAt;
-      const next = (bot.tasks ?? [])
-        .filter((candidate) => !taskHiddenFromPerson(candidate) && candidate.archivedAt === undefined)
-        .sort((a, b) => at(b) - at(a))[0];
-      if (next) this.mirrorActiveTask(bot, next);
-    }
-    bot.unread = botHasPersonUnread(bot);
-    this.refreshBotActivity(bot);
-    this.saveBots();
+    this.commitBotChange(bot, "the thread's visibility", () => {
+      if (hidden) {
+        task.hidden = true;
+        task.unread = false;
+      } else {
+        delete task.hidden;
+      }
+      if (hidden && bot.threadId === threadId) {
+        const at = (candidate: TaskRecord) => candidate.updatedAt ?? candidate.createdAt;
+        const next = (bot.tasks ?? [])
+          .filter((candidate) => !taskHiddenFromPerson(candidate) && candidate.archivedAt === undefined)
+          .sort((a, b) => at(b) - at(a))[0];
+        if (next) this.mirrorActiveTask(bot, next);
+      }
+      bot.unread = botHasPersonUnread(bot);
+      this.refreshBotActivity(bot);
+    });
     this.emit({ type: "bot", botId });
     return task;
   }
@@ -3565,8 +3576,7 @@ export class Store {
     const bot = this.bot(botId);
     const task = this.taskByThread(botId, threadId);
     if (!bot || !task) return null;
-    task.openedBy = structuredClone(openedBy);
-    this.saveBots();
+    this.commitBotChange(bot, "who opened the thread", () => { task.openedBy = structuredClone(openedBy); });
     this.emit({ type: "bot", botId });
     return task;
   }
@@ -3578,8 +3588,7 @@ export class Store {
     const bot = this.bot(botId);
     const task = this.taskByThread(botId, threadId);
     if (!bot || !task) return null;
-    task.parallelOf = structuredClone(parallelOf);
-    this.saveBots();
+    this.commitBotChange(bot, "the thread's link to its conversation", () => { task.parallelOf = structuredClone(parallelOf); });
     this.emit({ type: "bot", botId });
     return task;
   }
@@ -3591,7 +3600,7 @@ export class Store {
     const task = this.taskByThread(botId, threadId);
     if (!task || !Number.isFinite(at) || (task.askedAt ?? -1) >= at) return task ?? null;
     task.askedAt = at;
-    this.saveBots();
+    saveBotsFor("when you last wrote in this thread", () => this.saveBots());
     this.emit({ type: "bot", botId });
     return task;
   }
@@ -3603,10 +3612,11 @@ export class Store {
     const bot = this.bot(botId);
     const task = this.taskByThread(botId, threadId);
     if (!bot || !task) return null;
-    if (closedBy) task.closedBy = structuredClone(closedBy);
-    else if (!task.closedBy) return task;
-    else delete task.closedBy;
-    this.saveBots();
+    if (!closedBy && !task.closedBy) return task;
+    this.commitBotChange(bot, "who closed the thread", () => {
+      if (closedBy) task.closedBy = structuredClone(closedBy);
+      else delete task.closedBy;
+    });
     this.emit({ type: "bot", botId });
     return task;
   }
@@ -3615,8 +3625,7 @@ export class Store {
     const bot = this.bot(botId);
     const task = bot?.tasks?.find((t) => t.threadId === threadId);
     if (!bot || !task) return null;
-    this.mirrorActiveTask(bot, task);
-    this.saveBots();
+    this.commitBotChange(bot, "the thread switch", () => this.mirrorActiveTask(bot, task));
     this.emit({ type: "bot", botId });
     return bot;
   }
@@ -3629,11 +3638,13 @@ export class Store {
    * so a caller can later replace exactly that machine-made title — and
    * can see the peer provenance it must leave alone. */
   titleTaskFromFirstMessage(botId: string, text: string, threadId?: string): TaskRecord | null {
+    const bot = this.bot(botId);
     const task = threadId ? this.taskByThread(botId, threadId) : this.activeTask(botId);
-    if (!task || task.titleFromFirstMessage || (task.title !== UNTITLED_TASK && task.title !== UNTITLED_THREAD)) return null;
-    task.title = titleFromMessage(text);
-    task.titleFromFirstMessage = true;
-    this.saveBots();
+    if (!bot || !task || task.titleFromFirstMessage || (task.title !== UNTITLED_TASK && task.title !== UNTITLED_THREAD)) return null;
+    this.commitBotChange(bot, "the thread's title", () => {
+      task.title = titleFromMessage(text);
+      task.titleFromFirstMessage = true;
+    });
     this.emit({ type: "bot", botId });
     return task;
   }
@@ -3655,16 +3666,18 @@ export class Store {
     const bot = this.bot(botId);
     if (!bot?.tasks) return null;
     if (!bot.tasks.some((t) => t.threadId === threadId)) return null;
-    bot.tasks = bot.tasks.filter((t) => t.threadId !== threadId);
-    const visible = bot.tasks.find((task) => !task.routineRunId)
-      ?? this.createTask(botId, undefined, bot.threadId === threadId)!;
-    if (bot.threadId === threadId || this.taskByThread(botId, bot.threadId)?.routineRunId) {
-      this.mirrorActiveTask(bot, visible);
-    }
-    this.deleteThreadRecord(threadId);
-    bot.unread = botHasPersonUnread(bot);
-    this.refreshBotActivity(bot);
-    this.saveBots();
+    // The transcript rows and bots.json commit together: either failing
+    // leaves the task, its conversation and every subscriber as they were.
+    this.deleteThreadRecord(threadId, () => this.commitBotChange(bot, "the thread deletion", () => {
+      const kept = bot.tasks!.filter((t) => t.threadId !== threadId);
+      const visible = kept.find((task) => !task.routineRunId) ?? this.buildTask(bot);
+      bot.tasks = kept.includes(visible) ? kept : [visible, ...kept];
+      if (bot.threadId === threadId || this.taskByThread(botId, bot.threadId)?.routineRunId) {
+        this.mirrorActiveTask(bot, visible);
+      }
+      bot.unread = botHasPersonUnread(bot);
+      this.refreshBotActivity(bot);
+    }));
     this.emit({ type: "bot", botId });
     return bot;
   }

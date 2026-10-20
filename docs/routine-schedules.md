@@ -70,6 +70,28 @@ use an appropriate event/webhook workflow instead of a fake weekly schedule.
   can be dispatched; older work receives a missed-run receipt. The next date
   advances without replaying every missed minute. Queued/running/waiting work
   for the same cron routine does not accumulate overlapping copies.
+- A run waiting on the person (a question, an approval) gives way to its
+  routine's next occurrence once it has waited more than 30 minutes before that
+  occurrence came due and no hand-off to another bot is still open: it stops
+  with "Stopped waiting: the next scheduled run of this routine started
+  instead". An occurrence skipped behind a wait that is still held leaves one
+  Missed receipt per wait, so the owner hears of it.
+- An unattended bot run recovers from a passing failure by itself
+  (`server/routine-recovery.ts`):
+  - Its engine stalled, the provider rate-limited it or failed for a moment
+    (or Sagax restarted while it ran): it starts once more in the same
+    conversation after a short wait (15 s; a minute after a rate limit), told
+    to check what its first start already did. A second failure fails it:
+    "Failed after one automatic retry: ...".
+  - Its bot or conversation was busy when it started: it waits there,
+    checking every 30 s, for up to an hour.
+  - Signed out, out of credit, a usage limit or an engine that needs setting
+    up: no retry. The owner gets one notification per bot and cause saying
+    what to do, and no more until one of that bot's runs completes. A usage
+    limit that says when it resets (Claude Code does) puts the run back for
+    just after the reset, if that is within 12 hours.
+  - The log says what happened ("Retried after the engine stalled · Completed"),
+    and each routine shows "N of M runs OK this week".
 - Existing one-time, daily/weekday and interval schedules are not migrated or
   reinterpreted. Team exports retain cron expressions and zones; imports remain
   paused until enabled. Older phone apps safely treat cron as a newer schedule;

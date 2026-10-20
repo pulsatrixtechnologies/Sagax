@@ -74,8 +74,9 @@ export interface CoordinatorHost {
   /** Display names for the envelope of a turn. */
   names(node: HandoffView, parent?: HandoffView): EnvelopeNames;
   /** A teammate ended its turn on a question for the person: show it where
-   * the work was asked for (and again after a restart). */
-  park(node: HandoffView, question: string): void;
+   * the work was asked for. `restored` is the restart's re-park: it shows the
+   * question again only if no card for it is still open. */
+  park(node: HandoffView, question: string, restored?: boolean): void;
   /** Still parked (runtime inputRemindMs, then daily): the same question
    * again, in full, where the person reads. The work keeps waiting. */
   remind?(node: HandoffView, question: string, waitedMs: number): void;
@@ -91,6 +92,9 @@ export interface Coordinator {
   node(id: string): HandoffView | undefined;
   has(id: string): boolean;
   all(): HandoffView[];
+  /** all() without the ended nodes. Ended rows only grow, so a caller that
+   * asks about live work (most do, on every broadcast) reads these. */
+  active(): HandoffView[];
   children(id: string): HandoffView[];
   /** Throws an Error whose message is the typed refusal the caller shows the model. */
   enqueue(source: RoomAddress, generation: string, parentId: string | undefined, target: RoomAddress, key: string, text: string,
@@ -117,6 +121,8 @@ export interface Coordinator {
    * true when the assignment took the text as its answer and the host must
    * not start an ordinary turn. */
   answer(threadId: string, text: string): boolean;
+  /** Whether this thread's assignment is parked on a question for the person. */
+  awaitingAnswer(threadId: string): boolean;
   /** A thread turned confidential or a confidential thread was deleted
    * (docs/confidential-threads.md): its teammate work keeps no words of it. */
   forgetThread(threadId: string): { removed: number; scrubbed: number };

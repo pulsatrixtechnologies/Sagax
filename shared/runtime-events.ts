@@ -222,6 +222,8 @@ export type RuntimeEvent = RuntimeEventBase &
     // `claudeUpdate: true` narrows a setup failure to "this Claude Code is
     // too old for the model": the UI offers to run `claude update` for them.
     | { type: "runtime.error"; message: string; setup?: boolean; terminal?: boolean; claudeUpdate?: boolean;
+      /** The engine went silent and the turn was stopped as stuck. */
+      stalled?: boolean;
       /** A usage limit refused the turn: epoch ms when it resets, when the
        * engine said (server/limit-failover-host.ts). */
       limitResetsAt?: number }
