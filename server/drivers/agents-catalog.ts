@@ -19,6 +19,7 @@ import { WIDGET_TOOL_DEFINITIONS } from "./agents-widget-tools.ts";
 import { ARTIFACT_TOOL_DEFINITIONS } from "./agents-artifact-tools.ts";
 import { HELP_TOOL_DEFINITIONS } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_DEFINITIONS } from "./agents-settings-tools.ts";
+import { APPROVALS_TOOL_DEFINITIONS } from "./agents-approvals-tools.ts";
 import { CLAIM_TOOL_NAMES } from "../perspicax-claims.ts";
 
 /** Which tools a turn is shown. The harness decides each of these when it
@@ -475,6 +476,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   ...PAGE_TOOL_DEFINITIONS,
   ...HELP_TOOL_DEFINITIONS,
   ...SETTINGS_TOOL_DEFINITIONS,
+  ...APPROVALS_TOOL_DEFINITIONS,
   {
     name: "post_to_room",
     description:
@@ -1562,6 +1564,8 @@ const GITHUB_CONNECT_TOOL_NAMES = new Set(["connect_github"]);
 // bot that can reach that peer, so it stays.)
 const CHIEF_ONLY_TOOL_NAMES = new Set([
   "create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "create_room", "manage_room", "retry_thread",
+  // 2026-10-20: the person's approval cards, answered at their request
+  "sagax_approvals",
 ]);
 const CHIEF_TARGET_TOOL_NAMES = new Set(["propose_profile", "propose_model"]);
 /** create_bot as a bot that is not a Primary Bot sees it (server/bot-creation.ts):

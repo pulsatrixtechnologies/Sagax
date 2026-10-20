@@ -78,6 +78,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"GET","kind":"prefix","route":"/api/internal/","tier":"read","readOnly":true,"scope":"internal:read","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/act","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/internal/agents","tier":"read","readOnly":true,"scope":"internal:read","defaultEnabled":true},
+  {"method":"POST","kind":"exact","route":"/api/internal/approvals","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/ask-bot","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/attach-file","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/bot-deletion-requests","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},

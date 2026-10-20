@@ -306,6 +306,10 @@ import { checkWidgetForTurn, WidgetCheckAttempts, WidgetRenderer } from "./widge
 import { bundledKnowledgeIndex } from "./self-knowledge.ts";
 import { createSelfKnowledgeInternalRoutes } from "./routes/self-knowledge-internal.ts";
 import { createSettingsActionsInternalRoutes } from "./routes/settings-actions-internal.ts";
+import { createPrimaryApprovalsInternalRoutes } from "./routes/primary-approvals-internal.ts";
+import { createPrimaryApprovals, primaryAnswerable, type PrimaryCard, type PrimaryDecision, type PrimaryTurn } from "./primary-approvals.ts";
+import { reviewedSkillSha256 } from "../shared/skill-request.ts";
+import { checkPersonQuote } from "../shared/primary-request.ts";
 import { sessionIdlePolicy } from "./drivers/session-idle.ts";
 import { serveStaticUi } from "./static-ui.ts";
 import { coalescedRun } from "./coalesced-run.ts";
@@ -2632,7 +2636,11 @@ async function answeringCardAs(auth: RequestAuth, threadId: string, requestId: s
     const message = open ? store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId) : undefined;
     const card = message?.card;
     if (message && card && !card.answeredBy && card.answered !== "unavailable" && (card.answered || card.dismissed)) {
-      store.patchMessage(threadId, message.id, { card: { ...card, answeredBy: { ...cardAnswererFor(auth), ...(via ? { via } : {}) } } });
+      // 2026-10-20: answered by the person's Primary Bot at their request
+      // (sagax_approvals): the card reads "via <bot>"
+      const primary = actConfirmed()?.primary;
+      const how = primary ? { via: "primary-bot" as const, bot: primary.botName.slice(0, 80) } : via ? { via } : {};
+      store.patchMessage(threadId, message.id, { card: { ...card, answeredBy: { ...cardAnswererFor(auth), ...how } } });
     }
     if (CLOUD_HOME && open) cloudCardAnswersInFlight.delete(requestId);
   }
@@ -26258,6 +26266,8 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     },
     handle: (input) => settingsActions().handle(input),
   }),
+  // sagax_approvals (server/routes/primary-approvals-internal.ts)
+  createPrimaryApprovalsInternalRoutes({ handle: (input) => primaryApprovals().handle(input) }),
   // sagax_help (server/routes/self-knowledge-internal.ts)
   createSelfKnowledgeInternalRoutes({
     index: bundledKnowledgeIndex,
@@ -28216,6 +28226,19 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       return bot ? approvalModeForTurn(bot, false, threadId) : "ask";
     },
     keyRequired: (person, classes, fallback) => securityKeys.required(person, classes, fallback),
+    // 2026-10-20: the person asked their Primary Bot for this change now
+    personAsked: (input, quote) => {
+      const gate = primaryTurnGate(input.botId, input.threadId, input.generation);
+      if ("error" in gate) return gate.error;
+      const check = checkPersonQuote({ quote, message: gate.message.text, intent: "setting" });
+      return check.ok ? { message: gate.message.text } : check.reason;
+    },
+    ruleText: (person, kind, id) => {
+      if (!person) return undefined;
+      if (kind === "custom") return customRules.get(person, id)?.when;
+      const rule = ownerApprovals.rulesOf(person).find((row) => row.id === id);
+      return rule ? [rule.description, ...Object.values(rule.scope ?? {})].join(" ") : undefined;
+    },
     targetName: (kind, id, botId) => {
       if (kind === "bot") return store.bot(id)?.name;
       if (kind === "thread") return botId ? `${store.bot(botId)?.name ?? "Bot"}: ${store.taskByThread(botId, id)?.title ?? "conversation"}` : undefined;
@@ -28244,6 +28267,126 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
     },
   });
   return settingsActionService;
+}
+
+// ── sagax_approvals: the Primary Bot answers its person's cards (2026-10-20) ──
+/** The person's own Primary Bot, in a turn the person started with their
+ * own message (server/primary-approvals.ts): the gate of sagax_approvals and
+ * of sagax_settings' `quote`. Fail closed: a routine, a webhook, another
+ * bot's hop, a guest, a room without a known person, an unproven sender, a
+ * teammate or a bot shared by someone else is refused. */
+function primaryTurnGate(botId: string, threadId: string, generation: string): PrimaryTurn & { actor: PerformActor } | { status: number; code: string; error: string } {
+  const bot = store.bot(botId);
+  if (!bot) return { status: 404, code: "no_bot", error: "No such bot." };
+  if (!bot.chiefOfStaff || bot.temporary) return { status: 403, code: "not_primary", error: "Only the person's Primary Bot answers their cards. Tell them a card is waiting for them." };
+  const facts = actTurnFacts(threadId, generation);
+  const actor = actorForTurn(facts);
+  const person = actor.kind === "person" ? actor.personKey : actor.kind === "operator" ? localPrincipalId() : null;
+  const owner = effectiveBotOwner(bot) || (IDENTITY.kind === "perspicax" ? "" : localPrincipalId());
+  if (!person || !owner || person !== owner) return { status: 403, code: "not_owner_turn", error: "Only the person who owns this Primary Bot, in their own message, can have it answer their cards." };
+  if (ownEnvironmentOrigin(bot, threadId) !== "owner") return { status: 403, code: "not_owner_turn", error: "This turn is not the person's own message (a routine, a webhook, another bot or someone else): it answers no card." };
+  const request = directRequestOwners.get(threadId);
+  const message = request?.messageId ? store.messagesFor(threadId).find((row) => row.id === request.messageId) : undefined;
+  if (!message || message.role !== "user" || message.peerAsk || typeof message.text !== "string") return { status: 403, code: "no_request", error: "No message of the person started this turn." };
+  let performActor: PerformActor = { kind: "operator" };
+  if (actor.kind === "person") {
+    const live = sessions.liveWhere((session) => personKey(session) === actor.personKey);
+    const picked = live.find((session) => session.scopes.includes("admin")) ?? live[0];
+    if (!picked) return { status: 403, code: "no_session", error: "The person's session is no longer valid." };
+    performActor = { kind: "person", sessionId: picked.id, personKey: actor.personKey, scopes: picked.scopes.filter((scope): scope is "admin" | "client" => scope === "admin" || scope === "client") };
+  }
+  return { botId: bot.id, botName: bot.name, person, message: { id: message.id, text: message.text, at: message.at }, actor: performActor };
+}
+
+/** The request auth the person's own screen would carry, for the listing. */
+function primaryListAuth(actor: PerformActor): RequestAuth | null {
+  if (actor.kind === "operator") return { kind: "loopback", scopes: ["admin", "client"] };
+  const session = sessions.byId(actor.sessionId);
+  return session ? { kind: "session", session, via: "bearer", scopes: session.scopes } : null;
+}
+
+/** On-behalf replay marker: the person asked their Primary Bot for this,
+ * one-shot and bound to the method and path (act's planned confirmation). */
+type PrimaryAnswer = { botId: string; botName: string; messageId: string };
+
+let primaryApprovalService: ReturnType<typeof createPrimaryApprovals> | null = null;
+function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
+  const actorOf = (turn: PrimaryTurn) => (turn as PrimaryTurn & { actor: PerformActor }).actor;
+  const replay = async (turn: PrimaryTurn, method: string, path: string, body?: Record<string, unknown>) => {
+    const actor = actorOf(turn);
+    const confirmed = { personKey: actor.kind === "person" ? actor.personKey : null, classes: [] as string[], primary: { botId: turn.botId, botName: turn.botName, messageId: turn.message.id } satisfies PrimaryAnswer };
+    const answer = await performBotActRouteOutsideConfidential(actor, { kind: "route", method, path, ...(body ? { body } : {}) }, confirmed);
+    let parsed: Record<string, unknown> = {};
+    try { parsed = JSON.parse(answer.text) as Record<string, unknown>; } catch { parsed = { error: answer.text.slice(0, 300) }; }
+    return { status: answer.status, body: answer.status >= 400 ? { error: String(parsed.error ?? "The answer was refused."), ...(parsed.code ? { code: parsed.code } : {}) } : parsed };
+  };
+  primaryApprovalService ??= createPrimaryApprovals({
+    turn: primaryTurnGate,
+    pending: (turn) => {
+      const auth = primaryListAuth(actorOf(turn));
+      if (!auth) return [];
+      const out: PrimaryCard[] = [];
+      for (const item of inboxPending(auth, { principalId: turn.person })) {
+        if (!primaryAnswerable(item)) continue;
+        const message = store.messagesFor(item.threadId).find((row) => row.card?.requestId === item.requestId);
+        const card = message?.card;
+        if (!message || !card || card.answered || card.dismissed || card.expired) continue;
+        const durable = Boolean(card.routineRequest || card.skillRequest || card.profileRequest || card.teamSetupRequest || card.modelRequest);
+        const options: PrimaryDecision[] = item.kind === "question" ? ["answer"] : ["allow", "deny"];
+        let always: PrimaryCard["always"];
+        if (item.kind !== "question") {
+          if (card.ownerRule) always = "rule";
+          else if (card.allowSession && !card.allowKey) always = "session";
+          if (always) options.push("always_allow");
+          if (card.customRuleCandidate && !card.adminApproval && !durable && item.needsKey !== true) options.push("always_allow_this");
+          if (card.ownerRule && alwaysDenyOffered(card)) options.push("always_deny");
+        }
+        const openedBy = store.taskByThread(item.botId, item.threadId)?.openedBy;
+        out.push({
+          threadId: item.threadId, requestId: item.requestId, botId: item.botId, botName: item.botName, at: item.at,
+          title: String(card.plain?.title ?? card.title ?? "Approval").slice(0, 200),
+          line: String(card.plain?.line ?? card.subtitle ?? "").replace(/\s+/g, " ").slice(0, 240),
+          ...(item.roomName ?? item.threadTitle ? { where: String(item.roomName ?? item.threadTitle) } : {}),
+          ...(openedBy?.name ? { askedBy: openedBy.name } : {}),
+          kind: item.kind === "question" ? "question" : item.kind === "proposal" ? "proposal" : "permission",
+          needsKey: item.needsKey === true,
+          options,
+          ...(always ? { always } : {}),
+          ...(card.ownerRule?.description ? { alwaysScope: card.ownerRule.description } : {}),
+        });
+      }
+      return out;
+    },
+    respond: (turn, card, body) => {
+      const message = store.messagesFor(card.threadId).find((row) => row.card?.requestId === card.requestId);
+      const skill = message?.card?.skillRequest && body.behavior === "allow" ? reviewedSkillSha256(message.card.skillRequest) : undefined;
+      return replay(turn, "POST", `/api/threads/${card.threadId}/respond`, { requestId: card.requestId, ...body, ...(skill ? { reviewedSha256: skill } : {}) });
+    },
+    customRule: (turn, card) => {
+      const message = store.messagesFor(card.threadId).find((row) => row.card?.requestId === card.requestId);
+      const candidate = message?.card?.customRuleCandidate;
+      if (!candidate) return Promise.resolve({ status: 409, body: { error: "This card offers no Always allow this." } });
+      return replay(turn, "POST", "/api/custom-rules", { when: candidate.when, behavior: "allow", botId: card.botId, riskScope: [], fromCard: { threadId: card.threadId, requestId: card.requestId } });
+    },
+    dropCustomRule: (turn, ruleId) => replay(turn, "DELETE", `/api/custom-rules/${encodeURIComponent(ruleId)}`),
+    cancel: (turn, card) => {
+      const group = store.groupByThread(card.threadId);
+      return group
+        ? replay(turn, "POST", `/api/groups/${group.id}/interrupt`, { threadId: card.threadId })
+        : replay(turn, "POST", `/api/bots/${card.botId}/interrupt`, { threadId: card.threadId });
+    },
+    audit: (turn, card, decision) => {
+      appendAdminAction(DATA_DIR, {
+        category: "approval",
+        action: "approval.answer",
+        target: auditBotTarget(card.botId),
+        // "approved by <bot> on behalf of <person>, message <id>"
+        after: { decision, threadId: card.threadId, requestId: card.requestId, via: "primary-bot", bot: turn.botId, botName: turn.botName, message: turn.message.id },
+        actor: IDENTITY.kind === "perspicax" && isPrincipalId(turn.person) ? { kind: "person", principalId: turn.person, via: "sagax" } : { kind: "loopback" },
+      });
+    },
+  });
+  return primaryApprovalService;
 }
 
 function actAnswerer(auth: RequestAuth): BotActAnswerer {
@@ -28770,29 +28913,34 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
  * a card its owner allowed in person: when that thread is confidential, a
  * one-shot token lets it post into exactly that thread once even through a
  * delegated session (an ordinary thread needs none). */
-type InternalRequestMark = { onBehalf?: true; continuation?: string; confirmed?: { personKey: string | null; classes: readonly string[] } };
+/** The person's Allow behind a replay: a card's key covering `classes`, or
+ * (`primary`, 2026-10-20) the person's own request to their Primary Bot to
+ * answer a card for them (server/primary-approvals.ts), which the card then
+ * reads as "via <bot>". */
+type ActConfirmation = { personKey: string | null; classes: readonly string[]; primary?: PrimaryAnswer };
+type InternalRequestMark = { onBehalf?: true; continuation?: string; confirmed?: ActConfirmation };
 /** A planned setting change (sagax_settings) the person allowed on its card,
  * the card's security key covering `classes` (2026-10-19): its replay is
  * the person's own change, not the bot's. One-shot, bound to the method and
  * path, a minute at most; only this server mints it, after the Allow. */
 const ACT_CONFIRMED_HEADER = "x-sagax-act-confirmed";
-const actConfirmations = new Map<string, { personKey: string | null; classes: readonly string[]; method: string; path: string; expiresAt: number }>();
-function mintActConfirmation(confirmed: { personKey: string | null; classes: readonly string[] }, method: string, path: string): string {
+const actConfirmations = new Map<string, ActConfirmation & { method: string; path: string; expiresAt: number }>();
+function mintActConfirmation(confirmed: ActConfirmation, method: string, path: string): string {
   const token = randomBytes(32).toString("base64url");
   for (const [key, entry] of actConfirmations) if (entry.expiresAt < Date.now()) actConfirmations.delete(key);
   actConfirmations.set(token, { ...confirmed, method, path, expiresAt: Date.now() + 60_000 });
   return token;
 }
-function takeActConfirmation(token: string | undefined, method: string, path: string): { personKey: string | null; classes: readonly string[] } | null {
+function takeActConfirmation(token: string | undefined, method: string, path: string): ActConfirmation | null {
   if (!token) return null;
   const entry = actConfirmations.get(token);
   actConfirmations.delete(token);
   if (!entry || entry.expiresAt < Date.now() || entry.method !== method || entry.path !== path) return null;
-  return { personKey: entry.personKey, classes: entry.classes };
+  return { personKey: entry.personKey, classes: entry.classes, ...(entry.primary ? { primary: entry.primary } : {}) };
 }
-const actConfirmedScope = new AsyncLocalStorage<{ personKey: string | null; classes: readonly string[] } | null>();
+const actConfirmedScope = new AsyncLocalStorage<ActConfirmation | null>();
 /** The person's Allow behind this request, when it replays a planned change. */
-function actConfirmed(): { personKey: string | null; classes: readonly string[] } | null {
+function actConfirmed(): ActConfirmation | null {
   return actConfirmedScope.getStore() ?? null;
 }
 /** Every class the card's step-up covered: the route asks no second key. */
@@ -28908,7 +29056,7 @@ const continuationThreadScope = new AsyncLocalStorage<string | null>();
  * is refused, and a confidential thread is cut out of what comes back
  * (thread lists, search hits, a bot's selected transcript); an answer that
  * still names one is refused whole. */
-async function performBotActRouteOutsideConfidential(actor: PerformActor, target: RouteTarget, confirmed?: { personKey: string | null; classes: readonly string[] }, maxChars = 8000): Promise<{ status: number; text: string }> {
+async function performBotActRouteOutsideConfidential(actor: PerformActor, target: RouteTarget, confirmed?: ActConfirmation, maxChars = 8000): Promise<{ status: number; text: string }> {
   const ids = confidentialThreadIds();
   const mark: InternalRequestMark = { onBehalf: true, ...(confirmed ? { confirmed } : {}) };
   if (!ids.size) return performBotActRoute(actor, target, maxChars, mark);

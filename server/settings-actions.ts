@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import type { ApprovalMode } from "../shared/approval-mode.ts";
 import type { TurnFacts } from "../shared/bot-act.ts";
 import { acceptablePath, actorForTurn } from "../shared/bot-act.ts";
+import { checkPersonQuote, messageNamesCard, normalizeWords, personWrote } from "../shared/primary-request.ts";
 import { decideSettingEffect, HOLD_TEXT, type SettingClass } from "../shared/settings-actions-policy.ts";
 import { pickValue, SETTING_FAMILIES, SETTINGS, settingSpec, valueFits, type SettingIds, type SettingSpec } from "../shared/settings-actions.ts";
 import { STEP_UP_CLASSES, botActClasses, type StepUpClass } from "../shared/step-up.ts";
@@ -33,6 +34,12 @@ export type SettingsActionDeps = {
   audit: (row: { key: string; target?: string; value: unknown; secret: boolean; how: "run" | "allowed" | "rule"; botId: string; actor: string | null }) => void;
   /** A screen command to the person's open app (a device preference). */
   screen: (facts: TurnFacts, command: string, input: Record<string, unknown>) => BotActResult;
+  /** `quote` (2026-10-20): the person asked their own Primary Bot for this
+   * change in this turn's message; true, or why not. */
+  personAsked?: (input: SettingsActionInput, quote: unknown) => { message: string } | string;
+  /** A rule's own words (its when, its description), for the person's
+   * message to name it; undefined when it is not theirs. */
+  ruleText?: (person: string | null, kind: "custom" | "owner", id: string) => string | undefined;
   /** A record's name for a card (never its id), or undefined. */
   targetName?: (kind: string, id: string, botId?: string) => string | undefined;
 };
@@ -45,6 +52,78 @@ export type SettingsActionInput = {
   botName: string;
   botColor: string;
 };
+
+/** What a Primary Bot may change at once on the person's words (security
+ * review 2026-10-20): turning cards off or back on, nothing else. */
+const PERSON_ASKED_KEYS: ReadonlySet<string> = new Set([
+  "bot.approvalMode", "thread.approvalMode", "bot.permissionMode",
+  "rules.custom", "rules.customUpdate", "rules.customDelete", "rules.owner", "rules.ownerDelete", "rules.commandAllow",
+]);
+/** The words that name a level, so a quote says which one. */
+const LEVEL_WORDS: Readonly<Record<string, readonly string[]>> = {
+  ask: ["ask", "demande", "demander", "toujours demander", "carte"],
+  edits: ["edit", "modif", "accept"],
+  auto: ["auto", "approuver pour moi", "approuve pour moi", "approve for me", "approval mode"],
+  full: ["full", "acces complet", "full access"],
+  approval: ["ask", "demande", "approbation", "approval"],
+  bypass: ["bypass", "contourn", "full", "acces complet"],
+};
+
+/** Whether the person's message asks for this change: a key that turns cards
+ * off or on, the level named, and the bot named when it is not the one
+ * speaking. True, or why not. */
+/** Common words that name no rule ("la", "règle", "commande"...). */
+const RULE_FILLER = new Set(["regle", "rule", "rules", "regles", "commande", "command", "toujours", "always", "permettre", "allow", "pour", "with", "avec", "dans", "that", "this", "cette", "celle", "exacte", "exact"]);
+
+/** Whether the message names a rule: one of its own words (four letters or more). */
+function namesRule(message: string, ruleText: string): boolean {
+  const text = normalizeWords(message);
+  const own = [...new Set(normalizeWords(ruleText).trim().split(" ").filter((word) => word.length >= 4 && !RULE_FILLER.has(word)))];
+  const named = own.filter((word) => text.includes(` ${word} `)).length;
+  // two of its words, or its only one
+  return named >= Math.min(2, own.length) && named > 0;
+}
+
+/** The behavior a new rule takes, said in the person's words. */
+const BEHAVIOR_INTENT: Readonly<Record<string, "allow" | "deny" | "setting">> = { allow: "allow", deny: "deny", ask: "setting" };
+const ASK_WORDS = /(?:^| )(?:demande|demander|ask|confirm)/;
+const ALL_BOTS = /(?:^| )(?:tous (?:les|mes) (?:robots|bots)|all (?:my )?bots|every bot|chaque bot)(?: |$)/;
+
+export function askedChange(message: string, key: string, value: unknown, botName: string | undefined, speakingBot: boolean, ruleText?: string): true | string {
+  if (!PERSON_ASKED_KEYS.has(key)) return "only approval levels and rules change at once on the person's words";
+  const text = normalizeWords(message);
+  // security review 2026-10-20: a rule's content comes from the person's
+  // words (a new rule's when, an exact command), and a rule changed or
+  // removed is one they named
+  const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  if (key === "rules.custom") {
+    if (!(typeof record.when === "string" && normalizeWords(record.when).trim().split(" ").length >= 3 && personWrote(message, record.when))) return "the rule's words (when, three words or more) are not the person's own";
+    // the behavior is said too, and a rule for every bot says so
+    const behavior = typeof record.behavior === "string" ? record.behavior : "allow";
+    const intent = BEHAVIOR_INTENT[behavior];
+    if (!intent) return "unknown behavior";
+    const said = intent === "setting" ? ASK_WORDS.test(text) : checkPersonQuote({ quote: message, message, intent }).ok;
+    if (!said) return `the person's message does not say ${behavior}`;
+    if ((record.botId === null || record.botId === undefined) && !ALL_BOTS.test(text)) return "a rule for every bot needs the person to say every bot";
+  }
+  if (key === "rules.commandAllow" && !(typeof record.command === "string" && personWrote(message, record.command))) return "the command is not in the person's message";
+  if (key === "rules.customUpdate" && typeof record.when === "string" && !personWrote(message, record.when)) return "the rule's new words are not the person's own";
+  if ((key === "rules.customUpdate" || key === "rules.owner") && typeof record.behavior === "string") {
+    const intent = BEHAVIOR_INTENT[record.behavior];
+    const said = intent === "setting" ? ASK_WORDS.test(text) : intent ? checkPersonQuote({ quote: message, message, intent }).ok : false;
+    if (!said) return `the person's message does not say ${record.behavior}`;
+  }
+  if ((key === "rules.customUpdate" || key === "rules.owner") && record.botId === null && !ALL_BOTS.test(text)) return "a rule for every bot needs the person to say every bot";
+  if ((key === "rules.customUpdate" || key === "rules.customDelete" || key === "rules.owner" || key === "rules.ownerDelete") && !(ruleText && namesRule(message, ruleText))) {
+    return "the person's message does not name that rule";
+  }
+  if ((key.endsWith("approvalMode") || key === "bot.permissionMode") && typeof value === "string") {
+    const words = LEVEL_WORDS[value] ?? [value];
+    if (!words.some((word) => text.includes(` ${normalizeWords(word).trim()}`))) return `the person's message does not name the level ${value}`;
+  }
+  if (!speakingBot && botName && !messageNamesCard(message, [botName])) return `the person's message does not name ${botName}`;
+  return true;
+}
 
 /** Settings whose route asks the always-grant key itself. */
 const STANDING_GRANTS: ReadonlySet<string> = new Set(["bot.alwaysAllow", "rules.commandAllow", "bot.toolGrant"]);
@@ -230,7 +309,13 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     const stepUpClasses = settingStepUpClasses(classes, built, approvalTo, STANDING_GRANTS.has(spec.key));
     const person = actor.kind === "person" ? actor.personKey : null;
     const keyProtected = deps.keyRequired(person, stepUpClasses, actingOwner).length > 0;
-    const decided = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected, ...(approvalTo ? { approvalTo } : {}) });
+    // 2026-10-20: the person asked their own Primary Bot for this change
+    const proof = args.quote !== undefined && deps.personAsked ? deps.personAsked(input, args.quote) : undefined;
+    const subjectBot = spec.target === "bot" || spec.target === "thread" ? ids.botId : undefined;
+    const asked: boolean | string = proof === undefined ? false : typeof proof === "string" ? proof
+      : askedChange(proof.message, spec.key, value, subjectBot ? deps.targetName?.("bot", subjectBot) : undefined, !subjectBot || subjectBot === input.botId,
+        spec.target === "rule" && ids.target ? deps.ruleText?.(speaker, spec.key.startsWith("rules.custom") ? "custom" : "owner", ids.target) : undefined);
+    const decided = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected, ...(approvalTo ? { approvalTo } : {}), personAsked: asked === true });
     const secret = classes.includes("secret");
     // the card says what and where (a name, never an id) and the whole value
     // a person allows, or its keys and fingerprint when it is long; a
@@ -260,7 +345,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
     });
     if (decided.effect === "hold" && result.status < 400 && result.body.held) {
-      return text(200, `${String(result.body.text ?? "")} ${HOLD_TEXT[decided.reason]}`.trim());
+      return text(200, `${String(result.body.text ?? "")} ${HOLD_TEXT[decided.reason]}${typeof asked === "string" ? ` (quote: ${asked})` : ""}`.trim());
     }
     if (result.status >= 400) return result;
     return text(200, `Done: ${spec.label} changed.`);

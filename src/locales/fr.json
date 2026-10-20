@@ -259,6 +259,7 @@
   "approval.status.waitingConfirmation": "En attente de votre confirmation ci-dessous",
   "approval.status.waitingApproval": "En attente de votre autorisation",
   "approval.status.byAiClient": "depuis un client IA",
+  "approval.status.viaBot": "via {name}",
   "approval.stepper.next": "Demande suivante",
   "approval.stepper.previous": "Demande précédente",
   "approval.summary.dateRange": "{from} au {to}",

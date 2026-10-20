@@ -194,6 +194,53 @@ Settings > Security (`MyApprovalRules`, also `rules.owner` and
   (real computer, admin card), `server/cw-widgets.e2e.test.ts`,
   `server/owner-approval.test.ts`.
 
+## The Primary Bot answers the person's cards (2026-10-20)
+
+JC: "le bot principal doit pouvoir absolument tout faire" (Grok Bot
+parity). A person's Primary Bot answers, cancels and turns off the
+approval cards that wait on that person, when the person asks for it:
+
+- `sagax_approvals` (agents catalog, `server/drivers/agents-approvals-tools.ts`,
+  Primary Bot only, `CHIEF_ONLY_TOOL_NAMES`; route `/api/internal/approvals`,
+  `server/primary-approvals.ts`): `list` (the person's Approvals screen,
+  `inboxPending`, kept by `primaryAnswerable`; a short handle `c` + 7 hex,
+  never an id), `answer` (allow, always_allow, always_allow_this, deny,
+  always_deny, answer for a question), `cancel` (the card's turn).
+- The answer is the click: POST `/api/threads/:id/respond` (or the custom
+  rule's POST `/api/custom-rules` fromCard, or the interrupt) replayed by
+  `performBotActRouteOutsideConfidential` with the person's session and a
+  one-shot act confirmation carrying `primary` (bot, message). Every check
+  of the click applies (whose card, an admin's card for an admin only, a
+  security key, a confidential thread). No card kind is excluded (JC:
+  payments and sends included).
+- Gate (`primaryTurnGate`): the speaking bot is `chiefOfStaff`, owned by
+  the turn's proven person, and the turn is that person's own message
+  (`ownEnvironmentOrigin`: never a routine, webhook, another bot's hop, a
+  guest). Proof (`shared/primary-request.ts`): `quote`, the person's words,
+  must be in that message and carry a word of the decision (allow, always,
+  deny, cancel; a refusal in or just before the quote is refused; a bare
+  "oui"/"ok"/"go" counts only in a reply of eight words or less); with
+  several cards waiting, or a message longer than eight words, the message
+  must name the card's bot (only when no other card is that bot's), the
+  bot that asked, or the handle (`messageNamesCard`); a question's answer must be
+  the person's own words (`personWrote`); a card raised after the message
+  is never answered. This is the only defense against injection: keep it.
+- Trace: the card's `answeredBy` gets `via: "primary-bot"` and `bot`
+  ("· via Cryptic", `approval.status.viaBot`); the admin journal writes
+  `approval.answer` with `via: primary-bot`, the bot and the message id.
+- Cards off: `sagax_settings` takes the same `quote`; for the keys of
+  `PERSON_ASKED_KEYS` only (approval levels, owner mode, Always allow,
+  rules), with the level named, the bot named when it is not the
+  speaking one, a new rule's words (three or more) or command in the message, its
+  behavior said, "every bot" said for a rule of every bot, and a rule
+  changed or removed named by two of its words (`askedChange`), the policy (`personAsked`) runs approval levels (`bot.approvalMode`, and
+  `thread.approvalMode` for a conversation that keeps its own level),
+  Always allow rules and their removal at once, at any level of the
+  speaking bot. A key, a secret, another person, a bulk change, the
+  organization and the desktop-only Full of a personal server keep theirs.
+- Tests: `shared/primary-request.test.ts`, `server/primary-approvals.test.ts`,
+  `shared/settings-actions-policy.test.ts`, `server/primary-approvals.e2e.test.ts`.
+
 ## Bots know Sagax and Perspicax: sagax_help (2026-10-19)
 
 JC: the bots know everything Sagax and Perspicax can do, kept up to date,
