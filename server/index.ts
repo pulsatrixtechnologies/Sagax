@@ -79,8 +79,9 @@ import {
   isApprovalMode,
   type ApprovalMode,
 } from "../shared/approval-mode.ts";
-import { botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
+import { actorForTurn, botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActService, type PerformActor } from "./bot-act.ts";
+import { createSettingsActions } from "./settings-actions.ts";
 import { cwActionCard, cwActionLanguage, cwToolWidget, createCwActionPasses } from "./cw-widget-actions.ts";
 import { cwActionInstruction, parseCwAction } from "../shared/cw-widgets/actions.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
@@ -27541,6 +27542,52 @@ function botActs(): BotActService {
   return botActService;
 }
 
+/** sagax_settings (server/settings-actions.ts, 2026-10-19): every setting
+ * a person changes on screen, changed by their bot through the act engine. */
+let settingsActionService: ReturnType<typeof createSettingsActions> | null = null;
+function settingsActions(): ReturnType<typeof createSettingsActions> {
+  settingsActionService ??= createSettingsActions({
+    organization: () => IDENTITY.kind === "perspicax",
+    facts: actTurnFacts,
+    acts: botActs,
+    operatorId: () => localPrincipalId(),
+    botOwner: (botId) => {
+      const bot = store.bot(botId);
+      return bot ? effectiveBotOwner(bot) || null : null;
+    },
+    botOfThread: (threadId) => store.botByThread(threadId)?.id ?? null,
+    routineBot: (routineId) => routines?.listRoutines().find((routine) => routine.id === routineId)?.botId ?? null,
+    groupOwner: (groupId) => {
+      const group = store.groups.find((candidate) => candidate.id === groupId);
+      if (!group) return null;
+      return IDENTITY.kind === "perspicax" ? groupOwnerId(group) : localPrincipalId();
+    },
+    turnMode: (botId, threadId) => {
+      const bot = store.projectBotForTask(botId, threadId) ?? store.bot(botId);
+      return bot ? approvalModeForTurn(bot, false, threadId) : "ask";
+    },
+    keyRequired: (person, classes, fallback) => securityKeys.required(person, classes, fallback),
+    audit: ({ key, target, value, secret, how, botId, actor }) => {
+      appendAdminAction(DATA_DIR, {
+        category: "setting",
+        action: "setting.change",
+        ...(target ? { target: { kind: key.split(".")[0] ?? "setting", id: target } } : {}),
+        changed: [key],
+        after: { [key]: secret ? "[hidden]" : value, how, bot: botId },
+        actor: actor && IDENTITY.kind === "perspicax" ? { kind: "person", principalId: actor, via: "sagax" } : { kind: "loopback" },
+      });
+    },
+    screen: (facts, command, input) => {
+      const actor = actorForTurn(facts);
+      if (actor.kind === "none") return { status: 403, body: { error: "This turn is not tied to a signed-in person." } };
+      const audience = actor.kind === "person" ? actor.personKey : localPrincipalId();
+      broadcast({ kind: "bot-act", audience, action: command, input });
+      return { status: 200, body: { text: "Done." } };
+    },
+  });
+  return settingsActionService;
+}
+
 function actAnswerer(auth: RequestAuth): BotActAnswerer {
   if (auth.kind === "session") {
     return {
@@ -28007,7 +28054,36 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
  * a card its owner allowed in person: when that thread is confidential, a
  * one-shot token lets it post into exactly that thread once even through a
  * delegated session (an ordinary thread needs none). */
-type InternalRequestMark = { onBehalf?: true; continuation?: string };
+type InternalRequestMark = { onBehalf?: true; continuation?: string; confirmed?: { personKey: string | null; classes: readonly string[] } };
+/** A planned setting change (sagax_settings) the person allowed on its card,
+ * the card's security key covering `classes` (2026-10-19): its replay is
+ * the person's own change, not the bot's. One-shot, bound to the method and
+ * path, a minute at most; only this server mints it, after the Allow. */
+const ACT_CONFIRMED_HEADER = "x-sagax-act-confirmed";
+const actConfirmations = new Map<string, { personKey: string | null; classes: readonly string[]; method: string; path: string; expiresAt: number }>();
+function mintActConfirmation(confirmed: { personKey: string | null; classes: readonly string[] }, method: string, path: string): string {
+  const token = randomBytes(32).toString("base64url");
+  for (const [key, entry] of actConfirmations) if (entry.expiresAt < Date.now()) actConfirmations.delete(key);
+  actConfirmations.set(token, { ...confirmed, method, path, expiresAt: Date.now() + 60_000 });
+  return token;
+}
+function takeActConfirmation(token: string | undefined, method: string, path: string): { personKey: string | null; classes: readonly string[] } | null {
+  if (!token) return null;
+  const entry = actConfirmations.get(token);
+  actConfirmations.delete(token);
+  if (!entry || entry.expiresAt < Date.now() || entry.method !== method || entry.path !== path) return null;
+  return { personKey: entry.personKey, classes: entry.classes };
+}
+const actConfirmedScope = new AsyncLocalStorage<{ personKey: string | null; classes: readonly string[] } | null>();
+/** The person's Allow behind this request, when it replays a planned change. */
+function actConfirmed(): { personKey: string | null; classes: readonly string[] } | null {
+  return actConfirmedScope.getStore() ?? null;
+}
+/** Every class the card's step-up covered: the route asks no second key. */
+function actConfirmedCovers(classes: readonly string[]): boolean {
+  const confirmed = actConfirmed();
+  return Boolean(confirmed) && classes.every((name) => confirmed!.classes.includes(name));
+}
 /** A process secret: only this server's own requests carry it. */
 const ON_BEHALF_SECRET = randomBytes(32).toString("base64url");
 const ON_BEHALF_HEADER = "x-sagax-on-behalf";
@@ -28038,6 +28114,7 @@ async function performBotActRoute(actor: PerformActor, target: RouteTarget, maxC
   if (mark.onBehalf) headers.set(ON_BEHALF_HEADER, ON_BEHALF_SECRET);
   // only a confidential thread needs the token: an ordinary one takes the follow-up as before
   if (mark.continuation && store.isConfidentialThread(mark.continuation)) headers.set(CONTINUATION_HEADER, mintOwnerContinuation(mark.continuation));
+  if (mark.confirmed) headers.set(ACT_CONFIRMED_HEADER, mintActConfirmation(mark.confirmed, target.method, target.path));
   let body: string | undefined;
   if (target.body !== undefined) {
     headers.set("content-type", "application/json");
@@ -28115,15 +28192,16 @@ const continuationThreadScope = new AsyncLocalStorage<string | null>();
  * is refused, and a confidential thread is cut out of what comes back
  * (thread lists, search hits, a bot's selected transcript); an answer that
  * still names one is refused whole. */
-async function performBotActRouteOutsideConfidential(actor: PerformActor, target: RouteTarget): Promise<{ status: number; text: string }> {
+async function performBotActRouteOutsideConfidential(actor: PerformActor, target: RouteTarget, confirmed?: { personKey: string | null; classes: readonly string[] }, maxChars = 8000): Promise<{ status: number; text: string }> {
   const ids = confidentialThreadIds();
-  if (!ids.size) return performBotActRoute(actor, target, 8000, { onBehalf: true });
+  const mark: InternalRequestMark = { onBehalf: true, ...(confirmed ? { confirmed } : {}) };
+  if (!ids.size) return performBotActRoute(actor, target, maxChars, mark);
   if (namesConfidentialThread(JSON.stringify([target.path, target.query ?? {}, target.body ?? null]), ids)) {
     return { status: 404, text: JSON.stringify({ error: "no such conversation" }) };
   }
   // read whole: a cut answer could not be cleaned
-  const answer = await performBotActRoute(actor, target, 4_000_000, { onBehalf: true });
-  if (!namesConfidentialThread(answer.text, ids)) return { status: answer.status, text: answer.text.slice(0, 8000) };
+  const answer = await performBotActRoute(actor, target, 4_000_000, mark);
+  if (!namesConfidentialThread(answer.text, ids)) return { status: answer.status, text: answer.text.slice(0, maxChars) };
   let parsed: unknown;
   try {
     parsed = JSON.parse(answer.text);
@@ -28132,7 +28210,7 @@ async function performBotActRouteOutsideConfidential(actor: PerformActor, target
   }
   const text = JSON.stringify(scrubConfidentialThreads(parsed, ids));
   if (namesConfidentialThread(text, ids)) return { status: 403, text: JSON.stringify({ error: "That answer names a confidential thread." }) };
-  return { status: answer.status, text: text.slice(0, 8000) };
+  return { status: answer.status, text: text.slice(0, maxChars) };
 }
 /** Who acts, by principal: a session's principal (or its anonymous id),
  * the operator on loopback, nobody for a local service. */
@@ -28549,7 +28627,8 @@ function effectivePermissionMode(bot: BotRecord, ownerId: string): BotPermission
 function ruleManager(auth: RequestAuth): string | null {
   // a bot's act copy of its person's session is the bot, not the person:
   // it never saves, edits or removes a rule, nor changes a mode
-  if (auth.kind === "session" && isBotActSession(auth.session)) return null;
+  // unless it replays a change the person allowed on its card (sagax_settings)
+  if (auth.kind === "session" && isBotActSession(auth.session) && actConfirmed()?.personKey !== personKey(auth.session)) return null;
   const id = approvalCallerUserId(auth);
   return id ? id : null;
 }
@@ -28592,7 +28671,9 @@ function stepUpPolicyPerson(threadId: string, message: { from?: { botId?: string
  * is in a class too). */
 function botActStepUpContent(requestId: string): { classes: ReturnType<typeof botActClasses>; content: unknown } {
   const target = botActs().target(requestId);
-  return { classes: botActClasses(target), content: target ?? null };
+  const planned = botActs().plannedClasses(requestId).filter((name): name is StepUpClass => (STEP_UP_CLASSES as readonly string[]).includes(name));
+  const classes = botActClasses(target);
+  return { classes: STEP_UP_CLASSES.filter((name) => classes.includes(name) || planned.includes(name)), content: target ?? null };
 }
 
 /** A standing grant (Always allow) saved from a card: its own grant of the
@@ -28622,6 +28703,7 @@ function approvalModeStepUpGate(input: {
   if (loosens && input.to === "full") for (const name of STEP_UP_CLASSES) if (!classes.includes(name)) classes.push(name);
   if (input.widensAllow) classes.push("always-grant");
   if (!classes.length) return null;
+  if (actConfirmedCovers(classes)) return null;
   const bot = store.bot(input.botId);
   const required = securityKeys.required(input.person, classes, bot ? approvalOwnerId(bot) || null : null);
   if (!required.length) return null;
@@ -28671,6 +28753,7 @@ function stepUpAnswerOf(body: Record<string, unknown> | null | undefined): StepU
 function settingsStepUpGate(person: string | null, action: StepUpSettingsAction, detail: Record<string, unknown>, stepUp: unknown, policyPerson?: string | null): { status: number; body: StepUpRefusal } | null {
   const protectedBy = SETTINGS_ACTION_CLASS[action];
   if (!protectedBy) return null;
+  if (actConfirmedCovers([protectedBy])) return null;
   const required = securityKeys.required(person, [protectedBy], policyPerson);
   if (!required.length) return null;
   if (!person) return { status: 403, body: { error: "This change needs the person's security key.", code: "step_up_required", classes: required } };
@@ -33865,6 +33948,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       || secureTokenMatch(typeof onBehalfHeader === "string" ? onBehalfHeader : undefined, ON_BEHALF_SECRET));
     delegatedRequestScope.enterWith(delegated);
     continuationThreadScope.enterWith(continuation);
+    const confirmedHeader = req.headers[ACT_CONFIRMED_HEADER];
+    // only this server's own replay carries it: a bot act copy of the
+    // person's session, or the operator through the desktop owner header
+    actConfirmedScope.enterWith((auth.kind === "session" && isBotActSession(auth.session)) || (auth.kind === "loopback" && auth.trust !== "service")
+      ? takeActConfirmation(typeof confirmedHeader === "string" ? confirmedHeader : undefined, method, path)
+      : null);
     if (delegated) {
       const confidentialIds = confidentialThreadIds();
       if (confidentialIds.size) {
@@ -34445,6 +34534,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           botName: acting.name,
           botColor: acting.color,
           mode: approvalModeForTurn(acting, false, internalCapability.threadId),
+        });
+        return json(res, result.status, result.body);
+      }
+      if (path === "/api/internal/settings" && method === "POST") {
+        const body = await readInternalBody();
+        const acting = store.projectBotForTask(internalSender.id, internalCapability.threadId) ?? internalSender;
+        const result = await settingsActions().handle({
+          args: body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : {},
+          botId: internalSender.id,
+          threadId: internalCapability.threadId,
+          generation: internalCapability.generation,
+          botName: acting.name,
+          botColor: acting.color,
         });
         return json(res, result.status, result.body);
       }

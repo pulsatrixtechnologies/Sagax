@@ -1,7 +1,7 @@
 {
   "direct": {
-    "bytes": 73656,
-    "sha256": "fc29512e5ae3a1ae856d75bdab4e3e285192005b88e957039f2eddd086bb32b9",
+    "bytes": 74812,
+    "sha256": "6aa3d702c9f723955bfdd4601c01c257972955127c3f42ad57bccf7c9048b38a",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -25,6 +25,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -72,8 +73,8 @@
     ]
   },
   "direct+voice": {
-    "bytes": 74397,
-    "sha256": "5869ee2cfedaa5ceb1bbb706f2a237b1214a21418a3cbded86d5697095832a79",
+    "bytes": 75553,
+    "sha256": "aaba2f98e414875a13e3f6a40f39af4de540f9f817959943d7534489e3961a67",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -97,6 +98,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -145,8 +147,8 @@
     ]
   },
   "direct+shared": {
-    "bytes": 75401,
-    "sha256": "620aea7d4a69de1d34d98c37c445c17ff2f3d0aac77647e8888a05df884c150d",
+    "bytes": 76557,
+    "sha256": "09e407b10fa881533eed9750d9e5fc89e348bcdf8c6c978294f2a21bc7e593e0",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -172,6 +174,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -219,8 +222,8 @@
     ]
   },
   "direct+shared+voice": {
-    "bytes": 76142,
-    "sha256": "db26c294b428b5cf9374f462a1b5ea06bb55f8d5f3b2a9d5c9a6b5429cc0b4d2",
+    "bytes": 77298,
+    "sha256": "742e09878ec79d61d5090020fee868dd360689c0e11b0af5b7cba281a4bf159b",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -246,6 +249,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -294,8 +298,8 @@
     ]
   },
   "direct+skills": {
-    "bytes": 75709,
-    "sha256": "5d11be39ca2e0732468a65a193a41f41bf8599d0107ac85a3101ee36bf72fc1e",
+    "bytes": 76865,
+    "sha256": "d006a112e0736136983cb535be4cd71c7a705009aaa0b0fea4f62fd75e29cb7c",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -319,6 +323,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -368,8 +373,8 @@
     ]
   },
   "direct+skills+voice": {
-    "bytes": 76450,
-    "sha256": "a56c6d8915ca6591541e27cd5d1f8d748af7e7e8d4242bd5954c4c7701900b8b",
+    "bytes": 77606,
+    "sha256": "843df8cf50f7279dee489a6b829a349cdedf2947e8a87ae520d58acb1dadaa59",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -393,6 +398,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -443,8 +449,8 @@
     ]
   },
   "direct+skills+shared": {
-    "bytes": 77454,
-    "sha256": "bec13b37f105cdebc0bf786583eee01469bb14711dbbb86b15cdac367a158078",
+    "bytes": 78610,
+    "sha256": "a6e1451f597234c1a678484eea98d140c640ebbc98b3ba167fe03403fd6cd2d9",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -470,6 +476,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -519,8 +526,8 @@
     ]
   },
   "direct+skills+shared+voice": {
-    "bytes": 78195,
-    "sha256": "ed9e53af989e18c176ff48cae7e7d04c306560680c97862d790286993ceb84a9",
+    "bytes": 79351,
+    "sha256": "849c46aec0a2fd511a9adf5c592e62ab46419cf7ddb27f73ccb816a455ac76f1",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -546,6 +553,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -596,8 +604,8 @@
     ]
   },
   "room": {
-    "bytes": 70476,
-    "sha256": "62a77ced1805c59d50a384ab6167693a2a0958c45a183fced62221391dc65155",
+    "bytes": 71632,
+    "sha256": "a6eda1504842fe542eda7f601cbc458c7fc8560eaf65663d353d0e5db30e67aa",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -618,6 +626,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -665,8 +674,8 @@
     ]
   },
   "room+voice": {
-    "bytes": 71217,
-    "sha256": "29ed6407fb8baec29d95beef51a6ed970cb94223a2b0bdc1aa95cd34bd48cb1e",
+    "bytes": 72373,
+    "sha256": "c94ab473727f1266ae2133e7ad1b06bc82ab2756031f6f87441b59a272df712b",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -687,6 +696,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -735,8 +745,8 @@
     ]
   },
   "room+shared": {
-    "bytes": 72221,
-    "sha256": "0e4e2a084661062fae7e2dd7b987c12cee0d8b98a9bb182a31e42ad0ec991d91",
+    "bytes": 73377,
+    "sha256": "c0544dae76431579a8f6ba82e8d02a176929c270ca586404890abd1e69f2ed9d",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -759,6 +769,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -806,8 +817,8 @@
     ]
   },
   "room+shared+voice": {
-    "bytes": 72962,
-    "sha256": "5c008439632252e1537aef7ed5f690c410605f48a1af2c6a403338d2957aa131",
+    "bytes": 74118,
+    "sha256": "2360d79cfdf27b77eccde2718a2443bbdd92b93486a16dfa3c621d49e47343da",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -830,6 +841,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -878,8 +890,8 @@
     ]
   },
   "room+skills": {
-    "bytes": 72529,
-    "sha256": "851cfe4f4ccc9ab021e23ffba7a628eb61584e59894d02a35425da800e87c89e",
+    "bytes": 73685,
+    "sha256": "cdb5aad8ef04bebacb4bf2f14b75f1db1aacf59138fda0b01e115aa9af918980",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -900,6 +912,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -949,8 +962,8 @@
     ]
   },
   "room+skills+voice": {
-    "bytes": 73270,
-    "sha256": "9207fd7fba6534a23cfecc1fe9b262b9a59c7c7aed96bc6bdd36153d99e84c48",
+    "bytes": 74426,
+    "sha256": "84c47c7d95b73850f975b01725de000d10546dfb232d9125ff55e235a3deb4ba",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -971,6 +984,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1021,8 +1035,8 @@
     ]
   },
   "room+skills+shared": {
-    "bytes": 74274,
-    "sha256": "0f565c558f2ef32f70d3545132b9df2d5d91764dc5b0053d22baaf67f2a6a8ca",
+    "bytes": 75430,
+    "sha256": "3b9b14773c6579d338ac94e5e079554b3e6e76ec0b8d8541abd953fd61130642",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1045,6 +1059,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1094,8 +1109,8 @@
     ]
   },
   "room+skills+shared+voice": {
-    "bytes": 75015,
-    "sha256": "58987cc8a1ad499db317fd6fca39bf0f04bbada140b2b32664ee625ba60d4752",
+    "bytes": 76171,
+    "sha256": "99fcb650529fab0381ef92fb30d5673315439cc7e93ef7e67736c1c4d45a3482",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1118,6 +1133,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1168,8 +1184,8 @@
     ]
   },
   "room+own-thread": {
-    "bytes": 72429,
-    "sha256": "431cc4edb275f759025ffad1d55d2ce5c0f661358c5f11401215a1497f73b48e",
+    "bytes": 73585,
+    "sha256": "74963e85f8bd47cdd59a0633de42e3623e1cda744f107b5886281b8f5b759241",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1191,6 +1207,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1238,8 +1255,8 @@
     ]
   },
   "room+own-thread+voice": {
-    "bytes": 73170,
-    "sha256": "e40d218b0d488ca6387285c21d4cebf8aae2276a1630ddab1ff7aaf58e0d4fab",
+    "bytes": 74326,
+    "sha256": "1c6d37f91e7e54e3386c9f9472492734e95eea85a18f68bab8aee0b3acd602ab",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1261,6 +1278,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1309,8 +1327,8 @@
     ]
   },
   "room+own-thread+shared": {
-    "bytes": 74174,
-    "sha256": "037b6b494b83752bbfdbd278b60c4800cd3df6c3c8abe7adc862293d07855ce4",
+    "bytes": 75330,
+    "sha256": "0980b67f5b5feea235f0ffa7f5b7562ae0b7418f560665c07118a594a5eb34ab",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1334,6 +1352,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1381,8 +1400,8 @@
     ]
   },
   "room+own-thread+shared+voice": {
-    "bytes": 74915,
-    "sha256": "d4cb53c640946b04cef0cfb2929353bbc9ad64899931ed61acd78120ced277cb",
+    "bytes": 76071,
+    "sha256": "79fd2322d9c499f70420ffc42663ed915688537cbc5de02551f04d06506dc9a6",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1406,6 +1425,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1454,8 +1474,8 @@
     ]
   },
   "room+own-thread+skills": {
-    "bytes": 74482,
-    "sha256": "5342312df9c5205822571b3cec46c60fef8f4356b09eabc70400ef09df902b6c",
+    "bytes": 75638,
+    "sha256": "c4bb1a27f786824cdc1ca4870e2e23b3f4640fef55e9e954675ed19079f6f08a",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1477,6 +1497,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1526,8 +1547,8 @@
     ]
   },
   "room+own-thread+skills+voice": {
-    "bytes": 75223,
-    "sha256": "59cc6ddad2e2c3f2172a4962753fca79df6e110819f5438bd3f8a0b792a5fc97",
+    "bytes": 76379,
+    "sha256": "d0d1b44fde84a60cc627e8e35e840118dbf8e4528cb9f8e45719b075bb0e7f2d",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1549,6 +1570,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1599,8 +1621,8 @@
     ]
   },
   "room+own-thread+skills+shared": {
-    "bytes": 76227,
-    "sha256": "afd0dbc4af3c683009cc523a0b0ee8773cf83a15cf8cc12e8f768ee6bfe3943a",
+    "bytes": 77383,
+    "sha256": "c81febd866b2262b8bcf50f349b974373645c5c1f25e73f2c7db84116c2a1131",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1624,6 +1646,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1673,8 +1696,8 @@
     ]
   },
   "room+own-thread+skills+shared+voice": {
-    "bytes": 76968,
-    "sha256": "64bdde425835b9e5b75517f414d9c944d4da39a88a68806738c05671e1996c5b",
+    "bytes": 78124,
+    "sha256": "8101d42fabbc42ee88fd774e9c1828bde42887a3c99776dc67d7680d524c6427",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1698,6 +1721,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1748,8 +1772,8 @@
     ]
   },
   "direct+non-chief": {
-    "bytes": 64020,
-    "sha256": "63aeb05f84eebaf7582a3c5a37be6323d0f6472fae22c9b3cc4bdddd519f43fb",
+    "bytes": 65176,
+    "sha256": "cd2105f63104c2784fd1d208bd7ff8ba03266ab302370f7821f1aafe9b7d4da8",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1773,6 +1797,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1813,8 +1838,8 @@
     ]
   },
   "direct+voice+non-chief": {
-    "bytes": 64761,
-    "sha256": "cad1453a78f0ea0d08eae5ee2e5ec655e1fd07b3d1069ec5c157588c086ccf7c",
+    "bytes": 65917,
+    "sha256": "e435f6ee13781280c599818dedbe09def3ed599be69037b7118df11e5e9727a1",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1838,6 +1863,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1879,8 +1905,8 @@
     ]
   },
   "direct+shared+non-chief": {
-    "bytes": 65765,
-    "sha256": "be607576c0fb448beae7894f7f46e9278309c0c0dbc8119b89d9f21d464d855b",
+    "bytes": 66921,
+    "sha256": "5ecb276de336ef38c9909226114ecde2d7ca569b03090dd214da8cc2a4bef6b8",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1906,6 +1932,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -1946,8 +1973,8 @@
     ]
   },
   "direct+shared+voice+non-chief": {
-    "bytes": 66506,
-    "sha256": "1b5ba3762763160cd6f3058dfbed25d222ae8762aa8efa35bfe6307152a7422a",
+    "bytes": 67662,
+    "sha256": "ae592731ef430fd563cf17e35f53b175caae585236ac83daf7c233137c0fd6d7",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1973,6 +2000,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2014,8 +2042,8 @@
     ]
   },
   "direct+skills+non-chief": {
-    "bytes": 66073,
-    "sha256": "f760af49308191e9645981d97b03fbed516469224c3285bdfed7a90c43a7d6a8",
+    "bytes": 67229,
+    "sha256": "53e8c84b6d0437c1de5d28bc6602a44fe8e12f652d28293d62a3c44e3464919a",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -2039,6 +2067,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2081,8 +2110,8 @@
     ]
   },
   "direct+skills+voice+non-chief": {
-    "bytes": 66814,
-    "sha256": "49ea452b8f4b936836ef038bb947a85027853c4bfbdce71b04e1c1fa920330e8",
+    "bytes": 67970,
+    "sha256": "64725efead027e92f597af6a64c239d11b3961f73911a8750ba14ce61f0ff211",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -2106,6 +2135,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2149,8 +2179,8 @@
     ]
   },
   "direct+skills+shared+non-chief": {
-    "bytes": 67818,
-    "sha256": "4917363445fd52a6800ec1398d0c4cf14ba60557f045b037bb296c8290d0fa01",
+    "bytes": 68974,
+    "sha256": "60d36530d6bb68b349a93c060bceab0b31d26cd593c885f27ef2749c0a222a40",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2176,6 +2206,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2218,8 +2249,8 @@
     ]
   },
   "direct+skills+shared+voice+non-chief": {
-    "bytes": 68559,
-    "sha256": "7278df94bec46e644f56eb29ef04dffdb7aa6f495550e55479ef2b3e62e8b17c",
+    "bytes": 69715,
+    "sha256": "60408507fec12b1721189108aaf657f4b12ef7734886e47ca997787b11c4a9b1",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2245,6 +2276,7 @@
       "delete_artifact",
       "propose_page",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2288,8 +2320,8 @@
     ]
   },
   "room+non-chief": {
-    "bytes": 60840,
-    "sha256": "4264fa8b8489759e1be01cf7f7afc64ab980c092e824a5f3429b6326a5a11c20",
+    "bytes": 61996,
+    "sha256": "6c76ccf0454508d412296b620078a0c57b03a877af24eeb514d312b8e11df50a",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2310,6 +2342,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2350,8 +2383,8 @@
     ]
   },
   "room+voice+non-chief": {
-    "bytes": 61581,
-    "sha256": "5e1bada1eb61101934bcd8171b0ce6e4f719694a61f4bec3923973eb472e86db",
+    "bytes": 62737,
+    "sha256": "25ed07d548f76288ebc30de79305c0e16eff69172691741b74a3c4a2fb7971f9",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2372,6 +2405,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2413,8 +2447,8 @@
     ]
   },
   "room+shared+non-chief": {
-    "bytes": 62585,
-    "sha256": "0cacd6ee29aad59500ab9b63c9e0b75ccf52eb4c995e8c6b8fb9bcb4eeb7b737",
+    "bytes": 63741,
+    "sha256": "d8ba389679d3cfbf48b4dbb1d667d03e6157b41127ba6c344a9fb8708082ff3a",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2437,6 +2471,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2477,8 +2512,8 @@
     ]
   },
   "room+shared+voice+non-chief": {
-    "bytes": 63326,
-    "sha256": "0de476c7a84f191747ca40c9fe09aa8ec7ac1b0ad823cde513b9df7fe2ac38a4",
+    "bytes": 64482,
+    "sha256": "4d735c943dd43f4c8f2c1e7263b8dcaa1143ab5df3dfcb30873d0952173bcb41",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2501,6 +2536,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2542,8 +2578,8 @@
     ]
   },
   "room+skills+non-chief": {
-    "bytes": 62893,
-    "sha256": "c1b8a614a6f61ff129da6d6e6ba84bc6ec9711ba5182fd86b2db33163836076a",
+    "bytes": 64049,
+    "sha256": "7a71d284e5d90f53bb38eb7a6d84ffa5a10ddfccc050ae70c0c2059882218644",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2564,6 +2600,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2606,8 +2643,8 @@
     ]
   },
   "room+skills+voice+non-chief": {
-    "bytes": 63634,
-    "sha256": "a0f7f6654d0a8bd7e2dd1f5083da51b07b448bf06ad1da836d8c99ad0f3fe324",
+    "bytes": 64790,
+    "sha256": "1c475a0b8eb06b92a3adf1e88eb14669e834da1fe4bf5d3ca59db2fbf9a777d3",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2628,6 +2665,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2671,8 +2709,8 @@
     ]
   },
   "room+skills+shared+non-chief": {
-    "bytes": 64638,
-    "sha256": "978f8109afee1505d24567b95f4e7b2bd81c04f6a85490fd200c359d62898bad",
+    "bytes": 65794,
+    "sha256": "e269578cb53935b1b48d8ad0069ac79b77c4e404eab7a2984545041b153fd6cf",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2695,6 +2733,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2737,8 +2776,8 @@
     ]
   },
   "room+skills+shared+voice+non-chief": {
-    "bytes": 65379,
-    "sha256": "818cfde4292f477c69d5d3d4fbb5085730c18f5baa9fe989b035059b1f453b22",
+    "bytes": 66535,
+    "sha256": "6ea4277a8b506fc12cc2bed8aee85d62e6911fa2708dbdb5db518c2ecafb68a6",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2761,6 +2800,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2804,8 +2844,8 @@
     ]
   },
   "room+own-thread+non-chief": {
-    "bytes": 62793,
-    "sha256": "9239453c85af89b794c893305dd9300ab999d3bce1c310b047b5bc40ba473aff",
+    "bytes": 63949,
+    "sha256": "777c5670f03c0b75326d507fb35c69f51a9e81551a6c2305c7a0c1a7f46d2d21",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2827,6 +2867,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2867,8 +2908,8 @@
     ]
   },
   "room+own-thread+voice+non-chief": {
-    "bytes": 63534,
-    "sha256": "a73379dcb20e01d81c79fa29d36c04afd3985e9440cf34d5fee8bf1371256779",
+    "bytes": 64690,
+    "sha256": "b2a6c13aa27d44a645304e5e9caccb6f71a7f282feb98428010c87fc1d2c049f",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2890,6 +2931,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2931,8 +2973,8 @@
     ]
   },
   "room+own-thread+shared+non-chief": {
-    "bytes": 64538,
-    "sha256": "526cb1d26de40e31de58a5a45aa5d15f9d65def1acab97e4dc9a5c5dd7feda45",
+    "bytes": 65694,
+    "sha256": "02daf379f32b693a0cee08b9702067fc0ae1fea6acff4e3d869bd5082cf1e9aa",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2956,6 +2998,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -2996,8 +3039,8 @@
     ]
   },
   "room+own-thread+shared+voice+non-chief": {
-    "bytes": 65279,
-    "sha256": "506a9332d0836945b62975a596a8272564f9a3093868ec9284d97ad3e203fc78",
+    "bytes": 66435,
+    "sha256": "35fe08cf2934faf7438a6ce327768b11a23b4dd36e0d560c381540317b861e79",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -3021,6 +3064,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -3062,8 +3106,8 @@
     ]
   },
   "room+own-thread+skills+non-chief": {
-    "bytes": 64846,
-    "sha256": "6ff5b5363b89f75d02f4c097da7843807b6a99c3464a390ebe6aab1d98bbc794",
+    "bytes": 66002,
+    "sha256": "0f23e4f5e3ee2b05de34f75282ae2deadd5ce0d8e49c39ef081935aa72d59357",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -3085,6 +3129,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -3127,8 +3172,8 @@
     ]
   },
   "room+own-thread+skills+voice+non-chief": {
-    "bytes": 65587,
-    "sha256": "0d79974b4bfe4600081d97ed262c362d78f3301211897d72166d54ab81be3f10",
+    "bytes": 66743,
+    "sha256": "5fc84dc672ca43455d37c4472fb5d00a5a38e8ea79e49702f33d39d1bdfbedf6",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -3150,6 +3195,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -3193,8 +3239,8 @@
     ]
   },
   "room+own-thread+skills+shared+non-chief": {
-    "bytes": 66591,
-    "sha256": "0d0d78c6861bb473c124101b66b264fbf45b6ccdbb31a019ef6284042d3b27a7",
+    "bytes": 67747,
+    "sha256": "2824359bfc91fa4ff7dc4af6e40944dac984baf4aa81ccda7390e73d5e704083",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -3218,6 +3264,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -3260,8 +3307,8 @@
     ]
   },
   "room+own-thread+skills+shared+voice+non-chief": {
-    "bytes": 67332,
-    "sha256": "3fdcce3f30f86086f9e1892a25380963aee8d107de63d8016348303741aedf2b",
+    "bytes": 68488,
+    "sha256": "dbf8730f6fa80e6ede63fffb11f6808afc0c2c8b85cc0a69af463b944c443958",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -3285,6 +3332,7 @@
       "list_artifacts",
       "delete_artifact",
       "sagax_help",
+      "sagax_settings",
       "post_to_room",
       "react_to_message",
       "remove_reaction",

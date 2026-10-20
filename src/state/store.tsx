@@ -83,7 +83,7 @@ import { useChatErrorClear } from "./chat-error";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents, publishLiveFrame, publishMissedFrames } from "@/lib/live-events";
 import { receiveAchievementsFrame } from "@/lib/achievements";
-import { announceServerPreferences } from "@/lib/user-preferences-sync";
+import { announceServerPreferences, applyBotPreference } from "@/lib/user-preferences-sync";
 import { applyPersonLabel } from "@/lib/person-labels";
 import { announcePersonAvatar, withViewerAvatar } from "@/lib/person-avatars";
 import { StoreSourceContext, usePublishedStoreSource } from "./store-source";
@@ -5508,6 +5508,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         case "bot-act": {
           const command = uiCommandToAction(frame.action, frame.input);
+          // a preference on this device (sagax_settings): written where its
+          // module reads it, then announced like another tab's change
+          if (command && command.action.type === "setPreference") {
+            applyBotPreference(String(command.action.key), String(command.action.value));
+            break;
+          }
           if (command) dispatch(command.action as Action);
           break;
         }

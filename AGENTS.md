@@ -102,6 +102,50 @@ shows it; the system prompt says so (`WIDGET_SELF_CHECK_PROMPT`).
   `server/testing/widget-check-fixtures/`, broken ones must fail, healthy ones
   must pass with no defect).
 
+## Every setting is an action: sagax_settings (2026-10-19)
+
+JC: "Tout doit être modifiable via les bots. Absolument tout. [...] Arrête
+la paranoïa." A bot reads and changes any setting for the person speaking
+to it with `sagax_settings` (agents catalog, `server/drivers/agents-settings-tools.ts`,
+permission `settings:change`, member scope `own-setup`, deferred on Claude):
+`list` (by family) gives the keys, `get` reads, `set` changes.
+
+- Registry: `shared/settings-actions.ts`, one entry per setting (bot,
+  thread, routine, group, section, rules, account, appearance,
+  notifications, models, connections, credentials, server, organization,
+  computer): the route the screen calls and how to read it back. Adding a
+  setting to the app: add its entry, run `pnpm gen:settings-doc` (writes
+  `docs/settings-actions.md`, the inventory; the test fails when stale)
+  and `pnpm gen:self-knowledge`.
+- Rights: the route is replayed by the act engine (`server/bot-act.ts`
+  `handlePlanned`) with the person's own session; a route they cannot call
+  is refused before any card ("needs rights they do not have"), and the
+  route's own checks answer the rest. Turns with no person (routine,
+  webhook, guest) are refused as for `act`.
+- Policy (`shared/settings-actions-policy.ts`): a class the person protects
+  with a security key: card; secret, others, bulk, delete, org: card at
+  every level, Full included; not the owner's own work (the speaker owns
+  the speaking bot and the target): card; Ask or Edits: card; an approval
+  level or owner mode raised: runs up to the speaking bot's own level,
+  never Full or Custom; else it runs. Every applied change writes
+  `setting.change` (category `setting`) to the admin journal.
+- A planned replay carries `x-sagax-act-confirmed` (one-shot, 60 s, method
+  and path, minted only by this server): `ruleManager` then reads the bot
+  act copy as the person, and the approval-mode and settings step-up gates
+  accept the classes the card's key already covered (`actConfirmedCovers`;
+  a policy run covers none). `botActStepUpContent` adds the planned
+  classes to the card's own.
+- Device preferences (skin, notifications...) go to the person's open app
+  as the `setPreference` screen command (`DEVICE_PREFERENCE_KEYS` only;
+  `applyBotPreference`); an organization server saves them per person as
+  a change by hand.
+- `act` still refuses approval fields, rules and card answers; its error
+  points to `sagax_settings`. Security keys, vault export and import, and
+  the desktop-only Full of a personal server stay the person's (listed in
+  the doc).
+- Tests: `shared/settings-actions*.test.ts`, `server/settings-actions.test.ts`,
+  `server/settings-actions.e2e.test.ts`.
+
 ## Bots know Sagax and Perspicax: sagax_help (2026-10-19)
 
 JC: the bots know everything Sagax and Perspicax can do, kept up to date,
