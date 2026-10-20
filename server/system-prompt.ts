@@ -231,7 +231,7 @@ export function customMcpPrompt(names: string[]): string {
  * (shared/cw-widgets/schema.ts) so it never names a family, a view or a
  * field the chat would refuse. */
 const CW_FENCE_PROMPT =
-  ` To show ConnectWise records, use one \`\`\`cw fence holding a JSON object with family, view and records: family is ${cwOrList(CW_FAMILIES)} (nothing else draws); view is ${cwOrList(CW_VIEWS)} (card for one record); each record needs ${CW_FAMILIES.map((family) => `${family}: ${CW_REQUIRED_FIELDS[family].join(", ")}`).join("; ")} (other fields such as status, company or owner are optional).`
+  ` ConnectWise records go in a Markdown table by default. Only when the person explicitly asks for an interactive view (an interactive table, a card or a widget), use one \`\`\`cw fence holding a JSON object with family, view and records: family is ${cwOrList(CW_FAMILIES)} (nothing else draws); view is ${cwOrList(CW_VIEWS)} (card for one record); each record needs ${CW_FAMILIES.map((family) => `${family}: ${CW_REQUIRED_FIELDS[family].join(", ")}`).join("; ")} (other fields such as status, company or owner are optional).`
   + ` Example: ${CW_WIDGET_EXAMPLE}. A change from that card waits for the person's approval; do not write to ConnectWise from the fence yourself.`;
 
 /** The shadcn/ui kit every ```widget document carries (src/lib/widget-kit.ts):
@@ -292,7 +292,7 @@ export const WIDGET_PROMPT =
   " When you need details from the person, such as a date, a time, a duration or a pick from a few options, show them a widget form with pickers through show_widget instead of asking them to type the answers. A request like \"help me book a call\" or \"set a reminder\" is enough to show that form; do not wait to be asked for it. Put data and comparisons in a markdown table in your message, not in a widget.";
 /** Sagax: where show_widget sits beside the fences, and what a press is worth. */
 export const WIDGET_APPROVAL_PROMPT =
-  " A show_widget card holds no script and reaches no network: keep the ```widget fence for a tool that runs code, and ```cw for ConnectWise records. A press or a submitted form arrives as the person's next message, never as an approval: anything it leads you to write still waits for its own approval card.";
+  " A show_widget card holds no script and reaches no network: keep the ```widget fence for a tool that runs code, and ```cw for ConnectWise records the person asked to see as an interactive view. A press or a submitted form arrives as the person's next message, never as an approval: anything it leads you to write still waits for its own approval card.";
 const PROPOSAL_RESULT_PROMPT =
   " Follow the tool result: a change to your own routines, skills, profile or model applies immediately and the person sees it with an Undo; then continue the requested work without asking for another confirmation. A change for another bot may wait for the person. If it reports a pending review, end the turn and wait for the in-app decision. Never claim success before an applied result, and report failures honestly. Full Access does not grant another bot broader permissions.";
 export const ROUTINE_PROMPT =

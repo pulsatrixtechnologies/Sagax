@@ -5,13 +5,20 @@ import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.
 import { FIXTURE_TICKETS, fixtureQueryResult } from "../shared/cw-widgets/fixtures.ts";
 import type { WireMessage } from "../shared/wire.ts";
 
-// Mocked ConnectWise only: the fake engine "calls" cw_psa__query and hands
-// back made-up records. Nothing reaches a ConnectWise server.
+// Mocked ConnectWise only: the fake engine "calls" cw_psa__query and the
+// Perspicax view tool cw_psa__show_tickets and hands back made-up records.
+// Nothing reaches a ConnectWise server. Only the view tool draws a widget
+// (vues CW seulement sur demande, 2026-10-20).
 it("turns a ConnectWise query into a widget and a widget change into an approval card", async () => {
   const fixture = await launchVerificationServer({
     ...process.env,
     FAKE_CLAUDE_TOOL_CALLS: JSON.stringify([{
       name: "mcp__perspicax_x__cw_psa__query",
+      input: { resource: "service/tickets", conditions: "closedFlag=false" },
+      output: [{ type: "text", text: fixtureQueryResult(FIXTURE_TICKETS.slice(0, 3), 41) }],
+      ok: true,
+    }, {
+      name: "mcp__perspicax_x__cw_psa__show_tickets",
       input: { resource: "service/tickets", conditions: "closedFlag=false" },
       output: [{ type: "text", text: fixtureQueryResult(FIXTURE_TICKETS.slice(0, 3), 41) }],
       ok: true,
@@ -34,7 +41,12 @@ it("turns a ConnectWise query into a widget and a widget change into an approval
     await control(["send", "--bot", bot.id, "--text", "Montre-moi les billets ouverts"]);
     expect((await control(["wait", "--bot", bot.id, "--timeout", "20"])).status).toBe("settled");
 
-    const tool = (await messages(threadId)).find((row) => row.tool?.widget);
+    const rows = await messages(threadId);
+    const query = rows.find((row) => row.tool?.name?.endsWith("cw_psa__query"));
+    expect(query).toBeTruthy();
+    expect(query?.tool?.widget).toBeUndefined();
+    const tool = rows.find((row) => row.tool?.widget);
+    expect(tool?.tool?.name).toMatch(/cw_psa__show_tickets$/);
     const widget = tool?.tool?.widget as any;
     expect(widget).toMatchObject({ family: "ticket", view: "list", total: 41 });
     expect(widget.records.map((row: { id: number }) => row.id)).toEqual([48213, 48197, 48150]);

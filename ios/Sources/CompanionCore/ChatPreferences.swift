@@ -267,7 +267,7 @@ public func isToolActivityRow(_ message: Message) -> Bool {
     if isStatusNotice(message) { return false }
     if message.comm != nil || message.threadRef != nil { return false }
     // A ConnectWise widget is the transcript row. The tool chip stays folded.
-    if message.tool?.widget != nil { return false }
+    if message.tool?.widget != nil, CwWidgets.isViewTool(message.tool?.name) { return false }
     return true
 }
 

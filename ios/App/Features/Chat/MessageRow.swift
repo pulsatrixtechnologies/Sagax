@@ -234,7 +234,7 @@ struct MessageRow: View {
                 TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         case .activity:
-            if let widget = message.tool?.widget, widget.isKnown {
+            if let widget = message.tool?.widget, widget.isKnown, CwWidgets.isViewTool(message.tool?.name) {
                 CwWidgetCard(widget: widget, threadId: chat.threadId, botId: message.from?.botId) { action in
                     Task { await session.requestCwAction(action, threadId: chat.threadId, botId: message.from?.botId) }
                 }
