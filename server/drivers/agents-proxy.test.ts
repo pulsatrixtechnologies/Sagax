@@ -37,6 +37,8 @@ let attachStatus = 200;
 let attachResponse: unknown = { ok: true, name: "report.pdf", bytes: 48639 };
 let lastWidgetCheckBody: unknown = null;
 let widgetCheckResponse: unknown = { text: "Widget check passed (attempt 1).", isError: false };
+let lastHelpBody: unknown = null;
+let helpStatus = 200;
 let postCalls = 0;
 let postResponse: unknown = { ok: true, messageId: "msg-1", roomName: "Launch" };
 const DEFAULT_AGENTS = { bots: [{ id: "bot-helper", name: "Helper", model: "fake-model", busy: false }] };
@@ -223,6 +225,16 @@ beforeAll(async () => {
         lastExecBody = JSON.parse(data);
         res.writeHead(execStatus, { "content-type": "application/json" });
         res.end(JSON.stringify(execResponse));
+      });
+      return;
+    }
+    if (req.method === "POST" && req.url === "/api/internal/self-knowledge") {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => {
+        lastHelpBody = JSON.parse(data);
+        res.writeHead(helpStatus, { "content-type": "application/json" });
+        res.end(JSON.stringify(helpStatus === 200 ? { text: "Sagax 0.5.29 knowledge, 2026-10-19.\n\n## Install a plugin for a bot [guide]" } : { error: "The knowledge base is not in this build." }));
       });
       return;
     }
@@ -699,6 +711,7 @@ describe("agents-proxy MCP surface", () => {
       "list_artifacts",
       "delete_artifact",
       "propose_page",
+      "sagax_help",
       "post_to_room",
       "react_to_message",
       "remove_reaction",
@@ -830,6 +843,7 @@ describe("agents-proxy MCP surface", () => {
       "list_shared_computers",
       "list_bots", "list_rooms", "check_delegation", "wait_delegation", "list_threads",
       "list_artifacts",
+      "sagax_help",
       "list_team_setup",
       "workspace_read", "workspace_search",
       "session_search", "session_read",
@@ -1036,6 +1050,20 @@ describe("agents-proxy MCP surface", () => {
     const empty = await callTool("check_widget", { html: " " });
     expect(empty.result.isError).toBe(true);
     widgetCheckResponse = { text: "Widget check passed (attempt 1).", isError: false };
+  });
+
+  it("sagax_help asks the server with the person's question and hands back its sections", async () => {
+    const answer = await callTool("sagax_help", { question: "Peux-tu installer un plugin ?" });
+    expect(lastHelpBody).toEqual({ question: "Peux-tu installer un plugin ?" });
+    expect(answer.result.isError).toBeFalsy();
+    expect(answer.result.content[0].text).toContain("Install a plugin for a bot");
+    const empty = await callTool("sagax_help", { question: " " });
+    expect(empty.result.isError).toBe(true);
+    helpStatus = 503;
+    const missing = await callTool("sagax_help", { question: "x" });
+    expect(missing.result.isError).toBe(true);
+    expect(missing.result.content[0].text).toContain("not in this build");
+    helpStatus = 200;
   });
 
   it("attach_file hands a refusal to the model so it can fix the file and retry", async () => {

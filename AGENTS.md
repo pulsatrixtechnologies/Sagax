@@ -71,6 +71,45 @@ shows it; the system prompt says so (`WIDGET_SELF_CHECK_PROMPT`).
   `server/testing/widget-check-fixtures/`, broken ones must fail, healthy ones
   must pass with no defect).
 
+## Bots know Sagax and Perspicax: sagax_help (2026-10-19)
+
+JC: the bots know everything Sagax and Perspicax can do, kept up to date,
+without a bigger system prompt. A bot calls `sagax_help` (agents catalog,
+`server/drivers/agents-help-tools.ts`, read-only, permission `help:read`)
+and gets a few short sections: what, where in the app (English and French
+labels), who may do it, limits. The system prompt only says to call it
+(last sentence of `VERIFY_FIRST_PROMPT`).
+
+- The base is `server/self-knowledge/knowledge.generated.json`, written by
+  `pnpm gen:self-knowledge` (`scripts/self-knowledge/generate.ts`) from the
+  code: the agents tool catalog and its conditions, `MCP_PERMISSIONS`,
+  member scope and host-level tools, Settings pages and cards with their
+  locale labels, the bot editor's pages, the account menu, `engines.lock.json`,
+  the server's routes, the last 12 release notes, `apps/docs/content`,
+  `docs/` and this file. `pnpm build:server` regenerates it before every
+  build, and `scripts/bundle-server.mjs` copies it beside the bundle; the
+  server reads it on the first question only (`server/self-knowledge.ts`).
+- Perspicax's part comes from `server/self-knowledge/perspicax.snapshot.json`
+  (console menu and Settings window: labels, addresses, roles; nothing else,
+  since Perspicax is private and this repository public), written by
+  `scripts/self-knowledge/perspicax-snapshot.ts --repo <Perspicax checkout>`
+  from its latest release tag: rerun it after a Perspicax release. How-tos
+  about the console go in the guides. Live, a bot on an organization server
+  reads its catalog with `api_list`.
+- `scripts/self-knowledge/guides.ts` holds the only hand-written part: short
+  how-tos, each with references (`tool:`, `setting:`, `bot-setting:`,
+  `menu:`, `px:`, `file:`) that the generator checks; a guide naming
+  something gone fails the build. A customer named in a doc's example tag
+  is scrubbed, and the generator refuses to write a base holding a
+  secret, a real email address or such a tag (`auditKnowledgeText`).
+- AGENTS.md is indexed as maintainers' notes (kind `notes`), weighed below
+  the user docs; infrastructure docs are left out (`DOCS_LEFT_OUT`).
+- `scripts/self-knowledge/knowledge.test.ts` fails when the tools,
+  permissions, Settings, menus, engines or guides changed without
+  regenerating. `server/self-knowledge.test.ts` holds the 20 bench questions
+  (`server/self-knowledge/bench-questions.json`). Adding a tool or a
+  Settings card: rerun `pnpm gen:self-knowledge` and commit the JSON.
+
 ## Side cards on the chat's right edge (2026-10-19)
 
 The dev context pods (Environment, Context, Connectors, Changes) and the

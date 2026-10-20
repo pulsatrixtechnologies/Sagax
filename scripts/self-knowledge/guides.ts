@@ -1,0 +1,213 @@
+// The short how-tos of the sagax_help knowledge base: the only hand-written
+// part. Each one answers a question people really ask, in a few sentences,
+// and names its references: a tool (`tool:<name>`, must be in the agents
+// catalog), a generated section (`setting:`, `card:`, `menu:`,
+// `bot-setting:`, `px:`, `engine:`) or a file of this repository
+// (`file:<path>`). scripts/self-knowledge/build.ts refuses a guide whose
+// reference is gone, so a guide cannot outlive what it describes.
+// Fact-checked against the code on 2026-10-19 (Sagax 0.5.29, Perspicax 1.8.40).
+
+export interface Guide {
+  id: string;
+  title: string;
+  where?: string;
+  access?: string;
+  /** Search words, French and English. */
+  keywords: string;
+  text: string;
+  refs: string[];
+}
+
+/** One line more on a Settings page (setting:<id>): what it holds or who sees it. */
+export const SETTING_NOTES: Record<string, { text?: string; access?: string }> = {
+  engines: { text: "Engines and model providers with their sign-in or API keys, the voice engine (xAI, ElevenLabs, Fish Audio) and live calls, the image provider, Cloud coding agents (Cursor, Claude, Codex keys), and the Connected apps (Composio) and Decision model cards." },
+  experimental: { text: "Early features, each off until switched on: Connected apps, Meeting notetaker (Google Meet), skill authoring, browser profiles, data window.", access: "on an organization server, only people who may edit the configuration (admins)" },
+  backups: { text: "Export full backup (bots, conversations, settings; no secret), import and restore.", access: "solo: the person; organization: permission backup.workspace (off for members by default), restore stays with admins" },
+  computer: { text: "Where bots work: this computer, Local VM, cloud computers, self-hosted VPS, isolation, safety and storage.", access: "solo: the person; organization: admins, and each member for their own server environment" },
+  organization: { text: "Join a Perspicax server, connect to or start an organization; on an organization server the admin's policies: Allow full access, member auto-approval, new threads confidential by default, memory." },
+  usage: { text: "Tokens and cost this month and over 30 days, by bot and by model.", access: "everyone; it shows the person's own usage only" },
+  pages: { text: "Pages a bot proposed and the person published: open, copy the link, change who sees it, revoke, expiry." },
+};
+
+export const GUIDES: Guide[] = [
+  {
+    id: "plugins",
+    title: "Install a plugin for a bot",
+    where: "sidebar Connect apps (Connecter des applications), scope For <bot> (Pour <bot>)",
+    access: "the bot's owner or someone who manages it; organization: a member's call waits for an admin, and an admin may limit marketplaces",
+    keywords: "plugin plugins greffon installer install marketplace extension ajouter",
+    text: "Yes, a bot can install a plugin itself with the act tool and its plugins parameter: list, addMarketplace, install (also updates), setEnabled, uninstall, removeMarketplace. Each write waits for the person's Allow on a card unless the bot's approval mode is auto or full. On an organization server act is host-level: a member's call waits for an admin's approval, and the admin may restrict marketplaces. Hooks, MCP servers, LSP and bin/ of a plugin are removed. The person can also do it in the sidebar's Connect apps, scope For <bot>.",
+    refs: ["tool:act", "file:server/bot-plugins.ts", "file:shared/permissions.ts"],
+  },
+  {
+    id: "voice-team",
+    title: "Give voice mode (xAI) to a team or to people",
+    where: "Perspicax console > Access > Bot rights (Accès > Droits sur les bots), tab Who has what (Qui a quoi), /sagax/permissions?tab=assign",
+    access: "Perspicax admins only; a bot cannot do it",
+    keywords: "voix vocal mode voix voice mode xai equipe team teams donner assigner moteur engine membres",
+    text: "An admin does it in the Perspicax console: Access > Bot rights, tab Who has what; pick the teams or people, then give the engine Voice mode (xAI) (Mode voix (xAI)). A person's rights are the union of their own and their teams'. One person can also get it on their sheet. On the Sagax organization server the organization's xAI key then serves voice to admins and to the people given that engine. The xAI key itself is in Settings > Models and voice. In solo mode each person sets their own voice engine in Settings > Models and voice.",
+    refs: ["px:console:/sagax/permissions", "setting:engines", "file:server/org-xai-media.ts", "file:docs/voice-mode-xai.md"],
+  },
+  {
+    id: "cloud-agents",
+    title: "Launch a cloud coding agent",
+    where: "bot tool launch_cloud_agent; keys in Settings > Models and voice > Cloud coding agents (Agents de codage cloud)",
+    access: "organization: a member's call waits for an admin",
+    keywords: "agent cloud agents nuage lancer launch cursor codex claude coding code pr pull request",
+    text: "Yes, with launch_cloud_agent, then follow it with get_cloud_agent, cloud_agent_follow_up, cloud_agent_transcript, cancel_cloud_agent. Providers: perspicax (organization server linked to Perspicax, uses the person's sign-in, no key), cursor, claude and codex (the person's own key in Settings > Models and voice > Cloud coding agents). Without a sign-in or key the launch is refused with the reason. On an organization server the tool is host-level: a member's call waits for an admin.",
+    refs: ["tool:launch_cloud_agent", "tool:get_cloud_agent", "tool:cloud_agent_follow_up", "setting:engines", "file:server/cloud-agents"],
+  },
+  {
+    id: "routines-where",
+    title: "Where routines are",
+    where: "account menu (avatar, bottom of the sidebar) > Automations (Automatisations); a bot's panel > Details > Routines",
+    keywords: "routines routine ou sont where automations automatisations calendrier calendar planifiees scheduled",
+    text: "In Sagax: the account menu (the person's avatar at the bottom of the sidebar) > Automations opens the routines calendar (upcoming runs, webhooks). One bot's routines are in its panel > Details > Routines, with an on/off switch per routine. A bot reads its own with list_routines and runs one with run_routine. On an organization server, the Perspicax console also lists them: Bots > Routines (/sagax/routines), for every person (their own).",
+    refs: ["menu:sidebar.nav.automations", "tool:list_routines", "tool:run_routine", "px:console:/sagax/routines"],
+  },
+  {
+    id: "routine-create",
+    title: "Create a routine (every morning, every weekday)",
+    where: "bot tool propose_routine; also Automations in the account menu",
+    keywords: "routine creer create planifier schedule chaque matin every morning 8h cron recurring recurrente tache task",
+    text: "Yes: propose_routine with a cron schedule and an IANA time zone. A routine for the bot itself applies at once with an Undo, at any approval level (up to 20 enabled routines). A routine for another bot stays a card the person confirms, unless Full access is on. The person can also create and edit routines in Automations (account menu).",
+    refs: ["tool:propose_routine", "file:server/direct-apply.ts", "menu:sidebar.nav.automations"],
+  },
+  {
+    id: "zip",
+    title: "Read a .zip or other archive",
+    keywords: "zip archive archives tar gz 7z lire read fichier compresse decompresser unzip piece jointe attachment",
+    text: "Yes, when the person attaches it in the chat: the bot gets the archive and a manifest of its files (zip, tar, tar.gz, 7z), then reads the files with its tools. Solo: unpacked next to the upload. Organization: listed on the host, then copied and unpacked where the bot's tools run (its server environment, or the person's computer through the desktop app) at its first tool call. Limits: 5,000 files, 512 MB unpacked, 200:1 ratio.",
+    refs: ["file:server/attachment-archives.ts", "file:electron/archive-extract.mjs"],
+  },
+  {
+    id: "create-bot",
+    title: "Create a new bot",
+    keywords: "creer create nouveau new bot bots agent assistant",
+    text: "A Primary Bot has create_bot; another bot gets it when it may create bots for its person (not hidden, not temporary, owner not read-only). Only on the person's own request, at most 6 bots made by bots per person per hour. Below Full access the person approves a card; the new bot starts with connected apps and automatic approvals off. On an organization server a member creates bots for themselves only (permission bots.create, on by default). The person can always create one from the sidebar.",
+    refs: ["tool:create_bot", "file:server/bot-creation.ts", "file:shared/permissions.ts"],
+  },
+  {
+    id: "mcp-server",
+    title: "Add an MCP server",
+    where: "sidebar Connect apps (Connecter des applications) > MCP servers (Serveurs MCP)",
+    access: "organization: admin tier; Perspicax admins may limit servers in Settings > Organisation > Allowed MCP servers",
+    keywords: "mcp serveur server ajouter add connecteur connector outil tool",
+    text: "Partly: add_mcp_server saves the server switched off, only when the person asked. The bot cannot enable, test or edit it: the person turns it on in the sidebar's Connect apps > MCP servers. On an organization server it is an admin-tier action, and the Perspicax admin may limit which servers are allowed (Perspicax Settings > Organisation > Allowed MCP servers).",
+    refs: ["tool:add_mcp_server", "card:myConnections.servers", "px:settings:org.mcp"],
+  },
+  {
+    id: "connected-apps",
+    title: "Connect Gmail, Slack, Notion and other apps (Composio)",
+    where: "Settings > Experimental > Connected apps, then Settings > Models and voice > Connected apps, then sidebar Connect apps > Connected apps",
+    access: "organization: admins set it up (Experimental needs the right to edit the configuration)",
+    keywords: "gmail slack notion google drive outlook connecter connect apps applications composio connected apps applications connectees",
+    text: "The person does it: 1) Settings > Experimental > Connected apps (Apps connectées) on; 2) the Composio key in Settings > Models and voice > Connected apps; 3) the sidebar's Connect apps > Connected apps to sign in to each account (several labeled accounts per app). Then each bot's grants choose which tools it gets (Edit bot > Model and tools > Access). On an organization server an admin sets this up.",
+    refs: ["setting:experimental", "setting:engines", "bot-setting:access", "file:docs/composio.md"],
+  },
+  {
+    id: "voice-note",
+    title: "Send a voice note",
+    where: "voice engine in Settings > Models and voice; the bot's voice in Edit bot > Model and tools > Voice & alerts",
+    keywords: "note vocale voice note audio message vocal voix parler speak",
+    text: "Yes with send_voice_note, but only when a voice is configured: a voice engine with its key and a voice for the bot or the app, and the bot's voice notes not turned off. Otherwise the tool is not offered. On an organization server using the organization's xAI key, only for people given Voice mode (xAI).",
+    refs: ["tool:send_voice_note", "setting:engines", "bot-setting:voice"],
+  },
+  {
+    id: "model-change",
+    title: "Change a bot's model",
+    where: "Edit bot (Modifier le bot) > Model and tools > Model; for one conversation, the composer's model picker",
+    keywords: "modele model changer change moteur engine effort claude codex grok opus sonnet",
+    text: "The person opens the bot, Edit bot > Model and tools > Model (engine, model, effort). One conversation's model changes in the composer's model picker. The bot can do it too with propose_model: a change to itself applies at once with an Undo; existing conversations keep their model.",
+    refs: ["bot-setting:model", "tool:propose_model"],
+  },
+  {
+    id: "confidential",
+    title: "Make a conversation confidential",
+    where: "new thread menu > New confidential thread; thread menu > Make confidential (Rendre confidentiel)",
+    keywords: "confidentiel confidentielle confidential prive private secret conversation fil thread",
+    text: "The person does it: the new thread menu > New confidential thread (Nouveau fil confidentiel), or an existing thread's menu > Make confidential (permanent, after a confirmation). A confidential conversation is kept to its owner: other people, admins and bots outside it do not read it, and it is answered in the Sagax app only. On an organization server an admin may make new threads confidential by default (Settings > Organization). A thread working in a shared folder cannot be converted.",
+    refs: ["file:docs/confidential-threads.md", "setting:organization"],
+  },
+  {
+    id: "meetings",
+    title: "Join a meeting and take notes",
+    where: "Settings > Experimental > Meeting notetaker (Google Meet)",
+    access: "organization: Experimental is for admins",
+    keywords: "reunion meeting teams zoom google meet notes prendre rejoindre join transcription",
+    text: "Google Meet only: Microsoft Teams and Zoom links are recognized but not supported. With Settings > Experimental > Meeting notetaker (Google Meet) on, in a direct conversation, the bot has join_meeting, which shows the person a consent card first.",
+    refs: ["tool:join_meeting", "setting:experimental", "file:shared/meeting-links.ts"],
+  },
+  {
+    id: "usage",
+    title: "See token usage and cost",
+    where: "account menu > Usage > View usage (Utilisation > Voir l'utilisation), which opens Settings > Usage",
+    keywords: "consommation usage jetons tokens cout cost facture billing forfait plan depense spend",
+    text: "Account menu (avatar) > Usage > View usage opens Settings > Usage: this month and the last 30 days, by bot and by model; everyone sees their own usage. One bot: Edit bot > Activity > Usage. Organization totals: Perspicax console > Organization > Usage and cost (/usage), for managers and admins.",
+    refs: ["menu:sidebar.account.viewUsage", "setting:usage", "bot-setting:usage", "px:console:/usage"],
+  },
+  {
+    id: "approvals",
+    title: "Stop asking approval for every command (approval mode, Full access)",
+    where: "the icon left of the message field, or Edit bot > Security > Permissions",
+    access: "the bot cannot change its own level; organization: Full access off until an admin allows it, and Ask/Auto choice needs bots.approvalLevel (off for members by default)",
+    keywords: "approbation approval approuver approve demander ask auto full access acces complet permission commande command carte card mode",
+    text: "The person chooses the bot's approval level: the icon left of the message field, or Edit bot > Security > Permissions. Approve for me (Approuver à ma place) uses the provider's automatic review (Codex, Claude, Cursor, Grok) to approve routine actions and ask about others; Full access (Accès complet) runs commands and edits without cards, set from the packaged desktop app only; real questions and missing credentials still ask. Custom auto-review rules can allow specific commands. On an organization server Full access stays off until an admin turns on Allow full access (Settings > Organization, or Perspicax Settings > Bots > Policies), and a member needs bots.approvalLevel (Perspicax Access > Bot rights) to switch between Ask and Auto.",
+    refs: ["bot-setting:permissions", "setting:organization", "file:docs/approval-levels.md", "px:console:/sagax/permissions"],
+  },
+  {
+    id: "computer",
+    title: "Use the person's computer (Mac, PC)",
+    where: "Settings > Computer; the bot's Workspace (Edit bot > Model and tools > Workspace)",
+    keywords: "ordinateur computer mac pc controler control utiliser use ecran screen souris mouse clavier keyboard desktop bureau computer use",
+    text: "Yes, from the desktop app (macOS, or packaged Ubuntu x64): select_computer with surface local, then computer use. On an organization server only the person's own computer, through the desktop bridge while their desktop app is connected, and only when the bot's Workspace allows This computer or Local VM. Otherwise the bot works in its cloud computer or server environment. Not from iOS: the phone only shows a still of the screen with Play, Pause and Stop.",
+    refs: ["tool:select_computer", "setting:computer", "bot-setting:worksOn", "file:docs/computer-use-integration.md"],
+  },
+  {
+    id: "backups",
+    title: "Back up bots and conversations",
+    where: "Settings > Backups > Export full backup (Réglages > Sauvegardes > Exporter une sauvegarde complète); one bot: its actions menu > Export the bot (.zip)",
+    access: "organization: permission backup.workspace (off for members by default); restoring stays with admins",
+    keywords: "sauvegarde backup exporter export restaurer restore bots conversations zip copie",
+    text: "Settings > Backups > Export full backup saves bots, conversations and settings (never a secret: keys and tokens are left out). One bot: its actions menu > Export the bot (.zip), optionally with its conversations. On an organization server the page needs the backup.workspace permission, and restoring stays with admins.",
+    refs: ["setting:backups", "file:docs/bot-package.md", "file:shared/permissions.ts"],
+  },
+  {
+    id: "triggers",
+    title: "Start work on an outside event (GitHub, webhook)",
+    where: "account menu > Automations > Webhooks",
+    access: "organization: server.settings (admin)",
+    keywords: "webhook declencheur trigger github gitlab ticket issue evenement event slack sentry pagerduty linear demarrer start",
+    text: "A webhook starts a task from outside: Automations (account menu) > Webhooks creates one with a bearer token shown once. Typed triggers verified by the provider's own signature (GitHub, GitLab, Slack, Microsoft Teams, Outlook, Sentry, PagerDuty, Linear) exist on the server, but the app has no button to open their panel yet: say so rather than promising it. A bot cannot create either without the person's Allow (act on POST /api/webhooks), and on an organization server it needs server.settings (admin).",
+    refs: ["menu:sidebar.nav.automations", "tool:act", "file:shared/trigger-sources.ts", "file:server/webhooks.ts"],
+  },
+  {
+    id: "pages",
+    title: "Publish a web page to share",
+    where: "bot tool propose_page; manage in Settings > Published pages (Pages publiées)",
+    keywords: "page web publier publish partager share lien link site html canevas canvas",
+    text: "The bot proposes it with propose_page; the person reviews it on the card and decides whether to publish and who sees it (only them, the organization, or anyone with the link). Not available in rooms. Published pages are managed, shared or revoked in Settings > Published pages.",
+    refs: ["tool:propose_page", "setting:pages"],
+  },
+  {
+    id: "mobile",
+    title: "Use Sagax on an iPhone or iPad",
+    keywords: "iphone ipad ios telephone phone mobile cellulaire application app store testflight appairer pair",
+    text: "A native iOS companion app exists and pairs with the Mac or the server by QR code; there is no public App Store link yet (the account menu's Get Sagax on mobile entry stays hidden until one exists). Pairing is offered in the welcome flow's phone step, and an admin's bot can create a pairing code with manage_pairing. Another way: the phone web app (Add to Home Screen). On iOS, computer use is view-only.",
+    refs: ["file:docs/ios-companion.md", "file:docs/phone-web-app.md", "tool:manage_pairing", "menu:sidebar.account.mobile"],
+  },
+  {
+    id: "solo-vs-org",
+    title: "Solo Sagax and organization (Perspicax) differences",
+    keywords: "solo organisation organization perspicax admin membre member difference entreprise business",
+    text: "Solo: a person's own Sagax; they hold every setting. Organization: a Sagax server linked to Perspicax (Sagax Business); people sign in with Perspicax, admins manage people, teams, bot rights, engines, routines and usage in the Perspicax console, and member bots run host-level tools (act, manage_settings, manage_pairing, add_mcp_server, attach_file, vm_exec, shared_computer, the cloud agent tools) only after an admin's approval. In a member's own scope (their bots, memory, conversations, own computer) their bot works under their own approval level. Perspicax also serves the organization's products (ConnectWise and others) to bots through api_list, api_search and the profile tools.",
+    refs: ["file:server/member-tool-scope.ts", "px:console:/sagax/permissions", "tool:api_list"],
+  },
+  {
+    id: "admin-asks",
+    title: "What a member must ask an admin for",
+    keywords: "admin administrateur demander ask permission droit right membre member refuse refused bloque blocked",
+    text: "On an organization server a member asks an admin for: host-level bot tools (act on settings and plugins, manage_settings, add_mcp_server, attach_file, vm_exec, the cloud agent tools), Full access, organization engines such as Voice mode (xAI), backups, Experimental features and Connected apps, server settings and webhooks. The admin grants rights in the Perspicax console > Access > Bot rights, per person or team; a pending admin approval shows in Perspicax To do (À traiter).",
+    refs: ["file:docs/member-admin-audit.md", "px:console:/sagax/permissions", "px:console:/inbox"],
+  },
+];

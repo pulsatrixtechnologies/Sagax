@@ -299,6 +299,8 @@ import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineChe
 import { engineStartGate, routineEngineGate, type EngineSlot } from "./engine-start-gate.ts";
 import { IdleEnginePool, markOomVictim, MemoryWatch, memoryGuardSettings } from "./engine-memory-guard.ts";
 import { checkWidgetForTurn, WidgetCheckAttempts, WidgetRenderer } from "./widget-check.ts";
+import { bundledKnowledgeIndex } from "./self-knowledge.ts";
+import { createSelfKnowledgeInternalRoutes } from "./routes/self-knowledge-internal.ts";
 import { sessionIdlePolicy } from "./drivers/session-idle.ts";
 import { serveStaticUi } from "./static-ui.ts";
 import { coalescedRun } from "./coalesced-run.ts";
@@ -25446,6 +25448,17 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     },
   }),
   createPerspicaxClaimsInternalRoutes({ perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview }),
+  // sagax_help (server/routes/self-knowledge-internal.ts)
+  createSelfKnowledgeInternalRoutes({
+    index: bundledKnowledgeIndex,
+    context: (threadId) => {
+      const organization = IDENTITY.kind === "perspicax";
+      const speaker = turnSpeakerPrincipals.get(threadId);
+      const person = speaker ? principals.byId(speaker) : null;
+      const role = !organization || !person ? null : person.local === true || person.orgRole === "admin" ? "admin" as const : "member" as const;
+      return { organization, role, perspicaxTools: organization && Boolean(speaker) };
+    },
+  }),
   createPerspicaxToolInternalRoutes({ tools: PERSPICAX_TOOL_NAMES, perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview, confidential: confidentialPerspicaxRefusal }),
   createMcpAuditInternalRoutes({ append: (row) => appendAdminAction(DATA_DIR, { ...row, actor: { kind: "loopback" } }), confidential: (threadId) => store.isConfidentialThread(threadId) }),
   createRoutineRunInternalRoutes<Routine, RoutineRun>({

@@ -171,6 +171,13 @@ const catalogSnapshot = join(root, "dist-server", "model-catalog", "models-dev.s
 mkdirSync(dirname(catalogSnapshot), { recursive: true });
 copyFileSync(join(server, "model-catalog", "models-dev.snapshot.json"), catalogSnapshot);
 
+// The sagax_help knowledge base (server/self-knowledge.ts), read from disk
+// on the first question, like the catalog snapshot: never inlined.
+// `pnpm build:server` regenerates it first (scripts/self-knowledge/generate.ts).
+const knowledge = join(root, "dist-server", "self-knowledge", "knowledge.generated.json");
+mkdirSync(dirname(knowledge), { recursive: true });
+copyFileSync(join(server, "self-knowledge", "knowledge.generated.json"), knowledge);
+
 // Pi loads this through its own jiti and supplies TypeBox. Inline our local
 // policy module so the extension also works without the source checkout;
 // keep the Pi-owned dependency external and retain the .ts loading contract.
