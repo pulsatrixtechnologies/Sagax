@@ -151,12 +151,14 @@ describe("sidebar header", () => {
     expect(html).toMatch(/data-sidebar-foot[^>]*class="px-4 pb-4"/);
   });
 
-  it("keeps Connect apps and Browse Bots as icon buttons on the collapsed rail", () => {
+  it("keeps one Connect apps icon on the collapsed rail", () => {
     fixture.density = "icons";
     const html = render();
     expect((html.match(/<button[^>]*data-sidebar-connect-apps[^>]*>/g) ?? [])[0]).toContain('aria-label="Connect apps"');
-    expect(html).toContain('aria-label="Browse Bots"');
-    expect(html).toContain('data-place-anim="grid"');
+    // one entry for apps and bots: Browse Bots is a tab of Connect apps
+    expect(html).not.toContain('aria-label="Browse Bots"');
+    expect(html).not.toContain('data-place-anim="grid"');
+    expect(html).toContain("data-sidebar-account-rail");
   });
 
   it("hides the brand row when the sidebar logo is turned off, keeping search and New", () => {

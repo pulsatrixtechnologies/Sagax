@@ -18,6 +18,7 @@ try {
   localStorage.setItem("sagax.interfaceMode.v1", "advanced");
   localStorage.setItem("sagax-sidebar-shortcuts", "1");
   localStorage.setItem("omb-sidebar-width-v2", params.get("width") ?? "368");
+  if (params.get("rail") === "1") localStorage.setItem("openmausbot.sidebarDensity", "icons");
   localStorage.setItem("omb-threads-location", params.get("threads") === "sidebar" ? "sidebar" : "header");
 } catch {
   // the gallery still renders with the defaults
@@ -68,6 +69,11 @@ const team: Bot[] = [
   }, "Trois avis de sécurité à lire ce matin.", minutes(320)),
 ];
 
+// ?many=N adds N pinned bots, to check the rail's vertical scroll
+for (let i = 0; i < Number(params.get("many") ?? 0); i += 1) {
+  team.push(bot(`extra${i}`, `Bot ${i + 1}`, { color: "blue", mascotBody: "circle", pinned: true }, "Bonjour.", minutes(400 + i)));
+}
+
 // Answer the app's /api calls here: the made-up team, a profile, and an
 // empty answer for everything else.
 const realFetch = window.fetch.bind(window);
@@ -112,7 +118,7 @@ function Gallery() {
   return (
     <StoreProvider>
       <SelectAtlas />
-      <div data-gallery className="flex h-[1015px] w-[368px] overflow-hidden bg-app text-ink">
+      <div data-gallery className={`flex h-[1015px] ${params.get("rail") === "1" ? "w-[80px]" : "w-[368px]"} overflow-hidden bg-app text-ink`}>
         <Sidebar open onClose={() => {}} />
       </div>
     </StoreProvider>
