@@ -633,7 +633,7 @@ import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
 import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
 import { recordRoutineToggle, routineToggleForViewer } from "./routine-chat-events.ts";
-import { nextOccurrence, ROUTINE_RESTARTED, ROUTINE_RESUME_PROMPT, RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineMemoryHint, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
+import { nextOccurrence, PREWARM_ENGINE_LEAD_MS, ROUTINE_RESTARTED, ROUTINE_RESUME_PROMPT, RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineMemoryHint, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
@@ -792,6 +792,7 @@ import {
 import { callHasParkableWork, classifyVoiceIntent } from "../src/lib/voice-mode/voice-topics.ts";
 import { VoiceCallSessions, voiceCallTurnSettle } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
+import { prewarmWindowMs, ThreadPrewarm } from "./thread-prewarm.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
 import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
 import { effortAcceptedByModel, effortForModel } from "../shared/model-capabilities.ts";
@@ -15620,6 +15621,60 @@ function releaseWarmEngine(threadId: string): void {
   const live = store.projectBotForTask(bot.id, threadId) ?? bot;
   registry.get(live.modelSelection.instanceId)?.adapter.releaseWarmSession?.(threadId);
 }
+
+/** Pre-warm (server/thread-prewarm.ts): the engine of a thread starts when the
+ * person opens its conversation or starts typing, or shortly before a
+ * scheduled routine, so the first message does not pay the cold start. */
+const threadPrewarm = new ThreadPrewarm({ windowMs: prewarmWindowMs() });
+/** routineRunId of a task reserved for a scheduled run not started yet. */
+const RESERVED_RUN_PREFIX = "prewarm:";
+type PrewarmOutcome = "started" | "extended" | "limited" | "skipped";
+type PrewarmTurnOpts = { speaker: TurnSpeaker; runOn?: RoutineRunOn; automationSource?: "schedule" | "manual" };
+/** Why a thread is not warmed now, or null when it may be. */
+function prewarmRefusal(botId: string, threadId: string): string | null {
+  const level = memoryWatch.current();
+  if (level === "high" || level === "critical") return "memory";
+  if (idleEngines.maxIdle === 0) return "no idle sessions";
+  if (store.isConfidentialThread(threadId)) return "confidential";
+  if (voiceCalls.active(threadId)) return "call";
+  if (threadBusy(botId, threadId) || runningTurnEngines.has(threadId)) return "busy";
+  // already warm (finished turn or an earlier warm): nothing to start, and a
+  // new window must not shorten the life of a process a turn left idle
+  if (idleEngines.has(threadId)) return "warm";
+  const bot = store.projectBotForTask(botId, threadId);
+  if (!bot) return "no task";
+  if (registry.get(bot.modelSelection.instanceId)?.adapter.capabilities.warmSession !== true) return "engine";
+  return null;
+}
+function prewarmThread(botId: string, threadId: string, person: string, opts: PrewarmTurnOpts, windowMs?: number): PrewarmOutcome {
+  if (threadPrewarm.has(threadId)) return threadPrewarm.begin(threadId, person, async () => {}, windowMs);
+  if (prewarmRefusal(botId, threadId)) return "skipped";
+  return threadPrewarm.begin(threadId, person, (signal) => new Promise<void>((resolve) => {
+    signal.addEventListener("abort", () => {
+      // the driver closed its idle process (a turn's process stays)
+      if (!runningTurnEngines.has(threadId)) idleEngines.forget(threadId);
+    }, { once: true });
+    void startTurn(botId, "", {
+      threadId,
+      warmOnly: true,
+      warmSignal: signal,
+      speaker: opts.speaker,
+      ...(opts.runOn ? { runOn: opts.runOn } : {}),
+      ...(opts.automationSource ? { automationSource: opts.automationSource } : {}),
+      onWarmSettled: (ok) => {
+        // counted with the finished sessions, so the idle cap (#804) holds
+        if (ok && !signal.aborted && !runningTurnEngines.has(threadId)) idleEngines.noteIdle(threadId, () => {
+          threadPrewarm.cancel(threadId);
+          setImmediate(() => releaseWarmEngine(threadId));
+        });
+        resolve();
+      },
+    }).catch((error) => {
+      console.error(`[prewarm] skipped: ${error instanceof Error ? error.message.slice(0, 120) : "error"}`);
+      resolve();
+    });
+  }), windowMs);
+}
 /** Who a hang-up frame is for: the person who hung up, else the thread's
  * person, else the operator at this computer. */
 function voiceCallEndedAudience(threadId: string, auth?: RequestAuth): string {
@@ -17572,6 +17627,12 @@ async function startTurn(
   // The engine for a live call is already starting. This turn waits for it
   // and reuses the process. The warm itself must not wait.
   if (!warmOnly && voiceCalls.active(threadId)) await voiceWarmup.join(threadId);
+  // A pre-warm (opened conversation, composer, routine) still starting: this
+  // turn waits for it and takes its process over.
+  if (!warmOnly && threadPrewarm.has(threadId)) {
+    await threadPrewarm.join(threadId);
+    threadPrewarm.claim(threadId);
+  }
   if (threadBusy(botId, threadId)) throw Object.assign(new Error("this thread is already working — interrupt it first"), { status: 409, code: "thread_busy" });
   if (activeGroupTurnForBot(botId)) {
     throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
@@ -17591,7 +17652,7 @@ async function startTurn(
   // a webhook turn, or one inherited from a bot already running unattended
   if (opts?.automationSource === "webhook" || opts?.unattended) markUnattended(bot.id, threadId);
   // a person typing into this bot ends the unattended window immediately
-  else if (opts?.automationSource === undefined && !opts?.commsDepth && !opts?.cardContinuation) {
+  else if (opts?.automationSource === undefined && !opts?.commsDepth && !opts?.cardContinuation && !warmOnly) {
     clearUnattended(threadId);
     delegationWakeBudget.reset(threadId);
   }
@@ -19092,7 +19153,9 @@ async function startTurn(
       // A call turn (and the warm that prepares its process, so the two share
       // one spawn contract) runs at the engine's low effort: the person is
       // waiting for the first word (server/voice-call-effort.ts).
-      const turnEffort = onCall || warmOnly
+      // A pre-warm off a call (server/thread-prewarm.ts) takes the next
+      // turn's own effort and flags, or the turn would relaunch it.
+      const turnEffort = onCall
         ? callTurnEffort({ driverKind: instance.driverKind, levels: instance.adapter.capabilities.effortLevels, effort })
         : resolveEngineTurnEffort(effort, instance.driverKind, instance.adapter.capabilities.effortLevels);
       // A routine run while the server boots waits for an engine start slot
@@ -19116,7 +19179,7 @@ async function startTurn(
         ...(turnAccess ? { access: turnAccess } : {}),
         // on a live call the engine process stays warm from turn to turn.
         // A warm uses the same flag so the first spoken turn's contract matches.
-        ...(onCall || warmOnly ? { keepWarm: true } : {}),
+        ...(onCall ? { keepWarm: true } : {}),
         ...(warmOnly ? { warmOnly: true, ...(onCall ? { cachePrime: true } : {}), ...(opts?.warmSignal ? { warmSignal: opts.warmSignal } : {}) } : {}),
         startupRecovery: !warmOnly &&
           (opts?.automaticRecoveryIndex ?? 0) < botRecoveryBackups(liveBot ?? bot, cfg).length,
@@ -19805,6 +19868,35 @@ routines = new RoutineManager({
     const place = decideWorkplace({ desktopTargeted: false, routine: true, principal, personAsked: false });
     if (place.target !== "user-sandbox" && routine.runOn !== "cloud" && !cloudOnlyBot(routine.botId)) return;
     void userSandbox.prewake(principal, routine.botId);
+  },
+  // Pre-warm (server/thread-prewarm.ts): a scheduled bot run's engine starts
+  // PREWARM_ENGINE_LEAD_MS ahead in the task its run will take, with the
+  // run's own speaker and place, so the run is not a cold start.
+  reserveTask: (botId, title, run) => {
+    const task = store.createTask(botId, title, false, undefined, undefined, undefined, privateThreads() && run.runAs ? run.runAs : undefined);
+    if (!task) return null;
+    // hidden like a run's task until the run takes it (then tagged with its run)
+    store.patchTask(botId, task.threadId, { routineRunId: `${RESERVED_RUN_PREFIX}${run.routineId}` });
+    if (CLOUD_HOME) threadStarters.set(task.threadId, routineOpener(run.routineId));
+    return task;
+  },
+  claimReservedTask: (botId, threadId) => {
+    if (store.taskByThread(botId, threadId)?.routineRunId?.startsWith(RESERVED_RUN_PREFIX)) store.patchTask(botId, threadId, { routineRunId: undefined });
+  },
+  releaseReservedTask: (botId, threadId) => {
+    threadPrewarm.cancel(threadId);
+    const task = store.taskByThread(botId, threadId);
+    if (!task || !task.routineRunId?.startsWith(RESERVED_RUN_PREFIX) || store.messagesFor(threadId).length > 0 || threadBusy(botId, threadId)) return;
+    store.deleteTask(botId, threadId);
+  },
+  prewarmEngine: (routine, _dueAt, threadId) => {
+    if (routine.target !== "bot") return;
+    const outcome = prewarmThread(routine.botId, threadId, `routine:${routine.id}`, {
+      speaker: routineRunSpeaker({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) }),
+      runOn: routine.runOn ?? "maus",
+      automationSource: "schedule",
+    }, PREWARM_ENGINE_LEAD_MS + 3 * 60_000);
+    if (outcome === "started") console.log(`[prewarm] routine ${routine.id}: engine warming`);
   },
   joinConversation: (run) => {
     if (!routinesInConversationEnabled(cfg) || run.target !== "bot") return null;
@@ -42464,6 +42556,32 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       await interruptDirectThread(m[1], threadId);
       return json(res, 200, { ok: true, outcome: "stopped" });
     }
+    // Pre-warm (server/thread-prewarm.ts): the person opened this bot's
+    // conversation or started typing. Same access as a send to the thread;
+    // starts nothing visible and answers at once.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/warm$/);
+    if (m && method === "POST") {
+      const body = await readBody(req);
+      if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
+      const bot = store.bot(m[1]);
+      if (!bot) return json(res, 404, { error: "no such bot" });
+      requirePinnedClientThread(bot.id, body.threadId);
+      if (delegatedRequest()) routeThreadId(bot, body.threadId);
+      if (body.threadId !== undefined && (typeof body.threadId !== "string" || !/^[\w-]+$/.test(body.threadId))) {
+        return json(res, 400, { error: "threadId must be a task id" });
+      }
+      const threadId = routeThreadId(bot, body.threadId);
+      const notYours = cloudGuestSendRefusal(auth, threadId);
+      if (notYours) return json(res, 403, { error: notYours });
+      if (!store.taskByThread(bot.id, threadId)) return json(res, 200, { warm: "skipped" });
+      try {
+        assertWithinBudget(cfg, DATA_DIR);
+      } catch {
+        return json(res, 200, { warm: "skipped" });
+      }
+      const outcome = prewarmThread(bot.id, threadId, actorPrincipalId(auth) || "local", { speaker: speakerFor(auth) });
+      return json(res, 200, { warm: outcome });
+    }
     m = path.match(/^\/api\/bots\/([\w-]+)\/messages(?:\/(guarded))?$/);
     if (m && method === "POST") {
       const guarded = m[2] === "guarded";
@@ -46540,6 +46658,13 @@ const onListening = async () => {
   // Cut turns resume before the scheduler's first tick, so a queued run
   // that joins the same conversation waits for the resume, not the reverse.
   resumeTurnsCutByRestart();
+  // Tasks reserved for a scheduled run before a restart (pre-warm) that no
+  // run took: empty and hidden, removed before schedules fire again.
+  for (const bot of store.bots) {
+    for (const task of bot.tasks ?? []) {
+      if (task.routineRunId?.startsWith(RESERVED_RUN_PREFIX) && store.messagesFor(task.threadId).length === 0) store.deleteTask(bot.id, task.threadId);
+    }
+  }
   routines!.start();
   limitFailover.start();
   memoryUpkeep.start();

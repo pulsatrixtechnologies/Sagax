@@ -388,6 +388,21 @@ export interface RoutineManagerOptions {
    * (the person's server environment) now. Once per occurrence, best
    * effort; the run itself still waits for whatever is not up yet. */
   prewake?: (routine: Routine, dueAt: number) => void;
+  /** A bot routine is due within PREWARM_ENGINE_LEAD_MS: start the engine
+   * of the conversation its run will use, so the run is not a cold start
+   * (server/thread-prewarm.ts). `threadId` is a task this manager reserved
+   * for the run (createTask, below), or the joined conversation. Once per
+   * occurrence, best effort. */
+  prewarmEngine?: (routine: Routine, dueAt: number, threadId: string) => void;
+  /** A hidden task for a scheduled run that has not started yet, so its
+   * engine can be warmed (prewarmEngine). Without it, only a run that joins
+   * a conversation is warmed. */
+  reserveTask?: (botId: string, title: string, run: RoutineRun) => { threadId: string } | null;
+  /** The run took its reserved task: show it as any run's task. */
+  claimReservedTask?: (botId: string, threadId: string) => void;
+  /** A task reserved for a run that did not start in time: remove it if it
+   * is still empty, and close the engine warmed for it. */
+  releaseReservedTask?: (botId: string, threadId: string) => void;
   /** When set, run this bot's routine in that existing conversation instead of
    * a new hidden task. Room goals never use it. */
   joinConversation?: (run: RoutineRun) => string | null;
@@ -504,6 +519,12 @@ const WAKE_HORIZON_MS = 60 * 60_000;
  * to wake (options.prewake). A stopped AKS cluster plus a cold node pool took
  * ~11 min from the webhook to a running pod. */
 export const PREWAKE_LEAD_MS = 12 * 60_000;
+/** How early a scheduled bot run's engine is started (prewarmEngine): long
+ * enough for the process to be up, short enough to waste little. */
+export const PREWARM_ENGINE_LEAD_MS = 60_000;
+/** A reserved task the run has not taken this long after its due time is
+ * released. */
+const PREWARM_RESERVE_GRACE_MS = 3 * 60_000;
 
 /** How long a run may sit deferred behind a busy target before the user
  * hears about it once. Surfacing only; dispatch semantics stay unchanged. */
@@ -1048,6 +1069,8 @@ export class RoutineManager {
   private readonly failureFacts = new Map<string, RoutineFailureFacts>();
   /** routine id -> the occurrence (nextRunAt) already pre-woken. */
   private readonly prewoken = new Map<string, number>();
+  /** routine id -> the task reserved and warmed for its next occurrence. */
+  private readonly reserved = new Map<string, { dueAt: number; botId: string; threadId: string }>();
   /** The file existed but could not be read (corrupt JSON or a schema
    * failure). Saves are refused while set so a fresh empty state can never
    * overwrite whatever is on disk. Missing means a first run. */
@@ -1867,6 +1890,68 @@ export class RoutineManager {
     if (this.prewoken.size > 2_000) this.prewoken.clear();
   }
 
+  /** Reserve and warm the task of each scheduled bot run due within the
+   * engine lead; release the reservations no run took. */
+  private prewarmUpcoming(now: number): void {
+    const prewarm = this.options.prewarmEngine;
+    for (const [routineId, entry] of Array.from(this.reserved)) {
+      const routine = this.routines.find((candidate) => candidate.id === routineId);
+      const stale = now > entry.dueAt + PREWARM_RESERVE_GRACE_MS || !routine || !routine.enabled || routine.suspended || routine.botId !== entry.botId
+        || (routine.nextRunAt !== entry.dueAt && !this.runs.some((run) => run.routineId === routineId && run.status === "queued" && !run.manual));
+      if (!stale) continue;
+      this.reserved.delete(routineId);
+      if (entry.threadId) try { this.options.releaseReservedTask?.(entry.botId, entry.threadId); } catch { /* best effort */ }
+    }
+    if (!prewarm) return;
+    for (const routine of this.routines) {
+      const dueAt = routine.nextRunAt;
+      if (!routine.enabled || routine.suspended || routine.target !== "bot" || dueAt == null) continue;
+      if (dueAt - now > PREWARM_ENGINE_LEAD_MS || dueAt < now) continue;
+      if (this.reserved.get(routine.id)?.dueAt === dueAt) continue;
+      if (routine.onlyWhenPresent && awayDecision(routine, this.presenceOf(routine)) === "skip") continue;
+      // Already running or queued: its run has its thread, or will wait.
+      if (this.runs.some((run) => run.routineId === routine.id && (run.status === "queued" || run.status === "running" || run.status === "waiting"))) continue;
+      const pseudoRun = { routineId: routine.id, routineName: routine.name, botId: routine.botId, target: routine.target, runOn: routine.runOn ?? "maus",
+        scheduledFor: dueAt, status: "queued", manual: false, triggerSource: "schedule", ...(routine.runAs ? { runAs: routine.runAs } : {}) } as unknown as RoutineRun;
+      let threadId: string | null = null;
+      try {
+        threadId = this.options.joinConversation?.(pseudoRun) ?? null;
+      } catch {
+        threadId = null;
+      }
+      let reserved = false;
+      if (!threadId) {
+        if (!this.options.reserveTask) continue;
+        const task = this.options.reserveTask(routine.botId, this.runTitle(routine.name, dueAt), pseudoRun);
+        if (!task) continue;
+        threadId = task.threadId;
+        reserved = true;
+      }
+      const previous = this.reserved.get(routine.id);
+      if (previous?.threadId && previous.threadId !== threadId) {
+        try { this.options.releaseReservedTask?.(previous.botId, previous.threadId); } catch { /* best effort */ }
+      }
+      // A joined conversation is not ours to release: only remember the occurrence.
+      this.reserved.set(routine.id, { dueAt, botId: routine.botId, threadId: reserved ? threadId : "" });
+      try { prewarm(cloneRoutine(routine), dueAt, threadId); } catch { /* best effort */ }
+    }
+  }
+
+  /** The reserved task for this scheduled run, taken once. */
+  private takeReserved(run: RoutineRun): string | null {
+    if (run.manual || (run.triggerSource !== undefined && run.triggerSource !== "schedule")) return null;
+    const entry = this.reserved.get(run.routineId);
+    if (!entry || !entry.threadId || entry.botId !== run.botId) return null;
+    this.reserved.delete(run.routineId);
+    try { this.options.claimReservedTask?.(run.botId, entry.threadId); } catch { /* best effort */ }
+    return entry.threadId;
+  }
+
+  private runTitle(name: string, startedAt: number): string {
+    const suffix = ` · ${new Date(startedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+    return `${name.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;
+  }
+
   async tick(): Promise<void> {
     if (this.ticking || this.paused) return;
     this.ticking = true;
@@ -1894,6 +1979,7 @@ export class RoutineManager {
         }
       }
       this.prewakeUpcoming(now);
+      this.prewarmUpcoming(now);
       // Only when I'm here (server/routine-away.ts): skip a recurring
       // occurrence, or hold a one-time routine, while the person is away.
       const awaySkipped: Routine[] = [];
@@ -2078,11 +2164,13 @@ export class RoutineManager {
         // chat immediately. Scheduled work stays in its own task unless the
         // workspace has asked for runs to join the conversation they report to.
         const startedAt = this.now();
-        const suffix = ` · ${new Date(startedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
-        const title = `${run.routineName.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;
+        const title = this.runTitle(run.routineName, startedAt);
         const joined = joinedEarly;
+        const reservedThread = joined || run.target === "room-goal" ? null : this.takeReserved(run);
         const task = joined
           ? { threadId: joined }
+          : reservedThread
+          ? { threadId: reservedThread }
           : run.target === "room-goal"
           ? run.groupId
             ? this.options.createGoalTask?.(run.groupId, title) ?? null

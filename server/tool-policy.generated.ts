@@ -377,6 +377,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/memory\\/upkeep$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/memory$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/messages(?:\\/(guarded))?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
+  {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/warm$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":false},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/messages\\/([\\w-]+)\\/edit$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/model$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/outbound$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},

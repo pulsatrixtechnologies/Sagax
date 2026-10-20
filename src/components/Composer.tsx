@@ -75,6 +75,7 @@ import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { PendingApprovalBox, pendingApprovals, type Pending } from "./PendingApproval";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { ComposerReplyStrip } from "./ReplyQuote";
+import { prewarmConversation } from "@/lib/prewarm";
 import { escapeCancelsReply } from "@/lib/replies";
 import { useThreadRefs } from "./ThreadRefs";
 import {
@@ -237,12 +238,20 @@ export function Composer({
   // Goal mode is opt-in and one-shot so the next ordinary channel message
   // cannot accidentally start another multi-turn team run.
   const [channelMode, setChannelMode] = useComposerChannelMode(draftId);
+  // Pre-warm (src/lib/prewarm.ts): the engine starts when the person opens
+  // this conversation or types in it, so the first message is not cold.
+  const warmBotId = !group && bot ? bot.id : undefined;
+  const warmThreadId = !group && bot ? bot.threadId : undefined;
+  useEffect(() => {
+    prewarmConversation(api, warmBotId, warmThreadId);
+  }, [warmBotId, warmThreadId]);
   const editText = useCallback(
     (next: string) => {
       markDraftEdited(draftId);
       setText(next);
+      if (next.trim()) prewarmConversation(api, warmBotId, warmThreadId);
     },
-    [draftId, setText],
+    [draftId, setText, warmBotId, warmThreadId],
   );
   const editAttachments = useCallback(
     (next: SetStateAction<Attachment[]>) => {

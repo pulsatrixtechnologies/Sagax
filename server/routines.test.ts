@@ -9,6 +9,7 @@ import { ROUTINE_SKIPPED_WHILE_WAITING, ROUTINE_SUPERSEDED } from "./routine-exe
 import {
   nextOccurrence,
   PREWAKE_LEAD_MS,
+  PREWARM_ENGINE_LEAD_MS,
   RoutineManager,
   RoutineScheduleError,
   RoutineInputError,
@@ -3794,3 +3795,71 @@ describe("pre-waking a scheduled run's environment (2026-10-19)", () => {
   });
 });
 
+
+describe("pre-warming a scheduled run's engine (2026-10-19 perf parity)", () => {
+  const start = Date.parse("2026-10-19T18:00:00Z");
+  function warmHarness() {
+    const h = harness(start);
+    const reserved: Array<{ botId: string; title: string; threadId: string }> = [];
+    const warmed: Array<{ id: string; threadId: string }> = [];
+    const claimed: string[] = [];
+    const released: string[] = [];
+    let n = 0;
+    h.options.reserveTask = (botId, title) => {
+      const threadId = `reserved-${++n}`;
+      reserved.push({ botId, title, threadId });
+      return { threadId };
+    };
+    h.options.claimReservedTask = (_botId, threadId) => claimed.push(threadId);
+    h.options.releaseReservedTask = (_botId, threadId) => released.push(threadId);
+    h.options.prewarmEngine = (routine, _dueAt, threadId) => warmed.push({ id: routine.id, threadId });
+    return { ...h, reserved, warmed, claimed, released };
+  }
+
+  it("reserves and warms the run's task once, PREWARM_ENGINE_LEAD_MS ahead, and the run takes it", async () => {
+    const h = warmHarness();
+    const routine = h.manager.create({ name: "Dispatch", prompt: "Dispatch", botId: "maus-1",
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: start + 60 * 60_000 } });
+    const dueAt = h.manager.getRoutine(routine.id)!.nextRunAt!;
+    h.setNow(dueAt - PREWARM_ENGINE_LEAD_MS - 1_000);
+    await h.manager.tick();
+    expect(h.warmed).toEqual([]);
+    h.setNow(dueAt - PREWARM_ENGINE_LEAD_MS + 1_000);
+    await h.manager.tick();
+    await h.manager.tick();
+    expect(h.warmed).toEqual([{ id: routine.id, threadId: "reserved-1" }]);
+    h.setNow(dueAt);
+    await h.manager.tick();
+    expect(h.started).toEqual([expect.objectContaining({ threadId: "reserved-1" })]);
+    expect(h.claimed).toEqual(["reserved-1"]);
+    expect(h.taskTitles).toEqual([]);
+    expect(h.released).toEqual([]);
+  });
+
+  it("releases a reserved task no run took, and a manual run never takes it", async () => {
+    const h = warmHarness();
+    const routine = h.manager.create({ name: "Dispatch", prompt: "Dispatch", botId: "maus-1",
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: start + 60 * 60_000 } });
+    const dueAt = h.manager.getRoutine(routine.id)!.nextRunAt!;
+    h.setNow(dueAt - 30_000);
+    await h.manager.tick();
+    expect(h.warmed).toHaveLength(1);
+    h.manager.runNow(routine.id);
+    await h.manager.tick();
+    expect(h.started[0]!.threadId).not.toBe("reserved-1");
+    h.manager.update(routine.id, { enabled: false });
+    await h.manager.tick();
+    expect(h.released).toEqual(["reserved-1"]);
+  });
+
+  it("warms nothing without the hooks (no reservation)", async () => {
+    const h = harness(start);
+    const warmed: string[] = [];
+    h.options.prewarmEngine = (_routine, _dueAt, threadId) => warmed.push(threadId);
+    const routine = h.manager.create({ name: "Dispatch", prompt: "Dispatch", botId: "maus-1",
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: start + 60 * 60_000 } });
+    h.setNow(h.manager.getRoutine(routine.id)!.nextRunAt! - 30_000);
+    await h.manager.tick();
+    expect(warmed).toEqual([]);
+  });
+});
