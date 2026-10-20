@@ -789,7 +789,7 @@ import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
 import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
-import type { HarnessCommandScope } from "./contracts.ts";
+import type { HarnessCommandScope, TurnImageInput } from "./contracts.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   capabilitiesForAuth,
@@ -1109,6 +1109,7 @@ import { computerSelectTarget } from "../shared/execution-target.ts";
 import { attachDesktopTerminal, attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
 import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
+import { OFFICE_IMAGE_MAX_COUNT, OFFICE_IMAGES_MAX_TOTAL_BYTES, officeKind, officeMediaFolder, officeNote, readOfficeMedia } from "./office-media.ts";
 import { archiveInlineTexts, archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
 import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
@@ -4948,6 +4949,34 @@ function workplaceTurnText(text: string, decision: WorkplaceDecision): { text: s
     return archiveNote({ name: file.name, manifest: storedArchiveManifest(file.file), extractedPath: folder, when: "first-tool", texts: archiveInlineTexts(file.serverPath) });
   });
   return { text: staged.text, staging: target && staged.staged.length ? { target, files: staged.staged } : null, annotated };
+}
+
+/** Office documents (.docx, .pptx, .xlsx) attached to this message: the
+ * document's text after its tag, and its pictures as image inputs of the
+ * turn when the engine takes images (server/office-media.ts). On an
+ * organization server only the speaker's own uploads are read. */
+function officeTurnText(text: string, principal: WorkplaceDecision["principal"], nativeImages: boolean): { text: string; images: TurnImageInput[] } {
+  const files = attachedFilesInText(text, ATTACHMENTS_DIR).filter((file) => officeKind(file.file)
+    && (IDENTITY.kind !== "perspicax" || Boolean(principal && attachmentIsTheirs(principal, attachmentReferences(file.file)))));
+  if (!files.length) return { text, images: [] };
+  const images: TurnImageInput[] = [];
+  let bytes = 0;
+  const notes = files.map((file) => {
+    const media = readOfficeMedia(file.serverPath, ATTACHMENTS_DIR);
+    if (!media) return null;
+    const fits = nativeImages && images.length + media.images.length <= OFFICE_IMAGE_MAX_COUNT
+      && bytes + media.images.reduce((sum, image) => sum + image.bytes, 0) <= OFFICE_IMAGES_MAX_TOTAL_BYTES;
+    if (fits) {
+      for (const image of media.images) images.push({ path: image.path, mime: image.mime, bytes: image.bytes });
+      bytes += media.images.reduce((sum, image) => sum + image.bytes, 0);
+    }
+    return { file, note: officeNote(file.name, media, fits) };
+  });
+  let out = text;
+  for (const entry of notes.filter((item): item is NonNullable<typeof item> => item !== null).toReversed()) {
+    out = `${out.slice(0, entry.file.end)}\n${entry.note}${out.slice(entry.file.end)}`;
+  }
+  return { text: out, images };
 }
 
 /** Solo: an attached archive was unpacked next to its upload on this
@@ -9979,6 +10008,7 @@ function wipeConfidentialThread(botId: string, threadId: string, attachmentNames
     if (threadsReferencing(name).length) continue;
     try {
       rmSync(join(ATTACHMENTS_DIR, name), { force: true });
+      if (officeKind(name)) rmSync(officeMediaFolder(ATTACHMENTS_DIR, name), { recursive: true, force: true });
     } catch { /* already gone */ }
   }
   memoryUpkeep.dropThread(threadId);
@@ -17434,6 +17464,11 @@ async function startTurn(
   // call turn on the section alone never reached the engine.
   if (userMessage.voiceCall && !opts.cardContinuation && !opts.commsDepth && !userMessage.peerAsk) {
     providerText = voiceCallTurnPrompt(providerText, userMessage.voiceCall);
+  }
+  if (!opts.cardContinuation && !warmOnly) {
+    const office = officeTurnText(providerText, turnPlace.principal, usesNativeImageInput);
+    providerText = office.text;
+    turnImages.push(...office.images);
   }
   const placedText = opts.cardContinuation ? { text: providerText, staging: null } : workplaceTurnText(providerText, turnPlace);
   providerText = withWorkplaceNote(placedText.text, turnPlace, turnAuto);
