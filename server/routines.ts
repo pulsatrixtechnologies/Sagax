@@ -1509,27 +1509,29 @@ export class RoutineManager {
 
   remove(id: string, request?: RoutineRequestCommitFor<"delete">): boolean {
     this.assertWritable();
-    if (request) {
-      const receipt = this.matchingRoutineRequestReceipt(request);
-      if (receipt) {
-        return true;
-      }
-    }
+    if (request && this.matchingRoutineRequestReceipt(request)) return true;
     const at = this.routines.findIndex((r) => r.id === id);
     if (at === -1) return false;
-    const cancelledRuns: RoutineRun[] = [];
+    const changedRuns: RoutineRun[] = [];
     this.commitMutation(() => {
       this.routines.splice(at, 1);
       for (const run of this.runs) {
-        if (run.routineId !== id || run.status !== "queued") continue;
-        run.status = "cancelled";
-        run.attention = undefined;
-        run.finishedAt = this.now();
-        cancelledRuns.push(run);
+        if (run.routineId !== id) continue;
+        if (run.status === "queued") {
+          run.status = "cancelled";
+          run.attention = undefined;
+          run.finishedAt = this.now();
+          changedRuns.push(run);
+        } else if (!run.seenAt && isRoutineProblemRun(run)) {
+          // The routine is gone: its failures and misses no longer need the
+          // person, so the Routines indicators stop counting them.
+          run.seenAt = this.now();
+          changedRuns.push(run);
+        }
       }
       if (request) this.rememberRoutineRequest(request, id, this.now());
     });
-    for (const run of cancelledRuns) this.emitRun(run);
+    for (const run of changedRuns) this.emitRun(run);
     this.options.emit?.({ kind: "routine.deleted", routineId: id });
     return true;
   }

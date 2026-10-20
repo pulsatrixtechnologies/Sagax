@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
+import { isRoutineProblemRun } from "../shared/routines.ts";
 import {
   nextOccurrence,
   PREWAKE_LEAD_MS,
@@ -2942,6 +2943,95 @@ describe("RoutineManager", () => {
     expect(h.manager.clearRuns(() => true)).toHaveLength(1);
     expect([...byName().keys()]).toEqual(["My running"]);
     expect(h.manager.clearRuns(() => true)).toEqual([]);
+  });
+
+  describe("deleting a routine", () => {
+    const finish = (h: ReturnType<typeof harness>, threadId: string, ok: boolean) => h.manager.handleRuntimeEvent({
+      eventId: `${threadId}-done`, provider: "fake", threadId, createdAt: new Date().toISOString(),
+      type: "turn.completed", ok, ...(ok ? {} : { stopReason: "provider crashed" }),
+    });
+    const needsYou = (h: ReturnType<typeof harness>) => h.manager.listRuns().some((run) => isRoutineProblemRun(run) && !run.seenAt);
+    const nextRunAt = (h: ReturnType<typeof harness>, id: string) => h.manager.listRoutines().find((routine) => routine.id === id)!.nextRunAt!;
+
+    /** A daily routine with a seen failure, a completion, an unseen failure and an unseen miss, beside a kept routine's unseen failure. */
+    async function history() {
+      const h = harness();
+      const doomed = h.manager.create({
+        name: "Doomed daily", prompt: "Check it", botId: "maus-1",
+        schedule: { type: "daily", time: "08:05", weekdays: [0, 1, 2, 3, 4, 5, 6] },
+      });
+      h.setNow(nextRunAt(h, doomed.id));
+      await h.manager.tick();
+      finish(h, "thread-1", false);
+      const seenFailure = h.manager.listRuns()[0]!;
+      h.manager.markSeen(seenFailure.id);
+      h.setNow(nextRunAt(h, doomed.id));
+      await h.manager.tick();
+      finish(h, "thread-2", true);
+      h.setNow(nextRunAt(h, doomed.id));
+      await h.manager.tick();
+      finish(h, "thread-3", false);
+      h.setNow(nextRunAt(h, doomed.id) + 13 * 60 * 60_000);
+      await h.manager.tick();
+      const kept = h.manager.create({
+        name: "Kept report", prompt: "Write it", botId: "maus-2",
+        schedule: { type: "once", at: h.options.now!() + 60_000 },
+      });
+      h.setNow(kept.nextRunAt!);
+      await h.manager.tick();
+      finish(h, "thread-4", false);
+      const statuses = (name: string) => h.manager.listRuns().filter((run) => run.routineName === name)
+        .sort((a, b) => a.scheduledFor - b.scheduledFor).map((run) => run.status);
+      expect(statuses("Doomed daily")).toEqual(["failed", "completed", "failed", "missed"]);
+      expect(statuses("Kept report")).toEqual(["failed"]);
+      return { h, doomed, kept, seenFailure };
+    }
+
+    it("resolves its unseen failed and missed runs in the same mutation, and leaves every other run alone", async () => {
+      const { h, doomed, seenFailure } = await history();
+      const seenAt = h.manager.listRuns().find((run) => run.id === seenFailure.id)!.seenAt!;
+      h.emitted.length = 0;
+      const stampAt = h.options.now!() + 60_000;
+      h.setNow(stampAt);
+
+      expect(h.manager.remove(doomed.id)).toBe(true);
+
+      const doomedRuns = h.manager.listRuns().filter((run) => run.routineName === "Doomed daily")
+        .sort((a, b) => a.scheduledFor - b.scheduledFor);
+      expect(doomedRuns.map((run) => [run.status, run.seenAt])).toEqual([
+        ["failed", seenAt], ["completed", undefined], ["failed", stampAt], ["missed", stampAt],
+      ]);
+      const kept = h.manager.listRuns().find((run) => run.routineName === "Kept report")!;
+      expect(kept.seenAt).toBeUndefined();
+      const runFrames = h.emitted.filter((frame) => frame.kind === "routine.run");
+      expect(runFrames.map((frame) => [frame.run.status, frame.run.seenAt])).toEqual(
+        expect.arrayContaining([["failed", stampAt], ["missed", stampAt]]),
+      );
+      expect(runFrames).toHaveLength(2);
+      expect(h.emitted.some((frame) => frame.kind === "routine.deleted" && frame.routineId === doomed.id)).toBe(true);
+      const reloaded = new RoutineManager(h.options).listRuns().filter((run) => run.routineName === "Doomed daily");
+      expect(reloaded.filter((run) => isRoutineProblemRun(run) && !run.seenAt)).toEqual([]);
+    });
+
+    it("turns the Routines indicator off when the deleted routine held the only unseen problems", async () => {
+      const { h, doomed, kept } = await history();
+      h.manager.markSeen(h.manager.listRuns().find((run) => run.routineName === "Kept report")!.id);
+      expect(needsYou(h)).toBe(true);
+      h.manager.remove(doomed.id);
+      expect(needsYou(h)).toBe(false);
+      expect(h.manager.listRoutines().map((routine) => routine.id)).toEqual([kept.id]);
+    });
+
+    it("keeps its runs unseen when the delete cannot be saved", async () => {
+      const { h, doomed } = await history();
+      h.emitted.length = 0;
+      const save = vi.spyOn(h.manager as unknown as { save(): void }, "save").mockImplementationOnce(() => { throw new Error("fixture disk full"); });
+      expect(() => h.manager.remove(doomed.id)).toThrow("fixture disk full");
+      save.mockRestore();
+      expect(h.manager.listRoutines().some((routine) => routine.id === doomed.id)).toBe(true);
+      expect(h.manager.listRuns().filter((run) => run.routineName === "Doomed daily" && isRoutineProblemRun(run) && !run.seenAt)).toHaveLength(2);
+      expect(h.emitted).toHaveLength(0);
+    });
   });
 
   it("keeps recurring history while advancing the definition", async () => {
