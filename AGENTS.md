@@ -230,7 +230,12 @@ approval cards that wait on that person, when the person asks for it:
   other card is that bot's, the bot that asked, or the handle,
   `messageNamesCard`), or it is the latest card the person could see when
   they wrote (`latestSeen`, JC 2026-10-20: "oui" answers the latest, the
-  answer says which); a question's answer must be
+  answer says which). Security review 2026-10-20: an unnamed yes answers
+  one card per message (no cascade); a long message's bare yes counts only
+  when the message speaks of a card (`SPEAKS_OF_A_CARD` or a card's bot);
+  a card raised in the 3 s before the message makes an unnamed yes ask
+  which (`JUST_RAISED_MS`); a level's value and bot are in the quote itself,
+  "mets-toi" or its name for the speaking bot (`askedChange`); a question's answer must be
   the person's own words (`personWrote`); a card raised after the message
   is never answered. This is the only defense against injection: keep it.
 - Trace: the card's `answeredBy` gets `via: "primary-bot"` and `bot`

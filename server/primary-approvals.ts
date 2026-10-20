@@ -18,7 +18,7 @@
 
 import { createHash } from "node:crypto";
 
-import { checkPersonQuote, messageNamesCard, personWrote, type PrimaryIntent } from "../shared/primary-request.ts";
+import { checkPersonQuote, messageNamesCard, normalizeWords, personWrote, type PrimaryIntent } from "../shared/primary-request.ts";
 
 export type PrimaryDecision = "allow" | "always_allow" | "always_allow_this" | "deny" | "always_deny" | "answer";
 export const PRIMARY_DECISIONS: readonly PrimaryDecision[] = ["allow", "always_allow", "always_allow_this", "deny", "always_deny", "answer"];
@@ -118,6 +118,14 @@ const INTENTS: Readonly<Record<PrimaryDecision | "cancel", readonly PrimaryInten
   cancel: ["cancel"],
 };
 
+/** A long message's bare yes counts for a card only when the message speaks
+ * of one (security review 2026-10-20: "ok, résume ce courriel" or "le client
+ * m'a dit oui" approves nothing). */
+const SPEAKS_OF_A_CARD = /(?:^| )(?:cartes?|cards?|approb|approv|autoris|celle|celui|waiting|pending|permission|commande|command)/;
+/** A card that appeared this close before the message may not be the one
+ * the person meant: a bare yes then asks which (security review 2026-10-20). */
+const JUST_RAISED_MS = 3_000;
+
 /** Answers per message of the person: one "yes to all" covers a handful. */
 const ANSWERS_PER_MESSAGE = 20;
 
@@ -139,6 +147,8 @@ function ageOf(at: number, now: number): string {
 export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
   const now = deps.now ?? Date.now;
   const answered = new Map<string, number>();
+  /** Messages whose yes already answered a card it did not name. */
+  const implicit = new Set<string>();
 
   function listText(cards: PrimaryCard[], at: number): string {
     if (!cards.length) return "Nothing is waiting on the person.";
@@ -166,7 +176,7 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
     if (!wanted) {
       // no card named: the latest one the person saw (JC 2026-10-20)
       const card = latestSeen(cards, turn.message.at) ?? (cards.length === 1 ? cards[0] : undefined);
-      if (card) return { card, others: cards.filter((row) => row !== card) };
+      if (card && !(cards.length > 1 && card.at > turn.message.at - JUST_RAISED_MS)) return { card, others: cards.filter((row) => row !== card) };
       return refused(400, "card_required", cards.length ? `Pass card: one of ${cards.map((row) => cardRef(row.threadId, row.requestId)).join(", ")} (action list says which is which).` : "Nothing is waiting on the person.");
     }
     const card = cards.find((row) => cardRef(row.threadId, row.requestId) === wanted);
@@ -188,19 +198,34 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
       card.askedBy && !others.some((row) => row.askedBy === card.askedBy) ? card.askedBy : undefined,
       cardRef(card.threadId, card.requestId),
     ];
-    if (others.length > 0 && latestSeen([card, ...others], turn.message.at) !== card && !messageNamesCard(turn.message.text, names)) {
-      return refused(403, "card_not_named", "The person's message does not say which card, and this one is not the latest they saw: ask them (name the bot, or the card), or let them answer it.");
+    const named = messageNamesCard(turn.message.text, names);
+    if (!named) {
+      if (others.length > 0 && (latestSeen([card, ...others], turn.message.at) !== card || card.at > turn.message.at - JUST_RAISED_MS)) {
+        return refused(403, "card_not_named", "The person's message does not say which card, and this one is not clearly the latest they saw: ask them (name the bot, or the card), or let them answer it.");
+      }
+      // security review 2026-10-20: a yes that names no card answers one
+      // card per message, never the next ones in a row
+      if (implicit.has(turn.message.id)) return refused(403, "card_not_named", "A yes that names no card answers one card. Ask the person about the others.");
     }
     for (const intent of INTENTS[decision]) {
       const check = checkPersonQuote({ quote, message: turn.message.text, intent, anyLength: true });
       if (!check.ok) return refused(403, check.code, check.reason);
+      // a bare yes in a long message: only when the message speaks of a card
+      if ((intent === "allow" || intent === "deny") && !named && !checkPersonQuote({ quote, message: turn.message.text, intent }).ok &&
+        !SPEAKS_OF_A_CARD.test(normalizeWords(turn.message.text)) && !messageNamesCard(turn.message.text, [card.botName, ...others.map((row) => row.botName)])) {
+        return refused(403, "not_asked", "The person's yes is not about a card (their message speaks of something else). Ask them, or let them answer it.");
+      }
     }
     const count = answered.get(turn.message.id) ?? 0;
     if (count >= ANSWERS_PER_MESSAGE) return refused(429, "too_many", "That message already answered many cards. Ask the person again.");
     return null;
   }
 
-  function note(turn: PrimaryTurn): void {
+  function note(turn: PrimaryTurn, card?: PrimaryCard): void {
+    if (card && !messageNamesCard(turn.message.text, [card.botName, card.askedBy, cardRef(card.threadId, card.requestId)])) {
+      implicit.add(turn.message.id);
+      if (implicit.size > 2_000) implicit.delete(implicit.values().next().value!);
+    }
     answered.set(turn.message.id, (answered.get(turn.message.id) ?? 0) + 1);
     if (answered.size > 2_000) answered.delete(answered.keys().next().value!);
   }
@@ -230,7 +255,7 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
       result = await deps.respond(turn, card, body);
     }
     if (result.status >= 400) return result;
-    note(turn);
+    note(turn, card);
     deps.audit(turn, card, decision);
     const done = decision === "deny" || decision === "always_deny" ? "Denied" : decision === "answer" ? "Answered" : "Allowed";
     const rule = decision === "always_allow" || decision === "always_allow_this" ? ", and the rule is saved in their Settings > Security" : decision === "always_deny" ? ", and the deny rule is saved" : "";
@@ -251,7 +276,7 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
       if (refusal) return refusal;
       const result = await deps.cancel(gate, card);
       if (result.status >= 400) return result;
-      note(gate);
+      note(gate, card);
       deps.audit(gate, card, "cancel");
       return ok(`Stopped ${card.botName}'s turn for the person: ${cardWords(card)}.`);
     }

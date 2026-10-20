@@ -207,6 +207,8 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     await expect.poll(async () => Boolean(await helperCard(older.id)), { timeout: 15_000 }).toBe(true);
     const newer = await ask(hush.socket, "printf secret-newer");
     await expect.poll(async () => Boolean(await helperCard(newer.id)), { timeout: 15_000 }).toBe(true);
+    // the person read it: a card raised in the last seconds asks which
+    await new Promise((resolve) => setTimeout(resolve, 3_200));
     main = await turn(cryptic.id, cryptic.threadId, "Oui, vas-y, je te fais confiance pour celle qui attend en ce moment.");
     const hidden = await approvals(main.comms, { action: "list" });
     expect(hidden.body.text, JSON.stringify(hidden.body)).toContain("confidential conversation");

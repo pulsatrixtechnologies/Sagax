@@ -42,7 +42,8 @@ parties hors tableau du script.
   suivant part avec. Les cartes en attente se répondent avec
   `sagax_approvals` (`server/primary-approvals.ts`) : un « oui » qui ne
   nomme aucune carte répond à la plus récente que la personne voyait,
-  quelle que soit la longueur du message (le bot dit laquelle) ; une carte
+  quelle que soit la longueur du message (le bot dit laquelle ; une
+  carte par message ; dans un long message, il doit parler d'une carte) ; une carte
   d'un fil confidentiel de la personne se répond aussi, sans que ses mots
   passent au bot principal ; une carte qui exige la clé de sécurité
   physique de la personne reste à la personne.

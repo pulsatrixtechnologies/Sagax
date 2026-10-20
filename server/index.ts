@@ -28512,7 +28512,7 @@ function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
     cancel: (turn, card) => {
       const group = store.groupByThread(card.threadId);
       return group
-        ? replay(turn, "POST", `/api/groups/${group.id}/interrupt`, { threadId: card.threadId })
+        ? replay(turn, "POST", `/api/groups/${group.id}/interrupt`, { threadId: card.threadId }, card.threadId)
         : replay(turn, "POST", `/api/bots/${card.botId}/interrupt`, { threadId: card.threadId }, card.threadId);
     },
     audit: (turn, card, decision) => {

@@ -186,6 +186,10 @@ describe("askedChange (a Primary Bot's change on the person's words, security re
   it("turns cards off only, with the level, the bot and the rule's own words named", async () => {
     const { askedChange } = await import("./settings-actions.ts");
     expect(askedChange("Mets Katarina en auto", "bot.approvalMode", "auto", "Katarina", false)).toBe(true);
+    // security review 2026-10-20: the level and the bot are in the quote itself
+    expect(askedChange("Ne mets pas Katarina en Full, mets Zed en Full", "bot.approvalMode", "full", "Katarina", false, undefined, "mets Zed en Full")).toMatch(/Katarina/);
+    expect(askedChange("Mets Zed en Full", "bot.approvalMode", "full", undefined, true, undefined, "Mets Zed en Full", "Scout")).toMatch(/itself/);
+    expect(askedChange("Mets-toi en Full", "bot.approvalMode", "full", undefined, true, undefined, "Mets-toi en Full", "Scout")).toBe(true);
     expect(askedChange("Mets Katarina en auto", "bot.approvalMode", "full", "Katarina", false)).toMatch(/level full/);
     expect(askedChange("Fais-moi un rapport complet", "bot.approvalMode", "full", "Katarina", false)).not.toBe(true);
     expect(askedChange("Mets-la en auto", "bot.approvalMode", "auto", "Katarina", false)).toMatch(/Katarina/);
