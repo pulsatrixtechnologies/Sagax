@@ -588,6 +588,7 @@ import {
   composioSystemPrompt,
   customMcpPrompt,
   CREDENTIAL_PROMPT,
+  longCommandsPrompt,
   REACTION_PROMPT,
   mentionPrompt,
   THREADS_PROMPT,
@@ -604,6 +605,7 @@ import {
   resolveComputerPromptKind,
   teamAvailabilityPart,
 } from "./system-prompt.ts";
+import { shellTimeoutHookResult } from "./shell-timeout-hint.ts";
 import { readCuaConnection, readCuaUnavailableReason, gatedLocalComputer } from "./local-computer.ts";
 import {
   discoverExistingPerBotLocalVms,
@@ -7132,6 +7134,7 @@ function previewSystemPrompt(bot: BotRecord) {
         cwd: bot.cwd,
       }),
     },
+    { id: "shell", label: "Long-running commands", text: privateWorkspace ? longCommandsPrompt(computerPromptKind) : "" },
     { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
     // Auto cannot know its place until dispatch, so the preview stays silent
@@ -11951,6 +11954,7 @@ function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: 
     return lines.length ? { ok: true, context: lines.join("\n") } : { ok: true };
   }
   if (name === "Stop") return { ok: true };
+  if (name === "PostToolUseFailure") return shellTimeoutHookResult(payload);
   if (name !== "PostToolUse") return { ok: true, ignored: name || "unknown" };
   const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
   if (!toolUseId) return { ok: true, ignored: "PostToolUse without tool_use_id" };
@@ -18627,6 +18631,7 @@ async function startTurn(
         // false when they are not — see agentsMounted above)
         { id: "setup", label: "Setup", text: setupSystemPrompt(setupMode, { skills: skillAuthoring, cwd: liveBot?.cwd ?? bot.cwd }) },
         { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, confidential: store.isConfidentialThread(threadId) }) : "" },
+        { id: "shell", label: "Long-running commands", text: worksInWorkspace ? longCommandsPrompt(computerPromptKind) : "" },
         { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
         { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
         { id: "plan", label: "Surface", text: surfacePrompt({ computer: mountedComputer, browser: Boolean(integrations.browser) }, { pinned: plan.pinned, note: plan.note + vpsUnavailableNote + (computerSkipped && plan.computer !== "off" ? computerSkippedNote(redactSecretsInText(computerSkipped)) : ""), canSelect: computerSelectionTurns.has(threadId) || (warmOnly && maySelectComputer), cloudHome: Boolean(CLOUD_HOME) }) },
@@ -21647,6 +21652,7 @@ async function runGroupMemberTurn(
   const roomSystem = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE }) : "" },
+    { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
     { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" })) },

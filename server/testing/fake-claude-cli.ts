@@ -1087,10 +1087,20 @@ const playReply = (prompt: JsonValue, mcpNote: string) => {
     // parent's own result waits until its sub-agent's calls are done, the
     // way an Agent call settles after the work it started.
     let compactPending = compactMidTool;
+    const failureContext: string[] = [];
     const settle = (call: ScriptedToolCall, id: string) => {
       if (compactPending) { compactPending = false; compactNow(); }
       out({ type: "user", ...(call.parent ? { parent_tool_use_id: call.parent } : {}), message: { content: [{ type: "tool_result", tool_use_id: id, is_error: !call.ok, content: call.output }] } });
-      runHooks("PostToolUse", { tool_name: call.name, tool_input: call.input, tool_response: call.output, tool_use_id: id });
+      if (!call.ok) {
+        // Claude Code 2.1.296 runs only PostToolUseFailure for a failed call, with the result text as `error`.
+        const printed = runHooks("PostToolUseFailure", { tool_name: call.name, tool_input: call.input, error: call.output, tool_use_id: id });
+        try {
+          const context = JSON.parse(printed)?.hookSpecificOutput?.additionalContext;
+          if (typeof context === "string" && context) failureContext.push(context);
+        } catch {}
+      } else {
+        runHooks("PostToolUse", { tool_name: call.name, tool_input: call.input, tool_response: call.output, tool_use_id: id });
+      }
     };
     const waiting = new Map<string, ScriptedToolCall>();
     scriptedToolCalls.forEach((call, index) => {
@@ -1105,6 +1115,7 @@ const playReply = (prompt: JsonValue, mcpNote: string) => {
         }
       }
     });
+    if (failureContext.length) replyParts = [`${failureContext.join("\n")}\n\n${replyParts[0] ?? ""}`, ...replyParts.slice(1)];
     for (const text of replyParts) out({ type: "assistant", message: { content: [{ type: "text", text }], usage } });
   } else {
     replyParts.forEach((text, index) => {
