@@ -16694,7 +16694,7 @@ setSafetyConfirm((request) => confirmHeldCard(request));
 /** The approval card a server-side check waits on (a safety hold, a My
  * Chrome payment, send or delete): Allow or Deny, in the conversation, with
  * a notification. Full access and Approve for me do not answer it. */
-async function confirmHeldCard(request: { threadId?: string; botId?: string; tool?: string; summary: string }): Promise<"allow" | "deny" | "timeout"> {
+async function confirmHeldCard(request: { threadId?: string; botId?: string; tool?: string; summary: string; allowKey?: string }): Promise<"allow" | "deny" | "timeout"> {
   const threadId = request.threadId;
   if (!threadId) return "deny";
   const held = openSafetyHold();
@@ -16709,6 +16709,7 @@ async function confirmHeldCard(request: { threadId?: string; botId?: string; too
       options: ["Allow", "Deny"],
       requestId: held.requestId,
       ...(request.tool ? { tool: request.tool } : {}),
+      ...(request.allowKey ? { allowKey: request.allowKey } : {}),
       held: HELD_NOTE["approval.held.native"],
       heldCode: "approval.held.native",
     },
@@ -34961,12 +34962,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               const text = String(answer?.content?.[0]?.text ?? "");
               try { return String((JSON.parse(text) as { data?: { url?: unknown } }).data?.url ?? ""); } catch { return text; }
             },
-            confirm: (summary) => confirmHeldCard({
-              threadId: internalCapability.threadId,
-              botId: bot.id,
-              tool: `my_chrome:${browserToolName(body.params)}`,
-              summary,
-            }),
+            confirm: (summary, allowKey) => {
+              // "Always allow" saved on an earlier card: this kind of action on this site.
+              const grants = (store.projectBotForTask(bot.id, internalCapability.threadId) ?? store.bot(bot.id))?.alwaysAllow ?? [];
+              if (allowKey && grants.includes(allowKey)) return Promise.resolve("allow" as const);
+              return confirmHeldCard({
+                threadId: internalCapability.threadId,
+                botId: bot.id,
+                tool: `my_chrome:${browserToolName(body.params)}`,
+                summary,
+                ...(allowKey ? { allowKey } : {}),
+              });
+            },
             notes: () => myChrome.takeNotes(browser.session),
           });
         }

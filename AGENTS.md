@@ -5044,6 +5044,11 @@ An organization server never offers it unless that file says
   bot's last snapshot, the key (Enter or Space, except after typing in a
   search box), text with a line break, or an address (`/delete`,
   `/checkout`...). An unknown ref or a button with no name is a card too.
+  The card offers "Always allow" for one kind (payment, send or delete) on
+  one exact origin (`my_chrome:<kind>:<origin>`, `myChromeAllowKey`), saved
+  in the bot's `alwaysAllow` through the usual route (step-up, answerer
+  checks) and revocable there; a doubt ("unclear") or a page without a web
+  origin is carded every time.
   Passwords go only through the vault's `fill_credential`. What the gate
   blocked is added to the next result. The bot's prompt gets
   `MY_CHROME_SYSTEM_PROMPT`. A confidential conversation never uses it.

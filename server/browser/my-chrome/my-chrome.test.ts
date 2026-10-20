@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { removeTempDir } from "../../testing/cleanup.ts";
 import { cdpMethodVerdict, sanitizeNetworkEvent, sessionEventAllowed } from "./cdp-policy.ts";
 import { locateChrome, parseDevToolsActivePort } from "./locate.ts";
-import { MyChromeMemory, myChromeToolRefusal, refsFromResult, runMyChromeTool, sensitiveAddress, sensitiveElement } from "./pilot.ts";
+import { MyChromeMemory, myChromeAllowKey, myChromeToolRefusal, refsFromResult, runMyChromeTool, sensitiveAddress, sensitiveElement } from "./pilot.ts";
 import { MyChromeService } from "./service.ts";
 import { MY_CHROME_FILE, MyChromeSettingsStore, normalizeChromeAddress } from "./settings.ts";
 import { myChromeSiteAllows, normalizeMyChromeSite } from "./sites.ts";
@@ -202,18 +202,20 @@ describe("My Chrome tool calls", () => {
     memory.remember("s", call("agent_browser_snapshot"), { content: [{ type: "text", text: "- button \"Delete account\" [ref=e1]\n- link \"Two\" [ref=e2]" }] });
     const ran: unknown[] = [];
     const cards: string[] = [];
+    const keys: Array<string | undefined> = [];
     let answer: "allow" | "deny" | "timeout" = "deny";
     const deps = (params: unknown) => ({
       session: "s", params, memory,
       run: async (p: unknown) => { ran.push(p); return { content: [{ type: "text", text: "ok" }] }; },
       pageUrl: async () => "https://x.example/account?id=1",
-      confirm: async (summary: string) => { cards.push(summary); return answer; },
+      confirm: async (summary: string, allowKey?: string) => { cards.push(summary); keys.push(allowKey); return answer; },
       notes: () => ["Sagax blocked https://evil.example"],
     });
     const denied = await runMyChromeTool(deps(call("agent_browser_click", { selector: "@e1" }))) as { isError?: boolean; content: Array<{ text: string }> };
     expect(denied.isError).toBe(true);
     expect(ran).toEqual([]);
     expect(cards).toEqual(["My Chrome: click button \"Delete account\" (a delete) on https://x.example"]);
+    expect(keys).toEqual(["my_chrome:delete:https://x.example"]);
     answer = "timeout";
     expect((await runMyChromeTool(deps(call("agent_browser_click", { selector: "@e1" }))) as { isError?: boolean }).isError).toBe(true);
     answer = "allow";
@@ -224,5 +226,14 @@ describe("My Chrome tool calls", () => {
     expect(plain.content.map((part) => part.text)).toEqual(["ok", "Sagax blocked https://evil.example"]);
     expect((await runMyChromeTool(deps(call("agent_browser_eval", { script: "1" }))) as { isError?: boolean }).isError).toBe(true);
     expect(ran).toHaveLength(2);
+  });
+
+  it("offers Always allow for one kind of action on one site, never for a doubt", () => {
+    expect(myChromeAllowKey("payment", "https://shop.example/cart?x=1")).toBe("my_chrome:payment:https://shop.example");
+    expect(myChromeAllowKey("send", "http://localhost:3000/a")).toBe("my_chrome:send:http://localhost:3000");
+    expect(myChromeAllowKey("unclear", "https://shop.example/")).toBeUndefined();
+    expect(myChromeAllowKey("delete", "")).toBeUndefined();
+    expect(myChromeAllowKey("delete", "about:blank")).toBeUndefined();
+    expect(myChromeAllowKey("delete", "file:///etc/hosts")).toBeUndefined();
   });
 });

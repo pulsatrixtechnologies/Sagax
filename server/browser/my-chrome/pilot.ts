@@ -248,10 +248,25 @@ export interface MyChromeToolDeps {
   run(params: unknown): Promise<unknown>;
   /** The page the bot is on, for the card. */
   pageUrl(): Promise<string>;
-  /** Open the approval card on the conversation and wait for the person. */
-  confirm(summary: string): Promise<"allow" | "deny" | "timeout">;
+  /** Open the approval card on the conversation and wait for the person.
+   * allowKey, when given, lets the card offer "Always allow" (one kind of
+   * action on one site) and is checked against the bot's grants first. */
+  confirm(summary: string, allowKey?: string): Promise<"allow" | "deny" | "timeout">;
   /** What the gate refused since the last call (blocked navigations). */
   notes(): string[];
+}
+
+/** The "Always allow" grant of a sensitive action: one kind (payment, send,
+ * delete) on one exact site. An unclear action, or a page with no web
+ * origin, gets no grant: it is carded every time. */
+export function myChromeAllowKey(kind: SensitiveKind, page: string): string | undefined {
+  if (kind === "unclear") return undefined;
+  let origin = "";
+  try {
+    const url = new URL(page);
+    if (url.protocol === "https:" || url.protocol === "http:") origin = url.origin;
+  } catch { /* no origin */ }
+  return origin ? `my_chrome:${kind}:${origin}` : undefined;
 }
 
 function toolText(text: string, isError = false) {
@@ -269,7 +284,7 @@ export async function runMyChromeTool(deps: MyChromeToolDeps): Promise<unknown> 
     try { page = await deps.pageUrl(); } catch { /* the card still names the action */ }
     let origin = page;
     try { origin = new URL(page).origin; } catch { /* keep */ }
-    const answer = await deps.confirm(`My Chrome: ${sensitive.action}${origin ? ` on ${origin}` : ""}`);
+    const answer = await deps.confirm(`My Chrome: ${sensitive.action}${origin ? ` on ${origin}` : ""}`, myChromeAllowKey(sensitive.kind, page));
     if (answer !== "allow") {
       return toolText(`Not approved: the person did not approve this in My Chrome (${KIND_WORDS[sensitive.kind]}), so it did not happen. Do not retry it on your own; ask them, or continue without it.`, true);
     }
