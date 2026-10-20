@@ -38,7 +38,7 @@ it("turns a ConnectWise query into a widget and a widget change into an approval
   try {
     const bot = (await control(["new-bot", "--name", "Répartiteur"])).bot;
     const threadId: string = bot.activeTaskId;
-    await control(["send", "--bot", bot.id, "--text", "Montre-moi les billets ouverts"]);
+    await control(["send", "--bot", bot.id, "--text", "Montre-moi les billets ouverts en tableau interactif"]);
     expect((await control(["wait", "--bot", bot.id, "--timeout", "20"])).status).toBe("settled");
 
     const rows = await messages(threadId);

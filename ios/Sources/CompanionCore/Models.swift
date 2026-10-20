@@ -443,6 +443,10 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     /// Screen messages in the paged shape: the pixels live behind
     /// `/api/threads/:threadId/messages/:id/image` rather than inline.
     public var hasImage: Bool?
+    /// Screen and video messages: the person's message of that turn asked
+    /// for this view (shared/requested-views.ts). Drawn only with it; rows
+    /// from before 2026-10-20 have none and stay hidden.
+    public var requested: Bool? = nil
     /// Screen messages in the full shape: base64 pixels, inline.
     public var png: String?
     public var mime: String?

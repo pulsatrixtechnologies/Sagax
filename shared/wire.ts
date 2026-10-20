@@ -738,6 +738,10 @@ export interface WireMessage {
   requestPending?: boolean;
   /** The last assistant text item from a settled provider turn. */
   turnTerminal?: boolean;
+  /** screen and video messages: the person's message of that turn asked
+   * for this view (shared/requested-views.ts). A client draws a screen or a
+   * video row only with it; rows from before 2026-10-20 have none. */
+  requested?: boolean;
   /** screen messages: a frame of the bot's computer (base64 image) */
   png?: string;
   mime?: string;

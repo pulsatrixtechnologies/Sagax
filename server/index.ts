@@ -1042,6 +1042,8 @@ import { createMeAvatarRoutes } from "./routes/me-avatar.ts";
 import { createMediaWidgetRoutes, handleMediaProxy } from "./routes/media-widgets.ts";
 import { initMediaProxy } from "./media-proxy.ts";
 import { videoMessagesFromTool } from "./video-widget-turn.ts";
+import { askedForView } from "../shared/requested-views.ts";
+import { isCwViewTool } from "../shared/cw-widgets/tool-call.ts";
 import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from "./routes/presence.ts";
 import { PresenceTracker } from "./presence.ts";
 import { readApnsConfig } from "./push/config.ts";
@@ -9530,7 +9532,24 @@ function pageSize(raw: string | null): number | null | undefined {
 /** A screen message without its pixels, for live frames and pages alike.
  * The client fetches those from `/api/threads/:threadId/messages/:id/image`
  * when it actually shows one; `mime` stays so it can name a download. */
+/** The person's latest message in the conversation's active path: the
+ * message the running turn answers (views on request, shared/requested-views.ts). */
+function latestPersonText(threadId: string): string | undefined {
+  const path = store.activePath(threadId);
+  for (let i = path.length - 1; i >= 0; i -= 1) {
+    const row = path[i]!;
+    if (row.role === "user" && typeof row.text === "string") return row.text;
+  }
+  return undefined;
+}
+
 function slimMessage(message: Message): Message | Record<string, unknown> {
+  // a ConnectWise widget stored on an ordinary read before 2026-10-20 stays a
+  // row for every client, phone builds included (shared/cw-widgets/tool-call.ts)
+  if (message.tool?.widget && !isCwViewTool(message.tool.name)) {
+    const { widget: _widget, ...tool } = message.tool;
+    return { ...message, tool };
+  }
   if (message.kind !== "screen" || !message.png) return message;
   const { png: _png, ...rest } = message;
   return { ...rest, hasImage: true };
@@ -13710,7 +13729,7 @@ bus.subscribe((event: RuntimeEvent) => {
           const row = store.messagesFor(event.threadId).find((m) => m.id === messageId);
           const existing = row?.tool;
           toolName = existing?.name ?? "tool";
-          const widget = event.ok && event.resultText ? cwToolRowWidget(toolName, existing?.input, event.resultText) : null;
+          const widget = event.ok && event.resultText ? cwToolRowWidget(toolName, existing?.input, event.resultText, latestPersonText(event.threadId)) : null;
           // How long the call ran, for the step row's quiet duration.
           const durationMs = row ? Math.max(0, Date.now() - row.at) : undefined;
           store.patchMessage(event.threadId, messageId, {
@@ -13718,7 +13737,7 @@ bus.subscribe((event: RuntimeEvent) => {
           });
           toolMessageByItem.delete(itemKey);
         }
-        for (const videoMsg of videoMessagesFromTool(toolName, event.output, event.threadId)) {
+        for (const videoMsg of event.output ? videoMessagesFromTool(toolName, event.output, event.threadId, latestPersonText(event.threadId)) : []) {
           pushMessage(videoMsg);
         }
         // the bot just acted ON ITS SCREEN — refresh the preview now. Only
@@ -14761,7 +14780,10 @@ bus.subscribe((event: RuntimeEvent) => {
           const notificationBot = (routineRun && routineSourceOwner(routineRun)?.bot) || bot;
           notify(deliverableNotification("done", notificationBot, routineReportThread ?? event.threadId, completionDetail, { avatarUrl: notificationBot.avatarUrl }));
         }
-        if (screenPollers.has(event.threadId)) {
+        if (screenPollers.has(event.threadId) && askedForView(latestPersonText(event.threadId), "screen")) {
+          // views on request only (shared/requested-views.ts): the settled
+          // screenshot joins the chat only when the person asked to see the
+          // screen; the live screen panel is unchanged.
           // the last live frame becomes a settled inline screen message —
           // the screenshot-in-chat moment. One fresh capture first, so the
           // frame shows the turn's END state (the final tool's poke may
@@ -14777,7 +14799,7 @@ bus.subscribe((event: RuntimeEvent) => {
             new Promise<null>((resolve) => { timeout = setTimeout(() => resolve(null), SCREEN_SETTLE_TIMEOUT_MS); }),
           ]).then((frame) => {
             if (frame && isCurrent()) {
-              store.insertMessageAfter(event.threadId, settleLeafId, { role: "bot", kind: "screen", png: frame.png, mime: frame.mime });
+              store.insertMessageAfter(event.threadId, settleLeafId, { role: "bot", kind: "screen", requested: true, png: frame.png, mime: frame.mime });
             }
           }).catch(() => {}).finally(() => {
             clearTimeout(timeout);

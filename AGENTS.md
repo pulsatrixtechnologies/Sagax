@@ -5280,7 +5280,33 @@ build its own bubble. Gallery: `src/gallery/chat-widgets.html`
 (`npx vite --config vite.gallery.config.ts`, then
 `/src/gallery/chat-widgets.html?skin=<id>&lang=<code>&only=<sample>&narrow=1`).
 
-## ConnectWise views on demand only (2026-10-20)
+## Views in the chat only on request (2026-10-20)
+
+JC: « je veux pas de widget qui pop dans le chat pour aucune raison ».
+One rule, `shared/requested-views.ts` (`askedForView`): a view a tool result
+would add on its own appears only when the person's message of that turn
+asked for that kind of view; views the bot writes itself follow the same rule
+through the prompt. Approval, connection and credential cards and attachments
+the person asked for are not views.
+
+- ConnectWise tool row widget: `cwToolRowWidget` needs a view tool
+  (`cw_psa__show_*`) AND an ask ("view"). `slimMessage` strips the widget of
+  any other stored row, for every client.
+- Video players from a tool's output (Glitcho `list_followed`, any
+  `sagaxVideo`/`url` JSON): `videoMessagesFromTool` needs an ask ("video").
+- Settled screenshot at the end of a computer turn: needs an ask ("screen");
+  the live screen panel is unchanged.
+- Video and screen rows the server lets through carry `requested: true`;
+  web (ChatView, GroupView) and iOS (`MessageRow`) draw only those, so older
+  rows stay hidden.
+- Prompt (`RICH_OUTPUT_PROMPT`, `WIDGET_PROMPT`): ```chart, ```csv,
+  ```widget, ```cw, show_widget and an inline YouTube player only when asked
+  or when the request cannot be answered without one; show_widget forms only
+  to book, schedule or pick, never to display data.
+- Sagax renders no MCP Apps `ui://` resource itself: nothing to gate there.
+- Captures: `docs/screenshots/views-on-request/` (before, after).
+
+### ConnectWise views on demand only (2026-10-20)
 
 - A ConnectWise tool row draws its widget (`CwWidgetView`, iOS
   `CwWidgetCard`) only for a Perspicax view tool `cw_psa__show_<view>`

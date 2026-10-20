@@ -1341,9 +1341,10 @@ const MessagesList = memo(function MessagesList({
               // them as rows); only a fold the person asked for shows.
               return m.compaction?.by === "harness" ? null : <CompactionChip message={m} />;
             case "screen":
-              return <ScreenFrame threadId={threadId} message={m} />;
+              // views on request only (shared/requested-views.ts)
+              return m.requested ? <ScreenFrame threadId={threadId} message={m} /> : null;
             case "video":
-              return m.video ? (
+              return m.video && m.requested ? (
                 <div className="flex justify-start">
                   <VideoPlayerWidget video={m.video} />
                 </div>

@@ -85,7 +85,10 @@ describe("ConnectWise tool results", () => {
     // an ordinary read or find answers in text: no view the person did not ask for
     expect(cwToolRowWidget("mcp__perspicax_x__cw_psa__query", input, resultText)).toBeNull();
     expect(cwToolRowWidget("mcp__perspicax_x__cw_psa__find_schedule_entries", input, resultText)).toBeNull();
-    expect(cwToolRowWidget("mcp__perspicax_x__cw_psa__show_tickets", input, resultText)).toMatchObject({ family: "ticket" });
+    // a view tool draws only when the person's message asked for a view
+    expect(cwToolRowWidget("mcp__perspicax_x__cw_psa__show_tickets", input, resultText, "can you list me the ticket I have for today in connectwise?")).toBeNull();
+    expect(cwToolRowWidget("mcp__perspicax_x__cw_psa__show_tickets", input, resultText, "montre-moi mes billets en tableau interactif")).toMatchObject({ family: "ticket" });
+    expect(cwToolRowWidget("mcp__perspicax_x__cw_psa__query", input, resultText, "montre-moi mes billets en tableau interactif")).toBeNull();
     expect(isCwViewTool("cw_psa__show_schedule")).toBe(true);
     expect(isCwViewTool("mcp__perspicax_x__cw_psa__show_time_entries")).toBe(true);
     expect(isCwViewTool("mcp__perspicax_x__cw_psa__find_schedule_entries")).toBe(false);

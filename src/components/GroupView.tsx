@@ -836,11 +836,14 @@ export const Transcript = memo(function Transcript({
               m.dataResult ? <DataResultChip message={m} /> : isStatusActivity(m) ? <StatusActivityRow message={m} /> : <RoomToolChip message={m} roomId={group.id} />
             ) : null
           ) : m.kind === "screen" ? (
-            <ScreenFrame threadId={group.threadId} message={m} />
+            // views on request only (shared/requested-views.ts)
+            m.requested ? <ScreenFrame threadId={group.threadId} message={m} /> : null
           ) : m.kind === "video" && m.video ? (
-            <div className="flex justify-start">
-              <VideoPlayerWidget video={m.video} />
-            </div>
+            m.requested ? (
+              <div className="flex justify-start">
+                <VideoPlayerWidget video={m.video} />
+              </div>
+            ) : null
           ) : m.kind === "compaction" ? (
             m.compaction?.by === "harness" ? null : <CompactionChip message={m} />
           ) : m.kind === "digest" ? (
