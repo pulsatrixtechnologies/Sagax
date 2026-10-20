@@ -27,12 +27,15 @@ export function targetsServer(url, serverPort) {
   }
 }
 
-/** Every session but the app window's own is cancelled on its way to the server. */
-export function blockServerOutsideDefaultSession({ app, defaultSession, serverPort }) {
-  app.on("session-created", (created) => {
-    if (created === defaultSession) return;
-    created.webRequest.onBeforeRequest((details, callback) => callback({ cancel: targetsServer(details.url, serverPort()) }));
-  });
+/** The rule for one session: cancel its way to the server unless it is the
+ * app window's own. `guard()` is null until the app is ready (no window has
+ * loaded anything then); it shares the session's single onBeforeRequest
+ * listener with the upstream-hosts block (installSessionBlock). */
+export function serverRequestRefusal(created, guard) {
+  return (url) => {
+    const current = guard();
+    return Boolean(current) && created !== current.defaultSession && targetsServer(url, current.serverPort());
+  };
 }
 
 const ownPorts = new Set();

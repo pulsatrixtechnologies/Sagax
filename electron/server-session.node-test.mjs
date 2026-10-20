@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import test from "node:test";
 
-import { blockServerOutsideDefaultSession, reportOwnListeners, targetsServer } from "./server-session.mjs";
+import { reportOwnListeners, serverRequestRefusal, targetsServer } from "./server-session.mjs";
+import { installSessionBlock } from "./upstream-hosts.mjs";
 
 const SERVER_PORT = 48799;
 
@@ -15,13 +16,13 @@ function fakeSession() {
 
 const request = (session, url) => new Promise((resolve) => session.hooks.request({ url }, (result) => resolve(result.cancel)));
 
-test("no session but the app window's may reach the server, in any spelling of this machine", async () => {
-  const listeners = [];
-  const app = { on: (event, handler) => { if (event === "session-created") listeners.push(handler); } };
+test("no session but the app window's may reach the server, in any spelling of this machine, and the upstream block still holds", async () => {
   const defaultSession = fakeSession();
-  blockServerOutsideDefaultSession({ app, defaultSession, serverPort: () => SERVER_PORT });
-  const created = (session) => { for (const listener of listeners) listener(session); return session; };
-  const viewer = created(fakeSession());
+  let guard = null;
+  const viewer = fakeSession();
+  installSessionBlock(viewer, () => {}, serverRequestRefusal(viewer, () => guard));
+  installSessionBlock(defaultSession, () => {}, serverRequestRefusal(defaultSession, () => guard));
+  guard = { defaultSession, serverPort: () => SERVER_PORT };
   for (const host of ["127.0.0.1", "127.1.2.3", "localhost", "app.localhost", "[::1]", "[::ffff:127.0.0.1]", "0.0.0.0"]) {
     for (const scheme of ["http", "ws", "https", "wss"]) {
       assert.equal(await request(viewer, `${scheme}://${host}:${SERVER_PORT}/api/bots`), true, `${scheme} ${host}`);
@@ -30,17 +31,18 @@ test("no session but the app window's may reach the server, in any spelling of t
   for (const url of ["http://127.0.0.1:6080/vnc.html", "https://desktop.example/vnc.html", `http://10.0.0.5:${SERVER_PORT}/`, "data:text/html,x"]) {
     assert.equal(await request(viewer, url), false, url);
   }
-  created(defaultSession);
-  assert.equal(defaultSession.hooks.request, undefined, "the app window's own session is never cancelled");
+  // One listener per session: the upstream-hosts rule shares it.
+  assert.equal(await request(viewer, "https://github.com/milind-soni/OpenMausBot"), true);
+  assert.equal(await request(defaultSession, `http://127.0.0.1:${SERVER_PORT}/api/bots`), false, "the app window's own session is never cancelled");
   assert.equal(targetsServer(`http://2130706433:${SERVER_PORT}/`, SERVER_PORT), true);
 });
 
-test("main.mjs installs the guard once, before the first window, and sends the owner header on ws: too", () => {
+test("main.mjs sets the guard before the first window, and sends the owner header on ws: too", () => {
   const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
-  const install = main.indexOf("blockServerOutsideDefaultSession({");
+  const install = main.indexOf("serverSessionGuard = { defaultSession: session.defaultSession");
   assert.ok(install > 0);
-  assert.equal(main.indexOf("blockServerOutsideDefaultSession({", install + 1), -1);
-  assert.ok(main.indexOf("createWindow();", install) > install, "installed before the first window");
+  assert.match(main, /installSessionBlock\(created, \(line\) => slog\(`network: \$\{line\}`\), serverRequestRefusal\(created, \(\) => serverSessionGuard\)\)/);
+  assert.ok(main.indexOf("createWindow();", install) > install, "set before the first window");
   assert.match(main, /target\.protocol === "http:" \|\| target\.protocol === "ws:"/);
   assert.match(main, /reportOwnListeners\(proc\);/);
 });

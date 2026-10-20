@@ -152,6 +152,11 @@ Caddy's admin API (2019) and the ports of fleet workspaces. On an AKS sandbox
 the pod and service networks are private addresses, so a bot's browser never
 reaches the cluster.
 
+Azure's WireServer (`168.63.129.16`) counts as metadata on every host. On a
+shared server (organization, hosted workspace, service trust) no port a bot
+started is open to the bots' browsers, since one bot's page must never reach
+another bot's server; list it in `browserEngine.egress.allow` if needed.
+
 "A bot's own processes" means a process in the session of an engine running a
 bot's turns, so a dev server the bot started keeps counting after the shell
 that started it exits. Platforms other than Linux cannot tell, so there only
@@ -177,7 +182,8 @@ the system keychain (`--use-mock-keychain`) or keyring
 (`--password-store=basic`).
 
 A Chrome attached over CDP (`browserEngine.attachCdpUrl`) is the person's own
-and does not go through the gate; the server never treats a browser as its
+and does not go through the gate (an operator's explicit choice, for every
+bot of that server); the server never treats a browser as its
 owner anyway ([A browser signs in](self-hosting.md#a-browser-signs-in)), and
 the companion's control page needs its per-launch token. The widget check
 (`server/widget-check.ts`) keeps its own Chrome with no network at all.

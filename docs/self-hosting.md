@@ -553,7 +553,9 @@ so a browser on Vite's dev page (`pnpm dev`) is the owner as before. The
 server honours it only when it runs from source with owner trust, logs a
 warning, and ignores it in a build, the desktop app and a service-trust
 server. Run `SAGAX_DEV_TRUST_LOCAL_BROWSER=0 pnpm dev:server` to try the
-sign-in. Verification fixtures (`scripts/control-omb.ts`) set it the same
+sign-in. An unpackaged desktop run (`electron .`) sends no owner header,
+like upstream: sign its window in with a pairing code, or use a packaged
+build. Verification fixtures (`scripts/control-omb.ts`) set it the same
 way unless the caller passes `0`.
 
 ### Loopback trust: owner or service

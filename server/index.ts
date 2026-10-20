@@ -628,6 +628,7 @@ import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserRuntimeEnv } from "./browser-runtime.ts";
 import { browserEgress } from "./browser/egress/registry.ts";
+import type { ListenerOwnership } from "./browser/egress/ownership.ts";
 import { BrowserLive } from "./browser-live.ts";
 import { BrowserNetworkDebug } from "./browser-network-debug.ts";
 import {
@@ -4495,7 +4496,15 @@ function cancelDirectTurnDispatch(botId: string, expectedThreadId?: string): Dir
 // server per browser session that resolves names itself and never reaches
 // Sagax's own listeners, cloud metadata, link-local addresses, nor (on a
 // server) the local network (server/browser/egress, port of OpenMausBot #2930).
-browserEgress.configure({ host: DESKTOP_MANAGED ? "desktop" : CLOUD_HOME ? "cloud" : "server", config: () => cfg.browserEngine?.egress });
+// A shared server (organization, hosted workspace, service trust) runs many
+// people's bots side by side: one bot's browser never reaches the servers
+// another bot started, so no bot port is open there without
+// browserEngine.egress.allow (Sagax addition to the port).
+const sharedEgressHost = !DESKTOP_MANAGED && (IDENTITY.kind === "perspicax" || HOSTED_WORKSPACE || LOOPBACK.trust === "service");
+browserEgress.configure({
+  host: DESKTOP_MANAGED ? "desktop" : CLOUD_HOME ? "cloud" : "server", config: () => cfg.browserEngine?.egress,
+  ...(sharedEgressHost ? { ownership: { botOwned: async () => false } as unknown as ListenerOwnership } : {}),
+});
 const browserRuntime = new BrowserRuntime({
   egressNotice: (session) => browserEgress.takeNotice(session),
   // The bot's restart_browser tool. An open Browser panel watched the old

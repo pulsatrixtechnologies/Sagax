@@ -48,7 +48,8 @@ const LINK_LOCAL = subnets([["169.254.0.0", 16], ["fe80::", 10]]);
 const PRIVATE = subnets([["10.0.0.0", 8], ["100.64.0.0", 10], ["172.16.0.0", 12], ["192.168.0.0", 16], ["fc00::", 7]]);
 // AWS (IPv4 and IPv6), Azure, GCP and Oracle answer on 169.254.169.254; Alibaba on 100.100.100.200.
 const METADATA = new BlockList();
-for (const address of ["169.254.169.254", "fd00:ec2::254", "100.100.100.200"]) METADATA.addAddress(address, family(address));
+// Azure's WireServer (168.63.129.16) is a public-range address every Azure VM and AKS node answers on (Sagax addition).
+for (const address of ["169.254.169.254", "fd00:ec2::254", "100.100.100.200", "168.63.129.16"]) METADATA.addAddress(address, family(address));
 
 const NAT64 = subnets([["64:ff9b::", 96]]);
 const SIX_TO_FOUR = subnets([["2002::", 16]]);

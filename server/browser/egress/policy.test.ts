@@ -43,6 +43,7 @@ describe("address classes", () => {
     ["169.254.169.254", "metadata"],
     ["fd00:ec2::254", "metadata"],
     ["100.100.100.200", "metadata"],
+    ["168.63.129.16", "metadata"],
     ["169.254.1.1", "link-local"],
     ["fe80::1", "link-local"],
     ["fe80::1%en0", "link-local"],
