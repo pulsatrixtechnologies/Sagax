@@ -69967,6 +69967,150 @@
           }
         }
       }
+    },
+    "Sagax is reconnecting. Your message was not sent; try again in a moment.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax se reconnecte. Votre message n'a pas été envoyé; réessayez dans un instant."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sagax está reconectando. Sua mensagem não foi enviada; tente de novo em instantes."
+          }
+        }
+      }
+    },
+    "Reconnecting to Sagax...": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnexion à Sagax..."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconectando ao Sagax..."
+          }
+        }
+      }
+    },
+    "Your session has ended": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre session a pris fin"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sua sessão terminou"
+          }
+        }
+      }
+    },
+    "Your account is disabled in Pulsatrix or on this Sagax server. Ask an administrator.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre compte est désactivé dans Pulsatrix ou sur ce serveur Sagax. Demandez à un administrateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sua conta está desativada no Pulsatrix ou neste servidor Sagax. Fale com um administrador."
+          }
+        }
+      }
+    },
+    "Your Pulsatrix sign-in has ended. Sign in again to keep using your chats here.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre connexion Pulsatrix a pris fin. Reconnectez-vous pour continuer à utiliser vos conversations ici."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seu login no Pulsatrix terminou. Entre de novo para continuar usando suas conversas aqui."
+          }
+        }
+      }
+    },
+    "This session was signed out from another device or by an administrator. Sign in again to keep using your chats here.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette session a été fermée depuis un autre appareil ou par un administrateur. Reconnectez-vous pour continuer à utiliser vos conversations ici."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta sessão foi encerrada em outro dispositivo ou por um administrador. Entre de novo para continuar usando suas conversas aqui."
+          }
+        }
+      }
+    },
+    "This session expired after a long time without use. Sign in again to keep using your chats here.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette session a expiré après une longue période sans utilisation. Reconnectez-vous pour continuer à utiliser vos conversations ici."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta sessão expirou depois de muito tempo sem uso. Entre de novo para continuar usando suas conversas aqui."
+          }
+        }
+      }
+    },
+    "This address now answers as another Sagax server. Sign in again to use it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette adresse répond maintenant comme un autre serveur Sagax. Reconnectez-vous pour l'utiliser."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este endereço agora responde como outro servidor Sagax. Entre de novo para usá-lo."
+          }
+        }
+      }
+    },
+    "This server no longer recognizes this session. Sign in again to keep using your chats here.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce serveur ne reconnaît plus cette session. Reconnectez-vous pour continuer à utiliser vos conversations ici."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este servidor não reconhece mais esta sessão. Entre de novo para continuar usando suas conversas aqui."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
