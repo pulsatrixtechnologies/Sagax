@@ -30,7 +30,7 @@ const MAX_CHARS = 80;
 /** The text with emoji, punctuation and spacing reduced to single spaces. */
 function normalize(text: string): string {
   return text.toLowerCase().normalize("NFC").replace(/[’‘]/g, "'")
-    .replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}‍️]/gu, " ")
+    .replace(/\p{Extended_Pictographic}|\p{Emoji_Modifier}|‍|️/gu, " ")
     .replace(/[!?.,;:…~*_()"«»“”]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
