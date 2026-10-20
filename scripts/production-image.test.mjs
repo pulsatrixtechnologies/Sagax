@@ -38,6 +38,8 @@ describe("production image sources", () => {
     expect(dockerfile).not.toMatch(/FROM\s+\S*distroless/);
     expect(dockerfile).toContain("apt-get upgrade -y --no-install-recommends");
     expect(dockerfile).toContain("scripts/harden-image-deps.mjs");
+    // The server image has Hermes: its pip overlay is never skipped.
+    expect(dockerfile).not.toContain("--no-venv");
     expect(dockerfile).toContain("scripts/hermes-python.mjs");
     expect(dockerfile).toContain("install-chrome-for-testing.mjs");
     expect(dockerfile).toContain("libstdc++6");

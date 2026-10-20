@@ -40,7 +40,7 @@ COPY engines.lock.json scripts/install-engines.mjs scripts/engine-image-gate.mjs
 ENV ENGINE_SET="claude codex" \
     SAGAX_REQUIRE_ENGINES=0
 RUN node /app/engines/install-engines.mjs --lock /app/engines/engines.lock.json --manifest /app/engines/manifest.json \
-  && node /app/engines/harden-image-deps.mjs --root /usr/local/lib/node_modules \
+  && node /app/engines/harden-image-deps.mjs --no-venv --root /usr/local/lib/node_modules \
   && test -x /usr/local/bin/claude && test -x /usr/local/bin/codex \
   && npm cache clean --force \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \

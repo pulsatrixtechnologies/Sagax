@@ -282,6 +282,8 @@ describe("sagax-run image", () => {
     expect(dockerfile).toMatch(/^FROM \$\{SANDBOX_IMAGE\}$/m);
     expect(dockerfile).toContain('ENV ENGINE_SET="claude codex"');
     expect(dockerfile).toMatch(/^USER 1000:1000$/m);
+    // No Hermes in this image: the overlay runs npm only (a venv found fails).
+    expect(dockerfile).toContain("harden-image-deps.mjs --no-venv --root /usr/local/lib/node_modules");
     expect(dockerfile).toContain('ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/node", "/opt/sagax-runner/dist-server/sagax-runner.js"]');
     const bundle = readFileSync(new URL("../../scripts/bundle-server.mjs", import.meta.url), "utf8");
     expect(bundle.match(/const ENTRY_POINTS = \[([\s\S]*?)\];/)?.[1]).toMatch(/["']sagax-runner\.ts["']/);
