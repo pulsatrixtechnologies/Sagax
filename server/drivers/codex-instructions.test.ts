@@ -86,6 +86,23 @@ describe("Codex instruction receipts", () => {
     expect(cleared).toMatchObject({ deliverVolatile: true, hadVolatile: true });
   });
 
+  it("remembers the volatile sections the native thread holds, only once committed", async () => {
+    const key = randomUUID();
+    const request = vi.fn().mockResolvedValue({});
+    const v1 = { memory: "a".repeat(64), recent: "b".repeat(64) };
+    const first = await syncCodexInstructions(key, "native", "rules", "memory v1", false, request, false, v1);
+    expect(first.previousSections).toBeUndefined();
+    first.commitVolatile?.();
+    const changed = await syncCodexInstructions(key, "native", "rules", "memory v2", true, request, false, { ...v1, recent: "c".repeat(64) });
+    expect(changed.previousSections).toEqual(v1);
+    // not committed (the provider refused the turn): the old copy still counts
+    const retried = await syncCodexInstructions(key, "native", "rules", "memory v2", true, request, false, { ...v1, recent: "c".repeat(64) });
+    expect(retried.previousSections).toEqual(v1);
+    // a fresh native thread holds nothing yet
+    const fresh = await syncCodexInstructions(key, "native-2", "rules", "memory v2", false, request, false, v1);
+    expect(fresh.previousSections).toBeUndefined();
+  });
+
   it("treats a legacy bare-fingerprint receipt as unknown volatile context", async () => {
     const key = randomUUID();
     const request = vi.fn().mockResolvedValue({});

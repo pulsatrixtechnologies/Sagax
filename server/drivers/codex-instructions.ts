@@ -15,9 +15,16 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
 export interface CodexInstructionReceipt {
   instructions: string;
   volatile?: string;
+  /** Fingerprints of the volatile sections committed with `volatile`
+   * (prompt-split.ts sectionFingerprints), so a later turn sends only the
+   * sections that changed. */
+  sections?: Record<string, string>;
 }
 
 const isFingerprint = (value: string) => /^[0-9a-f]{64}$/.test(value);
+const validSections = (value: unknown): value is Record<string, string> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value)
+  && Object.values(value as Record<string, unknown>).every((print) => typeof print === "string" && isFingerprint(print));
 
 function parseReceipt(raw: string | undefined): CodexInstructionReceipt | null {
   if (!raw) return null;
@@ -26,11 +33,12 @@ function parseReceipt(raw: string | undefined): CodexInstructionReceipt | null {
   try {
     const parsed = JSON.parse(trimmed) as unknown;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const record = parsed as { instructions?: unknown; volatile?: unknown };
+      const record = parsed as { instructions?: unknown; volatile?: unknown; sections?: unknown };
       if (typeof record.instructions === "string" && isFingerprint(record.instructions)) {
         return {
           instructions: record.instructions,
           ...(typeof record.volatile === "string" && isFingerprint(record.volatile) ? { volatile: record.volatile } : {}),
+          ...(typeof record.volatile === "string" && validSections(record.sections) ? { sections: record.sections } : {}),
         };
       }
     }
@@ -64,7 +72,8 @@ export async function syncCodexInstructions(
   resumed: boolean,
   request: (method: string, params: Record<string, unknown>) => Promise<unknown>,
   mentionTurn = false,
-): Promise<{ deliverVolatile: boolean; hadVolatile: boolean; commitVolatile: (() => void) | null }> {
+  sections?: Record<string, string>,
+): Promise<{ deliverVolatile: boolean; hadVolatile: boolean; previousSections?: Record<string, string>; commitVolatile: (() => void) | null }> {
   const directory = join(DATA_DIR, "codex-instructions");
   const path = join(directory, `${digest(JSON.stringify([key, nativeThreadId]))}.sha256`);
   const fingerprint = digest(instructions);
@@ -115,10 +124,14 @@ export async function syncCodexInstructions(
     writeFileAtomic(path, JSON.stringify({ instructions: fingerprint }), { mode: 0o600 });
   }
   const commitVolatile = previous?.instructions === fingerprint && previous?.volatile === volatileFingerprint
+    && (!sections || previous.sections !== undefined)
     ? null
     : () => {
         mkdirSync(directory, { recursive: true });
-        writeFileAtomic(path, JSON.stringify({ instructions: fingerprint, volatile: volatileFingerprint }), { mode: 0o600 });
+        writeFileAtomic(path, JSON.stringify({ instructions: fingerprint, volatile: volatileFingerprint, ...(sections ? { sections } : {}) }), { mode: 0o600 });
       };
-  return { deliverVolatile, hadVolatile, commitVolatile };
+  // The sections the native thread holds: known only on a resumed thread
+  // whose committed receipt recorded them.
+  const previousSections = resumed && previous?.volatile !== undefined ? previous.sections : undefined;
+  return { deliverVolatile, hadVolatile, ...(previousSections ? { previousSections } : {}), commitVolatile };
 }
