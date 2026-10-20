@@ -4987,6 +4987,87 @@ export blocks of `server/credential-vault.test.ts` and
 the launcher forwards a throwaway `SAGAX_MCP_OAUTH_KEY` and sends the owner
 capability on its own starter rename).
 
+## My Chrome: a bot drives the person's own Chrome (2026-10-19)
+
+Port of OpenMausBot #2706 (My Chrome) with what Sagax needs of #2925, #2928,
+#2939 and #2949, narrowed by JC's rules. Off by default. Settings >
+Experimental > My Chrome (`src/components/settings/MyChromeSettings.tsx`,
+under the built-in browser row) turns it on and lists the allowed sites, each
+one exact origin (`https://host[:port]`, `http://localhost:port` the only
+plain http; `server/browser/my-chrome/sites.ts`), with Revoke, Stop / Resume
+and Chrome's address. A bot uses it when its browser session is "My Chrome"
+(`browserProfile: "my-chrome"`, `MY_CHROME_PROFILE`; BrowserProfilesManager
+offers it where the server does). Settings live in `my-chrome.json` (0600,
+`server/browser/my-chrome/settings.ts`); a file that does not read is "off".
+An organization server never offers it unless that file says
+`allowOnOrganizationServer: true` by hand (no route sets it).
+
+- The engine is still agent-browser (`AGENT_BROWSER_CDP`), but it reaches the
+  gate (`server/browser/my-chrome/gate.ts`), never Chrome: a loopback
+  WebSocket with a random 48-hex path per bot session. The gate holds one
+  DevTools connection to the person's Chrome, found from the setting (a port,
+  a loopback `ws://` or `http://`) or Chrome's `DevToolsActivePort` file
+  (`locate.ts`: that file only, never the profile's cookies, Login Data or
+  history; remote debugging on at `chrome://inspect/#remote-debugging`,
+  Chrome 144+, which asks the person before it lets Sagax in).
+- The engine sees only the tabs it opened through the gate (and popups they
+  opened): `Target.getTargets` is filtered, attaching to any other tab is
+  refused. A new tab starts blank, gets its guard, then goes to the address.
+  The guard (the gate's own session per tab) intercepts documents (`Fetch`)
+  and fails any top-level navigation outside the allowed sites: address,
+  link, redirect, form, script, popup (held by `Target.autoAttachRelated`
+  until guarded). Revoking a site refuses the engine on it at once.
+- `cdp-policy.ts` allowlists methods: no cookie call (`Network.getCookies`,
+  `getAllCookies`, `Storage.*`, `Page.getCookies`), no storage of any origin
+  (`DOMStorage`, `IndexedDB`, `CacheStorage`), no body or interception
+  (`getResponseBody`, `loadNetworkResource`, `Fetch`), no browser-wide call,
+  context, download, file upload, permission, autofill. Network events lose
+  every header, cookie and body; the `ExtraInfo` events are dropped. Frames
+  and workers of another site inside an allowed page are detached from the
+  engine. Unknown methods are refused.
+- Each driven tab carries a banner (bottom right, "A Sagax bot is driving
+  this tab" / "Un bot Sagax pilote cet onglet") in an isolated world, hidden
+  from the accessibility tree, with a Stop button whose binding exists only
+  in that world and counts only a trusted click. Sagax shows its own banner
+  while a bot drives (`src/components/MyChromeIndicator.tsx`: which bot, on
+  which site, Stop). Stop (`POST /api/my-chrome/stop`, the tab's button, or
+  turning My Chrome off) terminates every engine connection first, then
+  removes the guards and banners, closes the Chrome connection and the
+  engines' sessions; `stopped` is saved and holds until Resume.
+- The bot's calls (`server/browser/my-chrome/pilot.ts`, from the internal
+  browser route): only the page tools (no `agent_browser_eval`, cookies,
+  state, profiles, `read` with a URL, screenshot to a file), elements only by
+  `@eN` refs. A payment or purchase, a send (form, email, message, post,
+  save, confirm) or a delete waits on the same Allow / Deny card as a safety
+  hold (`confirmHeldCard` in server/index.ts; Full access and Approve for me
+  do not answer it). It is named from the role and name of the ref in the
+  bot's last snapshot, the key (Enter or Space, except after typing in a
+  search box), text with a line break, or an address (`/delete`,
+  `/checkout`...). An unknown ref or a button with no name is a card too.
+  Passwords go only through the vault's `fill_credential`. What the gate
+  blocked is added to the next result. The bot's prompt gets
+  `MY_CHROME_SYSTEM_PROMPT`. A confidential conversation never uses it.
+- Routes: `POST /api/my-chrome/{status,enable,sites,sites/revoke,address,stop,resume}`,
+  POST only, the person or an admin (`adminOrDelegate(server.settings)`),
+  admin and off in the agent tool policy.
+- The egress gate of the bots' own browsers (#2930) does not apply to My
+  Chrome (the person's browser); the site allowlist and the gate do.
+  `browserEngine.attachCdpUrl` keeps its old meaning (every bot attaches,
+  ungated): an operator setting, separate from My Chrome.
+
+Tests: `server/browser/my-chrome/my-chrome.test.ts` (sites, settings,
+locating Chrome, the DevTools policy, cards), `server/routes/my-chrome.test.ts`,
+`src/components/MyChromeIndicator.dom.test.ts`, and
+`server/browser/my-chrome/my-chrome.e2e.test.ts` against a throwaway headless
+Chrome for Testing (temporary profile, `--headless=new`, its own loopback
+port; `SAGAX_TEST_CHROME` or the Playwright cache, never the person's
+Chrome) and two local sites: the person's tabs stay invisible, every cookie
+and storage call is refused, no address, link, redirect or popup reaches the
+other site, its frame stays away from the engine, revoking works at once, the
+banner's Stop (a trusted click) and Sagax's Stop cut at once. With
+`SAGAX_TEST_AGENT_BROWSER=<agent-browser binary>` the last suite drives the
+real tool path: cards for delete, payment and send, refusals, Stop.
+
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 
 A bot shows a card, list, form, table or chart with the agents tool

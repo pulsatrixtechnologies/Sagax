@@ -35,6 +35,7 @@ import { ArtifactsHost } from "@/components/artifacts/ArtifactsHost";
 import { StagedOrgImport } from "@/components/OrgImportDialog";
 import { RetroAssistantHost } from "@/components/RetroAssistantHost";
 import { AchievementToaster } from "@/components/achievements/AchievementToaster";
+import { MyChromeIndicator } from "@/components/MyChromeIndicator";
 import { reportAchievement } from "@/lib/achievements";
 import { FloatingBotsHost } from "@/components/FloatingBotsHost";
 import { FloatingWindowsHost } from "@/components/floating/FloatingWindowsHost";
@@ -402,6 +403,8 @@ function Shell() {
       {/* What's new sits above the update dialog. Both are outside the layout flow. */}
       <ReleaseNotesPrompt />
       <UpdateBanner />
+      {/* A bot driving the person's own Chrome: who, where, and Stop. */}
+      <MyChromeIndicator />
       {/* The one bottom-left card at a time (only the star is left in Sagax). */}
       {/* Hibou 98 only: title bar, menus and toolbar (renders nothing otherwise) */}
       <RetroChromeSlot slot="top" onNewBot={() => setComposeOpen((open) => !open)} />
