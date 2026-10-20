@@ -187,6 +187,16 @@ export function resolveTeammate<T extends RosterMember>(
   return { error: `No bot with id or name "${shown}" — call list_bots and copy the exact id from the result. ${PEER_ACCESS_HELP}` };
 }
 
+/** True when a teammate's shown name alone resolves to it (resolveTeammate):
+ * no other peer in the list folds to the same name and the roster shows it
+ * unchanged. A prompt may then name it without its id, which the model
+ * would otherwise copy into each coordinate_bots call (perf round 3). */
+export function uniquePeerName(bot: RosterMember, peers: readonly RosterMember[]): boolean {
+  const fold = (value: string) => value.replace(/^@/, "").replace(/\s+/g, " ").trim().toLowerCase();
+  const name = fold(bot.name);
+  return Boolean(name) && peerName(bot.name) === bot.name && peers.filter(peer => fold(peer.name) === name).length === 1;
+}
+
 // The roster is interpolated into a TRUSTED bot's system prompt on every
 // turn, and its inputs (name/title/description) are user-editable and — via
 // team import — third-party-authored. Caps bound both the token spend and

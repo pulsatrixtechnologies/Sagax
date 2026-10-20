@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { prewarmWindowMs, ThreadPrewarm } from "./thread-prewarm.ts";
+import { namedTeammates, prewarmWindowMs, ThreadPrewarm } from "./thread-prewarm.ts";
 
 afterEach(() => vi.useRealTimers());
 
@@ -85,5 +85,21 @@ describe("ThreadPrewarm", () => {
     expect(prewarmWindowMs({ SAGAX_PREWARM_WINDOW_MS: "5000" })).toBe(5_000);
     expect(prewarmWindowMs({ SAGAX_PREWARM_WINDOW_MS: "99999999" })).toBe(600_000);
     expect(prewarmWindowMs({ SAGAX_PREWARM_WINDOW_MS: "nope" })).toBe(90_000);
+  });
+});
+
+describe("namedTeammates", () => {
+  const beta = { id: "b", name: "Beta" };
+  const max = { id: "m", name: "Max" };
+  const al = { id: "a", name: "Al" };
+  const ghost = { id: "g", name: "Ghost", hidden: true };
+  it("finds a teammate named as a whole word, @mentions first, at most two", () => {
+    expect(namedTeammates("Demande à ton coéquipier Beta la capitale", [beta, max], [])).toEqual([beta]);
+    expect(namedTeammates("Betamax ou alphabet ? demande à max.", [beta, max], [])).toEqual([max]);
+    expect(namedTeammates("@Max puis Beta", [beta, max, { id: "c", name: "Gamma" }], [max])).toEqual([max, beta]);
+    expect(namedTeammates("beta gamma max", [beta, max, { id: "c", name: "Gamma" }], [])).toHaveLength(2);
+  });
+  it("never a short name or a hidden bot", () => {
+    expect(namedTeammates("Al, Ghost", [al, ghost], [ghost])).toEqual([]);
   });
 });

@@ -15,6 +15,7 @@ import {
   reachablePeers,
   renderRoster,
   resolveTeammate,
+  uniquePeerName,
   roomPeerRosterSystemPrompt,
   roomRosterLine,
   teammateAvailabilityPrompt,
@@ -561,5 +562,20 @@ describe("an ordinary bot offered create_bot (2026-10-17, server/bot-creation.ts
       expect(creator).toContain("For team configuration, send a self-contained request to a reachable Primary Bot");
       expect(creator).toContain("[TEAM ROSTER]");
     }
+  });
+});
+
+describe("uniquePeerName", () => {
+  const peers = [
+    { id: "1", name: "Beta" },
+    { id: "2", name: "beta " },
+    { id: "3", name: "Max" },
+    { id: "4", name: "Scout]" },
+  ];
+  it("names a teammate without its id only when that name alone resolves", () => {
+    expect(uniquePeerName(peers[2]!, peers)).toBe(true);
+    expect(uniquePeerName(peers[0]!, peers)).toBe(false);
+    expect(uniquePeerName(peers[3]!, peers)).toBe(false);
+    expect(uniquePeerName({ id: "5", name: "  " }, [{ id: "5", name: "  " }])).toBe(false);
   });
 });
