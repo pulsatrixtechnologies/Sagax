@@ -94,7 +94,9 @@ describe("serveHarnessMcpHttp", () => {
   it("turns a refused capability into a tool error, never an HTTP 401", async () => {
     const response = await post({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "data_query", arguments: {} } }, "Bearer stale");
     expect(response.status).toBe(200);
-    const reply = await response.json() as Rpc;
+    // every tool call answers as an event stream, the result as the last event
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    const reply = JSON.parse((await response.text()).trim().split("data: ").at(-1)!) as Rpc;
     expect(reply.result.isError).toBe(true);
   });
   it("streams a tool call that carries a progress token, the result as the last event", async () => {

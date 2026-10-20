@@ -666,7 +666,7 @@ function harnessHttpServer(server: FakeMcpServer | undefined): { url: string; he
   return server?.type === "http" && typeof server.url === "string" && /\/api\/internal\/(browser|computer|data)\/mcp-http$/.test(server.url)
     ? { url: server.url, ...(server.headers ? { headers: server.headers } : {}) } : null;
 }
-const HTTP_POST_SCRIPT = `let b="";process.stdin.on("data",(c)=>b+=c).on("end",async()=>{try{const r=await fetch(process.env.FAKE_MCP_URL,{method:"POST",headers:{"content-type":"application/json",accept:"application/json, text/event-stream",...JSON.parse(process.env.FAKE_MCP_HEADERS||"{}")},body:b.trim()});process.stdout.write((await r.text())+"\\n")}catch(e){process.stderr.write(String(e))}})`;
+const HTTP_POST_SCRIPT = `let b="";process.stdin.on("data",(c)=>b+=c).on("end",async()=>{try{const r=await fetch(process.env.FAKE_MCP_URL,{method:"POST",headers:{"content-type":"application/json",accept:"application/json, text/event-stream",...JSON.parse(process.env.FAKE_MCP_HEADERS||"{}")},body:b.trim()});const t=await r.text();process.stdout.write((t.includes("data: ")?t.trim().split("data: ").at(-1):t)+"\\n")}catch(e){process.stderr.write(String(e))}})`;
 
 /** One screenshot through the launched cloud computer server, if this turn
  * has one: the server answers once the harness has created or woken the
@@ -1017,7 +1017,9 @@ function fakeHttpMcpSession(server: { url: string; headers?: Record<string, stri
     const id = ++next;
     try {
       const response = await post({ jsonrpc: "2.0", id, method, params });
-      return await response.json() as Record<string, unknown>;
+      const text = await response.text();
+      // a tool call answers as an event stream: the result is the last event
+      return JSON.parse(text.includes("data: ") ? text.trim().split("data: ").at(-1)! : text) as Record<string, unknown>;
     } catch (error) {
       return { id, error: { code: -1, message: error instanceof Error ? error.message : "error" } };
     }

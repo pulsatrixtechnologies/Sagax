@@ -113,14 +113,20 @@ export async function serveHarnessMcpHttp(req: IncomingMessage, res: ServerRespo
   // no limit and browser calls take up to 130 s). When the client sent a
   // progress token, the answer is an event stream that reports progress
   // every 15 s and ends with the result, which keeps the request alive.
+  // Without a progress token the stream still carries a comment line every
+  // 15 s, so no byte-idle timeout cuts a long call either.
+  const call = isToolCall(frame);
   const progressToken = callProgressToken(frame);
   let ticker: NodeJS.Timeout | undefined;
-  if (progressToken !== undefined) {
+  if (call) {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
     let progress = 0;
     ticker = setInterval(() => {
       progress += 1;
-      if (!res.writableEnded) res.write(sseEvent({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, progress } }));
+      if (res.writableEnded) return;
+      res.write(progressToken !== undefined
+        ? sseEvent({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, progress } })
+        : ": still working\n\n");
     }, PROGRESS_EVERY_MS);
     ticker.unref?.();
     res.once("close", () => clearInterval(ticker));
@@ -134,7 +140,7 @@ export async function serveHarnessMcpHttp(req: IncomingMessage, res: ServerRespo
     if (left > 0) pending.set(token, left);
     else pending.delete(token);
   }
-  if (progressToken !== undefined) {
+  if (call) {
     if (!res.writableEnded) res.end(sseEvent(reply));
     return;
   }
@@ -147,6 +153,13 @@ const PROGRESS_EVERY_MS = 15_000;
 
 function sseEvent(message: unknown): string {
   return `event: message\ndata: ${JSON.stringify(message)}\n\n`;
+}
+
+/** A tools/call request (it has an id): answered as an event stream. */
+function isToolCall(frame: unknown): boolean {
+  if (!frame || typeof frame !== "object" || Array.isArray(frame)) return false;
+  const message = frame as { method?: unknown; id?: unknown };
+  return message.method === "tools/call" && message.id !== undefined && message.id !== null;
 }
 
 /** The progress token of a tools/call request, when it carries one. */
