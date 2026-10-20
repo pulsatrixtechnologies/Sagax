@@ -38,6 +38,30 @@ spec:
           operator: Equal
           value: {{ .Values.warmNode.tolerationValue | quote }}
           effect: NoSchedule
+      {{- with .Values.warmNode.prepullImages }}
+      # Pull the sandbox images onto the warm node so a cold pod start does not
+      # wait on the registry. Each image must be digest-pinned and listed in
+      # admission.allowedImages.
+      initContainers:
+        {{- range $i, $img := . }}
+        - name: prepull-{{ $i }}
+          image: {{ $img | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "exit 0"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+        {{- end }}
+      {{- end }}
       containers:
         - name: pause
           image: {{ .Values.warmNode.pauseImage | quote }}
