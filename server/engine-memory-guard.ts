@@ -150,6 +150,12 @@ export class IdleEnginePool {
     this.idle.delete(threadId);
   }
 
+  /** Whether this thread has a finished (or pre-warmed) process kept warm. */
+  has(threadId: string): boolean {
+    this.prune();
+    return this.idle.has(threadId);
+  }
+
   /** The process is gone (session exited). */
   forget(threadId: string): void {
     this.idle.delete(threadId);
