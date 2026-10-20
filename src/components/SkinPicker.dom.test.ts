@@ -36,6 +36,8 @@ afterEach(() => {
   host.remove();
   delete document.documentElement.dataset.skin;
   delete document.documentElement.dataset.skinTint;
+  delete document.documentElement.dataset.skinDepth;
+  delete document.documentElement.dataset.skinTexture;
   vi.unstubAllGlobals();
 });
 
@@ -83,10 +85,15 @@ describe("SkinPicker", () => {
     expect(modePill()!.textContent).toContain(mode);
   });
 
-  it("shows the family's own look and each colour as swatches, each in its own skin context", () => {
+  it("shows the colours, the duo-tones and the moods as rows of swatches, each in its own skin context", () => {
     open("midnight");
-    const ids = [...host.querySelectorAll("[data-skin-variant]")].map((el) => el.getAttribute("data-skin-variant"));
-    expect(ids).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
+    const row = (group: string) =>
+      [...host.querySelectorAll(`[data-settings-row="skinVariant-${group}"] [data-skin-variant]`)].map((el) => el.getAttribute("data-skin-variant"));
+    expect(row("color")).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
+    expect(row("duo")).toEqual(["aurore", "ocean", "neon", "foret"]);
+    expect(row("ambiance")).toEqual(["cyberpunk", "sunset", "nordic", "candy"]);
+    // a mood without the scheme worn now shows the one it has
+    expect(swatch("candy")!.querySelector("[data-skin]")!.getAttribute("data-skin")).toBe("daylight");
     const dot = swatch("yellow")!.querySelector("[data-skin]")!;
     expect([dot.getAttribute("data-skin"), dot.getAttribute("data-skin-tint")]).toEqual(["midnight", "yellow"]);
     expect(swatch("basic")!.querySelector("[data-skin]")!.hasAttribute("data-skin-tint")).toBe(false);
@@ -127,6 +134,26 @@ describe("SkinPicker", () => {
     expect(localStorage.getItem(SKIN_MODE_KEY)).toBe("auto");
   });
 
+  it("shows Intensity on a colour only, and stamps it and the texture", async () => {
+    open("midnight");
+    expect(host.querySelector('[data-settings-row="skinDepth"]')).toBeNull();
+    await act(async () => { swatch("red")!.click(); await flush(); });
+    const depth = host.querySelector<HTMLElement>('[data-settings-row="skinDepth"]')!;
+    await act(async () => { depth.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!.click(); await flush(); });
+    const full = [...host.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Full"))!;
+    await act(async () => { full.click(); await flush(); });
+    expect(document.documentElement.dataset.skinDepth).toBe("full");
+    expect(localStorage.getItem("omb-skin-depth")).toBe("full");
+    await act(async () => { swatch("aurore")!.click(); await flush(); });
+    expect(host.querySelector('[data-settings-row="skinDepth"]')).toBeNull();
+    const textureRow = host.querySelector<HTMLElement>('[data-settings-row="skinTexture"]')!;
+    await act(async () => { textureRow.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!.click(); await flush(); });
+    const dots = [...host.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Dots"))!;
+    await act(async () => { dots.click(); await flush(); });
+    expect(document.documentElement.dataset.skinTexture).toBe("dots");
+    expect(localStorage.getItem("omb-skin-texture")).toBe("dots");
+  });
+
   it("gives Hibou 98 its Windows editions as variants, with no mode row", async () => {
     localStorage.setItem("omb.retro98.unlocked", "1");
     open("retro98");
@@ -135,6 +162,7 @@ describe("SkinPicker", () => {
     expect(ids).toEqual(["classic", "xp", "vista", "win7", "win8", "win81", "win10", "win11"]);
     expect(swatch("classic")!.getAttribute("aria-pressed")).toBe("true");
     expect(modePill()).toBeNull();
+    expect(host.querySelector('[data-settings-row="skinTexture"]')).toBeNull();
     await act(async () => { swatch("xp")!.click(); await flush(); });
     expect(worn()).toEqual(["retro98", "xp"]);
     expect(swatch("xp")!.getAttribute("aria-pressed")).toBe("true");

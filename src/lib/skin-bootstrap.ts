@@ -4,7 +4,8 @@
 // skinIdFromStored is the stored id alone; the inline script adds Auto.
 
 import { autoPairs, legacyPairs, SKIN_MODE_KEY, tintsBySkin } from "./skin-families";
-import { DEFAULT_SKIN, SKIN_IDS, SKIN_TINT_KEY, type SkinId } from "./skins";
+import { DEFAULT_SKIN, SKIN_DEPTH_KEY, SKIN_IDS, SKIN_TEXTURE_KEY, SKIN_TINT_KEY, type SkinId } from "./skins";
+import { SKIN_TEXTURES } from "./skin-families";
 
 const BOOTSTRAP_IDS: readonly string[] = SKIN_IDS;
 
@@ -39,5 +40,8 @@ export function skinBootstrapInlineScript(): string {
   const tints = scriptSafeJson(tintsBySkin());
   const modeKey = scriptSafeJson(SKIN_MODE_KEY);
   const tintKey = scriptSafeJson(SKIN_TINT_KEY);
-  return `(function(){var SKINS=${ids},PAIRS=${pairs},LEGACY=${legacy},TINTS=${tints},d=${fallback},s,m,t;try{s=localStorage.getItem("omb-skin");m=localStorage.getItem(${modeKey});t=localStorage.getItem(${tintKey})}catch(e){}if(LEGACY[s]){t=LEGACY[s][1];s=LEGACY[s][0]}s=SKINS.indexOf(s)>=0?s:d;if(m==="auto"&&PAIRS[s]){var k=false;try{k=matchMedia("(prefers-color-scheme: dark)").matches}catch(e){}s=PAIRS[s][k?1:0]}document.documentElement.dataset.skin=s;if(t&&TINTS[s]&&TINTS[s].indexOf(t)>=0)document.documentElement.dataset.skinTint=t})();`;
+  const depthKey = scriptSafeJson(SKIN_DEPTH_KEY);
+  const textureKey = scriptSafeJson(SKIN_TEXTURE_KEY);
+  const textures = scriptSafeJson(SKIN_TEXTURES.filter((texture) => texture !== "none"));
+  return `(function(){var SKINS=${ids},PAIRS=${pairs},LEGACY=${legacy},TINTS=${tints},X=${textures},d=${fallback},s,m,t,p,x;try{s=localStorage.getItem("omb-skin");m=localStorage.getItem(${modeKey});t=localStorage.getItem(${tintKey});p=localStorage.getItem(${depthKey});x=localStorage.getItem(${textureKey})}catch(e){}if(LEGACY[s]){t=LEGACY[s][1];s=LEGACY[s][0]}s=SKINS.indexOf(s)>=0?s:d;if(m==="auto"&&PAIRS[s]){var k=false;try{k=matchMedia("(prefers-color-scheme: dark)").matches}catch(e){}s=PAIRS[s][k?1:0]}document.documentElement.dataset.skin=s;var r=document.documentElement.dataset;if(t&&TINTS[s]&&TINTS[s].indexOf(t)>=0)r.skinTint=t;if(p==="full")r.skinDepth=p;if(X.indexOf(x)>=0)r.skinTexture=x})();`;
 }

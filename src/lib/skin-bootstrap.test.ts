@@ -52,6 +52,16 @@ describe("skin bootstrap under Auto", () => {
     expect(stamp({ "omb-skin": "midnight" }, false)).toEqual({ skin: "midnight" });
   });
 
+  it("stamps the full intensity and a known texture, and nothing else", () => {
+    expect(stamp({ "omb-skin": "midnight", "omb-skin-tint": "red", "omb-skin-depth": "full", "omb-skin-texture": "grid" }, false)).toEqual({
+      skin: "midnight",
+      skinTint: "red",
+      skinDepth: "full",
+      skinTexture: "grid",
+    });
+    expect(stamp({ "omb-skin": "midnight", "omb-skin-depth": "half", "omb-skin-texture": "stripes" }, false)).toEqual({ skin: "midnight" });
+  });
+
   it("wears a retired look-alike as its base and colour", () => {
     expect(stamp({ "omb-skin": "dusk" }, false)).toEqual({ skin: "midnight", skinTint: "pink" });
     expect(stamp({ "omb-skin": "dusk", "omb-skin-mode": "auto" }, false)).toEqual({ skin: "daylight", skinTint: "pink" });

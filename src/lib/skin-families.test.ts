@@ -16,6 +16,11 @@ import {
   legacyPairs,
   normalizeWorn,
   placeOfSkin,
+  schemesOf,
+  SKIN_DEPTHS,
+  SKIN_TEXTURES,
+  isSkinDepth,
+  isSkinTexture,
   readRememberedVariants,
   readSkinAuto,
   rememberVariant,
@@ -52,18 +57,33 @@ describe("skin families", () => {
     }
   });
 
-  it("gives Pulsatrix, Studio and Atelier their own look plus each colour (JC, 2026-10-19)", () => {
-    const ids = (family: string) => findFamily(family)!.variants.map((v) => v.id);
-    expect(ids("studio")).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
-    expect(ids("atelier")).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
+  it("gives Pulsatrix, Studio and Atelier their own look, each colour, the duo-tones and the moods (JC, 2026-10-19)", () => {
+    const ids = (family: string, group: string) => findFamily(family)!.variants.filter((v) => v.group === group).map((v) => v.id);
+    const richer = { duo: ["aurore", "ocean", "neon", "foret"], ambiance: ["cyberpunk", "sunset", "nordic", "candy"] };
+    for (const family of ["studio", "atelier"]) {
+      expect(ids(family, "color")).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
+      expect(ids(family, "duo")).toEqual(richer.duo);
+      expect(ids(family, "ambiance")).toEqual(richer.ambiance);
+    }
     // Pulsatrix's own colour is already blue
-    expect(ids("pulsatrix")).toEqual(["basic", "red", "pink", "green", "yellow"]);
+    expect(ids("pulsatrix", "color")).toEqual(["basic", "red", "pink", "green", "yellow"]);
     for (const family of ["pulsatrix", "studio", "atelier"]) {
       for (const variant of findFamily(family)!.variants) {
-        expect(canFollowSystem(variant), `${family} ${variant.id}`).toBe(true);
         expect(variant.tint ?? null).toBe(variant.id === "basic" ? null : variant.id);
+        // Cyberpunk is a night mood and Candy a daylight one; every other variant follows the system
+        const schemes = variant.id === "cyberpunk" ? ["dark"] : variant.id === "candy" ? ["light"] : ["light", "dark"];
+        expect(schemesOf(variant), `${family} ${variant.id}`).toEqual(schemes);
       }
     }
+  });
+
+  it("validates the intensity and the texture choices", () => {
+    expect(SKIN_DEPTHS).toEqual(["accent", "full"]);
+    expect(SKIN_TEXTURES).toEqual(["none", "grain", "grid", "dots", "lines"]);
+    expect(isSkinDepth("full")).toBe(true);
+    expect(isSkinDepth("half")).toBe(false);
+    expect(isSkinTexture("dots")).toBe(true);
+    expect(isSkinTexture("stripes")).toBe(false);
   });
 
   it("gives Hibou 98 the classic look plus each Windows edition, all on the retro98 skin", () => {

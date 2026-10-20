@@ -34,9 +34,36 @@ export type SkinFamilyId = (typeof SKIN_FAMILY_IDS)[number];
 
 /** The colours laid over the Pulsatrix, Studio and Atelier families. */
 export const SKIN_COLOR_TINTS = ["red", "pink", "blue", "green", "yellow"] as const;
+/** Two-colour gradients over the same families (JC, 2026-10-19: « des variantes plus complexes »). */
+export const SKIN_DUO_TINTS = ["aurore", "ocean", "neon", "foret"] as const;
+/** Themed moods: a whole palette, its gradients and its own glow over the family's shapes. */
+export const SKIN_AMBIANCE_TINTS = ["cyberpunk", "sunset", "nordic", "candy"] as const;
 /** The Windows editions laid over Hibou 98 (its own 98 look is the Classic variant). */
 export const SKIN_WINDOWS_TINTS = ["xp", "vista", "win7", "win8", "win81", "win10", "win11"] as const;
-export const SKIN_TINT_IDS = [...SKIN_COLOR_TINTS, ...SKIN_WINDOWS_TINTS] as const;
+export const SKIN_TINT_IDS = [...SKIN_COLOR_TINTS, ...SKIN_DUO_TINTS, ...SKIN_AMBIANCE_TINTS, ...SKIN_WINDOWS_TINTS] as const;
+
+/** The swatch rows of the picker: the family's own look and its colours, the duo-tones, the moods, Windows editions. */
+export type SkinVariantGroup = "color" | "duo" | "ambiance" | "edition";
+
+/**
+ * How far a colour reaches (`data-skin-depth`, `omb-skin-depth`): the accent
+ * only, or the whole surface (ground, sidebar, cards, bubbles, glow). Only the
+ * colour variants have it; the moods already colour everything.
+ */
+export const SKIN_DEPTHS = ["accent", "full"] as const;
+export type SkinDepth = (typeof SKIN_DEPTHS)[number];
+
+/** A light texture over the ground (`data-skin-texture`, `omb-skin-texture`), any variant, any family but Hibou 98. */
+export const SKIN_TEXTURES = ["none", "grain", "grid", "dots", "lines"] as const;
+export type SkinTexture = (typeof SKIN_TEXTURES)[number];
+
+export function isSkinDepth(value: unknown): value is SkinDepth {
+  return typeof value === "string" && (SKIN_DEPTHS as readonly string[]).includes(value);
+}
+
+export function isSkinTexture(value: unknown): value is SkinTexture {
+  return typeof value === "string" && (SKIN_TEXTURES as readonly string[]).includes(value);
+}
 export type SkinTintId = (typeof SKIN_TINT_IDS)[number];
 
 export const SKIN_VARIANT_IDS = ["basic", "classic", ...SKIN_TINT_IDS] as const;
@@ -54,13 +81,25 @@ export type SkinVariant = {
   dark?: SkinId;
   /** Laid over the skin as `data-skin-tint`; absent on the family's own look. */
   tint?: SkinTintId;
+  /** The picker row it sits in. */
+  group: SkinVariantGroup;
 };
 
-/** The family's own look first, then one variant per colour over the same light and dark skins. */
+/**
+ * The family's own look first, then one variant per colour, per duo-tone and
+ * per mood over the same light and dark skins. Cyberpunk is a night mood and
+ * Candy a daylight one, so each has the one scheme.
+ */
 function colorVariants(light: SkinId, dark: SkinId, skip: readonly SkinTintId[] = []): SkinVariant[] {
+  const both = (tint: SkinTintId, group: SkinVariantGroup): SkinVariant => ({ id: tint, light, dark, tint, group });
   return [
-    { id: "basic", light, dark },
-    ...SKIN_COLOR_TINTS.filter((tint) => !skip.includes(tint)).map((tint) => ({ id: tint, light, dark, tint })),
+    { id: "basic", light, dark, group: "color" },
+    ...SKIN_COLOR_TINTS.filter((tint) => !skip.includes(tint)).map((tint) => both(tint, "color")),
+    ...SKIN_DUO_TINTS.map((tint) => both(tint, "duo")),
+    { id: "cyberpunk", dark, tint: "cyberpunk", group: "ambiance" },
+    both("sunset", "ambiance"),
+    both("nordic", "ambiance"),
+    { id: "candy", light, tint: "candy", group: "ambiance" },
   ];
 }
 
@@ -87,8 +126,8 @@ export const SKIN_FAMILIES: readonly SkinFamily[] = [
     name: "Hibou 98",
     secret: true,
     variants: [
-      { id: "classic", light: "retro98" },
-      ...SKIN_WINDOWS_TINTS.map((tint) => ({ id: tint, light: "retro98" as SkinId, tint })),
+      { id: "classic", light: "retro98", group: "edition" },
+      ...SKIN_WINDOWS_TINTS.map((tint) => ({ id: tint, light: "retro98" as SkinId, tint, group: "edition" as const })),
     ],
   },
 ];

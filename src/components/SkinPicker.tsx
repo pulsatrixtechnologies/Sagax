@@ -12,7 +12,7 @@
 // drift from what picking it actually does.
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
-import { chooseSkin, prefersDarkScheme, readSkin, readSkinTint, SKIN_IDS, type SkinId } from "@/lib/skins";
+import { applySkinDepth, applySkinTexture, chooseSkin, prefersDarkScheme, readSkin, readSkinDepth, readSkinTexture, readSkinTint, SKIN_IDS, type SkinId } from "@/lib/skins";
 import {
   canFollowSystem,
   carryMode,
@@ -24,12 +24,17 @@ import {
   rememberVariant,
   resolveSkin,
   schemesOf,
+  SKIN_DEPTHS,
+  SKIN_TEXTURES,
   variantSkin,
   visibleFamilies,
   type SkinFamily,
+  type SkinDepth,
   type SkinModeChoice,
+  type SkinTexture,
   type SkinTintId,
   type SkinVariant,
+  type SkinVariantGroup,
 } from "@/lib/skin-families";
 import { readRetroUnlocked } from "@/lib/retro98";
 import { t } from "@/lib/i18n";
@@ -42,11 +47,12 @@ import { CompactRow, PillSelect } from "./SettingsPrimitives";
  * accent on purpose — a skin is mostly judged by where its colour lands, and a
  * single dot was too small to judge.
  */
-function Miniature({ skin, tint, selected }: { skin: SkinId; tint?: SkinTintId; selected: boolean }) {
+function Miniature({ skin, tint, depth, selected }: { skin: SkinId; tint?: SkinTintId; depth?: SkinDepth; selected: boolean }) {
   return (
     <div
       data-skin={skin}
       data-skin-tint={tint}
+      data-skin-depth={depth === "full" ? depth : undefined}
       aria-hidden="true"
       className={cn("flex h-[78px] w-full overflow-hidden rounded-lg bg-app", selected ? "ring-2 ring-accent-border" : "ring-1 ring-hairline/60")}
     >
@@ -94,6 +100,8 @@ function Miniature({ skin, tint, selected }: { skin: SkinId; tint?: SkinTintId; 
 const familyTagline = (family: SkinFamily) => t(`settings.skin.family.${family.id}.tagline`);
 const variantName = (variant: SkinVariant) => t(`settings.skin.variant.${variant.id}`);
 const MODES: readonly SkinModeChoice[] = ["light", "dark", "auto"];
+/** The swatch rows, in order; a family shows the ones it has variants in. */
+const GROUPS: readonly SkinVariantGroup[] = ["color", "duo", "ambiance", "edition"];
 
 /** The skin and tint the document wears now (main.tsx stamped them before the first paint). */
 function wornSkin(): { skin: SkinId; tint: SkinTintId | null } {
@@ -127,6 +135,11 @@ export function SkinPicker() {
   const [families] = useState(() => visibleFamilies(readRetroUnlocked(), place.family.id));
   const remembered = readRememberedVariants();
   const mode: SkinModeChoice = auto && canFollowSystem(place.variant) ? "auto" : place.scheme;
+
+  const [depth, setDepth] = useState<SkinDepth>(() => readSkinDepth());
+  const [texture, setTexture] = useState<SkinTexture>(() => readSkinTexture());
+  // Intensity reaches the plain colours only (the moods and duo-tones colour everything already).
+  const hasDepth = place.variant.group === "color" && Boolean(place.variant.tint);
 
   const wear = (family: SkinFamily, variant: SkinVariant, next: SkinModeChoice) => {
     rememberVariant(family.id, variant.id);
@@ -163,7 +176,7 @@ export function SkinPicker() {
                 selected ? "bg-selected" : "hover:bg-hover",
               )}
             >
-              <Miniature skin={shown} tint={variant.tint} selected={selected} />
+              <Miniature skin={shown} tint={variant.tint} depth={variant.group === "color" ? depth : undefined} selected={selected} />
               <span className="flex min-w-0 items-center gap-1.5 px-0.5 text-[13px] leading-[18px] text-ink">
                 <span className="min-w-0 truncate">{family.name}</span>
                 {family.secret && (
@@ -177,40 +190,72 @@ export function SkinPicker() {
           );
         })}
       </div>
-      {place.family.variants.length > 1 && (
-        <CompactRow label={t("settings.skin.variantLabel")} rowId="skinVariant">
-          <div className="flex flex-wrap items-center justify-end gap-1.5">
-            {place.family.variants.map((variant) => {
-              const selected = variant.id === place.variant.id;
-              return (
-                <button
-                  key={variant.id}
-                  type="button"
-                  aria-pressed={selected}
-                  aria-label={variantName(variant)}
-                  title={variantName(variant)}
-                  data-skin-variant={variant.id}
-                  onClick={() => {
-                    if (!selected) wear(place.family, variant, carryMode(variant, mode, place.scheme));
-                  }}
-                  className={cn(
-                    "size-[22px] cursor-pointer rounded-full bg-transparent transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none",
-                    selected ? "ring-2 ring-accent-border ring-offset-2 ring-offset-elevated" : "ring-1 ring-hairline hover:ring-ink-secondary/60",
-                  )}
-                >
-                  {/* the swatch opens the variant's own skin context: its
-                      ground and its colour come from that skin's block */}
-                  <span
-                    aria-hidden="true"
-                    data-skin={variantSkin(variant, place.scheme)}
-                    data-skin-tint={variant.tint}
-                    className="block size-full rounded-full"
-                    style={{ background: "linear-gradient(135deg, var(--color-app) 0 50%, var(--skin-swatch) 50% 100%)" }}
-                  />
-                </button>
-              );
-            })}
-          </div>
+      {GROUPS.map((group) => {
+        const variants = place.family.variants.filter((variant) => variant.group === group);
+        if (variants.length === 0 || place.family.variants.length < 2) return null;
+        return (
+          <CompactRow key={group} label={t(`settings.skin.group.${group}`)} rowId={`skinVariant-${group}`}>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {variants.map((variant) => {
+                const selected = variant.id === place.variant.id;
+                // a variant lacking the scheme worn now shows the one it has (Cyberpunk is dark, Candy light)
+                const swatchScheme = schemesOf(variant).includes(place.scheme) ? place.scheme : schemesOf(variant)[0];
+                return (
+                  <button
+                    key={variant.id}
+                    type="button"
+                    aria-pressed={selected}
+                    aria-label={variantName(variant)}
+                    title={variantName(variant)}
+                    data-skin-variant={variant.id}
+                    onClick={() => {
+                      if (!selected) wear(place.family, variant, carryMode(variant, mode, place.scheme));
+                    }}
+                    className={cn(
+                      "size-[22px] cursor-pointer rounded-full bg-transparent transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none",
+                      selected ? "ring-2 ring-accent-border ring-offset-2 ring-offset-elevated" : "ring-1 ring-hairline hover:ring-ink-secondary/60",
+                    )}
+                  >
+                    {/* the swatch opens the variant's own skin context: its
+                        ground and its colour (or gradient) come from that skin's block */}
+                    <span
+                      aria-hidden="true"
+                      data-skin={variantSkin(variant, swatchScheme)}
+                      data-skin-tint={variant.tint}
+                      className="block size-full rounded-full"
+                      style={{ background: "var(--skin-swatch-image, linear-gradient(135deg, var(--color-app) 0 50%, var(--skin-swatch) 50% 100%))" }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </CompactRow>
+        );
+      })}
+      {hasDepth && (
+        <CompactRow label={t("settings.skin.depthLabel")} rowId="skinDepth">
+          <PillSelect<SkinDepth>
+            value={depth}
+            ariaLabel={t("settings.skin.depthLabel")}
+            onChange={(next) => {
+              applySkinDepth(next);
+              setDepth(next);
+            }}
+            options={SKIN_DEPTHS.map((value) => ({ value, label: t(`settings.skin.depth.${value}`) }))}
+          />
+        </CompactRow>
+      )}
+      {place.family.id !== "retro98" && (
+        <CompactRow label={t("settings.skin.textureLabel")} rowId="skinTexture">
+          <PillSelect<SkinTexture>
+            value={texture}
+            ariaLabel={t("settings.skin.textureLabel")}
+            onChange={(next) => {
+              applySkinTexture(next);
+              setTexture(next);
+            }}
+            options={SKIN_TEXTURES.map((value) => ({ value, label: t(`settings.skin.texture.${value}`) }))}
+          />
         </CompactRow>
       )}
       {place.family.id !== "retro98" && (

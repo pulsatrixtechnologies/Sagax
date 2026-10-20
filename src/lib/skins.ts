@@ -4,7 +4,7 @@
 // that keeps the two halves from drifting apart, and it means adding a skin is
 // one CSS block plus one line in SKINS.
 
-import { autoPairs, isSkinTint, LEGACY_SKINS, normalizeWorn, readSkinAuto, writeSkinAuto, type SkinTintId } from "./skin-families";
+import { autoPairs, isSkinDepth, isSkinTexture, isSkinTint, LEGACY_SKINS, normalizeWorn, readSkinAuto, writeSkinAuto, type SkinDepth, type SkinTexture, type SkinTintId } from "./skin-families";
 
 export const SKIN_IDS = [
   "pulsatrix",
@@ -56,6 +56,10 @@ export const DEFAULT_SKIN: SkinId = "pulsatrix";
 const KEY = "omb-skin";
 /** The colour (or Windows edition) laid over the worn skin; absent for the family's own look. */
 export const SKIN_TINT_KEY = "omb-skin-tint";
+/** How far a colour reaches: absent for the accent only, "full" for the whole surface. */
+export const SKIN_DEPTH_KEY = "omb-skin-depth";
+/** A texture over the ground: absent for none. */
+export const SKIN_TEXTURE_KEY = "omb-skin-texture";
 
 // The input is whatever localStorage handed back — a string this app wrote
 // on an earlier run, a value edited by hand, or a leftover from a renamed
@@ -110,6 +114,47 @@ export function readSkinTint(): SkinTintId | null {
   } catch {
     return null;
   }
+}
+
+export function readSkinDepth(): SkinDepth {
+  try {
+    const value = getStore()?.getItem(SKIN_DEPTH_KEY);
+    return isSkinDepth(value) ? value : "accent";
+  } catch {
+    return "accent";
+  }
+}
+
+export function readSkinTexture(): SkinTexture {
+  try {
+    const value = getStore()?.getItem(SKIN_TEXTURE_KEY);
+    return isSkinTexture(value) ? value : "none";
+  } catch {
+    return "none";
+  }
+}
+
+/** Stamp a stored choice on the document, and remember it (absent = the default). */
+function stampChoice(attribute: "skinDepth" | "skinTexture", key: string, value: string, fallback: string): void {
+  const root = document.documentElement;
+  if (value === fallback) delete root.dataset[attribute];
+  else root.dataset[attribute] = value;
+  try {
+    if (value === fallback) getStore()?.removeItem(key);
+    else getStore()?.setItem(key, value);
+  } catch {
+    /* private mode: the choice lasts this session */
+  }
+}
+
+/** How far a colour reaches: the accent only, or the whole surface (skin-depth.css). */
+export function applySkinDepth(depth: SkinDepth): void {
+  stampChoice("skinDepth", SKIN_DEPTH_KEY, depth, "accent");
+}
+
+/** A light texture over the ground (skin-texture.css). */
+export function applySkinTexture(texture: SkinTexture): void {
+  stampChoice("skinTexture", SKIN_TEXTURE_KEY, texture, "none");
 }
 
 export function readSkin(): SkinId {

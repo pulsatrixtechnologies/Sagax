@@ -67,6 +67,20 @@ function parseSkins(source) {
   for (const [, id, tint, body] of source.matchAll(/(?:^|\n)\[data-skin="([a-z0-9-]+)"\]\[data-skin-tint="([a-z0-9-]+)"\]\s*\{([^}]*)\}/g)) {
     if (skins.has(id)) skins.set(`${id}+${tint}`, { ...skins.get(id), ...declarations(body) });
   }
+  // A full-surface colour, `[data-skin="x"][data-skin-tint="t"][data-skin-depth="full"] { … }`:
+  // over the tint over the base, as "x+t+full".
+  for (const [, id, tint, body] of source.matchAll(/(?:^|\n)\[data-skin="([a-z0-9-]+)"\]\[data-skin-tint="([a-z0-9-]+)"\]\[data-skin-depth="full"\]\s*\{([^}]*)\}/g)) {
+    const tinted = skins.get(`${id}+${tint}`);
+    if (tinted) skins.set(`${id}+${tint}+full`, { ...tinted, ...declarations(body) });
+  }
+  // A gradient fill (duo-tones, moods) declares its two ends as --accent-from
+  // and --accent-to: the accent's pairs are measured at each end as well, as
+  // "x+t@from" and "x+t@to", since a label crosses the whole gradient.
+  for (const [id, tokens] of [...skins]) {
+    for (const end of ["--accent-from", "--accent-to"]) {
+      if (tokens[end]) skins.set(`${id}@${end.slice(9)}`, { ...tokens, "--color-accent": tokens[end] });
+    }
+  }
   return skins;
 }
 
@@ -423,7 +437,7 @@ export function checkContrast(css, { verbose = false } = {}) {
     const rootTokens = resolve({ ...base, ...raw }, {}, inline);
     report(id, "", measure(rootTokens, PAIRS));
     const contexts = [["popover", rootTokens]];
-    for (const band of bands.filter((b) => b.id === id.split("+")[0])) {
+    for (const band of bands.filter((b) => b.id === id.split(/[+@]/)[0])) {
       const bandTokens = resolve(band.tokens, rootTokens, inline);
       report(id, band.selector, measure(bandTokens, BAND_PAIRS));
       contexts.push([`${band.selector} popover`, bandTokens]);
@@ -506,6 +520,8 @@ if (isMain) {
   // Hibou 98's Windows editions keep their palette blocks beside their chrome
   // (src/styles/retro-editions/*.css): measured as retro98 tints like the colours.
   if (cssArg < 0) {
+    // the richer variants' blocks (full colours, duo-tones, moods) sit in their own files
+    for (const name of ["depth", "duo", "ambiance", "texture"]) css += "\n" + readFileSync(join(root, `src/styles/skin-${name}.css`), "utf8");
     const editions = join(root, "src/styles/retro-editions");
     for (const file of readdirSync(editions).filter((name) => name.endsWith(".css")).sort()) css += "\n" + readFileSync(join(editions, file), "utf8");
   }

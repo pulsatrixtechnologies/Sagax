@@ -9,6 +9,12 @@
    other skins never load these files. Licence: third_party/geist/OFL.txt. */
 @import "@fontsource-variable/geist/wght.css";
 @import "@fontsource-variable/geist/wght-italic.css";
+/* The richer variants over the colour tints (2026-10-19): full-surface colours,
+   duo-tone gradients, themed moods and ground textures, each in its own file. */
+@import "./styles/skin-depth.css";
+@import "./styles/skin-duo.css";
+@import "./styles/skin-ambiance.css";
+@import "./styles/skin-texture.css";
 
 /* Phones and tablets have no hover, and Tailwind only applies `hover:` and
    `group-hover:` under `@media (hover: hover)`. A control revealed on hover
