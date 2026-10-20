@@ -40764,7 +40764,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
       }
       const existingBot = store.bot(m[1]);
-      const selectedTask = existingBot ? requestedTaskBot(existingBot.id, undefined) : null;
+      const rawSelection = (body as Record<string, unknown>).modelSelection;
+      if (body.threadId !== undefined && rawSelection === undefined) {
+        return json(res, 400, { error: "threadId goes with modelSelection" });
+      }
+      if (rawSelection !== undefined) requirePinnedClientThread(m[1], body.threadId);
+      const selectedTask = existingBot ? requestedTaskBot(existingBot.id, body.threadId) : null;
       const beforeProfile = existingBot ? profileSnapshot(existingBot) : undefined;
       const beforeVisibility = existingBot?.visibility;
       if (body.requireAvailableModel !== undefined && typeof body.requireAvailableModel !== "boolean") {
@@ -40783,8 +40788,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // be offline would cost the copy all of them. Letting it through is
       // safe — startTurn refuses to run a turn on an unavailable instance
       // anyway, so an unverifiable level never reaches a CLI.
-      const rawSelection = (body as Record<string, unknown>).modelSelection;
-      if (rawSelection !== undefined) requirePinnedClientThread(m[1], undefined);
       if (
         existingBot?.approvalGrant &&
         (rawSelection !== undefined || body.approvalMode !== undefined || body.autoApprove !== undefined)
