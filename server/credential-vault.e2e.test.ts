@@ -77,7 +77,6 @@ it("asks for a login with a card, grants it once, resumes the bot with a handle 
 
     // The resumed turn waits on the gate, so its capability is live while
     // the bot asks again below.
-    const previousPid = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).pid;
     unlinkSync(gate);
     const granted = await api("POST", `/api/bots/${bot.id}/vault-cards/${asked.messageId}/grant`, {
       threadId: bot.threadId,
@@ -91,8 +90,10 @@ it("asks for a login with a card, grants it once, resumes the bot with a handle 
     }, { timeout: 15_000 }).toMatchObject({ provided: true, resumed: true, vault: { itemName: "Billing", mode: "once" } });
 
     // The resumed turn is told the handle; asked again, the bot gets it at once.
+    // The warm engine process serves the resumed turn (same pid since #844),
+    // so the proof of the resume is the new prompt, not a new process.
     await expect.poll(() => {
-      try { return JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).pid !== previousPid; }
+      try { return readFileSync(fixture.fixtureDumpPath, "utf8").includes(`cred_${granted.item.id}`); }
       catch { return false; }
     }, { timeout: 15_000 }).toBe(true);
     const resumedDump = readFileSync(fixture.fixtureDumpPath, "utf8");
