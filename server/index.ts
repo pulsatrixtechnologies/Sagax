@@ -6367,10 +6367,11 @@ function githubClientId(): string | undefined {
 }
 /** Put a person's GitHub connection where gh and git read it in their
  * server environment (or take it out). Best effort: a turn re-applies it. */
-async function syncGithubToSandbox(principalId: string, connection: { token: string; login: string } | null, botId?: string): Promise<boolean> {
+async function syncGithubToSandbox(principalId: string, connection: { token: string; login: string } | null, botId?: string, previous?: { token: string; login: string } | null): Promise<boolean> {
   if (!userSandbox) return false;
   try {
-    const { argv, env } = githubSandboxArgv(connection);
+    // Never over a sign-in the person made in the environment (gh auth login): see githubSandboxArgv.
+    const { argv, env } = githubSandboxArgv(connection, previous);
     const result = await userSandbox.exec(principalId, { argv, env, timeoutSec: 30, maxOutputBytes: 4096 }, botId);
     return result.exitCode === 0;
   } catch (error) {
@@ -6389,7 +6390,7 @@ async function syncGithubForTurn(principalId: string, generation: string, botId?
   // Off: take the token out of the environment once per turn. The saved
   // connection stays, so turning the cap back on puts it back.
   if (personIntegrationsOff(principalId)) {
-    await syncGithubToSandbox(principalId, null, botId);
+    await syncGithubToSandbox(principalId, null, botId, personGithub(principalId));
     return;
   }
   const connection = personGithub(principalId);
@@ -6436,8 +6437,9 @@ const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
  * connection, then the organization's tokens (organization server). The
  * bot's token for the marketplace comes first (server/bot-plugins.ts). */
 function githubCredentialsFor(actor: string | null | undefined): GithubCredential[] {
-  const person = usablePersonGithub(actor)?.token;
-  const credentials: GithubCredential[] = person ? [{ token: person, via: "person" }] : [];
+  const connection = usablePersonGithub(actor);
+  const person = connection?.token;
+  const credentials: GithubCredential[] = person ? [{ token: person, via: "person", ...(connection.login ? { login: connection.login } : {}) }] : [];
   if (IDENTITY.kind === "perspicax" && !personIntegrationsOff(actor)) {
     try {
       for (const entry of orgGithubTokens.list()) {
@@ -6751,8 +6753,9 @@ ROUTES.push(createPersonConnectionRoutes({
       return githubConnect.status(principalId, personGithub(principalId));
     },
     disconnect: async (principalId) => {
+      const previous = personGithub(principalId);
       githubConnect.disconnect(principalId);
-      await syncGithubToSandbox(principalId, null);
+      await syncGithubToSandbox(principalId, null, undefined, previous);
     },
   },
   servers: {
@@ -29993,8 +29996,9 @@ const orgPersonConnectionDeps: OrgPersonConnectionsDeps = {
     const status = githubConnect.status(id, personGithub(id));
     if (status.state !== "connected" && status.state !== "pending") return { removed: false };
     const login = status.state === "connected" ? status.login : undefined;
+    const previous = personGithub(id);
     githubConnect.disconnect(id);
-    await syncGithubToSandbox(id, null);
+    await syncGithubToSandbox(id, null, undefined, previous);
     return { removed: true, ...(login ? { login } : {}) };
   },
   removePlugin: async (id, botId, key) => {

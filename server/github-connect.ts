@@ -54,7 +54,7 @@ export interface DeviceFlowStart {
 export type GithubStatus =
   | { state: "none"; deviceFlow: boolean }
   | { state: "pending"; deviceFlow: true; userCode: string; verificationUri: string; expiresAt: number }
-  | { state: "connected"; deviceFlow: boolean; login: string; name?: string; scopes?: string[]; via: "device" | "token"; connectedAt: number }
+  | { state: "connected"; deviceFlow: boolean; login: string; name?: string; scopes?: string[]; via: "device" | "token"; connectedAt: number; fineGrained?: boolean }
   | { state: "error"; deviceFlow: boolean; error: string };
 
 interface PendingDevice {
@@ -122,6 +122,8 @@ export class GithubConnect {
       return {
         state: "connected", deviceFlow, login: connection.login, via: connection.via, connectedAt: connection.connectedAt,
         ...(connection.name ? { name: connection.name } : {}), ...(connection.scopes ? { scopes: connection.scopes } : {}),
+        // One owner only: the person's organizations stay out of reach (never the token itself).
+        ...(githubTokenKind(connection.token) === "fine_grained" ? { fineGrained: true } : {}),
       };
     }
     const error = this.errors.get(principalId);
@@ -298,36 +300,73 @@ export function githubGitEnvironment(token: string | undefined): Record<string, 
   return { ...base, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}` };
 }
 
+/** The kind of a GitHub token, from its documented prefix. A fine-grained
+ * personal access token (github_pat_) reaches one resource owner only: the
+ * person's own account, or one organization, never both. */
+export type GithubTokenKind = "fine_grained" | "classic" | "oauth" | "app_user" | "unknown";
+export function githubTokenKind(token: string | undefined): GithubTokenKind {
+  if (!token) return "unknown";
+  if (token.startsWith("github_pat_")) return "fine_grained";
+  if (token.startsWith("ghp_")) return "classic";
+  if (token.startsWith("gho_")) return "oauth";
+  if (token.startsWith("ghu_")) return "app_user";
+  return "unknown";
+}
+
 /** The fixed command that puts the connection where gh and git read it in
  * the person's server environment (/workspace persists): gh's hosts.yml and
  * git's credential store, both 0600. The token rides the environment
- * (SAGAX_GH_TOKEN), never the argv. */
-export function githubSandboxArgv(connection: Pick<GithubConnection, "token" | "login"> | null): { argv: string[]; env: Record<string, string> } {
-  if (!connection) {
-    return {
-      argv: ["sh", "-c", [
-        "set -eu",
-        "rm -f \"$HOME/.config/gh/hosts.yml\"",
-        "if [ -f \"$HOME/.git-credentials\" ]; then grep -v '@github.com' \"$HOME/.git-credentials\" > \"$HOME/.git-credentials.tmp\" || true; mv \"$HOME/.git-credentials.tmp\" \"$HOME/.git-credentials\"; fi",
-        "echo sagax-github-removed",
-      ].join("\n")],
-      env: {},
-    };
-  }
-  if (!LOGIN.test(connection.login)) throw new GithubConnectError("invalid GitHub login", "invalid_login");
+ * (SAGAX_GH_TOKEN), never the argv.
+ *
+ * Sagax never overwrites a sign-in the person made there themselves (gh auth
+ * login, gh auth logout, an edited hosts.yml). It owns hosts.yml only when
+ * the file is absent or empty, when its checksum is the one Sagax recorded
+ * in .config/gh/.sagax-managed the last time it wrote it, or (a file written
+ * before that marker existed) when it is byte for byte what Sagax writes for
+ * this connection. Otherwise the person's file stays, Sagax's own line in
+ * git's credential store is taken out (so git uses the person's sign-in),
+ * and the command prints sagax-github-kept-person-login.
+ *
+ * `connection` null takes Sagax's connection out; `previous` (the connection
+ * being taken out) lets a file written before the marker be recognized. */
+export function githubSandboxArgv(
+  connection: Pick<GithubConnection, "token" | "login"> | null,
+  previous?: Pick<GithubConnection, "token" | "login"> | null,
+): { argv: string[]; env: Record<string, string> } {
+  const subject = connection ?? previous ?? null;
+  if (subject && !LOGIN.test(subject.login)) throw new GithubConnectError("invalid GitHub login", "invalid_login");
+  const env: Record<string, string> = { SAGAX_GH_MODE: connection ? "set" : "remove" };
+  if (subject) Object.assign(env, { SAGAX_GH_TOKEN: subject.token, SAGAX_GH_LOGIN: subject.login });
   return {
     argv: ["sh", "-c", [
       "set -eu",
       "umask 077",
-      "mkdir -p \"$HOME/.config/gh\"",
-      "printf 'github.com:\\n    oauth_token: %s\\n    user: %s\\n    git_protocol: https\\n' \"$SAGAX_GH_TOKEN\" \"$SAGAX_GH_LOGIN\" > \"$HOME/.config/gh/hosts.yml\"",
-      "touch \"$HOME/.git-credentials\"",
-      "grep -v '@github.com' \"$HOME/.git-credentials\" > \"$HOME/.git-credentials.tmp\" || true",
-      "printf 'https://%s:%s@github.com\\n' \"$SAGAX_GH_LOGIN\" \"$SAGAX_GH_TOKEN\" >> \"$HOME/.git-credentials.tmp\"",
-      "mv \"$HOME/.git-credentials.tmp\" \"$HOME/.git-credentials\"",
+      "dir=\"$HOME/.config/gh\"; hosts=\"$dir/hosts.yml\"; mark=\"$dir/.sagax-managed\"; creds=\"$HOME/.git-credentials\"",
+      "tok=\"${SAGAX_GH_TOKEN:-}\"",
+      "expected() { printf 'github.com:\\n    oauth_token: %s\\n    user: %s\\n    git_protocol: https\\n' \"$SAGAX_GH_TOKEN\" \"$SAGAX_GH_LOGIN\"; }",
+      "owned=no",
+      "if [ ! -e \"$hosts\" ] || ! grep -q '[^[:space:]]' \"$hosts\"; then owned=yes",
+      "elif [ -f \"$mark\" ] && [ \"$(cksum < \"$hosts\")\" = \"$(cat \"$mark\")\" ]; then owned=yes",
+      "elif [ -n \"$tok\" ] && expected | cmp -s - \"$hosts\"; then owned=yes",
+      "fi",
+      // Sagax's own line only, matched through the environment (never the argv).
+      "drop_own_line() { if [ -n \"$tok\" ] && [ -f \"$creds\" ]; then awk 'BEGIN { own = \"https://\" ENVIRON[\"SAGAX_GH_LOGIN\"] \":\" ENVIRON[\"SAGAX_GH_TOKEN\"] \"@github.com\" } $0 != own' \"$creds\" > \"$creds.tmp\" || true; mv \"$creds.tmp\" \"$creds\"; fi; }",
+      "if [ \"$owned\" = no ]; then rm -f \"$mark\"; drop_own_line; echo sagax-github-kept-person-login; exit 0; fi",
+      "if [ \"$SAGAX_GH_MODE\" = remove ]; then",
+      "  rm -f \"$hosts\" \"$mark\"",
+      "  if [ -n \"$tok\" ]; then drop_own_line; elif [ -f \"$creds\" ]; then grep -v '@github.com' \"$creds\" > \"$creds.tmp\" || true; mv \"$creds.tmp\" \"$creds\"; fi",
+      "  echo sagax-github-removed; exit 0",
+      "fi",
+      "mkdir -p \"$dir\"",
+      "expected > \"$hosts.tmp\"; mv \"$hosts.tmp\" \"$hosts\"",
+      "cksum < \"$hosts\" > \"$mark\"",
+      "touch \"$creds\"",
+      "grep -v '@github.com' \"$creds\" > \"$creds.tmp\" || true",
+      "printf 'https://%s:%s@github.com\\n' \"$SAGAX_GH_LOGIN\" \"$SAGAX_GH_TOKEN\" >> \"$creds.tmp\"",
+      "mv \"$creds.tmp\" \"$creds\"",
       "git config --global credential.https://github.com.helper store",
       "echo sagax-github-ready",
     ].join("\n")],
-    env: { SAGAX_GH_TOKEN: connection.token, SAGAX_GH_LOGIN: connection.login },
+    env,
   };
 }
