@@ -3852,6 +3852,7 @@
   "myConnections.github.usesEnvironment": "Your bots' gh and git use it in your server environment.",
   "myConnections.github.waiting": "Waiting for GitHub…",
   "myConnections.github.fineGrained": "This fine-grained token reaches one owner only (@{login}): your bots will not see the repositories of your organizations. Reconnect GitHub with access to organizations (Connect GitHub, or a classic token with the repo and read:org scopes).",
+  "myConnections.github.orgAccess": "Organization access on GitHub",
   "myConnections.intro": "Your own accounts and MCP servers. Only your conversations and your routines use them; nobody else's turn ever gets them.",
   "cloudAgentProviders.intro": "Keys you save here are encrypted on this server and used when you launch cloud coding agents (Cursor, Claude Code, Codex). They are never shown again after you save them.",
   "cloudAgentProviders.loading": "Loading cloud agent keys…",

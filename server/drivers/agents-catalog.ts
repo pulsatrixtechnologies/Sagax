@@ -47,6 +47,9 @@ export interface CatalogProfile {
   /** This turn's thread is on a live phone call. `end_call` is shown only
    * then. Absent is off, so the wire goldens stay as they are. */
   voiceCall?: boolean;
+  /** A person's 1:1 turn on a server with a GitHub OAuth App (device flow):
+   * connect_github is offered. Absent is off, so the wire goldens stay. */
+  githubConnect?: boolean;
   /** The server is a Cloud home (server/cloud-home.ts): no "this computer"
    * of the person's and no Local VM to offer. */
   cloudHome: boolean;
@@ -88,6 +91,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     singleStream: !externalRuntime && env.SAGAX_SINGLE_STREAM === "1",
     routeMessages: !externalRuntime && env.SAGAX_ROUTE_MESSAGES === "1",
     voiceCall: !externalRuntime && env.SAGAX_VOICE_CALL === "1",
+    githubConnect: !externalRuntime && env.SAGAX_GITHUB_CONNECT === "1",
     // Sagax is never an OMB Cloud home, so the env switch is ignored.
     cloudHome: false,
     memoryEnabled: env.SAGAX_MEMORY_ENABLED !== "0",
@@ -643,6 +647,17 @@ const toolDefinitions = (externalRuntime: boolean) => [
         },
       },
       required: ["credential_id"],
+    },
+  },
+  {
+    name: "connect_github",
+    description:
+      "Connect the person's GitHub account to Sagax the way gh auth login does (GitHub's device flow), with access to their organizations. Returns a short code and a github.com link to show them; they type the code there and authorize. One GitHub connection per person, used by gh and git in their cloud computer, Coding, cloud agents and integrations. Call it when gh or git is not signed in, or a repository of an organization answers 404 or 403. Never ask for a token or for gh auth login. With reconnect true it starts over even when connected (to add organizations).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        reconnect: { type: "boolean", description: "Start a new sign-in even when GitHub is connected (a token that misses an organization)." },
+      },
     },
   },
   {
@@ -1537,6 +1552,7 @@ const STREAM_TOOL_NAMES = new Set(["recall_topic"]);
 // shown only in a person's 1:1 turn (SAGAX_ROUTE_MESSAGES); its route refuses
 // otherwise.
 const ROUTE_TOOL_NAMES = new Set(["route_message"]);
+const GITHUB_CONNECT_TOOL_NAMES = new Set(["connect_github"]);
 // And for a role: every route behind these refuses a bot that is not its
 // section's Primary Bot, as it does a for_bot_id naming another bot on
 // propose_profile or propose_model. (A routine's for_bot_id is open to any
@@ -1649,7 +1665,8 @@ function coreCatalogTools(profile: CatalogProfile) {
     : VOICE_READY_TOOLS.filter((tool) => !CALL_TOOL_NAMES.has(tool.name)))
     .filter((tool) => profile.meetings === true || !MEETING_TOOL_NAMES.has(tool.name))
     .filter((tool) => profile.singleStream === true || !STREAM_TOOL_NAMES.has(tool.name))
-    .filter((tool) => profile.routeMessages === true || !ROUTE_TOOL_NAMES.has(tool.name));
+    .filter((tool) => profile.routeMessages === true || !ROUTE_TOOL_NAMES.has(tool.name))
+    .filter((tool) => profile.githubConnect === true || !GITHUB_CONNECT_TOOL_NAMES.has(tool.name));
   const ROLE_TOOLS = profile.chief
     ? CALL_TOOLS
     : CALL_TOOLS.filter((tool) => !CHIEF_ONLY_TOOL_NAMES.has(tool.name) || (tool.name === "create_bot" && profile.createBots === true)).map((tool) => {

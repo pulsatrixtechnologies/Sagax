@@ -926,7 +926,7 @@ import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
-import { GithubConnect, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
+import { GithubConnect, githubGitEnvironment, githubSandboxArgv, githubTokenKind } from "./github-connect.ts";
 import { syncPluginsToSandbox } from "./sandbox-plugins.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
 import { MarketplaceTokens } from "./marketplace-tokens.ts";
@@ -3859,6 +3859,9 @@ function agentsIntegration(
       // end_call is offered only while this thread is on a live phone call.
       // The route re-checks; a turn that is not a call never sees the tool.
       SAGAX_VOICE_CALL: voiceCalls.active(threadId) ? "1" : "0",
+      // connect_github: a 1:1 turn on a server with a GitHub OAuth App
+      // (device flow). The route re-checks both.
+      SAGAX_GITHUB_CONNECT: !store.groupByThread(threadId) && githubConnect.deviceFlowAvailable() ? "1" : "0",
       // join_meeting: Settings > Experimental > Meeting notetaker, direct
       // conversations only. The internal route re-checks both.
       SAGAX_MEETINGS: meetingNotetakerEnabled(cfg) && !store.groupByThread(threadId) ? "1" : "0",
@@ -36903,6 +36906,50 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           });
         } finally {
           mcpConfigBusy = false;
+        }
+      }
+      if (method === "POST" && path === "/api/internal/github-connect") {
+        // The turn's own person connects their GitHub (device flow), like gh
+        // auth login: the code and link go back to the bot to show; the device
+        // code and the token stay on the server (server/github-connect.ts).
+        const body = await readInternalBody();
+        const owner = connectorThread(internalSender.id, internalCapability.threadId);
+        if (!owner) return json(res, 403, { error: "source conversation does not belong to sender" });
+        if (owner.group) return json(res, 200, { state: "group" });
+        // Only a person's own turn: never a routine, an automation or another
+        // bot's hop (whose speaker falls back to the bot's owner), so a code
+        // is never bound to someone who did not ask for it.
+        const turnSpeaker = turnSpeakers.get(internalCapability.threadId);
+        const ghThread = internalCapability.threadId;
+        if (turnSpeaker?.origin !== "person" || turnRoutineLineage.has(ghThread) || isInternalTurn(ghThread)
+          || directRequestOwners.get(ghThread)?.automation || isUnattended(internalSender.id, ghThread)) {
+          return json(res, 200, { state: "not_person" });
+        }
+        const speaker = turnSpeaker.principalId || (IDENTITY.kind !== "perspicax" ? localPrincipalId() : "");
+        if (!speaker) return json(res, 403, { error: "GitHub is connected by a signed-in person." });
+        const principalId = speaker.trim().toLowerCase();
+        if (personIntegrationsOff(principalId)) return json(res, 200, { state: "integrations_off" });
+        // The same door as Connect apps (integrationsLocked): a person whose
+        // integrations an admin manages does not bind a GitHub account here either.
+        if (IDENTITY.kind === "perspicax" && !principalCan(principalId, "apps.ownIntegrations")) return json(res, 200, { state: "admin_only" });
+        const current = personGithub(principalId);
+        const status = githubConnect.status(principalId, current);
+        const orgAccessUrl = status.state === "connected" ? status.orgAccessUrl : undefined;
+        const reconnect = body?.reconnect === true;
+        if (current && !reconnect && githubTokenKind(current.token) !== "fine_grained") {
+          return json(res, 200, { state: "connected", login: current.login, ...(orgAccessUrl ? { orgAccessUrl } : {}) });
+        }
+        if (!githubConnect.deviceFlowAvailable()) return json(res, 200, { state: "no_device_flow", ...(current ? { login: current.login } : {}) });
+        // A sign-in already waiting: the same code again, never a second one
+        // (reconnect included, unless it is about to expire).
+        if (status.state === "pending" && status.expiresAt - Date.now() > 60_000) {
+          return json(res, 200, { state: "pending", userCode: status.userCode, verificationUri: status.verificationUri, expiresAt: status.expiresAt });
+        }
+        try {
+          const started = await githubConnect.startDeviceFlow(principalId);
+          return json(res, 200, { state: "pending", userCode: started.userCode, verificationUri: started.verificationUri, expiresAt: started.expiresAt });
+        } catch (error) {
+          return json(res, 200, { state: "error", message: error instanceof Error ? error.message : "GitHub sign-in is unavailable right now." });
         }
       }
       if (method === "POST" && path === "/api/internal/request-credential") {

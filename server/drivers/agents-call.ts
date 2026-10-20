@@ -997,6 +997,14 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       text: `A secure ${r.label ?? CREDENTIAL_TARGETS[credentialId].label} request is ready. The desktop app and a freshly QR-paired mobile app show its secure entry card; older mobile pairings explain how to pair again or finish on the computer. End this turn; Sagax will resume the task after the user saves or declines. Never ask them to paste the key into chat.`,
     };
   }
+  if (name === "connect_github") {
+    const r = await api("/api/internal/github-connect", {
+      method: "POST",
+      body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, ...(args.reconnect === true ? { reconnect: true } : {}) }),
+    });
+    if (r.error) return { text: `Couldn't start the GitHub sign-in: ${r.error}`, isError: true };
+    return { text: githubConnectText(r) };
+  }
   if (name === "request_login") {
     const domain = typeof args.domain === "string" ? args.domain.trim().slice(0, 253) : "";
     const itemName = typeof args.name === "string" ? args.name.trim().slice(0, 120) : "";
@@ -1616,4 +1624,31 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     };
   }
   return { text: `Unknown tool: ${name}`, isError: true };
+}
+
+/** What connect_github tells the bot, per state of the person's connection.
+ * The code and link are for the person; the device code never leaves the server. */
+export function githubConnectText(r: Record<string, unknown>): string {
+  const login = typeof r.login === "string" ? r.login : "";
+  const orgs = typeof r.orgAccessUrl === "string" ? r.orgAccessUrl : "";
+  switch (r.state) {
+    case "connected":
+      return `GitHub is connected as @${login}. Continue the task.${orgs ? ` If a repository of an organization still answers 404 or 403, that organization has not granted access: ask the person to open ${orgs} and click Grant (or Request) next to it, or call connect_github with reconnect true.` : ""}`;
+    case "pending": {
+      const until = typeof r.expiresAt === "number" ? ` It expires at ${new Date(r.expiresAt).toISOString().slice(11, 16)} UTC.` : "";
+      return `Show the person, in one short message in their language: the code ${String(r.userCode)} and the link ${String(r.verificationUri)}. They open the link, sign in to GitHub, type the code and authorize Sagax; on that page, next to each organization, they click Grant (or Request when they are not an owner) so their bots reach its repositories.${until} Then end this turn. When they say it is done, call connect_github again to confirm. Never ask for a token or for gh auth login.`;
+    }
+    case "group":
+      return "Connecting GitHub is done in a 1:1 conversation with the person or in Connect apps > GitHub, never in a group. Say so.";
+    case "not_person":
+      return "GitHub is connected only on the person's own request in their 1:1 conversation, never from a routine, an automation or another bot's turn. Tell them to ask you directly or to use Connect apps > GitHub.";
+    case "admin_only":
+      return "An administrator manages this person's integrations: they cannot connect GitHub themselves. Tell them to ask an administrator.";
+    case "integrations_off":
+      return "The person has turned off their integrations for bots (Connect apps). Say so; never ask for a token.";
+    case "no_device_flow":
+      return `This server has no GitHub OAuth App for the device flow yet.${login ? ` GitHub is connected as @${login} with a token that may not cover their organizations.` : ""} Tell the person to connect in Connect apps > GitHub with a classic personal access token with the repo and read:org scopes (a fine-grained token reaches one owner only), and an administrator to add the OAuth App's client id in Settings > Organization.`;
+    default:
+      return typeof r.message === "string" ? r.message : "GitHub sign-in is unavailable right now.";
+  }
 }
