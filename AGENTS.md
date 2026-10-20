@@ -111,6 +111,20 @@ JC's GO on points 1 and 2 of the bot quality diagnostic. Rules:
   list, ToolSearch, Task, `pwd`; no git, Skill, ls or wc rule); every other
   call reaches the broker and is a real card (`autoVerdict` decides, as
   before). Tests read the level with `server/testing/claude-level.ts`.
+- Owner setup (2026-10-19, `server/owner-autonomy.ts`): at Approve for me
+  or Full access, the owner mode `approval` reads as `auto` for the owner's
+  own work (`ownerLineageOrigin`: the owner's words signed in, their
+  scheduled or manual routine, a hop from their own bot speaking for them;
+  never the operator, a webhook, another person or a routine hop):
+  destructive calls, ask rules, security keys and holds keep their card.
+  Perspicax reads on Sagax's own `perspicax_*` mount (`perspicaxSelfAnswer`)
+  run unasked for the owner's own work at Auto/Edits/Full; leases (`claim`,
+  `claim_renew`, `claim_release`) never ask; the owner's deny and ask rules
+  come first. A lineage hop runs in the owner's cloud computer unasked only
+  when it reaches no credential (`lineageEnvironmentCall`); the Mac and the
+  Local VM keep the direct-turn rule. The ordinary-bot roster shows the
+  description of the owner's own teammates; a person's AI client
+  conversation never reuses a bot-opened thread and carries `aiClientPrompt`.
 - A parked question (NEEDS INPUT) waits: reminder after 30 min then daily
   (`inputRemindMs`, `TurnRunner.remind`), expiry after 7 days, never the
   old 30 min `failed`. The card (`WireMessage.inputRequest`,

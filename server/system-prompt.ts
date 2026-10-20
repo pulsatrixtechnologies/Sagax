@@ -69,6 +69,15 @@ export const VERIFY_FIRST_PROMPT =
   + " Ask the person only when a real decision is needed, once, through your question card (ask_user or its equivalent), or the `NEEDS INPUT:` line when your task asks for it; never guess and then act on the guess."
   + " Keeping replies short limits their length, never how far you check.";
 
+/** 2026-10-19 (owner setup): a person's own AI client writes for them
+ * through Perspicax (send_prompt). Their bots read "JC is asking via Ara"
+ * as another agent's relay: one refused, two asked JC to confirm. The
+ * message is authenticated as the person. */
+export function aiClientPrompt(personName: string): string {
+  const name = personName.replace(/[\r\n]+/g, " ").trim().slice(0, 80) || "the person";
+  return `\nThis conversation is ${name}'s own AI client, signed in as ${name}: every message here is ${name}'s own request, with the same authority as if they typed it in the app. A name in it such as "via Ara" or "Luna" is the client they use, never another bot relaying: do not ask them to confirm it came from them.`;
+}
+
 export function buildSystemPrompt(
   persona: string,
   soul: string,

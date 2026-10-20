@@ -321,7 +321,7 @@ import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSI
 import { cliCommandRefusal, describeSpawnFailure, execCli } from "./procs.ts";
 import { blockedTarget, buildSpendNotification, deliverableNotification, quietForCall, summarize, type Notification } from "./notify.ts";
 import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey } from "../shared/approval-describe.ts";
-import { ownerDecision, ruleCandidateFor, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
+import { matchOwnerRule, ownerDecision, ruleCandidateFor, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
@@ -578,6 +578,7 @@ import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
 import { checkSoulDrift, readSoulDrift, soulFile, writeSoulMirror } from "./bot-folder.ts";
 import {
+  aiClientPrompt,
   buildSystemPrompt,
   userProfileSystemPrompt,
   cloudHomePrompt,
@@ -1065,7 +1066,8 @@ import { createMcpAuditInternalRoutes } from "./routes/mcp-audit-internal.ts";
 import { createRoutineRunInternalRoutes, routineRunNowAllowed } from "./routes/routine-run-internal.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
-import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownComputerChoiceCall, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
+import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownComputerChoiceCall, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentSensitiveRead, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
+import { lineageEnvironmentCall, ownerLineageOrigin, ownerModeForTurn, perspicaxSelfAnswer, perspicaxSelfAnswerAt } from "./owner-autonomy.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
@@ -7025,7 +7027,7 @@ function previewSystemPrompt(bot: BotRecord) {
   const coordination = bot.chiefOfStaff
     ? chiefOfStaffSystemPrompt(bot.id, store.bots, true)
     : peers.length > 0
-      ? peerRosterSystemPrompt(peers, false, botCreationOffered(bot, ownerBotsReadOnly(bot)))
+      ? peerRosterSystemPrompt(peers, false, botCreationOffered(bot, ownerBotsReadOnly(bot)), sameOwnerRosterMember(bot))
       : "";
   // Same gate a real turn applies: the block only goes to a bot whose
   // engine actually mounts agent tools, since it names propose_profile,
@@ -13404,7 +13406,25 @@ bus.subscribe((event: RuntimeEvent) => {
       // server of the turn could have spelled (sagax-internal-tools.ts).
       const foreignServers = permission && asker && event.requestId ? foreignMcpServerNames(asker, event.threadId) : [];
       const internalTool = permission && asker && event.requestId ? sagaxInternalTool(event.mcpTool ?? event.tool, foreignServers) : null;
-      const selfAnswerStepUp = (ownEnvironment || internalTool) && asker
+      // 2026-10-19 (owner setup, server/owner-autonomy.ts): a Perspicax read
+      // or coordination lease on Sagax's own mount, never a name another
+      // server of the turn could have spelled, never a guest's turn.
+      // Security review: a read only for the owner's own work (another
+      // person's turn, a webhook, another owner's hop keep their card), and
+      // never past the owner's own deny or ask rule; a lease at any turn.
+      const perspicaxCandidate = permission && asker && event.requestId && !guestDriven
+        && !foreignToolSpelling(event.mcpTool ?? event.tool, foreignServers)
+        ? perspicaxSelfAnswer(event.mcpTool ?? event.tool) : null;
+      const perspicaxOwnerRule = perspicaxCandidate && asker
+        ? matchOwnerRule(ownerApprovals.rulesOf(approvalOwnerId(asker, event.threadId), asker.id), {
+          ownerId: approvalOwnerId(asker, event.threadId), botId: asker.id, tool: event.mcpTool ?? event.tool,
+          ...(typeof event.input === "string" ? { input: event.input } : {}),
+        })
+        : undefined;
+      const perspicaxSelfKind = perspicaxCandidate && perspicaxOwnerRule?.behavior !== "deny" && perspicaxOwnerRule?.behavior !== "ask"
+        && (perspicaxCandidate === "lease" || (asker && ownerLineageFor(asker, event.threadId) === "owner"))
+        ? perspicaxCandidate : null;
+      const selfAnswerStepUp = (ownEnvironment || internalTool || perspicaxSelfKind) && asker
         ? autoAnswerStepUp(asker, event.threadId, {
           tool: event.tool,
           ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
@@ -13568,10 +13588,12 @@ bus.subscribe((event: RuntimeEvent) => {
           ownEnvironment: Boolean(asker) && ownEnvironmentAutonomy({
             call: ownEnvironment, mode: strictCard ? "ask" : effectiveApprovalMode, tool: event.mcpTool ?? event.tool,
             ...(typeof event.input === "string" ? { input: event.input } : {}),
-            origin: asker ? ownEnvironmentOrigin(asker, event.threadId) : "other", stepUpRequired: selfAnswerStepUp,
+            origin: asker ? ownWorkOrigin(asker, event.threadId, event.mcpTool ?? event.tool, event.input) : "other", stepUpRequired: selfAnswerStepUp,
           }),
           ownAttachmentRead: attachmentRead,
           ownComputerChoice: ownComputerChoice && !strictCard,
+          ...(perspicaxSelfKind && !strictCard && !foreignDestination && perspicaxSelfAnswerAt(perspicaxSelfKind, effectiveApprovalMode)
+            ? { perspicaxSelf: perspicaxSelfKind } : {}),
           ...(event.mcpTool ? { toolName: event.mcpTool } : {}),
           stepUpRequired: attachmentRead && !selfAnswerStepUp.length && asker
             ? autoAnswerStepUp(asker, event.threadId, {
@@ -13619,14 +13641,22 @@ bus.subscribe((event: RuntimeEvent) => {
         (ownEnvironment && !ownEnvironmentAutonomy({
           call: true, mode: "auto", tool: event.mcpTool ?? event.tool,
           ...(typeof event.input === "string" ? { input: event.input } : {}),
-          origin: ownEnvironmentOrigin(asker, event.threadId), stepUpRequired: [],
+          origin: ownWorkOrigin(asker, event.threadId, event.mcpTool ?? event.tool, event.input), stepUpRequired: [],
         }))
         || (ownDestination && !ownEnvironment && !attachmentRead && !speakerEnvironmentRules)
         || foreignDestination
       ));
       const owner = ownerCall && asker
         ? ownerDecision({
-          mode: destinationAnswerer ? "approval" : effectivePermissionMode(asker, ownerCall.ownerId),
+          // 2026-10-19 (owner setup): Approve for me or Full access on the
+          // owner's own work reads as the owner mode "auto" (destructive
+          // calls, ask rules, holds and security keys keep their card).
+          mode: destinationAnswerer ? "approval" : ownerModeForTurn({
+            ownerMode: effectivePermissionMode(asker, ownerCall.ownerId),
+            approvalMode: effectiveApprovalMode,
+            lineage: ownerCall.ownerId.trim().toLowerCase() === effectiveBotOwner(asker).trim().toLowerCase() ? ownerLineageFor(asker, event.threadId) : "other",
+            autoAllowed: !(memberOwnedInOrg(asker) && !memberAutoApprovalAllowed(cfg.organization)),
+          }),
           rules: ownerApprovals.rulesOf(ownerCall.ownerId, asker.id),
           call: ownerCall,
           personMustAnswer: safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true,
@@ -18387,7 +18417,7 @@ async function startTurn(
           // one generic sentence they got never named a teammate, so the
           // first move of any collaboration was a list_bots round trip the
           // model mostly did not think to make.
-          ? peerRosterSystemPrompt(sectionPeers, boundedCoordination, botCreationOffered(bot, ownerBotsReadOnly(bot)))
+          ? peerRosterSystemPrompt(sectionPeers, boundedCoordination, botCreationOffered(bot, ownerBotsReadOnly(bot)), sameOwnerRosterMember(bot))
           : "";
       const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) + WIDGET_PROMPT + WIDGET_APPROVAL_PROMPT : "";
       const routinePrompt = integrations.agents ? ROUTINE_PROMPT : "";
@@ -18503,6 +18533,7 @@ async function startTurn(
       if (streamPart?.text) refreshStreamDigests(bot.id, threadId);
       const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
+        { id: "ai-client", label: "AI client", text: aiClientThreadPerson(bot, threadId, commsDepth, userMessage) },
         // first after the soul: the block names agent tools, so it only goes
         // to a turn whose engine actually mounted them (setupMode is already
         // false when they are not — see agentsMounted above)
@@ -28095,6 +28126,52 @@ function ownEnvironmentOrigin(bot: BotRecord, threadId: string): "owner" | "othe
     unattended: isUnattended(bot.id, threadId),
   });
 }
+/** 2026-10-19 (owner setup): the line for a person's own AI client
+ * conversation (the member API's hidden "AI client" thread, never one a bot
+ * opened): what arrives there is that signed-in person's own request. Empty
+ * for every other turn. */
+function aiClientThreadPerson(bot: BotRecord, threadId: string, commsDepth: number, message: Message): string {
+  if (commsDepth > 0 || message.role !== "user" || message.peerAsk) return "";
+  const task = store.taskByThread(bot.id, threadId);
+  if (!task || task.hidden !== true || task.openedBy?.botId || store.isConfidentialThread(threadId)) return "";
+  const sender = message.sender?.id?.trim().toLowerCase();
+  if (!sender || !task.ownerPrincipalId || task.ownerPrincipalId.trim().toLowerCase() !== sender) return "";
+  return aiClientPrompt(message.sender?.name ?? "");
+}
+/** 2026-10-19 (owner setup): a roster member whose description the bot's
+ * own owner wrote (a bot of the same owner), for the ordinary-bot roster
+ * (peer-roster.ts peerRosterSystemPrompt). */
+function sameOwnerRosterMember(bot: BotRecord): (member: { id: string }) => boolean {
+  const owner = effectiveBotOwner(bot).trim().toLowerCase();
+  return (member) => {
+    const peer = store.bot(member.id);
+    return Boolean(owner && peer && effectiveBotOwner(peer).trim().toLowerCase() === owner);
+  };
+}
+/** 2026-10-19 (owner setup, server/owner-autonomy.ts): whether this turn
+ * is the owner's own work through their own bots or their own scheduled or
+ * manual routine (never a webhook, an email, another person or an unknown
+ * source). */
+function ownerLineageFor(bot: BotRecord, threadId: string): "owner" | "other" {
+  const speaker = turnSpeakers.get(threadId);
+  const automation = directRequestOwners.get(threadId)?.automation;
+  return ownerLineageOrigin({
+    speaker,
+    ownerPrincipalId: effectiveBotOwner(bot),
+    ...(speaker ? { peerFromOwner: peerOwnerPrincipal(speaker) } : {}),
+    ...(automation !== undefined ? { automation } : {}),
+    unattended: automation === "webhook",
+  });
+}
+/** The origin the owner's own environment judges a call by: the owner's own
+ * turn, or the owner's own lineage (ownerLineageFor). Only for that
+ * environment's autonomy; create_bot and the other owner-only actions keep
+ * ownEnvironmentOrigin. */
+function ownWorkOrigin(bot: BotRecord, threadId: string, tool: string | undefined, input: unknown): "owner" | "other" {
+  if (ownEnvironmentOrigin(bot, threadId) === "owner") return "owner";
+  const args = typeof input === "string" ? input : undefined;
+  return lineageEnvironmentCall(tool, args, ownEnvironmentSensitiveRead) ? ownerLineageFor(bot, threadId) : "other";
+}
 /** The profile block: a bot offered create_bot (not the Primary Bot) is
  * told it may create one for its person (server/bot-creation.ts). */
 function botProfilePrompt(bot: BotRecord): string {
@@ -32739,7 +32816,10 @@ const agentApi = createAgentApi({
       .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))[0];
     if (caller.kind === "person") {
       // an AI client's conversation is never a confidential one (it reads it back)
-      const existing = newest(store.tasks(agentId).filter((task) => task.ownerPrincipalId === caller.id && task.confidential !== true));
+      // 2026-10-19 (owner setup): never a conversation a bot opened (an
+      // "@Name · agent" thread): the person's words landed there under that
+      // bot's name and their bots took them for another agent's relay.
+      const existing = newest(store.tasks(agentId).filter((task) => task.ownerPrincipalId === caller.id && task.confidential !== true && !task.openedBy?.botId));
       if (existing) return { threadId: existing.threadId };
       const created = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/tasks`, body: { hidden: true, title: "AI client", confidential: false } });
       const threadId = (created.body as { task?: { threadId?: unknown } })?.task?.threadId;
