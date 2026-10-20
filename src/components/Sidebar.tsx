@@ -31,10 +31,9 @@ import {
   Users,
   X,
   PictureInPicture2,
-  LayoutGrid,
   UserRoundPen,
 } from "lucide-react";
-import { api, openBotCatalog, useStore, formatTime, visibleMessages, currentTaskBot, botOpensTo, openBot, startNewTopic, type AppState, type Bot, type BotProject, type ConfigStatus, type FolderOwnerKind, type Group, type GroupTaskUpdatePatch, type InstanceInfo, type Message } from "@/state/store";
+import { api, useStore, formatTime, visibleMessages, currentTaskBot, botOpensTo, openBot, startNewTopic, type AppState, type Bot, type BotProject, type ConfigStatus, type FolderOwnerKind, type Group, type GroupTaskUpdatePatch, type InstanceInfo, type Message } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
@@ -44,7 +43,6 @@ import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
-import { InitialsAvatar } from "./Avatar";
 import { SidebarMascotAvatar, SidebarMascotProvider } from "./SidebarMascotAvatar";
 import { stateForBot } from "@/lib/mascot";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
@@ -158,11 +156,10 @@ import { buildTeamMapSections } from "@/lib/team-map";
 import { sidebarSectionAttention } from "@/lib/sidebar-attention";
 import { botListItemPointerIntent } from "@/lib/sidebar-selection";
 import { phoneSettingsAction, SidebarPhoneButton } from "./SidebarPhoneButton";
-import { SidebarPlaces } from "./SidebarPlaces";
 import { PulsatrixMark } from "./PulsatrixMark";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 
-import { profileInitials, SidebarProfileMenu, SidebarRoutinesBadge } from "./SidebarProfileMenu";
+import { SidebarProfileMenu, SidebarRoutinesBadge } from "./SidebarProfileMenu";
 import { SidebarConnectApps } from "./ConnectAppsPill";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
@@ -3083,7 +3080,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       </div>
 
       {/* Bot list. GET /api/org 404 keeps this roster. */}
-      <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto pb-6 pt-1", density === "icons" ? "px-2" : "pl-3 pr-[13px]")}
+      <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-6 pt-1", density === "icons" ? "px-2" : "pl-3 pr-[13px]")}
         data-sidebar-rail={density === "icons" ? "" : undefined}
         onKeyDown={density === "icons" ? moveRailFocus : undefined}
         onContextMenu={orgMode ? (event) => { if (event.target === event.currentTarget || (event.target as HTMLElement).dataset?.sidebarEmpty !== undefined) openOrgMenu(event, null, null); } : undefined}>
@@ -3107,7 +3104,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   aria-current={selected ? "page" : undefined}
                   className={cn(
                     density === "icons"
-                      ? "flex w-20 min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5"
+                      ? "mx-auto flex w-full min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5"
                       // the selected tile is a neutral lighter card with a
                       // 16px radius
                       // Grok Bot's pinned tile: 6px over a 60px portrait, 6px
@@ -3334,18 +3331,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         {density === "icons" ? (
           <>
             <SidebarConnectApps iconOnly icon={<Puzzle size={20} />} onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
-            {/* the rail's avatar opens Settings, so Browse bots keeps its icon */}
-            {!remoteClient && <SidebarPlaces iconOnly places={[{ key: "browse-bots", label: t("sidebar.browseBots"), icon: LayoutGrid, animation: "grid", onSelect: () => dispatch(openBotCatalog()) }]} />}
-            <div className="flex items-center justify-center">
-              <button
-                onClick={() => dispatch({ type: "toggleAppSettings" })}
-                data-sidebar-account-rail
-                className="flex h-10 min-w-0 items-center justify-center rounded-lg px-2 text-left hover:bg-sidebar-hover"
-                aria-label={t("sidebar.appSettings")}
-                title={state.config?.profile?.name?.trim() || t("sidebar.appSettings")}
-              >
-                <InitialsAvatar initials={profileInitials(state.config?.profile)} size={28} />
-              </button>
+            {/* one avatar, like the wide foot: its menu holds Settings,
+                Approvals, Code and the rest; Browse bots is a tab of Connect apps */}
+            <div data-sidebar-account-rail className="flex h-10 items-center justify-center">
+              <SidebarProfileMenu avatarOnly places={accountPlaces} />
             </div>
           </>
         ) : (
