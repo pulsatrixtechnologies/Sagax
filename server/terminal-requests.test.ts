@@ -129,7 +129,7 @@ describe("terminal request service", () => {
   });
   afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
 
-  function setup() {
+  function setup(extra: Partial<Parameters<typeof createTerminalRequestService>[0]> = {}) {
     const registry = new TerminalResourceRegistry();
     registry.register(testTerminalAdapter);
     registry.register(createTestTerminalAdapter({ kind: "sandbox", id: "mine", label: "Ordinateur infonuagique", scope: "personal", calls }));
@@ -161,6 +161,7 @@ describe("terminal request service", () => {
         ? { organization: true, admin: true, ownsBot: false }
         : { organization: true, admin: false, ownsBot: principalId === OWNER },
       workPlace: () => workPlace,
+      ...extra,
     });
     const auditRows = () => readFileSync(audit.path, "utf8").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
     return { requests, sessions, auditRows };
@@ -252,6 +253,31 @@ describe("terminal request service", () => {
     expect(refused).toMatchObject({ claimed: true, status: 403 });
     expect(calls.opened).toEqual([]);
     expect(auditRows().at(-1)).toMatchObject({ kind: "session.refused", principalId: MEMBER });
+  });
+
+  it("2026-10-19: an Always allow kept for this bot and this destination opens it as that person; another destination keeps its card", async () => {
+    const kept: Array<{ principalId: string; tool: string; scope: Record<string, string> }> = [];
+    const journal: string[] = [];
+    const { requests } = setup({
+      keptRule: (principalId, _bot, candidate) => {
+        kept.push({ principalId, ...candidate });
+        return principalId === OWNER && candidate.scope.destination === "desktop:mine" ? { id: "r1" } : null;
+      },
+      journalRule: ({ rule }) => journal.push(rule),
+    });
+    const other = await requests.submit({ botId, threadId, provider: "sandbox", reason: "x" });
+    if (!("requestId" in other)) throw new Error("no card");
+    expect(card().ownerRule).toMatchObject({ tool: "sagax:terminal", scope: { destination: "sandbox:mine" } });
+    expect(card().answered).toBeUndefined();
+    expect(calls.opened).toEqual([]);
+    messages = [];
+    const auto = await requests.submit({ botId, threadId, provider: "desktop", reason: "y" });
+    expect("requestId" in auto).toBe(true);
+    expect(card().answered).toBe("allow");
+    expect(calls.opened).toHaveLength(1);
+    expect(calls.opened[0]).toMatchObject({ principalId: OWNER });
+    expect(journal).toEqual(["r1"]);
+    expect(kept.every((row) => row.principalId === OWNER)).toBe(true);
   });
 
   it("audits a refusal of the card", async () => {

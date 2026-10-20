@@ -73,6 +73,35 @@ it("turns a ConnectWise query into a widget and a widget change into an approval
     const after = await messages(threadId);
     expect(after.find((row) => row.card?.requestId === note.body.requestId)?.card?.answered).toBe("deny");
     expect(after.filter((row) => row.role === "user").length).toBe(before);
+
+    // 2026-10-19 (JC: "Toujours permettre" on every card): a widget's card
+    // offers Always allow for this bot and this kind of change; kept, the
+    // next status change of a ticket asks nothing; a note keeps its card;
+    // revoked, the card comes back
+    const status = (ticketId: number) => api(`/api/threads/${threadId}/cw-actions`, {
+      method: "POST", body: { action: { kind: "ticket.status", ticketId, status: "Résolu", from: "En cours" } },
+    });
+    const kept = await status(48197);
+    const keptCard = (await messages(threadId)).find((row) => row.card?.requestId === kept.body.requestId)?.card;
+    expect(keptCard?.ownerRule).toMatchObject({ tool: "cw_widget:cw_psa__write" });
+    expect(keptCard?.ownerRule?.scope).not.toHaveProperty("id");
+    expect((await api(`/api/threads/${threadId}/respond`, { method: "POST", body: { requestId: kept.body.requestId, behavior: "allow", rule: "allow" } })).status).toBe(200);
+    expect((await control(["wait", "--bot", bot.id, "--timeout", "20"])).status).toBe("settled");
+    const rules = (await api("/api/approval-rules")).body.rules as Array<{ id: string; tool: string }>;
+    const rule = rules.find((row) => row.tool === "cw_widget:cw_psa__write");
+    expect(rule).toBeTruthy();
+    const byRule = await status(48150);
+    expect(byRule).toMatchObject({ status: 201, body: { allowedByRule: true } });
+    expect((await messages(threadId)).find((row) => row.card?.requestId === byRule.body.requestId)?.card?.answered).toBe("allow");
+    expect((await control(["wait", "--bot", bot.id, "--timeout", "20"])).status).toBe("settled");
+    const noteAgain = await api(`/api/threads/${threadId}/cw-actions`, {
+      method: "POST", body: { action: { kind: "ticket.note", ticketId: 48150, text: "Suivi.", internal: true } },
+    });
+    expect(noteAgain.body.allowedByRule).toBeUndefined();
+    expect((await api(`/api/approval-rules/${rule!.id}`, { method: "DELETE" })).status).toBe(200);
+    const revoked = await status(48213);
+    expect(revoked.body.allowedByRule).toBeUndefined();
+    expect((await messages(threadId)).find((row) => row.card?.requestId === revoked.body.requestId)?.card?.answered).toBeUndefined();
   } finally {
     await fixture.close();
     expect(existsSync(fixture.info.dataDir)).toBe(false);

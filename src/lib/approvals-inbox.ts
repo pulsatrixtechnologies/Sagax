@@ -20,10 +20,10 @@ export interface BulkAnswer {
   results: Array<{ key: string; ok: boolean; code?: string; message?: string }>;
 }
 
-export async function bulkAnswer(decision: "allow" | "deny", entries: readonly Pick<InboxApproval, "threadId" | "requestId">[]): Promise<BulkAnswer> {
+export async function bulkAnswer(decision: "allow" | "deny", entries: readonly Pick<InboxApproval, "threadId" | "requestId">[], always = false): Promise<BulkAnswer> {
   return api<BulkAnswer>("/api/approvals/bulk", {
     method: "POST",
-    body: JSON.stringify({ decision, items: entries.map((entry) => ({ threadId: entry.threadId, requestId: entry.requestId })) }),
+    body: JSON.stringify({ decision, items: entries.map((entry) => ({ threadId: entry.threadId, requestId: entry.requestId })), ...(always && decision === "allow" ? { rule: "allow" } : {}) }),
   });
 }
 

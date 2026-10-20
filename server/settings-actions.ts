@@ -14,7 +14,7 @@ import { acceptablePath, actorForTurn } from "../shared/bot-act.ts";
 import { decideSettingEffect, HOLD_TEXT, type SettingClass } from "../shared/settings-actions-policy.ts";
 import { pickValue, SETTING_FAMILIES, SETTINGS, settingSpec, valueFits, type SettingIds, type SettingSpec } from "../shared/settings-actions.ts";
 import { STEP_UP_CLASSES, botActClasses, type StepUpClass } from "../shared/step-up.ts";
-import type { BotActResult, BotActService } from "./bot-act.ts";
+import { valueDigest, type ActRuleCandidate, type BotActResult, type BotActService } from "./bot-act.ts";
 
 export type SettingsActionDeps = {
   organization: () => boolean;
@@ -30,7 +30,7 @@ export type SettingsActionDeps = {
   turnMode: (botId: string, threadId: string) => ApprovalMode;
   /** The step-up classes the person protects among these (security keys). */
   keyRequired: (person: string | null, classes: StepUpClass[], fallback: string | null) => StepUpClass[];
-  audit: (row: { key: string; target?: string; value: unknown; secret: boolean; how: "run" | "allowed"; botId: string; actor: string | null }) => void;
+  audit: (row: { key: string; target?: string; value: unknown; secret: boolean; how: "run" | "allowed" | "rule"; botId: string; actor: string | null }) => void;
   /** A screen command to the person's open app (a device preference). */
   screen: (facts: TurnFacts, command: string, input: Record<string, unknown>) => BotActResult;
   /** A record's name for a card (never its id), or undefined. */
@@ -212,7 +212,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         const held = await deps.acts().handlePlanned({
           facts,
           target: { kind: "ui", command: built.ui, input: built.input, action: { type: built.ui, ...built.input }, write: true },
-          plan: { effect: "hold", summary: `${spec.label} (${spec.key}): ${describe(value)}`, stepUpClasses: [], onDone: (how) => deps.audit({ key: spec.key, value, secret: false, how, botId: input.botId, actor: speaker }) },
+          // 2026-10-20 (security review): Always allow keeps this preference and this value
+          plan: { effect: "hold", summary: `${spec.label} (${spec.key}): ${describe(value)}`, stepUpClasses: [], rule: { tool: "sagax_settings", scope: { setting: spec.key, value: valueDigest(value) }, description: `${spec.label}: ${describe(value)}`.slice(0, 500) }, onDone: (how) => deps.audit({ key: spec.key, value, secret: false, how, botId: input.botId, actor: speaker }) },
           threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
         });
         return held.status < 400 ? text(200, `${String(held.body.text ?? "")} ${HOLD_TEXT[decidedUi.reason]}`.trim()) : held;
@@ -235,6 +236,15 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     // a person allows, or its keys and fingerprint when it is long; a
     // secret's value never
     const summary = `${spec.label} (${spec.key}${where ? `, ${where}` : ""})${secret ? `: ${Object.keys(value && typeof value === "object" ? value : {}).join(", ")}` : `: ${describe(value)}`}`;
+    // 2026-10-19 (JC: "Toujours permettre" on every card): what Always allow
+    // keeps: this setting of this target, and its exact value when the
+    // change is more than a simple one
+    const exactValue = classes.some((name) => name !== "own");
+    const rule: ActRuleCandidate = {
+      tool: "sagax_settings",
+      scope: { setting: spec.key, ...(ids.target ? { target: ids.target } : {}), ...(exactValue ? { value: valueDigest(value) } : {}) },
+      description: `${spec.label}${where ? ` (${where})` : ""}${exactValue ? (secret ? ", this exact value" : `: ${describe(value)}`) : ""}`.slice(0, 500),
+    };
     const result = await deps.acts().handlePlanned({
       facts,
       target: route,
@@ -242,6 +252,9 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         effect: decided.effect,
         summary,
         stepUpClasses,
+        rule,
+        // 2026-10-20 (security review): rules and permissions keep their card
+        ...(classes.includes("rule-change") || spec.family === "rules" ? { noRule: true } : {}),
         onDone: (how) => deps.audit({ key: spec.key, ...(ids.target ? { target: ids.target } : {}), value, secret, how, botId: input.botId, actor: speaker }),
       },
       threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,

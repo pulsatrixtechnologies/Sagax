@@ -28,6 +28,10 @@ export interface OwnerRuleRow {
   behavior: RuleBehavior;
   description: string;
   legacy?: true;
+  /** 2026-10-19: the situation the rule also answers (an admin's card, a
+   * held card, a turn that is not the person's own) and the bot's name. */
+  from?: "admin" | "hold" | "origin";
+  botName?: string;
 }
 
 const MODES: ReadonlyArray<{ id: BotPermissionMode; label: LocaleKey; help: LocaleKey }> = [

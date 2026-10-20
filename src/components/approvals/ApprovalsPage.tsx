@@ -116,9 +116,13 @@ function BulkConfirm({ decision, selected, bots, busy, onCancel, onConfirm }: {
   bots: ReadonlyMap<string, Bot>;
   busy: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  /** `always`: keep each card's own Always allow too (2026-10-19) */
+  onConfirm: (always: boolean) => void;
 }) {
   const plan = bulkPlan(selected, decision);
+  const [always, setAlways] = useState(false);
+  // every card a bulk Always allow covers must have its own rule to keep
+  const alwaysOffered = decision === "allow" && plan.answered.length > 0 && plan.answered.every((entry) => Boolean(entry.alwaysRule) && entry.alwaysKind === plan.answered[0]?.alwaysKind);
   const confirmRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { confirmRef.current?.focus(); }, []);
   const allow = decision === "allow";
@@ -136,14 +140,20 @@ function BulkConfirm({ decision, selected, bots, busy, onCancel, onConfirm }: {
           <h2 id="approvals-bulk-title" className="text-[16px] font-semibold text-ink">
             {t(allow ? "approvals.bulk.confirmAllowTitle" : "approvals.bulk.confirmDenyTitle", { count: plan.answered.length })}
           </h2>
-          <p className="mt-1 text-[12.5px] text-ink-secondary">{t(allow ? "approvals.bulk.onceOnly" : "approvals.bulk.denyNote")}</p>
+          <p className="mt-1 text-[12.5px] text-ink-secondary">{t(allow ? (always ? "approvals.bulk.alwaysNote" : "approvals.bulk.onceOnly") : "approvals.bulk.denyNote")}</p>
+          {alwaysOffered && (
+            <label className="mt-2 flex items-center gap-2 text-[13px] text-ink" data-bulk-always="">
+              <input type="checkbox" checked={always} onChange={(event) => setAlways(event.target.checked)} />
+              {t("approvals.bulk.always")}
+            </label>
+          )}
         </div>
         <ul className="min-h-0 flex-1 divide-y divide-hairline/30 overflow-y-auto border-y border-hairline/40" data-bulk-list="answered">
           {plan.answered.map((entry) => (
             <li key={entry.key} className="flex items-center gap-2.5 px-5 py-2">
               <InboxAvatar bot={bots.get(entry.botId)} name={entry.botName} size={22} />
               <span className="shrink-0 text-[12.5px] font-medium text-ink">{entry.botName}</span>
-              <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{inboxTitle(entry)}</span>
+              <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{always && entry.alwaysRule ? entry.alwaysRule : inboxTitle(entry)}</span>
               {entry.destination && <span className="shrink-0 text-[11.5px] text-ink-tertiary">{t(`approvals.destination.${entry.destination}`)}</span>}
             </li>
           ))}
@@ -164,7 +174,7 @@ function BulkConfirm({ decision, selected, bots, busy, onCancel, onConfirm }: {
             ref={confirmRef}
             type="button"
             disabled={busy || plan.answered.length === 0}
-            onClick={onConfirm}
+            onClick={() => onConfirm(always && alwaysOffered)}
             className={cn(
               "flex flex-[1.4] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-40",
               allow ? "bg-success hover:brightness-110" : "bg-danger text-danger-ink hover:brightness-110",
@@ -326,12 +336,12 @@ export function ApprovalsPage() {
   const decidable = shown.filter((entry) => entry.decidable && (entry.bulk === true || entry.bulk === "needs-key"));
   const allChecked = decidable.length > 0 && decidable.every((entry) => checked.has(entry.key));
 
-  const runBulk = async () => {
+  const runBulk = async (always = false) => {
     if (!confirm) return;
     const plan = bulkPlan(checkedEntries, confirm);
     setBulkBusy(true);
     try {
-      const out = await bulkAnswer(confirm, plan.answered);
+      const out = await bulkAnswer(confirm, plan.answered, always);
       for (const result of out.results) if (result.ok) finishAnswer(result.key, false);
       window.setTimeout(() => void refresh(), OUTCOME_MS);
       const left = checkedEntries.length - out.answered;
@@ -540,7 +550,7 @@ export function ApprovalsPage() {
           bots={bots}
           busy={bulkBusy}
           onCancel={() => setConfirm(null)}
-          onConfirm={() => void runBulk()}
+          onConfirm={(always) => void runBulk(always)}
         />
       )}
     </main>

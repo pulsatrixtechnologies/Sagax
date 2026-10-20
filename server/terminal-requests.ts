@@ -35,6 +35,11 @@ export interface TerminalRequestServiceDeps {
   /** Whose conversation this is when the task names nobody (a solo server's
    * operator): the bot's owner. */
   owner?(botId: string, threadId: string): string;
+  /** 2026-10-19 (JC: "Toujours permettre" on every card): the Always allow
+   * this person kept for this bot and this destination, or null. */
+  keptRule?(principalId: string, botId: string, candidate: { tool: string; scope: Record<string, string> }, threadId: string): { id: string } | null;
+  /** One journal row for an offer a kept rule opened. */
+  journalRule?(input: { threadId: string; botId: string; requestId: string; summary: string; rule: string }): void;
 }
 
 /** The card's choice when the bot names none: where the bot works, else the
@@ -129,6 +134,8 @@ export function createTerminalRequestService(deps: TerminalRequestServiceDeps) {
         destinations: [choiceOf(resource), ...others.map(choiceOf)],
       };
       const bot = deps.store.bot(args.botId);
+      // what Always allow keeps: this bot, this destination
+      const rule = { tool: "sagax:terminal", scope: { destination: terminalResourceKey(resource.provider, resource.id) }, description: `Open a terminal on ${resource.hostLabel}` };
       const message = deps.store.appendMessage(args.threadId, {
         role: "bot",
         kind: "options",
@@ -140,6 +147,7 @@ export function createTerminalRequestService(deps: TerminalRequestServiceDeps) {
           requestId,
           tool: "shell_terminal",
           terminalRequest: payload,
+          ownerRule: rule,
         },
       });
       deps.audit.write({
@@ -152,6 +160,14 @@ export function createTerminalRequestService(deps: TerminalRequestServiceDeps) {
         provider: resource.provider,
         requestId,
       });
+      const kept = deps.keptRule?.(principalId, args.botId, rule, args.threadId) ?? null;
+      if (kept) {
+        // the person's kept rule answers as them, with their own rights
+        const opened = await this.resolve({ threadId: args.threadId, requestId, behavior: "allow", principalId });
+        if (opened.claimed && "outcome" in opened && opened.outcome === "allowed-once") {
+          deps.journalRule?.({ threadId: args.threadId, botId: args.botId, requestId, summary: payload.reason, rule: kept.id });
+        }
+      }
       return { requestId, messageId: message.id, resource };
     },
 

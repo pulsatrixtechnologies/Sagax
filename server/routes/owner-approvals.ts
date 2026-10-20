@@ -29,6 +29,9 @@ export interface OwnerApprovalRouteDeps {
   ownedBots: (personId: string) => ReadonlyArray<{ id: string; name: string; threadId: string; alwaysAllow?: readonly string[] }>;
   /** A bot's current owner, or null when there is no such bot. */
   ownerOf: (botId: string) => string | null;
+  /** A bot's name for the list (a rule saved on a bot someone else owns,
+   * an admin's rule on a member's bot), or undefined when it is gone. */
+  botName?: (botId: string) => string | undefined;
   /** An earlier per-bot Allow key in plain words. */
   describeLegacy: (key: string) => string;
   /** Remove an earlier Allow key from a bot and its conversations. */
@@ -86,7 +89,11 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
       if (!me) return json(res, 403, { error: "Sign in to see your approval rules." });
       const botId = url.searchParams.get("botId") ?? undefined;
       if (botId && !deps.ownedBots(me).some((bot) => bot.id === botId)) return json(res, 404, { error: "no such bot" });
-      return json(res, 200, { rules: [...deps.store.rulesOf(me, botId), ...legacyRules(me, botId)] });
+      const named = (rows: OwnerRule[]) => rows.map((row) => {
+        const name = row.botId && deps.botName ? deps.botName(row.botId) : undefined;
+        return name ? { ...row, botName: name } : row;
+      });
+      return json(res, 200, { rules: named([...deps.store.rulesOf(me, botId), ...legacyRules(me, botId)]) });
     }
 
     // each route sits beside its method guard (scripts/tool-policy/route-inventory.ts)

@@ -11845,7 +11845,7 @@
       "computer.group.yours": "493611954285e785b0528faacc0193ebcc72cea00209f8bf9d3c0fb50f95402c",
       "computer.group.bots": "b80963e1aa35086834733398d4cbbdfb8f8d9b383820067e335ecdea1c5b0ca9",
       "myRules.title": "ee9c2edcf896c9e4ca92f79dd405d99acbc32d14562752abc8704086c60380bf",
-      "myRules.help": "aad54ca9026e853220b90d7b7298fff9a1e3bb3a01844f134498fb6476f5d7eb",
+      "myRules.help": "f501415ce8bf59b524c4045d510b09526217e0de30cc49a9b55f3a7238e77aa2",
       "computer.others": "44ed2032d073ba3f2971df4252313b331c6d00cace6c28d20327362c2116ec57",
       "computer.others.show": "c20ec252f8899b39b1f009012bdaebf36342492140ea50b54c0bd43ac7bedd2a",
       "computer.others.hide": "ab7a5a1756dbab24ee1b152759c0a409081595cd6f23530aa16eb52a344027d2",
@@ -13188,7 +13188,13 @@
       "grokImport.file": "005a5a43951cd61442f66e26492808003f215795145e65cb89e4acebd739bafd",
       "grokImport.tooLarge": "9cc9b0d286b57acd13f922be197d812cf31a47b787bfe18e02fa45f581ac8cba",
       "grokImport.leftOut": "2b9967f7756f0ccca7d25765d10b9679c34726c25250c6a1d60637691187f20a",
-      "grokImport.added": "d39f2128ee4a899f6a9232c3990f47ab346cb93d3efbe7840f8bb80b7ee86ccb"
+      "grokImport.added": "d39f2128ee4a899f6a9232c3990f47ab346cb93d3efbe7840f8bb80b7ee86ccb",
+      "approval.always.scopeLine": "4504878d19563be08e7e78c7cf5a3ca79cbe4ce017f6a2b05ef665bd20385ca6",
+      "myRules.from.admin": "99a3cacd1dd6f2a89fc26f16729dfde20d82318d580229653f8aedd26de3c198",
+      "myRules.from.hold": "36389aaa1f38e13857ae704eecb7f954d0c97d222cbbdeafec09518c8c314074",
+      "myRules.from.origin": "453000d5b073a8afb7e066bf81c7727e3ba9f2eea77654b35aab2a0c08a52444",
+      "approvals.bulk.always": "90e0fc3f8713a7cc4386a273f904b84524152a82cbee8b723e80aa4ef6c535f1",
+      "approvals.bulk.alwaysNote": "000ea0d9a8597626c611f847846ceeafc4883bf15b5fdb7a7f3a32301e748d22"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

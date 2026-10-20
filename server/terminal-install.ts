@@ -92,6 +92,9 @@ export function installTerminalFeature(deps: {
   owner?: (botId: string, threadId: string) => string;
   /** The bot owns this conversation (internal routes). */
   ownsThread: (botId: string, threadId: string) => boolean;
+  /** 2026-10-19: Always allow kept for a terminal offer (terminal-requests.ts). */
+  keptRule?: (principalId: string, botId: string, candidate: { tool: string; scope: Record<string, string> }, threadId: string) => { id: string } | null;
+  journalRule?: (input: { threadId: string; botId: string; requestId: string; summary: string; rule: string }) => void;
   /** The person's own environments, when this server has them. */
   personal?: Partial<Record<"sandbox" | "local-vm" | "desktop", PersonalTerminalDeps>>;
   now?: () => number;
@@ -121,6 +124,8 @@ export function installTerminalFeature(deps: {
     access: deps.access,
     ...(deps.workPlace ? { workPlace: deps.workPlace } : {}),
     ...(deps.owner ? { owner: deps.owner } : {}),
+    ...(deps.keptRule ? { keptRule: deps.keptRule } : {}),
+    ...(deps.journalRule ? { journalRule: deps.journalRule } : {}),
   });
 
   return {

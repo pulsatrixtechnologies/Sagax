@@ -8165,7 +8165,7 @@
   "computer.group.yours": "Your computer",
   "computer.group.bots": "Bots' computer",
   "myRules.title": "Your approval rules",
-  "myRules.help": "Every Always allow and Always deny you saved, on your bots and on bots shared with you. They are yours alone: delete one and the card asks again. On your own computer a command always asks; on your cloud computer and your Local VM, Always allow works.",
+  "myRules.help": "Every Always allow and Always deny you saved, from any card, on your bots, on bots shared with you and, for an admin, on members' bots. Each one names a bot, an action and its exact target or command. They are yours alone: delete one and the card asks again. A security key you chose for a kind of action is still asked each time.",
   "computer.others": "Other computers",
   "computer.others.show": "Show other computers",
   "computer.others.hide": "Hide other computers",
@@ -9329,5 +9329,11 @@
   "vault.card.signedInDone": "Done",
   "vault.card.signedInSelf": "You signed in to {site} yourself",
   "vault.card.selfUnprotected": "Not protected any more: {bot}’s browser is no longer prepared for your sign-in (Sagax restarted, 30 minutes passed, or the bot asked again). Do not type a password there now; prepare it again first.",
-  "vault.card.selfRearm": "Prepare again"
+  "vault.card.selfRearm": "Prepare again",
+  "approval.always.scopeLine": "Always allow keeps exactly: {name}, {rule}. You can revoke it in Settings > Security.",
+  "myRules.from.admin": "saved on an admin's card",
+  "myRules.from.hold": "also when a safety check holds it",
+  "myRules.from.origin": "also for routines, other bots and your own computer",
+  "approvals.bulk.always": "Always allow these: each card keeps its own exact scope",
+  "approvals.bulk.alwaysNote": "Each request is allowed, and the same action on the same kind of target will pass without a card for that bot. Each rule is listed in Settings > Security, where you can revoke it."
 }
