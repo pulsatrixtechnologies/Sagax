@@ -213,5 +213,9 @@ describe("Sagax's GitHub sync in the server environment", () => {
     const base = { login: "jc", via: "token" as const, connectedAt: 1 };
     expect(connect.status("jc", { ...base, token: "github_pat_x" } as GithubConnection)).toMatchObject({ state: "connected", fineGrained: true });
     expect(connect.status("jc", { ...base, token: "gho_x" } as GithubConnection)).not.toHaveProperty("fineGrained");
+    // Signed in through the OAuth App: GitHub's page to grant it each organization.
+    const app = new GithubConnect({ clientId: () => "Iv1.abc", save: () => undefined });
+    expect(app.status("jc", { ...base, via: "device", token: "gho_x" } as GithubConnection)).toMatchObject({ orgAccessUrl: "https://github.com/settings/connections/applications/Iv1.abc" });
+    expect(app.status("jc", { ...base, token: "ghp_x" } as GithubConnection)).not.toHaveProperty("orgAccessUrl");
   });
 });
