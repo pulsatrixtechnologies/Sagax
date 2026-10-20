@@ -36,8 +36,10 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
  * turn that tagged a bot, and recent work did it on every turn of an active
  * bot, because its "2h ago" labels drift even when nothing else changed.
  * The phone-call section (server/voice-call-prompt.ts) rides only on the
- * turns of a voice call and the first written turn after it. */
-const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "stream"]);
+ * turns of a voice call and the first written turn after it. The Auto
+ * workspace rules (server/auto-computer.ts) come and go with the bot's
+ * Workspace setting and with who speaks; volatile, so neither relaunches. */
+const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "stream", "workplace"]);
 /** Claude Code keeps its process across turns and tells a reused process
  * what changed in its volatile half: the surface paragraph changes when a
  * teammate's reply resumes a person's turn (no computer choice there), and

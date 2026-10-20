@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { turnTrace } from "./turn-trace.ts";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
@@ -2187,6 +2188,7 @@ export class RoutineManager {
         run.status = "running";
         this.save();
         this.emitRun(run);
+        turnTrace(task.threadId, "routine-run", true);
         try {
           const prompt = run.prompt ?? this.routines.find((r) => r.id === run.routineId)?.prompt;
           if (!prompt) {
@@ -2197,6 +2199,7 @@ export class RoutineManager {
           // Without the hook (a solo server) nothing is awaited here, so the
           // turn starts in the same tick as before.
           const memoryNote = this.options.memoryHint ? await this.memoryNote(run, prompt) : "";
+          turnTrace(task.threadId, "routine-memory");
           // The run may have been cancelled while the memory answered.
           if (this.options.memoryHint && run.status !== "running") continue;
           if (run.target === "room-goal") {
