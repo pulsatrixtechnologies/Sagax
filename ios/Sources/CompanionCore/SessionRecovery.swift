@@ -186,18 +186,23 @@ public struct CredentialCandidate: Equatable, Sendable {
 }
 
 extension CompanionConnectionRegistry {
-    /// Other saved records for the same server as `connection`: the same
-    /// server environment id, or a shared route. Re-pairing used to be the
-    /// only place that recognized them; recovery reads their tokens too.
+    /// Other saved records for the same server as `connection`: they share
+    /// a route (the exact origin a bearer is sent to), and their server
+    /// environment ids, when both are known, agree. The environment id alone
+    /// is never enough: it is public, so another host could claim it, and a
+    /// token must only ever travel to an origin it was issued for.
     public func duplicates(of connection: Connection) -> [Connection] {
         let routes = Set(connection.orderedEndpoints.map(\.url))
+        guard !routes.isEmpty else { return [] }
         return connections.filter { saved in
-            guard saved.id != connection.id else { return false }
+            guard saved.id != connection.id,
+                  !routes.isDisjoint(with: saved.orderedEndpoints.map(\.url))
+            else { return false }
             if let environment = connection.serverEnvironmentId,
                let other = saved.serverEnvironmentId {
                 return environment == other
             }
-            return !routes.isEmpty && !routes.isDisjoint(with: saved.orderedEndpoints.map(\.url))
+            return true
         }
     }
 }

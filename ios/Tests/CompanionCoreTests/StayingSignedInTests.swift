@@ -235,6 +235,21 @@ final class StayingSignedInTests: XCTestCase {
         let registry = CompanionConnectionRegistry(connections: [older, server, other], activeConnectionID: "org-older")
         XCTAssertEqual(registry.duplicates(of: older).map(\.id), ["org"], "same server, not the Mac")
 
+        // Another host claiming the same (public) environment id is never a
+        // duplicate: its token would travel to an origin it was not issued for.
+        var impostor = server
+        impostor.id = "impostor"
+        impostor.activeEndpoint = CompanionEndpoint(url: "https://evil.example", kind: .hosted, priority: 0)
+        impostor.endpoints = [impostor.activeEndpoint!]
+        let mixed = CompanionConnectionRegistry(connections: [server, impostor])
+        XCTAssertEqual(mixed.duplicates(of: impostor), [])
+        XCTAssertEqual(mixed.duplicates(of: server), [])
+        // Same origin, but the server's data was recreated: not the same.
+        var recreated = server
+        recreated.id = "recreated"
+        recreated.serverEnvironmentId = "env-2"
+        XCTAssertEqual(CompanionConnectionRegistry(connections: [server, recreated]).duplicates(of: recreated), [])
+
         let slots = MemorySlots()
         slots.items[.shared] = ["org-older": "dead", "org": "live", "mac": "mac-token"]
         let ids = ["org-older"] + registry.duplicates(of: older).map(\.id)
