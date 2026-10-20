@@ -659,20 +659,37 @@ const readLaunchFiles = (): Record<string, unknown> => {
   return { systemPrompt, mcpConfig, settings, settingsMode };
 };
 
+type FakeMcpServer = { command?: string; args?: string[]; env?: Record<string, string>; type?: string; url?: string; headers?: Record<string, string> };
+/** The harness's own HTTP servers (server/harness-mcp-http.ts), which the
+ * real CLI connects to itself. Other URL servers stay unreached here. */
+function harnessHttpServer(server: FakeMcpServer | undefined): { url: string; headers?: Record<string, string> } | null {
+  return server?.type === "http" && typeof server.url === "string" && /\/api\/internal\/(browser|computer|data)\/mcp-http$/.test(server.url)
+    ? { url: server.url, ...(server.headers ? { headers: server.headers } : {}) } : null;
+}
+const HTTP_POST_SCRIPT = `let b="";process.stdin.on("data",(c)=>b+=c).on("end",async()=>{try{const r=await fetch(process.env.FAKE_MCP_URL,{method:"POST",headers:{"content-type":"application/json",accept:"application/json, text/event-stream",...JSON.parse(process.env.FAKE_MCP_HEADERS||"{}")},body:b.trim()});process.stdout.write((await r.text())+"\\n")}catch(e){process.stderr.write(String(e))}})`;
+
 /** One screenshot through the launched cloud computer server, if this turn
  * has one: the server answers once the harness has created or woken the
  * computer (or refused to). Synchronous, like the turn loop around it. */
 const useCloudComputer = () => {
   launchFiles ??= readLaunchFiles();
-  const server = (launchFiles.mcpConfig as { mcpServers?: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> } | null)
+  const server = (launchFiles.mcpConfig as { mcpServers?: Record<string, FakeMcpServer> } | null)
     ?.mcpServers?.computer;
-  if (!server?.command || server.args?.at(-1) !== "computer" || !/harness-mcp-proxy/.test(server.args[0] ?? "")) return;
+  const http = harnessHttpServer(server);
+  if (!http && (!server?.command || server.args?.at(-1) !== "computer" || !/harness-mcp-proxy/.test(server.args[0] ?? ""))) return;
+  if (http && !http.url.endsWith("/api/internal/computer/mcp-http")) return;
   const id = `tu-${process.pid}-${++toolUseCount}`;
   out({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "mcp__computer__screenshot", input: {} }] } });
-  const ran = spawnSync(server.command, server.args, {
-    input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "screenshot", arguments: {} } })}\n`,
-    env: { ...process.env, ...server.env }, encoding: "utf8", timeout: 150_000,
-  });
+  const input = `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "screenshot", arguments: {} } })}\n`;
+  // The real CLI posts to an HTTP server itself; this loop is synchronous,
+  // so one short Node child does the POST.
+  const ran = http
+    ? spawnSync(process.execPath, ["-e", HTTP_POST_SCRIPT], {
+      input, env: { ...process.env, FAKE_MCP_URL: http.url, FAKE_MCP_HEADERS: JSON.stringify(http.headers ?? {}) }, encoding: "utf8", timeout: 150_000,
+    })
+    : spawnSync(server!.command!, server!.args ?? [], {
+      input, env: { ...process.env, ...server!.env }, encoding: "utf8", timeout: 150_000,
+    });
   let reply: { result?: { isError?: boolean; content?: unknown }; error?: { message?: string } } = {};
   try { reply = JSON.parse(ran.stdout.trim().split("\n")[0] ?? ""); } catch { reply = { error: { message: ran.stderr || "no answer" } }; }
   out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id,
@@ -989,6 +1006,26 @@ const fakeMcpCalls: FakeMcpCall[] | null = (() => {
   }
 })();
 
+/** One MCP client session over streamable HTTP, JSON answers only. */
+function fakeHttpMcpSession(server: { url: string; headers?: Record<string, string> }) {
+  let next = 0;
+  const post = async (frame: Record<string, unknown>) => fetch(server.url, {
+    method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...server.headers },
+    body: JSON.stringify(frame), signal: AbortSignal.timeout(20_000),
+  });
+  const request = async (method: string, params: Record<string, unknown>) => {
+    const id = ++next;
+    try {
+      const response = await post({ jsonrpc: "2.0", id, method, params });
+      return await response.json() as Record<string, unknown>;
+    } catch (error) {
+      return { id, error: { code: -1, message: error instanceof Error ? error.message : "error" } };
+    }
+  };
+  const notify = (method: string) => { void post({ jsonrpc: "2.0", method }).catch(() => {}); };
+  return { request, notify, close: () => {} };
+}
+
 /** One stdio MCP client session: newline-delimited JSON-RPC. */
 function fakeMcpSession(server: { command: string; args?: string[]; env?: Record<string, string> }) {
   const child = spawn(server.command, server.args ?? [], { env: { ...process.env, ...server.env }, stdio: ["pipe", "pipe", "ignore"] });
@@ -1041,9 +1078,9 @@ async function proxyFetch(target: string): Promise<string> {
 
 // The real CLI reads --mcp-config once, at launch, and keeps its servers
 // for every turn of the process; the harness may remove the file after.
-let launchServers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> | null = null;
+let launchServers: Record<string, FakeMcpServer> | null = null;
 async function runFakeMcpCalls(calls: FakeMcpCall[], configPath: string | null): Promise<string> {
-  let servers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> = launchServers ?? {};
+  let servers: Record<string, FakeMcpServer> = launchServers ?? {};
   if (configPath && !launchServers) {
     try {
       const config = JSON.parse(readFileSync(configPath, "utf8")) as { mcpServers?: typeof servers };
@@ -1060,7 +1097,7 @@ async function runFakeMcpCalls(calls: FakeMcpCall[], configPath: string | null):
   // as a tool's own HTTP call would; the reply carries proxy:<status>:<body>.
   if (process.env.FAKE_CLAUDE_PROXY_FETCH) notes.push(await proxyFetch(process.env.FAKE_CLAUDE_PROXY_FETCH));
   for (const call of calls) {
-    const names = Object.keys(servers).filter((name) => matches(call.server, name) && typeof servers[name]?.command === "string");
+    const names = Object.keys(servers).filter((name) => matches(call.server, name) && (typeof servers[name]?.command === "string" || harnessHttpServer(servers[name]) !== null));
     if (!names.length) {
       notes.push("mcp:absent");
       continue;
@@ -1068,7 +1105,8 @@ async function runFakeMcpCalls(calls: FakeMcpCall[], configPath: string | null):
     for (const name of names) {
       if (!first && pauseMs > 0) await new Promise((resolve) => setTimeout(resolve, pauseMs));
       first = false;
-      const session = fakeMcpSession(servers[name] as { command: string; args?: string[]; env?: Record<string, string> });
+      const http = harnessHttpServer(servers[name]);
+      const session = http ? fakeHttpMcpSession(http) : fakeMcpSession(servers[name] as { command: string; args?: string[]; env?: Record<string, string> });
       try {
         await session.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fake-claude", version: "0" } });
         session.notify("notifications/initialized");

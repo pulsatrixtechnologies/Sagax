@@ -2146,6 +2146,31 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(JSON.stringify(seen.argv)).not.toContain("tok-docs");
   });
 
+  it("reaches the harness's Data and browser servers over HTTP, the bearer in a header", async () => {
+    await create();
+    const dump = join(scratch, "harness-http.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const harness = (kind: string) => ({ command: process.execPath, args: ["/app/server/harness-mcp-proxy.ts", kind], env: { SAGAX_MCP_TOKEN: `tok-${kind}`, SAGAX_HARNESS_URL: "http://127.0.0.1:4321" } });
+    await instance.adapter.sendTurn({ threadId: "t-harness-http", text: "hi", integrations: { data: harness("data"), browser: harness("browser") } });
+    await recorder.until((e) => e.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.mcpConfig.mcpServers.data).toEqual({ type: "http", url: "http://127.0.0.1:4321/api/internal/data/mcp-http", headers: { Authorization: "Bearer tok-data" } });
+    expect(seen.mcpConfig.mcpServers.browser).toEqual({ type: "http", url: "http://127.0.0.1:4321/api/internal/browser/mcp-http", headers: { Authorization: "Bearer tok-browser" } });
+    expect(JSON.stringify(seen.argv)).not.toContain("tok-data");
+  });
+
+  it("keeps the harness's stdio proxy for a turn with a tool selection", async () => {
+    await create();
+    const dump = join(scratch, "harness-http-scoped.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const data = { command: process.execPath, args: ["/app/server/harness-mcp-proxy.ts", "data"], env: { SAGAX_MCP_TOKEN: "tok-d", SAGAX_HARNESS_URL: "http://127.0.0.1:4321" } };
+    await instance.adapter.sendTurn({ threadId: "t-harness-http-scoped", text: "hi", toolScope: { allow: ["native:*", "mcp:data:*"] }, integrations: { data } });
+    await recorder.until((e) => e.type === "turn.completed");
+    const mounted = JSON.parse(readFileSync(dump, "utf8")).mcpConfig.mcpServers.data;
+    expect(mounted.type).toBeUndefined();
+    expect(JSON.stringify(mounted)).toContain("harness-mcp-proxy");
+  });
+
   it("keeps a selected url server's whole catalog: Claude Code searches tools itself", async () => {
     await create();
     const dump = join(scratch, "remote-mcp-scoped.json");

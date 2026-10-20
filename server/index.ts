@@ -6,6 +6,7 @@
 import "../electron/legacy-env-boot.mjs";
 import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
 import { healthzBody } from "./healthz.ts";
+import { harnessMcpHttpKind, serveHarnessMcpHttp } from "./harness-mcp-http.ts";
 // Then the upstream/analytics network block (network-guard.ts).
 import "./network-guard.ts";
 // The console's server log tail captures from here on (server-log-ring.ts).
@@ -34993,6 +34994,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // The agents-proxy (spawned inside a bot's agent process) calls these to
     // discover peers and hand a message to one. Not part of the public API.
     if (path.startsWith("/api/internal/")) {
+      // The harness's browser, cloud computer and Data servers over MCP
+      // streamable HTTP (server/harness-mcp-http.ts): each frame goes to the
+      // route below with its bearer, through every check that follows.
+      const harnessHttpKind = harnessMcpHttpKind(path);
+      if (harnessHttpKind) return serveHarnessMcpHttp(req, res, harnessHttpKind, `http://127.0.0.1:${PORT}`);
       const internalCapability = authorizedInternalCapability(req.headers.authorization);
       if (!internalCapability) {
         return json(res, 401, { error: "unauthorized" });
