@@ -1607,19 +1607,24 @@ export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "read_transcript", "read_transcript_cold", "read_transcript_page", "read_latest_page", "read_latest_page_with_threads",
   "find_agents", "get_agent", "list_agents", "send_prompt", "await_turn", "create_agent", "delete_agent",
   "workspace_read", "workspace_search", "session_read", "close_thread", "list_threads",
-  "request_login", "request_credential",
-  // A separate self-owned job, or a post into a room from a 1:1 chat: rare.
-  "start_thread", "list_rooms", "post_to_room",
+  "request_login",
+  // A post into a room from a 1:1 chat: rare.
+  "list_rooms", "post_to_room",
 ]);
+
+/** Deferred only in a coordinating turn, where it opens a separate job on
+ * the bot itself and only when the person asked for one; elsewhere the
+ * threads prompt presents it as the way to hand a teammate a job. */
+const DEFERRED_WHEN_COORDINATING: ReadonlySet<string> = new Set(["start_thread"]);
 
 /** The tools/list a Claude Code engine is served: the same tools, with the
  * rare ones marked `_meta["anthropic/alwaysLoad"] = false` so the CLI defers
  * them behind tool search although the server is always loaded (the CLI's
  * per-tool override of a server's alwaysLoad). Other engines never get the
  * marker (SAGAX_DEFER_RARE_TOOLS is set by the Claude driver only). */
-export function withDeferredRareTools<T extends { name: string }>(tools: readonly T[]): Array<T & { _meta?: Record<string, unknown> }> {
-  return tools.map((tool) => DEFERRED_AGENT_TOOL_NAMES.has(tool.name)
-    ? { ...tool, _meta: { "anthropic/alwaysLoad": false } }
+export function withDeferredRareTools<T extends { name: string }>(tools: readonly T[], profile: { coordinating: boolean }): Array<T & { _meta?: Record<string, unknown> }> {
+  return tools.map((tool) => DEFERRED_AGENT_TOOL_NAMES.has(tool.name) || (profile.coordinating && DEFERRED_WHEN_COORDINATING.has(tool.name))
+    ? { ...tool, _meta: { ...(tool as { _meta?: Record<string, unknown> })._meta, "anthropic/alwaysLoad": false } }
     : tool);
 }
 

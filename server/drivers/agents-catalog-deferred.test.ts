@@ -21,7 +21,7 @@ const EVERYTHING = {
 const ALWAYS_LOADED = [
   "list_bots", "ask_bot", "coordinate_bots", "send_to_bot", "route_message", "list_room_targets",
   "delegate_bot", "check_delegation", "wait_delegation",
-  "react_to_message", "show_widget", "update_widget", "check_widget", "attach_file", "select_computer",
+  "react_to_message", "show_widget", "update_widget", "check_widget", "attach_file", "select_computer", "request_credential",
   "memory_update", "memory_log", "session_search", "tool_result_read", "answer_approval", "act",
 ];
 
@@ -57,11 +57,17 @@ describe("deferred rare agents tools", () => {
 
   it("marks the rare tools and leaves every tool's own fields unchanged", () => {
     const tools = availableTools(catalogProfileFromEnv(EVERYTHING));
-    const marked = withDeferredRareTools(tools);
+    const marked = withDeferredRareTools(tools, { coordinating: false });
     expect(marked.map(({ _meta, ...tool }) => tool)).toEqual(tools);
     for (const tool of marked) {
       expect(tool._meta?.["anthropic/alwaysLoad"]).toBe(DEFERRED_AGENT_TOOL_NAMES.has(tool.name) ? false : undefined);
     }
+  });
+
+  it("defers start_thread only in a coordinating turn, and keeps a tool's own _meta", () => {
+    const start = { name: "start_thread", _meta: { "x/keep": 1 } };
+    expect(withDeferredRareTools([start], { coordinating: false })[0]).toEqual(start);
+    expect(withDeferredRareTools([start], { coordinating: true })[0]!._meta).toEqual({ "x/keep": 1, "anthropic/alwaysLoad": false });
   });
 
   it("serves the marker only when the Claude driver asks for it", async () => {

@@ -1564,6 +1564,23 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.mcpConfig.mcpServers.ogb.alwaysLoad).toBe(true);
   });
 
+  it.each([
+    ["an ordinary turn", {}, {}, "1"],
+    ["a guest's confined turn", { guestConfined: true, approvalMode: "ask" }, {}, undefined],
+    ["an instance tool list without ToolSearch", {}, { tools: ["Read"] }, undefined],
+  ] as const)("asks the agents proxy to defer rare tools only where tool search exists: %s", async (_label, turnExtra, config, expected) => {
+    await create(undefined, { FAKE_CLAUDE_VERSION: "2.1.284" }, config as Partial<ClaudeConfig>);
+    const dump = join(scratch, "defer-dump.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await instance.adapter.sendTurn({
+      threadId: "t-defer", text: "hi", ...turnExtra,
+      integrations: { agents: { command: process.execPath, args: ["/fake/agents-proxy.js"], env: { SAGAX_BOT_ID: "b1", SAGAX_COMMS_TOKEN: "tok" } } },
+    });
+    await recorder.until((e) => e.type === "turn.completed" || e.type === "turn.failed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.mcpConfig.mcpServers.agents.env.SAGAX_DEFER_RARE_TOOLS).toBe(expected);
+  });
+
   // The harness hands the same per-session bearer to every turn; rewriting
   // the file each time cost an fsync on the event loop. A rotated bearer
   // must still be on disk before the CLI reads it.

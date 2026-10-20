@@ -26,9 +26,10 @@ import { callTool, capResult, toolCallContextFromEnv } from "./agents-call.ts";
 import { harnessClientFromEnv, type Json } from "./agents-client.ts";
 import { auditSampleFromEnv, deniedResourcesFromEnv, guardToolCall, permissionModeFromEnv, principalFromEnv } from "../mcp-permissions.ts";
 
-const AVAILABLE_TOOLS = availableTools(catalogProfileFromEnv(process.env));
+const PROFILE = catalogProfileFromEnv(process.env);
+const AVAILABLE_TOOLS = availableTools(PROFILE);
 // Claude Code only (SAGAX_DEFER_RARE_TOOLS=1): rare tools wait for tool search.
-const LISTED_TOOLS = process.env.SAGAX_DEFER_RARE_TOOLS === "1" ? withDeferredRareTools(AVAILABLE_TOOLS) : AVAILABLE_TOOLS;
+const LISTED_TOOLS = process.env.SAGAX_DEFER_RARE_TOOLS === "1" ? withDeferredRareTools(AVAILABLE_TOOLS, PROFILE) : AVAILABLE_TOOLS;
 // A warm engine keeps this process across its turns; the harness keeps
 // every per-turn limit, so nothing here counts.
 const CONTEXT = toolCallContextFromEnv(process.env);

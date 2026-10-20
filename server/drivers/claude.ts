@@ -1854,7 +1854,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // Claude waits for always-loaded tools before building the prompt.
         // Rare agents tools wait for tool search (agents-catalog.ts
         // DEFERRED_AGENT_TOOL_NAMES): about 15,000 fewer prompt tokens a turn.
-        const agentsEnv = { ...turn.integrations.agents.env, SAGAX_DEFER_RARE_TOOLS: "1" };
+        // Not when the turn names its built-ins (a guest's turn, an instance
+        // tool list) without ToolSearch: a deferred tool would be unreachable.
+        const toolSearch = !turn.guestConfined && (config.tools === undefined || config.tools.includes("ToolSearch"));
+        const agentsEnv = toolSearch ? { ...turn.integrations.agents.env, SAGAX_DEFER_RARE_TOOLS: "1" } : turn.integrations.agents.env;
         mcpServers.agents = { ...turn.integrations.agents, env: agentsEnv, alwaysLoad: true };
         // On a call the process is kept from turn to turn: the turn's comms
         // token (new every turn) rides a file the proxy reads on each call,
