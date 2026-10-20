@@ -34,7 +34,26 @@ export function contractChanges(before: unknown, after: unknown, limit = 8, path
 /** Environment entries of an MCP server that hold a per-turn credential:
  * they are handed to a long-lived process through a file the harness
  * rewrites each turn instead (see `withoutTurnTokens`). */
-export const TURN_TOKEN_ENV = ["SAGAX_COMMS_TOKEN"] as const;
+export const TURN_TOKEN_ENV = ["SAGAX_COMMS_TOKEN", "SAGAX_TURN_DEPTH"] as const;
+
+/** Agents switches a reused process may keep from its launch when the turn
+ * needs no more than it has (2026-10-19 perf parity): a teammate's reply
+ * that resumes a person's turn (depth 1, no route_message, no own threads)
+ * runs in the process the person's turn launched; the server refuses what
+ * this turn may not do whatever the tool list shows. A turn that needs a
+ * switch the live process lacks still gets a fresh one. */
+export const TURN_SWITCH_ENV = ["SAGAX_ROUTE_MESSAGES", "SAGAX_OWN_THREAD_CREATION"] as const;
+
+/** The switches one turn needs, from its agents server's env. */
+export function turnSwitches(servers: Record<string, unknown>): Record<string, boolean> {
+  const env = (servers.agents as { env?: Record<string, unknown> } | undefined)?.env ?? {};
+  return Object.fromEntries(TURN_SWITCH_ENV.map((key) => [key, env[key] === "1"]));
+}
+
+/** A live process launched with `live` switches can run a turn needing `want`. */
+export function switchesCover(live: Record<string, boolean> | undefined, want: Record<string, boolean>): boolean {
+  return Object.entries(want).every(([key, on]) => !on || live?.[key] === true);
+}
 
 /** The MCP servers of a contract with each per-turn token's value masked:
  * two turns of one call then make the same contract. */
@@ -48,6 +67,7 @@ export function withoutTurnTokens(servers: Record<string, unknown>): Record<stri
     }
     const masked = { ...env };
     for (const key of TURN_TOKEN_ENV) if (key in masked) masked[key] = "(turn token)";
+    for (const key of TURN_SWITCH_ENV) if (key in masked) masked[key] = "(turn switch)";
     out[name] = { ...(server as object), env: masked };
   }
   return out;
@@ -71,5 +91,9 @@ export function warmCommsEnv(threadId: string, botId: string | undefined, env: R
   const tokenPath = commsTokenFile(threadId, botId);
   mkdirSync(dirname(tokenPath), { recursive: true, mode: 0o700 });
   writeFileAtomic(tokenPath, token, { mode: 0o600 });
-  return { ...env, SAGAX_COMMS_TOKEN_FILE: tokenPath };
+  // The turn's comms depth rides beside the token: the harness checks it
+  // against the token's own (a resumed turn is one deeper).
+  if (env.SAGAX_TURN_DEPTH === undefined) return { ...env, SAGAX_COMMS_TOKEN_FILE: tokenPath };
+  writeFileAtomic(`${tokenPath}.depth`, env.SAGAX_TURN_DEPTH, { mode: 0o600 });
+  return { ...env, SAGAX_COMMS_TOKEN_FILE: tokenPath, SAGAX_TURN_DEPTH_FILE: `${tokenPath}.depth` };
 }

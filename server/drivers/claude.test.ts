@@ -1177,6 +1177,49 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(realpathSync(seen.env.CLAUDE_CONFIG_DIR)).toBe(realpathSync(personal));
   });
 
+  it("runs a teammate's reply resuming a person's turn in the same process, with the new token and depth", async () => {
+    await create();
+    const dump = join(scratch, "dump-continuation.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const send = async (token: string, depth: string, switches: string, volatile: string) => {
+      const before = recorder.events.filter((e) => e.type === "turn.completed").length;
+      await instance.adapter.sendTurn({
+        threadId: "t-continue", text: "hello", system: `stable${volatile}`, systemStable: "stable", systemVolatile: volatile,
+        integrations: { agents: { command: process.execPath, args: ["/fake/agents-proxy.js"], env: { SAGAX_BOT_ID: "b1", SAGAX_COMMS_TOKEN: token, SAGAX_TURN_DEPTH: depth, SAGAX_ROUTE_MESSAGES: switches, SAGAX_OWN_THREAD_CREATION: switches } } },
+      });
+      await recorder.until(() => recorder.events.filter((e) => e.type === "turn.completed").length > before);
+      const seen = JSON.parse(readFileSync(dump, "utf8")) as { pid: number; mcpConfig: { mcpServers: { agents: { env: Record<string, string> } } } };
+      const env = seen.mcpConfig.mcpServers.agents.env;
+      return { pid: seen.pid, token: readFileSync(env.SAGAX_COMMS_TOKEN_FILE!, "utf8"), depth: readFileSync(env.SAGAX_TURN_DEPTH_FILE!, "utf8") };
+    };
+    const person = await send("token-person", "0", "1", " plan: choose a computer");
+    const reply = await send("token-reply", "1", "0", " plan: no computer this turn");
+    expect(reply.pid).toBe(person.pid);
+    expect(reply.token).toBe("token-reply");
+    expect(reply.depth).toBe("1");
+    const next = await send("token-next", "0", "1", " plan: choose a computer");
+    expect(next.pid).toBe(person.pid);
+    expect(next.depth).toBe("0");
+  });
+
+  it("relaunches when a turn needs agents tools the live process was launched without", async () => {
+    await create();
+    const dump = join(scratch, "dump-switches.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const send = async (switches: string) => {
+      const before = recorder.events.filter((e) => e.type === "turn.completed").length;
+      await instance.adapter.sendTurn({
+        threadId: "t-switches", text: "hello",
+        integrations: { agents: { command: process.execPath, args: ["/fake/agents-proxy.js"], env: { SAGAX_BOT_ID: "b1", SAGAX_COMMS_TOKEN: `t${switches}`, SAGAX_TURN_DEPTH: "0", SAGAX_ROUTE_MESSAGES: switches } } },
+      });
+      await recorder.until(() => recorder.events.filter((e) => e.type === "turn.completed").length > before);
+      return (JSON.parse(readFileSync(dump, "utf8")) as { pid: number }).pid;
+    };
+    const without = await send("0");
+    const needs = await send("1");
+    expect(needs).not.toBe(without);
+  });
+
   it("slice 4: a turn under another identity never reuses the retained process", async () => {
     await create(undefined, { ANTHROPIC_API_KEY: "sk-ant-workspace-fixture" });
     const dump = join(scratch, "dump-identity.json");

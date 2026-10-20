@@ -593,6 +593,7 @@ import {
   computerPrompt,
   composioSystemPrompt,
   customMcpPrompt,
+  CLAUDE_REUSE_VOLATILE_SECTIONS,
   CREDENTIAL_PROMPT,
   longCommandsPrompt,
   REACTION_PROMPT,
@@ -18823,7 +18824,7 @@ async function startTurn(
         { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
         // a voice call: the phone-call instruction (server/voice-call-prompt.ts)
         { id: "voice-call", label: "Phone call", text: voiceCallText },
-      ]);
+      ], instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
       // the Files list's "last used": what this turn's prompt carried
       markWorkspaceUse(bot.id, promptSectionPaths(prompt.sections));

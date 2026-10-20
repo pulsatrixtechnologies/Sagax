@@ -3,7 +3,7 @@
 // left out of the contract (server/drivers/spawn-contract.ts).
 import { describe, expect, it } from "vitest";
 
-import { contractChanges, withoutTurnTokens } from "./spawn-contract.ts";
+import { contractChanges, switchesCover, turnSwitches, withoutTurnTokens } from "./spawn-contract.ts";
 
 describe("spawn contract", () => {
   it("names the fields that changed, never their values", () => {
@@ -24,5 +24,14 @@ describe("spawn contract", () => {
     const servers = turn("one");
     withoutTurnTokens(servers);
     expect(servers.agents.env.SAGAX_COMMS_TOKEN).toBe("one");
+  });
+
+  it("masks the turn depth and the agents switches, and says when a live process covers a turn", () => {
+    const servers = (depth: string, route: string) => ({ agents: { env: { SAGAX_COMMS_TOKEN: "x", SAGAX_TURN_DEPTH: depth, SAGAX_ROUTE_MESSAGES: route, SAGAX_OWN_THREAD_CREATION: route } } });
+    expect(JSON.stringify(withoutTurnTokens(servers("0", "1")))).toBe(JSON.stringify(withoutTurnTokens(servers("1", "0"))));
+    const launched = turnSwitches(servers("0", "1"));
+    expect(switchesCover(launched, turnSwitches(servers("1", "0")))).toBe(true);
+    expect(switchesCover(turnSwitches(servers("1", "0")), launched)).toBe(false);
+    expect(switchesCover(undefined, turnSwitches({}))).toBe(true);
   });
 });

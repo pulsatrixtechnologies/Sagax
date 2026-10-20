@@ -8,6 +8,7 @@
 // room posts, checking a delegation made this turn) are the harness's: one
 // proxy can serve many turns of a warm engine, and only the harness knows
 // where a turn begins.
+import { readFileSync } from "node:fs";
 import { CREDENTIAL_TARGETS, isCredentialTargetId } from "../../shared/credential-request.ts";
 import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
 
@@ -50,10 +51,21 @@ export interface ToolCallResult {
  *   (agents-catalog.ts) and the harness address and token (agents-client.ts). */
 export function toolCallContextFromEnv(env: NodeJS.ProcessEnv): ToolCallContext {
   const profile = catalogProfileFromEnv(env);
+  const launchedDepth = Number(env.SAGAX_TURN_DEPTH ?? "0") || 0;
+  const depthFile = env.SAGAX_TURN_DEPTH_FILE;
   return {
     botId: profile.botId,
     threadId: env.SAGAX_THREAD_ID ?? "",
-    depth: Number(env.SAGAX_TURN_DEPTH ?? "0") || 0,
+    // A process kept across turns reads the current turn's depth each call.
+    get depth() {
+      if (!depthFile) return launchedDepth;
+      try {
+        const value = Number(readFileSync(depthFile, "utf8").trim());
+        return Number.isInteger(value) && value >= 0 ? value : launchedDepth;
+      } catch {
+        return launchedDepth;
+      }
+    },
     externalRuntime: profile.externalRuntime,
     coordinating: profile.coordinating,
     sharedComputers: profile.sharedComputers,
