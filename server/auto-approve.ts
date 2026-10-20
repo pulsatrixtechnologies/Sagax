@@ -169,6 +169,11 @@ export type AutoVerdictSource =
   | "own-environment"
   | "own-attachment"
   | "own-computer-choice"
+  /** 2026-10-19 (owner setup, server/owner-autonomy.ts): a Perspicax read
+   * on Sagax's own mount at a level that runs work unasked, and a
+   * coordination lease (claim, claim_renew, claim_release) at any level. */
+  | "perspicax-read"
+  | "perspicax-lease"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -228,6 +233,12 @@ export function autoVerdict(
      * works: answered at any level, after the safety hold and the person's
      * own rules, never when a security key protects it. */
     ownComputerChoice?: boolean;
+    /** 2026-10-19 (owner setup, server/owner-autonomy.ts): a Perspicax read
+     * or lease on Sagax's own mount that the caller found applies at this
+     * level (perspicaxSelfAnswerAt). Answered after the safety hold and the
+     * person's own rules, never for a send, a sandbox widening or a call a
+     * security key protects. */
+    perspicaxSelf?: "read" | "lease";
     /** The engine's own `<server>__<tool>` name when `tool` is a kind (ACP
      * "other") or a bare name: what the outbound guard reads for Sagax's own
      * tools and the owner's environment. */
@@ -283,6 +294,12 @@ export function autoVerdict(
   }
   if (context?.ownComputerChoice && selfAnswerable) {
     return { approve: `approved ${tool} (choosing among your own computers)`, source: "own-computer-choice" };
+  }
+  if (context?.perspicaxSelf === "lease" && selfAnswerable) {
+    return { approve: `approved ${tool} (coordination lease)`, source: "perspicax-lease" };
+  }
+  if (context?.perspicaxSelf === "read" && selfAnswerable) {
+    return { approve: `approved ${tool} (read-only)`, source: "perspicax-read" };
   }
   // The owner's own environment: only at a level that already runs work
   // unasked (Auto, Auto-accept edits). At Ask the person asked to see every
