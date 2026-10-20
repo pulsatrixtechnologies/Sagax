@@ -3827,19 +3827,23 @@ up (cloud computer woken, three commands, text at +67 s). Rules:
   An active task keeps its session however large.
   `server/stale-session.ts`, `staleEngineSession` in `server/index.ts`.
   Engines handed the transcript every turn, a rewound thread or another
-  engine joining are not concerned (they rebuild anyway).
+  engine joining are not concerned (they rebuild anyway). Routine, teammate
+  and room threads are judged the same way. `context.autoCompact: false`
+  (debugging) turns this off too.
 - Then `compactConversation` folds at once with the deterministic summary
   (no model call on the person's wait), keeping the latest two exchanges
   (one, or none, on a short thread); with nothing new since the last fold it
-  re-applies that fold. The turn starts a new session under
+  re-applies that fold. The record is marked `stale` (kept across a retry or
+  a restart). The turn starts a new session under
   `PAUSED_PREAMBLE` (`server/turn-context.ts`): "resumed after a pause",
   unfinished work only if the new message asks for it. No chat row. A
   prewarm of a stale thread is skipped (`prewarmRefusal` "stale session").
 - Small talk (`server/small-talk.ts` `isSmallTalk`: a greeting, thanks, a
   goodbye or how-are-you alone, FR/EN, at most the bot's name around it;
-  never "ok", "oui", "vas-y"): the person's turn carries
+  never "ok", "oui", "vas-y", "ça va", "quoi de neuf"): the person's turn carries
   `SMALL_TALK_TURN_NOTE`, and its cloud computer tools answer
-  `SMALL_TALK_CLOUD_REFUSAL` without waking it (`/api/internal/sandbox/mcp`).
+  `SMALL_TALK_CLOUD_REFUSAL` without waking it (`/api/internal/sandbox/mcp`)
+  while that message is the latest (a request steered in lifts it).
   The standing rule rides `RUN_YOURSELF_PROMPT`: small talk calls no tool and
   never resumes earlier work; one line may name it and ask.
 - Tests: `server/stale-session.test.ts`, `server/small-talk.test.ts`,

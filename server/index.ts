@@ -15642,19 +15642,17 @@ function staleEngineSession(threadId: string, task: TaskRecord, instance: NonNul
   return staleSessionReason({
     now: Date.now(),
     lastActivityAt: last?.at,
-    sessionBytes: instance.adapter.sessionBytes?.(threadId, cursor),
+    sessionBytes: () => instance.adapter.sessionBytes?.(threadId, cursor),
     hours: cfg.context?.staleSessionHours,
     maxBytes: cfg.context?.staleSessionBytes,
     coldMinutes: cfg.context?.staleSessionColdMinutes,
   });
 }
-/** Threads whose next dispatch starts a new engine session because the old
- * one was stale: their replay says the conversation resumes after a pause
- * (turn-context.ts PAUSED_PREAMBLE). Read once by that dispatch. */
-const staleSessionFolds = new Map<string, StaleSessionReason>();
-/** thread -> the turn (dispatch generation) whose person's message was small
- * talk alone: its cloud computer tools do not run (SMALL_TALK_CLOUD_REFUSAL). */
-const smallTalkTurns = new Map<string, string>();
+/** thread -> the turn (dispatch generation) and the person's message that
+ * was small talk alone: its cloud computer tools do not run
+ * (SMALL_TALK_CLOUD_REFUSAL) while that message is still the latest one; a
+ * request steered into the same turn lifts it. */
+const smallTalkTurns = new Map<string, { generation: string; messageId: string }>();
 
 /** The existing direct-turn claim owns summarization, including Stop and
  * thread deletion. A durable record is committed only to its original branch. */
@@ -15694,15 +15692,18 @@ async function compactConversation(input: {
       if (!current.contextSummaries?.some(entry => entry.id === id)) {
         const bytes = history.reduce((n, entry) => n + Buffer.byteLength(entry.text), 0);
         const entry = { id, at: Date.now(), summary: redactSecretsInText(deterministicSummary(fold.folded)), firstKeptId: fold.firstKeptId,
-          foldedThroughId, anchorId, tokensBefore: Math.ceil(bytes / 4) };
+          foldedThroughId, anchorId, tokensBefore: Math.ceil(bytes / 4), stale: true as const };
         store.patchTask(bot.id, threadId, { contextSummaries: [...(current.contextSummaries ?? []), entry].slice(-CONTEXT_SUMMARIES_KEPT) });
       }
     } else if (record) {
-      // Nothing new since the last fold: start from that fold again.
-      store.patchTask(bot.id, threadId, { appliedCompactionId: undefined });
+      // Nothing new since the last fold: start from that fold again, read as a pause.
+      const current = store.taskByThread(bot.id, threadId);
+      store.patchTask(bot.id, threadId, {
+        appliedCompactionId: undefined,
+        ...(current?.contextSummaries?.some(entry => entry.id === record.id)
+          ? { contextSummaries: current.contextSummaries.map(entry => entry.id === record.id ? { ...entry, stale: true as const } : entry) } : {}),
+      });
     } else return;
-    staleSessionFolds.set(threadId, stale);
-    if (staleSessionFolds.size > 2_000) staleSessionFolds.delete(staleSessionFolds.keys().next().value!);
     console.info(`[context] ${bot.id} ${threadId}: engine session not resumed (${stale === "idle" ? "thread quiet for hours" : "session too large"}); new session from the summary`);
     return;
   }
@@ -18294,7 +18295,7 @@ async function startTurn(
   // hang the HTTP request
   const dispatchClaimId = randomUUID();
   if (smallTalk) {
-    smallTalkTurns.set(threadId, dispatchClaimId);
+    smallTalkTurns.set(threadId, { generation: dispatchClaimId, messageId: userMessage.id });
     if (smallTalkTurns.size > 2_000) smallTalkTurns.delete(smallTalkTurns.keys().next().value!);
   }
   // Guest-driven for as long as it runs, wherever it runs (cloudGuestDriven).
@@ -18453,8 +18454,7 @@ async function startTurn(
       // A retry then sees the unapplied record again and rebuilds safely.
       if (contextReset && !warmOnly) store.patchTask(bot.id, threadId, { resumeCursors: {} });
       // A fold of a stale session reads as a pause, never "continue where you left off".
-      const pausedFold = contextReset && staleSessionFolds.has(threadId);
-      if (!warmOnly) staleSessionFolds.delete(threadId);
+      const pausedFold = contextReset && Boolean(record && task.contextSummaries?.some(entry => entry.id === record.id && entry.stale));
 
       // After a rewind (edit / branch switch) the provider's native session
       // still contains the abandoned branch: start a fresh session instead of
@@ -35805,7 +35805,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const ownerId = internalCapability.sandboxPrincipalId;
         if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
         // A greeting does not wake a sleeping cloud computer: nothing below runs.
-        if (rpcMethod === "tools/call" && smallTalkTurns.get(internalCapability.threadId) === internalCapability.generation) {
+        const smallTalkTurn = rpcMethod === "tools/call" ? smallTalkTurns.get(internalCapability.threadId) : undefined;
+        if (smallTalkTurn && smallTalkTurn.generation === internalCapability.generation
+          && store.activePath(internalCapability.threadId).findLast(message => message.role === "user")?.id === smallTalkTurn.messageId) {
           return json(res, 200, { result: { content: [{ type: "text", text: SMALL_TALK_CLOUD_REFUSAL }], isError: true } });
         }
         try {

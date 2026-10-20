@@ -1644,6 +1644,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
      * for sessionBytes. After a restart the default config dir is searched. */
     const sessionConfigDirs = new Map<string, string>();
     const sessionFiles = new Map<string, string>();
+    /** A session whose file was not found, and when to look again: a miss
+     * scans every projects/ folder, so it is not repeated on every turn. */
+    const sessionMisses = new Map<string, number>();
     /** Size of a saved session's file (<config>/projects/<cwd>/<id>.jsonl),
      * the file a --resume parses and replays. */
     const sessionFileBytes = (sessionId: string): number | undefined => {
@@ -1652,6 +1655,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (cached) {
         try { return statSync(cached).size; } catch { sessionFiles.delete(sessionId); }
       }
+      if ((sessionMisses.get(sessionId) ?? 0) > Date.now()) return undefined;
       const dirs = new Set<string>();
       const known = sessionConfigDirs.get(sessionId);
       if (known) dirs.add(known);
@@ -1669,6 +1673,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           } catch {}
         }
       }
+      sessionMisses.set(sessionId, Date.now() + 10 * 60_000);
+      if (sessionMisses.size > 500) sessionMisses.delete(sessionMisses.keys().next().value!);
       return undefined;
     };
     const { idleMs: SESSION_IDLE_MS } = sessionIdlePolicy("CLAUDE");

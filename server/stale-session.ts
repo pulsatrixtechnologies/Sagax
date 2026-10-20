@@ -44,8 +44,9 @@ export function staleSessionReason(input: {
   now: number;
   /** When the thread's last message before this turn was written. */
   lastActivityAt?: number;
-  /** The engine's saved session on disk, when it can tell. */
-  sessionBytes?: number;
+  /** The engine's saved session on disk, when it can tell; read only when
+   * the thread has been quiet long enough for the size to matter. */
+  sessionBytes?: number | (() => number | undefined);
   hours?: number;
   maxBytes?: number;
   coldMinutes?: number;
@@ -56,6 +57,9 @@ export function staleSessionReason(input: {
   const quietMs = typeof input.lastActivityAt === "number" && Number.isFinite(input.lastActivityAt) ? input.now - input.lastActivityAt : undefined;
   if (quietMs === undefined) return null;
   if (hours > 0 && quietMs > hours * HOUR_MS) return "idle";
-  if (maxBytes > 0 && quietMs > coldMs && typeof input.sessionBytes === "number" && input.sessionBytes > maxBytes) return "size";
+  if (maxBytes > 0 && quietMs > coldMs) {
+    const bytes = typeof input.sessionBytes === "function" ? input.sessionBytes() : input.sessionBytes;
+    if (typeof bytes === "number" && bytes > maxBytes) return "size";
+  }
   return null;
 }

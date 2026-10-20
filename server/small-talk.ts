@@ -4,7 +4,7 @@
 //
 // Deliberately narrow: the whole message must be small talk, in French or
 // English, with at most the bot's name and punctuation or emoji around it.
-// A confirmation ("ok", "oui", "vas-y", "go") is NOT small talk: it may be
+// A confirmation ("ok", "oui", "vas-y", "go", "ça va") is NOT small talk: it may be
 // the answer to "Shall I pick it back up?". Anything else is a request.
 
 const PHRASES = [
@@ -18,8 +18,10 @@ const PHRASES = [
   "bonne fin de journee", "à demain", "a demain", "à plus", "a plus", "à plus tard", "a plus tard", "à bientôt", "a bientot",
   "good night", "see you", "see you later", "see you tomorrow", "have a good night", "have a good day",
   // how are you
-  "ça va", "ca va", "comment ça va", "comment ca va", "comment vas-tu", "comment allez-vous", "quoi de neuf",
-  "how are you", "how are you doing", "how's it going", "hows it going", "what's up", "whats up", "sup",
+  // never "ça va" alone (a consent in Québec: "ça va si je relance ?") nor
+  // "quoi de neuf" / "what's up" (a real status question)
+  "comment ça va", "comment ca va", "comment vas-tu", "comment allez-vous",
+  "how are you", "how are you doing", "how's it going", "hows it going",
 ];
 
 const SET = new Set(PHRASES);

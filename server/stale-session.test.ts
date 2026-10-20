@@ -19,6 +19,13 @@ describe("staleSessionReason", () => {
     // An active task keeps its session however large.
     expect(staleSessionReason({ now, lastActivityAt: now - 20 * 60_000, sessionBytes: 60_000_000 })).toBeNull();
     expect(staleSessionReason({ now, lastActivityAt: now - 20 * 60_000, sessionBytes: 6_400_000, coldMinutes: 10 })).toBe("size");
+    // The size is read only once the thread is quiet long enough.
+    let reads = 0;
+    const bytes = () => { reads++; return 6_400_000; };
+    expect(staleSessionReason({ now, lastActivityAt: now - 60_000, sessionBytes: bytes })).toBeNull();
+    expect(reads).toBe(0);
+    expect(staleSessionReason({ now, lastActivityAt: now - 2 * HOUR, sessionBytes: bytes })).toBe("size");
+    expect(reads).toBe(1);
   });
 
   it("0 turns a check off; an engine that reports no size is judged on time only", () => {
