@@ -90,15 +90,20 @@ labels), who may do it, limits. The system prompt only says to call it
   build, and `scripts/bundle-server.mjs` copies it beside the bundle; the
   server reads it on the first question only (`server/self-knowledge.ts`).
 - Perspicax's part comes from `server/self-knowledge/perspicax.snapshot.json`
-  (console menu with roles, Settings window, page notes, docs, last release
-  notes), written by `scripts/self-knowledge/perspicax-snapshot.ts --repo
-  <Perspicax checkout>`: rerun it after a Perspicax release. Live, a bot on
-  an organization server reads its catalog with `api_list`.
+  (console menu and Settings window: labels, addresses, roles; nothing else,
+  since Perspicax is private and this repository public), written by
+  `scripts/self-knowledge/perspicax-snapshot.ts --repo <Perspicax checkout>`
+  from its latest release tag: rerun it after a Perspicax release. How-tos
+  about the console go in the guides. Live, a bot on an organization server
+  reads its catalog with `api_list`.
 - `scripts/self-knowledge/guides.ts` holds the only hand-written part: short
   how-tos, each with references (`tool:`, `setting:`, `bot-setting:`,
   `menu:`, `px:`, `file:`) that the generator checks; a guide naming
-  something gone fails the build. Customer names in doc examples are
-  scrubbed (`client:<name>`); no secret, checked by the test.
+  something gone fails the build. A customer named in a doc's example tag
+  is scrubbed, and the generator refuses to write a base holding a
+  secret, a real email address or such a tag (`auditKnowledgeText`).
+- AGENTS.md is indexed as maintainers' notes (kind `notes`), weighed below
+  the user docs; infrastructure docs are left out (`DOCS_LEFT_OUT`).
 - `scripts/self-knowledge/knowledge.test.ts` fails when the tools,
   permissions, Settings, menus, engines or guides changed without
   regenerating. `server/self-knowledge.test.ts` holds the 20 bench questions

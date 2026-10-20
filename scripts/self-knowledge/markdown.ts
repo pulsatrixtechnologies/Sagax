@@ -31,10 +31,15 @@ export function plainText(markdown: string): string {
     .trim();
 }
 
-/** Example tags that name a real customer in a doc (`client:<name>`) lose
- * the name: no customer data in the base. */
+/** Example tags that name a real customer in a doc (`client:Acme`,
+ * `client: "Acme"`, `company=Acme`) lose the name: no customer data in the
+ * base. */
+const CUSTOMER_TAG = /\b([Cc]lients?|[Cc]ompany|[Cc]ompanies|[Cc]ustomers?)(:["'`]?|:\s+(?=["'`]?[A-Z])["'`]?|=["'`]?)(?!<name>)[A-Za-z0-9][\w.-]*/g;
+/** A tag the scrub missed; the generator refuses the base then. */
+export const CUSTOMER_TAG_LEFT = /\b(?:[Cc]lient|[Cc]ompany|[Cc]ustomer)(?::["'`]?|:\s+["'`]?(?=[A-Z])|=["'`]?)(?!<name>)[A-Za-z0-9][\w.-]*/;
+
 export function scrub<T extends { title: string; text: string; keywords?: string }>(section: T): T {
-  const clean = (text: string) => text.replace(/\b(client|company|customer|clients|companies):(?!<)[A-Za-z0-9][\w.-]*/gi, "$1:<name>");
+  const clean = (text: string) => text.replace(CUSTOMER_TAG, "$1$2<name>");
   return { ...section, title: clean(section.title), text: clean(section.text), ...(section.keywords ? { keywords: clean(section.keywords) } : {}) };
 }
 

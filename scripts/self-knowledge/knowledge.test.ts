@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildKnowledge, KNOWLEDGE_FILE } from "./build.ts";
+import { auditKnowledgeText, buildKnowledge, KNOWLEDGE_FILE, serializeKnowledge } from "./build.ts";
 import { GUIDES } from "./guides.ts";
 import type { KnowledgeBase, KnowledgeSection } from "../../server/self-knowledge-types.ts";
 import { availableTools } from "../../server/drivers/agents-catalog.ts";
@@ -53,6 +53,7 @@ describe("self-knowledge base", () => {
   });
 
   it("is deterministic and carries its version and day", () => {
+    expect(serializeKnowledge(buildKnowledge(root, committed.generated))).toBe(serializeKnowledge(fresh));
     expect(buildKnowledge(root, "2000-01-01").hash).toBe(fresh.hash);
     expect(committed.version).toBe(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).forkVersion);
     expect(committed.generated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -62,16 +63,12 @@ describe("self-knowledge base", () => {
   it("holds no secret and stays small", () => {
     const text = readFileSync(join(root, KNOWLEDGE_FILE), "utf8");
     expect(text.length).toBeLessThan(2_500_000);
-    const secrets = [
-      /(?<![\w-])sk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}/, /\bghp_[A-Za-z0-9]{20,}/, /\bgithub_pat_[A-Za-z0-9_]{20,}/, /\bxox[abprs]-[A-Za-z0-9-]{10,}/,
-      /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\bwhsec_[A-Za-z0-9_-]{24,}/, /\bAKIA[0-9A-Z]{16}\b/, /\bAIza[0-9A-Za-z_-]{30,}/,
-    ];
-    for (const pattern of secrets) expect(text, String(pattern)).not.toMatch(pattern);
-    // A doc's example tag never brings a customer's name in (markdown.ts scrub).
-    expect(text).not.toMatch(/\b(?:client|company|customer):(?!<name>)[A-Za-z0-9]/i);
-    const emails = [...text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)].map((match) => match[0].toLowerCase());
-    const allowed = /@(example\.(?:com|org|test|net)|[\w-]+\.example(?:\.\w+)?|example|pulsatrix\.ca|users\.noreply\.github\.com|localhost|x\.y\.z)$/;
-    expect(emails.filter((email) => !allowed.test(email) && !/^(git@|noreply@|no-reply@)/.test(email))).toEqual([]);
+    expect(auditKnowledgeText(text)).toEqual([]);
+    // The audit itself catches what it must (the generator exits 1 on any).
+    expect(auditKnowledgeText("key sk-ant-abcdefghijklmnopqrstuvwxyz0123")).toHaveLength(1);
+    expect(auditKnowledgeText("write to someone@gmail.com")).toHaveLength(1);
+    expect(auditKnowledgeText("which team holds client:Acme")).toHaveLength(1);
+    expect(auditKnowledgeText("disk-and-expired-approvals and hello@pulsatrix.ca")).toEqual([]);
   });
 
   it("keeps each section short and sourced", () => {

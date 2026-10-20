@@ -8,7 +8,7 @@
 // short sections: the best sentences of each, where it is in the app, who
 // may use it. BM25 over title, keywords and text, with French words mapped
 // to the English of the catalog.
-import { existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { KnowledgeBase, KnowledgeKind, KnowledgeSection } from "./self-knowledge-types.ts";
@@ -20,15 +20,15 @@ export const HELP_MAX_RESULTS = 6;
 const EXCERPT_CHARS = 520;
 
 /** The base sits in self-knowledge/ beside this module in a checkout and
- * beside the bundled server (scripts/bundle-server.mjs copies it). */
-export function readBundledKnowledge(): KnowledgeBase | null {
+ * beside the bundled server (scripts/bundle-server.mjs copies it). Read
+ * without blocking the event loop. */
+export async function readBundledKnowledge(): Promise<KnowledgeBase | null> {
   const here = dirname(fileURLToPath(import.meta.url));
-  for (const path of [join(here, "self-knowledge", KNOWLEDGE_FILE_NAME)]) {
-    if (existsSync(path)) {
-      try { return JSON.parse(readFileSync(path, "utf8")) as KnowledgeBase; } catch { return null; }
-    }
+  try {
+    return JSON.parse(await readFile(join(here, "self-knowledge", KNOWLEDGE_FILE_NAME), "utf8")) as KnowledgeBase;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 // ---------------------------------------------------------------- words
@@ -121,7 +121,7 @@ export function queryTerms(question: string): string[] {
 /** How much a kind of section weighs: a checked how-to and the catalog
  * first, route lists last. */
 const KIND_WEIGHT: Record<KnowledgeKind, number> = {
-  guide: 1.5, tool: 1.15, setting: 1.15, menu: 1.1, perspicax: 1.05, doc: 1, engine: 0.9, release: 0.85, route: 0.4,
+  guide: 1.5, tool: 1.15, setting: 1.15, menu: 1.1, perspicax: 1.05, doc: 1, engine: 0.9, release: 0.85, notes: 0.6, route: 0.4,
 };
 
 interface Indexed {
@@ -163,7 +163,7 @@ export function indexKnowledge(base: KnowledgeBase): KnowledgeIndex {
 
 export interface HelpMatch { section: KnowledgeSection; score: number }
 
-export function searchKnowledge(index: KnowledgeIndex, question: string, limit = HELP_DEFAULT_RESULTS): HelpMatch[] {
+export function searchKnowledge(index: KnowledgeIndex, question: string, limit = HELP_DEFAULT_RESULTS, context?: Pick<HelpContext, "organization">): HelpMatch[] {
   const terms = queryTerms(question);
   if (!terms.length) return [];
   const total = index.docs.length;
@@ -185,6 +185,8 @@ export function searchKnowledge(index: KnowledgeIndex, question: string, limit =
     // A section that answers more of the question's words beats one that
     // repeats a single word.
     score *= KIND_WEIGHT[doc.section.kind] * (0.5 + hits / terms.length);
+    // A solo Sagax has no Perspicax console: its pages come last there.
+    if (context && !context.organization && doc.section.kind === "perspicax") score *= 0.3;
     scored.push({ section: doc.section, score });
   }
   scored.sort((a, b) => b.score - a.score || (a.section.id < b.section.id ? -1 : 1));
@@ -225,7 +227,7 @@ export interface HelpContext {
   organization: boolean;
   /** The person speaking in this turn, on an organization server. */
   role?: "admin" | "member" | null;
-  /** Perspicax tools (api_list, ...) are in this turn's catalog. */
+  /** Perspicax tools (api_list, ...) may be in this turn's catalog. */
   perspicaxTools?: boolean;
 }
 
@@ -235,14 +237,14 @@ export function helpAnswer(index: KnowledgeIndex, question: string, context: Hel
     ? `organization server (Perspicax)${context.role ? `, the person speaking is ${context.role === "admin" ? "an admin" : "a member"}` : ""}`
     : "a person's own Sagax (solo, no organization)";
   const head = [
-    `Sagax ${base.version} knowledge, ${base.generated}${base.perspicax ? `; Perspicax ${base.perspicax.version} (${base.perspicax.date})` : ""}. This server: ${where}.`,
+    `Sagax ${base.version} knowledge, ${base.generated}${base.perspicax && context.organization ? `; Perspicax console ${base.perspicax.version} (this organization's may be older)` : ""}. This server: ${where}.`,
   ];
-  const matches = searchKnowledge(index, question, limit);
+  const matches = searchKnowledge(index, question, limit, context);
   if (!matches.length) {
-    head.push("Nothing in the knowledge base matches. Do not claim the capability exists or does not: say you did not find it, and check your own tool list" + (context.perspicaxTools ? " and api_list (this organization's live Perspicax catalog)" : "") + " before answering.");
+    head.push("Nothing in the knowledge base matches. Do not claim the capability exists or does not: say you did not find it, and check your own tool list" + (context.perspicaxTools ? " (and api_list, if you have it)" : "") + " before answering.");
     return { text: head.join("\n"), ids: [] };
   }
-  head.push("Only what is below and your own tool list is real; quote where it is and who may use it.");
+  head.push("From Sagax's own code and docs: trust it over memory, and your own tool list over it. Say where it is and who may do it.");
   const blocks = matches.map(({ section }) => [
     `## ${section.title} [${section.kind}]`,
     section.where ? `Where: ${section.where}` : null,
@@ -250,18 +252,30 @@ export function helpAnswer(index: KnowledgeIndex, question: string, context: Hel
     excerpt(section, question),
     `(${section.source})`,
   ].filter(Boolean).join("\n"));
-  const tail = context.perspicaxTools ? ["For this organization's live Perspicax catalog (products, profiles, what the person may reach): api_list, then api_search."] : [];
+  const tail = context.perspicaxTools ? ["For this organization's live Perspicax catalog (products, profiles, what the person may reach), if you have api_list: api_list, then api_search."] : [];
   return { text: [...head, ...blocks, ...tail].join("\n\n"), ids: matches.map((match) => match.section.id) };
 }
 
-let cached: KnowledgeIndex | null | undefined;
+let cached: Promise<KnowledgeIndex | null> | undefined;
 
-/** The index of the bundled base, built on first use. Null when the file is
- * missing (a checkout that never ran the generator). */
-export function bundledKnowledgeIndex(): KnowledgeIndex | null {
-  if (cached === undefined) {
-    const base = readBundledKnowledge();
-    cached = base ? indexKnowledge(base) : null;
-  }
+/** The index of the bundled base, built on first use and kept (about 6 MB).
+ * Null when the file is missing (a checkout that never ran the generator). */
+export function bundledKnowledgeIndex(): Promise<KnowledgeIndex | null> {
+  cached ??= readBundledKnowledge().then((base) => (base ? indexKnowledge(base) : null));
   return cached;
+}
+
+/** sagax_help calls per turn: a looping bot gets a refusal, not CPU. */
+export const HELP_CALLS_PER_TURN = 20;
+
+export class HelpCallCounter {
+  private readonly counts = new Map<string, number>();
+  /** True while `turn` (thread and generation) is under the cap. */
+  take(turn: string): boolean {
+    const used = this.counts.get(turn) ?? 0;
+    if (used >= HELP_CALLS_PER_TURN) return false;
+    if (this.counts.size > 2000) this.counts.clear();
+    this.counts.set(turn, used + 1);
+    return true;
+  }
 }

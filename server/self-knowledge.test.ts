@@ -5,9 +5,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bundledKnowledgeIndex, excerpt, helpAnswer, queryTerms, searchKnowledge } from "./self-knowledge.ts";
+import { bundledKnowledgeIndex, excerpt, HELP_CALLS_PER_TURN, HelpCallCounter, helpAnswer, queryTerms, searchKnowledge } from "./self-knowledge.ts";
 
-const index = bundledKnowledgeIndex()!;
+const index = (await bundledKnowledgeIndex())!;
 const bench = JSON.parse(readFileSync(join(import.meta.dirname, "self-knowledge", "bench-questions.json"), "utf8")) as Array<{ q: string; expect: string[] }>;
 
 describe("sagax_help", () => {
@@ -48,6 +48,22 @@ describe("sagax_help", () => {
     for (const question of bench.map((entry) => entry.q)) {
       expect(helpAnswer(index, question, { organization: true, role: "admin" }).text.length, question).toBeLessThan(4000);
     }
+  });
+
+  it("puts the Perspicax console last on a solo Sagax", () => {
+    const question = "Où voir les droits sur les bots ?";
+    const org = searchKnowledge(index, question, 6, { organization: true }).map((match) => match.section.kind);
+    const solo = searchKnowledge(index, question, 6, { organization: false }).map((match) => match.section.kind);
+    expect(org).toContain("perspicax");
+    expect(solo.indexOf("perspicax") === -1 || solo.indexOf("perspicax") > org.indexOf("perspicax")).toBe(true);
+    expect(helpAnswer(index, question, { organization: false }).text).not.toContain("Perspicax console 1.");
+  });
+
+  it("caps the calls of one turn", () => {
+    const counter = new HelpCallCounter();
+    for (let i = 0; i < HELP_CALLS_PER_TURN; i++) expect(counter.take("t:g")).toBe(true);
+    expect(counter.take("t:g")).toBe(false);
+    expect(counter.take("t:g2")).toBe(true);
   });
 
   it("never claims a capability when nothing matches", () => {

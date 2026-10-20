@@ -7,23 +7,24 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildKnowledge, KNOWLEDGE_FILE } from "./build.ts";
+import { auditKnowledgeText, buildKnowledge, KNOWLEDGE_FILE, serializeKnowledge } from "./build.ts";
 import type { KnowledgeBase } from "../../server/self-knowledge-types.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const path = join(root, KNOWLEDGE_FILE);
-const today = new Date().toISOString().slice(0, 10);
+// SOURCE_DATE_EPOCH makes an image build reproducible.
+const epoch = Number(process.env.SOURCE_DATE_EPOCH);
+const today = new Date(Number.isFinite(epoch) && epoch > 0 ? epoch * 1000 : Date.now()).toISOString().slice(0, 10);
 const previous: KnowledgeBase | null = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
 const fresh = buildKnowledge(root, today);
 const base = previous && previous.hash === fresh.hash && previous.version === fresh.version ? { ...fresh, generated: previous.generated } : fresh;
 
-/** One section per line: a change reads as a change of a few lines. */
-export function serializeKnowledge(kb: KnowledgeBase): string {
-  const { sections, ...head } = kb;
-  return `{\n${Object.entries(head).map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)},`).join("\n")}\n  "sections": [\n${sections.map((section) => `    ${JSON.stringify(section)}`).join(",\n")}\n  ]\n}\n`;
-}
-
 const text = serializeKnowledge(base);
+const problems = auditKnowledgeText(text);
+if (problems.length) {
+  console.error(`${KNOWLEDGE_FILE} not written, it would hold:\n${problems.join("\n")}`);
+  process.exit(1);
+}
 if (process.argv.includes("--check")) {
   const current = existsSync(path) ? readFileSync(path, "utf8") : "";
   if (current !== text) {

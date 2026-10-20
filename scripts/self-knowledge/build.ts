@@ -20,7 +20,7 @@ import { HOST_LEVEL_AGENT_TOOLS, MEMBER_OWN_SCOPE_AGENT_TOOLS } from "../../serv
 import { READ_ONLY_AGENT_TOOL_NAMES } from "../../server/agent-tool-policy.ts";
 import { TOOL_POLICY_ROWS } from "../../server/tool-policy.generated.ts";
 import type { KnowledgeBase, KnowledgeSection, PerspicaxSnapshot } from "../../server/self-knowledge-types.ts";
-import { clip, docSections, plainText, scrub, slug } from "./markdown.ts";
+import { clip, CUSTOMER_TAG_LEFT, docSections, plainText, scrub, slug } from "./markdown.ts";
 import { GUIDES, SETTING_NOTES } from "./guides.ts";
 
 export const KNOWLEDGE_FILE = join("server", "self-knowledge", "knowledge.generated.json");
@@ -301,7 +301,7 @@ function routeSections(): KnowledgeSection[] {
     id: `route:${group}`,
     kind: "route" as const,
     title: `Server routes ${group}`,
-    access: "the app and the API call these with the person's session; a bot never calls them directly",
+    access: "the app calls these with the person's session; a bot reaches them only through act, as the person, within the person's rights",
     text: clip(routes.join("; "), 900),
     source: "server/tool-policy.generated.ts",
   }));
@@ -332,6 +332,9 @@ function walk(root: string, dir: string, keep: (path: string) => boolean): strin
 const DOCS_LEFT_OUT = new Set([
   "docs/TODO.md", "docs/ci.md", "docs/releasing.md", "docs/history-rewrite-plan.md", "docs/localization.md",
   "docs/mascots.md", "docs/team-incidents.md",
+  // infrastructure of a deployment, not what the app does
+  "docs/sandbox-kubernetes.md", "docs/user-sandbox-perspicax-infra.md", "docs/runtime-contract.md", "docs/browser-packaging.md",
+  "docs/media-proxy.md", "docs/no-phone-home.md", "docs/grok-latency.md",
 ]);
 
 function versionKey(version: string): number[] { return version.split(".").map((part) => Number(part) || 0); }
@@ -367,7 +370,7 @@ function docsSections(root: string): KnowledgeSection[] {
     if (DOCS_LEFT_OUT.has(path)) continue;
     out.push(...docSections({ path, markdown: read(root, path), kind: "doc", fallbackTitle: path.replace(/^docs\//, "").replace(/\.md$/, ""), maxLevel: 2 }));
   }
-  out.push(...docSections({ path: "AGENTS.md", markdown: read(root, "AGENTS.md"), kind: "doc", fallbackTitle: "Sagax", maxLevel: 2 }));
+  out.push(...docSections({ path: "AGENTS.md", markdown: read(root, "AGENTS.md"), kind: "notes", fallbackTitle: "Sagax", maxLevel: 2 }));
   return out;
 }
 
@@ -385,6 +388,29 @@ export function checkGuides(root: string, toolNames: ReadonlySet<string>, sectio
     }
   }
   for (const id of Object.keys(SETTING_NOTES)) if (!sectionIds.has(`setting:${id}`)) problems.push(`SETTING_NOTES.${id} is not a Settings page`);
+  return problems;
+}
+
+// ---------------------------------------------------------------- audit
+
+const SECRET_PATTERNS = [
+  /(?<![\w-])sk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}/, /\bghp_[A-Za-z0-9]{20,}/, /\bgithub_pat_[A-Za-z0-9_]{20,}/, /\bxox[abprs]-[A-Za-z0-9-]{10,}/,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\bwhsec_[A-Za-z0-9_-]{24,}/, /\bAKIA[0-9A-Z]{16}\b/, /\bAIza[0-9A-Za-z_-]{30,}/,
+];
+const ALLOWED_EMAIL = /@(example\.(?:com|org|test|net)|[\w-]+\.example(?:\.\w+)?|example|pulsatrix\.ca|users\.noreply\.github\.com|localhost|x\.y\.z)$/;
+
+/** What must never be in the base, whatever the checkout holds (a Docker
+ * build copies untracked files too): a secret, a real person's address, a
+ * customer named in an example tag. The generator refuses to write a base
+ * that fails; the test runs it on the committed one. */
+export function auditKnowledgeText(text: string): string[] {
+  const problems: string[] = [];
+  for (const pattern of SECRET_PATTERNS) if (pattern.test(text)) problems.push(`secret-like text ${pattern}`);
+  for (const match of text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) {
+    const email = match[0].toLowerCase();
+    if (!ALLOWED_EMAIL.test(email) && !/^(git@|noreply@|no-reply@)/.test(email)) problems.push(`email address ${email}`);
+  }
+  if (CUSTOMER_TAG_LEFT.test(text)) problems.push("a customer tag (client:<name>) left unscrubbed");
   return problems;
 }
 
@@ -443,6 +469,12 @@ export function buildKnowledge(root: string, generated: string): KnowledgeBase {
     counts,
     sections,
   };
+}
+
+/** One section per line: a change reads as a change of a few lines. */
+export function serializeKnowledge(kb: KnowledgeBase): string {
+  const { sections, ...head } = kb;
+  return `{\n${Object.entries(head).map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)},`).join("\n")}\n  "sections": [\n${sections.map((section) => `    ${JSON.stringify(section)}`).join(",\n")}\n  ]\n}\n`;
 }
 
 export { plainText, slug };

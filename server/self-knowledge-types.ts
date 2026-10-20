@@ -14,8 +14,10 @@ export type KnowledgeKind =
   | "engine"
   /** A section of a release's notes. */
   | "release"
-  /** A section of the user docs, docs/ or AGENTS.md. */
+  /** A section of the user docs or docs/. */
   | "doc"
+  /** A section of AGENTS.md: the maintainers' notes, weighed below the docs. */
+  | "notes"
   /** A group of the server's HTTP routes. */
   | "route"
   /** Perspicax: its console pages, settings, docs and release notes. */
