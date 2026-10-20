@@ -5480,6 +5480,11 @@ never pushed). The Pod comes from the run provisioner
   stopped, secrets wiped, nothing more sent). `PX_CONTROL_URL` is https
   (loopback http for tests), and the token is only sent to its origin:
   a bootstrap whose `git_url` or `model_proxy` points elsewhere fails.
+- Duration: the runner's own deadline comes from the bootstrap
+  (`limits.max_duration_sec`) and is re-armed by a `limits` command
+  (`{max_duration_sec}`: what the Pod has left after an admin extended the
+  run, 1 s to 12 h, a number only). Perspicax enforces the run's maximum
+  too; the Pod's hard deadline is the 12 h cap.
 - Secrets: one 0400 file each in `/dev/shm/px-secrets` (memory), visible
   to `setup`; the `setup_only` ones (the default) are erased before the
   engine starts. Every secret value and the run token are masked in all
