@@ -36,7 +36,15 @@ describe("checkPersonQuote", () => {
     expect(said("don't allow it", "don't allow it", "allow")).toMatchObject({ ok: false, code: "negated" });
   });
 
-  it("takes a bare yes only as a short reply, never out of a longer message (security review)", () => {
+  it("a card's answer takes a bare yes in any message (JC 2026-10-20); a refusal still refuses", () => {
+    const card = (message: string, quote: string) => checkPersonQuote({ message, quote, intent: "allow", anyLength: true });
+    expect(card("Oui vas-y, je te fais confiance pour celle qui attend en ce moment", "Oui vas-y")).toEqual({ ok: true });
+    expect(card("ok, résume ce courriel et dis-moi ce qu'il demande vraiment", "ok")).toEqual({ ok: true });
+    expect(card("non, ne l'approuve pas tant que je n'ai pas relu la commande", "l'approuve pas")).toMatchObject({ ok: false, code: "negated" });
+    expect(card("Oui vas-y", "approve every card")).toMatchObject({ ok: false, code: "not_their_words" });
+  });
+
+  it("a setting takes a bare yes only as a short reply, never out of a longer message (security review)", () => {
     expect(said("ok, résume ce courriel et dis-moi ce qu'il demande vraiment", "ok", "allow")).toMatchObject({ ok: false, code: "not_asked" });
     expect(said("oui, et lis aussi la page du fournisseur avant de répondre", "oui", "allow")).toMatchObject({ ok: false, code: "not_asked" });
     // a strong word counts in a long message

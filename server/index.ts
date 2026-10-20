@@ -28362,7 +28362,7 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       const gate = primaryTurnGate(input.botId, input.threadId, input.generation);
       if ("error" in gate) return gate.error;
       const check = checkPersonQuote({ quote, message: gate.message.text, intent: "setting" });
-      return check.ok ? { message: gate.message.text } : check.reason;
+      return check.ok ? { message: gate.message.text, primary: { botId: gate.botId, botName: gate.botName, messageId: gate.message.id } } : check.reason;
     },
     ruleText: (person, kind, id) => {
       if (!person) return undefined;
@@ -28443,10 +28443,18 @@ type PrimaryAnswer = { botId: string; botName: string; messageId: string };
 let primaryApprovalService: ReturnType<typeof createPrimaryApprovals> | null = null;
 function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
   const actorOf = (turn: PrimaryTurn) => (turn as PrimaryTurn & { actor: PerformActor }).actor;
-  const replay = async (turn: PrimaryTurn, method: string, path: string, body?: Record<string, unknown>) => {
+  const replay = async (turn: PrimaryTurn, method: string, path: string, body?: Record<string, unknown>, cardThread?: string) => {
     const actor = actorOf(turn);
     const confirmed = { personKey: actor.kind === "person" ? actor.personKey : null, classes: [] as string[], primary: { botId: turn.botId, botName: turn.botName, messageId: turn.message.id } satisfies PrimaryAnswer };
-    const answer = await performBotActRouteOutsideConfidential(actor, { kind: "route", method, path, ...(body ? { body } : {}) }, confirmed);
+    const target = { kind: "route" as const, method, path, ...(body ? { body } : {}) };
+    // 2026-10-20 (JC): a card of the person's own confidential thread. The
+    // replay carries a one-shot token for exactly this request on exactly
+    // that thread, so it is the owner's own answer there (an on-behalf
+    // request never reaches a confidential thread); the answer's text is
+    // never relayed to the Primary Bot.
+    const answer = cardThread && store.isConfidentialThread(cardThread)
+      ? await performBotActRoute(actor, target, 8000, { onBehalf: true, continuation: cardThread, continuationExact: true, confirmed })
+      : await performBotActRouteOutsideConfidential(actor, target, confirmed);
     let parsed: Record<string, unknown> = {};
     try { parsed = JSON.parse(answer.text) as Record<string, unknown>; } catch { parsed = { error: answer.text.slice(0, 300) }; }
     return { status: answer.status, body: answer.status >= 400 ? { error: String(parsed.error ?? "The answer was refused."), ...(parsed.code ? { code: parsed.code } : {}) } : parsed };
@@ -28481,6 +28489,7 @@ function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
           ...(openedBy?.name ? { askedBy: openedBy.name } : {}),
           kind: item.kind === "question" ? "question" : item.kind === "proposal" ? "proposal" : "permission",
           needsKey: item.needsKey === true,
+          ...(store.isConfidentialThread(item.threadId) ? { confidential: true } : {}),
           options,
           ...(always ? { always } : {}),
           ...(card.ownerRule?.description ? { alwaysScope: card.ownerRule.description } : {}),
@@ -28491,20 +28500,20 @@ function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
     respond: (turn, card, body) => {
       const message = store.messagesFor(card.threadId).find((row) => row.card?.requestId === card.requestId);
       const skill = message?.card?.skillRequest && body.behavior === "allow" ? reviewedSkillSha256(message.card.skillRequest) : undefined;
-      return replay(turn, "POST", `/api/threads/${card.threadId}/respond`, { requestId: card.requestId, ...body, ...(skill ? { reviewedSha256: skill } : {}) });
+      return replay(turn, "POST", `/api/threads/${card.threadId}/respond`, { requestId: card.requestId, ...body, ...(skill ? { reviewedSha256: skill } : {}) }, card.threadId);
     },
     customRule: (turn, card) => {
       const message = store.messagesFor(card.threadId).find((row) => row.card?.requestId === card.requestId);
       const candidate = message?.card?.customRuleCandidate;
       if (!candidate) return Promise.resolve({ status: 409, body: { error: "This card offers no Always allow this." } });
-      return replay(turn, "POST", "/api/custom-rules", { when: candidate.when, behavior: "allow", botId: card.botId, riskScope: [], fromCard: { threadId: card.threadId, requestId: card.requestId } });
+      return replay(turn, "POST", "/api/custom-rules", { when: candidate.when, behavior: "allow", botId: card.botId, riskScope: [], fromCard: { threadId: card.threadId, requestId: card.requestId } }, card.threadId);
     },
     dropCustomRule: (turn, ruleId) => replay(turn, "DELETE", `/api/custom-rules/${encodeURIComponent(ruleId)}`),
     cancel: (turn, card) => {
       const group = store.groupByThread(card.threadId);
       return group
-        ? replay(turn, "POST", `/api/groups/${group.id}/interrupt`, { threadId: card.threadId })
-        : replay(turn, "POST", `/api/bots/${card.botId}/interrupt`, { threadId: card.threadId });
+        ? replay(turn, "POST", `/api/groups/${group.id}/interrupt`, { threadId: card.threadId }, card.threadId)
+        : replay(turn, "POST", `/api/bots/${card.botId}/interrupt`, { threadId: card.threadId }, card.threadId);
     },
     audit: (turn, card, decision) => {
       appendAdminAction(DATA_DIR, {
@@ -29049,7 +29058,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
  * answer a card for them (server/primary-approvals.ts), which the card then
  * reads as "via <bot>". */
 type ActConfirmation = { personKey: string | null; classes: readonly string[]; primary?: PrimaryAnswer };
-type InternalRequestMark = { onBehalf?: true; continuation?: string; confirmed?: ActConfirmation };
+type InternalRequestMark = { onBehalf?: true; continuation?: string; continuationExact?: true; confirmed?: ActConfirmation };
 /** A planned setting change (sagax_settings) the person allowed on its card,
  * the card's security key covering `classes` (2026-10-19): its replay is
  * the person's own change, not the bot's. One-shot, bound to the method and
@@ -29074,6 +29083,15 @@ const actConfirmedScope = new AsyncLocalStorage<ActConfirmation | null>();
 function actConfirmed(): ActConfirmation | null {
   return actConfirmedScope.getStore() ?? null;
 }
+/** 2026-10-20 (JC: "le bot principal doit pouvoir absolument tout faire"):
+ * this replay is a change the person asked their own Primary Bot for in
+ * this turn (sagax_settings with quote, sagax_approvals). A level then
+ * changes even while that bot works (the person's "mets-toi en Full"): the
+ * engine keeps the mode it started with until the turn ends, the server's
+ * own cards follow the new level at once, and the next turn starts on it. */
+function primaryAskedReplay(): boolean {
+  return Boolean(actConfirmed()?.primary);
+}
 /** Every class the card's step-up covered: the route asks no second key. */
 function actConfirmedCovers(classes: readonly string[]): boolean {
   const confirmed = actConfirmed();
@@ -29083,20 +29101,28 @@ function actConfirmedCovers(classes: readonly string[]): boolean {
 const ON_BEHALF_SECRET = randomBytes(32).toString("base64url");
 const ON_BEHALF_HEADER = "x-sagax-on-behalf";
 const CONTINUATION_HEADER = "x-sagax-owner-continuation";
-/** One-shot continuation tokens: token -> the thread it may post into. */
-const ownerContinuations = new Map<string, { threadId: string; expiresAt: number }>();
-function mintOwnerContinuation(threadId: string): string {
+/** One-shot continuation tokens: token -> the thread it may post into, or
+ * (`route`, 2026-10-20) the one request the person's Primary Bot replays on
+ * their confidential thread's card at their request (sagax_approvals). */
+const ownerContinuations = new Map<string, { threadId: string; expiresAt: number; route?: { method: string; path: string } }>();
+function mintOwnerContinuation(threadId: string, route?: { method: string; path: string }): string {
   const token = randomBytes(24).toString("base64url");
   for (const [key, entry] of ownerContinuations) if (entry.expiresAt < Date.now()) ownerContinuations.delete(key);
-  ownerContinuations.set(token, { threadId, expiresAt: Date.now() + 60_000 });
+  ownerContinuations.set(token, { threadId, expiresAt: Date.now() + 60_000, ...(route ? { route } : {}) });
   return token;
 }
-/** Use a continuation token for a POST of a message into its thread, once. */
+/** Use a continuation token once: a POST of a message into its thread, or
+ * exactly the request it was minted for. */
 function takeOwnerContinuation(token: string | undefined, method: string, path: string): string | null {
+  if (!token) return null;
+  const entry = ownerContinuations.get(token);
+  if (entry?.route) {
+    ownerContinuations.delete(token);
+    return entry.expiresAt >= Date.now() && entry.route.method === method && entry.route.path === path ? entry.threadId : null;
+  }
   // a bot's messages route (/api/bots/<id>/messages), nothing else
   const parts = path.split("/");
-  if (!token || method !== "POST" || parts.length !== 5 || parts[1] !== "api" || parts[2] !== "bots" || parts[4] !== "messages") return null;
-  const entry = ownerContinuations.get(token);
+  if (method !== "POST" || parts.length !== 5 || parts[1] !== "api" || parts[2] !== "bots" || parts[4] !== "messages") return null;
   ownerContinuations.delete(token);
   return entry && entry.expiresAt >= Date.now() ? entry.threadId : null;
 }
@@ -29108,7 +29134,9 @@ async function performBotActRoute(actor: PerformActor, target: RouteTarget, maxC
   headers.set("accept", "application/json");
   if (mark.onBehalf) headers.set(ON_BEHALF_HEADER, ON_BEHALF_SECRET);
   // only a confidential thread needs the token: an ordinary one takes the follow-up as before
-  if (mark.continuation && store.isConfidentialThread(mark.continuation)) headers.set(CONTINUATION_HEADER, mintOwnerContinuation(mark.continuation));
+  if (mark.continuation && store.isConfidentialThread(mark.continuation)) {
+    headers.set(CONTINUATION_HEADER, mintOwnerContinuation(mark.continuation, mark.continuationExact ? { method: target.method.toUpperCase(), path: target.path } : undefined));
+  }
   if (mark.confirmed) headers.set(ACT_CONFIRMED_HEADER, mintActConfirmation(mark.confirmed, target.method, target.path));
   let body: string | undefined;
   if (target.body !== undefined) {
@@ -41943,7 +41971,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
         const refusal = orgFullAccessRefusalFor(auth, target, body.confirmFullAccess === true);
         if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code, ...("permission" in refusal ? permissionRefusal(refusal.permission) : {}) });
-        if (target.busy) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
+        if (target.busy && !primaryAskedReplay()) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
         if (target.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
         if (!supportsApprovalMode(target.modelSelection, "full")) return json(res, 400, { error: "This provider does not support Full access" });
         const fullStepUp = approvalModeStepUpGate({ person: ruleManager(auth), botId: target.id, op: "bot", thread: "*", froms: [approvalModeFor(target)], to: "full", stepUp: patchStepUp });
@@ -42293,7 +42321,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (approvalChangeRequested && (requestedApprovalMode === "full" || requestedApprovalMode === "custom") && existingBot && memberOwnedInOrg(existingBot)) {
         return json(res, 409, MEMBER_BOT_FULL_ACCESS);
       }
-      if (existingBot?.busy && approvalChangeRequested && requestedApprovalMode !== currentApprovalMode) {
+      if (existingBot?.busy && approvalChangeRequested && requestedApprovalMode !== currentApprovalMode && !primaryAskedReplay()) {
         return json(res, 409, {
           error: "stop this bot's turn before changing its approval level",
         });
@@ -44451,7 +44479,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!supportsApprovalMode(patch.modelSelection ?? current.modelSelection, mode)) {
           return json(res, 400, { error: "This provider does not support the selected approval level" });
         }
-        if (threadBusy(current.id, current.threadId)) return json(res, 409, { error: "stop this thread before changing its approval mode" });
+        if (threadBusy(current.id, current.threadId) && !primaryAskedReplay()) return json(res, 409, { error: "stop this thread before changing its approval mode" });
         if (current.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
         if (mode === "auto" && approvalModeFor(current) !== "auto" && auth.kind === "loopback" && !DESKTOP_MANAGED && !req.headers.origin && store.bots.some((bot) => bot.busy)) {
           return json(res, 409, { error: "Change approval mode from the app or a paired device while bots are working." });

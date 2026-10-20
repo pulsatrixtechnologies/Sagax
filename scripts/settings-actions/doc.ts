@@ -75,8 +75,18 @@ parties hors tableau du script.
   s'appliquent pas et une suppression passe aussi : niveaux d'approbation,
   règles « toujours permettre » et leur retrait, sur n'importe quel bot de
   la personne. Une clé de sécurité choisie, un secret, autrui, un lot et
-  l'organisation gardent la carte. Les cartes en attente se répondent avec
-  \`sagax_approvals\` (\`server/primary-approvals.ts\`).
+  l'organisation gardent la carte. Full compris sur un serveur
+  d'organisation (2026-10-20), aux règles de la route : l'organisation
+  permet Full, la personne possède le bot et a \`bots.fullAccess\`. Un niveau
+  change même pendant que ce bot travaille (« mets-toi en Full ») ; le tour
+  suivant part avec. Les cartes en attente se répondent avec
+  \`sagax_approvals\` (\`server/primary-approvals.ts\`) : un « oui » qui ne
+  nomme aucune carte répond à la plus récente que la personne voyait,
+  quelle que soit la longueur du message (le bot dit laquelle ; une
+  carte par message ; dans un long message, il doit parler d'une carte) ; une carte
+  d'un fil confidentiel de la personne se répond aussi, sans que ses mots
+  passent au bot principal ; une carte qui exige la clé de sécurité
+  physique de la personne reste à la personne.
 - Journal : chaque changement appliqué (tout de suite ou après Allow) écrit
   une ligne \`setting.change\` (catégorie \`setting\`) dans le journal
   d'administration ; la valeur d'un secret est \`[hidden]\`.
@@ -104,9 +114,9 @@ const TAIL = `
 | Toute autre route /api | partout | \`act\` avec \`method\` et \`path\`, mêmes droits, carte pour une écriture |
 | Clés de sécurité (ajout, retrait, classes) | Réglages > Sécurité | la clé physique de la personne : l'outil ouvre l'écran (\`act\` ui toggleAppSettings section security) |
 | Export et import du coffre | Réglages > Identifiants | la personne seule (données en clair) ; les éléments du coffre restent modifiables (\`credentials.*\`) |
-| Full ou Custom sur un serveur personnel | Éditeur du bot > Permissions | canal de confirmation de l'app de bureau ; sur un serveur d'organisation \`bot.approvalMode\` full passe par une carte |
+| Full ou Custom sur un serveur personnel | Éditeur du bot > Permissions | canal de confirmation de l'app de bureau ; sur un serveur d'organisation \`bot.approvalMode\` full passe tout de suite à la demande de la personne à son bot principal (\`quote\`), sinon par une carte |
 | Mode serveur, mises à jour, icône, diagnostics | Réglages > Système, Mises à jour | IPC de l'app de bureau, pas de route |
-| Répondre à une carte | conversation | une carte est la réponse de la personne, jamais d'un bot |
+| Répondre à une carte | conversation | la personne, ou son bot principal à sa demande (\`sagax_approvals\`), fil confidentiel compris ; jamais un autre bot ; une carte à clé de sécurité reste à la personne |
 
 ## Console Perspicax (exposée à Sagax)
 

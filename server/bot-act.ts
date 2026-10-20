@@ -95,6 +95,9 @@ export type PlannedAct = {
   /** No Always allow on this card (a change to rules or permissions). */
   noRule?: boolean;
   rule?: ActRuleCandidate;
+  /** 2026-10-20: the person asked their own Primary Bot for this change in
+   * this turn (sagax_settings with quote): the replay says so. */
+  primary?: { botId: string; botName: string; messageId: string };
 };
 
 export type BotActDeps = {
@@ -105,7 +108,7 @@ export type BotActDeps = {
   sessionForPerson: (personKey: string) => LiveSession | null;
   /** `confirmed`: this replay follows that person's own Allow on a planned
    * change's card (the card's step-up covered `classes`). */
-  performRoute: (actor: PerformActor, target: Extract<ActTarget, { kind: "route" }>, confirmed?: { personKey: string | null; classes: readonly string[] }, maxChars?: number) => Promise<{ status: number; text: string }>;
+  performRoute: (actor: PerformActor, target: Extract<ActTarget, { kind: "route" }>, confirmed?: { personKey: string | null; classes: readonly string[]; primary?: { botId: string; botName: string; messageId: string } }, maxChars?: number) => Promise<{ status: number; text: string }>;
   broadcastUi: (audience: string, command: string, input: Record<string, unknown>) => void;
   postCard: (input: { threadId: string; botId: string; botName: string; botColor: string; requestId: string; summary: string; rule?: ActRuleCandidate }) => { messageId: string };
   /** 2026-10-19: the person's saved Always allow that answers this act now
@@ -211,7 +214,7 @@ export function createBotActService(deps: BotActDeps): BotActService {
       if (input.plan.effect === "run") {
         // the registry and its policy decided: the route reads it as the
         // person's planned change (no key was signed, so no class is covered)
-        const planned = { personKey: performActor.kind === "person" ? performActor.personKey : null, classes: [] as string[] };
+        const planned = { personKey: performActor.kind === "person" ? performActor.personKey : null, classes: [] as string[], ...(input.plan.primary ? { primary: input.plan.primary } : {}) };
         const result = await run(performActor, input.target, undefined, planned, input.maxChars);
         if (result.status < 400) input.plan.onDone?.("run");
         return result;
@@ -368,7 +371,7 @@ export function createBotActService(deps: BotActDeps): BotActService {
     };
   }
 
-  async function run(actor: PerformActor, target: ActTarget, audience?: string, confirmed?: { personKey: string | null; classes: readonly string[] }, maxChars = 8000): Promise<BotActResult> {
+  async function run(actor: PerformActor, target: ActTarget, audience?: string, confirmed?: { personKey: string | null; classes: readonly string[]; primary?: { botId: string; botName: string; messageId: string } }, maxChars = 8000): Promise<BotActResult> {
     if (target.kind === "ui") {
       deps.broadcastUi(audience ?? (actor.kind === "person" ? actor.personKey : deps.operatorAudience()), target.command, target.input);
       return { status: 200, body: { text: "Done.", status: 200 } };

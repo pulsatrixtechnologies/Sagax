@@ -12,7 +12,7 @@ export const APPROVALS_TOOL_DEFINITIONS = [
       additionalProperties: false,
       properties: {
         action: { type: "string", enum: ["list", "answer", "cancel"] },
-        card: { type: "string", maxLength: 20, description: "From list; optional when one waits." },
+        card: { type: "string", maxLength: 20, description: "From list; omit for the latest." },
         decision: { type: "string", enum: ["allow", "always_allow", "always_allow_this", "deny", "always_deny", "answer"] },
         quote: { type: "string", maxLength: 600 },
         text: { type: "string", maxLength: 4000, description: "decision answer: their answer." },

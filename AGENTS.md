@@ -211,18 +211,31 @@ approval cards that wait on that person, when the person asks for it:
   `performBotActRouteOutsideConfidential` with the person's session and a
   one-shot act confirmation carrying `primary` (bot, message). Every check
   of the click applies (whose card, an admin's card for an admin only, a
-  security key, a confidential thread). No card kind is excluded (JC:
-  payments and sends included).
+  security key). No card kind is excluded (JC: payments and sends
+  included). A card of the person's own confidential thread too (JC
+  2026-10-20): its replay carries a one-shot owner continuation bound to
+  that exact method and path (`mintOwnerContinuation` with `route`), and
+  `list` and the answer give the bot "<bot>'s card in a confidential
+  conversation", never its title, command or thread. A card that needs the
+  person's security key stays theirs (the key is physical).
 - Gate (`primaryTurnGate`): the speaking bot is `chiefOfStaff`, owned by
   the turn's proven person, and the turn is that person's own message
   (`ownEnvironmentOrigin`: never a routine, webhook, another bot's hop, a
   guest). Proof (`shared/primary-request.ts`): `quote`, the person's words,
   must be in that message and carry a word of the decision (allow, always,
   deny, cancel; a refusal in or just before the quote is refused; a bare
-  "oui"/"ok"/"go" counts only in a reply of eight words or less); with
-  several cards waiting, or a message longer than eight words, the message
-  must name the card's bot (only when no other card is that bot's), the
-  bot that asked, or the handle (`messageNamesCard`); a question's answer must be
+  "oui"/"ok"/"go" counts in a message of any length for a card,
+  `anyLength`, and in a reply of eight words or less for a setting). A
+  card is bound to the yes: the message names it (its bot, only when no
+  other card is that bot's, the bot that asked, or the handle,
+  `messageNamesCard`), or it is the latest card the person could see when
+  they wrote (`latestSeen`, JC 2026-10-20: "oui" answers the latest, the
+  answer says which). Security review 2026-10-20: an unnamed yes answers
+  one card per message (no cascade); a long message's bare yes counts only
+  when the message speaks of a card (`SPEAKS_OF_A_CARD` or a card's bot);
+  a card raised in the 3 s before the message makes an unnamed yes ask
+  which (`JUST_RAISED_MS`); a level's value and bot are in the quote itself,
+  "mets-toi" or its name for the speaking bot (`askedChange`); a question's answer must be
   the person's own words (`personWrote`); a card raised after the message
   is never answered. This is the only defense against injection: keep it.
 - Trace: the card's `answeredBy` gets `via: "primary-bot"` and `bot`
@@ -238,6 +251,11 @@ approval cards that wait on that person, when the person asks for it:
   Always allow rules and their removal at once, at any level of the
   speaking bot. A key, a secret, another person, a bulk change, the
   organization and the desktop-only Full of a personal server keep theirs.
+  On an organization server Full runs at once too (JC 2026-10-20), through
+  the route's own rules (the organization allows Full, the person owns the
+  bot and holds `bots.fullAccess`). The settings replay carries `primary`
+  (`PlannedAct.primary`), so a level also changes while that bot works
+  (`primaryAskedReplay`: "mets-toi en Full"); the next turn starts on it.
 - Tests: `shared/primary-request.test.ts`, `server/primary-approvals.test.ts`,
   `shared/settings-actions-policy.test.ts`, `server/primary-approvals.e2e.test.ts`.
 

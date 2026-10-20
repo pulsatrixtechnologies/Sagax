@@ -36,7 +36,7 @@ export type SettingsActionDeps = {
   screen: (facts: TurnFacts, command: string, input: Record<string, unknown>) => BotActResult;
   /** `quote` (2026-10-20): the person asked their own Primary Bot for this
    * change in this turn's message; true, or why not. */
-  personAsked?: (input: SettingsActionInput, quote: unknown) => { message: string } | string;
+  personAsked?: (input: SettingsActionInput, quote: unknown) => { message: string; quote?: string; primary?: { botId: string; botName: string; messageId: string } } | string;
   /** A rule's own words (its when, its description), for the person's
    * message to name it; undefined when it is not theirs. */
   ruleText?: (person: string | null, kind: "custom" | "owner", id: string) => string | undefined;
@@ -89,7 +89,10 @@ const BEHAVIOR_INTENT: Readonly<Record<string, "allow" | "deny" | "setting">> = 
 const ASK_WORDS = /(?:^| )(?:demande|demander|ask|confirm)/;
 const ALL_BOTS = /(?:^| )(?:tous (?:les|mes) (?:robots|bots)|all (?:my )?bots|every bot|chaque bot)(?: |$)/;
 
-export function askedChange(message: string, key: string, value: unknown, botName: string | undefined, speakingBot: boolean, ruleText?: string): true | string {
+/** "mets-toi", "yourself": the person speaks of the bot they talk to. */
+const REFLEXIVE = /(?:^| )(?:toi|te|t'|toi meme|yourself|you|your)(?: |$)/;
+
+export function askedChange(message: string, key: string, value: unknown, botName: string | undefined, speakingBot: boolean, ruleText?: string, quote: string = message, speakingName?: string): true | string {
   if (!PERSON_ASKED_KEYS.has(key)) return "only approval levels and rules change at once on the person's words";
   const text = normalizeWords(message);
   // security review 2026-10-20: a rule's content comes from the person's
@@ -118,8 +121,13 @@ export function askedChange(message: string, key: string, value: unknown, botNam
     return "the person's message does not name that rule";
   }
   if ((key.endsWith("approvalMode") || key === "bot.permissionMode") && typeof value === "string") {
+    // security review 2026-10-20: the level and its bot are in the quote
+    // itself ("ne mets pas Katarina en Full, mets Zed en Full" sets Zed only)
+    const said = normalizeWords(quote);
     const words = LEVEL_WORDS[value] ?? [value];
-    if (!words.some((word) => text.includes(` ${normalizeWords(word).trim()}`))) return `the person's message does not name the level ${value}`;
+    if (!words.some((word) => said.includes(` ${normalizeWords(word).trim()}`))) return `the person's words (quote) do not name the level ${value}`;
+    if (!speakingBot && botName && !messageNamesCard(quote, [botName])) return `the person's words (quote) do not name ${botName}`;
+    if (speakingBot && !REFLEXIVE.test(said) && !(speakingName && messageNamesCard(quote, [speakingName]))) return "the person's words (quote) do not say this bot itself (\"mets-toi\", or its name)";
   }
   if (!speakingBot && botName && !messageNamesCard(message, [botName])) return `the person's message does not name ${botName}`;
   return true;
@@ -314,7 +322,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     const subjectBot = spec.target === "bot" || spec.target === "thread" ? ids.botId : undefined;
     const asked: boolean | string = proof === undefined ? false : typeof proof === "string" ? proof
       : askedChange(proof.message, spec.key, value, subjectBot ? deps.targetName?.("bot", subjectBot) : undefined, !subjectBot || subjectBot === input.botId,
-        spec.target === "rule" && ids.target ? deps.ruleText?.(speaker, spec.key.startsWith("rules.custom") ? "custom" : "owner", ids.target) : undefined);
+        spec.target === "rule" && ids.target ? deps.ruleText?.(speaker, spec.key.startsWith("rules.custom") ? "custom" : "owner", ids.target) : undefined,
+        typeof args.quote === "string" ? args.quote : proof.message, input.botName);
     const decided = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected, ...(approvalTo ? { approvalTo } : {}), personAsked: asked === true });
     const secret = classes.includes("secret");
     // the card says what and where (a name, never an id) and the whole value
@@ -340,6 +349,9 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         rule,
         // 2026-10-20 (security review): rules and permissions keep their card
         ...(classes.includes("rule-change") || spec.family === "rules" ? { noRule: true } : {}),
+        // 2026-10-20: the person's own request, so the route takes the
+        // change as theirs (a level of a bot that is working included)
+        ...(asked === true && typeof proof === "object" && proof.primary ? { primary: proof.primary } : {}),
         onDone: (how) => deps.audit({ key: spec.key, ...(ids.target ? { target: ids.target } : {}), value, secret, how, botId: input.botId, actor: speaker }),
       },
       threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
@@ -348,7 +360,9 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       return text(200, `${String(result.body.text ?? "")} ${HOLD_TEXT[decided.reason]}${typeof asked === "string" ? ` (quote: ${asked})` : ""}`.trim());
     }
     if (result.status >= 400) return result;
-    return text(200, `Done: ${spec.label} changed.`);
+    // a level changed for the speaking bot while it answers: its next turn
+    const nextTurn = approvalTo && subjectBot === input.botId ? " It applies from the person's next message." : "";
+    return text(200, `Done: ${spec.label} changed.${nextTurn}`);
   }
 
   return { handle };
